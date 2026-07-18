@@ -111,6 +111,14 @@ impl ProcessHandler {
         Ok(self.output_dir.join(format!("{}.bin", output.token)))
     }
 
+    pub fn mode(&self) -> hoimin_core::ResourceMode {
+        self.backend.mode()
+    }
+
+    pub fn close(&self) -> Result<(), ResourceError> {
+        self.backend.close()
+    }
+
     pub async fn handle(&self, request: RunProcess) -> Result<ProcessFinished, EffectFailed> {
         self.run(request.into()).await
     }
@@ -201,8 +209,17 @@ impl ProcessHandler {
         let process_result = tokio::select! {
             status = child.wait() => {
                 match status {
-                    Ok(status) => terminate_supervised(id, &mut supervisor)
-                        .map(|()| exit_termination(status)),
+                    Ok(status) => supervisor
+                        .classify(exit_termination(status))
+                        .map_err(|error| resource_failure(
+                            id,
+                            "process.resource.classify",
+                            "classify process termination",
+                            error,
+                        ))
+                        .and_then(|termination| {
+                            terminate_supervised(id, &mut supervisor).map(|()| termination)
+                        }),
                     Err(error) => Err(io_failure(
                         id,
                         "process.wait",
