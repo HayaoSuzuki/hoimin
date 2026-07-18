@@ -44,6 +44,20 @@ def invoke(
     return [json.loads(line) for line in completed.stdout.splitlines()]
 
 
+def invoke_raw(payload: str) -> list[dict[str, object]]:
+    completed = subprocess.run(
+        [sys.executable, str(ANALYZER)],
+        input=payload + "\n",
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    assert completed.stderr == ""
+    assert completed.returncode == 0
+    return [json.loads(line) for line in completed.stdout.splitlines()]
+
+
 def candidates(events: list[dict[str, object]]) -> list[dict[str, object]]:
     return [event for event in events if event["kind"] == "candidate"]
 
@@ -208,6 +222,25 @@ def test_formatting_comments_and_parentheses_survive_local_replacements():
     cst.parse_module(mutated)
 
 
+def test_compound_comparisons_preserve_noncanonical_keyword_spacing():
+    source = "membership = item not  in values\nidentity = item is\t not sentinel\n"
+    events = invoke(source)
+    records = [
+        record
+        for record in candidates(events)
+        if record["operator"] in {"membership", "identity"}
+    ]
+    assert [(record["original"], record["replacement"]) for record in records] == [
+        ("not  in", "in"),
+        ("is\t not", "is"),
+    ]
+    assert not [
+        event for event in events if event.get("code") == "unreconstructable_span"
+    ]
+    for record in records:
+        cst.parse_module(apply_candidate(source, record))
+
+
 @pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
 def test_newline_styles_have_round_tripping_byte_spans(newline: str):
     source = newline.join(["name = '\u732b'", "answer = name is None", ""])
@@ -274,3 +307,29 @@ def test_effect_id_is_echoed_on_every_record_and_order_is_deterministic():
     assert all(record["effect_id"] == "e-99" for record in first)
     starts = [r["span"]["start"] for r in candidates(first)]
     assert starts == sorted(starts)
+
+
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+def test_nonstandard_json_constants_emit_bounded_invalid_request(constant: str):
+    events = invoke_raw(
+        '{"effect_id":' + constant + ',"path":"pkg/a.py","module":"x = 1\\n"}'
+    )
+    assert [event["kind"] for event in events] == ["diagnostic", "summary"]
+    assert events[0]["code"] == "invalid_request"
+    assert events[0]["effect_id"] == "unknown"
+
+
+def test_oversized_json_integer_emits_bounded_invalid_request():
+    events = invoke_raw('{"effect_id":' + "9" * 5000 + "}")
+    assert [event["kind"] for event in events] == ["diagnostic", "summary"]
+    assert events[0]["code"] == "invalid_request"
+
+
+def test_lone_surrogate_emits_bounded_ascii_safe_invalid_request():
+    payload = json.dumps(
+        {"effect_id": "e", "path": "pkg/a.py", "module": "\ud800"},
+        ensure_ascii=True,
+    )
+    events = invoke_raw(payload)
+    assert [event["kind"] for event in events] == ["diagnostic", "summary"]
+    assert events[0]["code"] == "invalid_request"
