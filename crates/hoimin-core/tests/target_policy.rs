@@ -236,3 +236,15 @@ fn windows_paths_use_mixed_slashes_and_case_insensitive_containment() {
     let targets = resolve_explicit(&selection, &[DiscoveredFile::python("pkg/a.py")]).unwrap();
     assert_eq!(targets[0].path, "pkg/a.py");
 }
+
+#[cfg(windows)]
+#[test]
+fn windows_absolute_selector_strips_root_case_insensitively() {
+    let selection = Selection {
+        root: Utf8PathBuf::from("C:/Project"),
+        files: vec![Utf8PathBuf::from("c:/project/pkg/a.py")],
+        ..Selection::default()
+    };
+    let targets = resolve_explicit(&selection, &[DiscoveredFile::python("pkg/a.py")]).unwrap();
+    assert_eq!(targets[0].path, "pkg/a.py");
+}

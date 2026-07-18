@@ -176,10 +176,9 @@ fn whole_file(path: Utf8PathBuf) -> TargetSlice {
 fn normalize_logical(root: &Utf8Path, path: &Utf8Path) -> Result<Utf8PathBuf, TargetError> {
     let original = path.to_owned();
     let relative = if path.is_absolute() {
-        path.strip_prefix(root)
-            .map_err(|_| TargetError::PathOutsideRoot(original.clone()))?
+        strip_root(root, path).ok_or_else(|| TargetError::PathOutsideRoot(original.clone()))?
     } else {
-        path
+        path.to_owned()
     };
     let mut parts = Vec::<&str>::new();
     for component in relative.components() {
@@ -197,6 +196,24 @@ fn normalize_logical(root: &Utf8Path, path: &Utf8Path) -> Result<Utf8PathBuf, Ta
         }
     }
     Ok(Utf8PathBuf::from(parts.join("/")))
+}
+
+fn strip_root(root: &Utf8Path, path: &Utf8Path) -> Option<Utf8PathBuf> {
+    if !cfg!(windows) {
+        return path.strip_prefix(root).ok().map(Utf8Path::to_owned);
+    }
+    let root = root.as_str().replace('\\', "/");
+    let root = root.trim_end_matches('/');
+    let path = path.as_str().replace('\\', "/");
+    if path.eq_ignore_ascii_case(root) {
+        return Some(Utf8PathBuf::new());
+    }
+    let prefix = format!("{root}/");
+    if path.len() >= prefix.len() && path[..prefix.len()].eq_ignore_ascii_case(&prefix) {
+        Some(Utf8PathBuf::from(&path[prefix.len()..]))
+    } else {
+        None
+    }
 }
 
 fn is_within(path: &Utf8Path, directory: &Utf8Path) -> bool {
@@ -238,13 +255,13 @@ fn normalize_ranges(ranges: &mut Vec<LineRange>) {
     ranges.sort_by_key(|range| (range.start, range.end));
     let mut merged: Vec<LineRange> = Vec::with_capacity(ranges.len());
     for range in ranges.drain(..) {
-        if let Some(previous) = merged.last_mut()
-            && range.start <= previous.end.saturating_add(1)
-        {
-            previous.end = previous.end.max(range.end);
-        } else {
-            merged.push(range);
+        if let Some(previous) = merged.last_mut() {
+            if range.start <= previous.end.saturating_add(1) {
+                previous.end = previous.end.max(range.end);
+                continue;
+            }
         }
+        merged.push(range);
     }
     *ranges = merged;
 }
