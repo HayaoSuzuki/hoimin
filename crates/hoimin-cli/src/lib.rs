@@ -3,6 +3,7 @@ use std::ffi::OsString;
 pub mod analyzer;
 pub mod cli;
 pub mod target;
+pub mod workspace;
 
 pub async fn run_from<I, T>(args: I) -> i32
 where
