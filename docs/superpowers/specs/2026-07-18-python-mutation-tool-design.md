@@ -443,6 +443,12 @@ DB書き込みは単一writerへ集約し、一つのmutant結果ごとにtransa
 一つでも異なる場合は結果を流用せず、同じDB内に新しいrunを作る。
 完了済みのmutantだけを再利用し、`timeout`、`out_of_memory`、`process_limit`、`error`、`not_run`は再実行の対象にする。
 
+再開時にrun内の全結果をcoreへ読み込まない。
+session handlerはfingerprintが一致する最新の未完了runを`LIMIT 1`で返し、coreが候補spoolを逐次読むたびに、その`(run_id, mutant_id)`のstatusを最大一行だけ返す。
+coreは単一のstatusを`reuse`または`rerun`へ分類するため、resumeのメモリ使用量もmutant数から独立する。
+`timeout`など再実行対象の既存結果は、candidate、result、diagnosticを一つのtransactionで置換する。
+不完全終了したrunは再開後に完了へ遷移できるが、完了済みrunへの結果保存と再完了は拒否する。
+
 ## 終了コード
 
 CLIの終了コードは次のとおりである。

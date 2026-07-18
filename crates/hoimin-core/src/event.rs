@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use crate::{
     EffectId, IntegrityCheckpoint, OutputSpoolRef, ProcessTermination, ReservationId, ResourceMode,
-    StoredRun, TargetSlice,
+    SessionResumeRef, StoredResult, TargetSlice,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -28,7 +28,13 @@ completion_event!(AnalysisFinished, CandidateLoaded, OutputEmitted,);
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SessionLoaded {
     pub id: EffectId,
-    pub runs: Vec<StoredRun>,
+    pub resume: Option<SessionResumeRef>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct StoredResultLoaded {
+    pub id: EffectId,
+    pub result: Option<StoredResult>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -227,6 +233,7 @@ pub enum RunEvent {
     WorkerReset(WorkerReset),
     OriginalsVerified(OriginalsVerified),
     SessionLoaded(SessionLoaded),
+    StoredResultLoaded(StoredResultLoaded),
     SessionStarted(SessionStarted),
     ResultPersisted(ResultPersisted),
     SessionFinished(SessionFinished),

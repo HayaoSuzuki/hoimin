@@ -1,53 +1,31 @@
-use std::collections::BTreeSet;
 use std::time::Duration;
 
 use hoimin_core::{
     CommandArg, FingerprintInput, LineRange, MutationStatus, RawRunLimits, ResourceMode,
-    RunFingerprint, SourceHash, StoredResult, StoredRun, TargetSlice, fingerprint, resume_policy,
-    select_resume_run,
+    ResumeDecision, SourceHash, StoredResult, TargetSlice, fingerprint, resume_policy,
 };
 
 #[test]
-fn resume_reuses_only_determinate_completed_results() {
-    let decision = resume_policy(&[
-        stored("m1", MutationStatus::Killed),
-        stored("m2", MutationStatus::Survived),
-        stored("m3", MutationStatus::Timeout),
-        stored("m4", MutationStatus::OutOfMemory),
-        stored("m5", MutationStatus::ProcessLimit),
-        stored("m6", MutationStatus::Error),
-        stored("m7", MutationStatus::NotRun),
-    ]);
-    assert_eq!(
-        decision.reusable_ids,
-        BTreeSet::from(["m1".to_owned(), "m2".to_owned()])
-    );
-    assert_eq!(
-        decision.rerun_ids,
-        BTreeSet::from([
-            "m3".to_owned(),
-            "m4".to_owned(),
-            "m5".to_owned(),
-            "m6".to_owned(),
-            "m7".to_owned(),
-        ])
-    );
-}
-
-#[test]
-fn newest_compatible_incomplete_run_is_selected_and_complete_runs_are_ignored() {
-    let wanted = fingerprint(&fixture_input());
-    let other = RunFingerprint::from_bytes([9; 32]);
-    let runs = vec![
-        run("old", wanted, 1, false, "m-old"),
-        run("complete", wanted, 99, true, "m-complete"),
-        run("other", other, 100, false, "m-other"),
-        run("new", wanted, 2, false, "m-new"),
-    ];
-    let decision = select_resume_run(&runs, &wanted).unwrap();
-    assert_eq!(decision.run_id.as_deref(), Some("new"));
-    assert_eq!(decision.reusable_ids, BTreeSet::from(["m-new".to_owned()]));
-    assert!(select_resume_run(&runs, &RunFingerprint::from_bytes([8; 32])).is_none());
+fn resume_decides_one_stored_result_without_collecting_the_run() {
+    for status in [MutationStatus::Killed, MutationStatus::Survived] {
+        assert_eq!(
+            resume_policy(Some(&stored("m", status))),
+            ResumeDecision::Reuse
+        );
+    }
+    for status in [
+        MutationStatus::Timeout,
+        MutationStatus::OutOfMemory,
+        MutationStatus::ProcessLimit,
+        MutationStatus::Error,
+        MutationStatus::NotRun,
+    ] {
+        assert_eq!(
+            resume_policy(Some(&stored("m", status))),
+            ResumeDecision::Rerun
+        );
+    }
+    assert_eq!(resume_policy(None), ResumeDecision::Rerun);
 }
 
 #[test]
@@ -57,6 +35,25 @@ fn fingerprint_is_canonical_for_set_like_fields() {
     reordered.targets.reverse();
     reordered.operators.reverse();
     assert_eq!(fingerprint(&fixture_input()), fingerprint(&reordered));
+}
+
+#[test]
+fn duplicate_paths_are_order_independent_by_the_whole_element() {
+    let mut original = fixture_input();
+    original.sources.push(SourceHash {
+        path: "src/a.py".into(),
+        hash: [9; 32],
+    });
+    original.targets.push(TargetSlice {
+        path: "src/a.py".into(),
+        lines: vec![LineRange { start: 8, end: 9 }],
+        symbols: vec!["omega".to_owned()],
+    });
+    let mut reordered = original.clone();
+    reordered.sources.swap(0, 2);
+    reordered.targets.swap(0, 2);
+
+    assert_eq!(fingerprint(&original), fingerprint(&reordered));
 }
 
 #[test]
@@ -173,23 +170,6 @@ fn stored(id: &str, status: MutationStatus) -> StoredResult {
     StoredResult {
         mutant_id: id.to_owned(),
         status,
-    }
-}
-
-fn run(
-    run_id: &str,
-    fingerprint: RunFingerprint,
-    ordinal: u64,
-    complete: bool,
-    mutant: &str,
-) -> StoredRun {
-    StoredRun {
-        run_id: run_id.to_owned(),
-        fingerprint,
-        ordinal,
-        complete,
-        results: vec![stored(mutant, MutationStatus::Killed)],
-        diagnostics: Vec::new(),
     }
 }
 

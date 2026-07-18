@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 use std::time::Duration;
 
 use camino::Utf8PathBuf;
@@ -88,84 +87,78 @@ pub struct SessionDiagnostic {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct StoredRun {
+pub struct SessionResumeRef {
     pub run_id: String,
-    pub fingerprint: RunFingerprint,
-    pub ordinal: u64,
-    pub complete: bool,
-    pub results: Vec<StoredResult>,
-    pub diagnostics: Vec<SessionDiagnostic>,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ResumeDecision {
-    pub run_id: Option<String>,
-    pub reusable_ids: BTreeSet<String>,
-    pub rerun_ids: BTreeSet<String>,
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum ResumeDecision {
+    Reuse,
+    Rerun,
 }
 
-pub fn resume_policy(results: &[StoredResult]) -> ResumeDecision {
-    let mut decision = ResumeDecision::default();
-    for result in results {
-        match result.status {
-            MutationStatus::Killed | MutationStatus::Survived => {
-                decision.reusable_ids.insert(result.mutant_id.clone());
-            }
+pub fn resume_policy(result: Option<&StoredResult>) -> ResumeDecision {
+    match result.map(|result| result.status) {
+        Some(MutationStatus::Killed | MutationStatus::Survived) => ResumeDecision::Reuse,
+        Some(
             MutationStatus::Timeout
             | MutationStatus::OutOfMemory
             | MutationStatus::ProcessLimit
             | MutationStatus::Error
-            | MutationStatus::NotRun => {
-                decision.rerun_ids.insert(result.mutant_id.clone());
-            }
-        }
+            | MutationStatus::NotRun,
+        )
+        | None => ResumeDecision::Rerun,
     }
-    decision
-}
-
-pub fn select_resume_run(runs: &[StoredRun], wanted: &RunFingerprint) -> Option<ResumeDecision> {
-    let run = runs
-        .iter()
-        .filter(|run| !run.complete && run.fingerprint == *wanted)
-        .max_by_key(|run| run.ordinal)?;
-    let mut decision = resume_policy(&run.results);
-    decision.run_id = Some(run.run_id.clone());
-    Some(decision)
 }
 
 fn encode_sources(sources: &[SourceHash]) -> Vec<u8> {
-    let mut values = sources.to_vec();
-    values.sort_by(|left, right| left.path.as_str().cmp(right.path.as_str()));
+    let mut values = sources
+        .iter()
+        .map(|value| {
+            let mut element = Encoder::new();
+            element.bytes(value.path.as_str().as_bytes());
+            element.bytes(&value.hash);
+            element.bytes
+        })
+        .collect::<Vec<_>>();
+    values.sort();
     let mut out = Encoder::new();
     out.count(values.len());
     for value in values {
-        out.bytes(value.path.as_str().as_bytes());
-        out.bytes(&value.hash);
+        out.bytes(&value);
     }
     out.bytes
 }
 
 fn encode_targets(targets: &[TargetSlice]) -> Vec<u8> {
-    let mut values = targets.to_vec();
-    values.sort_by(|left, right| left.path.as_str().cmp(right.path.as_str()));
+    let mut values = targets
+        .iter()
+        .cloned()
+        .map(|value| {
+            let mut element = Encoder::new();
+            element.bytes(value.path.as_str().as_bytes());
+            let mut lines = value.lines;
+            lines.sort_by_key(|line| (line.start, line.end));
+            element.count(lines.len());
+            for line in lines {
+                element.raw(&line.start.to_le_bytes());
+                element.raw(&line.end.to_le_bytes());
+            }
+            let mut symbols = value.symbols;
+            symbols.sort();
+            symbols.dedup();
+            element.count(symbols.len());
+            for symbol in symbols {
+                element.bytes(symbol.as_bytes());
+            }
+            element.bytes
+        })
+        .collect::<Vec<_>>();
+    values.sort();
     let mut out = Encoder::new();
     out.count(values.len());
     for value in values {
-        out.bytes(value.path.as_str().as_bytes());
-        let mut lines = value.lines;
-        lines.sort_by_key(|line| (line.start, line.end));
-        out.count(lines.len());
-        for line in lines {
-            out.raw(&line.start.to_le_bytes());
-            out.raw(&line.end.to_le_bytes());
-        }
-        let mut symbols = value.symbols;
-        symbols.sort();
-        symbols.dedup();
-        out.count(symbols.len());
-        for symbol in symbols {
-            out.bytes(symbol.as_bytes());
-        }
+        out.bytes(&value);
     }
     out.bytes
 }

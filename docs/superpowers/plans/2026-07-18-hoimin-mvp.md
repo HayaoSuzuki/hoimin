@@ -989,6 +989,8 @@ impl SessionHandler {
 
 The handler performs no reuse or retry policy. It returns stored rows to core and commits requested records one transaction at a time. With contracts enabled, `session.commit.post` reads back the `(run_id, mutant_id)` record after commit and checks equality.
 
+**Implementation deviation after review:** The batch-shaped example in Step 1 is not the runtime API. To preserve the design requirement that functional-core memory is independent of mutant count (design lines 109–112), `LoadSession` carries the fingerprint and returns only the newest compatible incomplete run reference. A separate `LookupStoredResult` effect reads at most one status for the current candidate, and core classifies one `Option<StoredResult>` as reuse or rerun. No runtime `Vec<StoredRun>`, `BTreeSet` of mutant IDs, or run-wide diagnostics load is used. An inconclusive stored result may be transactionally replaced after resume; `finish(false)` may later transition to `finish(true)`, while completed runs reject further persistence and finish operations.
+
 - [ ] **Step 5: Run focused and regression tests**
 
 Run: `cargo test -p hoimin-core --features contracts --test resume_policy && cargo test -p hoimin-cli --features contracts --test session_handler && cargo test --workspace`

@@ -86,3 +86,19 @@ fn migrate_v1(connection: &Connection) -> Result<(), rusqlite::Error> {
          COMMIT;",
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn configures_busy_timeout_on_the_handler_connection() {
+        let connection = Connection::open_in_memory().unwrap();
+        configure(&connection).unwrap();
+
+        let timeout: i64 = connection
+            .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(timeout, 5_000);
+    }
+}

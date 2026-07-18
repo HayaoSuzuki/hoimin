@@ -21,7 +21,20 @@ macro_rules! effect_request {
     };
 }
 
-effect_request!(Preflight, AnalyzeFile, ReadCandidate, LoadSession,);
+effect_request!(Preflight, AnalyzeFile, ReadCandidate,);
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LoadSession {
+    pub id: EffectId,
+    pub fingerprint: RunFingerprint,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LookupStoredResult {
+    pub id: EffectId,
+    pub run_id: String,
+    pub mutant_id: String,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BeginSession {
@@ -149,6 +162,7 @@ pub enum RunEffect {
     ResetWorker(ResetWorker),
     VerifyOriginals(VerifyOriginals),
     LoadSession(LoadSession),
+    LookupStoredResult(LookupStoredResult),
     BeginSession(BeginSession),
     PersistResult(PersistResult),
     FinishSession(FinishSession),

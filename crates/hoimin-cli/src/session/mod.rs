@@ -5,14 +5,14 @@ use std::path::Path;
 use std::time::Duration;
 
 use hoimin_core::{
-    BeginSession, EffectFailed, EffectFailure, EffectId, FinishSession, LoadSession, MutantResult,
-    MutationStatus, PersistResult, ResourceMode, ResultPersisted, RunFingerprint,
-    SessionDiagnostic, SessionFinished, SessionLoaded, SessionStarted, StoredResult, StoredRun,
-    contract_ensure,
+    BeginSession, EffectFailed, EffectFailure, EffectId, FinishSession, LoadSession,
+    LookupStoredResult, MutantResult, MutationStatus, PersistResult, ResourceMode, ResultPersisted,
+    SessionDiagnostic, SessionFinished, SessionLoaded, SessionResumeRef, SessionStarted,
+    StoredResult, StoredResultLoaded, contract_ensure,
 };
 #[cfg(feature = "contracts")]
 use hoimin_core::{ByteSpan, MutationCandidate, OutputSpoolRef};
-use rusqlite::{Connection, ErrorCode, Transaction, params};
+use rusqlite::{Connection, ErrorCode, OptionalExtension, Transaction, params};
 use thiserror::Error;
 
 pub use schema::SchemaError;
@@ -38,9 +38,76 @@ impl SessionHandler {
 
     pub fn load(&mut self, request: LoadSession) -> Result<SessionLoaded, EffectFailed> {
         let id = request.id;
-        self.load_runs()
-            .map(|runs| SessionLoaded { id, runs })
-            .map_err(|failure| EffectFailed { id, failure })
+        self.connection
+            .query_row(
+                "SELECT run_id FROM runs
+                 WHERE fingerprint=?1 AND complete=0 ORDER BY id DESC LIMIT 1",
+                [request.fingerprint.as_bytes().as_slice()],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()
+            .map_err(|error| failed(id, "session.read", "load resume run", error))
+            .and_then(|run_id| match run_id {
+                Some(None) => Err(EffectFailed {
+                    id,
+                    failure: corrupt("NULL run ID"),
+                }),
+                Some(Some(run_id)) => Ok(Some(SessionResumeRef { run_id })),
+                None => Ok(None),
+            })
+            .map(|resume| SessionLoaded { id, resume })
+    }
+
+    pub fn lookup(
+        &mut self,
+        request: LookupStoredResult,
+    ) -> Result<StoredResultLoaded, EffectFailed> {
+        let id = request.id;
+        let complete = self
+            .connection
+            .query_row(
+                "SELECT complete FROM runs WHERE run_id=?1",
+                [&request.run_id],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .optional()
+            .map_err(|error| failed(id, "session.read", "lookup run state", error))?;
+        match complete {
+            None => {
+                return Err(state_failure(
+                    id,
+                    "session.lookup.state",
+                    "run does not exist",
+                ));
+            }
+            Some(None) => {
+                return Err(EffectFailed {
+                    id,
+                    failure: corrupt("NULL complete flag"),
+                });
+            }
+            Some(Some(1)) => {
+                return Err(state_failure(
+                    id,
+                    "session.lookup.complete",
+                    "completed run cannot be resumed",
+                ));
+            }
+            Some(Some(0)) => {}
+            Some(Some(_)) => {
+                return Err(EffectFailed {
+                    id,
+                    failure: corrupt("invalid complete flag"),
+                });
+            }
+        }
+
+        let (candidates, results, status) =
+            result_shape(&self.connection, &request.run_id, &request.mutant_id)
+                .map_err(|error| failed(id, "session.read", "lookup stored result", error))?;
+        let result = decode_stored_result(&request.mutant_id, candidates, results, status)
+            .map_err(|failure| EffectFailed { id, failure })?;
+        Ok(StoredResultLoaded { id, result })
     }
 
     pub fn begin(&mut self, request: BeginSession) -> Result<SessionStarted, EffectFailed> {
@@ -78,6 +145,63 @@ impl SessionHandler {
             .connection
             .transaction()
             .map_err(|error| failed(id, "session.persist", "begin result transaction", error))?;
+        let complete = transaction
+            .query_row(
+                "SELECT complete FROM runs WHERE run_id=?1",
+                [&run_id],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .optional()
+            .map_err(|error| failed(id, "session.persist", "read run state", error))?;
+        match complete {
+            Some(Some(1)) => {
+                return Err(state_failure(
+                    id,
+                    "session.persist.complete",
+                    "completed run cannot accept results",
+                ));
+            }
+            Some(Some(0)) | None => {}
+            Some(None) => {
+                return Err(EffectFailed {
+                    id,
+                    failure: corrupt("NULL complete flag"),
+                });
+            }
+            Some(Some(_)) => {
+                return Err(EffectFailed {
+                    id,
+                    failure: corrupt("invalid complete flag"),
+                });
+            }
+        }
+
+        let (candidate_count, result_count, status) =
+            result_shape(&transaction, &run_id, &mutant_id)
+                .map_err(|error| failed(id, "session.persist", "read existing result", error))?;
+        if let Some(stored) =
+            decode_stored_result(&mutant_id, candidate_count, result_count, status)
+                .map_err(|failure| EffectFailed { id, failure })?
+        {
+            match stored.status {
+                MutationStatus::Killed | MutationStatus::Survived => {
+                    return Err(state_failure(
+                        id,
+                        "session.duplicate_result",
+                        "determinate result cannot be replaced",
+                    ));
+                }
+                MutationStatus::Timeout
+                | MutationStatus::OutOfMemory
+                | MutationStatus::ProcessLimit
+                | MutationStatus::Error
+                | MutationStatus::NotRun => {
+                    delete_stored_result(&transaction, &run_id, &mutant_id).map_err(|error| {
+                        failed(id, "session.persist", "replace inconclusive result", error)
+                    })?;
+                }
+            }
+        }
         insert_candidate(&transaction, &request.result).map_err(|error| {
             let code = if is_constraint(&error) {
                 "session.duplicate_result"
@@ -124,11 +248,14 @@ impl SessionHandler {
             .connection
             .transaction()
             .map_err(|error| failed(id, "session.finish", "begin finish transaction", error))?;
+        let statement = if request.complete {
+            "UPDATE runs SET finished=1, complete=1 WHERE run_id=?1 AND complete=0"
+        } else {
+            "UPDATE runs SET finished=1, complete=0
+             WHERE run_id=?1 AND finished=0 AND complete=0"
+        };
         let changed = transaction
-            .execute(
-                "UPDATE runs SET finished=1, complete=?1 WHERE run_id=?2 AND finished=0",
-                params![i64::from(request.complete), request.run_id],
-            )
+            .execute(statement, [&request.run_id])
             .map_err(|error| failed(id, "session.finish", "mark run finished", error))?;
         if changed != 1 {
             return Err(EffectFailed {
@@ -148,93 +275,6 @@ impl SessionHandler {
             run_id: request.run_id,
             complete: request.complete,
         })
-    }
-
-    fn load_runs(&self) -> Result<Vec<StoredRun>, EffectFailure> {
-        let mut statement = self
-            .connection
-            .prepare("SELECT id, run_id, fingerprint, complete FROM runs ORDER BY id")
-            .map_err(|error| database("session.read", "prepare runs", error))?;
-        let raw = statement
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, Vec<u8>>(2)?,
-                    row.get::<_, i64>(3)?,
-                ))
-            })
-            .map_err(|error| database("session.read", "query runs", error))?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| database("session.corrupt", "decode run row", error))?;
-        drop(statement);
-
-        let mut runs = Vec::with_capacity(raw.len());
-        for (ordinal, run_id, digest, complete) in raw {
-            let bytes: [u8; 32] = digest
-                .try_into()
-                .map_err(|_| corrupt("invalid fingerprint length"))?;
-            let complete = match complete {
-                0 => false,
-                1 => true,
-                _ => return Err(corrupt("invalid complete flag")),
-            };
-            let results = self.load_results(&run_id)?;
-            let diagnostics = self.load_diagnostics(&run_id)?;
-            runs.push(StoredRun {
-                run_id,
-                fingerprint: RunFingerprint::from_bytes(bytes),
-                ordinal: u64::try_from(ordinal).map_err(|_| corrupt("negative run ordinal"))?,
-                complete,
-                results,
-                diagnostics,
-            });
-        }
-        Ok(runs)
-    }
-
-    fn load_results(&self, run_id: &str) -> Result<Vec<StoredResult>, EffectFailure> {
-        let mut statement = self
-            .connection
-            .prepare("SELECT mutant_id, status FROM results WHERE run_id=?1 ORDER BY mutant_id")
-            .map_err(|error| database("session.read", "prepare results", error))?;
-        let rows = statement
-            .query_map([run_id], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            })
-            .map_err(|error| database("session.read", "query results", error))?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| database("session.corrupt", "decode result row", error))?;
-        rows.into_iter()
-            .map(|(mutant_id, status)| {
-                Ok(StoredResult {
-                    mutant_id,
-                    status: decode_status(&status)
-                        .ok_or_else(|| corrupt("unknown mutation status"))?,
-                })
-            })
-            .collect()
-    }
-
-    fn load_diagnostics(&self, run_id: &str) -> Result<Vec<SessionDiagnostic>, EffectFailure> {
-        let mut statement = self
-            .connection
-            .prepare(
-                "SELECT mutant_id,level,code,message FROM diagnostics WHERE run_id=?1 ORDER BY id",
-            )
-            .map_err(|error| database("session.read", "prepare diagnostics", error))?;
-        statement
-            .query_map([run_id], |row| {
-                Ok(SessionDiagnostic {
-                    mutant_id: row.get(0)?,
-                    level: row.get(1)?,
-                    code: row.get(2)?,
-                    message: row.get(3)?,
-                })
-            })
-            .map_err(|error| database("session.read", "query diagnostics", error))?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| database("session.corrupt", "decode diagnostic row", error))
     }
 
     #[cfg(feature = "contracts")]
@@ -367,6 +407,57 @@ fn insert_diagnostic(
     Ok(())
 }
 
+fn result_shape(
+    connection: &Connection,
+    run_id: &str,
+    mutant_id: &str,
+) -> rusqlite::Result<(i64, i64, Option<String>)> {
+    connection.query_row(
+        "SELECT
+             (SELECT count(*) FROM candidates WHERE run_id=?1 AND mutant_id=?2),
+             (SELECT count(*) FROM results WHERE run_id=?1 AND mutant_id=?2),
+             (SELECT status FROM results WHERE run_id=?1 AND mutant_id=?2)",
+        params![run_id, mutant_id],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )
+}
+
+fn decode_stored_result(
+    mutant_id: &str,
+    candidate_count: i64,
+    result_count: i64,
+    status: Option<String>,
+) -> Result<Option<StoredResult>, EffectFailure> {
+    match (candidate_count, result_count, status) {
+        (0, 0, None) => Ok(None),
+        (1, 1, Some(status)) => Ok(Some(StoredResult {
+            mutant_id: mutant_id.to_owned(),
+            status: decode_status(&status).ok_or_else(|| corrupt("unknown mutation status"))?,
+        })),
+        _ => Err(corrupt("candidate and result rows are inconsistent")),
+    }
+}
+
+fn delete_stored_result(
+    transaction: &Transaction<'_>,
+    run_id: &str,
+    mutant_id: &str,
+) -> rusqlite::Result<()> {
+    transaction.execute(
+        "DELETE FROM diagnostics WHERE run_id=?1 AND mutant_id=?2",
+        params![run_id, mutant_id],
+    )?;
+    transaction.execute(
+        "DELETE FROM results WHERE run_id=?1 AND mutant_id=?2",
+        params![run_id, mutant_id],
+    )?;
+    transaction.execute(
+        "DELETE FROM candidates WHERE run_id=?1 AND mutant_id=?2",
+        params![run_id, mutant_id],
+    )?;
+    Ok(())
+}
+
 fn to_i64(value: u64) -> rusqlite::Result<i64> {
     i64::try_from(value).map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
 }
@@ -411,6 +502,17 @@ fn failed(id: EffectId, code: &str, operation: &str, error: rusqlite::Error) -> 
     EffectFailed {
         id,
         failure: database(code, operation, error),
+    }
+}
+
+fn state_failure(id: EffectId, code: &str, message: &str) -> EffectFailed {
+    EffectFailed {
+        id,
+        failure: EffectFailure::SessionDatabase {
+            code: code.to_owned(),
+            operation: "validate session lifecycle".to_owned(),
+            message: message.to_owned(),
+        },
     }
 }
 
