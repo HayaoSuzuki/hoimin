@@ -56,15 +56,20 @@ pub(crate) async fn resolve_changed(
         diff_args.push(&base);
         let output = run_git(root, &diff_args).await?;
         parse_diff(&output, &mut changed, &mut excluded)?;
-    } else if head_exists(root).await? {
-        diff_args.push("HEAD");
-        let output = run_git(root, &diff_args).await?;
-        parse_diff(&output, &mut changed, &mut excluded)?;
+    } else {
+        if head_exists(root).await? {
+            diff_args.push("HEAD");
+            let output = run_git(root, &diff_args).await?;
+            parse_diff(&output, &mut changed, &mut excluded)?;
+        } else {
+            let indexed = run_git(root, &["ls-files", "-z"]).await?;
+            collect_current_worktree_paths(root, &indexed, &mut changed).await?;
+        }
     }
     changed.retain(|path, _| !excluded.contains(path));
 
     let untracked = run_git(root, &["ls-files", "--others", "--exclude-standard", "-z"]).await?;
-    collect_untracked(root, &untracked, &mut changed).await?;
+    collect_current_worktree_paths(root, &untracked, &mut changed).await?;
     Ok(normalize_changed(changed))
 }
 
@@ -276,7 +281,7 @@ fn parse_hunk_range(line: &str) -> Result<Option<LineRange>, TargetError> {
     Ok(Some(LineRange { start, end }))
 }
 
-async fn collect_untracked(
+async fn collect_current_worktree_paths(
     root: &Utf8Path,
     output: &[u8],
     changed: &mut BTreeMap<Utf8PathBuf, Vec<LineRange>>,
@@ -286,21 +291,23 @@ async fn collect_untracked(
         .filter(|path| !path.is_empty())
     {
         let path = std::str::from_utf8(raw_path)
-            .map_err(|_| TargetError::GitFailed("untracked path is not valid UTF-8".into()))?;
+            .map_err(|_| TargetError::GitFailed("Git path is not valid UTF-8".into()))?;
         let path = Utf8PathBuf::from(path.replace('\\', "/"));
         if !is_python(&path) {
             continue;
         }
-        let contents = tokio::fs::read(root.join(&path))
-            .await
-            .map_err(|error| TargetError::GitFailed(error.to_string()))?;
+        let contents = match tokio::fs::read(root.join(&path)).await {
+            Ok(contents) => contents,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(TargetError::GitFailed(error.to_string())),
+        };
         if contents.contains(&0) || contents.is_empty() {
             continue;
         }
         let line_count = contents.iter().filter(|byte| **byte == b'\n').count()
             + usize::from(!contents.ends_with(b"\n"));
         let end = u32::try_from(line_count)
-            .map_err(|_| TargetError::GitFailed("untracked file has too many lines".into()))?;
+            .map_err(|_| TargetError::GitFailed("Python file has too many lines".into()))?;
         changed
             .entry(path)
             .or_default()

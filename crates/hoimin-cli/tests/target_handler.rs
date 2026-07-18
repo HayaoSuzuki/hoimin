@@ -182,6 +182,21 @@ async fn changed_collects_untracked_python_in_unborn_repository() {
 }
 
 #[tokio::test]
+async fn changed_collects_staged_python_in_unborn_repository() {
+    let repo = FixtureRepo::new();
+    repo.write("pkg/a.py", "one\ntwo\nthree\n");
+    repo.git(&["add", "pkg/a.py"]);
+
+    assert_eq!(
+        repo.changed_lines(None).await.changed,
+        BTreeMap::from([(
+            Utf8PathBuf::from("pkg/a.py"),
+            vec![LineRange { start: 1, end: 3 }],
+        )])
+    );
+}
+
+#[tokio::test]
 async fn uses_diff_base_against_worktree() {
     let repo = FixtureRepo::new();
     repo.write("pkg/a.py", "one\ntwo\nthree\n");
