@@ -68,6 +68,8 @@ impl PortableSupervisor {
             self.process_group = Some(pid as i32);
         }
         #[cfg(windows)]
+        // The child can execute between spawn and this assignment. Task 8 closes that known
+        // pre-assignment race by adding suspended startup before hard-limit configuration.
         assign_to_job(self.job, pid)?;
         #[cfg(not(any(unix, windows)))]
         let _ = pid;

@@ -142,6 +142,7 @@ impl ProcessHandler {
         command
             .args(arguments)
             .current_dir(&process.cwd)
+            .kill_on_drop(true)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -168,13 +169,8 @@ impl ProcessHandler {
             )
         })?;
         if let Err(error) = supervisor.attach(&child) {
-            terminate_unattached_child(&mut child).await;
-            return Err(resource_failure(
-                id,
-                "process.resource.attach",
-                "attach resource supervisor",
-                error,
-            ));
+            let cleanup_error = terminate_unattached_child(&mut child).await.err();
+            return Err(attach_failure(id, error, cleanup_error));
         }
 
         let stdout = child.stdout.take().ok_or_else(|| {
@@ -202,32 +198,47 @@ impl ProcessHandler {
             receiver,
         ));
 
-        let termination = tokio::select! {
+        let process_result = tokio::select! {
             status = child.wait() => {
-                let status = status.map_err(|error| io_failure(id, "process.wait", "wait for process", None, error))?;
-                terminate_supervised(id, &mut supervisor)?;
-                exit_termination(status)
+                match status {
+                    Ok(status) => terminate_supervised(id, &mut supervisor)
+                        .map(|()| exit_termination(status)),
+                    Err(error) => Err(io_failure(
+                        id,
+                        "process.wait",
+                        "wait for process",
+                        None,
+                        error,
+                    )),
+                }
             }
             () = cancellation.cancelled() => {
-                terminate_supervised(id, &mut supervisor)?;
-                wait_after_termination(id, &mut child).await?;
-                ProcessTermination::Cancelled
+                match terminate_supervised(id, &mut supervisor) {
+                    Ok(()) => wait_after_termination(id, &mut child)
+                        .await
+                        .map(|()| ProcessTermination::Cancelled),
+                    Err(error) => Err(error),
+                }
             }
             () = tokio::time::sleep_until(deadline) => {
-                terminate_supervised(id, &mut supervisor)?;
-                wait_after_termination(id, &mut child).await?;
-                ProcessTermination::Timeout
+                match terminate_supervised(id, &mut supervisor) {
+                    Ok(()) => wait_after_termination(id, &mut child)
+                        .await
+                        .map(|()| ProcessTermination::Timeout),
+                    Err(error) => Err(error),
+                }
             }
         };
 
-        let output = await_output(
+        let output_result = await_output(
             id,
             stdout_task,
             stderr_task,
             collector_task,
             tokio::time::Instant::now() + POST_TERMINATION_GRACE,
         )
-        .await?;
+        .await;
+        let (termination, output) = combine_process_and_output(process_result, output_result)?;
         contract_ensure!(
             "process.output.post",
             output.retained <= process.limits.max_output_bytes
@@ -336,9 +347,54 @@ async fn wait_after_termination(id: EffectId, child: &mut Child) -> Result<(), E
     }
 }
 
-async fn terminate_unattached_child(child: &mut Child) {
-    let _ = child.start_kill();
-    let _ = child.wait().await;
+async fn terminate_unattached_child(child: &mut Child) -> std::io::Result<()> {
+    let kill_error = child.start_kill().err();
+    let wait_error = match tokio::time::timeout(POST_TERMINATION_GRACE, child.wait()).await {
+        Ok(Ok(_)) => None,
+        Ok(Err(error)) => Some(error),
+        Err(_) => Some(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "timed out waiting for unattached child termination",
+        )),
+    };
+    match (kill_error, wait_error) {
+        (None, None) => Ok(()),
+        (Some(error), None) | (None, Some(error)) => Err(error),
+        (Some(kill), Some(wait)) => Err(std::io::Error::other(format!(
+            "kill failed: {kill}; wait failed: {wait}"
+        ))),
+    }
+}
+
+fn combine_process_and_output(
+    process: Result<ProcessTermination, EffectFailed>,
+    output: Result<OutputSpoolRef, EffectFailed>,
+) -> Result<(ProcessTermination, OutputSpoolRef), EffectFailed> {
+    match process {
+        Ok(termination) => output.map(|output| (termination, output)),
+        Err(error) => Err(error),
+    }
+}
+
+fn attach_failure(
+    id: EffectId,
+    attach: ResourceError,
+    cleanup: Option<std::io::Error>,
+) -> EffectFailed {
+    let mut message = attach.to_string();
+    if let Some(cleanup) = cleanup {
+        message.push_str("; spawned-child cleanup failed: ");
+        message.push_str(&cleanup.to_string());
+    }
+    EffectFailed {
+        id,
+        failure: EffectFailure::Io {
+            code: "process.resource.attach".into(),
+            operation: "attach resource supervisor".into(),
+            path: None,
+            message,
+        },
+    }
 }
 
 fn terminate_supervised(
@@ -430,4 +486,59 @@ fn native_argv(argv: &[CommandArg]) -> Result<Vec<OsString>, String> {
 #[cfg(not(any(unix, windows)))]
 fn native_argv(_argv: &[CommandArg]) -> Result<Vec<OsString>, String> {
     Err("unsupported process platform".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use hoimin_core::{EffectFailure, EffectId, ProcessTermination};
+
+    use super::{attach_failure, combine_process_and_output};
+    use crate::resource::ResourceError;
+
+    #[test]
+    fn process_error_precedes_output_cleanup_error() {
+        let primary =
+            hoimin_core::EffectFailed::other(EffectId(41), "process.resource.terminate", "primary");
+        let cleanup = hoimin_core::EffectFailed::other(
+            EffectId(41),
+            "process.output.close.timeout",
+            "cleanup",
+        );
+
+        let error = combine_process_and_output(Err(primary.clone()), Err(cleanup))
+            .expect_err("primary process failure wins");
+
+        assert_eq!(error, primary);
+    }
+
+    #[test]
+    fn successful_process_requires_successful_output_cleanup() {
+        let cleanup = hoimin_core::EffectFailed::other(
+            EffectId(42),
+            "process.output.close.timeout",
+            "cleanup",
+        );
+
+        let error =
+            combine_process_and_output(Ok(ProcessTermination::Exit(0)), Err(cleanup.clone()))
+                .expect_err("output cleanup failure is returned");
+
+        assert_eq!(error, cleanup);
+    }
+
+    #[test]
+    fn attach_failure_preserves_cleanup_failure_detail() {
+        let cleanup = std::io::Error::new(std::io::ErrorKind::TimedOut, "cleanup timed out");
+
+        let error = attach_failure(EffectId(43), ResourceError::MissingProcessId, Some(cleanup));
+
+        assert_eq!(error.id, EffectId(43));
+        assert!(matches!(
+            error.failure,
+            EffectFailure::Io { ref code, ref message, .. }
+                if code == "process.resource.attach"
+                    && message.contains("spawned process did not expose a process id")
+                    && message.contains("cleanup timed out")
+        ));
+    }
 }
