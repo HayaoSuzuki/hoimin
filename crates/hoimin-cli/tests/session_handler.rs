@@ -56,7 +56,7 @@ fn migrates_schema_enables_wal_and_echoes_typed_completion_events() {
         observer
             .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
             .unwrap(),
-        1
+        2
     );
     assert_eq!(
         observer
@@ -509,7 +509,7 @@ fn lookup_request(id: u64, run_id: &str, mutant_id: &str) -> LookupStoredResult 
 fn create_nullable_corrupt_database(path: &std::path::Path) {
     let db = Connection::open(path).unwrap();
     db.execute_batch(
-        "PRAGMA user_version=1;
+        "PRAGMA user_version=2;
          CREATE TABLE runs (id INTEGER PRIMARY KEY, run_id TEXT, fingerprint BLOB, complete INTEGER);
          CREATE TABLE results (run_id TEXT, mutant_id TEXT, status TEXT);
          CREATE TABLE fingerprints (digest BLOB PRIMARY KEY, schema_version INTEGER);
