@@ -209,11 +209,10 @@ fn strip_root(root: &Utf8Path, path: &Utf8Path) -> Option<Utf8PathBuf> {
         return Some(Utf8PathBuf::new());
     }
     let prefix = format!("{root}/");
-    if path.len() >= prefix.len() && path[..prefix.len()].eq_ignore_ascii_case(&prefix) {
-        Some(Utf8PathBuf::from(&path[prefix.len()..]))
-    } else {
-        None
-    }
+    path.get(..prefix.len())
+        .filter(|candidate| candidate.eq_ignore_ascii_case(&prefix))
+        .and_then(|_| path.get(prefix.len()..))
+        .map(Utf8PathBuf::from)
 }
 
 fn is_within(path: &Utf8Path, directory: &Utf8Path) -> bool {

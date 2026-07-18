@@ -248,3 +248,19 @@ fn windows_absolute_selector_strips_root_case_insensitively() {
     let targets = resolve_explicit(&selection, &[DiscoveredFile::python("pkg/a.py")]).unwrap();
     assert_eq!(targets[0].path, "pkg/a.py");
 }
+
+#[cfg(windows)]
+#[test]
+fn windows_non_ascii_path_outside_root_returns_typed_error() {
+    let selection = Selection {
+        root: Utf8PathBuf::from("C:/a"),
+        files: vec![Utf8PathBuf::from("C:/€x/file.py")],
+        ..Selection::default()
+    };
+    assert_eq!(
+        resolve_explicit(&selection, &[]),
+        Err(TargetError::PathOutsideRoot(Utf8PathBuf::from(
+            "C:/€x/file.py"
+        )))
+    );
+}
