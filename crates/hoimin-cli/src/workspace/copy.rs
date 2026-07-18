@@ -31,6 +31,70 @@ pub(crate) struct PlanState {
     pub(crate) workers: BTreeSet<u32>,
 }
 
+impl PlanState {
+    fn validate_grant(
+        &self,
+        request: &CreateWorker,
+        preflight_id: EffectId,
+        requested_workers: u32,
+        aggregate_bytes: u64,
+    ) -> Result<(), WorkspaceError> {
+        if request.preflight_id() != preflight_id {
+            return Err(WorkspaceError::PreflightMismatch {
+                expected: preflight_id,
+                received: request.preflight_id(),
+            });
+        }
+        if request.worker() >= requested_workers {
+            return Err(WorkspaceError::WorkerOutOfRange {
+                worker: request.worker(),
+                requested_workers,
+            });
+        }
+        if request.granted_allowance() != aggregate_bytes {
+            return Err(WorkspaceError::AllowanceMismatch {
+                expected: aggregate_bytes,
+                received: request.granted_allowance(),
+            });
+        }
+        match self.reservation {
+            Some((reservation, _allowance)) if reservation != request.reservation_id() => {
+                Err(WorkspaceError::ReservationMismatch {
+                    expected: reservation,
+                    received: request.reservation_id(),
+                })
+            }
+            Some((_reservation, allowance)) if allowance != request.granted_allowance() => {
+                Err(WorkspaceError::AllowanceMismatch {
+                    expected: allowance,
+                    received: request.granted_allowance(),
+                })
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn accept_grant(
+        &mut self,
+        request: &CreateWorker,
+        preflight_id: EffectId,
+        requested_workers: u32,
+        aggregate_bytes: u64,
+    ) -> Result<bool, WorkspaceError> {
+        self.validate_grant(request, preflight_id, requested_workers, aggregate_bytes)?;
+        let newly_bound = self.reservation.is_none();
+        if newly_bound {
+            self.reservation = Some((request.reservation_id(), request.granted_allowance()));
+        }
+        if !self.workers.insert(request.worker()) {
+            return Err(WorkspaceError::WorkerAlreadyExists {
+                worker: request.worker(),
+            });
+        }
+        Ok(newly_bound)
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct CopyAllowance {
     granted: AtomicU64,
@@ -167,59 +231,30 @@ impl WorkspacePlan {
     }
 
     pub(crate) fn validate_grant(&self, request: &CreateWorker) -> Result<(), WorkspaceError> {
-        if request.preflight_id() != self.preflight_id {
-            return Err(WorkspaceError::PreflightMismatch {
-                expected: self.preflight_id,
-                received: request.preflight_id(),
-            });
-        }
-        if request.worker() >= self.requested_workers {
-            return Err(WorkspaceError::WorkerOutOfRange {
-                worker: request.worker(),
-                requested_workers: self.requested_workers,
-            });
-        }
-        if request.granted_allowance() != self.aggregate_bytes {
-            return Err(WorkspaceError::AllowanceMismatch {
-                expected: self.aggregate_bytes,
-                received: request.granted_allowance(),
-            });
-        }
         let state = self
             .state
             .lock()
             .map_err(|_| WorkspaceError::StatePoisoned)?;
-        match state.reservation {
-            Some((reservation, _allowance)) if reservation != request.reservation_id() => {
-                Err(WorkspaceError::ReservationMismatch {
-                    expected: reservation,
-                    received: request.reservation_id(),
-                })
-            }
-            Some((_reservation, allowance)) if allowance != request.granted_allowance() => {
-                Err(WorkspaceError::AllowanceMismatch {
-                    expected: allowance,
-                    received: request.granted_allowance(),
-                })
-            }
-            _ => Ok(()),
-        }
+        state.validate_grant(
+            request,
+            self.preflight_id,
+            self.requested_workers,
+            self.aggregate_bytes,
+        )
     }
 
     fn accept_grant(&self, request: &CreateWorker) -> Result<(), WorkspaceError> {
-        self.validate_grant(request)?;
         let mut state = self
             .state
             .lock()
             .map_err(|_| WorkspaceError::StatePoisoned)?;
-        if state.reservation.is_none() {
-            state.reservation = Some((request.reservation_id(), request.granted_allowance()));
+        if state.accept_grant(
+            request,
+            self.preflight_id,
+            self.requested_workers,
+            self.aggregate_bytes,
+        )? {
             self.allowance.set_grant(request.granted_allowance());
-        }
-        if !state.workers.insert(request.worker()) {
-            return Err(WorkspaceError::WorkerAlreadyExists {
-                worker: request.worker(),
-            });
         }
         Ok(())
     }
@@ -291,5 +326,86 @@ impl WorkspacePlan {
             worker,
             charged,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Barrier;
+    use std::thread;
+
+    use hoimin_core::{BudgetLedger, RunBudgets, reserve_workspace_copy};
+
+    use super::*;
+
+    fn create_request(
+        ledger: &mut BudgetLedger,
+        completed: &PreflightCompleted,
+        worker: u32,
+    ) -> (CreateWorker, ReservationId) {
+        let grant = reserve_workspace_copy(ledger, completed).unwrap();
+        let reservation = grant.reservation_id();
+        (
+            grant.create_worker(EffectId(99), worker).unwrap(),
+            reservation,
+        )
+    }
+
+    #[test]
+    fn plan_state_atomically_binds_one_initial_reservation_and_worker_slot() {
+        let completed = PreflightCompleted {
+            id: EffectId(7),
+            per_worker_logical_bytes: 9,
+            requested_workers: 2,
+            aggregate_logical_bytes: 18,
+        };
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: completed.aggregate_logical_bytes * 2,
+            processes: 1,
+        });
+        let (first, first_reservation) = create_request(&mut ledger, &completed, 0);
+        let (second, second_reservation) = create_request(&mut ledger, &completed, 1);
+        let state = Arc::new(Mutex::new(PlanState::default()));
+        let barrier = Arc::new(Barrier::new(2));
+        let attempts = [
+            (first, first_reservation, 0),
+            (second, second_reservation, 1),
+        ]
+        .map(|(request, reservation, worker)| {
+            let state = Arc::clone(&state);
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                barrier.wait();
+                let result = state.lock().unwrap().accept_grant(
+                    &request,
+                    completed.id,
+                    2,
+                    completed.aggregate_logical_bytes,
+                );
+                (reservation, worker, result)
+            })
+        })
+        .map(|thread| thread.join().unwrap());
+        let winner = attempts.iter().find(|attempt| attempt.2.is_ok()).unwrap();
+        let loser = attempts.iter().find(|attempt| attempt.2.is_err()).unwrap();
+
+        assert_eq!(
+            attempts.iter().filter(|attempt| attempt.2.is_ok()).count(),
+            1
+        );
+        assert_eq!(
+            loser.2,
+            Err(WorkspaceError::ReservationMismatch {
+                expected: winner.0,
+                received: loser.0,
+            })
+        );
+        let state = state.lock().unwrap();
+        assert_eq!(
+            state.reservation,
+            Some((winner.0, completed.aggregate_logical_bytes))
+        );
+        assert_eq!(state.workers, BTreeSet::from([winner.1]));
     }
 }
