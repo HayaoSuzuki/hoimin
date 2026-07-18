@@ -2,7 +2,12 @@ use serde::{Deserialize, Serialize};
 
 use camino::Utf8PathBuf;
 
-use crate::{EffectId, IntegrityCheckpoint, ReservationId, TargetSlice};
+use std::time::Duration;
+
+use crate::{
+    EffectId, IntegrityCheckpoint, OutputSpoolRef, ProcessTermination, ReservationId, ResourceMode,
+    TargetSlice,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct StartRequested;
@@ -19,7 +24,6 @@ macro_rules! completion_event {
 }
 
 completion_event!(
-    ProcessFinished,
     AnalysisFinished,
     CandidateLoaded,
     SessionLoaded,
@@ -28,6 +32,15 @@ completion_event!(
     SessionFinished,
     OutputEmitted,
 );
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ProcessFinished {
+    pub id: EffectId,
+    pub termination: ProcessTermination,
+    pub output: OutputSpoolRef,
+    pub elapsed: Duration,
+    pub resource_mode: ResourceMode,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WorkerCreated {

@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{IntegrityCheckpoint, ReservationId, Selection};
+use camino::Utf8PathBuf;
+
+use crate::{CommandArg, IntegrityCheckpoint, ProcessLimits, ReservationId, Selection};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct EffectId(pub u64);
@@ -18,7 +20,6 @@ macro_rules! effect_request {
 
 effect_request!(
     Preflight,
-    RunProcess,
     AnalyzeFile,
     ReadCandidate,
     LoadSession,
@@ -27,6 +28,14 @@ effect_request!(
     FinishSession,
     EmitOutput,
 );
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RunProcess {
+    pub id: EffectId,
+    pub argv: Vec<CommandArg>,
+    pub cwd: Utf8PathBuf,
+    pub limits: ProcessLimits,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CreateWorker {

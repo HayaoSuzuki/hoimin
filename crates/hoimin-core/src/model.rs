@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 
@@ -70,6 +72,23 @@ pub struct OutputSpoolRef {
     pub token: String,
     pub retained: u64,
     pub observed: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ProcessLimits {
+    pub timeout: Duration,
+    pub max_output_bytes: u64,
+    pub max_memory_bytes: u64,
+    pub max_processes: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum ProcessTermination {
+    Exit(i32),
+    Timeout,
+    OutOfMemory,
+    ProcessLimit,
+    Cancelled,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
