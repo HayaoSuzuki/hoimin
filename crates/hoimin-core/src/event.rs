@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{EffectId, TargetSlice};
+use camino::Utf8PathBuf;
+
+use crate::{EffectId, IntegrityCheckpoint, ReservationId, TargetSlice};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct StartRequested;
@@ -17,20 +19,54 @@ macro_rules! completion_event {
 }
 
 completion_event!(
-    PreflightCompleted,
-    WorkerCreated,
     ProcessFinished,
     AnalysisFinished,
     CandidateLoaded,
-    MutationApplied,
-    WorkerReset,
     SessionLoaded,
     SessionStarted,
     ResultPersisted,
     SessionFinished,
     OutputEmitted,
-    CleanupFinished,
 );
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WorkerCreated {
+    pub id: EffectId,
+    pub worker: u32,
+    pub reservation_id: ReservationId,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct MutationApplied {
+    pub id: EffectId,
+    pub worker: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WorkerReset {
+    pub id: EffectId,
+    pub worker: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct OriginalsVerified {
+    pub id: EffectId,
+    pub checkpoint: IntegrityCheckpoint,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PreflightCompleted {
+    pub id: EffectId,
+    pub per_worker_logical_bytes: u64,
+    pub requested_workers: u32,
+    pub aggregate_logical_bytes: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CleanupFinished {
+    pub id: EffectId,
+    pub released_reservations: Vec<ReservationId>,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct TargetsResolved {
@@ -39,9 +75,77 @@ pub struct TargetsResolved {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum EffectFailure {
+    WorkspaceRestore {
+        path: Utf8PathBuf,
+        message: String,
+    },
+    OriginalChanged {
+        path: Utf8PathBuf,
+    },
+    CopyLimit {
+        requested: u64,
+        allowance: u64,
+    },
+    InvalidWorkspaceGrant {
+        expected: ReservationId,
+        received: ReservationId,
+    },
+    InvalidWorkspacePath {
+        path: Utf8PathBuf,
+    },
+    InvalidMutation {
+        code: String,
+        path: Utf8PathBuf,
+        message: String,
+    },
+    WorkerMissing {
+        worker: u32,
+    },
+    Io {
+        code: String,
+        operation: String,
+        path: Option<Utf8PathBuf>,
+        message: String,
+    },
+    Other {
+        code: String,
+        message: String,
+    },
+}
+
+impl EffectFailure {
+    pub fn code(&self) -> &str {
+        match self {
+            Self::WorkspaceRestore { .. } => "workspace.restore",
+            Self::OriginalChanged { .. } => "workspace.original.changed",
+            Self::CopyLimit { .. } => "workspace.copy.limit",
+            Self::InvalidWorkspaceGrant { .. } => "workspace.grant.invalid",
+            Self::InvalidWorkspacePath { .. } => "workspace.path.invalid",
+            Self::InvalidMutation { code, .. }
+            | Self::Io { code, .. }
+            | Self::Other { code, .. } => code,
+            Self::WorkerMissing { .. } => "workspace.worker.missing",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct EffectFailed {
     pub id: EffectId,
-    pub message: String,
+    pub failure: EffectFailure,
+}
+
+impl EffectFailed {
+    pub fn other(id: EffectId, code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            id,
+            failure: EffectFailure::Other {
+                code: code.into(),
+                message: message.into(),
+            },
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -56,6 +160,7 @@ pub enum RunEvent {
     MutationApplied(MutationApplied),
     MutantFinished(ProcessFinished),
     WorkerReset(WorkerReset),
+    OriginalsVerified(OriginalsVerified),
     SessionLoaded(SessionLoaded),
     SessionStarted(SessionStarted),
     ResultPersisted(ResultPersisted),

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::Selection;
+use crate::{IntegrityCheckpoint, ReservationId, Selection};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct EffectId(pub u64);
@@ -18,19 +18,48 @@ macro_rules! effect_request {
 
 effect_request!(
     Preflight,
-    CreateWorker,
     RunProcess,
     AnalyzeFile,
     ReadCandidate,
-    ApplyMutation,
-    ResetWorker,
     LoadSession,
     BeginSession,
     PersistResult,
     FinishSession,
     EmitOutput,
-    Cleanup,
 );
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CreateWorker {
+    pub id: EffectId,
+    pub preflight_id: EffectId,
+    pub reservation_id: ReservationId,
+    pub granted_allowance: u64,
+    pub worker: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ApplyMutation {
+    pub id: EffectId,
+    pub worker: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ResetWorker {
+    pub id: EffectId,
+    pub worker: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct VerifyOriginals {
+    pub id: EffectId,
+    pub checkpoint: IntegrityCheckpoint,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Cleanup {
+    pub id: EffectId,
+    pub reservations: Vec<ReservationId>,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ResolveTargets {
@@ -50,6 +79,7 @@ pub enum RunEffect {
     ApplyMutation(ApplyMutation),
     RunMutant(RunProcess),
     ResetWorker(ResetWorker),
+    VerifyOriginals(VerifyOriginals),
     LoadSession(LoadSession),
     BeginSession(BeginSession),
     PersistResult(PersistResult),

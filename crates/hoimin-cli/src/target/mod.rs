@@ -36,9 +36,6 @@ impl TargetHandler {
         Self::resolve(&request.selection)
             .await
             .map(|targets| TargetsResolved { id, targets })
-            .map_err(|error| EffectFailed {
-                id,
-                message: error.to_string(),
-            })
+            .map_err(|error| EffectFailed::other(id, "target.resolve", error.to_string()))
     }
 }

@@ -71,3 +71,12 @@ pub struct OutputSpoolRef {
     pub retained: u64,
     pub observed: u64,
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IntegrityCheckpoint {
+    PreAnalysis,
+    Periodic,
+    PreFinalReport,
+    Cleanup,
+}

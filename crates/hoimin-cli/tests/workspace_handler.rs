@@ -6,11 +6,11 @@ use std::path::{Path, PathBuf};
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_cli::workspace::{
     CopyOptions, WorkerWorkspace, WorkspaceDiagnostic, WorkspaceError, WorkspaceHandler,
-    WorkspaceLimits, WorkspacePlan, build_command_environment,
+    WorkspacePlan, build_command_environment,
 };
 use hoimin_core::{
-    ApplyMutation, ByteSpan, Cleanup, CreateWorker, EffectId, MutationCandidate, Preflight,
-    ResetWorker,
+    ApplyMutation, BudgetLedger, ByteSpan, EffectId, MutationCandidate, Preflight, RunBudgets,
+    reserve_workspace_copy,
 };
 use tempfile::TempDir;
 
@@ -37,17 +37,30 @@ fn write_file(root: &Path, path: &str, contents: &[u8]) {
     fs::write(destination, contents).unwrap();
 }
 
-fn limits(max_copy_size: u64, workers: usize) -> WorkspaceLimits {
-    WorkspaceLimits {
-        max_copy_size,
-        workers,
-    }
+fn preflight_plan(root: &Utf8Path, workers: u32, options: CopyOptions) -> WorkspacePlan {
+    WorkspacePlan::preflight(root, EffectId(900), workers, options).unwrap()
+}
+
+fn grant_plan(plan: &WorkspacePlan, max_copy_size: u64) -> hoimin_core::WorkspaceCopyGrant {
+    let mut ledger = BudgetLedger::new(RunBudgets {
+        memory: 1,
+        copy: max_copy_size,
+        processes: 1,
+    });
+    reserve_workspace_copy(&mut ledger, &plan.completed()).unwrap()
+}
+
+fn create_worker(root: &Utf8Path) -> WorkerWorkspace {
+    let plan = preflight_plan(root, 1, CopyOptions::default());
+    let grant = grant_plan(&plan, plan.aggregate_bytes());
+    plan.create_worker(&grant.create_worker(EffectId(901), 0).unwrap())
+        .unwrap()
 }
 
 #[test]
 fn reset_restores_changed_and_deleted_files_and_removes_new_files() {
     let project = FixtureProject::new();
-    let mut worker = WorkerWorkspace::create(project.root(), limits(1_024, 1)).unwrap();
+    let mut worker = create_worker(project.root());
     worker.write("pkg/a.py", b"mutated\n").unwrap();
     worker.remove("pkg/b.py").unwrap();
     worker.write("generated.txt", b"new\n").unwrap();
@@ -55,8 +68,8 @@ fn reset_restores_changed_and_deleted_files_and_removes_new_files() {
     worker.reset().unwrap();
 
     assert_eq!(worker.read("pkg/a.py").unwrap(), b"original\n");
-    assert!(worker.exists("pkg/b.py"));
-    assert!(!worker.exists("generated.txt"));
+    assert!(worker.exists("pkg/b.py").unwrap());
+    assert!(!worker.exists("generated.txt").unwrap());
     assert_eq!(
         fs::read(project.root().join("pkg/a.py")).unwrap(),
         b"original\n"
@@ -81,8 +94,7 @@ fn excludes_git_venv_and_caches() {
         write_file(project.temp.path(), path, b"cache");
     }
 
-    let plan =
-        WorkspacePlan::preflight(project.root(), limits(1_024, 1), CopyOptions::default()).unwrap();
+    let plan = preflight_plan(project.root(), 1, CopyOptions::default());
     let paths = plan
         .manifest()
         .entries()
@@ -102,7 +114,8 @@ fn explicit_exclude_wins_over_include_and_gitignore() {
 
     let plan = WorkspacePlan::preflight(
         project.root(),
-        limits(1_024, 1),
+        EffectId(902),
+        1,
         CopyOptions {
             includes: vec!["fixtures/**".into()],
             excludes: vec!["fixtures/secret.txt".into()],
@@ -128,8 +141,7 @@ fn skips_symlink_with_typed_diagnostic() {
         return;
     }
 
-    let plan =
-        WorkspacePlan::preflight(project.root(), limits(1_024, 1), CopyOptions::default()).unwrap();
+    let plan = preflight_plan(project.root(), 1, CopyOptions::default());
 
     assert_eq!(
         plan.diagnostics(),
@@ -155,56 +167,45 @@ fn rejects_aggregate_copy_over_allowance_before_materializing() {
     let project = FixtureProject::new();
     let per_worker = b"original\n".len() as u64 + b"second\n".len() as u64;
 
-    let error = WorkspacePlan::preflight(
-        project.root(),
-        limits(per_worker * 2 - 1, 2),
-        CopyOptions::default(),
-    )
-    .unwrap_err();
+    let plan = preflight_plan(project.root(), 2, CopyOptions::default());
+    let mut ledger = BudgetLedger::new(RunBudgets {
+        memory: 1,
+        copy: per_worker * 2 - 1,
+        processes: 1,
+    });
 
-    assert_eq!(
-        error,
-        WorkspaceError::AggregateCopyLimit {
-            per_worker,
-            workers: 2,
-            requested: per_worker * 2,
-            allowance: per_worker * 2 - 1,
-        }
-    );
+    let error = reserve_workspace_copy(&mut ledger, &plan.completed()).unwrap_err();
+
+    assert_eq!(error.code(), "workspace.copy.limit");
+    assert_eq!(plan.materialized_workers(), 0);
 }
 
 #[test]
 fn charges_every_worker_copy_against_one_allowance() {
     let project = FixtureProject::new();
     let per_worker = b"original\n".len() as u64 + b"second\n".len() as u64;
-    let plan = WorkspacePlan::preflight(
-        project.root(),
-        limits(per_worker * 2, 2),
-        CopyOptions::default(),
-    )
-    .unwrap();
+    let plan = preflight_plan(project.root(), 2, CopyOptions::default());
+    let grant = grant_plan(&plan, per_worker * 2);
 
-    let _first = plan.create_worker().unwrap();
+    let _first = plan
+        .create_worker(&grant.create_worker(EffectId(910), 0).unwrap())
+        .unwrap();
     assert_eq!(plan.observed_copy_bytes(), per_worker);
-    let _second = plan.create_worker().unwrap();
+    let _second = plan
+        .create_worker(&grant.create_worker(EffectId(911), 1).unwrap())
+        .unwrap();
     assert_eq!(plan.observed_copy_bytes(), per_worker * 2);
-    assert_eq!(
-        plan.create_worker().unwrap_err(),
-        WorkspaceError::WorkerCountExceeded { workers: 2 }
-    );
+    assert!(grant.create_worker(EffectId(912), 2).is_err());
 }
 
 #[test]
 fn dropping_a_worker_releases_its_copy_charge_and_worker_slot() {
     let project = FixtureProject::new();
     let per_worker = b"original\n".len() as u64 + b"second\n".len() as u64;
-    let plan = WorkspacePlan::preflight(
-        project.root(),
-        limits(per_worker, 1),
-        CopyOptions::default(),
-    )
-    .unwrap();
-    let worker = plan.create_worker().unwrap();
+    let plan = preflight_plan(project.root(), 1, CopyOptions::default());
+    let grant = grant_plan(&plan, per_worker);
+    let request = grant.create_worker(EffectId(920), 0).unwrap();
+    let worker = plan.create_worker(&request).unwrap();
     assert_eq!(plan.materialized_workers(), 1);
     assert_eq!(plan.observed_copy_bytes(), per_worker);
 
@@ -212,19 +213,15 @@ fn dropping_a_worker_releases_its_copy_charge_and_worker_slot() {
 
     assert_eq!(plan.materialized_workers(), 0);
     assert_eq!(plan.observed_copy_bytes(), 0);
-    let _replacement = plan.create_worker().unwrap();
+    let _replacement = plan.create_worker(&request).unwrap();
 }
 
 #[test]
 fn stops_worker_creation_when_observed_bytes_exceed_grant() {
     let project = FixtureProject::new();
     let per_worker = b"original\n".len() as u64 + b"second\n".len() as u64;
-    let plan = WorkspacePlan::preflight(
-        project.root(),
-        limits(per_worker, 1),
-        CopyOptions::default(),
-    )
-    .unwrap();
+    let plan = preflight_plan(project.root(), 1, CopyOptions::default());
+    let grant = grant_plan(&plan, per_worker);
     fs::write(
         project.root().join("pkg/a.py"),
         b"much larger original contents\n",
@@ -232,7 +229,8 @@ fn stops_worker_creation_when_observed_bytes_exceed_grant() {
     .unwrap();
 
     assert!(matches!(
-        plan.create_worker().unwrap_err(),
+        plan.create_worker(&grant.create_worker(EffectId(930), 0).unwrap())
+            .unwrap_err(),
         WorkspaceError::CopyAllowanceExceeded { .. }
     ));
     assert_eq!(plan.materialized_workers(), 0);
@@ -241,7 +239,7 @@ fn stops_worker_creation_when_observed_bytes_exceed_grant() {
 #[test]
 fn resets_read_only_file() {
     let project = FixtureProject::new();
-    let mut worker = WorkerWorkspace::create(project.root(), limits(1_024, 1)).unwrap();
+    let mut worker = create_worker(project.root());
     worker.write("pkg/a.py", b"mutated\n").unwrap();
     let path = worker.root().join("pkg/a.py");
     let mut permissions = fs::metadata(&path).unwrap().permissions();
@@ -256,7 +254,7 @@ fn resets_read_only_file() {
 #[test]
 fn dropping_a_worker_removes_read_only_files() {
     let project = FixtureProject::new();
-    let worker = WorkerWorkspace::create(project.root(), limits(1_024, 1)).unwrap();
+    let worker = create_worker(project.root());
     let root = worker.root().to_owned();
     let path = root.join("pkg/a.py");
     let mut permissions = fs::metadata(&path).unwrap().permissions();
@@ -271,7 +269,7 @@ fn dropping_a_worker_removes_read_only_files() {
 #[test]
 fn detects_original_change() {
     let project = FixtureProject::new();
-    let mut worker = WorkerWorkspace::create(project.root(), limits(1_024, 1)).unwrap();
+    let mut worker = create_worker(project.root());
     fs::write(project.root().join("pkg/a.py"), b"changed outside\n").unwrap();
 
     assert_eq!(
@@ -285,7 +283,7 @@ fn detects_original_change() {
 #[test]
 fn mutation_checks_hash_exact_original_and_span() {
     let project = FixtureProject::new();
-    let mut worker = WorkerWorkspace::create(project.root(), limits(1_024, 1)).unwrap();
+    let mut worker = create_worker(project.root());
     let hash = worker
         .manifest()
         .entry(Utf8Path::new("pkg/a.py"))
@@ -324,7 +322,7 @@ fn mutation_checks_hash_exact_original_and_span() {
 #[test]
 fn rewrites_original_pythonpath_entries_and_deduplicates() {
     let project = FixtureProject::new();
-    let worker = WorkerWorkspace::create(project.root(), limits(1_024, 1)).unwrap();
+    let worker = create_worker(project.root());
     let original_pkg = project.root().join("pkg");
     let outside = project.root().parent().unwrap().join("outside");
     let inherited_pythonpath = std::env::join_paths([
@@ -370,19 +368,22 @@ fn effect_handlers_preserve_original_ids_for_success_and_failure() {
     let mut handler = WorkspaceHandler::new(
         project.root().to_owned(),
         Vec::new(),
-        limits(1_024, 1),
+        1,
         CopyOptions::default(),
     );
+    let completed = handler
+        .handle_preflight(Preflight { id: EffectId(1) })
+        .unwrap();
+    assert_eq!(completed.id, EffectId(1));
+    let mut ledger = BudgetLedger::new(RunBudgets {
+        memory: 1,
+        copy: completed.aggregate_logical_bytes,
+        processes: 1,
+    });
+    let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
     assert_eq!(
         handler
-            .handle_preflight(Preflight { id: EffectId(1) })
-            .unwrap()
-            .id,
-        EffectId(1)
-    );
-    assert_eq!(
-        handler
-            .handle_create_worker(CreateWorker { id: EffectId(2) })
+            .handle_create_worker(grant.create_worker(EffectId(2), 0).unwrap())
             .unwrap()
             .id,
         EffectId(2)
@@ -414,29 +415,37 @@ fn effect_handlers_preserve_original_ids_for_success_and_failure() {
     };
     assert_eq!(
         handler
-            .handle_apply_mutation(ApplyMutation { id: EffectId(3) }, 0, &candidate)
+            .handle_apply_mutation(
+                ApplyMutation {
+                    id: EffectId(3),
+                    worker: 0,
+                },
+                &candidate,
+            )
             .unwrap()
             .id,
         EffectId(3)
     );
     assert_eq!(
         handler
-            .handle_reset_worker(ResetWorker { id: EffectId(4) }, 0)
+            .handle_reset_worker(hoimin_core::ResetWorker {
+                id: EffectId(4),
+                worker: 0,
+            })
             .unwrap()
             .id,
         EffectId(4)
     );
     assert_eq!(
         handler
-            .handle_cleanup(Cleanup { id: EffectId(5) })
+            .handle_cleanup(grant.cleanup(EffectId(5)))
             .unwrap()
             .id,
         EffectId(5)
     );
 
     let missing = Utf8PathBuf::from("definitely/missing/workspace/root");
-    let mut failing =
-        WorkspaceHandler::new(missing, Vec::new(), limits(1, 1), CopyOptions::default());
+    let mut failing = WorkspaceHandler::new(missing, Vec::new(), 1, CopyOptions::default());
     assert_eq!(
         failing
             .handle_preflight(Preflight { id: EffectId(99) })

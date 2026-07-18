@@ -22,10 +22,7 @@ pub async fn handle_git(request: ResolveGitChanges) -> Result<GitChangesResolved
     resolve_changed(&request.root, request.diff_base.as_deref())
         .await
         .map(|changed| GitChangesResolved { id, changed })
-        .map_err(|error| EffectFailed {
-            id,
-            message: error.to_string(),
-        })
+        .map_err(|error| EffectFailed::other(id, "target.git", error.to_string()))
 }
 
 pub(crate) async fn resolve_changed(

@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::ContractInvariant;
+use crate::{Cleanup, CleanupFinished, CreateWorker, EffectId, PreflightCompleted};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum BudgetKind {
@@ -133,4 +134,104 @@ impl ContractInvariant for BudgetLedger {
             .into_iter()
             .all(|kind| self.reserved(kind) <= self.limit(kind))
     }
+}
+
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum WorkspaceBudgetError {
+    #[error("workspace preflight aggregate byte count overflowed")]
+    AggregateOverflow,
+    #[error("workspace preflight aggregate mismatch: {per_worker} x {workers} != {reported}")]
+    AggregateMismatch {
+        per_worker: u64,
+        workers: u32,
+        reported: u64,
+    },
+    #[error("worker {worker} is outside requested worker count {requested_workers}")]
+    WorkerOutOfRange { worker: u32, requested_workers: u32 },
+    #[error(transparent)]
+    LimitReached(#[from] LimitReached),
+}
+
+impl WorkspaceBudgetError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::AggregateOverflow => "workspace.preflight.aggregate_overflow",
+            Self::AggregateMismatch { .. } => "workspace.preflight.aggregate_mismatch",
+            Self::WorkerOutOfRange { .. } => "workspace.worker.out_of_range",
+            Self::LimitReached(_) => "workspace.copy.limit",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WorkspaceCopyGrant {
+    pub preflight_id: EffectId,
+    pub reservation_id: ReservationId,
+    pub granted_allowance: u64,
+    pub per_worker_logical_bytes: u64,
+    pub requested_workers: u32,
+}
+
+impl WorkspaceCopyGrant {
+    pub fn create_worker(
+        self,
+        id: EffectId,
+        worker: u32,
+    ) -> Result<CreateWorker, WorkspaceBudgetError> {
+        if worker >= self.requested_workers {
+            return Err(WorkspaceBudgetError::WorkerOutOfRange {
+                worker,
+                requested_workers: self.requested_workers,
+            });
+        }
+        Ok(CreateWorker {
+            id,
+            preflight_id: self.preflight_id,
+            reservation_id: self.reservation_id,
+            granted_allowance: self.granted_allowance,
+            worker,
+        })
+    }
+
+    pub fn cleanup(self, id: EffectId) -> Cleanup {
+        Cleanup {
+            id,
+            reservations: vec![self.reservation_id],
+        }
+    }
+}
+
+pub fn reserve_workspace_copy(
+    ledger: &mut BudgetLedger,
+    preflight: &PreflightCompleted,
+) -> Result<WorkspaceCopyGrant, WorkspaceBudgetError> {
+    let expected = preflight
+        .per_worker_logical_bytes
+        .checked_mul(u64::from(preflight.requested_workers))
+        .ok_or(WorkspaceBudgetError::AggregateOverflow)?;
+    if expected != preflight.aggregate_logical_bytes {
+        return Err(WorkspaceBudgetError::AggregateMismatch {
+            per_worker: preflight.per_worker_logical_bytes,
+            workers: preflight.requested_workers,
+            reported: preflight.aggregate_logical_bytes,
+        });
+    }
+    let reservation_id = ledger.reserve(BudgetKind::Copy, expected)?;
+    Ok(WorkspaceCopyGrant {
+        preflight_id: preflight.id,
+        reservation_id,
+        granted_allowance: expected,
+        per_worker_logical_bytes: preflight.per_worker_logical_bytes,
+        requested_workers: preflight.requested_workers,
+    })
+}
+
+pub fn release_workspace_copy(
+    ledger: &mut BudgetLedger,
+    cleanup: &CleanupFinished,
+) -> Result<(), BudgetError> {
+    for reservation in &cleanup.released_reservations {
+        ledger.release(*reservation)?;
+    }
+    Ok(())
 }

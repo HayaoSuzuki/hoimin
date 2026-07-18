@@ -5,7 +5,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 use ignore::WalkBuilder;
 
 use super::manifest::{build_manifest, relative_utf8};
-use super::{WorkerWorkspace, WorkspaceError};
+use super::{WorkerWorkspace, WorkspaceError, permission_fingerprint};
 
 impl WorkerWorkspace {
     pub fn verify_originals(&self) -> Result<(), WorkspaceError> {
@@ -55,6 +55,10 @@ impl WorkerWorkspace {
             let unchanged = fs::symlink_metadata(&destination)
                 .ok()
                 .filter(|metadata| metadata.file_type().is_file())
+                .filter(|metadata| {
+                    permission_fingerprint(&metadata.permissions())
+                        == snapshot.permission_fingerprint
+                })
                 .and_then(|_| fs::read(&destination).ok())
                 .is_some_and(|bytes| bytes == snapshot.bytes);
             if unchanged {
@@ -106,6 +110,9 @@ impl WorkerWorkspace {
             let bytes = fs::read(&destination)
                 .map_err(|error| WorkspaceError::io("verify restored file", path, error))?;
             if bytes != snapshot.bytes {
+                return Ok(false);
+            }
+            if permission_fingerprint(&metadata.permissions()) != snapshot.permission_fingerprint {
                 return Ok(false);
             }
         }
@@ -166,7 +173,9 @@ fn remove_directory_if_empty(path: &Utf8Path) -> Result<(), WorkspaceError> {
 fn remove_any(path: &Utf8Path) -> Result<(), WorkspaceError> {
     let metadata = fs::symlink_metadata(path)
         .map_err(|error| WorkspaceError::io("inspect worker path", path, error))?;
-    make_writable(path)?;
+    if !metadata.file_type().is_symlink() {
+        make_writable(path)?;
+    }
     if metadata.file_type().is_dir() {
         fs::remove_dir_all(path)
             .map_err(|error| WorkspaceError::io("remove worker directory", path, error))

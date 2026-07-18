@@ -2,17 +2,17 @@ use std::fs;
 
 use hoimin_core::MutationCandidate;
 
-use super::{WorkerWorkspace, WorkspaceError, make_writable};
+use super::{WorkerWorkspace, WorkspaceError, make_writable, resolve_worker_path};
 
 impl WorkerWorkspace {
     pub fn apply_mutation(&mut self, candidate: &MutationCandidate) -> Result<(), WorkspaceError> {
         self.verify_originals()?;
+        let path = resolve_worker_path(&self.root, &candidate.path)?;
         let expected = self.manifest.entry(&candidate.path).ok_or_else(|| {
             WorkspaceError::MutationTargetMissing {
                 path: candidate.path.clone(),
             }
         })?;
-        let path = self.root.join(&candidate.path);
         let bytes = fs::read(&path)
             .map_err(|error| WorkspaceError::io("read mutation target", &candidate.path, error))?;
         let actual_hash = blake3::hash(&bytes);

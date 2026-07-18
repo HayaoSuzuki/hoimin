@@ -1,45 +1,57 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use camino::{Utf8Path, Utf8PathBuf};
+use hoimin_core::{CreateWorker, EffectId, PreflightCompleted, ReservationId};
 
 use super::manifest::build_manifest;
 use super::{
     CopyOptions, SnapshotFile, WorkerWorkspace, WorkspaceDiagnostic, WorkspaceError,
-    WorkspaceLimits, WorkspaceManifest,
+    WorkspaceManifest,
 };
 
 #[derive(Debug)]
 pub struct WorkspacePlan {
+    preflight_id: EffectId,
     original_root: Utf8PathBuf,
     options: CopyOptions,
-    limits: WorkspaceLimits,
+    requested_workers: u32,
+    aggregate_bytes: u64,
     manifest: WorkspaceManifest,
     diagnostics: Vec<WorkspaceDiagnostic>,
     allowance: Arc<CopyAllowance>,
-    materialized: Arc<AtomicUsize>,
+    state: Arc<Mutex<PlanState>>,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct PlanState {
+    pub(crate) reservation: Option<(ReservationId, u64)>,
+    pub(crate) workers: BTreeSet<u32>,
 }
 
 #[derive(Debug)]
 pub(crate) struct CopyAllowance {
-    granted: u64,
+    granted: AtomicU64,
     charged: AtomicU64,
 }
 
 impl CopyAllowance {
+    fn set_grant(&self, granted: u64) {
+        self.granted.store(granted, Ordering::Release);
+    }
+
     fn charge(&self, amount: u64) -> Result<(), WorkspaceError> {
+        let granted = self.granted.load(Ordering::Acquire);
         self.charged
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
-                current
-                    .checked_add(amount)
-                    .filter(|next| *next <= self.granted)
+                current.checked_add(amount).filter(|next| *next <= granted)
             })
             .map(|_| ())
             .map_err(|observed| WorkspaceError::CopyAllowanceExceeded {
                 observed: observed.saturating_add(amount),
-                allowance: self.granted,
+                allowance: granted,
             })
     }
 
@@ -56,10 +68,11 @@ impl CopyAllowance {
 impl WorkspacePlan {
     pub fn preflight(
         root: &Utf8Path,
-        limits: WorkspaceLimits,
+        preflight_id: EffectId,
+        requested_workers: u32,
         options: CopyOptions,
     ) -> Result<Self, WorkspaceError> {
-        if limits.workers == 0 {
+        if requested_workers == 0 {
             return Err(WorkspaceError::ZeroWorkers);
         }
         let canonical = fs::canonicalize(root)
@@ -67,32 +80,33 @@ impl WorkspacePlan {
         let original_root =
             Utf8PathBuf::from_path_buf(canonical).map_err(|_| WorkspaceError::NonUtf8Path)?;
         let (manifest, diagnostics) = build_manifest(&original_root, &options)?;
-        let workers =
-            u64::try_from(limits.workers).map_err(|_| WorkspaceError::CopySizeOverflow)?;
-        let aggregate = manifest
+        let aggregate_bytes = manifest
             .logical_bytes()
-            .checked_mul(workers)
+            .checked_mul(u64::from(requested_workers))
             .ok_or(WorkspaceError::CopySizeOverflow)?;
-        if aggregate > limits.max_copy_size {
-            return Err(WorkspaceError::AggregateCopyLimit {
-                per_worker: manifest.logical_bytes(),
-                workers: limits.workers,
-                requested: aggregate,
-                allowance: limits.max_copy_size,
-            });
-        }
         Ok(Self {
+            preflight_id,
             original_root,
             options,
-            limits,
+            requested_workers,
+            aggregate_bytes,
             manifest,
             diagnostics,
             allowance: Arc::new(CopyAllowance {
-                granted: aggregate,
+                granted: AtomicU64::new(0),
                 charged: AtomicU64::new(0),
             }),
-            materialized: Arc::new(AtomicUsize::new(0)),
+            state: Arc::new(Mutex::new(PlanState::default())),
         })
+    }
+
+    pub fn completed(&self) -> PreflightCompleted {
+        PreflightCompleted {
+            id: self.preflight_id,
+            per_worker_logical_bytes: self.manifest.logical_bytes(),
+            requested_workers: self.requested_workers,
+            aggregate_logical_bytes: self.aggregate_bytes,
+        }
     }
 
     pub fn manifest(&self) -> &WorkspaceManifest {
@@ -104,9 +118,7 @@ impl WorkspacePlan {
     }
 
     pub fn aggregate_bytes(&self) -> u64 {
-        self.manifest
-            .logical_bytes()
-            .saturating_mul(self.limits.workers as u64)
+        self.aggregate_bytes
     }
 
     pub fn observed_copy_bytes(&self) -> u64 {
@@ -114,28 +126,88 @@ impl WorkspacePlan {
     }
 
     pub fn materialized_workers(&self) -> usize {
-        self.materialized.load(Ordering::Acquire)
+        self.state
+            .lock()
+            .map(|state| state.workers.len())
+            .unwrap_or_default()
     }
 
-    pub fn create_worker(&self) -> Result<WorkerWorkspace, WorkspaceError> {
-        self.materialized
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
-                (current < self.limits.workers).then_some(current + 1)
-            })
-            .map_err(|_| WorkspaceError::WorkerCountExceeded {
-                workers: self.limits.workers,
-            })?;
+    pub fn reservation_id(&self) -> Option<ReservationId> {
+        self.state
+            .lock()
+            .ok()
+            .and_then(|state| state.reservation.map(|(id, _)| id))
+    }
 
-        match self.materialize_worker() {
+    pub fn verify_originals(&self) -> Result<(), WorkspaceError> {
+        let (current, _) = build_manifest(&self.original_root, &self.options)?;
+        if self.manifest.content_matches(&current) {
+            Ok(())
+        } else {
+            Err(WorkspaceError::OriginalChanged {
+                path: self
+                    .manifest
+                    .first_content_difference(&current)
+                    .unwrap_or_default(),
+            })
+        }
+    }
+
+    pub fn create_worker(&self, request: &CreateWorker) -> Result<WorkerWorkspace, WorkspaceError> {
+        self.accept_grant(request)?;
+        match self.materialize_worker(request.worker) {
             Ok(worker) => Ok(worker),
             Err(error) => {
-                self.materialized.fetch_sub(1, Ordering::AcqRel);
+                if let Ok(mut state) = self.state.lock() {
+                    state.workers.remove(&request.worker);
+                }
                 Err(error)
             }
         }
     }
 
-    fn materialize_worker(&self) -> Result<WorkerWorkspace, WorkspaceError> {
+    fn accept_grant(&self, request: &CreateWorker) -> Result<(), WorkspaceError> {
+        if request.preflight_id != self.preflight_id
+            || request.worker >= self.requested_workers
+            || request.granted_allowance != self.aggregate_bytes
+        {
+            return Err(WorkspaceError::InvalidGrant {
+                requested: request.granted_allowance,
+                expected: self.aggregate_bytes,
+            });
+        }
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| WorkspaceError::StatePoisoned)?;
+        match state.reservation {
+            Some((reservation, _allowance)) if reservation != request.reservation_id => {
+                return Err(WorkspaceError::ReservationMismatch {
+                    expected: reservation,
+                    received: request.reservation_id,
+                });
+            }
+            Some((_reservation, allowance)) if allowance != request.granted_allowance => {
+                return Err(WorkspaceError::InvalidGrant {
+                    requested: request.granted_allowance,
+                    expected: allowance,
+                });
+            }
+            None => {
+                state.reservation = Some((request.reservation_id, request.granted_allowance));
+                self.allowance.set_grant(request.granted_allowance);
+            }
+            _ => {}
+        }
+        if !state.workers.insert(request.worker) {
+            return Err(WorkspaceError::WorkerAlreadyExists {
+                worker: request.worker,
+            });
+        }
+        Ok(())
+    }
+
+    fn materialize_worker(&self, worker: u32) -> Result<WorkerWorkspace, WorkspaceError> {
         let temp = tempfile::Builder::new()
             .prefix("hoimin-worker-")
             .tempdir()
@@ -180,19 +252,9 @@ impl WorkspacePlan {
                 fs::set_permissions(&destination, permissions.clone()).map_err(|error| {
                     WorkspaceError::io("copy worker permissions", &entry.path, error)
                 })?;
-                snapshot.insert(entry.path.clone(), SnapshotFile { bytes, permissions });
+                snapshot.insert(entry.path.clone(), SnapshotFile::new(bytes, permissions));
             }
-
-            let (current, _) = build_manifest(&self.original_root, &self.options)?;
-            if !self.manifest.content_matches(&current) {
-                return Err(WorkspaceError::OriginalChanged {
-                    path: self
-                        .manifest
-                        .first_content_difference(&current)
-                        .unwrap_or_default(),
-                });
-            }
-            Ok(())
+            self.verify_originals()
         })();
 
         if let Err(error) = result {
@@ -208,7 +270,8 @@ impl WorkspacePlan {
             self.manifest.clone(),
             snapshot,
             Arc::clone(&self.allowance),
-            Arc::clone(&self.materialized),
+            Arc::clone(&self.state),
+            worker,
             charged,
         ))
     }
