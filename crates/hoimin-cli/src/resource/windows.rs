@@ -328,8 +328,12 @@ fn record_notification(state: &mut RunState, message: u32, pid: u32) {
             state
                 .exited_roots
                 .extend(state.active.iter().map(|root| root.pid));
+            state.active.clear();
         }
-        JOB_OBJECT_MSG_EXIT_PROCESS if state.active.iter().any(|root| root.pid == pid) => {
+        JOB_OBJECT_MSG_EXIT_PROCESS
+            if let Some(index) = state.active.iter().position(|root| root.pid == pid) =>
+        {
+            state.active.swap_remove(index);
             state.exited_roots.insert(pid);
         }
         _ => {}
@@ -592,6 +596,7 @@ fn terminate_job(job: HANDLE, operation: &'static str) -> Result<(), ResourceErr
 mod tests {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
+    use std::sync::atomic::Ordering;
     use std::time::{Duration, Instant};
 
     use camino::{Utf8Path, Utf8PathBuf};
@@ -599,7 +604,10 @@ mod tests {
         CommandArg, EffectFailure, EffectId, ProcessLimits, RawRunLimits, RunLimits, RunProcess,
     };
 
-    use super::{AttachFault, WindowsBackend};
+    use super::{
+        ActiveRoot, AttachFault, MEMORY_VIOLATION, RootSignal, RunState, WindowsBackend,
+        record_notification,
+    };
     use crate::process::ProcessHandler;
     use crate::resource::ResourceBackend;
 
@@ -731,5 +739,39 @@ mod tests {
             .unwrap_or_else(|error| error.into_inner());
         assert!(state.closed);
         assert!(state.terminated);
+    }
+
+    #[test]
+    fn exited_root_is_not_marked_by_a_later_aggregate_violation() {
+        let exited = std::sync::Arc::new(RootSignal::default());
+        let active = std::sync::Arc::new(RootSignal::default());
+        let mut state = RunState {
+            active: vec![
+                ActiveRoot {
+                    pid: 301,
+                    signal: std::sync::Arc::downgrade(&exited),
+                },
+                ActiveRoot {
+                    pid: 302,
+                    signal: std::sync::Arc::downgrade(&active),
+                },
+            ],
+            ..RunState::default()
+        };
+
+        record_notification(
+            &mut state,
+            windows_sys::Win32::System::SystemServices::JOB_OBJECT_MSG_EXIT_PROCESS,
+            301,
+        );
+        record_notification(
+            &mut state,
+            windows_sys::Win32::System::SystemServices::JOB_OBJECT_MSG_JOB_MEMORY_LIMIT,
+            0,
+        );
+
+        assert_eq!(exited.violations.load(Ordering::Acquire), 0);
+        assert_eq!(active.violations.load(Ordering::Acquire), MEMORY_VIOLATION);
+        assert!(state.exited_roots.contains(&301));
     }
 }

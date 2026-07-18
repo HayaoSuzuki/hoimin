@@ -1,6 +1,7 @@
 mod output;
 
 use std::ffi::OsString;
+use std::future::Future;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -18,6 +19,13 @@ use uuid::Uuid;
 use crate::resource::{ProcessSupervisor, ResourceBackend, ResourceError};
 
 const POST_TERMINATION_GRACE: Duration = Duration::from_secs(1);
+
+#[derive(Debug, Eq, PartialEq)]
+enum ProcessSelection<T> {
+    Cancelled,
+    Timeout,
+    Exited(T),
+}
 
 #[derive(Clone, Debug)]
 pub struct ProcessCancellation {
@@ -206,45 +214,47 @@ impl ProcessHandler {
             receiver,
         ));
 
-        let process_result = tokio::select! {
-            status = child.wait() => {
-                match status {
-                    Ok(status) => supervisor
-                        .classify(exit_termination(status))
-                        .map_err(|error| resource_failure(
+        let process_result = match select_process_result(
+            child.wait(),
+            cancellation.cancelled(),
+            tokio::time::sleep_until(deadline),
+        )
+        .await
+        {
+            ProcessSelection::Exited(status) => match status {
+                Ok(status) => supervisor
+                    .classify(exit_termination(status))
+                    .map_err(|error| {
+                        resource_failure(
                             id,
                             "process.resource.classify",
                             "classify process termination",
                             error,
-                        ))
-                        .and_then(|termination| {
-                            terminate_supervised(id, &mut supervisor).map(|()| termination)
-                        }),
-                    Err(error) => Err(io_failure(
-                        id,
-                        "process.wait",
-                        "wait for process",
-                        None,
-                        error,
-                    )),
-                }
-            }
-            () = cancellation.cancelled() => {
-                match terminate_supervised(id, &mut supervisor) {
-                    Ok(()) => wait_after_termination(id, &mut child)
-                        .await
-                        .map(|()| ProcessTermination::Cancelled),
-                    Err(error) => Err(error),
-                }
-            }
-            () = tokio::time::sleep_until(deadline) => {
-                match terminate_supervised(id, &mut supervisor) {
-                    Ok(()) => wait_after_termination(id, &mut child)
-                        .await
-                        .map(|()| ProcessTermination::Timeout),
-                    Err(error) => Err(error),
-                }
-            }
+                        )
+                    })
+                    .and_then(|termination| {
+                        terminate_supervised(id, &mut supervisor).map(|()| termination)
+                    }),
+                Err(error) => Err(io_failure(
+                    id,
+                    "process.wait",
+                    "wait for process",
+                    None,
+                    error,
+                )),
+            },
+            ProcessSelection::Cancelled => match terminate_supervised(id, &mut supervisor) {
+                Ok(()) => wait_after_termination(id, &mut child)
+                    .await
+                    .map(|()| ProcessTermination::Cancelled),
+                Err(error) => Err(error),
+            },
+            ProcessSelection::Timeout => match terminate_supervised(id, &mut supervisor) {
+                Ok(()) => wait_after_termination(id, &mut child)
+                    .await
+                    .map(|()| ProcessTermination::Timeout),
+                Err(error) => Err(error),
+            },
         };
 
         let output_result = await_output(
@@ -269,6 +279,24 @@ impl ProcessHandler {
             elapsed: started.elapsed(),
             resource_mode: self.backend.mode(),
         })
+    }
+}
+
+async fn select_process_result<T, W, C, D>(
+    wait: W,
+    cancellation: C,
+    deadline: D,
+) -> ProcessSelection<T>
+where
+    W: Future<Output = T>,
+    C: Future<Output = ()>,
+    D: Future<Output = ()>,
+{
+    tokio::select! {
+        biased;
+        () = cancellation => ProcessSelection::Cancelled,
+        () = deadline => ProcessSelection::Timeout,
+        value = wait => ProcessSelection::Exited(value),
     }
 }
 
@@ -507,9 +535,13 @@ fn native_argv(_argv: &[CommandArg]) -> Result<Vec<OsString>, String> {
 
 #[cfg(test)]
 mod tests {
+    use std::future::{pending, ready};
+
     use hoimin_core::{EffectFailure, EffectId, ProcessTermination};
 
-    use super::{attach_failure, combine_process_and_output};
+    use super::{
+        ProcessSelection, attach_failure, combine_process_and_output, select_process_result,
+    };
     use crate::resource::ResourceError;
 
     #[test]
@@ -557,5 +589,14 @@ mod tests {
                     && message.contains("spawned process did not expose a process id")
                     && message.contains("cleanup timed out")
         ));
+    }
+
+    #[tokio::test]
+    async fn cancellation_and_timeout_precede_a_simultaneous_exit() {
+        let cancelled = select_process_result(ready(7_u8), ready(()), ready(())).await;
+        assert_eq!(cancelled, ProcessSelection::Cancelled);
+
+        let timed_out = select_process_result(ready(7_u8), pending::<()>(), ready(())).await;
+        assert_eq!(timed_out, ProcessSelection::Timeout);
     }
 }
