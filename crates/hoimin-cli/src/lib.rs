@@ -3,6 +3,7 @@ use std::ffi::OsString;
 pub mod analyzer;
 pub mod cli;
 pub mod process;
+pub mod report;
 pub mod resource;
 pub mod target;
 pub mod workspace;

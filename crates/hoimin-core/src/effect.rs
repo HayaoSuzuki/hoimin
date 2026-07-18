@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 
 use camino::Utf8PathBuf;
 
-use crate::{CommandArg, IntegrityCheckpoint, ProcessLimits, ReservationId, Selection};
+use crate::{
+    CommandArg, IntegrityCheckpoint, OutputEvent, ProcessLimits, ReservationId, Selection,
+};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct EffectId(pub u64);
@@ -26,8 +28,13 @@ effect_request!(
     BeginSession,
     PersistResult,
     FinishSession,
-    EmitOutput,
 );
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EmitOutput {
+    pub id: EffectId,
+    pub event: OutputEvent,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RunProcess {
@@ -114,7 +121,7 @@ pub struct ResolveTargets {
     pub selection: Selection,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum RunEffect {
     ResolveTargets(ResolveTargets),

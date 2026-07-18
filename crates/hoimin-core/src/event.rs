@@ -133,6 +133,16 @@ pub enum EffectFailure {
         path: Option<Utf8PathBuf>,
         message: String,
     },
+    ReportIo {
+        operation: String,
+        message: String,
+    },
+    ReportSerialization {
+        message: String,
+    },
+    ReportState {
+        message: String,
+    },
     Other {
         code: String,
         message: String,
@@ -154,6 +164,9 @@ impl EffectFailure {
             | Self::Io { code, .. }
             | Self::Other { code, .. } => code,
             Self::WorkerMissing { .. } => "workspace.worker.missing",
+            Self::ReportIo { .. } => "report.io",
+            Self::ReportSerialization { .. } => "report.serialization",
+            Self::ReportState { .. } => "report.state",
         }
     }
 }

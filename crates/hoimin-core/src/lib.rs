@@ -7,6 +7,7 @@ mod contracts;
 pub mod effect;
 pub mod event;
 pub mod model;
+pub mod report;
 pub mod target;
 
 pub use budget::*;
@@ -16,4 +17,5 @@ pub use contracts::ContractInvariant;
 pub use effect::*;
 pub use event::*;
 pub use model::*;
+pub use report::*;
 pub use target::*;
