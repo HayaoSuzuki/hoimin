@@ -61,24 +61,64 @@ hoiminが避けたい事故を構造上排除できないため、採用しな�
 
 ## コンポーネント
 
-hoiminは六つのコンポーネントに分ける。
+hoiminはfunctional coreと、I/Oの種類ごとに分けたshell handlerで構成する。
 
-- **target**：CLIの対象指定とGit差分を解決し、mutation可能なソース範囲を確定する。
-- **analyzer**：LibCSTヘルパーをファイル単位で起動し、mutation候補をJSON Linesで受け取る。
-- **workspace**：制限付きのプロジェクト複製、worker、復元、掃除を管理する。
-- **runner**：baselineとmutantごとのテストコマンドを実行し、結果を分類する。
-- **resource**：OS別の時間、メモリ、出力、プロセスツリー制御を提供する。
-- **report**：JSON、JSON Lines、SQLiteへ結果を逐次書き込む。
+- **core**：対象集合、run状態、Effect、Event、結果分類、集計、終了判断を扱う。
+- **target handler**：filesystemとGitから対象候補を読み取り、相対パスと変更行を返す。
+- **analyzer handler**：LibCSTヘルパーを起動し、mutation候補をJSON Linesのspoolへ書く。
+- **workspace handler**：制限付きのプロジェクト複製、worker、mutation適用、復元、掃除を行う。
+- **process handler**：baselineとmutantのコマンドをOS別のresource制御下で起動し、生の終了理由と出力spoolを返す。
+- **report handler**：coreが生成した出力eventをJSONまたはJSON Linesへ逐次書き込む。
+- **session handler**：SQLite transaction、互換runの検索、commit済み結果の読み出しを行う。
 
-各コンポーネントは、内部表現ではなく値オブジェクトを介して通信する。
-`target`は相対パスとバイト範囲を返し、`analyzer`はmutation記述子を返し、`runner`は実行結果を返す。
-この境界により、LibCST、OS別プロセス管理、保存形式を別々に検証できる。
+各handlerは判断済みのEffectを受け取り、内部表現ではなく完了Eventを返す。
+この境界により、対象選択と結果分類をI/Oから独立して検証し、LibCST、OS別プロセス管理、保存形式をhandler単位で検証できる。
+
+## Sans-I/Oによる制御と実行の分離
+
+hoiminの制御ロジックは、Sans-I/Oの考え方を使って**functional core**と**imperative shell**に分ける。
+Sans-I/Oはネットワークプロトコルのために整理された手法だが、同期的な入力から同期的な出力を返し、I/Oと非同期フロー制御を外側へ出す原則をrun制御へ適用できる。
+
+functional coreの中心は、`RunState`と`RunEvent`を受け取り、新しい状態と実行要求を返す同期的な状態機械である。
+
+実装はCargo workspace内の二つのcrateに分ける。
+`hoimin-core`はEvent、Effect、状態機械、分類、集計、契約を実装し、Tokio、filesystem、SQLite、OS APIへ依存しない。
+`hoimin-cli`は`hoimin-core`へ依存し、shellのhandlerとMaturinで配布するバイナリを実装する。
+依存方向をcrate境界で固定し、coreへI/O依存を追加しなければ実装できない変更をレビュー時に識別できるようにする。
+
+```rust
+fn transition(
+    state: RunState,
+    event: RunEvent,
+) -> Result<(RunState, Vec<RunEffect>), MachineError>;
+```
+
+状態機械はfilesystem、Git、子プロセス、時計、環境変数、SQLite、Tokioへアクセスしない。
+runの状態遷移、空きworkerへの割り当て、mutation結果の分類、timeoutと終了コードの判断、resume互換性、score、target集合演算、run全体の予算予約を値の変換として処理する。
+
+imperative shellは`RunEffect`を実行し、その結果を`RunEvent`として状態機械へ返す。
+Git差分の取得、LibCSTヘルパーの起動、worker操作、OS別プロセス制御、時刻取得、JSONとJSON Linesの書き込み、SQLite transactionはshell側のhandlerが担当する。
+巨大な`FileSystem` traitへI/Oをまとめず、Git、workspace、process、report、sessionごとの小さな具体的handlerに分ける。
+
+主なeffectは対象解決、複製前検査、worker作成、baseline起動、候補解析、次候補の読み出し、mutation適用、テスト起動、worker復元、結果保存、イベント出力、cleanupである。
+各effectにはrun内で一意な`EffectId`を付ける。
+shellが受理したeffectは、成功、失敗、timeout、キャンセルのいずれか一つの完了eventへ到達させる。
+同じ`EffectId`について二つ目の完了eventを生成しない。
+プロセス自体が強制終了した場合はこの規則を適用できないため、SQLiteにcommit済みの結果だけをresumeで再利用する。
+
+候補とプロセス出力の本体は状態機械へ渡さない。
+eventは`CandidateSpoolRef`と`OutputSpoolRef`、件数、offset、hashなどの小さな値だけを保持する。
+候補spoolから次のレコードを読む処理もshell側のeffectとし、functional coreのメモリ使用量をmutant数から独立させる。
+
+並列実行の判断はfunctional coreが行う。
+状態機械は`--jobs`、空きworker、実行中のeffect、run全体の予算から開始可能なeffectだけを返す。
+shellは複数のeffectを非同期に実行できるが、完了順を判断に使わず、完了eventを状態機械へ戻すだけとする。
 
 ## 開発時の契約検査
 
 hoiminは、コンポーネント境界の前提と結果を**契約**として記述する。
 契約は、呼び出し前の事前条件、処理後の事後条件、状態を持つ値の不変条件に分ける。
-`dbc` crateには依存せず、Cargo feature `contracts`で有効になる軽量なマクロとtraitを`src/contracts.rs`に実装する。
+`dbc` crateには依存せず、Cargo feature `contracts`で有効になる軽量なマクロとtraitを`crates/hoimin-core/src/contracts.rs`に実装する。
 
 契約検査はCIと開発用テストでだけ使う。
 `contracts` featureが無効なビルドでは条件式を評価せず、検査用のスナップショット、ハッシュ計算、診断文字列も生成しない。
@@ -99,6 +139,7 @@ CLI引数の誤り、対象spanと元バイト列の不一致、元の作業ツ�
 - mutation適用後は指定spanだけが変わり、復元後のworkerはmanifestと一致する。
 - 予約済みメモリ、コピー量、プロセス数はrun全体の上限を超えず、解放後に二重減算しない。
 - runの状態遷移は定義済みの辺だけを通り、fatal errorまたはキャンセル後に新しいmutantを開始しない。
+- 一つの`EffectId`に対する完了eventは一つだけであり、未知のID、重複完了、現在の状態で受理できないeventを拒否する。
 - 出力イベントの`sequence`は単調増加し、一つのmutantについて開始イベントの後に完了イベントが現れる。
 - SQLite transactionのcommit後は、同じrunとmutant IDで結果を読み戻せる。
 
@@ -107,20 +148,18 @@ CLI引数の誤り、対象spanと元バイト列の不一致、元の作業ツ�
 
 ## 実行の流れ
 
-一回の実行は次の順序で進む。
+一回の実行は、状態機械とshellのあいだでeventとeffectを交換して進む。
 
-1. CLI引数、Python実行ファイル、対象パス、テストコマンドを検証する。
-2. 対象ファイルと複製対象ファイルのハッシュを記録する。
-3. worker用サンドボックスを作る。
-4. 元コードのままbaselineテストを実行する。
-5. 対象ファイルを一つずつLibCSTで解析し、mutation候補を列挙する。
-6. 候補を相対パス、開始バイト、演算子IDの順に並べる。
-7. 一つの候補をworker内のファイルへ適用する。
-8. 制限付き子プロセスとしてテストコマンドを実行する。
-9. 結果を分類し、選択された出力先へ直ちに書き込む。
-10. workerを開始時の内容へ戻す。
-11. 次の候補へ進む。
-12. 完了または中断時にすべての子プロセスを停止し、一時領域を削除する。
+1. CLI adapterが引数配列を`StartRequested` eventへ変換する。
+2. 状態機械が引数間の制約を検証し、対象解決、Python確認、複製量の事前計算をeffectとして返す。
+3. shellがeffectを実行し、対象ファイル、複製manifest、PythonとLibCSTの版を完了eventとして返す。
+4. 状態機械がworker作成とbaseline実行を要求する。
+5. baseline成功後、状態機械がファイル単位のLibCST解析と候補spool作成を要求する。
+6. 状態機械が空きworkerとrun全体の予算に応じ、次候補の読み出し、mutation適用、テスト実行を要求する。
+7. shellが完了eventを返すたびに、状態機械が結果分類、保存、出力、worker復元のeffectを返す。
+8. 状態機械が次の候補を要求し、候補終了、制限到達、fatal error、deadline、キャンセルまで繰り返す。
+9. 状態機械が未実行候補の分類、最終summary、cleanupを要求する。
+10. shellが書き込みをflushし、子孫プロセス、worker、一時領域を掃除して完了eventを返す。
 
 baselineが失敗した場合はmutationを一つも実行しない。
 元の作業ツリーが実行中に変わった場合は、異なるソースに対する結果が同じrunへ混ざるため実行を中断する。
@@ -429,6 +468,19 @@ JSON形式では最終文書を作れないほどの内部障害だけを標準�
 timeoutとOOMはmutation testingで起こり得る判定不能状態であり、ツールのクラッシュとして扱わない。
 パッチ対象のバイト列不一致、worker復元失敗、SQLite commit失敗は結果の信頼性を損なうため、後続mutantを実行しない。
 
+shellのhandlerは、I/O失敗の処置を決めず、`EffectFailed` eventへ変換する。
+eventには`EffectId`、spawn、filesystem、Git、serialization、SQLiteなどの分類、機械可読コード、診断詳細を含める。
+状態機械が現在の状態と分類から再試行、中断、`not_run`、cleanup、終了コードを決める。
+
+テストプロセスの非ゼロ終了、timeout、OOM、プロセス数上限はhandler自体の失敗ではない。
+process handlerはこれらを`ProcessFinished` eventの終了理由として返し、functional coreが`killed`、`survived`、`timeout`、`out_of_memory`へ分類する。
+
+deadlineとCtrl+Cは、それぞれ`DeadlineReached`と`CancellationRequested` eventとして状態機械へ渡す。
+fatal errorまたはキャンセル後、状態機械は新しいmutantのeffectを返さず、実行中プロセスの停止、未実行候補の分類、flush、cleanupだけを要求する。
+cleanup handlerは同じeffectを再実行しても結果が変わらない冪等操作とする。
+
+未知の`EffectId`、同じeffectに対する二回目の完了、現在の状態で受理できないeventは`MachineError`とし、基盤エラーの終了コード2へ対応づける。
+
 ## テスト戦略
 
 ### Rustの単体テスト
@@ -443,11 +495,26 @@ Rust側では次を単体テストする。
 - JSONとJSON Linesのスキーマ
 - SQLiteの逐次保存と互換runの再開
 - 状態集計、mutation score、終了コードの優先順位
+- `RunEvent`ごとの状態遷移と返される`RunEffect`
+- 空きworker、`--jobs`、run全体の予算から開始可能なeffectだけを返すこと
+- effectの順序を入れ替えた完了event、重複完了、未知IDの拒否
+- deadline、キャンセル、fatal error後にmutation開始effectを返さないこと
+- spool参照だけを状態へ保持し、候補と出力の本体を保持しないこと
 
 契約無効の通常構成では`cargo test`を実行し、契約条件式に副作用を置いたテストで条件式が評価されないことを確認する。
 契約有効の構成では`cargo test --features contracts`を実行する。
 各契約には意図的に不正状態を作る`#[should_panic]`テストを設け、安定した契約識別子がpanicメッセージへ含まれることを確認する。
 候補spool、worker復元、run全体の予算、状態遷移、イベント順序にはproperty testを追加する。
+functional coreのテストはEvent列と期待するEffect列だけを使い、mock filesystem、mock process、async runtimeを使わない。
+
+### Shell handlerのテスト
+
+Git、workspace、process、report、sessionの各handlerは、状態判断を含まないことを前提に個別テストする。
+一時ディレクトリ、実際のGit repository、短命な子プロセス、一時SQLite databaseを使い、成功とI/O失敗が対応する完了eventへ変換されることを確認する。
+各handlerについて、同じ`EffectId`を維持すること、巨大な結果をspool参照として返すこと、cleanupを二回実行できることを検証する。
+
+`hoimin-core`の依存グラフにはTokio、rusqlite、tempfile、OS API crateを含めない。
+CIは`cargo tree -p hoimin-core`とfeature単位のビルドを実行し、この境界を固定する。
 
 ### LibCSTヘルパーのテスト
 
@@ -494,6 +561,8 @@ Windows CIではJob Objectのメモリ上限、プロセス数上限、close時�
 - JSON、JSON Lines、SQLiteの互換性を自動テストで固定する。
 - CIの契約有効テストが事前条件、事後条件、不変条件の違反を検出する。
 - 配布wheelでは契約条件式を評価せず、契約無効の通常テストと同じユーザー向け動作を保つ。
+- `hoimin-core`がI/Oと非同期runtimeへ依存せず、公開APIへEventを渡すだけで全状態遷移をテストできる。
+- 一つのeffectが一つの完了eventへ対応し、I/O失敗を含む処置を状態機械が一意に決める。
 
 ## 参考資料
 
@@ -502,6 +571,7 @@ Windows CIではJob Objectのメモリ上限、プロセス数上限、close時�
 - [LibCST](https://github.com/Instagram/LibCST)
 - [LibCST native parser](https://github.com/Instagram/LibCST/tree/main/native/libcst)
 - [dbc crate](https://docs.rs/dbc/latest/dbc/)
+- [Sans-I/O](https://sans-io.readthedocs.io/)
 - [LibCST metadata](https://libcst.readthedocs.io/en/latest/metadata.html)
 - [Maturin bin bindings](https://www.maturin.rs/bindings.html)
 - [Windows Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)
