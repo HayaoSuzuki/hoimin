@@ -5,8 +5,10 @@ use tokio::process::{Child, Command};
 
 use super::{ProcessSupervisor, ResourceError};
 
-#[derive(Clone, Debug)]
-pub struct PortableBackend;
+#[derive(Clone, Debug, Default)]
+pub struct PortableBackend {
+    diagnostic: Option<String>,
+}
 
 impl PortableBackend {
     pub fn new(allow_best_effort_memory: bool) -> Result<Self, ResourceError> {
@@ -18,11 +20,21 @@ impl PortableBackend {
         }
         #[cfg(not(target_os = "linux"))]
         let _ = allow_best_effort_memory;
-        Ok(Self)
+        Ok(Self { diagnostic: None })
     }
 
     pub fn for_tests() -> Self {
-        Self
+        Self::default()
+    }
+
+    pub(crate) fn with_diagnostic(diagnostic: String) -> Self {
+        Self {
+            diagnostic: Some(diagnostic),
+        }
+    }
+
+    pub fn diagnostic(&self) -> Option<&str> {
+        self.diagnostic.as_deref()
     }
 
     pub fn mode(&self) -> ResourceMode {

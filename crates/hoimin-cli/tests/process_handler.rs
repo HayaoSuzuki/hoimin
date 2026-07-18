@@ -4,7 +4,10 @@ use std::time::{Duration, Instant};
 
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_cli::process::{ProcessCancellation, ProcessHandler, ProcessRequest};
-use hoimin_cli::resource::{PortableBackend, ResourceBackend};
+use hoimin_cli::resource::{
+    CgroupCapabilities, PortableBackend, ResourceBackend, parse_cgroup_event_counters,
+    select_linux_backend,
+};
 use hoimin_core::{
     CommandArg, EffectFailure, EffectId, ProcessLimits, ProcessTermination, RawRunLimits,
     ResourceMode, RunLimits, RunProcess,
@@ -12,6 +15,8 @@ use hoimin_core::{
 
 #[cfg(windows)]
 use hoimin_cli::resource::WindowsBackend;
+#[cfg(target_os = "linux")]
+use hoimin_cli::resource::probe_linux_cgroup_with_launcher;
 
 #[cfg(unix)]
 fn native_arg(value: &OsStr) -> CommandArg {
@@ -73,7 +78,6 @@ fn portable_handler(output_dir: &Utf8Path) -> ProcessHandler {
     )
 }
 
-#[cfg(windows)]
 fn hard_run_limits(max_memory: u64, max_processes: usize) -> RunLimits {
     let raw = RawRunLimits {
         max_memory,
@@ -81,6 +85,241 @@ fn hard_run_limits(max_memory: u64, max_processes: usize) -> RunLimits {
         ..RawRunLimits::default()
     };
     RunLimits::try_from(&raw).expect("valid hard run limits")
+}
+
+mod linux_policy {
+    use super::*;
+
+    #[test]
+    fn unavailable_cgroup_requires_explicit_best_effort_opt_in() {
+        let unavailable =
+            CgroupCapabilities::Unavailable("delegated cgroup subtree is not writable".to_owned());
+
+        let error = select_linux_backend(unavailable.clone(), false).unwrap_err();
+        assert!(error.to_string().contains("--allow-best-effort-memory"));
+        assert!(
+            error
+                .to_string()
+                .contains("delegated cgroup subtree is not writable")
+        );
+
+        let backend = select_linux_backend(unavailable, true).unwrap();
+        assert_eq!(backend.mode(), ResourceMode::BestEffort);
+        assert_eq!(
+            backend.diagnostic(),
+            Some("delegated cgroup subtree is not writable")
+        );
+    }
+
+    #[test]
+    fn parses_memory_and_process_event_counters_by_name() {
+        let counters = parse_cgroup_event_counters(
+            b"low 2\nhigh 3\nmax 5\noom 7\noom_kill 11\noom_group_kill 13\n",
+            b"max 17\n",
+        )
+        .unwrap();
+
+        assert_eq!(counters.memory_max, 5);
+        assert_eq!(counters.oom, 7);
+        assert_eq!(counters.oom_kill, 11);
+        assert_eq!(counters.oom_group_kill, 13);
+        assert_eq!(counters.pids_max, 17);
+    }
+}
+
+#[cfg(target_os = "linux")]
+mod cgroup_v2 {
+    use std::ffi::OsString;
+    use std::sync::Arc;
+
+    use super::*;
+
+    fn hard_handler(
+        output_dir: &Utf8Path,
+        max_memory: u64,
+        max_processes: usize,
+    ) -> Option<ProcessHandler> {
+        let capabilities = probe_linux_cgroup_with_launcher(
+            &hard_run_limits(max_memory, max_processes),
+            OsString::from(env!("CARGO_BIN_EXE_hoimin")),
+        );
+        match capabilities {
+            CgroupCapabilities::Available(backend) => Some(ProcessHandler::new(
+                ResourceBackend::LinuxHard(backend),
+                output_dir.to_owned(),
+            )),
+            CgroupCapabilities::Unavailable(reason) => {
+                eprintln!("SKIP: Linux cgroup v2 hard-limit capability unavailable: {reason}");
+                None
+            }
+            CgroupCapabilities::CleanupPending(pending) => {
+                panic!(
+                    "Linux cgroup probe cleanup remained pending: {}",
+                    pending.reason()
+                )
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn removes_run_cgroup_and_rejects_future_spawn_after_close() {
+        let output = tempfile::tempdir().unwrap();
+        let output_dir = Utf8Path::from_path(output.path()).unwrap();
+        let capabilities = probe_linux_cgroup_with_launcher(
+            &hard_run_limits(512 * 1024 * 1024, 16),
+            OsString::from(env!("CARGO_BIN_EXE_hoimin")),
+        );
+        let backend = match capabilities {
+            CgroupCapabilities::Available(backend) => backend,
+            CgroupCapabilities::Unavailable(reason) => {
+                eprintln!("SKIP: Linux cgroup v2 hard-limit capability unavailable: {reason}");
+                return;
+            }
+            CgroupCapabilities::CleanupPending(pending) => {
+                panic!(
+                    "Linux cgroup probe cleanup remained pending: {}",
+                    pending.reason()
+                )
+            }
+        };
+        let run_path = backend.run_cgroup_path_for_tests();
+        let handler = ProcessHandler::new(ResourceBackend::LinuxHard(backend), output_dir.into());
+
+        handler.close().unwrap();
+
+        assert!(!run_path.exists());
+        let failure = handler
+            .handle(run_python(
+                200,
+                "raise SystemExit(0)",
+                limits(Duration::from_secs(1), 64),
+            ))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            failure.failure,
+            EffectFailure::Io { ref code, ref message, .. }
+                if code == "process.resource.setup" && message.contains("closed")
+        ));
+    }
+
+    #[tokio::test]
+    async fn hard_cgroup_preserves_non_utf8_argv_without_a_shell() {
+        let output = tempfile::tempdir().unwrap();
+        let Some(handler) = hard_handler(
+            Utf8Path::from_path(output.path()).unwrap(),
+            512 * 1024 * 1024,
+            16,
+        ) else {
+            return;
+        };
+        let raw = vec![b'n', b'o', b'n', b'-', 0xff, b'-', b'u', b't', b'f', b'8'];
+        let request = RunProcess {
+            id: EffectId(201),
+            argv: vec![
+                python_executable(),
+                utf8_arg("-c"),
+                utf8_arg("import os,sys; sys.stdout.buffer.write(os.fsencode(sys.argv[1]))"),
+                CommandArg::Unix(raw.clone()),
+            ],
+            cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
+            limits: limits(Duration::from_secs(5), 64),
+        };
+
+        let event = handler.handle(request).await.unwrap();
+
+        assert_eq!(event.resource_mode, ResourceMode::Hard);
+        assert_eq!(event.termination, ProcessTermination::Exit(0));
+        assert_eq!(
+            fs::read(handler.spool_path(&event.output).unwrap()).unwrap(),
+            raw
+        );
+        handler.close().unwrap();
+    }
+
+    #[tokio::test]
+    async fn timeout_kills_a_setsid_descendant_without_killing_a_sibling_root() {
+        let output = tempfile::tempdir().unwrap();
+        let output_dir = Utf8Path::from_path(output.path()).unwrap();
+        let Some(handler) = hard_handler(output_dir, 512 * 1024 * 1024, 16) else {
+            return;
+        };
+        let handler = Arc::new(handler);
+        let pid_file = output_dir.join("setsid-child.pid");
+        let guard = FixtureChildGuard::new(pid_file.clone());
+        let timed_out = handler.handle(RunProcess {
+            id: EffectId(202),
+            argv: vec![
+                python_executable(),
+                utf8_arg("-c"),
+                utf8_arg("import os,pathlib,subprocess,sys,time; child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)'],preexec_fn=os.setsid); pathlib.Path(sys.argv[1]).write_text(str(child.pid)); time.sleep(30)"),
+                native_arg(pid_file.as_std_path().as_os_str()),
+            ],
+            cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
+            limits: limits(Duration::from_secs(1), 64),
+        });
+        let sibling = handler.handle(run_python(
+            203,
+            "import sys,time; time.sleep(1.3); sys.stdout.write('alive')",
+            limits(Duration::from_secs(5), 64),
+        ));
+
+        let (timed_out, sibling) = tokio::join!(timed_out, sibling);
+        let child_pid = guard.pid().expect("fixture descendant wrote pid");
+
+        assert_eq!(timed_out.unwrap().termination, ProcessTermination::Timeout);
+        let sibling = sibling.unwrap();
+        assert_eq!(sibling.termination, ProcessTermination::Exit(0));
+        assert_eq!(
+            fs::read(handler.spool_path(&sibling.output).unwrap()).unwrap(),
+            b"alive"
+        );
+        assert!(wait_until_process_stops(child_pid).await);
+        handler.close().unwrap();
+    }
+
+    #[tokio::test]
+    async fn run_cgroup_classifies_concurrent_aggregate_memory_and_process_limits() {
+        let memory_output = tempfile::tempdir().unwrap();
+        let Some(memory_handler) = hard_handler(
+            Utf8Path::from_path(memory_output.path()).unwrap(),
+            160 * 1024 * 1024,
+            16,
+        ) else {
+            return;
+        };
+        let memory_handler = Arc::new(memory_handler);
+        let code = "import time; x=bytearray(96*1024*1024); x[::4096]=b'x'*(len(x[::4096])); time.sleep(2)";
+        let (first, second) = tokio::join!(
+            memory_handler.handle(run_python(204, code, limits(Duration::from_secs(5), 64))),
+            memory_handler.handle(run_python(205, code, limits(Duration::from_secs(5), 64)))
+        );
+        assert!(
+            [first.unwrap().termination, second.unwrap().termination]
+                .contains(&ProcessTermination::OutOfMemory)
+        );
+        memory_handler.close().unwrap();
+
+        let process_output = tempfile::tempdir().unwrap();
+        let Some(process_handler) = hard_handler(
+            Utf8Path::from_path(process_output.path()).unwrap(),
+            512 * 1024 * 1024,
+            3,
+        ) else {
+            return;
+        };
+        let process_handler = Arc::new(process_handler);
+        let code = "import subprocess,sys,time; child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(2)']); time.sleep(1); child.wait()";
+        let (first, second) = tokio::join!(
+            process_handler.handle(run_python(206, code, limits(Duration::from_secs(5), 4096))),
+            process_handler.handle(run_python(207, code, limits(Duration::from_secs(5), 4096)))
+        );
+        assert!(
+            [first.unwrap().termination, second.unwrap().termination]
+                .contains(&ProcessTermination::ProcessLimit)
+        );
+        process_handler.close().unwrap();
+    }
 }
 
 struct FixtureChildGuard {

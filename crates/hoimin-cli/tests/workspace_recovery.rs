@@ -1,4 +1,6 @@
+#[cfg(windows)]
 use std::collections::BTreeMap;
+#[cfg(windows)]
 use std::ffi::{OsStr, OsString};
 use std::fs;
 

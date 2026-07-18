@@ -139,9 +139,17 @@ impl ProcessHandler {
         let id = process.id;
         let argv = native_argv(&process.argv)
             .map_err(|message| EffectFailed::other(id, "process.argv.invalid", message))?;
-        let (program, arguments) = argv.split_first().ok_or_else(|| {
-            EffectFailed::other(id, "process.argv.empty", "process argv must not be empty")
-        })?;
+        if argv.is_empty() {
+            return Err(EffectFailed::other(
+                id,
+                "process.argv.empty",
+                "process argv must not be empty",
+            ));
+        }
+        let argv = self.backend.wrap_argv(argv);
+        let (program, arguments) = argv
+            .split_first()
+            .expect("a resource backend must preserve a non-empty argv");
         tokio::fs::create_dir_all(&self.output_dir)
             .await
             .map_err(|error| {
@@ -233,7 +241,7 @@ impl ProcessHandler {
                         )
                     })
                     .and_then(|termination| {
-                        terminate_supervised(id, &mut supervisor).map(|()| termination)
+                        terminate_supervised(id, &mut supervisor, false).map(|()| termination)
                     }),
                 Err(error) => Err(io_failure(
                     id,
@@ -243,13 +251,13 @@ impl ProcessHandler {
                     error,
                 )),
             },
-            ProcessSelection::Cancelled => match terminate_supervised(id, &mut supervisor) {
+            ProcessSelection::Cancelled => match terminate_supervised(id, &mut supervisor, true) {
                 Ok(()) => wait_after_termination(id, &mut child)
                     .await
                     .map(|()| ProcessTermination::Cancelled),
                 Err(error) => Err(error),
             },
-            ProcessSelection::Timeout => match terminate_supervised(id, &mut supervisor) {
+            ProcessSelection::Timeout => match terminate_supervised(id, &mut supervisor, true) {
                 Ok(()) => wait_after_termination(id, &mut child)
                     .await
                     .map(|()| ProcessTermination::Timeout),
@@ -445,8 +453,9 @@ fn attach_failure(
 fn terminate_supervised(
     id: EffectId,
     supervisor: &mut ProcessSupervisor,
+    live_root_owned: bool,
 ) -> Result<(), EffectFailed> {
-    supervisor.terminate().map_err(|error| {
+    supervisor.terminate(live_root_owned).map_err(|error| {
         resource_failure(
             id,
             "process.resource.terminate",
@@ -498,10 +507,12 @@ fn exit_termination(status: std::process::ExitStatus) -> ProcessTermination {
     #[cfg(unix)]
     {
         use std::os::unix::process::ExitStatusExt;
-        return ProcessTermination::Exit(status.signal().map_or(-1, |signal| 128 + signal));
+        ProcessTermination::Exit(status.signal().map_or(-1, |signal| 128 + signal))
     }
     #[cfg(not(unix))]
-    ProcessTermination::Exit(-1)
+    {
+        ProcessTermination::Exit(-1)
+    }
 }
 
 #[cfg(unix)]
