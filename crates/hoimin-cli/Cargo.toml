@@ -16,6 +16,7 @@ contracts = ["hoimin-core/contracts"]
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
+camino = "1.1"
 hoimin-core = { path = "../hoimin-core" }
 humantime = "2.2"
 ignore = "0.4"

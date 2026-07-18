@@ -2,7 +2,12 @@ use std::ffi::OsString;
 use std::fmt;
 use std::path::PathBuf;
 
+use camino::Utf8PathBuf;
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use hoimin_core::{
+    CommandArg, ConfigError, LineRange, LineSelection, OutputConfig, RawRunConfig, RawRunLimits,
+    RunConfig, SessionConfig, SymbolSelection,
+};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -171,6 +176,9 @@ pub enum CliError {
     Clap(clap::Error),
     MissingTargetSelector,
     MissingTestArgv,
+    InvalidValue { name: &'static str, value: String },
+    NonUtf8Value(&'static str),
+    Config(ConfigError),
 }
 
 impl fmt::Display for CliError {
@@ -183,6 +191,11 @@ impl fmt::Display for CliError {
             Self::MissingTestArgv => {
                 formatter.write_str("at least one test argv element is required after `--`")
             }
+            Self::InvalidValue { name, value } => {
+                write!(formatter, "invalid {name}: {value}")
+            }
+            Self::NonUtf8Value(name) => write!(formatter, "{name} must be valid UTF-8"),
+            Self::Config(error) => error.fmt(formatter),
         }
     }
 }
@@ -192,6 +205,21 @@ impl std::error::Error for CliError {}
 impl From<clap::Error> for CliError {
     fn from(error: clap::Error) -> Self {
         Self::Clap(error)
+    }
+}
+
+impl From<ConfigError> for CliError {
+    fn from(error: ConfigError) -> Self {
+        Self::Config(error)
+    }
+}
+
+impl CliError {
+    pub fn config_error(&self) -> Option<&ConfigError> {
+        match self {
+            Self::Config(error) => Some(error),
+            _ => None,
+        }
     }
 }
 
@@ -250,4 +278,178 @@ where
 {
     let root = RootCli::try_parse_from(args)?;
     RunArgs::try_from(root.command)
+}
+
+pub fn parse_config_from<I, T>(args: I) -> Result<RunConfig, CliError>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString> + Clone,
+{
+    let args = parse_from(args)?;
+    RunConfig::try_from(raw_config(args)?).map_err(CliError::from)
+}
+
+fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
+    let root = utf8_path(args.root, "--root")?;
+    let python = args
+        .python
+        .map(|path| utf8_path(path, "--python"))
+        .transpose()?;
+    let sources = args
+        .source
+        .into_iter()
+        .map(|path| utf8_path(path, "--source"))
+        .collect::<Result<Vec<_>, _>>()?;
+    let files = args
+        .file
+        .into_iter()
+        .map(|path| utf8_path(path, "--file"))
+        .collect::<Result<Vec<_>, _>>()?;
+    let lines = args
+        .line
+        .iter()
+        .map(|value| parse_line_selection(value))
+        .collect::<Result<Vec<_>, _>>()?;
+    let symbols = args
+        .symbol
+        .iter()
+        .map(|value| parse_symbol_selection(value))
+        .collect::<Result<Vec<_>, _>>()?;
+    let session = args
+        .session
+        .map(|path| utf8_path(path, "--session").map(|path| SessionConfig { path }))
+        .transpose()?;
+    let limits = RawRunLimits {
+        jobs: args.jobs,
+        max_mutants: args.max_mutants,
+        max_candidates: args.max_candidates,
+        analyzer_timeout: parse_duration(&args.analyzer_timeout, "--analyzer-timeout")?,
+        baseline_timeout: parse_duration(&args.baseline_timeout, "--baseline-timeout")?,
+        mutant_timeout: if args.mutant_timeout == "auto" {
+            None
+        } else {
+            Some(parse_duration(&args.mutant_timeout, "--mutant-timeout")?)
+        },
+        total_timeout: parse_duration(&args.total_timeout, "--total-timeout")?,
+        max_memory: parse_bytes(&args.max_memory, "--max-memory")?,
+        max_output: parse_bytes(&args.max_output, "--max-output")?,
+        max_copy_size: parse_bytes(&args.max_copy_size, "--max-copy-size")?,
+        max_processes: args.max_processes,
+    };
+    Ok(RawRunConfig {
+        root,
+        sources,
+        files,
+        lines,
+        symbols,
+        changed: args.changed,
+        diff_base: args.diff_base,
+        includes: args.include,
+        excludes: args.exclude,
+        python,
+        allow_best_effort_memory: args.allow_best_effort_memory,
+        limits,
+        test_argv: args.test_argv.into_iter().map(command_arg).collect(),
+        output: OutputConfig {
+            format: match args.format {
+                OutputFormat::Json => hoimin_core::OutputFormat::Json,
+                OutputFormat::Jsonl => hoimin_core::OutputFormat::Jsonl,
+                OutputFormat::Human => hoimin_core::OutputFormat::Human,
+            },
+        },
+        session,
+        resume: args.resume,
+    })
+}
+
+fn utf8_path(path: PathBuf, name: &'static str) -> Result<Utf8PathBuf, CliError> {
+    Utf8PathBuf::from_path_buf(path).map_err(|_| CliError::NonUtf8Value(name))
+}
+
+fn parse_line_selection(value: &str) -> Result<LineSelection, CliError> {
+    let (path, range) = value
+        .rsplit_once(':')
+        .ok_or_else(|| CliError::InvalidValue {
+            name: "--line",
+            value: value.to_owned(),
+        })?;
+    let (start, end) = range.split_once('-').unwrap_or((range, range));
+    let start = start.parse::<u32>().map_err(|_| CliError::InvalidValue {
+        name: "--line",
+        value: value.to_owned(),
+    })?;
+    let end = end.parse::<u32>().map_err(|_| CliError::InvalidValue {
+        name: "--line",
+        value: value.to_owned(),
+    })?;
+    Ok(LineSelection {
+        path: Utf8PathBuf::from(path.replace('\\', "/")),
+        range: LineRange { start, end },
+    })
+}
+
+fn parse_symbol_selection(value: &str) -> Result<SymbolSelection, CliError> {
+    let (module, qualname) = value
+        .split_once(':')
+        .ok_or_else(|| CliError::InvalidValue {
+            name: "--symbol",
+            value: value.to_owned(),
+        })?;
+    if module.is_empty() || qualname.is_empty() {
+        return Err(CliError::InvalidValue {
+            name: "--symbol",
+            value: value.to_owned(),
+        });
+    }
+    Ok(SymbolSelection {
+        module: module.to_owned(),
+        qualname: qualname.to_owned(),
+    })
+}
+
+fn parse_duration(value: &str, name: &'static str) -> Result<std::time::Duration, CliError> {
+    humantime::parse_duration(value).map_err(|_| CliError::InvalidValue {
+        name,
+        value: value.to_owned(),
+    })
+}
+
+fn parse_bytes(value: &str, name: &'static str) -> Result<u64, CliError> {
+    const SUFFIXES: [(&str, u64); 7] = [
+        ("GiB", 1024 * 1024 * 1024),
+        ("MiB", 1024 * 1024),
+        ("KiB", 1024),
+        ("GB", 1_000_000_000),
+        ("MB", 1_000_000),
+        ("KB", 1_000),
+        ("B", 1),
+    ];
+    for (suffix, multiplier) in SUFFIXES {
+        if let Some(number) = value.strip_suffix(suffix) {
+            return number
+                .parse::<u64>()
+                .ok()
+                .and_then(|number| number.checked_mul(multiplier))
+                .ok_or_else(|| CliError::InvalidValue {
+                    name,
+                    value: value.to_owned(),
+                });
+        }
+    }
+    value.parse::<u64>().map_err(|_| CliError::InvalidValue {
+        name,
+        value: value.to_owned(),
+    })
+}
+
+#[cfg(unix)]
+fn command_arg(value: OsString) -> CommandArg {
+    use std::os::unix::ffi::OsStringExt;
+    CommandArg::Unix(value.into_vec())
+}
+
+#[cfg(windows)]
+fn command_arg(value: OsString) -> CommandArg {
+    use std::os::windows::ffi::OsStrExt;
+    CommandArg::Windows(value.encode_wide().collect())
 }

@@ -75,3 +75,155 @@ fn root_help_exposes_the_run_contract() {
         );
     }
 }
+
+#[test]
+fn parse_run_config_validates_cross_flag_rules() {
+    let error = hoimin_cli::cli::parse_config_from([
+        "hoimin",
+        "run",
+        "--file",
+        "a.py",
+        "--diff-base",
+        "main",
+        "--",
+        "python",
+    ])
+    .unwrap_err();
+    assert_eq!(
+        error.config_error(),
+        Some(&hoimin_core::ConfigError::DiffBaseRequiresChanged)
+    );
+}
+
+#[tokio::test]
+async fn runtime_entrypoint_applies_typed_validation() {
+    let code = hoimin_cli::run_from([
+        "hoimin",
+        "run",
+        "--file",
+        "a.py",
+        "--diff-base",
+        "main",
+        "--",
+        "python",
+    ])
+    .await;
+    assert_eq!(code, 2);
+}
+
+#[test]
+fn parse_run_config_parses_ranges_limits_and_output() {
+    let config = hoimin_cli::cli::parse_config_from([
+        "hoimin",
+        "run",
+        "--source",
+        "pkg",
+        "--line",
+        "pkg/a.py:4-7",
+        "--jobs",
+        "2",
+        "--max-memory",
+        "2GiB",
+        "--format",
+        "jsonl",
+        "--",
+        "python",
+        "-m",
+        "unittest",
+    ])
+    .unwrap();
+
+    assert_eq!(config.limits.jobs.get(), 2);
+    assert_eq!(config.limits.max_memory.get(), 2 * 1024 * 1024 * 1024);
+    assert_eq!(
+        config.selection.lines[0].range,
+        hoimin_core::LineRange { start: 4, end: 7 }
+    );
+    assert_eq!(config.output.format, hoimin_core::OutputFormat::Jsonl);
+    assert_eq!(config.test_argv.len(), 3);
+}
+
+#[test]
+fn parse_run_config_preserves_runtime_policy_options() {
+    let config = hoimin_cli::cli::parse_config_from([
+        "hoimin",
+        "run",
+        "--file",
+        "pkg/a.py",
+        "--python",
+        "tools/python",
+        "--allow-best-effort-memory",
+        "--",
+        "python",
+    ])
+    .unwrap();
+    assert_eq!(
+        config.python.as_deref(),
+        Some(camino::Utf8Path::new("tools/python"))
+    );
+    assert!(config.allow_best_effort_memory);
+}
+
+#[cfg(unix)]
+#[test]
+fn test_argv_preserves_non_utf8_bytes() {
+    use std::os::unix::ffi::OsStringExt;
+
+    let invalid = std::ffi::OsString::from_vec(vec![0xff, b'x']);
+    let config = hoimin_cli::cli::parse_config_from([
+        std::ffi::OsString::from("hoimin"),
+        std::ffi::OsString::from("run"),
+        std::ffi::OsString::from("--file"),
+        std::ffi::OsString::from("a.py"),
+        std::ffi::OsString::from("--"),
+        invalid.clone(),
+    ])
+    .unwrap();
+    assert_eq!(
+        config.test_argv,
+        [hoimin_core::CommandArg::Unix(invalid.into_vec())]
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn test_argv_preserves_non_utf8_wide_units() {
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+
+    let invalid = std::ffi::OsString::from_wide(&[0xd800, b'x' as u16]);
+    let expected: Vec<u16> = invalid.encode_wide().collect();
+    let config = hoimin_cli::cli::parse_config_from([
+        std::ffi::OsString::from("hoimin"),
+        std::ffi::OsString::from("run"),
+        std::ffi::OsString::from("--file"),
+        std::ffi::OsString::from("a.py"),
+        std::ffi::OsString::from("--"),
+        invalid,
+    ])
+    .unwrap();
+    assert_eq!(
+        config.test_argv,
+        [hoimin_core::CommandArg::Windows(expected)]
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn selector_rejects_non_utf8_wide_units() {
+    use std::os::windows::ffi::OsStringExt;
+
+    let invalid = std::ffi::OsString::from_wide(&[0xd800]);
+    let error = hoimin_cli::cli::parse_config_from([
+        std::ffi::OsString::from("hoimin"),
+        std::ffi::OsString::from("run"),
+        std::ffi::OsString::from("--file"),
+        invalid,
+        std::ffi::OsString::from("--"),
+        std::ffi::OsString::from("python"),
+    ])
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        hoimin_cli::cli::CliError::NonUtf8Value("--file")
+    ));
+}
