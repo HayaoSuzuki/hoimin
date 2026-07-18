@@ -36,6 +36,7 @@ pub struct AnalysisFinished {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CandidateLoaded {
     pub id: EffectId,
+    pub worker: u32,
     pub candidate: Option<MutationCandidate>,
     pub next_offset: u64,
 }
@@ -49,6 +50,7 @@ pub struct SessionLoaded {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct StoredResultLoaded {
     pub id: EffectId,
+    pub worker: u32,
     pub result: Option<StoredResult>,
 }
 
@@ -61,6 +63,7 @@ pub struct SessionStarted {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ResultPersisted {
     pub id: EffectId,
+    pub worker: u32,
     pub run_id: String,
     pub mutant_id: String,
 }
@@ -75,6 +78,7 @@ pub struct SessionFinished {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ProcessFinished {
     pub id: EffectId,
+    pub worker: Option<u32>,
     pub termination: ProcessTermination,
     pub output: OutputSpoolRef,
     pub elapsed: Duration,

@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use hoimin_core::{
@@ -64,7 +65,6 @@ fn baseline_success_requests_analysis_without_performing_io() {
         RunEvent::BaselineFinished(process_finished(baseline_id, ProcessTermination::Exit(0))),
     )
     .unwrap();
-
     assert_eq!(next.phase(), RunPhase::Analyze);
     assert!(
         effects
@@ -157,6 +157,38 @@ fn pending_effects_reject_unknown_duplicate_and_wrong_completion_kind() {
 }
 
 #[test]
+fn retired_late_completion_is_distinct_from_a_true_duplicate() {
+    let (state, effects) = waiting_for_candidate();
+    let read_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }));
+    let completed = CandidateLoaded {
+        id: read_id,
+        worker: 0,
+        candidate: Some(fixture_candidate(1)),
+        next_offset: 1,
+    };
+    let (state, effects) = transition(state, RunEvent::CandidateLoaded(completed.clone())).unwrap();
+    let duplicate = transition(state.clone(), RunEvent::CandidateLoaded(completed)).unwrap_err();
+    assert_eq!(duplicate.code(), "machine.effect.duplicate");
+
+    let apply_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ApplyMutation(_))
+    }));
+    let (stopped, _) = transition(state, RunEvent::CancellationRequested).unwrap();
+    assert!(stopped.is_effect_retired(apply_id));
+    let retired = transition(
+        stopped,
+        RunEvent::MutationApplied(MutationApplied {
+            id: apply_id,
+            worker: 0,
+        }),
+    )
+    .unwrap_err();
+    assert_eq!(retired.code(), "machine.effect.retired");
+}
+
+#[test]
 fn deadline_and_cancellation_stop_scheduling_new_mutants() {
     for (event, exit_code) in [
         (RunEvent::DeadlineReached, 4),
@@ -214,6 +246,97 @@ fn deadline_before_preflight_still_emits_a_complete_report_before_cleanup() {
 }
 
 #[test]
+fn cancellation_flushes_active_and_remaining_candidates_as_not_run() {
+    let (state, effects) = waiting_for_analysis();
+    let analysis_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::AnalyzeFile(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::AnalysisFinished(AnalysisFinished {
+            id: analysis_id,
+            spool: Some(CandidateSpoolRef {
+                token: "cancel-drain".to_owned(),
+                records: 3,
+            }),
+            truncated: false,
+        }),
+    )
+    .unwrap();
+    let read_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }));
+    let (state, _) = transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read_id,
+            worker: 0,
+            candidate: Some(fixture_candidate(1)),
+            next_offset: 10,
+        }),
+    )
+    .unwrap();
+    let (mut state, mut effects) = transition(state, RunEvent::CancellationRequested).unwrap();
+
+    for sequence in 1..=3 {
+        if sequence != 1 {
+            let read_id = effect_id(find_effect(&effects, |effect| {
+                matches!(effect, RunEffect::ReadCandidate(_))
+            }));
+            (state, effects) = transition(
+                state,
+                RunEvent::CandidateLoaded(CandidateLoaded {
+                    id: read_id,
+                    worker: 0,
+                    candidate: Some(fixture_candidate(sequence)),
+                    next_offset: sequence * 10,
+                }),
+            )
+            .unwrap();
+        }
+        (state, effects) = complete_mutant_started(state, effects);
+        let finished = find_effect(&effects, |effect| {
+            matches!(effect, RunEffect::EmitOutput(value)
+                if matches!(&value.event, hoimin_core::OutputEvent::MutantFinished(value)
+                    if value.status == MutationStatus::NotRun
+                        && value.candidate.sequence == sequence))
+        });
+        let finished_id = effect_id(finished);
+        (state, effects) = transition(
+            state,
+            RunEvent::OutputEmitted(OutputEmitted { id: finished_id }),
+        )
+        .unwrap();
+        assert_eq!(state.summary().not_run, sequence);
+        assert!(!effects.iter().any(|effect| matches!(
+            effect,
+            RunEffect::ApplyMutation(_) | RunEffect::RunMutant(_)
+        )));
+    }
+
+    let read_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read_id,
+            worker: 0,
+            candidate: None,
+            next_offset: 30,
+        }),
+    )
+    .unwrap();
+    assert_eq!(state.phase(), RunPhase::Finalize);
+    assert_eq!(state.exit_code(), 130);
+    assert!(
+        effects
+            .iter()
+            .any(|effect| { matches!(effect, RunEffect::VerifyOriginals(_)) })
+    );
+}
+
+#[test]
 fn one_active_candidate_is_applied_classified_and_reported() {
     let (state, effects) = waiting_for_candidate();
     let read_id = effect_id(find_effect(&effects, |effect| {
@@ -224,6 +347,7 @@ fn one_active_candidate_is_applied_classified_and_reported() {
         state,
         RunEvent::CandidateLoaded(CandidateLoaded {
             id: read_id,
+            worker: 0,
             candidate: Some(candidate.clone()),
             next_offset: 17,
         }),
@@ -241,6 +365,7 @@ fn one_active_candidate_is_applied_classified_and_reported() {
         }),
     )
     .unwrap();
+    let (state, effects) = complete_mutant_started(state, effects);
     let mutant_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunMutant(_))
     }));
@@ -257,6 +382,133 @@ fn one_active_candidate_is_applied_classified_and_reported() {
             if matches!(&value.event, hoimin_core::OutputEvent::MutantFinished(value)
                 if value.status == MutationStatus::Killed && value.candidate == candidate)
     )));
+}
+
+#[test]
+fn four_jobs_fill_four_independent_worker_chains_in_every_completion_order() {
+    let mut raw = fixture_raw_config();
+    raw.limits.jobs = 4;
+    let (state, effects) = waiting_for_analysis_with(RunConfig::try_from(raw).unwrap());
+    let analysis_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::AnalyzeFile(_))
+    }));
+    let (mut state, mut effects) = transition(
+        state,
+        RunEvent::AnalysisFinished(AnalysisFinished {
+            id: analysis_id,
+            spool: Some(CandidateSpoolRef {
+                token: "parallel".to_owned(),
+                records: 4,
+            }),
+            truncated: false,
+        }),
+    )
+    .unwrap();
+    let mut running_workers = BTreeSet::new();
+    let mut running_ids = BTreeMap::new();
+    for sequence in 1..=4 {
+        let read = find_effect(&effects, |effect| {
+            matches!(effect, RunEffect::ReadCandidate(_))
+        });
+        let (read_id, worker) = match read {
+            RunEffect::ReadCandidate(value) => (value.id, value.worker),
+            _ => unreachable!(),
+        };
+        let (next, produced) = transition(
+            state,
+            RunEvent::CandidateLoaded(CandidateLoaded {
+                id: read_id,
+                worker,
+                candidate: Some(fixture_candidate(sequence)),
+                next_offset: sequence,
+            }),
+        )
+        .unwrap();
+        state = next;
+        let apply = find_effect(&produced, |effect| {
+            matches!(effect, RunEffect::ApplyMutation(_))
+        });
+        let apply_id = apply.id();
+        let (next, started) = transition(
+            state,
+            RunEvent::MutationApplied(MutationApplied {
+                id: apply_id,
+                worker,
+            }),
+        )
+        .unwrap();
+        state = next;
+        let (next, running) = complete_mutant_started(state, started);
+        state = next;
+        let process = find_effect(&running, |effect| matches!(effect, RunEffect::RunMutant(_)));
+        let RunEffect::RunMutant(process) = process else {
+            unreachable!()
+        };
+        assert_eq!(process.worker, Some(worker));
+        running_workers.insert(worker);
+        running_ids.insert(worker, process.id);
+        effects = produced;
+    }
+    assert_eq!(running_workers, BTreeSet::from([0, 1, 2, 3]));
+    assert_eq!(state.pending_count(), 4);
+
+    let base_state = state;
+    let expected_candidates = vec![
+        ("m1".to_owned(), MutationStatus::Killed),
+        ("m2".to_owned(), MutationStatus::Killed),
+        ("m3".to_owned(), MutationStatus::Killed),
+        ("m4".to_owned(), MutationStatus::Killed),
+    ];
+    let mut tested_orders = 0;
+    for first in 0..4 {
+        for second in 0..4 {
+            for third in 0..4 {
+                for fourth in 0..4 {
+                    let order = [first, second, third, fourth];
+                    if order.into_iter().collect::<BTreeSet<_>>().len() != 4 {
+                        continue;
+                    }
+                    tested_orders += 1;
+                    let mut state = base_state.clone();
+                    let mut completion_sequences = Vec::new();
+                    let mut finished_candidates = Vec::new();
+                    for worker in order {
+                        let mut finished =
+                            process_finished(running_ids[&worker], ProcessTermination::Exit(1));
+                        finished.worker = Some(worker);
+                        let (next, produced) =
+                            transition(state, RunEvent::MutantFinished(finished)).unwrap();
+                        state = next;
+                        let output = find_effect(
+                            &produced,
+                            |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, hoimin_core::OutputEvent::MutantFinished(_))),
+                        );
+                        let RunEffect::EmitOutput(output) = output else {
+                            unreachable!()
+                        };
+                        let hoimin_core::OutputEvent::MutantFinished(finished) = &output.event
+                        else {
+                            unreachable!()
+                        };
+                        assert_eq!(finished.candidate.sequence, u64::from(worker) + 1);
+                        assert_eq!(finished.candidate.id, format!("m{}", worker + 1));
+                        completion_sequences.push(finished.sequence);
+                        finished_candidates.push((finished.candidate.id.clone(), finished.status));
+                    }
+                    assert!(
+                        completion_sequences
+                            .windows(2)
+                            .all(|pair| pair[0] < pair[1]),
+                        "non-monotonic output sequence for completion order {order:?}"
+                    );
+                    finished_candidates.sort_by(|left, right| left.0.cmp(&right.0));
+                    assert_eq!(finished_candidates, expected_candidates);
+                    assert_eq!(state.summary().killed, 4);
+                }
+            }
+        }
+    }
+    assert_eq!(tested_orders, 24);
 }
 
 #[test]
@@ -574,6 +826,7 @@ fn session_result_is_persisted_before_finished_output_and_reset() {
         state,
         RunEvent::CandidateLoaded(CandidateLoaded {
             id: read_id,
+            worker: 0,
             candidate: Some(fixture_candidate(1)),
             next_offset: 1,
         }),
@@ -586,6 +839,7 @@ fn session_result_is_persisted_before_finished_output_and_reset() {
         state,
         RunEvent::StoredResultLoaded(StoredResultLoaded {
             id: lookup_id,
+            worker: 0,
             result: None,
         }),
     )
@@ -601,6 +855,7 @@ fn session_result_is_persisted_before_finished_output_and_reset() {
         }),
     )
     .unwrap();
+    let (state, effects) = complete_mutant_started(state, effects);
     let mutant_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunMutant(_))
     }));
@@ -628,6 +883,7 @@ fn session_result_is_persisted_before_finished_output_and_reset() {
         state,
         RunEvent::ResultPersisted(ResultPersisted {
             id: persist_id,
+            worker: 0,
             run_id: "session-run".to_owned(),
             mutant_id: fixture_candidate(1).id,
         }),
@@ -652,6 +908,7 @@ fn resumed_determinate_result_is_reused_without_mutant_execution() {
         state,
         RunEvent::CandidateLoaded(CandidateLoaded {
             id: read_id,
+            worker: 0,
             candidate: Some(candidate.clone()),
             next_offset: 1,
         }),
@@ -664,11 +921,22 @@ fn resumed_determinate_result_is_reused_without_mutant_execution() {
         state,
         RunEvent::StoredResultLoaded(StoredResultLoaded {
             id: lookup_id,
+            worker: 0,
             result: Some(StoredResult {
                 mutant_id: candidate.id,
                 status: MutationStatus::Killed,
             }),
         }),
+    )
+    .unwrap();
+    let (next, effects) = complete_mutant_started(next, effects);
+    let finished_id = effect_id(find_effect(
+        &effects,
+        |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, hoimin_core::OutputEvent::MutantFinished(_))),
+    ));
+    let (next, effects) = transition(
+        next,
+        RunEvent::OutputEmitted(OutputEmitted { id: finished_id }),
     )
     .unwrap();
 
@@ -677,11 +945,88 @@ fn resumed_determinate_result_is_reused_without_mutant_execution() {
         effect,
         RunEffect::ApplyMutation(_) | RunEffect::RunMutant(_)
     )));
-    assert!(
-        effects
-            .iter()
-            .any(|effect| matches!(effect, RunEffect::EmitOutput(_)))
-    );
+}
+
+#[test]
+fn reused_result_is_counted_only_after_finished_output_succeeds() {
+    let (state, effects) = waiting_for_session_candidate(true);
+    let read_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }));
+    let candidate = fixture_candidate(1);
+    let (state, effects) = transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read_id,
+            worker: 0,
+            candidate: Some(candidate.clone()),
+            next_offset: 1,
+        }),
+    )
+    .unwrap();
+    let lookup_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::LookupStoredResult(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::StoredResultLoaded(StoredResultLoaded {
+            id: lookup_id,
+            worker: 0,
+            result: Some(StoredResult {
+                mutant_id: candidate.id,
+                status: MutationStatus::Killed,
+            }),
+        }),
+    )
+    .unwrap();
+    let (state, effects) = complete_mutant_started(state, effects);
+    let finished_id = effect_id(find_effect(
+        &effects,
+        |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, hoimin_core::OutputEvent::MutantFinished(_))),
+    ));
+    let (failed, _) = transition(
+        state,
+        RunEvent::EffectFailed(EffectFailed::other(finished_id, "report.write", "fixture")),
+    )
+    .unwrap();
+
+    assert_eq!(failed.summary().killed, 0);
+    assert_eq!(failed.exit_code(), 2);
+}
+
+#[test]
+fn session_completion_for_another_mutant_is_rejected() {
+    let (state, effects) = waiting_for_session_candidate(true);
+    let read_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read_id,
+            worker: 0,
+            candidate: Some(fixture_candidate(1)),
+            next_offset: 1,
+        }),
+    )
+    .unwrap();
+    let lookup_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::LookupStoredResult(_))
+    }));
+    let error = transition(
+        state,
+        RunEvent::StoredResultLoaded(StoredResultLoaded {
+            id: lookup_id,
+            worker: 0,
+            result: Some(StoredResult {
+                mutant_id: "another-mutant".to_owned(),
+                status: MutationStatus::Killed,
+            }),
+        }),
+    )
+    .unwrap_err();
+
+    assert_eq!(error.code(), "machine.session.identity_mismatch");
 }
 
 #[test]
@@ -694,6 +1039,7 @@ fn session_save_failure_is_fatal_and_does_not_schedule_reset_or_next_mutant() {
         state,
         RunEvent::CandidateLoaded(CandidateLoaded {
             id: read_id,
+            worker: 0,
             candidate: Some(fixture_candidate(1)),
             next_offset: 1,
         }),
@@ -706,6 +1052,7 @@ fn session_save_failure_is_fatal_and_does_not_schedule_reset_or_next_mutant() {
         state,
         RunEvent::StoredResultLoaded(StoredResultLoaded {
             id: lookup_id,
+            worker: 0,
             result: None,
         }),
     )
@@ -721,6 +1068,7 @@ fn session_save_failure_is_fatal_and_does_not_schedule_reset_or_next_mutant() {
         }),
     )
     .unwrap();
+    let (state, effects) = complete_mutant_started(state, effects);
     let mutant_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunMutant(_))
     }));
@@ -751,7 +1099,7 @@ fn session_save_failure_is_fatal_and_does_not_schedule_reset_or_next_mutant() {
 }
 
 #[test]
-fn failed_sibling_retires_unstarted_process_effect() {
+fn mutant_process_is_only_scheduled_after_started_output_succeeds() {
     let (state, effects) = waiting_for_candidate();
     let read_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::ReadCandidate(_))
@@ -760,6 +1108,7 @@ fn failed_sibling_retires_unstarted_process_effect() {
         state,
         RunEvent::CandidateLoaded(CandidateLoaded {
             id: read_id,
+            worker: 0,
             candidate: Some(fixture_candidate(1)),
             next_offset: 1,
         }),
@@ -779,17 +1128,29 @@ fn failed_sibling_retires_unstarted_process_effect() {
     let output_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::EmitOutput(_))
     }));
-    let mutant_id = effect_id(find_effect(&effects, |effect| {
-        matches!(effect, RunEffect::RunMutant(_))
-    }));
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::RunMutant(_)))
+    );
 
-    let (next, produced) = transition(
+    let (_, produced) = transition(
+        state.clone(),
+        RunEvent::OutputEmitted(OutputEmitted { id: output_id }),
+    )
+    .unwrap();
+    assert!(
+        produced
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::RunMutant(_)))
+    );
+
+    let (_next, produced) = transition(
         state,
         RunEvent::EffectFailed(EffectFailed::other(output_id, "report.write", "fixture")),
     )
     .unwrap();
 
-    assert!(!next.is_effect_pending(mutant_id));
     assert!(
         !produced
             .iter()
@@ -952,6 +1313,7 @@ fn every_process_termination_is_classified_by_the_machine() {
             state,
             RunEvent::CandidateLoaded(CandidateLoaded {
                 id: read_id,
+                worker: 0,
                 candidate: Some(fixture_candidate(1)),
                 next_offset: 1,
             }),
@@ -968,6 +1330,7 @@ fn every_process_termination_is_classified_by_the_machine() {
             }),
         )
         .unwrap();
+        let (state, effects) = complete_mutant_started(state, effects);
         let mutant_id = effect_id(find_effect(&effects, |effect| {
             matches!(effect, RunEffect::RunMutant(_))
         }));
@@ -1012,6 +1375,7 @@ fn max_mutants_reports_remaining_candidates_as_not_run_in_stable_order() {
         state,
         RunEvent::CandidateLoaded(CandidateLoaded {
             id: read_id,
+            worker: 0,
             candidate: Some(fixture_candidate(1)),
             next_offset: 10,
         }),
@@ -1028,6 +1392,7 @@ fn max_mutants_reports_remaining_candidates_as_not_run_in_stable_order() {
         }),
     )
     .unwrap();
+    let (state, effects) = complete_mutant_started(state, effects);
     let mutant_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunMutant(_))
     }));
@@ -1062,14 +1427,15 @@ fn max_mutants_reports_remaining_candidates_as_not_run_in_stable_order() {
         state,
         RunEvent::CandidateLoaded(CandidateLoaded {
             id: read_id,
+            worker: 0,
             candidate: Some(fixture_candidate(2)),
             next_offset: 20,
         }),
     )
     .unwrap();
+    let (next, effects) = complete_mutant_started(next, effects);
 
     assert_eq!(next.summary().killed, 1);
-    assert_eq!(next.summary().not_run, 1);
     assert_eq!(next.exit_code(), 4);
     assert!(
         !effects
@@ -1082,6 +1448,16 @@ fn max_mutants_reports_remaining_candidates_as_not_run_in_stable_order() {
             if matches!(&value.event, hoimin_core::OutputEvent::MutantFinished(value)
                 if value.status == MutationStatus::NotRun && value.candidate.sequence == 2)
     )));
+    let finished_id = effect_id(find_effect(
+        &effects,
+        |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, hoimin_core::OutputEvent::MutantFinished(_))),
+    ));
+    let (next, _) = transition(
+        next,
+        RunEvent::OutputEmitted(OutputEmitted { id: finished_id }),
+    )
+    .unwrap();
+    assert_eq!(next.summary().not_run, 1);
 }
 
 #[test]
@@ -1112,6 +1488,7 @@ fn completion_ledger_stays_bounded_across_ten_thousand_mutants() {
             state,
             RunEvent::CandidateLoaded(CandidateLoaded {
                 id: read_id,
+                worker: 0,
                 candidate: Some(fixture_candidate(sequence)),
                 next_offset: sequence,
             }),
@@ -1130,18 +1507,11 @@ fn completion_ledger_stays_bounded_across_ten_thousand_mutants() {
         )
         .unwrap();
         state = next;
-        let started_id = effect_id(find_effect(
-            &effects,
-            |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, hoimin_core::OutputEvent::MutantStarted(_))),
-        ));
+        let (next, effects) = complete_mutant_started(state, effects);
+        state = next;
         let mutant_id = effect_id(find_effect(&effects, |effect| {
             matches!(effect, RunEffect::RunMutant(_))
         }));
-        (state, _) = transition(
-            state,
-            RunEvent::OutputEmitted(OutputEmitted { id: started_id }),
-        )
-        .unwrap();
         let (next, effects) = transition(
             state,
             RunEvent::MutantFinished(process_finished(mutant_id, ProcessTermination::Exit(1))),
@@ -1178,6 +1548,7 @@ fn completion_ledger_stays_bounded_across_ten_thousand_mutants() {
         state,
         RunEvent::CandidateLoaded(CandidateLoaded {
             id: read_id,
+            worker: 0,
             candidate: None,
             next_offset: 10_000,
         }),
@@ -1271,6 +1642,7 @@ fn waiting_for_analysis_with(config: RunConfig) -> (RunState, Vec<RunEffect>) {
 fn waiting_for_baseline_with(config: RunConfig) -> (RunState, Vec<RunEffect>) {
     let session_enabled = config.session.is_some();
     let resume = config.resume;
+    let jobs = u32::try_from(config.limits.jobs.get()).unwrap();
     let initial_state = if session_enabled {
         RunState::with_fingerprint("run-1", config, RunFingerprint::from_bytes([7; 32]))
     } else {
@@ -1301,8 +1673,8 @@ fn waiting_for_baseline_with(config: RunConfig) -> (RunState, Vec<RunEffect>) {
         RunEvent::PreflightCompleted(PreflightCompleted {
             id: preflight_id,
             per_worker_logical_bytes: 10,
-            requested_workers: 1,
-            aggregate_logical_bytes: 10,
+            requested_workers: jobs,
+            aggregate_logical_bytes: 10 * u64::from(jobs),
             fingerprint: session_enabled.then_some(RunFingerprint::from_bytes([7; 32])),
         }),
     )
@@ -1338,24 +1710,46 @@ fn waiting_for_baseline_with(config: RunConfig) -> (RunState, Vec<RunEffect>) {
         }
     }
     (state, effects) = complete_run_started(state, effects);
-    let create = find_effect(&effects, |effect| {
-        matches!(effect, RunEffect::CreateWorker(_))
-    });
-    transition(
-        state,
-        RunEvent::WorkerCreated(WorkerCreated {
-            id: effect_id(create),
-            worker: 0,
-            reservation_id: reservation_id(create),
-        }),
-    )
-    .unwrap()
+    let creates: Vec<_> = effects
+        .iter()
+        .filter_map(|effect| match effect {
+            RunEffect::CreateWorker(value) => {
+                Some((value.id(), value.worker(), value.reservation_id()))
+            }
+            _ => None,
+        })
+        .collect();
+    let mut produced = Vec::new();
+    for (id, worker, reservation_id) in creates {
+        (state, produced) = transition(
+            state,
+            RunEvent::WorkerCreated(WorkerCreated {
+                id,
+                worker,
+                reservation_id,
+            }),
+        )
+        .unwrap();
+    }
+    (state, produced)
 }
 
 fn complete_run_started(state: RunState, effects: Vec<RunEffect>) -> (RunState, Vec<RunEffect>) {
     let output_id = effect_id(find_effect(
         &effects,
         |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, hoimin_core::OutputEvent::RunStarted(_))),
+    ));
+    transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: output_id }),
+    )
+    .unwrap()
+}
+
+fn complete_mutant_started(state: RunState, effects: Vec<RunEffect>) -> (RunState, Vec<RunEffect>) {
+    let output_id = effect_id(find_effect(
+        &effects,
+        |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, hoimin_core::OutputEvent::MutantStarted(_))),
     ));
     transition(
         state,
@@ -1416,6 +1810,7 @@ fn waiting_for_reset(termination: ProcessTermination) -> (RunState, Vec<RunEffec
         state,
         RunEvent::CandidateLoaded(CandidateLoaded {
             id: read_id,
+            worker: 0,
             candidate: Some(fixture_candidate(1)),
             next_offset: 1,
         }),
@@ -1432,6 +1827,7 @@ fn waiting_for_reset(termination: ProcessTermination) -> (RunState, Vec<RunEffec
         }),
     )
     .unwrap();
+    let (state, effects) = complete_mutant_started(state, effects);
     let mutant_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunMutant(_))
     }));
@@ -1472,6 +1868,7 @@ fn fixture_raw_config() -> RawRunConfig {
 fn process_finished(id: EffectId, termination: ProcessTermination) -> ProcessFinished {
     ProcessFinished {
         id,
+        worker: Some(0),
         termination,
         output: hoimin_core::OutputSpoolRef {
             token: "output".to_owned(),

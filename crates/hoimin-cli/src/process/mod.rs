@@ -3,8 +3,8 @@ mod output;
 use std::ffi::OsString;
 use std::future::Future;
 use std::process::Stdio;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use camino::Utf8PathBuf;
@@ -33,10 +33,63 @@ pub struct ProcessCancellation {
     state: Arc<CancellationState>,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct ProcessStartGate {
+    state: Arc<StartGateState>,
+}
+
+#[derive(Debug)]
+struct StartGateState {
+    cancelled: AtomicBool,
+    notify: Notify,
+    spawn_gate: Mutex<()>,
+}
+
+impl ProcessStartGate {
+    pub(crate) fn new() -> Self {
+        Self {
+            state: Arc::new(StartGateState {
+                cancelled: AtomicBool::new(false),
+                notify: Notify::new(),
+                spawn_gate: Mutex::new(()),
+            }),
+        }
+    }
+
+    pub(crate) fn cancel(&self) {
+        let _spawn = self.begin_spawn();
+        if !self.state.cancelled.swap(true, Ordering::AcqRel) {
+            self.state.notify.notify_waiters();
+        }
+    }
+
+    pub(crate) async fn cancelled(&self) {
+        loop {
+            let notified = self.state.notify.notified();
+            if self.is_cancelled() {
+                return;
+            }
+            notified.await;
+        }
+    }
+
+    pub(crate) fn is_cancelled(&self) -> bool {
+        self.state.cancelled.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn begin_spawn(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.state
+            .spawn_gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
 #[derive(Debug)]
 struct CancellationState {
     cancelled: AtomicBool,
     notify: Notify,
+    spawn_gate: Mutex<()>,
 }
 
 impl ProcessCancellation {
@@ -45,11 +98,17 @@ impl ProcessCancellation {
             state: Arc::new(CancellationState {
                 cancelled: AtomicBool::new(false),
                 notify: Notify::new(),
+                spawn_gate: Mutex::new(()),
             }),
         }
     }
 
     pub fn cancel(&self) {
+        let _spawn = self
+            .state
+            .spawn_gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if !self.state.cancelled.swap(true, Ordering::AcqRel) {
             self.state.notify.notify_waiters();
         }
@@ -64,6 +123,17 @@ impl ProcessCancellation {
             notified.await;
         }
     }
+
+    pub(crate) fn is_cancelled(&self) -> bool {
+        self.state.cancelled.load(Ordering::Acquire)
+    }
+
+    fn begin_spawn(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.state
+            .spawn_gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 }
 
 impl Default for ProcessCancellation {
@@ -76,12 +146,18 @@ impl Default for ProcessCancellation {
 pub struct ProcessRequest {
     process: RunProcess,
     cancellation: ProcessCancellation,
+    start_gate: Option<ProcessStartGate>,
     environment: Option<CommandEnvironment>,
 }
 
 impl ProcessRequest {
     pub fn with_cancellation(mut self, cancellation: ProcessCancellation) -> Self {
         self.cancellation = cancellation;
+        self
+    }
+
+    pub(crate) fn with_start_gate(mut self, start_gate: ProcessStartGate) -> Self {
+        self.start_gate = Some(start_gate);
         self
     }
 
@@ -96,6 +172,7 @@ impl From<RunProcess> for ProcessRequest {
         Self {
             process,
             cancellation: ProcessCancellation::new(),
+            start_gate: None,
             environment: None,
         }
     }
@@ -143,9 +220,17 @@ impl ProcessHandler {
         let ProcessRequest {
             process,
             cancellation,
+            start_gate,
             environment,
         } = request;
         let id = process.id;
+        if cancellation.is_cancelled() {
+            return Err(EffectFailed::other(
+                id,
+                "process.cancelled.before_spawn",
+                "process was cancelled before spawn",
+            ));
+        }
         let argv = native_argv(&process.argv)
             .map_err(|message| EffectFailed::other(id, "process.argv.invalid", message))?;
         if argv.is_empty() {
@@ -200,6 +285,25 @@ impl ProcessHandler {
                 })?;
         let started = Instant::now();
         let deadline = tokio::time::Instant::now() + process.limits.timeout;
+        let start_guard = start_gate.as_ref().map(ProcessStartGate::begin_spawn);
+        if start_gate
+            .as_ref()
+            .is_some_and(ProcessStartGate::is_cancelled)
+        {
+            return Err(EffectFailed::other(
+                id,
+                "process.cancelled.before_spawn",
+                "process was cancelled before spawn",
+            ));
+        }
+        let spawn_guard = cancellation.begin_spawn();
+        if cancellation.is_cancelled() {
+            return Err(EffectFailed::other(
+                id,
+                "process.cancelled.before_spawn",
+                "process was cancelled before spawn",
+            ));
+        }
         let mut child = command.spawn().map_err(|error| {
             io_failure(
                 id,
@@ -210,9 +314,24 @@ impl ProcessHandler {
             )
         })?;
         if let Err(error) = supervisor.attach(&child) {
-            let cleanup_error = terminate_unattached_child(&mut child).await.err();
+            let terminate_error = child.start_kill().err();
+            drop(spawn_guard);
+            drop(start_guard);
+            let cleanup_error = match terminate_error {
+                Some(error) => Some(error),
+                None => match tokio::time::timeout(POST_TERMINATION_GRACE, child.wait()).await {
+                    Ok(Ok(_)) => None,
+                    Ok(Err(error)) => Some(error),
+                    Err(_) => Some(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "timed out waiting for unattached child termination",
+                    )),
+                },
+            };
             return Err(attach_failure(id, error, cleanup_error));
         }
+        drop(spawn_guard);
+        drop(start_guard);
 
         let stdout = child.stdout.take().ok_or_else(|| {
             EffectFailed::other(id, "process.stdout.missing", "stdout pipe was not created")
@@ -299,6 +418,7 @@ impl ProcessHandler {
         );
         Ok(ProcessFinished {
             id,
+            worker: process.worker,
             termination,
             output,
             elapsed: started.elapsed(),
@@ -567,13 +687,55 @@ fn native_argv(_argv: &[CommandArg]) -> Result<Vec<OsString>, String> {
 #[cfg(test)]
 mod tests {
     use std::future::{pending, ready};
+    use std::time::Duration;
 
     use hoimin_core::{EffectFailure, EffectId, ProcessTermination};
 
     use super::{
-        ProcessSelection, attach_failure, combine_process_and_output, select_process_result,
+        ProcessCancellation, ProcessSelection, ProcessStartGate, attach_failure,
+        combine_process_and_output, select_process_result,
     };
     use crate::resource::ResourceError;
+
+    #[test]
+    fn cancellation_and_spawn_are_linearized_by_the_spawn_gate() {
+        let cancellation = ProcessCancellation::new();
+        let spawn = cancellation.begin_spawn();
+        let worker_cancellation = cancellation.clone();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            worker_cancellation.cancel();
+        });
+        started_rx.recv().unwrap();
+        std::thread::sleep(Duration::from_millis(20));
+        assert!(!cancellation.is_cancelled());
+
+        drop(spawn);
+        worker.join().unwrap();
+
+        assert!(cancellation.is_cancelled());
+    }
+
+    #[test]
+    fn external_request_and_spawn_are_linearized_by_the_same_gate() {
+        let request = ProcessStartGate::new();
+        let spawn = request.begin_spawn();
+        let worker_request = request.clone();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            worker_request.cancel();
+        });
+        started_rx.recv().unwrap();
+        std::thread::sleep(Duration::from_millis(20));
+        assert!(!request.is_cancelled());
+
+        drop(spawn);
+        worker.join().unwrap();
+
+        assert!(request.is_cancelled());
+    }
 
     #[test]
     fn process_error_precedes_output_cleanup_error() {

@@ -63,6 +63,7 @@ impl SessionHandler {
         request: LookupStoredResult,
     ) -> Result<StoredResultLoaded, EffectFailed> {
         let id = request.id;
+        let worker = request.worker;
         let complete = self
             .connection
             .query_row(
@@ -107,7 +108,7 @@ impl SessionHandler {
                 .map_err(|error| failed(id, "session.read", "lookup stored result", error))?;
         let result = decode_stored_result(&request.mutant_id, candidates, results, status)
             .map_err(|failure| EffectFailed { id, failure })?;
-        Ok(StoredResultLoaded { id, result })
+        Ok(StoredResultLoaded { id, worker, result })
     }
 
     pub fn begin(&mut self, request: BeginSession) -> Result<SessionStarted, EffectFailed> {
@@ -139,6 +140,7 @@ impl SessionHandler {
 
     pub fn persist(&mut self, request: PersistResult) -> Result<ResultPersisted, EffectFailed> {
         let id = request.id;
+        let worker = request.worker;
         let run_id = request.result.run_id.clone();
         let mutant_id = request.result.candidate.id.clone();
         let transaction = self
@@ -237,6 +239,7 @@ impl SessionHandler {
         );
         Ok(ResultPersisted {
             id,
+            worker,
             run_id,
             mutant_id,
         })

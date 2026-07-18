@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use camino::Utf8PathBuf;
 use hoimin_core::{
-    ConfigError, DiscoveredFile, LineRange, LineSelection, RawRunConfig, RunConfig, Selection,
-    SymbolSelection, TargetError, TargetSlice, auto_mutant_timeout, intersect_changed,
+    ConfigError, DiscoveredFile, LineRange, LineSelection, MAX_JOBS, RawRunConfig, RunConfig,
+    Selection, SymbolSelection, TargetError, TargetSlice, auto_mutant_timeout, intersect_changed,
     resolve_explicit,
 };
 
@@ -82,6 +82,38 @@ fn rejects_zero_or_overflow_limit() {
     assert_eq!(
         RunConfig::try_from(raw),
         Err(ConfigError::InvalidLimit("baseline_timeout"))
+    );
+
+    let mut raw = raw_config();
+    raw.limits.max_processes = usize::try_from(u64::from(u32::MAX) + 1).unwrap();
+    assert_eq!(
+        RunConfig::try_from(raw),
+        Err(ConfigError::InvalidLimit("max_processes"))
+    );
+}
+
+#[test]
+fn rejects_jobs_before_any_jobs_sized_allocation_is_possible() {
+    let mut raw = raw_config();
+    raw.limits.jobs = MAX_JOBS + 1;
+    raw.limits.max_processes = MAX_JOBS + 1;
+    assert_eq!(
+        RunConfig::try_from(raw),
+        Err(ConfigError::JobsExceedsMaximum {
+            jobs: MAX_JOBS + 1,
+            maximum: MAX_JOBS,
+        })
+    );
+
+    let mut raw = raw_config();
+    raw.limits.jobs = 4;
+    raw.limits.max_processes = 3;
+    assert_eq!(
+        RunConfig::try_from(raw),
+        Err(ConfigError::JobsExceedsProcesses {
+            jobs: 4,
+            max_processes: 3,
+        })
     );
 }
 

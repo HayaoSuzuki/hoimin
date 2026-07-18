@@ -1,6 +1,7 @@
 use std::ffi::OsString;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 #[tokio::test]
@@ -11,6 +12,168 @@ async fn pytest_and_unittest_commands_produce_the_same_mutant_statuses() {
     assert_eq!(pytest.statuses, unittest.statuses);
     assert_eq!(pytest.exit_code, unittest.exit_code);
     assert_eq!(pytest.statuses, ["killed"]);
+}
+
+#[tokio::test]
+async fn jobs_one_and_four_produce_the_same_candidates_and_statuses() {
+    let one = tempfile::tempdir().unwrap();
+    let four = tempfile::tempdir().unwrap();
+    write_parallel_project(one.path());
+    write_parallel_project(four.path());
+    let command = "from src.calc import total; assert total(1, 2, 3, 4, 5) == 15";
+
+    let serial = run_project(one.path(), 1, command).await;
+    let parallel = run_project(four.path(), 4, command).await;
+    let project_results = |run: &FixtureRun| {
+        let mut results = run.document["mutants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|mutant| {
+                (
+                    mutant["candidate"]["id"].as_str().unwrap().to_owned(),
+                    mutant["status"].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect::<Vec<_>>();
+        results.sort();
+        results
+    };
+
+    assert_eq!(serial.exit_code, parallel.exit_code);
+    assert_eq!(project_results(&serial), project_results(&parallel));
+    assert!(parallel.document["mutants"].as_array().unwrap().len() >= 4);
+    for run in [&serial, &parallel] {
+        let sequences = run.document["mutants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|mutant| mutant["sequence"].as_u64().unwrap())
+            .collect::<Vec<_>>();
+        assert!(sequences.windows(2).all(|pair| pair[0] < pair[1]));
+    }
+}
+
+#[tokio::test]
+async fn jobs_four_reaches_a_cross_process_barrier() {
+    let directory = tempfile::tempdir().unwrap();
+    let coordinator = tempfile::tempdir().unwrap();
+    write_parallel_project(directory.path());
+    let markers = coordinator.path().join("markers");
+    std::fs::create_dir(&markers).unwrap();
+    let overlap = coordinator.path().join("overlap-proven");
+    let original = "return a + b + c + d + e";
+    let mutant = format!(
+        "marker=markers/str(os.getpid())\nmarker.write_text('running')\ntry:\n    deadline=time.monotonic()+2\n    while len(list(markers.iterdir())) < 2 and time.monotonic() < deadline: time.sleep(.02)\n    if len(list(markers.iterdir())) >= 2: Path({:?}).write_text('proven')\n    from src.calc import total\n    assert total(1,2,3,4,5) == 15\nfinally:\n    marker.unlink(missing_ok=True)",
+        overlap.to_string_lossy(),
+    );
+    let command = format!(
+        "from pathlib import Path; import os,time; source=Path('src/calc.py').read_text(); markers=Path({:?}); exec({:?}) if {:?} not in source else exec('from src.calc import total; assert total(1,2,3,4,5) == 15')",
+        markers.to_string_lossy(),
+        mutant,
+        original,
+    );
+
+    let run = run_project(directory.path(), 4, &command).await;
+
+    assert_eq!(
+        run.exit_code, 0,
+        "stderr={} stdout={}",
+        run.stderr, run.stdout
+    );
+    assert!(overlap.exists(), "two live worker processes must overlap");
+    assert_eq!(std::fs::read_dir(markers).unwrap().count(), 0);
+    assert!(run.statuses.iter().all(|status| status == "killed"));
+}
+
+#[tokio::test]
+async fn jobs_four_processes_receive_isolated_run_mutant_and_worker_metadata() {
+    let project = tempfile::tempdir().unwrap();
+    let coordinator = tempfile::tempdir().unwrap();
+    let records = coordinator.path().join("records");
+    std::fs::create_dir(&records).unwrap();
+    write_parallel_project(project.path());
+    let original = "return a + b + c + d + e";
+    let mutant = format!(
+        "assert Path(os.environ['HOIMIN_WORKER_ROOT']).resolve() == Path.cwd().resolve()\nPath({:?}, os.environ['HOIMIN_MUTANT_ID']).write_text(os.environ['HOIMIN_RUN_ID'])",
+        records.to_string_lossy(),
+    );
+    let command = format!(
+        r#"from pathlib import Path; import os; source=Path('src/calc.py').read_text(); exec({:?}) if {:?} not in source else exec("assert 'HOIMIN_MUTANT_ID' not in os.environ; assert os.environ['HOIMIN_RUN_ID']"); from src.calc import total; assert total(1,2,3,4,5) == 15"#,
+        mutant, original,
+    );
+
+    let run = run_project(project.path(), 4, &command).await;
+
+    assert_eq!(
+        run.exit_code, 0,
+        "stderr={} stdout={}",
+        run.stderr, run.stdout
+    );
+    let run_id = run.document["run"]["run_id"].as_str().unwrap();
+    for mutant in run.document["mutants"].as_array().unwrap() {
+        let mutant_id = mutant["candidate"]["id"].as_str().unwrap();
+        assert_eq!(
+            std::fs::read_to_string(records.join(mutant_id)).unwrap(),
+            run_id
+        );
+    }
+}
+
+#[tokio::test]
+async fn joinset_and_completion_queue_stay_bounded_across_many_mutants() {
+    let project = tempfile::tempdir().unwrap();
+    let source = project.path().join("src");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("__init__.py"), "").unwrap();
+    let expression = (1..=24)
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>()
+        .join(" + ");
+    std::fs::write(
+        source.join("calc.py"),
+        format!("def total():\n    return {expression}\n"),
+    )
+    .unwrap();
+    let python = python_executable();
+    let config = hoimin_cli::cli::parse_config_from([
+        OsString::from("hoimin"),
+        OsString::from("run"),
+        OsString::from("--root"),
+        project.path().as_os_str().to_owned(),
+        OsString::from("--source"),
+        OsString::from("src"),
+        OsString::from("--file"),
+        OsString::from("src/calc.py"),
+        OsString::from("--python"),
+        python.as_os_str().to_owned(),
+        OsString::from("--jobs"),
+        OsString::from("4"),
+        OsString::from("--format"),
+        OsString::from("json"),
+        OsString::from("--"),
+        python.as_os_str().to_owned(),
+        OsString::from("-c"),
+        OsString::from("from src.calc import total; assert total() == 300"),
+    ])
+    .unwrap();
+    let stdout = SharedBuffer::default();
+    let control = hoimin_cli::shell::RunControl::new();
+
+    let exit = hoimin_cli::shell::run_loop_with_control(
+        config,
+        stdout.clone(),
+        SharedBuffer::default(),
+        control.clone(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(exit, 0);
+    let document: serde_json::Value = serde_json::from_slice(&stdout.bytes()).unwrap();
+    assert!(document["mutants"].as_array().unwrap().len() >= 20);
+    assert!(control.max_process_tasks() <= 4);
+    assert!(control.max_completion_in_flight() <= 5);
 }
 
 #[tokio::test]
@@ -179,7 +342,166 @@ async fn total_timeout_cancels_and_reaps_descendants_before_cleanup() {
 }
 
 #[tokio::test]
-async fn failed_mutant_started_output_retires_the_sibling_process() {
+async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_incomplete() {
+    let project = tempfile::tempdir().unwrap();
+    let coordinator = tempfile::tempdir().unwrap();
+    write_parallel_project(project.path());
+    let active = coordinator.path().join("active");
+    std::fs::create_dir(&active).unwrap();
+    let leak = coordinator.path().join("descendant-survived");
+    let session = coordinator.path().join("session.sqlite3");
+    let child = format!(
+        "import pathlib,time; time.sleep(2); pathlib.Path({:?}).write_text('leak')",
+        leak.to_string_lossy()
+    );
+    let mutant = format!(
+        "from pathlib import Path; import os,subprocess,sys,time; Path({:?},str(os.getpid())).write_text('running'); subprocess.Popen([sys.executable,'-c',{:?}]); time.sleep(20)",
+        active.to_string_lossy(),
+        child,
+    );
+    let original = "return a + b + c + d + e";
+    let command = format!(
+        "from pathlib import Path; source=Path('src/calc.py').read_text(); exec({:?}) if {:?} not in source else exec('from src.calc import total; assert total(1,2,3,4,5) == 15')",
+        mutant, original,
+    );
+    let python = python_executable();
+    let config = hoimin_cli::cli::parse_config_from([
+        OsString::from("hoimin"),
+        OsString::from("run"),
+        OsString::from("--root"),
+        project.path().as_os_str().to_owned(),
+        OsString::from("--source"),
+        OsString::from("src"),
+        OsString::from("--file"),
+        OsString::from("src/calc.py"),
+        OsString::from("--python"),
+        python.as_os_str().to_owned(),
+        OsString::from("--jobs"),
+        OsString::from("4"),
+        OsString::from("--session"),
+        session.as_os_str().to_owned(),
+        OsString::from("--format"),
+        OsString::from("json"),
+        OsString::from("--"),
+        python.as_os_str().to_owned(),
+        OsString::from("-c"),
+        OsString::from(command),
+    ])
+    .unwrap();
+    let stdout = SharedBuffer::default();
+    let stderr = SharedBuffer::default();
+    let control = hoimin_cli::shell::RunControl::new();
+    let run = hoimin_cli::shell::run_loop_with_control(
+        config,
+        stdout.clone(),
+        stderr.clone(),
+        control.clone(),
+    );
+    let cancel = async {
+        let marker_deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+        while std::fs::read_dir(&active).unwrap().next().is_none()
+            && tokio::time::Instant::now() < marker_deadline
+        {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(std::fs::read_dir(&active).unwrap().next().is_some());
+        control.cancel();
+    };
+    let (exit, ()) =
+        tokio::time::timeout(Duration::from_secs(30), async { tokio::join!(run, cancel) })
+            .await
+            .expect("cancelled run must finish promptly");
+    let exit = exit.unwrap();
+
+    assert_eq!(exit, 130);
+    let document: serde_json::Value =
+        serde_json::from_slice(&stdout.bytes()).expect("parseable cancelled report");
+    assert_eq!(document["summary"]["complete"], false);
+    let not_run_count = document["summary"]["counts"]["not_run"]
+        .as_u64()
+        .expect("not_run summary count");
+    let not_run_mutants = document["mutants"]
+        .as_array()
+        .expect("cancelled mutant array")
+        .iter()
+        .filter(|mutant| mutant["status"] == "not_run")
+        .count() as u64;
+    assert!(not_run_count > 0);
+    assert_eq!(not_run_count, not_run_mutants);
+    assert!(control.max_process_tasks() <= 4);
+    assert!(control.max_completion_in_flight() <= 5);
+    let connection = rusqlite::Connection::open(session).unwrap();
+    let complete: i64 = connection
+        .query_row("SELECT complete FROM runs", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(complete, 0);
+    drop(connection);
+    tokio::time::sleep(Duration::from_millis(2300)).await;
+    assert!(!leak.exists(), "cancelled descendant outlived the run");
+}
+
+#[tokio::test]
+async fn serial_output_that_requests_stop_is_accepted_before_cancellation() {
+    let project = tempfile::tempdir().unwrap();
+    write_parallel_project(project.path());
+    let python = python_executable();
+    let args = [
+        OsString::from("hoimin"),
+        OsString::from("run"),
+        OsString::from("--root"),
+        project.path().as_os_str().to_owned(),
+        OsString::from("--source"),
+        OsString::from("src"),
+        OsString::from("--file"),
+        OsString::from("src/calc.py"),
+        OsString::from("--python"),
+        python.as_os_str().to_owned(),
+        OsString::from("--jobs"),
+        OsString::from("4"),
+        OsString::from("--format"),
+        OsString::from("jsonl"),
+        OsString::from("--"),
+        python.as_os_str().to_owned(),
+        OsString::from("-c"),
+        OsString::from("from src.calc import total; assert total(1,2,3,4,5) == 15"),
+    ];
+    let config = hoimin_cli::cli::parse_config_from(args).unwrap();
+    let control = hoimin_cli::shell::RunControl::new();
+    let mut stdout = CancelOnMutantFinished {
+        accepted: Vec::new(),
+        cancelled: false,
+        control: control.clone(),
+    };
+    let mut stderr = Vec::new();
+
+    let exit = hoimin_cli::shell::run_loop_with_control(config, &mut stdout, &mut stderr, control)
+        .await
+        .unwrap();
+
+    assert_eq!(exit, 130);
+    let events = String::from_utf8(stdout.accepted).unwrap();
+    let events = events
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    let mutants = events
+        .iter()
+        .filter(|event| event["kind"] == "mutant_finished")
+        .collect::<Vec<_>>();
+    let ids = mutants
+        .iter()
+        .map(|event| event["candidate"]["id"].as_str().unwrap())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        ids.len(),
+        mutants.len(),
+        "a completed output was re-emitted"
+    );
+    assert!(mutants.iter().any(|event| event["status"] != "not_run"));
+}
+
+#[tokio::test]
+async fn failed_mutant_started_output_prevents_process_start() {
     let directory = tempfile::tempdir().unwrap();
     let counter = directory.path().join("executions");
     let command = format!(
@@ -266,6 +588,26 @@ struct FixtureRun {
     document: serde_json::Value,
 }
 
+#[derive(Clone, Default)]
+struct SharedBuffer(Arc<Mutex<Vec<u8>>>);
+
+impl SharedBuffer {
+    fn bytes(&self) -> Vec<u8> {
+        self.0.lock().unwrap().clone()
+    }
+}
+
+impl Write for SharedBuffer {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 async fn run_fixture(test_args: &[&str]) -> FixtureRun {
     run_fixture_options(test_args, None, false).await
 }
@@ -350,6 +692,32 @@ struct RejectMutantStarted {
     accepted: Vec<u8>,
 }
 
+struct CancelOnMutantFinished {
+    accepted: Vec<u8>,
+    cancelled: bool,
+    control: hoimin_cli::shell::RunControl,
+}
+
+impl Write for CancelOnMutantFinished {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.accepted.extend_from_slice(bytes);
+        if !self.cancelled
+            && self
+                .accepted
+                .windows(b"mutant_finished".len())
+                .any(|window| window == b"mutant_finished")
+        {
+            self.cancelled = true;
+            self.control.cancel();
+        }
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 impl Write for RejectMutantStarted {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         let mut combined = self.accepted.clone();
@@ -366,6 +734,64 @@ impl Write for RejectMutantStarted {
 
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
+    }
+}
+
+fn write_parallel_project(root: &Path) {
+    let source = root.join("src");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("__init__.py"), "").unwrap();
+    std::fs::write(
+        source.join("calc.py"),
+        "def total(a, b, c, d, e):\n    return a + b + c + d + e\n",
+    )
+    .unwrap();
+}
+
+async fn run_project(root: &Path, jobs: usize, command: &str) -> FixtureRun {
+    let python = python_executable();
+    let args = [
+        OsString::from("hoimin"),
+        OsString::from("run"),
+        OsString::from("--root"),
+        root.as_os_str().to_owned(),
+        OsString::from("--source"),
+        OsString::from("src"),
+        OsString::from("--file"),
+        OsString::from("src/calc.py"),
+        OsString::from("--python"),
+        python.as_os_str().to_owned(),
+        OsString::from("--jobs"),
+        OsString::from(jobs.to_string()),
+        OsString::from("--format"),
+        OsString::from("json"),
+        OsString::from("--"),
+        python.as_os_str().to_owned(),
+        OsString::from("-c"),
+        OsString::from(command),
+    ];
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let exit_code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let stdout = String::from_utf8(stdout).unwrap();
+    let stderr = String::from_utf8(stderr).unwrap();
+    let document: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|error| {
+        panic!(
+            "invalid JSON report ({error}); exit={exit_code}; stdout={stdout:?}; stderr={stderr:?}"
+        )
+    });
+    let statuses = document["mutants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|mutant| mutant["status"].as_str().unwrap().to_owned())
+        .collect();
+    FixtureRun {
+        exit_code,
+        statuses,
+        stdout,
+        stderr,
+        document,
     }
 }
 

@@ -1,5 +1,7 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::io::Write;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use camino::Utf8PathBuf;
 use hoimin_core::{
@@ -8,10 +10,12 @@ use hoimin_core::{
     StartRequested, TargetSlice, fingerprint, transition,
 };
 use tempfile::TempDir;
+use tokio::sync::mpsc;
+use tokio::task::JoinSet;
 use uuid::Uuid;
 
 use crate::analyzer::{AnalyzerHandler, CandidateStore};
-use crate::process::{ProcessCancellation, ProcessHandler, ProcessRequest};
+use crate::process::{ProcessCancellation, ProcessHandler, ProcessRequest, ProcessStartGate};
 use crate::report::ReportHandler;
 #[cfg(not(any(windows, target_os = "linux")))]
 use crate::resource::PortableBackend;
@@ -20,14 +24,84 @@ use crate::session::SessionHandler;
 use crate::target::TargetHandler;
 use crate::workspace::{CopyOptions, WorkspaceHandler};
 
+#[derive(Clone, Debug)]
+pub struct RunControl {
+    request: ProcessStartGate,
+    max_process_tasks: Arc<AtomicUsize>,
+    max_completion_in_flight: Arc<AtomicUsize>,
+}
+
+impl RunControl {
+    pub fn new() -> Self {
+        Self {
+            request: ProcessStartGate::new(),
+            max_process_tasks: Arc::new(AtomicUsize::new(0)),
+            max_completion_in_flight: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    pub fn cancel(&self) {
+        self.request.cancel();
+    }
+
+    pub fn max_process_tasks(&self) -> usize {
+        self.max_process_tasks.load(Ordering::Acquire)
+    }
+
+    pub fn max_completion_in_flight(&self) -> usize {
+        self.max_completion_in_flight.load(Ordering::Acquire)
+    }
+
+    fn observe_process_tasks(&self, value: usize) {
+        self.max_process_tasks.fetch_max(value, Ordering::AcqRel);
+    }
+
+    fn observe_completion_in_flight(&self, value: usize) {
+        self.max_completion_in_flight
+            .fetch_max(value, Ordering::AcqRel);
+    }
+
+    async fn cancelled(&self) {
+        self.request.cancelled().await;
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.request.is_cancelled()
+    }
+
+    fn begin_dispatch(&self) -> Option<std::sync::MutexGuard<'_, ()>> {
+        let guard = self.request.begin_spawn();
+        if self.is_cancelled() {
+            None
+        } else {
+            Some(guard)
+        }
+    }
+
+    fn start_gate(&self) -> ProcessStartGate {
+        self.request.clone()
+    }
+}
+
+impl Default for RunControl {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+struct ShellCompletion {
+    event: RunEvent,
+    process_task: bool,
+}
+
 pub struct ShellContext<Stdout, Stderr> {
     workspace: WorkspaceHandler,
     analyzer: AnalyzerHandler,
-    process: ProcessHandler,
+    process: Arc<ProcessHandler>,
     report: ReportHandler<Stdout, Stderr>,
     session: Option<SessionHandler>,
     session_path: Option<Utf8PathBuf>,
-    active_candidate: Option<hoimin_core::MutationCandidate>,
+    active_candidates: BTreeMap<u32, hoimin_core::MutationCandidate>,
     _spool_dir: TempDir,
     resolved_targets: Option<Vec<TargetSlice>>,
     config: RunConfig,
@@ -48,17 +122,22 @@ where
             .map_err(|_| "temporary spool path is not UTF-8".to_owned())?;
         std::fs::create_dir_all(spool_path.join("report")).map_err(|error| error.to_string())?;
         let source_roots = config.selection.sources.clone();
+        let requested_workers = u32::try_from(config.limits.jobs.get())
+            .map_err(|_| "--jobs exceeds the supported worker count".to_owned())?;
         let workspace = WorkspaceHandler::new(
             config.root.clone(),
             source_roots,
-            1,
+            requested_workers,
             CopyOptions {
                 includes: config.selection.includes.clone(),
                 excludes: config.selection.excludes.clone(),
             },
         );
         let backend = resource_backend(config).map_err(|error| error.to_string())?;
-        let process = ProcessHandler::new(backend.clone(), spool_path.join("process"));
+        let process = Arc::new(ProcessHandler::new(
+            backend.clone(),
+            spool_path.join("process"),
+        ));
         let analyzer = AnalyzerHandler::with_backend(
             config.root.clone(),
             python.clone(),
@@ -82,7 +161,7 @@ where
             report,
             session: None,
             session_path: config.session.as_ref().map(|value| value.path.clone()),
-            active_candidate: None,
+            active_candidates: BTreeMap::new(),
             _spool_dir: spool_dir,
             resolved_targets: None,
             config: config.clone(),
@@ -102,6 +181,9 @@ async fn python_versions<Stdout, Stderr>(
         .ok_or("--python is required")?;
     let request = RunProcess {
         id,
+        worker: None,
+        run_id: None,
+        mutant_id: None,
         argv: [
             python.as_str(),
             "-c",
@@ -278,7 +360,7 @@ where
             .handle_create_worker(request)
             .map(RunEvent::WorkerCreated),
         RunEffect::RunBaseline(request) => {
-            match worker_process_request(context, id, request, cancellation.clone()) {
+            match worker_process_request(context, id, request, cancellation.clone(), None) {
                 Ok(request) => context
                     .process
                     .run(request)
@@ -295,17 +377,21 @@ where
         RunEffect::ReadCandidate(request) => {
             match CandidateStore::replay_one(&request.spool, request.offset) {
                 Ok(Some((candidate, next_offset))) => {
-                    context.active_candidate = Some(candidate.clone());
+                    context
+                        .active_candidates
+                        .insert(request.worker, candidate.clone());
                     Ok(RunEvent::CandidateLoaded(CandidateLoaded {
                         id: request.id,
+                        worker: request.worker,
                         candidate: Some(candidate),
                         next_offset,
                     }))
                 }
                 Ok(None) => {
-                    context.active_candidate = None;
+                    context.active_candidates.remove(&request.worker);
                     Ok(RunEvent::CandidateLoaded(CandidateLoaded {
                         id: request.id,
+                        worker: request.worker,
                         candidate: None,
                         next_offset: request.offset,
                     }))
@@ -317,7 +403,7 @@ where
                 )),
             }
         }
-        RunEffect::ApplyMutation(request) => match context.active_candidate.as_ref() {
+        RunEffect::ApplyMutation(request) => match context.active_candidates.get(&request.worker) {
             Some(candidate) => context
                 .workspace
                 .handle_apply_mutation(request, candidate)
@@ -329,7 +415,7 @@ where
             )),
         },
         RunEffect::RunMutant(request) => {
-            match worker_process_request(context, id, request, cancellation.clone()) {
+            match worker_process_request(context, id, request, cancellation.clone(), None) {
                 Ok(request) => context
                     .process
                     .run(request)
@@ -338,10 +424,17 @@ where
                 Err(error) => Err(error),
             }
         }
-        RunEffect::ResetWorker(request) => context
-            .workspace
-            .handle_reset_worker(request)
-            .map(RunEvent::WorkerReset),
+        RunEffect::ResetWorker(request) => {
+            let worker = request.worker;
+            let result = context
+                .workspace
+                .handle_reset_worker(request)
+                .map(RunEvent::WorkerReset);
+            if result.is_ok() {
+                context.active_candidates.remove(&worker);
+            }
+            result
+        }
         RunEffect::VerifyOriginals(request) => context
             .workspace
             .handle_verify_originals(request)
@@ -389,16 +482,73 @@ fn worker_process_request<Stdout, Stderr>(
     id: EffectId,
     mut request: RunProcess,
     cancellation: ProcessCancellation,
+    start_gate: Option<ProcessStartGate>,
 ) -> Result<ProcessRequest, EffectFailed> {
+    let worker = request.worker.ok_or_else(|| {
+        EffectFailed::other(
+            id,
+            "shell.worker.missing",
+            "process has no workspace worker",
+        )
+    })?;
     let inherited = std::env::vars_os().collect();
-    let environment = context
+    let mut environment = context
         .workspace
-        .command_environment(0, &inherited)
+        .command_environment(worker, &inherited)
         .map_err(|error| EffectFailed::other(id, "shell.worker.environment", error.to_string()))?;
+    set_worker_metadata(
+        &mut environment,
+        request.run_id.as_deref(),
+        request.mutant_id.as_deref(),
+    );
     request.cwd.clone_from(&environment.cwd);
-    Ok(ProcessRequest::from(request)
+    let request = ProcessRequest::from(request)
         .with_environment(environment)
-        .with_cancellation(cancellation))
+        .with_cancellation(cancellation);
+    Ok(match start_gate {
+        Some(start_gate) => request.with_start_gate(start_gate),
+        None => request,
+    })
+}
+
+fn set_worker_metadata(
+    environment: &mut crate::workspace::CommandEnvironment,
+    run_id: Option<&str>,
+    mutant_id: Option<&str>,
+) {
+    for name in ["HOIMIN_WORKER_ROOT", "HOIMIN_RUN_ID", "HOIMIN_MUTANT_ID"] {
+        remove_environment_key(&mut environment.env, name);
+    }
+    environment.env.insert(
+        std::ffi::OsString::from("HOIMIN_WORKER_ROOT"),
+        std::ffi::OsString::from(environment.cwd.as_str()),
+    );
+    if let Some(run_id) = run_id {
+        environment.env.insert(
+            std::ffi::OsString::from("HOIMIN_RUN_ID"),
+            std::ffi::OsString::from(run_id),
+        );
+    }
+    if let Some(mutant_id) = mutant_id {
+        environment.env.insert(
+            std::ffi::OsString::from("HOIMIN_MUTANT_ID"),
+            std::ffi::OsString::from(mutant_id),
+        );
+    }
+}
+
+fn remove_environment_key(
+    environment: &mut BTreeMap<std::ffi::OsString, std::ffi::OsString>,
+    name: &str,
+) {
+    let keys = environment
+        .keys()
+        .filter(|key| key.to_string_lossy().eq_ignore_ascii_case(name))
+        .cloned()
+        .collect::<Vec<_>>();
+    for key in keys {
+        environment.remove(&key);
+    }
 }
 
 fn session<Stdout, Stderr>(
@@ -426,71 +576,346 @@ where
     Stdout: Write,
     Stderr: Write,
 {
+    run_loop_with_control(config, stdout, stderr, RunControl::new()).await
+}
+
+#[doc(hidden)]
+pub async fn run_loop_with_control<Stdout, Stderr>(
+    config: RunConfig,
+    stdout: Stdout,
+    stderr: Stderr,
+    control: RunControl,
+) -> Result<i32, String>
+where
+    Stdout: Write,
+    Stderr: Write,
+{
     let mut context = ShellContext::new(&config, stdout, stderr).await?;
     let deadline = tokio::time::Instant::now() + config.limits.total_timeout.get();
+    let max_jobs = config.limits.jobs.get();
+    let channel_capacity = config.limits.jobs.get().saturating_add(1);
     let run_result = async {
         let mut state = RunState::new(Uuid::new_v4().to_string(), config);
         let (next, initial) = transition(state, RunEvent::StartRequested(StartRequested))
             .map_err(|error| error.to_string())?;
         state = next;
         let mut effects = VecDeque::from(initial);
-        let mut deadline_signalled = false;
-        while let Some(effect) = effects.pop_front() {
-            if !state.is_effect_pending(effect.id()) {
-                continue;
-            }
-            let event = if deadline_signalled
-                || matches!(state.phase(), RunPhase::Finalize | RunPhase::Cleaning)
+        let cancellation = ProcessCancellation::new();
+        let (completion_tx, mut completion_rx) = mpsc::channel(channel_capacity);
+        let mut process_tasks = JoinSet::new();
+        let mut in_flight = 0_usize;
+        let mut stop_signalled = false;
+        let mut ctrl_c = Box::pin(tokio::signal::ctrl_c());
+
+        while state.phase() != RunPhase::Finished {
+            let mut serial_completion = None;
+            let mut priority_event = None;
+            let mut signal_failure = None;
+            let ready_process_completion = if !stop_signalled
+                && !control.is_cancelled()
+                && tokio::time::Instant::now() < deadline
             {
-                execute_effect(&mut context, effect).await
-            } else if tokio::time::Instant::now() >= deadline {
-                deadline_signalled = true;
-                let (next, produced) = transition(state, RunEvent::DeadlineReached)
-                    .map_err(|error| error.to_string())?;
-                state = next;
-                effects.extend(produced);
-                continue;
+                completion_rx.try_recv().ok()
             } else {
-                let cancellation = ProcessCancellation::new();
-                let mut execution = Box::pin(execute_effect_with_cancellation(
-                    &mut context,
-                    effect,
-                    cancellation.clone(),
-                ));
+                None
+            };
+            while ready_process_completion.is_none() {
+                let Some(effect) = effects.pop_front() else {
+                    break;
+                };
+                if !stop_signalled
+                    && (control.is_cancelled() || tokio::time::Instant::now() >= deadline)
+                {
+                    cancellation.cancel();
+                    stop_signalled = true;
+                    priority_event = Some(if control.is_cancelled() {
+                        RunEvent::CancellationRequested
+                    } else {
+                        RunEvent::DeadlineReached
+                    });
+                    break;
+                }
+                if !state.is_effect_pending(effect.id()) {
+                    continue;
+                }
+                match effect {
+                    RunEffect::RunBaseline(request) => {
+                        let id = request.id;
+                        match worker_process_request(
+                            &context,
+                            id,
+                            request,
+                            cancellation.clone(),
+                            Some(control.start_gate()),
+                        ) {
+                            Ok(request) => {
+                                if !spawn_process(
+                                    Arc::clone(&context.process),
+                                    request,
+                                    true,
+                                    completion_tx.clone(),
+                                    &mut process_tasks,
+                                    &control,
+                                ) {
+                                    cancellation.cancel();
+                                    stop_signalled = true;
+                                    priority_event = Some(RunEvent::CancellationRequested);
+                                    break;
+                                }
+                            }
+                            Err(error) => {
+                                serial_completion = Some(ShellCompletion {
+                                    event: RunEvent::EffectFailed(error),
+                                    process_task: false,
+                                });
+                            }
+                        }
+                        if serial_completion.is_none() {
+                            control.observe_process_tasks(process_tasks.len());
+                            debug_assert!(process_tasks.len() <= max_jobs);
+                            in_flight += 1;
+                            control.observe_completion_in_flight(in_flight);
+                        }
+                    }
+                    RunEffect::RunMutant(request) => {
+                        let id = request.id;
+                        match worker_process_request(
+                            &context,
+                            id,
+                            request,
+                            cancellation.clone(),
+                            Some(control.start_gate()),
+                        ) {
+                            Ok(request) => {
+                                if !spawn_process(
+                                    Arc::clone(&context.process),
+                                    request,
+                                    false,
+                                    completion_tx.clone(),
+                                    &mut process_tasks,
+                                    &control,
+                                ) {
+                                    cancellation.cancel();
+                                    stop_signalled = true;
+                                    priority_event = Some(RunEvent::CancellationRequested);
+                                    break;
+                                }
+                            }
+                            Err(error) => {
+                                serial_completion = Some(ShellCompletion {
+                                    event: RunEvent::EffectFailed(error),
+                                    process_task: false,
+                                });
+                            }
+                        }
+                        if serial_completion.is_none() {
+                            control.observe_process_tasks(process_tasks.len());
+                            debug_assert!(process_tasks.len() <= max_jobs);
+                            in_flight += 1;
+                            control.observe_completion_in_flight(in_flight);
+                        }
+                    }
+                    effect => {
+                        let stopping = stop_signalled;
+                        let event = if stopping {
+                            execute_effect_with_cancellation(
+                                &mut context,
+                                effect,
+                                cancellation.clone(),
+                            )
+                            .await
+                        } else {
+                            let mut execution = Box::pin(execute_effect_with_cancellation(
+                                &mut context,
+                                effect,
+                                cancellation.clone(),
+                            ));
+                            tokio::select! {
+                                biased;
+                                event = &mut execution => event,
+                                () = control.cancelled() => {
+                                    cancellation.cancel();
+                                    let _ = execution.await;
+                                    stop_signalled = true;
+                                    RunEvent::CancellationRequested
+                                }
+                                () = tokio::time::sleep_until(deadline) => {
+                                    cancellation.cancel();
+                                    let _ = execution.await;
+                                    stop_signalled = true;
+                                    RunEvent::DeadlineReached
+                                }
+                                signal = &mut ctrl_c => {
+                                    cancellation.cancel();
+                                    let _ = execution.await;
+                                    stop_signalled = true;
+                                    match ctrl_c_event(signal) {
+                                        Ok(event) => event,
+                                        Err(error) => {
+                                            signal_failure = Some(error);
+                                            RunEvent::CancellationRequested
+                                        }
+                                    }
+                                }
+                            }
+                        };
+                        if matches!(
+                            event,
+                            RunEvent::DeadlineReached | RunEvent::CancellationRequested
+                        ) {
+                            priority_event = Some(event);
+                        } else {
+                            serial_completion = Some(ShellCompletion {
+                                event,
+                                process_task: false,
+                            });
+                        }
+                    }
+                }
+                if serial_completion.is_some() {
+                    break;
+                }
+            }
+
+            if let Some(error) = signal_failure.take() {
+                cancellation.cancel();
+                let drain_failure =
+                    drain_processes(&mut process_tasks, &mut completion_rx, &mut in_flight)
+                        .await
+                        .err();
+                return Err(match drain_failure {
+                    Some(drain_failure) => format!("{error}; {drain_failure}"),
+                    None => error,
+                });
+            }
+
+            if in_flight == 0
+                && priority_event.is_none()
+                && serial_completion.is_none()
+                && ready_process_completion.is_none()
+            {
+                return Err(format!("run stalled in {:?}", state.phase()));
+            }
+
+            let completion = if let Some(completion) = serial_completion {
+                completion
+            } else if let Some(event) = priority_event {
+                ShellCompletion {
+                    event,
+                    process_task: false,
+                }
+            } else if let Some(completion) = ready_process_completion {
+                completion
+            } else if stop_signalled {
+                completion_rx
+                    .recv()
+                    .await
+                    .ok_or_else(|| "completion channel closed".to_owned())?
+            } else {
                 tokio::select! {
-                    event = &mut execution => event,
+                    biased;
+                    () = control.cancelled() => {
+                        cancellation.cancel();
+                        stop_signalled = true;
+                        ShellCompletion {
+                            event: RunEvent::CancellationRequested,
+                            process_task: false,
+                        }
+                    }
                     () = tokio::time::sleep_until(deadline) => {
                         cancellation.cancel();
-                        let _ = execution.await;
-                        deadline_signalled = true;
-                        let (next, produced) = transition(state, RunEvent::DeadlineReached)
-                            .map_err(|error| error.to_string())?;
-                        state = next;
-                        effects.extend(produced);
-                        continue;
+                        stop_signalled = true;
+                        ShellCompletion {
+                            event: RunEvent::DeadlineReached,
+                            process_task: false,
+                        }
+                    }
+                    signal = &mut ctrl_c => {
+                        cancellation.cancel();
+                        stop_signalled = true;
+                        match ctrl_c_event(signal) {
+                            Ok(event) => ShellCompletion {
+                                event,
+                                process_task: false,
+                            },
+                            Err(error) => {
+                                signal_failure = Some(error);
+                                ShellCompletion {
+                                    event: RunEvent::CancellationRequested,
+                                    process_task: false,
+                                }
+                            }
+                        }
+                    }
+                    event = completion_rx.recv() => {
+                        event.ok_or_else(|| "completion channel closed".to_owned())?
                     }
                 }
             };
-            if !deadline_signalled
-                && !matches!(state.phase(), RunPhase::Finalize | RunPhase::Cleaning)
-                && tokio::time::Instant::now() >= deadline
-            {
-                // Synchronous handlers cannot be aborted safely mid-filesystem operation.
-                // Retire their completion immediately after they return and let core drive
-                // integrity verification and cleanup.
-                deadline_signalled = true;
-                let (next, produced) = transition(state, RunEvent::DeadlineReached)
-                    .map_err(|error| error.to_string())?;
-                state = next;
-                effects.extend(produced);
-                continue;
+            if let Some(error) = signal_failure.take() {
+                cancellation.cancel();
+                let drain_failure =
+                    drain_processes(&mut process_tasks, &mut completion_rx, &mut in_flight)
+                        .await
+                        .err();
+                return Err(match drain_failure {
+                    Some(drain_failure) => format!("{error}; {drain_failure}"),
+                    None => error,
+                });
             }
-            let (next, produced) = transition(state, event).map_err(|error| error.to_string())?;
+            let ShellCompletion {
+                event,
+                process_task: process_completion,
+            } = completion;
+            let external_stop = matches!(
+                event,
+                RunEvent::DeadlineReached | RunEvent::CancellationRequested
+            );
+            let failed = matches!(event, RunEvent::EffectFailed(_));
+            if !external_stop && process_completion {
+                in_flight = in_flight.saturating_sub(1);
+            }
+            if failed {
+                cancellation.cancel();
+                stop_signalled = true;
+            }
+            let transition_result = transition(state, event);
+            let (next, produced) = match transition_result {
+                Ok(value) => value,
+                Err(error) => {
+                    cancellation.cancel();
+                    drain_processes(&mut process_tasks, &mut completion_rx, &mut in_flight).await?;
+                    return Err(error.to_string());
+                }
+            };
             state = next;
+
+            if external_stop || failed {
+                effects.clear();
+                drain_processes(&mut process_tasks, &mut completion_rx, &mut in_flight).await?;
+            } else {
+                if process_completion {
+                    let process_failure = match process_tasks.join_next().await {
+                        Some(Ok(())) => None,
+                        Some(Err(error)) => Some(format!("process task failed: {error}")),
+                        None => Some("process completion had no task".to_owned()),
+                    };
+                    if let Some(process_failure) = process_failure {
+                        cancellation.cancel();
+                        let drain_failure =
+                            drain_processes(&mut process_tasks, &mut completion_rx, &mut in_flight)
+                                .await
+                                .err();
+                        return Err(match drain_failure {
+                            Some(drain_failure) => {
+                                format!("{process_failure}; {drain_failure}")
+                            }
+                            None => process_failure,
+                        });
+                    }
+                }
+            }
             effects.extend(produced);
-        }
-        if state.phase() != RunPhase::Finished {
-            return Err(format!("run stalled in {:?}", state.phase()));
         }
         Ok(state.exit_code())
     }
@@ -498,6 +923,62 @@ where
     let close_result = context.process.close().map_err(|error| error.to_string());
     let workspace_close = context.workspace.close().map_err(|error| error.to_string());
     combine_close_results(run_result, workspace_close, close_result)
+}
+
+fn ctrl_c_event(signal: std::io::Result<()>) -> Result<RunEvent, String> {
+    signal
+        .map(|()| RunEvent::CancellationRequested)
+        .map_err(|error| format!("install Ctrl+C handler: {error}"))
+}
+
+fn spawn_process(
+    process: Arc<ProcessHandler>,
+    request: ProcessRequest,
+    baseline: bool,
+    sender: mpsc::Sender<ShellCompletion>,
+    tasks: &mut JoinSet<()>,
+    control: &RunControl,
+) -> bool {
+    let Some(_dispatch) = control.begin_dispatch() else {
+        return false;
+    };
+    tasks.spawn(async move {
+        let event = match process.run(request).await {
+            Ok(value) if baseline => RunEvent::BaselineFinished(value),
+            Ok(value) => RunEvent::MutantFinished(value),
+            Err(error) => RunEvent::EffectFailed(error),
+        };
+        let _ = sender
+            .send(ShellCompletion {
+                event,
+                process_task: true,
+            })
+            .await;
+    });
+    true
+}
+
+async fn drain_processes(
+    tasks: &mut JoinSet<()>,
+    receiver: &mut mpsc::Receiver<ShellCompletion>,
+    in_flight: &mut usize,
+) -> Result<(), String> {
+    let mut first_failure = None;
+    while let Some(result) = tasks.join_next().await {
+        if let Err(error) = result
+            && first_failure.is_none()
+        {
+            first_failure = Some(format!("process task failed while stopping: {error}"));
+        }
+    }
+    while receiver.try_recv().is_ok() {
+        *in_flight = in_flight.saturating_sub(1);
+    }
+    *in_flight = 0;
+    match first_failure {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
 }
 
 fn combine_close_results(
@@ -517,5 +998,60 @@ fn combine_close_results(
         (Ok(_), false) => Err(failures.join("; ")),
         (Err(error), true) => Err(error),
         (Err(error), false) => Err(format!("{error}; {}", failures.join("; "))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsString;
+
+    #[test]
+    fn worker_metadata_removes_case_variants_and_baseline_mutant_leakage() {
+        let mut environment = crate::workspace::CommandEnvironment {
+            cwd: "worker/root".into(),
+            env: BTreeMap::from([
+                (
+                    OsString::from("hoimin_worker_root"),
+                    OsString::from("parent"),
+                ),
+                (OsString::from("HoImIn_RuN_Id"), OsString::from("parent")),
+                (OsString::from("hoimin_mutant_id"), OsString::from("parent")),
+            ]),
+        };
+
+        set_worker_metadata(&mut environment, Some("run-1"), None);
+
+        assert_eq!(
+            environment.env.get(&OsString::from("HOIMIN_WORKER_ROOT")),
+            Some(&OsString::from("worker/root"))
+        );
+        assert_eq!(
+            environment.env.get(&OsString::from("HOIMIN_RUN_ID")),
+            Some(&OsString::from("run-1"))
+        );
+        assert!(environment.env.keys().all(|key| {
+            !key.to_string_lossy()
+                .eq_ignore_ascii_case("HOIMIN_MUTANT_ID")
+        }));
+        assert_eq!(
+            environment
+                .env
+                .keys()
+                .filter(|key| key.to_string_lossy().eq_ignore_ascii_case("HOIMIN_RUN_ID"))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn ctrl_c_handler_failure_is_infrastructure_not_cancellation() {
+        assert!(matches!(
+            ctrl_c_event(Ok(())),
+            Ok(RunEvent::CancellationRequested)
+        ));
+        let error = ctrl_c_event(Err(std::io::Error::other("fixture"))).unwrap_err();
+        assert!(error.contains("install Ctrl+C handler"));
+        assert!(error.contains("fixture"));
     }
 }

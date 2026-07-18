@@ -34,6 +34,7 @@ pub struct AnalyzeFile {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ReadCandidate {
     pub id: EffectId,
+    pub worker: u32,
     pub spool: CandidateSpoolRef,
     pub offset: u64,
 }
@@ -47,6 +48,7 @@ pub struct LoadSession {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LookupStoredResult {
     pub id: EffectId,
+    pub worker: u32,
     pub run_id: String,
     pub mutant_id: String,
 }
@@ -61,6 +63,7 @@ pub struct BeginSession {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PersistResult {
     pub id: EffectId,
+    pub worker: u32,
     pub result: MutantResult,
 }
 
@@ -80,6 +83,10 @@ pub struct EmitOutput {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RunProcess {
     pub id: EffectId,
+    /// Workspace worker for baseline/mutant processes. Runtime probes use None.
+    pub worker: Option<u32>,
+    pub run_id: Option<String>,
+    pub mutant_id: Option<String>,
     pub argv: Vec<CommandArg>,
     pub cwd: Utf8PathBuf,
     pub limits: ProcessLimits,

@@ -646,6 +646,9 @@ mod tests {
             );
             let request = RunProcess {
                 id: EffectId(200 + sequence as u64),
+                worker: None,
+                run_id: None,
+                mutant_id: None,
                 argv: vec![
                     python(),
                     arg("-c"),
@@ -689,6 +692,9 @@ mod tests {
         );
         let request = RunProcess {
             id: EffectId(250),
+            worker: None,
+            run_id: None,
+            mutant_id: None,
             argv: vec![python(), arg("-c"), arg("import time; time.sleep(30)")],
             cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
             limits: ProcessLimits {

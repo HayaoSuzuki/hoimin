@@ -462,6 +462,7 @@ fn persist_with_status(
 ) -> PersistResult {
     PersistResult {
         id: EffectId(id),
+        worker: 0,
         result: MutantResult {
             run_id: run_id.to_owned(),
             candidate: MutationCandidate {
@@ -501,6 +502,7 @@ fn persist_with_status(
 fn lookup_request(id: u64, run_id: &str, mutant_id: &str) -> LookupStoredResult {
     LookupStoredResult {
         id: EffectId(id),
+        worker: 0,
         run_id: run_id.to_owned(),
         mutant_id: mutant_id.to_owned(),
     }

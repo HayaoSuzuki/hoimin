@@ -7,6 +7,8 @@ use thiserror::Error;
 
 use crate::{CommandArg, LineSelection, Selection};
 
+pub const MAX_JOBS: usize = 256;
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RawRunLimits {
     pub jobs: usize,
@@ -153,12 +155,37 @@ pub enum ConfigError {
     MissingTestArgv,
     #[error("invalid zero or overflowing limit: {0}")]
     InvalidLimit(&'static str),
+    #[error("--jobs {jobs} exceeds the supported maximum {maximum}")]
+    JobsExceedsMaximum { jobs: usize, maximum: usize },
+    #[error("--jobs {jobs} exceeds --max-processes {max_processes}")]
+    JobsExceedsProcesses { jobs: usize, max_processes: usize },
 }
 
 impl TryFrom<&RawRunLimits> for RunLimits {
     type Error = ConfigError;
 
     fn try_from(raw: &RawRunLimits) -> Result<Self, Self::Error> {
+        if raw.jobs == 0 {
+            return Err(ConfigError::InvalidLimit("jobs"));
+        }
+        if raw.max_processes == 0 {
+            return Err(ConfigError::InvalidLimit("max_processes"));
+        }
+        if u32::try_from(raw.max_processes).is_err() {
+            return Err(ConfigError::InvalidLimit("max_processes"));
+        }
+        if raw.jobs > MAX_JOBS {
+            return Err(ConfigError::JobsExceedsMaximum {
+                jobs: raw.jobs,
+                maximum: MAX_JOBS,
+            });
+        }
+        if raw.jobs > raw.max_processes {
+            return Err(ConfigError::JobsExceedsProcesses {
+                jobs: raw.jobs,
+                max_processes: raw.max_processes,
+            });
+        }
         if raw
             .baseline_timeout
             .checked_mul(2)

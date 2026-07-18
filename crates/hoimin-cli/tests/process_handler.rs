@@ -65,6 +65,9 @@ fn limits(timeout: Duration, max_output_bytes: u64) -> ProcessLimits {
 fn run_python(id: u64, code: &str, limits: ProcessLimits) -> RunProcess {
     RunProcess {
         id: EffectId(id),
+        worker: None,
+        run_id: None,
+        mutant_id: None,
         argv: vec![python_executable(), utf8_arg("-c"), utf8_arg(code)],
         cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
         limits,
@@ -216,6 +219,9 @@ mod cgroup_v2 {
         let raw = vec![b'n', b'o', b'n', b'-', 0xff, b'-', b'u', b't', b'f', b'8'];
         let request = RunProcess {
             id: EffectId(201),
+            worker: None,
+            run_id: None,
+            mutant_id: None,
             argv: vec![
                 python_executable(),
                 utf8_arg("-c"),
@@ -249,7 +255,10 @@ mod cgroup_v2 {
         let guard = FixtureChildGuard::new(pid_file.clone());
         let timed_out = handler.handle(RunProcess {
             id: EffectId(202),
-            argv: vec![
+        worker: None,
+        run_id: None,
+        mutant_id: None,
+        argv: vec![
                 python_executable(),
                 utf8_arg("-c"),
                 utf8_arg("import os,pathlib,subprocess,sys,time; child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)'],preexec_fn=os.setsid); pathlib.Path(sys.argv[1]).write_text(str(child.pid)); time.sleep(30)"),
@@ -508,6 +517,9 @@ mod portable {
         let expected = "space & | $() ; literal";
         let request = RunProcess {
             id: EffectId(51),
+            worker: None,
+            run_id: None,
+            mutant_id: None,
             argv: vec![
                 python_executable(),
                 utf8_arg("-c"),
@@ -548,11 +560,36 @@ mod portable {
     }
 
     #[tokio::test]
+    async fn cancellation_before_run_never_spawns_the_child() {
+        let output = tempfile::tempdir().unwrap();
+        let marker = output.path().join("spawned");
+        let handler = portable_handler(Utf8Path::from_path(output.path()).unwrap());
+        let cancellation = ProcessCancellation::new();
+        cancellation.cancel();
+        let code = format!(
+            "from pathlib import Path; Path({:?}).write_text('spawned')",
+            marker.to_string_lossy()
+        );
+        let request =
+            ProcessRequest::from(run_python(60, &code, limits(Duration::from_secs(5), 64)))
+                .with_cancellation(cancellation);
+
+        let failure = handler.run(request).await.unwrap_err();
+
+        assert_eq!(failure.id, EffectId(60));
+        assert_eq!(failure.failure.code(), "process.cancelled.before_spawn");
+        assert!(!marker.exists());
+    }
+
+    #[tokio::test]
     async fn maps_spawn_failure_to_effect_failed() {
         let output = tempfile::tempdir().unwrap();
         let handler = portable_handler(Utf8Path::from_path(output.path()).unwrap());
         let request = RunProcess {
             id: EffectId(7),
+            worker: None,
+            run_id: None,
+            mutant_id: None,
             argv: vec![utf8_arg("definitely-missing-hoimin-executable")],
             cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
             limits: limits(Duration::from_secs(1), 64),
@@ -599,6 +636,9 @@ mod portable {
         let handler = portable_handler(output_dir);
         let request = RunProcess {
             id: EffectId(9),
+            worker: None,
+            run_id: None,
+            mutant_id: None,
             argv: vec![
                 python_executable(),
                 utf8_arg("-c"),
@@ -628,7 +668,10 @@ mod portable {
         let cancellation = ProcessCancellation::new();
         let request = ProcessRequest::from(RunProcess {
             id: EffectId(10),
-            argv: vec![
+        worker: None,
+        run_id: None,
+        mutant_id: None,
+        argv: vec![
                 python_executable(),
                 utf8_arg("-c"),
                 utf8_arg(
@@ -807,6 +850,9 @@ mod job_object {
         let handler = Arc::new(hard_handler(output_dir, 512 * 1024 * 1024, 16));
         let request = RunProcess {
             id: EffectId(109),
+            worker: None,
+            run_id: None,
+            mutant_id: None,
             argv: vec![
                 python_executable(),
                 utf8_arg("-c"),
