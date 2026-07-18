@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::EffectId;
+use crate::{EffectId, TargetSlice};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct StartRequested;
@@ -17,7 +17,6 @@ macro_rules! completion_event {
 }
 
 completion_event!(
-    TargetsResolved,
     PreflightCompleted,
     WorkerCreated,
     ProcessFinished,
@@ -32,6 +31,12 @@ completion_event!(
     OutputEmitted,
     CleanupFinished,
 );
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TargetsResolved {
+    pub id: EffectId,
+    pub targets: Vec<TargetSlice>,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct EffectFailed {

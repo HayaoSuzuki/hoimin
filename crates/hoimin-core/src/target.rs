@@ -66,6 +66,10 @@ pub enum TargetError {
     SymbolModuleNotFound(String),
     #[error("--changed requires a Git repository")]
     GitRepositoryRequired,
+    #[error("Git target resolution failed: {0}")]
+    GitFailed(String),
+    #[error("target discovery failed: {0}")]
+    DiscoveryFailed(String),
 }
 
 pub fn resolve_explicit(
@@ -288,6 +292,88 @@ fn normalize_ranges(ranges: &mut Vec<LineRange>) {
         merged.push(range);
     }
     *ranges = merged;
+}
+
+pub fn normalize_changed(
+    changed: BTreeMap<Utf8PathBuf, Vec<LineRange>>,
+) -> BTreeMap<Utf8PathBuf, Vec<LineRange>> {
+    let changed = changed
+        .into_iter()
+        .filter_map(|(path, mut ranges)| {
+            ranges.retain(|range| range.start > 0 && range.start <= range.end);
+            normalize_ranges(&mut ranges);
+            (!ranges.is_empty()).then_some((path, ranges))
+        })
+        .collect();
+    contract_ensure!(
+        "target.changed.post",
+        changed_is_normalized(&changed),
+        &changed
+    );
+    changed
+}
+
+pub fn intersect_changed(
+    explicit: &[TargetSlice],
+    changed: &BTreeMap<Utf8PathBuf, Vec<LineRange>>,
+) -> Vec<TargetSlice> {
+    let changed = normalize_changed(changed.clone());
+    let targets: Vec<TargetSlice> = if explicit.is_empty() {
+        changed
+            .into_iter()
+            .map(|(path, lines)| TargetSlice {
+                path,
+                lines,
+                symbols: Vec::new(),
+            })
+            .collect()
+    } else {
+        explicit
+            .iter()
+            .filter_map(|target| {
+                let changed_lines = changed.get(&target.path)?;
+                let mut lines = if target.lines.is_empty() {
+                    changed_lines.clone()
+                } else {
+                    target
+                        .lines
+                        .iter()
+                        .flat_map(|explicit_range| {
+                            changed_lines.iter().filter_map(move |changed_range| {
+                                let start = explicit_range.start.max(changed_range.start);
+                                let end = explicit_range.end.min(changed_range.end);
+                                (start <= end).then_some(LineRange { start, end })
+                            })
+                        })
+                        .collect()
+                };
+                normalize_ranges(&mut lines);
+                (!lines.is_empty()).then(|| TargetSlice {
+                    path: target.path.clone(),
+                    lines,
+                    symbols: target.symbols.clone(),
+                })
+            })
+            .collect()
+    };
+    contract_ensure!(
+        "target.changed.post",
+        targets_are_normalized(&targets),
+        &targets
+    );
+    targets
+}
+
+pub fn changed_is_normalized(changed: &BTreeMap<Utf8PathBuf, Vec<LineRange>>) -> bool {
+    changed.values().all(|ranges| {
+        !ranges.is_empty()
+            && ranges
+                .iter()
+                .all(|range| range.start > 0 && range.start <= range.end)
+            && ranges
+                .windows(2)
+                .all(|pair| pair[0].end.saturating_add(1) < pair[1].start)
+    })
 }
 
 pub fn targets_are_normalized(targets: &[TargetSlice]) -> bool {

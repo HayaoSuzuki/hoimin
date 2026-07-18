@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::Selection;
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct EffectId(pub u64);
 
@@ -15,7 +17,6 @@ macro_rules! effect_request {
 }
 
 effect_request!(
-    ResolveTargets,
     Preflight,
     CreateWorker,
     RunProcess,
@@ -32,6 +33,13 @@ effect_request!(
 );
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ResolveTargets {
+    pub id: EffectId,
+    pub selection: Selection,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum RunEffect {
     ResolveTargets(ResolveTargets),
     Preflight(Preflight),

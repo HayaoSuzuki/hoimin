@@ -1,9 +1,11 @@
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use camino::Utf8PathBuf;
 use hoimin_core::{
     ConfigError, DiscoveredFile, LineRange, LineSelection, RawRunConfig, RunConfig, Selection,
-    SymbolSelection, TargetError, auto_mutant_timeout, resolve_explicit,
+    SymbolSelection, TargetError, TargetSlice, auto_mutant_timeout, intersect_changed,
+    resolve_explicit,
 };
 
 fn raw_config() -> RawRunConfig {
@@ -222,6 +224,86 @@ fn explicit_exclude_wins_over_include() {
     let targets = resolve_explicit(&selection, &discovered).unwrap();
     assert_eq!(targets.len(), 1);
     assert_eq!(targets[0].path, "pkg/a.py");
+}
+
+#[test]
+fn changed_intersects_file_line_symbol_and_source() {
+    let explicit = vec![
+        TargetSlice {
+            path: Utf8PathBuf::from("pkg/file.py"),
+            lines: Vec::new(),
+            symbols: Vec::new(),
+        },
+        TargetSlice {
+            path: Utf8PathBuf::from("pkg/line.py"),
+            lines: vec![LineRange { start: 3, end: 6 }],
+            symbols: Vec::new(),
+        },
+        TargetSlice {
+            path: Utf8PathBuf::from("pkg/source.py"),
+            lines: Vec::new(),
+            symbols: Vec::new(),
+        },
+        TargetSlice {
+            path: Utf8PathBuf::from("pkg/symbol.py"),
+            lines: Vec::new(),
+            symbols: vec!["Widget.run".into()],
+        },
+    ];
+    let changed = BTreeMap::from([
+        (
+            Utf8PathBuf::from("pkg/file.py"),
+            vec![LineRange { start: 8, end: 9 }],
+        ),
+        (
+            Utf8PathBuf::from("pkg/line.py"),
+            vec![
+                LineRange { start: 1, end: 4 },
+                LineRange { start: 6, end: 8 },
+            ],
+        ),
+        (
+            Utf8PathBuf::from("pkg/source.py"),
+            vec![LineRange { start: 11, end: 12 }],
+        ),
+        (
+            Utf8PathBuf::from("pkg/symbol.py"),
+            vec![LineRange { start: 20, end: 20 }],
+        ),
+        (
+            Utf8PathBuf::from("tests/not_selected.py"),
+            vec![LineRange { start: 1, end: 1 }],
+        ),
+    ]);
+
+    assert_eq!(
+        intersect_changed(&explicit, &changed),
+        vec![
+            TargetSlice {
+                path: Utf8PathBuf::from("pkg/file.py"),
+                lines: vec![LineRange { start: 8, end: 9 }],
+                symbols: Vec::new(),
+            },
+            TargetSlice {
+                path: Utf8PathBuf::from("pkg/line.py"),
+                lines: vec![
+                    LineRange { start: 3, end: 4 },
+                    LineRange { start: 6, end: 6 },
+                ],
+                symbols: Vec::new(),
+            },
+            TargetSlice {
+                path: Utf8PathBuf::from("pkg/source.py"),
+                lines: vec![LineRange { start: 11, end: 12 }],
+                symbols: Vec::new(),
+            },
+            TargetSlice {
+                path: Utf8PathBuf::from("pkg/symbol.py"),
+                lines: vec![LineRange { start: 20, end: 20 }],
+                symbols: vec!["Widget.run".into()],
+            },
+        ]
+    );
 }
 
 #[cfg(windows)]
