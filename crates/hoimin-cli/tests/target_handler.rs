@@ -186,6 +186,38 @@ async fn uses_diff_base_against_worktree() {
 }
 
 #[tokio::test]
+async fn diff_base_uses_merge_base_against_worktree() {
+    let repo = FixtureRepo::new();
+    repo.write("pkg/a.py", "one\ntwo\nthree\n");
+    let common = repo.commit_all("common");
+    repo.git(&["checkout", "--quiet", "-b", "base"]);
+    repo.write("pkg/a.py", "one\nBASE\nthree\n");
+    repo.commit_all("base branch");
+    repo.git(&["checkout", "--quiet", "-b", "feature", &common]);
+    repo.write("pkg/a.py", "one\ntwo\nFEATURE\n");
+
+    assert_eq!(
+        repo.changed_lines(Some("base".into())).await.changed,
+        BTreeMap::from([(
+            Utf8PathBuf::from("pkg/a.py"),
+            vec![LineRange { start: 3, end: 3 }],
+        )])
+    );
+}
+
+#[tokio::test]
+async fn changed_cancels_staged_edit_reverted_in_worktree() {
+    let repo = FixtureRepo::new();
+    repo.write("pkg/a.py", "one\ntwo\nthree\n");
+    repo.commit_all("initial");
+    repo.write("pkg/a.py", "one\nSTAGED\nthree\n");
+    repo.git(&["add", "pkg/a.py"]);
+    repo.write("pkg/a.py", "one\ntwo\nthree\n");
+
+    assert!(repo.changed_lines(None).await.changed.is_empty());
+}
+
+#[tokio::test]
 async fn ignores_deleted_and_binary_paths() {
     let repo = FixtureRepo::new();
     repo.write("pkg/deleted.py", "x = 1\n");
@@ -248,8 +280,50 @@ async fn tracks_renamed_python_destination() {
 }
 
 #[tokio::test]
+async fn changed_pins_diff_format_and_rename_detection() {
+    let repo = FixtureRepo::new();
+    repo.write("pkg/old.py", "one\ntwo\nthree\nfour\nfive\n");
+    repo.commit_all("initial");
+    repo.git(&["config", "color.ui", "always"]);
+    repo.git(&["config", "diff.noprefix", "true"]);
+    repo.git(&["config", "diff.renames", "false"]);
+    repo.git(&["mv", "pkg/old.py", "pkg/new.py"]);
+    repo.write("pkg/new.py", "one\nTWO\nthree\nfour\nfive\n");
+
+    assert_eq!(
+        repo.changed_lines(None).await.changed,
+        BTreeMap::from([(
+            Utf8PathBuf::from("pkg/new.py"),
+            vec![LineRange { start: 2, end: 2 }],
+        )])
+    );
+}
+
+#[tokio::test]
 async fn rejects_non_repository() {
     let root = tempfile::tempdir().unwrap();
+    let selection = Selection {
+        root: Utf8PathBuf::from_path_buf(root.path().to_path_buf()).unwrap(),
+        sources: vec![Utf8PathBuf::from("pkg")],
+        changed: true,
+        ..Selection::default()
+    };
+
+    assert_eq!(
+        TargetHandler::resolve(&selection).await,
+        Err(TargetError::GitRepositoryRequired)
+    );
+}
+
+#[tokio::test]
+async fn rejects_bare_repository_as_git_repository_required() {
+    let root = tempfile::tempdir().unwrap();
+    let output = Command::new("git")
+        .args(["init", "--bare", "--quiet"])
+        .current_dir(root.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success());
     let selection = Selection {
         root: Utf8PathBuf::from_path_buf(root.path().to_path_buf()).unwrap(),
         sources: vec![Utf8PathBuf::from("pkg")],

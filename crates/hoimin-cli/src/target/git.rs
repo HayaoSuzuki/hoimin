@@ -32,22 +32,49 @@ pub(crate) async fn resolve_changed(
     root: &Utf8Path,
     diff_base: Option<&str>,
 ) -> Result<BTreeMap<Utf8PathBuf, Vec<LineRange>>, TargetError> {
+    ensure_git_worktree(root).await?;
     let mut changed = BTreeMap::<Utf8PathBuf, Vec<LineRange>>::new();
     let mut excluded = BTreeSet::new();
+    let mut diff_args = vec![
+        "diff",
+        "--unified=0",
+        "--no-color",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
+        "--find-renames",
+        "--relative",
+    ];
     if let Some(base) = diff_base {
-        let output = run_git(root, &["diff", "--unified=0", "--relative", base]).await?;
+        diff_args.push("--merge-base");
+        diff_args.push(base);
+        let output = run_git(root, &diff_args).await?;
         parse_diff(&output, &mut changed, &mut excluded)?;
     } else {
-        let unstaged = run_git(root, &["diff", "--unified=0", "--relative"]).await?;
-        parse_diff(&unstaged, &mut changed, &mut excluded)?;
-        let staged = run_git(root, &["diff", "--cached", "--unified=0", "--relative"]).await?;
-        parse_diff(&staged, &mut changed, &mut excluded)?;
+        diff_args.push("HEAD");
+        let output = run_git(root, &diff_args).await?;
+        parse_diff(&output, &mut changed, &mut excluded)?;
     }
     changed.retain(|path, _| !excluded.contains(path));
 
     let untracked = run_git(root, &["ls-files", "--others", "--exclude-standard", "-z"]).await?;
     collect_untracked(root, &untracked, &mut changed).await?;
     Ok(normalize_changed(changed))
+}
+
+async fn ensure_git_worktree(root: &Utf8Path) -> Result<(), TargetError> {
+    let output = Command::new("git")
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .current_dir(root)
+        .output()
+        .await
+        .map_err(|error| TargetError::GitFailed(error.to_string()))?;
+    if output.status.success() && output.stdout.trim_ascii() == b"true" {
+        Ok(())
+    } else {
+        Err(TargetError::GitRepositoryRequired)
+    }
 }
 
 async fn run_git(root: &Utf8Path, args: &[&str]) -> Result<Vec<u8>, TargetError> {
@@ -62,15 +89,11 @@ async fn run_git(root: &Utf8Path, args: &[&str]) -> Result<Vec<u8>, TargetError>
     }
 
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-    if stderr.to_ascii_lowercase().contains("not a git repository") {
-        Err(TargetError::GitRepositoryRequired)
-    } else {
-        Err(TargetError::GitFailed(format!(
-            "git {} exited with {}: {stderr}",
-            args.join(" "),
-            output.status
-        )))
-    }
+    Err(TargetError::GitFailed(format!(
+        "git {} exited with {}: {stderr}",
+        args.join(" "),
+        output.status
+    )))
 }
 
 fn parse_diff(
@@ -167,8 +190,12 @@ fn decode_git_quoted(value: &str) -> Result<String, TargetError> {
         };
         match escaped {
             b'\\' | b'"' => decoded.push(escaped),
+            b'a' => decoded.push(0x07),
+            b'b' => decoded.push(0x08),
             b't' => decoded.push(b'\t'),
             b'n' => decoded.push(b'\n'),
+            b'v' => decoded.push(0x0b),
+            b'f' => decoded.push(0x0c),
             b'r' => decoded.push(b'\r'),
             b'0'..=b'7' => {
                 let end = (index + 3).min(bytes.len());
@@ -252,4 +279,17 @@ async fn collect_untracked(
 fn is_python(path: &Utf8Path) -> bool {
     path.extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("py"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_git_quoted;
+
+    #[test]
+    fn quoted_path_accepts_standard_control_escapes() {
+        assert_eq!(
+            decode_git_quoted(r#""a/\a\b\v\f.py""#).unwrap(),
+            "a/\x07\x08\x0b\x0c.py"
+        );
+    }
 }
