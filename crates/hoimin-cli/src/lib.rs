@@ -5,6 +5,7 @@ pub mod cli;
 pub mod process;
 pub mod report;
 pub mod resource;
+pub mod session;
 pub mod target;
 pub mod workspace;
 

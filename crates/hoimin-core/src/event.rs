@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use crate::{
     EffectId, IntegrityCheckpoint, OutputSpoolRef, ProcessTermination, ReservationId, ResourceMode,
-    TargetSlice,
+    StoredRun, TargetSlice,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -23,15 +23,33 @@ macro_rules! completion_event {
     };
 }
 
-completion_event!(
-    AnalysisFinished,
-    CandidateLoaded,
-    SessionLoaded,
-    SessionStarted,
-    ResultPersisted,
-    SessionFinished,
-    OutputEmitted,
-);
+completion_event!(AnalysisFinished, CandidateLoaded, OutputEmitted,);
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SessionLoaded {
+    pub id: EffectId,
+    pub runs: Vec<StoredRun>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SessionStarted {
+    pub id: EffectId,
+    pub run_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ResultPersisted {
+    pub id: EffectId,
+    pub run_id: String,
+    pub mutant_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SessionFinished {
+    pub id: EffectId,
+    pub run_id: String,
+    pub complete: bool,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ProcessFinished {
@@ -143,6 +161,11 @@ pub enum EffectFailure {
     ReportState {
         message: String,
     },
+    SessionDatabase {
+        code: String,
+        operation: String,
+        message: String,
+    },
     Other {
         code: String,
         message: String,
@@ -162,6 +185,7 @@ impl EffectFailure {
             Self::InvalidWorkspacePath { .. } => "workspace.path.invalid",
             Self::InvalidMutation { code, .. }
             | Self::Io { code, .. }
+            | Self::SessionDatabase { code, .. }
             | Self::Other { code, .. } => code,
             Self::WorkerMissing { .. } => "workspace.worker.missing",
             Self::ReportIo { .. } => "report.io",

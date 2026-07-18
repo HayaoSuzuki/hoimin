@@ -8,6 +8,7 @@ pub mod effect;
 pub mod event;
 pub mod model;
 pub mod report;
+pub mod resume;
 pub mod target;
 
 pub use budget::*;
@@ -18,4 +19,5 @@ pub use effect::*;
 pub use event::*;
 pub use model::*;
 pub use report::*;
+pub use resume::*;
 pub use target::*;

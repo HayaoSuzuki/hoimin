@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use camino::Utf8PathBuf;
 
 use crate::{
-    CommandArg, IntegrityCheckpoint, OutputEvent, ProcessLimits, ReservationId, Selection,
+    CommandArg, IntegrityCheckpoint, MutantResult, OutputEvent, ProcessLimits, ReservationId,
+    RunFingerprint, Selection,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
@@ -20,15 +21,27 @@ macro_rules! effect_request {
     };
 }
 
-effect_request!(
-    Preflight,
-    AnalyzeFile,
-    ReadCandidate,
-    LoadSession,
-    BeginSession,
-    PersistResult,
-    FinishSession,
-);
+effect_request!(Preflight, AnalyzeFile, ReadCandidate, LoadSession,);
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BeginSession {
+    pub id: EffectId,
+    pub run_id: String,
+    pub fingerprint: RunFingerprint,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PersistResult {
+    pub id: EffectId,
+    pub result: MutantResult,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct FinishSession {
+    pub id: EffectId,
+    pub run_id: String,
+    pub complete: bool,
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EmitOutput {
