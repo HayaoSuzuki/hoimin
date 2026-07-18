@@ -178,14 +178,14 @@ pub fn transition(
 ```rust
 #[test]
 fn run_requires_a_selector_and_test_argv() {
-    let err = hoimin::cli::parse_from(["hoimin", "run", "--", "python", "-m", "unittest"])
+    let err = hoimin_cli::cli::parse_from(["hoimin", "run", "--", "python", "-m", "unittest"])
         .unwrap_err();
     assert!(err.to_string().contains("target selector"));
 }
 
 #[test]
 fn command_after_separator_is_preserved_without_shell_parsing() {
-    let cli = hoimin::cli::parse_from([
+    let cli = hoimin_cli::cli::parse_from([
         "hoimin", "run", "--file", "src/calc.py", "--", "python", "-m", "pytest", "-q",
     ]).unwrap();
     assert_eq!(cli.test_argv, ["python", "-m", "pytest", "-q"]);
