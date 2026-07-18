@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
-    ContractInvariant, MutationCandidate, MutationStatus, OutputSpoolRef, ProcessTermination,
-    ResourceMode, RunConfig, contract_ensure,
+    MutationCandidate, MutationStatus, OutputSpoolRef, ProcessTermination, ResourceMode, RunConfig,
+    contract_ensure,
 };
 
 pub const REPORT_SCHEMA_VERSION: u32 = 1;
@@ -16,7 +16,7 @@ pub fn classify_mutant(termination: ProcessTermination) -> MutationStatus {
         ProcessTermination::Exit(_) => MutationStatus::Killed,
         ProcessTermination::Timeout => MutationStatus::Timeout,
         ProcessTermination::OutOfMemory => MutationStatus::OutOfMemory,
-        ProcessTermination::ProcessLimit => MutationStatus::Error,
+        ProcessTermination::ProcessLimit => MutationStatus::ProcessLimit,
         ProcessTermination::Cancelled => MutationStatus::NotRun,
     }
 }
@@ -27,6 +27,7 @@ pub struct MutationSummary {
     pub survived: u64,
     pub timeout: u64,
     pub out_of_memory: u64,
+    pub process_limit: u64,
     pub error: u64,
     pub not_run: u64,
     pub inconclusive: u64,
@@ -40,10 +41,12 @@ impl MutationSummary {
             MutationStatus::Survived => self.survived += 1,
             MutationStatus::Timeout => self.timeout += 1,
             MutationStatus::OutOfMemory => self.out_of_memory += 1,
+            MutationStatus::ProcessLimit => self.process_limit += 1,
             MutationStatus::Error => self.error += 1,
             MutationStatus::NotRun => self.not_run += 1,
         }
-        self.inconclusive = self.timeout + self.out_of_memory + self.error + self.not_run;
+        self.inconclusive =
+            self.timeout + self.out_of_memory + self.process_limit + self.error + self.not_run;
         let decidable = self.killed + self.survived;
         self.score = (decidable != 0).then(|| self.killed as f64 / decidable as f64);
     }
@@ -64,6 +67,19 @@ pub struct ExitPolicy {
     pub incomplete: bool,
     pub survivors: bool,
     pub interrupted: bool,
+}
+
+impl ExitPolicy {
+    pub fn from_summary(summary: &MutationSummary) -> Self {
+        Self {
+            incomplete: summary.timeout > 0
+                || summary.out_of_memory > 0
+                || summary.process_limit > 0
+                || summary.not_run > 0,
+            survivors: summary.survived > 0,
+            ..Self::default()
+        }
+    }
 }
 
 pub fn exit_code(incomplete: bool, survivors: bool, interrupted: bool) -> i32 {
@@ -254,10 +270,27 @@ impl OutputEvent {
             Self::RunFinished(value) => value.schema_version,
         }
     }
+
+    pub fn run_id(&self) -> &str {
+        match self {
+            Self::RunStarted(value) => &value.run_id,
+            Self::BaselineFinished(value) => &value.run_id,
+            Self::MutantStarted(value) => &value.run_id,
+            Self::MutantFinished(value) => &value.run_id,
+            Self::Diagnostic(value) => &value.run_id,
+            Self::RunFinished(value) => &value.run_id,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ReportSequenceError {
+    #[error("report event preceded run_started")]
+    RunNotStarted,
+    #[error("run_started was emitted more than once for {run_id}")]
+    RunAlreadyStarted { run_id: String },
+    #[error("report event belongs to run {received}, expected {expected}")]
+    RunIdMismatch { expected: String, received: String },
     #[error("report sequence {received} does not follow {previous}")]
     NotMonotonic { previous: u64, received: u64 },
     #[error("mutant {mutant_id} sequence {mutant_sequence} started more than once")]
@@ -275,6 +308,7 @@ pub enum ReportSequenceError {
 #[derive(Clone, Debug, Default)]
 pub struct ReportSequence {
     last: Option<u64>,
+    run_id: Option<String>,
     active_mutants: BTreeSet<(String, u64)>,
 }
 
@@ -283,25 +317,24 @@ impl ReportSequence {
         Self::default()
     }
 
-    pub fn observe_sequence(&mut self, received: u64) -> Result<(), ReportSequenceError> {
-        let error = self.last.and_then(|previous| {
-            (received <= previous)
-                .then_some(ReportSequenceError::NotMonotonic { previous, received })
-        });
-        contract_ensure!(
-            "report.sequence.invariant",
-            error.is_none(),
-            (&self.last, received)
-        );
-        if let Some(error) = error {
-            return Err(error);
-        }
-        self.last = Some(received);
-        Ok(())
-    }
-
     pub fn observe(&mut self, event: &OutputEvent) -> Result<(), ReportSequenceError> {
-        let mutant_error = match event {
+        let lifecycle_error = match (event, self.run_id.as_deref()) {
+            (OutputEvent::RunStarted(value), Some(_)) => {
+                Some(ReportSequenceError::RunAlreadyStarted {
+                    run_id: value.run_id.clone(),
+                })
+            }
+            (OutputEvent::RunStarted(_), None) => None,
+            (_, None) => Some(ReportSequenceError::RunNotStarted),
+            (_, Some(expected)) if event.run_id() != expected => {
+                Some(ReportSequenceError::RunIdMismatch {
+                    expected: expected.to_owned(),
+                    received: event.run_id().to_owned(),
+                })
+            }
+            _ => None,
+        };
+        let mutant_error = lifecycle_error.or_else(|| match event {
             OutputEvent::MutantStarted(value) => {
                 let key = (value.mutant_id.clone(), value.mutant_sequence);
                 self.active_mutants.contains(&key).then_some(
@@ -321,17 +354,32 @@ impl ReportSequence {
                 )
             }
             _ => None,
-        };
+        });
+        let error = mutant_error.or_else(|| {
+            self.last.and_then(|previous| {
+                (event.sequence() <= previous).then_some(ReportSequenceError::NotMonotonic {
+                    previous,
+                    received: event.sequence(),
+                })
+            })
+        });
         contract_ensure!(
             "report.sequence.invariant",
-            mutant_error.is_none(),
-            (&self.active_mutants, event.sequence())
+            error.is_none(),
+            (
+                &self.run_id,
+                &self.active_mutants,
+                self.last,
+                event.run_id(),
+                event.sequence()
+            )
         );
-        if let Some(error) = mutant_error {
+        if let Some(error) = error {
             return Err(error);
         }
-        self.observe_sequence(event.sequence())?;
+        self.last = Some(event.sequence());
         match event {
+            OutputEvent::RunStarted(value) => self.run_id = Some(value.run_id.clone()),
             OutputEvent::MutantStarted(value) => {
                 self.active_mutants
                     .insert((value.mutant_id.clone(), value.mutant_sequence));
@@ -343,11 +391,5 @@ impl ReportSequence {
             _ => {}
         }
         Ok(())
-    }
-}
-
-impl ContractInvariant for ReportSequence {
-    fn invariant(&self) -> bool {
-        true
     }
 }

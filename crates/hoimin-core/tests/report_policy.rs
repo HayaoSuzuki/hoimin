@@ -6,7 +6,7 @@ use hoimin_core::{
 
 #[test]
 fn process_terminations_are_classified_without_test_runner_assumptions() {
-    use MutationStatus::{Error, Killed, NotRun, OutOfMemory, Survived, Timeout};
+    use MutationStatus::{Killed, NotRun, OutOfMemory, ProcessLimit, Survived, Timeout};
 
     assert_eq!(
         hoimin_core::classify_mutant(ProcessTermination::Exit(0)),
@@ -26,7 +26,7 @@ fn process_terminations_are_classified_without_test_runner_assumptions() {
     );
     assert_eq!(
         hoimin_core::classify_mutant(ProcessTermination::ProcessLimit),
-        Error
+        ProcessLimit
     );
     assert_eq!(
         hoimin_core::classify_mutant(ProcessTermination::Cancelled),
@@ -43,12 +43,23 @@ fn score_uses_only_killed_and_survived() {
         MutationStatus::OutOfMemory,
         MutationStatus::Error,
         MutationStatus::NotRun,
+        MutationStatus::ProcessLimit,
     ]);
 
     assert_eq!(summary.score, Some(0.5));
     assert_eq!(summary.killed, 1);
     assert_eq!(summary.survived, 1);
-    assert_eq!(summary.inconclusive, 4);
+    assert_eq!(summary.inconclusive, 5);
+    assert_eq!(summary.process_limit, 1);
+}
+
+#[test]
+fn process_limit_and_survivor_produce_an_incomplete_exit() {
+    let summary = summarize(&[MutationStatus::Survived, MutationStatus::ProcessLimit]);
+    let policy = ExitPolicy::from_summary(&summary);
+    assert!(policy.survivors);
+    assert!(policy.incomplete);
+    assert_eq!(exit_code_for(policy), 4);
 }
 
 #[test]
@@ -85,9 +96,13 @@ fn complete_exit_policy_has_stable_precedence() {
 #[test]
 fn invalid_sequence_is_a_typed_runtime_error() {
     let mut sequence = ReportSequence::new();
-    sequence.observe_sequence(10).unwrap();
+    sequence
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 10)))
+        .unwrap();
     assert_eq!(
-        sequence.observe_sequence(10),
+        sequence.observe(&OutputEvent::Diagnostic(hoimin_core::Diagnostic::new(
+            "run-1", 10, "warning", "x", "y",
+        ))),
         Err(hoimin_core::ReportSequenceError::NotMonotonic {
             previous: 10,
             received: 10,
@@ -97,8 +112,39 @@ fn invalid_sequence_is_a_typed_runtime_error() {
 
 #[cfg(not(feature = "contracts"))]
 #[test]
+fn sequence_requires_run_start_and_rejects_cross_run_events() {
+    let mut sequence = ReportSequence::new();
+    assert_eq!(
+        sequence.observe(&OutputEvent::Diagnostic(hoimin_core::Diagnostic::new(
+            "run-1", 1, "warning", "x", "y",
+        ))),
+        Err(hoimin_core::ReportSequenceError::RunNotStarted)
+    );
+    sequence
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .unwrap();
+    assert_eq!(
+        sequence.observe(&OutputEvent::Diagnostic(hoimin_core::Diagnostic::new(
+            "run-2", 2, "warning", "x", "y",
+        ))),
+        Err(hoimin_core::ReportSequenceError::RunIdMismatch {
+            expected: "run-1".to_owned(),
+            received: "run-2".to_owned(),
+        })
+    );
+    assert!(matches!(
+        sequence.observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 2))),
+        Err(hoimin_core::ReportSequenceError::RunAlreadyStarted { .. })
+    ));
+}
+
+#[cfg(not(feature = "contracts"))]
+#[test]
 fn a_mutant_finish_must_follow_its_matching_start() {
     let mut sequence = ReportSequence::new();
+    sequence
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .unwrap();
     let finished = finished_event(2, candidate("m1", 7));
     assert_eq!(
         sequence.observe(&finished),
@@ -107,17 +153,13 @@ fn a_mutant_finish_must_follow_its_matching_start() {
             mutant_sequence: 7,
         })
     );
-
-    sequence
-        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
-        .unwrap();
     sequence
         .observe(&OutputEvent::MutantStarted(MutantStarted::new(
-            "run-1", 2, "m1", 7,
+            "run-1", 3, "m1", 7,
         )))
         .unwrap();
     sequence
-        .observe(&finished_event(3, candidate("m1", 7)))
+        .observe(&finished_event(4, candidate("m1", 7)))
         .unwrap();
 }
 
@@ -147,7 +189,7 @@ fn all_event_variants_have_the_exact_public_kind() {
             "kind": "run_finished", "schema_version": 1, "sequence": 6,
             "run_id": "run-1",
             "counts": { "killed": 0, "survived": 0, "timeout": 0,
-                "out_of_memory": 0, "error": 0, "not_run": 0,
+                "out_of_memory": 0, "process_limit": 0, "error": 0, "not_run": 0,
                 "inconclusive": 0, "score": null },
             "complete": true, "exit_code": 0
         }))
@@ -184,8 +226,25 @@ fn all_event_variants_have_the_exact_public_kind() {
 #[should_panic(expected = "report.sequence.invariant")]
 fn invalid_sequence_trips_the_ci_contract() {
     let mut sequence = ReportSequence::new();
-    sequence.observe_sequence(10).unwrap();
-    let _ = sequence.observe_sequence(9);
+    sequence
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 10)))
+        .unwrap();
+    let _ = sequence.observe(&OutputEvent::Diagnostic(hoimin_core::Diagnostic::new(
+        "run-1", 9, "warning", "x", "y",
+    )));
+}
+
+#[cfg(feature = "contracts")]
+#[test]
+#[should_panic(expected = "report.sequence.invariant")]
+fn cross_run_event_trips_the_ci_contract() {
+    let mut sequence = ReportSequence::new();
+    sequence
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .unwrap();
+    let _ = sequence.observe(&OutputEvent::Diagnostic(hoimin_core::Diagnostic::new(
+        "run-2", 2, "warning", "x", "y",
+    )));
 }
 
 fn candidate(id: &str, sequence: u64) -> MutationCandidate {

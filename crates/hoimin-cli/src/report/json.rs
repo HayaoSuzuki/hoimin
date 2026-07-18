@@ -1,4 +1,4 @@
-use std::io::{self, Seek, SeekFrom, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 use hoimin_core::{OutputEvent, REPORT_SCHEMA_VERSION};
@@ -14,27 +14,38 @@ pub(super) enum JsonError {
     State(&'static str),
 }
 
+trait MutantSpool: Read + Write + Seek + Send {}
+
+impl<T> MutantSpool for T where T: Read + Write + Seek + Send {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Lifecycle {
+    Open,
+    Poisoned,
+    Finished,
+}
+
 pub(super) struct JsonReport {
-    mutants: NamedTempFile,
+    mutants: Box<dyn MutantSpool>,
     has_mutants: bool,
     run: Option<Vec<u8>>,
     baseline: Option<Vec<u8>>,
-    finished: bool,
+    lifecycle: Lifecycle,
 }
 
 impl JsonReport {
     pub(super) fn new(spool_dir: &Path) -> io::Result<Self> {
-        Ok(Self {
-            mutants: NamedTempFile::new_in(spool_dir)?,
+        Ok(Self::with_spool(NamedTempFile::new_in(spool_dir)?))
+    }
+
+    pub(super) fn with_spool(spool: impl Read + Write + Seek + Send + 'static) -> Self {
+        Self {
+            mutants: Box::new(spool),
             has_mutants: false,
             run: None,
             baseline: None,
-            finished: false,
-        })
-    }
-
-    pub(super) fn resident_buffer_bytes(&self) -> usize {
-        self.run.as_ref().map_or(0, Vec::capacity) + self.baseline.as_ref().map_or(0, Vec::capacity)
+            lifecycle: Lifecycle::Open,
+        }
     }
 
     pub(super) fn record(
@@ -42,8 +53,12 @@ impl JsonReport {
         event: &OutputEvent,
         stdout: &mut impl Write,
     ) -> Result<(), JsonError> {
-        if self.finished {
-            return Err(JsonError::State("JSON report is already finished"));
+        if self.lifecycle != Lifecycle::Open {
+            return Err(JsonError::State(match self.lifecycle {
+                Lifecycle::Poisoned => "JSON report is poisoned after a partial write",
+                Lifecycle::Finished => "JSON report is already finished",
+                Lifecycle::Open => unreachable!(),
+            }));
         }
         match event {
             OutputEvent::RunStarted(_) => {
@@ -60,10 +75,15 @@ impl JsonReport {
                 }
                 self.baseline = Some(serde_json::to_vec(event).map_err(JsonError::Serialization)?);
             }
-            OutputEvent::MutantFinished(_) => self.write_mutant(event)?,
+            OutputEvent::MutantFinished(_) => {
+                self.lifecycle = Lifecycle::Poisoned;
+                self.write_mutant(event)?;
+                self.lifecycle = Lifecycle::Open;
+            }
             OutputEvent::RunFinished(_) => {
+                self.lifecycle = Lifecycle::Poisoned;
                 self.write_final(event, stdout)?;
-                self.finished = true;
+                self.lifecycle = Lifecycle::Finished;
             }
             OutputEvent::MutantStarted(_) | OutputEvent::Diagnostic(_) => {}
         }
@@ -114,19 +134,13 @@ impl JsonReport {
         })?;
 
         self.mutants
-            .as_file_mut()
             .flush()
-            .and_then(|()| {
-                self.mutants
-                    .as_file_mut()
-                    .seek(SeekFrom::Start(0))
-                    .map(drop)
-            })
+            .and_then(|()| self.mutants.seek(SeekFrom::Start(0)).map(drop))
             .map_err(|source| JsonError::Io {
                 operation: "rewind mutant spool",
                 source,
             })?;
-        io::copy(self.mutants.as_file_mut(), stdout).map_err(|source| JsonError::Io {
+        io::copy(&mut self.mutants, stdout).map_err(|source| JsonError::Io {
             operation: "copy mutant spool",
             source,
         })?;

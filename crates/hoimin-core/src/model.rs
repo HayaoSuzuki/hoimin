@@ -44,6 +44,7 @@ pub enum MutationStatus {
     Survived,
     Timeout,
     OutOfMemory,
+    ProcessLimit,
     Error,
     NotRun,
 }

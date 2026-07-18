@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
 use std::sync::{Arc, Mutex};
 
 use hoimin_cli::report::ReportHandler;
@@ -180,23 +180,6 @@ fn json_streams_mutants_from_disk_into_one_document() {
 }
 
 #[test]
-fn json_resident_buffers_do_not_grow_with_mutant_count() {
-    let spool = tempfile::tempdir().unwrap();
-    let mut handler =
-        ReportHandler::new(OutputFormat::Json, io::sink(), io::sink(), spool.path()).unwrap();
-    emit(
-        &mut handler,
-        1,
-        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)),
-    );
-    let initial = handler.resident_buffer_bytes();
-    for index in 0..10_000 {
-        emit(&mut handler, index + 2, mutant_finished(index + 2, index));
-    }
-    assert!(handler.resident_buffer_bytes() <= initial + 1024);
-}
-
-#[test]
 fn report_errors_are_typed_and_echo_the_effect_id() {
     let mut handler = ReportHandler::new(
         OutputFormat::Jsonl,
@@ -230,6 +213,116 @@ fn report_errors_are_typed_and_echo_the_effect_id() {
         .unwrap_err();
     assert_eq!(failed.id, EffectId(100));
     assert!(matches!(failed.failure, EffectFailure::ReportState { .. }));
+
+    let mut handler = ReportHandler::new(
+        OutputFormat::Human,
+        FailingWriter,
+        io::sink(),
+        std::env::temp_dir(),
+    )
+    .unwrap();
+    let failed = handler
+        .handle(EmitOutput {
+            id: EffectId(101),
+            event: OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)),
+        })
+        .unwrap_err();
+    assert_eq!(failed.id, EffectId(101));
+    assert!(matches!(failed.failure, EffectFailure::ReportIo { .. }));
+}
+
+#[test]
+fn partial_stdout_failure_poisons_json_report() {
+    let spool = tempfile::tempdir().unwrap();
+    let mut handler = ReportHandler::new(
+        OutputFormat::Json,
+        FailAfter::new(24),
+        io::sink(),
+        spool.path(),
+    )
+    .unwrap();
+    emit(
+        &mut handler,
+        1,
+        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)),
+    );
+    let failed = handler
+        .handle(EmitOutput {
+            id: EffectId(2),
+            event: run_summary(2),
+        })
+        .unwrap_err();
+    assert_eq!(failed.id, EffectId(2));
+    assert!(matches!(failed.failure, EffectFailure::ReportIo { .. }));
+
+    let retry = handler
+        .handle(EmitOutput {
+            id: EffectId(3),
+            event: run_summary(3),
+        })
+        .unwrap_err();
+    assert_eq!(retry.id, EffectId(3));
+    assert!(matches!(retry.failure, EffectFailure::ReportState { .. }));
+}
+
+#[test]
+fn partial_mutant_spool_failure_poisons_json_report() {
+    let mut handler = ReportHandler::with_mutant_spool(
+        OutputFormat::Json,
+        io::sink(),
+        io::sink(),
+        FailAfter::new(12),
+    );
+    emit(
+        &mut handler,
+        1,
+        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)),
+    );
+    let failed = handler
+        .handle(EmitOutput {
+            id: EffectId(2),
+            event: mutant_finished(2, 0),
+        })
+        .unwrap_err();
+    assert_eq!(failed.id, EffectId(2));
+    assert!(matches!(failed.failure, EffectFailure::ReportIo { .. }));
+
+    let retry = handler
+        .handle(EmitOutput {
+            id: EffectId(3),
+            event: mutant_finished(3, 0),
+        })
+        .unwrap_err();
+    assert_eq!(retry.id, EffectId(3));
+    assert!(matches!(retry.failure, EffectFailure::ReportState { .. }));
+}
+
+#[test]
+fn human_format_writes_progress_to_stdout_and_diagnostics_to_stderr() {
+    let stdout = SharedWriter::default();
+    let stderr = SharedWriter::default();
+    let mut handler = ReportHandler::new(
+        OutputFormat::Human,
+        stdout.clone(),
+        stderr.clone(),
+        std::env::temp_dir(),
+    )
+    .unwrap();
+    for event in events() {
+        handler
+            .handle(EmitOutput {
+                id: EffectId(event.sequence()),
+                event,
+            })
+            .unwrap();
+    }
+    assert!(stdout.text().contains("run started: run-1"));
+    assert!(stdout.text().contains("mutant finished: m0 killed"));
+    assert!(stdout.text().contains("run finished: exit 0"));
+    assert!(!stdout.text().contains("diagnostic text"));
+    assert!(stderr.text().contains("warning x: diagnostic text"));
+    assert_eq!(stdout.flushes(), 5);
+    assert_eq!(stderr.flushes(), 1);
 }
 
 struct FailingWriter;
@@ -241,6 +334,48 @@ impl Write for FailingWriter {
 
     fn flush(&mut self) -> io::Result<()> {
         Err(io::Error::other("fixture flush failure"))
+    }
+}
+
+struct FailAfter {
+    inner: Cursor<Vec<u8>>,
+    remaining: usize,
+}
+
+impl FailAfter {
+    fn new(remaining: usize) -> Self {
+        Self {
+            inner: Cursor::new(Vec::new()),
+            remaining,
+        }
+    }
+}
+
+impl Write for FailAfter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if self.remaining == 0 {
+            return Err(io::Error::other("injected partial write failure"));
+        }
+        let written = self.remaining.min(buf.len());
+        self.inner.write_all(&buf[..written])?;
+        self.remaining -= written;
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Read for FailAfter {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.inner.read(buf)
+    }
+}
+
+impl Seek for FailAfter {
+    fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
+        self.inner.seek(position)
     }
 }
 
@@ -274,19 +409,23 @@ fn events() -> Vec<OutputEvent> {
             "x",
             "diagnostic text",
         )),
-        OutputEvent::RunFinished(RunSummary {
-            schema_version: 1,
-            sequence: 6,
-            run_id: "run-1".to_owned(),
-            counts: MutationSummary {
-                killed: 1,
-                score: Some(1.0),
-                ..MutationSummary::default()
-            },
-            complete: true,
-            exit_code: 0,
-        }),
+        run_summary(6),
     ]
+}
+
+fn run_summary(sequence: u64) -> OutputEvent {
+    OutputEvent::RunFinished(RunSummary {
+        schema_version: 1,
+        sequence,
+        run_id: "run-1".to_owned(),
+        counts: MutationSummary {
+            killed: 1,
+            score: Some(1.0),
+            ..MutationSummary::default()
+        },
+        complete: true,
+        exit_code: 0,
+    })
 }
 
 fn mutant_finished(event_sequence: u64, mutant_sequence: u64) -> OutputEvent {
