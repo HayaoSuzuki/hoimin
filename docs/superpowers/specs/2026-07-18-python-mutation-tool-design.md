@@ -74,6 +74,37 @@ hoiminは六つのコンポーネントに分ける。
 `target`は相対パスとバイト範囲を返し、`analyzer`はmutation記述子を返し、`runner`は実行結果を返す。
 この境界により、LibCST、OS別プロセス管理、保存形式を別々に検証できる。
 
+## 開発時の契約検査
+
+hoiminは、コンポーネント境界の前提と結果を**契約**として記述する。
+契約は、呼び出し前の事前条件、処理後の事後条件、状態を持つ値の不変条件に分ける。
+`dbc` crateには依存せず、Cargo feature `contracts`で有効になる軽量なマクロとtraitを`src/contracts.rs`に実装する。
+
+契約検査はCIと開発用テストでだけ使う。
+`contracts` featureが無効なビルドでは条件式を評価せず、検査用のスナップショット、ハッシュ計算、診断文字列も生成しない。
+PyPIへ配布するwheelは、このfeatureを無効にしてビルドする。
+
+契約違反は、プログラム内部の前提が破られたことを示すため、契約検査が有効なときはpanicさせる。
+panicメッセージには、`workspace.reset.post`のような安定した識別子、契約種別、条件、診断に必要な最小限の値を含める。
+これにより、CIログから違反した境界を特定できる。
+
+契約は、ユーザー入力と実行時障害の検証を置き換えない。
+CLI引数の誤り、対象spanと元バイト列の不一致、元の作業ツリーの変更、リソース上限超過、worker復元失敗は、契約検査の有無にかかわらず型付き`Result`として処理する。
+ユーザーは契約を意識せず、同じ終了コードと機械可読結果を受け取る。
+
+初版では次の境界に契約を置く。
+
+- `target`が返すパスはプロジェクトルートからの正規化済み相対パスであり、行範囲は昇順で重複しない。
+- `analyzer`が受け入れた候補数は、候補spool内のJSON Linesレコード数と一致する。
+- mutation適用後は指定spanだけが変わり、復元後のworkerはmanifestと一致する。
+- 予約済みメモリ、コピー量、プロセス数はrun全体の上限を超えず、解放後に二重減算しない。
+- runの状態遷移は定義済みの辺だけを通り、fatal errorまたはキャンセル後に新しいmutantを開始しない。
+- 出力イベントの`sequence`は単調増加し、一つのmutantについて開始イベントの後に完了イベントが現れる。
+- SQLite transactionのcommit後は、同じrunとmutant IDで結果を読み戻せる。
+
+通常のエラー経路を契約違反として扱わない。
+たとえば候補数が`--max-candidates`へ達することは想定済みの不完全終了であり、候補数カウンターとspool件数が食い違うことが契約違反である。
+
 ## 実行の流れ
 
 一回の実行は次の順序で進む。
@@ -413,6 +444,11 @@ Rust側では次を単体テストする。
 - SQLiteの逐次保存と互換runの再開
 - 状態集計、mutation score、終了コードの優先順位
 
+契約無効の通常構成では`cargo test`を実行し、契約条件式に副作用を置いたテストで条件式が評価されないことを確認する。
+契約有効の構成では`cargo test --features contracts`を実行する。
+各契約には意図的に不正状態を作る`#[should_panic]`テストを設け、安定した契約識別子がpanicメッセージへ含まれることを確認する。
+候補spool、worker復元、run全体の予算、状態遷移、イベント順序にはproperty testを追加する。
+
 ### LibCSTヘルパーのテスト
 
 Python 3.12、3.13、3.14で同じfixture群を実行する。
@@ -456,6 +492,8 @@ Windows CIではJob Objectのメモリ上限、プロセス数上限、close時�
 - Python 3.12から3.14の対応構文で、変更箇所以外のソースを保持する。
 - 中断後に子孫プロセスとworker内のmutationを残さない。
 - JSON、JSON Lines、SQLiteの互換性を自動テストで固定する。
+- CIの契約有効テストが事前条件、事後条件、不変条件の違反を検出する。
+- 配布wheelでは契約条件式を評価せず、契約無効の通常テストと同じユーザー向け動作を保つ。
 
 ## 参考資料
 
@@ -463,6 +501,7 @@ Windows CIではJob Objectのメモリ上限、プロセス数上限、close時�
 - [Cosmic Ray concepts](https://cosmic-ray.readthedocs.io/en/latest/concepts.html)
 - [LibCST](https://github.com/Instagram/LibCST)
 - [LibCST native parser](https://github.com/Instagram/LibCST/tree/main/native/libcst)
+- [dbc crate](https://docs.rs/dbc/latest/dbc/)
 - [LibCST metadata](https://libcst.readthedocs.io/en/latest/metadata.html)
 - [Maturin bin bindings](https://www.maturin.rs/bindings.html)
 - [Windows Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)
