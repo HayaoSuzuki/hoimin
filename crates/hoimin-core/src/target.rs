@@ -245,7 +245,17 @@ fn path_key(value: &str) -> String {
 }
 
 fn windows_case_key(value: &str) -> String {
-    value.chars().flat_map(char::to_uppercase).collect()
+    value.chars().map(simple_uppercase).collect()
+}
+
+fn simple_uppercase(value: char) -> char {
+    let mut uppercase = value.to_uppercase();
+    let first = uppercase.next().unwrap_or(value);
+    if uppercase.next().is_some() {
+        value
+    } else {
+        first
+    }
 }
 
 fn resolve_symbol_path(

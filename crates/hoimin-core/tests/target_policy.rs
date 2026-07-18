@@ -289,3 +289,19 @@ fn windows_final_sigma_uses_uppercase_case_equivalence() {
     let targets = resolve_explicit(&selection, &[DiscoveredFile::python("pkg/a.py")]).unwrap();
     assert_eq!(targets[0].path, "pkg/a.py");
 }
+
+#[cfg(windows)]
+#[test]
+fn windows_multi_character_uppercase_does_not_overmatch_root() {
+    let selection = Selection {
+        root: Utf8PathBuf::from("C:/ß"),
+        files: vec![Utf8PathBuf::from("C:/SS/file.py")],
+        ..Selection::default()
+    };
+    assert_eq!(
+        resolve_explicit(&selection, &[]),
+        Err(TargetError::PathOutsideRoot(Utf8PathBuf::from(
+            "C:/SS/file.py"
+        )))
+    );
+}
