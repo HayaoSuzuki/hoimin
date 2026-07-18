@@ -4,6 +4,7 @@ use hoimin_cli::analyzer::{
     ProtocolError, StoreError,
 };
 use hoimin_core::{ByteSpan, EffectId, MutationCandidate};
+use std::fs;
 
 fn candidate(sequence: u64) -> MutationCandidate {
     MutationCandidate {
@@ -172,5 +173,141 @@ fn candidate_limit_is_a_typed_expected_completion() {
     assert!(matches!(
         summary,
         Some(AnalyzerRecord::Summary(summary)) if summary.status() == AnalysisStatus::AnalysisLimitReached
+    ));
+}
+
+#[test]
+fn protocol_accepts_nested_colon_path_like_task4() {
+    let mut protocol = protocol();
+    assert!(matches!(
+        protocol.receive_line(br#"{"kind":"candidate","effect_id":7,"path":"pkg/a:b.py","span":{"start":1,"length":1},"original":"+","replacement":"-","operator":"binary_add_sub","line":1,"column":1,"symbol":null}"#),
+        Ok(Some(AnalyzerRecord::Candidate(_)))
+    ));
+}
+
+#[test]
+fn candidate_rejects_null_field_from_another_kind() {
+    let mut protocol = protocol();
+    assert!(matches!(
+        protocol.receive_line(br#"{"kind":"candidate","effect_id":7,"path":"pkg/calc.py","span":{"start":1,"length":1},"original":"+","replacement":"-","operator":"binary_add_sub","line":1,"column":1,"symbol":null,"code":null}"#),
+        Err(ProtocolError::InvalidRecord(
+            "candidate contains fields for another record kind"
+        ))
+    ));
+}
+
+#[test]
+fn diagnostic_rejects_null_field_from_another_kind() {
+    let mut protocol = protocol();
+    assert!(matches!(
+        protocol.receive_line(br#"{"kind":"diagnostic","effect_id":7,"code":"invalid_syntax","path":"pkg/calc.py","replacement":null}"#),
+        Err(ProtocolError::InvalidRecord(
+            "diagnostic contains fields for another record kind"
+        ))
+    ));
+}
+
+#[test]
+fn summary_rejects_null_field_from_another_kind() {
+    let mut protocol = protocol();
+    assert!(matches!(
+        protocol.receive_line(br#"{"kind":"summary","effect_id":7,"candidate_count":0,"diagnostic_count":0,"truncated":false,"path":null}"#),
+        Err(ProtocolError::InvalidRecord(
+            "summary contains fields for another record kind"
+        ))
+    ));
+}
+
+fn spool_lines(reference: &hoimin_core::CandidateSpoolRef) -> Vec<String> {
+    fs::read_to_string(&reference.token)
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect()
+}
+
+#[test]
+fn replay_rejects_duplicate_or_reversed_sequence() {
+    let mut store = CandidateStore::new(2).unwrap();
+    store.push(&candidate(1)).unwrap();
+    store.push(&candidate(2)).unwrap();
+    let reference = store.finish().unwrap();
+    let lines = spool_lines(&reference);
+
+    fs::write(&reference.token, format!("{}\n{}\n", lines[0], lines[0])).unwrap();
+    let (_, next) = CandidateStore::replay_one(&reference, 0).unwrap().unwrap();
+    assert!(matches!(
+        CandidateStore::replay_one(&reference, next),
+        Err(StoreError::InvalidSequence {
+            expected: 2,
+            actual: 1
+        })
+    ));
+
+    fs::write(&reference.token, format!("{}\n{}\n", lines[1], lines[0])).unwrap();
+    assert!(matches!(
+        CandidateStore::replay_one(&reference, 0),
+        Err(StoreError::InvalidSequence {
+            expected: 1,
+            actual: 2
+        })
+    ));
+}
+
+#[test]
+fn replay_rejects_sequence_gap() {
+    let mut store = CandidateStore::new(2).unwrap();
+    store.push(&candidate(1)).unwrap();
+    store.push(&candidate(2)).unwrap();
+    let reference = store.finish().unwrap();
+    let first = spool_lines(&reference).remove(0);
+    let third = serde_json::to_string(&candidate(3)).unwrap();
+    fs::write(&reference.token, format!("{first}\n{third}\n")).unwrap();
+
+    let (_, next) = CandidateStore::replay_one(&reference, 0).unwrap().unwrap();
+    assert!(matches!(
+        CandidateStore::replay_one(&reference, next),
+        Err(StoreError::InvalidSequence {
+            expected: 2,
+            actual: 3
+        })
+    ));
+}
+
+#[test]
+fn replay_rejects_early_eof_before_reference_record_count() {
+    let mut store = CandidateStore::new(2).unwrap();
+    store.push(&candidate(1)).unwrap();
+    store.push(&candidate(2)).unwrap();
+    let reference = store.finish().unwrap();
+    let first = spool_lines(&reference).remove(0);
+    fs::write(&reference.token, format!("{first}\n")).unwrap();
+
+    let (_, end) = CandidateStore::replay_one(&reference, 0).unwrap().unwrap();
+    assert!(matches!(
+        CandidateStore::replay_one(&reference, end),
+        Err(StoreError::UnexpectedEof {
+            expected_records: 2,
+            actual_records: 1
+        })
+    ));
+}
+
+#[test]
+fn replay_rejects_truncated_record() {
+    let mut store = CandidateStore::new(2).unwrap();
+    store.push(&candidate(1)).unwrap();
+    store.push(&candidate(2)).unwrap();
+    let reference = store.finish().unwrap();
+    let lines = spool_lines(&reference);
+    fs::write(&reference.token, format!("{}\n{{", lines[0])).unwrap();
+
+    let (_, next) = CandidateStore::replay_one(&reference, 0).unwrap().unwrap();
+    assert!(matches!(
+        CandidateStore::replay_one(&reference, next),
+        Err(StoreError::UnexpectedEof {
+            expected_records: 2,
+            actual_records: 1
+        })
     ));
 }

@@ -95,7 +95,7 @@ pub fn stable_mutant_id(identity: &CandidateIdentity) -> MutantId {
         b"source-blake3",
         identity.file_hash.to_ascii_lowercase().as_bytes(),
     );
-    let path = identity.path.as_str().replace('\\', "/");
+    let path = canonical_identity_path(identity.path.as_str());
     framed(&mut hasher, b"path", path.as_bytes());
     framed(
         &mut hasher,
@@ -172,10 +172,34 @@ pub fn validate_candidate(
 }
 
 pub fn normalized_relative_path(path: &str) -> bool {
-    !path.is_empty()
-        && !path.starts_with('/')
-        && !path.contains('\\')
-        && path
-            .split('/')
-            .all(|part| !part.is_empty() && part != "." && part != ".." && !part.contains(':'))
+    if path.is_empty() || path.starts_with('/') || path.contains('\\') {
+        return false;
+    }
+    let mut parts = path.split('/');
+    let Some(first) = parts.next() else {
+        return false;
+    };
+    !first.contains(':') && valid_path_part(first) && parts.all(valid_path_part)
+}
+
+fn valid_path_part(part: &str) -> bool {
+    !part.is_empty() && part != "." && part != ".."
+}
+
+fn canonical_identity_path(path: &str) -> String {
+    let slash_path = path.replace('\\', "/");
+    let mut normalized = String::with_capacity(slash_path.len());
+    if slash_path.starts_with('/') {
+        normalized.push('/');
+    }
+    for part in slash_path
+        .split('/')
+        .filter(|part| !part.is_empty() && *part != ".")
+    {
+        if !normalized.is_empty() && !normalized.ends_with('/') {
+            normalized.push('/');
+        }
+        normalized.push_str(part);
+    }
+    normalized
 }

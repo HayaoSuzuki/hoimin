@@ -93,3 +93,48 @@ fn rejects_wrong_line_metadata_and_non_normalized_path() {
         Err(CandidateValidationError::InvalidPath)
     );
 }
+
+#[test]
+fn path_policy_matches_task4_helper_for_colons_and_absolute_paths() {
+    let source = b"x = 1\nvalue == 2\n";
+    let mut nested_colon = descriptor(source);
+    nested_colon.path = Utf8PathBuf::from("pkg/a:b.py");
+    assert!(validate_candidate(source, &nested_colon).is_ok());
+
+    for invalid in ["/pkg/calc.py", "C:/pkg/calc.py", "pkg/../calc.py"] {
+        let mut candidate = descriptor(source);
+        candidate.path = Utf8PathBuf::from(invalid);
+        assert_eq!(
+            validate_candidate(source, &candidate),
+            Err(CandidateValidationError::InvalidPath),
+            "path should be rejected: {invalid}"
+        );
+    }
+}
+
+#[test]
+fn stable_id_normalizes_only_harmless_path_variants() {
+    let source = b"x = 1\nvalue == 2\n";
+    let canonical = CandidateIdentity::from(&descriptor(source));
+    let duplicate = CandidateIdentity {
+        path: Utf8PathBuf::from("pkg//calc.py"),
+        ..canonical.clone()
+    };
+    let dotted = CandidateIdentity {
+        path: Utf8PathBuf::from("./pkg/calc.py"),
+        ..canonical.clone()
+    };
+    let parent = CandidateIdentity {
+        path: Utf8PathBuf::from("pkg/../calc.py"),
+        ..canonical.clone()
+    };
+    let absolute = CandidateIdentity {
+        path: Utf8PathBuf::from("/pkg/calc.py"),
+        ..canonical.clone()
+    };
+
+    assert_eq!(stable_mutant_id(&canonical), stable_mutant_id(&duplicate));
+    assert_eq!(stable_mutant_id(&canonical), stable_mutant_id(&dotted));
+    assert_ne!(stable_mutant_id(&canonical), stable_mutant_id(&parent));
+    assert_ne!(stable_mutant_id(&canonical), stable_mutant_id(&absolute));
+}

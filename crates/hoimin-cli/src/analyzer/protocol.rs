@@ -188,41 +188,28 @@ impl AnalyzerProtocol {
                 "record after candidate limit diagnostic",
             ));
         }
-        if raw.code.is_some()
-            || raw.message.is_some()
-            || raw.candidate_count.is_some()
-            || raw.diagnostic_count.is_some()
-            || raw.truncated.is_some()
+        if raw.code.is_present()
+            || raw.message.is_present()
+            || raw.candidate_count.is_present()
+            || raw.diagnostic_count.is_present()
+            || raw.truncated.is_present()
         {
             return Err(ProtocolError::InvalidRecord(
                 "candidate contains fields for another record kind",
             ));
         }
-        let path = raw
-            .path
-            .ok_or(ProtocolError::InvalidRecord("candidate path is required"))?;
-        let span: ByteSpan = raw
-            .span
-            .ok_or(ProtocolError::InvalidRecord("candidate span is required"))?
-            .into();
-        let original = raw.original.ok_or(ProtocolError::InvalidRecord(
-            "candidate original is required",
-        ))?;
-        let replacement = raw.replacement.ok_or(ProtocolError::InvalidRecord(
-            "candidate replacement is required",
-        ))?;
-        let operator = raw.operator.ok_or(ProtocolError::InvalidRecord(
-            "candidate operator is required",
-        ))?;
-        let line = raw
-            .line
-            .ok_or(ProtocolError::InvalidRecord("candidate line is required"))?;
-        let column = raw
-            .column
-            .ok_or(ProtocolError::InvalidRecord("candidate column is required"))?;
+        let path = raw.path.required("candidate path is required")?;
+        let span: ByteSpan = raw.span.required("candidate span is required")?.into();
+        let original = raw.original.required("candidate original is required")?;
+        let replacement = raw
+            .replacement
+            .required("candidate replacement is required")?;
+        let operator = raw.operator.required("candidate operator is required")?;
+        let line = raw.line.required("candidate line is required")?;
+        let column = raw.column.required("candidate column is required")?;
         let symbol = raw
             .symbol
-            .ok_or(ProtocolError::InvalidRecord("candidate symbol is required"))?;
+            .nullable_required("candidate symbol is required")?;
         if !normalized_relative_path(path.as_str())
             || line == 0
             || original.len() as u64 != span.length
@@ -256,20 +243,20 @@ impl AnalyzerProtocol {
     }
 
     fn receive_diagnostic(&mut self, raw: RawRecord) -> Result<AnalyzerRecord, ProtocolError> {
-        if raw.span.is_some()
-            || raw.original.is_some()
-            || raw.replacement.is_some()
-            || raw.operator.is_some()
-            || raw.symbol.is_some()
-            || raw.candidate_count.is_some()
-            || raw.diagnostic_count.is_some()
-            || raw.truncated.is_some()
+        if raw.span.is_present()
+            || raw.original.is_present()
+            || raw.replacement.is_present()
+            || raw.operator.is_present()
+            || raw.symbol.is_present()
+            || raw.candidate_count.is_present()
+            || raw.diagnostic_count.is_present()
+            || raw.truncated.is_present()
         {
             return Err(ProtocolError::InvalidRecord(
                 "diagnostic contains fields for another record kind",
             ));
         }
-        let code = match raw.code.as_deref() {
+        let code = match raw.code.value().map(String::as_str) {
             Some("invalid_syntax") => AnalyzerDiagnosticCode::InvalidSyntax,
             Some("unreconstructable_span") => AnalyzerDiagnosticCode::UnreconstructableSpan,
             Some("unparseable_replacement") => AnalyzerDiagnosticCode::UnparseableReplacement,
@@ -277,29 +264,29 @@ impl AnalyzerProtocol {
             Some("invalid_request") => AnalyzerDiagnosticCode::InvalidRequest,
             _ => return Err(ProtocolError::InvalidRecord("unknown diagnostic code")),
         };
-        let has_location = raw.line.is_some() || raw.column.is_some();
+        let has_location = raw.line.is_present() || raw.column.is_present();
         let fields_match = match code {
             AnalyzerDiagnosticCode::InvalidRequest => {
-                raw.path.is_none() && !has_location && raw.message.is_some()
+                !raw.path.is_present() && !has_location && raw.message.value().is_some()
             }
             AnalyzerDiagnosticCode::UnreconstructableSpan
             | AnalyzerDiagnosticCode::UnparseableReplacement => {
-                raw.path.is_some()
-                    && raw.line.is_some()
-                    && raw.column.is_some()
-                    && raw.message.is_none()
+                raw.path.value().is_some()
+                    && raw.line.value().is_some()
+                    && raw.column.value().is_some()
+                    && !raw.message.is_present()
             }
             AnalyzerDiagnosticCode::InvalidSyntax
             | AnalyzerDiagnosticCode::CandidateLimitExceeded => {
-                raw.path.is_some() && !has_location && raw.message.is_none()
+                raw.path.value().is_some() && !has_location && !raw.message.is_present()
             }
         };
-        if !fields_match || raw.line == Some(0) {
+        if !fields_match || raw.line.value() == Some(&0) {
             return Err(ProtocolError::InvalidRecord("invalid diagnostic fields"));
         }
         if raw
             .path
-            .as_ref()
+            .value()
             .is_some_and(|path| !normalized_relative_path(path.as_str()))
         {
             return Err(ProtocolError::InvalidRecord("invalid diagnostic path"));
@@ -322,38 +309,36 @@ impl AnalyzerProtocol {
             .ok_or(ProtocolError::InvalidRecord("diagnostic count overflow"))?;
         Ok(AnalyzerRecord::Diagnostic(AnalyzerDiagnostic {
             code,
-            path: raw.path,
-            line: raw.line,
-            column: raw.column,
-            message: raw.message,
+            path: raw.path.into_value(),
+            line: raw.line.into_value(),
+            column: raw.column.into_value(),
+            message: raw.message.into_value(),
         }))
     }
 
     fn receive_summary(&mut self, raw: RawRecord) -> Result<AnalyzerRecord, ProtocolError> {
-        if raw.path.is_some()
-            || raw.span.is_some()
-            || raw.original.is_some()
-            || raw.replacement.is_some()
-            || raw.operator.is_some()
-            || raw.line.is_some()
-            || raw.column.is_some()
-            || raw.symbol.is_some()
-            || raw.code.is_some()
-            || raw.message.is_some()
+        if raw.path.is_present()
+            || raw.span.is_present()
+            || raw.original.is_present()
+            || raw.replacement.is_present()
+            || raw.operator.is_present()
+            || raw.line.is_present()
+            || raw.column.is_present()
+            || raw.symbol.is_present()
+            || raw.code.is_present()
+            || raw.message.is_present()
         {
             return Err(ProtocolError::InvalidRecord(
                 "summary contains fields for another record kind",
             ));
         }
-        let candidate_count = raw.candidate_count.ok_or(ProtocolError::InvalidRecord(
-            "summary candidate_count is required",
-        ))?;
-        let diagnostic_count = raw.diagnostic_count.ok_or(ProtocolError::InvalidRecord(
-            "summary diagnostic_count is required",
-        ))?;
-        let truncated = raw.truncated.ok_or(ProtocolError::InvalidRecord(
-            "summary truncated is required",
-        ))?;
+        let candidate_count = raw
+            .candidate_count
+            .required("summary candidate_count is required")?;
+        let diagnostic_count = raw
+            .diagnostic_count
+            .required("summary diagnostic_count is required")?;
+        let truncated = raw.truncated.required("summary truncated is required")?;
         if candidate_count != self.candidate_count || diagnostic_count != self.diagnostic_count {
             return Err(ProtocolError::CountMismatch {
                 expected_candidates: self.candidate_count,
@@ -401,20 +386,32 @@ fn known_operator(operator: &str) -> bool {
 struct RawRecord {
     kind: String,
     effect_id: EffectId,
-    path: Option<Utf8PathBuf>,
-    span: Option<RawSpan>,
-    original: Option<String>,
-    replacement: Option<String>,
-    operator: Option<String>,
-    line: Option<u32>,
-    column: Option<u32>,
-    #[serde(default, deserialize_with = "present_nullable")]
-    symbol: Option<Option<String>>,
-    code: Option<String>,
-    message: Option<String>,
-    candidate_count: Option<u64>,
-    diagnostic_count: Option<u64>,
-    truncated: Option<bool>,
+    #[serde(default)]
+    path: RawField<Utf8PathBuf>,
+    #[serde(default)]
+    span: RawField<RawSpan>,
+    #[serde(default)]
+    original: RawField<String>,
+    #[serde(default)]
+    replacement: RawField<String>,
+    #[serde(default)]
+    operator: RawField<String>,
+    #[serde(default)]
+    line: RawField<u32>,
+    #[serde(default)]
+    column: RawField<u32>,
+    #[serde(default)]
+    symbol: RawField<String>,
+    #[serde(default)]
+    code: RawField<String>,
+    #[serde(default)]
+    message: RawField<String>,
+    #[serde(default)]
+    candidate_count: RawField<u64>,
+    #[serde(default)]
+    diagnostic_count: RawField<u64>,
+    #[serde(default)]
+    truncated: RawField<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -433,9 +430,53 @@ impl From<RawSpan> for ByteSpan {
     }
 }
 
-fn present_nullable<'de, D>(deserializer: D) -> Result<Option<Option<String>>, D::Error>
+#[derive(Debug, Default)]
+enum RawField<T> {
+    #[default]
+    Missing,
+    Present(Option<T>),
+}
+
+impl<T> RawField<T> {
+    fn is_present(&self) -> bool {
+        matches!(self, Self::Present(_))
+    }
+
+    fn value(&self) -> Option<&T> {
+        match self {
+            Self::Present(Some(value)) => Some(value),
+            Self::Missing | Self::Present(None) => None,
+        }
+    }
+
+    fn into_value(self) -> Option<T> {
+        match self {
+            Self::Present(value) => value,
+            Self::Missing => None,
+        }
+    }
+
+    fn required(self, message: &'static str) -> Result<T, ProtocolError> {
+        self.into_value()
+            .ok_or(ProtocolError::InvalidRecord(message))
+    }
+
+    fn nullable_required(self, message: &'static str) -> Result<Option<T>, ProtocolError> {
+        match self {
+            Self::Present(value) => Ok(value),
+            Self::Missing => Err(ProtocolError::InvalidRecord(message)),
+        }
+    }
+}
+
+impl<'de, T> Deserialize<'de> for RawField<T>
 where
-    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
 {
-    Option::<String>::deserialize(deserializer).map(Some)
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Option::<T>::deserialize(deserializer).map(Self::Present)
+    }
 }

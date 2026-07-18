@@ -17,6 +17,13 @@ pub enum StoreError {
     RecordTooLarge { limit: u64 },
     #[error("invalid candidate spool offset {offset}")]
     InvalidOffset { offset: u64 },
+    #[error(
+        "candidate spool ended before all records: expected {expected_records}, got {actual_records}"
+    )]
+    UnexpectedEof {
+        expected_records: u64,
+        actual_records: u64,
+    },
     #[error("candidate spool I/O failed: {0}")]
     Io(String),
     #[error("candidate spool record is corrupt: {0}")]
@@ -106,9 +113,6 @@ impl CandidateStore {
         if offset > length {
             return Err(StoreError::InvalidOffset { offset });
         }
-        if offset == length {
-            return Ok(None);
-        }
         if offset != 0 {
             file.seek(SeekFrom::Start(offset - 1)).map_err(io_error)?;
             let mut previous = [0_u8; 1];
@@ -117,8 +121,25 @@ impl CandidateStore {
                 return Err(StoreError::InvalidOffset { offset });
             }
         }
+        let expected_sequence = expected_sequence_at(&mut file, offset)?;
+        if offset == length {
+            let actual_records = expected_sequence.saturating_sub(1);
+            return if actual_records < reference.records {
+                Err(StoreError::UnexpectedEof {
+                    expected_records: reference.records,
+                    actual_records,
+                })
+            } else if actual_records == reference.records {
+                Ok(None)
+            } else {
+                Err(StoreError::InvalidSequence {
+                    expected: reference.records,
+                    actual: actual_records,
+                })
+            };
+        }
         file.seek(SeekFrom::Start(offset)).map_err(io_error)?;
-        read_one_bounded(file, reference, offset)
+        read_one_bounded(file, reference, offset, expected_sequence)
     }
 }
 
@@ -132,30 +153,79 @@ fn read_one_bounded(
     file: File,
     reference: &CandidateSpoolRef,
     offset: u64,
+    expected_sequence: u64,
 ) -> Result<Option<(MutationCandidate, u64)>, StoreError> {
     let mut line = Vec::new();
     let mut reader = BufReader::new(file).take(MAX_SPOOL_RECORD_BYTES + 1);
     let read = reader.read_until(b'\n', &mut line).map_err(io_error)?;
     if read == 0 {
-        return Ok(None);
+        return Err(StoreError::UnexpectedEof {
+            expected_records: reference.records,
+            actual_records: expected_sequence.saturating_sub(1),
+        });
     }
-    if read as u64 > MAX_SPOOL_RECORD_BYTES || line.last() != Some(&b'\n') {
+    if read as u64 > MAX_SPOOL_RECORD_BYTES {
         return Err(StoreError::RecordTooLarge {
             limit: MAX_SPOOL_RECORD_BYTES,
+        });
+    }
+    if line.last() != Some(&b'\n') {
+        return Err(StoreError::UnexpectedEof {
+            expected_records: reference.records,
+            actual_records: expected_sequence.saturating_sub(1),
         });
     }
     line.pop();
     let candidate: MutationCandidate = serde_json::from_slice(&line)
         .map_err(|error| StoreError::CorruptRecord(error.to_string()))?;
-    if candidate.sequence == 0 || candidate.sequence > reference.records {
-        return Err(StoreError::CorruptRecord(
-            "sequence outside spool reference".into(),
-        ));
+    if candidate.sequence != expected_sequence {
+        return Err(StoreError::InvalidSequence {
+            expected: expected_sequence,
+            actual: candidate.sequence,
+        });
+    }
+    if candidate.sequence > reference.records {
+        return Err(StoreError::InvalidSequence {
+            expected: reference.records,
+            actual: candidate.sequence,
+        });
     }
     let next = offset
         .checked_add(read as u64)
         .ok_or(StoreError::InvalidOffset { offset })?;
     Ok(Some((candidate, next)))
+}
+
+fn expected_sequence_at(file: &mut File, offset: u64) -> Result<u64, StoreError> {
+    if offset == 0 {
+        return Ok(1);
+    }
+    let window_length = offset.min(MAX_SPOOL_RECORD_BYTES + 1);
+    let window_start = offset - window_length;
+    file.seek(SeekFrom::Start(window_start)).map_err(io_error)?;
+    let mut window = vec![0_u8; window_length as usize];
+    file.read_exact(&mut window).map_err(io_error)?;
+    let previous_body = window
+        .strip_suffix(b"\n")
+        .ok_or(StoreError::InvalidOffset { offset })?;
+    let record_start = previous_body
+        .iter()
+        .rposition(|byte| *byte == b'\n')
+        .map_or(0, |index| index + 1);
+    if window_start != 0 && record_start == 0 {
+        return Err(StoreError::RecordTooLarge {
+            limit: MAX_SPOOL_RECORD_BYTES,
+        });
+    }
+    let previous: MutationCandidate = serde_json::from_slice(&previous_body[record_start..])
+        .map_err(|error| StoreError::CorruptRecord(error.to_string()))?;
+    previous
+        .sequence
+        .checked_add(1)
+        .ok_or(StoreError::InvalidSequence {
+            expected: previous.sequence,
+            actual: previous.sequence,
+        })
 }
 
 fn io_error(error: std::io::Error) -> StoreError {
