@@ -63,6 +63,29 @@ fn process_limit_and_survivor_produce_an_incomplete_exit() {
 }
 
 #[test]
+fn error_results_take_infrastructure_exit_precedence() {
+    let error_only = summarize(&[MutationStatus::Error]);
+    assert_eq!(exit_code_for(ExitPolicy::from_summary(&error_only)), 2);
+
+    let error_and_survivor = summarize(&[MutationStatus::Error, MutationStatus::Survived]);
+    assert_eq!(
+        exit_code_for(ExitPolicy::from_summary(&error_and_survivor)),
+        2
+    );
+
+    let error_survivor_and_incomplete = summarize(&[
+        MutationStatus::Error,
+        MutationStatus::Survived,
+        MutationStatus::Timeout,
+    ]);
+    let policy = ExitPolicy::from_summary(&error_survivor_and_incomplete);
+    assert!(policy.infrastructure_error);
+    assert!(policy.incomplete);
+    assert!(policy.survivors);
+    assert_eq!(exit_code_for(policy), 2);
+}
+
+#[test]
 fn no_candidates_has_a_null_score_and_success_exit() {
     assert_eq!(summarize(&[]).score, None);
     assert_eq!(exit_code(false, false, false), 0);

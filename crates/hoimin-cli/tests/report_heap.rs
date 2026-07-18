@@ -4,14 +4,16 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use hoimin_cli::report::ReportHandler;
 use hoimin_core::{
-    ByteSpan, EffectId, EmitOutput, MutantFinished, MutationCandidate, MutationStatus, OutputEvent,
-    OutputFormat, ProcessTermination, ResourceMode, RunStarted,
+    ByteSpan, EffectId, EmitOutput, MutantFinished, MutationCandidate, MutationStatus,
+    MutationSummary, OutputEvent, OutputFormat, ProcessTermination, ResourceMode, RunStarted,
+    RunSummary,
 };
 
 struct TrackingAllocator;
 
-static TRACKING: AtomicBool = AtomicBool::new(false);
-static CURRENT: AtomicUsize = AtomicUsize::new(0);
+static MEASURING: AtomicBool = AtomicBool::new(false);
+static LIVE: AtomicUsize = AtomicUsize::new(0);
+static BASELINE: AtomicUsize = AtomicUsize::new(0);
 static PEAK: AtomicUsize = AtomicUsize::new(0);
 
 #[global_allocator]
@@ -20,7 +22,7 @@ static ALLOCATOR: TrackingAllocator = TrackingAllocator;
 unsafe impl GlobalAlloc for TrackingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let pointer = unsafe { System.alloc(layout) };
-        if !pointer.is_null() && TRACKING.load(Ordering::Relaxed) {
+        if !pointer.is_null() {
             allocated(layout.size());
         }
         pointer
@@ -28,22 +30,20 @@ unsafe impl GlobalAlloc for TrackingAllocator {
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         let pointer = unsafe { System.alloc_zeroed(layout) };
-        if !pointer.is_null() && TRACKING.load(Ordering::Relaxed) {
+        if !pointer.is_null() {
             allocated(layout.size());
         }
         pointer
     }
 
     unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
-        if TRACKING.load(Ordering::Relaxed) {
-            deallocated(layout.size());
-        }
+        deallocated(layout.size());
         unsafe { System.dealloc(pointer, layout) };
     }
 
     unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         let new_pointer = unsafe { System.realloc(pointer, layout, new_size) };
-        if !new_pointer.is_null() && TRACKING.load(Ordering::Relaxed) {
+        if !new_pointer.is_null() {
             if new_size >= layout.size() {
                 allocated(new_size - layout.size());
             } else {
@@ -55,14 +55,15 @@ unsafe impl GlobalAlloc for TrackingAllocator {
 }
 
 fn allocated(bytes: usize) {
-    let current = CURRENT.fetch_add(bytes, Ordering::Relaxed) + bytes;
-    PEAK.fetch_max(current, Ordering::Relaxed);
+    let live = LIVE.fetch_add(bytes, Ordering::Relaxed) + bytes;
+    if MEASURING.load(Ordering::Relaxed) {
+        let measured = live.saturating_sub(BASELINE.load(Ordering::Relaxed));
+        PEAK.fetch_max(measured, Ordering::Relaxed);
+    }
 }
 
 fn deallocated(bytes: usize) {
-    let _ = CURRENT.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-        Some(current.saturating_sub(bytes))
-    });
+    LIVE.fetch_sub(bytes, Ordering::Relaxed);
 }
 
 #[test]
@@ -82,9 +83,9 @@ fn json_heap_peak_is_independent_of_mutant_count() {
 
 fn measured_peak(mutants: u64) -> usize {
     let spool = tempfile::tempdir().unwrap();
-    CURRENT.store(0, Ordering::Relaxed);
     PEAK.store(0, Ordering::Relaxed);
-    TRACKING.store(true, Ordering::Relaxed);
+    BASELINE.store(LIVE.load(Ordering::Relaxed), Ordering::Relaxed);
+    MEASURING.store(true, Ordering::Relaxed);
 
     {
         let mut handler =
@@ -96,9 +97,24 @@ fn measured_peak(mutants: u64) -> usize {
         for index in 0..mutants {
             emit(&mut handler, mutant_finished(index + 2, index));
         }
+        emit(
+            &mut handler,
+            OutputEvent::RunFinished(RunSummary {
+                schema_version: 1,
+                sequence: mutants + 2,
+                run_id: "run-1".to_owned(),
+                counts: MutationSummary {
+                    killed: mutants,
+                    score: Some(1.0),
+                    ..MutationSummary::default()
+                },
+                complete: true,
+                exit_code: 0,
+            }),
+        );
     }
 
-    TRACKING.store(false, Ordering::Relaxed);
+    MEASURING.store(false, Ordering::Relaxed);
     PEAK.load(Ordering::Relaxed)
 }
 

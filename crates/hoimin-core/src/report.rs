@@ -72,6 +72,7 @@ pub struct ExitPolicy {
 impl ExitPolicy {
     pub fn from_summary(summary: &MutationSummary) -> Self {
         Self {
+            infrastructure_error: summary.error > 0,
             incomplete: summary.timeout > 0
                 || summary.out_of_memory > 0
                 || summary.process_limit > 0
