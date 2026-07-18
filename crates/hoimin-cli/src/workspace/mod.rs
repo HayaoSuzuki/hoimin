@@ -42,6 +42,15 @@ pub enum WorkspaceError {
     CopySizeOverflow,
     #[error("workspace copy grant {requested} does not match expected aggregate {expected}")]
     InvalidGrant { requested: u64, expected: u64 },
+    #[error("workspace preflight {received:?} does not match plan preflight {expected:?}")]
+    PreflightMismatch {
+        expected: hoimin_core::EffectId,
+        received: hoimin_core::EffectId,
+    },
+    #[error("worker {worker} is outside requested worker count {requested_workers}")]
+    WorkerOutOfRange { worker: u32, requested_workers: u32 },
+    #[error("workspace allowance {received} does not match plan allowance {expected}")]
+    AllowanceMismatch { expected: u64, received: u64 },
     #[error("workspace reservation {received:?} does not match bound reservation {expected:?}")]
     ReservationMismatch {
         expected: hoimin_core::ReservationId,
@@ -105,6 +114,9 @@ impl WorkspaceError {
             Self::InvalidGrant { .. }
             | Self::CopyAllowanceExceeded { .. }
             | Self::CopySizeOverflow => "workspace.copy.limit",
+            Self::PreflightMismatch { .. } => "workspace.preflight.mismatch",
+            Self::WorkerOutOfRange { .. } => "workspace.worker.out_of_range",
+            Self::AllowanceMismatch { .. } => "workspace.allowance.mismatch",
             Self::ReservationMismatch { .. } => "workspace.grant.invalid",
             Self::OriginalChanged { .. } => "workspace.original.changed",
             Self::WorkspaceRestore { .. } => "workspace.restore",
@@ -179,31 +191,61 @@ fn resolve_worker_path(root: &Utf8Path, path: &Utf8Path) -> Result<Utf8PathBuf, 
 }
 
 fn make_tree_writable(root: &Path) -> Result<(), WorkspaceError> {
-    if !root.exists() {
+    let metadata = match fs::symlink_metadata(root) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            let path = Utf8Path::from_path(root).ok_or(WorkspaceError::NonUtf8Path)?;
+            return Err(WorkspaceError::io("inspect cleanup path", path, error));
+        }
+    };
+    if metadata.file_type().is_symlink() {
         return Ok(());
     }
-    let root = Utf8Path::from_path(root).ok_or(WorkspaceError::NonUtf8Path)?;
-    let mut builder = ignore::WalkBuilder::new(root);
-    builder
-        .hidden(false)
-        .ignore(false)
-        .git_ignore(false)
-        .git_global(false)
-        .git_exclude(false)
-        .parents(false)
-        .follow_links(false);
-    let mut paths = builder
-        .build()
-        .map(|entry| entry.map_err(|error| WorkspaceError::Walk(error.to_string())))
-        .collect::<Result<Vec<_>, _>>()?;
-    paths.sort_by_key(|entry| std::cmp::Reverse(entry.depth()));
-    for entry in paths {
-        if !entry
-            .file_type()
-            .is_some_and(|file_type| file_type.is_symlink())
-        {
-            make_writable(Utf8Path::from_path(entry.path()).ok_or(WorkspaceError::NonUtf8Path)?)?;
+    make_cleanup_entry_accessible(root, &metadata)?;
+    if metadata.is_dir() {
+        let path = Utf8Path::from_path(root).ok_or(WorkspaceError::NonUtf8Path)?;
+        let entries = fs::read_dir(root)
+            .map_err(|error| WorkspaceError::io("read cleanup directory", path, error))?;
+        for entry in entries {
+            let entry =
+                entry.map_err(|error| WorkspaceError::io("read cleanup entry", path, error))?;
+            make_tree_writable(&entry.path())?;
         }
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+#[allow(clippy::permissions_set_readonly_false)]
+fn make_cleanup_entry_accessible(
+    path: &Path,
+    metadata: &fs::Metadata,
+) -> Result<(), WorkspaceError> {
+    let mut permissions = metadata.permissions();
+    if permissions.readonly() {
+        permissions.set_readonly(false);
+        let path = Utf8Path::from_path(path).ok_or(WorkspaceError::NonUtf8Path)?;
+        fs::set_permissions(path, permissions)
+            .map_err(|error| WorkspaceError::io("prepare cleanup path", path, error))?;
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn make_cleanup_entry_accessible(
+    path: &Path,
+    metadata: &fs::Metadata,
+) -> Result<(), WorkspaceError> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut permissions = metadata.permissions();
+    let required = if metadata.is_dir() { 0o700 } else { 0o200 };
+    if permissions.mode() & required != required {
+        permissions.set_mode(permissions.mode() | required);
+        let path = Utf8Path::from_path(path).ok_or(WorkspaceError::NonUtf8Path)?;
+        fs::set_permissions(path, permissions)
+            .map_err(|error| WorkspaceError::io("prepare cleanup path", path, error))?;
     }
     Ok(())
 }
@@ -220,6 +262,7 @@ pub struct WorkerWorkspace {
     plan_state: Arc<Mutex<copy::PlanState>>,
     worker: u32,
     charged: u64,
+    cleanup_complete: bool,
 }
 
 impl WorkerWorkspace {
@@ -247,6 +290,7 @@ impl WorkerWorkspace {
             plan_state,
             worker,
             charged,
+            cleanup_complete: false,
         }
     }
 
@@ -294,11 +338,20 @@ impl WorkerWorkspace {
         Ok(resolve_worker_path(&self.root, path.as_ref())?.exists())
     }
 
-    pub fn cleanup(&mut self) -> Result<(), WorkspaceError> {
+    pub fn try_cleanup(&mut self) -> Result<(), WorkspaceError> {
+        if self.cleanup_complete {
+            return Ok(());
+        }
         make_tree_writable(self.temp.path())?;
         match fs::remove_dir_all(self.temp.path()) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Ok(()) => {
+                self.cleanup_complete = true;
+                Ok(())
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                self.cleanup_complete = true;
+                Ok(())
+            }
             Err(error) => Err(WorkspaceError::io(
                 "remove worker workspace",
                 &self.root,
@@ -310,6 +363,12 @@ impl WorkerWorkspace {
 
 impl Drop for WorkerWorkspace {
     fn drop(&mut self) {
+        if !self.cleanup_complete && self.try_cleanup().is_err() {
+            return;
+        }
+        if fs::symlink_metadata(self.temp.path()).is_ok() {
+            return;
+        }
         self.allowance.release(self.charged);
         if let Ok(mut state) = self.plan_state.lock() {
             state.workers.remove(&self.worker);
@@ -358,11 +417,17 @@ pub fn build_command_environment(
 
 #[cfg(windows)]
 fn take_pythonpath(env: &mut BTreeMap<OsString, OsString>) -> OsString {
-    let key = env
+    let keys = env
         .keys()
-        .find(|key| key.to_string_lossy().eq_ignore_ascii_case("PYTHONPATH"))
-        .cloned();
-    key.and_then(|key| env.remove(&key)).unwrap_or_default()
+        .filter(|key| key.to_string_lossy().eq_ignore_ascii_case("PYTHONPATH"))
+        .cloned()
+        .collect::<Vec<_>>();
+    let paths = keys
+        .into_iter()
+        .filter_map(|key| env.remove(&key))
+        .flat_map(|value| std::env::split_paths(&value).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    std::env::join_paths(paths).unwrap_or_default()
 }
 
 #[cfg(not(windows))]
@@ -460,6 +525,7 @@ pub struct WorkspaceHandler {
     options: CopyOptions,
     plan: Option<WorkspacePlan>,
     workers: BTreeMap<u32, WorkerWorkspace>,
+    pending_cleanup: BTreeMap<u32, WorkerWorkspace>,
 }
 
 impl WorkspaceHandler {
@@ -476,6 +542,7 @@ impl WorkspaceHandler {
             options,
             plan: None,
             workers: BTreeMap::new(),
+            pending_cleanup: BTreeMap::new(),
         }
     }
 
@@ -502,14 +569,25 @@ impl WorkspaceHandler {
         &mut self,
         request: CreateWorker,
     ) -> Result<WorkerCreated, EffectFailed> {
-        let id = request.id;
-        let worker = request.worker;
-        let reservation_id = request.reservation_id;
+        let id = request.id();
+        let worker = request.worker();
+        let reservation_id = request.reservation_id();
         if self.workers.contains_key(&worker) {
             return Err(effect_failed(
                 id,
                 WorkspaceError::WorkerAlreadyExists { worker },
             ));
+        }
+        if let Some(pending) = self.pending_cleanup.get_mut(&worker) {
+            self.plan
+                .as_ref()
+                .ok_or(WorkspaceError::WorkerMissing { worker })
+                .and_then(|plan| plan.validate_grant(&request))
+                .map_err(|error| effect_failed(id, error))?;
+            pending
+                .try_cleanup()
+                .map_err(|error| effect_failed(id, error))?;
+            self.pending_cleanup.remove(&worker);
         }
         let result = self
             .plan
@@ -563,12 +641,17 @@ impl WorkspaceHandler {
             Err(error) => {
                 let reported_error = if let Some(mut discarded) = self.workers.remove(&worker) {
                     let discarded_root = discarded.root().to_owned();
-                    match discarded.cleanup() {
+                    match discarded.try_cleanup() {
                         Ok(()) => error,
-                        Err(cleanup_error) => WorkspaceError::WorkspaceRestore {
-                            path: discarded_root,
-                            message: format!("{error}; discard cleanup failed: {cleanup_error}"),
-                        },
+                        Err(cleanup_error) => {
+                            self.pending_cleanup.insert(worker, discarded);
+                            WorkspaceError::WorkspaceRestore {
+                                path: discarded_root,
+                                message: format!(
+                                    "{error}; discard cleanup failed: {cleanup_error}"
+                                ),
+                            }
+                        }
                     }
                 } else {
                     error
@@ -604,10 +687,16 @@ impl WorkspaceHandler {
         }
         for workspace in self.workers.values_mut() {
             workspace
-                .cleanup()
+                .try_cleanup()
+                .map_err(|error| effect_failed(request.id, error))?;
+        }
+        for workspace in self.pending_cleanup.values_mut() {
+            workspace
+                .try_cleanup()
                 .map_err(|error| effect_failed(request.id, error))?;
         }
         self.workers.clear();
+        self.pending_cleanup.clear();
         self.plan = None;
         Ok(CleanupFinished {
             id: request.id,
@@ -641,6 +730,24 @@ impl WorkspaceHandler {
 
     pub fn worker_count(&self) -> usize {
         self.workers.len()
+    }
+
+    pub fn pending_cleanup_count(&self) -> usize {
+        self.pending_cleanup.len()
+    }
+
+    pub fn observed_copy_bytes(&self) -> u64 {
+        self.plan
+            .as_ref()
+            .map(WorkspacePlan::observed_copy_bytes)
+            .unwrap_or_default()
+    }
+
+    pub fn materialized_worker_slots(&self) -> usize {
+        self.plan
+            .as_ref()
+            .map(WorkspacePlan::materialized_workers)
+            .unwrap_or_default()
     }
 
     pub fn command_environment(
@@ -725,6 +832,19 @@ fn effect_failed(id: hoimin_core::EffectId, error: WorkspaceError) -> EffectFail
         },
         WorkspaceError::ReservationMismatch { expected, received } => {
             EffectFailure::InvalidWorkspaceGrant { expected, received }
+        }
+        WorkspaceError::PreflightMismatch { expected, received } => {
+            EffectFailure::WorkspacePreflightMismatch { expected, received }
+        }
+        WorkspaceError::WorkerOutOfRange {
+            worker,
+            requested_workers,
+        } => EffectFailure::WorkspaceWorkerOutOfRange {
+            worker,
+            requested_workers,
+        },
+        WorkspaceError::AllowanceMismatch { expected, received } => {
+            EffectFailure::WorkspaceAllowanceMismatch { expected, received }
         }
         WorkspaceError::InvalidPath { path } => EffectFailure::InvalidWorkspacePath { path },
         WorkspaceError::MutationTargetMissing { path }

@@ -87,6 +87,18 @@ pub enum EffectFailure {
         requested: u64,
         allowance: u64,
     },
+    WorkspacePreflightMismatch {
+        expected: EffectId,
+        received: EffectId,
+    },
+    WorkspaceWorkerOutOfRange {
+        worker: u32,
+        requested_workers: u32,
+    },
+    WorkspaceAllowanceMismatch {
+        expected: u64,
+        received: u64,
+    },
     InvalidWorkspaceGrant {
         expected: ReservationId,
         received: ReservationId,
@@ -120,6 +132,9 @@ impl EffectFailure {
             Self::WorkspaceRestore { .. } => "workspace.restore",
             Self::OriginalChanged { .. } => "workspace.original.changed",
             Self::CopyLimit { .. } => "workspace.copy.limit",
+            Self::WorkspacePreflightMismatch { .. } => "workspace.preflight.mismatch",
+            Self::WorkspaceWorkerOutOfRange { .. } => "workspace.worker.out_of_range",
+            Self::WorkspaceAllowanceMismatch { .. } => "workspace.allowance.mismatch",
             Self::InvalidWorkspaceGrant { .. } => "workspace.grant.invalid",
             Self::InvalidWorkspacePath { .. } => "workspace.path.invalid",
             Self::InvalidMutation { code, .. }

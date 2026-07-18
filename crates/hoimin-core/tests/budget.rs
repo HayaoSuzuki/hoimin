@@ -73,12 +73,17 @@ fn preflight_metadata_is_reserved_by_core_and_carried_to_each_worker_effect() {
     let second = grant.create_worker(EffectId(12), 1).unwrap();
 
     assert_eq!(ledger.reserved(BudgetKind::Copy), 30);
-    assert_eq!(first.preflight_id, EffectId(10));
-    assert_eq!(first.reservation_id, grant.reservation_id);
-    assert_eq!(first.granted_allowance, 30);
-    assert_eq!(first.worker, 0);
-    assert_eq!(second.reservation_id, first.reservation_id);
-    assert_eq!(second.worker, 1);
+    assert_eq!(grant.preflight_id(), EffectId(10));
+    assert_eq!(grant.granted_allowance(), 30);
+    assert_eq!(grant.per_worker_logical_bytes(), 10);
+    assert_eq!(grant.requested_workers(), 3);
+    assert_eq!(first.id(), EffectId(11));
+    assert_eq!(first.preflight_id(), EffectId(10));
+    assert_eq!(first.reservation_id(), grant.reservation_id());
+    assert_eq!(first.granted_allowance(), 30);
+    assert_eq!(first.worker(), 0);
+    assert_eq!(second.reservation_id(), first.reservation_id());
+    assert_eq!(second.worker(), 1);
 }
 
 #[test]
@@ -112,7 +117,7 @@ fn cleanup_completion_releases_the_core_copy_reservation_once() {
     .unwrap();
     let cleanup = CleanupFinished {
         id: EffectId(31),
-        released_reservations: vec![grant.reservation_id],
+        released_reservations: vec![grant.reservation_id()],
     };
 
     release_workspace_copy(&mut ledger, &cleanup).unwrap();
@@ -120,7 +125,7 @@ fn cleanup_completion_releases_the_core_copy_reservation_once() {
     assert_eq!(ledger.reserved(BudgetKind::Copy), 0);
     assert_eq!(
         release_workspace_copy(&mut ledger, &cleanup),
-        Err(BudgetError::AlreadyReleased(grant.reservation_id))
+        Err(BudgetError::AlreadyReleased(grant.reservation_id()))
     );
 }
 
@@ -174,7 +179,7 @@ fn grant_can_release_a_reserved_preflight_even_before_any_worker_is_created() {
     .unwrap();
 
     let cleanup = grant.cleanup(EffectId(61));
-    assert_eq!(cleanup.reservations, vec![grant.reservation_id]);
+    assert_eq!(cleanup.reservations, vec![grant.reservation_id()]);
     let completed = CleanupFinished {
         id: cleanup.id,
         released_reservations: cleanup.reservations,

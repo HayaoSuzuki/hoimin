@@ -1,7 +1,8 @@
 use camino::Utf8PathBuf;
 use hoimin_core::{
-    EffectFailed, EffectFailure, EffectId, IntegrityCheckpoint, OriginalsVerified, RunEffect,
-    RunEvent, VerifyOriginals,
+    BudgetLedger, EffectFailed, EffectFailure, EffectId, IntegrityCheckpoint, OriginalsVerified,
+    Preflight, PreflightCompleted, RunBudgets, RunEffect, RunEvent, VerifyOriginals,
+    reserve_workspace_copy,
 };
 
 #[test]
@@ -20,6 +21,35 @@ fn workspace_failures_are_machine_readable_and_keep_the_effect_id() {
         failed.failure,
         EffectFailure::WorkspaceRestore { .. }
     ));
+}
+
+#[test]
+fn run_effect_deserialization_preserves_messages_but_rejects_worker_capabilities() {
+    let ordinary = RunEffect::Preflight(Preflight { id: EffectId(50) });
+    let ordinary_json = serde_json::to_string(&ordinary).unwrap();
+    assert_eq!(
+        serde_json::from_str::<RunEffect>(&ordinary_json).unwrap(),
+        ordinary
+    );
+
+    let preflight = PreflightCompleted {
+        id: EffectId(51),
+        per_worker_logical_bytes: 5,
+        requested_workers: 1,
+        aggregate_logical_bytes: 5,
+    };
+    let mut ledger = BudgetLedger::new(RunBudgets {
+        memory: 1,
+        copy: 5,
+        processes: 1,
+    });
+    let capability = reserve_workspace_copy(&mut ledger, &preflight)
+        .unwrap()
+        .create_worker(EffectId(52), 0)
+        .unwrap();
+    let capability_json = serde_json::to_string(&RunEffect::CreateWorker(capability)).unwrap();
+
+    assert!(serde_json::from_str::<RunEffect>(&capability_json).is_err());
 }
 
 #[test]

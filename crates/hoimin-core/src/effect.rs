@@ -28,13 +28,51 @@ effect_request!(
     EmitOutput,
 );
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CreateWorker {
-    pub id: EffectId,
-    pub preflight_id: EffectId,
-    pub reservation_id: ReservationId,
-    pub granted_allowance: u64,
-    pub worker: u32,
+    id: EffectId,
+    preflight_id: EffectId,
+    reservation_id: ReservationId,
+    granted_allowance: u64,
+    worker: u32,
+}
+
+impl CreateWorker {
+    pub(crate) fn from_workspace_grant(
+        id: EffectId,
+        preflight_id: EffectId,
+        reservation_id: ReservationId,
+        granted_allowance: u64,
+        worker: u32,
+    ) -> Self {
+        Self {
+            id,
+            preflight_id,
+            reservation_id,
+            granted_allowance,
+            worker,
+        }
+    }
+
+    pub fn id(&self) -> EffectId {
+        self.id
+    }
+
+    pub fn preflight_id(&self) -> EffectId {
+        self.preflight_id
+    }
+
+    pub fn reservation_id(&self) -> ReservationId {
+        self.reservation_id
+    }
+
+    pub fn granted_allowance(&self) -> u64 {
+        self.granted_allowance
+    }
+
+    pub fn worker(&self) -> u32 {
+        self.worker
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -72,6 +110,7 @@ pub struct ResolveTargets {
 pub enum RunEffect {
     ResolveTargets(ResolveTargets),
     Preflight(Preflight),
+    #[serde(skip_deserializing)]
     CreateWorker(CreateWorker),
     RunBaseline(RunProcess),
     AnalyzeFile(AnalyzeFile),

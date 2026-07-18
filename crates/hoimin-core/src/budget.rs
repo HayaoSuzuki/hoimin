@@ -165,14 +165,34 @@ impl WorkspaceBudgetError {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WorkspaceCopyGrant {
-    pub preflight_id: EffectId,
-    pub reservation_id: ReservationId,
-    pub granted_allowance: u64,
-    pub per_worker_logical_bytes: u64,
-    pub requested_workers: u32,
+    preflight_id: EffectId,
+    reservation_id: ReservationId,
+    granted_allowance: u64,
+    per_worker_logical_bytes: u64,
+    requested_workers: u32,
 }
 
 impl WorkspaceCopyGrant {
+    pub fn preflight_id(self) -> EffectId {
+        self.preflight_id
+    }
+
+    pub fn reservation_id(self) -> ReservationId {
+        self.reservation_id
+    }
+
+    pub fn granted_allowance(self) -> u64 {
+        self.granted_allowance
+    }
+
+    pub fn per_worker_logical_bytes(self) -> u64 {
+        self.per_worker_logical_bytes
+    }
+
+    pub fn requested_workers(self) -> u32 {
+        self.requested_workers
+    }
+
     pub fn create_worker(
         self,
         id: EffectId,
@@ -184,13 +204,13 @@ impl WorkspaceCopyGrant {
                 requested_workers: self.requested_workers,
             });
         }
-        Ok(CreateWorker {
+        Ok(CreateWorker::from_workspace_grant(
             id,
-            preflight_id: self.preflight_id,
-            reservation_id: self.reservation_id,
-            granted_allowance: self.granted_allowance,
+            self.preflight_id,
+            self.reservation_id,
+            self.granted_allowance,
             worker,
-        })
+        ))
     }
 
     pub fn cleanup(self, id: EffectId) -> Cleanup {

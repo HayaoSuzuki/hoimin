@@ -155,53 +155,70 @@ impl WorkspacePlan {
 
     pub fn create_worker(&self, request: &CreateWorker) -> Result<WorkerWorkspace, WorkspaceError> {
         self.accept_grant(request)?;
-        match self.materialize_worker(request.worker) {
+        match self.materialize_worker(request.worker()) {
             Ok(worker) => Ok(worker),
             Err(error) => {
                 if let Ok(mut state) = self.state.lock() {
-                    state.workers.remove(&request.worker);
+                    state.workers.remove(&request.worker());
                 }
                 Err(error)
             }
         }
     }
 
-    fn accept_grant(&self, request: &CreateWorker) -> Result<(), WorkspaceError> {
-        if request.preflight_id != self.preflight_id
-            || request.worker >= self.requested_workers
-            || request.granted_allowance != self.aggregate_bytes
-        {
-            return Err(WorkspaceError::InvalidGrant {
-                requested: request.granted_allowance,
-                expected: self.aggregate_bytes,
+    pub(crate) fn validate_grant(&self, request: &CreateWorker) -> Result<(), WorkspaceError> {
+        if request.preflight_id() != self.preflight_id {
+            return Err(WorkspaceError::PreflightMismatch {
+                expected: self.preflight_id,
+                received: request.preflight_id(),
             });
         }
-        let mut state = self
+        if request.worker() >= self.requested_workers {
+            return Err(WorkspaceError::WorkerOutOfRange {
+                worker: request.worker(),
+                requested_workers: self.requested_workers,
+            });
+        }
+        if request.granted_allowance() != self.aggregate_bytes {
+            return Err(WorkspaceError::AllowanceMismatch {
+                expected: self.aggregate_bytes,
+                received: request.granted_allowance(),
+            });
+        }
+        let state = self
             .state
             .lock()
             .map_err(|_| WorkspaceError::StatePoisoned)?;
         match state.reservation {
-            Some((reservation, _allowance)) if reservation != request.reservation_id => {
-                return Err(WorkspaceError::ReservationMismatch {
+            Some((reservation, _allowance)) if reservation != request.reservation_id() => {
+                Err(WorkspaceError::ReservationMismatch {
                     expected: reservation,
-                    received: request.reservation_id,
-                });
+                    received: request.reservation_id(),
+                })
             }
-            Some((_reservation, allowance)) if allowance != request.granted_allowance => {
-                return Err(WorkspaceError::InvalidGrant {
-                    requested: request.granted_allowance,
+            Some((_reservation, allowance)) if allowance != request.granted_allowance() => {
+                Err(WorkspaceError::AllowanceMismatch {
                     expected: allowance,
-                });
+                    received: request.granted_allowance(),
+                })
             }
-            None => {
-                state.reservation = Some((request.reservation_id, request.granted_allowance));
-                self.allowance.set_grant(request.granted_allowance);
-            }
-            _ => {}
+            _ => Ok(()),
         }
-        if !state.workers.insert(request.worker) {
+    }
+
+    fn accept_grant(&self, request: &CreateWorker) -> Result<(), WorkspaceError> {
+        self.validate_grant(request)?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| WorkspaceError::StatePoisoned)?;
+        if state.reservation.is_none() {
+            state.reservation = Some((request.reservation_id(), request.granted_allowance()));
+            self.allowance.set_grant(request.granted_allowance());
+        }
+        if !state.workers.insert(request.worker()) {
             return Err(WorkspaceError::WorkerAlreadyExists {
-                worker: request.worker,
+                worker: request.worker(),
             });
         }
         Ok(())

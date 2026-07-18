@@ -59,37 +59,134 @@ fn shell_materializes_only_from_a_matching_core_copy_grant() {
         .handle_create_worker(grant.create_worker(EffectId(2), 0).unwrap())
         .unwrap();
     assert_eq!(created.worker, 0);
-    assert_eq!(created.reservation_id, grant.reservation_id);
-
-    let mut forged = grant.create_worker(EffectId(3), 1).unwrap();
-    forged.granted_allowance += 1;
-    let failed = handler.handle_create_worker(forged).unwrap_err();
-    assert_eq!(failed.id, EffectId(3));
-    assert!(matches!(failed.failure, EffectFailure::CopyLimit { .. }));
+    assert_eq!(created.reservation_id, grant.reservation_id());
     assert_eq!(handler.worker_count(), 1);
 }
 
 #[test]
-fn shell_rejects_a_forged_reservation_id_as_a_typed_grant_failure() {
+fn shell_rejects_a_core_capability_from_another_preflight() {
+    let first = tempfile::tempdir().unwrap();
+    let second = tempfile::tempdir().unwrap();
+    let first_root = Utf8Path::from_path(first.path()).unwrap();
+    let second_root = Utf8Path::from_path(second.path()).unwrap();
+    write(first_root, "pkg/a.py", b"original\n");
+    write(second_root, "pkg/a.py", b"original\n");
+    let mut first_handler = handler(first_root, 1);
+    let mut second_handler = handler(second_root, 1);
+    first_handler
+        .handle_preflight(Preflight { id: EffectId(4) })
+        .unwrap();
+    let second_preflight = second_handler
+        .handle_preflight(Preflight { id: EffectId(5) })
+        .unwrap();
+    let mut ledger = BudgetLedger::new(RunBudgets {
+        memory: 1,
+        copy: 9,
+        processes: 1,
+    });
+    let grant = reserve_workspace_copy(&mut ledger, &second_preflight).unwrap();
+
+    let failed = first_handler
+        .handle_create_worker(grant.create_worker(EffectId(6), 0).unwrap())
+        .unwrap_err();
+
+    assert!(matches!(
+        failed.failure,
+        EffectFailure::WorkspacePreflightMismatch { .. }
+    ));
+    assert_eq!(first_handler.worker_count(), 0);
+}
+
+#[test]
+fn shell_distinguishes_allowance_and_reservation_mismatches_from_core_capabilities() {
+    let small = tempfile::tempdir().unwrap();
+    let large = tempfile::tempdir().unwrap();
+    let small_root = Utf8Path::from_path(small.path()).unwrap();
+    let large_root = Utf8Path::from_path(large.path()).unwrap();
+    write(small_root, "pkg/a.py", b"original\n");
+    write(large_root, "pkg/a.py", b"original!\n");
+    let mut small_handler = handler(small_root, 1);
+    let mut large_handler = handler(large_root, 1);
+    small_handler
+        .handle_preflight(Preflight { id: EffectId(7) })
+        .unwrap();
+    let large_preflight = large_handler
+        .handle_preflight(Preflight { id: EffectId(7) })
+        .unwrap();
+    let mut large_ledger = BudgetLedger::new(RunBudgets {
+        memory: 1,
+        copy: 10,
+        processes: 1,
+    });
+    let large_grant = reserve_workspace_copy(&mut large_ledger, &large_preflight).unwrap();
+    let allowance_failed = small_handler
+        .handle_create_worker(large_grant.create_worker(EffectId(8), 0).unwrap())
+        .unwrap_err();
+    assert!(matches!(
+        allowance_failed.failure,
+        EffectFailure::WorkspaceAllowanceMismatch { .. }
+    ));
+
     let project = tempfile::tempdir().unwrap();
     let root = Utf8Path::from_path(project.path()).unwrap();
     write(root, "pkg/a.py", b"original\n");
-    let mut handler = handler(root, 2);
-    let (_ledger, grant) = preflight_and_grant(&mut handler, 18);
-    handler
-        .handle_create_worker(grant.create_worker(EffectId(4), 0).unwrap())
+    let mut bound_handler = handler(root, 2);
+    let completed = bound_handler
+        .handle_preflight(Preflight { id: EffectId(9) })
         .unwrap();
-
-    let mut forged = grant.create_worker(EffectId(5), 1).unwrap();
-    forged.reservation_id = ReservationId(grant.reservation_id.0 + 1);
-    let failed = handler.handle_create_worker(forged).unwrap_err();
-
-    assert_eq!(failed.id, EffectId(5));
+    let mut ledger = BudgetLedger::new(RunBudgets {
+        memory: 1,
+        copy: 36,
+        processes: 1,
+    });
+    let first_grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+    let second_grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+    bound_handler
+        .handle_create_worker(first_grant.create_worker(EffectId(10), 0).unwrap())
+        .unwrap();
+    let reservation_failed = bound_handler
+        .handle_create_worker(second_grant.create_worker(EffectId(11), 1).unwrap())
+        .unwrap_err();
     assert!(matches!(
-        failed.failure,
+        reservation_failed.failure,
         EffectFailure::InvalidWorkspaceGrant { .. }
     ));
-    assert_eq!(handler.worker_count(), 1);
+}
+
+#[test]
+fn shell_reports_a_core_capability_worker_outside_its_plan_range() {
+    let one_worker = tempfile::tempdir().unwrap();
+    let two_workers = tempfile::tempdir().unwrap();
+    let one_worker_root = Utf8Path::from_path(one_worker.path()).unwrap();
+    let two_workers_root = Utf8Path::from_path(two_workers.path()).unwrap();
+    write(one_worker_root, "pkg/a.py", b"123456789012345678");
+    write(two_workers_root, "pkg/a.py", b"original\n");
+    let mut one_worker_handler = handler(one_worker_root, 1);
+    let mut two_worker_handler = handler(two_workers_root, 2);
+    one_worker_handler
+        .handle_preflight(Preflight { id: EffectId(12) })
+        .unwrap();
+    let two_worker_preflight = two_worker_handler
+        .handle_preflight(Preflight { id: EffectId(12) })
+        .unwrap();
+    let mut ledger = BudgetLedger::new(RunBudgets {
+        memory: 1,
+        copy: 18,
+        processes: 1,
+    });
+    let grant = reserve_workspace_copy(&mut ledger, &two_worker_preflight).unwrap();
+
+    let failed = one_worker_handler
+        .handle_create_worker(grant.create_worker(EffectId(13), 1).unwrap())
+        .unwrap_err();
+
+    assert!(matches!(
+        failed.failure,
+        EffectFailure::WorkspaceWorkerOutOfRange {
+            worker: 1,
+            requested_workers: 1,
+        }
+    ));
 }
 
 #[test]
@@ -109,7 +206,10 @@ fn cleanup_reports_reservation_only_after_worker_directory_is_deleted() {
         .unwrap();
 
     assert!(!worker_root.exists());
-    assert_eq!(completed.released_reservations, vec![grant.reservation_id]);
+    assert_eq!(
+        completed.released_reservations,
+        vec![grant.reservation_id()]
+    );
     release_workspace_copy(&mut ledger, &completed).unwrap();
     assert_eq!(ledger.reserved(hoimin_core::BudgetKind::Copy), 0);
 }
@@ -127,7 +227,10 @@ fn cleanup_releases_a_core_reservation_even_when_no_worker_was_created() {
         .unwrap();
     release_workspace_copy(&mut ledger, &completed).unwrap();
 
-    assert_eq!(completed.released_reservations, vec![grant.reservation_id]);
+    assert_eq!(
+        completed.released_reservations,
+        vec![grant.reservation_id()]
+    );
     assert_eq!(ledger.reserved(hoimin_core::BudgetKind::Copy), 0);
 }
 
@@ -142,7 +245,7 @@ fn cleanup_rejects_a_reservation_that_is_not_bound_to_the_plan() {
         .handle_create_worker(grant.create_worker(EffectId(106), 0).unwrap())
         .unwrap();
     let mut cleanup = grant.cleanup(EffectId(107));
-    cleanup.reservations[0] = ReservationId(grant.reservation_id.0 + 1);
+    cleanup.reservations[0] = ReservationId(grant.reservation_id().0 + 1);
 
     let failed = handler.handle_cleanup(cleanup).unwrap_err();
 
@@ -151,7 +254,7 @@ fn cleanup_rejects_a_reservation_that_is_not_bound_to_the_plan() {
         EffectFailure::InvalidWorkspaceGrant {
             expected,
             received,
-        } if expected == grant.reservation_id && received != expected
+        } if expected == grant.reservation_id() && received != expected
     ));
     assert_eq!(handler.worker_count(), 1);
 }
@@ -336,10 +439,21 @@ fn pythonpath_environment_key_is_replaced_case_insensitively() {
     let root = Utf8Path::from_path(project.path()).unwrap();
     let worker = tempfile::tempdir().unwrap();
     let worker_root = Utf8Path::from_path(worker.path()).unwrap();
-    let inherited = BTreeMap::from([(
-        OsString::from("PythonPath"),
-        std::env::join_paths([root.as_std_path()]).unwrap(),
-    )]);
+    let first = root.join("first");
+    let second = root.join("second");
+    fs::create_dir_all(&first).unwrap();
+    fs::create_dir_all(&second).unwrap();
+    let inherited = BTreeMap::from([
+        (
+            OsString::from("PYTHONPATH"),
+            std::env::join_paths([first.as_std_path()]).unwrap(),
+        ),
+        (
+            OsString::from("PythonPath"),
+            std::env::join_paths([second.as_std_path()]).unwrap(),
+        ),
+        (OsString::from("KEEP_ME"), OsString::from("yes")),
+    ]);
 
     let command =
         hoimin_cli::workspace::build_command_environment(root, worker_root, &[], &inherited)
@@ -354,6 +468,47 @@ fn pythonpath_environment_key_is_replaced_case_insensitively() {
         1
     );
     assert!(command.env.contains_key(OsStr::new("PYTHONPATH")));
+    assert_eq!(
+        command.env.get(OsStr::new("KEEP_ME")),
+        Some(&OsString::from("yes"))
+    );
+    let paths = std::env::split_paths(command.env.get(OsStr::new("PYTHONPATH")).unwrap())
+        .collect::<Vec<_>>();
+    assert!(
+        paths.contains(&worker_root.join("first").into_std_path_buf()),
+        "{paths:?}"
+    );
+    assert!(
+        paths.contains(&worker_root.join("second").into_std_path_buf()),
+        "{paths:?}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn cleanup_removes_a_mode_000_nested_directory() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let project = tempfile::tempdir().unwrap();
+    let root = Utf8Path::from_path(project.path()).unwrap();
+    write(root, "pkg/a.py", b"original\n");
+    let mut handler = handler(root, 1);
+    let (_ledger, grant) = preflight_and_grant(&mut handler, 9);
+    handler
+        .handle_create_worker(grant.create_worker(EffectId(155), 0).unwrap())
+        .unwrap();
+    let worker_root = handler.worker(0).unwrap().root().to_owned();
+    let nested = worker_root.join("locked/deep");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(nested.join("generated.txt"), b"generated\n").unwrap();
+    fs::set_permissions(&nested, fs::Permissions::from_mode(0o000)).unwrap();
+    fs::set_permissions(nested.parent().unwrap(), fs::Permissions::from_mode(0o000)).unwrap();
+
+    handler
+        .handle_cleanup(grant.cleanup(EffectId(156)))
+        .unwrap();
+
+    assert!(!worker_root.exists());
 }
 
 #[cfg(windows)]
@@ -395,7 +550,10 @@ fn cleanup_lock_returns_typed_failure_keeps_worker_and_succeeds_on_retry() {
     let completed = handler
         .handle_cleanup(grant.cleanup(EffectId(163)))
         .unwrap();
-    assert_eq!(completed.released_reservations, vec![grant.reservation_id]);
+    assert_eq!(
+        completed.released_reservations,
+        vec![grant.reservation_id()]
+    );
     release_workspace_copy(&mut ledger, &completed).unwrap();
     assert_eq!(ledger.reserved(hoimin_core::BudgetKind::Copy), 0);
     assert!(!worker_root.exists());
@@ -403,7 +561,7 @@ fn cleanup_lock_returns_typed_failure_keeps_worker_and_succeeds_on_retry() {
 
 #[cfg(windows)]
 #[test]
-fn reset_reports_a_failed_discard_cleanup_and_still_allows_recreation() {
+fn reset_retains_failed_discard_until_cleanup_then_allows_recreation() {
     use std::fs::OpenOptions;
     use std::os::windows::fs::OpenOptionsExt;
 
@@ -411,7 +569,7 @@ fn reset_reports_a_failed_discard_cleanup_and_still_allows_recreation() {
     let root = Utf8Path::from_path(project.path()).unwrap();
     write(root, "pkg/a.py", b"original\n");
     let mut handler = handler(root, 1);
-    let (_ledger, grant) = preflight_and_grant(&mut handler, 9);
+    let (mut ledger, grant) = preflight_and_grant(&mut handler, 9);
     handler
         .handle_create_worker(grant.create_worker(EffectId(171), 0).unwrap())
         .unwrap();
@@ -437,14 +595,53 @@ fn reset_reports_a_failed_discard_cleanup_and_still_allows_recreation() {
             if message.contains("discard cleanup failed")
     ));
     assert_eq!(handler.worker_count(), 0);
+    assert_eq!(handler.pending_cleanup_count(), 1);
+    assert_eq!(handler.observed_copy_bytes(), 9);
+    assert_eq!(handler.materialized_worker_slots(), 1);
+    assert!(worker_root.exists());
 
     write(root, "pkg/a.py", b"original\n");
+    let retry = grant.create_worker(EffectId(173), 0).unwrap();
+    let blocked = handler.handle_create_worker(retry.clone()).unwrap_err();
+    assert!(matches!(blocked.failure, EffectFailure::Io { .. }));
+    assert_eq!(handler.pending_cleanup_count(), 1);
+    assert_eq!(handler.observed_copy_bytes(), 9);
+    assert_eq!(handler.materialized_worker_slots(), 1);
+    assert!(worker_root.exists());
+
     drop(locked);
-    fs::remove_dir_all(worker_root.parent().unwrap()).unwrap();
-    handler
-        .handle_create_worker(grant.create_worker(EffectId(173), 0).unwrap())
+    let mut foreign_handler =
+        WorkspaceHandler::new(root.to_owned(), Vec::new(), 1, CopyOptions::default());
+    let foreign_preflight = foreign_handler
+        .handle_preflight(Preflight { id: EffectId(999) })
         .unwrap();
-    handler
+    let mut foreign_ledger = BudgetLedger::new(RunBudgets {
+        memory: 1,
+        copy: 9,
+        processes: 1,
+    });
+    let foreign_grant = reserve_workspace_copy(&mut foreign_ledger, &foreign_preflight).unwrap();
+    let unauthorized = handler
+        .handle_create_worker(foreign_grant.create_worker(EffectId(998), 0).unwrap())
+        .unwrap_err();
+    assert!(matches!(
+        unauthorized.failure,
+        EffectFailure::WorkspacePreflightMismatch { .. }
+    ));
+    assert_eq!(handler.pending_cleanup_count(), 1);
+    assert_eq!(handler.observed_copy_bytes(), 9);
+    assert_eq!(handler.materialized_worker_slots(), 1);
+    assert!(worker_root.exists());
+
+    handler.handle_create_worker(retry).unwrap();
+    assert_eq!(handler.pending_cleanup_count(), 0);
+    assert_eq!(handler.observed_copy_bytes(), 9);
+    assert_eq!(handler.materialized_worker_slots(), 1);
+    assert!(!worker_root.exists());
+
+    let completed = handler
         .handle_cleanup(grant.cleanup(EffectId(174)))
         .unwrap();
+    release_workspace_copy(&mut ledger, &completed).unwrap();
+    assert_eq!(ledger.reserved(hoimin_core::BudgetKind::Copy), 0);
 }
