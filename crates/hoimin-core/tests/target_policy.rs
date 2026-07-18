@@ -264,3 +264,16 @@ fn windows_non_ascii_path_outside_root_returns_typed_error() {
         )))
     );
 }
+
+#[cfg(windows)]
+#[test]
+fn windows_unicode_case_variants_resolve_under_root() {
+    let selection = Selection {
+        root: Utf8PathBuf::from("C:/Ä"),
+        sources: vec![Utf8PathBuf::from("PKG")],
+        files: vec![Utf8PathBuf::from("c:/ä/pkg/a.py")],
+        ..Selection::default()
+    };
+    let targets = resolve_explicit(&selection, &[DiscoveredFile::python("pkg/a.py")]).unwrap();
+    assert_eq!(targets[0].path, "pkg/a.py");
+}

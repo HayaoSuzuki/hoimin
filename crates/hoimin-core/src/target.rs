@@ -80,7 +80,7 @@ pub fn resolve_explicit(
     let excludes: BTreeSet<_> = selection
         .excludes
         .iter()
-        .map(|value| value.replace('\\', "/"))
+        .map(|value| path_key(value))
         .collect();
     let available: BTreeMap<_, _> = discovered
         .iter()
@@ -89,7 +89,7 @@ pub fn resolve_explicit(
                 .ok()
                 .map(|path| (path, file.is_python))
         })
-        .filter(|(path, _)| !excludes.contains(path.as_str()))
+        .filter(|(path, _)| !excludes.contains(&path_key(path.as_str())))
         .collect();
 
     let mut targets = BTreeMap::<Utf8PathBuf, TargetSlice>::new();
@@ -203,22 +203,24 @@ fn strip_root(root: &Utf8Path, path: &Utf8Path) -> Option<Utf8PathBuf> {
         return path.strip_prefix(root).ok().map(Utf8Path::to_owned);
     }
     let root = root.as_str().replace('\\', "/");
-    let root = root.trim_end_matches('/');
     let path = path.as_str().replace('\\', "/");
-    if path.eq_ignore_ascii_case(root) {
-        return Some(Utf8PathBuf::new());
+    let root_parts: Vec<_> = root.split('/').filter(|part| !part.is_empty()).collect();
+    let path_parts: Vec<_> = path.split('/').filter(|part| !part.is_empty()).collect();
+    if path_parts.len() < root_parts.len()
+        || !root_parts
+            .iter()
+            .zip(&path_parts)
+            .all(|(root, path)| unicode_case_key(root) == unicode_case_key(path))
+    {
+        return None;
     }
-    let prefix = format!("{root}/");
-    path.get(..prefix.len())
-        .filter(|candidate| candidate.eq_ignore_ascii_case(&prefix))
-        .and_then(|_| path.get(prefix.len()..))
-        .map(Utf8PathBuf::from)
+    Some(Utf8PathBuf::from(path_parts[root_parts.len()..].join("/")))
 }
 
 fn is_within(path: &Utf8Path, directory: &Utf8Path) -> bool {
     if cfg!(windows) {
-        let path = path.as_str().replace('\\', "/").to_ascii_lowercase();
-        let directory = directory.as_str().replace('\\', "/").to_ascii_lowercase();
+        let path = path_key(path.as_str());
+        let directory = path_key(directory.as_str());
         path == directory || path.starts_with(&format!("{directory}/"))
     } else {
         path == directory || path.starts_with(directory.as_str().to_owned() + "/")
@@ -227,10 +229,23 @@ fn is_within(path: &Utf8Path, directory: &Utf8Path) -> bool {
 
 fn paths_equal(left: &Utf8Path, right: &Utf8Path) -> bool {
     if cfg!(windows) {
-        left.as_str().eq_ignore_ascii_case(right.as_str())
+        path_key(left.as_str()) == path_key(right.as_str())
     } else {
         left == right
     }
+}
+
+fn path_key(value: &str) -> String {
+    let value = value.replace('\\', "/");
+    if cfg!(windows) {
+        unicode_case_key(&value)
+    } else {
+        value
+    }
+}
+
+fn unicode_case_key(value: &str) -> String {
+    value.chars().flat_map(char::to_lowercase).collect()
 }
 
 fn resolve_symbol_path(
