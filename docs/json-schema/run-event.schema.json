@@ -1,0 +1,297 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/HayaoSuzuki/hoimin/main/docs/json-schema/run-event.schema.json",
+  "title": "hoimin run JSON Lines event",
+  "oneOf": [
+    { "$ref": "#/$defs/runStarted" },
+    { "$ref": "#/$defs/baselineFinished" },
+    { "$ref": "#/$defs/mutantStarted" },
+    { "$ref": "#/$defs/mutantFinished" },
+    { "$ref": "#/$defs/diagnostic" },
+    { "$ref": "#/$defs/runFinished" }
+  ],
+  "$defs": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "resourceMode": {
+      "type": "string",
+      "enum": ["hard", "best_effort"]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "killed",
+        "survived",
+        "timeout",
+        "out_of_memory",
+        "process_limit",
+        "error",
+        "not_run"
+      ]
+    },
+    "output": {
+      "type": "object",
+      "description": "A bounded process-output spool reference. retained and observed are byte counts that expose truncation.",
+      "required": ["token", "retained", "observed"],
+      "properties": {
+        "token": { "type": "string" },
+        "retained": { "type": "integer", "minimum": 0 },
+        "observed": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "termination": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["Exit"],
+          "properties": {
+            "Exit": { "type": "integer" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "string",
+          "enum": ["Timeout", "OutOfMemory", "ProcessLimit", "Cancelled"]
+        }
+      ]
+    },
+    "span": {
+      "type": "object",
+      "required": ["start", "length"],
+      "properties": {
+        "start": { "type": "integer", "minimum": 0 },
+        "length": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "candidate": {
+      "type": "object",
+      "required": [
+        "id",
+        "sequence",
+        "path",
+        "span",
+        "original",
+        "replacement",
+        "operator",
+        "line",
+        "column",
+        "symbol",
+        "file_hash"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "sequence": { "type": "integer", "minimum": 0 },
+        "path": { "type": "string" },
+        "span": { "$ref": "#/$defs/span" },
+        "original": { "type": "string" },
+        "replacement": { "type": "string" },
+        "operator": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "column": { "type": "integer", "minimum": 0 },
+        "symbol": { "type": ["string", "null"] },
+        "file_hash": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "counts": {
+      "type": "object",
+      "required": [
+        "killed",
+        "survived",
+        "timeout",
+        "out_of_memory",
+        "process_limit",
+        "error",
+        "not_run",
+        "inconclusive",
+        "score"
+      ],
+      "properties": {
+        "killed": { "type": "integer", "minimum": 0 },
+        "survived": { "type": "integer", "minimum": 0 },
+        "timeout": { "type": "integer", "minimum": 0 },
+        "out_of_memory": { "type": "integer", "minimum": 0 },
+        "process_limit": { "type": "integer", "minimum": 0 },
+        "error": { "type": "integer", "minimum": 0 },
+        "not_run": { "type": "integer", "minimum": 0 },
+        "inconclusive": { "type": "integer", "minimum": 0 },
+        "score": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "runStarted": {
+      "type": "object",
+      "required": [
+        "kind",
+        "schema_version",
+        "sequence",
+        "run_id",
+        "normalized_config",
+        "versions",
+        "resource_control"
+      ],
+      "properties": {
+        "kind": { "const": "run_started" },
+        "schema_version": { "$ref": "#/$defs/schemaVersion" },
+        "sequence": { "type": "integer", "minimum": 0 },
+        "run_id": { "type": "string" },
+        "normalized_config": {
+          "type": ["object", "null"],
+          "description": "Normalized invocation config. New config fields may be added in schema version 1.",
+          "additionalProperties": true
+        },
+        "versions": {
+          "type": "object",
+          "required": ["os", "python", "hoimin", "libcst"],
+          "properties": {
+            "os": { "type": "string" },
+            "python": { "type": "string" },
+            "hoimin": { "type": "string" },
+            "libcst": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "resource_control": {
+          "type": "object",
+          "required": ["mode", "mechanism"],
+          "properties": {
+            "mode": { "$ref": "#/$defs/resourceMode" },
+            "mechanism": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "baselineFinished": {
+      "type": "object",
+      "required": [
+        "kind",
+        "schema_version",
+        "sequence",
+        "run_id",
+        "termination",
+        "elapsed_ms",
+        "resource_mode",
+        "output"
+      ],
+      "properties": {
+        "kind": { "const": "baseline_finished" },
+        "schema_version": { "$ref": "#/$defs/schemaVersion" },
+        "sequence": { "type": "integer", "minimum": 0 },
+        "run_id": { "type": "string" },
+        "termination": { "$ref": "#/$defs/termination" },
+        "elapsed_ms": { "type": "integer", "minimum": 0 },
+        "resource_mode": { "$ref": "#/$defs/resourceMode" },
+        "output": { "$ref": "#/$defs/output" }
+      },
+      "additionalProperties": false
+    },
+    "mutantStarted": {
+      "type": "object",
+      "required": [
+        "kind",
+        "schema_version",
+        "sequence",
+        "run_id",
+        "mutant_id",
+        "mutant_sequence"
+      ],
+      "properties": {
+        "kind": { "const": "mutant_started" },
+        "schema_version": { "$ref": "#/$defs/schemaVersion" },
+        "sequence": { "type": "integer", "minimum": 0 },
+        "run_id": { "type": "string" },
+        "mutant_id": { "type": "string" },
+        "mutant_sequence": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "mutantFinished": {
+      "type": "object",
+      "required": [
+        "kind",
+        "schema_version",
+        "sequence",
+        "run_id",
+        "candidate",
+        "status",
+        "termination",
+        "elapsed_ms",
+        "resource_mode",
+        "output"
+      ],
+      "properties": {
+        "kind": { "const": "mutant_finished" },
+        "schema_version": { "$ref": "#/$defs/schemaVersion" },
+        "sequence": { "type": "integer", "minimum": 0 },
+        "run_id": { "type": "string" },
+        "candidate": { "$ref": "#/$defs/candidate" },
+        "status": { "$ref": "#/$defs/status" },
+        "termination": {
+          "oneOf": [
+            { "$ref": "#/$defs/termination" },
+            { "type": "null" }
+          ]
+        },
+        "elapsed_ms": { "type": "integer", "minimum": 0 },
+        "resource_mode": { "$ref": "#/$defs/resourceMode" },
+        "output": {
+          "oneOf": [
+            { "$ref": "#/$defs/output" },
+            { "type": "null" }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": [
+        "kind",
+        "schema_version",
+        "sequence",
+        "run_id",
+        "level",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "kind": { "const": "diagnostic" },
+        "schema_version": { "$ref": "#/$defs/schemaVersion" },
+        "sequence": { "type": "integer", "minimum": 0 },
+        "run_id": { "type": "string" },
+        "level": { "type": "string" },
+        "code": { "type": "string" },
+        "message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "runFinished": {
+      "type": "object",
+      "required": [
+        "kind",
+        "schema_version",
+        "sequence",
+        "run_id",
+        "counts",
+        "complete",
+        "exit_code"
+      ],
+      "properties": {
+        "kind": { "const": "run_finished" },
+        "schema_version": { "$ref": "#/$defs/schemaVersion" },
+        "sequence": { "type": "integer", "minimum": 0 },
+        "run_id": { "type": "string" },
+        "counts": { "$ref": "#/$defs/counts" },
+        "complete": { "type": "boolean" },
+        "exit_code": { "type": "integer", "enum": [0, 1, 2, 3, 4, 130] }
+      },
+      "additionalProperties": false
+    }
+  }
+}

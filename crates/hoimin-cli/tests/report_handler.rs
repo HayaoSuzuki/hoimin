@@ -1,4 +1,5 @@
 use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use hoimin_cli::report::ReportHandler;
@@ -37,6 +38,525 @@ impl SharedWriter {
 
     fn flushes(&self) -> usize {
         self.0.lock().unwrap().flushes
+    }
+}
+
+#[tokio::test]
+async fn documentation_contract() {
+    let root = repo_root();
+    let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
+    let commands = fenced_run_commands(&readme);
+    assert!(
+        !commands.is_empty(),
+        "README must contain fenced hoimin run commands"
+    );
+    assert!(commands.iter().any(|words| words.first().unwrap() == "uvx"));
+    assert!(
+        commands
+            .iter()
+            .any(|words| words.first().unwrap() == "pipx")
+    );
+
+    let fixture = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(fixture.path().join("src")).unwrap();
+    std::fs::create_dir_all(fixture.path().join("tests")).unwrap();
+    std::fs::write(
+        fixture.path().join("src/calc.py"),
+        "def add(left, right):\n    return left + right\n",
+    )
+    .unwrap();
+    std::fs::write(fixture.path().join("src/__init__.py"), "").unwrap();
+    let python = test_python();
+    let mut documented_outputs = Vec::new();
+    for command in commands {
+        let argv = normalize_documented_command(&command, fixture.path(), &python);
+        let config = hoimin_cli::cli::parse_config_from(argv.clone())
+            .unwrap_or_else(|error| panic!("invalid documented command {command:?}: {error}"));
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let exit = hoimin_cli::run_with_io(argv, &mut stdout, &mut stderr).await;
+        assert_eq!(
+            exit,
+            0,
+            "documented command failed: {command:?}\nstderr: {}",
+            String::from_utf8_lossy(&stderr)
+        );
+        match config.output.format {
+            OutputFormat::Json => {
+                let _: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+            }
+            OutputFormat::Jsonl => {
+                assert!(
+                    stdout
+                        .split(|byte| *byte == b'\n')
+                        .filter(|line| !line.is_empty())
+                        .all(|line| serde_json::from_slice::<serde_json::Value>(line).is_ok())
+                );
+            }
+            OutputFormat::Human => assert!(!stdout.is_empty()),
+        }
+        documented_outputs.push((config.output.format, stdout, stderr));
+    }
+
+    let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
+    let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
+    assert_eq!(
+        event_schema["$schema"],
+        "https://json-schema.org/draft/2020-12/schema"
+    );
+    assert_eq!(
+        result_schema["$schema"],
+        "https://json-schema.org/draft/2020-12/schema"
+    );
+    for (format, stdout, stderr) in documented_outputs {
+        match format {
+            OutputFormat::Json => {
+                let document = serde_json::from_slice(&stdout).unwrap();
+                assert_schema_valid(&result_schema, &document, &event_schema);
+            }
+            OutputFormat::Jsonl => {
+                for line in stdout
+                    .split(|byte| *byte == b'\n')
+                    .chain(stderr.split(|byte| *byte == b'\n'))
+                    .filter(|line| !line.is_empty())
+                {
+                    let event = serde_json::from_slice(line).unwrap();
+                    assert_schema_valid(&event_schema, &event, &event_schema);
+                }
+            }
+            OutputFormat::Human => {}
+        }
+    }
+
+    let (document, jsonl_events) = actual_documented_reports();
+    assert_schema_valid(&result_schema, &document, &event_schema);
+    for event in &jsonl_events {
+        assert_schema_valid(&event_schema, event, &event_schema);
+    }
+
+    let incomplete = actual_pre_baseline_report();
+    assert!(incomplete["baseline"].is_null());
+    assert_schema_valid(&result_schema, &incomplete, &event_schema);
+
+    let mut invalid = document.clone();
+    invalid["schema_version"] = serde_json::json!(2);
+    assert_schema_invalid(&result_schema, &invalid, &event_schema);
+    invalid = document.clone();
+    invalid["unexpected"] = serde_json::json!(true);
+    assert_schema_invalid(&result_schema, &invalid, &event_schema);
+
+    let mut invalid_event = jsonl_events
+        .iter()
+        .find(|event| event["kind"] == "mutant_finished")
+        .unwrap()
+        .clone();
+    invalid_event["status"] = serde_json::json!("unknown");
+    assert_schema_invalid(&event_schema, &invalid_event, &event_schema);
+    invalid_event["status"] = serde_json::json!("killed");
+    invalid_event["resource_mode"] = serde_json::json!("soft");
+    assert_schema_invalid(&event_schema, &invalid_event, &event_schema);
+}
+
+fn fenced_run_commands(markdown: &str) -> Vec<Vec<String>> {
+    let mut fenced = false;
+    markdown
+        .lines()
+        .filter_map(|line| {
+            if line.trim_start().as_bytes().starts_with(&[96; 3]) {
+                fenced = !fenced;
+                return None;
+            }
+            if !fenced {
+                return None;
+            }
+            let line = line.trim().strip_prefix("$ ").unwrap_or(line.trim());
+            let words = line
+                .split_ascii_whitespace()
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            let run = words.windows(2).any(|pair| pair == ["hoimin", "run"]);
+            run.then_some(words)
+        })
+        .collect()
+}
+
+fn normalize_documented_command(command: &[String], root: &Path, python: &Path) -> Vec<String> {
+    let launcher = command
+        .windows(2)
+        .position(|pair| pair == ["hoimin", "run"])
+        .expect("documented launch prefix");
+    let mut argv = command[launcher..].to_vec();
+    let root = root.to_str().expect("UTF-8 fixture");
+    let python = python.to_str().expect("UTF-8 Python");
+    for index in 0..argv.len() {
+        if index > 0 && argv[index - 1] == "--root" {
+            argv[index] = root.to_owned();
+        } else if argv[index] == "python" {
+            argv[index] = python.to_owned();
+        }
+    }
+    let separator = argv
+        .iter()
+        .position(|argument| argument == "--")
+        .expect("documented direct argv separator");
+    argv.splice(
+        separator..separator,
+        [
+            "--max-mutants".to_owned(),
+            "1".to_owned(),
+            "--max-candidates".to_owned(),
+            "32".to_owned(),
+            "--total-timeout".to_owned(),
+            "30s".to_owned(),
+            "--allow-best-effort-memory".to_owned(),
+        ],
+    );
+    let separator = argv.iter().position(|argument| argument == "--").unwrap();
+    argv.truncate(separator + 1);
+    argv.extend([
+        python.to_owned(),
+        "-c".to_owned(),
+        "from src.calc import add; assert add(2, 1) == 3".to_owned(),
+    ]);
+    argv
+}
+
+fn test_python() -> PathBuf {
+    if let Some(path) = std::env::var_os("HOIMIN_TEST_PYTHON") {
+        return path.into();
+    }
+    let executable = if cfg!(windows) {
+        repo_root().join(".venv/Scripts/python.exe")
+    } else {
+        repo_root().join(".venv/bin/python")
+    };
+    assert!(
+        executable.is_file(),
+        "set HOIMIN_TEST_PYTHON to a Python with LibCST: {}",
+        executable.display()
+    );
+    executable
+}
+
+fn read_schema(path: &Path) -> serde_json::Value {
+    let bytes = std::fs::read(path)
+        .unwrap_or_else(|error| panic!("read schema {}: {error}", path.display()));
+    serde_json::from_slice(&bytes)
+        .unwrap_or_else(|error| panic!("parse schema {}: {error}", path.display()))
+}
+
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_owned()
+}
+
+fn actual_documented_reports() -> (serde_json::Value, Vec<serde_json::Value>) {
+    let event_records = documented_events();
+    let spool = tempfile::tempdir().unwrap();
+
+    let json_stdout = SharedWriter::default();
+    let mut json = ReportHandler::new(
+        OutputFormat::Json,
+        json_stdout.clone(),
+        io::sink(),
+        spool.path(),
+    )
+    .unwrap();
+    for event in event_records.iter().cloned() {
+        emit(&mut json, event.sequence(), event);
+    }
+    let document = serde_json::from_str(json_stdout.text().trim()).unwrap();
+
+    let jsonl_stdout = SharedWriter::default();
+    let jsonl_stderr = SharedWriter::default();
+    let mut jsonl = ReportHandler::new(
+        OutputFormat::Jsonl,
+        jsonl_stdout.clone(),
+        jsonl_stderr.clone(),
+        spool.path(),
+    )
+    .unwrap();
+    for event in event_records {
+        emit(&mut jsonl, event.sequence(), event);
+    }
+    let events = jsonl_stdout
+        .text()
+        .lines()
+        .chain(jsonl_stderr.text().lines())
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    (document, events)
+}
+
+fn actual_pre_baseline_report() -> serde_json::Value {
+    let stdout = SharedWriter::default();
+    let spool = tempfile::tempdir().unwrap();
+    let mut handler =
+        ReportHandler::new(OutputFormat::Json, stdout.clone(), io::sink(), spool.path()).unwrap();
+    emit(
+        &mut handler,
+        1,
+        OutputEvent::RunStarted(RunStarted::minimal("pre-baseline", 1)),
+    );
+    emit(
+        &mut handler,
+        2,
+        OutputEvent::RunFinished(RunSummary {
+            schema_version: 1,
+            sequence: 2,
+            run_id: "pre-baseline".to_owned(),
+            counts: MutationSummary::default(),
+            complete: false,
+            exit_code: 4,
+        }),
+    );
+    serde_json::from_str(stdout.text().trim()).unwrap()
+}
+
+fn documented_events() -> Vec<OutputEvent> {
+    let mut events = vec![
+        OutputEvent::RunStarted(RunStarted::minimal("documented-run", 1)),
+        OutputEvent::BaselineFinished(BaselineFinished {
+            schema_version: 1,
+            sequence: 2,
+            run_id: "documented-run".to_owned(),
+            termination: ProcessTermination::Exit(0),
+            elapsed_ms: 10,
+            resource_mode: ResourceMode::Hard,
+            output: output_ref(),
+        }),
+    ];
+    let statuses = [
+        MutationStatus::Killed,
+        MutationStatus::Survived,
+        MutationStatus::Timeout,
+        MutationStatus::OutOfMemory,
+        MutationStatus::ProcessLimit,
+        MutationStatus::Error,
+        MutationStatus::NotRun,
+    ];
+    let mut summary = MutationSummary::default();
+    let mut event_sequence = 3;
+    for (mutant_sequence, status) in statuses.into_iter().enumerate() {
+        let mutant_sequence = mutant_sequence as u64;
+        let mutant_id = format!("m{mutant_sequence}");
+        events.push(OutputEvent::MutantStarted(MutantStarted::new(
+            "documented-run",
+            event_sequence,
+            &mutant_id,
+            mutant_sequence,
+        )));
+        event_sequence += 1;
+        summary.record(status);
+        let termination = match status {
+            MutationStatus::Killed => Some(ProcessTermination::Exit(1)),
+            MutationStatus::Survived => Some(ProcessTermination::Exit(0)),
+            MutationStatus::Timeout => Some(ProcessTermination::Timeout),
+            MutationStatus::OutOfMemory => Some(ProcessTermination::OutOfMemory),
+            MutationStatus::ProcessLimit => Some(ProcessTermination::ProcessLimit),
+            MutationStatus::NotRun => Some(ProcessTermination::Cancelled),
+            MutationStatus::Error => None,
+        };
+        events.push(OutputEvent::MutantFinished(MutantFinished {
+            schema_version: 1,
+            sequence: event_sequence,
+            run_id: "documented-run".to_owned(),
+            candidate: MutationCandidate {
+                id: mutant_id,
+                sequence: mutant_sequence,
+                path: "src/example.py".into(),
+                span: ByteSpan {
+                    start: mutant_sequence,
+                    length: 1,
+                },
+                original: "+".to_owned(),
+                replacement: "-".to_owned(),
+                operator: "binary_add_sub".to_owned(),
+                line: 1,
+                column: mutant_sequence as u32,
+                symbol: None,
+                file_hash: "hash".to_owned(),
+            },
+            status,
+            termination,
+            elapsed_ms: 2,
+            resource_mode: if mutant_sequence % 2 == 0 {
+                ResourceMode::Hard
+            } else {
+                ResourceMode::BestEffort
+            },
+            output: termination.map(|_| output_ref()),
+        }));
+        event_sequence += 1;
+    }
+    events.push(OutputEvent::Diagnostic(Diagnostic::new(
+        "documented-run",
+        event_sequence,
+        "warning",
+        "resource.best_effort",
+        "fixture diagnostic",
+    )));
+    event_sequence += 1;
+    events.push(OutputEvent::RunFinished(RunSummary {
+        schema_version: 1,
+        sequence: event_sequence,
+        run_id: "documented-run".to_owned(),
+        counts: summary,
+        complete: false,
+        exit_code: 2,
+    }));
+    events
+}
+
+fn assert_schema_valid(
+    schema: &serde_json::Value,
+    instance: &serde_json::Value,
+    event_schema: &serde_json::Value,
+) {
+    if let Err(error) = validate_schema(schema, instance, schema, event_schema, "$") {
+        panic!("schema validation failed: {error}\ninstance: {instance}");
+    }
+}
+
+fn assert_schema_invalid(
+    schema: &serde_json::Value,
+    instance: &serde_json::Value,
+    event_schema: &serde_json::Value,
+) {
+    assert!(
+        validate_schema(schema, instance, schema, event_schema, "$").is_err(),
+        "invalid instance unexpectedly matched schema: {instance}"
+    );
+}
+
+fn validate_schema(
+    schema: &serde_json::Value,
+    instance: &serde_json::Value,
+    active_root: &serde_json::Value,
+    event_root: &serde_json::Value,
+    path: &str,
+) -> Result<(), String> {
+    if let Some(reference) = schema.get("$ref").and_then(serde_json::Value::as_str) {
+        let (root, pointer) = if let Some(pointer) = reference.strip_prefix('#') {
+            (active_root, pointer)
+        } else if let Some(pointer) = reference.strip_prefix("run-event.schema.json#") {
+            (event_root, pointer)
+        } else {
+            return Err(format!("{path}: unsupported schema reference {reference}"));
+        };
+        let target = root
+            .pointer(pointer)
+            .ok_or_else(|| format!("{path}: unresolved schema reference {reference}"))?;
+        return validate_schema(target, instance, root, event_root, path);
+    }
+
+    if let Some(branches) = schema.get("oneOf").and_then(serde_json::Value::as_array) {
+        let matches = branches
+            .iter()
+            .filter(|branch| {
+                validate_schema(branch, instance, active_root, event_root, path).is_ok()
+            })
+            .count();
+        if matches != 1 {
+            return Err(format!(
+                "{path}: expected exactly one oneOf match, got {matches}"
+            ));
+        }
+    }
+
+    if let Some(expected) = schema.get("const") {
+        if instance != expected {
+            return Err(format!("{path}: expected const {expected}, got {instance}"));
+        }
+    }
+    if let Some(values) = schema.get("enum").and_then(serde_json::Value::as_array) {
+        if !values.contains(instance) {
+            return Err(format!("{path}: {instance} is not in enum"));
+        }
+    }
+    if let Some(expected) = schema.get("type") {
+        let matches = match expected {
+            serde_json::Value::String(kind) => instance_has_type(instance, kind),
+            serde_json::Value::Array(kinds) => kinds
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .any(|kind| instance_has_type(instance, kind)),
+            _ => false,
+        };
+        if !matches {
+            return Err(format!("{path}: {instance} does not have type {expected}"));
+        }
+    }
+
+    if let Some(minimum) = schema.get("minimum").and_then(serde_json::Value::as_f64) {
+        if instance.as_f64().is_some_and(|value| value < minimum) {
+            return Err(format!("{path}: number is below {minimum}"));
+        }
+    }
+    if let Some(maximum) = schema.get("maximum").and_then(serde_json::Value::as_f64) {
+        if instance.as_f64().is_some_and(|value| value > maximum) {
+            return Err(format!("{path}: number is above {maximum}"));
+        }
+    }
+
+    if let Some(object) = instance.as_object() {
+        let properties = schema
+            .get("properties")
+            .and_then(serde_json::Value::as_object);
+        if let Some(required) = schema.get("required").and_then(serde_json::Value::as_array) {
+            for name in required.iter().filter_map(serde_json::Value::as_str) {
+                if !object.contains_key(name) {
+                    return Err(format!("{path}: missing required property {name}"));
+                }
+            }
+        }
+        if let Some(properties) = properties {
+            for (name, value) in object {
+                if let Some(property_schema) = properties.get(name) {
+                    validate_schema(
+                        property_schema,
+                        value,
+                        active_root,
+                        event_root,
+                        &format!("{path}.{name}"),
+                    )?;
+                } else if schema.get("additionalProperties")
+                    == Some(&serde_json::Value::Bool(false))
+                {
+                    return Err(format!("{path}: unexpected property {name}"));
+                }
+            }
+        }
+    }
+
+    if let (Some(items), Some(values)) = (schema.get("items"), instance.as_array()) {
+        for (index, value) in values.iter().enumerate() {
+            validate_schema(
+                items,
+                value,
+                active_root,
+                event_root,
+                &format!("{path}[{index}]"),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn instance_has_type(instance: &serde_json::Value, kind: &str) -> bool {
+    match kind {
+        "null" => instance.is_null(),
+        "boolean" => instance.is_boolean(),
+        "object" => instance.is_object(),
+        "array" => instance.is_array(),
+        "number" => instance.is_number(),
+        "integer" => instance.as_i64().is_some() || instance.as_u64().is_some(),
+        "string" => instance.is_string(),
+        _ => false,
     }
 }
 
