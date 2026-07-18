@@ -277,3 +277,15 @@ fn windows_unicode_case_variants_resolve_under_root() {
     let targets = resolve_explicit(&selection, &[DiscoveredFile::python("pkg/a.py")]).unwrap();
     assert_eq!(targets[0].path, "pkg/a.py");
 }
+
+#[cfg(windows)]
+#[test]
+fn windows_final_sigma_uses_uppercase_case_equivalence() {
+    let selection = Selection {
+        root: Utf8PathBuf::from("C:/Σ"),
+        files: vec![Utf8PathBuf::from("c:/ς/pkg/a.py")],
+        ..Selection::default()
+    };
+    let targets = resolve_explicit(&selection, &[DiscoveredFile::python("pkg/a.py")]).unwrap();
+    assert_eq!(targets[0].path, "pkg/a.py");
+}

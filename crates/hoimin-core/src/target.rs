@@ -210,7 +210,7 @@ fn strip_root(root: &Utf8Path, path: &Utf8Path) -> Option<Utf8PathBuf> {
         || !root_parts
             .iter()
             .zip(&path_parts)
-            .all(|(root, path)| unicode_case_key(root) == unicode_case_key(path))
+            .all(|(root, path)| windows_case_key(root) == windows_case_key(path))
     {
         return None;
     }
@@ -238,14 +238,14 @@ fn paths_equal(left: &Utf8Path, right: &Utf8Path) -> bool {
 fn path_key(value: &str) -> String {
     let value = value.replace('\\', "/");
     if cfg!(windows) {
-        unicode_case_key(&value)
+        windows_case_key(&value)
     } else {
         value
     }
 }
 
-fn unicode_case_key(value: &str) -> String {
-    value.chars().flat_map(char::to_lowercase).collect()
+fn windows_case_key(value: &str) -> String {
+    value.chars().flat_map(char::to_uppercase).collect()
 }
 
 fn resolve_symbol_path(
