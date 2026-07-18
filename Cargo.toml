@@ -7,7 +7,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
-repository = "https://github.com/haya14busa/hoimin"
+repository = "https://github.com/HayaoSuzuki/hoimin"
 
 [profile.release]
 lto = "thin"
