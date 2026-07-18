@@ -736,6 +736,31 @@ impl WorkspaceHandler {
         self.pending_cleanup.len()
     }
 
+    pub fn close(&mut self) -> Result<(), WorkspaceError> {
+        let mut first_error = None;
+        for workspace in self.workers.values_mut() {
+            if let Err(error) = workspace.try_cleanup()
+                && first_error.is_none()
+            {
+                first_error = Some(error);
+            }
+        }
+        for workspace in self.pending_cleanup.values_mut() {
+            if let Err(error) = workspace.try_cleanup()
+                && first_error.is_none()
+            {
+                first_error = Some(error);
+            }
+        }
+        if let Some(error) = first_error {
+            return Err(error);
+        }
+        self.workers.clear();
+        self.pending_cleanup.clear();
+        self.plan = None;
+        Ok(())
+    }
+
     pub fn observed_copy_bytes(&self) -> u64 {
         self.plan
             .as_ref()

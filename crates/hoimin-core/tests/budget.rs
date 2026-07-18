@@ -66,6 +66,7 @@ fn preflight_metadata_is_reserved_by_core_and_carried_to_each_worker_effect() {
         per_worker_logical_bytes: 10,
         requested_workers: 3,
         aggregate_logical_bytes: 30,
+        fingerprint: None,
     };
 
     let grant = reserve_workspace_copy(&mut ledger, &preflight).unwrap();
@@ -94,6 +95,7 @@ fn inconsistent_preflight_metadata_is_rejected_without_reserving() {
         per_worker_logical_bytes: 10,
         requested_workers: 3,
         aggregate_logical_bytes: 29,
+        fingerprint: None,
     };
 
     let error = reserve_workspace_copy(&mut ledger, &preflight).unwrap_err();
@@ -112,6 +114,7 @@ fn cleanup_completion_releases_the_core_copy_reservation_once() {
             per_worker_logical_bytes: 10,
             requested_workers: 3,
             aggregate_logical_bytes: 30,
+            fingerprint: None,
         },
     )
     .unwrap();
@@ -137,6 +140,7 @@ fn preflight_aggregate_overflow_is_typed_and_does_not_reserve() {
         per_worker_logical_bytes: u64::MAX,
         requested_workers: 2,
         aggregate_logical_bytes: 0,
+        fingerprint: None,
     };
 
     let error = reserve_workspace_copy(&mut ledger, &preflight).unwrap_err();
@@ -155,6 +159,7 @@ fn grant_rejects_worker_index_outside_preflight_count() {
             per_worker_logical_bytes: 5,
             requested_workers: 2,
             aggregate_logical_bytes: 10,
+            fingerprint: None,
         },
     )
     .unwrap();
@@ -174,6 +179,7 @@ fn grant_can_release_a_reserved_preflight_even_before_any_worker_is_created() {
             per_worker_logical_bytes: 10,
             requested_workers: 1,
             aggregate_logical_bytes: 10,
+            fingerprint: None,
         },
     )
     .unwrap();

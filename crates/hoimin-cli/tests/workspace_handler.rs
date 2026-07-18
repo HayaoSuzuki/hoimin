@@ -454,3 +454,33 @@ fn effect_handlers_preserve_original_ids_for_success_and_failure() {
         EffectId(99)
     );
 }
+
+#[test]
+fn explicit_close_removes_active_worker_before_handler_drop() {
+    let project = FixtureProject::new();
+    let mut handler = WorkspaceHandler::new(
+        project.root().to_owned(),
+        Vec::new(),
+        1,
+        CopyOptions::default(),
+    );
+    let completed = handler
+        .handle_preflight(Preflight { id: EffectId(70) })
+        .unwrap();
+    let mut ledger = BudgetLedger::new(RunBudgets {
+        memory: 1,
+        copy: completed.aggregate_logical_bytes,
+        processes: 1,
+    });
+    let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+    handler
+        .handle_create_worker(grant.create_worker(EffectId(71), 0).unwrap())
+        .unwrap();
+    let worker_root = handler.worker(0).unwrap().root().to_owned();
+
+    handler.close().unwrap();
+
+    assert!(!worker_root.exists());
+    assert_eq!(handler.worker_count(), 0);
+    assert_eq!(handler.pending_cleanup_count(), 0);
+}

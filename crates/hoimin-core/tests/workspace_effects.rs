@@ -37,6 +37,7 @@ fn run_effect_deserialization_preserves_messages_but_rejects_worker_capabilities
         per_worker_logical_bytes: 5,
         requested_workers: 1,
         aggregate_logical_bytes: 5,
+        fingerprint: None,
     };
     let mut ledger = BudgetLedger::new(RunBudgets {
         memory: 1,

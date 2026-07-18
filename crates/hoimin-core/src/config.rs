@@ -134,6 +134,7 @@ pub struct RunConfig {
     pub session: Option<SessionConfig>,
     pub python: Option<Utf8PathBuf>,
     pub allow_best_effort_memory: bool,
+    pub resume: bool,
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -240,6 +241,7 @@ impl TryFrom<RawRunConfig> for RunConfig {
             session: raw.session,
             python: raw.python,
             allow_best_effort_memory: raw.allow_best_effort_memory,
+            resume: raw.resume,
         })
     }
 }

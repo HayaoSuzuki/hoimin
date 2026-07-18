@@ -170,6 +170,7 @@ impl WorkspacePlan {
             per_worker_logical_bytes: self.manifest.logical_bytes(),
             requested_workers: self.requested_workers,
             aggregate_logical_bytes: self.aggregate_bytes,
+            fingerprint: None,
         }
     }
 
@@ -358,6 +359,7 @@ mod tests {
             per_worker_logical_bytes: 9,
             requested_workers: 2,
             aggregate_logical_bytes: 18,
+            fingerprint: None,
         };
         let mut ledger = BudgetLedger::new(RunBudgets {
             memory: 1,

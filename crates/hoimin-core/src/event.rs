@@ -5,8 +5,9 @@ use camino::Utf8PathBuf;
 use std::time::Duration;
 
 use crate::{
-    EffectId, IntegrityCheckpoint, OutputSpoolRef, ProcessTermination, ReservationId, ResourceMode,
-    SessionResumeRef, StoredResult, TargetSlice,
+    CandidateSpoolRef, EffectId, IntegrityCheckpoint, MutationCandidate, OutputSpoolRef,
+    ProcessTermination, ReservationId, ResourceMode, RunFingerprint, SessionResumeRef,
+    StoredResult, TargetSlice,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -23,7 +24,21 @@ macro_rules! completion_event {
     };
 }
 
-completion_event!(AnalysisFinished, CandidateLoaded, OutputEmitted,);
+completion_event!(OutputEmitted,);
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AnalysisFinished {
+    pub id: EffectId,
+    pub spool: Option<CandidateSpoolRef>,
+    pub truncated: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CandidateLoaded {
+    pub id: EffectId,
+    pub candidate: Option<MutationCandidate>,
+    pub next_offset: u64,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SessionLoaded {
@@ -97,6 +112,8 @@ pub struct PreflightCompleted {
     pub per_worker_logical_bytes: u64,
     pub requested_workers: u32,
     pub aggregate_logical_bytes: u64,
+    #[serde(default)]
+    pub fingerprint: Option<RunFingerprint>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -197,6 +214,53 @@ impl EffectFailure {
             Self::ReportIo { .. } => "report.io",
             Self::ReportSerialization { .. } => "report.serialization",
             Self::ReportState { .. } => "report.state",
+        }
+    }
+
+    pub fn message(&self) -> String {
+        match self {
+            Self::WorkspaceRestore { path, message } => {
+                format!("restore {}: {message}", path)
+            }
+            Self::OriginalChanged { path } => format!("original changed: {path}"),
+            Self::CopyLimit {
+                requested,
+                allowance,
+            } => format!("copy requires {requested} bytes, allowance is {allowance}"),
+            Self::WorkspacePreflightMismatch { expected, received } => {
+                format!("preflight effect mismatch: expected {expected:?}, received {received:?}")
+            }
+            Self::WorkspaceWorkerOutOfRange {
+                worker,
+                requested_workers,
+            } => format!("worker {worker} is outside requested count {requested_workers}"),
+            Self::WorkspaceAllowanceMismatch { expected, received } => {
+                format!("workspace allowance mismatch: expected {expected}, received {received}")
+            }
+            Self::InvalidWorkspaceGrant { expected, received } => {
+                format!("workspace grant mismatch: expected {expected:?}, received {received:?}")
+            }
+            Self::InvalidWorkspacePath { path } => format!("invalid workspace path: {path}"),
+            Self::InvalidMutation { path, message, .. } => {
+                format!("invalid mutation for {path}: {message}")
+            }
+            Self::WorkerMissing { worker } => format!("worker {worker} is missing"),
+            Self::Io {
+                operation,
+                path,
+                message,
+                ..
+            } => match path {
+                Some(path) => format!("{operation} {}: {message}", path),
+                None => format!("{operation}: {message}"),
+            },
+            Self::ReportIo { operation, message }
+            | Self::SessionDatabase {
+                operation, message, ..
+            } => format!("{operation}: {message}"),
+            Self::ReportSerialization { message }
+            | Self::ReportState { message }
+            | Self::Other { message, .. } => message.clone(),
         }
     }
 }

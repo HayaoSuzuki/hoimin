@@ -3,11 +3,11 @@ use serde::{Deserialize, Serialize};
 use camino::Utf8PathBuf;
 
 use crate::{
-    CommandArg, IntegrityCheckpoint, MutantResult, OutputEvent, ProcessLimits, ReservationId,
-    RunFingerprint, Selection,
+    CandidateSpoolRef, CommandArg, IntegrityCheckpoint, MutantResult, OutputEvent, ProcessLimits,
+    ReservationId, RunFingerprint, Selection, TargetSlice,
 };
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct EffectId(pub u64);
 
 macro_rules! effect_request {
@@ -21,7 +21,22 @@ macro_rules! effect_request {
     };
 }
 
-effect_request!(Preflight, AnalyzeFile, ReadCandidate,);
+effect_request!(Preflight,);
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AnalyzeFile {
+    pub id: EffectId,
+    pub target: TargetSlice,
+    pub final_target: bool,
+    pub max_candidates: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ReadCandidate {
+    pub id: EffectId,
+    pub spool: CandidateSpoolRef,
+    pub offset: u64,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LoadSession {
@@ -168,4 +183,27 @@ pub enum RunEffect {
     FinishSession(FinishSession),
     EmitOutput(EmitOutput),
     Cleanup(Cleanup),
+}
+
+impl RunEffect {
+    pub fn id(&self) -> EffectId {
+        match self {
+            Self::ResolveTargets(value) => value.id,
+            Self::Preflight(value) => value.id,
+            Self::CreateWorker(value) => value.id(),
+            Self::RunBaseline(value) | Self::RunMutant(value) => value.id,
+            Self::AnalyzeFile(value) => value.id,
+            Self::ReadCandidate(value) => value.id,
+            Self::ApplyMutation(value) => value.id,
+            Self::ResetWorker(value) => value.id,
+            Self::VerifyOriginals(value) => value.id,
+            Self::LoadSession(value) => value.id,
+            Self::LookupStoredResult(value) => value.id,
+            Self::BeginSession(value) => value.id,
+            Self::PersistResult(value) => value.id,
+            Self::FinishSession(value) => value.id,
+            Self::EmitOutput(value) => value.id,
+            Self::Cleanup(value) => value.id,
+        }
+    }
 }

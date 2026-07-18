@@ -17,6 +17,7 @@ use tokio::sync::Notify;
 use uuid::Uuid;
 
 use crate::resource::{ProcessSupervisor, ResourceBackend, ResourceError};
+use crate::workspace::CommandEnvironment;
 
 const POST_TERMINATION_GRACE: Duration = Duration::from_secs(1);
 
@@ -54,7 +55,7 @@ impl ProcessCancellation {
         }
     }
 
-    async fn cancelled(&self) {
+    pub(crate) async fn cancelled(&self) {
         loop {
             let notified = self.state.notify.notified();
             if self.state.cancelled.load(Ordering::Acquire) {
@@ -75,11 +76,17 @@ impl Default for ProcessCancellation {
 pub struct ProcessRequest {
     process: RunProcess,
     cancellation: ProcessCancellation,
+    environment: Option<CommandEnvironment>,
 }
 
 impl ProcessRequest {
     pub fn with_cancellation(mut self, cancellation: ProcessCancellation) -> Self {
         self.cancellation = cancellation;
+        self
+    }
+
+    pub fn with_environment(mut self, environment: CommandEnvironment) -> Self {
+        self.environment = Some(environment);
         self
     }
 }
@@ -89,6 +96,7 @@ impl From<RunProcess> for ProcessRequest {
         Self {
             process,
             cancellation: ProcessCancellation::new(),
+            environment: None,
         }
     }
 }
@@ -135,6 +143,7 @@ impl ProcessHandler {
         let ProcessRequest {
             process,
             cancellation,
+            environment,
         } = request;
         let id = process.id;
         let argv = native_argv(&process.argv)
@@ -163,9 +172,17 @@ impl ProcessHandler {
             })?;
 
         let mut command = Command::new(program);
+        command.args(arguments);
+        if let Some(environment) = environment {
+            command
+                .current_dir(environment.cwd)
+                .env_clear()
+                .envs(environment.env);
+        } else {
+            command.current_dir(&process.cwd);
+        }
         command
-            .args(arguments)
-            .current_dir(&process.cwd)
+            .env("PYTHONDONTWRITEBYTECODE", "1")
             .kill_on_drop(true)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -378,7 +395,10 @@ async fn await_pipe_until(
     }
 }
 
-async fn wait_after_termination(id: EffectId, child: &mut Child) -> Result<(), EffectFailed> {
+pub(crate) async fn wait_after_termination(
+    id: EffectId,
+    child: &mut Child,
+) -> Result<(), EffectFailed> {
     match tokio::time::timeout(POST_TERMINATION_GRACE, child.wait()).await {
         Ok(result) => result.map(|_| ()).map_err(|error| {
             io_failure(
@@ -400,7 +420,7 @@ async fn wait_after_termination(id: EffectId, child: &mut Child) -> Result<(), E
     }
 }
 
-async fn terminate_unattached_child(child: &mut Child) -> std::io::Result<()> {
+pub(crate) async fn terminate_unattached_child(child: &mut Child) -> std::io::Result<()> {
     let kill_error = child.start_kill().err();
     let wait_error = match tokio::time::timeout(POST_TERMINATION_GRACE, child.wait()).await {
         Ok(Ok(_)) => None,
@@ -450,7 +470,7 @@ fn attach_failure(
     }
 }
 
-fn terminate_supervised(
+pub(crate) fn terminate_supervised(
     id: EffectId,
     supervisor: &mut ProcessSupervisor,
     live_root_owned: bool,
@@ -500,7 +520,7 @@ fn resource_failure(
     }
 }
 
-fn exit_termination(status: std::process::ExitStatus) -> ProcessTermination {
+pub(crate) fn exit_termination(status: std::process::ExitStatus) -> ProcessTermination {
     if let Some(code) = status.code() {
         return ProcessTermination::Exit(code);
     }
