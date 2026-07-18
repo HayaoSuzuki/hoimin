@@ -44,14 +44,19 @@ pub(crate) async fn resolve_changed(
         "--src-prefix=a/",
         "--dst-prefix=b/",
         "--find-renames",
+        "--inter-hunk-context=0",
+        "--diff-algorithm=myers",
+        "--no-indent-heuristic",
+        "-l0",
         "--relative",
     ];
     if let Some(base) = diff_base {
+        let base = resolve_commit(root, base).await?;
         diff_args.push("--merge-base");
-        diff_args.push(base);
+        diff_args.push(&base);
         let output = run_git(root, &diff_args).await?;
         parse_diff(&output, &mut changed, &mut excluded)?;
-    } else {
+    } else if head_exists(root).await? {
         diff_args.push("HEAD");
         let output = run_git(root, &diff_args).await?;
         parse_diff(&output, &mut changed, &mut excluded)?;
@@ -61,6 +66,34 @@ pub(crate) async fn resolve_changed(
     let untracked = run_git(root, &["ls-files", "--others", "--exclude-standard", "-z"]).await?;
     collect_untracked(root, &untracked, &mut changed).await?;
     Ok(normalize_changed(changed))
+}
+
+async fn resolve_commit(root: &Utf8Path, revision: &str) -> Result<String, TargetError> {
+    let revision = format!("{revision}^{{commit}}");
+    let output = run_git(
+        root,
+        &["rev-parse", "--verify", "--end-of-options", &revision],
+    )
+    .await?;
+    let oid = std::str::from_utf8(output.trim_ascii())
+        .map_err(|_| TargetError::GitFailed("Git commit ID is not valid UTF-8".into()))?;
+    if matches!(oid.len(), 40 | 64) && oid.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        Ok(oid.to_owned())
+    } else {
+        Err(TargetError::GitFailed(
+            "git rev-parse returned an invalid commit ID".into(),
+        ))
+    }
+}
+
+async fn head_exists(root: &Utf8Path) -> Result<bool, TargetError> {
+    let output = Command::new("git")
+        .args(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
+        .current_dir(root)
+        .output()
+        .await
+        .map_err(|error| TargetError::GitFailed(error.to_string()))?;
+    Ok(output.status.success())
 }
 
 async fn ensure_git_worktree(root: &Utf8Path) -> Result<(), TargetError> {

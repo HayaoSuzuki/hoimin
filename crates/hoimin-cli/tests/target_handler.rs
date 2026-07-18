@@ -168,6 +168,20 @@ async fn changed_collects_staged_unstaged_and_untracked_python_lines() {
 }
 
 #[tokio::test]
+async fn changed_collects_untracked_python_in_unborn_repository() {
+    let repo = FixtureRepo::new();
+    repo.write("pkg/a.py", "one\ntwo\n");
+
+    assert_eq!(
+        repo.changed_lines(None).await.changed,
+        BTreeMap::from([(
+            Utf8PathBuf::from("pkg/a.py"),
+            vec![LineRange { start: 1, end: 2 }],
+        )])
+    );
+}
+
+#[tokio::test]
 async fn uses_diff_base_against_worktree() {
     let repo = FixtureRepo::new();
     repo.write("pkg/a.py", "one\ntwo\nthree\n");
@@ -202,6 +216,26 @@ async fn diff_base_uses_merge_base_against_worktree() {
             Utf8PathBuf::from("pkg/a.py"),
             vec![LineRange { start: 3, end: 3 }],
         )])
+    );
+}
+
+#[tokio::test]
+async fn diff_base_starting_with_dash_is_rejected_before_diff() {
+    let repo = FixtureRepo::new();
+    repo.write("pkg/a.py", "one\ntwo\n");
+    repo.commit_all("initial");
+    let selection = Selection {
+        root: repo.root(),
+        sources: vec![Utf8PathBuf::from("pkg")],
+        changed: true,
+        diff_base: Some("--stat".into()),
+        ..Selection::default()
+    };
+
+    let error = TargetHandler::resolve(&selection).await.unwrap_err();
+    assert!(
+        matches!(error, TargetError::GitFailed(ref message) if message.contains("git rev-parse --verify --end-of-options")),
+        "unexpected error: {error:?}"
     );
 }
 
@@ -295,6 +329,35 @@ async fn changed_pins_diff_format_and_rename_detection() {
         BTreeMap::from([(
             Utf8PathBuf::from("pkg/new.py"),
             vec![LineRange { start: 2, end: 2 }],
+        )])
+    );
+}
+
+#[tokio::test]
+async fn changed_pins_hunk_boundaries_under_hostile_config() {
+    let repo = FixtureRepo::new();
+    repo.write(
+        "pkg/a.py",
+        "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n",
+    );
+    repo.commit_all("initial");
+    repo.git(&["config", "diff.interHunkContext", "100"]);
+    repo.git(&["config", "diff.algorithm", "histogram"]);
+    repo.git(&["config", "diff.indentHeuristic", "true"]);
+    repo.git(&["config", "diff.renameLimit", "1"]);
+    repo.write(
+        "pkg/a.py",
+        "one\nTWO\nthree\nfour\nfive\nsix\nseven\nEIGHT\nnine\nten\n",
+    );
+
+    assert_eq!(
+        repo.changed_lines(None).await.changed,
+        BTreeMap::from([(
+            Utf8PathBuf::from("pkg/a.py"),
+            vec![
+                LineRange { start: 2, end: 2 },
+                LineRange { start: 8, end: 8 },
+            ],
         )])
     );
 }
