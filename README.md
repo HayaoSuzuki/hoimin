@@ -1,6 +1,6 @@
 # hoimin
 
-hoimin is a bounded mutation-testing CLI for focused Python changes. It mutates copied source files, runs the test command once for the baseline and once per selected mutant, and emits versioned machine-readable results. Python 3.12, 3.13, and 3.14 are supported.
+hoimin is a bounded mutation-testing CLI for focused Python changes. It mutates copied source files, runs the test command once for the baseline and once per selected mutant, and emits versioned machine-readable results. Python 3.14 is supported.
 
 ## Run it
 
@@ -127,8 +127,6 @@ cargo test --workspace
 cargo test -p hoimin-core --features contracts
 cargo test -p hoimin-cli --features contracts
 cargo tree -p hoimin-core --edges normal
-uv run --python 3.12 pytest python/tests -q
-uv run --python 3.13 pytest python/tests -q
 uv run --python 3.14 pytest python/tests -q
 ```
 
