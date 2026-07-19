@@ -1,21 +1,20 @@
 # Development
 
-Run the Python quality gate locally with the same commands used in CI:
+Run the Rust quality gate locally with the same commands used in CI:
 
 ```console
-uv sync --frozen
-uv run ruff check python tests
-uv run ruff format --check python tests
-uv run ty check
-uv run pytest
+cargo fmt --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+uv run maturin build --release
+uv run python tests/wheel_smoke.py
 ```
 
-`pytest` builds one release wheel per session for `tests/wheel_smoke.py` unless
-`HOIMIN_WHEEL` names an existing wheel to test.
+The standalone wheel smoke script builds a release wheel unless `HOIMIN_WHEEL`
+names an existing wheel to test.
 
-After changing the analyzer or its tests, run mutation analysis with:
+After changing the Rust analyzer or its tests, run mutation analysis with:
 
 ```console
-uv run maturin develop
-uv run hoimin run --root . --source python --file python/hoimin_analyzer.py --python python --max-candidates 1000 --max-mutants 1000 --jobs 1 --total-timeout 10m --allow-best-effort-memory --format json -- python -m pytest python/tests -q
+uv run hoimin run --root . --source crates --file crates/hoimin-cli/src/analyzer/mod.rs --max-candidates 1000 --max-mutants 1000 --jobs 1 --total-timeout 10m --allow-best-effort-memory --format json -- cargo test --workspace
 ```

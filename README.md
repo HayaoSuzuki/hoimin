@@ -1,19 +1,19 @@
 # hoimin
 
-hoimin is a bounded mutation-testing CLI for focused Python changes. It mutates copied source files, runs the test command once for the baseline and once per selected mutant, and emits versioned machine-readable results. Python 3.14 is supported.
+hoimin is a bounded mutation-testing CLI for focused Python changes. Its Rust analyzer mutates copied source files, runs the test command once for the baseline and once per selected mutant, and emits versioned machine-readable results.
 
 ## Run it
 
-`uvx` and `pipx run` install hoimin in an isolated environment for a single invocation. The Python given by `--python` must have LibCST installed; it is independent from the Python command after `--`.
+`uvx` and `pipx run` install hoimin's native binary wheel in an isolated environment for a single invocation. Rust performs analysis in-process; the command after `--` is the test command for the project being checked.
 
 ```console
-uvx hoimin run --root . --source src --file src/calc.py --python python --format json -- python -m pytest -q
+uvx hoimin run --root . --source src --file src/calc.py --format json -- python -m pytest -q
 ```
 
-The same project can use the standard-library test runner. hoimin does not require pytest or unittest configuration:
+Use a narrower selector to check one symbol:
 
 ```console
-pipx run hoimin run --root . --source src --symbol calc:add --python python --format jsonl -- python -m unittest discover -s tests
+pipx run hoimin run --root . --source src --symbol calc:add --format jsonl -- python -m pytest -q
 ```
 
 In a persistent installation, replace the launch prefix with `hoimin`. Everything after `--` is passed directly as native argv to the child process. hoimin does not join it into a command string, invoke a shell, expand globs or variables, or interpret shell quoting.
@@ -52,7 +52,7 @@ The defaults are:
 | `--max-processes` | `64` | run-wide descendants |
 | `--format` | `json` | `json`, `jsonl`, or `human` |
 
-`--python` has no implicit default in this CLI and must name the analyzer Python. By default there are no include/exclude overrides or SQLite session, and `--changed`, `--resume`, and `--allow-best-effort-memory` are disabled.
+By default there are no include/exclude overrides or SQLite session, and `--changed`, `--resume`, and `--allow-best-effort-memory` are disabled.
 
 Every numeric limit must be nonzero. Memory, process, copy, and total-timeout limits are run-wide and are not multiplied by `--jobs`. On Windows, Job Objects provide hard process and memory enforcement. On Linux, delegated cgroup v2 provides hard enforcement. When hard enforcement is unavailable, Unix uses best-effort process-group and rlimit controls; such a run is rejected unless `--allow-best-effort-memory` is explicit. Reports identify `hard` or `best_effort` resource mode.
 
@@ -74,7 +74,7 @@ The MVP operator set is:
 - `True` ↔ `False`;
 - `break` ↔ `continue`.
 
-LibCST preserves formatting while applying exactly one replacement per mutant.
+The Rust analyzer preserves the original source except for exactly one replacement per mutant.
 
 ## Results
 
@@ -107,27 +107,25 @@ Higher-priority conditions win in this order: cancellation, infrastructure error
 
 ## Sessions and resume
 
-No database is created by default. `--session PATH` stores a run in SQLite and commits each mutant result independently. `--resume` requires `--session` and looks up the newest compatible incomplete run. Compatibility includes source and configuration fingerprints, test argv, safety limits, operator set, and Python/LibCST versions. Completed `killed` and `survived` results can be reused; `timeout`, `out_of_memory`, `process_limit`, `error`, and `not_run` are run again. An incompatible or already complete run is not silently mixed with new results.
+No database is created by default. `--session PATH` stores a run in SQLite and commits each mutant result independently. `--resume` requires `--session` and looks up the newest compatible incomplete run. Compatibility includes source and configuration fingerprints, test argv, safety limits, and the operator set. Completed `killed` and `survived` results can be reused; `timeout`, `out_of_memory`, `process_limit`, `error`, and `not_run` are run again. An incompatible or already complete run is not silently mixed with new results.
 
 ## Build and verify a wheel
 
 The package is a native binary wheel, not a Python extension module. Build and smoke-test the wheel locally with:
 
 ```console
-uv run maturin build --release --no-default-features
-uv run pytest -q tests/wheel_smoke.py
+uv run maturin build --release
+uv run python tests/wheel_smoke.py
 ```
 
-The smoke test installs the wheel into a new environment, runs the embedded analyzer outside this checkout, and checks both pytest and unittest. For the Python quality gate and mutation-test workflow, see [the development guide](docs/development.md). For development verification, run:
+The smoke test installs the wheel into a new environment and runs the Rust-only CLI outside this checkout. For development verification, see [the development guide](docs/development.md).
 
 ```console
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo fmt --check
+cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-cargo test -p hoimin-core --features contracts
-cargo test -p hoimin-cli --features contracts
-cargo tree -p hoimin-core --edges normal
-uv run --python 3.14 pytest python/tests -q
+uv run maturin build --release
+uv run python tests/wheel_smoke.py
 ```
 
 Windows Job Object tests run on Windows and Linux hard-limit tests require a delegated cgroup v2 runner. The ordinary Linux CI job verifies the explicit best-effort path separately.
