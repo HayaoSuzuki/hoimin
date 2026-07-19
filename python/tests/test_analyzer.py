@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import importlib.util
 import io
 import json
@@ -567,3 +568,21 @@ def test_main_rejects_two_valid_jsonl_requests(monkeypatch: pytest.MonkeyPatch) 
             "truncated": False,
         },
     ]
+
+
+def test_request_is_frozen_and_nested_init_path_is_a_package() -> None:
+    request = analyzer.parse_request(
+        {"effect_id": "e", "path": "pkg/sub/__init__.py", "module": "pass\n"}
+    )
+
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        request.path = "other.py"
+
+    assert analyzer._module_name(request.path) == "pkg.sub"  # noqa: SLF001 -- Directly exercises the path-to-module helper.
+
+
+def test_write_jsonl_rejects_nan_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(analyzer.sys, "stdout", io.StringIO())
+
+    with pytest.raises(ValueError, match="Out of range float values are not JSON compliant"):
+        analyzer.write_jsonl({"value": float("nan")})
