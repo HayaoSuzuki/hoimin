@@ -72,6 +72,14 @@ struct RawRunArgs {
     #[arg(long, value_name = "GLOB")]
     exclude: Vec<String>,
 
+    /// Include only named mutation operators; may be repeated or comma-delimited.
+    #[arg(long, value_delimiter = ',')]
+    operators: Vec<String>,
+
+    /// Exclude named mutation operators; may be repeated or comma-delimited.
+    #[arg(long, value_delimiter = ',')]
+    exclude_operators: Vec<String>,
+
     /// Maximum concurrently active workers.
     #[arg(long, default_value_t = 1)]
     jobs: usize,
@@ -148,6 +156,8 @@ pub struct RunArgs {
     pub diff_base: Option<String>,
     pub include: Vec<String>,
     pub exclude: Vec<String>,
+    pub operators: Vec<String>,
+    pub exclude_operators: Vec<String>,
     pub jobs: usize,
     pub max_mutants: usize,
     pub max_candidates: usize,
@@ -246,6 +256,8 @@ impl TryFrom<Command> for RunArgs {
             diff_base: raw.diff_base,
             include: raw.include,
             exclude: raw.exclude,
+            operators: raw.operators,
+            exclude_operators: raw.exclude_operators,
             jobs: raw.jobs,
             max_mutants: raw.max_mutants,
             max_candidates: raw.max_candidates,
@@ -347,6 +359,8 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
         diff_base: args.diff_base,
         includes: args.include,
         excludes: args.exclude,
+        operators: args.operators,
+        exclude_operators: args.exclude_operators,
         allow_best_effort_memory: args.allow_best_effort_memory,
         limits,
         test_argv: args.test_argv.iter().map(command_arg).collect(),
