@@ -29,6 +29,9 @@ thiserror = "2.0"
 tokio = { version = "1.47", features = ["fs", "io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
 tracing = "0.1"
 uuid = { version = "1.17", features = ["serde", "v4"] }
+ruff_python_parser = { version = "0.6.2", package = "littrs-ruff-python-parser" }
+ruff_python_ast = { version = "0.6.2", package = "littrs-ruff-python-ast" }
+ruff_text_size = { version = "0.6.2", package = "littrs-ruff-text-size" }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Diagnostics_ToolHelp", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_SystemServices", "Win32_System_Threading"] }

@@ -1,0 +1,174 @@
+use camino::Utf8Path;
+use hoimin_cli::analyzer::AnalyzerDiagnosticCode;
+use hoimin_cli::analyzer::rust::{AnalyzeRequest, analyze_source};
+use hoimin_core::{ByteSpan, LineRange};
+
+fn analyze(source: &str) -> hoimin_cli::analyzer::rust::AnalyzerOutput {
+    analyze_with(Utf8Path::new("pkg/sample.py"), &[], &[], 10_000, source)
+}
+
+fn analyze_with(
+    path: &Utf8Path,
+    lines: &[LineRange],
+    symbols: &[String],
+    max_candidates: usize,
+    source: &str,
+) -> hoimin_cli::analyzer::rust::AnalyzerOutput {
+    analyze_source(
+        &AnalyzeRequest {
+            path,
+            lines,
+            symbols,
+            max_candidates,
+        },
+        source,
+    )
+}
+
+#[test]
+fn emits_the_mvp_operator_replacements_in_source_order() {
+    let source = "def f(a, b, xs, flag):\n    value = a == b and a not in xs and a is not b\n    value += a * b // 2 % 2\n    return not flag, +a, -b, True, False\n";
+    let output = analyze(source);
+    let pairs: Vec<_> = output
+        .candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        pairs,
+        vec![
+            ("==", "!=", "compare_eq_ne"),
+            ("and", "or", "boolean_and_or"),
+            ("not in", "in", "membership"),
+            ("and", "or", "boolean_and_or"),
+            ("is not", "is", "identity"),
+            ("+=", "-=", "augmented_add_sub"),
+            ("*", "/", "binary_mul_div"),
+            ("//", "%", "binary_floor_mod"),
+            ("%", "//", "binary_floor_mod"),
+            ("not flag", "flag", "remove_not"),
+            ("+", "-", "unary_sign"),
+            ("-", "+", "unary_sign"),
+            ("True", "False", "boolean_literal"),
+            ("False", "True", "boolean_literal")
+        ]
+    );
+}
+
+#[test]
+fn emits_each_remaining_mvp_operator() {
+    let source = "def f(a, b, xs):\n    a != b\n    a < b\n    a <= b\n    a > b\n    a >= b\n    a in xs\n    a is b\n    a or b\n    a + b\n    a - b\n    a / b\n    while a:\n        break\n        continue\n";
+    let output = analyze(source);
+    let pairs: Vec<_> = output
+        .candidates
+        .iter()
+        .map(|candidate| (candidate.original.as_str(), candidate.replacement.as_str()))
+        .collect();
+    assert_eq!(
+        pairs,
+        vec![
+            ("!=", "=="),
+            ("<", "<="),
+            ("<=", "<"),
+            (">", ">="),
+            (">=", ">"),
+            ("in", "not in"),
+            ("is", "is not"),
+            ("or", "and"),
+            ("+", "-"),
+            ("-", "+"),
+            ("/", "*"),
+            ("break", "continue"),
+            ("continue", "break")
+        ]
+    );
+}
+
+#[test]
+fn preserves_comment_and_unicode_bytes_outside_each_span() {
+    let source = "# 日本語\n値 = left == right  # adjacent comment\n";
+    let candidate = analyze(source).candidates.remove(0);
+    assert_eq!(
+        candidate.span,
+        ByteSpan {
+            start: 23,
+            length: 2
+        }
+    );
+    assert_eq!((candidate.line, candidate.column), (2, 11));
+    let mut changed = source.as_bytes().to_vec();
+    let start = usize::try_from(candidate.span.start).unwrap();
+    changed.splice(start..start + 2, candidate.replacement.bytes());
+    assert_eq!(
+        String::from_utf8(changed).unwrap(),
+        "# 日本語\n値 = left != right  # adjacent comment\n"
+    );
+}
+
+#[test]
+fn assigns_nested_definition_symbols_and_init_module_selectors() {
+    let source = "class Outer:\n    def method(self, left, right):\n        return left == right\n";
+    let output = analyze_with(
+        Utf8Path::new("pkg/sub/__init__.py"),
+        &[],
+        &["sub:Outer.method".to_owned()],
+        10_000,
+        source,
+    );
+    assert_eq!(output.candidates.len(), 1);
+    assert_eq!(output.candidates[0].symbol.as_deref(), Some("Outer.method"));
+}
+
+#[test]
+fn filters_candidates_by_line_or_symbol() {
+    let source = "def first(a, b):\n    return a == b\n\ndef second(a, b):\n    return a == b\n";
+    let output = analyze_with(
+        Utf8Path::new("pkg/sample.py"),
+        &[LineRange { start: 2, end: 2 }],
+        &["pkg.sample:second".to_owned()],
+        10_000,
+        source,
+    );
+    assert_eq!(
+        output
+            .candidates
+            .iter()
+            .map(|candidate| candidate.symbol.as_deref())
+            .collect::<Vec<_>>(),
+        vec![Some("first"), Some("second")]
+    );
+}
+
+#[test]
+fn reports_invalid_syntax_without_candidates() {
+    let output = analyze("def broken(:\n");
+    assert!(output.candidates.is_empty());
+    assert_eq!(
+        output.diagnostics[0].code,
+        AnalyzerDiagnosticCode::InvalidSyntax
+    );
+    assert!(!output.truncated);
+}
+
+#[test]
+fn truncates_after_selected_candidates_and_emits_limit_diagnostic() {
+    let output = analyze_with(
+        Utf8Path::new("pkg/sample.py"),
+        &[],
+        &[],
+        2,
+        "a == b and c == d\n",
+    );
+    assert_eq!(output.candidates.len(), 2);
+    assert!(output.truncated);
+    assert_eq!(
+        output.diagnostics[0].code,
+        AnalyzerDiagnosticCode::CandidateLimitExceeded
+    );
+}

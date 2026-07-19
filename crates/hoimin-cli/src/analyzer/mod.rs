@@ -1,4 +1,5 @@
 mod protocol;
+pub mod rust;
 mod store;
 
 pub use protocol::*;
