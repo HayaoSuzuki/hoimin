@@ -5,7 +5,6 @@ use hoimin_cli::analyzer::{
 };
 use hoimin_core::{AnalyzeFile, ByteSpan, EffectId, MutationCandidate, TargetSlice};
 use std::fs;
-use std::time::Duration;
 
 fn candidate(sequence: u64) -> MutationCandidate {
     MutationCandidate {
@@ -44,12 +43,7 @@ fn analysis_request(id: u64, path: &str, final_target: bool, max_candidates: u64
 }
 
 fn handler(root: Utf8PathBuf) -> AnalyzerHandler {
-    AnalyzerHandler::new(
-        root,
-        Utf8PathBuf::from("definitely-not-a-python-executable"),
-        Duration::from_secs(5),
-    )
-    .unwrap()
+    AnalyzerHandler::new(root).unwrap()
 }
 
 #[test]
@@ -345,12 +339,7 @@ async fn concrete_handler_does_not_spawn_python_for_analysis() {
     )
     .unwrap();
     let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
-    let mut handler = AnalyzerHandler::new(
-        root,
-        Utf8PathBuf::from("definitely-not-a-python-executable"),
-        Duration::from_secs(5),
-    )
-    .unwrap();
+    let mut handler = AnalyzerHandler::new(root).unwrap();
     let finished = handler
         .handle(AnalyzeFile {
             id: EffectId(77),

@@ -5,9 +5,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use camino::Utf8PathBuf;
 use hoimin_core::{
-    CandidateLoaded, CommandArg, EffectFailed, EffectId, FingerprintInput, ProcessLimits,
-    ProcessTermination, RunConfig, RunEffect, RunEvent, RunPhase, RunProcess, RunState, SourceHash,
-    StartRequested, TargetSlice, fingerprint, transition,
+    CandidateLoaded, EffectFailed, EffectId, FingerprintInput, RunConfig, RunEffect, RunEvent,
+    RunPhase, RunProcess, RunState, SourceHash, StartRequested, TargetSlice, fingerprint,
+    transition,
 };
 use tempfile::TempDir;
 use tokio::sync::mpsc;
@@ -113,7 +113,6 @@ where
     Stderr: Write,
 {
     pub async fn new(config: &RunConfig, stdout: Stdout, stderr: Stderr) -> Result<Self, String> {
-        let python = config.python.clone().unwrap_or_default();
         let spool_dir = tempfile::tempdir().map_err(|error| error.to_string())?;
         let spool_path = Utf8PathBuf::from_path_buf(spool_dir.path().to_owned())
             .map_err(|_| "temporary spool path is not UTF-8".to_owned())?;
@@ -137,8 +136,6 @@ where
         ));
         let analyzer = AnalyzerHandler::with_backend(
             config.root.clone(),
-            python.clone(),
-            config.limits.analyzer_timeout.get(),
             backend,
             config.limits.max_memory.get(),
             config.limits.max_processes.get() as u32,
@@ -166,72 +163,6 @@ where
     }
 }
 
-async fn python_versions<Stdout, Stderr>(
-    context: &ShellContext<Stdout, Stderr>,
-    id: EffectId,
-    cancellation: ProcessCancellation,
-) -> Result<(String, String), String> {
-    let python = context
-        .config
-        .python
-        .as_ref()
-        .ok_or("--python is required")?;
-    let request = RunProcess {
-        id,
-        worker: None,
-        run_id: None,
-        mutant_id: None,
-        argv: [
-            python.as_str(),
-            "-c",
-            "import sys; from importlib.metadata import version; print(sys.version.split()[0]); print(version('libcst'))",
-        ]
-        .into_iter()
-        .map(command_arg)
-        .collect(),
-        cwd: context.config.root.clone(),
-        limits: ProcessLimits {
-            timeout: context.config.limits.analyzer_timeout.get(),
-            max_output_bytes: 4096,
-            max_memory_bytes: context.config.limits.max_memory.get(),
-            max_processes: context.config.limits.max_processes.get() as u32,
-        },
-    };
-    let finished = context
-        .process
-        .run(ProcessRequest::from(request).with_cancellation(cancellation))
-        .await
-        .map_err(|error| format!("verify Python/LibCST: {:?}", error.failure))?;
-    if finished.termination != ProcessTermination::Exit(0) {
-        return Err(format!(
-            "verify Python/LibCST exited as {:?}",
-            finished.termination
-        ));
-    }
-    let path = context
-        .process
-        .spool_path(&finished.output)
-        .map_err(|error| error.to_string())?;
-    let bytes = tokio::fs::read(path)
-        .await
-        .map_err(|error| error.to_string())?;
-    let text = String::from_utf8(bytes).map_err(|error| error.to_string())?;
-    let mut lines = text.lines();
-    let python = lines.next().ok_or("missing Python version")?.to_owned();
-    let libcst = lines.next().ok_or("missing LibCST version")?.to_owned();
-    Ok((python, libcst))
-}
-
-#[cfg(windows)]
-fn command_arg(value: &str) -> CommandArg {
-    CommandArg::Windows(value.encode_utf16().collect())
-}
-
-#[cfg(unix)]
-fn command_arg(value: &str) -> CommandArg {
-    CommandArg::Unix(value.as_bytes().to_vec())
-}
-
 fn mutation_operators() -> Vec<String> {
     [
         "compare_eq_ne",
@@ -255,7 +186,6 @@ fn mutation_operators() -> Vec<String> {
 
 async fn prepare_fingerprint<Stdout, Stderr>(
     context: &ShellContext<Stdout, Stderr>,
-    cancellation: ProcessCancellation,
 ) -> Result<hoimin_core::RunFingerprint, EffectFailed> {
     let id = EffectId(0);
     let targets = context.resolved_targets.as_ref().ok_or_else(|| {
@@ -277,17 +207,12 @@ async fn prepare_fingerprint<Stdout, Stderr>(
             hash: *blake3::hash(&bytes).as_bytes(),
         });
     }
-    let (python_version, libcst_version) = python_versions(context, id, cancellation)
-        .await
-        .map_err(|error| EffectFailed::other(id, "fingerprint.runtime", error))?;
     Ok(fingerprint(&FingerprintInput {
         sources,
         targets: targets.clone(),
         operators: mutation_operators(),
         test_argv: context.config.test_argv.clone(),
         limits: context.config.limits.clone(),
-        python_version,
-        libcst_version,
         resource_mode: context.process.mode(),
     }))
 }
@@ -340,7 +265,7 @@ where
             Err(error) => Err(error),
         },
         RunEffect::Preflight(request) => match context.workspace.handle_preflight(request) {
-            Ok(mut value) => match prepare_fingerprint(context, cancellation.clone()).await {
+            Ok(mut value) => match prepare_fingerprint(context).await {
                 Ok(run_fingerprint) => {
                     value.fingerprint = Some(run_fingerprint);
                     Ok(RunEvent::PreflightCompleted(value))

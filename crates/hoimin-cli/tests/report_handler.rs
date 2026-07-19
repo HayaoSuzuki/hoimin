@@ -139,7 +139,7 @@ async fn documentation_contract() {
     assert_schema_valid(&result_schema, &incomplete, &event_schema);
 
     let mut invalid = document.clone();
-    invalid["schema_version"] = serde_json::json!(2);
+    invalid["schema_version"] = serde_json::json!(REPORT_SCHEMA_VERSION + 1);
     assert_schema_invalid(&result_schema, &invalid, &event_schema);
     invalid = document.clone();
     invalid["unexpected"] = serde_json::json!(true);
@@ -154,6 +154,20 @@ async fn documentation_contract() {
     assert_schema_invalid(&event_schema, &invalid_event, &event_schema);
     invalid_event["status"] = serde_json::json!("killed");
     invalid_event["resource_mode"] = serde_json::json!("soft");
+    assert_schema_invalid(&event_schema, &invalid_event, &event_schema);
+
+    let mut invalid_event = jsonl_events
+        .iter()
+        .find(|event| event["kind"] == "run_started")
+        .unwrap()
+        .clone();
+    invalid_event["versions"]["python"] = serde_json::json!("3.14.0");
+    assert_schema_invalid(&event_schema, &invalid_event, &event_schema);
+    invalid_event["versions"]
+        .as_object_mut()
+        .unwrap()
+        .remove("python");
+    invalid_event["versions"]["libcst"] = serde_json::json!("1.0.0");
     assert_schema_invalid(&event_schema, &invalid_event, &event_schema);
 }
 
@@ -186,6 +200,18 @@ fn normalize_documented_command(command: &[String], root: &Path, python: &Path) 
         .position(|pair| pair == ["hoimin", "run"])
         .expect("documented launch prefix");
     let mut argv = command[launcher..].to_vec();
+    let mut remove_value = false;
+    argv.retain(|argument| {
+        if remove_value {
+            remove_value = false;
+            false
+        } else if argument == "--python" {
+            remove_value = true;
+            false
+        } else {
+            true
+        }
+    });
     let root = root.to_str().expect("UTF-8 fixture");
     let python = python.to_str().expect("UTF-8 Python");
     for index in 0..argv.len() {
@@ -306,7 +332,7 @@ fn actual_pre_baseline_report() -> serde_json::Value {
         &mut handler,
         2,
         OutputEvent::RunFinished(RunSummary {
-            schema_version: 1,
+            schema_version: REPORT_SCHEMA_VERSION,
             sequence: 2,
             run_id: "pre-baseline".to_owned(),
             counts: MutationSummary::default(),
@@ -321,7 +347,7 @@ fn documented_events() -> Vec<OutputEvent> {
     let mut events = vec![
         OutputEvent::RunStarted(RunStarted::minimal("documented-run", 1)),
         OutputEvent::BaselineFinished(BaselineFinished {
-            schema_version: 1,
+            schema_version: REPORT_SCHEMA_VERSION,
             sequence: 2,
             run_id: "documented-run".to_owned(),
             termination: ProcessTermination::Exit(0),
@@ -362,7 +388,7 @@ fn documented_events() -> Vec<OutputEvent> {
             MutationStatus::Error => None,
         };
         events.push(OutputEvent::MutantFinished(MutantFinished {
-            schema_version: 1,
+            schema_version: REPORT_SCHEMA_VERSION,
             sequence: event_sequence,
             run_id: "documented-run".to_owned(),
             candidate: MutationCandidate {
@@ -402,7 +428,7 @@ fn documented_events() -> Vec<OutputEvent> {
     )));
     event_sequence += 1;
     events.push(OutputEvent::RunFinished(RunSummary {
-        schema_version: 1,
+        schema_version: REPORT_SCHEMA_VERSION,
         sequence: event_sequence,
         run_id: "documented-run".to_owned(),
         counts: summary,
@@ -678,7 +704,7 @@ fn json_streams_mutants_from_disk_into_one_document() {
     }
 
     let document: serde_json::Value = serde_json::from_str(stdout.text().trim()).unwrap();
-    assert_eq!(document["schema_version"], 1);
+    assert_eq!(document["schema_version"], REPORT_SCHEMA_VERSION);
     assert_eq!(document["run"]["kind"], "run_started");
     assert_eq!(document["baseline"]["kind"], "baseline_finished");
     assert_eq!(document["mutants"].as_array().unwrap().len(), 1);
@@ -690,7 +716,7 @@ fn json_streams_mutants_from_disk_into_one_document() {
     assert_eq!(
         stdout.text(),
         format!(
-            "{{\"schema_version\":1,\"run\":{},\"baseline\":{},\"mutants\":[{}],\"summary\":{}}}\n",
+            "{{\"schema_version\":{REPORT_SCHEMA_VERSION},\"run\":{},\"baseline\":{},\"mutants\":[{}],\"summary\":{}}}\n",
             serde_json::to_string(&event_records[0]).unwrap(),
             serde_json::to_string(&event_records[1]).unwrap(),
             serde_json::to_string(&event_records[3]).unwrap(),
@@ -912,7 +938,7 @@ fn events() -> Vec<OutputEvent> {
     vec![
         OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)),
         OutputEvent::BaselineFinished(BaselineFinished {
-            schema_version: 1,
+            schema_version: REPORT_SCHEMA_VERSION,
             sequence: 2,
             run_id: "run-1".to_owned(),
             termination: ProcessTermination::Exit(0),
@@ -935,7 +961,7 @@ fn events() -> Vec<OutputEvent> {
 
 fn run_summary(sequence: u64) -> OutputEvent {
     OutputEvent::RunFinished(RunSummary {
-        schema_version: 1,
+        schema_version: REPORT_SCHEMA_VERSION,
         sequence,
         run_id: "run-1".to_owned(),
         counts: MutationSummary {
@@ -950,7 +976,7 @@ fn run_summary(sequence: u64) -> OutputEvent {
 
 fn mutant_finished(event_sequence: u64, mutant_sequence: u64) -> OutputEvent {
     OutputEvent::MutantFinished(MutantFinished {
-        schema_version: 1,
+        schema_version: REPORT_SCHEMA_VERSION,
         sequence: event_sequence,
         run_id: "run-1".to_owned(),
         candidate: MutationCandidate {

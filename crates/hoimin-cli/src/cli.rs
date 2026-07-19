@@ -14,7 +14,7 @@ use hoimin_core::{
     name = "hoimin",
     version,
     about = "Bounded mutation testing for focused Python changes",
-    after_help = "Run contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --diff-base\nCopy options:\n  --include --exclude\nSafety options:\n  --python --jobs --max-mutants --max-candidates --analyzer-timeout\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-processes --allow-best-effort-memory\nOutput/session options:\n  --format <json|jsonl|human> --session --resume"
+    after_help = "Run contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --diff-base\nCopy options:\n  --include --exclude\nSafety options:\n  --jobs --max-mutants --max-candidates --analyzer-timeout\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-processes --allow-best-effort-memory\nOutput/session options:\n  --format <json|jsonl|human> --session --resume"
 )]
 struct RootCli {
     #[command(subcommand)]
@@ -71,10 +71,6 @@ struct RawRunArgs {
     /// Exclude a path while copying; may be repeated and wins over include.
     #[arg(long, value_name = "GLOB")]
     exclude: Vec<String>,
-
-    /// Python executable used by the LibCST analyzer.
-    #[arg(long, value_name = "PATH")]
-    python: Option<PathBuf>,
 
     /// Maximum concurrently active workers.
     #[arg(long, default_value_t = 1)]
@@ -152,7 +148,6 @@ pub struct RunArgs {
     pub diff_base: Option<String>,
     pub include: Vec<String>,
     pub exclude: Vec<String>,
-    pub python: Option<PathBuf>,
     pub jobs: usize,
     pub max_mutants: usize,
     pub max_candidates: usize,
@@ -250,7 +245,6 @@ impl TryFrom<Command> for RunArgs {
             diff_base: raw.diff_base,
             include: raw.include,
             exclude: raw.exclude,
-            python: raw.python,
             jobs: raw.jobs,
             max_mutants: raw.max_mutants,
             max_candidates: raw.max_candidates,
@@ -291,10 +285,6 @@ where
 
 fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
     let root = utf8_path(args.root, "--root")?;
-    let python = args
-        .python
-        .map(|path| utf8_path(path, "--python"))
-        .transpose()?;
     let sources = args
         .source
         .into_iter()
@@ -346,7 +336,6 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
         diff_base: args.diff_base,
         includes: args.include,
         excludes: args.exclude,
-        python,
         allow_best_effort_memory: args.allow_best_effort_memory,
         limits,
         test_argv: args.test_argv.into_iter().map(command_arg).collect(),

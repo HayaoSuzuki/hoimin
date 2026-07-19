@@ -21,18 +21,12 @@ pub struct AnalyzerHandler {
 }
 
 impl AnalyzerHandler {
-    pub fn new(
-        root: Utf8PathBuf,
-        _python: Utf8PathBuf,
-        _timeout: std::time::Duration,
-    ) -> Result<Self, std::io::Error> {
+    pub fn new(root: Utf8PathBuf) -> Result<Self, std::io::Error> {
         Ok(Self { root, store: None })
     }
 
     pub fn with_backend(
         root: Utf8PathBuf,
-        _python: Utf8PathBuf,
-        _timeout: std::time::Duration,
         _backend: ResourceBackend,
         _max_memory_bytes: u64,
         _max_processes: u32,
@@ -177,12 +171,7 @@ mod tests {
         )
         .unwrap();
         let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
-        let mut handler = AnalyzerHandler::new(
-            root,
-            Utf8PathBuf::from("definitely-not-a-python-executable"),
-            std::time::Duration::from_secs(5),
-        )
-        .unwrap();
+        let mut handler = AnalyzerHandler::new(root).unwrap();
         let cancellation = ProcessCancellation::new();
         cancellation.cancel();
 

@@ -74,6 +74,10 @@ fn root_help_exposes_the_run_contract() {
             "missing `{expected}` from help:\n{help}"
         );
     }
+    assert!(
+        !help.contains("--python"),
+        "obsolete option in help:\n{help}"
+    );
 }
 
 #[test]
@@ -144,8 +148,8 @@ fn parse_run_config_parses_ranges_limits_and_output() {
 }
 
 #[test]
-fn parse_run_config_preserves_runtime_policy_options() {
-    let config = hoimin_cli::cli::parse_config_from([
+fn parse_run_config_rejects_obsolete_python_option() {
+    let error = hoimin_cli::cli::parse_config_from([
         "hoimin",
         "run",
         "--file",
@@ -156,12 +160,8 @@ fn parse_run_config_preserves_runtime_policy_options() {
         "--",
         "python",
     ])
-    .unwrap();
-    assert_eq!(
-        config.python.as_deref(),
-        Some(camino::Utf8Path::new("tools/python"))
-    );
-    assert!(config.allow_best_effort_memory);
+    .unwrap_err();
+    assert!(error.to_string().contains("--python"));
 }
 
 #[cfg(unix)]
