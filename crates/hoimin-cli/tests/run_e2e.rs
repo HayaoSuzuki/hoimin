@@ -12,6 +12,13 @@ async fn pytest_and_unittest_commands_produce_the_same_mutant_statuses() {
     assert_eq!(pytest.statuses, unittest.statuses);
     assert_eq!(pytest.exit_code, unittest.exit_code);
     assert_eq!(pytest.statuses, ["killed"]);
+    assert_eq!(
+        pytest.document["run"]["versions"],
+        serde_json::json!({
+            "os": std::env::consts::OS,
+            "hoimin": env!("CARGO_PKG_VERSION"),
+        })
+    );
 }
 
 #[tokio::test]

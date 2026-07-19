@@ -540,25 +540,6 @@ pub(crate) async fn wait_after_termination(
     }
 }
 
-pub(crate) async fn terminate_unattached_child(child: &mut Child) -> std::io::Result<()> {
-    let kill_error = child.start_kill().err();
-    let wait_error = match tokio::time::timeout(POST_TERMINATION_GRACE, child.wait()).await {
-        Ok(Ok(_)) => None,
-        Ok(Err(error)) => Some(error),
-        Err(_) => Some(std::io::Error::new(
-            std::io::ErrorKind::TimedOut,
-            "timed out waiting for unattached child termination",
-        )),
-    };
-    match (kill_error, wait_error) {
-        (None, None) => Ok(()),
-        (Some(error), None) | (None, Some(error)) => Err(error),
-        (Some(kill), Some(wait)) => Err(std::io::Error::other(format!(
-            "kill failed: {kill}; wait failed: {wait}"
-        ))),
-    }
-}
-
 fn combine_process_and_output(
     process: Result<ProcessTermination, EffectFailed>,
     output: Result<OutputSpoolRef, EffectFailed>,

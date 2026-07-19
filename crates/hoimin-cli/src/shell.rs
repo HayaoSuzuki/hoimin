@@ -5,9 +5,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use camino::Utf8PathBuf;
 use hoimin_core::{
-    CandidateLoaded, EffectFailed, EffectId, FingerprintInput, RunConfig, RunEffect, RunEvent,
-    RunPhase, RunProcess, RunState, SourceHash, StartRequested, TargetSlice, fingerprint,
-    transition,
+    CandidateLoaded, EffectFailed, EffectId, FingerprintInput, OutputEvent, ReportVersions,
+    RunConfig, RunEffect, RunEvent, RunPhase, RunProcess, RunState, SourceHash, StartRequested,
+    TargetSlice, fingerprint, transition,
 };
 use tempfile::TempDir;
 use tokio::sync::mpsc;
@@ -105,6 +105,7 @@ pub struct ShellContext<Stdout, Stderr> {
     _spool_dir: TempDir,
     resolved_targets: Option<Vec<TargetSlice>>,
     config: RunConfig,
+    report_versions: ReportVersions,
 }
 
 impl<Stdout, Stderr> ShellContext<Stdout, Stderr>
@@ -159,6 +160,10 @@ where
             _spool_dir: spool_dir,
             resolved_targets: None,
             config: config.clone(),
+            report_versions: ReportVersions {
+                os: std::env::consts::OS.to_owned(),
+                hoimin: env!("CARGO_PKG_VERSION").to_owned(),
+            },
         })
     }
 }
@@ -361,7 +366,10 @@ where
             .workspace
             .handle_verify_originals(request)
             .map(RunEvent::OriginalsVerified),
-        RunEffect::EmitOutput(request) => {
+        RunEffect::EmitOutput(mut request) => {
+            if let OutputEvent::RunStarted(run_started) = &mut request.event {
+                run_started.versions = context.report_versions.clone();
+            }
             context.report.handle(request).map(RunEvent::OutputEmitted)
         }
         RunEffect::Cleanup(request) => match context.process.close() {
