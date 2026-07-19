@@ -9,20 +9,20 @@ use ruff_text_size::Ranged;
 
 use super::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
-pub struct AnalyzeRequest<'a> {
+pub(crate) struct AnalyzeRequest<'a> {
     pub path: &'a Utf8Path,
     pub lines: &'a [LineRange],
     pub symbols: &'a [String],
     pub max_candidates: usize,
 }
 
-pub struct AnalyzerOutput {
+pub(crate) struct AnalyzerOutput {
     pub candidates: Vec<AnalyzerCandidate>,
     pub diagnostics: Vec<AnalyzerDiagnostic>,
     pub truncated: bool,
 }
 
-pub fn analyze_source(request: &AnalyzeRequest<'_>, source: &str) -> AnalyzerOutput {
+pub(crate) fn analyze_source(request: &AnalyzeRequest<'_>, source: &str) -> AnalyzerOutput {
     let parsed = match parse_module(source) {
         Ok(parsed) => parsed,
         Err(_) => return invalid_syntax(request.path),
@@ -318,3 +318,7 @@ impl<'ast, 'tokens> Visitor<'ast> for AstFacts<'tokens> {
         visitor::walk_expr(self, expression);
     }
 }
+
+#[cfg(test)]
+#[path = "rust_tests.rs"]
+mod rust_tests;

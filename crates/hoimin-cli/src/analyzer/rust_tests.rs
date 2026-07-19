@@ -1,9 +1,9 @@
+use super::{AnalyzeRequest, analyze_source};
+use crate::analyzer::AnalyzerDiagnosticCode;
 use camino::Utf8Path;
-use hoimin_cli::analyzer::AnalyzerDiagnosticCode;
-use hoimin_cli::analyzer::rust::{AnalyzeRequest, analyze_source};
 use hoimin_core::{ByteSpan, LineRange};
 
-fn analyze(source: &str) -> hoimin_cli::analyzer::rust::AnalyzerOutput {
+fn analyze(source: &str) -> super::AnalyzerOutput {
     analyze_with(Utf8Path::new("pkg/sample.py"), &[], &[], 10_000, source)
 }
 
@@ -13,7 +13,7 @@ fn analyze_with(
     symbols: &[String],
     max_candidates: usize,
     source: &str,
-) -> hoimin_cli::analyzer::rust::AnalyzerOutput {
+) -> super::AnalyzerOutput {
     analyze_source(
         &AnalyzeRequest {
             path,
@@ -61,6 +61,42 @@ fn emits_the_mvp_operator_replacements_in_source_order() {
     );
 }
 
+#[test]
+fn emits_complete_candidate_records_in_source_order() {
+    let output = analyze("x = a == b\n");
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.path.as_str(),
+                candidate.span,
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+                candidate.line,
+                candidate.column,
+                candidate.symbol.as_deref(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        candidates,
+        vec![(
+            "pkg/sample.py",
+            ByteSpan {
+                start: 6,
+                length: 2,
+            },
+            "==",
+            "!=",
+            "compare_eq_ne",
+            1,
+            6,
+            None,
+        )]
+    );
+}
 #[test]
 fn removes_not_across_its_complete_ast_operand_range() {
     let output = analyze("result = not (left == right and ready)\n");

@@ -1,5 +1,6 @@
 mod protocol;
-pub mod rust;
+#[allow(dead_code)]
+mod rust;
 mod store;
 
 pub use protocol::*;
