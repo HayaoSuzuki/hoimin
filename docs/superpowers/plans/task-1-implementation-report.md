@@ -19,7 +19,7 @@ Verification:
 
 Concern:
 
-Ruff's existing-code cleanup used generated `noqa` directives for legacy analyzer/test diagnostics. These are functional no-ops but should be narrowed or replaced with code-level fixes in a follow-up cleanup if strict per-construct rationale is required.
+Resolved in the first review-fix commit: generated bare `noqa` directives were replaced with construct-local, rule-specific rationales or code-level fixes.
 
 ## Review fix report
 
@@ -30,3 +30,5 @@ Verification after the review fix:
 - `uv run ruff check python tests`: passed.
 - `uv run ruff format --check python tests`: passed.
 - Focused and full pytest remain behaviorally unchanged; the 100% coverage gate is still intentionally pending Task 2.
+
+Second review fix: added method docstrings to emit_candidate and emit_diagnostic, replacing their inaccurate LibCST-hook D102 suppressions.

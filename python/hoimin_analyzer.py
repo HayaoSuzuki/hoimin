@@ -208,12 +208,13 @@ class MutationVisitor(cst.CSTVisitor):  # noqa: D101 -- Protocol data and sentin
         if isinstance(original_node, (cst.ClassDef, cst.FunctionDef)):
             self.scope.pop()
 
-    def emit_candidate(  # noqa: D102 -- LibCST visitor hooks implement framework-defined behavior.
+    def emit_candidate(
         self,
         node: cst.CSTNode,
         replacement: cst.CSTNode,
         operator: str,
     ) -> None:
+        """Emit one selected mutation candidate as a JSONL record."""
         position = self.get_metadata(PositionProvider, node)
         symbol = ".".join(self.scope) or None
         if not self._selected(position.start, symbol):
@@ -288,7 +289,8 @@ class MutationVisitor(cst.CSTVisitor):  # noqa: D101 -- Protocol data and sentin
             and (symbol == selected_qualname or symbol.startswith(selected_qualname + "."))
         )
 
-    def emit_diagnostic(self, code: str, position: CodePosition | None = None) -> None:  # noqa: D102 -- LibCST visitor hooks implement framework-defined behavior.
+    def emit_diagnostic(self, code: str, position: CodePosition | None = None) -> None:
+        """Emit an analyzer diagnostic, optionally located in the source."""
         record: dict[str, object] = {
             "kind": "diagnostic",
             "effect_id": self.request.effect_id,
