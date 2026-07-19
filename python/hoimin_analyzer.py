@@ -7,7 +7,7 @@ import json
 import sys
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Any
+from typing import Any, cast
 
 import libcst as cst
 from libcst.metadata import (
@@ -231,7 +231,7 @@ class MutationVisitor(cst.CSTVisitor):  # noqa: D101 -- Protocol data and sentin
             self.emit_diagnostic("unreconstructable_span", position.start)
             return
         try:
-            mutated_from_cst = self.module.deep_replace(node, replacement).code
+            mutated_from_cst = cast("cst.Module", self.module.deep_replace(node, replacement)).code
             mutated_bytes = mutated_from_cst.encode("utf-8")
             prefix = self.source_bytes[: byte_span.start]
             suffix = self.source_bytes[span_end:]
@@ -309,7 +309,7 @@ def analyze(request: AnalyzerRequest) -> None:  # noqa: D103 -- Internal analyze
     truncated = False
     try:
         module = cst.parse_module(request.module)
-    except (cst.ParserSyntaxError, cst.CSTValidationError):
+    except cst.ParserSyntaxError, cst.CSTValidationError:
         write_jsonl(
             {
                 "kind": "diagnostic",

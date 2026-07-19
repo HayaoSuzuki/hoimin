@@ -9,10 +9,14 @@ import venv
 import zipfile
 from email.parser import Parser
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 from unittest.mock import Mock
 
 import pytest
 from conftest import build_wheel_for_smoke_tests
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
@@ -108,10 +112,19 @@ def write_fixture(root: Path) -> Path:
     return target
 
 
+def mutant_signature(mutant: object) -> tuple[str, str]:
+    assert isinstance(mutant, dict)
+    mutant_record = cast("dict[str, object]", mutant)
+    candidate = mutant_record["candidate"]
+    assert isinstance(candidate, dict)
+    candidate_record = cast("dict[str, object]", candidate)
+    return str(candidate_record["id"]), str(mutant_record["status"])
+
+
 def result_signature(document: dict[str, object]) -> set[tuple[str, str]]:
     mutants = document["mutants"]
     assert isinstance(mutants, list)
-    return {(str(mutant["candidate"]["id"]), str(mutant["status"])) for mutant in mutants}
+    return {mutant_signature(mutant) for mutant in mutants}
 
 
 def run_mutations(
@@ -159,7 +172,7 @@ def run_mutations(
 def test_installed_wheel_is_checkout_independent(tmp_path: Path) -> None:
     wheel = wheel_path()
     metadata = wheel_metadata(wheel)
-    assert metadata["Requires-Python"].replace(" ", "") == ">=3.12,<3.15"
+    assert metadata["Requires-Python"].replace(" ", "") == ">=3.14,<3.15"
     assert {value.replace(" ", "") for value in metadata.get_all("Requires-Dist")} >= {
         "libcst>=1.8.6,<2"
     }
@@ -308,7 +321,12 @@ def test_wheel_override_skips_session_build(
     sentinel = Mock()
     monkeypatch.setattr("conftest.subprocess.run", sentinel)
 
-    assert build_wheel_for_smoke_tests.__wrapped__() is None
+    # Pytest fixture wrapping retains the original callable on __wrapped__.
+    wrapped_fixture = cast(
+        "Callable[[], None]",
+        build_wheel_for_smoke_tests.__wrapped__,  # ty: ignore[unresolved-attribute]
+    )
+    assert wrapped_fixture() is None
     sentinel.assert_not_called()
 
 

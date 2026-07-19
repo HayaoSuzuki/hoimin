@@ -7,11 +7,10 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import libcst as cst
 import pytest
-from hypothesis import given, settings, strategies as st
 
 if TYPE_CHECKING:
     from types import ModuleType
@@ -82,12 +81,20 @@ def candidates(events: list[dict[str, object]]) -> list[dict[str, object]]:
     return [event for event in events if event["kind"] == "candidate"]
 
 
+def span_bounds(record: dict[str, object]) -> tuple[int, int]:
+    span = record["span"]
+    assert isinstance(span, dict)
+    span_record = cast("dict[str, object]", span)
+    start = span_record["start"]
+    length = span_record["length"]
+    assert isinstance(start, int)
+    assert isinstance(length, int)
+    return start, start + length
+
+
 def apply_candidate(source: str, candidate: dict[str, object]) -> str:
     raw = source.encode()
-    span = candidate["span"]
-    assert isinstance(span, dict)
-    start = span["start"]
-    end = start + span["length"]
+    start, end = span_bounds(candidate)
     mutated = raw[:start] + str(candidate["replacement"]).encode() + raw[end:]
     return mutated.decode()
 
@@ -165,9 +172,9 @@ def replacements(a, b, items, flag):
 def test_unicode_and_crlf_spans_are_utf8_bytes_and_round_trip():
     source = '# \u65e5\u672c\u8a9e\r\nvalue = "\u96ea"\r\nresult = value == "\u96ea"\r\n'
     event = candidates(invoke(source))[0]
-    span = event["span"]
+    start, end = span_bounds(event)
     raw = source.encode()
-    assert raw[span["start"] : span["start"] + span["length"]].decode() == event["original"]
+    assert raw[start:end].decode() == event["original"]
     assert event["line"] == 3
     assert event["column"] == 15
 
@@ -252,8 +259,8 @@ def test_newline_styles_have_round_tripping_byte_spans(newline: str):
     source = newline.join(["name = '\u732b'", "answer = name is None", ""])
     for record in candidates(invoke(source)):
         raw = source.encode()
-        span = record["span"]
-        assert raw[span["start"] : span["start"] + span["length"]].decode() == record["original"]
+        start, end = span_bounds(record)
+        assert raw[start:end].decode() == record["original"]
 
 
 def test_invalid_syntax_emits_exact_diagnostic_code_and_summary():
@@ -306,7 +313,7 @@ def test_effect_id_is_echoed_on_every_record_and_order_is_deterministic():
     second = invoke(source, effect_id="e-99")
     assert first == second
     assert all(record["effect_id"] == "e-99" for record in first)
-    starts = [r["span"]["start"] for r in candidates(first)]
+    starts = [span_bounds(record)[0] for record in candidates(first)]
     assert starts == sorted(starts)
 
 
