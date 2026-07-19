@@ -63,7 +63,9 @@ fn emits_the_mvp_operator_replacements_in_source_order() {
 
 #[test]
 fn emits_complete_candidate_records_in_source_order() {
-    let output = analyze("x = a == b\n");
+    let source =
+        "top = left == right\ndef decide(flag, value):\n    return not flag or value + 1\n";
+    let output = analyze(source);
     let candidates: Vec<_> = output
         .candidates
         .iter()
@@ -82,19 +84,60 @@ fn emits_complete_candidate_records_in_source_order() {
         .collect();
     assert_eq!(
         candidates,
-        vec![(
-            "pkg/sample.py",
-            ByteSpan {
-                start: 6,
-                length: 2,
-            },
-            "==",
-            "!=",
-            "compare_eq_ne",
-            1,
-            6,
-            None,
-        )]
+        vec![
+            (
+                "pkg/sample.py",
+                ByteSpan {
+                    start: 11,
+                    length: 2,
+                },
+                "==",
+                "!=",
+                "compare_eq_ne",
+                1,
+                11,
+                None,
+            ),
+            (
+                "pkg/sample.py",
+                ByteSpan {
+                    start: 56,
+                    length: 8,
+                },
+                "not flag",
+                "flag",
+                "remove_not",
+                3,
+                11,
+                Some("decide"),
+            ),
+            (
+                "pkg/sample.py",
+                ByteSpan {
+                    start: 65,
+                    length: 2,
+                },
+                "or",
+                "and",
+                "boolean_and_or",
+                3,
+                20,
+                Some("decide"),
+            ),
+            (
+                "pkg/sample.py",
+                ByteSpan {
+                    start: 74,
+                    length: 1,
+                },
+                "+",
+                "-",
+                "binary_add_sub",
+                3,
+                29,
+                Some("decide"),
+            ),
+        ]
     );
 }
 #[test]
