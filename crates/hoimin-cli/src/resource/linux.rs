@@ -374,6 +374,7 @@ mod platform {
     const MEMORY_VIOLATION: u8 = 1;
     const PROCESS_VIOLATION: u8 = 2;
     const CONTROL_WAIT: Duration = Duration::from_secs(1);
+    const CGROUP2_SUPER_MAGIC: libc::c_long = 0x6367_7270;
 
     #[derive(Clone, Debug)]
     pub struct PendingCgroupCleanup {
@@ -381,6 +382,11 @@ mod platform {
         reason: Arc<str>,
     }
 
+    #[allow(
+        clippy::missing_errors_doc,
+        clippy::must_use_candidate,
+        reason = "These methods are public only within the private Linux cgroup backend module."
+    )]
     impl PendingCgroupCleanup {
         fn new(paths: Vec<PathBuf>, reason: String, child: Option<std::process::Child>) -> Self {
             Self {
