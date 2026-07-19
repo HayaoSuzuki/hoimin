@@ -37,6 +37,7 @@ pub fn probe_linux_cgroup(limits: &RunLimits) -> CgroupCapabilities {
 }
 
 #[cfg(target_os = "linux")]
+#[must_use]
 pub fn probe_linux_cgroup_with_launcher(
     limits: &RunLimits,
     launcher: OsString,
@@ -335,6 +336,10 @@ fn remove_cgroup_dir(path: &std::path::Path) -> Result<(), ResourceError> {
 }
 
 #[cfg(all(any(target_os = "linux", test), unix))]
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "The parser shares a fallible interface with platform-specific path decoding."
+)]
 fn path_from_bytes(bytes: Vec<u8>) -> Result<PathBuf, ResourceError> {
     use std::os::unix::ffi::OsStringExt;
 
@@ -404,7 +409,7 @@ mod platform {
                     .inner
                     .child
                     .lock()
-                    .unwrap_or_else(|error| error.into_inner());
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 if let Some(owned) = child.as_mut() {
                     match owned.try_wait() {
                         Ok(Some(_)) => {}
@@ -454,7 +459,7 @@ mod platform {
             let child = self
                 .child
                 .get_mut()
-                .unwrap_or_else(|error| error.into_inner());
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             let child_clean = match child.as_mut() {
                 Some(owned) => {
                     let _ = owned.kill();
@@ -485,6 +490,11 @@ mod platform {
         launcher: OsString,
     }
 
+    #[allow(
+        clippy::missing_errors_doc,
+        clippy::must_use_candidate,
+        reason = "These methods are public only within the private Linux cgroup backend module."
+    )]
     impl LinuxBackend {
         pub fn probe(limits: &RunLimits) -> CgroupCapabilities {
             match std::env::current_exe() {
@@ -639,7 +649,10 @@ mod platform {
 
     impl LinuxRunCgroup {
         fn prepare_root(self: &Arc<Self>) -> Result<ProcessSupervisor, ResourceError> {
-            let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if state.closed {
                 return Err(ResourceError::RunClosed);
             }
@@ -676,7 +689,10 @@ mod platform {
             let pid = i32::try_from(child.id().ok_or(ResourceError::MissingProcessId)?)
                 .map_err(|_| ResourceError::InvalidCgroupData("child pid overflow".into()))?;
             wait_for_launcher_stop(pid)?;
-            let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if state.closed {
                 return Err(ResourceError::RunClosed);
             }
@@ -703,7 +719,10 @@ mod platform {
             signal: &RootSignal,
             termination: ProcessTermination,
         ) -> Result<ProcessTermination, ResourceError> {
-            let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if !state.cleaned {
                 self.refresh_events(&mut state)?;
             }
@@ -722,7 +741,10 @@ mod platform {
             root: &RootCgroup,
             live_root_pid: Option<i32>,
         ) -> Result<(), ResourceError> {
-            let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             let accounting = (!state.cleaned)
                 .then(|| self.refresh_events(&mut state).err())
                 .flatten();
@@ -757,7 +779,10 @@ mod platform {
         }
 
         fn close(&self) -> Result<(), ResourceError> {
-            let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             state.closed = true;
             if state.cleaned {
                 return Ok(());
@@ -922,7 +947,7 @@ mod platform {
         // SAFETY: path is a live NUL-terminated pathname and stats points to writable storage.
         let mut stats: libc::statfs = unsafe { std::mem::zeroed() };
         // SAFETY: arguments satisfy statfs(2)'s pointer requirements.
-        if unsafe { libc::statfs(path.as_ptr(), &mut stats) } != 0 {
+        if unsafe { libc::statfs(path.as_ptr(), std::ptr::addr_of_mut!(stats)) } != 0 {
             return Err(ResourceError::io(
                 "verify cgroup2 filesystem",
                 io::Error::last_os_error(),
@@ -958,7 +983,7 @@ mod platform {
             .map_err(|error| ResourceError::io("read delegated cgroup controllers", error))?;
         for required in [b"memory".as_slice(), b"pids".as_slice()] {
             if !available
-                .split(|byte| byte.is_ascii_whitespace())
+                .split(u8::is_ascii_whitespace)
                 .any(|controller| controller == required)
             {
                 return Err(ResourceError::InvalidCgroupData(format!(
@@ -974,7 +999,7 @@ mod platform {
             .into_iter()
             .filter(|required| {
                 !enabled
-                    .split(|byte| byte.is_ascii_whitespace())
+                    .split(u8::is_ascii_whitespace)
                     .any(|controller| controller == *required)
             })
             .collect();
@@ -999,7 +1024,7 @@ mod platform {
             .map_err(|error| ResourceError::io("verify delegated subtree controllers", error))?;
         for required in [b"memory".as_slice(), b"pids".as_slice()] {
             if !verified
-                .split(|byte| byte.is_ascii_whitespace())
+                .split(u8::is_ascii_whitespace)
                 .any(|controller| controller == required)
             {
                 return Err(ResourceError::InvalidCgroupData(format!(
@@ -1020,7 +1045,7 @@ mod platform {
             ));
             match fs::create_dir(&path) {
                 Ok(()) => return Ok(path),
-                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
                 Err(error) => return Err(ResourceError::io("create delegated cgroup", error)),
             }
         }
@@ -1197,8 +1222,13 @@ mod platform {
         loop {
             let mut status = 0;
             // SAFETY: pid identifies our child and status points to initialized storage.
-            let result =
-                unsafe { libc::waitpid(pid, &mut status, libc::WUNTRACED | libc::WNOHANG) };
+            let result = unsafe {
+                libc::waitpid(
+                    pid,
+                    std::ptr::addr_of_mut!(status),
+                    libc::WUNTRACED | libc::WNOHANG,
+                )
+            };
             if result == pid {
                 if libc::WIFSTOPPED(status) && libc::WSTOPSIG(status) == libc::SIGSTOP {
                     return Ok(());
@@ -1316,7 +1346,7 @@ mod platform {
 
     fn parse_member_pids(procs: &[u8]) -> Result<Vec<u32>, ResourceError> {
         procs
-            .split(|byte| byte.is_ascii_whitespace())
+            .split(u8::is_ascii_whitespace)
             .filter(|raw| !raw.is_empty())
             .map(|raw| {
                 std::str::from_utf8(raw)

@@ -68,6 +68,10 @@ pub(crate) struct PortableSupervisor {
 }
 
 impl PortableSupervisor {
+    #[allow(
+        clippy::unnecessary_wraps,
+        reason = "Windows job-object creation is fallible while Unix construction is not."
+    )]
     fn new() -> Result<Self, ResourceError> {
         #[cfg(windows)]
         let job = create_kill_on_close_job()?;
@@ -84,7 +88,10 @@ impl PortableSupervisor {
         let pid = child.id().ok_or(ResourceError::MissingProcessId)?;
         #[cfg(unix)]
         {
-            self.process_group = Some(pid as i32);
+            self.process_group = Some(
+                i32::try_from(pid)
+                    .map_err(|_| ResourceError::InvalidLimit("portable process group id"))?,
+            );
         }
         #[cfg(windows)]
         // The child can execute between spawn and this assignment. Task 8 closes that known
@@ -126,6 +133,10 @@ impl Drop for PortableSupervisor {
 }
 
 #[cfg(unix)]
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "The shared command configuration API propagates platform setup failures."
+)]
 fn configure_command(command: &mut Command, limits: ProcessLimits) -> Result<(), ResourceError> {
     use std::os::unix::process::CommandExt;
 
@@ -145,14 +156,14 @@ fn configure_command(command: &mut Command, limits: ProcessLimits) -> Result<(),
                 rlim_cur: memory as libc::rlim_t,
                 rlim_max: memory as libc::rlim_t,
             };
-            if libc::setrlimit(libc::RLIMIT_AS, &address_space) != 0 {
+            if libc::setrlimit(libc::RLIMIT_AS, std::ptr::addr_of!(address_space)) != 0 {
                 return Err(io::Error::last_os_error());
             }
             let cpu = libc::rlimit {
                 rlim_cur: cpu_seconds as libc::rlim_t,
                 rlim_max: cpu_seconds as libc::rlim_t,
             };
-            if libc::setrlimit(libc::RLIMIT_CPU, &cpu) != 0 {
+            if libc::setrlimit(libc::RLIMIT_CPU, std::ptr::addr_of!(cpu)) != 0 {
                 return Err(io::Error::last_os_error());
             }
             Ok(())
