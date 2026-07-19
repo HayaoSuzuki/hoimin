@@ -10,6 +10,9 @@ import zipfile
 from email.parser import Parser
 from pathlib import Path
 
+import pytest
+from conftest import build_wheel_for_smoke_tests
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -207,3 +210,99 @@ def test_installed_wheel_is_checkout_independent(tmp_path: Path) -> None:
     assert result_signature(pytest_result) == result_signature(unittest_result)
     assert hashlib.sha256(target.read_bytes()).digest() == original
     assert "PYTHONPATH" not in environment
+
+
+def test_wheel_path_uses_existing_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    wheel = tmp_path / "override.whl"
+    wheel.touch()
+    monkeypatch.setenv("HOIMIN_WHEEL", str(wheel))
+
+    assert wheel_path() == wheel.resolve()
+
+
+def test_wheel_path_rejects_missing_override(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("HOIMIN_WHEEL", str(tmp_path / "missing.whl"))
+
+    with pytest.raises(AssertionError, match="HOIMIN_WHEEL does not exist"):
+        wheel_path()
+
+
+def test_wheel_path_requires_a_compatible_platform_wheel(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("HOIMIN_WHEEL", raising=False)
+    monkeypatch.setattr("wheel_smoke.REPOSITORY_ROOT", tmp_path)
+    wheel_directory = tmp_path / "target" / "wheels"
+    wheel_directory.mkdir(parents=True)
+
+    with pytest.raises(AssertionError, match="build a wheel first"):
+        wheel_path()
+
+    (wheel_directory / "hoimin-0.1.0-py3-none-any.whl").touch()
+    monkeypatch.setattr("wheel_smoke.sys.platform", "linux")
+    with pytest.raises(AssertionError, match="no wheel for linux"):
+        wheel_path()
+
+    compatible_wheel = wheel_directory / "hoimin-0.1.0-cp314-cp314-win_amd64.whl"
+    compatible_wheel.touch()
+    monkeypatch.setattr("wheel_smoke.sys.platform", "win32")
+    assert wheel_path() == compatible_wheel
+
+
+def test_wheel_metadata_parses_and_validates_metadata_files(tmp_path: Path) -> None:
+    wheel = tmp_path / "hoimin.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("hoimin-0.1.0.dist-info/METADATA", "Name: hoimin\nVersion: 0.1.0\n")
+
+    metadata = wheel_metadata(wheel)
+
+    assert metadata["Name"] == "hoimin"
+    assert metadata["Version"] == "0.1.0"
+
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("first.dist-info/METADATA", "Name: first\n")
+        archive.writestr("second.dist-info/METADATA", "Name: second\n")
+    with pytest.raises(AssertionError):
+        wheel_metadata(wheel)
+
+
+@pytest.mark.parametrize(
+    ("platform_name", "python_path", "hoimin_path"),
+    [("nt", "Scripts/python.exe", "Scripts/hoimin.exe"), ("posix", "bin/python", "bin/hoimin")],
+)
+def test_environment_paths_match_platform(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    platform_name: str,
+    python_path: str,
+    hoimin_path: str,
+) -> None:
+    monkeypatch.setattr("wheel_smoke.os.name", platform_name)
+
+    assert environment_python(tmp_path) == tmp_path / python_path
+    assert environment_hoimin(tmp_path) == tmp_path / hoimin_path
+
+
+def test_isolated_environment_removes_inherited_python_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PYTHONPATH", "unexpected")
+    monkeypatch.setenv("PYTHONHOME", "unexpected")
+    monkeypatch.setenv("VIRTUAL_ENV", "unexpected")
+
+    environment = isolated_environment()
+
+    assert "PYTHONPATH" not in environment
+    assert "PYTHONHOME" not in environment
+    assert "VIRTUAL_ENV" not in environment
+    assert environment["PYTHONNOUSERSITE"] == "1"
+
+
+def test_wheel_override_skips_session_build(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("HOIMIN_WHEEL", str(tmp_path / "override.whl"))
+
+    assert build_wheel_for_smoke_tests.__wrapped__() is None

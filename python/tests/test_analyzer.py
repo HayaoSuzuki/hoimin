@@ -1,16 +1,36 @@
 from __future__ import annotations
 
+import importlib.util
+import io
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import libcst as cst
 import pytest
 
+if TYPE_CHECKING:
+    from types import ModuleType
+
 ROOT = Path(__file__).parents[2]
 ANALYZER = ROOT / "python" / "hoimin_analyzer.py"
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def load_analyzer() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("hoimin_analyzer_direct", ANALYZER)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+analyzer = load_analyzer()
 
 
 def invoke(  # noqa: PLR0913 -- Helper mirrors the six independent analyzer request fields.
@@ -311,3 +331,205 @@ def test_lone_surrogate_emits_bounded_ascii_safe_invalid_request():
     events = invoke_raw(payload)
     assert [event["kind"] for event in events] == ["diagnostic", "summary"]
     assert events[0]["code"] == "invalid_request"
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("pkg/sample.py", True),
+        ("", False),
+        ("pkg\\sample.py", False),
+        ("/pkg/sample.py", False),
+        ("../sample.py", False),
+        ("C:/sample.py", False),
+    ],
+)
+def test_normalized_path_contract(path: str, expected: object) -> None:
+    assert analyzer._normalized_path(path) is expected  # noqa: SLF001 -- Directly exercises the validation contract.
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        (None, "request must be an object"),
+        ({}, "missing field: effect_id"),
+        (
+            {"effect_id": True, "path": "pkg/sample.py", "module": "pass"},
+            "effect_id must be a string or integer",
+        ),
+        (
+            {"effect_id": "e", "path": "pkg/sample.py", "module": "pass", "lines": "1"},
+            "lines must be an array",
+        ),
+        (
+            {
+                "effect_id": "e",
+                "path": "pkg/sample.py",
+                "module": "pass",
+                "lines": [[True, 2]],
+            },
+            "line ranges must be [positive_start, end] pairs",
+        ),
+        (
+            {
+                "effect_id": "e",
+                "path": "pkg/sample.py",
+                "module": "pass",
+                "lines": [[2, 1]],
+            },
+            "line ranges must be [positive_start, end] pairs",
+        ),
+        (
+            {
+                "effect_id": "e",
+                "path": "pkg/sample.py",
+                "module": "pass",
+                "symbols": ["pkg.sample"],
+            },
+            "symbols must contain MODULE:QUALNAME strings",
+        ),
+        (
+            {
+                "effect_id": "e",
+                "path": "pkg/sample.py",
+                "module": "pass",
+                "max_candidates": 0,
+            },
+            "max_candidates must be a positive integer",
+        ),
+        (
+            {"effect_id": "e", "path": "pkg\\sample.py", "module": "pass"},
+            "path must be a normalized relative POSIX path",
+        ),
+        (
+            {"effect_id": "e", "path": "pkg/sample.py", "module": "\ud800"},
+            "module must be source text",
+        ),
+    ],
+)
+def test_parse_request_rejects_invalid_protocol_values(value: Any, message: str) -> None:
+    with pytest.raises(analyzer.RequestError, match=re.escape(message)):
+        analyzer.parse_request(value)
+
+
+def test_parse_request_returns_immutable_normalized_request() -> None:
+    request = analyzer.parse_request(
+        {
+            "effect_id": 7,
+            "path": "pkg/__init__.py",
+            "module": "value = True\n",
+            "lines": [[1, 2]],
+            "symbols": ["pkg:method"],
+            "max_candidates": 3,
+        }
+    )
+    assert request == analyzer.AnalyzerRequest(
+        7,
+        "pkg/__init__.py",
+        "value = True\n",
+        ((1, 2),),
+        ("pkg:method",),
+        3,
+    )
+    assert analyzer._module_name(request.path) == "pkg"  # noqa: SLF001 -- Directly exercises the path-to-module helper.
+
+
+def test_emit_candidate_reports_an_unreconstructable_utf8_span(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = "value = True\n"
+    request = analyzer.parse_request({"effect_id": "e", "path": "pkg/sample.py", "module": source})
+    module = cst.parse_module(source)
+    visitor = analyzer.MutationVisitor(request, module)
+    visitor.source_bytes = b"value = \xff\xff\xff\xff\n"
+
+    cst.MetadataWrapper(module, unsafe_skip_copy=True).visit(visitor)
+
+    assert [json.loads(line) for line in capsys.readouterr().out.splitlines()] == [
+        {
+            "kind": "diagnostic",
+            "effect_id": "e",
+            "code": "unreconstructable_span",
+            "path": "pkg/sample.py",
+            "line": 1,
+            "column": 8,
+        }
+    ]
+
+
+def test_emit_candidate_reports_an_unparseable_replacement(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class InvalidReplacementModule:
+        def deep_replace(
+            self, node: cst.CSTNode, replacement: cst.CSTNode
+        ) -> InvalidReplacementModule:
+            del node, replacement
+            return self
+
+        @property
+        def code(self) -> str:
+            return "value = (\n"
+
+    source = "value = True\n"
+    request = analyzer.parse_request({"effect_id": "e", "path": "pkg/sample.py", "module": source})
+    module = cst.parse_module(source)
+    visitor = analyzer.MutationVisitor(request, InvalidReplacementModule())
+
+    cst.MetadataWrapper(module, unsafe_skip_copy=True).visit(visitor)
+
+    assert [json.loads(line) for line in capsys.readouterr().out.splitlines()] == [
+        {
+            "kind": "diagnostic",
+            "effect_id": "e",
+            "code": "unparseable_replacement",
+            "path": "pkg/sample.py",
+            "line": 1,
+            "column": 8,
+        }
+    ]
+
+
+def test_main_rejects_empty_or_multiple_jsonl_requests(monkeypatch: pytest.MonkeyPatch) -> None:
+    stdout = io.StringIO()
+    monkeypatch.setattr(analyzer.sys, "stdin", io.StringIO("\n\n"))
+    monkeypatch.setattr(analyzer.sys, "stdout", stdout)
+
+    assert analyzer.main() == 0
+    assert [json.loads(line) for line in stdout.getvalue().splitlines()] == [
+        {
+            "kind": "diagnostic",
+            "effect_id": "unknown",
+            "code": "invalid_request",
+            "message": "exactly one JSONL request is required",
+        },
+        {
+            "kind": "summary",
+            "effect_id": "unknown",
+            "candidate_count": 0,
+            "diagnostic_count": 1,
+            "truncated": False,
+        },
+    ]
+
+
+def test_emit_candidate_reports_a_nonlocal_replacement(capsys: pytest.CaptureFixture[str]) -> None:
+    class NonlocalReplacementModule:
+        def deep_replace(
+            self, node: cst.CSTNode, replacement: cst.CSTNode
+        ) -> NonlocalReplacementModule:
+            del node, replacement
+            return self
+
+        @property
+        def code(self) -> str:
+            return "other = False\n"
+
+    source = "value = True\n"
+    request = analyzer.parse_request({"effect_id": "e", "path": "pkg/sample.py", "module": source})
+    module = cst.parse_module(source)
+    visitor = analyzer.MutationVisitor(request, NonlocalReplacementModule())
+
+    cst.MetadataWrapper(module, unsafe_skip_copy=True).visit(visitor)
+
+    assert json.loads(capsys.readouterr().out)["code"] == "unparseable_replacement"
