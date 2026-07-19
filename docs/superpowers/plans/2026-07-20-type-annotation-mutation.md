@@ -59,7 +59,7 @@
 fn operator_flags_expand_groups_and_preserve_legacy_default() {
     let default = parse_config_from(["hoimin", "run", "--file", "x.py", "--", "check"])
         .unwrap();
-    assert!(!default.operators.contains(MutationOperator::TypeNullable));
+    assert!(!default.operators.contains(MutationOperator::TypeNullableRemove));
 
     let selected = parse_config_from([
         "hoimin", "run", "--file", "x.py",
@@ -67,7 +67,7 @@ fn operator_flags_expand_groups_and_preserve_legacy_default() {
         "--exclude-operators", "type_mapping",
         "--", "check",
     ]).unwrap();
-    assert!(selected.operators.contains(MutationOperator::TypeNullable));
+    assert!(selected.operators.contains(MutationOperator::TypeNullableRemove));
     assert!(selected.operators.contains(MutationOperator::TypeListSequence));
     assert!(!selected.operators.contains(MutationOperator::TypeMapping));
 }
@@ -261,7 +261,7 @@ async fn mypy_reports_a_surviving_nullable_contract_mutant() {
 
 - [ ] **Step 2: 失敗を確認する**
 
-Run: `uv run cargo test -p hoimin-cli --test run_e2e ty_kills_a_nullable_contract_mutant mypy_reports_a_surviving_nullable_contract_mutant`
+Run: `uv run cargo test -p hoimin-cli --test run_e2e ty_kills_a_nullable_contract_mutant ty_reports_a_surviving_nullable_contract_mutant mypy_kills_a_nullable_contract_mutant mypy_reports_a_surviving_nullable_contract_mutant`
 
 Expected: fixture または type operator が未接続なら失敗する。
 
@@ -339,5 +339,3 @@ git commit -m "docs: describe type annotation mutation"
 - Spec coverage: Task 1 は演算子選択と既定の互換性、Task 2 は protocol、fingerprint、resume、Task 3 は全注釈位置と非対象構文、Task 4 は ty/mypy の killed/survived、Task 5 は README、schema、全品質ゲートを担当する。
 - Placeholder scan: 実装する型、関数、ファイル、コマンド、期待結果を各 task に記載した。未決定の作業は残していない。
 - Type consistency: `MutationOperatorSelection` を Task 1 で定義し、Tasks 2–4 は `RunConfig::operators`、`names()`、`AnalyzeRequest::operators` を同じ名称で使う。
-
-
