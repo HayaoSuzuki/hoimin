@@ -148,3 +148,58 @@ fn accept_candidate(
         })
         .map_err(|error| EffectFailed::other(id, "analyzer.store", error.to_string()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hoimin_core::{EffectId, TargetSlice};
+
+    fn request(id: u64) -> AnalyzeFile {
+        AnalyzeFile {
+            id: EffectId(id),
+            target: TargetSlice {
+                path: "src/calc.py".into(),
+                lines: Vec::new(),
+                symbols: Vec::new(),
+            },
+            final_target: true,
+            max_candidates: 10,
+        }
+    }
+
+    #[tokio::test]
+    async fn concrete_handler_cancellation_leaves_store_ready_for_final_spool() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::create_dir(directory.path().join("src")).unwrap();
+        std::fs::write(
+            directory.path().join("src/calc.py"),
+            "result = left == right\n",
+        )
+        .unwrap();
+        let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
+        let mut handler = AnalyzerHandler::new(
+            root,
+            Utf8PathBuf::from("definitely-not-a-python-executable"),
+            std::time::Duration::from_secs(5),
+        )
+        .unwrap();
+        let cancellation = ProcessCancellation::new();
+        cancellation.cancel();
+
+        let cancelled = handler
+            .handle_with_cancellation(request(82), cancellation)
+            .await;
+
+        assert!(matches!(
+            cancelled,
+            Err(error) if error.id == EffectId(82) && error.failure.code() == "analyzer.cancelled"
+        ));
+        assert_eq!(handler.store.as_ref().unwrap().count(), 0);
+
+        let finished = handler.handle(request(83)).await.unwrap();
+        let spool = finished.spool.unwrap();
+
+        assert_eq!(spool.records, 1);
+        assert!(handler.store.is_none());
+    }
+}

@@ -30,6 +30,28 @@ fn protocol() -> AnalyzerProtocol {
     AnalyzerProtocol::new(EffectId(7))
 }
 
+fn analysis_request(id: u64, path: &str, final_target: bool, max_candidates: u64) -> AnalyzeFile {
+    AnalyzeFile {
+        id: EffectId(id),
+        target: TargetSlice {
+            path: path.into(),
+            lines: Vec::new(),
+            symbols: Vec::new(),
+        },
+        final_target,
+        max_candidates,
+    }
+}
+
+fn handler(root: Utf8PathBuf) -> AnalyzerHandler {
+    AnalyzerHandler::new(
+        root,
+        Utf8PathBuf::from("definitely-not-a-python-executable"),
+        Duration::from_secs(5),
+    )
+    .unwrap()
+}
+
 #[test]
 fn candidate_store_enforces_limit_without_retaining_records() {
     let mut store = CandidateStore::new(2).unwrap();
@@ -348,4 +370,88 @@ async fn concrete_handler_does_not_spawn_python_for_analysis() {
     assert_eq!(spool.records, 1);
     assert_eq!(first_candidate.original, "==");
     assert_eq!(first_candidate.replacement, "!=");
+}
+
+#[tokio::test]
+async fn concrete_handler_reports_source_read_failure() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
+    let result = handler(root)
+        .handle(analysis_request(78, "src/missing.py", true, 10))
+        .await;
+
+    assert!(matches!(
+        result,
+        Err(error) if error.id == EffectId(78) && error.failure.code() == "analyzer.source.read"
+    ));
+}
+
+#[tokio::test]
+async fn concrete_handler_truncates_at_candidate_limit() {
+    let directory = tempfile::tempdir().unwrap();
+    fs::create_dir(directory.path().join("src")).unwrap();
+    fs::write(
+        directory.path().join("src/calc.py"),
+        "first = left == right\nsecond = top == bottom\n",
+    )
+    .unwrap();
+    let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
+    let finished = handler(root)
+        .handle(analysis_request(79, "src/calc.py", true, 1))
+        .await
+        .unwrap();
+    let spool = finished.spool.unwrap();
+    let (candidate, offset) = CandidateStore::replay_one(&spool, 0).unwrap().unwrap();
+
+    assert!(finished.truncated);
+    assert_eq!(spool.records, 1);
+    assert_eq!(candidate.sequence, 1);
+    assert_eq!(CandidateStore::replay_one(&spool, offset).unwrap(), None);
+}
+
+#[tokio::test]
+async fn concrete_handler_spools_multiple_requests_on_final_target() {
+    let directory = tempfile::tempdir().unwrap();
+    fs::create_dir(directory.path().join("src")).unwrap();
+    fs::write(
+        directory.path().join("src/first.py"),
+        "first = left == right\n",
+    )
+    .unwrap();
+    fs::write(
+        directory.path().join("src/second.py"),
+        "second = top == bottom\n",
+    )
+    .unwrap();
+    let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
+    let mut handler = handler(root);
+
+    let first = handler
+        .handle(analysis_request(80, "src/first.py", false, 10))
+        .await
+        .unwrap();
+    let second = handler
+        .handle(analysis_request(81, "src/second.py", true, 10))
+        .await
+        .unwrap();
+    let spool = second.spool.unwrap();
+    let (first_candidate, second_offset) = CandidateStore::replay_one(&spool, 0).unwrap().unwrap();
+    let (second_candidate, end_offset) = CandidateStore::replay_one(&spool, second_offset)
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(first.spool, None);
+    assert_eq!(spool.records, 2);
+    assert_eq!(
+        (first_candidate.sequence, first_candidate.path.as_str()),
+        (1, "src/first.py")
+    );
+    assert_eq!(
+        (second_candidate.sequence, second_candidate.path.as_str()),
+        (2, "src/second.py")
+    );
+    assert_eq!(
+        CandidateStore::replay_one(&spool, end_offset).unwrap(),
+        None
+    );
 }
