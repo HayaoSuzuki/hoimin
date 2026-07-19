@@ -8,13 +8,12 @@ from pathlib import Path
 import libcst as cst
 import pytest
 
-
 ROOT = Path(__file__).parents[2]
 ANALYZER = ROOT / "python" / "hoimin_analyzer.py"
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
-def invoke(
+def invoke(  # noqa: PLR0913
     source: str,
     *,
     path: str = "pkg/sample.py",
@@ -31,7 +30,7 @@ def invoke(
         "symbols": symbols or [],
         "max_candidates": max_candidates,
     }
-    completed = subprocess.run(
+    completed = subprocess.run(  # noqa: S603
         [sys.executable, str(ANALYZER)],
         input=json.dumps(request) + "\n",
         capture_output=True,
@@ -45,7 +44,7 @@ def invoke(
 
 
 def invoke_raw(payload: str) -> list[dict[str, object]]:
-    completed = subprocess.run(
+    completed = subprocess.run(  # noqa: S603
         [sys.executable, str(ANALYZER)],
         input=payload + "\n",
         capture_output=True,
@@ -112,10 +111,7 @@ def replacements(a, b, items, flag):
         continue
     return values
 """
-    pairs = {
-        (record["original"], record["replacement"])
-        for record in candidates(invoke(source))
-    }
+    pairs = {(record["original"], record["replacement"]) for record in candidates(invoke(source))}
     assert pairs == {
         ("==", "!="),
         ("!=", "=="),
@@ -146,16 +142,11 @@ def replacements(a, b, items, flag):
 
 
 def test_unicode_and_crlf_spans_are_utf8_bytes_and_round_trip():
-    source = (
-        '# \u65e5\u672c\u8a9e\r\nvalue = "\u96ea"\r\nresult = value == "\u96ea"\r\n'
-    )
+    source = '# \u65e5\u672c\u8a9e\r\nvalue = "\u96ea"\r\nresult = value == "\u96ea"\r\n'
     event = candidates(invoke(source))[0]
     span = event["span"]
     raw = source.encode()
-    assert (
-        raw[span["start"] : span["start"] + span["length"]].decode()
-        == event["original"]
-    )
+    assert raw[span["start"] : span["start"] + span["length"]].decode() == event["original"]
     assert event["line"] == 3
     assert event["column"] == 15
 
@@ -196,9 +187,7 @@ def test_nested_class_and_function_qualnames_are_syntactic():
         "                return 1 == 2\n"
         "            return nested()\n"
     )
-    records = candidates(
-        invoke(source, symbols=["pkg.sample:Outer.Inner.method.nested"])
-    )
+    records = candidates(invoke(source, symbols=["pkg.sample:Outer.Inner.method.nested"]))
     assert len(records) == 1
     assert records[0]["symbol"] == "Outer.Inner.method.nested"
 
@@ -226,17 +215,13 @@ def test_compound_comparisons_preserve_noncanonical_keyword_spacing():
     source = "membership = item not  in values\nidentity = item is\t not sentinel\n"
     events = invoke(source)
     records = [
-        record
-        for record in candidates(events)
-        if record["operator"] in {"membership", "identity"}
+        record for record in candidates(events) if record["operator"] in {"membership", "identity"}
     ]
     assert [(record["original"], record["replacement"]) for record in records] == [
         ("not  in", "in"),
         ("is\t not", "is"),
     ]
-    assert not [
-        event for event in events if event.get("code") == "unreconstructable_span"
-    ]
+    assert not [event for event in events if event.get("code") == "unreconstructable_span"]
     for record in records:
         cst.parse_module(apply_candidate(source, record))
 
@@ -247,10 +232,7 @@ def test_newline_styles_have_round_tripping_byte_spans(newline: str):
     for record in candidates(invoke(source)):
         raw = source.encode()
         span = record["span"]
-        assert (
-            raw[span["start"] : span["start"] + span["length"]].decode()
-            == record["original"]
-        )
+        assert raw[span["start"] : span["start"] + span["length"]].decode() == record["original"]
 
 
 def test_invalid_syntax_emits_exact_diagnostic_code_and_summary():
@@ -294,9 +276,7 @@ def test_candidate_limit_is_enforced_without_emitting_unbounded_records():
         "diagnostic_count": 1,
         "truncated": True,
     }
-    assert [e["code"] for e in events if e["kind"] == "diagnostic"] == [
-        "candidate_limit_exceeded"
-    ]
+    assert [e["code"] for e in events if e["kind"] == "diagnostic"] == ["candidate_limit_exceeded"]
 
 
 def test_effect_id_is_echoed_on_every_record_and_order_is_deterministic():
@@ -311,9 +291,7 @@ def test_effect_id_is_echoed_on_every_record_and_order_is_deterministic():
 
 @pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
 def test_nonstandard_json_constants_emit_bounded_invalid_request(constant: str):
-    events = invoke_raw(
-        '{"effect_id":' + constant + ',"path":"pkg/a.py","module":"x = 1\\n"}'
-    )
+    events = invoke_raw('{"effect_id":' + constant + ',"path":"pkg/a.py","module":"x = 1\\n"}')
     assert [event["kind"] for event in events] == ["diagnostic", "summary"]
     assert events[0]["code"] == "invalid_request"
     assert events[0]["effect_id"] == "unknown"

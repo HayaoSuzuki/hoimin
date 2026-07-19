@@ -1,23 +1,20 @@
 from __future__ import annotations
 
 import hashlib
-from email.parser import Parser
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import venv
 import zipfile
-
+from email.parser import Parser
+from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
-def run(
-    argv: list[str], *, cwd: Path, env: dict[str, str]
-) -> subprocess.CompletedProcess[str]:
-    completed = subprocess.run(
+def run(argv: list[str], *, cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    completed = subprocess.run(  # noqa: S603, UP022
         argv,
         cwd=cwd,
         env=env,
@@ -93,9 +90,7 @@ def write_fixture(root: Path) -> Path:
     )
     (tests / "__init__.py").write_text("", encoding="utf-8")
     (tests / "test_pytest.py").write_text(
-        "from src.calc import add\n\n"
-        "def test_add():\n"
-        "    assert add(2, 1) == 3\n",
+        "from src.calc import add\n\ndef test_add():\n    assert add(2, 1) == 3\n",
         encoding="utf-8",
     )
     (tests / "test_unittest.py").write_text(
@@ -112,10 +107,7 @@ def write_fixture(root: Path) -> Path:
 def result_signature(document: dict[str, object]) -> set[tuple[str, str]]:
     mutants = document["mutants"]
     assert isinstance(mutants, list)
-    return {
-        (str(mutant["candidate"]["id"]), str(mutant["status"]))
-        for mutant in mutants
-    }
+    return {(str(mutant["candidate"]["id"]), str(mutant["status"])) for mutant in mutants}
 
 
 def run_mutations(
@@ -156,10 +148,7 @@ def run_mutations(
     assert document["run"]["resource_control"]["mode"] in {"hard", "best_effort"}
     assert document["baseline"]["resource_mode"] in {"hard", "best_effort"}
     assert document["mutants"]
-    assert all(
-        mutant["resource_mode"] in {"hard", "best_effort"}
-        for mutant in document["mutants"]
-    )
+    assert all(mutant["resource_mode"] in {"hard", "best_effort"} for mutant in document["mutants"])
     return document
 
 
@@ -171,9 +160,7 @@ def test_installed_wheel_is_checkout_independent(tmp_path: Path) -> None:
         "libcst>=1.8.6,<2"
     }
     assert metadata["License-Expression"] == "MIT"
-    assert metadata.get_all("Project-URL") == [
-        "Repository, https://github.com/HayaoSuzuki/hoimin"
-    ]
+    assert metadata.get_all("Project-URL") == ["Repository, https://github.com/HayaoSuzuki/hoimin"]
 
     environment_root = tmp_path / "empty-environment"
     venv.EnvBuilder(with_pip=True, clear=True).create(environment_root)

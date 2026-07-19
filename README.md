@@ -118,7 +118,7 @@ uv run maturin build --release --no-default-features
 uv run pytest -q tests/wheel_smoke.py
 ```
 
-The smoke test installs the wheel into a new environment, runs the embedded analyzer outside this checkout, and checks both pytest and unittest. For development verification, run:
+The smoke test installs the wheel into a new environment, runs the embedded analyzer outside this checkout, and checks both pytest and unittest. For the Python quality gate and mutation-test workflow, see [the development guide](docs/development.md). For development verification, run:
 
 ```console
 cargo fmt --all -- --check
