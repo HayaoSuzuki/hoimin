@@ -444,8 +444,8 @@ fn parse_bytes(value: &str, name: &'static str) -> Result<u64, CliError> {
 
 #[cfg(unix)]
 fn command_arg(value: &OsString) -> CommandArg {
-    use std::os::unix::ffi::OsStringExt;
-    CommandArg::Unix(value.into_vec())
+    use std::os::unix::ffi::OsStrExt;
+    CommandArg::Unix(value.as_bytes().to_vec())
 }
 
 #[cfg(windows)]
