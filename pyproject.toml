@@ -46,6 +46,7 @@ python_files = ["test_*.py", "*_test.py", "wheel_smoke.py"]
 addopts = "-ra --randomly-seed=last --cov=python --cov=tests --cov-report=term-missing --cov-fail-under=100"
 
 [tool.coverage.run]
+core = "sysmon"
 branch = false
 parallel = true
 patch = ["subprocess"]
