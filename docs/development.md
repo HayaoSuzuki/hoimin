@@ -16,5 +16,5 @@ names an existing wheel to test.
 After changing the Rust analyzer or its tests, run mutation analysis with:
 
 ```console
-uv run hoimin run --root . --source crates --file crates/hoimin-cli/src/analyzer/mod.rs --max-candidates 1000 --max-mutants 1000 --jobs 1 --total-timeout 10m --allow-best-effort-memory --format json -- cargo test --workspace
+uv run hoimin run --root . --file crates/hoimin-cli/src/analyzer/mod.rs --max-candidates 1000 --max-mutants 1000 --jobs 1 --total-timeout 10m --allow-best-effort-memory --format json -- cargo test --workspace
 ```
