@@ -172,7 +172,7 @@ fn line_and_column(source: &str, offset: usize) -> (u32, u32) {
     let line = prefix.bytes().filter(|byte| *byte == b'\n').count() as u32 + 1;
     let column = prefix
         .rsplit_once('\n')
-        .map_or(prefix.len(), |(_, tail)| tail.len()) as u32;
+        .map_or(prefix.chars().count(), |(_, tail)| tail.chars().count()) as u32;
     (line, column)
 }
 

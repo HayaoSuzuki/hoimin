@@ -228,7 +228,7 @@ fn emits_each_remaining_mvp_operator() {
 }
 
 #[test]
-fn preserves_comment_and_unicode_bytes_outside_each_span() {
+fn reports_unicode_code_point_columns_without_changing_byte_spans() {
     let source = "# 日本語\n値 = left == right  # adjacent comment\n";
     let candidate = analyze(source).candidates.remove(0);
     assert_eq!(
@@ -238,7 +238,7 @@ fn preserves_comment_and_unicode_bytes_outside_each_span() {
             length: 2
         }
     );
-    assert_eq!((candidate.line, candidate.column), (2, 11));
+    assert_eq!((candidate.line, candidate.column), (2, 9));
     let mut changed = source.as_bytes().to_vec();
     let start = usize::try_from(candidate.span.start).unwrap();
     changed.splice(start..start + 2, candidate.replacement.bytes());

@@ -38,3 +38,6 @@ windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_Securit
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[dev-dependencies]
+pretty_assertions = "1.4.1"

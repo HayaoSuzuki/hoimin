@@ -17,6 +17,7 @@ use std::process::{Command, Stdio};
 
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::LineRange;
+use pretty_assertions::assert_eq;
 use serde::Deserialize;
 
 const FIXTURE: &str = include_str!("fixtures/analyzer_parity.py");
@@ -58,10 +59,7 @@ fn rust_and_python_helpers_emit_identical_candidates() {
     for path in ["pkg/sample.py", "pkg/sub/__init__.py"] {
         let rust_candidates = rust_candidates(path);
         let python_candidates = python_candidates(FIXTURE, path);
-        assert_eq!(
-            rust_candidates, python_candidates,
-            "candidate mismatch for fixture {path}"
-        );
+        assert_eq!(rust_candidates, python_candidates, "candidate mismatch for fixture {path}");
     }
 }
 
@@ -102,9 +100,11 @@ fn python_candidates(source: &str, path: &str) -> Vec<ComparableCandidate> {
         "max_candidates": 10_000,
     });
     let mut child = Command::new(python_executable())
+        .env("PYTHONUTF8", "1")
         .arg(repo_root().join("python/hoimin_analyzer.py"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .expect("start Python analyzer helper");
     child
