@@ -108,3 +108,30 @@ Higher-priority conditions win in this order: cancellation, infrastructure error
 ## Sessions and resume
 
 No database is created by default. `--session PATH` stores a run in SQLite and commits each mutant result independently. `--resume` requires `--session` and looks up the newest compatible incomplete run. Compatibility includes source and configuration fingerprints, test argv, safety limits, operator set, and Python/LibCST versions. Completed `killed` and `survived` results can be reused; `timeout`, `out_of_memory`, `process_limit`, `error`, and `not_run` are run again. An incompatible or already complete run is not silently mixed with new results.
+
+## Build and verify a wheel
+
+The package is a native binary wheel, not a Python extension module. Build and smoke-test the wheel locally with:
+
+```console
+uv run maturin build --release --no-default-features
+uv run pytest -q tests/wheel_smoke.py
+```
+
+The smoke test installs the wheel into a new environment, runs the embedded analyzer outside this checkout, and checks both pytest and unittest. For development verification, run:
+
+```console
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace
+cargo test -p hoimin-core --features contracts
+cargo test -p hoimin-cli --features contracts
+cargo tree -p hoimin-core --edges normal
+uv run --python 3.12 pytest python/tests -q
+uv run --python 3.13 pytest python/tests -q
+uv run --python 3.14 pytest python/tests -q
+```
+
+Windows Job Object tests run on Windows and Linux hard-limit tests require a delegated cgroup v2 runner. The ordinary Linux CI job verifies the explicit best-effort path separately.
+
+Releases are built only from matching `v*` tags. Before enabling publication, protect the repository `pypi` environment with the required reviewers or rules and register PyPI Trusted Publishing for this workflow and environment; the release job uses that environment's OIDC token rather than a stored upload token.
