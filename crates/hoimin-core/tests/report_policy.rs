@@ -1,9 +1,21 @@
 use hoimin_core::{
     ByteSpan, ExitPolicy, MutantFinished, MutantStarted, MutationCandidate, MutationStatus,
-    OutputEvent, ProcessTermination, ReportSequence, ResourceMode, RunStarted, exit_code,
-    exit_code_for, summarize,
+    OutputEvent, ProcessTermination, ReportSequence, ReportVersions, ResourceMode, RunStarted,
+    exit_code, exit_code_for, summarize,
 };
+use serde_json::json;
 
+#[test]
+fn run_started_versions_serialize_only_os_and_hoimin() {
+    let versions = ReportVersions {
+        os: "windows".into(),
+        hoimin: "0.1.0".into(),
+    };
+    assert_eq!(
+        serde_json::to_value(versions).unwrap(),
+        json!({"os":"windows","hoimin":"0.1.0"})
+    );
+}
 #[test]
 fn process_terminations_are_classified_without_test_runner_assumptions() {
     use MutationStatus::{Killed, NotRun, OutOfMemory, ProcessLimit, Survived, Timeout};

@@ -8,7 +8,7 @@ use crate::{
     RunLimits, TargetSlice,
 };
 
-const FINGERPRINT_SCHEMA: u8 = 1;
+const FINGERPRINT_SCHEMA: u8 = 2;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceHash {
@@ -23,8 +23,6 @@ pub struct FingerprintInput {
     pub operators: Vec<String>,
     pub test_argv: Vec<CommandArg>,
     pub limits: RunLimits,
-    pub python_version: String,
-    pub libcst_version: String,
     pub resource_mode: ResourceMode,
 }
 
@@ -49,10 +47,8 @@ pub fn fingerprint(input: &FingerprintInput) -> RunFingerprint {
     encoder.field(3, &encode_operators(&input.operators));
     encoder.field(4, &encode_argv(&input.test_argv));
     encoder.field(5, &encode_limits(&input.limits));
-    encoder.field(6, input.python_version.as_bytes());
-    encoder.field(7, input.libcst_version.as_bytes());
     encoder.field(
-        8,
+        6,
         &[match input.resource_mode {
             ResourceMode::Hard => 0,
             ResourceMode::BestEffort => 1,

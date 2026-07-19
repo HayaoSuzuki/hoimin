@@ -13,7 +13,7 @@
   "$defs": {
     "schemaVersion": {
       "type": "integer",
-      "const": 1
+      "const": 2
     },
     "resourceMode": {
       "type": "string",
@@ -146,12 +146,10 @@
         },
         "versions": {
           "type": "object",
-          "required": ["os", "python", "hoimin", "libcst"],
+          "required": ["os", "hoimin"],
           "properties": {
             "os": { "type": "string" },
-            "python": { "type": "string" },
-            "hoimin": { "type": "string" },
-            "libcst": { "type": "string" }
+            "hoimin": { "type": "string" }
           },
           "additionalProperties": false
         },

@@ -53,7 +53,6 @@ pub struct RawRunConfig {
     pub diff_base: Option<String>,
     pub includes: Vec<String>,
     pub excludes: Vec<String>,
-    pub python: Option<Utf8PathBuf>,
     pub allow_best_effort_memory: bool,
     pub limits: RawRunLimits,
     pub test_argv: Vec<CommandArg>,
@@ -134,7 +133,6 @@ pub struct RunConfig {
     pub test_argv: Vec<CommandArg>,
     pub output: OutputConfig,
     pub session: Option<SessionConfig>,
-    pub python: Option<Utf8PathBuf>,
     pub allow_best_effort_memory: bool,
     pub resume: bool,
 }
@@ -266,7 +264,6 @@ impl TryFrom<RawRunConfig> for RunConfig {
             test_argv: raw.test_argv,
             output: raw.output,
             session: raw.session,
-            python: raw.python,
             allow_best_effort_memory: raw.allow_best_effort_memory,
             resume: raw.resume,
         })

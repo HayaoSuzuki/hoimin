@@ -74,21 +74,18 @@ fn every_compatibility_field_changes_the_fingerprint() {
     let mut value = original.clone();
     value.test_argv.push(CommandArg::Unix(vec![0, 255]));
     variants.push(("argv", value));
-    let mut value = original.clone();
-    value.python_version.push_str(".1");
-    variants.push(("Python", value));
-    let mut value = original.clone();
-    value.libcst_version.push_str(".1");
-    variants.push(("LibCST", value));
-    let mut value = original.clone();
-    value.resource_mode = ResourceMode::BestEffort;
-    variants.push(("resource mode", value));
 
     for (name, value) in variants {
         assert_ne!(expected, fingerprint(&value), "unchanged field: {name}");
     }
 }
 
+#[test]
+fn fingerprint_changes_when_resource_mode_changes() {
+    let mut changed = fixture_input();
+    changed.resource_mode = ResourceMode::BestEffort;
+    assert_ne!(fingerprint(&fixture_input()), fingerprint(&changed));
+}
 #[test]
 fn every_safety_limit_changes_the_fingerprint() {
     let original = fixture_input();
@@ -153,8 +150,6 @@ fn fixture_input() -> FingerprintInput {
         operators: vec!["boolean".to_owned(), "binary".to_owned()],
         test_argv: vec![CommandArg::Unix(vec![0xff, 0, b'x'])],
         limits: (&fixture_raw_limits()).try_into().unwrap(),
-        python_version: "3.13.4".to_owned(),
-        libcst_version: "1.8.2".to_owned(),
         resource_mode: ResourceMode::Hard,
     }
 }

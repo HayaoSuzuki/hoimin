@@ -8,7 +8,7 @@ use crate::{
     contract_ensure,
 };
 
-pub const REPORT_SCHEMA_VERSION: u32 = 1;
+pub const REPORT_SCHEMA_VERSION: u32 = 2;
 
 pub fn classify_mutant(termination: ProcessTermination) -> MutationStatus {
     match termination {
@@ -111,9 +111,7 @@ pub fn exit_code_for(policy: ExitPolicy) -> i32 {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ReportVersions {
     pub os: String,
-    pub python: String,
     pub hoimin: String,
-    pub libcst: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
