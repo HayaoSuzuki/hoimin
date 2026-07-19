@@ -111,6 +111,14 @@ fn fingerprint_changes_when_resource_mode_changes() {
     assert_ne!(fingerprint(&fixture_input()), fingerprint(&changed));
 }
 #[test]
+fn fingerprint_changes_when_type_operator_selection_changes() {
+    let changed = FingerprintInput {
+        operators: vec!["type_nullable_remove".to_owned()],
+        ..fixture_input()
+    };
+    assert_ne!(fingerprint(&fixture_input()), fingerprint(&changed));
+}
+#[test]
 fn every_safety_limit_changes_the_fingerprint() {
     let original = fixture_input();
     let expected = fingerprint(&original);

@@ -1,7 +1,7 @@
 use super::{AnalyzeRequest, analyze_source};
 use crate::analyzer::AnalyzerDiagnosticCode;
 use camino::Utf8Path;
-use hoimin_core::{ByteSpan, LineRange};
+use hoimin_core::{ByteSpan, LineRange, MutationOperator, MutationOperatorSelection};
 use proptest::prelude::*;
 
 fn analyze(source: &str) -> super::AnalyzerOutput {
@@ -15,17 +15,35 @@ fn analyze_with(
     max_candidates: usize,
     source: &str,
 ) -> super::AnalyzerOutput {
+    let operators = MutationOperatorSelection::default();
     analyze_source(
         &AnalyzeRequest {
             path,
             lines,
             symbols,
+            operators: &operators,
             max_candidates,
         },
         source,
     )
 }
 
+#[test]
+fn omits_candidates_for_unselected_operators() {
+    let mut operators = MutationOperatorSelection::default();
+    operators.exclude(MutationOperator::BinaryAddSub);
+    let output = analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/sample.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            max_candidates: 10_000,
+        },
+        "result = left + right\n",
+    );
+    assert!(output.candidates.is_empty());
+}
 proptest! {
     #[test]
     fn arbitrary_python_input_has_ordered_in_bounds_candidates(source in ".{0,4096}") {

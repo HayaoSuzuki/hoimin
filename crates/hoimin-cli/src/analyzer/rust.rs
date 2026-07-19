@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use camino::Utf8Path;
-use hoimin_core::{ByteSpan, LineRange};
+use hoimin_core::{ByteSpan, LineRange, MutationOperator, MutationOperatorSelection};
 use ruff_python_ast::visitor::Visitor;
 use ruff_python_ast::{Expr, ModModule, Stmt, UnaryOp, visitor};
 use ruff_python_parser::parse_module;
@@ -13,6 +13,7 @@ pub(crate) struct AnalyzeRequest<'a> {
     pub path: &'a Utf8Path,
     pub lines: &'a [LineRange],
     pub symbols: &'a [String],
+    pub operators: &'a MutationOperatorSelection,
     pub max_candidates: usize,
 }
 
@@ -83,7 +84,9 @@ pub(crate) fn analyze_source(request: &AnalyzeRequest<'_>, source: &str) -> Anal
         let original = source[start..span_end].to_owned();
         let (line, column) = line_and_column(source, start);
         let symbol = facts.scope_at(start);
-        if selected(request, line, symbol.as_deref()) {
+        let operator = MutationOperator::from_name(operator)
+            .expect("token mutation operator must be configured");
+        if selected(request, line, symbol.as_deref()) && request.operators.contains(operator) {
             candidates.push(AnalyzerCandidate {
                 path: request.path.to_owned(),
                 span: ByteSpan {
@@ -92,7 +95,7 @@ pub(crate) fn analyze_source(request: &AnalyzeRequest<'_>, source: &str) -> Anal
                 },
                 original,
                 replacement,
-                operator: operator.to_owned(),
+                operator: operator.as_str().to_owned(),
                 line,
                 column,
                 symbol,

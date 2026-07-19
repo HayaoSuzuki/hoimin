@@ -3,7 +3,9 @@ use hoimin_cli::analyzer::{
     AnalyzerDiagnostic, AnalyzerDiagnosticCode, AnalyzerHandler, AnalyzerProtocol, AnalyzerRecord,
     CandidateStore, ProtocolError, StoreError,
 };
-use hoimin_core::{AnalyzeFile, ByteSpan, EffectId, MutationCandidate, TargetSlice};
+use hoimin_core::{
+    AnalyzeFile, ByteSpan, EffectId, MutationCandidate, MutationOperatorSelection, TargetSlice,
+};
 use std::fs;
 
 fn candidate(sequence: u64) -> MutationCandidate {
@@ -203,6 +205,14 @@ fn protocol_accepts_nested_colon_path_like_task4() {
 }
 
 #[test]
+fn protocol_accepts_type_nullable_remove_candidate() {
+    let mut protocol = protocol();
+    assert!(matches!(
+        protocol.receive_line(br#"{"kind":"candidate","effect_id":7,"path":"pkg/calc.py","span":{"start":1,"length":1},"original":"?","replacement":"","operator":"type_nullable_remove","line":1,"column":1,"symbol":null}"#),
+        Ok(Some(AnalyzerRecord::Candidate(_)))
+    ));
+}
+#[test]
 fn candidate_rejects_null_field_from_another_kind() {
     let mut protocol = protocol();
     assert!(matches!(
@@ -341,16 +351,19 @@ async fn concrete_handler_does_not_spawn_python_for_analysis() {
     let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
     let mut handler = AnalyzerHandler::new(root).unwrap();
     let finished = handler
-        .handle(AnalyzeFile {
-            id: EffectId(77),
-            target: TargetSlice {
-                path: "src/calc.py".into(),
-                lines: Vec::new(),
-                symbols: Vec::new(),
+        .handle(
+            AnalyzeFile {
+                id: EffectId(77),
+                target: TargetSlice {
+                    path: "src/calc.py".into(),
+                    lines: Vec::new(),
+                    symbols: Vec::new(),
+                },
+                final_target: true,
+                max_candidates: 10,
             },
-            final_target: true,
-            max_candidates: 10,
-        })
+            &MutationOperatorSelection::default(),
+        )
         .await
         .unwrap();
     let spool = finished.spool.unwrap();
@@ -366,7 +379,10 @@ async fn concrete_handler_reports_source_read_failure() {
     let directory = tempfile::tempdir().unwrap();
     let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
     let result = handler(root)
-        .handle(analysis_request(78, "src/missing.py", true, 10))
+        .handle(
+            analysis_request(78, "src/missing.py", true, 10),
+            &MutationOperatorSelection::default(),
+        )
         .await;
 
     assert!(matches!(
@@ -386,7 +402,10 @@ async fn concrete_handler_truncates_at_candidate_limit() {
     .unwrap();
     let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
     let finished = handler(root)
-        .handle(analysis_request(79, "src/calc.py", true, 1))
+        .handle(
+            analysis_request(79, "src/calc.py", true, 1),
+            &MutationOperatorSelection::default(),
+        )
         .await
         .unwrap();
     let spool = finished.spool.unwrap();
@@ -416,11 +435,17 @@ async fn concrete_handler_spools_multiple_requests_on_final_target() {
     let mut handler = handler(root);
 
     let first = handler
-        .handle(analysis_request(80, "src/first.py", false, 10))
+        .handle(
+            analysis_request(80, "src/first.py", false, 10),
+            &MutationOperatorSelection::default(),
+        )
         .await
         .unwrap();
     let second = handler
-        .handle(analysis_request(81, "src/second.py", true, 10))
+        .handle(
+            analysis_request(81, "src/second.py", true, 10),
+            &MutationOperatorSelection::default(),
+        )
         .await
         .unwrap();
     let spool = second.spool.unwrap();
