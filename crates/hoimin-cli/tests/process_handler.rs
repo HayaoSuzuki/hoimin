@@ -356,17 +356,33 @@ impl Drop for FixtureChildGuard {
 }
 
 #[cfg(unix)]
+fn unix_pid(pid: u32) -> Option<i32> {
+    i32::try_from(pid).ok()
+}
+
+#[cfg(unix)]
 fn process_exists(pid: u32) -> bool {
-    // SAFETY: signal 0 performs no mutation and accepts any numeric pid.
-    unsafe { libc::kill(pid as i32, 0) == 0 }
+    unix_pid(pid).is_some_and(|pid| {
+        // SAFETY: signal 0 performs no mutation and accepts a validated Unix pid.
+        unsafe { libc::kill(pid, 0) == 0 }
+    })
 }
 
 #[cfg(unix)]
 fn terminate_fixture_process(pid: u32) {
-    // SAFETY: this is a best-effort test cleanup for the exact fixture pid.
-    unsafe {
-        libc::kill(pid as i32, libc::SIGKILL);
+    if let Some(pid) = unix_pid(pid) {
+        // SAFETY: this is a best-effort test cleanup for the exact validated fixture pid.
+        unsafe {
+            libc::kill(pid, libc::SIGKILL);
+        }
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn unix_pid_rejects_values_outside_the_platform_pid_range() {
+    assert_eq!(unix_pid(0), Some(0));
+    assert_eq!(unix_pid(u32::MAX), None);
 }
 
 #[cfg(windows)]
