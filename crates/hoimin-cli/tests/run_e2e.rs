@@ -789,9 +789,6 @@ fn fixture_root() -> PathBuf {
 }
 
 fn python_executable() -> PathBuf {
-    if let Some(path) = std::env::var_os("HOIMIN_TEST_PYTHON") {
-        return path.into();
-    }
     let executable = if cfg!(windows) {
         repo_root().join(".venv/Scripts/python.exe")
     } else {
@@ -799,7 +796,7 @@ fn python_executable() -> PathBuf {
     };
     assert!(
         executable.is_file(),
-        "set HOIMIN_TEST_PYTHON to a Python interpreter: {}",
+        "missing controlled test Python interpreter: {}",
         executable.display()
     );
     executable
