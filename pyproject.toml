@@ -9,7 +9,6 @@ description = "Bounded mutation testing for focused Python changes"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.14,<3.15"
-dependencies = ["libcst>=1.8.6,<2"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.14",
@@ -20,80 +19,6 @@ classifiers = [
 
 [project.urls]
 Repository = "https://github.com/HayaoSuzuki/hoimin"
-
-[dependency-groups]
-dev = [
-    "hypothesis>=6.110,<7",
-    "maturin>=1.11,<2",
-    "pytest>=8.4,<9",
-    "pytest-cov>=7,<8",
-    "pytest-randomly>=4.0,<5",
-    "ruff>=0.15,<1",
-    "ty>=0.0.44",
-]
-
-[tool.ty.environment]
-python-version = "3.14"
-
-[tool.ty.src]
-include = ["python", "tests"]
-
-[tool.pytest.ini_options]
-minversion = "8.0"
-testpaths = ["python/tests", "tests"]
-norecursedirs = ["tests/fixtures"]
-python_files = ["test_*.py", "*_test.py", "wheel_smoke.py"]
-addopts = "-ra --randomly-seed=last --cov=python --cov=tests --cov-report=term-missing --cov-fail-under=100"
-
-[tool.coverage.run]
-core = "sysmon"
-branch = false
-parallel = true
-patch = ["subprocess"]
-source = ["python", "tests"]
-omit = [
-    "python/tests/fixtures/*",
-    "tests/fixtures/*",
-]
-
-[tool.coverage.report]
-show_missing = true
-fail_under = 100
-exclude_lines = [
-    "pragma: no cover",
-    "if TYPE_CHECKING:",
-    "if __name__ == .__main__.:",
-    "^\\s*\\.\\.\\.$",
-]
-
-[tool.ruff]
-line-length = 100
-target-version = "py314"
-
-[tool.ruff.lint]
-select = ["ALL"]
-ignore = [
-    "COM812", # Conflicts with the formatter.
-    "D203", # Incompatible with D211.
-    "D213", # Incompatible with D212.
-]
-
-[tool.ruff.lint.per-file-ignores]
-"python/tests/**" = [
-    "ANN", # Test functions and helpers intentionally use concise pytest signatures.
-    "D", # Test names and assertions document behavior more precisely than docstrings.
-    "INP001", # The subprocess analyzer tests are deliberately runnable as loose files.
-    "PLR2004", # Concrete protocol values make request and response expectations readable.
-    "S101", # Pytest assertions are the test API.
-]
-"tests/**" = [
-    "ANN", # Test functions and helpers intentionally use concise pytest signatures.
-    "D", # Test names and assertions document behavior more precisely than docstrings.
-    "INP001", # Smoke tests are deliberately runnable as loose files.
-    "PLR2004", # Concrete wheel and protocol values make smoke-test expectations readable.
-    "S101", # Pytest assertions are the test API.
-    "SLF001", # Helper-unit tests in Task 2 exercise wheel-smoke implementation branches.
-]
 
 [tool.maturin]
 bindings = "bin"
