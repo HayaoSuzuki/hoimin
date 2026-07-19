@@ -31,3 +31,10 @@
 - Focused wheel smoke tests: 5 passed.
 - Full `uv run pytest`: 53 passed, 100.00% coverage.
 - `uv run ruff check tests/wheel_smoke.py` and `uv run ruff format --check tests/wheel_smoke.py`: passed.
+
+## Formatting follow-up
+
+- Reformatted the JSONL request fixture in `python/tests/test_analyzer.py` to satisfy the 100-column limit without behavior changes.
+- `uv run ruff check python tests`: passed.
+- `uv run ruff format --check python tests`: passed (9 files already formatted).
+- `uv run pytest`: 53 passed, 100.00% coverage.

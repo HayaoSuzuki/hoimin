@@ -536,7 +536,9 @@ def test_emit_candidate_reports_a_nonlocal_replacement(capsys: pytest.CaptureFix
 
 
 def test_main_rejects_two_valid_jsonl_requests(monkeypatch: pytest.MonkeyPatch) -> None:
-    request = json.dumps({"effect_id": "effect-9", "path": "pkg/sample.py", "module": "value = 1\n"})
+    request = json.dumps(
+        {"effect_id": "effect-9", "path": "pkg/sample.py", "module": "value = 1\n"}
+    )
     stdout = io.StringIO()
     monkeypatch.setattr(analyzer.sys, "stdin", io.StringIO(f"{request}\n{request}\n"))
     monkeypatch.setattr(analyzer.sys, "stdout", stdout)
