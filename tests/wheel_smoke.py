@@ -82,15 +82,18 @@ def main() -> int:
     wheel = wheel_path()
     metadata = wheel_metadata(wheel)
     assert metadata.requires_python.replace(" ", "") == ">=3.14,<3.15"
-    assert metadata.requires_dist is None or all("libcst" not in value.lower() for value in metadata.requires_dist)
+    assert metadata.requires_dist is None
     assert metadata.license_expression == "MIT"
     assert metadata.project_urls == ["Repository, https://github.com/HayaoSuzuki/hoimin"]
     with tempfile.TemporaryDirectory(prefix="hoimin-wheel-smoke-") as temporary_directory:
         temporary_root = Path(temporary_directory)
+        environment = isolated_environment()
+        distribution_help = run(["uvx", "--from", str(wheel), "hoimin", "--help"], cwd=temporary_root, env=environment)
+        assert "--python" not in distribution_help.stdout
+        assert "--python" not in distribution_help.stderr
         environment_root = temporary_root / "environment"
         venv.EnvBuilder(with_pip=True, clear=True).create(environment_root)
         python = environment_python(environment_root)
-        environment = isolated_environment()
         run([str(python), "-m", "pip", "install", "--disable-pip-version-check", str(wheel), "pytest>=8.4,<9"], cwd=temporary_root, env=environment)
         executable = environment_hoimin(environment_root)
         version = run([str(executable), "--version"], cwd=temporary_root, env=environment)

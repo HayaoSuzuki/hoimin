@@ -167,7 +167,7 @@ async fn documentation_contract() {
         .as_object_mut()
         .unwrap()
         .remove("python");
-    invalid_event["versions"]["libcst"] = serde_json::json!("1.0.0");
+    invalid_event["versions"]["unexpected"] = serde_json::json!("1.0.0");
     assert_schema_invalid(&event_schema, &invalid_event, &event_schema);
 }
 
