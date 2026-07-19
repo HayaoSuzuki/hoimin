@@ -91,6 +91,7 @@ pub struct SessionConfig {
 pub struct NonZeroDuration(Duration);
 
 impl NonZeroDuration {
+    #[must_use]
     pub fn get(self) -> Duration {
         self.0
     }
@@ -270,6 +271,7 @@ impl TryFrom<RawRunConfig> for RunConfig {
     }
 }
 
+#[must_use]
 pub fn auto_mutant_timeout(baseline: Duration) -> Duration {
     baseline
         .checked_mul(2)

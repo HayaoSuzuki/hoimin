@@ -30,15 +30,18 @@ pub struct FingerprintInput {
 pub struct RunFingerprint([u8; 32]);
 
 impl RunFingerprint {
+    #[must_use]
     pub const fn from_bytes(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }
 
+    #[must_use]
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 }
 
+#[must_use]
 pub fn fingerprint(input: &FingerprintInput) -> RunFingerprint {
     let mut encoder = Encoder::new();
     encoder.raw(&[FINGERPRINT_SCHEMA]);
@@ -93,6 +96,7 @@ pub enum ResumeDecision {
     Rerun,
 }
 
+#[must_use]
 pub fn resume_policy(result: Option<&StoredResult>) -> ResumeDecision {
     match result.map(|result| result.status) {
         Some(MutationStatus::Killed | MutationStatus::Survived) => ResumeDecision::Reuse,

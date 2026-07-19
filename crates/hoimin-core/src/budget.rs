@@ -54,6 +54,7 @@ pub struct BudgetLedger {
 }
 
 impl BudgetLedger {
+    #[must_use]
     pub fn new(limits: RunBudgets) -> Self {
         Self {
             limits,
@@ -63,10 +64,15 @@ impl BudgetLedger {
         }
     }
 
+    #[must_use]
     pub fn limits(&self) -> RunBudgets {
         self.limits
     }
 
+    /// # Errors
+    ///
+    /// Returns [`LimitReached`] when the requested amount exceeds the remaining budget for `kind`.
+    ///
     pub fn reserve(
         &mut self,
         kind: BudgetKind,
@@ -89,6 +95,10 @@ impl BudgetLedger {
         Ok(id)
     }
 
+    /// # Errors
+    ///
+    /// Returns [`BudgetError::AlreadyReleased`] for a reservation released before, or [`BudgetError::UnknownReservation`] for an unknown ID.
+    ///
     pub fn release(&mut self, id: ReservationId) -> Result<(), BudgetError> {
         if self.reservations.remove(&id).is_some() {
             self.released.insert(id);
@@ -103,6 +113,7 @@ impl BudgetLedger {
         }
     }
 
+    #[must_use]
     pub fn reserved(&self, kind: BudgetKind) -> u64 {
         self.reservations
             .values()
@@ -111,6 +122,7 @@ impl BudgetLedger {
             .sum()
     }
 
+    #[must_use]
     pub fn reservation(&self, id: ReservationId) -> Option<&Reservation> {
         self.reservations.get(&id)
     }
@@ -153,6 +165,7 @@ pub enum WorkspaceBudgetError {
 }
 
 impl WorkspaceBudgetError {
+    #[must_use]
     pub fn code(&self) -> &'static str {
         match self {
             Self::AggregateOverflow => "workspace.preflight.aggregate_overflow",
@@ -173,26 +186,34 @@ pub struct WorkspaceCopyGrant {
 }
 
 impl WorkspaceCopyGrant {
+    #[must_use]
     pub fn preflight_id(self) -> EffectId {
         self.preflight_id
     }
 
+    #[must_use]
     pub fn reservation_id(self) -> ReservationId {
         self.reservation_id
     }
-
+    #[must_use]
     pub fn granted_allowance(self) -> u64 {
         self.granted_allowance
     }
 
+    #[must_use]
     pub fn per_worker_logical_bytes(self) -> u64 {
         self.per_worker_logical_bytes
     }
 
+    #[must_use]
     pub fn requested_workers(self) -> u32 {
         self.requested_workers
     }
 
+    /// # Errors
+    ///
+    /// Returns [`WorkspaceBudgetError::WorkerOutOfRange`] when `worker` was not requested during preflight.
+    ///
     pub fn create_worker(
         self,
         id: EffectId,
@@ -213,6 +234,7 @@ impl WorkspaceCopyGrant {
         ))
     }
 
+    #[must_use]
     pub fn cleanup(self, id: EffectId) -> Cleanup {
         Cleanup {
             id,
@@ -221,6 +243,10 @@ impl WorkspaceCopyGrant {
     }
 }
 
+/// # Errors
+///
+/// Returns [`WorkspaceBudgetError::AggregateOverflow`] or [`WorkspaceBudgetError::AggregateMismatch`] for invalid preflight bytes, and [`WorkspaceBudgetError::LimitReached`] when the copy budget is exhausted.
+///
 pub fn reserve_workspace_copy(
     ledger: &mut BudgetLedger,
     preflight: &PreflightCompleted,
@@ -246,6 +272,10 @@ pub fn reserve_workspace_copy(
     })
 }
 
+/// # Errors
+///
+/// Returns [`BudgetError::AlreadyReleased`] or [`BudgetError::UnknownReservation`] for a released cleanup reservation.
+///
 pub fn release_workspace_copy(
     ledger: &mut BudgetLedger,
     cleanup: &CleanupFinished,

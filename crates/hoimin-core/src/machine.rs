@@ -104,6 +104,41 @@ enum StoppedCandidate {
 }
 
 #[derive(Clone, Debug)]
+struct RunFlags {
+    scheduling: SchedulingFlags,
+    outcome: OutcomeFlags,
+    report: ReportFlags,
+    cleanup: CleanupFlags,
+}
+
+#[derive(Clone, Debug)]
+struct SchedulingFlags {
+    candidate_exhausted: bool,
+    mutant_limit_reached: bool,
+    stop_requested: bool,
+}
+
+#[derive(Clone, Debug)]
+struct OutcomeFlags {
+    baseline_failed: bool,
+    infrastructure_error: bool,
+    incomplete: bool,
+}
+
+#[derive(Clone, Debug)]
+struct ReportFlags {
+    interrupted: bool,
+    report_started: bool,
+    stop_after_run_started: bool,
+}
+
+#[derive(Clone, Debug)]
+struct CleanupFlags {
+    cleanup_done: bool,
+    session_finish_attempted: bool,
+}
+
+#[derive(Clone, Debug)]
 pub struct RunState {
     run_id: String,
     config: RunConfig,
@@ -121,27 +156,17 @@ pub struct RunState {
     workers: BTreeMap<u32, WorkerState>,
     output_actions: BTreeMap<EffectId, OutputAction>,
     created_workers: BTreeSet<u32>,
-    candidate_exhausted: bool,
     scheduled_mutants: u64,
     run_finished_output_id: Option<EffectId>,
-    mutant_limit_reached: bool,
     baseline_elapsed: std::time::Duration,
     summary: MutationSummary,
     output_sequence: u64,
-    baseline_failed: bool,
-    infrastructure_error: bool,
-    incomplete: bool,
-    interrupted: bool,
     fingerprint: Option<RunFingerprint>,
     session_run_id: Option<String>,
     diagnostic_output_id: Option<EffectId>,
     run_started_output_id: Option<EffectId>,
-    report_started: bool,
     pending_failure: Option<EffectFailed>,
-    stop_after_run_started: bool,
-    cleanup_done: bool,
-    session_finish_attempted: bool,
-    stop_requested: bool,
+    flags: RunFlags,
     stopped_candidates: VecDeque<StoppedCandidate>,
 }
 
@@ -169,27 +194,37 @@ impl RunState {
             workers: BTreeMap::new(),
             output_actions: BTreeMap::new(),
             created_workers: BTreeSet::new(),
-            candidate_exhausted: false,
             scheduled_mutants: 0,
             run_finished_output_id: None,
-            mutant_limit_reached: false,
             baseline_elapsed: std::time::Duration::ZERO,
             summary: MutationSummary::default(),
             output_sequence: 0,
-            baseline_failed: false,
-            infrastructure_error: false,
-            incomplete: false,
-            interrupted: false,
             fingerprint: None,
             session_run_id: None,
             diagnostic_output_id: None,
             run_started_output_id: None,
-            report_started: false,
             pending_failure: None,
-            stop_after_run_started: false,
-            cleanup_done: false,
-            session_finish_attempted: false,
-            stop_requested: false,
+            flags: RunFlags {
+                scheduling: SchedulingFlags {
+                    candidate_exhausted: false,
+                    mutant_limit_reached: false,
+                    stop_requested: false,
+                },
+                outcome: OutcomeFlags {
+                    baseline_failed: false,
+                    infrastructure_error: false,
+                    incomplete: false,
+                },
+                report: ReportFlags {
+                    interrupted: false,
+                    report_started: false,
+                    stop_after_run_started: false,
+                },
+                cleanup: CleanupFlags {
+                    cleanup_done: false,
+                    session_finish_attempted: false,
+                },
+            },
             stopped_candidates: VecDeque::new(),
         }
     }
@@ -204,46 +239,56 @@ impl RunState {
         state
     }
 
+    #[must_use]
     pub fn phase(&self) -> RunPhase {
         self.phase
     }
 
+    #[must_use]
     pub fn summary(&self) -> &MutationSummary {
         &self.summary
     }
 
+    #[must_use]
     pub fn run_id(&self) -> &str {
         &self.run_id
     }
 
+    #[must_use]
     pub fn candidate_offset(&self) -> u64 {
         self.candidate_offset
     }
 
+    #[must_use]
     pub fn pending_count(&self) -> usize {
         self.pending.len()
     }
 
+    #[must_use]
     pub fn is_effect_pending(&self, id: EffectId) -> bool {
         self.pending.contains_key(&id)
     }
 
+    #[must_use]
     pub fn is_effect_retired(&self, id: EffectId) -> bool {
         self.retired.contains(&id)
     }
 
+    #[must_use]
     pub fn completion_ledger_entries(&self) -> usize {
         self.completed_gaps.len()
     }
 
+    #[must_use]
     pub fn exit_code(&self) -> i32 {
         let summary_policy = ExitPolicy::from_summary(&self.summary);
         exit_code_for(ExitPolicy {
-            infrastructure_error: self.infrastructure_error || summary_policy.infrastructure_error,
-            baseline_failed: self.baseline_failed,
-            incomplete: self.incomplete || summary_policy.incomplete,
+            infrastructure_error: self.flags.outcome.infrastructure_error
+                || summary_policy.infrastructure_error,
+            baseline_failed: self.flags.outcome.baseline_failed,
+            incomplete: self.flags.outcome.incomplete || summary_policy.incomplete,
             survivors: summary_policy.survivors,
-            interrupted: self.interrupted,
+            interrupted: self.flags.report.interrupted,
         })
     }
 
@@ -540,13 +585,13 @@ impl RunState {
     }
 
     fn schedule_read_or_finalize(&mut self) -> Result<Vec<RunEffect>, MachineError> {
-        if !self.candidate_exhausted
+        if !self.flags.scheduling.candidate_exhausted
             && !self.candidate_read_pending()
             && let Some(worker) = self.idle_worker()
         {
             return self.read_next_candidate(worker);
         }
-        if self.candidate_exhausted
+        if self.flags.scheduling.candidate_exhausted
             && self
                 .workers
                 .values()
@@ -603,6 +648,10 @@ impl RunState {
         })])
     }
 
+    fn max_processes(&self) -> Result<u32, MachineError> {
+        u32::try_from(self.config.limits.max_processes.get())
+            .map_err(|_| MachineError::ProcessCountOverflow)
+    }
     fn mutant_process(&mut self, worker: u32) -> Result<Vec<RunEffect>, MachineError> {
         self.worker_mut(worker)?.phase = WorkerPhase::Running;
         let id = self.allocate_id()?;
@@ -621,7 +670,7 @@ impl RunState {
                 timeout,
                 max_output_bytes: self.config.limits.max_output.get(),
                 max_memory_bytes: self.config.limits.max_memory.get(),
-                max_processes: self.config.limits.max_processes.get() as u32,
+                max_processes: self.max_processes()?,
             },
         })])
     }
@@ -649,7 +698,7 @@ impl RunState {
                 candidate: result.candidate,
                 status: result.status,
                 termination,
-                elapsed_ms: result.elapsed.as_millis().min(u128::from(u64::MAX)) as u64,
+                elapsed_ms: elapsed_millis(result.elapsed),
                 resource_mode: result.resource_mode,
                 output: result.output,
             }),
@@ -750,7 +799,7 @@ impl RunState {
                     self.synthetic_finished_output(worker, status)
                 }
             }
-        } else if !self.candidate_exhausted {
+        } else if !self.flags.scheduling.candidate_exhausted {
             self.read_next_candidate(worker)
         } else {
             self.phase = RunPhase::Finalize;
@@ -780,7 +829,9 @@ impl RunState {
                 sequence: self.output_sequence(),
                 run_id: self.run_id.clone(),
                 counts: self.summary.clone(),
-                complete: !self.incomplete && !self.infrastructure_error && !self.interrupted,
+                complete: !self.flags.outcome.incomplete
+                    && !self.flags.outcome.infrastructure_error
+                    && !self.flags.report.interrupted,
                 exit_code: self.exit_code(),
             }),
         })])
@@ -789,14 +840,16 @@ impl RunState {
     fn post_cleanup_effects(&mut self) -> Result<Vec<RunEffect>, MachineError> {
         self.phase = RunPhase::Finalize;
         if let Some(run_id) = self.session_run_id.clone()
-            && !self.session_finish_attempted
+            && !self.flags.cleanup.session_finish_attempted
         {
-            self.session_finish_attempted = true;
+            self.flags.cleanup.session_finish_attempted = true;
             let id = self.allocate_id()?;
             Ok(vec![RunEffect::FinishSession(FinishSession {
                 id,
                 run_id,
-                complete: !self.incomplete && !self.infrastructure_error && !self.interrupted,
+                complete: !self.flags.outcome.incomplete
+                    && !self.flags.outcome.infrastructure_error
+                    && !self.flags.report.interrupted,
             })])
         } else {
             self.final_report_effects()
@@ -830,6 +883,8 @@ pub enum MachineError {
     MissingFingerprint,
     #[error("configured worker count does not fit in u32")]
     WorkerCountOverflow,
+    #[error("configured maximum process count does not fit in u32")]
+    ProcessCountOverflow,
     #[error("preflight reserved {preflight} workers, configured jobs is {configured}")]
     WorkerCountMismatch { configured: u32, preflight: u32 },
     #[error("unknown worker {0}")]
@@ -851,6 +906,7 @@ pub enum MachineError {
 }
 
 impl MachineError {
+    #[must_use]
     pub fn code(&self) -> &'static str {
         match self {
             Self::UnknownEffect(_) => "machine.effect.unknown",
@@ -863,6 +919,7 @@ impl MachineError {
             Self::Budget(_) => "machine.budget",
             Self::MissingFingerprint => "machine.fingerprint.missing",
             Self::WorkerCountOverflow => "machine.worker.count_overflow",
+            Self::ProcessCountOverflow => "machine.process.count_overflow",
             Self::WorkerCountMismatch { .. } => "machine.worker.count_mismatch",
             Self::UnknownWorker(_) => "machine.worker.unknown",
             Self::ProcessWorkerMismatch { .. } => "machine.worker.process_mismatch",
@@ -871,11 +928,21 @@ impl MachineError {
     }
 }
 
+/// Applies an event and produces its resulting state and requested effects.
+///
+/// # Errors
+///
+/// Returns [`MachineError`] when the event does not complete a pending effect or is invalid for the current state.
+#[allow(
+    clippy::too_many_lines,
+    reason = "the transition table is kept together to make state-machine cases auditable"
+)]
 pub fn transition(
     mut state: RunState,
     event: RunEvent,
 ) -> Result<(RunState, Vec<RunEffect>), MachineError> {
-    let _was_fatal = state.infrastructure_error;
+    #[cfg(feature = "contracts")]
+    let was_fatal = state.flags.outcome.infrastructure_error;
     let completed = state.accept_completion(&event)?;
     let completed_worker = completed.and_then(|pending| pending.worker);
     let effects = match event {
@@ -924,11 +991,11 @@ pub fn transition(
         }
         RunEvent::OutputEmitted(value) if state.run_started_output_id == Some(value.id) => {
             state.run_started_output_id = None;
-            state.report_started = true;
+            state.flags.report.report_started = true;
             if let Some(failed) = state.pending_failure.take() {
                 state.diagnostic_effect(&failed)?
-            } else if state.stop_after_run_started {
-                state.stop_after_run_started = false;
+            } else if state.flags.report.stop_after_run_started {
+                state.flags.report.stop_after_run_started = false;
                 state.phase = RunPhase::Finalize;
                 if state.copy_grant.is_some() {
                     state.finalize_effects()?
@@ -959,7 +1026,7 @@ pub fn transition(
                         timeout: state.config.limits.baseline_timeout.get(),
                         max_output_bytes: state.config.limits.max_output.get(),
                         max_memory_bytes: state.config.limits.max_memory.get(),
-                        max_processes: state.config.limits.max_processes.get() as u32,
+                        max_processes: state.max_processes()?,
                     },
                 })]
             } else {
@@ -985,14 +1052,14 @@ pub fn transition(
                 state.phase = RunPhase::Analyze;
                 effects.extend(state.analyze_next()?);
             } else {
-                state.baseline_failed = true;
+                state.flags.outcome.baseline_failed = true;
                 state.phase = RunPhase::Finalize;
                 effects.extend(state.finalize_effects()?);
             }
             effects
         }
         RunEvent::AnalysisFinished(value) if state.phase == RunPhase::Analyze => {
-            state.incomplete |= value.truncated;
+            state.flags.outcome.incomplete |= value.truncated;
             if value.truncated {
                 state.phase = RunPhase::Finalize;
                 state.finalize_effects()?
@@ -1018,49 +1085,43 @@ pub fn transition(
             }
             let worker = value.worker;
             state.candidate_offset = value.next_offset;
-            if state.stop_requested {
-                match value.candidate {
-                    Some(candidate) => {
-                        let worker_state = state.worker_mut(worker)?;
-                        worker_state.candidate = Some(candidate);
-                        worker_state.result = None;
-                        worker_state.phase = WorkerPhase::Idle;
-                        state.synthetic_started_output(worker, MutationStatus::NotRun)?
-                    }
-                    None => {
-                        let worker_state = state.worker_mut(worker)?;
-                        *worker_state = WorkerState::default();
-                        state.candidate_exhausted = true;
-                        state.next_stopped_candidate_effects()?
-                    }
+            if state.flags.scheduling.stop_requested {
+                if let Some(candidate) = value.candidate {
+                    let worker_state = state.worker_mut(worker)?;
+                    worker_state.candidate = Some(candidate);
+                    worker_state.result = None;
+                    worker_state.phase = WorkerPhase::Idle;
+                    state.synthetic_started_output(worker, MutationStatus::NotRun)?
+                } else {
+                    let worker_state = state.worker_mut(worker)?;
+                    *worker_state = WorkerState::default();
+                    state.flags.scheduling.candidate_exhausted = true;
+                    state.next_stopped_candidate_effects()?
                 }
             } else {
-                let mut effects = match value.candidate {
-                    Some(candidate) => {
-                        contract_ensure!(
-                            "machine.worker.candidate.pre",
-                            state.worker_mut(worker)?.candidate.is_none(),
-                            (worker, &candidate)
-                        );
-                        let worker_state = state.worker_mut(worker)?;
-                        worker_state.candidate = Some(candidate);
-                        worker_state.phase = WorkerPhase::Idle;
-                        if state.scheduled_mutants >= state.config.limits.max_mutants.get() as u64 {
-                            state.mutant_limit_reached = true;
-                            state.incomplete = true;
-                            state.synthetic_started_output(worker, MutationStatus::NotRun)?
-                        } else {
-                            state.scheduled_mutants += 1;
-                            state.candidate_effects(worker)?
-                        }
+                let mut effects = if let Some(candidate) = value.candidate {
+                    contract_ensure!(
+                        "machine.worker.candidate.pre",
+                        state.worker_mut(worker)?.candidate.is_none(),
+                        (worker, &candidate)
+                    );
+                    let worker_state = state.worker_mut(worker)?;
+                    worker_state.candidate = Some(candidate);
+                    worker_state.phase = WorkerPhase::Idle;
+                    if state.scheduled_mutants >= state.config.limits.max_mutants.get() as u64 {
+                        state.flags.scheduling.mutant_limit_reached = true;
+                        state.flags.outcome.incomplete = true;
+                        state.synthetic_started_output(worker, MutationStatus::NotRun)?
+                    } else {
+                        state.scheduled_mutants += 1;
+                        state.candidate_effects(worker)?
                     }
-                    None => {
-                        let worker_state = state.worker_mut(worker)?;
-                        worker_state.phase = WorkerPhase::Idle;
-                        worker_state.candidate = None;
-                        state.candidate_exhausted = true;
-                        Vec::new()
-                    }
+                } else {
+                    let worker_state = state.worker_mut(worker)?;
+                    worker_state.phase = WorkerPhase::Idle;
+                    worker_state.candidate = None;
+                    state.flags.scheduling.candidate_exhausted = true;
+                    Vec::new()
                 };
                 effects.extend(state.schedule_read_or_finalize()?);
                 effects
@@ -1085,8 +1146,10 @@ pub fn transition(
             match crate::resume_policy(value.result.as_ref()) {
                 ResumeDecision::Rerun => state.apply_worker_effects(worker)?,
                 ResumeDecision::Reuse => {
-                    let status = value.result.expect("reuse requires a stored result").status;
-                    state.synthetic_started_output(worker, status)?
+                    let result = value
+                        .result
+                        .ok_or(MachineError::WrongPhase { phase: state.phase })?;
+                    state.synthetic_started_output(worker, result.status)?
                 }
             }
         }
@@ -1167,14 +1230,14 @@ pub fn transition(
             match state
                 .output_actions
                 .remove(&value.id)
-                .expect("checked above")
+                .ok_or(MachineError::WrongPhase { phase: state.phase })?
             {
                 OutputAction::StartMutant(worker) => state.mutant_process(worker)?,
                 OutputAction::StartSynthetic(worker, status) => {
                     state.synthetic_finished_output(worker, status)?
                 }
                 OutputAction::FinishMutant(worker) => {
-                    if state.stop_requested {
+                    if state.flags.scheduling.stop_requested {
                         *state.worker_mut(worker)? = WorkerState::default();
                         state.next_stopped_candidate_effects()?
                     } else {
@@ -1189,7 +1252,7 @@ pub fn transition(
                     worker_state.phase = WorkerPhase::Idle;
                     worker_state.candidate = None;
                     worker_state.result = None;
-                    if state.stop_requested {
+                    if state.flags.scheduling.stop_requested {
                         state.next_stopped_candidate_effects()?
                     } else {
                         state.schedule_read_or_finalize()?
@@ -1220,7 +1283,7 @@ pub fn transition(
         }
         RunEvent::OutputEmitted(value) if state.diagnostic_output_id == Some(value.id) => {
             state.diagnostic_output_id = None;
-            if state.cleanup_done {
+            if state.flags.cleanup.cleanup_done {
                 state.post_cleanup_effects()?
             } else {
                 state.cleanup_effects()?
@@ -1230,34 +1293,34 @@ pub fn transition(
             release_workspace_copy(&mut state.budgets, &value)
                 .map_err(|error| MachineError::Budget(error.to_string()))?;
             state.copy_grant = None;
-            state.cleanup_done = true;
+            state.flags.cleanup.cleanup_done = true;
             state.post_cleanup_effects()?
         }
         RunEvent::OutputEmitted(_) => Vec::new(),
         RunEvent::EffectFailed(failed) if state.phase == RunPhase::Cleaning => {
-            state.infrastructure_error = true;
-            state.stop_requested = true;
+            state.flags.outcome.infrastructure_error = true;
+            state.flags.scheduling.stop_requested = true;
             state.retire_pending();
             state.copy_grant = None;
-            state.cleanup_done = true;
+            state.flags.cleanup.cleanup_done = true;
             state.diagnostic_effect(&failed)?
         }
         RunEvent::EffectFailed(failed) if state.diagnostic_output_id == Some(failed.id) => {
-            state.infrastructure_error = true;
-            state.stop_requested = true;
+            state.flags.outcome.infrastructure_error = true;
+            state.flags.scheduling.stop_requested = true;
             state.retire_pending();
             state.diagnostic_output_id = None;
-            if state.cleanup_done {
+            if state.flags.cleanup.cleanup_done {
                 state.post_cleanup_effects()?
             } else {
                 state.cleanup_effects()?
             }
         }
         RunEvent::EffectFailed(failed) => {
-            state.infrastructure_error = true;
-            state.stop_requested = true;
+            state.flags.outcome.infrastructure_error = true;
+            state.flags.scheduling.stop_requested = true;
             state.retire_pending();
-            if !state.report_started {
+            if !state.flags.report.report_started {
                 if state.run_started_output_id == Some(failed.id) {
                     state.run_started_output_id = None;
                     state.cleanup_effects()?
@@ -1274,14 +1337,14 @@ pub fn transition(
             }
         }
         RunEvent::DeadlineReached => {
-            state.incomplete = true;
-            state.stop_requested = true;
+            state.flags.outcome.incomplete = true;
+            state.flags.scheduling.stop_requested = true;
             let was_mutating = state.phase == RunPhase::Mutants;
             state.retire_pending();
             if was_mutating {
                 state.begin_stopped_mutant_drain()?
-            } else if !state.report_started {
-                state.stop_after_run_started = true;
+            } else if !state.flags.report.report_started {
+                state.flags.report.stop_after_run_started = true;
                 state.start_run_effects()?
             } else if state.copy_grant.is_some() {
                 state.phase = RunPhase::Finalize;
@@ -1291,14 +1354,14 @@ pub fn transition(
             }
         }
         RunEvent::CancellationRequested => {
-            state.interrupted = true;
-            state.stop_requested = true;
+            state.flags.report.interrupted = true;
+            state.flags.scheduling.stop_requested = true;
             let was_mutating = state.phase == RunPhase::Mutants;
             state.retire_pending();
             if was_mutating {
                 state.begin_stopped_mutant_drain()?
-            } else if !state.report_started {
-                state.stop_after_run_started = true;
+            } else if !state.flags.report.report_started {
+                state.flags.report.stop_after_run_started = true;
                 state.start_run_effects()?
             } else if state.copy_grant.is_some() {
                 state.phase = RunPhase::Finalize;
@@ -1352,7 +1415,9 @@ pub fn transition(
     );
     contract_ensure!(
         "machine.cancel.post",
-        !(_was_fatal || state.infrastructure_error || state.stop_requested)
+        !(was_fatal
+            || state.flags.outcome.infrastructure_error
+            || state.flags.scheduling.stop_requested)
             || !effects.iter().any(|effect| matches!(
                 effect,
                 RunEffect::ApplyMutation(_) | RunEffect::RunMutant(_)
@@ -1362,13 +1427,17 @@ pub fn transition(
     Ok((state, effects))
 }
 
+fn elapsed_millis(duration: std::time::Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+}
+
 fn baseline_output(state: &mut RunState, value: &ProcessFinished) -> OutputEvent {
     OutputEvent::BaselineFinished(BaselineOutput {
         schema_version: crate::REPORT_SCHEMA_VERSION,
         sequence: state.output_sequence(),
         run_id: state.run_id.clone(),
         termination: value.termination,
-        elapsed_ms: value.elapsed.as_millis().min(u128::from(u64::MAX)) as u64,
+        elapsed_ms: elapsed_millis(value.elapsed),
         resource_mode: value.resource_mode,
         output: value.output.clone(),
     })

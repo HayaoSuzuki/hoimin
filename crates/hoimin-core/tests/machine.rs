@@ -42,7 +42,7 @@ fn baseline_success_requests_analysis_without_performing_io() {
         }),
     )
     .unwrap();
-    let (state, effects) = complete_run_started(state, effects);
+    let (state, effects) = complete_run_started(state, &effects);
     let worker_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::CreateWorker(_))
     }));
@@ -294,7 +294,7 @@ fn cancellation_flushes_active_and_remaining_candidates_as_not_run() {
             )
             .unwrap();
         }
-        (state, effects) = complete_mutant_started(state, effects);
+        (state, effects) = complete_mutant_started(state, &effects);
         let finished = find_effect(&effects, |effect| {
             matches!(effect, RunEffect::EmitOutput(value)
                 if matches!(&value.event, hoimin_core::OutputEvent::MutantFinished(value)
@@ -365,7 +365,7 @@ fn one_active_candidate_is_applied_classified_and_reported() {
         }),
     )
     .unwrap();
-    let (state, effects) = complete_mutant_started(state, effects);
+    let (state, effects) = complete_mutant_started(state, &effects);
     let mutant_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunMutant(_))
     }));
@@ -385,6 +385,10 @@ fn one_active_candidate_is_applied_classified_and_reported() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the completion-order matrix is intentionally kept in one test"
+)]
 fn four_jobs_fill_four_independent_worker_chains_in_every_completion_order() {
     let mut raw = fixture_raw_config();
     raw.limits.jobs = 4;
@@ -438,7 +442,7 @@ fn four_jobs_fill_four_independent_worker_chains_in_every_completion_order() {
         )
         .unwrap();
         state = next;
-        let (next, running) = complete_mutant_started(state, started);
+        let (next, running) = complete_mutant_started(state, &started);
         state = next;
         let process = find_effect(&running, |effect| matches!(effect, RunEffect::RunMutant(_)));
         let RunEffect::RunMutant(process) = process else {
@@ -855,7 +859,7 @@ fn session_result_is_persisted_before_finished_output_and_reset() {
         }),
     )
     .unwrap();
-    let (state, effects) = complete_mutant_started(state, effects);
+    let (state, effects) = complete_mutant_started(state, &effects);
     let mutant_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunMutant(_))
     }));
@@ -929,7 +933,7 @@ fn resumed_determinate_result_is_reused_without_mutant_execution() {
         }),
     )
     .unwrap();
-    let (next, effects) = complete_mutant_started(next, effects);
+    let (next, effects) = complete_mutant_started(next, &effects);
     let finished_id = effect_id(find_effect(
         &effects,
         |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, hoimin_core::OutputEvent::MutantFinished(_))),
@@ -979,7 +983,7 @@ fn reused_result_is_counted_only_after_finished_output_succeeds() {
         }),
     )
     .unwrap();
-    let (state, effects) = complete_mutant_started(state, effects);
+    let (state, effects) = complete_mutant_started(state, &effects);
     let finished_id = effect_id(find_effect(
         &effects,
         |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, hoimin_core::OutputEvent::MutantFinished(_))),
@@ -1068,7 +1072,7 @@ fn session_save_failure_is_fatal_and_does_not_schedule_reset_or_next_mutant() {
         }),
     )
     .unwrap();
-    let (state, effects) = complete_mutant_started(state, effects);
+    let (state, effects) = complete_mutant_started(state, &effects);
     let mutant_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunMutant(_))
     }));
@@ -1186,6 +1190,10 @@ fn candidate_overflow_stops_before_any_mutant_execution() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the ordered target replay is clearer as one scenario"
+)]
 fn multiple_target_files_are_analyzed_in_order_before_candidate_replay() {
     let (state, effects) = start_state();
     let resolve_id = effect_id(find_effect(&effects, |effect| {
@@ -1225,7 +1233,7 @@ fn multiple_target_files_are_analyzed_in_order_before_candidate_replay() {
         }),
     )
     .unwrap();
-    let (state, effects) = complete_run_started(state, effects);
+    let (state, effects) = complete_run_started(state, &effects);
     let create = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::CreateWorker(_))
     });
@@ -1246,11 +1254,10 @@ fn multiple_target_files_are_analyzed_in_order_before_candidate_replay() {
         RunEvent::BaselineFinished(process_finished(baseline_id, ProcessTermination::Exit(0))),
     )
     .unwrap();
-    let first = match find_effect(&effects, |effect| {
+    let RunEffect::AnalyzeFile(first) = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::AnalyzeFile(_))
-    }) {
-        RunEffect::AnalyzeFile(value) => value,
-        _ => unreachable!(),
+    }) else {
+        unreachable!()
     };
     assert_eq!(first.target.path, camino::Utf8PathBuf::from("src/a.py"));
     assert!(!first.final_target);
@@ -1263,11 +1270,10 @@ fn multiple_target_files_are_analyzed_in_order_before_candidate_replay() {
         }),
     )
     .unwrap();
-    let second = match find_effect(&effects, |effect| {
+    let RunEffect::AnalyzeFile(second) = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::AnalyzeFile(_))
-    }) {
-        RunEffect::AnalyzeFile(value) => value,
-        _ => unreachable!(),
+    }) else {
+        unreachable!()
     };
     assert_eq!(second.target.path, camino::Utf8PathBuf::from("src/b.py"));
     assert!(second.final_target);
@@ -1330,7 +1336,7 @@ fn every_process_termination_is_classified_by_the_machine() {
             }),
         )
         .unwrap();
-        let (state, effects) = complete_mutant_started(state, effects);
+        let (state, effects) = complete_mutant_started(state, &effects);
         let mutant_id = effect_id(find_effect(&effects, |effect| {
             matches!(effect, RunEffect::RunMutant(_))
         }));
@@ -1349,6 +1355,10 @@ fn every_process_termination_is_classified_by_the_machine() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the bounded scheduling scenario is kept as one end-to-end test"
+)]
 fn max_mutants_reports_remaining_candidates_as_not_run_in_stable_order() {
     let mut raw = fixture_raw_config();
     raw.limits.max_mutants = 1;
@@ -1392,7 +1402,7 @@ fn max_mutants_reports_remaining_candidates_as_not_run_in_stable_order() {
         }),
     )
     .unwrap();
-    let (state, effects) = complete_mutant_started(state, effects);
+    let (state, effects) = complete_mutant_started(state, &effects);
     let mutant_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunMutant(_))
     }));
@@ -1433,7 +1443,7 @@ fn max_mutants_reports_remaining_candidates_as_not_run_in_stable_order() {
         }),
     )
     .unwrap();
-    let (next, effects) = complete_mutant_started(next, effects);
+    let (next, effects) = complete_mutant_started(next, &effects);
 
     assert_eq!(next.summary().killed, 1);
     assert_eq!(next.exit_code(), 4);
@@ -1507,7 +1517,7 @@ fn completion_ledger_stays_bounded_across_ten_thousand_mutants() {
         )
         .unwrap();
         state = next;
-        let (next, effects) = complete_mutant_started(state, effects);
+        let (next, effects) = complete_mutant_started(state, &effects);
         state = next;
         let mutant_id = effect_id(find_effect(&effects, |effect| {
             matches!(effect, RunEffect::RunMutant(_))
@@ -1597,7 +1607,7 @@ fn waiting_for_baseline() -> (RunState, Vec<RunEffect>) {
         }),
     )
     .unwrap();
-    let (state, effects) = complete_run_started(state, effects);
+    let (state, effects) = complete_run_started(state, &effects);
     let create = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::CreateWorker(_))
     });
@@ -1709,7 +1719,7 @@ fn waiting_for_baseline_with(config: RunConfig) -> (RunState, Vec<RunEffect>) {
             .unwrap();
         }
     }
-    (state, effects) = complete_run_started(state, effects);
+    (state, effects) = complete_run_started(state, &effects);
     let creates: Vec<_> = effects
         .iter()
         .filter_map(|effect| match effect {
@@ -1734,9 +1744,9 @@ fn waiting_for_baseline_with(config: RunConfig) -> (RunState, Vec<RunEffect>) {
     (state, produced)
 }
 
-fn complete_run_started(state: RunState, effects: Vec<RunEffect>) -> (RunState, Vec<RunEffect>) {
+fn complete_run_started(state: RunState, effects: &[RunEffect]) -> (RunState, Vec<RunEffect>) {
     let output_id = effect_id(find_effect(
-        &effects,
+        effects,
         |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, hoimin_core::OutputEvent::RunStarted(_))),
     ));
     transition(
@@ -1746,9 +1756,9 @@ fn complete_run_started(state: RunState, effects: Vec<RunEffect>) -> (RunState, 
     .unwrap()
 }
 
-fn complete_mutant_started(state: RunState, effects: Vec<RunEffect>) -> (RunState, Vec<RunEffect>) {
+fn complete_mutant_started(state: RunState, effects: &[RunEffect]) -> (RunState, Vec<RunEffect>) {
     let output_id = effect_id(find_effect(
-        &effects,
+        effects,
         |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, hoimin_core::OutputEvent::MutantStarted(_))),
     ));
     transition(
@@ -1827,7 +1837,7 @@ fn waiting_for_reset(termination: ProcessTermination) -> (RunState, Vec<RunEffec
         }),
     )
     .unwrap();
-    let (state, effects) = complete_mutant_started(state, effects);
+    let (state, effects) = complete_mutant_started(state, &effects);
     let mutant_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunMutant(_))
     }));

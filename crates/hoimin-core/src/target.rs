@@ -72,6 +72,10 @@ pub enum TargetError {
     DiscoveryFailed(String),
 }
 
+/// # Errors
+///
+/// Returns [`TargetError`] when a requested path, line range, or symbol cannot
+/// be resolved to a discovered Python file within the configured roots.
 pub fn resolve_explicit(
     selection: &Selection,
     discovered: &[DiscoveredFile],
@@ -294,6 +298,7 @@ fn normalize_ranges(ranges: &mut Vec<LineRange>) {
     *ranges = merged;
 }
 
+#[must_use]
 pub fn normalize_changed(
     changed: BTreeMap<Utf8PathBuf, Vec<LineRange>>,
 ) -> BTreeMap<Utf8PathBuf, Vec<LineRange>> {
@@ -313,6 +318,7 @@ pub fn normalize_changed(
     changed
 }
 
+#[must_use]
 pub fn intersect_changed(
     explicit: &[TargetSlice],
     changed: &BTreeMap<Utf8PathBuf, Vec<LineRange>>,
@@ -364,6 +370,7 @@ pub fn intersect_changed(
     targets
 }
 
+#[must_use]
 pub fn changed_is_normalized(changed: &BTreeMap<Utf8PathBuf, Vec<LineRange>>) -> bool {
     changed.values().all(|ranges| {
         !ranges.is_empty()
@@ -376,6 +383,7 @@ pub fn changed_is_normalized(changed: &BTreeMap<Utf8PathBuf, Vec<LineRange>>) ->
     })
 }
 
+#[must_use]
 pub fn targets_are_normalized(targets: &[TargetSlice]) -> bool {
     targets.windows(2).all(|pair| pair[0].path < pair[1].path)
         && targets.iter().all(|target| {

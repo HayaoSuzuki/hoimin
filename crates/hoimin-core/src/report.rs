@@ -10,6 +10,7 @@ use crate::{
 
 pub const REPORT_SCHEMA_VERSION: u32 = 2;
 
+#[must_use]
 pub fn classify_mutant(termination: ProcessTermination) -> MutationStatus {
     match termination {
         ProcessTermination::Exit(0) => MutationStatus::Survived,
@@ -35,6 +36,8 @@ pub struct MutationSummary {
 }
 
 impl MutationSummary {
+    // The public score protocol is f64; mutation counts remain exact u64 values.
+    #[allow(clippy::cast_precision_loss)]
     pub fn record(&mut self, status: MutationStatus) {
         match status {
             MutationStatus::Killed => self.killed += 1,
@@ -52,6 +55,7 @@ impl MutationSummary {
     }
 }
 
+#[must_use]
 pub fn summarize(statuses: &[MutationStatus]) -> MutationSummary {
     let mut result = MutationSummary::default();
     for status in statuses {
@@ -60,6 +64,9 @@ pub fn summarize(statuses: &[MutationStatus]) -> MutationSummary {
     result
 }
 
+// Each field is an independent, public exit-condition input. Keeping the flags
+// directly addressable preserves the exit-status protocol used by callers.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ExitPolicy {
     pub infrastructure_error: bool,
@@ -70,6 +77,7 @@ pub struct ExitPolicy {
 }
 
 impl ExitPolicy {
+    #[must_use]
     pub fn from_summary(summary: &MutationSummary) -> Self {
         Self {
             infrastructure_error: summary.error > 0,
@@ -83,6 +91,7 @@ impl ExitPolicy {
     }
 }
 
+#[must_use]
 pub fn exit_code(incomplete: bool, survivors: bool, interrupted: bool) -> i32 {
     exit_code_for(ExitPolicy {
         incomplete,
@@ -92,6 +101,7 @@ pub fn exit_code(incomplete: bool, survivors: bool, interrupted: bool) -> i32 {
     })
 }
 
+#[must_use]
 pub fn exit_code_for(policy: ExitPolicy) -> i32 {
     if policy.interrupted {
         130
@@ -101,10 +111,8 @@ pub fn exit_code_for(policy: ExitPolicy) -> i32 {
         3
     } else if policy.incomplete {
         4
-    } else if policy.survivors {
-        1
     } else {
-        0
+        i32::from(policy.survivors)
     }
 }
 
@@ -248,6 +256,7 @@ pub enum OutputEvent {
 }
 
 impl OutputEvent {
+    #[must_use]
     pub fn sequence(&self) -> u64 {
         match self {
             Self::RunStarted(value) => value.sequence,
@@ -259,6 +268,7 @@ impl OutputEvent {
         }
     }
 
+    #[must_use]
     pub fn schema_version(&self) -> u32 {
         match self {
             Self::RunStarted(value) => value.schema_version,
@@ -270,6 +280,7 @@ impl OutputEvent {
         }
     }
 
+    #[must_use]
     pub fn run_id(&self) -> &str {
         match self {
             Self::RunStarted(value) => &value.run_id,
@@ -312,10 +323,15 @@ pub struct ReportSequence {
 }
 
 impl ReportSequence {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// # Errors
+    ///
+    /// Returns [`ReportSequenceError`] when the event violates the run,
+    /// mutant-lifecycle, or strictly increasing sequence invariants.
     pub fn observe(&mut self, event: &OutputEvent) -> Result<(), ReportSequenceError> {
         let lifecycle_error = match (event, self.run_id.as_deref()) {
             (OutputEvent::RunStarted(value), Some(_)) => {

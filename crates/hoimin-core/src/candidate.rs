@@ -14,6 +14,7 @@ const MUTANT_ID_DOMAIN: &[u8] = b"hoimin.mutant-id.v1\0";
 pub struct MutantId(String);
 
 impl MutantId {
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -82,6 +83,7 @@ pub enum CandidateValidationError {
     InvalidMutation,
 }
 
+#[must_use]
 pub fn stable_mutant_id(identity: &CandidateIdentity) -> MutantId {
     let mut hasher = blake3::Hasher::new();
     hasher.update(MUTANT_ID_DOMAIN);
@@ -119,6 +121,10 @@ fn framed(hasher: &mut blake3::Hasher, tag: &[u8], value: &[u8]) {
     hasher.update(value);
 }
 
+/// # Errors
+///
+/// Returns [`CandidateValidationError`] when the candidate metadata, path, hash, span, source text, or reported location is invalid.
+///
 pub fn validate_candidate(
     source: &[u8],
     candidate: &CandidateDescriptor,

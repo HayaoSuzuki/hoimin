@@ -118,22 +118,27 @@ impl CreateWorker {
         }
     }
 
+    #[must_use]
     pub fn id(&self) -> EffectId {
         self.id
     }
 
+    #[must_use]
     pub fn preflight_id(&self) -> EffectId {
         self.preflight_id
     }
 
+    #[must_use]
     pub fn reservation_id(&self) -> ReservationId {
         self.reservation_id
     }
 
+    #[must_use]
     pub fn granted_allowance(&self) -> u64 {
         self.granted_allowance
     }
 
+    #[must_use]
     pub fn worker(&self) -> u32 {
         self.worker
     }
@@ -193,6 +198,7 @@ pub enum RunEffect {
 }
 
 impl RunEffect {
+    #[must_use]
     pub fn id(&self) -> EffectId {
         match self {
             Self::ResolveTargets(value) => value.id,

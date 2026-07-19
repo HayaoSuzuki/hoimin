@@ -200,6 +200,7 @@ pub enum EffectFailure {
 }
 
 impl EffectFailure {
+    #[must_use]
     pub fn code(&self) -> &str {
         match self {
             Self::WorkspaceRestore { .. } => "workspace.restore",
@@ -221,10 +222,11 @@ impl EffectFailure {
         }
     }
 
+    #[must_use]
     pub fn message(&self) -> String {
         match self {
             Self::WorkspaceRestore { path, message } => {
-                format!("restore {}: {message}", path)
+                format!("restore {path}: {message}")
             }
             Self::OriginalChanged { path } => format!("original changed: {path}"),
             Self::CopyLimit {
@@ -255,7 +257,7 @@ impl EffectFailure {
                 message,
                 ..
             } => match path {
-                Some(path) => format!("{operation} {}: {message}", path),
+                Some(path) => format!("{operation} {path}: {message}"),
                 None => format!("{operation}: {message}"),
             },
             Self::ReportIo { operation, message }
