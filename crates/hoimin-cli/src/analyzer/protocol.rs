@@ -373,7 +373,7 @@ impl AnalyzerProtocol {
 }
 
 fn known_operator(operator: &str) -> bool {
-    MutationOperator::from_name(operator).is_some()
+    MutationOperator::from_name(operator).is_some_and(|parsed| parsed.as_str() == operator)
 }
 
 #[derive(Debug, Deserialize)]

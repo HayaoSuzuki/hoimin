@@ -213,6 +213,23 @@ fn protocol_accepts_type_nullable_remove_candidate() {
     ));
 }
 #[test]
+fn protocol_rejects_type_mapping_selector_alias() {
+    let mut protocol = protocol();
+    assert!(matches!(
+        protocol.receive_line(br#"{"kind":"candidate","effect_id":7,"path":"pkg/calc.py","span":{"start":1,"length":1},"original":"?","replacement":"","operator":"type_mapping","line":1,"column":1,"symbol":null}"#),
+        Err(ProtocolError::InvalidRecord("invalid candidate fields"))
+    ));
+}
+
+#[test]
+fn protocol_accepts_type_dict_mapping_candidate() {
+    let mut protocol = protocol();
+    assert!(matches!(
+        protocol.receive_line(br#"{"kind":"candidate","effect_id":7,"path":"pkg/calc.py","span":{"start":1,"length":1},"original":"?","replacement":"","operator":"type_dict_mapping","line":1,"column":1,"symbol":null}"#),
+        Ok(Some(AnalyzerRecord::Candidate(_)))
+    ));
+}
+#[test]
 fn candidate_rejects_null_field_from_another_kind() {
     let mut protocol = protocol();
     assert!(matches!(
