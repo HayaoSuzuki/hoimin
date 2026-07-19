@@ -4,9 +4,9 @@ Run the Python quality gate locally with the same commands used in CI:
 
 ```console
 uv sync --frozen
-uv run ty check
 uv run ruff check python tests
 uv run ruff format --check python tests
+uv run ty check
 uv run pytest
 ```
 
