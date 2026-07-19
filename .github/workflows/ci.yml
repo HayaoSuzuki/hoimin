@@ -20,6 +20,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   rust:
+    needs: quality
     name: Rust (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -42,6 +43,7 @@ jobs:
       - run: cargo test -p hoimin-cli --test run_e2e
 
   contracts:
+    needs: quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -59,6 +61,7 @@ jobs:
       - run: cargo test -p hoimin-cli --features contracts
 
   core-dependency-purity:
+    needs: quality
     name: Core dependency purity (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -77,6 +80,7 @@ jobs:
           ! grep -E '(^| )(tokio|rusqlite|tempfile|windows-sys|libc|hoimin-cli)( |$)' core-tree.txt
 
   wheel-smoke:
+    needs: quality
     name: Wheel smoke (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -98,6 +102,7 @@ jobs:
       - run: uv run --frozen python tests/wheel_smoke.py
 
   linux-best-effort:
+    needs: quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -107,6 +112,7 @@ jobs:
       - run: cargo test -p hoimin-cli linux_policy::unavailable_cgroup_requires_explicit_best_effort_opt_in
 
   linux-cgroup-v2-hard:
+    needs: quality
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.HOIMIN_CGROUP_V2_DELEGATED == 'true'
     runs-on: [self-hosted, linux, x64, cgroup-v2-delegated]
     steps:

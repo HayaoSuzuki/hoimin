@@ -959,7 +959,6 @@ mod platform {
                 io::Error::last_os_error(),
             ));
         }
-        const CGROUP2_SUPER_MAGIC: libc::c_long = 0x6367_7270;
         if stats.f_type != CGROUP2_SUPER_MAGIC {
             return Err(ResourceError::InvalidCgroupData(
                 "resolved membership path is not on cgroup2fs".into(),
