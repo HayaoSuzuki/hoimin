@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "hoimin"
 path = "src/main.rs"
@@ -41,3 +44,4 @@ libc = "0.2"
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
+proptest = "1.7"

@@ -190,7 +190,7 @@ fn test_argv_preserves_non_utf8_bytes() {
 fn test_argv_preserves_non_utf8_wide_units() {
     use std::os::windows::ffi::{OsStrExt, OsStringExt};
 
-    let invalid = std::ffi::OsString::from_wide(&[0xd800, b'x' as u16]);
+    let invalid = std::ffi::OsString::from_wide(&[0xd800, u16::from(b'x')]);
     let expected: Vec<u16> = invalid.encode_wide().collect();
     let config = hoimin_cli::cli::parse_config_from([
         std::ffi::OsString::from("hoimin"),

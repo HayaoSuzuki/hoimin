@@ -11,6 +11,9 @@ pub struct PortableBackend {
 }
 
 impl PortableBackend {
+    /// # Errors
+    ///
+    /// Returns an error on Linux when best-effort memory limiting was not explicitly allowed.
     pub fn new(allow_best_effort_memory: bool) -> Result<Self, ResourceError> {
         #[cfg(target_os = "linux")]
         if !allow_best_effort_memory {
@@ -23,6 +26,7 @@ impl PortableBackend {
         Ok(Self { diagnostic: None })
     }
 
+    #[must_use]
     pub fn for_tests() -> Self {
         Self::default()
     }
@@ -33,10 +37,12 @@ impl PortableBackend {
         }
     }
 
+    #[must_use]
     pub fn diagnostic(&self) -> Option<&str> {
         self.diagnostic.as_deref()
     }
 
+    #[must_use]
     pub fn mode(&self) -> ResourceMode {
         ResourceMode::BestEffort
     }
@@ -46,6 +52,7 @@ impl PortableBackend {
         command: &mut Command,
         limits: ProcessLimits,
     ) -> Result<ProcessSupervisor, ResourceError> {
+        let _ = self;
         configure_command(command, limits)?;
         Ok(ProcessSupervisor::Portable(PortableSupervisor::new()?))
     }
@@ -155,6 +162,10 @@ fn configure_command(command: &mut Command, limits: ProcessLimits) -> Result<(),
 }
 
 #[cfg(not(unix))]
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "the non-Unix no-op retains the shared fallible platform configuration interface"
+)]
 fn configure_command(_command: &mut Command, _limits: ProcessLimits) -> Result<(), ResourceError> {
     Ok(())
 }
@@ -182,8 +193,9 @@ fn create_kill_on_close_job() -> Result<isize, ResourceError> {
         if SetInformationJobObject(
             job,
             JobObjectExtendedLimitInformation,
-            &information as *const _ as *const _,
-            size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            (&raw const information).cast(),
+            u32::try_from(size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>())
+                .expect("Windows Job Object structure size fits u32"),
         ) == 0
         {
             let error = io::Error::last_os_error();

@@ -51,7 +51,7 @@ pub(crate) async fn collect_output(
         let chunk_len = u64::try_from(chunk.len()).unwrap_or(u64::MAX);
         observed = add_observed(observed, chunk_len);
         let remaining = max_retained.saturating_sub(retained);
-        let keep = remaining.min(chunk_len) as usize;
+        let keep = retained_chunk_len(remaining, chunk.len());
         if keep != 0
             && let Some(file) = spool.as_mut()
         {
@@ -79,6 +79,11 @@ pub(crate) async fn collect_output(
     })
 }
 
+fn retained_chunk_len(remaining: u64, chunk_len: usize) -> usize {
+    usize::try_from(remaining)
+        .unwrap_or(usize::MAX)
+        .min(chunk_len)
+}
 fn add_observed(observed: u64, chunk_len: u64) -> u64 {
     observed.saturating_add(chunk_len)
 }
@@ -87,7 +92,7 @@ fn add_observed(observed: u64, chunk_len: u64) -> u64 {
 mod tests {
     use std::time::Duration;
 
-    use super::{add_observed, collect_output, pipe_channel};
+    use super::{add_observed, collect_output, pipe_channel, retained_chunk_len};
 
     #[tokio::test]
     async fn collector_drains_to_eof_after_spool_create_failure() {
@@ -123,5 +128,10 @@ mod tests {
     #[test]
     fn observed_byte_count_saturates() {
         assert_eq!(add_observed(u64::MAX - 2, 8), u64::MAX);
+    }
+
+    #[test]
+    fn retained_chunk_length_handles_a_remaining_limit_larger_than_usize() {
+        assert_eq!(retained_chunk_len(u64::MAX, 16), 16);
     }
 }

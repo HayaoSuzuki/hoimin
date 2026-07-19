@@ -124,7 +124,7 @@ struct RawRunArgs {
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     format: OutputFormat,
 
-    /// SQLite session path; no database is created unless specified.
+    /// `SQLite` session path; no database is created unless specified.
     #[arg(long, value_name = "PATH")]
     session: Option<PathBuf>,
 
@@ -210,6 +210,7 @@ impl From<ConfigError> for CliError {
 }
 
 impl CliError {
+    #[must_use]
     pub fn config_error(&self) -> Option<&ConfigError> {
         match self {
             Self::Config(error) => Some(error),
@@ -265,6 +266,11 @@ impl TryFrom<Command> for RunArgs {
     }
 }
 
+/// Parses command-line arguments into executable run arguments.
+///
+/// # Errors
+///
+/// Returns an error when Clap rejects the arguments or required inputs are absent.
 pub fn parse_from<I, T>(args: I) -> Result<RunArgs, CliError>
 where
     I: IntoIterator<Item = T>,
@@ -274,6 +280,11 @@ where
     RunArgs::try_from(root.command)
 }
 
+/// Parses command-line arguments and validates a run configuration.
+///
+/// # Errors
+///
+/// Returns an error when an argument or configuration value is invalid.
 pub fn parse_config_from<I, T>(args: I) -> Result<RunConfig, CliError>
 where
     I: IntoIterator<Item = T>,
@@ -338,7 +349,7 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
         excludes: args.exclude,
         allow_best_effort_memory: args.allow_best_effort_memory,
         limits,
-        test_argv: args.test_argv.into_iter().map(command_arg).collect(),
+        test_argv: args.test_argv.iter().map(command_arg).collect(),
         output: OutputConfig {
             format: match args.format {
                 OutputFormat::Json => hoimin_core::OutputFormat::Json,
@@ -432,13 +443,13 @@ fn parse_bytes(value: &str, name: &'static str) -> Result<u64, CliError> {
 }
 
 #[cfg(unix)]
-fn command_arg(value: OsString) -> CommandArg {
+fn command_arg(value: &OsString) -> CommandArg {
     use std::os::unix::ffi::OsStringExt;
     CommandArg::Unix(value.into_vec())
 }
 
 #[cfg(windows)]
-fn command_arg(value: OsString) -> CommandArg {
+fn command_arg(value: &OsString) -> CommandArg {
     use std::os::windows::ffi::OsStrExt;
     CommandArg::Windows(value.encode_wide().collect())
 }

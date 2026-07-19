@@ -109,7 +109,8 @@ impl WorkspaceError {
         }
     }
 
-    pub fn code(&self) -> &'static str {
+    #[must_use]
+    pub const fn code(&self) -> &'static str {
         match self {
             Self::InvalidGrant { .. }
             | Self::CopyAllowanceExceeded { .. }
@@ -267,7 +268,7 @@ pub struct WorkerWorkspace {
 
 impl WorkerWorkspace {
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn from_materialized(
+    pub(crate) const fn from_materialized(
         temp: tempfile::TempDir,
         root: Utf8PathBuf,
         original_root: Utf8PathBuf,
@@ -294,20 +295,26 @@ impl WorkerWorkspace {
         }
     }
 
+    #[must_use]
     pub fn root(&self) -> &Utf8Path {
         &self.root
     }
 
-    pub fn manifest(&self) -> &WorkspaceManifest {
+    #[must_use]
+    pub const fn manifest(&self) -> &WorkspaceManifest {
         &self.manifest
     }
 
+    /// # Errors
+    /// Returns `InvalidPath` or an I/O failure when the path cannot be read.
     pub fn read(&self, path: impl AsRef<Utf8Path>) -> Result<Vec<u8>, WorkspaceError> {
         let path = path.as_ref();
         let destination = resolve_worker_path(&self.root, path)?;
         fs::read(destination).map_err(|error| WorkspaceError::io("read worker file", path, error))
     }
 
+    /// # Errors
+    /// Returns `InvalidPath` or an I/O failure when the file cannot be written.
     pub fn write(
         &mut self,
         path: impl AsRef<Utf8Path>,
@@ -326,6 +333,8 @@ impl WorkerWorkspace {
             .map_err(|error| WorkspaceError::io("write worker file", path, error))
     }
 
+    /// # Errors
+    /// Returns `InvalidPath` or an I/O failure when the file cannot be removed.
     pub fn remove(&mut self, path: impl AsRef<Utf8Path>) -> Result<(), WorkspaceError> {
         let path = path.as_ref();
         let destination = resolve_worker_path(&self.root, path)?;
@@ -334,10 +343,14 @@ impl WorkerWorkspace {
             .map_err(|error| WorkspaceError::io("remove worker file", path, error))
     }
 
+    /// # Errors
+    /// Returns `InvalidPath` when the supplied path is not root-relative.
     pub fn exists(&self, path: impl AsRef<Utf8Path>) -> Result<bool, WorkspaceError> {
         Ok(resolve_worker_path(&self.root, path.as_ref())?.exists())
     }
 
+    /// # Errors
+    /// Returns an I/O failure when the temporary workspace cannot be removed.
     pub fn try_cleanup(&mut self) -> Result<(), WorkspaceError> {
         if self.cleanup_complete {
             return Ok(());
@@ -382,6 +395,8 @@ pub struct CommandEnvironment {
     pub env: BTreeMap<OsString, OsString>,
 }
 
+/// # Errors
+/// Returns `PythonPath` if the rewritten environment cannot be encoded.
 pub fn build_command_environment(
     original_root: &Utf8Path,
     worker_root: &Utf8Path,
@@ -416,6 +431,11 @@ pub fn build_command_environment(
 }
 
 #[cfg(windows)]
+// Keys must be owned before they can be removed from the same map.
+#[allow(
+    clippy::needless_collect,
+    reason = "keys borrow the map before mutable removal"
+)]
 fn take_pythonpath(env: &mut BTreeMap<OsString, OsString>) -> OsString {
     let keys = env
         .keys()
@@ -529,7 +549,8 @@ pub struct WorkspaceHandler {
 }
 
 impl WorkspaceHandler {
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         original_root: Utf8PathBuf,
         source_roots: Vec<Utf8PathBuf>,
         requested_workers: u32,
@@ -546,6 +567,12 @@ impl WorkspaceHandler {
         }
     }
 
+    /// # Errors
+    /// Returns `EffectFailed` for invalid workspace roots, manifests, or copy limits.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "event ownership is the workspace state-machine boundary"
+    )]
     pub fn handle_preflight(
         &mut self,
         request: Preflight,
@@ -565,6 +592,12 @@ impl WorkspaceHandler {
         .map_err(|error| effect_failed(id, error))
     }
 
+    /// # Errors
+    /// Returns `EffectFailed` for missing plans, invalid grants, duplicate workers, or I/O failures.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "event ownership is the workspace state-machine boundary"
+    )]
     pub fn handle_create_worker(
         &mut self,
         request: CreateWorker,
@@ -606,6 +639,12 @@ impl WorkspaceHandler {
             .map_err(|error| effect_failed(id, error))
     }
 
+    /// # Errors
+    /// Returns `EffectFailed` for missing workers, changed originals, invalid mutations, or I/O failures.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "event ownership is the workspace state-machine boundary"
+    )]
     pub fn handle_apply_mutation(
         &mut self,
         request: ApplyMutation,
@@ -625,6 +664,12 @@ impl WorkspaceHandler {
             .map_err(|error| effect_failed(id, error))
     }
 
+    /// # Errors
+    /// Returns `EffectFailed` for missing workers, changed originals, or restoration failures.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "event ownership is the workspace state-machine boundary"
+    )]
     pub fn handle_reset_worker(
         &mut self,
         request: ResetWorker,
@@ -661,6 +706,8 @@ impl WorkspaceHandler {
         }
     }
 
+    /// # Errors
+    /// Returns `EffectFailed` for invalid reservations or worker cleanup failures.
     pub fn handle_cleanup(&mut self, request: Cleanup) -> Result<CleanupFinished, EffectFailed> {
         if let Some(bound) = self.plan.as_ref().and_then(WorkspacePlan::reservation_id) {
             match request.reservations.as_slice() {
@@ -704,6 +751,12 @@ impl WorkspaceHandler {
         })
     }
 
+    /// # Errors
+    /// Returns `EffectFailed` when preflight is absent or source contents changed.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "event ownership is the workspace state-machine boundary"
+    )]
     pub fn handle_verify_originals(
         &self,
         request: VerifyOriginals,
@@ -720,6 +773,7 @@ impl WorkspaceHandler {
             .map_err(|error| effect_failed(id, error))
     }
 
+    #[must_use]
     pub fn worker(&self, worker: u32) -> Option<&WorkerWorkspace> {
         self.workers.get(&worker)
     }
@@ -728,14 +782,18 @@ impl WorkspaceHandler {
         self.workers.get_mut(&worker)
     }
 
+    #[must_use]
     pub fn worker_count(&self) -> usize {
         self.workers.len()
     }
 
+    #[must_use]
     pub fn pending_cleanup_count(&self) -> usize {
         self.pending_cleanup.len()
     }
 
+    /// # Errors
+    /// Returns the first worker cleanup failure.
     pub fn close(&mut self) -> Result<(), WorkspaceError> {
         let mut first_error = None;
         for workspace in self.workers.values_mut() {
@@ -775,6 +833,8 @@ impl WorkspaceHandler {
             .unwrap_or_default()
     }
 
+    /// # Errors
+    /// Returns `WorkerMissing` or `PythonPath` when the environment cannot be built.
     pub fn command_environment(
         &self,
         worker: u32,
@@ -793,6 +853,8 @@ impl WorkspaceHandler {
     }
 }
 
+/// # Errors
+/// Returns the corresponding workspace handler `EffectFailed`.
 pub fn handle_preflight(
     handler: &mut WorkspaceHandler,
     request: Preflight,
@@ -800,6 +862,8 @@ pub fn handle_preflight(
     handler.handle_preflight(request)
 }
 
+/// # Errors
+/// Returns the corresponding workspace handler `EffectFailed`.
 pub fn handle_create_worker(
     handler: &mut WorkspaceHandler,
     request: CreateWorker,
@@ -807,6 +871,8 @@ pub fn handle_create_worker(
     handler.handle_create_worker(request)
 }
 
+/// # Errors
+/// Returns the corresponding workspace handler `EffectFailed`.
 pub fn handle_apply_mutation(
     handler: &mut WorkspaceHandler,
     request: ApplyMutation,
@@ -815,6 +881,8 @@ pub fn handle_apply_mutation(
     handler.handle_apply_mutation(request, candidate)
 }
 
+/// # Errors
+/// Returns the corresponding workspace handler `EffectFailed`.
 pub fn handle_reset_worker(
     handler: &mut WorkspaceHandler,
     request: ResetWorker,
@@ -822,6 +890,8 @@ pub fn handle_reset_worker(
     handler.handle_reset_worker(request)
 }
 
+/// # Errors
+/// Returns the corresponding workspace handler `EffectFailed`.
 pub fn handle_cleanup(
     handler: &mut WorkspaceHandler,
     request: Cleanup,
@@ -829,6 +899,8 @@ pub fn handle_cleanup(
     handler.handle_cleanup(request)
 }
 
+/// # Errors
+/// Returns the corresponding workspace handler `EffectFailed`.
 pub fn handle_verify_originals(
     handler: &WorkspaceHandler,
     request: VerifyOriginals,

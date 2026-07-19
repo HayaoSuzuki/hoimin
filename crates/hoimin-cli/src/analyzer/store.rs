@@ -38,22 +38,31 @@ pub struct CandidateStore {
 }
 
 impl CandidateStore {
+    /// # Errors
+    ///
+    /// Returns an error when the candidate limit is zero or the temporary spool file cannot be
+    /// created.
     pub fn new(max_candidates: u64) -> Result<Self, StoreError> {
         if max_candidates == 0 {
             return Err(StoreError::LimitExceeded { limit: 0 });
         }
         Ok(Self {
-            file: NamedTempFile::new().map_err(io_error)?,
+            file: NamedTempFile::new().map_err(|error| io_error(&error))?,
             count: 0,
             records_written: 0,
             max_candidates,
         })
     }
 
+    #[must_use]
     pub fn count(&self) -> u64 {
         self.count
     }
 
+    /// # Errors
+    ///
+    /// Returns an error when the store is full, the candidate sequence is invalid, serialization
+    /// fails, the encoded record is too large, or writing the spool fails.
     pub fn push(&mut self, candidate: &MutationCandidate) -> Result<(), StoreError> {
         if self.count >= self.max_candidates {
             return Err(StoreError::LimitExceeded {
@@ -79,7 +88,10 @@ impl CandidateStore {
         }
         serde_json::to_writer(self.file.as_file_mut(), candidate)
             .map_err(|error| StoreError::Io(error.to_string()))?;
-        self.file.as_file_mut().write_all(b"\n").map_err(io_error)?;
+        self.file
+            .as_file_mut()
+            .write_all(b"\n")
+            .map_err(|error| io_error(&error))?;
         self.count = expected;
         self.records_written = expected;
         contract_ensure!(
@@ -90,17 +102,30 @@ impl CandidateStore {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// Returns an error when flushing, syncing, or preserving the spool file fails.
     pub fn finish(mut self) -> Result<CandidateSpoolRef, StoreError> {
-        self.file.as_file_mut().flush().map_err(io_error)?;
-        self.file.as_file().sync_all().map_err(io_error)?;
+        self.file
+            .as_file_mut()
+            .flush()
+            .map_err(|error| io_error(&error))?;
+        self.file
+            .as_file()
+            .sync_all()
+            .map_err(|error| io_error(&error))?;
         let records = self.count;
-        let (_file, path) = self.file.keep().map_err(|error| io_error(error.error))?;
+        let (_file, path) = self.file.keep().map_err(|error| io_error(&error.error))?;
         Ok(CandidateSpoolRef {
             token: path.to_string_lossy().into_owned(),
             records,
         })
     }
 
+    /// # Errors
+    ///
+    /// Returns an error when the spool cannot be read, the offset or sequence is invalid, a
+    /// record is oversized or corrupt, or the spool ends before its declared record count.
     pub fn replay_one(
         reference: &CandidateSpoolRef,
         offset: u64,
@@ -108,15 +133,17 @@ impl CandidateStore {
         let mut file = OpenOptions::new()
             .read(true)
             .open(&reference.token)
-            .map_err(io_error)?;
-        let length = file.metadata().map_err(io_error)?.len();
+            .map_err(|error| io_error(&error))?;
+        let length = file.metadata().map_err(|error| io_error(&error))?.len();
         if offset > length {
             return Err(StoreError::InvalidOffset { offset });
         }
         if offset != 0 {
-            file.seek(SeekFrom::Start(offset - 1)).map_err(io_error)?;
+            file.seek(SeekFrom::Start(offset - 1))
+                .map_err(|error| io_error(&error))?;
             let mut previous = [0_u8; 1];
-            file.read_exact(&mut previous).map_err(io_error)?;
+            file.read_exact(&mut previous)
+                .map_err(|error| io_error(&error))?;
             if previous[0] != b'\n' {
                 return Err(StoreError::InvalidOffset { offset });
             }
@@ -124,21 +151,20 @@ impl CandidateStore {
         let expected_sequence = expected_sequence_at(&mut file, offset)?;
         if offset == length {
             let actual_records = expected_sequence.saturating_sub(1);
-            return if actual_records < reference.records {
-                Err(StoreError::UnexpectedEof {
+            return match actual_records.cmp(&reference.records) {
+                std::cmp::Ordering::Less => Err(StoreError::UnexpectedEof {
                     expected_records: reference.records,
                     actual_records,
-                })
-            } else if actual_records == reference.records {
-                Ok(None)
-            } else {
-                Err(StoreError::InvalidSequence {
+                }),
+                std::cmp::Ordering::Equal => Ok(None),
+                std::cmp::Ordering::Greater => Err(StoreError::InvalidSequence {
                     expected: reference.records,
                     actual: actual_records,
-                })
+                }),
             };
         }
-        file.seek(SeekFrom::Start(offset)).map_err(io_error)?;
+        file.seek(SeekFrom::Start(offset))
+            .map_err(|error| io_error(&error))?;
         read_one_bounded(file, reference, offset, expected_sequence)
     }
 }
@@ -157,7 +183,9 @@ fn read_one_bounded(
 ) -> Result<Option<(MutationCandidate, u64)>, StoreError> {
     let mut line = Vec::new();
     let mut reader = BufReader::new(file).take(MAX_SPOOL_RECORD_BYTES + 1);
-    let read = reader.read_until(b'\n', &mut line).map_err(io_error)?;
+    let read = reader
+        .read_until(b'\n', &mut line)
+        .map_err(|error| io_error(&error))?;
     if read == 0 {
         return Err(StoreError::UnexpectedEof {
             expected_records: reference.records,
@@ -202,9 +230,11 @@ fn expected_sequence_at(file: &mut File, offset: u64) -> Result<u64, StoreError>
     }
     let window_length = offset.min(MAX_SPOOL_RECORD_BYTES + 1);
     let window_start = offset - window_length;
-    file.seek(SeekFrom::Start(window_start)).map_err(io_error)?;
+    file.seek(SeekFrom::Start(window_start))
+        .map_err(|error| io_error(&error))?;
     let mut window = vec![0_u8; window_length as usize];
-    file.read_exact(&mut window).map_err(io_error)?;
+    file.read_exact(&mut window)
+        .map_err(|error| io_error(&error))?;
     let previous_body = window
         .strip_suffix(b"\n")
         .ok_or(StoreError::InvalidOffset { offset })?;
@@ -228,7 +258,7 @@ fn expected_sequence_at(file: &mut File, offset: u64) -> Result<u64, StoreError>
         })
 }
 
-fn io_error(error: std::io::Error) -> StoreError {
+fn io_error(error: &std::io::Error) -> StoreError {
     StoreError::Io(error.to_string())
 }
 

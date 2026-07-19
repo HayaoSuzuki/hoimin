@@ -30,13 +30,25 @@ pub struct SessionHandler {
 }
 
 impl SessionHandler {
+    /// Opens and configures the `SQLite` database at `path`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SessionError`] when `SQLite` cannot open the database or its schema cannot be
+    /// configured.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, SessionError> {
         let connection = Connection::open(path)?;
         schema::configure(&connection)?;
         Ok(Self { connection })
     }
 
-    pub fn load(&mut self, request: LoadSession) -> Result<SessionLoaded, EffectFailed> {
+    /// Finds the latest incomplete run compatible with `request`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EffectFailed`] when the session database cannot be read or contains a corrupt
+    /// run identifier.
+    pub fn load(&mut self, request: &LoadSession) -> Result<SessionLoaded, EffectFailed> {
         let id = request.id;
         self.connection
             .query_row(
@@ -46,7 +58,7 @@ impl SessionHandler {
                 |row| row.get::<_, Option<String>>(0),
             )
             .optional()
-            .map_err(|error| failed(id, "session.read", "load resume run", error))
+            .map_err(|error| failed(id, "session.read", "load resume run", &error))
             .and_then(|run_id| match run_id {
                 Some(None) => Err(EffectFailed {
                     id,
@@ -58,9 +70,15 @@ impl SessionHandler {
             .map(|resume| SessionLoaded { id, resume })
     }
 
+    /// Looks up a stored mutant result for an incomplete run.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EffectFailed`] when the run is unavailable for resumption, the database cannot
+    /// be read, or stored rows are inconsistent.
     pub fn lookup(
         &mut self,
-        request: LookupStoredResult,
+        request: &LookupStoredResult,
     ) -> Result<StoredResultLoaded, EffectFailed> {
         let id = request.id;
         let worker = request.worker;
@@ -72,7 +90,7 @@ impl SessionHandler {
                 |row| row.get::<_, Option<i64>>(0),
             )
             .optional()
-            .map_err(|error| failed(id, "session.read", "lookup run state", error))?;
+            .map_err(|error| failed(id, "session.read", "lookup run state", &error))?;
         match complete {
             None => {
                 return Err(state_failure(
@@ -105,18 +123,24 @@ impl SessionHandler {
 
         let (candidates, results, status) =
             result_shape(&self.connection, &request.run_id, &request.mutant_id)
-                .map_err(|error| failed(id, "session.read", "lookup stored result", error))?;
+                .map_err(|error| failed(id, "session.read", "lookup stored result", &error))?;
         let result = decode_stored_result(&request.mutant_id, candidates, results, status)
             .map_err(|failure| EffectFailed { id, failure })?;
         Ok(StoredResultLoaded { id, worker, result })
     }
 
+    /// Records a new incomplete run.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EffectFailed`] when the session database cannot start, write, or commit the run
+    /// transaction.
     pub fn begin(&mut self, request: BeginSession) -> Result<SessionStarted, EffectFailed> {
         let id = request.id;
         let transaction = self
             .connection
             .transaction()
-            .map_err(|error| failed(id, "session.begin", "begin run transaction", error))?;
+            .map_err(|error| failed(id, "session.begin", "begin run transaction", &error))?;
         transaction
             .execute(
                 "INSERT OR IGNORE INTO fingerprints(digest, schema_version) VALUES (?1, ?2)",
@@ -128,17 +152,23 @@ impl SessionHandler {
                     params![request.run_id, request.fingerprint.as_bytes().as_slice()],
                 )
             })
-            .map_err(|error| failed(id, "session.begin", "insert run", error))?;
+            .map_err(|error| failed(id, "session.begin", "insert run", &error))?;
         transaction
             .commit()
-            .map_err(|error| failed(id, "session.commit", "commit run", error))?;
+            .map_err(|error| failed(id, "session.commit", "commit run", &error))?;
         Ok(SessionStarted {
             id,
             run_id: request.run_id,
         })
     }
 
-    pub fn persist(&mut self, request: PersistResult) -> Result<ResultPersisted, EffectFailed> {
+    /// Stores a mutant result, replacing an earlier inconclusive result when permitted.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EffectFailed`] when the run is complete, the result conflicts with stored data,
+    /// diagnostics do not match the mutant, or the database transaction fails.
+    pub fn persist(&mut self, request: &PersistResult) -> Result<ResultPersisted, EffectFailed> {
         let id = request.id;
         let worker = request.worker;
         let run_id = request.result.run_id.clone();
@@ -146,7 +176,7 @@ impl SessionHandler {
         let transaction = self
             .connection
             .transaction()
-            .map_err(|error| failed(id, "session.persist", "begin result transaction", error))?;
+            .map_err(|error| failed(id, "session.persist", "begin result transaction", &error))?;
         let complete = transaction
             .query_row(
                 "SELECT complete FROM runs WHERE run_id=?1",
@@ -154,7 +184,7 @@ impl SessionHandler {
                 |row| row.get::<_, Option<i64>>(0),
             )
             .optional()
-            .map_err(|error| failed(id, "session.persist", "read run state", error))?;
+            .map_err(|error| failed(id, "session.persist", "read run state", &error))?;
         match complete {
             Some(Some(1)) => {
                 return Err(state_failure(
@@ -180,7 +210,7 @@ impl SessionHandler {
 
         let (candidate_count, result_count, status) =
             result_shape(&transaction, &run_id, &mutant_id)
-                .map_err(|error| failed(id, "session.persist", "read existing result", error))?;
+                .map_err(|error| failed(id, "session.persist", "read existing result", &error))?;
         if let Some(stored) =
             decode_stored_result(&mutant_id, candidate_count, result_count, status)
                 .map_err(|failure| EffectFailed { id, failure })?
@@ -199,7 +229,7 @@ impl SessionHandler {
                 | MutationStatus::Error
                 | MutationStatus::NotRun => {
                     delete_stored_result(&transaction, &run_id, &mutant_id).map_err(|error| {
-                        failed(id, "session.persist", "replace inconclusive result", error)
+                        failed(id, "session.persist", "replace inconclusive result", &error)
                     })?;
                 }
             }
@@ -210,27 +240,20 @@ impl SessionHandler {
             } else {
                 "session.persist"
             };
-            failed(id, code, "insert candidate", error)
+            failed(id, code, "insert candidate", &error)
         })?;
         insert_result(&transaction, &request.result)
-            .map_err(|error| failed(id, "session.persist", "insert result", error))?;
-        for diagnostic in &request.result.diagnostics {
-            if diagnostic.mutant_id != mutant_id {
-                return Err(EffectFailed {
-                    id,
-                    failure: EffectFailure::SessionDatabase {
-                        code: "session.persist.diagnostic".to_owned(),
-                        operation: "validate diagnostic".to_owned(),
-                        message: "diagnostic mutant ID does not match result".to_owned(),
-                    },
-                });
-            }
-            insert_diagnostic(&transaction, &run_id, diagnostic)
-                .map_err(|error| failed(id, "session.persist", "insert diagnostic", error))?;
-        }
+            .map_err(|error| failed(id, "session.persist", "insert result", &error))?;
+        persist_diagnostics(
+            &transaction,
+            &run_id,
+            &mutant_id,
+            &request.result.diagnostics,
+            id,
+        )?;
         transaction
             .commit()
-            .map_err(|error| failed(id, "session.commit", "commit mutant result", error))?;
+            .map_err(|error| failed(id, "session.commit", "commit mutant result", &error))?;
 
         contract_ensure!(
             "session.commit.post",
@@ -245,12 +268,18 @@ impl SessionHandler {
         })
     }
 
+    /// Marks a run as finished, optionally making it ineligible for resumption.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EffectFailed`] when the run is missing or already finished, or its transaction
+    /// cannot be started, updated, or committed.
     pub fn finish(&mut self, request: FinishSession) -> Result<SessionFinished, EffectFailed> {
         let id = request.id;
         let transaction = self
             .connection
             .transaction()
-            .map_err(|error| failed(id, "session.finish", "begin finish transaction", error))?;
+            .map_err(|error| failed(id, "session.finish", "begin finish transaction", &error))?;
         let statement = if request.complete {
             "UPDATE runs SET finished=1, complete=1 WHERE run_id=?1 AND complete=0"
         } else {
@@ -259,7 +288,7 @@ impl SessionHandler {
         };
         let changed = transaction
             .execute(statement, [&request.run_id])
-            .map_err(|error| failed(id, "session.finish", "mark run finished", error))?;
+            .map_err(|error| failed(id, "session.finish", "mark run finished", &error))?;
         if changed != 1 {
             return Err(EffectFailed {
                 id,
@@ -272,7 +301,7 @@ impl SessionHandler {
         }
         transaction
             .commit()
-            .map_err(|error| failed(id, "session.commit", "commit run finish", error))?;
+            .map_err(|error| failed(id, "session.commit", "commit run finish", &error))?;
         Ok(SessionFinished {
             id,
             run_id: request.run_id,
@@ -392,6 +421,30 @@ fn insert_result(transaction: &Transaction<'_>, result: &MutantResult) -> rusqli
     Ok(())
 }
 
+fn persist_diagnostics(
+    transaction: &Transaction<'_>,
+    run_id: &str,
+    mutant_id: &str,
+    diagnostics: &[SessionDiagnostic],
+    id: EffectId,
+) -> Result<(), EffectFailed> {
+    for diagnostic in diagnostics {
+        if diagnostic.mutant_id != mutant_id {
+            return Err(EffectFailed {
+                id,
+                failure: EffectFailure::SessionDatabase {
+                    code: "session.persist.diagnostic".to_owned(),
+                    operation: "validate diagnostic".to_owned(),
+                    message: "diagnostic mutant ID does not match result".to_owned(),
+                },
+            });
+        }
+        insert_diagnostic(transaction, run_id, diagnostic)
+            .map_err(|error| failed(id, "session.persist", "insert diagnostic", &error))?;
+    }
+    Ok(())
+}
+
 fn insert_diagnostic(
     transaction: &Transaction<'_>,
     run_id: &str,
@@ -501,7 +554,7 @@ fn resource_name(mode: ResourceMode) -> &'static str {
     }
 }
 
-fn failed(id: EffectId, code: &str, operation: &str, error: rusqlite::Error) -> EffectFailed {
+fn failed(id: EffectId, code: &str, operation: &str, error: &rusqlite::Error) -> EffectFailed {
     EffectFailed {
         id,
         failure: database(code, operation, error),
@@ -519,7 +572,7 @@ fn state_failure(id: EffectId, code: &str, message: &str) -> EffectFailed {
     }
 }
 
-fn database(code: &str, operation: &str, error: rusqlite::Error) -> EffectFailure {
+fn database(code: &str, operation: &str, error: &rusqlite::Error) -> EffectFailure {
     EffectFailure::SessionDatabase {
         code: code.to_owned(),
         operation: operation.to_owned(),

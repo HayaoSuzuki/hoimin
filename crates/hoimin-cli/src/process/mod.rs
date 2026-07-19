@@ -93,6 +93,7 @@ struct CancellationState {
 }
 
 impl ProcessCancellation {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             state: Arc::new(CancellationState {
@@ -151,6 +152,7 @@ pub struct ProcessRequest {
 }
 
 impl ProcessRequest {
+    #[must_use]
     pub fn with_cancellation(mut self, cancellation: ProcessCancellation) -> Self {
         self.cancellation = cancellation;
         self
@@ -161,6 +163,7 @@ impl ProcessRequest {
         self
     }
 
+    #[must_use]
     pub fn with_environment(mut self, environment: CommandEnvironment) -> Self {
         self.environment = Some(environment);
         self
@@ -191,6 +194,7 @@ pub struct ProcessHandler {
 }
 
 impl ProcessHandler {
+    #[must_use]
     pub fn new(backend: ResourceBackend, output_dir: Utf8PathBuf) -> Self {
         Self {
             backend,
@@ -198,24 +202,48 @@ impl ProcessHandler {
         }
     }
 
+    /// Returns the spool path represented by `output`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProcessError::InvalidSpoolToken`] if `output` does not contain a UUID token.
     pub fn spool_path(&self, output: &OutputSpoolRef) -> Result<Utf8PathBuf, ProcessError> {
         Uuid::parse_str(&output.token)
             .map_err(|_| ProcessError::InvalidSpoolToken(output.token.clone()))?;
         Ok(self.output_dir.join(format!("{}.bin", output.token)))
     }
 
+    #[must_use]
     pub fn mode(&self) -> hoimin_core::ResourceMode {
         self.backend.mode()
     }
 
+    /// Releases resources owned by the process backend.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the backend cannot release its resources.
     pub fn close(&self) -> Result<(), ResourceError> {
         self.backend.close()
     }
 
+    /// Runs a process with default cancellation and environment settings.
+    ///
+    /// # Errors
+    ///
+    /// Returns an effect failure when process setup, execution, termination, or output collection fails.
     pub async fn handle(&self, request: RunProcess) -> Result<ProcessFinished, EffectFailed> {
         self.run(request.into()).await
     }
 
+    /// Runs a process request, including cancellation, resource supervision, and output collection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an effect failure for cancellation, invalid arguments, resource setup, process I/O,
+    /// termination, or output collection errors.
+    // This coordinates the complete child lifecycle; extracting stages would obscure cleanup ordering.
+    #[allow(clippy::too_many_lines)]
     pub async fn run(&self, request: ProcessRequest) -> Result<ProcessFinished, EffectFailed> {
         let ProcessRequest {
             process,
@@ -241,9 +269,13 @@ impl ProcessHandler {
             ));
         }
         let argv = self.backend.wrap_argv(argv);
-        let (program, arguments) = argv
-            .split_first()
-            .expect("a resource backend must preserve a non-empty argv");
+        let Some((program, arguments)) = argv.split_first() else {
+            return Err(EffectFailed::other(
+                id,
+                "process.argv.backend_invalid",
+                "resource backend produced an empty argv",
+            ));
+        };
         tokio::fs::create_dir_all(&self.output_dir)
             .await
             .map_err(|error| {
@@ -252,7 +284,7 @@ impl ProcessHandler {
                     "process.output.create",
                     "create output directory",
                     Some(self.output_dir.clone()),
-                    error,
+                    &error,
                 )
             })?;
 
@@ -280,7 +312,7 @@ impl ProcessHandler {
                         id,
                         "process.resource.setup",
                         "prepare resource supervisor",
-                        error,
+                        &error,
                     )
                 })?;
         let started = Instant::now();
@@ -310,7 +342,7 @@ impl ProcessHandler {
                 "process.spawn",
                 "spawn process",
                 Some(process.cwd.clone()),
-                error,
+                &error,
             )
         })?;
         if let Err(error) = supervisor.attach(&child) {
@@ -328,7 +360,7 @@ impl ProcessHandler {
                     )),
                 },
             };
-            return Err(attach_failure(id, error, cleanup_error));
+            return Err(attach_failure(id, &error, cleanup_error.as_ref()));
         }
         drop(spawn_guard);
         drop(start_guard);
@@ -373,7 +405,7 @@ impl ProcessHandler {
                             id,
                             "process.resource.classify",
                             "classify process termination",
-                            error,
+                            &error,
                         )
                     })
                     .and_then(|termination| {
@@ -384,7 +416,7 @@ impl ProcessHandler {
                     "process.wait",
                     "wait for process",
                     None,
-                    error,
+                    &error,
                 )),
             },
             ProcessSelection::Cancelled => match terminate_supervised(id, &mut supervisor, true) {
@@ -461,8 +493,8 @@ async fn await_output(
         collector_task.abort();
         return Err(error);
     }
-    match tokio::time::timeout_at(deadline, &mut collector_task).await {
-        Ok(result) => result
+    if let Ok(result) = tokio::time::timeout_at(deadline, &mut collector_task).await {
+        result
             .map_err(|error| EffectFailed::other(id, "process.output.join", error.to_string()))?
             .map_err(|error| {
                 io_failure(
@@ -470,17 +502,16 @@ async fn await_output(
                     "process.output.write",
                     "write output spool",
                     None,
-                    error,
+                    &error,
                 )
-            }),
-        Err(_) => {
-            collector_task.abort();
-            Err(EffectFailed::other(
-                id,
-                "process.output.close.timeout",
-                "timed out draining process output after termination",
-            ))
-        }
+            })
+    } else {
+        collector_task.abort();
+        Err(EffectFailed::other(
+            id,
+            "process.output.close.timeout",
+            "timed out draining process output after termination",
+        ))
     }
 }
 
@@ -490,8 +521,8 @@ async fn await_pipe_until(
     task: &mut tokio::task::JoinHandle<std::io::Result<()>>,
     deadline: tokio::time::Instant,
 ) -> Result<(), EffectFailed> {
-    match tokio::time::timeout_at(deadline, &mut *task).await {
-        Ok(result) => result
+    if let Ok(result) = tokio::time::timeout_at(deadline, &mut *task).await {
+        result
             .map_err(|error| {
                 EffectFailed::other(id, format!("process.{name}.join"), error.to_string())
             })?
@@ -501,17 +532,16 @@ async fn await_pipe_until(
                     format!("process.{name}.read"),
                     "drain process pipe",
                     None,
-                    error,
+                    &error,
                 )
-            }),
-        Err(_) => {
-            task.abort();
-            Err(EffectFailed::other(
-                id,
-                "process.output.close.timeout",
-                "timed out draining process output after termination",
-            ))
-        }
+            })
+    } else {
+        task.abort();
+        Err(EffectFailed::other(
+            id,
+            "process.output.close.timeout",
+            "timed out draining process output after termination",
+        ))
     }
 }
 
@@ -519,24 +549,23 @@ pub(crate) async fn wait_after_termination(
     id: EffectId,
     child: &mut Child,
 ) -> Result<(), EffectFailed> {
-    match tokio::time::timeout(POST_TERMINATION_GRACE, child.wait()).await {
-        Ok(result) => result.map(|_| ()).map_err(|error| {
+    if let Ok(result) = tokio::time::timeout(POST_TERMINATION_GRACE, child.wait()).await {
+        result.map(|_| ()).map_err(|error| {
             io_failure(
                 id,
                 "process.wait",
                 "wait after process termination",
                 None,
-                error,
+                &error,
             )
-        }),
-        Err(_) => {
-            let _ = child.start_kill();
-            Err(EffectFailed::other(
-                id,
-                "process.wait.timeout",
-                "timed out waiting for process termination",
-            ))
-        }
+        })
+    } else {
+        let _ = child.start_kill();
+        Err(EffectFailed::other(
+            id,
+            "process.wait.timeout",
+            "timed out waiting for process termination",
+        ))
     }
 }
 
@@ -552,8 +581,8 @@ fn combine_process_and_output(
 
 fn attach_failure(
     id: EffectId,
-    attach: ResourceError,
-    cleanup: Option<std::io::Error>,
+    attach: &ResourceError,
+    cleanup: Option<&std::io::Error>,
 ) -> EffectFailed {
     let mut message = attach.to_string();
     if let Some(cleanup) = cleanup {
@@ -581,7 +610,7 @@ pub(crate) fn terminate_supervised(
             id,
             "process.resource.terminate",
             "terminate supervised process tree",
-            error,
+            &error,
         )
     })
 }
@@ -591,7 +620,7 @@ fn io_failure(
     code: impl Into<String>,
     operation: impl Into<String>,
     path: Option<Utf8PathBuf>,
-    error: std::io::Error,
+    error: &std::io::Error,
 ) -> EffectFailed {
     EffectFailed {
         id,
@@ -608,7 +637,7 @@ fn resource_failure(
     id: EffectId,
     code: &'static str,
     operation: &'static str,
-    error: ResourceError,
+    error: &ResourceError,
 ) -> EffectFailed {
     EffectFailed {
         id,
@@ -753,7 +782,8 @@ mod tests {
     fn attach_failure_preserves_cleanup_failure_detail() {
         let cleanup = std::io::Error::new(std::io::ErrorKind::TimedOut, "cleanup timed out");
 
-        let error = attach_failure(EffectId(43), ResourceError::MissingProcessId, Some(cleanup));
+        let attach = ResourceError::MissingProcessId;
+        let error = attach_failure(EffectId(43), &attach, Some(&cleanup));
 
         assert_eq!(error.id, EffectId(43));
         assert!(matches!(

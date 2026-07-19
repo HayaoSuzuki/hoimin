@@ -32,6 +32,7 @@ pub struct RunControl {
 }
 
 impl RunControl {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             request: ProcessStartGate::new(),
@@ -44,10 +45,12 @@ impl RunControl {
         self.request.cancel();
     }
 
+    #[must_use]
     pub fn max_process_tasks(&self) -> usize {
         self.max_process_tasks.load(Ordering::Acquire)
     }
 
+    #[must_use]
     pub fn max_completion_in_flight(&self) -> usize {
         self.max_completion_in_flight.load(Ordering::Acquire)
     }
@@ -113,6 +116,15 @@ where
     Stdout: Write,
     Stderr: Write,
 {
+    /// Creates all handlers required for a run.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when local run infrastructure cannot be initialized.
+    #[expect(
+        clippy::unused_async,
+        reason = "the constructor remains asynchronous for compatibility with the run infrastructure API"
+    )]
     pub async fn new(config: &RunConfig, stdout: Stdout, stderr: Stderr) -> Result<Self, String> {
         let spool_dir = tempfile::tempdir().map_err(|error| error.to_string())?;
         let spool_path = Utf8PathBuf::from_path_buf(spool_dir.path().to_owned())
@@ -139,7 +151,8 @@ where
             config.root.clone(),
             backend,
             config.limits.max_memory.get(),
-            config.limits.max_processes.get() as u32,
+            u32::try_from(config.limits.max_processes.get())
+                .map_err(|_| "--max-processes exceeds the supported process count".to_owned())?,
         )
         .map_err(|error| error.to_string())?;
         let report = ReportHandler::new(
@@ -251,6 +264,10 @@ where
     execute_effect_with_cancellation(context, effect, ProcessCancellation::new()).await
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "effect dispatch is intentionally centralized to preserve a one-to-one effect-to-event mapping"
+)]
 async fn execute_effect_with_cancellation<Stdout, Stderr>(
     context: &mut ShellContext<Stdout, Stderr>,
     effect: RunEffect,
@@ -384,11 +401,11 @@ where
             )),
         },
         RunEffect::LoadSession(request) => match session(context, id) {
-            Ok(handler) => handler.load(request).map(RunEvent::SessionLoaded),
+            Ok(handler) => handler.load(&request).map(RunEvent::SessionLoaded),
             Err(error) => Err(error),
         },
         RunEffect::LookupStoredResult(request) => match session(context, id) {
-            Ok(handler) => handler.lookup(request).map(RunEvent::StoredResultLoaded),
+            Ok(handler) => handler.lookup(&request).map(RunEvent::StoredResultLoaded),
             Err(error) => Err(error),
         },
         RunEffect::BeginSession(request) => match session(context, id) {
@@ -396,7 +413,7 @@ where
             Err(error) => Err(error),
         },
         RunEffect::PersistResult(request) => match session(context, id) {
-            Ok(handler) => handler.persist(request).map(RunEvent::ResultPersisted),
+            Ok(handler) => handler.persist(&request).map(RunEvent::ResultPersisted),
             Err(error) => Err(error),
         },
         RunEffect::FinishSession(request) => match session(context, id) {
@@ -497,6 +514,11 @@ fn session<Stdout, Stderr>(
     Ok(context.session.as_mut().expect("initialized above"))
 }
 
+/// Runs the configured mutation-test state machine.
+///
+/// # Errors
+///
+/// Returns an error when run infrastructure, state transitions, or cleanup fail.
 pub async fn run_loop<Stdout, Stderr>(
     config: RunConfig,
     stdout: Stdout,
@@ -510,6 +532,10 @@ where
 }
 
 #[doc(hidden)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the loop keeps cancellation, completion, and state-transition ordering in one auditable sequence"
+)]
 pub async fn run_loop_with_control<Stdout, Stderr>(
     config: RunConfig,
     stdout: Stdout,
@@ -823,26 +849,24 @@ where
             if external_stop || failed {
                 effects.clear();
                 drain_processes(&mut process_tasks, &mut completion_rx, &mut in_flight).await?;
-            } else {
-                if process_completion {
-                    let process_failure = match process_tasks.join_next().await {
-                        Some(Ok(())) => None,
-                        Some(Err(error)) => Some(format!("process task failed: {error}")),
-                        None => Some("process completion had no task".to_owned()),
-                    };
-                    if let Some(process_failure) = process_failure {
-                        cancellation.cancel();
-                        let drain_failure =
-                            drain_processes(&mut process_tasks, &mut completion_rx, &mut in_flight)
-                                .await
-                                .err();
-                        return Err(match drain_failure {
-                            Some(drain_failure) => {
-                                format!("{process_failure}; {drain_failure}")
-                            }
-                            None => process_failure,
-                        });
-                    }
+            } else if process_completion {
+                let process_failure = match process_tasks.join_next().await {
+                    Some(Ok(())) => None,
+                    Some(Err(error)) => Some(format!("process task failed: {error}")),
+                    None => Some("process completion had no task".to_owned()),
+                };
+                if let Some(process_failure) = process_failure {
+                    cancellation.cancel();
+                    let drain_failure =
+                        drain_processes(&mut process_tasks, &mut completion_rx, &mut in_flight)
+                            .await
+                            .err();
+                    return Err(match drain_failure {
+                        Some(drain_failure) => {
+                            format!("{process_failure}; {drain_failure}")
+                        }
+                        None => process_failure,
+                    });
                 }
             }
             effects.extend(produced);

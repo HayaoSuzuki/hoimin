@@ -50,6 +50,7 @@ pub struct AnalyzerSummary {
 }
 
 impl AnalyzerSummary {
+    #[must_use]
     pub fn status(&self) -> AnalysisStatus {
         if self.truncated {
             AnalysisStatus::AnalysisLimitReached
@@ -110,6 +111,7 @@ pub struct AnalyzerProtocol {
 }
 
 impl AnalyzerProtocol {
+    #[must_use]
     pub fn new(expected_effect_id: EffectId) -> Self {
         Self::with_limits(
             expected_effect_id,
@@ -118,6 +120,7 @@ impl AnalyzerProtocol {
         )
     }
 
+    #[must_use]
     pub fn with_limits(
         expected_effect_id: EffectId,
         max_line_bytes: usize,
@@ -136,6 +139,10 @@ impl AnalyzerProtocol {
         }
     }
 
+    /// # Errors
+    ///
+    /// Returns an error when the line or cumulative output is too large, malformed, addressed
+    /// to another effect, or violates the analyzer record protocol.
     pub fn receive_line(&mut self, line: &[u8]) -> Result<Option<AnalyzerRecord>, ProtocolError> {
         if self.summary.is_some() {
             return Err(ProtocolError::RecordAfterSummary);
@@ -178,6 +185,9 @@ impl AnalyzerProtocol {
         }
     }
 
+    /// # Errors
+    ///
+    /// Returns an error when no summary record was received.
     pub fn finish(self) -> Result<AnalyzerSummary, ProtocolError> {
         self.summary.ok_or(ProtocolError::MissingSummary)
     }

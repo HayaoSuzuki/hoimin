@@ -41,6 +41,10 @@ impl SharedWriter {
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "The documentation contract is intentionally kept in one test so each README command is exercised against the same fixture."
+)]
 #[tokio::test]
 async fn documentation_contract() {
     let root = repo_root();
@@ -204,9 +208,9 @@ fn normalize_documented_command(command: &[String], root: &Path, python: &Path) 
     let python = python.to_str().expect("UTF-8 Python");
     for index in 0..argv.len() {
         if index > 0 && argv[index - 1] == "--root" {
-            argv[index] = root.to_owned();
+            root.clone_into(&mut argv[index]);
         } else if argv[index] == "python" {
-            argv[index] = python.to_owned();
+            python.clone_into(&mut argv[index]);
         }
     }
     let separator = argv
@@ -282,11 +286,11 @@ fn actual_documented_reports() -> (serde_json::Value, Vec<serde_json::Value>) {
     }
     let document = serde_json::from_str(json_stdout.text().trim()).unwrap();
 
-    let jsonl_stdout = SharedWriter::default();
+    let json_lines_stdout = SharedWriter::default();
     let jsonl_stderr = SharedWriter::default();
     let mut jsonl = ReportHandler::new(
         OutputFormat::Jsonl,
-        jsonl_stdout.clone(),
+        json_lines_stdout.clone(),
         jsonl_stderr.clone(),
         spool.path(),
     )
@@ -294,7 +298,7 @@ fn actual_documented_reports() -> (serde_json::Value, Vec<serde_json::Value>) {
     for event in event_records {
         emit(&mut jsonl, event.sequence(), event);
     }
-    let events = jsonl_stdout
+    let events = json_lines_stdout
         .text()
         .lines()
         .chain(jsonl_stderr.text().lines())
@@ -353,7 +357,7 @@ fn documented_events() -> Vec<OutputEvent> {
     let mut summary = MutationSummary::default();
     let mut event_sequence = 3;
     for (mutant_sequence, status) in statuses.into_iter().enumerate() {
-        let mutant_sequence = mutant_sequence as u64;
+        let mutant_sequence = u64::try_from(mutant_sequence).expect("fixture sequence fits u64");
         let mutant_id = format!("m{mutant_sequence}");
         events.push(OutputEvent::MutantStarted(MutantStarted::new(
             "documented-run",
@@ -388,7 +392,7 @@ fn documented_events() -> Vec<OutputEvent> {
                 replacement: "-".to_owned(),
                 operator: "binary_add_sub".to_owned(),
                 line: 1,
-                column: mutant_sequence as u32,
+                column: u32::try_from(mutant_sequence).expect("fixture sequence fits u32"),
                 symbol: None,
                 file_hash: "hash".to_owned(),
             },

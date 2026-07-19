@@ -78,6 +78,7 @@ pub enum ResourceBackend {
 }
 
 impl ResourceBackend {
+    #[must_use]
     pub fn mode(&self) -> ResourceMode {
         match self {
             Self::Portable(backend) => backend.mode(),
@@ -88,6 +89,7 @@ impl ResourceBackend {
         }
     }
 
+    #[must_use]
     pub fn diagnostic(&self) -> Option<&str> {
         match self {
             Self::Portable(backend) => backend.diagnostic(),
@@ -122,6 +124,9 @@ impl ResourceBackend {
         }
     }
 
+    /// # Errors
+    ///
+    /// Returns an error when the active platform backend cannot release its resources.
     pub fn close(&self) -> Result<(), ResourceError> {
         match self {
             Self::Portable(_) => Ok(()),

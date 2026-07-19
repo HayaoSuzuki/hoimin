@@ -104,8 +104,7 @@ async fn jobs_four_processes_receive_isolated_run_mutant_and_worker_metadata() {
         records.to_string_lossy(),
     );
     let command = format!(
-        r#"from pathlib import Path; import os; source=Path('src/calc.py').read_text(); exec({:?}) if {:?} not in source else exec("assert 'HOIMIN_MUTANT_ID' not in os.environ; assert os.environ['HOIMIN_RUN_ID']"); from src.calc import total; assert total(1,2,3,4,5) == 15"#,
-        mutant, original,
+        r#"from pathlib import Path; import os; source=Path('src/calc.py').read_text(); exec({mutant:?}) if {original:?} not in source else exec("assert 'HOIMIN_MUTANT_ID' not in os.environ; assert os.environ['HOIMIN_RUN_ID']"); from src.calc import total; assert total(1,2,3,4,5) == 15"#,
     );
 
     let run = run_project(project.path(), 4, &command).await;
@@ -325,8 +324,7 @@ async fn total_timeout_cancels_and_reaps_descendants_before_cleanup() {
         marker.to_string_lossy()
     );
     let command = format!(
-        "import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',{:?}]); time.sleep(20)",
-        child
+        "import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',{child:?}]); time.sleep(20)"
     );
     let started = Instant::now();
     let run =
@@ -363,8 +361,7 @@ async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_in
     );
     let original = "return a + b + c + d + e";
     let command = format!(
-        "from pathlib import Path; source=Path('src/calc.py').read_text(); exec({:?}) if {:?} not in source else exec('from src.calc import total; assert total(1,2,3,4,5) == 15')",
-        mutant, original,
+        "from pathlib import Path; source=Path('src/calc.py').read_text(); exec({mutant:?}) if {original:?} not in source else exec('from src.calc import total; assert total(1,2,3,4,5) == 15')",
     );
     let python = python_executable();
     let config = hoimin_cli::cli::parse_config_from([
@@ -408,10 +405,11 @@ async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_in
         assert!(std::fs::read_dir(&active).unwrap().next().is_some());
         control.cancel();
     };
-    let (exit, ()) =
-        tokio::time::timeout(Duration::from_secs(30), async { tokio::join!(run, cancel) })
-            .await
-            .expect("cancelled run must finish promptly");
+    let (exit, ()) = Box::pin(tokio::time::timeout(Duration::from_secs(30), async {
+        tokio::join!(run, cancel)
+    }))
+    .await
+    .expect("cancelled run must finish promptly");
     let exit = exit.unwrap();
 
     assert_eq!(exit, 130);

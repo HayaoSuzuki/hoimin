@@ -24,14 +24,17 @@ pub struct WorkspaceManifest {
 }
 
 impl WorkspaceManifest {
+    #[must_use]
     pub fn entries(&self) -> &[ManifestEntry] {
         &self.entries
     }
 
-    pub fn logical_bytes(&self) -> u64 {
+    #[must_use]
+    pub const fn logical_bytes(&self) -> u64 {
         self.logical_bytes
     }
 
+    #[must_use]
     pub fn entry(&self, path: &Utf8Path) -> Option<&ManifestEntry> {
         self.entries
             .binary_search_by(|entry| entry.path.as_path().cmp(path))
@@ -73,7 +76,7 @@ impl WorkspaceManifest {
     }
 }
 
-pub(crate) fn build_manifest(
+pub fn build_manifest(
     root: &Utf8Path,
     options: &CopyOptions,
 ) -> Result<(WorkspaceManifest, Vec<WorkspaceDiagnostic>), WorkspaceError> {
@@ -154,6 +157,11 @@ fn overrides(
         .map_err(|error| WorkspaceError::InvalidGlob(error.to_string()))
 }
 
+// `WalkBuilder::build` consumes its builder, so borrowing would not avoid ownership.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "WalkBuilder::build consumes the builder"
+)]
 fn collect(
     builder: WalkBuilder,
     root: &Utf8Path,
@@ -195,7 +203,7 @@ fn collect(
     Ok(())
 }
 
-pub(crate) fn relative_utf8(root: &Utf8Path, path: &Path) -> Result<Utf8PathBuf, WorkspaceError> {
+pub fn relative_utf8(root: &Utf8Path, path: &Path) -> Result<Utf8PathBuf, WorkspaceError> {
     let relative = path
         .strip_prefix(root.as_std_path())
         .map_err(|_| WorkspaceError::OutsideRoot)?;

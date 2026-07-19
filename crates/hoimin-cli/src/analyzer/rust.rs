@@ -23,9 +23,8 @@ pub(crate) struct AnalyzerOutput {
 }
 
 pub(crate) fn analyze_source(request: &AnalyzeRequest<'_>, source: &str) -> AnalyzerOutput {
-    let parsed = match parse_module(source) {
-        Ok(parsed) => parsed,
-        Err(_) => return invalid_syntax(request.path),
+    let Ok(parsed) = parse_module(source) else {
+        return invalid_syntax(request.path);
     };
     let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens());
     let mut candidates = Vec::new();
@@ -167,6 +166,10 @@ fn replacement(text: &str, unary: bool) -> Option<(&'static str, &'static str)> 
     Some(result)
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Ruff TextSize offsets cap parsed source at u32::MAX bytes, and code-point counts cannot exceed byte counts."
+)]
 fn line_and_column(source: &str, offset: usize) -> (u32, u32) {
     let prefix = &source[..offset];
     let line = prefix.bytes().filter(|byte| *byte == b'\n').count() as u32 + 1;
@@ -273,7 +276,7 @@ impl<'tokens> AstFacts<'tokens> {
     }
 }
 
-impl<'ast, 'tokens> Visitor<'ast> for AstFacts<'tokens> {
+impl<'ast> Visitor<'ast> for AstFacts<'_> {
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
         match statement {
             Stmt::FunctionDef(definition) => self.visit_definition(

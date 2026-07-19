@@ -9,6 +9,10 @@ rust-version = "1.85"
 license = "MIT"
 repository = "https://github.com/HayaoSuzuki/hoimin"
 
+[workspace.lints.clippy]
+all = "deny"
+pedantic = "deny"
+
 [profile.release]
 lto = "thin"
 strip = true

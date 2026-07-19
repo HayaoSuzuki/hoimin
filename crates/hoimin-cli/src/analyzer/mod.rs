@@ -21,10 +21,18 @@ pub struct AnalyzerHandler {
 }
 
 impl AnalyzerHandler {
+    #[allow(
+        clippy::missing_errors_doc,
+        reason = "The preserved fallible API currently has no error-producing path."
+    )]
     pub fn new(root: Utf8PathBuf) -> Result<Self, std::io::Error> {
         Ok(Self { root, store: None })
     }
 
+    #[allow(
+        clippy::missing_errors_doc,
+        reason = "The preserved fallible API currently has no error-producing path."
+    )]
     pub fn with_backend(
         root: Utf8PathBuf,
         _backend: ResourceBackend,
@@ -34,6 +42,10 @@ impl AnalyzerHandler {
         Ok(Self { root, store: None })
     }
 
+    /// # Errors
+    ///
+    /// Returns an error when analysis is cancelled, the source cannot be read or decoded, a
+    /// generated candidate is invalid, or the candidate store fails.
     pub async fn handle(&mut self, request: AnalyzeFile) -> Result<AnalysisFinished, EffectFailed> {
         self.handle_with_cancellation(request, ProcessCancellation::new())
             .await

@@ -5,6 +5,12 @@ use hoimin_core::MutationCandidate;
 use super::{WorkerWorkspace, WorkspaceError, make_writable, resolve_worker_path};
 
 impl WorkerWorkspace {
+    /// Applies a candidate only when the original workspace and target bytes still match.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the original workspace changed, the target is invalid, or the
+    /// mutated file cannot be written.
     pub fn apply_mutation(&mut self, candidate: &MutationCandidate) -> Result<(), WorkspaceError> {
         self.verify_originals()?;
         let path = resolve_worker_path(&self.root, &candidate.path)?;

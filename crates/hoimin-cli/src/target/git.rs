@@ -17,6 +17,11 @@ pub struct GitChangesResolved {
     pub changed: BTreeMap<Utf8PathBuf, Vec<LineRange>>,
 }
 
+/// Resolves changed Python lines from Git into target-change data.
+///
+/// # Errors
+///
+/// Returns an effect failure when Git inspection cannot resolve changed files.
 pub async fn handle_git(request: ResolveGitChanges) -> Result<GitChangesResolved, EffectFailed> {
     let id = request.id;
     resolve_changed(&request.root, request.diff_base.as_deref())
@@ -53,15 +58,13 @@ pub(crate) async fn resolve_changed(
         diff_args.push(&base);
         let output = run_git(root, &diff_args).await?;
         parse_diff(&output, &mut changed, &mut excluded)?;
+    } else if head_exists(root).await? {
+        diff_args.push("HEAD");
+        let output = run_git(root, &diff_args).await?;
+        parse_diff(&output, &mut changed, &mut excluded)?;
     } else {
-        if head_exists(root).await? {
-            diff_args.push("HEAD");
-            let output = run_git(root, &diff_args).await?;
-            parse_diff(&output, &mut changed, &mut excluded)?;
-        } else {
-            let indexed = run_git(root, &["ls-files", "-z"]).await?;
-            collect_current_worktree_paths(root, &indexed, &mut changed).await?;
-        }
+        let indexed = run_git(root, &["ls-files", "-z"]).await?;
+        collect_current_worktree_paths(root, &indexed, &mut changed).await?;
     }
     changed.retain(|path, _| !excluded.contains(path));
 
@@ -301,8 +304,10 @@ async fn collect_current_worktree_paths(
         if contents.contains(&0) || contents.is_empty() {
             continue;
         }
-        let line_count = contents.iter().filter(|byte| **byte == b'\n').count()
-            + usize::from(!contents.ends_with(b"\n"));
+        let mut line_count = usize::from(!contents.ends_with(b"\n"));
+        for byte in &contents {
+            line_count += usize::from(*byte == b'\n');
+        }
         let end = u32::try_from(line_count)
             .map_err(|_| TargetError::GitFailed("Python file has too many lines".into()))?;
         changed

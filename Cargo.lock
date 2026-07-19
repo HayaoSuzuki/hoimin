@@ -516,6 +516,7 @@ dependencies = [
  "littrs-ruff-python-parser",
  "littrs-ruff-text-size",
  "pretty_assertions",
+ "proptest",
  "rusqlite",
  "serde",
  "serde_json",

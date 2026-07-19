@@ -23,6 +23,7 @@ pub enum CgroupCapabilities {
     Unavailable(String),
 }
 
+#[must_use]
 pub fn probe_linux_cgroup(limits: &RunLimits) -> CgroupCapabilities {
     #[cfg(target_os = "linux")]
     {
@@ -43,6 +44,10 @@ pub fn probe_linux_cgroup_with_launcher(
     platform::LinuxBackend::probe_with_launcher(limits, launcher)
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "the Linux launcher consumes its iterator while non-Linux targets discard it"
+)]
 pub fn run_linux_launcher_from<I, T>(args: I) -> Option<i32>
 where
     I: IntoIterator<Item = T>,
@@ -68,6 +73,10 @@ pub struct CgroupEventCounters {
     pub pids_max: u64,
 }
 
+/// # Errors
+///
+/// Returns an error when hard cgroup limits are unavailable and best-effort memory is disallowed,
+/// or when pending cgroup cleanup cannot complete.
 pub fn select_linux_backend(
     capabilities: CgroupCapabilities,
     allow_best_effort_memory: bool,
@@ -101,6 +110,9 @@ pub fn select_linux_backend(
     }
 }
 
+/// # Errors
+///
+/// Returns an error when either cgroup event file is malformed or contains a non-numeric value.
 pub fn parse_cgroup_event_counters(
     memory_events: &[u8],
     pids_events: &[u8],
@@ -121,7 +133,7 @@ fn parse_named_counters(input: &[u8]) -> Result<Vec<(&[u8], u64)>, ResourceError
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| {
-            let mut fields = line.split(|byte| byte.is_ascii_whitespace());
+            let mut fields = line.split(u8::is_ascii_whitespace);
             let name = fields.next().unwrap_or_default();
             let raw_value = fields.next().ok_or_else(|| {
                 ResourceError::InvalidCgroupData(String::from_utf8_lossy(line).into_owned())

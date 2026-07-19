@@ -25,19 +25,19 @@ fn migrates_schema_enables_wal_and_echoes_typed_completion_events() {
     assert_eq!(started.id, EffectId(1));
     assert_eq!(started.run_id, "run-1");
 
-    let persisted = handler.persist(persist_request(2, "run-1", "m1")).unwrap();
+    let persisted = handler.persist(&persist_request(2, "run-1", "m1")).unwrap();
     assert_eq!(persisted.id, EffectId(2));
     assert_eq!(persisted.mutant_id, "m1");
 
     let loaded = handler
-        .load(LoadSession {
+        .load(&LoadSession {
             id: EffectId(3),
             fingerprint,
         })
         .unwrap();
     assert_eq!(loaded.id, EffectId(3));
     assert_eq!(loaded.resume.unwrap().run_id, "run-1");
-    let stored = handler.lookup(lookup_request(30, "run-1", "m1")).unwrap();
+    let stored = handler.lookup(&lookup_request(30, "run-1", "m1")).unwrap();
     assert_eq!(stored.id, EffectId(30));
     assert_eq!(stored.result.unwrap().status, MutationStatus::Killed);
 
@@ -96,7 +96,7 @@ fn timeout_can_be_replaced_then_resumed_and_completed_end_to_end() {
     let fingerprint = RunFingerprint::from_bytes([1; 32]);
     handler.begin(begin_request(1, "run-1")).unwrap();
     handler
-        .persist(persist_with_status(
+        .persist(&persist_with_status(
             2,
             "run-1",
             "m1",
@@ -112,29 +112,29 @@ fn timeout_can_be_replaced_then_resumed_and_completed_end_to_end() {
         .unwrap();
 
     let loaded = handler
-        .load(LoadSession {
+        .load(&LoadSession {
             id: EffectId(4),
             fingerprint,
         })
         .unwrap();
     assert_eq!(loaded.resume.unwrap().run_id, "run-1");
-    let stored = handler.lookup(lookup_request(5, "run-1", "m1")).unwrap();
+    let stored = handler.lookup(&lookup_request(5, "run-1", "m1")).unwrap();
     assert_eq!(resume_policy(stored.result.as_ref()), ResumeDecision::Rerun);
 
     handler
-        .persist(persist_with_status(
+        .persist(&persist_with_status(
             6,
             "run-1",
             "m1",
             MutationStatus::Killed,
         ))
         .unwrap();
-    let stored = handler.lookup(lookup_request(7, "run-1", "m1")).unwrap();
+    let stored = handler.lookup(&lookup_request(7, "run-1", "m1")).unwrap();
     assert_eq!(resume_policy(stored.result.as_ref()), ResumeDecision::Reuse);
     handler.finish(finish_request(8, "run-1")).unwrap();
     assert!(
         handler
-            .load(LoadSession {
+            .load(&LoadSession {
                 id: EffectId(9),
                 fingerprint,
             })
@@ -144,7 +144,7 @@ fn timeout_can_be_replaced_then_resumed_and_completed_end_to_end() {
     );
 
     let failed = handler
-        .persist(persist_with_status(
+        .persist(&persist_with_status(
             10,
             "run-1",
             "m2",
@@ -173,7 +173,7 @@ fn load_selects_only_the_newest_compatible_incomplete_run() {
     handler.finish(finish_request(5, "complete")).unwrap();
 
     let loaded = handler
-        .load(LoadSession {
+        .load(&LoadSession {
             id: EffectId(6),
             fingerprint: wanted,
         })
@@ -182,7 +182,7 @@ fn load_selects_only_the_newest_compatible_incomplete_run() {
     assert_eq!(loaded.resume.unwrap().run_id, "new");
     assert!(
         handler
-            .load(LoadSession {
+            .load(&LoadSession {
                 id: EffectId(7),
                 fingerprint: RunFingerprint::from_bytes([9; 32]),
             })
@@ -237,7 +237,7 @@ fn each_mutant_transaction_rolls_back_when_commit_fails() {
     let mut handler = SessionHandler::open(&path).unwrap();
 
     let failed = handler
-        .persist(persist_request(9, "missing-run", "m1"))
+        .persist(&persist_request(9, "missing-run", "m1"))
         .unwrap_err();
     assert_eq!(failed.id, EffectId(9));
     assert_eq!(failed.failure.code(), "session.commit");
@@ -263,7 +263,7 @@ fn failed_inconclusive_replacement_restores_the_previous_result() {
     let mut handler = SessionHandler::open(&path).unwrap();
     handler.begin(begin_request(1, "run-1")).unwrap();
     handler
-        .persist(persist_with_status(
+        .persist(&persist_with_status(
             2,
             "run-1",
             "m1",
@@ -273,11 +273,11 @@ fn failed_inconclusive_replacement_restores_the_previous_result() {
 
     let mut replacement = persist_with_status(3, "run-1", "m1", MutationStatus::Killed);
     replacement.result.diagnostics[0].mutant_id = "wrong-id".to_owned();
-    let failed = handler.persist(replacement).unwrap_err();
+    let failed = handler.persist(&replacement).unwrap_err();
     assert_eq!(failed.id, EffectId(3));
     assert_eq!(failed.failure.code(), "session.persist.diagnostic");
 
-    let stored = handler.lookup(lookup_request(4, "run-1", "m1")).unwrap();
+    let stored = handler.lookup(&lookup_request(4, "run-1", "m1")).unwrap();
     assert_eq!(stored.result.unwrap().status, MutationStatus::Timeout);
     let observer = Connection::open(path).unwrap();
     assert_eq!(
@@ -302,7 +302,7 @@ fn determinate_results_cannot_be_replaced() {
             .begin(begin_request(10 * index as u64 + 1, &run_id))
             .unwrap();
         handler
-            .persist(persist_with_status(
+            .persist(&persist_with_status(
                 10 * index as u64 + 2,
                 &run_id,
                 "m1",
@@ -311,7 +311,7 @@ fn determinate_results_cannot_be_replaced() {
             .unwrap();
 
         let duplicate = handler
-            .persist(persist_request(10 * index as u64 + 3, &run_id, "m1"))
+            .persist(&persist_request(10 * index as u64 + 3, &run_id, "m1"))
             .unwrap_err();
         assert_eq!(duplicate.id, EffectId(10 * index as u64 + 3));
         assert_eq!(duplicate.failure.code(), "session.duplicate_result");
@@ -337,7 +337,7 @@ fn every_inconclusive_result_can_be_replaced() {
             .begin(begin_request(10 * index as u64 + 1, &run_id))
             .unwrap();
         handler
-            .persist(persist_with_status(
+            .persist(&persist_with_status(
                 10 * index as u64 + 2,
                 &run_id,
                 "m1",
@@ -345,11 +345,11 @@ fn every_inconclusive_result_can_be_replaced() {
             ))
             .unwrap();
         handler
-            .persist(persist_request(10 * index as u64 + 3, &run_id, "m1"))
+            .persist(&persist_request(10 * index as u64 + 3, &run_id, "m1"))
             .unwrap();
         assert_eq!(
             handler
-                .lookup(lookup_request(10 * index as u64 + 4, &run_id, "m1"))
+                .lookup(&lookup_request(10 * index as u64 + 4, &run_id, "m1"))
                 .unwrap()
                 .result
                 .unwrap()
@@ -365,13 +365,13 @@ fn lookup_rejects_corrupt_status_candidate_mismatch_and_completed_runs() {
     let path = temp.path().join("sessions.sqlite3");
     let mut handler = SessionHandler::open(&path).unwrap();
     handler.begin(begin_request(1, "run-1")).unwrap();
-    handler.persist(persist_request(2, "run-1", "m1")).unwrap();
+    handler.persist(&persist_request(2, "run-1", "m1")).unwrap();
     Connection::open(&path)
         .unwrap()
         .execute("UPDATE results SET status='bogus'", [])
         .unwrap();
     let failed = handler
-        .lookup(lookup_request(7, "run-1", "m1"))
+        .lookup(&lookup_request(7, "run-1", "m1"))
         .unwrap_err();
     assert_eq!(failed.id, EffectId(7));
     assert_eq!(failed.failure.code(), "session.corrupt");
@@ -381,7 +381,7 @@ fn lookup_rejects_corrupt_status_candidate_mismatch_and_completed_runs() {
     let mut handler = SessionHandler::open(&mismatch_path).unwrap();
     handler.begin(begin_request(8, "run-mismatch")).unwrap();
     handler
-        .persist(persist_request(9, "run-mismatch", "m1"))
+        .persist(&persist_request(9, "run-mismatch", "m1"))
         .unwrap();
     let corrupter = Connection::open(&mismatch_path).unwrap();
     corrupter
@@ -392,7 +392,7 @@ fn lookup_rejects_corrupt_status_candidate_mismatch_and_completed_runs() {
         .unwrap();
     drop(corrupter);
     let failed = handler
-        .lookup(lookup_request(10, "run-mismatch", "m1"))
+        .lookup(&lookup_request(10, "run-mismatch", "m1"))
         .unwrap_err();
     assert_eq!(failed.id, EffectId(10));
     assert_eq!(failed.failure.code(), "session.corrupt");
@@ -403,7 +403,7 @@ fn lookup_rejects_corrupt_status_candidate_mismatch_and_completed_runs() {
     handler.begin(begin_request(11, "run-complete")).unwrap();
     handler.finish(finish_request(12, "run-complete")).unwrap();
     let failed = handler
-        .lookup(lookup_request(13, "run-complete", "m1"))
+        .lookup(&lookup_request(13, "run-complete", "m1"))
         .unwrap_err();
     assert_eq!(failed.id, EffectId(13));
     assert_eq!(failed.failure.code(), "session.lookup.complete");
@@ -412,7 +412,7 @@ fn lookup_rejects_corrupt_status_candidate_mismatch_and_completed_runs() {
     create_nullable_corrupt_database(&null_path);
     let mut handler = SessionHandler::open(&null_path).unwrap();
     let failed = handler
-        .lookup(lookup_request(14, "run-null", "m-null"))
+        .lookup(&lookup_request(14, "run-null", "m-null"))
         .unwrap_err();
     assert_eq!(failed.id, EffectId(14));
     assert_eq!(failed.failure.code(), "session.corrupt");

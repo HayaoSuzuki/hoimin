@@ -53,6 +53,10 @@ enum AttachFault {
 }
 
 impl WindowsBackend {
+    /// # Errors
+    ///
+    /// Returns an error when configured limits cannot be represented by the Windows Job Object API
+    /// or its run-wide job cannot be created.
     pub fn new(limits: &RunLimits) -> Result<Self, ResourceError> {
         let memory = usize::try_from(limits.max_memory.get())
             .map_err(|_| ResourceError::InvalidLimit("max_memory"))?;
@@ -81,10 +85,14 @@ impl WindowsBackend {
         Ok(backend)
     }
 
+    #[must_use]
     pub fn mode(&self) -> ResourceMode {
         ResourceMode::Hard
     }
 
+    /// # Errors
+    ///
+    /// Returns an error when terminating the run-wide Job Object fails.
     pub fn close(&self) -> Result<(), ResourceError> {
         self.inner.close()
     }
@@ -99,7 +107,7 @@ impl WindowsBackend {
                 .inner
                 .state
                 .lock()
-                .unwrap_or_else(|error| error.into_inner());
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             self.inner.drain_pending(&mut state)?;
             if state.closed {
                 return Err(ResourceError::RunClosed);
@@ -161,7 +169,10 @@ impl WindowsRunJob {
     }
 
     fn close(&self) -> Result<(), ResourceError> {
-        let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if state.terminated {
             return Ok(());
         }
@@ -183,16 +194,21 @@ impl WindowsRunJob {
         root_job: HANDLE,
         signal: &Arc<RootSignal>,
         child: &Child,
-        _attach_fault: AttachFault,
+        attach_fault: AttachFault,
     ) -> Result<u32, ResourceError> {
+        #[cfg(not(test))]
+        let _ = attach_fault;
         let pid = child.id().ok_or(ResourceError::MissingProcessId)?;
-        let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.drain_pending(&mut state)?;
         if state.closed {
             return Err(ResourceError::RunClosed);
         }
         #[cfg(test)]
-        if _attach_fault == AttachFault::Assign {
+        if attach_fault == AttachFault::Assign {
             return Err(ResourceError::io(
                 "assign process to run-wide job",
                 io::Error::other("injected assignment failure"),
@@ -210,7 +226,7 @@ impl WindowsRunJob {
             signal: Arc::downgrade(signal),
         });
         #[cfg(test)]
-        if _attach_fault == AttachFault::Resume {
+        if attach_fault == AttachFault::Resume {
             state.active.retain(|root| root.pid != pid);
             return Err(ResourceError::io(
                 "resume suspended primary thread",
@@ -230,7 +246,10 @@ impl WindowsRunJob {
         signal: &RootSignal,
         termination: ProcessTermination,
     ) -> Result<ProcessTermination, ResourceError> {
-        let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.drain_until_root_exit(&mut state, pid)?;
         state.active.retain(|root| root.pid != pid);
         state.exited_roots.remove(&pid);
@@ -245,7 +264,10 @@ impl WindowsRunJob {
     }
 
     fn unregister_root(&self, pid: u32) {
-        let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         state.active.retain(|root| root.pid != pid);
         state.exited_roots.remove(&pid);
     }
@@ -276,7 +298,8 @@ impl WindowsRunJob {
                     io::Error::new(io::ErrorKind::TimedOut, "root exit notification timed out"),
                 ));
             }
-            let timeout_ms = remaining.as_millis().min(u128::from(u32::MAX)) as u32;
+            let timeout_ms = u32::try_from(remaining.as_millis().min(u128::from(u32::MAX)))
+                .expect("bounded timeout fits u32");
             match self.next_notification(timeout_ms.max(1))? {
                 Some((message, pid)) => {
                     record_notification(state, message, pid);
@@ -302,17 +325,20 @@ impl WindowsRunJob {
         let ok = unsafe {
             GetQueuedCompletionStatus(
                 self.completion_port.raw(),
-                &mut message,
-                &mut key,
-                &mut overlapped,
+                &raw mut message,
+                &raw mut key,
+                &raw mut overlapped,
                 timeout_ms,
             )
         };
         if ok != 0 {
-            return Ok(Some((message, overlapped as usize as u32)));
+            let pid = u32::try_from(overlapped as usize)
+                .map_err(|_| ResourceError::InvalidLimit("Job Object notification process id"))?;
+            return Ok(Some((message, pid)));
         }
         let error = io::Error::last_os_error();
-        if error.raw_os_error() == Some(WAIT_TIMEOUT as i32) {
+        if error.raw_os_error() == Some(i32::try_from(WAIT_TIMEOUT).expect("WAIT_TIMEOUT fits i32"))
+        {
             Ok(None)
         } else {
             Err(ResourceError::io("read Job Object notification", error))
@@ -466,8 +492,9 @@ fn set_extended_limits(
         SetInformationJobObject(
             job,
             JobObjectExtendedLimitInformation,
-            information as *const _ as *const c_void,
-            size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            std::ptr::from_ref(information).cast::<c_void>(),
+            u32::try_from(size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>())
+                .expect("Windows Job Object structure size fits u32"),
         )
     } == 0
     {
@@ -495,8 +522,9 @@ fn associate_completion_port(job: HANDLE, port: HANDLE) -> Result<(), ResourceEr
         SetInformationJobObject(
             job,
             JobObjectAssociateCompletionPortInformation,
-            &association as *const _ as *const c_void,
-            size_of::<JOBOBJECT_ASSOCIATE_COMPLETION_PORT>() as u32,
+            (&raw const association).cast::<c_void>(),
+            u32::try_from(size_of::<JOBOBJECT_ASSOCIATE_COMPLETION_PORT>())
+                .expect("Windows completion port association size fits u32"),
         )
     } == 0
     {
@@ -543,11 +571,12 @@ fn resume_primary_thread(pid: u32) -> Result<(), ResourceError> {
         "snapshot suspended process threads",
     )?;
     let mut entry = THREADENTRY32 {
-        dwSize: size_of::<THREADENTRY32>() as u32,
+        dwSize: u32::try_from(size_of::<THREADENTRY32>())
+            .expect("Windows thread entry size fits u32"),
         ..Default::default()
     };
     // SAFETY: entry has the documented size and remains writable through enumeration.
-    if unsafe { Thread32First(snapshot.raw(), &mut entry) } == 0 {
+    if unsafe { Thread32First(snapshot.raw(), &raw mut entry) } == 0 {
         return Err(ResourceError::io(
             "enumerate suspended process threads",
             io::Error::last_os_error(),
@@ -570,7 +599,7 @@ fn resume_primary_thread(pid: u32) -> Result<(), ResourceError> {
             return Ok(());
         }
         // SAFETY: entry remains valid and has unchanged dwSize.
-        if unsafe { Thread32Next(snapshot.raw(), &mut entry) } == 0 {
+        if unsafe { Thread32Next(snapshot.raw(), &raw mut entry) } == 0 {
             break;
         }
     }
@@ -712,7 +741,7 @@ mod tests {
             .inner
             .state
             .lock()
-            .unwrap_or_else(|error| error.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         assert!(state.active.is_empty());
         assert!(state.exited_roots.is_empty());
     }
@@ -732,7 +761,7 @@ mod tests {
                 .inner
                 .state
                 .lock()
-                .unwrap_or_else(|error| error.into_inner());
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             assert!(state.closed, "failed close still rejects future spawn");
             assert!(!state.terminated, "OS termination has not succeeded yet");
         }
@@ -742,7 +771,7 @@ mod tests {
             .inner
             .state
             .lock()
-            .unwrap_or_else(|error| error.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         assert!(state.closed);
         assert!(state.terminated);
     }

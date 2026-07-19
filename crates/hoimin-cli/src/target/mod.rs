@@ -11,6 +11,11 @@ use self::git::resolve_changed;
 pub struct TargetHandler;
 
 impl TargetHandler {
+    /// Resolves configured selection to concrete mutation targets.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when filesystem or Git target discovery fails.
     pub async fn resolve(selection: &Selection) -> Result<Vec<TargetSlice>, TargetError> {
         let discovered = fs::discover_explicit(selection)
             .map_err(|error| TargetError::DiscoveryFailed(error.to_string()))?;
@@ -31,6 +36,11 @@ impl TargetHandler {
         Ok(intersect_changed(&explicit, &changed))
     }
 
+    /// Handles a target-resolution effect.
+    ///
+    /// # Errors
+    ///
+    /// Returns an effect failure when target resolution fails.
     pub async fn handle(request: ResolveTargets) -> Result<TargetsResolved, EffectFailed> {
         let id = request.id;
         Self::resolve(&request.selection)

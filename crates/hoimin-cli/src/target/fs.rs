@@ -5,7 +5,7 @@ use std::path::Path;
 use camino::Utf8PathBuf;
 use hoimin_core::{DiscoveredFile, Selection};
 use ignore::overrides::OverrideBuilder;
-use ignore::{DirEntry, WalkBuilder};
+use ignore::{DirEntry, Walk, WalkBuilder};
 
 #[derive(Debug)]
 pub enum FsTargetError {
@@ -28,6 +28,11 @@ impl fmt::Display for FsTargetError {
 
 impl std::error::Error for FsTargetError {}
 
+/// Discovers explicitly selected files from the filesystem.
+///
+/// # Errors
+///
+/// Returns an error when a glob is invalid, traversal fails, or a path is unsuitable.
 pub fn discover_explicit(selection: &Selection) -> Result<Vec<DiscoveredFile>, FsTargetError> {
     let root = selection.root.as_std_path();
     let mut files = BTreeMap::<Utf8PathBuf, DiscoveredFile>::new();
@@ -35,7 +40,7 @@ pub fn discover_explicit(selection: &Selection) -> Result<Vec<DiscoveredFile>, F
     let excludes = build_overrides(root, &[], &selection.excludes)?;
     let mut normal = WalkBuilder::new(root);
     normal.overrides(excludes);
-    collect(normal, root, &mut files)?;
+    collect(normal.build(), root, &mut files)?;
 
     if !selection.includes.is_empty() {
         let includes = build_overrides(root, &selection.includes, &selection.excludes)?;
@@ -48,7 +53,7 @@ pub fn discover_explicit(selection: &Selection) -> Result<Vec<DiscoveredFile>, F
             .git_exclude(false)
             .parents(false)
             .overrides(includes);
-        collect(restored, root, &mut files)?;
+        collect(restored.build(), root, &mut files)?;
     }
 
     Ok(files.into_values().collect())
@@ -77,11 +82,11 @@ fn build_overrides(
 }
 
 fn collect(
-    builder: WalkBuilder,
+    builder: Walk,
     root: &Path,
     files: &mut BTreeMap<Utf8PathBuf, DiscoveredFile>,
 ) -> Result<(), FsTargetError> {
-    for entry in builder.build() {
+    for entry in builder {
         let entry = entry.map_err(FsTargetError::Walk)?;
         if entry
             .file_type()

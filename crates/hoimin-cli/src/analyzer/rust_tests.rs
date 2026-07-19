@@ -2,6 +2,7 @@ use super::{AnalyzeRequest, analyze_source};
 use crate::analyzer::AnalyzerDiagnosticCode;
 use camino::Utf8Path;
 use hoimin_core::{ByteSpan, LineRange};
+use proptest::prelude::*;
 
 fn analyze(source: &str) -> super::AnalyzerOutput {
     analyze_with(Utf8Path::new("pkg/sample.py"), &[], &[], 10_000, source)
@@ -23,6 +24,23 @@ fn analyze_with(
         },
         source,
     )
+}
+
+proptest! {
+    #[test]
+    fn arbitrary_python_input_has_ordered_in_bounds_candidates(source in ".{0,4096}") {
+        let output = analyze(&source);
+        let mut previous_end = 0;
+        for candidate in output.candidates {
+            let start = usize::try_from(candidate.span.start).expect("span start fits usize");
+            let length = usize::try_from(candidate.span.length).expect("span length fits usize");
+            let end = start.checked_add(length).expect("candidate span does not overflow");
+            prop_assert!(previous_end <= start);
+            prop_assert!(end <= source.len());
+            prop_assert_eq!(&source[start..end], candidate.original);
+            previous_end = end;
+        }
+    }
 }
 
 #[test]

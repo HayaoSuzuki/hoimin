@@ -4,6 +4,7 @@ use hoimin_core::{
     CommandArg, FingerprintInput, LineRange, MutationStatus, RawRunLimits, ResourceMode,
     ResumeDecision, SourceHash, StoredResult, TargetSlice, fingerprint, resume_policy,
 };
+use proptest::prelude::*;
 
 #[test]
 fn resume_decides_one_stored_result_without_collecting_the_run() {
@@ -35,6 +36,29 @@ fn fingerprint_is_canonical_for_set_like_fields() {
     reordered.targets.reverse();
     reordered.operators.reverse();
     assert_eq!(fingerprint(&fixture_input()), fingerprint(&reordered));
+}
+
+proptest! {
+    #[test]
+    fn fingerprint_is_invariant_under_independent_set_orderings(
+        reverse_sources in any::<bool>(),
+        reverse_targets in any::<bool>(),
+        reverse_operators in any::<bool>(),
+    ) {
+        let original = fixture_input();
+        let mut reordered = original.clone();
+        if reverse_sources {
+            reordered.sources.reverse();
+        }
+        if reverse_targets {
+            reordered.targets.reverse();
+        }
+        if reverse_operators {
+            reordered.operators.reverse();
+        }
+
+        prop_assert_eq!(fingerprint(&original), fingerprint(&reordered));
+    }
 }
 
 #[test]

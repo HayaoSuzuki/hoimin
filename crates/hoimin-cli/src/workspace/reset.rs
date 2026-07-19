@@ -8,6 +8,11 @@ use super::manifest::{build_manifest, relative_utf8};
 use super::{WorkerWorkspace, WorkspaceError, permission_fingerprint};
 
 impl WorkerWorkspace {
+    /// Confirms that the original workspace still matches this worker's manifest.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the source cannot be scanned or its contents changed.
     pub fn verify_originals(&self) -> Result<(), WorkspaceError> {
         let (current, _) = build_manifest(&self.original_root, &self.options)?;
         if self.manifest.content_matches(&current) {
@@ -22,6 +27,11 @@ impl WorkerWorkspace {
         }
     }
 
+    /// Restores the worker filesystem from its original snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the original workspace changed or restoration cannot complete.
     pub fn reset(&mut self) -> Result<(), WorkspaceError> {
         self.verify_originals()?;
         self.reset_from_snapshot().map_err(|error| {
@@ -36,7 +46,7 @@ impl WorkerWorkspace {
         })
     }
 
-    fn reset_from_snapshot(&mut self) -> Result<(), WorkspaceError> {
+    fn reset_from_snapshot(&self) -> Result<(), WorkspaceError> {
         let existing = collect_worker_entries(&self.root)?;
         for (path, is_dir) in existing.iter().rev() {
             if *is_dir {
@@ -186,7 +196,7 @@ fn remove_any(path: &Utf8Path) -> Result<(), WorkspaceError> {
 
 #[cfg(windows)]
 #[allow(clippy::permissions_set_readonly_false)]
-pub(crate) fn make_writable(path: &Utf8Path) -> Result<(), WorkspaceError> {
+pub fn make_writable(path: &Utf8Path) -> Result<(), WorkspaceError> {
     let mut permissions = fs::symlink_metadata(path)
         .map_err(|error| WorkspaceError::io("read permissions", path, error))?
         .permissions();
@@ -199,7 +209,7 @@ pub(crate) fn make_writable(path: &Utf8Path) -> Result<(), WorkspaceError> {
 }
 
 #[cfg(unix)]
-pub(crate) fn make_writable(path: &Utf8Path) -> Result<(), WorkspaceError> {
+pub fn make_writable(path: &Utf8Path) -> Result<(), WorkspaceError> {
     use std::os::unix::fs::PermissionsExt;
 
     let mut permissions = fs::symlink_metadata(path)

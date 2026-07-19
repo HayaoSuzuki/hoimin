@@ -26,7 +26,7 @@ pub struct WorkspacePlan {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct PlanState {
+pub struct PlanState {
     pub(crate) reservation: Option<(ReservationId, u64)>,
     pub(crate) workers: BTreeSet<u32>,
 }
@@ -96,7 +96,7 @@ impl PlanState {
 }
 
 #[derive(Debug)]
-pub(crate) struct CopyAllowance {
+pub struct CopyAllowance {
     granted: AtomicU64,
     charged: AtomicU64,
 }
@@ -119,7 +119,7 @@ impl CopyAllowance {
             })
     }
 
-    pub(crate) fn release(&self, amount: u64) {
+    pub fn release(&self, amount: u64) {
         let previous = self.charged.fetch_sub(amount, Ordering::AcqRel);
         debug_assert!(previous >= amount);
     }
@@ -130,6 +130,12 @@ impl CopyAllowance {
 }
 
 impl WorkspacePlan {
+    /// Builds a copy plan after validating the source workspace and requested capacity.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the root cannot be materialized, the manifest cannot be built,
+    /// the worker count is zero, or the aggregate copy allowance overflows.
     pub fn preflight(
         root: &Utf8Path,
         preflight_id: EffectId,
@@ -164,7 +170,8 @@ impl WorkspacePlan {
         })
     }
 
-    pub fn completed(&self) -> PreflightCompleted {
+    #[must_use]
+    pub const fn completed(&self) -> PreflightCompleted {
         PreflightCompleted {
             id: self.preflight_id,
             per_worker_logical_bytes: self.manifest.logical_bytes(),
@@ -174,22 +181,27 @@ impl WorkspacePlan {
         }
     }
 
-    pub fn manifest(&self) -> &WorkspaceManifest {
+    #[must_use]
+    pub const fn manifest(&self) -> &WorkspaceManifest {
         &self.manifest
     }
 
+    #[must_use]
     pub fn diagnostics(&self) -> &[WorkspaceDiagnostic] {
         &self.diagnostics
     }
 
-    pub fn aggregate_bytes(&self) -> u64 {
+    #[must_use]
+    pub const fn aggregate_bytes(&self) -> u64 {
         self.aggregate_bytes
     }
 
+    #[must_use]
     pub fn observed_copy_bytes(&self) -> u64 {
         self.allowance.charged()
     }
 
+    #[must_use]
     pub fn materialized_workers(&self) -> usize {
         self.state
             .lock()
@@ -197,6 +209,7 @@ impl WorkspacePlan {
             .unwrap_or_default()
     }
 
+    #[must_use]
     pub fn reservation_id(&self) -> Option<ReservationId> {
         self.state
             .lock()
@@ -204,6 +217,11 @@ impl WorkspacePlan {
             .and_then(|state| state.reservation.map(|(id, _)| id))
     }
 
+    /// Confirms that the source workspace still matches this plan's manifest.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the source cannot be scanned or its contents changed.
     pub fn verify_originals(&self) -> Result<(), WorkspaceError> {
         let (current, _) = build_manifest(&self.original_root, &self.options)?;
         if self.manifest.content_matches(&current) {
@@ -218,6 +236,11 @@ impl WorkspacePlan {
         }
     }
 
+    /// Materializes a worker after validating and recording its granted copy allowance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an invalid grant or if worker materialization fails.
     pub fn create_worker(&self, request: &CreateWorker) -> Result<WorkerWorkspace, WorkspaceError> {
         self.accept_grant(request)?;
         match self.materialize_worker(request.worker()) {
@@ -249,12 +272,14 @@ impl WorkspacePlan {
             .state
             .lock()
             .map_err(|_| WorkspaceError::StatePoisoned)?;
-        if state.accept_grant(
+        let newly_bound = state.accept_grant(
             request,
             self.preflight_id,
             self.requested_workers,
             self.aggregate_bytes,
-        )? {
+        )?;
+        drop(state);
+        if newly_bound {
             self.allowance.set_grant(request.granted_allowance());
         }
         Ok(())
@@ -409,5 +434,6 @@ mod tests {
             Some((winner.0, completed.aggregate_logical_bytes))
         );
         assert_eq!(state.workers, BTreeSet::from([winner.1]));
+        drop(state);
     }
 }

@@ -135,6 +135,8 @@ impl BudgetLedger {
         }
     }
 
+    // The contract macro may compile out while this helper retains its uniform invariant API.
+    #[allow(clippy::unused_self)]
     fn check_invariant(&self) {
         crate::contract_ensure!("budget.total.invariant", self.invariant(), self.limits);
     }

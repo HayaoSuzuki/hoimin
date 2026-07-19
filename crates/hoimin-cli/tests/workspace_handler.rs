@@ -314,8 +314,8 @@ fn mutation_checks_hash_exact_original_and_span() {
     stale.original = "wrong!!!".into();
     assert!(matches!(
         worker.apply_mutation(&stale),
-        Err(WorkspaceError::MutationHashMismatch { .. })
-            | Err(WorkspaceError::MutationOriginalMismatch { .. })
+        Err(WorkspaceError::MutationHashMismatch { .. }
+            | WorkspaceError::MutationOriginalMismatch { .. })
     ));
 }
 

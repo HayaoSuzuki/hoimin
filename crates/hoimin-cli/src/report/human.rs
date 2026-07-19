@@ -6,10 +6,10 @@ pub(super) fn write_event(writer: &mut impl Write, event: &OutputEvent) -> io::R
     match event {
         OutputEvent::RunStarted(value) => writeln!(writer, "run started: {}", value.run_id)?,
         OutputEvent::BaselineFinished(value) => {
-            writeln!(writer, "baseline finished: {:?}", value.termination)?
+            writeln!(writer, "baseline finished: {:?}", value.termination)?;
         }
         OutputEvent::MutantStarted(value) => {
-            writeln!(writer, "mutant started: {}", value.mutant_id)?
+            writeln!(writer, "mutant started: {}", value.mutant_id)?;
         }
         OutputEvent::MutantFinished(value) => writeln!(
             writer,
@@ -18,10 +18,10 @@ pub(super) fn write_event(writer: &mut impl Write, event: &OutputEvent) -> io::R
             status_name(value.status)
         )?,
         OutputEvent::Diagnostic(value) => {
-            writeln!(writer, "{} {}: {}", value.level, value.code, value.message)?
+            writeln!(writer, "{} {}: {}", value.level, value.code, value.message)?;
         }
         OutputEvent::RunFinished(value) => {
-            writeln!(writer, "run finished: exit {}", value.exit_code)?
+            writeln!(writer, "run finished: exit {}", value.exit_code)?;
         }
     }
     writer.flush()
