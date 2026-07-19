@@ -62,6 +62,64 @@ fn emits_the_mvp_operator_replacements_in_source_order() {
 }
 
 #[test]
+fn removes_not_across_its_complete_ast_operand_range() {
+    let output = analyze("result = not (left == right and ready)\n");
+    let candidate = output
+        .candidates
+        .iter()
+        .find(|candidate| candidate.operator == "remove_not")
+        .expect("not candidate");
+    assert_eq!(candidate.original, "not (left == right and ready)");
+    assert_eq!(candidate.replacement, "(left == right and ready)");
+    assert_eq!(candidate.span.length, candidate.original.len() as u64);
+}
+
+#[test]
+fn classifies_unary_signs_from_the_ast_not_preceding_tokens() {
+    let output = analyze("result = left * -right + +other\n");
+    let signs: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| matches!(candidate.original.as_str(), "+" | "-"))
+        .map(|candidate| (candidate.original.as_str(), candidate.operator.as_str()))
+        .collect();
+    assert_eq!(
+        signs,
+        vec![
+            ("-", "unary_sign"),
+            ("+", "binary_add_sub"),
+            ("+", "unary_sign"),
+        ]
+    );
+}
+
+#[test]
+fn assigns_ast_scopes_to_decorators_async_definitions_and_not_following_code() {
+    let source = "class Outer:\n    @decorator(left == right)\n    async def method(self):\n        return not (ready and enabled)\nafter = left == right\n";
+    let output = analyze(source);
+    let observed: Vec<_> = output
+        .candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.symbol.as_deref(),
+                candidate.line,
+            )
+        })
+        .collect();
+    assert_eq!(
+        observed,
+        vec![
+            ("==", Some("Outer.method"), 2),
+            ("not (ready and enabled)", Some("Outer.method"), 4),
+            ("and", Some("Outer.method"), 4),
+            ("==", None, 5),
+        ]
+    );
+}
+
+#[test]
 fn emits_each_remaining_mvp_operator() {
     let source = "def f(a, b, xs):\n    a != b\n    a < b\n    a <= b\n    a > b\n    a >= b\n    a in xs\n    a is b\n    a or b\n    a + b\n    a - b\n    a / b\n    while a:\n        break\n        continue\n";
     let output = analyze(source);

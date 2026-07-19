@@ -1,6 +1,9 @@
+use std::collections::HashSet;
+
 use camino::Utf8Path;
 use hoimin_core::{ByteSpan, LineRange};
-use ruff_python_ast::token::TokenKind;
+use ruff_python_ast::visitor::Visitor;
+use ruff_python_ast::{Expr, ModModule, Stmt, UnaryOp, visitor};
 use ruff_python_parser::parse_module;
 use ruff_text_size::Ranged;
 
@@ -24,6 +27,7 @@ pub fn analyze_source(request: &AnalyzeRequest<'_>, source: &str) -> AnalyzerOut
         Ok(parsed) => parsed,
         Err(_) => return invalid_syntax(request.path),
     };
+    let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens());
     let mut candidates = Vec::new();
     let tokens: Vec<_> = parsed.tokens().iter().collect();
     for (index, token) in tokens.iter().enumerate() {
@@ -59,10 +63,7 @@ pub fn analyze_source(request: &AnalyzeRequest<'_>, source: &str) -> AnalyzerOut
             })
         {
             continue;
-        } else if text == "not" {
-            let expression = next.unwrap();
-            let expression_start = usize::from(expression.range().start());
-            let expression_end = usize::from(expression.range().end());
+        } else if let Some((expression_start, expression_end)) = facts.not_operand_range(start) {
             (
                 expression_end,
                 source[expression_start..expression_end].to_owned(),
@@ -74,8 +75,7 @@ pub fn analyze_source(request: &AnalyzeRequest<'_>, source: &str) -> AnalyzerOut
                 && matches!(text, "in" | "is")
         }) {
             continue;
-        } else if let Some((replacement, operator)) =
-            replacement(text, unary_sign(tokens.as_slice(), index))
+        } else if let Some((replacement, operator)) = replacement(text, facts.is_unary_sign(start))
         {
             (end, replacement.to_owned(), operator)
         } else {
@@ -83,7 +83,7 @@ pub fn analyze_source(request: &AnalyzeRequest<'_>, source: &str) -> AnalyzerOut
         };
         let original = source[start..span_end].to_owned();
         let (line, column) = line_and_column(source, start);
-        let symbol = scope_at(source, start);
+        let symbol = facts.scope_at(start);
         if selected(request, line, symbol.as_deref()) {
             candidates.push(AnalyzerCandidate {
                 path: request.path.to_owned(),
@@ -167,20 +167,6 @@ fn replacement(text: &str, unary: bool) -> Option<(&'static str, &'static str)> 
     Some(result)
 }
 
-fn unary_sign(tokens: &[&ruff_python_ast::token::Token], index: usize) -> bool {
-    let Some(previous) = index.checked_sub(1).and_then(|i| tokens.get(i)) else {
-        return true;
-    };
-    matches!(
-        previous.kind(),
-        TokenKind::Lpar
-            | TokenKind::Comma
-            | TokenKind::Equal
-            | TokenKind::Return
-            | TokenKind::Colon
-    )
-}
-
 fn line_and_column(source: &str, offset: usize) -> (u32, u32) {
     let prefix = &source[..offset];
     let line = prefix.bytes().filter(|byte| *byte == b'\n').count() as u32 + 1;
@@ -188,50 +174,6 @@ fn line_and_column(source: &str, offset: usize) -> (u32, u32) {
         .rsplit_once('\n')
         .map_or(prefix.len(), |(_, tail)| tail.len()) as u32;
     (line, column)
-}
-
-fn scope_at(source: &str, offset: usize) -> Option<String> {
-    let mut scopes: Vec<(usize, String)> = Vec::new();
-    let mut consumed = 0;
-    for line in source.split_inclusive('\n') {
-        if consumed > offset {
-            break;
-        }
-        let indent = line.len() - line.trim_start().len();
-        let words: Vec<_> = line.split_whitespace().collect();
-        if let Some(name) = words
-            .get(1)
-            .filter(|_| matches!(words.first(), Some(&"def") | Some(&"class")))
-        {
-            while scopes.last().is_some_and(|(depth, _)| *depth >= indent) {
-                scopes.pop();
-            }
-            scopes.push((
-                indent,
-                name.trim_end_matches('(')
-                    .trim_end_matches(':')
-                    .split('(')
-                    .next()
-                    .unwrap()
-                    .to_owned(),
-            ));
-        } else {
-            while scopes
-                .last()
-                .is_some_and(|(depth, _)| *depth > indent && !line.trim().is_empty())
-            {
-                scopes.pop();
-            }
-        }
-        consumed += line.len();
-    }
-    (!scopes.is_empty()).then(|| {
-        scopes
-            .into_iter()
-            .map(|(_, name)| name)
-            .collect::<Vec<_>>()
-            .join(".")
-    })
 }
 
 fn selected(request: &AnalyzeRequest<'_>, line: u32, symbol: Option<&str>) -> bool {
@@ -260,4 +202,119 @@ fn module_name(path: &Utf8Path) -> String {
         parts.pop();
     }
     parts.join(".")
+}
+
+#[derive(Default)]
+struct AstFacts<'tokens> {
+    unary_sign_starts: HashSet<usize>,
+    not_operands: Vec<(usize, usize, usize)>,
+    scopes: Vec<ScopeRange>,
+    qualname: Vec<String>,
+    tokens: Option<&'tokens ruff_python_ast::token::Tokens>,
+}
+struct ScopeRange {
+    start: usize,
+    end: usize,
+    symbol: String,
+}
+
+impl<'tokens> AstFacts<'tokens> {
+    fn from_module(module: &ModModule, tokens: &'tokens ruff_python_ast::token::Tokens) -> Self {
+        let mut facts = Self {
+            tokens: Some(tokens),
+            ..Self::default()
+        };
+        for statement in &module.body {
+            facts.visit_stmt(statement);
+        }
+        facts
+    }
+
+    fn not_operand_range(&self, start: usize) -> Option<(usize, usize)> {
+        self.not_operands
+            .iter()
+            .find_map(|(not_start, operand_start, operand_end)| {
+                (*not_start == start).then_some((*operand_start, *operand_end))
+            })
+    }
+
+    fn is_unary_sign(&self, start: usize) -> bool {
+        self.unary_sign_starts.contains(&start)
+    }
+
+    fn scope_at(&self, offset: usize) -> Option<String> {
+        self.scopes
+            .iter()
+            .filter(|scope| scope.start <= offset && offset < scope.end)
+            .max_by_key(|scope| scope.start)
+            .map(|scope| scope.symbol.clone())
+    }
+
+    fn visit_definition(
+        &mut self,
+        name: &str,
+        range: ruff_text_size::TextRange,
+        decorators: &[ruff_python_ast::Decorator],
+        statement: &Stmt,
+    ) {
+        let start = decorators
+            .iter()
+            .map(|decorator| usize::from(decorator.range().start()))
+            .min()
+            .unwrap_or_else(|| usize::from(range.start()));
+        self.qualname.push(name.to_owned());
+        self.scopes.push(ScopeRange {
+            start,
+            end: usize::from(range.end()),
+            symbol: self.qualname.join("."),
+        });
+        visitor::walk_stmt(self, statement);
+        self.qualname.pop();
+    }
+}
+
+impl<'ast, 'tokens> Visitor<'ast> for AstFacts<'tokens> {
+    fn visit_stmt(&mut self, statement: &'ast Stmt) {
+        match statement {
+            Stmt::FunctionDef(definition) => self.visit_definition(
+                definition.name.as_str(),
+                definition.range(),
+                &definition.decorator_list,
+                statement,
+            ),
+            Stmt::ClassDef(definition) => self.visit_definition(
+                definition.name.as_str(),
+                definition.range(),
+                &definition.decorator_list,
+                statement,
+            ),
+            _ => visitor::walk_stmt(self, statement),
+        }
+    }
+
+    fn visit_expr(&mut self, expression: &'ast Expr) {
+        if let Expr::UnaryOp(unary) = expression {
+            let start = usize::from(unary.range().start());
+            match unary.op {
+                UnaryOp::Not => {
+                    let operand_range = ruff_python_ast::token::parenthesized_range(
+                        unary.operand.as_ref().into(),
+                        unary.into(),
+                        self.tokens.expect("parser tokens are set"),
+                    )
+                    .unwrap_or_else(|| unary.operand.range());
+                    self.not_operands.push((
+                        start,
+                        usize::from(operand_range.start()),
+                        usize::from(operand_range.end()),
+                    ));
+                }
+                UnaryOp::UAdd | UnaryOp::USub => {
+                    self.unary_sign_starts.insert(start);
+                }
+                UnaryOp::Invert => {}
+            }
+        }
+        visitor::walk_expr(self, expression);
+    }
 }
