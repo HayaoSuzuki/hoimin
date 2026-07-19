@@ -13,7 +13,7 @@ ANALYZER = ROOT / "python" / "hoimin_analyzer.py"
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
-def invoke(  # noqa: PLR0913
+def invoke(  # noqa: PLR0913 -- Helper mirrors the six independent analyzer request fields.
     source: str,
     *,
     path: str = "pkg/sample.py",
@@ -30,7 +30,7 @@ def invoke(  # noqa: PLR0913
         "symbols": symbols or [],
         "max_candidates": max_candidates,
     }
-    completed = subprocess.run(  # noqa: S603
+    completed = subprocess.run(  # noqa: S603 -- Tests execute the repository-owned analyzer with a fixed interpreter.
         [sys.executable, str(ANALYZER)],
         input=json.dumps(request) + "\n",
         capture_output=True,
@@ -44,7 +44,7 @@ def invoke(  # noqa: PLR0913
 
 
 def invoke_raw(payload: str) -> list[dict[str, object]]:
-    completed = subprocess.run(  # noqa: S603
+    completed = subprocess.run(  # noqa: S603 -- Tests execute the repository-owned analyzer with a fixed interpreter.
         [sys.executable, str(ANALYZER)],
         input=payload + "\n",
         capture_output=True,

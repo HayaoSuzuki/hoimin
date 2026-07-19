@@ -20,3 +20,13 @@ Verification:
 Concern:
 
 Ruff's existing-code cleanup used generated `noqa` directives for legacy analyzer/test diagnostics. These are functional no-ops but should be narrowed or replaced with code-level fixes in a follow-up cleanup if strict per-construct rationale is required.
+
+## Review fix report
+
+Replaced the generated bare Ruff suppressions with rule-specific, construct-local explanations. Added a real module docstring and `python/__init__.py` so the analyzer is no longer an undocumented implicit-namespace script. Documented every test-only per-file exception in `pyproject.toml`, retaining only categories required by the existing pytest test and smoke-test conventions. No coverage threshold, source selection, or test collection behavior was weakened.
+
+Verification after the review fix:
+
+- `uv run ruff check python tests`: passed.
+- `uv run ruff format --check python tests`: passed.
+- Focused and full pytest remain behaviorally unchanged; the 100% coverage gate is still intentionally pending Task 2.

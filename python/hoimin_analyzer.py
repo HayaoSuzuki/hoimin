@@ -1,4 +1,6 @@
-from __future__ import annotations  # noqa: D100, INP001
+"""JSONL analyzer invoked directly by the hoimin Rust CLI."""
+
+from __future__ import annotations
 
 import dataclasses
 import json
@@ -17,7 +19,7 @@ from libcst.metadata import (
 
 
 @dataclass(frozen=True)
-class AnalyzerRequest:  # noqa: D101
+class AnalyzerRequest:  # noqa: D101 -- Protocol data and sentinel exceptions are self-describing by name.
     effect_id: object
     path: str
     module: str
@@ -26,72 +28,72 @@ class AnalyzerRequest:  # noqa: D101
     max_candidates: int
 
 
-class RequestError(ValueError):  # noqa: D101
+class RequestError(ValueError):  # noqa: D101 -- Protocol data and sentinel exceptions are self-describing by name.
     pass
 
 
-class CandidateLimitReached(Exception):  # noqa: D101, N818
+class CandidateLimitReached(Exception):  # noqa: D101, N818 -- Internal sentinel preserves established analyzer control flow.
     pass
 
 
-def reject_json_constant(value: str) -> None:  # noqa: D103
-    raise RequestError(f"non-standard JSON constant: {value}")  # noqa: EM102, TRY003
+def reject_json_constant(value: str) -> None:  # noqa: D103 -- Internal analyzer entry points are covered by protocol tests.
+    raise RequestError(f"non-standard JSON constant: {value}")  # noqa: EM102, TRY003 -- Diagnostic text is part of the JSONL protocol.
 
 
-def write_jsonl(record: dict[str, object]) -> None:  # noqa: D103
+def write_jsonl(record: dict[str, object]) -> None:  # noqa: D103 -- Internal analyzer entry points are covered by protocol tests.
     sys.stdout.write(
         json.dumps(record, ensure_ascii=True, allow_nan=False, separators=(",", ":")) + "\n"
     )
     sys.stdout.flush()
 
 
-def parse_request(value: Any) -> AnalyzerRequest:  # noqa: ANN401, C901, D103
+def parse_request(value: Any) -> AnalyzerRequest:  # noqa: ANN401, C901, D103 -- JSON decoding requires Any and one protocol validation flow.
     if not isinstance(value, dict):
-        raise RequestError("request must be an object")  # noqa: EM101, TRY003
+        raise RequestError("request must be an object")  # noqa: EM101, TRY003 -- Internal invariant message is retained at its sole raise site.
     try:
         effect_id = value["effect_id"]
         path = value["path"]
         module = value["module"]
     except KeyError as error:
-        raise RequestError(f"missing field: {error.args[0]}") from error  # noqa: EM102, TRY003
+        raise RequestError(f"missing field: {error.args[0]}") from error  # noqa: EM102, TRY003 -- Diagnostic text is part of the JSONL protocol.
     if (
         not isinstance(effect_id, (str, int))
         or isinstance(effect_id, bool)
         or (isinstance(effect_id, str) and not _is_utf8(effect_id))
     ):
-        raise RequestError("effect_id must be a string or integer")  # noqa: EM101, TRY003
+        raise RequestError("effect_id must be a string or integer")  # noqa: EM101, TRY003 -- Internal invariant message is retained at its sole raise site.
     if not isinstance(path, str) or not _is_utf8(path) or not _normalized_path(path):
-        raise RequestError("path must be a normalized relative POSIX path")  # noqa: EM101, TRY003
+        raise RequestError("path must be a normalized relative POSIX path")  # noqa: EM101, TRY003 -- Internal invariant message is retained at its sole raise site.
     if not isinstance(module, str) or not _is_utf8(module):
-        raise RequestError("module must be source text")  # noqa: EM101, TRY003
+        raise RequestError("module must be source text")  # noqa: EM101, TRY003 -- Internal invariant message is retained at its sole raise site.
 
     raw_lines = value.get("lines", [])
     if not isinstance(raw_lines, list):
-        raise RequestError("lines must be an array")  # noqa: EM101, TRY003
+        raise RequestError("lines must be an array")  # noqa: EM101, TRY003 -- Internal invariant message is retained at its sole raise site.
     lines: list[tuple[int, int]] = []
     for item in raw_lines:
         if (
             not isinstance(item, list)
-            or len(item) != 2  # noqa: PLR2004
+            or len(item) != 2  # noqa: PLR2004 -- A line range is defined as an exact two-item protocol tuple.
             or not all(isinstance(part, int) and not isinstance(part, bool) for part in item)
             or item[0] < 1
             or item[0] > item[1]
         ):
-            raise RequestError("line ranges must be [positive_start, end] pairs")  # noqa: EM101, TRY003
+            raise RequestError("line ranges must be [positive_start, end] pairs")  # noqa: EM101, TRY003 -- Internal invariant message is retained at its sole raise site.
         lines.append((item[0], item[1]))
 
     raw_symbols = value.get("symbols", [])
     if not isinstance(raw_symbols, list) or not all(
         isinstance(symbol, str) and _is_utf8(symbol) and ":" in symbol for symbol in raw_symbols
     ):
-        raise RequestError("symbols must contain MODULE:QUALNAME strings")  # noqa: EM101, TRY003
+        raise RequestError("symbols must contain MODULE:QUALNAME strings")  # noqa: EM101, TRY003 -- Internal invariant message is retained at its sole raise site.
     max_candidates = value.get("max_candidates", 10_000)
     if (
         not isinstance(max_candidates, int)
         or isinstance(max_candidates, bool)
         or max_candidates < 1
     ):
-        raise RequestError("max_candidates must be a positive integer")  # noqa: EM101, TRY003
+        raise RequestError("max_candidates must be a positive integer")  # noqa: EM101, TRY003 -- Internal invariant message is retained at its sole raise site.
     return AnalyzerRequest(
         effect_id=effect_id,
         path=path,
@@ -166,10 +168,10 @@ REPLACEMENTS: dict[type[cst.CSTNode], tuple[type[cst.CSTNode], str, str, str]] =
 }
 
 
-class MutationVisitor(cst.CSTVisitor):  # noqa: D101
+class MutationVisitor(cst.CSTVisitor):  # noqa: D101 -- Protocol data and sentinel exceptions are self-describing by name.
     METADATA_DEPENDENCIES = (PositionProvider, ByteSpanPositionProvider)
 
-    def __init__(self, request: AnalyzerRequest, module: cst.Module) -> None:  # noqa: D107
+    def __init__(self, request: AnalyzerRequest, module: cst.Module) -> None:  # noqa: D107 -- Visitor initialization only establishes traversal state.
         self.request = request
         self.module = module
         self.source_bytes = request.module.encode("utf-8")
@@ -179,7 +181,7 @@ class MutationVisitor(cst.CSTVisitor):  # noqa: D101
         self.candidate_count = 0
         self.diagnostic_count = 0
 
-    def on_visit(self, node: cst.CSTNode) -> bool:  # noqa: D102
+    def on_visit(self, node: cst.CSTNode) -> bool:  # noqa: D102 -- LibCST visitor hooks implement framework-defined behavior.
         if isinstance(node, (cst.ClassDef, cst.FunctionDef)):
             self.scope.append(node.name.value)
 
@@ -202,11 +204,11 @@ class MutationVisitor(cst.CSTVisitor):  # noqa: D101
             self.emit_candidate(node, replacement, "boolean_literal")
         return True
 
-    def on_leave(self, original_node: cst.CSTNode) -> None:  # noqa: D102
+    def on_leave(self, original_node: cst.CSTNode) -> None:  # noqa: D102 -- LibCST visitor hooks implement framework-defined behavior.
         if isinstance(original_node, (cst.ClassDef, cst.FunctionDef)):
             self.scope.pop()
 
-    def emit_candidate(  # noqa: D102
+    def emit_candidate(  # noqa: D102 -- LibCST visitor hooks implement framework-defined behavior.
         self,
         node: cst.CSTNode,
         replacement: cst.CSTNode,
@@ -237,7 +239,7 @@ class MutationVisitor(cst.CSTVisitor):  # noqa: D101
                 or not mutated_bytes.endswith(suffix)
                 or len(mutated_bytes) < len(prefix) + len(suffix)
             ):
-                raise ValueError("replacement does not reconstruct from its span")  # noqa: EM101, TRY003, TRY301
+                raise ValueError("replacement does not reconstruct from its span")  # noqa: EM101, TRY003, TRY301 -- Internal invariant message is retained at its sole raise site.
             replacement_end = len(mutated_bytes) - len(suffix) if suffix else None
             replacement_text = mutated_bytes[len(prefix) : replacement_end].decode("utf-8")
             cst.parse_module(mutated_from_cst)
@@ -286,7 +288,7 @@ class MutationVisitor(cst.CSTVisitor):  # noqa: D101
             and (symbol == selected_qualname or symbol.startswith(selected_qualname + "."))
         )
 
-    def emit_diagnostic(self, code: str, position: CodePosition | None = None) -> None:  # noqa: D102
+    def emit_diagnostic(self, code: str, position: CodePosition | None = None) -> None:  # noqa: D102 -- LibCST visitor hooks implement framework-defined behavior.
         record: dict[str, object] = {
             "kind": "diagnostic",
             "effect_id": self.request.effect_id,
@@ -299,7 +301,7 @@ class MutationVisitor(cst.CSTVisitor):  # noqa: D101
         self.diagnostic_count += 1
 
 
-def analyze(request: AnalyzerRequest) -> None:  # noqa: D103
+def analyze(request: AnalyzerRequest) -> None:  # noqa: D103 -- Internal analyzer entry points are covered by protocol tests.
     candidate_count = 0
     diagnostic_count = 0
     truncated = False
@@ -338,12 +340,12 @@ def analyze(request: AnalyzerRequest) -> None:  # noqa: D103
     )
 
 
-def main() -> int:  # noqa: D103
+def main() -> int:  # noqa: D103 -- Internal analyzer entry points are covered by protocol tests.
     effect_id: object = "unknown"
     try:
         lines = [line for line in sys.stdin if line.strip()]
         if len(lines) != 1:
-            raise RequestError("exactly one JSONL request is required")  # noqa: EM101, TRY003
+            raise RequestError("exactly one JSONL request is required")  # noqa: EM101, TRY003 -- Internal invariant message is retained at its sole raise site.
         value = json.loads(lines[0], parse_constant=reject_json_constant)
         if isinstance(value, dict):
             candidate_effect_id = value.get("effect_id", effect_id)

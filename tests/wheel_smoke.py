@@ -14,7 +14,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
 def run(argv: list[str], *, cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    completed = subprocess.run(  # noqa: S603, UP022
+    completed = subprocess.run(  # noqa: S603, UP022 -- Smoke helper captures stdout and stderr separately for failure diagnostics.
         argv,
         cwd=cwd,
         env=env,

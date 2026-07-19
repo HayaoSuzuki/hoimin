@@ -14,7 +14,7 @@ def build_wheel_for_smoke_tests() -> None:
     if os.environ.get("HOIMIN_WHEEL"):
         return
     completed = subprocess.run(
-        ["uv", "run", "maturin", "build", "--release", "--no-default-features"],  # noqa: S607
+        ["uv", "run", "maturin", "build", "--release", "--no-default-features"],  # noqa: S607 -- uv is the documented repository tool entry point.
         cwd=REPOSITORY_ROOT,
         check=False,
     )

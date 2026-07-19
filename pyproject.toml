@@ -73,8 +73,21 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"python/tests/**" = ["ANN", "D", "INP001", "PLR2004", "S101"]
-"tests/**" = ["ANN", "D", "INP001", "PLR2004", "S101", "SLF001"]
+"python/tests/**" = [
+    "ANN", # Test functions and helpers intentionally use concise pytest signatures.
+    "D", # Test names and assertions document behavior more precisely than docstrings.
+    "INP001", # The subprocess analyzer tests are deliberately runnable as loose files.
+    "PLR2004", # Concrete protocol values make request and response expectations readable.
+    "S101", # Pytest assertions are the test API.
+]
+"tests/**" = [
+    "ANN", # Test functions and helpers intentionally use concise pytest signatures.
+    "D", # Test names and assertions document behavior more precisely than docstrings.
+    "INP001", # Smoke tests are deliberately runnable as loose files.
+    "PLR2004", # Concrete wheel and protocol values make smoke-test expectations readable.
+    "S101", # Pytest assertions are the test API.
+    "SLF001", # Helper-unit tests in Task 2 exercise wheel-smoke implementation branches.
+]
 
 [tool.maturin]
 bindings = "bin"
