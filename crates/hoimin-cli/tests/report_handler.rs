@@ -66,7 +66,7 @@ async fn documentation_contract() {
     )
     .unwrap();
     std::fs::write(fixture.path().join("src/__init__.py"), "").unwrap();
-    let python = test_python();
+    let python = repository_python();
     let mut documented_outputs = Vec::new();
     for command in commands {
         let argv = normalize_documented_command(&command, fixture.path(), &python);
@@ -235,10 +235,7 @@ fn normalize_documented_command(command: &[String], root: &Path, python: &Path) 
     argv
 }
 
-fn test_python() -> PathBuf {
-    if let Some(path) = std::env::var_os("HOIMIN_TEST_PYTHON") {
-        return path.into();
-    }
+fn repository_python() -> PathBuf {
     let executable = if cfg!(windows) {
         repo_root().join(".venv/Scripts/python.exe")
     } else {
@@ -246,7 +243,7 @@ fn test_python() -> PathBuf {
     };
     assert!(
         executable.is_file(),
-        "set HOIMIN_TEST_PYTHON to a Python interpreter: {}",
+        "repository virtualenv Python interpreter is missing: {}",
         executable.display()
     );
     executable

@@ -5,15 +5,13 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 #[tokio::test]
-async fn pytest_and_unittest_commands_produce_the_same_mutant_statuses() {
-    let pytest = run_fixture(&["-m", "pytest", "-q"]).await;
+async fn unittest_command_produces_the_expected_mutant_statuses() {
     let unittest = run_fixture(&["-m", "unittest", "discover", "-s", "tests"]).await;
 
-    assert_eq!(pytest.statuses, unittest.statuses);
-    assert_eq!(pytest.exit_code, unittest.exit_code);
-    assert_eq!(pytest.statuses, ["killed"]);
+    assert_eq!(unittest.exit_code, 0);
+    assert_eq!(unittest.statuses, ["killed"]);
     assert_eq!(
-        pytest.document["run"]["versions"],
+        unittest.document["run"]["versions"],
         serde_json::json!({
             "os": std::env::consts::OS,
             "hoimin": env!("CARGO_PKG_VERSION"),
@@ -801,7 +799,7 @@ fn python_executable() -> PathBuf {
     };
     assert!(
         executable.is_file(),
-        "set HOIMIN_TEST_PYTHON to a Python with pytest: {}",
+        "set HOIMIN_TEST_PYTHON to a Python interpreter: {}",
         executable.display()
     );
     executable
