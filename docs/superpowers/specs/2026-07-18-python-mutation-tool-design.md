@@ -377,6 +377,7 @@ cgroup v2を作れない環境では、`RLIMIT_AS`、`RLIMIT_CPU`、プロセス
 - **survived**：テストコマンドが終了コード0で終了した。
 - **timeout**：mutant単体の時間上限を超えた。
 - **out_of_memory**：設定したメモリ上限を超えた。
+- **process_limit**：mutantのプロセスツリーが設定したプロセス数上限を超えた。
 - **error**：起動、パッチ、解析、保存、サンドボックス復元などの基盤処理が失敗した。
 - **not_run**：mutant数または全体時間の上限により実行されなかった。
 
@@ -390,7 +391,7 @@ mutation scoreは次の式で計算する。
 killed / (killed + survived)
 ```
 
-`timeout`、`out_of_memory`、`error`、`not_run`は分母に含めない。
+`timeout`、`out_of_memory`、`process_limit`、`error`、`not_run`は分母に含めない。
 判定可能なmutantが一つもない場合はscoreを`null`にする。
 
 ## 出力
@@ -414,7 +415,7 @@ JSONには少なくとも次の情報を含める。
 - baseline結果
 - 各mutantのID、位置、差分、状態、所要時間、資源情報
 - 出力切り詰め情報
-- 状態別件数とmutation score
+- `process_limit`を含む状態別件数とmutation score
 - 完全なrunかどうか
 
 JSON Linesは次のイベントを提供する。
@@ -440,7 +441,13 @@ DB書き込みは単一writerへ集約し、一つのmutant結果ごとにtransa
 `--resume`は同じDB内の最新の未完了runを探す。
 再開には、ソースハッシュ、対象指定、演算子セット、テストargv、安全制限、PythonとLibCSTのバージョンが一致する必要がある。
 一つでも異なる場合は結果を流用せず、同じDB内に新しいrunを作る。
-完了済みのmutantだけを再利用し、`timeout`、`out_of_memory`、`error`、`not_run`は再実行の対象にする。
+完了済みのmutantだけを再利用し、`timeout`、`out_of_memory`、`process_limit`、`error`、`not_run`は再実行の対象にする。
+
+再開時にrun内の全結果をcoreへ読み込まない。
+session handlerはfingerprintが一致する最新の未完了runを`LIMIT 1`で返し、coreが候補spoolを逐次読むたびに、その`(run_id, mutant_id)`のstatusを最大一行だけ返す。
+coreは単一のstatusを`reuse`または`rerun`へ分類するため、resumeのメモリ使用量もmutant数から独立する。
+`timeout`など再実行対象の既存結果は、candidate、result、diagnosticを一つのtransactionで置換する。
+不完全終了したrunは再開後に完了へ遷移できるが、完了済みrunへの結果保存と再完了は拒否する。
 
 ## 終了コード
 
@@ -451,11 +458,12 @@ CLIの終了コードは次のとおりである。
 1   runが完了し、survivedがある
 2   CLI、設定、解析、保存、サンドボックスなどの基盤エラー
 3   baseline失敗
-4   timeout、OOM、候補数上限、全体時間上限により結果が不完全
+4   timeout、OOM、プロセス数上限、候補数上限、全体時間上限により結果が不完全
 130 ユーザーによる中断
 ```
 
-`survived`と未判定結果が混在する場合は、不完全であることを優先して4を返す。
+`error`が一件でもあれば基盤エラーを優先して2を返す。
+`survived`と`timeout`、`out_of_memory`、`process_limit`、`not_run`のいずれかが混在する場合は、不完全であることを優先して4を返す。
 候補が`--max-mutants`を超えた場合は安定順の先頭だけを実行し、残りを`not_run`として4を返す。
 対象範囲にmutation候補がない場合は、完全なrunとして0を返し、scoreを`null`にする。
 
@@ -473,7 +481,7 @@ eventには`EffectId`、spawn、filesystem、Git、serialization、SQLiteなど�
 状態機械が現在の状態と分類から再試行、中断、`not_run`、cleanup、終了コードを決める。
 
 テストプロセスの非ゼロ終了、timeout、OOM、プロセス数上限はhandler自体の失敗ではない。
-process handlerはこれらを`ProcessFinished` eventの終了理由として返し、functional coreが`killed`、`survived`、`timeout`、`out_of_memory`へ分類する。
+process handlerはこれらを`ProcessFinished` eventの終了理由として返し、functional coreが`killed`、`survived`、`timeout`、`out_of_memory`、`process_limit`へ分類する。
 
 deadlineとCtrl+Cは、それぞれ`DeadlineReached`と`CancellationRequested` eventとして状態機械へ渡す。
 fatal errorまたはキャンセル後、状態機械は新しいmutantのeffectを返さず、実行中プロセスの停止、未実行候補の分類、flush、cleanupだけを要求する。

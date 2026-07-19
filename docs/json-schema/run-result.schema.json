@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/HayaoSuzuki/hoimin/main/docs/json-schema/run-result.schema.json",
+  "title": "hoimin run JSON result",
+  "type": "object",
+  "required": ["schema_version", "run", "baseline", "mutants", "summary"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 2
+    },
+    "run": {
+      "$ref": "run-event.schema.json#/$defs/runStarted"
+    },
+    "baseline": {
+      "oneOf": [
+        {
+          "$ref": "run-event.schema.json#/$defs/baselineFinished"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "mutants": {
+      "type": "array",
+      "items": {
+        "$ref": "run-event.schema.json#/$defs/mutantFinished"
+      }
+    },
+    "summary": {
+      "$ref": "run-event.schema.json#/$defs/runFinished"
+    }
+  },
+  "additionalProperties": false
+}
