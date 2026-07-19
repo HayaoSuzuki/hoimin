@@ -533,3 +533,27 @@ def test_emit_candidate_reports_a_nonlocal_replacement(capsys: pytest.CaptureFix
     cst.MetadataWrapper(module, unsafe_skip_copy=True).visit(visitor)
 
     assert json.loads(capsys.readouterr().out)["code"] == "unparseable_replacement"
+
+
+def test_main_rejects_two_valid_jsonl_requests(monkeypatch: pytest.MonkeyPatch) -> None:
+    request = json.dumps({"effect_id": "effect-9", "path": "pkg/sample.py", "module": "value = 1\n"})
+    stdout = io.StringIO()
+    monkeypatch.setattr(analyzer.sys, "stdin", io.StringIO(f"{request}\n{request}\n"))
+    monkeypatch.setattr(analyzer.sys, "stdout", stdout)
+
+    assert analyzer.main() == 0
+    assert [json.loads(line) for line in stdout.getvalue().splitlines()] == [
+        {
+            "kind": "diagnostic",
+            "effect_id": "unknown",
+            "code": "invalid_request",
+            "message": "exactly one JSONL request is required",
+        },
+        {
+            "kind": "summary",
+            "effect_id": "unknown",
+            "candidate_count": 0,
+            "diagnostic_count": 1,
+            "truncated": False,
+        },
+    ]

@@ -9,6 +9,7 @@ import venv
 import zipfile
 from email.parser import Parser
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from conftest import build_wheel_for_smoke_tests
@@ -304,5 +305,23 @@ def test_wheel_override_skips_session_build(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("HOIMIN_WHEEL", str(tmp_path / "override.whl"))
+    sentinel = Mock()
+    monkeypatch.setattr("conftest.subprocess.run", sentinel)
 
     assert build_wheel_for_smoke_tests.__wrapped__() is None
+    sentinel.assert_not_called()
+
+
+def test_wheel_path_selects_linux_x86_64_wheel(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("HOIMIN_WHEEL", raising=False)
+    monkeypatch.setattr("wheel_smoke.REPOSITORY_ROOT", tmp_path)
+    monkeypatch.setattr("wheel_smoke.os.name", "posix")
+    monkeypatch.setattr("wheel_smoke.sys.platform", "linux")
+    wheel_directory = tmp_path / "target" / "wheels"
+    wheel_directory.mkdir(parents=True)
+    compatible_wheel = wheel_directory / "hoimin-0.1.0-cp314-cp314-manylinux_x86_64.whl"
+    compatible_wheel.touch()
+
+    assert wheel_path() == compatible_wheel
