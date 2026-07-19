@@ -5,8 +5,7 @@ use hoimin_cli::analyzer::{
 };
 use hoimin_core::{AnalyzeFile, ByteSpan, EffectId, MutationCandidate, TargetSlice};
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 fn candidate(sequence: u64) -> MutationCandidate {
     MutationCandidate {
@@ -315,115 +314,38 @@ fn replay_rejects_truncated_record() {
 }
 
 #[tokio::test]
-async fn concrete_handler_rejects_a_huge_stdout_line_without_unbounded_retention() {
-    let (directory, mut handler) = fault_handler(
-        "import json,sys\njson.loads(sys.stdin.readline())\nsys.stdout.write('x' * (2 * 1024 * 1024 + 1) + '\\n')\nsys.stdout.flush()\n",
-        Duration::from_secs(5),
-        4096,
-    );
-    let error = handler.handle(fault_request()).await.unwrap_err();
-    assert_eq!(error.failure.code(), "analyzer.protocol");
-    drop(directory);
-}
-
-#[tokio::test]
-async fn concrete_handler_bounds_stderr_even_when_the_helper_exits() {
-    let (directory, mut handler) = fault_handler(
-        "import json,sys\njson.loads(sys.stdin.readline())\nsys.stderr.write('e' * 2048)\nsys.stderr.flush()\n",
-        Duration::from_secs(5),
-        1024,
-    );
-    let error = handler.handle(fault_request()).await.unwrap_err();
-    assert_eq!(error.failure.code(), "analyzer.stderr.limit");
-    drop(directory);
-}
-
-#[tokio::test]
-async fn concrete_handler_times_out_and_reaps_a_helper_with_a_child_process() {
-    let (directory, mut handler) = fault_handler(
-        "import json,subprocess,sys,time\njson.loads(sys.stdin.readline())\nsubprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\ntime.sleep(60)\n",
-        Duration::from_millis(100),
-        4096,
-    );
-    let started = Instant::now();
-    let error = handler.handle(fault_request()).await.unwrap_err();
-    assert_eq!(error.failure.code(), "analyzer.timeout");
-    assert!(started.elapsed() < Duration::from_secs(5));
-    drop(directory);
-}
-
-#[tokio::test]
-async fn concrete_handler_times_out_while_helper_refuses_large_stdin() {
-    let (directory, mut handler) = fault_handler(
-        "import time\ntime.sleep(60)\n",
-        Duration::from_millis(100),
-        4096,
-    );
-    fs::write(
-        directory.path().join("src/calc.py"),
-        format!("# {}\n", "x".repeat(4 * 1024 * 1024)),
-    )
-    .unwrap();
-    let started = Instant::now();
-    let result = tokio::time::timeout(Duration::from_secs(5), handler.handle(fault_request()))
-        .await
-        .expect("analyzer timeout must supervise stdin delivery");
-    let error = result.unwrap_err();
-
-    assert_eq!(error.failure.code(), "analyzer.timeout");
-    assert!(started.elapsed() < Duration::from_secs(5));
-    drop(directory);
-}
-
-fn fault_handler(
-    helper: &str,
-    timeout: Duration,
-    max_output: u64,
-) -> (tempfile::TempDir, AnalyzerHandler) {
+async fn concrete_handler_does_not_spawn_python_for_analysis() {
     let directory = tempfile::tempdir().unwrap();
     fs::create_dir(directory.path().join("src")).unwrap();
     fs::write(
         directory.path().join("src/calc.py"),
-        "def add(a, b):\n    return a + b\n",
+        "def equal(left, right):\n    return left == right\n",
     )
     .unwrap();
     let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
-    let handler = AnalyzerHandler::with_helper_source_for_tests(
+    let mut handler = AnalyzerHandler::new(
         root,
-        Utf8PathBuf::from_path_buf(python_executable()).unwrap(),
-        timeout,
-        max_output,
-        helper,
+        Utf8PathBuf::from("definitely-not-a-python-executable"),
+        Duration::from_secs(5),
     )
     .unwrap();
-    (directory, handler)
-}
-
-fn fault_request() -> AnalyzeFile {
-    AnalyzeFile {
-        id: EffectId(77),
-        target: TargetSlice {
-            path: "src/calc.py".into(),
-            lines: Vec::new(),
-            symbols: Vec::new(),
-        },
-        final_target: true,
-        max_candidates: 10,
-    }
-}
-
-fn python_executable() -> PathBuf {
-    if let Some(path) = std::env::var_os("HOIMIN_TEST_PYTHON") {
-        return path.into();
-    }
-    let repository = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
+    let finished = handler
+        .handle(AnalyzeFile {
+            id: EffectId(77),
+            target: TargetSlice {
+                path: "src/calc.py".into(),
+                lines: Vec::new(),
+                symbols: Vec::new(),
+            },
+            final_target: true,
+            max_candidates: 10,
+        })
+        .await
         .unwrap();
-    if cfg!(windows) {
-        repository.join(".venv/Scripts/python.exe")
-    } else {
-        repository.join(".venv/bin/python")
-    }
+    let spool = finished.spool.unwrap();
+    let (first_candidate, _) = CandidateStore::replay_one(&spool, 0).unwrap().unwrap();
+
+    assert_eq!(spool.records, 1);
+    assert_eq!(first_candidate.original, "==");
+    assert_eq!(first_candidate.replacement, "!=");
 }

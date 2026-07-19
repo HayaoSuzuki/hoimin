@@ -113,10 +113,7 @@ where
     Stderr: Write,
 {
     pub async fn new(config: &RunConfig, stdout: Stdout, stderr: Stderr) -> Result<Self, String> {
-        let python = config
-            .python
-            .clone()
-            .ok_or_else(|| "--python is required for analyzer execution".to_owned())?;
+        let python = config.python.clone().unwrap_or_default();
         let spool_dir = tempfile::tempdir().map_err(|error| error.to_string())?;
         let spool_path = Utf8PathBuf::from_path_buf(spool_dir.path().to_owned())
             .map_err(|_| "temporary spool path is not UTF-8".to_owned())?;
