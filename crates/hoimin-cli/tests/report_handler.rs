@@ -200,18 +200,6 @@ fn normalize_documented_command(command: &[String], root: &Path, python: &Path) 
         .position(|pair| pair == ["hoimin", "run"])
         .expect("documented launch prefix");
     let mut argv = command[launcher..].to_vec();
-    let mut remove_value = false;
-    argv.retain(|argument| {
-        if remove_value {
-            remove_value = false;
-            false
-        } else if argument == "--python" {
-            remove_value = true;
-            false
-        } else {
-            true
-        }
-    });
     let root = root.to_str().expect("UTF-8 fixture");
     let python = python.to_str().expect("UTF-8 Python");
     for index in 0..argv.len() {
@@ -258,7 +246,7 @@ fn test_python() -> PathBuf {
     };
     assert!(
         executable.is_file(),
-        "set HOIMIN_TEST_PYTHON to a Python with LibCST: {}",
+        "set HOIMIN_TEST_PYTHON to a Python interpreter: {}",
         executable.display()
     );
     executable
