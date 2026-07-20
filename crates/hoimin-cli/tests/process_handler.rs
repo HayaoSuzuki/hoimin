@@ -13,12 +13,12 @@ use hoimin_core::{
     RunProcess,
 };
 
-#[cfg(any(target_os = "linux", windows))]
-use hoimin_core::{RawRunLimits, RunLimits};
 #[cfg(windows)]
 use hoimin_cli::resource::WindowsBackend;
 #[cfg(target_os = "linux")]
 use hoimin_cli::resource::probe_linux_cgroup_with_launcher;
+#[cfg(any(target_os = "linux", windows))]
+use hoimin_core::{RawRunLimits, RunLimits};
 
 #[cfg(unix)]
 fn native_arg(value: &OsStr) -> CommandArg {
