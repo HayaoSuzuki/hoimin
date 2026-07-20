@@ -15,6 +15,7 @@ from email.parser import Parser
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+COMMAND_TIMEOUT_SECONDS = 120
 
 
 @dataclass(frozen=True)
@@ -37,10 +38,47 @@ FIXTURE_SOURCE = "def add(left, right):\n    return left + right\n"
 FIXTURE_TEST = "from src.calc import add\n\n\ndef test_add():\n    assert add(2, 1) == 3\n"
 
 
-def run(argv: list[str], *, cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    completed = subprocess.run(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=False, timeout=120, check=False)
-    assert completed.returncode == 0, f"command failed ({completed.returncode}): {argv!r}\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+def run(
+    argv: list[str], *, cwd: Path, env: dict[str, str]
+) -> subprocess.CompletedProcess[str]:
+    completed = subprocess.run(
+        argv,
+        cwd=cwd,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        shell=False,
+        timeout=COMMAND_TIMEOUT_SECONDS,
+        check=False,
+    )
+    assert completed.returncode == 0, (
+        f"command failed ({completed.returncode}): {argv!r}\n"
+        f"stdout:\n{completed.stdout}\n"
+        f"stderr:\n{completed.stderr}"
+    )
     return completed
+
+
+def assert_help_hides_python_option(
+    completed: subprocess.CompletedProcess[str],
+) -> None:
+    assert "--python" not in completed.stdout, (
+        f"installed help unexpectedly exposes --python in stdout: {completed.stdout!r}"
+    )
+    assert "--python" not in completed.stderr, (
+        f"installed help unexpectedly exposes --python in stderr: {completed.stderr!r}"
+    )
+
+
+def assert_mutation_result(output: str) -> None:
+    document = json.loads(output)
+    mutants = document["mutants"]
+    assert mutants, "mutation run produced no mutants"
+    assert any(mutant["status"] in {"killed", "survived"} for mutant in mutants), (
+        f"mutation run had no killed or survived mutant: {mutants!r}"
+    )
 
 
 def is_compatible_wheel(wheel: Path, system: str, machine: str) -> bool:
@@ -153,30 +191,75 @@ def main() -> int:
         machine=platform.machine().lower(),
     )
     validate_wheel_metadata(wheel_metadata(wheel))
+
     with tempfile.TemporaryDirectory(prefix="hoimin-wheel-smoke-") as temporary_directory:
         temporary_root = Path(temporary_directory)
         environment = isolated_environment(os.environ)
         is_windows = os.name == "nt"
-        distribution_help = run(["uvx", "--python", "3.14", "--from", str(wheel), "hoimin", "--help"], cwd=temporary_root, env=environment)
-        assert "--python" not in distribution_help.stdout
-        assert "--python" not in distribution_help.stderr
+
+        distribution_help = run(
+            ["uvx", "--python", "3.14", "--from", str(wheel), "hoimin", "--help"],
+            cwd=temporary_root,
+            env=environment,
+        )
+        assert_help_hides_python_option(distribution_help)
+
         environment_root = temporary_root / "environment"
         venv.EnvBuilder(with_pip=True, clear=True).create(environment_root)
         python = environment_python(environment_root, is_windows=is_windows)
-        run([str(python), "-m", "pip", "install", "--disable-pip-version-check", str(wheel), "pytest>=8.4,<9"], cwd=temporary_root, env=environment)
+        run(
+            [
+                str(python),
+                "-m",
+                "pip",
+                "install",
+                "--disable-pip-version-check",
+                str(wheel),
+                "pytest>=8.4,<9",
+            ],
+            cwd=temporary_root,
+            env=environment,
+        )
         executable = environment_hoimin(environment_root, is_windows=is_windows)
         version = run([str(executable), "--version"], cwd=temporary_root, env=environment)
         assert (version.stdout + version.stderr).strip().startswith("hoimin ")
+
         fixture = temporary_root / "project"
         target = write_fixture(fixture)
         original = hashlib.sha256(target.read_bytes()).digest()
-        completed = run([str(executable), "run", "--root", str(fixture), "--source", "src", "--file", "src/calc.py", "--max-mutants", "16", "--max-candidates", "64", "--total-timeout", "60s", "--allow-best-effort-memory", "--format", "json", "--", str(python), "-m", "pytest", "-q"], cwd=fixture, env=environment)
+        completed = run(
+            [
+                str(executable),
+                "run",
+                "--root",
+                str(fixture),
+                "--source",
+                "src",
+                "--file",
+                "src/calc.py",
+                "--max-mutants",
+                "16",
+                "--max-candidates",
+                "64",
+                "--total-timeout",
+                "60s",
+                "--allow-best-effort-memory",
+                "--format",
+                "json",
+                "--",
+                str(python),
+                "-m",
+                "pytest",
+                "-q",
+            ],
+            cwd=fixture,
+            env=environment,
+        )
         assert "--python" not in completed.stdout
-        document = json.loads(completed.stdout)
-        assert document["mutants"]
-        assert any(mutant["status"] in {"killed", "survived"} for mutant in document["mutants"])
+        assert_mutation_result(completed.stdout)
         assert hashlib.sha256(target.read_bytes()).digest() == original
         assert "PYTHONPATH" not in environment
+
     return 0
 
 

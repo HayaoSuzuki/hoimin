@@ -1,14 +1,20 @@
 from pathlib import Path
+import subprocess
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 import zipfile
 
 from wheel_smoke import (
+    COMMAND_TIMEOUT_SECONDS,
     WheelMetadata,
+    assert_help_hides_python_option,
+    assert_mutation_result,
     environment_hoimin,
     environment_python,
     is_compatible_wheel,
     isolated_environment,
+    run,
     select_compatible_wheel,
     validate_wheel_metadata,
     wheel_metadata,
@@ -335,6 +341,103 @@ class SmokeFixtureTests(unittest.TestCase):
                 (root / "tests" / "test_calc.py").read_text(),
                 "from src.calc import add\n\n\ndef test_add():\n    assert add(2, 1) == 3\n",
             )
+
+
+class CommandAndResultTests(unittest.TestCase):
+    def test_run_returns_a_successful_completed_process(self) -> None:
+        # Arrange
+        argv = ["hoimin", "--version"]
+        completed = subprocess.CompletedProcess(argv, 0, stdout="hoimin 0.1.0\n", stderr="")
+        with patch("wheel_smoke.subprocess.run", return_value=completed) as mocked_run:
+            # Act
+            actual = run(argv, cwd=Path("work"), env={"PYTHONNOUSERSITE": "1"})
+
+            # Assert
+            self.assertIs(actual, completed)
+            mocked_run.assert_called_once_with(
+                argv,
+                cwd=Path("work"),
+                env={"PYTHONNOUSERSITE": "1"},
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                shell=False,
+                timeout=COMMAND_TIMEOUT_SECONDS,
+                check=False,
+            )
+
+    def test_run_reports_command_output_for_a_failure(self) -> None:
+        # Arrange
+        argv = ["hoimin", "run"]
+        completed = subprocess.CompletedProcess(argv, 7, stdout="command output", stderr="command error")
+        with patch("wheel_smoke.subprocess.run", return_value=completed):
+            # Act
+            error = self.assertRaisesRegex(
+                AssertionError,
+                r"(?s)command failed \(7\): .*stdout:\ncommand output\nstderr:\ncommand error",
+            )
+
+            # Assert
+            with error:
+                run(argv, cwd=Path("work"), env={})
+
+    def test_help_output_rejects_the_python_option(self) -> None:
+        cases = (
+            ("stdout", subprocess.CompletedProcess(["hoimin"], 0, stdout="--python", stderr="")),
+            ("stderr", subprocess.CompletedProcess(["hoimin"], 0, stdout="", stderr="--python")),
+        )
+
+        for channel, completed in cases:
+            with self.subTest(channel=channel):
+                # Arrange
+                help_output = completed
+
+                # Act
+                error = self.assertRaisesRegex(AssertionError, "--python")
+
+                # Assert
+                with error:
+                    assert_help_hides_python_option(help_output)
+
+    def test_mutation_result_accepts_terminal_mutants(self) -> None:
+        cases = (
+            ("killed", '{"mutants": [{"status": "killed"}]}'),
+            ("survived", '{"mutants": [{"status": "survived"}]}'),
+        )
+
+        for status, output in cases:
+            with self.subTest(status=status):
+                # Arrange
+                result_output = output
+
+                # Act
+                actual = assert_mutation_result(result_output)
+
+                # Assert
+                self.assertIsNone(actual)
+
+    def test_mutation_result_rejects_an_empty_mutant_list(self) -> None:
+        # Arrange
+        output = '{"mutants": []}'
+
+        # Act
+        error = self.assertRaises(AssertionError)
+
+        # Assert
+        with error:
+            assert_mutation_result(output)
+
+    def test_mutation_result_rejects_a_nonterminal_mutant_list(self) -> None:
+        # Arrange
+        output = '{"mutants": [{"status": "timeout"}]}'
+
+        # Act
+        error = self.assertRaises(AssertionError)
+
+        # Assert
+        with error:
+            assert_mutation_result(output)
 
 
 if __name__ == "__main__":
