@@ -2,6 +2,7 @@ use std::ffi::OsString;
 
 pub mod analyzer;
 pub mod cli;
+pub mod fingerprint_inputs;
 pub mod process;
 pub mod progress;
 pub mod report;
