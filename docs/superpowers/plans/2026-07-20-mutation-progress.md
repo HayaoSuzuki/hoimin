@@ -124,9 +124,13 @@ git commit -m "feat: add progress command parsing"
 
 ```rust
 #[test]
-fn input_marks_incomplete_and_unsupported_reports_unusable() {
+fn input_marks_incomplete_reports_unusable() {
     assert!(matches!(read_report(&incomplete), Ok(InputReport::Unusable { .. })));
-    assert!(matches!(read_report(&unsupported), Ok(InputReport::Unusable { .. })));
+}
+
+#[test]
+fn input_rejects_unsupported_report_schema() {
+    assert!(read_report(&unsupported).is_err());
 }
 ```
 
@@ -151,11 +155,11 @@ struct RunReportDocument {
 }
 
 pub(crate) enum UnusableReason {
-    UnsupportedSchema, MissingBaseline, BaselineFailed, Incomplete, InvalidStructure,
+    MissingBaseline, BaselineFailed, Incomplete, InvalidStructure,
 }
 ```
 
-Require `OutputEvent::BaselineFinished` with `ProcessTermination::Exit(0)`, `OutputEvent::RunFinished` with `complete == true`, and only `OutputEvent::MutantFinished` inside `mutants`. Malformed JSON, unreadable paths, and invalid document structure are command errors. Syntactically valid failed-baseline, incomplete, and unsupported-version reports are normal `UnusableReason` values for output.
+Require `OutputEvent::BaselineFinished` with `ProcessTermination::Exit(0)`, `OutputEvent::RunFinished` with `complete == true`, and only `OutputEvent::MutantFinished` inside `mutants`. Malformed JSON, unreadable paths, invalid document structure, and unsupported schema versions are command errors. Syntactically valid failed-baseline and incomplete reports are normal `UnusableReason` values for output.
 
 - [ ] **Step 4: Verify input classification**
 
@@ -266,7 +270,7 @@ async fn progress_json_exposes_agent_decision_fields() {
 }
 ```
 
-Add tests for readable human fields and for malformed JSON or unreadable paths returning code `2`; valid unusable reports with no usable adjacent pair must return `0` and `indeterminate`.
+Add tests for readable human fields and for malformed JSON, unreadable paths, or unsupported schema returning code `2`; valid unusable reports with no usable adjacent pair must return `0` and `indeterminate`.
 
 - [ ] **Step 2: Run output tests and verify failure**
 
