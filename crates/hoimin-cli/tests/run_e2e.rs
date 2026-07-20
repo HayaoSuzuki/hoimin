@@ -926,20 +926,35 @@ fn repo_root() -> PathBuf {
         .to_owned()
 }
 
+#[cfg(unix)]
+struct DescendantProcess {
+    // `libc::kill` accepts a signed Unix process ID. Validate the marker value
+    // once when opening it and retain that native representation thereafter.
+    pid: i32,
+}
+
+#[cfg(windows)]
 struct DescendantProcess {
     pid: u32,
-    #[cfg(windows)]
     handle: windows_sys::Win32::Foundation::HANDLE,
 }
 
 impl DescendantProcess {
     fn pid(&self) -> u32 {
-        self.pid
+        #[cfg(unix)]
+        {
+            self.pid.unsigned_abs()
+        }
+
+        #[cfg(windows)]
+        {
+            self.pid
+        }
     }
 
     #[cfg(unix)]
     fn open(pid: u32) -> Option<Self> {
-        i32::try_from(pid).ok().map(|pid| Self { pid: pid as u32 })
+        i32::try_from(pid).ok().map(|pid| Self { pid })
     }
 
     #[cfg(windows)]
@@ -957,10 +972,8 @@ impl DescendantProcess {
 
     #[cfg(unix)]
     fn is_alive(&self) -> bool {
-        i32::try_from(self.pid).is_ok_and(|pid| {
-            // SAFETY: signal 0 performs no mutation and accepts a validated process ID.
-            unsafe { libc::kill(pid, 0) == 0 }
-        })
+        // SAFETY: signal 0 performs no mutation and the process ID was validated in `open`.
+        unsafe { libc::kill(self.pid, 0) == 0 }
     }
 
     #[cfg(windows)]
