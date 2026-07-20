@@ -9,7 +9,7 @@ pub use store::*;
 use camino::Utf8PathBuf;
 use hoimin_core::{
     AnalysisFinished, AnalyzeFile, CANDIDATE_SCHEMA_VERSION, CandidateDescriptor, EffectFailed,
-    MutationCandidate, MutationOperatorSelection, validate_candidate,
+    MutationCandidate, MutationOperatorSelection, MutationProfile, validate_candidate,
 };
 
 use crate::process::ProcessCancellation;
@@ -50,8 +50,9 @@ impl AnalyzerHandler {
         &mut self,
         request: AnalyzeFile,
         operators: &MutationOperatorSelection,
+        profile: MutationProfile,
     ) -> Result<AnalysisFinished, EffectFailed> {
-        self.handle_with_cancellation(request, operators, ProcessCancellation::new())
+        self.handle_with_cancellation(request, operators, profile, ProcessCancellation::new())
             .await
     }
 
@@ -59,6 +60,7 @@ impl AnalyzerHandler {
         &mut self,
         request: AnalyzeFile,
         operators: &MutationOperatorSelection,
+        profile: MutationProfile,
         cancellation: ProcessCancellation,
     ) -> Result<AnalysisFinished, EffectFailed> {
         let id = request.id;
@@ -95,6 +97,7 @@ impl AnalyzerHandler {
                 lines: &request.target.lines,
                 symbols: &request.target.symbols,
                 operators,
+                profile,
                 max_candidates,
             },
             &module,
@@ -164,7 +167,7 @@ fn accept_candidate(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hoimin_core::{EffectId, TargetSlice};
+    use hoimin_core::{EffectId, MutationProfile, TargetSlice};
 
     fn request(id: u64) -> AnalyzeFile {
         AnalyzeFile {
@@ -195,7 +198,7 @@ mod tests {
         cancellation.cancel();
 
         let cancelled = handler
-            .handle_with_cancellation(request(82), &operators, cancellation)
+            .handle_with_cancellation(request(82), &operators, MutationProfile::Full, cancellation)
             .await;
 
         assert!(matches!(
@@ -204,7 +207,10 @@ mod tests {
         ));
         assert_eq!(handler.store.as_ref().unwrap().count(), 0);
 
-        let finished = handler.handle(request(83), &operators).await.unwrap();
+        let finished = handler
+            .handle(request(83), &operators, MutationProfile::Full)
+            .await
+            .unwrap();
         let spool = finished.spool.unwrap();
 
         assert_eq!(spool.records, 1);

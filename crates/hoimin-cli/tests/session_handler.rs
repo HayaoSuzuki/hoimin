@@ -6,7 +6,7 @@ use hoimin_core::{
     LookupStoredResult, MutantResult, MutationCandidate, MutationStatus, OutputSpoolRef,
     PersistResult, ResourceMode, ResumeDecision, RunFingerprint, resume_policy,
 };
-use rusqlite::Connection;
+use rusqlite::{Connection, OpenFlags};
 
 #[test]
 fn migrates_schema_enables_wal_and_echoes_typed_completion_events() {
@@ -24,6 +24,17 @@ fn migrates_schema_enables_wal_and_echoes_typed_completion_events() {
         .unwrap();
     assert_eq!(started.id, EffectId(1));
     assert_eq!(started.run_id, "run-1");
+
+    let connection = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let stored_schema: i64 = connection
+        .query_row("SELECT schema_version FROM fingerprints", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(
+        stored_schema,
+        i64::from(hoimin_core::FINGERPRINT_SCHEMA_VERSION)
+    );
 
     let persisted = handler.persist(&persist_request(2, "run-1", "m1")).unwrap();
     assert_eq!(persisted.id, EffectId(2));

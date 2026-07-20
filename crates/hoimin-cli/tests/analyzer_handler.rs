@@ -4,7 +4,8 @@ use hoimin_cli::analyzer::{
     CandidateStore, ProtocolError, StoreError,
 };
 use hoimin_core::{
-    AnalyzeFile, ByteSpan, EffectId, MutationCandidate, MutationOperatorSelection, TargetSlice,
+    AnalyzeFile, ByteSpan, EffectId, MutationCandidate, MutationOperatorSelection, MutationProfile,
+    TargetSlice,
 };
 use std::fs;
 
@@ -392,6 +393,7 @@ async fn concrete_handler_does_not_spawn_python_for_analysis() {
                 max_candidates: 10,
             },
             &MutationOperatorSelection::default(),
+            MutationProfile::Full,
         )
         .await
         .unwrap();
@@ -411,6 +413,7 @@ async fn concrete_handler_reports_source_read_failure() {
         .handle(
             analysis_request(78, "src/missing.py", true, 10),
             &MutationOperatorSelection::default(),
+            MutationProfile::Full,
         )
         .await;
 
@@ -434,6 +437,7 @@ async fn concrete_handler_truncates_at_candidate_limit() {
         .handle(
             analysis_request(79, "src/calc.py", true, 1),
             &MutationOperatorSelection::default(),
+            MutationProfile::Full,
         )
         .await
         .unwrap();
@@ -467,6 +471,7 @@ async fn concrete_handler_spools_multiple_requests_on_final_target() {
         .handle(
             analysis_request(80, "src/first.py", false, 10),
             &MutationOperatorSelection::default(),
+            MutationProfile::Full,
         )
         .await
         .unwrap();
@@ -474,6 +479,7 @@ async fn concrete_handler_spools_multiple_requests_on_final_target() {
         .handle(
             analysis_request(81, "src/second.py", true, 10),
             &MutationOperatorSelection::default(),
+            MutationProfile::Full,
         )
         .await
         .unwrap();

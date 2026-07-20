@@ -1,8 +1,9 @@
 use std::time::Duration;
 
 use hoimin_core::{
-    CommandArg, FingerprintInput, LineRange, MutationStatus, RawRunLimits, ResourceMode,
-    ResumeDecision, SourceHash, StoredResult, TargetSlice, fingerprint, resume_policy,
+    CommandArg, FingerprintInput, LineRange, MutationProfile, MutationStatus, RawRunLimits,
+    ResourceMode, ResumeDecision, SourceHash, StoredResult, TargetSlice, fingerprint,
+    resume_policy,
 };
 use proptest::prelude::*;
 
@@ -110,6 +111,17 @@ fn fingerprint_changes_when_resource_mode_changes() {
     changed.resource_mode = ResourceMode::BestEffort;
     assert_ne!(fingerprint(&fixture_input()), fingerprint(&changed));
 }
+
+#[test]
+fn fingerprint_changes_when_mutation_profile_changes() {
+    let focused = FingerprintInput {
+        profile: MutationProfile::Focused,
+        ..fixture_input()
+    };
+
+    assert_ne!(fingerprint(&fixture_input()), fingerprint(&focused));
+}
+
 #[test]
 fn fingerprint_changes_when_type_operator_selection_changes() {
     let changed = FingerprintInput {
@@ -180,6 +192,7 @@ fn fixture_input() -> FingerprintInput {
             },
         ],
         operators: vec!["boolean".to_owned(), "binary".to_owned()],
+        profile: MutationProfile::Full,
         test_argv: vec![CommandArg::Unix(vec![0xff, 0, b'x'])],
         limits: (&fixture_raw_limits()).try_into().unwrap(),
         resource_mode: ResourceMode::Hard,

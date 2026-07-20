@@ -331,6 +331,87 @@ async fn sqlite_session_can_be_resumed_after_repeated_mutant_limits() {
         assert_eq!(complete, 0);
     }
 }
+
+#[tokio::test]
+async fn focused_profile_is_reported_and_omits_arid_candidates() {
+    let project = focused_profile_project();
+    let run = run_focused_profile(project.path(), "focused", "json", None, false, 100).await;
+
+    assert_eq!(
+        run.document["run"]["normalized_config"]["profile"],
+        "focused"
+    );
+    let lines: Vec<_> = run.document["mutants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|mutant| mutant["candidate"]["line"].as_u64().unwrap())
+        .collect();
+    assert_eq!(lines, vec![4, 9]);
+
+    let jsonl = run_focused_profile(project.path(), "focused", "jsonl", None, false, 100).await;
+    let run_started = jsonl
+        .stdout
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find(|record| record["kind"] == "run_started")
+        .unwrap();
+    assert_eq!(run_started["normalized_config"]["profile"], "focused");
+
+    let human = run_focused_profile(project.path(), "focused", "human", None, false, 100).await;
+    assert!(
+        human
+            .stdout
+            .lines()
+            .next()
+            .unwrap()
+            .contains("(profile: focused)"),
+        "human output was: {}",
+        human.stdout
+    );
+}
+
+#[tokio::test]
+async fn focused_profile_does_not_resume_full_profile_session() {
+    let project = focused_profile_project();
+    let sessions = tempfile::tempdir().unwrap();
+    let database = sessions.path().join("session.sqlite3");
+
+    let full = run_focused_profile(project.path(), "full", "json", Some(&database), false, 1).await;
+    assert_eq!(full.exit_code, 4, "stderr={}", full.stderr);
+    assert_eq!(full.document["summary"]["complete"], false);
+
+    let focused =
+        run_focused_profile(project.path(), "focused", "json", Some(&database), true, 1).await;
+    assert_eq!(focused.exit_code, 4, "stderr={}", focused.stderr);
+    assert_eq!(focused.document["summary"]["complete"], false);
+
+    let connection = rusqlite::Connection::open(database).unwrap();
+    let run_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM runs", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(run_count, 2);
+}
+
+#[test]
+fn readme_documents_focused_profile_selection_and_session_compatibility() {
+    let readme = std::fs::read_to_string(repo_root().join("README.md")).unwrap();
+    let windows_readme = readme.replace("\r\n", "\n").replace('\n', "\r\n");
+
+    for documented_readme in [&readme, &windows_readme] {
+        let documented_readme = documented_readme.replace("\r\n", "\n");
+
+        assert!(documented_readme.contains("`--profile full|focused`"));
+        assert!(documented_readme.contains(
+            "`--profile full` is the default and considers every candidate produced by the selected\noperators."
+        ));
+        assert!(documented_readme.contains("Python `__main__` guards, bare\n`print(...)` calls, `assert` statements, and function default expressions."));
+        assert!(documented_readme.contains(
+            "Profile selection is part of session compatibility, so a focused run never resumes results from a full run and vice versa."
+        ));
+    }
+}
+
 #[tokio::test]
 async fn sqlite_save_failure_is_fatal_and_leaves_no_partial_result() {
     let directory = tempfile::tempdir().unwrap();
@@ -856,6 +937,93 @@ fn write_parallel_project(root: &Path) {
         "def total(a, b, c, d, e):\n    return a + b + c + d + e\n",
     )
     .unwrap();
+}
+
+fn focused_profile_project() -> tempfile::TempDir {
+    let project = tempfile::tempdir().unwrap();
+    let source = project.path().join("src");
+    std::fs::create_dir(&source).unwrap();
+    std::fs::write(source.join("__init__.py"), "").unwrap();
+    std::fs::write(
+        source.join("focused.py"),
+        "def decide(value=True):\n    print(1 + 2)\n    assert value is True\n    return 3 + 4\n\nif __name__ == \"__main__\":\n    launch = 5 + 6\nelse:\n    fallback = 7 + 8\n",
+    )
+    .unwrap();
+    project
+}
+
+async fn run_focused_profile(
+    root: &Path,
+    profile: &str,
+    format: &str,
+    session: Option<&Path>,
+    resume: bool,
+    max_mutants: usize,
+) -> FixtureRun {
+    let python = python_executable();
+    let mut args = vec![
+        OsString::from("hoimin"),
+        OsString::from("run"),
+        OsString::from("--root"),
+        root.as_os_str().to_owned(),
+        OsString::from("--source"),
+        OsString::from("src"),
+        OsString::from("--file"),
+        OsString::from("src/focused.py"),
+        OsString::from("--profile"),
+        OsString::from(profile),
+        OsString::from("--max-mutants"),
+        OsString::from(max_mutants.to_string()),
+        OsString::from("--format"),
+        OsString::from(format),
+        OsString::from("--allow-best-effort-memory"),
+        OsString::from("--"),
+        python.as_os_str().to_owned(),
+        OsString::from("-c"),
+        OsString::from("from src.focused import decide; assert decide() == 7"),
+    ];
+    let separator = args.iter().position(|argument| argument == "--").unwrap();
+    if let Some(session) = session {
+        args.splice(
+            separator..separator,
+            [OsString::from("--session"), session.as_os_str().to_owned()],
+        );
+    }
+    if resume {
+        let separator = args.iter().position(|argument| argument == "--").unwrap();
+        args.splice(separator..separator, [OsString::from("--resume")]);
+    }
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let exit_code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let stdout = String::from_utf8(stdout).unwrap();
+    let stderr = String::from_utf8(stderr).unwrap();
+    let document = if format == "json" {
+        serde_json::from_str(stdout.trim()).unwrap_or_else(|error| {
+            panic!(
+                "invalid JSON report ({error}); exit={exit_code}; stdout={stdout:?}; stderr={stderr:?}"
+            )
+        })
+    } else {
+        serde_json::Value::Null
+    };
+    let statuses = document["mutants"]
+        .as_array()
+        .map(|mutants| {
+            mutants
+                .iter()
+                .map(|mutant| mutant["status"].as_str().unwrap().to_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    FixtureRun {
+        exit_code,
+        statuses,
+        stdout,
+        stderr,
+        document,
+    }
 }
 
 async fn run_project_with_session(

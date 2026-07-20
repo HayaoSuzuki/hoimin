@@ -206,6 +206,25 @@ impl Default for MutationOperatorSelection {
         Self::all_legacy()
     }
 }
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MutationProfile {
+    #[default]
+    Full,
+    Focused,
+}
+
+impl MutationProfile {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Focused => "focused",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RawRunConfig {
     pub root: Utf8PathBuf,
@@ -220,6 +239,7 @@ pub struct RawRunConfig {
     pub operators: Vec<String>,
     pub exclude_operators: Vec<String>,
     pub allow_best_effort_memory: bool,
+    pub profile: MutationProfile,
     pub limits: RawRunLimits,
     pub test_argv: Vec<CommandArg>,
     pub output: OutputConfig,
@@ -302,6 +322,7 @@ pub struct RunConfig {
     pub session: Option<SessionConfig>,
     pub operators: MutationOperatorSelection,
     pub allow_best_effort_memory: bool,
+    pub profile: MutationProfile,
     pub resume: bool,
 }
 
@@ -451,6 +472,7 @@ impl TryFrom<RawRunConfig> for RunConfig {
             session: raw.session,
             operators,
             allow_best_effort_memory: raw.allow_best_effort_memory,
+            profile: raw.profile,
             resume: raw.resume,
         })
     }

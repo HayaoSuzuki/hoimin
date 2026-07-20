@@ -3,11 +3,12 @@ use std::time::Duration;
 
 use hoimin_core::{
     AnalysisFinished, ByteSpan, CandidateLoaded, CandidateSpoolRef, CommandArg, EffectFailed,
-    EffectId, MutationApplied, MutationCandidate, MutationStatus, MutationSummary, OutputConfig,
-    OutputEmitted, PreflightCompleted, ProcessFinished, ProcessTermination, RawRunConfig,
-    RawRunLimits, ResourceMode, ResultPersisted, RunConfig, RunEffect, RunEvent, RunFingerprint,
-    RunPhase, RunState, SessionLoaded, SessionResumeRef, SessionStarted, StartRequested,
-    StoredResult, StoredResultLoaded, TargetSlice, TargetsResolved, WorkerCreated, transition,
+    EffectId, MutationApplied, MutationCandidate, MutationProfile, MutationStatus, MutationSummary,
+    OutputConfig, OutputEmitted, OutputEvent, PreflightCompleted, ProcessFinished,
+    ProcessTermination, RawRunConfig, RawRunLimits, ResourceMode, ResultPersisted, RunConfig,
+    RunEffect, RunEvent, RunFingerprint, RunPhase, RunState, SessionLoaded, SessionResumeRef,
+    SessionStarted, StartRequested, StoredResult, StoredResultLoaded, TargetSlice, TargetsResolved,
+    WorkerCreated, transition,
 };
 
 #[test]
@@ -70,6 +71,52 @@ fn baseline_success_requests_analysis_without_performing_io() {
         effects
             .iter()
             .any(|effect| matches!(effect, RunEffect::AnalyzeFile(_)))
+    );
+}
+
+#[test]
+fn run_started_emits_normalized_focused_profile() {
+    let state = RunState::new("run-1", focused_config());
+    let (state, effects) = transition(state, RunEvent::StartRequested(StartRequested)).unwrap();
+    let resolve_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ResolveTargets(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::TargetsResolved(TargetsResolved {
+            id: resolve_id,
+            targets: vec![TargetSlice {
+                path: "src/calc.py".into(),
+                lines: Vec::new(),
+                symbols: Vec::new(),
+            }],
+        }),
+    )
+    .unwrap();
+    let preflight_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::Preflight(_))
+    }));
+    let (_, effects) = transition(
+        state,
+        RunEvent::PreflightCompleted(PreflightCompleted {
+            id: preflight_id,
+            per_worker_logical_bytes: 10,
+            requested_workers: 1,
+            aggregate_logical_bytes: 10,
+            fingerprint: None,
+        }),
+    )
+    .unwrap();
+
+    let RunEffect::EmitOutput(output) = effects.first().unwrap() else {
+        unreachable!()
+    };
+    let OutputEvent::RunStarted(run_started) = &output.event else {
+        unreachable!()
+    };
+    assert_eq!(
+        run_started.normalized_config.as_ref().unwrap().profile,
+        MutationProfile::Focused
     );
 }
 
@@ -1859,6 +1906,12 @@ fn waiting_for_reset(termination: ProcessTermination) -> (RunState, Vec<RunEffec
 
 fn fixture_config() -> RunConfig {
     RunConfig::try_from(fixture_raw_config()).unwrap()
+}
+
+fn focused_config() -> RunConfig {
+    let mut raw = fixture_raw_config();
+    raw.profile = MutationProfile::Focused;
+    RunConfig::try_from(raw).unwrap()
 }
 
 fn fixture_raw_config() -> RawRunConfig {

@@ -4,11 +4,11 @@ use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    CommandArg, MutantTimeout, MutationCandidate, MutationStatus, OutputSpoolRef, ResourceMode,
-    RunLimits, TargetSlice,
+    CommandArg, MutantTimeout, MutationCandidate, MutationProfile, MutationStatus, OutputSpoolRef,
+    ResourceMode, RunLimits, TargetSlice,
 };
 
-const FINGERPRINT_SCHEMA: u8 = 2;
+pub const FINGERPRINT_SCHEMA_VERSION: u8 = 3;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceHash {
@@ -21,6 +21,7 @@ pub struct FingerprintInput {
     pub sources: Vec<SourceHash>,
     pub targets: Vec<TargetSlice>,
     pub operators: Vec<String>,
+    pub profile: MutationProfile,
     pub test_argv: Vec<CommandArg>,
     pub limits: RunLimits,
     pub resource_mode: ResourceMode,
@@ -44,7 +45,7 @@ impl RunFingerprint {
 #[must_use]
 pub fn fingerprint(input: &FingerprintInput) -> RunFingerprint {
     let mut encoder = Encoder::new();
-    encoder.raw(&[FINGERPRINT_SCHEMA]);
+    encoder.raw(&[FINGERPRINT_SCHEMA_VERSION]);
     encoder.field(1, &encode_sources(&input.sources));
     encoder.field(2, &encode_targets(&input.targets));
     encoder.field(3, &encode_operators(&input.operators));
@@ -55,6 +56,13 @@ pub fn fingerprint(input: &FingerprintInput) -> RunFingerprint {
         &[match input.resource_mode {
             ResourceMode::Hard => 0,
             ResourceMode::BestEffort => 1,
+        }],
+    );
+    encoder.field(
+        7,
+        &[match input.profile {
+            MutationProfile::Full => 0,
+            MutationProfile::Focused => 1,
         }],
     );
     RunFingerprint(*blake3::hash(&encoder.bytes).as_bytes())

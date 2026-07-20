@@ -53,6 +53,7 @@ The defaults are:
 | `--max-copy-size` | `1GiB` | run-wide logical bytes copied across all workers |
 | `--max-processes` | `64` | run-wide descendants |
 | `--format` | `json` | `json`, `jsonl`, or `human` |
+| `--profile full|focused` | `full` | candidate-selection profile |
 
 By default there are no include/exclude overrides or SQLite session, and `--changed`, `--resume`, and `--allow-best-effort-memory` are disabled.
 
@@ -89,6 +90,18 @@ The type selector families are `type_nullable`, `type_collections`, and `type_it
 A type checker that exits nonzero for a mutated annotation kills that mutant.
 
 The Rust analyzer preserves the original source except for exactly one replacement per mutant.
+
+## Mutation profiles
+
+`--profile full` is the default and considers every candidate produced by the selected
+operators. `--profile focused` suppresses candidates in Python `__main__` guards, bare
+`print(...)` calls, `assert` statements, and function default expressions. It is intended
+to reduce low-value survivors in focused change checks, but may omit useful mutants; use
+`full` when measuring the complete selected target.
+
+```console
+hoimin run --profile focused --root . --source src -- python -m pytest -q
+```
 
 ## Results
 
@@ -132,7 +145,7 @@ Higher-priority conditions win in this order: cancellation, infrastructure error
 
 ## Sessions and resume
 
-No database is created by default. `--session PATH` stores a run in SQLite and commits each mutant result independently. `--resume` requires `--session` and looks up the newest compatible incomplete run. Compatibility includes source and configuration fingerprints, test argv, safety limits, and the operator set. Completed `killed` and `survived` results can be reused; `timeout`, `out_of_memory`, `process_limit`, `error`, and `not_run` are run again. An incompatible or already complete run is not silently mixed with new results.
+No database is created by default. `--session PATH` stores a run in SQLite and commits each mutant result independently. `--resume` requires `--session` and looks up the newest compatible incomplete run. Compatibility includes source and configuration fingerprints, test argv, safety limits, and the operator set. Profile selection is part of session compatibility, so a focused run never resumes results from a full run and vice versa. Completed `killed` and `survived` results can be reused; `timeout`, `out_of_memory`, `process_limit`, `error`, and `not_run` are run again. An incompatible or already complete run is not silently mixed with new results.
 
 ## Build and verify a wheel
 
