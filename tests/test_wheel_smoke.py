@@ -5,11 +5,15 @@ import zipfile
 
 from wheel_smoke import (
     WheelMetadata,
+    environment_hoimin,
+    environment_python,
     is_compatible_wheel,
+    isolated_environment,
     select_compatible_wheel,
     validate_wheel_metadata,
     wheel_metadata,
     wheel_path,
+    write_fixture,
 )
 
 
@@ -260,6 +264,77 @@ class WheelMetadataTests(unittest.TestCase):
                 # Assert
                 with error:
                     validate_wheel_metadata(invalid_metadata)
+
+
+class SmokeFixtureTests(unittest.TestCase):
+    def test_isolated_environment_removes_python_import_state(self) -> None:
+        # Arrange
+        source = {
+            "KEEP": "value",
+            "PYTHONHOME": "/python-home",
+            "PYTHONPATH": "/checkout",
+            "VIRTUAL_ENV": "/virtual-environment",
+        }
+
+        # Act
+        actual = isolated_environment(source)
+
+        # Assert
+        self.assertEqual(actual, {"KEEP": "value", "PYTHONNOUSERSITE": "1"})
+
+    def test_environment_python_paths(self) -> None:
+        cases = (
+            ("POSIX", False, Path("environment/bin/python")),
+            ("Windows", True, Path("environment/Scripts/python.exe")),
+        )
+
+        for name, is_windows, expected in cases:
+            with self.subTest(name=name):
+                # Arrange
+                root = Path("environment")
+
+                # Act
+                actual = environment_python(root, is_windows=is_windows)
+
+                # Assert
+                self.assertEqual(actual, expected)
+
+    def test_environment_hoimin_paths(self) -> None:
+        cases = (
+            ("POSIX", False, Path("environment/bin/hoimin")),
+            ("Windows", True, Path("environment/Scripts/hoimin.exe")),
+        )
+
+        for name, is_windows, expected in cases:
+            with self.subTest(name=name):
+                # Arrange
+                root = Path("environment")
+
+                # Act
+                actual = environment_hoimin(root, is_windows=is_windows)
+
+                # Assert
+                self.assertEqual(actual, expected)
+
+    def test_write_fixture_creates_the_expected_project(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            # Arrange
+            root = Path(temporary_directory) / "project"
+
+            # Act
+            target = write_fixture(root)
+
+            # Assert
+            self.assertEqual(target, root / "src" / "calc.py")
+            self.assertEqual((root / "src" / "__init__.py").read_text(), "")
+            self.assertEqual(
+                target.read_text(),
+                "def add(left, right):\n    return left + right\n",
+            )
+            self.assertEqual(
+                (root / "tests" / "test_calc.py").read_text(),
+                "from src.calc import add\n\n\ndef test_add():\n    assert add(2, 1) == 3\n",
+            )
 
 
 if __name__ == "__main__":
