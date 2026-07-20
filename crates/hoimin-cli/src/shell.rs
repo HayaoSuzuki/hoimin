@@ -206,7 +206,7 @@ async fn prepare_fingerprint<Stdout, Stderr>(
     }
     Ok(fingerprint(&FingerprintInput {
         sources,
-        fingerprint_inputs: Vec::new(),
+        fingerprint_inputs: context.config.fingerprint_inputs.clone(),
         targets: targets.clone(),
         operators: context.config.operators.names(),
         profile: context.config.profile,
@@ -500,6 +500,19 @@ fn session<Stdout, Stderr>(
     Ok(context.session.as_mut().expect("initialized above"))
 }
 
+/// Resolves filesystem-backed records that participate in a run fingerprint.
+///
+/// # Errors
+///
+/// Returns an error when a configured fingerprint input pattern cannot be resolved.
+pub fn prepare_run_config(
+    mut config: RunConfig,
+) -> Result<RunConfig, crate::fingerprint_inputs::FingerprintInputError> {
+    config.fingerprint_inputs =
+        crate::fingerprint_inputs::resolve(&config.root, &config.fingerprint_includes)?;
+    Ok(config)
+}
+
 /// Runs the configured mutation-test state machine.
 ///
 /// # Errors
@@ -514,15 +527,30 @@ where
     Stdout: Write,
     Stderr: Write,
 {
-    run_loop_with_control(config, stdout, stderr, RunControl::new()).await
+    let config = prepare_run_config(config).map_err(|error| error.to_string())?;
+    run_loop_prepared(config, stdout, stderr, RunControl::new()).await
 }
 
 #[doc(hidden)]
+pub async fn run_loop_with_control<Stdout, Stderr>(
+    config: RunConfig,
+    stdout: Stdout,
+    stderr: Stderr,
+    control: RunControl,
+) -> Result<i32, String>
+where
+    Stdout: Write,
+    Stderr: Write,
+{
+    let config = prepare_run_config(config).map_err(|error| error.to_string())?;
+    run_loop_prepared(config, stdout, stderr, control).await
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "the loop keeps cancellation, completion, and state-transition ordering in one auditable sequence"
 )]
-pub async fn run_loop_with_control<Stdout, Stderr>(
+async fn run_loop_prepared<Stdout, Stderr>(
     config: RunConfig,
     stdout: Stdout,
     stderr: Stderr,
