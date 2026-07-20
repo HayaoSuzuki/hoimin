@@ -66,12 +66,13 @@ async fn documentation_contract() {
     std::fs::create_dir_all(fixture.path().join("tests")).unwrap();
     std::fs::write(
         fixture.path().join("src/calc.py"),
-        "def add(left, right):\n    return left + right\n",
+        "def add(left, right) -> int:\n    return left + right\n",
     )
     .unwrap();
     std::fs::write(fixture.path().join("src/__init__.py"), "").unwrap();
     let python = repository_python();
     let mut documented_outputs = Vec::new();
+    let mut documented_type_operator = false;
     for command in commands {
         let argv = normalize_documented_command(&command, fixture.path(), &python);
         let config = hoimin_cli::cli::parse_config_from(argv.clone())
@@ -79,10 +80,9 @@ async fn documentation_contract() {
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
         let exit = hoimin_cli::run_with_io(argv, &mut stdout, &mut stderr).await;
-        assert_eq!(
-            exit,
-            0,
-            "documented command failed: {command:?}\nstderr: {}",
+        assert!(
+            matches!(exit, 0 | 1),
+            "documented command returned an infrastructure error: {exit}; command: {command:?}\nstderr: {}",
             String::from_utf8_lossy(&stderr)
         );
         match config.output.format {
@@ -117,6 +117,13 @@ async fn documentation_contract() {
             OutputFormat::Json => {
                 let document = serde_json::from_slice(&stdout).unwrap();
                 assert_schema_valid(&result_schema, &document, &event_schema);
+                documented_type_operator |= document["mutants"].as_array().is_some_and(|mutants| {
+                    mutants.iter().any(|mutant| {
+                        mutant["candidate"]["operator"]
+                            .as_str()
+                            .is_some_and(|operator| operator.starts_with("type_"))
+                    })
+                });
             }
             OutputFormat::Jsonl => {
                 for line in stdout
@@ -132,6 +139,10 @@ async fn documentation_contract() {
         }
     }
 
+    assert!(
+        documented_type_operator,
+        "a documented JSON command must validate a type-operator candidate"
+    );
     let (document, jsonl_events) = actual_documented_reports();
     assert_schema_valid(&result_schema, &document, &event_schema);
     for event in &jsonl_events {

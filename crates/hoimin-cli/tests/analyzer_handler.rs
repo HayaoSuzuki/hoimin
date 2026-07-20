@@ -205,10 +205,22 @@ fn protocol_accepts_nested_colon_path_like_task4() {
 }
 
 #[test]
-fn protocol_accepts_type_nullable_remove_candidate() {
+fn protocol_accepts_type_nullable_remove_candidate_from_json_output() {
     let mut protocol = protocol();
+    let output = serde_json::json!({
+        "kind": "candidate",
+        "effect_id": 7,
+        "path": "pkg/calc.py",
+        "span": { "start": 1, "length": 1 },
+        "original": "?",
+        "replacement": "",
+        "operator": "type_nullable_remove",
+        "line": 1,
+        "column": 1,
+        "symbol": null
+    });
     assert!(matches!(
-        protocol.receive_line(br#"{"kind":"candidate","effect_id":7,"path":"pkg/calc.py","span":{"start":1,"length":1},"original":"?","replacement":"","operator":"type_nullable_remove","line":1,"column":1,"symbol":null}"#),
+        protocol.receive_line(&serde_json::to_vec(&output).unwrap()),
         Ok(Some(AnalyzerRecord::Candidate(_)))
     ));
 }
