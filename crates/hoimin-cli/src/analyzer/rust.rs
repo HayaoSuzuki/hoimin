@@ -5,7 +5,7 @@ use hoimin_core::{
     ByteSpan, LineRange, MutationOperator, MutationOperatorSelection, MutationProfile,
 };
 use ruff_python_ast::visitor::Visitor;
-use ruff_python_ast::{Expr, ModModule, Operator, Stmt, UnaryOp, visitor};
+use ruff_python_ast::{CmpOp, Expr, ModModule, Operator, Stmt, UnaryOp, visitor};
 use ruff_python_parser::parse_module;
 use ruff_text_size::Ranged;
 
@@ -115,6 +115,22 @@ pub(crate) fn analyze_source(request: &AnalyzeRequest<'_>, source: &str) -> Anal
         &facts.imports,
         request,
     ));
+    if request.profile == MutationProfile::Focused {
+        candidates.retain(|candidate| {
+            if candidate.operator.starts_with("type_") {
+                return true;
+            }
+            let Some(end) = candidate.span.start.checked_add(candidate.span.length) else {
+                return true;
+            };
+            let (Ok(start), Ok(end)) =
+                (usize::try_from(candidate.span.start), usize::try_from(end))
+            else {
+                return true;
+            };
+            !facts.contains_arid_span(start, end)
+        });
+    }
     let mut seen = BTreeSet::new();
     candidates.retain(|candidate| {
         seen.insert((
@@ -241,6 +257,7 @@ struct AstFacts<'tokens> {
     imports: KnownImports,
     unary_sign_starts: HashSet<usize>,
     not_operands: Vec<(usize, usize, usize)>,
+    arid_ranges: Vec<(usize, usize)>,
     scopes: Vec<ScopeRange>,
     qualname: Vec<String>,
     tokens: Option<&'tokens ruff_python_ast::token::Tokens>,
@@ -261,7 +278,34 @@ impl<'tokens> AstFacts<'tokens> {
         for statement in &module.body {
             facts.visit_stmt(statement);
         }
+        facts.normalize_arid_ranges();
         facts
+    }
+
+    fn record_arid_range(&mut self, range: ruff_text_size::TextRange) {
+        self.arid_ranges
+            .push((usize::from(range.start()), usize::from(range.end())));
+    }
+
+    fn normalize_arid_ranges(&mut self) {
+        self.arid_ranges.sort_unstable_by_key(|range| range.0);
+        let mut merged = Vec::with_capacity(self.arid_ranges.len());
+        for (start, end) in self.arid_ranges.drain(..) {
+            if let Some((_, previous_end)) = merged.last_mut()
+                && start <= *previous_end
+            {
+                *previous_end = (*previous_end).max(end);
+            } else {
+                merged.push((start, end));
+            }
+        }
+        self.arid_ranges = merged;
+    }
+
+    fn contains_arid_span(&self, start: usize, end: usize) -> bool {
+        self.arid_ranges
+            .iter()
+            .any(|(range_start, range_end)| *range_start <= start && end <= *range_end)
     }
 
     fn not_operand_range(&self, start: usize) -> Option<(usize, usize)> {
@@ -310,12 +354,30 @@ impl<'tokens> AstFacts<'tokens> {
 impl<'ast> Visitor<'ast> for AstFacts<'_> {
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
         match statement {
-            Stmt::FunctionDef(definition) => self.visit_definition(
-                definition.name.as_str(),
-                definition.range(),
-                &definition.decorator_list,
-                statement,
-            ),
+            Stmt::FunctionDef(definition) => {
+                for parameter in definition.parameters.iter_non_variadic_params() {
+                    if let Some(default) = parameter.default() {
+                        self.record_arid_range(default.range());
+                    }
+                }
+                self.visit_definition(
+                    definition.name.as_str(),
+                    definition.range(),
+                    &definition.decorator_list,
+                    statement,
+                );
+            }
+            Stmt::If(statement_if) if is_main_guard(statement_if.test.as_ref()) => {
+                self.record_arid_range(statement_if.test.range());
+                for child in &statement_if.body {
+                    self.record_arid_range(child.range());
+                }
+                visitor::walk_stmt(self, statement);
+            }
+            Stmt::Assert(_) => {
+                self.record_arid_range(statement.range());
+                visitor::walk_stmt(self, statement);
+            }
             Stmt::ClassDef(definition) => self.visit_definition(
                 definition.name.as_str(),
                 definition.range(),
@@ -327,6 +389,11 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
     }
 
     fn visit_expr(&mut self, expression: &'ast Expr) {
+        if let Expr::Call(call) = expression
+            && matches!(call.func.as_ref(), Expr::Name(name) if name.id.as_str() == "print")
+        {
+            self.record_arid_range(call.range());
+        }
         if let Expr::UnaryOp(unary) = expression {
             let start = usize::from(unary.range().start());
             match unary.op {
@@ -351,6 +418,26 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
         }
         visitor::walk_expr(self, expression);
     }
+}
+
+fn is_main_guard(expression: &Expr) -> bool {
+    let Expr::Compare(compare) = expression else {
+        return false;
+    };
+    if compare.ops.len() != 1 || compare.ops[0] != CmpOp::Eq || compare.comparators.len() != 1 {
+        return false;
+    }
+    let right = &compare.comparators[0];
+    (is_dunder_name(compare.left.as_ref()) && is_main_literal(right))
+        || (is_main_literal(compare.left.as_ref()) && is_dunder_name(right))
+}
+
+fn is_dunder_name(expression: &Expr) -> bool {
+    matches!(expression, Expr::Name(name) if name.id.as_str() == "__name__")
+}
+
+fn is_main_literal(expression: &Expr) -> bool {
+    matches!(expression, Expr::StringLiteral(value) if value.value.to_str() == "__main__")
 }
 
 #[cfg(test)]

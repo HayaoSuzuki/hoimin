@@ -11,6 +11,29 @@ fn analyze(source: &str) -> super::AnalyzerOutput {
 }
 
 fn analyze_types(source: &str) -> super::AnalyzerOutput {
+    analyze_types_with_profile(MutationProfile::Full, source)
+}
+
+fn analyze_with_profile(
+    profile: MutationProfile,
+    max_candidates: usize,
+    source: &str,
+) -> super::AnalyzerOutput {
+    let operators = MutationOperatorSelection::default();
+    analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/sample.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            profile,
+            max_candidates,
+        },
+        source,
+    )
+}
+
+fn analyze_types_with_profile(profile: MutationProfile, source: &str) -> super::AnalyzerOutput {
     let mut operators = MutationOperatorSelection::default();
     for operator in [
         MutationOperator::TypeNullableRemove,
@@ -29,7 +52,7 @@ fn analyze_types(source: &str) -> super::AnalyzerOutput {
             lines: &[],
             symbols: &[],
             operators: &operators,
-            profile: MutationProfile::Full,
+            profile,
             max_candidates: 10_000,
         },
         source,
@@ -54,6 +77,124 @@ fn analyze_with(
         },
         source,
     )
+}
+
+#[test]
+fn focused_profile_suppresses_main_print_assert_and_defaults() {
+    let source = "if __name__ == \"__main__\":\n    print(1 + 2)\n    assert 3 == 3\nelse:\n    fallback = 4 + 5\n\ndef f(flag=True, *, enabled=False):\n    return flag + enabled\n";
+    let focused = analyze_with_profile(MutationProfile::Focused, 10_000, source);
+    let descriptors: Vec<_> = focused
+        .candidates
+        .iter()
+        .map(|candidate| (candidate.line, candidate.operator.as_str()))
+        .collect();
+    assert_eq!(
+        descriptors,
+        vec![
+            (5, "binary_add_sub"),
+            (7, "binary_mul_div"),
+            (8, "binary_add_sub"),
+        ]
+    );
+}
+
+#[test]
+fn focused_profile_accepts_only_exact_main_guard_shapes() {
+    let source = "if \"__main__\" == __name__:\n    reversed = 1 + 2\nif __name__ != \"__main__\":\n    inequality = 3 + 4\nif __name__ == \"__main__\" == \"__main__\":\n    chained = 5 + 6\nif __name__ == \"entry\":\n    entry = 7 + 8\n";
+    let focused = analyze_with_profile(MutationProfile::Focused, 10_000, source);
+    assert!(
+        focused
+            .candidates
+            .iter()
+            .all(|candidate| candidate.line != 2)
+    );
+    for line in [3, 4, 5, 6, 7, 8] {
+        assert!(
+            focused
+                .candidates
+                .iter()
+                .any(|candidate| candidate.line == line),
+            "expected an eligible candidate on line {line}",
+        );
+    }
+}
+
+#[test]
+fn focused_profile_suppresses_only_bare_print_and_assert() {
+    let source = "print(1 + 2)\nlogger.print(3 + 4)\nassert 5 + 6\nregular = 7 + 8\n";
+    let focused = analyze_with_profile(MutationProfile::Focused, 10_000, source);
+    let descriptors: Vec<_> = focused
+        .candidates
+        .iter()
+        .map(|candidate| (candidate.line, candidate.operator.as_str()))
+        .collect();
+    assert_eq!(
+        descriptors,
+        vec![(2, "binary_add_sub"), (4, "binary_add_sub")]
+    );
+}
+
+#[test]
+fn focused_profile_retains_type_annotation_candidates() {
+    let source = "from typing import Optional\n\ndef choose(value: Optional[int], enabled=True) -> Optional[int]:\n    return value\n";
+    let focused = analyze_types_with_profile(MutationProfile::Focused, source);
+    assert!(
+        focused
+            .candidates
+            .iter()
+            .any(|candidate| candidate.operator.starts_with("type_"))
+    );
+    assert!(
+        focused
+            .candidates
+            .iter()
+            .all(|candidate| candidate.operator != "boolean_literal")
+    );
+}
+
+#[test]
+fn focused_filter_runs_before_candidate_limit() {
+    let focused = analyze_with_profile(
+        MutationProfile::Focused,
+        1,
+        "def choose(enabled=True):\n    return 1 + 2\n",
+    );
+    assert_eq!(focused.candidates.len(), 1);
+    assert_eq!(focused.candidates[0].line, 2);
+    assert_eq!(focused.candidates[0].operator, "binary_add_sub");
+}
+
+#[test]
+fn focused_profile_applies_after_line_and_symbol_selection() {
+    let source = "def selected(enabled=True):\n    return 1 + 2\n\ndef ignored(enabled=True):\n    return 3 + 4\n";
+    let lines = vec![LineRange { start: 2, end: 2 }];
+    let symbols = vec!["pkg.sample:selected".to_owned()];
+    let operators = MutationOperatorSelection::default();
+    let focused = analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/sample.py"),
+            lines: &lines,
+            symbols: &symbols,
+            operators: &operators,
+            profile: MutationProfile::Focused,
+            max_candidates: 10_000,
+        },
+        source,
+    );
+    let descriptors: Vec<_> = focused
+        .candidates
+        .iter()
+        .map(|candidate| (candidate.line, candidate.operator.as_str()))
+        .collect();
+    assert_eq!(descriptors, vec![(2, "binary_add_sub")]);
+}
+
+#[test]
+fn full_profile_matches_default_candidate_output() {
+    assert_eq!(
+        analyze("result = first + second\n").candidates,
+        analyze_with_profile(MutationProfile::Full, 10_000, "result = first + second\n").candidates,
+    );
 }
 
 #[test]
