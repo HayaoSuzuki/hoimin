@@ -55,6 +55,7 @@ struct ReportMutants<'a> {
     duplicates: HashSet<MutantKey>,
 }
 
+#[must_use]
 pub fn compare_reports(reports: &[InputReport], patience: NonZeroUsize) -> ProgressResult {
     let mut comparisons = Vec::new();
     let mut consecutive_stalls = 0;
@@ -242,6 +243,10 @@ fn is_inconclusive(status: MutationStatus) -> bool {
     !is_conclusive(status)
 }
 
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "The progress schema models scores as f64, so this calculation must preserve that output type."
+)]
 fn score(killed: usize, survived: usize) -> Option<f64> {
     let denominator = killed + survived;
     (denominator > 0).then(|| killed as f64 / denominator as f64)

@@ -72,6 +72,11 @@ struct RunReportDocument {
     summary: OutputEvent,
 }
 
+/// Reads and validates one mutation run report.
+///
+/// # Errors
+///
+/// Returns an error when the report cannot be read, parsed, or structurally validated.
 pub fn read_report(path: &Path) -> Result<InputReport, ProgressError> {
     let bytes = fs::read(path).map_err(|source| ProgressError::Read {
         path: path.to_path_buf(),

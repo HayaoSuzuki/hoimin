@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 #[test]
 fn input_accepts_a_complete_baseline_success_report() {
     let fixture = tempfile::tempdir().unwrap();
-    let report = write_json(&fixture, "complete.json", valid_report());
+    let report = write_json(&fixture, "complete.json", &valid_report());
 
     let InputReport::Usable(usable) = read_report(&report).unwrap() else {
         panic!("complete report should be usable");
@@ -30,7 +30,7 @@ fn input_marks_missing_baseline_reports_unusable() {
     let fixture = tempfile::tempdir().unwrap();
     let mut document = valid_report();
     document["baseline"] = Value::Null;
-    let report = write_json(&fixture, "missing-baseline.json", document);
+    let report = write_json(&fixture, "missing-baseline.json", &document);
 
     assert!(matches!(
         read_report(&report),
@@ -46,7 +46,7 @@ fn input_marks_failed_baseline_reports_unusable() {
     let fixture = tempfile::tempdir().unwrap();
     let mut document = valid_report();
     document["baseline"]["termination"] = json!({ "Exit": 1 });
-    let report = write_json(&fixture, "failed-baseline.json", document);
+    let report = write_json(&fixture, "failed-baseline.json", &document);
 
     assert!(matches!(
         read_report(&report),
@@ -63,7 +63,7 @@ fn input_marks_incomplete_reports_unusable() {
     let mut document = valid_report();
     document["summary"]["complete"] = json!(false);
     document["summary"]["exit_code"] = json!(4);
-    let report = write_json(&fixture, "incomplete.json", document);
+    let report = write_json(&fixture, "incomplete.json", &document);
 
     assert!(matches!(
         read_report(&report),
@@ -79,7 +79,7 @@ fn input_rejects_unsupported_report_schema() {
     let fixture = tempfile::tempdir().unwrap();
     let mut document = valid_report();
     document["schema_version"] = json!(REPORT_SCHEMA_VERSION + 1);
-    let report = write_json(&fixture, "unsupported-schema.json", document);
+    let report = write_json(&fixture, "unsupported-schema.json", &document);
 
     assert!(read_report(&report).is_err());
 }
@@ -89,7 +89,7 @@ fn input_rejects_unsupported_nested_event_schema() {
     let fixture = tempfile::tempdir().unwrap();
     let mut document = valid_report();
     document["baseline"]["schema_version"] = json!(REPORT_SCHEMA_VERSION + 1);
-    let report = write_json(&fixture, "unsupported-event-schema.json", document);
+    let report = write_json(&fixture, "unsupported-event-schema.json", &document);
 
     assert!(read_report(&report).is_err());
 }
@@ -108,7 +108,7 @@ fn input_rejects_invalid_document_structure() {
     let fixture = tempfile::tempdir().unwrap();
     let mut document = valid_report();
     document["mutants"] = json!([document["run"].clone()]);
-    let report = write_json(&fixture, "invalid-structure.json", document);
+    let report = write_json(&fixture, "invalid-structure.json", &document);
 
     assert!(read_report(&report).is_err());
 }
@@ -256,7 +256,7 @@ fn compare_a_usable_unusable_usable_history_has_no_cross_gap_comparison() {
 async fn output_json_exposes_agent_decision_fields() {
     let fixture = tempfile::tempdir().unwrap();
     let reports = (0..4)
-        .map(|index| write_json(&fixture, &format!("stalled-{index}.json"), valid_report()))
+        .map(|index| write_json(&fixture, &format!("stalled-{index}.json"), &valid_report()))
         .collect::<Vec<_>>();
 
     let (code, stdout, stderr) = run_progress(&reports, "json").await;
@@ -280,8 +280,8 @@ async fn output_json_exposes_agent_decision_fields() {
 async fn output_human_includes_latest_comparison_fields() {
     let fixture = tempfile::tempdir().unwrap();
     let reports = vec![
-        write_json(&fixture, "before.json", valid_report()),
-        write_json(&fixture, "after.json", valid_report()),
+        write_json(&fixture, "before.json", &valid_report()),
+        write_json(&fixture, "after.json", &valid_report()),
     ];
 
     let (code, stdout, stderr) = run_progress(&reports, "human").await;
@@ -309,11 +309,36 @@ async fn output_human_includes_latest_comparison_fields() {
 }
 
 #[tokio::test]
+async fn documented_progress_invocation_accepts_ordered_reports() {
+    let fixture = tempfile::tempdir().unwrap();
+    let first = write_json(&fixture, "before.json", &valid_report());
+    let second = write_json(&fixture, "after.json", &valid_report());
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    let code = hoimin_cli::run_with_io(
+        [
+            "hoimin",
+            "progress",
+            "--patience",
+            "3",
+            first.to_str().unwrap(),
+            second.to_str().unwrap(),
+        ],
+        &mut stdout,
+        &mut stderr,
+    )
+    .await;
+
+    assert_eq!(code, 0);
+}
+
+#[tokio::test]
 async fn output_malformed_json_returns_exit_two() {
     let fixture = tempfile::tempdir().unwrap();
     let malformed = fixture.path().join("malformed.json");
     std::fs::write(&malformed, b"{ not json").unwrap();
-    let valid = write_json(&fixture, "valid.json", valid_report());
+    let valid = write_json(&fixture, "valid.json", &valid_report());
 
     let (code, stdout, stderr) = run_progress(&[malformed, valid], "json").await;
 
@@ -330,7 +355,7 @@ async fn output_malformed_json_returns_exit_two() {
 async fn output_unreadable_path_returns_exit_two() {
     let fixture = tempfile::tempdir().unwrap();
     let missing = fixture.path().join("missing.json");
-    let valid = write_json(&fixture, "valid.json", valid_report());
+    let valid = write_json(&fixture, "valid.json", &valid_report());
 
     let (code, stdout, stderr) = run_progress(&[missing, valid], "json").await;
 
@@ -348,8 +373,8 @@ async fn output_unsupported_schema_returns_exit_two() {
     let fixture = tempfile::tempdir().unwrap();
     let mut unsupported = valid_report();
     unsupported["schema_version"] = json!(REPORT_SCHEMA_VERSION + 1);
-    let unsupported = write_json(&fixture, "unsupported.json", unsupported);
-    let valid = write_json(&fixture, "valid.json", valid_report());
+    let unsupported = write_json(&fixture, "unsupported.json", &unsupported);
+    let valid = write_json(&fixture, "valid.json", &valid_report());
 
     let (code, stdout, stderr) = run_progress(&[unsupported, valid], "json").await;
 
@@ -367,8 +392,8 @@ async fn output_invalid_structure_returns_exit_two() {
     let fixture = tempfile::tempdir().unwrap();
     let mut invalid = valid_report();
     invalid["mutants"] = json!([invalid["run"].clone()]);
-    let invalid = write_json(&fixture, "invalid.json", invalid);
-    let valid = write_json(&fixture, "valid.json", valid_report());
+    let invalid = write_json(&fixture, "invalid.json", &invalid);
+    let valid = write_json(&fixture, "valid.json", &valid_report());
 
     let (code, stdout, stderr) = run_progress(&[invalid, valid], "json").await;
 
@@ -386,14 +411,14 @@ async fn output_unusable_reports_are_indeterminate_and_exit_zero() {
     let fixture = tempfile::tempdir().unwrap();
     let mut missing_baseline = valid_report();
     missing_baseline["baseline"] = Value::Null;
-    let missing_baseline = write_json(&fixture, "missing-baseline.json", missing_baseline);
+    let missing_baseline = write_json(&fixture, "missing-baseline.json", &missing_baseline);
     let mut incomplete = valid_report();
     incomplete["summary"]["complete"] = json!(false);
     incomplete["summary"]["exit_code"] = json!(4);
-    let incomplete = write_json(&fixture, "incomplete.json", incomplete);
+    let incomplete = write_json(&fixture, "incomplete.json", &incomplete);
     let mut baseline_failed = valid_report();
     baseline_failed["baseline"]["termination"] = json!({ "Exit": 1 });
-    let baseline_failed = write_json(&fixture, "baseline-failed.json", baseline_failed);
+    let baseline_failed = write_json(&fixture, "baseline-failed.json", &baseline_failed);
 
     let (code, stdout, stderr) =
         run_progress(&[missing_baseline, incomplete, baseline_failed], "json").await;
@@ -419,8 +444,8 @@ async fn output_ambiguity_is_structured_and_warned_on_stderr() {
     let mutant = ambiguous["mutants"][0].clone();
     ambiguous["mutants"] = json!([mutant.clone(), mutant]);
     let reports = vec![
-        write_json(&fixture, "before.json", ambiguous.clone()),
-        write_json(&fixture, "after.json", ambiguous),
+        write_json(&fixture, "before.json", &ambiguous),
+        write_json(&fixture, "after.json", &ambiguous),
     ];
 
     let (code, stdout, stderr) = run_progress(&reports, "json").await;
@@ -440,7 +465,7 @@ async fn output_ambiguity_is_structured_and_warned_on_stderr() {
 async fn progress_json_document_matches_its_schema() {
     let fixture = tempfile::tempdir().unwrap();
     let reports = (0..4)
-        .map(|index| write_json(&fixture, &format!("stalled-{index}.json"), valid_report()))
+        .map(|index| write_json(&fixture, &format!("stalled-{index}.json"), &valid_report()))
         .collect::<Vec<_>>();
     let (code, stdout, _) = run_progress(&reports, "json").await;
     assert_eq!(code, 0);
@@ -535,9 +560,9 @@ fn mutant(key: &str, status: MutationStatus) -> MutantFinished {
     }
 }
 
-fn write_json(fixture: &tempfile::TempDir, name: &str, document: Value) -> PathBuf {
+fn write_json(fixture: &tempfile::TempDir, name: &str, document: &Value) -> PathBuf {
     let report = fixture.path().join(name);
-    std::fs::write(&report, serde_json::to_vec(&document).unwrap()).unwrap();
+    std::fs::write(&report, serde_json::to_vec(document).unwrap()).unwrap();
     report
 }
 
