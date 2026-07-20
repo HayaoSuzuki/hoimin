@@ -375,16 +375,14 @@ async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_in
     write_parallel_project(project.path());
     let active = coordinator.path().join("active");
     std::fs::create_dir(&active).unwrap();
-    let leak = coordinator.path().join("descendant-survived");
+    let descendant_ready = coordinator.path().join("descendant-ready");
     let session = coordinator.path().join("session.sqlite3");
-    let child = format!(
-        "import pathlib,time; time.sleep(2); pathlib.Path({:?}).write_text('leak')",
-        leak.to_string_lossy()
-    );
+    let child = "import time; time.sleep(20)";
     let mutant = format!(
-        "from pathlib import Path; import os,subprocess,sys,time; Path({:?},str(os.getpid())).write_text('running'); subprocess.Popen([sys.executable,'-c',{:?}]); time.sleep(20)",
+        "from pathlib import Path; import os,subprocess,sys,time; Path({:?},str(os.getpid())).write_text('running'); time.sleep(0.5); child=subprocess.Popen([sys.executable,'-c',{:?}]); Path({:?}).write_text(str(child.pid)); time.sleep(20)",
         active.to_string_lossy(),
         child,
+        descendant_ready.to_string_lossy(),
     );
     let original = "return a + b + c + d + e";
     let command = format!(
@@ -424,15 +422,22 @@ async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_in
     );
     let cancel = async {
         let marker_deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-        while std::fs::read_dir(&active).unwrap().next().is_none()
-            && tokio::time::Instant::now() < marker_deadline
-        {
+        while !descendant_ready.is_file() && tokio::time::Instant::now() < marker_deadline {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        assert!(std::fs::read_dir(&active).unwrap().next().is_some());
+        assert!(
+            descendant_ready.is_file(),
+            "descendant must report readiness before cancellation"
+        );
+        let descendant_pid: u32 = std::fs::read_to_string(&descendant_ready)
+            .expect("read descendant-ready marker")
+            .trim()
+            .parse()
+            .expect("descendant-ready marker must contain a PID");
         control.cancel();
+        descendant_pid
     };
-    let (exit, ()) = Box::pin(tokio::time::timeout(Duration::from_secs(30), async {
+    let (exit, descendant_pid) = Box::pin(tokio::time::timeout(Duration::from_secs(30), async {
         tokio::join!(run, cancel)
     }))
     .await
@@ -462,8 +467,10 @@ async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_in
         .unwrap();
     assert_eq!(complete, 0);
     drop(connection);
-    tokio::time::sleep(Duration::from_millis(2300)).await;
-    assert!(!leak.exists(), "cancelled descendant outlived the run");
+    assert!(
+        wait_until_process_stops(descendant_pid, Duration::from_secs(5)).await,
+        "cancelled descendant {descendant_pid} outlived the run"
+    );
 }
 
 #[tokio::test]
@@ -925,4 +932,41 @@ fn repo_root() -> PathBuf {
         .parent()
         .unwrap()
         .to_owned()
+}
+
+#[cfg(unix)]
+fn process_exists(pid: u32) -> bool {
+    i32::try_from(pid).is_ok_and(|pid| {
+        // SAFETY: signal 0 performs no mutation and accepts a validated process ID.
+        unsafe { libc::kill(pid, 0) == 0 }
+    })
+}
+
+#[cfg(windows)]
+fn process_exists(pid: u32) -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
+    use windows_sys::Win32::System::Threading::{
+        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    // SAFETY: the handle is checked and closed on every successful open.
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if handle.is_null() {
+            return false;
+        }
+        let mut exit_code = 0;
+        let active =
+            GetExitCodeProcess(handle, &raw mut exit_code) != 0 && exit_code == STILL_ACTIVE as u32;
+        CloseHandle(handle);
+        active
+    }
+}
+
+async fn wait_until_process_stops(pid: u32, timeout: Duration) -> bool {
+    let deadline = tokio::time::Instant::now() + timeout;
+    while process_exists(pid) && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    !process_exists(pid)
 }
