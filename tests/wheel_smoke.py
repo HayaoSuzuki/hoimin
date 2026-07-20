@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import platform
 import subprocess
 import sys
 import tempfile
@@ -29,6 +30,16 @@ def run(argv: list[str], *, cwd: Path, env: dict[str, str]) -> subprocess.Comple
     return completed
 
 
+def is_compatible_wheel(wheel: Path, system: str, machine: str) -> bool:
+    if system == "win32":
+        return "win_amd64" in wheel.name
+    if system.startswith("linux"):
+        return "x86_64" in wheel.name
+    if system == "darwin":
+        return machine == "arm64" and "macosx" in wheel.name and "arm64" in wheel.name
+    return False
+
+
 def wheel_path() -> Path:
     override = os.environ.get("HOIMIN_WHEEL")
     if override:
@@ -37,7 +48,11 @@ def wheel_path() -> Path:
         return wheel
     wheels = sorted((REPOSITORY_ROOT / "target" / "wheels").glob("hoimin-*.whl"))
     assert wheels, "build a wheel first with uv run maturin build --release"
-    compatible = [wheel for wheel in wheels if (sys.platform == "win32" and "win_amd64" in wheel.name) or (sys.platform.startswith("linux") and "x86_64" in wheel.name)]
+    compatible = [
+        wheel
+        for wheel in wheels
+        if is_compatible_wheel(wheel, sys.platform, platform.machine().lower())
+    ]
     assert compatible, f"no wheel for {sys.platform}: {[wheel.name for wheel in wheels]}"
     return compatible[-1]
 
@@ -88,7 +103,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="hoimin-wheel-smoke-") as temporary_directory:
         temporary_root = Path(temporary_directory)
         environment = isolated_environment()
-        distribution_help = run(["uvx", "--from", str(wheel), "hoimin", "--help"], cwd=temporary_root, env=environment)
+        distribution_help = run(["uvx", "--python", "3.14", "--from", str(wheel), "hoimin", "--help"], cwd=temporary_root, env=environment)
         assert "--python" not in distribution_help.stdout
         assert "--python" not in distribution_help.stderr
         environment_root = temporary_root / "environment"
