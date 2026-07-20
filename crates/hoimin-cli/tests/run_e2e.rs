@@ -376,12 +376,14 @@ async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_in
     let active = coordinator.path().join("active");
     std::fs::create_dir(&active).unwrap();
     let descendant_ready = coordinator.path().join("descendant-ready");
+    let descendant_ready_temp = coordinator.path().join("descendant-ready.tmp");
     let session = coordinator.path().join("session.sqlite3");
     let child = "import time; time.sleep(20)";
     let mutant = format!(
-        "from pathlib import Path; import os,subprocess,sys,time; Path({:?},str(os.getpid())).write_text('running'); time.sleep(0.5); child=subprocess.Popen([sys.executable,'-c',{:?}]); Path({:?}).write_text(str(child.pid)); time.sleep(20)",
+        "from pathlib import Path; import os,subprocess,sys,time; Path({:?},str(os.getpid())).write_text('running'); time.sleep(0.5); child=subprocess.Popen([sys.executable,'-c',{:?}]); ready_temp=Path({:?}); ready_temp.write_text(str(child.pid)); ready_temp.replace({:?}); time.sleep(20)",
         active.to_string_lossy(),
         child,
+        descendant_ready_temp.to_string_lossy(),
         descendant_ready.to_string_lossy(),
     );
     let original = "return a + b + c + d + e";
@@ -421,23 +423,12 @@ async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_in
         control.clone(),
     );
     let cancel = async {
-        let marker_deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-        while !descendant_ready.is_file() && tokio::time::Instant::now() < marker_deadline {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-        assert!(
-            descendant_ready.is_file(),
-            "descendant must report readiness before cancellation"
-        );
-        let descendant_pid: u32 = std::fs::read_to_string(&descendant_ready)
-            .expect("read descendant-ready marker")
-            .trim()
-            .parse()
-            .expect("descendant-ready marker must contain a PID");
+        let descendant =
+            wait_for_descendant_process(&descendant_ready, Duration::from_secs(15)).await;
         control.cancel();
-        descendant_pid
+        descendant
     };
-    let (exit, descendant_pid) = Box::pin(tokio::time::timeout(Duration::from_secs(30), async {
+    let (exit, descendant) = Box::pin(tokio::time::timeout(Duration::from_secs(30), async {
         tokio::join!(run, cancel)
     }))
     .await
@@ -468,8 +459,9 @@ async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_in
     assert_eq!(complete, 0);
     drop(connection);
     assert!(
-        wait_until_process_stops(descendant_pid, Duration::from_secs(5)).await,
-        "cancelled descendant {descendant_pid} outlived the run"
+        descendant.wait_until_stops(Duration::from_secs(5)).await,
+        "cancelled descendant {} outlived the run",
+        descendant.pid()
     );
 }
 
@@ -934,39 +926,92 @@ fn repo_root() -> PathBuf {
         .to_owned()
 }
 
-#[cfg(unix)]
-fn process_exists(pid: u32) -> bool {
-    i32::try_from(pid).is_ok_and(|pid| {
-        // SAFETY: signal 0 performs no mutation and accepts a validated process ID.
-        unsafe { libc::kill(pid, 0) == 0 }
-    })
+struct DescendantProcess {
+    pid: u32,
+    #[cfg(windows)]
+    handle: windows_sys::Win32::Foundation::HANDLE,
+}
+
+impl DescendantProcess {
+    fn pid(&self) -> u32 {
+        self.pid
+    }
+
+    #[cfg(unix)]
+    fn open(pid: u32) -> Option<Self> {
+        i32::try_from(pid).ok().map(|pid| Self { pid: pid as u32 })
+    }
+
+    #[cfg(windows)]
+    fn open(pid: u32) -> Option<Self> {
+        use windows_sys::Win32::System::Threading::{
+            OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+
+        // SAFETY: the fixture PID came from the child process and the handle is owned on success.
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            (!handle.is_null()).then_some(Self { pid, handle })
+        }
+    }
+
+    #[cfg(unix)]
+    fn is_alive(&self) -> bool {
+        i32::try_from(self.pid).is_ok_and(|pid| {
+            // SAFETY: signal 0 performs no mutation and accepts a validated process ID.
+            unsafe { libc::kill(pid, 0) == 0 }
+        })
+    }
+
+    #[cfg(windows)]
+    fn is_alive(&self) -> bool {
+        use windows_sys::Win32::Foundation::STILL_ACTIVE;
+        use windows_sys::Win32::System::Threading::GetExitCodeProcess;
+
+        // SAFETY: handle is retained by this fixture and valid until Drop.
+        unsafe {
+            let mut exit_code = 0;
+            GetExitCodeProcess(self.handle, &raw mut exit_code) != 0
+                && exit_code == STILL_ACTIVE as u32
+        }
+    }
+
+    async fn wait_until_stops(&self, timeout: Duration) -> bool {
+        let deadline = tokio::time::Instant::now() + timeout;
+        while self.is_alive() && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        !self.is_alive()
+    }
 }
 
 #[cfg(windows)]
-fn process_exists(pid: u32) -> bool {
-    use windows_sys::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
-    use windows_sys::Win32::System::Threading::{
-        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-    };
+impl Drop for DescendantProcess {
+    fn drop(&mut self) {
+        use windows_sys::Win32::Foundation::CloseHandle;
 
-    // SAFETY: the handle is checked and closed on every successful open.
-    unsafe {
-        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-        if handle.is_null() {
-            return false;
+        // SAFETY: this instance owns the successful OpenProcess handle.
+        unsafe {
+            CloseHandle(self.handle);
         }
-        let mut exit_code = 0;
-        let active =
-            GetExitCodeProcess(handle, &raw mut exit_code) != 0 && exit_code == STILL_ACTIVE as u32;
-        CloseHandle(handle);
-        active
     }
 }
 
-async fn wait_until_process_stops(pid: u32, timeout: Duration) -> bool {
+async fn wait_for_descendant_process(marker: &Path, timeout: Duration) -> DescendantProcess {
     let deadline = tokio::time::Instant::now() + timeout;
-    while process_exists(pid) && tokio::time::Instant::now() < deadline {
+    loop {
+        if let Some(pid) = std::fs::read_to_string(marker)
+            .ok()
+            .and_then(|value| value.trim().parse().ok())
+        {
+            if let Some(process) = DescendantProcess::open(pid) {
+                return process;
+            }
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "descendant-ready marker did not yield an open process before cancellation"
+        );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    !process_exists(pid)
 }
