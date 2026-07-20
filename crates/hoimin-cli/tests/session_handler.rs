@@ -193,7 +193,7 @@ fn load_selects_only_the_newest_compatible_incomplete_run() {
 }
 
 #[test]
-fn finish_state_table_allows_false_to_true_only_once() {
+fn incomplete_finish_is_idempotent_but_completion_is_final() {
     let temp = tempfile::tempdir().unwrap();
     let mut handler = SessionHandler::open(temp.path().join("sessions.sqlite3")).unwrap();
     handler.begin(begin_request(1, "partial")).unwrap();
@@ -204,18 +204,13 @@ fn finish_state_table_allows_false_to_true_only_once() {
             complete: false,
         })
         .unwrap();
-    assert_eq!(
-        handler
-            .finish(FinishSession {
-                id: EffectId(3),
-                run_id: "partial".to_owned(),
-                complete: false,
-            })
-            .unwrap_err()
-            .failure
-            .code(),
-        "session.finish.state"
-    );
+    handler
+        .finish(FinishSession {
+            id: EffectId(3),
+            run_id: "partial".to_owned(),
+            complete: false,
+        })
+        .unwrap();
     handler.finish(finish_request(4, "partial")).unwrap();
     assert_eq!(
         handler

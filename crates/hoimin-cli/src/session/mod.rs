@@ -283,8 +283,7 @@ impl SessionHandler {
         let statement = if request.complete {
             "UPDATE runs SET finished=1, complete=1 WHERE run_id=?1 AND complete=0"
         } else {
-            "UPDATE runs SET finished=1, complete=0
-             WHERE run_id=?1 AND finished=0 AND complete=0"
+            "UPDATE runs SET finished=1, complete=0 WHERE run_id=?1 AND complete=0"
         };
         let changed = transaction
             .execute(statement, [&request.run_id])
