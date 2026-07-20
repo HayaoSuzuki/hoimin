@@ -20,7 +20,7 @@ fn fixture_root(files: &[(&str, &str)]) -> FixtureRoot {
     }
 }
 
-fn assert_error_prefix(error: FingerprintInputError, prefix: &str) {
+fn assert_error_prefix(error: &FingerprintInputError, prefix: &str) {
     assert!(
         error.to_string().starts_with(prefix),
         "expected `{prefix}` prefix, got `{error}`"
@@ -68,7 +68,7 @@ fn resolve_rejects_unmatched_patterns() {
 
     let error = resolve(&fixture.root, &["missing/*.json".into()]).unwrap_err();
 
-    assert_error_prefix(error, "fingerprint.include.unmatched");
+    assert_error_prefix(&error, "fingerprint.include.unmatched");
 }
 
 #[test]
@@ -77,7 +77,7 @@ fn resolve_rejects_absolute_parent_nul_and_invalid_glob_patterns() {
 
     for pattern in ["/tmp/x", "../x", "nested\\..\\x", "file\0name", "["] {
         let error = resolve(&fixture.root, &[pattern.into()]).unwrap_err();
-        assert_error_prefix(error, "fingerprint.include.invalid_glob");
+        assert_error_prefix(&error, "fingerprint.include.invalid_glob");
     }
 }
 
@@ -88,7 +88,7 @@ fn resolve_rejects_directories() {
 
     let error = resolve(&fixture.root, &["dir".into()]).unwrap_err();
 
-    assert_error_prefix(error, "fingerprint.include.unsupported_file");
+    assert_error_prefix(&error, "fingerprint.include.unsupported_file");
 }
 
 #[cfg(unix)]
@@ -99,7 +99,7 @@ fn resolve_rejects_symlinks() {
 
     let error = resolve(&fixture.root, &["link.txt".into()]).unwrap_err();
 
-    assert_error_prefix(error, "fingerprint.include.unsupported_file");
+    assert_error_prefix(&error, "fingerprint.include.unsupported_file");
 }
 
 #[cfg(target_os = "linux")]
@@ -113,7 +113,7 @@ fn resolve_rejects_non_utf8_paths() {
 
     let error = resolve(&fixture.root, &["*".into()]).unwrap_err();
 
-    assert_error_prefix(error, "fingerprint.include.unsupported_file");
+    assert_error_prefix(&error, "fingerprint.include.unsupported_file");
 }
 
 #[cfg(unix)]
@@ -129,5 +129,5 @@ fn resolve_rejects_read_failures() {
 
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
     let error = result.unwrap_err();
-    assert_error_prefix(error, "fingerprint.include.unsupported_file");
+    assert_error_prefix(&error, "fingerprint.include.unsupported_file");
 }
