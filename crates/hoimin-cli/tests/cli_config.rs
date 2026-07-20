@@ -1,14 +1,33 @@
+use hoimin_cli::cli::{ParsedCommand, ProgressOutputFormat, parse_from};
 use hoimin_core::MutationOperator;
+
+#[test]
+fn progress_defaults_to_human_and_three_stalls() {
+    let ParsedCommand::Progress(args) =
+        parse_from(["hoimin", "progress", "before.json", "after.json"]).unwrap()
+    else {
+        panic!("expected progress");
+    };
+
+    assert_eq!(args.patience.get(), 3);
+    assert_eq!(args.format, ProgressOutputFormat::Human);
+}
+
+#[test]
+fn progress_requires_two_reports_and_positive_patience() {
+    assert!(parse_from(["hoimin", "progress", "one.json"]).is_err());
+    assert!(parse_from(["hoimin", "progress", "--patience", "0", "a", "b"]).is_err());
+}
+
 #[test]
 fn run_requires_a_selector_and_test_argv() {
-    let err = hoimin_cli::cli::parse_from(["hoimin", "run", "--", "python", "-m", "unittest"])
-        .unwrap_err();
+    let err = parse_from(["hoimin", "run", "--", "python", "-m", "unittest"]).unwrap_err();
     assert!(err.to_string().contains("target selector"));
 }
 
 #[test]
 fn command_after_separator_is_preserved_without_shell_parsing() {
-    let cli = hoimin_cli::cli::parse_from([
+    let ParsedCommand::Run(cli) = parse_from([
         "hoimin",
         "run",
         "--file",
@@ -19,19 +38,21 @@ fn command_after_separator_is_preserved_without_shell_parsing() {
         "pytest",
         "-q",
     ])
-    .unwrap();
+    .unwrap() else {
+        panic!("expected run");
+    };
     assert_eq!(cli.test_argv, ["python", "-m", "pytest", "-q"]);
 }
 
 #[test]
 fn run_requires_test_argv() {
-    let err = hoimin_cli::cli::parse_from(["hoimin", "run", "--file", "src/calc.py"]).unwrap_err();
+    let err = parse_from(["hoimin", "run", "--file", "src/calc.py"]).unwrap_err();
     assert!(err.to_string().contains("test argv"));
 }
 
 #[test]
 fn documented_defaults_are_applied() {
-    let cli = hoimin_cli::cli::parse_from([
+    let ParsedCommand::Run(cli) = parse_from([
         "hoimin",
         "run",
         "--file",
@@ -40,7 +61,9 @@ fn documented_defaults_are_applied() {
         "python",
         "tests.py",
     ])
-    .unwrap();
+    .unwrap() else {
+        panic!("expected run");
+    };
 
     assert_eq!(cli.jobs, 1);
     assert_eq!(cli.max_mutants, 100);
@@ -57,7 +80,7 @@ fn documented_defaults_are_applied() {
 
 #[test]
 fn root_help_exposes_the_run_contract() {
-    let error = hoimin_cli::cli::parse_from(["hoimin", "--help"]).unwrap_err();
+    let error = parse_from(["hoimin", "--help"]).unwrap_err();
     let help = error.to_string();
 
     for expected in [

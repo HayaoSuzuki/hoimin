@@ -1,5 +1,6 @@
 use std::ffi::OsString;
 use std::fmt;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 use camino::Utf8PathBuf;
@@ -22,9 +23,15 @@ struct RootCli {
 }
 
 #[derive(Debug, Subcommand)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "command parsing immediately consumes the enum and keeps both argument values direct"
+)]
 enum Command {
     /// Run mutation tests for an explicitly selected target.
     Run(RawRunArgs),
+    /// Compare chronologically ordered mutation run reports.
+    Progress(RawProgressArgs),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -32,6 +39,12 @@ pub enum OutputFormat {
     Json,
     Jsonl,
     Human,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum ProgressOutputFormat {
+    Human,
+    Json,
 }
 
 #[derive(Debug, Args)]
@@ -145,6 +158,25 @@ struct RawRunArgs {
     test_argv: Vec<OsString>,
 }
 
+#[derive(Debug, Args)]
+struct RawProgressArgs {
+    /// Consecutive unchanged comparisons before the history is saturated.
+    #[arg(
+        long,
+        default_value_t = NonZeroUsize::new(3).unwrap(),
+        value_parser = clap::value_parser!(NonZeroUsize)
+    )]
+    patience: NonZeroUsize,
+
+    /// Render the comparison as human-readable text or JSON.
+    #[arg(long, value_enum, default_value_t = ProgressOutputFormat::Human)]
+    format: ProgressOutputFormat,
+
+    /// Ordered run report files to compare.
+    #[arg(required = true, num_args = 2.., value_name = "REPORT")]
+    reports: Vec<PathBuf>,
+}
+
 #[derive(Debug)]
 pub struct RunArgs {
     pub root: PathBuf,
@@ -177,8 +209,26 @@ pub struct RunArgs {
 }
 
 #[derive(Debug)]
+pub struct ProgressArgs {
+    pub reports: Vec<PathBuf>,
+    pub patience: NonZeroUsize,
+    pub format: ProgressOutputFormat,
+}
+
+#[derive(Debug)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "the public parser API deliberately exposes direct RunArgs and ProgressArgs values"
+)]
+pub enum ParsedCommand {
+    Run(RunArgs),
+    Progress(ProgressArgs),
+}
+
+#[derive(Debug)]
 pub enum CliError {
     Clap(clap::Error),
+    ProgressCommand,
     MissingTargetSelector,
     MissingTestArgv,
     InvalidValue { name: &'static str, value: String },
@@ -190,6 +240,9 @@ impl fmt::Display for CliError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Clap(error) => error.fmt(formatter),
+            Self::ProgressCommand => {
+                formatter.write_str("the `progress` command does not produce a run configuration")
+            }
             Self::MissingTargetSelector => {
                 formatter.write_str("at least one target selector is required")
             }
@@ -229,67 +282,75 @@ impl CliError {
     }
 }
 
-impl TryFrom<Command> for RunArgs {
+impl TryFrom<Command> for ParsedCommand {
     type Error = CliError;
 
     fn try_from(command: Command) -> Result<Self, Self::Error> {
-        let Command::Run(raw) = command;
-        let has_selector = !raw.source.is_empty()
-            || !raw.file.is_empty()
-            || !raw.line.is_empty()
-            || !raw.symbol.is_empty()
-            || raw.changed;
-        if !has_selector {
-            return Err(CliError::MissingTargetSelector);
-        }
-        if raw.test_argv.is_empty() {
-            return Err(CliError::MissingTestArgv);
-        }
+        match command {
+            Command::Run(raw) => {
+                let has_selector = !raw.source.is_empty()
+                    || !raw.file.is_empty()
+                    || !raw.line.is_empty()
+                    || !raw.symbol.is_empty()
+                    || raw.changed;
+                if !has_selector {
+                    return Err(CliError::MissingTargetSelector);
+                }
+                if raw.test_argv.is_empty() {
+                    return Err(CliError::MissingTestArgv);
+                }
 
-        Ok(Self {
-            root: raw.root,
-            source: raw.source,
-            file: raw.file,
-            line: raw.line,
-            symbol: raw.symbol,
-            changed: raw.changed,
-            diff_base: raw.diff_base,
-            include: raw.include,
-            exclude: raw.exclude,
-            operators: raw.operators,
-            exclude_operators: raw.exclude_operators,
-            jobs: raw.jobs,
-            max_mutants: raw.max_mutants,
-            max_candidates: raw.max_candidates,
-            analyzer_timeout: raw.analyzer_timeout,
-            baseline_timeout: raw.baseline_timeout,
-            mutant_timeout: raw.mutant_timeout,
-            total_timeout: raw.total_timeout,
-            max_memory: raw.max_memory,
-            max_output: raw.max_output,
-            max_copy_size: raw.max_copy_size,
-            max_processes: raw.max_processes,
-            allow_best_effort_memory: raw.allow_best_effort_memory,
-            format: raw.format,
-            session: raw.session,
-            resume: raw.resume,
-            test_argv: raw.test_argv,
-        })
+                Ok(Self::Run(RunArgs {
+                    root: raw.root,
+                    source: raw.source,
+                    file: raw.file,
+                    line: raw.line,
+                    symbol: raw.symbol,
+                    changed: raw.changed,
+                    diff_base: raw.diff_base,
+                    include: raw.include,
+                    exclude: raw.exclude,
+                    operators: raw.operators,
+                    exclude_operators: raw.exclude_operators,
+                    jobs: raw.jobs,
+                    max_mutants: raw.max_mutants,
+                    max_candidates: raw.max_candidates,
+                    analyzer_timeout: raw.analyzer_timeout,
+                    baseline_timeout: raw.baseline_timeout,
+                    mutant_timeout: raw.mutant_timeout,
+                    total_timeout: raw.total_timeout,
+                    max_memory: raw.max_memory,
+                    max_output: raw.max_output,
+                    max_copy_size: raw.max_copy_size,
+                    max_processes: raw.max_processes,
+                    allow_best_effort_memory: raw.allow_best_effort_memory,
+                    format: raw.format,
+                    session: raw.session,
+                    resume: raw.resume,
+                    test_argv: raw.test_argv,
+                }))
+            }
+            Command::Progress(raw) => Ok(Self::Progress(ProgressArgs {
+                reports: raw.reports,
+                patience: raw.patience,
+                format: raw.format,
+            })),
+        }
     }
 }
 
-/// Parses command-line arguments into executable run arguments.
+/// Parses command-line arguments into a command and its executable arguments.
 ///
 /// # Errors
 ///
 /// Returns an error when Clap rejects the arguments or required inputs are absent.
-pub fn parse_from<I, T>(args: I) -> Result<RunArgs, CliError>
+pub fn parse_from<I, T>(args: I) -> Result<ParsedCommand, CliError>
 where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
     let root = RootCli::try_parse_from(args)?;
-    RunArgs::try_from(root.command)
+    ParsedCommand::try_from(root.command)
 }
 
 /// Parses command-line arguments and validates a run configuration.
@@ -302,7 +363,9 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
-    let args = parse_from(args)?;
+    let ParsedCommand::Run(args) = parse_from(args)? else {
+        return Err(CliError::ProgressCommand);
+    };
     RunConfig::try_from(raw_config(args)?).map_err(CliError::from)
 }
 
