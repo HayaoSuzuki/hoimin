@@ -208,6 +208,7 @@ async fn prepare_fingerprint<Stdout, Stderr>(
         sources,
         targets: targets.clone(),
         operators: context.config.operators.names(),
+        profile: context.config.profile,
         test_argv: context.config.test_argv.clone(),
         limits: context.config.limits.clone(),
         resource_mode: context.process.mode(),
@@ -294,7 +295,12 @@ where
         }
         RunEffect::AnalyzeFile(request) => context
             .analyzer
-            .handle_with_cancellation(request, &context.config.operators, cancellation.clone())
+            .handle_with_cancellation(
+                request,
+                &context.config.operators,
+                context.config.profile,
+                cancellation.clone(),
+            )
             .await
             .map(RunEvent::AnalysisFinished),
         RunEffect::ReadCandidate(request) => {

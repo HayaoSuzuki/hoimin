@@ -5,10 +5,10 @@ use std::path::Path;
 use std::time::Duration;
 
 use hoimin_core::{
-    BeginSession, EffectFailed, EffectFailure, EffectId, FinishSession, LoadSession,
-    LookupStoredResult, MutantResult, MutationStatus, PersistResult, ResourceMode, ResultPersisted,
-    SessionDiagnostic, SessionFinished, SessionLoaded, SessionResumeRef, SessionStarted,
-    StoredResult, StoredResultLoaded, contract_ensure,
+    BeginSession, EffectFailed, EffectFailure, EffectId, FINGERPRINT_SCHEMA_VERSION, FinishSession,
+    LoadSession, LookupStoredResult, MutantResult, MutationStatus, PersistResult, ResourceMode,
+    ResultPersisted, SessionDiagnostic, SessionFinished, SessionLoaded, SessionResumeRef,
+    SessionStarted, StoredResult, StoredResultLoaded, contract_ensure,
 };
 #[cfg(feature = "contracts")]
 use hoimin_core::{ByteSpan, MutationCandidate, OutputSpoolRef};
@@ -144,7 +144,10 @@ impl SessionHandler {
         transaction
             .execute(
                 "INSERT OR IGNORE INTO fingerprints(digest, schema_version) VALUES (?1, ?2)",
-                params![request.fingerprint.as_bytes().as_slice(), 1_i64],
+                params![
+                    request.fingerprint.as_bytes().as_slice(),
+                    i64::from(FINGERPRINT_SCHEMA_VERSION),
+                ],
             )
             .and_then(|_| {
                 transaction.execute(

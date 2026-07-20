@@ -1,5 +1,5 @@
 use hoimin_cli::cli::{ParsedCommand, ProgressOutputFormat, parse_from};
-use hoimin_core::MutationOperator;
+use hoimin_core::{MutationOperator, MutationProfile};
 
 #[test]
 fn progress_defaults_to_human_and_three_stalls() {
@@ -76,6 +76,43 @@ fn documented_defaults_are_applied() {
     assert_eq!(cli.max_output, "1MiB");
     assert_eq!(cli.max_copy_size, "1GiB");
     assert_eq!(cli.max_processes, 64);
+}
+
+#[test]
+fn mutation_profile_defaults_to_full_and_accepts_focused() {
+    let full =
+        hoimin_cli::cli::parse_config_from(["hoimin", "run", "--file", "x.py", "--", "check"])
+            .unwrap();
+    assert_eq!(full.profile, MutationProfile::Full);
+
+    let focused = hoimin_cli::cli::parse_config_from([
+        "hoimin",
+        "run",
+        "--file",
+        "x.py",
+        "--profile",
+        "focused",
+        "--",
+        "check",
+    ])
+    .unwrap();
+    assert_eq!(focused.profile, MutationProfile::Focused);
+}
+
+#[test]
+fn mutation_profile_rejects_unknown_value() {
+    let error = hoimin_cli::cli::parse_from([
+        "hoimin",
+        "run",
+        "--file",
+        "x.py",
+        "--profile",
+        "sampled",
+        "--",
+        "check",
+    ])
+    .unwrap_err();
+    assert!(error.to_string().contains("sampled"));
 }
 
 #[test]

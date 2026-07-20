@@ -871,6 +871,45 @@ fn human_format_writes_progress_to_stdout_and_diagnostics_to_stderr() {
     assert_eq!(stderr.flushes(), 1);
 }
 
+#[test]
+fn human_format_includes_profile_for_normalized_runs() {
+    let stdout = SharedWriter::default();
+    let mut handler = ReportHandler::new(
+        OutputFormat::Human,
+        stdout.clone(),
+        io::sink(),
+        std::env::temp_dir(),
+    )
+    .unwrap();
+    let mut started = RunStarted::minimal("run-1", 1);
+    started.normalized_config = Some(
+        hoimin_cli::cli::parse_config_from([
+            "hoimin",
+            "run",
+            "--file",
+            "x.py",
+            "--profile",
+            "focused",
+            "--",
+            "check",
+        ])
+        .unwrap(),
+    );
+
+    handler
+        .handle(EmitOutput {
+            id: EffectId(1),
+            event: OutputEvent::RunStarted(started),
+        })
+        .unwrap();
+
+    assert!(
+        stdout
+            .text()
+            .contains("run started: run-1 (profile: focused)")
+    );
+}
+
 struct FailingWriter;
 
 impl Write for FailingWriter {

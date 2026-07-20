@@ -1,7 +1,9 @@
 use super::{AnalyzeRequest, analyze_source};
 use crate::analyzer::AnalyzerDiagnosticCode;
 use camino::Utf8Path;
-use hoimin_core::{ByteSpan, LineRange, MutationOperator, MutationOperatorSelection};
+use hoimin_core::{
+    ByteSpan, LineRange, MutationOperator, MutationOperatorSelection, MutationProfile,
+};
 use proptest::prelude::*;
 
 fn analyze(source: &str) -> super::AnalyzerOutput {
@@ -27,6 +29,7 @@ fn analyze_types(source: &str) -> super::AnalyzerOutput {
             lines: &[],
             symbols: &[],
             operators: &operators,
+            profile: MutationProfile::Full,
             max_candidates: 10_000,
         },
         source,
@@ -46,6 +49,7 @@ fn analyze_with(
             lines,
             symbols,
             operators: &operators,
+            profile: MutationProfile::Full,
             max_candidates,
         },
         source,
@@ -62,6 +66,7 @@ fn omits_candidates_for_unselected_operators() {
             lines: &[],
             symbols: &[],
             operators: &operators,
+            profile: MutationProfile::Full,
             max_candidates: 10_000,
         },
         "result = left + right\n",
@@ -287,6 +292,7 @@ fn type_annotations_respect_line_and_symbol_filters() {
             lines: &[LineRange { start: 4, end: 4 }],
             symbols: &[],
             operators: &operators,
+            profile: MutationProfile::Full,
             max_candidates: 10_000,
         },
         source,
@@ -306,6 +312,7 @@ fn type_annotations_respect_line_and_symbol_filters() {
             lines: &[],
             symbols: &["pkg.sample:convert".to_owned()],
             operators: &operators,
+            profile: MutationProfile::Full,
             max_candidates: 10_000,
         },
         source,

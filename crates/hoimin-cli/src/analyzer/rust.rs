@@ -1,7 +1,9 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use camino::Utf8Path;
-use hoimin_core::{ByteSpan, LineRange, MutationOperator, MutationOperatorSelection};
+use hoimin_core::{
+    ByteSpan, LineRange, MutationOperator, MutationOperatorSelection, MutationProfile,
+};
 use ruff_python_ast::visitor::Visitor;
 use ruff_python_ast::{Expr, ModModule, Operator, Stmt, UnaryOp, visitor};
 use ruff_python_parser::parse_module;
@@ -14,6 +16,7 @@ pub(crate) struct AnalyzeRequest<'a> {
     pub lines: &'a [LineRange],
     pub symbols: &'a [String],
     pub operators: &'a MutationOperatorSelection,
+    pub profile: MutationProfile,
     pub max_candidates: usize,
 }
 

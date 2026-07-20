@@ -6,8 +6,8 @@ use std::path::PathBuf;
 use camino::Utf8PathBuf;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use hoimin_core::{
-    CommandArg, ConfigError, LineRange, LineSelection, OutputConfig, RawRunConfig, RawRunLimits,
-    RunConfig, SessionConfig, SymbolSelection,
+    CommandArg, ConfigError, LineRange, LineSelection, MutationProfile, OutputConfig, RawRunConfig,
+    RawRunLimits, RunConfig, SessionConfig, SymbolSelection,
 };
 
 #[derive(Debug, Parser)]
@@ -15,7 +15,7 @@ use hoimin_core::{
     name = "hoimin",
     version,
     about = "Bounded mutation testing for focused Python changes",
-    after_help = "Run contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --diff-base\nCopy options:\n  --include --exclude\nSafety options:\n  --jobs --max-mutants --max-candidates --analyzer-timeout\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-processes --allow-best-effort-memory\nOutput/session options:\n  --format <json|jsonl|human> --session --resume"
+    after_help = "Run contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates --analyzer-timeout\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-processes --allow-best-effort-memory\nOutput/session options:\n  --format <json|jsonl|human> --session --resume"
 )]
 struct RootCli {
     #[command(subcommand)]
@@ -45,6 +45,22 @@ pub enum OutputFormat {
 pub enum ProgressOutputFormat {
     Human,
     Json,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
+enum ProfileArg {
+    #[default]
+    Full,
+    Focused,
+}
+
+impl From<ProfileArg> for MutationProfile {
+    fn from(value: ProfileArg) -> Self {
+        match value {
+            ProfileArg::Full => Self::Full,
+            ProfileArg::Focused => Self::Focused,
+        }
+    }
 }
 
 #[derive(Debug, Args)]
@@ -88,6 +104,10 @@ struct RawRunArgs {
     /// Include only named mutation operators; may be repeated or comma-delimited.
     #[arg(long, value_delimiter = ',')]
     operators: Vec<String>,
+
+    /// Candidate-selection profile.
+    #[arg(long, value_enum, default_value_t = ProfileArg::Full)]
+    profile: ProfileArg,
 
     /// Exclude named mutation operators; may be repeated or comma-delimited.
     #[arg(long, value_delimiter = ',')]
@@ -189,6 +209,7 @@ pub struct RunArgs {
     pub include: Vec<String>,
     pub exclude: Vec<String>,
     pub operators: Vec<String>,
+    profile: ProfileArg,
     pub exclude_operators: Vec<String>,
     pub jobs: usize,
     pub max_mutants: usize,
@@ -311,6 +332,7 @@ impl TryFrom<Command> for ParsedCommand {
                     include: raw.include,
                     exclude: raw.exclude,
                     operators: raw.operators,
+                    profile: raw.profile,
                     exclude_operators: raw.exclude_operators,
                     jobs: raw.jobs,
                     max_mutants: raw.max_mutants,
@@ -429,6 +451,7 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
         operators: args.operators,
         exclude_operators: args.exclude_operators,
         allow_best_effort_memory: args.allow_best_effort_memory,
+        profile: args.profile.into(),
         limits,
         test_argv: args.test_argv.iter().map(command_arg).collect(),
         output: OutputConfig {
