@@ -122,6 +122,80 @@ fn type_annotations_ignore_quoted_and_unrecognized_forms() {
 }
 
 #[test]
+fn type_annotations_reject_disallowed_nested_types_and_object_nullable_addition() {
+    let source = "from typing import Annotated, Any, Callable, Optional, TypeVar\n\nT = TypeVar('T')\nAlias = str\nobject_value: object\noptional_any: Optional[Any]\ncallable_value: Callable[[str], int] | None\noptional_type_var: Optional[T]\naliased: Alias | None\nitems: list[Any]\nannotated: Optional[Annotated[list[str], 'meta']]\n";
+    let output = analyze_types(source);
+    assert!(
+        output
+            .candidates
+            .iter()
+            .all(|candidate| !candidate.operator.starts_with("type_"))
+    );
+}
+
+#[test]
+fn type_annotations_resolve_unaliased_and_aliased_collections_abc_modules() {
+    let source = "import collections.abc\nimport collections.abc as cabc\n\nfirst: collections.abc.Iterable[str]\nsecond: collections.abc.Sequence[str]\nthird: cabc.Iterable[str]\nfourth: cabc.Sequence[str]\n";
+    let output = analyze_types(source);
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator.starts_with("type_"))
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        candidates,
+        vec![
+            (
+                "collections.abc.Iterable[str]",
+                "collections.abc.Iterator[str]",
+                "type_iterable_iterator"
+            ),
+            (
+                "collections.abc.Iterable[str]",
+                "collections.abc.Iterable[str] | None",
+                "type_nullable_add"
+            ),
+            (
+                "collections.abc.Sequence[str]",
+                "collections.abc.Sequence[str] | None",
+                "type_nullable_add"
+            ),
+            (
+                "collections.abc.Sequence[str]",
+                "collections.abc.Iterable[str]",
+                "type_sequence_iterable"
+            ),
+            (
+                "cabc.Iterable[str]",
+                "cabc.Iterator[str]",
+                "type_iterable_iterator"
+            ),
+            (
+                "cabc.Iterable[str]",
+                "cabc.Iterable[str] | None",
+                "type_nullable_add"
+            ),
+            (
+                "cabc.Sequence[str]",
+                "cabc.Sequence[str] | None",
+                "type_nullable_add"
+            ),
+            (
+                "cabc.Sequence[str]",
+                "cabc.Iterable[str]",
+                "type_sequence_iterable"
+            ),
+        ]
+    );
+}
+#[test]
 fn type_annotations_respect_line_and_symbol_filters() {
     let source = "class Model:\n    field: list[str]\n\ndef convert(value: str) -> set[str]:\n    local: dict[str, int] = {}\n    return set()\n";
     let mut operators = MutationOperatorSelection::default();

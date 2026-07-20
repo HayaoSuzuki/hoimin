@@ -370,7 +370,10 @@ impl KnownImports {
                                 || name.split('.').next().unwrap_or(name),
                                 |asname| asname.as_str(),
                             );
-                            imports.modules.insert(local.to_owned(), name.to_owned());
+                            let resolved = if alias.asname.is_some() { name } else { local };
+                            imports
+                                .modules
+                                .insert(local.to_owned(), resolved.to_owned());
                         }
                     }
                 }
@@ -557,6 +560,9 @@ fn annotation_replacements(
     source: &str,
     imports: &KnownImports,
 ) -> Vec<(String, MutationOperator)> {
+    if contains_disallowed_annotation(annotation, imports) {
+        return Vec::new();
+    }
     let mut replacements = Vec::new();
     if let Some(replacement) = nullable_removal(annotation, source, imports) {
         replacements.push((replacement, MutationOperator::TypeNullableRemove));
@@ -602,10 +608,7 @@ fn nullable_add_allowed(annotation: &Expr, imports: &KnownImports) -> bool {
 
 fn is_supported_annotation(annotation: &Expr, imports: &KnownImports) -> bool {
     match annotation {
-        Expr::Name(name) => matches!(
-            name.id.as_str(),
-            "str" | "int" | "float" | "bool" | "bytes" | "object"
-        ),
+        Expr::Name(name) => matches!(name.id.as_str(), "str" | "int" | "float" | "bool" | "bytes"),
         Expr::Subscript(subscript) => matches!(
             imports.resolved_name(subscript.value.as_ref()).as_deref(),
             Some(
@@ -637,7 +640,10 @@ fn contains_disallowed_annotation(annotation: &Expr, imports: &KnownImports) -> 
     match annotation {
         Expr::StringLiteral(_) => true,
         Expr::Name(name) => {
-            imports.type_vars.contains(name.id.as_str())
+            !matches!(
+                name.id.as_str(),
+                "str" | "int" | "float" | "bool" | "bytes" | "object"
+            ) || imports.type_vars.contains(name.id.as_str())
                 || imports.resolved_name(annotation).as_deref() == Some("typing.Any")
         }
         Expr::Subscript(subscript) => {
@@ -647,9 +653,7 @@ fn contains_disallowed_annotation(annotation: &Expr, imports: &KnownImports) -> 
             ) || contains_disallowed_annotation(subscript.slice.as_ref(), imports)
         }
         Expr::BinOp(binary) if binary.op == Operator::BitOr => {
-            is_none(binary.left.as_ref())
-                || is_none(binary.right.as_ref())
-                || contains_disallowed_annotation(binary.left.as_ref(), imports)
+            contains_disallowed_annotation(binary.left.as_ref(), imports)
                 || contains_disallowed_annotation(binary.right.as_ref(), imports)
         }
         _ => false,
