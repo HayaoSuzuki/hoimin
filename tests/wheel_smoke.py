@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 import hashlib
 import json
 import os
@@ -40,21 +41,33 @@ def is_compatible_wheel(wheel: Path, system: str, machine: str) -> bool:
     return False
 
 
-def wheel_path() -> Path:
-    override = os.environ.get("HOIMIN_WHEEL")
+def select_compatible_wheel(
+    wheels: list[Path], *, system: str, machine: str
+) -> Path:
+    compatible = sorted(
+        wheel
+        for wheel in wheels
+        if is_compatible_wheel(wheel, system, machine)
+    )
+    assert compatible, f"no wheel for {system}: {[wheel.name for wheel in wheels]}"
+    return compatible[-1]
+
+
+def wheel_path(
+    *,
+    environment: Mapping[str, str],
+    wheel_directory: Path,
+    system: str,
+    machine: str,
+) -> Path:
+    override = environment.get("HOIMIN_WHEEL")
     if override:
         wheel = Path(override).resolve()
         assert wheel.is_file(), f"HOIMIN_WHEEL does not exist: {wheel}"
         return wheel
-    wheels = sorted((REPOSITORY_ROOT / "target" / "wheels").glob("hoimin-*.whl"))
+    wheels = sorted(wheel_directory.glob("hoimin-*.whl"))
     assert wheels, "build a wheel first with uv run maturin build --release"
-    compatible = [
-        wheel
-        for wheel in wheels
-        if is_compatible_wheel(wheel, sys.platform, platform.machine().lower())
-    ]
-    assert compatible, f"no wheel for {sys.platform}: {[wheel.name for wheel in wheels]}"
-    return compatible[-1]
+    return select_compatible_wheel(wheels, system=system, machine=machine)
 
 
 def wheel_metadata(wheel: Path) -> WheelMetadata:
@@ -94,7 +107,12 @@ def write_fixture(root: Path) -> Path:
 
 
 def main() -> int:
-    wheel = wheel_path()
+    wheel = wheel_path(
+        environment=os.environ,
+        wheel_directory=REPOSITORY_ROOT / "target" / "wheels",
+        system=sys.platform,
+        machine=platform.machine().lower(),
+    )
     metadata = wheel_metadata(wheel)
     assert metadata.requires_python.replace(" ", "") == ">=3.14,<3.15"
     assert metadata.requires_dist is None
