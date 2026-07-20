@@ -269,6 +269,41 @@ async fn fingerprint_include_unmatched_fails_before_creating_session() {
 }
 
 #[tokio::test]
+async fn fingerprint_include_is_reported() {
+    let options = ["--fingerprint-include", "pyproject.toml"];
+    let test_args = ["-m", "unittest", "discover", "-s", "tests"];
+
+    let json = run_fixture_options_extra(&test_args, None, false, &options).await;
+    assert_eq!(json.exit_code, 0, "stderr={}", json.stderr);
+    assert_eq!(
+        json.document["run"]["normalized_config"]["fingerprint_includes"],
+        serde_json::json!(["pyproject.toml"])
+    );
+    assert_eq!(
+        json.document["run"]["normalized_config"]["fingerprint_inputs"][0]["path"],
+        "pyproject.toml"
+    );
+
+    let jsonl =
+        run_fixture_options_extra_with_format(&test_args, None, false, "jsonl", &options).await;
+    assert_eq!(jsonl.exit_code, 0, "stderr={}", jsonl.stderr);
+    let run_started = jsonl
+        .stdout
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find(|record| record["kind"] == "run_started")
+        .unwrap();
+    assert_eq!(
+        run_started["normalized_config"]["fingerprint_includes"],
+        serde_json::json!(["pyproject.toml"])
+    );
+    assert_eq!(
+        run_started["normalized_config"]["fingerprint_inputs"][0]["path"],
+        "pyproject.toml"
+    );
+}
+
+#[tokio::test]
 async fn shell_context_construction_performs_no_project_io() {
     let directory = tempfile::tempdir().unwrap();
     let missing_root = directory.path().join("missing-project");
@@ -892,6 +927,16 @@ async fn run_fixture_options_extra(
     resume: bool,
     extra_options: &[&str],
 ) -> FixtureRun {
+    run_fixture_options_extra_with_format(test_args, session, resume, "json", extra_options).await
+}
+
+async fn run_fixture_options_extra_with_format(
+    test_args: &[&str],
+    session: Option<&Path>,
+    resume: bool,
+    format: &str,
+    extra_options: &[&str],
+) -> FixtureRun {
     let root = fixture_root();
     let python = python_executable();
     let mut args = vec![
@@ -904,7 +949,7 @@ async fn run_fixture_options_extra(
         OsString::from("--file"),
         OsString::from("src/calc.py"),
         OsString::from("--format"),
-        OsString::from("json"),
+        OsString::from(format),
         OsString::from("--allow-best-effort-memory"),
         OsString::from("--"),
         python.as_os_str().to_owned(),
@@ -928,17 +973,24 @@ async fn run_fixture_options_extra(
     let exit_code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
     let stdout = String::from_utf8(stdout).unwrap();
     let stderr = String::from_utf8(stderr).unwrap();
-    let document: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|error| {
-        panic!(
-            "invalid JSON report ({error}); exit={exit_code}; stdout={stdout:?}; stderr={stderr:?}"
-        )
-    });
+    let document = if format == "json" {
+        serde_json::from_str(stdout.trim()).unwrap_or_else(|error| {
+            panic!(
+                "invalid JSON report ({error}); exit={exit_code}; stdout={stdout:?}; stderr={stderr:?}"
+            )
+        })
+    } else {
+        serde_json::Value::Null
+    };
     let statuses = document["mutants"]
         .as_array()
-        .unwrap()
-        .iter()
-        .map(|mutant| mutant["status"].as_str().unwrap().to_owned())
-        .collect();
+        .map(|mutants| {
+            mutants
+                .iter()
+                .map(|mutant| mutant["status"].as_str().unwrap().to_owned())
+                .collect()
+        })
+        .unwrap_or_default();
     FixtureRun {
         exit_code,
         statuses,

@@ -35,6 +35,14 @@ Explicit selectors form a union. For example, `--source src --file src/calc.py` 
 
 `--include GLOB` can restore files excluded by ignore rules or built-in copy exclusions. `--exclude GLOB` adds exclusions and wins when both match. Both options may be repeated.
 
+`--fingerprint-include GLOB` records matching files as explicit session-fingerprint inputs. It only invalidates compatible-run reuse: it does not control worker copying, select mutation targets, or implicitly watch files. Use `--include GLOB` independently when a fingerprinted input must also be copied into each worker; no files are implicitly watched.
+
+For example, when a test needs an ignored fixture input copied into its worker:
+
+```console
+hoimin run --root . --source src --fingerprint-include tests/fixtures/settings.toml --include tests/fixtures/settings.toml -- python -m pytest -q
+```
+
 ## Limits and defaults
 
 The defaults are:
@@ -54,6 +62,7 @@ The defaults are:
 | `--max-processes` | `64` | run-wide descendants |
 | `--format` | `json` | `json`, `jsonl`, or `human` |
 | `--profile full|focused` | `full` | candidate-selection profile |
+| `--fingerprint-include GLOB` | none | invalidates compatible session reuse; does not copy worker files |
 
 By default there are no include/exclude overrides or SQLite session, and `--changed`, `--resume`, and `--allow-best-effort-memory` are disabled.
 
