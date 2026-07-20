@@ -444,6 +444,46 @@ impl KnownImports {
         parts.reverse();
         Some(parts.join("."))
     }
+
+    fn spelling_for(&self, source: &str, targets: &[&str]) -> Option<String> {
+        if let Some((prefix, _)) = source.rsplit_once('.') {
+            let imported_module = self.modules.iter().any(|(local, module)| {
+                (prefix == local
+                    || prefix
+                        .strip_prefix(local)
+                        .is_some_and(|suffix| suffix.starts_with('.')))
+                    && targets
+                        .iter()
+                        .any(|target| target.starts_with(module.as_str()))
+            });
+            return imported_module.then(|| {
+                let (_, name) = targets
+                    .first()
+                    .and_then(|target| target.rsplit_once('.'))
+                    .expect("abstract type targets contain a qualified name");
+                format!("{prefix}.{name}")
+            });
+        }
+        let direct = self
+            .direct
+            .iter()
+            .filter(|(_, resolved)| targets.contains(&resolved.as_str()))
+            .map(|(local, _)| local.clone())
+            .min();
+        direct.or_else(|| {
+            self.modules
+                .iter()
+                .flat_map(|(local, module)| {
+                    targets.iter().filter_map(move |target| {
+                        target
+                            .strip_prefix(module)
+                            .and_then(|suffix| suffix.strip_prefix('.'))
+                            .map(|suffix| format!("{local}.{suffix}"))
+                    })
+                })
+                .min()
+        })
+    }
 }
 
 fn is_known_type_name(name: &str) -> bool {
@@ -459,6 +499,8 @@ fn is_known_type_name(name: &str) -> bool {
             | "Any"
             | "Callable"
             | "TypeVar"
+            | "Literal"
+            | "Protocol"
     )
 }
 
@@ -584,9 +626,7 @@ fn annotation_replacements(
             MutationOperator::TypeNullableAdd,
         ));
     }
-    if let Some((replacement, operator)) = collection_replacement(annotation, source, imports) {
-        replacements.push((replacement, operator));
-    }
+    replacements.extend(collection_replacements(annotation, source, imports));
     replacements
 }
 
@@ -652,10 +692,14 @@ fn contains_disallowed_annotation(annotation: &Expr, imports: &KnownImports) -> 
                 || imports.type_vars.contains(name.id.as_str())
                 || imports.resolved_name(annotation).as_deref() == Some("typing.Any")
         }
+        Expr::Attribute(_) => matches!(
+            imports.resolved_name(annotation).as_deref(),
+            Some("typing.Any" | "typing.Protocol")
+        ),
         Expr::Subscript(subscript) => {
             matches!(
                 imports.resolved_name(subscript.value.as_ref()).as_deref(),
-                Some("typing.Annotated" | "typing.Callable")
+                Some("typing.Annotated" | "typing.Callable" | "typing.Literal" | "typing.Protocol")
             ) || contains_disallowed_annotation(subscript.slice.as_ref(), imports)
         }
         Expr::BinOp(binary) if binary.op == Operator::BitOr => {
@@ -666,38 +710,71 @@ fn contains_disallowed_annotation(annotation: &Expr, imports: &KnownImports) -> 
     }
 }
 
-fn collection_replacement(
+fn collection_replacements(
     annotation: &Expr,
     source: &str,
     imports: &KnownImports,
-) -> Option<(String, MutationOperator)> {
+) -> Vec<(String, MutationOperator)> {
     let Expr::Subscript(subscript) = annotation else {
-        return None;
+        return Vec::new();
     };
-    let resolved = imports.resolved_name(subscript.value.as_ref())?;
-    let (replacement_name, operator) = match resolved.as_str() {
-        "list" => ("Sequence", MutationOperator::TypeListSequence),
-        "set" => ("AbstractSet", MutationOperator::TypeSetAbstractSet),
-        "dict" => ("Mapping", MutationOperator::TypeMapping),
-        "typing.Iterable" | "collections.abc.Iterable" => {
-            ("Iterator", MutationOperator::TypeIterableIterator)
-        }
+    let Some(resolved) = imports.resolved_name(subscript.value.as_ref()) else {
+        return Vec::new();
+    };
+    let base = expression_source(subscript.value.as_ref(), source);
+    let replacement = |name: String, operator| {
+        (
+            replace_subscript_base(annotation, subscript.value.as_ref(), source, &name),
+            operator,
+        )
+    };
+    match resolved.as_str() {
+        "list" => imports
+            .spelling_for(&base, &["typing.Sequence", "collections.abc.Sequence"])
+            .map(|name| vec![replacement(name, MutationOperator::TypeListSequence)])
+            .unwrap_or_default(),
         "typing.Sequence" | "collections.abc.Sequence" => {
-            ("Iterable", MutationOperator::TypeSequenceIterable)
+            let mut replacements = vec![replacement(
+                "list".to_owned(),
+                MutationOperator::TypeListSequence,
+            )];
+            if let Some(name) =
+                imports.spelling_for(&base, &["typing.Iterable", "collections.abc.Iterable"])
+            {
+                replacements.push(replacement(name, MutationOperator::TypeSequenceIterable));
+            }
+            replacements
         }
-        _ => return None,
-    };
-    Some((
-        replace_subscript_base(
-            annotation,
-            subscript.value.as_ref(),
-            source,
-            replacement_name,
-        ),
-        operator,
-    ))
+        "set" => imports
+            .spelling_for(
+                &base,
+                &["typing.AbstractSet", "collections.abc.AbstractSet"],
+            )
+            .map(|name| vec![replacement(name, MutationOperator::TypeSetAbstractSet)])
+            .unwrap_or_default(),
+        "typing.AbstractSet" | "collections.abc.AbstractSet" => vec![replacement(
+            "set".to_owned(),
+            MutationOperator::TypeSetAbstractSet,
+        )],
+        "dict" => imports
+            .spelling_for(&base, &["typing.Mapping", "collections.abc.Mapping"])
+            .map(|name| vec![replacement(name, MutationOperator::TypeMapping)])
+            .unwrap_or_default(),
+        "typing.Mapping" | "collections.abc.Mapping" => vec![replacement(
+            "dict".to_owned(),
+            MutationOperator::TypeMapping,
+        )],
+        "typing.Iterable" | "collections.abc.Iterable" => imports
+            .spelling_for(&base, &["typing.Iterator", "collections.abc.Iterator"])
+            .map(|name| vec![replacement(name, MutationOperator::TypeIterableIterator)])
+            .unwrap_or_default(),
+        "typing.Iterator" | "collections.abc.Iterator" => imports
+            .spelling_for(&base, &["typing.Iterable", "collections.abc.Iterable"])
+            .map(|name| vec![replacement(name, MutationOperator::TypeIterableIterator)])
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    }
 }
-
 fn replace_subscript_base(
     annotation: &Expr,
     base: &Expr,
@@ -710,11 +787,7 @@ fn replace_subscript_base(
     let base_start = usize::from(base_range.start());
     let base_end = usize::from(base_range.end());
     let end = usize::from(annotation_range.end());
-    let base_text = &source[base_start..base_end];
-    let replacement_base = base_text.rsplit_once('.').map_or_else(
-        || replacement.to_owned(),
-        |(prefix, _)| format!("{prefix}.{replacement}"),
-    );
+    let replacement_base = replacement;
     format!(
         "{}{}{}",
         &source[start..base_start],
