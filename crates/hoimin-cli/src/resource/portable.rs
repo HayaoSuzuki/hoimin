@@ -5,6 +5,10 @@ use tokio::process::{Child, Command};
 
 use super::{ProcessSupervisor, ResourceError};
 
+#[cfg(target_os = "macos")]
+const MACOS_BEST_EFFORT_DIAGNOSTIC: &str =
+    "macOS uses process groups and RLIMIT_CPU; max-memory is not enforced";
+
 #[derive(Clone, Debug, Default)]
 pub struct PortableBackend {
     diagnostic: Option<String>,
@@ -13,17 +17,33 @@ pub struct PortableBackend {
 impl PortableBackend {
     /// # Errors
     ///
-    /// Returns an error on Linux when best-effort memory limiting was not explicitly allowed.
+    /// Returns an error on Linux or macOS when best-effort memory limiting was not explicitly
+    /// allowed.
     pub fn new(allow_best_effort_memory: bool) -> Result<Self, ResourceError> {
         #[cfg(target_os = "linux")]
-        if !allow_best_effort_memory {
-            return Err(ResourceError::BestEffortNotAllowed(
-                "portable Linux uses per-process RLIMIT_AS/RLIMIT_CPU and process groups".into(),
-            ));
+        {
+            if !allow_best_effort_memory {
+                return Err(ResourceError::BestEffortNotAllowed(
+                    "portable Linux uses per-process RLIMIT_AS/RLIMIT_CPU and process groups"
+                        .into(),
+                ));
+            }
+            Ok(Self { diagnostic: None })
         }
-        #[cfg(not(target_os = "linux"))]
-        let _ = allow_best_effort_memory;
-        Ok(Self { diagnostic: None })
+        #[cfg(target_os = "macos")]
+        {
+            if !allow_best_effort_memory {
+                return Err(ResourceError::BestEffortNotAllowed(
+                    MACOS_BEST_EFFORT_DIAGNOSTIC.into(),
+                ));
+            }
+            Ok(Self::with_diagnostic(MACOS_BEST_EFFORT_DIAGNOSTIC.into()))
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        {
+            let _ = allow_best_effort_memory;
+            Ok(Self { diagnostic: None })
+        }
     }
 
     #[must_use]
@@ -132,7 +152,7 @@ impl Drop for PortableSupervisor {
     }
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 #[allow(
     clippy::unnecessary_wraps,
     reason = "The shared command configuration API propagates platform setup failures."
@@ -157,6 +177,38 @@ fn configure_command(command: &mut Command, limits: ProcessLimits) -> Result<(),
                 rlim_max: memory as libc::rlim_t,
             };
             if libc::setrlimit(libc::RLIMIT_AS, std::ptr::addr_of!(address_space)) != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            let cpu = libc::rlimit {
+                rlim_cur: cpu_seconds as libc::rlim_t,
+                rlim_max: cpu_seconds as libc::rlim_t,
+            };
+            if libc::setrlimit(libc::RLIMIT_CPU, std::ptr::addr_of!(cpu)) != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "the shared command configuration API retains a fallible signature across target-specific implementations"
+)]
+fn configure_command(command: &mut Command, limits: ProcessLimits) -> Result<(), ResourceError> {
+    use std::os::unix::process::CommandExt;
+
+    let cpu_seconds = limits
+        .timeout
+        .as_secs()
+        .saturating_add(u64::from(limits.timeout.subsec_nanos() != 0))
+        .max(1);
+    // SAFETY: this closure uses only async-signal-safe libc calls before exec.
+    unsafe {
+        command.as_std_mut().pre_exec(move || {
+            if libc::setpgid(0, 0) != 0 {
                 return Err(io::Error::last_os_error());
             }
             let cpu = libc::rlimit {

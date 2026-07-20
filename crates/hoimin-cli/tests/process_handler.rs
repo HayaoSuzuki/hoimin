@@ -9,14 +9,16 @@ use hoimin_cli::resource::{
     select_linux_backend,
 };
 use hoimin_core::{
-    CommandArg, EffectFailure, EffectId, ProcessLimits, ProcessTermination, RawRunLimits,
-    ResourceMode, RunLimits, RunProcess,
+    CommandArg, EffectFailure, EffectId, ProcessLimits, ProcessTermination, ResourceMode,
+    RunProcess,
 };
 
 #[cfg(windows)]
 use hoimin_cli::resource::WindowsBackend;
 #[cfg(target_os = "linux")]
 use hoimin_cli::resource::probe_linux_cgroup_with_launcher;
+#[cfg(any(target_os = "linux", windows))]
+use hoimin_core::{RawRunLimits, RunLimits};
 
 #[cfg(unix)]
 fn native_arg(value: &OsStr) -> CommandArg {
@@ -81,6 +83,7 @@ fn portable_handler(output_dir: &Utf8Path) -> ProcessHandler {
     )
 }
 
+#[cfg(any(target_os = "linux", windows))]
 fn hard_run_limits(max_memory: u64, max_processes: usize) -> RunLimits {
     let raw = RawRunLimits {
         max_memory,
@@ -730,6 +733,38 @@ mod portable {
             PortableBackend::new(true).unwrap().mode(),
             ResourceMode::BestEffort
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_portable_backend_requires_explicit_best_effort_opt_in() {
+        let error = PortableBackend::new(false).unwrap_err();
+        assert!(error.to_string().contains("--allow-best-effort-memory"));
+
+        let backend = PortableBackend::new(true).unwrap();
+        assert_eq!(backend.mode(), ResourceMode::BestEffort);
+        assert_eq!(
+            backend.diagnostic(),
+            Some("macOS uses process groups and RLIMIT_CPU; max-memory is not enforced"),
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn macos_portable_backend_spawns_without_virtual_memory_rlimit() {
+        let output = tempfile::tempdir().unwrap();
+        let handler = portable_handler(Utf8Path::from_path(output.path()).unwrap());
+
+        let event = handler
+            .handle(run_python(
+                70,
+                "raise SystemExit(0)",
+                limits(Duration::from_secs(5), 64),
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(event.termination, ProcessTermination::Exit(0));
     }
 }
 

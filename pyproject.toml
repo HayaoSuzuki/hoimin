@@ -13,12 +13,13 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.14",
     "Programming Language :: Rust",
+    "Operating System :: MacOS",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
 ]
 
 [project.urls]
-Repository = "https://github.com/HayaoSuzuki/hoimin"
+Repository = "https://github.com/tokyogas-tech/hoimin"
 
 [tool.maturin]
 bindings = "bin"

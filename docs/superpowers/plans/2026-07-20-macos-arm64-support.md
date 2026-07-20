@@ -1,5 +1,11 @@
 # Apple Silicon macOS Support Implementation Plan
 
+> **Superseded:** Do not execute this plan. The verified Darwin behavior rejects
+> `RLIMIT_AS`; the active no-release plan is
+> [`2026-07-20-apple-silicon-wheel.md`](2026-07-20-apple-silicon-wheel.md),
+> which uses process groups and `RLIMIT_CPU` without claiming enforced macOS
+> memory limits.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Support Apple Silicon macOS (`aarch64-apple-darwin`) with an installable native wheel, CI coverage, and an explicitly opt-in best-effort resource policy.
