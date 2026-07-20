@@ -23,6 +23,10 @@ pub(crate) struct AnalyzerOutput {
     pub truncated: bool,
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "token and type-annotation candidates share local byte-span and source-order control flow"
+)]
 pub(crate) fn analyze_source(request: &AnalyzeRequest<'_>, source: &str) -> AnalyzerOutput {
     let Ok(parsed) = parse_module(source) else {
         return invalid_syntax(request.path);
@@ -378,7 +382,11 @@ impl KnownImports {
                     }
                 }
                 Stmt::ImportFrom(import) if import.level == 0 => {
-                    let Some(module_name) = import.module.as_ref().map(|name| name.as_str()) else {
+                    let Some(module_name) = import
+                        .module
+                        .as_ref()
+                        .map(ruff_python_ast::Identifier::as_str)
+                    else {
                         continue;
                     };
                     if !matches!(module_name, "typing" | "collections.abc") {
@@ -480,7 +488,7 @@ impl<'ast> AnnotationCollector<'ast> {
     }
 
     fn record_function_annotations(&mut self, definition: &'ast ruff_python_ast::StmtFunctionDef) {
-        for parameter in definition.parameters.iter() {
+        for parameter in &definition.parameters {
             if let Some(annotation) = parameter.annotation() {
                 self.annotations.push((annotation, self.symbol()));
             }
