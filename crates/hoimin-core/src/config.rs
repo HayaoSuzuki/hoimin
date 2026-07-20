@@ -71,9 +71,6 @@ pub enum MutationOperator {
 impl MutationOperator {
     #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
-        if name == "type_mapping" {
-            return Some(Self::TypeMapping);
-        }
         Self::all()
             .into_iter()
             .find(|operator| operator.as_str() == name)

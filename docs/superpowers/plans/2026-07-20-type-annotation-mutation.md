@@ -64,7 +64,7 @@ fn operator_flags_expand_groups_and_preserve_legacy_default() {
     let selected = parse_config_from([
         "hoimin", "run", "--file", "x.py",
         "--operators", "type_nullable,type_collections",
-        "--exclude-operators", "type_mapping",
+        "--exclude-operators", "type_dict_mapping",
         "--", "check",
     ]).unwrap();
     assert!(selected.operators.contains(MutationOperator::TypeNullableRemove));

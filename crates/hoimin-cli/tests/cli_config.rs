@@ -246,7 +246,7 @@ fn operator_flags_expand_groups_and_preserve_legacy_default() {
         "--operators",
         "type_nullable,type_collections",
         "--exclude-operators",
-        "type_mapping",
+        "type_dict_mapping",
         "--",
         "check",
     ])
@@ -281,6 +281,27 @@ fn operator_flags_reject_unknown_names() {
         error.config_error(),
         Some(&hoimin_core::ConfigError::UnknownMutationOperator {
             value: "unknown_operator".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn operator_flags_reject_type_mapping_alias() {
+    let error = hoimin_cli::cli::parse_config_from([
+        "hoimin",
+        "run",
+        "--file",
+        "x.py",
+        "--operators",
+        "type_mapping",
+        "--",
+        "check",
+    ])
+    .unwrap_err();
+    assert_eq!(
+        error.config_error(),
+        Some(&hoimin_core::ConfigError::UnknownMutationOperator {
+            value: "type_mapping".to_owned(),
         })
     );
 }

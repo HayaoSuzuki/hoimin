@@ -423,7 +423,7 @@ fn windows_multi_character_uppercase_does_not_overmatch_root() {
 #[test]
 fn run_config_normalizes_operator_selectors() {
     let mut raw = raw_config();
-    raw.operators = vec!["type_iterables".to_owned(), "type_mapping".to_owned()];
+    raw.operators = vec!["type_iterables".to_owned(), "type_dict_mapping".to_owned()];
     raw.exclude_operators = vec!["type_iterable_iterator".to_owned()];
     let config = RunConfig::try_from(raw).unwrap();
     assert!(
