@@ -278,7 +278,8 @@ async fn sqlite_session_saves_and_resumes_a_determinate_result_without_reexecuti
 #[tokio::test]
 async fn sqlite_session_can_be_resumed_after_repeated_mutant_limits() {
     let project = tempfile::tempdir().unwrap();
-    let database = project.path().join("session.sqlite3");
+    let sessions = tempfile::tempdir().unwrap();
+    let database = sessions.path().join("session.sqlite3");
     write_parallel_project(project.path());
     let command = "from src.calc import total; assert total(1, 2, 3, 4, 5) == 15";
 
