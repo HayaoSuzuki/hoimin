@@ -154,7 +154,7 @@ struct RunReportDocument {
 }
 
 pub(crate) enum UnusableReason {
-    MissingBaseline, BaselineFailed, Incomplete, InvalidStructure,
+    MissingBaseline, BaselineFailed, Incomplete,
 }
 ```
 
