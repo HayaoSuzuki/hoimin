@@ -40,7 +40,7 @@ hoimin progress --format json REPORT [REPORT ...]
 各入力はサポート対象の run-result schema version であることを検証する。
 baseline が成功し、run が complete で、mutant status が最終状態として記録されているレポートだけを比較に使用する。
 
-解析不能な JSON、未対応 schema、baseline failure、または incomplete な run は `unusable` としてレポートする。
+解析不能な JSON と未対応 schema は CLI エラーとして終了する。baseline failure または incomplete な run は `unusable` としてレポートする。
 `unusable` なレポートをまたぐ比較は作らず、飽和カウンタも更新しない。利用可能なレポートが二つ未満であれば、進捗および飽和は判定不能とする。
 
 ## Mutant の照合
@@ -69,7 +69,7 @@ score は共通集合に含まれる `killed` と `survived` からだけ計算�
 - 共通集合 score の差分
 - 新規、消滅、曖昧、判定不能 mutant の件数
 
-「改善」は `survived -> killed` が一件以上ある、または持ち越し survivor が減ることとする。改善があれば飽和カウンタを 0 に戻す。
+「改善」は `survived -> killed` が一件以上ある、または持ち越し survivor が減ることとする。後退のない改善があれば飽和カウンタを 0 に戻す。同一比較に改善と後退の両方がある場合は、両方を集計するが、状態と飽和カウンタについては後退を優先する。
 
 改善も後退もない比較を「停滞」とし、飽和カウンタを 1 増やす。`killed -> survived` が一件以上ある比較は「後退」とし、停滞ではないため飽和カウンタを増やさない。比較可能な共通集合が空のときも、カウンタを更新しない。
 
@@ -104,7 +104,7 @@ JSON 形式は、入力レポートごとの利用可否、隣接比較ごとの
 - 停滞が三回連続で飽和になること
 - `--patience` が既定値と上書き値の両方で効くこと
 - 新規・消滅 mutant が照合集計に分離されること
-- 不完全・baseline failure・未対応 schema が比較とカウンタから除かれること
+- 不完全・baseline failure が比較とカウンタから除かれ、未対応 schema が CLI エラーになること
 - 重複照合キーが警告され、照合から除かれること
 - 共通集合が空の比較がカウンタを更新しないこと
 - human と JSON の状態が同じ判断を表すこと

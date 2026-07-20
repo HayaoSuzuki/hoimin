@@ -36,11 +36,10 @@
 | `docs/json-schema/progress-result.schema.json` | Versioned JSON contract. |
 | `README.md` | Public usage and semantics. |
 
-### Task 1: Parse and dispatch `progress`
+### Task 1: Parse `progress`
 
 **Files:**
 - Modify: `crates/hoimin-cli/src/cli.rs`
-- Modify: `crates/hoimin-cli/src/lib.rs`
 - Modify: `crates/hoimin-cli/tests/cli_config.rs`
 
 **Interfaces:**
@@ -93,7 +92,7 @@ struct RawProgressArgs {
 pub enum ParsedCommand { Run(RunArgs), Progress(ProgressArgs) }
 ```
 
-Change `RootCli` conversion so the existing run conversion remains unchanged inside the `Run` branch. In `run_with_io`, run commands keep their `RunConfig` conversion and `shell::run_loop`; progress commands call Task 4 and print errors to stderr with code `2`. Do not add `jsonl` to `ProgressOutputFormat`.
+Change `RootCli` conversion so the existing run conversion remains unchanged inside the `Run` branch. Do not add `jsonl` to `ProgressOutputFormat`. Task 4 introduces the `run_with_io` dispatch once `progress::run` exists; do not add a temporary runtime stub in this task.
 
 - [ ] **Step 4: Verify parser compatibility**
 
@@ -124,9 +123,13 @@ git commit -m "feat: add progress command parsing"
 
 ```rust
 #[test]
-fn input_marks_incomplete_and_unsupported_reports_unusable() {
+fn input_marks_incomplete_reports_unusable() {
     assert!(matches!(read_report(&incomplete), Ok(InputReport::Unusable { .. })));
-    assert!(matches!(read_report(&unsupported), Ok(InputReport::Unusable { .. })));
+}
+
+#[test]
+fn input_rejects_unsupported_report_schema() {
+    assert!(read_report(&unsupported).is_err());
 }
 ```
 
@@ -151,11 +154,11 @@ struct RunReportDocument {
 }
 
 pub(crate) enum UnusableReason {
-    UnsupportedSchema, MissingBaseline, BaselineFailed, Incomplete, InvalidStructure,
+    MissingBaseline, BaselineFailed, Incomplete,
 }
 ```
 
-Require `OutputEvent::BaselineFinished` with `ProcessTermination::Exit(0)`, `OutputEvent::RunFinished` with `complete == true`, and only `OutputEvent::MutantFinished` inside `mutants`. Malformed JSON, unreadable paths, and invalid document structure are command errors. Syntactically valid failed-baseline, incomplete, and unsupported-version reports are normal `UnusableReason` values for output.
+Require `OutputEvent::BaselineFinished` with `ProcessTermination::Exit(0)`, `OutputEvent::RunFinished` with `complete == true`, and only `OutputEvent::MutantFinished` inside `mutants`. Malformed JSON, unreadable paths, invalid document structure, and unsupported schema versions are command errors. Syntactically valid failed-baseline and incomplete reports are normal `UnusableReason` values for output.
 
 - [ ] **Step 4: Verify input classification**
 
@@ -224,7 +227,7 @@ fn key(candidate: &MutationCandidate) -> MutantKey { /* copy these five fields o
 
 Create a per-report map of unique keys and a duplicate-key set. For each immediately adjacent pair of `Usable` reports, exclude a key duplicated in either side, then count common, added, removed, and inconclusive mutants. `survived -> killed` is improvement; `killed -> survived` is regression. Common-set score is `killed / (killed + survived)` and is null if its denominator is zero.
 
-Increment stalls only for a nonempty common set with neither improvement nor regression. Reset to zero on improvement. Leave the count unchanged for regression, an empty common set, or a broken chain. Publish `Improving`, `Regressing`, `Stalled`, `Saturated`, or `Indeterminate`; `Saturated` requires a latest stalled comparison and `stalls >= patience`.
+Increment stalls only for a nonempty common set with neither improvement nor regression. Reset to zero on improvement without regression. Leave the count unchanged for regression (including a comparison containing both improvement and regression), an empty common set, or a broken chain. When both transition directions occur, retain both aggregate counts but publish `Regressing`. Publish `Improving`, `Regressing`, `Stalled`, `Saturated`, or `Indeterminate`; `Saturated` requires a latest stalled comparison and `stalls >= patience`.
 
 - [ ] **Step 4: Verify comparison behavior**
 
@@ -266,7 +269,7 @@ async fn progress_json_exposes_agent_decision_fields() {
 }
 ```
 
-Add tests for readable human fields and for malformed JSON or unreadable paths returning code `2`; valid unusable reports with no usable adjacent pair must return `0` and `indeterminate`.
+Add tests for readable human fields and for malformed JSON, unreadable paths, or unsupported schema returning code `2`; valid unusable reports with no usable adjacent pair must return `0` and `indeterminate`.
 
 - [ ] **Step 2: Run output tests and verify failure**
 
@@ -291,6 +294,8 @@ const PROGRESS_SCHEMA_VERSION: u32 = 1;
 ```
 
 Human output must include state, score and delta when present, improvement, regression, carried survivors, added, removed, ambiguous, inconclusive, stalls, patience, and saturated. Send unusable-input reasons and ambiguity warnings to stderr. JSON contains the same fields structurally. Add `progress-result.schema.json` with closed top-level/comparison objects, five-state enum, and nonnegative integer fields. Reuse the schema-validation pattern from `crates/hoimin-cli/tests/report_handler.rs`.
+
+In `run_with_io`, retain the existing `RunConfig` conversion and `shell::run_loop` for `ParsedCommand::Run`. Dispatch `ParsedCommand::Progress` to `progress::run`, printing any `ProgressError` to stderr and returning exit code `2`.
 
 - [ ] **Step 4: Verify integration and schema**
 

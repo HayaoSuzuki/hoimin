@@ -3,6 +3,7 @@ use std::ffi::OsString;
 pub mod analyzer;
 pub mod cli;
 pub mod process;
+pub mod progress;
 pub mod report;
 pub mod resource;
 pub mod session;
@@ -31,8 +32,21 @@ where
     Stdout: std::io::Write,
     Stderr: std::io::Write,
 {
-    match cli::parse_config_from(args) {
-        Ok(config) => match shell::run_loop(config, &mut *stdout, &mut *stderr).await {
+    match cli::parse_from(args) {
+        Ok(cli::ParsedCommand::Run(args)) => match cli::run_config_from_args(args) {
+            Ok(config) => match shell::run_loop(config, &mut *stdout, &mut *stderr).await {
+                Ok(code) => code,
+                Err(error) => {
+                    let _ = writeln!(stderr, "{error}");
+                    2
+                }
+            },
+            Err(error) => {
+                let _ = writeln!(stderr, "{error}");
+                2
+            }
+        },
+        Ok(cli::ParsedCommand::Progress(args)) => match progress::run(args, stdout, stderr) {
             Ok(code) => code,
             Err(error) => {
                 let _ = writeln!(stderr, "{error}");

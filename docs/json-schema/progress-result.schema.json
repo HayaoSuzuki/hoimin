@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/tokyogas-tech/hoimin/main/docs/json-schema/progress-result.schema.json",
+  "title": "hoimin progress JSON result",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "patience",
+    "consecutive_stalls",
+    "latest",
+    "inputs",
+    "comparisons"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "patience": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "consecutive_stalls": {
+      "$ref": "#/$defs/nonnegativeInteger"
+    },
+    "latest": {
+      "$ref": "#/$defs/latestDecision"
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/inputDisposition"
+      }
+    },
+    "comparisons": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/comparison"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "state": {
+      "type": "string",
+      "enum": [
+        "improving",
+        "regressing",
+        "stalled",
+        "saturated",
+        "indeterminate"
+      ]
+    },
+    "nonnegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "nullableScore": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/score"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "nullableScoreDelta": {
+      "oneOf": [
+        {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "latestDecision": {
+      "type": "object",
+      "required": ["state", "consecutive_stalls", "patience", "saturated"],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "consecutive_stalls": {
+          "$ref": "#/$defs/nonnegativeInteger"
+        },
+        "patience": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "saturated": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "inputDisposition": {
+      "type": "object",
+      "required": ["source", "usable", "reason"],
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "usable": {
+          "type": "boolean"
+        },
+        "reason": {
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": ["missing_baseline", "baseline_failed", "incomplete"]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "usable": {
+              "const": true
+            },
+            "reason": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "usable": {
+              "const": false
+            },
+            "reason": {
+              "type": "string",
+              "enum": ["missing_baseline", "baseline_failed", "incomplete"]
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "comparison": {
+      "type": "object",
+      "required": [
+        "common",
+        "added",
+        "removed",
+        "ambiguous",
+        "inconclusive",
+        "improvements",
+        "regressions",
+        "carried_survivors",
+        "previous_score",
+        "current_score",
+        "score_delta",
+        "state"
+      ],
+      "properties": {
+        "common": {
+          "$ref": "#/$defs/nonnegativeInteger"
+        },
+        "added": {
+          "$ref": "#/$defs/nonnegativeInteger"
+        },
+        "removed": {
+          "$ref": "#/$defs/nonnegativeInteger"
+        },
+        "ambiguous": {
+          "$ref": "#/$defs/nonnegativeInteger"
+        },
+        "inconclusive": {
+          "$ref": "#/$defs/nonnegativeInteger"
+        },
+        "improvements": {
+          "$ref": "#/$defs/nonnegativeInteger"
+        },
+        "regressions": {
+          "$ref": "#/$defs/nonnegativeInteger"
+        },
+        "carried_survivors": {
+          "$ref": "#/$defs/nonnegativeInteger"
+        },
+        "previous_score": {
+          "$ref": "#/$defs/nullableScore"
+        },
+        "current_score": {
+          "$ref": "#/$defs/nullableScore"
+        },
+        "score_delta": {
+          "$ref": "#/$defs/nullableScoreDelta"
+        },
+        "state": {
+          "$ref": "#/$defs/state"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
