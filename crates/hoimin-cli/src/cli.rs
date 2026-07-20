@@ -97,6 +97,10 @@ struct RawRunArgs {
     #[arg(long, value_name = "GLOB")]
     include: Vec<String>,
 
+    /// Add a root-relative file glob to the session fingerprint; may be repeated.
+    #[arg(long, value_name = "GLOB")]
+    fingerprint_include: Vec<String>,
+
     /// Exclude a path while copying; may be repeated and wins over include.
     #[arg(long, value_name = "GLOB")]
     exclude: Vec<String>,
@@ -207,6 +211,7 @@ pub struct RunArgs {
     pub changed: bool,
     pub diff_base: Option<String>,
     pub include: Vec<String>,
+    pub fingerprint_includes: Vec<String>,
     pub exclude: Vec<String>,
     pub operators: Vec<String>,
     profile: ProfileArg,
@@ -330,6 +335,7 @@ impl TryFrom<Command> for ParsedCommand {
                     changed: raw.changed,
                     diff_base: raw.diff_base,
                     include: raw.include,
+                    fingerprint_includes: raw.fingerprint_include,
                     exclude: raw.exclude,
                     operators: raw.operators,
                     profile: raw.profile,
@@ -448,7 +454,7 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
         diff_base: args.diff_base,
         includes: args.include,
         excludes: args.exclude,
-        fingerprint_includes: Vec::new(),
+        fingerprint_includes: args.fingerprint_includes,
         operators: args.operators,
         exclude_operators: args.exclude_operators,
         allow_best_effort_memory: args.allow_best_effort_memory,

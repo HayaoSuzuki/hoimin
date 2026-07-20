@@ -209,6 +209,34 @@ fn parse_run_config_parses_ranges_limits_and_output() {
 }
 
 #[test]
+fn run_preserves_repeated_fingerprint_include_patterns() {
+    let config = hoimin_cli::cli::parse_config_from([
+        "hoimin",
+        "run",
+        "--file",
+        "src/calc.py",
+        "--fingerprint-include",
+        "pyproject.toml",
+        "--fingerprint-include",
+        "fixtures/**/*.json",
+        "--include",
+        "fixtures/**",
+        "--",
+        "python",
+        "-m",
+        "pytest",
+    ])
+    .unwrap();
+
+    assert_eq!(
+        config.fingerprint_includes,
+        ["pyproject.toml", "fixtures/**/*.json"]
+    );
+    assert_eq!(config.selection.includes, ["fixtures/**"]);
+    assert!(config.fingerprint_inputs.is_empty());
+}
+
+#[test]
 fn parse_run_config_rejects_obsolete_python_option() {
     let error = hoimin_cli::cli::parse_config_from([
         "hoimin",
