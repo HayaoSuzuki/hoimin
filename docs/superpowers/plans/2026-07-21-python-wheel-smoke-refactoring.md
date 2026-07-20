@@ -706,7 +706,7 @@ class CommandAndResultTests(unittest.TestCase):
             # Act
             error = self.assertRaisesRegex(
                 AssertionError,
-                r"command failed \(7\): .*stdout:\ncommand output\nstderr:\ncommand error",
+                r"(?s)command failed \(7\): .*stdout:\ncommand output\nstderr:\ncommand error",
             )
 
             # Assert
