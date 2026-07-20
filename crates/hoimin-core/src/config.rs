@@ -329,6 +329,59 @@ pub struct RunConfig {
     pub resume: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlanConfig {
+    pub root: Utf8PathBuf,
+    pub selection: Selection,
+    pub limits: RunLimits,
+    pub test_argv: Vec<CommandArg>,
+    pub output: OutputConfig,
+    pub operators: MutationOperatorSelection,
+    pub allow_best_effort_memory: bool,
+    pub profile: MutationProfile,
+    pub fingerprint_includes: Vec<String>,
+    pub fingerprint_inputs: Vec<FingerprintInputFile>,
+}
+
+impl RunConfig {
+    #[must_use]
+    pub fn into_plan_config(self) -> PlanConfig {
+        PlanConfig {
+            root: self.root,
+            selection: self.selection,
+            limits: self.limits,
+            test_argv: self.test_argv,
+            output: self.output,
+            operators: self.operators,
+            allow_best_effort_memory: self.allow_best_effort_memory,
+            profile: self.profile,
+            fingerprint_includes: self.fingerprint_includes,
+            fingerprint_inputs: self.fingerprint_inputs,
+        }
+    }
+}
+
+impl PlanConfig {
+    #[must_use]
+    pub fn into_run_config(self, output: OutputConfig) -> RunConfig {
+        RunConfig {
+            root: self.root,
+            selection: self.selection,
+            fingerprint_includes: self.fingerprint_includes,
+            fingerprint_inputs: self.fingerprint_inputs,
+            limits: self.limits,
+            test_argv: self.test_argv,
+            output,
+            session: None,
+            operators: self.operators,
+            allow_best_effort_memory: self.allow_best_effort_memory,
+            profile: self.profile,
+            resume: false,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct FingerprintInputFile {
     pub path: Utf8PathBuf,
