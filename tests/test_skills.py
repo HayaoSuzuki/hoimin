@@ -15,6 +15,8 @@ SKILLS = {
             "3. Target production code, never the test module. Use `--source <dir> "
             "--changed` when a source root is known; otherwise use `--file <path>`. "
             "Narrow a large target with `--line` or `--symbol`.",
+            "hoimin run --root . --source <dir> --changed --profile focused "
+            "--format json -- python -m pytest -q",
             "| `1` | Complete; survivor exists | Keep the report and investigate a "
             "survivor. |\n"
             "| `2` | Configuration or infrastructure error | Fix or report it; do "
@@ -43,6 +45,7 @@ SKILLS = {
             "is incomplete in the progress history.",
             "4. Default to `--profile focused`. Do not use persistent reports or "
             "`--session` / `--resume` unless the user requests them.",
+            "hoimin progress --format json report-001.json report-002.json",
             "Read `latest.state` and `latest.consecutive_stalls` from the JSON "
             "result. Decide from `latest.state`, **終了コードではなく**. Use "
             "`latest.consecutive_stalls` to report and confirm the default patience; "
