@@ -640,10 +640,8 @@ fn contains_disallowed_annotation(annotation: &Expr, imports: &KnownImports) -> 
     match annotation {
         Expr::StringLiteral(_) => true,
         Expr::Name(name) => {
-            !matches!(
-                name.id.as_str(),
-                "str" | "int" | "float" | "bool" | "bytes" | "object"
-            ) || imports.type_vars.contains(name.id.as_str())
+            !matches!(name.id.as_str(), "str" | "int" | "float" | "bool" | "bytes")
+                || imports.type_vars.contains(name.id.as_str())
                 || imports.resolved_name(annotation).as_deref() == Some("typing.Any")
         }
         Expr::Subscript(subscript) => {

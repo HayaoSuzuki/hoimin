@@ -123,7 +123,7 @@ fn type_annotations_ignore_quoted_and_unrecognized_forms() {
 
 #[test]
 fn type_annotations_reject_disallowed_nested_types_and_object_nullable_addition() {
-    let source = "from typing import Annotated, Any, Callable, Optional, TypeVar\n\nT = TypeVar('T')\nAlias = str\nobject_value: object\noptional_any: Optional[Any]\ncallable_value: Callable[[str], int] | None\noptional_type_var: Optional[T]\naliased: Alias | None\nitems: list[Any]\nannotated: Optional[Annotated[list[str], 'meta']]\n";
+    let source = "from typing import Annotated, Any, Callable, Optional, TypeVar\n\nT = TypeVar('T')\nAlias = str\nobject_value: object\noptional_object: Optional[object]\nobject_union: object | None\nobject_list: list[object]\noptional_any: Optional[Any]\ncallable_value: Callable[[str], int] | None\noptional_type_var: Optional[T]\naliased: Alias | None\nitems: list[Any]\nannotated: Optional[Annotated[list[str], 'meta']]\n";
     let output = analyze_types(source);
     assert!(
         output
