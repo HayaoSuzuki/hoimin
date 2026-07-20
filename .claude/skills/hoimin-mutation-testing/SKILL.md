@@ -33,6 +33,8 @@ Everything after `--` is the test command's native argv. Do not turn it into a s
 | `4` | Incomplete run | Resolve the limit, timeout, or interruption first. |
 | `130` | Cancelled | Report cancellation; do not interpret partial data. |
 
+For exit codes `2`, `3`, `4`, or `130`, stop the mutation-test workflow and diagnose or resolve the condition before adding tests or scoring results.
+
 For a survivor, read its mutated expression and identify the externally observable contract it violates. Add or strengthen the smallest behavioral test that distinguishes the original implementation from that mutant, then rerun normal tests. Avoid implementation-detail mocks, unrelated test changes, and production code changes made only to kill a survivor.
 
 Use the `hoimin-mutation-improvement` skill when several survivors need a measured improvement loop.

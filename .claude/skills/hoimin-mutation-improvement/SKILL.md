@@ -11,7 +11,7 @@ Iterate on survivors only while ordered hoimin reports show meaningful progress.
 
 1. Inspect the production-code selector, test argv, profile, operators, and limits. Keep them unchanged for this loop.
 2. Create a temporary directory outside the repository. Save every complete `hoimin run --format json` result there in oldest-to-newest order.
-3. Run the normal test command before each mutation run. Do not use a report whose baseline failed or whose run is incomplete in the progress history.
+3. Run the normal test command before each mutation run. If it fails, repair the normal test failure before collecting or scoring another mutation report. Do not use a report whose baseline failed or whose run is incomplete in the progress history.
 4. Default to `--profile focused`. Do not use persistent reports or `--session` / `--resume` unless the user requests them.
 
 The first complete report establishes the baseline. If it has no survivor, report success immediately. Otherwise select one useful survivor, add or strengthen a behavioral test for its contract, and rerun normal tests before collecting the next report.
@@ -24,13 +24,13 @@ After two or more usable reports, pass all of them in oldest-to-newest order:
 hoimin progress --format json report-001.json report-002.json
 ```
 
-Read `latest.state` from the JSON result. Decide from this field, **終了コードではなく**.
+Read `latest.state` and `latest.consecutive_stalls` from the JSON result. Decide from `latest.state`, **終了コードではなく**. Use `latest.consecutive_stalls` to report and confirm the default patience; `latest.state` remains the control signal.
 
 | `latest.state` | Action |
 | --- | --- |
 | `improving` | Progress reset the stall count. Select one remaining survivor and continue. |
 | `stalled` | Try one more focused behavioral-test improvement; it has not yet reached patience. |
-| `saturated` | Stop. The default is three consecutive comparable stalls; report residual survivors, attempted contracts, and this stop reason. |
+| `saturated` | Stop. Confirm `latest.consecutive_stalls` has reached the default three comparable stalls; report residual survivors, attempted contracts, and this stop reason. |
 | `regressing` | Stop and diagnose the previous test change or target drift. Do not hide regression by adding another test. |
 | `indeterminate` | Repair the baseline, incomplete run, or changed selection and rebuild a comparable history. Do not count it as a stall. |
 
@@ -38,4 +38,4 @@ If a complete report has zero survivors, finish without waiting for `saturated`.
 
 ## Final report
 
-State the production target, test argv, report count, final `latest.state`, tests added or strengthened, and unresolved survivors with their rationale. Keep temporary reports out of the repository unless the user asks to retain them.
+State the production target, test argv, report count, final `latest.state` and `latest.consecutive_stalls`, tests added or strengthened, and unresolved survivors with their rationale. Keep temporary reports out of the repository unless the user asks to retain them.

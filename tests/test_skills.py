@@ -9,13 +9,23 @@ SKILLS = {
             "Use when developing or changing Python code and automated tests, "
             "and hoimin mutation testing can expose missing behavioral coverage."
         ),
-        "phrases": (
-            "--profile focused --format json",
-            "--source <dir> --changed",
-            "`--file <path>`",
-            "production code",
-            "`1`",
-            "survivor",
+        "required_blocks": (
+            "2. Run the normal test command first. If it fails, repair or report "
+            "the failure before mutation testing.",
+            "3. Target production code, never the test module. Use `--source <dir> "
+            "--changed` when a source root is known; otherwise use `--file <path>`. "
+            "Narrow a large target with `--line` or `--symbol`.",
+            "| `1` | Complete; survivor exists | Keep the report and investigate a "
+            "survivor. |\n"
+            "| `2` | Configuration or infrastructure error | Fix or report it; do "
+            "not add tests yet. |\n"
+            "| `3` | Baseline failed | Repair the normal test failure first. |\n"
+            "| `4` | Incomplete run | Resolve the limit, timeout, or interruption "
+            "first. |\n"
+            "| `130` | Cancelled | Report cancellation; do not interpret partial data. |",
+            "For exit codes `2`, `3`, `4`, or `130`, stop the mutation-test "
+            "workflow and diagnose or resolve the condition before adding tests "
+            "or scoring results.",
         ),
     },
     "hoimin-mutation-improvement": {
@@ -23,15 +33,34 @@ SKILLS = {
             "Use when iterating on hoimin mutation-test survivors and test improvements "
             "until the current target's progress is saturated or complete."
         ),
-        "phrases": (
-            "hoimin progress --format json",
-            "latest.state",
-            "`improving`",
-            "`stalled`",
-            "`saturated`",
-            "`regressing`",
-            "`indeterminate`",
-            "終了コードではなく",
+        "required_blocks": (
+            "2. Create a temporary directory outside the repository. Save every "
+            "complete `hoimin run --format json` result there in oldest-to-newest "
+            "order.",
+            "3. Run the normal test command before each mutation run. If it fails, "
+            "repair the normal test failure before collecting or scoring another "
+            "mutation report. Do not use a report whose baseline failed or whose run "
+            "is incomplete in the progress history.",
+            "4. Default to `--profile focused`. Do not use persistent reports or "
+            "`--session` / `--resume` unless the user requests them.",
+            "Read `latest.state` and `latest.consecutive_stalls` from the JSON "
+            "result. Decide from `latest.state`, **終了コードではなく**. Use "
+            "`latest.consecutive_stalls` to report and confirm the default patience; "
+            "`latest.state` remains the control signal.",
+            "| `improving` | Progress reset the stall count. Select one remaining "
+            "survivor and continue. |\n"
+            "| `stalled` | Try one more focused behavioral-test improvement; it has "
+            "not yet reached patience. |\n"
+            "| `saturated` | Stop. Confirm `latest.consecutive_stalls` has reached "
+            "the default three comparable stalls; report residual survivors, "
+            "attempted contracts, and this stop reason. |\n"
+            "| `regressing` | Stop and diagnose the previous test change or target drift. "
+            "Do not hide regression by adding another test. |\n"
+            "| `indeterminate` | Repair the baseline, incomplete run, or changed "
+            "selection and rebuild a comparable history. Do not count it as a stall. |",
+            "State the production target, test argv, report count, final "
+            "`latest.state` and `latest.consecutive_stalls`, tests added or "
+            "strengthened, and unresolved survivors with their rationale.",
         ),
     },
 }
@@ -58,8 +87,9 @@ class SkillContractTests(unittest.TestCase):
             )
             self.assertTrue(frontmatter["description"].startswith("Use when"), name)
             body = "\n".join(lines[closing + 1 :])
-            for phrase in contract["phrases"]:
-                self.assertIn(phrase, body, f"{name}: {phrase}")
+            for block in contract["required_blocks"]:
+                with self.subTest(name=name, block=block):
+                    self.assertIn(block, body)
 
 
 if __name__ == "__main__":
