@@ -303,6 +303,35 @@ async fn sqlite_session_saves_and_resumes_a_determinate_result_without_reexecuti
 }
 
 #[tokio::test]
+async fn sqlite_session_can_be_resumed_after_repeated_mutant_limits() {
+    let project = tempfile::tempdir().unwrap();
+    let sessions = tempfile::tempdir().unwrap();
+    let database = sessions.path().join("session.sqlite3");
+    write_parallel_project(project.path());
+    let command = "from src.calc import total; assert total(1, 2, 3, 4, 5) == 15";
+
+    let mut run_id = None;
+    for resume in [false, true, true] {
+        let run = run_project_with_session(project.path(), &database, resume, 1, command).await;
+        assert_eq!(run.exit_code, 4, "stderr={}", run.stderr);
+        assert!(!run.stderr.contains("session.finish.state"));
+        let connection = rusqlite::Connection::open(&database).unwrap();
+        let current_run_id = run.document["run"]["run_id"].as_str().unwrap();
+        if let Some(first_run_id) = &run_id {
+            assert_eq!(current_run_id, first_run_id);
+        } else {
+            run_id = Some(current_run_id.to_owned());
+        }
+        let (run_count, complete): (i64, i64) = connection
+            .query_row("SELECT COUNT(*), MAX(complete) FROM runs", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(run_count, 1);
+        assert_eq!(complete, 0);
+    }
+}
+#[tokio::test]
 async fn sqlite_save_failure_is_fatal_and_leaves_no_partial_result() {
     let directory = tempfile::tempdir().unwrap();
     let database = directory.path().join("session.sqlite3");
@@ -829,6 +858,64 @@ fn write_parallel_project(root: &Path) {
     .unwrap();
 }
 
+async fn run_project_with_session(
+    root: &Path,
+    session: &Path,
+    resume: bool,
+    max_mutants: usize,
+    command: &str,
+) -> FixtureRun {
+    let python = python_executable();
+    let mut args = vec![
+        OsString::from("hoimin"),
+        OsString::from("run"),
+        OsString::from("--root"),
+        root.as_os_str().to_owned(),
+        OsString::from("--source"),
+        OsString::from("src"),
+        OsString::from("--file"),
+        OsString::from("src/calc.py"),
+        OsString::from("--session"),
+        session.as_os_str().to_owned(),
+    ];
+    if resume {
+        args.push(OsString::from("--resume"));
+    }
+    args.extend([
+        OsString::from("--max-mutants"),
+        OsString::from(max_mutants.to_string()),
+        OsString::from("--format"),
+        OsString::from("json"),
+        OsString::from("--allow-best-effort-memory"),
+        OsString::from("--"),
+        python.as_os_str().to_owned(),
+        OsString::from("-c"),
+        OsString::from(command),
+    ]);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let exit_code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let stdout = String::from_utf8(stdout).unwrap();
+    let stderr = String::from_utf8(stderr).unwrap();
+    let document: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|error| {
+        panic!(
+            "invalid JSON report ({error}); exit={exit_code}; stdout={stdout:?}; stderr={stderr:?}"
+        )
+    });
+    let statuses = document["mutants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|mutant| mutant["status"].as_str().unwrap().to_owned())
+        .collect();
+    FixtureRun {
+        exit_code,
+        statuses,
+        stdout,
+        stderr,
+        document,
+    }
+}
 async fn run_project(root: &Path, jobs: usize, command: &str) -> FixtureRun {
     let python = python_executable();
     let args = [
