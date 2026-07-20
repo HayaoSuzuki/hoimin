@@ -18,6 +18,33 @@ async fn unittest_command_produces_the_expected_mutant_statuses() {
         })
     );
 }
+#[tokio::test]
+async fn ty_kills_a_nullable_contract_mutant() {
+    let run = run_type_checker(&ty_executable(), "killed").await;
+
+    assert_eq!(run.statuses, ["killed"]);
+}
+
+#[tokio::test]
+async fn ty_reports_a_surviving_nullable_contract_mutant() {
+    let run = run_type_checker(&ty_executable(), "survived").await;
+
+    assert_eq!(run.statuses, ["survived"]);
+}
+
+#[tokio::test]
+async fn mypy_kills_a_nullable_contract_mutant() {
+    let run = run_type_checker(&mypy_executable(), "killed").await;
+
+    assert_eq!(run.statuses, ["killed"]);
+}
+
+#[tokio::test]
+async fn mypy_reports_a_surviving_nullable_contract_mutant() {
+    let run = run_type_checker(&mypy_executable(), "survived").await;
+
+    assert_eq!(run.statuses, ["survived"]);
+}
 
 #[tokio::test]
 async fn jobs_one_and_four_produce_the_same_candidates_and_statuses() {
@@ -607,6 +634,44 @@ impl Write for SharedBuffer {
 async fn run_fixture(test_args: &[&str]) -> FixtureRun {
     run_fixture_options(test_args, None, false).await
 }
+async fn run_type_checker(checker: &Path, expected_status: &str) -> FixtureRun {
+    let root = type_checking_fixture_root();
+    let line = match expected_status {
+        "killed" => "src/contracts.py:1",
+        "survived" => "src/contracts.py:6",
+        _ => panic!("unsupported type-checker expectation: {expected_status}"),
+    };
+    let checker_args: &[&str] = match checker.file_stem().and_then(|name| name.to_str()) {
+        Some("ty") => &["check"],
+        Some("mypy") => &["src"],
+        Some(name) => panic!("unsupported type checker: {name}"),
+        None => panic!("type checker has no executable name: {}", checker.display()),
+    };
+    let mut args = vec![
+        OsString::from("hoimin"),
+        OsString::from("run"),
+        OsString::from("--root"),
+        root.as_os_str().to_owned(),
+        OsString::from("--source"),
+        OsString::from("src"),
+        OsString::from("--line"),
+        OsString::from(line),
+        OsString::from("--operators"),
+        OsString::from("type_nullable"),
+        OsString::from("--max-mutants"),
+        OsString::from("1"),
+        OsString::from("--format"),
+        OsString::from("json"),
+        OsString::from("--allow-best-effort-memory"),
+        OsString::from("--"),
+        checker.as_os_str().to_owned(),
+    ];
+    args.extend(checker_args.iter().map(OsString::from));
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let exit_code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    fixture_run(exit_code, stdout, stderr)
+}
 
 async fn run_fixture_with_session(test_args: &[&str], session: &Path, resume: bool) -> FixtureRun {
     run_fixture_options(test_args, Some(session), resume).await
@@ -660,6 +725,28 @@ async fn run_fixture_options_extra(
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     let exit_code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let stdout = String::from_utf8(stdout).unwrap();
+    let stderr = String::from_utf8(stderr).unwrap();
+    let document: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|error| {
+        panic!(
+            "invalid JSON report ({error}); exit={exit_code}; stdout={stdout:?}; stderr={stderr:?}"
+        )
+    });
+    let statuses = document["mutants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|mutant| mutant["status"].as_str().unwrap().to_owned())
+        .collect();
+    FixtureRun {
+        exit_code,
+        statuses,
+        stdout,
+        stderr,
+        document,
+    }
+}
+fn fixture_run(exit_code: i32, stdout: Vec<u8>, stderr: Vec<u8>) -> FixtureRun {
     let stdout = String::from_utf8(stdout).unwrap();
     let stderr = String::from_utf8(stderr).unwrap();
     let document: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|error| {
@@ -792,6 +879,9 @@ async fn run_project(root: &Path, jobs: usize, command: &str) -> FixtureRun {
 fn fixture_root() -> PathBuf {
     repo_root().join("tests/fixtures/projects/basic")
 }
+fn type_checking_fixture_root() -> PathBuf {
+    repo_root().join("tests/fixtures/projects/type-checking")
+}
 
 fn python_executable() -> PathBuf {
     let executable = if cfg!(windows) {
@@ -802,6 +892,27 @@ fn python_executable() -> PathBuf {
     assert!(
         executable.is_file(),
         "missing controlled test Python interpreter: {}",
+        executable.display()
+    );
+    executable
+}
+fn ty_executable() -> PathBuf {
+    checker_executable("ty")
+}
+
+fn mypy_executable() -> PathBuf {
+    checker_executable("mypy")
+}
+
+fn checker_executable(name: &str) -> PathBuf {
+    let executable = if cfg!(windows) {
+        repo_root().join(format!(".venv/Scripts/{name}.exe"))
+    } else {
+        repo_root().join(format!(".venv/bin/{name}"))
+    };
+    assert!(
+        executable.is_file(),
+        "missing controlled type checker: {}",
         executable.display()
     );
     executable
