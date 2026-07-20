@@ -448,6 +448,7 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
         diff_base: args.diff_base,
         includes: args.include,
         excludes: args.exclude,
+        fingerprint_includes: Vec::new(),
         operators: args.operators,
         exclude_operators: args.exclude_operators,
         allow_best_effort_memory: args.allow_best_effort_memory,

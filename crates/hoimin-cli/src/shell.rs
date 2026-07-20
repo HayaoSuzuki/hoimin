@@ -206,6 +206,7 @@ async fn prepare_fingerprint<Stdout, Stderr>(
     }
     Ok(fingerprint(&FingerprintInput {
         sources,
+        fingerprint_inputs: Vec::new(),
         targets: targets.clone(),
         operators: context.config.operators.names(),
         profile: context.config.profile,
