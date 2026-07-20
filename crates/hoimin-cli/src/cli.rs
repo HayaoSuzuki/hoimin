@@ -366,6 +366,10 @@ where
     let ParsedCommand::Run(args) = parse_from(args)? else {
         return Err(CliError::ProgressCommand);
     };
+    run_config_from_args(args)
+}
+
+pub(crate) fn run_config_from_args(args: RunArgs) -> Result<RunConfig, CliError> {
     RunConfig::try_from(raw_config(args)?).map_err(CliError::from)
 }
 

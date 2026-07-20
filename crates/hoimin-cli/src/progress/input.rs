@@ -50,6 +50,16 @@ pub enum ProgressError {
         path: PathBuf,
         message: &'static str,
     },
+    #[error("could not serialize progress output: {source}")]
+    Serialize {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("could not write progress output: {source}")]
+    Write {
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 #[derive(Deserialize)]
