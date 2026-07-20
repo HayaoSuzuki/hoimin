@@ -23,3 +23,10 @@ Repository = "https://github.com/HayaoSuzuki/hoimin"
 [tool.maturin]
 bindings = "bin"
 manifest-path = "crates/hoimin-cli/Cargo.toml"
+
+[dependency-groups]
+dev = [
+    "maturin>=1.11,<2",
+    "mypy>=2.3.0",
+    "ty>=0.0.61",
+]

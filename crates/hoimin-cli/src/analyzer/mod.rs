@@ -9,7 +9,7 @@ pub use store::*;
 use camino::Utf8PathBuf;
 use hoimin_core::{
     AnalysisFinished, AnalyzeFile, CANDIDATE_SCHEMA_VERSION, CandidateDescriptor, EffectFailed,
-    MutationCandidate, validate_candidate,
+    MutationCandidate, MutationOperatorSelection, validate_candidate,
 };
 
 use crate::process::ProcessCancellation;
@@ -46,14 +46,19 @@ impl AnalyzerHandler {
     ///
     /// Returns an error when analysis is cancelled, the source cannot be read or decoded, a
     /// generated candidate is invalid, or the candidate store fails.
-    pub async fn handle(&mut self, request: AnalyzeFile) -> Result<AnalysisFinished, EffectFailed> {
-        self.handle_with_cancellation(request, ProcessCancellation::new())
+    pub async fn handle(
+        &mut self,
+        request: AnalyzeFile,
+        operators: &MutationOperatorSelection,
+    ) -> Result<AnalysisFinished, EffectFailed> {
+        self.handle_with_cancellation(request, operators, ProcessCancellation::new())
             .await
     }
 
     pub(crate) async fn handle_with_cancellation(
         &mut self,
         request: AnalyzeFile,
+        operators: &MutationOperatorSelection,
         cancellation: ProcessCancellation,
     ) -> Result<AnalysisFinished, EffectFailed> {
         let id = request.id;
@@ -89,6 +94,7 @@ impl AnalyzerHandler {
                 path: &request.target.path,
                 lines: &request.target.lines,
                 symbols: &request.target.symbols,
+                operators,
                 max_candidates,
             },
             &module,
@@ -184,11 +190,12 @@ mod tests {
         .unwrap();
         let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
         let mut handler = AnalyzerHandler::new(root).unwrap();
+        let operators = MutationOperatorSelection::default();
         let cancellation = ProcessCancellation::new();
         cancellation.cancel();
 
         let cancelled = handler
-            .handle_with_cancellation(request(82), cancellation)
+            .handle_with_cancellation(request(82), &operators, cancellation)
             .await;
 
         assert!(matches!(
@@ -197,7 +204,7 @@ mod tests {
         ));
         assert_eq!(handler.store.as_ref().unwrap().count(), 0);
 
-        let finished = handler.handle(request(83)).await.unwrap();
+        let finished = handler.handle(request(83), &operators).await.unwrap();
         let spool = finished.spool.unwrap();
 
         assert_eq!(spool.records, 1);

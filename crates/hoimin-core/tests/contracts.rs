@@ -33,8 +33,9 @@ fn disabled_contract_does_not_evaluate_condition_or_context() {
 #[cfg(not(feature = "contracts"))]
 #[test]
 fn disabled_ensure_does_not_call_invariant() {
-    let _value = Invalid;
-    contract_ensure!("test.disabled.invariant", _value.invariant(), &_value);
+    let value = Invalid;
+    std::hint::black_box(&value);
+    contract_ensure!("test.disabled.invariant", value.invariant(), &value);
 }
 
 #[cfg(feature = "contracts")]

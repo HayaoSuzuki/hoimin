@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use camino::Utf8PathBuf;
+use hoimin_core::MutationOperator;
 use hoimin_core::{
     ConfigError, DiscoveredFile, LineRange, LineSelection, MAX_JOBS, RawRunConfig, RunConfig,
     Selection, SymbolSelection, TargetError, TargetSlice, auto_mutant_timeout, intersect_changed,
@@ -417,5 +418,23 @@ fn windows_multi_character_uppercase_does_not_overmatch_root() {
         Err(TargetError::PathOutsideRoot(Utf8PathBuf::from(
             "C:/SS/file.py"
         )))
+    );
+}
+#[test]
+fn run_config_normalizes_operator_selectors() {
+    let mut raw = raw_config();
+    raw.operators = vec!["type_iterables".to_owned(), "type_dict_mapping".to_owned()];
+    raw.exclude_operators = vec!["type_iterable_iterator".to_owned()];
+    let config = RunConfig::try_from(raw).unwrap();
+    assert!(
+        config
+            .operators
+            .contains(MutationOperator::TypeSequenceIterable)
+    );
+    assert!(config.operators.contains(MutationOperator::TypeMapping));
+    assert!(
+        !config
+            .operators
+            .contains(MutationOperator::TypeIterableIterator)
     );
 }

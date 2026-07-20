@@ -181,27 +181,6 @@ where
     }
 }
 
-fn mutation_operators() -> Vec<String> {
-    [
-        "compare_eq_ne",
-        "compare_order",
-        "membership",
-        "identity",
-        "boolean_and_or",
-        "binary_add_sub",
-        "augmented_add_sub",
-        "binary_mul_div",
-        "binary_floor_mod",
-        "unary_sign",
-        "break_continue",
-        "remove_not",
-        "boolean_literal",
-    ]
-    .into_iter()
-    .map(str::to_owned)
-    .collect()
-}
-
 async fn prepare_fingerprint<Stdout, Stderr>(
     context: &ShellContext<Stdout, Stderr>,
 ) -> Result<hoimin_core::RunFingerprint, EffectFailed> {
@@ -228,7 +207,7 @@ async fn prepare_fingerprint<Stdout, Stderr>(
     Ok(fingerprint(&FingerprintInput {
         sources,
         targets: targets.clone(),
-        operators: mutation_operators(),
+        operators: context.config.operators.names(),
         test_argv: context.config.test_argv.clone(),
         limits: context.config.limits.clone(),
         resource_mode: context.process.mode(),
@@ -315,7 +294,7 @@ where
         }
         RunEffect::AnalyzeFile(request) => context
             .analyzer
-            .handle_with_cancellation(request, cancellation.clone())
+            .handle_with_cancellation(request, &context.config.operators, cancellation.clone())
             .await
             .map(RunEvent::AnalysisFinished),
         RunEffect::ReadCandidate(request) => {

@@ -1,3 +1,4 @@
+use hoimin_core::MutationOperator;
 #[test]
 fn run_requires_a_selector_and_test_argv() {
     let err = hoimin_cli::cli::parse_from(["hoimin", "run", "--", "python", "-m", "unittest"])
@@ -226,4 +227,81 @@ fn selector_rejects_non_utf8_wide_units() {
         error,
         hoimin_cli::cli::CliError::NonUtf8Value("--file")
     ));
+}
+#[test]
+fn operator_flags_expand_groups_and_preserve_legacy_default() {
+    let default =
+        hoimin_cli::cli::parse_config_from(["hoimin", "run", "--file", "x.py", "--", "check"])
+            .unwrap();
+    assert!(
+        !default
+            .operators
+            .contains(MutationOperator::TypeNullableRemove)
+    );
+    let selected = hoimin_cli::cli::parse_config_from([
+        "hoimin",
+        "run",
+        "--file",
+        "x.py",
+        "--operators",
+        "type_nullable,type_collections",
+        "--exclude-operators",
+        "type_dict_mapping",
+        "--",
+        "check",
+    ])
+    .unwrap();
+    assert!(
+        selected
+            .operators
+            .contains(MutationOperator::TypeNullableRemove)
+    );
+    assert!(
+        selected
+            .operators
+            .contains(MutationOperator::TypeListSequence)
+    );
+    assert!(!selected.operators.contains(MutationOperator::TypeMapping));
+}
+
+#[test]
+fn operator_flags_reject_unknown_names() {
+    let error = hoimin_cli::cli::parse_config_from([
+        "hoimin",
+        "run",
+        "--file",
+        "x.py",
+        "--operators",
+        "unknown_operator",
+        "--",
+        "check",
+    ])
+    .unwrap_err();
+    assert_eq!(
+        error.config_error(),
+        Some(&hoimin_core::ConfigError::UnknownMutationOperator {
+            value: "unknown_operator".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn operator_flags_reject_type_mapping_alias() {
+    let error = hoimin_cli::cli::parse_config_from([
+        "hoimin",
+        "run",
+        "--file",
+        "x.py",
+        "--operators",
+        "type_mapping",
+        "--",
+        "check",
+    ])
+    .unwrap_err();
+    assert_eq!(
+        error.config_error(),
+        Some(&hoimin_core::ConfigError::UnknownMutationOperator {
+            value: "type_mapping".to_owned(),
+        })
+    );
 }

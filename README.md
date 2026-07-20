@@ -76,6 +76,18 @@ The MVP operator set is:
 - `True` ↔ `False`;
 - `break` ↔ `continue`.
 
+By default, a run selects only this legacy operator set; it does not mutate type annotations. Select type operators explicitly with `--operators` (comma-separated), and remove individual operators or selector families after selection with `--exclude-operators`.
+
+For example, run a type checker against nullable and collection annotation mutations:
+
+```console
+hoimin run --root . --source src --operators type_nullable,type_collections --format json -- uv run ty check
+```
+
+The type selector families are `type_nullable`, `type_collections`, and `type_iterables`; individual IDs are `type_nullable_remove`, `type_nullable_add`, `type_list_sequence`, `type_set_abstract_set`, `type_dict_mapping`, `type_iterable_iterator`, and `type_sequence_iterable`. For example, append `--exclude-operators type_nullable_add` to retain nullable-removal mutations only. As with every command after `--`, `uv`, `run`, `ty`, and `check` are direct argv elements on both Windows and Unix.
+
+A type checker that exits nonzero for a mutated annotation kills that mutant.
+
 The Rust analyzer preserves the original source except for exactly one replacement per mutant.
 
 ## Results

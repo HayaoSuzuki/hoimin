@@ -1,13 +1,37 @@
 use super::{AnalyzeRequest, analyze_source};
 use crate::analyzer::AnalyzerDiagnosticCode;
 use camino::Utf8Path;
-use hoimin_core::{ByteSpan, LineRange};
+use hoimin_core::{ByteSpan, LineRange, MutationOperator, MutationOperatorSelection};
 use proptest::prelude::*;
 
 fn analyze(source: &str) -> super::AnalyzerOutput {
     analyze_with(Utf8Path::new("pkg/sample.py"), &[], &[], 10_000, source)
 }
 
+fn analyze_types(source: &str) -> super::AnalyzerOutput {
+    let mut operators = MutationOperatorSelection::default();
+    for operator in [
+        MutationOperator::TypeNullableRemove,
+        MutationOperator::TypeNullableAdd,
+        MutationOperator::TypeListSequence,
+        MutationOperator::TypeSetAbstractSet,
+        MutationOperator::TypeMapping,
+        MutationOperator::TypeIterableIterator,
+        MutationOperator::TypeSequenceIterable,
+    ] {
+        operators.include(operator);
+    }
+    analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/sample.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            max_candidates: 10_000,
+        },
+        source,
+    )
+}
 fn analyze_with(
     path: &Utf8Path,
     lines: &[LineRange],
@@ -15,17 +39,293 @@ fn analyze_with(
     max_candidates: usize,
     source: &str,
 ) -> super::AnalyzerOutput {
+    let operators = MutationOperatorSelection::default();
     analyze_source(
         &AnalyzeRequest {
             path,
             lines,
             symbols,
+            operators: &operators,
             max_candidates,
         },
         source,
     )
 }
 
+#[test]
+fn omits_candidates_for_unselected_operators() {
+    let mut operators = MutationOperatorSelection::default();
+    operators.exclude(MutationOperator::BinaryAddSub);
+    let output = analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/sample.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            max_candidates: 10_000,
+        },
+        "result = left + right\n",
+    );
+    assert!(output.candidates.is_empty());
+}
+
+#[test]
+fn type_annotations_emit_supported_candidates_in_source_order() {
+    let source = "from typing import AbstractSet, Iterator, Mapping, Optional\nimport typing as t\nfrom collections.abc import Iterable, Sequence\n\nmodule_value: Optional[int]\n\nclass Model:\n    names: list[str]\n\n    def convert(self, name: str | None, age: t.Optional[int]) -> set[str]:\n        mapping: dict[str, int] = {}\n        values: Iterable[str] = []\n        ordered: Sequence[str] = []\n        return set()\n";
+    let output = analyze_types(source);
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator.starts_with("type_"))
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        candidates,
+        vec![
+            ("Optional[int]", "int", "type_nullable_remove"),
+            ("list[str]", "Sequence[str]", "type_list_sequence"),
+            ("list[str]", "list[str] | None", "type_nullable_add"),
+            ("str | None", "str", "type_nullable_remove"),
+            ("t.Optional[int]", "int", "type_nullable_remove"),
+            ("set[str]", "set[str] | None", "type_nullable_add"),
+            ("set[str]", "AbstractSet[str]", "type_set_abstract_set"),
+            ("dict[str, int]", "Mapping[str, int]", "type_dict_mapping"),
+            (
+                "dict[str, int]",
+                "dict[str, int] | None",
+                "type_nullable_add"
+            ),
+            ("Iterable[str]", "Iterator[str]", "type_iterable_iterator"),
+            ("Iterable[str]", "Iterable[str] | None", "type_nullable_add"),
+            ("Sequence[str]", "list[str]", "type_list_sequence"),
+            ("Sequence[str]", "Sequence[str] | None", "type_nullable_add"),
+            ("Sequence[str]", "Iterable[str]", "type_sequence_iterable"),
+        ]
+    );
+}
+
+#[test]
+fn type_annotations_ignore_quoted_and_unrecognized_forms() {
+    let source = "from typing import Annotated, Any, Callable, Optional, TypeVar\nfrom local import Optional as LocalOptional\n\nT = TypeVar('T')\nclass Sequence: pass\nquoted: 'Optional[int]'\nannotated: Annotated[list[str], 'meta']\nany_value: Any\ncallback: Callable[[str], int]\ngeneric: T\nuser_sequence: Sequence[str]\nlocal_optional: LocalOptional[int]\n";
+    let output = analyze_types(source);
+    assert!(
+        output
+            .candidates
+            .iter()
+            .all(|candidate| !candidate.operator.starts_with("type_"))
+    );
+}
+
+#[test]
+fn type_annotations_reject_disallowed_nested_types_and_object_nullable_addition() {
+    let source = "from typing import Annotated, Any, Callable, Literal, Optional, Protocol, TypeVar\nimport typing as t\n\nT = TypeVar('T')\nAlias = str\nobject_value: object\noptional_object: Optional[object]\nobject_union: object | None\nobject_list: list[object]\noptional_any: Optional[Any]\ncallable_value: Callable[[str], int] | None\noptional_type_var: Optional[T]\naliased: Alias | None\nitems: list[Any]\nannotated: Optional[Annotated[list[str], 'meta']]\nliteral: Literal[\"x\"] | None\nqualified_literal: t.Literal[\"x\"] | None\nprotocol: Protocol | None\nqualified_protocol: t.Protocol | None\n";
+    let output = analyze_types(source);
+    assert!(
+        output
+            .candidates
+            .iter()
+            .all(|candidate| !candidate.operator.starts_with("type_"))
+    );
+}
+
+#[test]
+fn type_annotations_resolve_unaliased_and_aliased_collections_abc_modules() {
+    let source = "import collections.abc\nimport collections.abc as cabc\n\nfirst: collections.abc.Iterable[str]\nsecond: collections.abc.Sequence[str]\nthird: cabc.Iterable[str]\nfourth: cabc.Sequence[str]\n";
+    let output = analyze_types(source);
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| {
+            candidate.operator.starts_with("type_") && candidate.operator != "type_list_sequence"
+        })
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        candidates,
+        vec![
+            (
+                "collections.abc.Iterable[str]",
+                "collections.abc.Iterator[str]",
+                "type_iterable_iterator"
+            ),
+            (
+                "collections.abc.Iterable[str]",
+                "collections.abc.Iterable[str] | None",
+                "type_nullable_add"
+            ),
+            (
+                "collections.abc.Sequence[str]",
+                "collections.abc.Sequence[str] | None",
+                "type_nullable_add"
+            ),
+            (
+                "collections.abc.Sequence[str]",
+                "collections.abc.Iterable[str]",
+                "type_sequence_iterable"
+            ),
+            (
+                "cabc.Iterable[str]",
+                "cabc.Iterator[str]",
+                "type_iterable_iterator"
+            ),
+            (
+                "cabc.Iterable[str]",
+                "cabc.Iterable[str] | None",
+                "type_nullable_add"
+            ),
+            (
+                "cabc.Sequence[str]",
+                "cabc.Sequence[str] | None",
+                "type_nullable_add"
+            ),
+            (
+                "cabc.Sequence[str]",
+                "cabc.Iterable[str]",
+                "type_sequence_iterable"
+            ),
+        ]
+    );
+}
+#[test]
+fn type_annotations_emit_reverse_collection_and_iterable_mutations() {
+    let source = "from typing import AbstractSet, Iterable, Iterator, Mapping, Sequence\n\nforward_list: list[str]\nreverse_sequence: Sequence[str]\nforward_set: set[str]\nreverse_set: AbstractSet[str]\nforward_dict: dict[str, int]\nreverse_mapping: Mapping[str, int]\nforward_iterable: Iterable[str]\nreverse_iterator: Iterator[str]\n";
+    let output = analyze_types(source);
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| {
+            matches!(
+                candidate.operator.as_str(),
+                "type_list_sequence"
+                    | "type_set_abstract_set"
+                    | "type_dict_mapping"
+                    | "type_iterable_iterator"
+                    | "type_sequence_iterable"
+            )
+        })
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        candidates,
+        vec![
+            ("list[str]", "Sequence[str]", "type_list_sequence"),
+            ("Sequence[str]", "list[str]", "type_list_sequence"),
+            ("Sequence[str]", "Iterable[str]", "type_sequence_iterable"),
+            ("set[str]", "AbstractSet[str]", "type_set_abstract_set"),
+            ("AbstractSet[str]", "set[str]", "type_set_abstract_set"),
+            ("dict[str, int]", "Mapping[str, int]", "type_dict_mapping"),
+            ("Mapping[str, int]", "dict[str, int]", "type_dict_mapping"),
+            ("Iterable[str]", "Iterator[str]", "type_iterable_iterator"),
+            ("Iterator[str]", "Iterable[str]", "type_iterable_iterator"),
+        ]
+    );
+}
+
+#[test]
+fn type_annotations_require_resolvable_abstract_destinations() {
+    let missing = analyze_types("value: list[str]\n");
+    assert!(
+        missing
+            .candidates
+            .iter()
+            .all(|candidate| candidate.operator != "type_list_sequence")
+    );
+    let direct = analyze_types("from typing import Sequence as Seq\nvalue: list[str]\n");
+    assert!(direct.candidates.iter().any(|candidate| (
+        candidate.original.as_str(),
+        candidate.replacement.as_str(),
+        candidate.operator.as_str()
+    ) == (
+        "list[str]",
+        "Seq[str]",
+        "type_list_sequence"
+    )));
+    let qualified = analyze_types("import typing as t\nvalue: list[str]\n");
+    assert!(qualified.candidates.iter().any(|candidate| (
+        candidate.original.as_str(),
+        candidate.replacement.as_str(),
+        candidate.operator.as_str()
+    ) == (
+        "list[str]",
+        "t.Sequence[str]",
+        "type_list_sequence"
+    )));
+}
+#[test]
+fn type_annotations_respect_line_and_symbol_filters() {
+    let source = "from typing import AbstractSet, Mapping, Sequence\n\nclass Model:\n    field: list[str]\n\ndef convert(value: str) -> set[str]:\n    local: dict[str, int] = {}\n    return set()\n";
+    let mut operators = MutationOperatorSelection::default();
+    for operator in [
+        MutationOperator::TypeNullableAdd,
+        MutationOperator::TypeListSequence,
+        MutationOperator::TypeSetAbstractSet,
+        MutationOperator::TypeMapping,
+    ] {
+        operators.include(operator);
+    }
+    let line_output = analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/sample.py"),
+            lines: &[LineRange { start: 4, end: 4 }],
+            symbols: &[],
+            operators: &operators,
+            max_candidates: 10_000,
+        },
+        source,
+    );
+    assert_eq!(
+        line_output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator.starts_with("type_"))
+            .map(|candidate| candidate.original.as_str())
+            .collect::<Vec<_>>(),
+        vec!["list[str]", "list[str]"]
+    );
+    let symbol_output = analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/sample.py"),
+            lines: &[],
+            symbols: &["pkg.sample:convert".to_owned()],
+            operators: &operators,
+            max_candidates: 10_000,
+        },
+        source,
+    );
+    assert_eq!(
+        symbol_output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator.starts_with("type_"))
+            .map(|candidate| candidate.original.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "str",
+            "set[str]",
+            "set[str]",
+            "dict[str, int]",
+            "dict[str, int]"
+        ]
+    );
+}
 proptest! {
     #[test]
     fn arbitrary_python_input_has_ordered_in_bounds_candidates(source in ".{0,4096}") {

@@ -18,6 +18,33 @@ async fn unittest_command_produces_the_expected_mutant_statuses() {
         })
     );
 }
+#[tokio::test]
+async fn ty_kills_a_nullable_contract_mutant() {
+    let run = run_type_checker(&ty_executable(), "killed").await;
+
+    assert_eq!(run.statuses, ["killed"]);
+}
+
+#[tokio::test]
+async fn ty_reports_a_surviving_nullable_contract_mutant() {
+    let run = run_type_checker(&ty_executable(), "survived").await;
+
+    assert_eq!(run.statuses, ["survived"]);
+}
+
+#[tokio::test]
+async fn mypy_kills_a_nullable_contract_mutant() {
+    let run = run_type_checker(&mypy_executable(), "killed").await;
+
+    assert_eq!(run.statuses, ["killed"]);
+}
+
+#[tokio::test]
+async fn mypy_reports_a_surviving_nullable_contract_mutant() {
+    let run = run_type_checker(&mypy_executable(), "survived").await;
+
+    assert_eq!(run.statuses, ["survived"]);
+}
 
 #[tokio::test]
 async fn jobs_one_and_four_produce_the_same_candidates_and_statuses() {
@@ -348,16 +375,16 @@ async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_in
     write_parallel_project(project.path());
     let active = coordinator.path().join("active");
     std::fs::create_dir(&active).unwrap();
-    let leak = coordinator.path().join("descendant-survived");
+    let descendant_ready = coordinator.path().join("descendant-ready");
+    let descendant_ready_temp = coordinator.path().join("descendant-ready.tmp");
     let session = coordinator.path().join("session.sqlite3");
-    let child = format!(
-        "import pathlib,time; time.sleep(2); pathlib.Path({:?}).write_text('leak')",
-        leak.to_string_lossy()
-    );
+    let child = "import time; time.sleep(20)";
     let mutant = format!(
-        "from pathlib import Path; import os,subprocess,sys,time; Path({:?},str(os.getpid())).write_text('running'); subprocess.Popen([sys.executable,'-c',{:?}]); time.sleep(20)",
+        "from pathlib import Path; import os,subprocess,sys,time; Path({:?},str(os.getpid())).write_text('running'); time.sleep(0.5); child=subprocess.Popen([sys.executable,'-c',{:?}]); ready_temp=Path({:?}); ready_temp.write_text(str(child.pid)); ready_temp.replace({:?}); time.sleep(20)",
         active.to_string_lossy(),
         child,
+        descendant_ready_temp.to_string_lossy(),
+        descendant_ready.to_string_lossy(),
     );
     let original = "return a + b + c + d + e";
     let command = format!(
@@ -396,16 +423,12 @@ async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_in
         control.clone(),
     );
     let cancel = async {
-        let marker_deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-        while std::fs::read_dir(&active).unwrap().next().is_none()
-            && tokio::time::Instant::now() < marker_deadline
-        {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-        assert!(std::fs::read_dir(&active).unwrap().next().is_some());
+        let descendant =
+            wait_for_descendant_process(&descendant_ready, Duration::from_secs(15)).await;
         control.cancel();
+        descendant
     };
-    let (exit, ()) = Box::pin(tokio::time::timeout(Duration::from_secs(30), async {
+    let (exit, descendant) = Box::pin(tokio::time::timeout(Duration::from_secs(30), async {
         tokio::join!(run, cancel)
     }))
     .await
@@ -435,8 +458,11 @@ async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_in
         .unwrap();
     assert_eq!(complete, 0);
     drop(connection);
-    tokio::time::sleep(Duration::from_millis(2300)).await;
-    assert!(!leak.exists(), "cancelled descendant outlived the run");
+    assert!(
+        descendant.wait_until_stops(Duration::from_secs(5)).await,
+        "cancelled descendant {} outlived the run",
+        descendant.pid()
+    );
 }
 
 #[tokio::test]
@@ -607,6 +633,44 @@ impl Write for SharedBuffer {
 async fn run_fixture(test_args: &[&str]) -> FixtureRun {
     run_fixture_options(test_args, None, false).await
 }
+async fn run_type_checker(checker: &Path, expected_status: &str) -> FixtureRun {
+    let root = type_checking_fixture_root();
+    let line = match expected_status {
+        "killed" => "src/contracts.py:1",
+        "survived" => "src/contracts.py:6",
+        _ => panic!("unsupported type-checker expectation: {expected_status}"),
+    };
+    let checker_args: &[&str] = match checker.file_stem().and_then(|name| name.to_str()) {
+        Some("ty") => &["check"],
+        Some("mypy") => &["src"],
+        Some(name) => panic!("unsupported type checker: {name}"),
+        None => panic!("type checker has no executable name: {}", checker.display()),
+    };
+    let mut args = vec![
+        OsString::from("hoimin"),
+        OsString::from("run"),
+        OsString::from("--root"),
+        root.as_os_str().to_owned(),
+        OsString::from("--source"),
+        OsString::from("src"),
+        OsString::from("--line"),
+        OsString::from(line),
+        OsString::from("--operators"),
+        OsString::from("type_nullable"),
+        OsString::from("--max-mutants"),
+        OsString::from("1"),
+        OsString::from("--format"),
+        OsString::from("json"),
+        OsString::from("--allow-best-effort-memory"),
+        OsString::from("--"),
+        checker.as_os_str().to_owned(),
+    ];
+    args.extend(checker_args.iter().map(OsString::from));
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let exit_code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    fixture_run(exit_code, stdout, stderr)
+}
 
 async fn run_fixture_with_session(test_args: &[&str], session: &Path, resume: bool) -> FixtureRun {
     run_fixture_options(test_args, Some(session), resume).await
@@ -660,6 +724,28 @@ async fn run_fixture_options_extra(
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     let exit_code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let stdout = String::from_utf8(stdout).unwrap();
+    let stderr = String::from_utf8(stderr).unwrap();
+    let document: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|error| {
+        panic!(
+            "invalid JSON report ({error}); exit={exit_code}; stdout={stdout:?}; stderr={stderr:?}"
+        )
+    });
+    let statuses = document["mutants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|mutant| mutant["status"].as_str().unwrap().to_owned())
+        .collect();
+    FixtureRun {
+        exit_code,
+        statuses,
+        stdout,
+        stderr,
+        document,
+    }
+}
+fn fixture_run(exit_code: i32, stdout: Vec<u8>, stderr: Vec<u8>) -> FixtureRun {
     let stdout = String::from_utf8(stdout).unwrap();
     let stderr = String::from_utf8(stderr).unwrap();
     let document: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|error| {
@@ -792,6 +878,9 @@ async fn run_project(root: &Path, jobs: usize, command: &str) -> FixtureRun {
 fn fixture_root() -> PathBuf {
     repo_root().join("tests/fixtures/projects/basic")
 }
+fn type_checking_fixture_root() -> PathBuf {
+    repo_root().join("tests/fixtures/projects/type-checking")
+}
 
 fn python_executable() -> PathBuf {
     let executable = if cfg!(windows) {
@@ -806,6 +895,27 @@ fn python_executable() -> PathBuf {
     );
     executable
 }
+fn ty_executable() -> PathBuf {
+    checker_executable("ty")
+}
+
+fn mypy_executable() -> PathBuf {
+    checker_executable("mypy")
+}
+
+fn checker_executable(name: &str) -> PathBuf {
+    let executable = if cfg!(windows) {
+        repo_root().join(format!(".venv/Scripts/{name}.exe"))
+    } else {
+        repo_root().join(format!(".venv/bin/{name}"))
+    };
+    assert!(
+        executable.is_file(),
+        "missing controlled type checker: {}",
+        executable.display()
+    );
+    executable
+}
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -814,4 +924,107 @@ fn repo_root() -> PathBuf {
         .parent()
         .unwrap()
         .to_owned()
+}
+
+#[cfg(unix)]
+struct DescendantProcess {
+    // `libc::kill` accepts a signed Unix process ID. Validate the marker value
+    // once when opening it and retain that native representation thereafter.
+    pid: i32,
+}
+
+#[cfg(windows)]
+struct DescendantProcess {
+    pid: u32,
+    handle: windows_sys::Win32::Foundation::HANDLE,
+}
+
+impl DescendantProcess {
+    fn pid(&self) -> u32 {
+        #[cfg(unix)]
+        {
+            self.pid.unsigned_abs()
+        }
+
+        #[cfg(windows)]
+        {
+            self.pid
+        }
+    }
+
+    #[cfg(unix)]
+    fn open(pid: u32) -> Option<Self> {
+        i32::try_from(pid).ok().map(|pid| Self { pid })
+    }
+
+    #[cfg(windows)]
+    fn open(pid: u32) -> Option<Self> {
+        use windows_sys::Win32::System::Threading::{
+            OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+
+        // SAFETY: the fixture PID came from the child process and the handle is owned on success.
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            (!handle.is_null()).then_some(Self { pid, handle })
+        }
+    }
+
+    #[cfg(unix)]
+    fn is_alive(&self) -> bool {
+        // SAFETY: signal 0 performs no mutation and the process ID was validated in `open`.
+        unsafe { libc::kill(self.pid, 0) == 0 }
+    }
+
+    #[cfg(windows)]
+    fn is_alive(&self) -> bool {
+        use windows_sys::Win32::Foundation::STILL_ACTIVE;
+        use windows_sys::Win32::System::Threading::GetExitCodeProcess;
+
+        // SAFETY: handle is retained by this fixture and valid until Drop.
+        unsafe {
+            let mut exit_code = 0;
+            GetExitCodeProcess(self.handle, &raw mut exit_code) != 0
+                && exit_code == STILL_ACTIVE as u32
+        }
+    }
+
+    async fn wait_until_stops(&self, timeout: Duration) -> bool {
+        let deadline = tokio::time::Instant::now() + timeout;
+        while self.is_alive() && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        !self.is_alive()
+    }
+}
+
+#[cfg(windows)]
+impl Drop for DescendantProcess {
+    fn drop(&mut self) {
+        use windows_sys::Win32::Foundation::CloseHandle;
+
+        // SAFETY: this instance owns the successful OpenProcess handle.
+        unsafe {
+            CloseHandle(self.handle);
+        }
+    }
+}
+
+async fn wait_for_descendant_process(marker: &Path, timeout: Duration) -> DescendantProcess {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        if let Some(pid) = std::fs::read_to_string(marker)
+            .ok()
+            .and_then(|value| value.trim().parse().ok())
+        {
+            if let Some(process) = DescendantProcess::open(pid) {
+                return process;
+            }
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "descendant-ready marker did not yield an open process before cancellation"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 }

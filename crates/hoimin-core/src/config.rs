@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::num::{NonZeroU64, NonZeroUsize};
 use std::time::Duration;
 
@@ -42,6 +43,169 @@ impl Default for RawRunLimits {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MutationOperator {
+    CompareEqNe,
+    CompareOrder,
+    Membership,
+    Identity,
+    BooleanAndOr,
+    BinaryAddSub,
+    AugmentedAddSub,
+    BinaryMulDiv,
+    BinaryFloorMod,
+    UnarySign,
+    RemoveNot,
+    BooleanLiteral,
+    BreakContinue,
+    TypeNullableRemove,
+    TypeNullableAdd,
+    TypeListSequence,
+    TypeSetAbstractSet,
+    TypeMapping,
+    TypeIterableIterator,
+    TypeSequenceIterable,
+}
+
+impl MutationOperator {
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::all()
+            .into_iter()
+            .find(|operator| operator.as_str() == name)
+    }
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::CompareEqNe => "compare_eq_ne",
+            Self::CompareOrder => "compare_order",
+            Self::Membership => "membership",
+            Self::Identity => "identity",
+            Self::BooleanAndOr => "boolean_and_or",
+            Self::BinaryAddSub => "binary_add_sub",
+            Self::AugmentedAddSub => "augmented_add_sub",
+            Self::BinaryMulDiv => "binary_mul_div",
+            Self::BinaryFloorMod => "binary_floor_mod",
+            Self::UnarySign => "unary_sign",
+            Self::RemoveNot => "remove_not",
+            Self::BooleanLiteral => "boolean_literal",
+            Self::BreakContinue => "break_continue",
+            Self::TypeNullableRemove => "type_nullable_remove",
+            Self::TypeNullableAdd => "type_nullable_add",
+            Self::TypeListSequence => "type_list_sequence",
+            Self::TypeSetAbstractSet => "type_set_abstract_set",
+            Self::TypeMapping => "type_dict_mapping",
+            Self::TypeIterableIterator => "type_iterable_iterator",
+            Self::TypeSequenceIterable => "type_sequence_iterable",
+        }
+    }
+    fn all() -> [Self; 20] {
+        [
+            Self::CompareEqNe,
+            Self::CompareOrder,
+            Self::Membership,
+            Self::Identity,
+            Self::BooleanAndOr,
+            Self::BinaryAddSub,
+            Self::AugmentedAddSub,
+            Self::BinaryMulDiv,
+            Self::BinaryFloorMod,
+            Self::UnarySign,
+            Self::RemoveNot,
+            Self::BooleanLiteral,
+            Self::BreakContinue,
+            Self::TypeNullableRemove,
+            Self::TypeNullableAdd,
+            Self::TypeListSequence,
+            Self::TypeSetAbstractSet,
+            Self::TypeMapping,
+            Self::TypeIterableIterator,
+            Self::TypeSequenceIterable,
+        ]
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct MutationOperatorSelection(BTreeSet<MutationOperator>);
+
+impl MutationOperatorSelection {
+    #[must_use]
+    pub fn all_legacy() -> Self {
+        Self(
+            [
+                MutationOperator::CompareEqNe,
+                MutationOperator::CompareOrder,
+                MutationOperator::Membership,
+                MutationOperator::Identity,
+                MutationOperator::BooleanAndOr,
+                MutationOperator::BinaryAddSub,
+                MutationOperator::AugmentedAddSub,
+                MutationOperator::BinaryMulDiv,
+                MutationOperator::BinaryFloorMod,
+                MutationOperator::UnarySign,
+                MutationOperator::RemoveNot,
+                MutationOperator::BooleanLiteral,
+                MutationOperator::BreakContinue,
+            ]
+            .into_iter()
+            .collect(),
+        )
+    }
+    /// Expands a selector name into its constituent mutation operators.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError::UnknownMutationOperator`] for an unrecognized selector.
+    pub fn parse_selector(selector: &str) -> Result<Vec<MutationOperator>, ConfigError> {
+        match selector {
+            "type_nullable" => Ok(vec![
+                MutationOperator::TypeNullableRemove,
+                MutationOperator::TypeNullableAdd,
+            ]),
+            "type_collections" => Ok(vec![
+                MutationOperator::TypeListSequence,
+                MutationOperator::TypeSetAbstractSet,
+                MutationOperator::TypeMapping,
+            ]),
+            "type_iterables" => Ok(vec![
+                MutationOperator::TypeIterableIterator,
+                MutationOperator::TypeSequenceIterable,
+            ]),
+            value => MutationOperator::from_name(value).map_or_else(
+                || {
+                    Err(ConfigError::UnknownMutationOperator {
+                        value: value.to_owned(),
+                    })
+                },
+                |operator| Ok(vec![operator]),
+            ),
+        }
+    }
+    pub fn include(&mut self, operator: MutationOperator) {
+        self.0.insert(operator);
+    }
+    pub fn exclude(&mut self, operator: MutationOperator) {
+        self.0.remove(&operator);
+    }
+    #[must_use]
+    pub fn contains(&self, operator: MutationOperator) -> bool {
+        self.0.contains(&operator)
+    }
+    #[must_use]
+    pub fn names(&self) -> Vec<String> {
+        self.0
+            .iter()
+            .map(|operator| operator.as_str().to_owned())
+            .collect()
+    }
+}
+
+impl Default for MutationOperatorSelection {
+    fn default() -> Self {
+        Self::all_legacy()
+    }
+}
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RawRunConfig {
     pub root: Utf8PathBuf,
@@ -53,6 +217,8 @@ pub struct RawRunConfig {
     pub diff_base: Option<String>,
     pub includes: Vec<String>,
     pub excludes: Vec<String>,
+    pub operators: Vec<String>,
+    pub exclude_operators: Vec<String>,
     pub allow_best_effort_memory: bool,
     pub limits: RawRunLimits,
     pub test_argv: Vec<CommandArg>,
@@ -134,12 +300,15 @@ pub struct RunConfig {
     pub test_argv: Vec<CommandArg>,
     pub output: OutputConfig,
     pub session: Option<SessionConfig>,
+    pub operators: MutationOperatorSelection,
     pub allow_best_effort_memory: bool,
     pub resume: bool,
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ConfigError {
+    #[error("unknown mutation operator: {value}")]
+    UnknownMutationOperator { value: String },
     #[error("at least one target selector is required")]
     MissingSelector,
     #[error("--diff-base requires --changed")]
@@ -246,6 +415,21 @@ impl TryFrom<RawRunConfig> for RunConfig {
         if raw.test_argv.is_empty() {
             return Err(ConfigError::MissingTestArgv);
         }
+        let mut operators = if raw.operators.is_empty() {
+            MutationOperatorSelection::all_legacy()
+        } else {
+            MutationOperatorSelection(BTreeSet::new())
+        };
+        for selector in &raw.operators {
+            for operator in MutationOperatorSelection::parse_selector(selector)? {
+                operators.include(operator);
+            }
+        }
+        for selector in &raw.exclude_operators {
+            for operator in MutationOperatorSelection::parse_selector(selector)? {
+                operators.exclude(operator);
+            }
+        }
         let limits = RunLimits::try_from(&raw.limits)?;
         let selection = Selection {
             root: raw.root.clone(),
@@ -265,6 +449,7 @@ impl TryFrom<RawRunConfig> for RunConfig {
             test_argv: raw.test_argv,
             output: raw.output,
             session: raw.session,
+            operators,
             allow_best_effort_memory: raw.allow_best_effort_memory,
             resume: raw.resume,
         })

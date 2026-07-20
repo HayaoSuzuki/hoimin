@@ -1,5 +1,5 @@
 use camino::Utf8PathBuf;
-use hoimin_core::{ByteSpan, EffectId, normalized_relative_path};
+use hoimin_core::{ByteSpan, EffectId, MutationOperator, normalized_relative_path};
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -373,22 +373,7 @@ impl AnalyzerProtocol {
 }
 
 fn known_operator(operator: &str) -> bool {
-    matches!(
-        operator,
-        "compare_eq_ne"
-            | "compare_order"
-            | "membership"
-            | "identity"
-            | "boolean_and_or"
-            | "binary_add_sub"
-            | "augmented_add_sub"
-            | "binary_mul_div"
-            | "binary_floor_mod"
-            | "unary_sign"
-            | "remove_not"
-            | "boolean_literal"
-            | "break_continue"
-    )
+    MutationOperator::from_name(operator).is_some_and(|parsed| parsed.as_str() == operator)
 }
 
 #[derive(Debug, Deserialize)]
