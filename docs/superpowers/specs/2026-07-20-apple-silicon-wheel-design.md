@@ -32,6 +32,14 @@ wheel filename に含まれる `arm64` tag を互換条件とし、Linux と Win
 条件は変更しない。これにより、ネイティブ Apple Silicon で Maturin が出力する
 `macosx_*_arm64` wheel が smoke test に渡る。
 
+macOS の portable process backend は、子プロセスの process group と
+`RLIMIT_CPU` を設定する。Darwin は仮想メモリ制限 `RLIMIT_AS` を拒否するため、
+macOS の `pre_exec` では設定しない。このため macOS は `best_effort` resource
+mode であり、`--max-memory` は強制されない。通常実行では
+`--allow-best-effort-memory` を必須にし、CLI の diagnostic はこの制約を明示する。
+Linux の `RLIMIT_AS`/`RLIMIT_CPU` 設定と cgroup v2 backend、Windows Job Object
+backend は変更しない。
+
 通常 CI の `rust` job と `wheel-smoke` job の OS matrix に `macos-14` を加える。
 `macos-14` は GitHub-hosted Apple Silicon runner であり、Maturin はその runner
 上でネイティブ arm64 wheel を生成する。release workflow は Windows と Linux の
@@ -43,6 +51,8 @@ wheel filename に含まれる `arm64` tag を互換条件とし、Linux と Win
   `target/wheels/` に arm64 macOS wheel が生成される。
 - `uv run python tests/wheel_smoke.py` がその wheel を選択し、`uvx --from` と
   virtual environment の CLI 実行を成功させる。
+- `cargo test -p hoimin-cli --test process_handler portable -- --nocapture` が macOS
+  で通り、portable backend が `RLIMIT_AS` なしで child process を実行できる。
 - CI の `Rust (macos-14)` と `Wheel smoke (macos-14)` が成功する。
 - release workflow に差分がなく、PyPI 公開は発生しない。
 
