@@ -175,6 +175,28 @@ fn validate_structure(path: &Path, document: &RunReportDocument) -> Result<(), P
             "summary must be a run_finished event",
         ));
     }
+
+    let run_id = document.run.run_id();
+    let events = std::iter::once(&document.run)
+        .chain(document.baseline.iter())
+        .chain(document.mutants.iter())
+        .chain(std::iter::once(&document.summary));
+    let mut previous_sequence = None;
+    for event in events {
+        if event.run_id() != run_id {
+            return Err(invalid_structure(
+                path,
+                "all present events must share run.run_id",
+            ));
+        }
+        if previous_sequence.is_some_and(|previous| event.sequence() <= previous) {
+            return Err(invalid_structure(
+                path,
+                "event sequences must be strictly increasing in document order",
+            ));
+        }
+        previous_sequence = Some(event.sequence());
+    }
     Ok(())
 }
 

@@ -5,7 +5,8 @@ use std::{
 
 use camino::Utf8PathBuf;
 use hoimin_cli::progress::{
-    InputReport, ProgressState, UnusableReason, UsableReport, compare_reports, read_report,
+    InputReport, ProgressError, ProgressState, UnusableReason, UsableReport, compare_reports,
+    read_report,
 };
 use hoimin_core::{
     ByteSpan, MutantFinished, MutationCandidate, MutationStatus, REPORT_SCHEMA_VERSION,
@@ -114,6 +115,28 @@ fn input_rejects_invalid_document_structure() {
 }
 
 #[test]
+fn input_rejects_events_from_a_different_run() {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut document = valid_report();
+    document["summary"]["run_id"] = json!("different-run");
+    let report = write_json(&fixture, "different-run.json", &document);
+
+    let error = read_report(&report).unwrap_err();
+    assert!(matches!(error, ProgressError::InvalidStructure { .. }));
+}
+
+#[test]
+fn input_rejects_nonmonotonic_event_sequences() {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut document = valid_report();
+    document["summary"]["sequence"] = json!(3);
+    let report = write_json(&fixture, "nonmonotonic-sequence.json", &document);
+
+    let error = read_report(&report).unwrap_err();
+    assert!(matches!(error, ProgressError::InvalidStructure { .. }));
+}
+
+#[test]
 fn input_rejects_unreadable_paths() {
     let fixture = tempfile::tempdir().unwrap();
     let missing = fixture.path().join("missing.json");
@@ -146,6 +169,34 @@ fn compare_an_improvement_resets_prior_stalls() {
 
     assert_eq!(result.consecutive_stalls, 0);
     assert_eq!(result.latest, ProgressState::Improving);
+}
+
+#[test]
+fn compare_regression_takes_precedence_over_improvement_in_a_mixed_transition() {
+    let result = compare_reports(
+        &[
+            usable(vec![
+                mutant("improvement", MutationStatus::Survived),
+                mutant("regression", MutationStatus::Killed),
+            ]),
+            usable(vec![
+                mutant("improvement", MutationStatus::Survived),
+                mutant("regression", MutationStatus::Killed),
+            ]),
+            usable(vec![
+                mutant("improvement", MutationStatus::Killed),
+                mutant("regression", MutationStatus::Survived),
+            ]),
+        ],
+        nz(3),
+    );
+
+    let comparison = &result.comparisons[1];
+    assert_eq!(comparison.improvements, 1);
+    assert_eq!(comparison.regressions, 1);
+    assert_eq!(comparison.state, ProgressState::Regressing);
+    assert_eq!(result.consecutive_stalls, 1);
+    assert_eq!(result.latest, ProgressState::Regressing);
 }
 
 #[test]
@@ -441,8 +492,11 @@ async fn output_unusable_reports_are_indeterminate_and_exit_zero() {
 async fn output_ambiguity_is_structured_and_warned_on_stderr() {
     let fixture = tempfile::tempdir().unwrap();
     let mut ambiguous = valid_report();
-    let mutant = ambiguous["mutants"][0].clone();
-    ambiguous["mutants"] = json!([mutant.clone(), mutant]);
+    let first_mutant = ambiguous["mutants"][0].clone();
+    let mut duplicate_mutant = first_mutant.clone();
+    duplicate_mutant["sequence"] = json!(4);
+    ambiguous["mutants"] = json!([first_mutant, duplicate_mutant]);
+    ambiguous["summary"]["sequence"] = json!(5);
     let reports = vec![
         write_json(&fixture, "before.json", &ambiguous),
         write_json(&fixture, "after.json", &ambiguous),

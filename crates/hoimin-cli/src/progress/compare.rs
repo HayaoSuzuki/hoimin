@@ -187,10 +187,10 @@ fn compare_usable_reports(previous: &UsableReport, current: &UsableReport) -> Co
         .map(|(before, after)| after - before);
     let state = if comparable_common == 0 {
         ProgressState::Indeterminate
-    } else if improvements > 0 {
-        ProgressState::Improving
     } else if regressions > 0 {
         ProgressState::Regressing
+    } else if improvements > 0 {
+        ProgressState::Improving
     } else {
         ProgressState::Stalled
     };
