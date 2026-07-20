@@ -64,7 +64,7 @@ These controls reduce accidental resource exhaustion. hoimin executes user-selec
 
 ## Mutation operators
 
-The MVP operator set is:
+The default runtime operator set is:
 
 - equality (`==` ↔ `!=`) and ordered comparisons (`<`, `<=`, `>`, `>=`);
 - membership (`in` ↔ `not in`) and identity (`is` ↔ `is not`);
@@ -76,7 +76,7 @@ The MVP operator set is:
 - `True` ↔ `False`;
 - `break` ↔ `continue`.
 
-By default, a run selects only this legacy operator set; it does not mutate type annotations. Select type operators explicitly with `--operators` (comma-separated), and remove individual operators or selector families after selection with `--exclude-operators`.
+Without `--operators`, a run selects all 13 runtime operators and does not mutate type annotations. Supplying `--operators` (comma-separated) selects an explicit operator set instead; `--exclude-operators` then removes individual operators or selector families from that set.
 
 For example, run a type checker against nullable and collection annotation mutations:
 
