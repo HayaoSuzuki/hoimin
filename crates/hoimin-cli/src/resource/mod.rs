@@ -170,6 +170,13 @@ impl ProcessSupervisor {
         }
     }
 
+    #[cfg_attr(
+        target_os = "macos",
+        allow(
+            clippy::unnecessary_wraps,
+            reason = "macOS has only the infallible portable supervisor, while Linux and Windows retain the shared fallible classification API"
+        )
+    )]
     pub(crate) fn classify(
         &mut self,
         termination: hoimin_core::ProcessTermination,

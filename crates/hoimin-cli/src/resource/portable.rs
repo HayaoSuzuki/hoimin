@@ -193,6 +193,10 @@ fn configure_command(command: &mut Command, limits: ProcessLimits) -> Result<(),
 }
 
 #[cfg(target_os = "macos")]
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "the shared command configuration API retains a fallible signature across target-specific implementations"
+)]
 fn configure_command(command: &mut Command, limits: ProcessLimits) -> Result<(), ResourceError> {
     use std::os::unix::process::CommandExt;
 

@@ -9,10 +9,12 @@ use hoimin_cli::resource::{
     select_linux_backend,
 };
 use hoimin_core::{
-    CommandArg, EffectFailure, EffectId, ProcessLimits, ProcessTermination, RawRunLimits,
-    ResourceMode, RunLimits, RunProcess,
+    CommandArg, EffectFailure, EffectId, ProcessLimits, ProcessTermination, ResourceMode,
+    RunProcess,
 };
 
+#[cfg(any(target_os = "linux", windows))]
+use hoimin_core::{RawRunLimits, RunLimits};
 #[cfg(windows)]
 use hoimin_cli::resource::WindowsBackend;
 #[cfg(target_os = "linux")]
@@ -81,6 +83,7 @@ fn portable_handler(output_dir: &Utf8Path) -> ProcessHandler {
     )
 }
 
+#[cfg(any(target_os = "linux", windows))]
 fn hard_run_limits(max_memory: u64, max_processes: usize) -> RunLimits {
     let raw = RawRunLimits {
         max_memory,
