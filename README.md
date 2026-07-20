@@ -7,7 +7,7 @@ hoimin is a bounded mutation-testing CLI for focused Python changes. Its Rust an
 `uvx` and `pipx run` install hoimin's native binary wheel in an isolated environment for a single invocation. Rust performs analysis in-process; the command after `--` is the test command for the project being checked.
 
 ```console
-uvx hoimin run --root . --source src --file src/calc.py --format json -- python -m pytest -q
+uvx hoimin run --root . --file src/calc.py --format json -- python -m pytest -q
 ```
 
 Use a narrower selector to check one symbol:
@@ -29,7 +29,9 @@ At least one target selector is required:
 - `--changed` restricts selection to staged, unstaged, and untracked Git changes. It requires `--source`.
 - `--diff-base REV` uses the merge base of `REV` and `HEAD` for `--changed`. It is invalid without `--changed`.
 
-`--root DIR` resolves relative paths and defaults to the current directory. Repeated and mixed explicit selectors form a union. Combining explicit selectors with `--changed` takes their intersection with changed lines. A `--symbol` requires `--source`; when `--source` is present, file and line paths must be inside a source root.
+Explicit selectors form a union. For example, `--source src --file src/calc.py` selects `src/calc.py` and every Python file below `src`. Use `--file` alone for a run limited to named files.
+
+`--root DIR` resolves relative paths and defaults to the current directory. Combining explicit selectors with `--changed` takes their intersection with changed lines. A `--symbol` requires `--source`; when `--source` is present, file and line paths must be inside a source root.
 
 `--include GLOB` can restore files excluded by ignore rules or built-in copy exclusions. `--exclude GLOB` adds exclusions and wins when both match. Both options may be repeated.
 
