@@ -18,6 +18,22 @@ SKILLS = {
             "survivor",
         ),
     },
+    "hoimin-mutation-improvement": {
+        "description": (
+            "Use when iterating on hoimin mutation-test survivors and test improvements "
+            "until the current target's progress is saturated or complete."
+        ),
+        "phrases": (
+            "hoimin progress --format json",
+            "latest.state",
+            "`improving`",
+            "`stalled`",
+            "`saturated`",
+            "`regressing`",
+            "`indeterminate`",
+            "終了コードではなく",
+        ),
+    },
 }
 
 
