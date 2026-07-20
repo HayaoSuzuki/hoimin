@@ -4,11 +4,11 @@ use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    CommandArg, MutantTimeout, MutationCandidate, MutationProfile, MutationStatus, OutputSpoolRef,
-    ResourceMode, RunLimits, TargetSlice,
+    CommandArg, FingerprintInputFile, MutantTimeout, MutationCandidate, MutationProfile,
+    MutationStatus, OutputSpoolRef, ResourceMode, RunLimits, TargetSlice,
 };
 
-pub const FINGERPRINT_SCHEMA_VERSION: u8 = 3;
+pub const FINGERPRINT_SCHEMA_VERSION: u8 = 4;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceHash {
@@ -19,6 +19,7 @@ pub struct SourceHash {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FingerprintInput {
     pub sources: Vec<SourceHash>,
+    pub fingerprint_inputs: Vec<FingerprintInputFile>,
     pub targets: Vec<TargetSlice>,
     pub operators: Vec<String>,
     pub profile: MutationProfile,
@@ -65,6 +66,7 @@ pub fn fingerprint(input: &FingerprintInput) -> RunFingerprint {
             MutationProfile::Focused => 1,
         }],
     );
+    encoder.field(8, &encode_fingerprint_inputs(&input.fingerprint_inputs));
     RunFingerprint(*blake3::hash(&encoder.bytes).as_bytes())
 }
 
@@ -134,6 +136,19 @@ fn encode_sources(sources: &[SourceHash]) -> Vec<u8> {
     out.count(values.len());
     for value in values {
         out.bytes(&value);
+    }
+    out.bytes
+}
+
+fn encode_fingerprint_inputs(inputs: &[FingerprintInputFile]) -> Vec<u8> {
+    let mut values = inputs.to_vec();
+    values.sort();
+    values.dedup();
+    let mut out = Encoder::new();
+    out.count(values.len());
+    for value in values {
+        out.bytes(value.path.as_str().as_bytes());
+        out.bytes(value.hash.as_bytes());
     }
     out.bytes
 }
