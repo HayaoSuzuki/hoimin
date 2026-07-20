@@ -272,8 +272,9 @@ impl SessionHandler {
     ///
     /// # Errors
     ///
-    /// Returns [`EffectFailed`] when the run is missing or already finished, or its transaction
-    /// cannot be started, updated, or committed.
+    /// Returns [`EffectFailed`] when the run is missing, already complete, or its transaction
+    /// cannot be started, updated, or committed. Repeating an incomplete finish is idempotent;
+    /// a completed run cannot be finished again.
     pub fn finish(&mut self, request: FinishSession) -> Result<SessionFinished, EffectFailed> {
         let id = request.id;
         let transaction = self

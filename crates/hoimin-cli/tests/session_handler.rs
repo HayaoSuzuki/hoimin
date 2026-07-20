@@ -221,8 +221,21 @@ fn incomplete_finish_is_idempotent_but_completion_is_final() {
         "session.finish.state"
     );
 
-    handler.begin(begin_request(6, "direct")).unwrap();
-    handler.finish(finish_request(7, "direct")).unwrap();
+    assert_eq!(
+        handler
+            .finish(FinishSession {
+                id: EffectId(6),
+                run_id: "partial".to_owned(),
+                complete: false,
+            })
+            .unwrap_err()
+            .failure
+            .code(),
+        "session.finish.state"
+    );
+
+    handler.begin(begin_request(7, "direct")).unwrap();
+    handler.finish(finish_request(8, "direct")).unwrap();
 }
 
 #[test]

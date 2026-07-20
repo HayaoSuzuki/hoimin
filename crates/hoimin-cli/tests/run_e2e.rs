@@ -282,14 +282,24 @@ async fn sqlite_session_can_be_resumed_after_repeated_mutant_limits() {
     write_parallel_project(project.path());
     let command = "from src.calc import total; assert total(1, 2, 3, 4, 5) == 15";
 
+    let mut run_id = None;
     for resume in [false, true, true] {
         let run = run_project_with_session(project.path(), &database, resume, 1, command).await;
         assert_eq!(run.exit_code, 4, "stderr={}", run.stderr);
         assert!(!run.stderr.contains("session.finish.state"));
         let connection = rusqlite::Connection::open(&database).unwrap();
-        let complete: i64 = connection
-            .query_row("SELECT complete FROM runs", [], |row| row.get(0))
+        let current_run_id = run.document["run"]["run_id"].as_str().unwrap();
+        if let Some(first_run_id) = &run_id {
+            assert_eq!(current_run_id, first_run_id);
+        } else {
+            run_id = Some(current_run_id.to_owned());
+        }
+        let (run_count, complete): (i64, i64) = connection
+            .query_row("SELECT COUNT(*), MAX(complete) FROM runs", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
             .unwrap();
+        assert_eq!(run_count, 1);
         assert_eq!(complete, 0);
     }
 }
