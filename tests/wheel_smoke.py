@@ -99,7 +99,7 @@ def main() -> int:
     assert metadata.requires_python.replace(" ", "") == ">=3.14,<3.15"
     assert metadata.requires_dist is None
     assert metadata.license_expression == "MIT"
-    assert metadata.project_urls == ["Repository, https://github.com/HayaoSuzuki/hoimin"]
+    assert metadata.project_urls == ["Repository, https://github.com/tokyogas-tech/hoimin"]
     with tempfile.TemporaryDirectory(prefix="hoimin-wheel-smoke-") as temporary_directory:
         temporary_root = Path(temporary_directory)
         environment = isolated_environment()

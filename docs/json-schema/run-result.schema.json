@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/HayaoSuzuki/hoimin/main/docs/json-schema/run-result.schema.json",
+  "$id": "https://raw.githubusercontent.com/tokyogas-tech/hoimin/main/docs/json-schema/run-result.schema.json",
   "title": "hoimin run JSON result",
   "type": "object",
   "required": ["schema_version", "run", "baseline", "mutants", "summary"],

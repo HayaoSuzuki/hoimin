@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/HayaoSuzuki/hoimin/main/docs/json-schema/run-event.schema.json",
+  "$id": "https://raw.githubusercontent.com/tokyogas-tech/hoimin/main/docs/json-schema/run-event.schema.json",
   "title": "hoimin run JSON Lines event",
   "oneOf": [
     { "$ref": "#/$defs/runStarted" },
