@@ -25,6 +25,14 @@ class WheelMetadata:
     project_urls: list[str] | None
 
 
+EXPECTED_WHEEL_METADATA = WheelMetadata(
+    requires_python=">=3.14,<3.15",
+    requires_dist=None,
+    license_expression="MIT",
+    project_urls=["Repository, https://github.com/tokyogas-tech/hoimin"],
+)
+
+
 def run(argv: list[str], *, cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     completed = subprocess.run(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=False, timeout=120, check=False)
     assert completed.returncode == 0, f"command failed ({completed.returncode}): {argv!r}\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
@@ -72,10 +80,37 @@ def wheel_path(
 
 def wheel_metadata(wheel: Path) -> WheelMetadata:
     with zipfile.ZipFile(wheel) as archive:
-        metadata_files = sorted(name for name in archive.namelist() if name.endswith(".dist-info/METADATA"))
-        assert len(metadata_files) == 1
+        metadata_files = sorted(
+            name
+            for name in archive.namelist()
+            if name.endswith(".dist-info/METADATA")
+        )
+        assert len(metadata_files) == 1, (
+            f"expected exactly one METADATA member in {wheel}: {metadata_files}"
+        )
         parsed = Parser().parsestr(archive.read(metadata_files[0]).decode("utf-8"))
-    return WheelMetadata(parsed["Requires-Python"], parsed.get_all("Requires-Dist"), parsed["License-Expression"], parsed.get_all("Project-URL"))
+
+    return WheelMetadata(
+        requires_python=parsed["Requires-Python"],
+        requires_dist=parsed.get_all("Requires-Dist"),
+        license_expression=parsed["License-Expression"],
+        project_urls=parsed.get_all("Project-URL"),
+    )
+
+
+def validate_wheel_metadata(metadata: WheelMetadata) -> None:
+    assert metadata.requires_python.replace(" ", "") == (
+        EXPECTED_WHEEL_METADATA.requires_python
+    ), f"unexpected Requires-Python: {metadata.requires_python!r}"
+    assert metadata.requires_dist == EXPECTED_WHEEL_METADATA.requires_dist, (
+        f"unexpected Requires-Dist: {metadata.requires_dist!r}"
+    )
+    assert metadata.license_expression == EXPECTED_WHEEL_METADATA.license_expression, (
+        f"unexpected License-Expression: {metadata.license_expression!r}"
+    )
+    assert metadata.project_urls == EXPECTED_WHEEL_METADATA.project_urls, (
+        f"unexpected Project-URL: {metadata.project_urls!r}"
+    )
 
 
 def environment_python(root: Path) -> Path:
@@ -113,11 +148,7 @@ def main() -> int:
         system=sys.platform,
         machine=platform.machine().lower(),
     )
-    metadata = wheel_metadata(wheel)
-    assert metadata.requires_python.replace(" ", "") == ">=3.14,<3.15"
-    assert metadata.requires_dist is None
-    assert metadata.license_expression == "MIT"
-    assert metadata.project_urls == ["Repository, https://github.com/tokyogas-tech/hoimin"]
+    validate_wheel_metadata(wheel_metadata(wheel))
     with tempfile.TemporaryDirectory(prefix="hoimin-wheel-smoke-") as temporary_directory:
         temporary_root = Path(temporary_directory)
         environment = isolated_environment()

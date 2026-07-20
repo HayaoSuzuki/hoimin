@@ -1,10 +1,14 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+import zipfile
 
 from wheel_smoke import (
+    WheelMetadata,
     is_compatible_wheel,
     select_compatible_wheel,
+    validate_wheel_metadata,
+    wheel_metadata,
     wheel_path,
 )
 
@@ -130,6 +134,132 @@ class WheelSelectionTests(unittest.TestCase):
 
             # Assert
             self.assertEqual(actual, latest)
+
+
+class WheelMetadataTests(unittest.TestCase):
+    def test_reads_the_single_metadata_member(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            # Arrange
+            wheel = Path(temporary_directory) / "hoimin.whl"
+            text = (
+                "Requires-Python: >=3.14, <3.15\n"
+                "License-Expression: MIT\n"
+                "Project-URL: Repository, https://github.com/tokyogas-tech/hoimin\n"
+            )
+            with zipfile.ZipFile(wheel, "w") as archive:
+                archive.writestr("hoimin-0.1.0.dist-info/METADATA", text)
+
+            # Act
+            actual = wheel_metadata(wheel)
+
+            # Assert
+            self.assertEqual(
+                actual,
+                WheelMetadata(
+                    requires_python=">=3.14, <3.15",
+                    requires_dist=None,
+                    license_expression="MIT",
+                    project_urls=[
+                        "Repository, https://github.com/tokyogas-tech/hoimin"
+                    ],
+                ),
+            )
+
+    def test_rejects_an_archive_without_metadata(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            # Arrange
+            wheel = Path(temporary_directory) / "hoimin.whl"
+            with zipfile.ZipFile(wheel, "w"):
+                pass
+
+            # Act
+            error = self.assertRaisesRegex(AssertionError, "expected exactly one METADATA")
+
+            # Assert
+            with error:
+                wheel_metadata(wheel)
+
+    def test_rejects_an_archive_with_multiple_metadata_members(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            # Arrange
+            wheel = Path(temporary_directory) / "hoimin.whl"
+            with zipfile.ZipFile(wheel, "w") as archive:
+                archive.writestr("one.dist-info/METADATA", "License-Expression: MIT\n")
+                archive.writestr("two.dist-info/METADATA", "License-Expression: MIT\n")
+
+            # Act
+            error = self.assertRaisesRegex(AssertionError, "expected exactly one METADATA")
+
+            # Assert
+            with error:
+                wheel_metadata(wheel)
+
+    def test_accepts_the_expected_metadata(self) -> None:
+        # Arrange
+        metadata = WheelMetadata(
+            requires_python=">=3.14, <3.15",
+            requires_dist=None,
+            license_expression="MIT",
+            project_urls=["Repository, https://github.com/tokyogas-tech/hoimin"],
+        )
+
+        # Act
+        actual = validate_wheel_metadata(metadata)
+
+        # Assert
+        self.assertIsNone(actual)
+
+    def test_rejects_each_unexpected_metadata_field(self) -> None:
+        cases = (
+            (
+                "Requires-Python",
+                WheelMetadata(
+                    requires_python=">=3.13,<3.15",
+                    requires_dist=None,
+                    license_expression="MIT",
+                    project_urls=["Repository, https://github.com/tokyogas-tech/hoimin"],
+                ),
+            ),
+            (
+                "Requires-Dist",
+                WheelMetadata(
+                    requires_python=">=3.14,<3.15",
+                    requires_dist=["pytest"],
+                    license_expression="MIT",
+                    project_urls=["Repository, https://github.com/tokyogas-tech/hoimin"],
+                ),
+            ),
+            (
+                "License-Expression",
+                WheelMetadata(
+                    requires_python=">=3.14,<3.15",
+                    requires_dist=None,
+                    license_expression="Apache-2.0",
+                    project_urls=["Repository, https://github.com/tokyogas-tech/hoimin"],
+                ),
+            ),
+            (
+                "Project-URL",
+                WheelMetadata(
+                    requires_python=">=3.14,<3.15",
+                    requires_dist=None,
+                    license_expression="MIT",
+                    project_urls=["Homepage, https://example.invalid/"],
+                ),
+            ),
+        )
+
+        for field, metadata in cases:
+            with self.subTest(field=field):
+                # Arrange
+                invalid_metadata = metadata
+
+                # Act
+                error = self.assertRaisesRegex(AssertionError, field)
+
+                # Assert
+                with error:
+                    validate_wheel_metadata(invalid_metadata)
 
 
 if __name__ == "__main__":
