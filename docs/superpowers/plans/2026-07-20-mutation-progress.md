@@ -36,11 +36,10 @@
 | `docs/json-schema/progress-result.schema.json` | Versioned JSON contract. |
 | `README.md` | Public usage and semantics. |
 
-### Task 1: Parse and dispatch `progress`
+### Task 1: Parse `progress`
 
 **Files:**
 - Modify: `crates/hoimin-cli/src/cli.rs`
-- Modify: `crates/hoimin-cli/src/lib.rs`
 - Modify: `crates/hoimin-cli/tests/cli_config.rs`
 
 **Interfaces:**
@@ -93,7 +92,7 @@ struct RawProgressArgs {
 pub enum ParsedCommand { Run(RunArgs), Progress(ProgressArgs) }
 ```
 
-Change `RootCli` conversion so the existing run conversion remains unchanged inside the `Run` branch. In `run_with_io`, run commands keep their `RunConfig` conversion and `shell::run_loop`; progress commands call Task 4 and print errors to stderr with code `2`. Do not add `jsonl` to `ProgressOutputFormat`.
+Change `RootCli` conversion so the existing run conversion remains unchanged inside the `Run` branch. Do not add `jsonl` to `ProgressOutputFormat`. Task 4 introduces the `run_with_io` dispatch once `progress::run` exists; do not add a temporary runtime stub in this task.
 
 - [ ] **Step 4: Verify parser compatibility**
 
@@ -295,6 +294,8 @@ const PROGRESS_SCHEMA_VERSION: u32 = 1;
 ```
 
 Human output must include state, score and delta when present, improvement, regression, carried survivors, added, removed, ambiguous, inconclusive, stalls, patience, and saturated. Send unusable-input reasons and ambiguity warnings to stderr. JSON contains the same fields structurally. Add `progress-result.schema.json` with closed top-level/comparison objects, five-state enum, and nonnegative integer fields. Reuse the schema-validation pattern from `crates/hoimin-cli/tests/report_handler.rs`.
+
+In `run_with_io`, retain the existing `RunConfig` conversion and `shell::run_loop` for `ParsedCommand::Run`. Dispatch `ParsedCommand::Progress` to `progress::run`, printing any `ProgressError` to stderr and returning exit code `2`.
 
 - [ ] **Step 4: Verify integration and schema**
 
