@@ -2,12 +2,12 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use camino::Utf8PathBuf;
-use hoimin_core::MutationOperator;
 use hoimin_core::{
     ConfigError, DiscoveredFile, LineRange, LineSelection, MAX_JOBS, RawRunConfig, RunConfig,
     Selection, SymbolSelection, TargetError, TargetSlice, auto_mutant_timeout, intersect_changed,
     resolve_explicit,
 };
+use hoimin_core::{MutationOperator, MutationProfile};
 
 fn raw_config() -> RawRunConfig {
     RawRunConfig {
@@ -16,6 +16,23 @@ fn raw_config() -> RawRunConfig {
         test_argv: vec![hoimin_core::CommandArg::Unix(b"python".to_vec())],
         ..RawRunConfig::default()
     }
+}
+
+#[test]
+fn mutation_profile_defaults_to_full_and_is_normalized() {
+    let raw = raw_config();
+    assert_eq!(raw.profile, MutationProfile::Full);
+    assert_eq!(
+        RunConfig::try_from(raw.clone()).unwrap().profile,
+        MutationProfile::Full
+    );
+
+    let mut raw = raw;
+    raw.profile = MutationProfile::Focused;
+    assert_eq!(
+        RunConfig::try_from(raw).unwrap().profile,
+        MutationProfile::Focused
+    );
 }
 
 #[test]

@@ -454,9 +454,11 @@ impl RunState {
         let id = self.allocate_id()?;
         self.run_started_output_id = Some(id);
         let sequence = self.output_sequence();
+        let mut run_started = RunStarted::minimal(self.run_id.clone(), sequence);
+        run_started.normalized_config = Some(self.config.clone());
         Ok(vec![RunEffect::EmitOutput(EmitOutput {
             id,
-            event: OutputEvent::RunStarted(RunStarted::minimal(self.run_id.clone(), sequence)),
+            event: OutputEvent::RunStarted(run_started),
         })])
     }
 
