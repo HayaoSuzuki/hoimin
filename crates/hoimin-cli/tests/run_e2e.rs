@@ -269,6 +269,46 @@ async fn fingerprint_include_unmatched_fails_before_creating_session() {
 }
 
 #[tokio::test]
+async fn fingerprint_file_missing_fails_before_creating_session() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = directory.path().join("session.sqlite3");
+    let root = fixture_root();
+    let python = python_executable();
+    let args = [
+        OsString::from("hoimin"),
+        OsString::from("run"),
+        OsString::from("--root"),
+        root.as_os_str().to_owned(),
+        OsString::from("--file"),
+        OsString::from("src/calc.py"),
+        OsString::from("--session"),
+        database.as_os_str().to_owned(),
+        OsString::from("--fingerprint-file"),
+        OsString::from("missing.toml"),
+        OsString::from("--allow-best-effort-memory"),
+        OsString::from("--"),
+        python.as_os_str().to_owned(),
+        OsString::from("-m"),
+        OsString::from("unittest"),
+        OsString::from("discover"),
+        OsString::from("-s"),
+        OsString::from("tests"),
+    ];
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    let exit_code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+
+    assert_eq!(exit_code, 2);
+    assert!(
+        String::from_utf8(stderr)
+            .unwrap()
+            .contains("fingerprint.file.not_found")
+    );
+    assert!(!database.exists());
+}
+
+#[tokio::test]
 async fn fingerprint_include_is_reported() {
     let options = ["--fingerprint-include", "pyproject.toml"];
     let test_args = ["-m", "unittest", "discover", "-s", "tests"];
@@ -300,6 +340,42 @@ async fn fingerprint_include_is_reported() {
     assert_eq!(
         run_started["normalized_config"]["fingerprint_inputs"][0]["path"],
         "pyproject.toml"
+    );
+}
+
+#[tokio::test]
+async fn fingerprint_file_is_reported() {
+    let options = ["--fingerprint-file", "pyproject.toml"];
+    let test_args = ["-m", "unittest", "discover", "-s", "tests"];
+
+    let json = run_fixture_options_extra(&test_args, None, false, &options).await;
+    assert_eq!(json.exit_code, 0, "stderr={}", json.stderr);
+    assert_eq!(
+        json.document["run"]["normalized_config"]["fingerprint_files"],
+        serde_json::json!(["pyproject.toml"])
+    );
+    assert_eq!(
+        json.document["run"]["normalized_config"]["fingerprint_inputs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|record| record["path"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["pyproject.toml"]
+    );
+
+    let jsonl =
+        run_fixture_options_extra_with_format(&test_args, None, false, "jsonl", &options).await;
+    assert_eq!(jsonl.exit_code, 0, "stderr={}", jsonl.stderr);
+    let run_started = jsonl
+        .stdout
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find(|record| record["kind"] == "run_started")
+        .unwrap();
+    assert_eq!(
+        run_started["normalized_config"]["fingerprint_files"],
+        serde_json::json!(["pyproject.toml"])
     );
 }
 
@@ -427,6 +503,56 @@ async fn fingerprint_include_change_starts_a_distinct_session_run() {
         .query_row("SELECT COUNT(*) FROM runs", [], |row| row.get(0))
         .unwrap();
     assert_eq!(run_count, 2);
+}
+
+#[tokio::test]
+async fn fingerprint_file_ignores_nested_names_but_tracks_the_exact_file() {
+    let project = tempfile::tempdir().unwrap();
+    let sessions = tempfile::tempdir().unwrap();
+    let database = sessions.path().join("session.sqlite3");
+    write_parallel_project(project.path());
+    std::fs::write(project.path().join("pyproject.toml"), "value = 1\n").unwrap();
+    let nested = project.path().join(".worktrees/a/pyproject.toml");
+    std::fs::create_dir_all(nested.parent().unwrap()).unwrap();
+    std::fs::write(&nested, "nested = 1\n").unwrap();
+    let command = "from src.calc import total; assert total(1, 2, 3, 4, 5) == 15";
+    let options = ["--fingerprint-file", "pyproject.toml"];
+
+    let first =
+        run_project_with_session_options(project.path(), &database, false, 1, command, &options)
+            .await;
+    assert_eq!(first.exit_code, 4, "stderr={}", first.stderr);
+    let first_run_id = first.document["run"]["run_id"].as_str().unwrap().to_owned();
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    connection
+        .execute("UPDATE runs SET complete=0", [])
+        .unwrap();
+    drop(connection);
+
+    std::fs::write(&nested, "nested = 2\n").unwrap();
+    let resumed =
+        run_project_with_session_options(project.path(), &database, true, 1, command, &options)
+            .await;
+    assert_eq!(resumed.exit_code, 4, "stderr={}", resumed.stderr);
+    assert_eq!(
+        resumed.document["run"]["run_id"].as_str().unwrap(),
+        first_run_id
+    );
+
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    connection
+        .execute("UPDATE runs SET complete=0", [])
+        .unwrap();
+    drop(connection);
+    std::fs::write(project.path().join("pyproject.toml"), "value = 2\n").unwrap();
+    let changed =
+        run_project_with_session_options(project.path(), &database, true, 1, command, &options)
+            .await;
+    assert_eq!(changed.exit_code, 4, "stderr={}", changed.stderr);
+    assert_ne!(
+        changed.document["run"]["run_id"].as_str().unwrap(),
+        first_run_id
+    );
 }
 
 #[tokio::test]
