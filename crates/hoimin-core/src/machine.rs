@@ -293,17 +293,29 @@ impl RunState {
         self.completed_gaps.len()
     }
 
-    #[must_use]
-    pub fn exit_code(&self) -> i32 {
+    fn exit_policy(&self) -> ExitPolicy {
         let summary_policy = ExitPolicy::from_summary(&self.summary);
-        exit_code_for(ExitPolicy {
+        ExitPolicy {
             infrastructure_error: self.flags.outcome.infrastructure_error
                 || summary_policy.infrastructure_error,
             baseline_failed: self.flags.outcome.baseline_failed,
             incomplete: self.flags.outcome.incomplete || summary_policy.incomplete,
             survivors: summary_policy.survivors,
             interrupted: self.flags.report.interrupted,
-        })
+        }
+    }
+
+    fn complete(&self) -> bool {
+        let policy = self.exit_policy();
+        !policy.infrastructure_error
+            && !policy.baseline_failed
+            && !policy.incomplete
+            && !policy.interrupted
+    }
+
+    #[must_use]
+    pub fn exit_code(&self) -> i32 {
+        exit_code_for(self.exit_policy())
     }
 
     fn allocate_id(&mut self) -> Result<EffectId, MachineError> {
@@ -845,9 +857,7 @@ impl RunState {
                 sequence: self.output_sequence(),
                 run_id: self.run_id.clone(),
                 counts: self.summary.clone(),
-                complete: !self.flags.outcome.incomplete
-                    && !self.flags.outcome.infrastructure_error
-                    && !self.flags.report.interrupted,
+                complete: self.complete(),
                 exit_code: self.exit_code(),
             }),
         })])
@@ -855,6 +865,7 @@ impl RunState {
 
     fn post_cleanup_effects(&mut self) -> Result<Vec<RunEffect>, MachineError> {
         self.phase = RunPhase::Finalize;
+        let complete = self.complete();
         if let Some(run_id) = self.session_run_id.clone()
             && !self.flags.cleanup.session_finish_attempted
         {
@@ -863,9 +874,7 @@ impl RunState {
             Ok(vec![RunEffect::FinishSession(FinishSession {
                 id,
                 run_id,
-                complete: !self.flags.outcome.incomplete
-                    && !self.flags.outcome.infrastructure_error
-                    && !self.flags.report.interrupted,
+                complete,
             })])
         } else {
             self.final_report_effects()

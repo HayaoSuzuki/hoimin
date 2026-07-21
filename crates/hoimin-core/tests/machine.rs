@@ -2,13 +2,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use hoimin_core::{
-    AnalysisFinished, ByteSpan, CandidateLoaded, CandidateSpoolRef, CommandArg, EffectFailed,
-    EffectId, MutationApplied, MutationCandidate, MutationProfile, MutationStatus, MutationSummary,
-    OutputConfig, OutputEmitted, OutputEvent, PreflightCompleted, ProcessFinished,
-    ProcessTermination, RawRunConfig, RawRunLimits, ResourceMode, ResultPersisted, RunConfig,
-    RunEffect, RunEvent, RunFingerprint, RunPhase, RunState, SessionLoaded, SessionResumeRef,
-    SessionStarted, StartRequested, StoredResult, StoredResultLoaded, TargetSlice, TargetsResolved,
-    WorkerCreated, transition,
+    AnalysisFinished, ByteSpan, CandidateLoaded, CandidateSpoolRef, CleanupFinished, CommandArg,
+    EffectFailed, EffectId, MutationApplied, MutationCandidate, MutationProfile, MutationStatus,
+    MutationSummary, OriginalsVerified, OutputConfig, OutputEmitted, OutputEvent,
+    PreflightCompleted, ProcessFinished, ProcessTermination, RawRunConfig, RawRunLimits,
+    ResourceMode, ResultPersisted, RunConfig, RunEffect, RunEvent, RunFingerprint, RunPhase,
+    RunState, SessionFinished, SessionLoaded, SessionResumeRef, SessionStarted, StartRequested,
+    StoredResult, StoredResultLoaded, TargetSlice, TargetsResolved, WorkerCreated, WorkerReset,
+    transition,
 };
 
 #[test]
@@ -1084,6 +1085,161 @@ fn session_result_is_persisted_before_finished_output_and_reset() {
             .iter()
             .any(|effect| matches!(effect, RunEffect::EmitOutput(_)))
     );
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the complete session lifecycle verifies one timeout regression"
+)]
+fn timeout_marks_the_session_and_final_report_incomplete() {
+    let (state, effects) = waiting_for_session_candidate(false);
+    let read_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }));
+    let candidate = fixture_candidate(1);
+    let (state, effects) = transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read_id,
+            worker: 0,
+            candidate: Some(candidate.clone()),
+            next_offset: 1,
+        }),
+    )
+    .unwrap();
+    let lookup_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::LookupStoredResult(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::StoredResultLoaded(StoredResultLoaded {
+            id: lookup_id,
+            worker: 0,
+            result: None,
+        }),
+    )
+    .unwrap();
+    let apply_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ApplyMutation(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::MutationApplied(MutationApplied {
+            id: apply_id,
+            worker: 0,
+        }),
+    )
+    .unwrap();
+    let (state, effects) = complete_mutant_started(state, &effects);
+    let mutant_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::RunMutant(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::MutantFinished(process_finished(mutant_id, ProcessTermination::Timeout)),
+    )
+    .unwrap();
+    let persist_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::PersistResult(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::ResultPersisted(ResultPersisted {
+            id: persist_id,
+            worker: 0,
+            run_id: "session-run".to_owned(),
+            mutant_id: candidate.id,
+        }),
+    )
+    .unwrap();
+    let finished_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::EmitOutput(value)
+            if matches!(&value.event, OutputEvent::MutantFinished(_)))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: finished_id }),
+    )
+    .unwrap();
+    let reset_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ResetWorker(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::WorkerReset(WorkerReset {
+            id: reset_id,
+            worker: 0,
+        }),
+    )
+    .unwrap();
+    let read_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read_id,
+            worker: 0,
+            candidate: None,
+            next_offset: 1,
+        }),
+    )
+    .unwrap();
+    let RunEffect::VerifyOriginals(verify) = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::VerifyOriginals(_))
+    }) else {
+        unreachable!()
+    };
+    let (state, effects) = transition(
+        state,
+        RunEvent::OriginalsVerified(OriginalsVerified {
+            id: verify.id,
+            checkpoint: verify.checkpoint,
+        }),
+    )
+    .unwrap();
+    let RunEffect::Cleanup(cleanup) =
+        find_effect(&effects, |effect| matches!(effect, RunEffect::Cleanup(_)))
+    else {
+        unreachable!()
+    };
+    let (state, effects) = transition(
+        state,
+        RunEvent::CleanupFinished(CleanupFinished {
+            id: cleanup.id,
+            released_reservations: cleanup.reservations.clone(),
+        }),
+    )
+    .unwrap();
+    let RunEffect::FinishSession(finish) = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::FinishSession(_))
+    }) else {
+        unreachable!()
+    };
+    assert!(!finish.complete);
+
+    let (_state, effects) = transition(
+        state,
+        RunEvent::SessionFinished(SessionFinished {
+            id: finish.id,
+            run_id: finish.run_id.clone(),
+            complete: finish.complete,
+        }),
+    )
+    .unwrap();
+    let RunEffect::EmitOutput(output) = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::EmitOutput(value)
+            if matches!(&value.event, OutputEvent::RunFinished(_)))
+    }) else {
+        unreachable!()
+    };
+    let OutputEvent::RunFinished(summary) = &output.event else {
+        unreachable!()
+    };
+    assert!(!summary.complete);
+    assert_eq!(summary.exit_code, 4);
+    assert_eq!(summary.counts.timeout, 1);
 }
 
 #[test]

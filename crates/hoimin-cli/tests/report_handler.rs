@@ -49,6 +49,12 @@ impl SharedWriter {
 async fn documentation_contract() {
     let root = repo_root();
     let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
+    assert!(
+        readme.contains(
+            "`complete` is `false` when any mutant is inconclusive or the run fails or is interrupted"
+        ),
+        "README must define the machine-readable complete field",
+    );
     let commands = fenced_run_commands(&readme);
     assert!(
         !commands.is_empty(),
