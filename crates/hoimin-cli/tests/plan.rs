@@ -197,6 +197,30 @@ async fn verify_rejects_changed_fingerprint_input_before_baseline() {
 }
 
 #[tokio::test]
+async fn verify_rejects_incoherent_selection_root_before_baseline() {
+    let project = Project::new();
+    let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
+    let requested = vec![manifest.candidates[0].id.clone()];
+    let other_workspace = project.path.join("other-workspace");
+    std::fs::create_dir_all(other_workspace.join("src")).unwrap();
+    std::fs::copy(
+        project.path.join("src/calc.py"),
+        other_workspace.join("src/calc.py"),
+    )
+    .unwrap();
+    let mut value = serde_json::to_value(manifest).unwrap();
+    value["normalized_config"]["selection"]["root"] = serde_json::json!(other_workspace);
+    write_json(&path, &value);
+
+    let error = prepare_verify(&path, &requested, OutputFormat::Json)
+        .await
+        .unwrap_err();
+
+    assert_error_code(error, "plan.manifest.invalid");
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
 async fn verify_rejects_tampered_candidate_before_baseline() {
     let project = Project::new();
     let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;

@@ -210,6 +210,11 @@ fn validate_header(manifest: &PlanManifest) -> Result<(), PlanError> {
             manifest.kind
         )));
     }
+    if manifest.normalized_config.selection.root != manifest.normalized_config.root {
+        return Err(PlanError::ManifestInvalid(
+            "selection root differs from normalized config root".to_owned(),
+        ));
+    }
     validate_records("sources", &manifest.sources)?;
     validate_records("fingerprint_inputs", &manifest.fingerprint_inputs)?;
     validate_records(
