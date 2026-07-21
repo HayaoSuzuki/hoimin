@@ -54,6 +54,17 @@ where
                 2
             }
         },
+        Ok(cli::ParsedCommand::Plan(_)) => {
+            let _ = writeln!(stderr, "the `plan` command is not available in this build");
+            2
+        }
+        Ok(cli::ParsedCommand::Verify(_)) => {
+            let _ = writeln!(
+                stderr,
+                "the `verify` command is not available in this build"
+            );
+            2
+        }
         Err(cli::CliError::Clap(error)) => {
             let exit_code = error.exit_code();
             let _ = writeln!(stderr, "{error}");

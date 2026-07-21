@@ -20,6 +20,131 @@ fn progress_requires_two_reports_and_positive_patience() {
 }
 
 #[test]
+fn plan_accepts_run_selection_but_rejects_report_and_session_options() {
+    let ParsedCommand::Plan(args) = parse_from([
+        "hoimin",
+        "plan",
+        "--file",
+        "src/calc.py",
+        "--fingerprint-include",
+        "pyproject.toml",
+        "--",
+        "python",
+        "-m",
+        "pytest",
+    ])
+    .unwrap() else {
+        panic!("expected plan");
+    };
+    let config = args.into_run_config().unwrap();
+    assert_eq!(config.output.format, hoimin_core::OutputFormat::Json);
+    assert_eq!(config.session, None);
+    assert!(!config.resume);
+    assert_eq!(config.fingerprint_includes, ["pyproject.toml"]);
+    assert_eq!(config.test_argv.len(), 3);
+    for option in ["--format", "--session", "--resume"] {
+        assert!(
+            parse_from([
+                "hoimin",
+                "plan",
+                "--file",
+                "src/calc.py",
+                option,
+                "x",
+                "--",
+                "python",
+            ])
+            .is_err(),
+            "{option}"
+        );
+    }
+}
+
+#[test]
+fn verify_requires_candidates_and_accepts_only_format_override() {
+    let ParsedCommand::Verify(args) = parse_from([
+        "hoimin",
+        "verify",
+        "plan.json",
+        "--format",
+        "jsonl",
+        "--candidate",
+        "m1_a",
+        "--candidate",
+        "m1_a",
+    ])
+    .unwrap() else {
+        panic!("expected verify");
+    };
+    assert_eq!(args.manifest, std::path::PathBuf::from("plan.json"));
+    assert_eq!(args.candidate_ids, ["m1_a"]);
+    assert_eq!(args.format, hoimin_cli::cli::OutputFormat::Jsonl);
+    assert!(parse_from(["hoimin", "verify", "plan.json"]).is_err());
+    for option in ["--source", "--session"] {
+        assert!(
+            parse_from([
+                "hoimin",
+                "verify",
+                "plan.json",
+                "--candidate",
+                "m1_a",
+                option,
+                "x",
+            ])
+            .is_err(),
+            "{option}"
+        );
+    }
+    assert!(
+        parse_from([
+            "hoimin",
+            "verify",
+            "plan.json",
+            "--candidate",
+            "m1_a",
+            "--",
+            "python",
+        ])
+        .is_err()
+    );
+}
+
+#[tokio::test]
+async fn parsed_plan_and_verify_are_temporarily_unavailable_without_output() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let plan_code = hoimin_cli::run_with_io(
+        ["hoimin", "plan", "--file", "src/calc.py", "--", "python"],
+        &mut stdout,
+        &mut stderr,
+    )
+    .await;
+    assert_eq!(plan_code, 2);
+    assert!(stdout.is_empty());
+    assert!(
+        String::from_utf8(stderr)
+            .unwrap()
+            .contains("plan` command is not available")
+    );
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let verify_code = hoimin_cli::run_with_io(
+        ["hoimin", "verify", "plan.json", "--candidate", "m1_a"],
+        &mut stdout,
+        &mut stderr,
+    )
+    .await;
+    assert_eq!(verify_code, 2);
+    assert!(stdout.is_empty());
+    assert!(
+        String::from_utf8(stderr)
+            .unwrap()
+            .contains("verify` command is not available")
+    );
+}
+
+#[test]
 fn run_requires_a_selector_and_test_argv() {
     let err = parse_from(["hoimin", "run", "--", "python", "-m", "unittest"]).unwrap_err();
     assert!(err.to_string().contains("target selector"));
