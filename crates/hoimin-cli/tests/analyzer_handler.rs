@@ -1,7 +1,7 @@
 use camino::Utf8PathBuf;
 use hoimin_cli::analyzer::{
     AnalyzerDiagnostic, AnalyzerDiagnosticCode, AnalyzerHandler, AnalyzerProtocol, AnalyzerRecord,
-    CandidateStore, ProtocolError, StoreError,
+    CandidateStore, ProtocolError, StoreError, discover_targets,
 };
 use hoimin_core::{
     AnalyzeFile, ByteSpan, EffectId, MutationCandidate, MutationOperatorSelection, MutationProfile,
@@ -47,6 +47,121 @@ fn analysis_request(id: u64, path: &str, final_target: bool, max_candidates: u64
 
 fn handler(root: Utf8PathBuf) -> AnalyzerHandler {
     AnalyzerHandler::new(root).unwrap()
+}
+
+fn two_target_fixture() -> (
+    tempfile::TempDir,
+    Utf8PathBuf,
+    Vec<TargetSlice>,
+    MutationOperatorSelection,
+) {
+    let directory = tempfile::tempdir().unwrap();
+    fs::create_dir(directory.path().join("src")).unwrap();
+    fs::write(
+        directory.path().join("src/first.py"),
+        "def first():\n    return 1 + 2\n",
+    )
+    .unwrap();
+    fs::write(
+        directory.path().join("src/second.py"),
+        "def second():\n    return 3 + 4\n",
+    )
+    .unwrap();
+    let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
+    let targets = ["src/first.py", "src/second.py"]
+        .into_iter()
+        .map(|path| TargetSlice {
+            path: path.into(),
+            lines: Vec::new(),
+            symbols: Vec::new(),
+        })
+        .collect();
+    (
+        directory,
+        root,
+        targets,
+        MutationOperatorSelection::default(),
+    )
+}
+
+async fn replay_runtime_candidates(
+    root: Utf8PathBuf,
+    targets: Vec<TargetSlice>,
+    operators: MutationOperatorSelection,
+    profile: MutationProfile,
+) -> Vec<MutationCandidate> {
+    let mut handler = handler(root);
+    let target_count = targets.len();
+    let mut spool = None;
+    for (index, target) in targets.into_iter().enumerate() {
+        let finished = handler
+            .handle(
+                AnalyzeFile {
+                    id: EffectId(u64::try_from(index).unwrap() + 100),
+                    target,
+                    final_target: index + 1 == target_count,
+                    max_candidates: 100,
+                },
+                &operators,
+                profile,
+            )
+            .await
+            .unwrap();
+        if finished.spool.is_some() {
+            spool = finished.spool;
+        }
+    }
+    let spool = spool.expect("the final target returns the candidate spool");
+    let mut candidates = Vec::new();
+    let mut offset = 0;
+    while let Some((candidate, next_offset)) = CandidateStore::replay_one(&spool, offset).unwrap() {
+        candidates.push(candidate);
+        offset = next_offset;
+    }
+    candidates
+}
+
+#[tokio::test]
+async fn in_memory_discovery_matches_runtime_candidate_descriptors() {
+    let (_directory, root, targets, operators) = two_target_fixture();
+
+    let planned = discover_targets(&root, &targets, &operators, MutationProfile::Focused, 100)
+        .await
+        .unwrap();
+    let runtime =
+        replay_runtime_candidates(root, targets, operators, MutationProfile::Focused).await;
+
+    assert_eq!(planned.candidates, runtime);
+    assert!(!planned.truncated);
+}
+
+#[tokio::test]
+async fn in_memory_discovery_stops_when_a_later_target_exceeds_the_global_limit() {
+    let (_directory, root, targets, operators) = two_target_fixture();
+
+    let discovery = discover_targets(&root, &targets, &operators, MutationProfile::Focused, 1)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        discovery
+            .candidates
+            .iter()
+            .map(|candidate| candidate.path.as_str())
+            .collect::<Vec<_>>(),
+        vec!["src/first.py"]
+    );
+    assert!(discovery.truncated);
+    assert_eq!(
+        discovery.diagnostics,
+        vec![AnalyzerDiagnostic {
+            code: AnalyzerDiagnosticCode::CandidateLimitExceeded,
+            path: Some("src/second.py".into()),
+            line: None,
+            column: None,
+            message: None,
+        }]
+    );
 }
 
 #[test]
@@ -448,6 +563,30 @@ async fn concrete_handler_truncates_at_candidate_limit() {
     assert_eq!(spool.records, 1);
     assert_eq!(candidate.sequence, 1);
     assert_eq!(CandidateStore::replay_one(&spool, offset).unwrap(), None);
+}
+
+#[tokio::test]
+async fn concrete_handler_finishes_spool_when_a_non_final_target_is_truncated() {
+    let directory = tempfile::tempdir().unwrap();
+    fs::create_dir(directory.path().join("src")).unwrap();
+    fs::write(
+        directory.path().join("src/calc.py"),
+        "first = left == right\nsecond = top == bottom\n",
+    )
+    .unwrap();
+    let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
+    let finished = handler(root)
+        .handle(
+            analysis_request(80, "src/calc.py", false, 1),
+            &MutationOperatorSelection::default(),
+            MutationProfile::Full,
+        )
+        .await
+        .unwrap();
+    let spool = finished.spool.unwrap();
+
+    assert!(finished.truncated);
+    assert_eq!(spool.records, 1);
 }
 
 #[tokio::test]
