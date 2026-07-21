@@ -5,37 +5,47 @@ description: Use when iterating on hoimin mutation-test survivors and test impro
 
 # Improve Python Tests with hoimin
 
-Iterate on survivors only while ordered hoimin reports show meaningful progress. `saturated` is a stopping decision, not proof that every remaining mutant is equivalent or that testing is complete.
+Improve tests against explicitly selected planned candidates. A surviving candidate identifies a
+behavioral contract to test; it does not justify changing production code only to make a mutant
+fail.
 
-## Set up a comparable series
+## Keep one plan valid
 
-1. Inspect the production-code selector, test argv, profile, operators, and limits. Keep them unchanged for this loop.
-2. Create a temporary directory outside the repository. Save every complete `hoimin run --format json` result there in oldest-to-newest order.
-3. Run the normal test command before each mutation run. If it fails, repair the normal test failure before collecting or scoring another mutation report. Do not use a report whose baseline failed or whose run is incomplete in the progress history.
-4. Default to `--profile focused`. Do not use persistent reports or `--session` / `--resume` unless the user requests them.
+1. Keep `PLAN.json` and verify reports in a temporary directory outside the repository.
+2. Keep the plan's root, selector, profile, operators, limits, fingerprint inputs, and test argv
+   unchanged while improving tests. Test-only changes are expected: every verify still runs a
+   fresh baseline with those new tests.
+3. Discard and regenerate the plan before verify if production target source or a fingerprint
+   input changes. Also replan before changing selector, operators, profile, limits, or test argv.
 
-The first complete report establishes the baseline. If it has no survivor, report success immediately. Otherwise select one useful survivor, add or strengthen a behavioral test for its contract, and rerun normal tests before collecting the next report.
+## Improve one selected candidate
 
-## Decide after each complete report
-
-After two or more usable reports, pass all of them in oldest-to-newest order:
+1. Read a candidate ID from `PLAN.json` and verify it. Preserve the report.
 
 ```console
-hoimin progress --format json report-001.json report-002.json
+hoimin verify "$plan_path" --candidate '<ID_FROM_PLAN_JSON>' --format json \
+  > "$temp_dir/verify-001.json"
 ```
 
-Read `latest.state` and `latest.consecutive_stalls` from the JSON result. Decide from `latest.state`, **終了コードではなく**. Use `latest.consecutive_stalls` to report and confirm the default patience; `latest.state` remains the control signal.
+2. If it survives, read its original expression, replacement, symbol, and line. Add or strengthen
+   the smallest behavioral test that observes the violated contract. Do not add implementation-
+   detail mocks, unrelated tests, or production-code changes made only to kill the mutant.
+3. Run the normal test command. If it fails, repair or report that failure before verifying again.
+4. Reverify the same candidate. A completed killed result closes that candidate; a survivor needs
+   another contract investigation; a baseline failure, incomplete run, cancellation, or error
+   stops the loop for diagnosis.
 
-| `latest.state` | Action |
-| --- | --- |
-| `improving` | Progress reset the stall count. Select one remaining survivor and continue. |
-| `stalled` | Try one more focused behavioral-test improvement; it has not yet reached patience. |
-| `saturated` | Stop. Confirm `latest.consecutive_stalls` has reached the default three comparable stalls; report residual survivors, attempted contracts, and this stop reason. |
-| `regressing` | Stop and diagnose the previous test change or target drift. Do not hide regression by adding another test. |
-| `indeterminate` | Repair the baseline, incomplete run, or changed selection and rebuild a comparable history. Do not count it as a stall. |
+## Compare and stop honestly
 
-If a complete report has zero survivors, finish without waiting for `saturated`. Never change production code only to kill a survivor, and never continue from a failed baseline, incomplete report, or cancellation.
+Use `hoimin progress --format json` only when every supplied report covers the identical candidate-ID set.
+Do not use arbitrary one-candidate or changing-subset verify reports to infer
+improvement, stalls, or saturation. When a planned candidate remains unverified, say so. When
+`PLAN.json` was truncated, also say that candidates outside its retained partial set were never
+enumerated.
 
 ## Final report
 
-State the production target, test argv, report count, final `latest.state` and `latest.consecutive_stalls`, tests added or strengthened, and unresolved survivors with their rationale. Keep temporary reports out of the repository unless the user asks to retain them.
+State the production target, test argv, plan profile and fingerprint inputs, selected candidate
+IDs, each candidate's final status, tests added or strengthened, any replan reason, and unverified
+or truncated-away candidates with their rationale. Keep temporary manifests and reports out of the
+repository unless the user asks to retain them.
