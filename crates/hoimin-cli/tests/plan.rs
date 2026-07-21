@@ -3,11 +3,12 @@ use std::path::{Path, PathBuf};
 
 use hoimin_cli::{
     analyzer::discover_targets,
-    cli::{ParsedCommand, parse_from},
+    cli::{OutputFormat, ParsedCommand, parse_from},
+    plan::{PlanManifest, create, prepare_verify},
     shell,
     target::TargetHandler,
 };
-use hoimin_core::MutationCandidate;
+use hoimin_core::{MutationCandidate, OutputFormat as CoreOutputFormat};
 
 #[tokio::test]
 async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
@@ -158,6 +159,192 @@ async fn plan_preparation_failures_return_two_without_a_manifest() {
         assert!(!stderr.is_empty(), "case={case}");
         assert!(!marker.exists(), "case={case}");
     }
+}
+
+#[tokio::test]
+async fn verify_rejects_changed_source_before_baseline() {
+    let project = Project::new();
+    let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
+    let requested = vec![manifest.candidates[0].id.clone()];
+    std::fs::write(
+        project.path.join("src/calc.py"),
+        "def only_add(left, right):\n    return left - right\n",
+    )
+    .unwrap();
+
+    let error = prepare_verify(&path, &requested, OutputFormat::Json)
+        .await
+        .unwrap_err();
+
+    assert_error_code(error, "plan.source.changed");
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_rejects_changed_fingerprint_input_before_baseline() {
+    let project = Project::new();
+    let (path, manifest, marker) =
+        write_plan_manifest(&project, &["--fingerprint-include", "config.toml"]).await;
+    let requested = vec![manifest.candidates[0].id.clone()];
+    std::fs::write(project.path.join("config.toml"), "[changed]\n").unwrap();
+
+    let error = prepare_verify(&path, &requested, OutputFormat::Json)
+        .await
+        .unwrap_err();
+
+    assert_error_code(error, "plan.fingerprint_input.changed");
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_rejects_tampered_candidate_before_baseline() {
+    let project = Project::new();
+    let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
+    let requested = vec![manifest.candidates[0].id.clone()];
+    let mut value = serde_json::to_value(manifest).unwrap();
+    value["candidates"][0]["original"] = serde_json::json!("wrong");
+    write_json(&path, &value);
+
+    let error = prepare_verify(&path, &requested, OutputFormat::Json)
+        .await
+        .unwrap_err();
+
+    assert_error_code(error, "plan.candidate.invalid");
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_rejects_malformed_headers_and_source_paths() {
+    let project = Project::new();
+    let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
+    let requested = vec![manifest.candidates[0].id.clone()];
+    let original = serde_json::to_value(manifest).unwrap();
+
+    std::fs::write(&path, b"{").unwrap();
+    let error = prepare_verify(&path, &requested, OutputFormat::Json)
+        .await
+        .unwrap_err();
+    assert_error_code(error, "plan.manifest.invalid");
+
+    for case in ["schema", "kind", "parent_path", "absolute_path"] {
+        let mut value = original.clone();
+        match case {
+            "schema" => value["schema_version"] = serde_json::json!(2),
+            "kind" => value["kind"] = serde_json::json!("report"),
+            "parent_path" => value["sources"][0]["path"] = serde_json::json!("../outside.py"),
+            "absolute_path" => value["sources"][0]["path"] = serde_json::json!("/outside.py"),
+            _ => unreachable!(),
+        }
+        write_json(&path, &value);
+
+        let error = prepare_verify(&path, &requested, OutputFormat::Json)
+            .await
+            .unwrap_err();
+        assert_error_code(error, "plan.manifest.invalid");
+    }
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_rejects_duplicate_manifest_candidates_and_missing_requested_ids() {
+    let project = Project::new();
+    let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
+    let mut duplicate = serde_json::to_value(&manifest).unwrap();
+    let candidate = duplicate["candidates"][0].clone();
+    duplicate["candidates"]
+        .as_array_mut()
+        .unwrap()
+        .push(candidate);
+    write_json(&path, &duplicate);
+
+    let error = prepare_verify(
+        &path,
+        &[manifest.candidates[0].id.clone()],
+        OutputFormat::Json,
+    )
+    .await
+    .unwrap_err();
+    assert_error_code(error, "plan.candidate.invalid");
+
+    write_json(&path, &serde_json::to_value(manifest).unwrap());
+    let error = prepare_verify(
+        &path,
+        &["m1_0000000000000000000000000000000000000000000000000000000000000000".to_owned()],
+        OutputFormat::Json,
+    )
+    .await
+    .unwrap_err();
+    assert_error_code(error, "plan.candidate.invalid");
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_deduplicates_requested_ids_and_rejects_max_mutants_overflow() {
+    let project = Project::new();
+    let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
+    assert!(manifest.candidates.len() >= 2);
+    let first = manifest.candidates[0].id.clone();
+    let second = manifest.candidates[1].id.clone();
+
+    let verified = prepare_verify(&path, &[first.clone(), first.clone()], OutputFormat::Human)
+        .await
+        .unwrap();
+    assert_eq!(verified.candidate_ids.len(), 1);
+    assert!(verified.candidate_ids.contains(&first));
+    assert_eq!(verified.config.output.format, CoreOutputFormat::Human);
+    assert_eq!(verified.config.session, None);
+    assert!(!verified.config.resume);
+
+    let mut overflow = serde_json::to_value(manifest).unwrap();
+    overflow["normalized_config"]["limits"]["max_mutants"] = serde_json::json!(1);
+    write_json(&path, &overflow);
+    let error = prepare_verify(&path, &[first, second], OutputFormat::Json)
+        .await
+        .unwrap_err();
+    assert_error_code(error, "plan.candidate.invalid");
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn truncated_plan_accepts_a_contained_candidate() {
+    let project = Project::new();
+    let (path, manifest, marker) = write_plan_manifest(&project, &["--max-candidates", "1"]).await;
+    assert!(manifest.truncated);
+    let requested = vec![manifest.candidates[0].id.clone()];
+
+    let verified = prepare_verify(&path, &requested, OutputFormat::Jsonl)
+        .await
+        .unwrap();
+
+    assert_eq!(verified.candidate_ids.len(), 1);
+    assert_eq!(verified.config.output.format, CoreOutputFormat::Jsonl);
+    assert!(!marker.exists());
+}
+
+fn assert_error_code(error: impl std::fmt::Display, code: &str) {
+    assert!(
+        error.to_string().starts_with(code),
+        "expected {code}, got {error}"
+    );
+}
+
+async fn write_plan_manifest(
+    project: &Project,
+    options: &[&str],
+) -> (PathBuf, PlanManifest, PathBuf) {
+    let marker = project.path.join("test-command-ran");
+    let args = plan_args(project, options.iter().copied(), &marker);
+    let ParsedCommand::Plan(plan) = parse_from(args).unwrap() else {
+        panic!("expected plan arguments");
+    };
+    let output = create(plan.into_run_config().unwrap()).await.unwrap();
+    let path = project.path.join("plan.json");
+    write_json(&path, &serde_json::to_value(&output.manifest).unwrap());
+    (path, output.manifest, marker)
+}
+
+fn write_json(path: &Path, value: &serde_json::Value) {
+    std::fs::write(path, serde_json::to_vec(value).unwrap()).unwrap();
 }
 
 async fn discover_for_plan_args(args: Vec<OsString>) -> Vec<MutationCandidate> {
