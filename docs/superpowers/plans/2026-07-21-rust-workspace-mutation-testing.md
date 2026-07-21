@@ -18,6 +18,17 @@
 > The acceptance criterion is therefore limited to this selected set; no
 > conclusion is made about unselected workspace modules.
 
+The reproducible priority command is:
+
+```console
+cargo mutants --workspace --jobs 4 \
+  --file crates/hoimin-core/src/machine.rs \
+  --file crates/hoimin-core/src/target.rs \
+  --file crates/hoimin-cli/src/cli.rs \
+  --file crates/hoimin-cli/src/process/mod.rs \
+  --re '(TryFrom<Command> for ParsedCommand>::try_from|parse_bytes|raw_config|ProcessHandler::run|ProcessStartGate::cancel|ProcessCancellation::cancel|RunState::accept_completion|RunState::schedule_read_or_finalize|targets_are_normalized|changed_is_normalized)'
+```
+
 **Architecture:** `.cargo/mutants.toml` が全 workspace mutant と全 workspace test の実行契約を所有する。ローカルの `mutants.out` は発見・反復用の一時成果物とし、結果を起点に既存の crate test を振る舞い単位で強化する。除外は完全な mutant 名にアンカーした `exclude_re` だけに限定する。
 
 **Tech Stack:** Rust 2024（MSRV 1.85）、Cargo workspace、cargo-mutants、既存の Rust integration/unit tests、Maturin、uv。
@@ -343,7 +354,7 @@ git commit -m "test: document equivalent mutants"
 
 Expected: the commit contains only configuration comments and exact patterns. If no exception exists, omit this task and do not create an empty `exclude_re` key.
 
-### Task 5: Verify the completed mutation-quality gate
+### Task 5: Verify the completed priority mutation-quality gate
 
 **Files:**
 - Read: `.cargo/mutants.toml`
@@ -354,7 +365,7 @@ Expected: the commit contains only configuration comments and exact patterns. If
 
 **Interfaces:**
 - Consumes: all Task 3 test improvements and Task 4 reviewed exclusions.
-- Produces: current full-workspace mutation evidence and the existing release-quality evidence.
+- Produces: current priority-scope mutation evidence and the existing release-quality evidence. The unfiltered full-workspace workflow remains documented in `docs/development.md`, but is outside this run's acceptance claim.
 
 - [ ] **Step 1: Run the existing full quality gate**
 
@@ -380,15 +391,20 @@ rm -rf mutants.out mutants.out.old
 
 Expected: the explicitly named ignored diagnostic directories are absent before the independent final run.
 
-- [ ] **Step 3: Run a fresh, unfiltered final mutation test**
+- [ ] **Step 3: Run a fresh priority-scope final mutation test**
 
 Run:
 
 ```console
-cargo mutants --workspace
+cargo mutants --workspace --jobs 4 \
+  --file crates/hoimin-core/src/machine.rs \
+  --file crates/hoimin-core/src/target.rs \
+  --file crates/hoimin-cli/src/cli.rs \
+  --file crates/hoimin-cli/src/process/mod.rs \
+  --re '(TryFrom<Command> for ParsedCommand>::try_from|parse_bytes|raw_config|ProcessHandler::run|ProcessStartGate::cancel|ProcessCancellation::cancel|RunState::accept_completion|RunState::schedule_read_or_finalize|targets_are_normalized|changed_is_normalized)'
 ```
 
-Expected: a successful baseline, no tool error, no `--iterate`, no path/regex CLI filter, and no in-place mutation.
+Expected: a successful baseline, no tool error, no `--iterate`, exactly the reviewed priority path/regex filters above, and no in-place mutation.
 
 - [ ] **Step 4: Assert the final outcome files meet the acceptance contract**
 
