@@ -27,7 +27,7 @@ outcome. While adding tests, `--iterate` reuses previously caught and unviable
 outcomes; do not use it for the required final check.
 
 ```console
-cargo install --locked cargo-mutants
+cargo install --locked cargo-mutants --version 27.1.0
 
 # Discover all remaining outcomes.
 cargo mutants --workspace
@@ -37,6 +37,18 @@ cargo mutants --workspace --iterate
 
 # Required final check: do not use --iterate here.
 cargo mutants --workspace
+```
+
+The required reproducible priority check was validated with `cargo-mutants`
+27.1.0:
+
+```console
+cargo mutants --workspace --jobs 4 \
+  --file crates/hoimin-core/src/machine.rs \
+  --file crates/hoimin-core/src/target.rs \
+  --file crates/hoimin-cli/src/cli.rs \
+  --file crates/hoimin-cli/src/process/mod.rs \
+  --re '(TryFrom<Command> for ParsedCommand>::try_from|parse_bytes|raw_config|ProcessHandler::run|ProcessStartGate::cancel|ProcessCancellation::cancel|RunState::accept_completion|RunState::schedule_read_or_finalize|targets_are_normalized|changed_is_normalized)'
 ```
 
 `mutants.out/missed.txt` requires a behavior test unless the exact mutant is

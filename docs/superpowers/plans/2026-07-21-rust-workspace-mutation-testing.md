@@ -92,7 +92,7 @@ Keep the leading slash so an unrelated nested directory with this name is not si
 Append a `## Rust mutation testing` section to `docs/development.md` after the existing analyzer-specific mutation command. Include this exact command sequence and acceptance rule:
 
 ```console
-cargo install --locked cargo-mutants
+cargo install --locked cargo-mutants --version 27.1.0
 
 # Discover all remaining outcomes.
 cargo mutants --workspace
@@ -111,7 +111,7 @@ State that `mutants.out/missed.txt` requires a behavior test unless the exact mu
 Run:
 
 ```console
-cargo install --locked cargo-mutants
+cargo install --locked cargo-mutants --version 27.1.0
 ```
 
 Expected: `cargo mutants --version` prints an installed version. This installs
