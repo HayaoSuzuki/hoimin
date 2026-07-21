@@ -80,12 +80,27 @@ where
                 2
             }
         },
-        Ok(cli::ParsedCommand::Verify(_)) => {
-            let _ = writeln!(
-                stderr,
-                "the `verify` command is not available in this build"
-            );
-            2
+        Ok(cli::ParsedCommand::Verify(args)) => {
+            match plan::prepare_verify(&args.manifest, &args.candidate_ids, args.format).await {
+                Ok(verified) => match shell::run_selected_loop(
+                    verified.config,
+                    verified.candidate_ids,
+                    &mut *stdout,
+                    &mut *stderr,
+                )
+                .await
+                {
+                    Ok(code) => code,
+                    Err(error) => {
+                        let _ = writeln!(stderr, "{error}");
+                        2
+                    }
+                },
+                Err(error) => {
+                    let _ = writeln!(stderr, "{error}");
+                    2
+                }
+            }
         }
         Err(cli::CliError::Clap(error)) => {
             let exit_code = error.exit_code();

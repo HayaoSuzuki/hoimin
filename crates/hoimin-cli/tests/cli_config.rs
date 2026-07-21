@@ -109,41 +109,6 @@ fn verify_requires_candidates_and_accepts_only_format_override() {
     );
 }
 
-#[tokio::test]
-async fn parsed_plan_and_verify_are_temporarily_unavailable_without_output() {
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let plan_code = hoimin_cli::run_with_io(
-        ["hoimin", "plan", "--file", "src/calc.py", "--", "python"],
-        &mut stdout,
-        &mut stderr,
-    )
-    .await;
-    assert_eq!(plan_code, 2);
-    assert!(stdout.is_empty());
-    assert!(
-        String::from_utf8(stderr)
-            .unwrap()
-            .contains("plan` command is not available")
-    );
-
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let verify_code = hoimin_cli::run_with_io(
-        ["hoimin", "verify", "plan.json", "--candidate", "m1_a"],
-        &mut stdout,
-        &mut stderr,
-    )
-    .await;
-    assert_eq!(verify_code, 2);
-    assert!(stdout.is_empty());
-    assert!(
-        String::from_utf8(stderr)
-            .unwrap()
-            .contains("verify` command is not available")
-    );
-}
-
 #[test]
 fn run_requires_a_selector_and_test_argv() {
     let err = parse_from(["hoimin", "run", "--", "python", "-m", "unittest"]).unwrap_err();

@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
@@ -345,6 +346,106 @@ async fn truncated_plan_accepts_a_contained_candidate() {
     assert!(!marker.exists());
 }
 
+#[tokio::test]
+async fn verify_runs_only_requested_candidates() {
+    let project = Project::new();
+    let coordinator = tempfile::tempdir().unwrap();
+    let marker = coordinator.path().join("test-command-ran");
+    let (path, manifest) = write_plan_manifest_with_marker(&project, &[], &marker).await;
+    assert!(manifest.candidates.len() >= 2);
+    let requested = vec![
+        manifest.candidates[0].id.clone(),
+        manifest.candidates[1].id.clone(),
+    ];
+    let session_path = project.path.join("session.sqlite3");
+    let mut args = vec![
+        OsString::from("hoimin"),
+        OsString::from("verify"),
+        path.as_os_str().to_owned(),
+        OsString::from("--format"),
+        OsString::from("jsonl"),
+    ];
+    for candidate_id in &requested {
+        args.extend([OsString::from("--candidate"), OsString::from(candidate_id)]);
+    }
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+
+    assert_eq!(code, 1, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert!(marker.exists(), "verify must execute a fresh baseline");
+    assert!(
+        !session_path.exists(),
+        "verify must not create a session database"
+    );
+    let events = stdout
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event["kind"] == "baseline_finished")
+            .count(),
+        1,
+        "verify must execute exactly one fresh baseline"
+    );
+    let started = events
+        .iter()
+        .find(|event| event["kind"] == "run_started")
+        .unwrap();
+    let mut expected_config = serde_json::to_value(&manifest.normalized_config).unwrap();
+    expected_config["output"]["format"] = serde_json::json!("jsonl");
+    expected_config["session"] = serde_json::Value::Null;
+    expected_config["resume"] = serde_json::json!(false);
+    assert_eq!(started["normalized_config"], expected_config);
+    let actual = events
+        .iter()
+        .filter(|event| event["kind"] == "mutant_finished")
+        .map(|event| event["candidate"]["id"].as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(actual.len(), requested.len());
+    assert_eq!(
+        actual.into_iter().collect::<BTreeSet<_>>(),
+        requested.into_iter().collect()
+    );
+}
+
+#[tokio::test]
+async fn verify_executes_retained_candidate_from_truncated_plan() {
+    let project = Project::new();
+    let coordinator = tempfile::tempdir().unwrap();
+    let marker = coordinator.path().join("test-command-ran");
+    let (path, manifest) =
+        write_plan_manifest_with_marker(&project, &["--max-candidates", "1"], &marker).await;
+    assert!(manifest.truncated);
+    let candidate_id = manifest.candidates[0].id.clone();
+    let args = [
+        OsString::from("hoimin"),
+        OsString::from("verify"),
+        path.as_os_str().to_owned(),
+        OsString::from("--candidate"),
+        OsString::from(&candidate_id),
+    ];
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+
+    assert_eq!(code, 1, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert!(
+        marker.exists(),
+        "verify must execute the baseline and selected mutant"
+    );
+    let document: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    assert!(!document["baseline"].is_null());
+    let mutants = document["mutants"].as_array().unwrap();
+    assert_eq!(mutants.len(), 1);
+    assert_eq!(mutants[0]["candidate"]["id"], candidate_id);
+}
+
 fn assert_error_code(error: impl std::fmt::Display, code: &str) {
     assert!(
         error.to_string().starts_with(code),
@@ -357,14 +458,23 @@ async fn write_plan_manifest(
     options: &[&str],
 ) -> (PathBuf, PlanManifest, PathBuf) {
     let marker = project.path.join("test-command-ran");
-    let args = plan_args(project, options.iter().copied(), &marker);
+    let (path, manifest) = write_plan_manifest_with_marker(project, options, &marker).await;
+    (path, manifest, marker)
+}
+
+async fn write_plan_manifest_with_marker(
+    project: &Project,
+    options: &[&str],
+    marker: &Path,
+) -> (PathBuf, PlanManifest) {
+    let args = plan_args(project, options.iter().copied(), marker);
     let ParsedCommand::Plan(plan) = parse_from(args).unwrap() else {
         panic!("expected plan arguments");
     };
     let output = create(plan.into_run_config().unwrap()).await.unwrap();
     let path = project.path.join("plan.json");
     write_json(&path, &serde_json::to_value(&output.manifest).unwrap());
-    (path, output.manifest, marker)
+    (path, output.manifest)
 }
 
 fn write_json(path: &Path, value: &serde_json::Value) {
