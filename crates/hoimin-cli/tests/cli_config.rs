@@ -154,7 +154,14 @@ fn line_and_symbol_are_independent_target_selectors() {
     assert_eq!(line.selection.lines.len(), 1);
 
     let symbol = hoimin_cli::cli::parse_config_from([
-        "hoimin", "run", "--source", "pkg", "--symbol", "pkg.a:run", "--", "python",
+        "hoimin",
+        "run",
+        "--source",
+        "pkg",
+        "--symbol",
+        "pkg.a:run",
+        "--",
+        "python",
     ])
     .unwrap();
     assert_eq!(symbol.selection.symbols.len(), 1);

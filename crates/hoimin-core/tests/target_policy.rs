@@ -4,8 +4,8 @@ use std::time::Duration;
 use camino::Utf8PathBuf;
 use hoimin_core::{
     ConfigError, DiscoveredFile, LineRange, LineSelection, MAX_JOBS, RawRunConfig, RunConfig,
-    Selection, SymbolSelection, TargetError, TargetSlice, auto_mutant_timeout, intersect_changed,
-    changed_is_normalized, resolve_explicit, targets_are_normalized,
+    Selection, SymbolSelection, TargetError, TargetSlice, auto_mutant_timeout,
+    changed_is_normalized, intersect_changed, resolve_explicit, targets_are_normalized,
 };
 use hoimin_core::{MutationOperator, MutationProfile};
 
@@ -187,7 +187,10 @@ fn target_normalization_requires_sorted_paths_and_valid_disjoint_ranges() {
         target("pkg/a.py", Vec::new()),
         target(
             "pkg/b.py",
-            vec![LineRange { start: 1, end: 3 }, LineRange { start: 4, end: 5 }],
+            vec![
+                LineRange { start: 1, end: 3 },
+                LineRange { start: 4, end: 5 }
+            ],
         ),
     ]));
     assert!(!targets_are_normalized(&[
@@ -200,7 +203,10 @@ fn target_normalization_requires_sorted_paths_and_valid_disjoint_ranges() {
     ]));
     assert!(!targets_are_normalized(&[target(
         "pkg/a.py",
-        vec![LineRange { start: 1, end: 3 }, LineRange { start: 3, end: 5 }],
+        vec![
+            LineRange { start: 1, end: 3 },
+            LineRange { start: 3, end: 5 }
+        ],
     )]));
     assert!(!targets_are_normalized(&[target(
         "pkg/a.py",
