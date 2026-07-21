@@ -3,6 +3,7 @@ use std::ffi::OsString;
 pub mod analyzer;
 pub mod cli;
 pub mod fingerprint_inputs;
+pub mod plan;
 pub mod process;
 pub mod progress;
 pub mod report;
@@ -54,10 +55,31 @@ where
                 2
             }
         },
-        Ok(cli::ParsedCommand::Plan(_)) => {
-            let _ = writeln!(stderr, "the `plan` command is not available in this build");
-            2
-        }
+        Ok(cli::ParsedCommand::Plan(args)) => match args.into_run_config() {
+            Ok(config) => match plan::create(config).await {
+                Ok(output) => match serde_json::to_writer(&mut *stdout, &output.manifest) {
+                    Ok(()) => match writeln!(stdout) {
+                        Ok(()) => output.exit_code,
+                        Err(error) => {
+                            let _ = writeln!(stderr, "{error}");
+                            2
+                        }
+                    },
+                    Err(error) => {
+                        let _ = writeln!(stderr, "{error}");
+                        2
+                    }
+                },
+                Err(error) => {
+                    let _ = writeln!(stderr, "{error}");
+                    2
+                }
+            },
+            Err(error) => {
+                let _ = writeln!(stderr, "{error}");
+                2
+            }
+        },
         Ok(cli::ParsedCommand::Verify(_)) => {
             let _ = writeln!(
                 stderr,
