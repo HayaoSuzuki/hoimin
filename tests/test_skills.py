@@ -10,24 +10,25 @@ SKILLS = {
             "and hoimin mutation testing can expose missing behavioral coverage."
         ),
         "required_blocks": (
-            "2. Run the normal test command first. If it fails, repair or report "
-            "the failure before mutation testing.",
-            "3. Target production code, never the test module. Use `--source <dir> "
-            "--changed` when a source root is known; otherwise use `--file <path>`. "
-            "Narrow a large target with `--line` or `--symbol`.",
-            "hoimin run --root . --source <dir> --changed --profile focused "
-            "--format json -- python -m pytest -q",
-            "| `1` | Complete; survivor exists | Keep the report and investigate a "
-            "survivor. |\n"
-            "| `2` | Configuration or infrastructure error | Fix or report it; do "
-            "not add tests yet. |\n"
-            "| `3` | Baseline failed | Repair the normal test failure first. |\n"
-            "| `4` | Incomplete run | Resolve the limit, timeout, or interruption "
-            "first. |\n"
-            "| `130` | Cancelled | Report cancellation; do not interpret partial data. |",
-            "For exit codes `2`, `3`, `4`, or `130`, stop the mutation-test "
-            "workflow and diagnose or resolve the condition before adding tests "
-            "or scoring results.",
+            "1. Inspect changed production Python files, their tests, and the normal test command. Target\n"
+            "   production code, never test modules. Prefer `--source <dir> --changed`; otherwise use\n"
+            "   `--file <path>`, `--line`, or `--symbol`.",
+            "2. Run the normal test command. Stop and repair or report a failure before planning.",
+            "3. Create a temporary directory outside the repository. Keep the root, selector, profile,\n"
+            "   operators, limits, test argv, and fingerprint inputs unchanged for every verify that consumes\n"
+            "   its plan.",
+            "hoimin plan --root . --source <dir> --changed --profile focused \\\n"
+            "  --fingerprint-include pyproject.toml -- python -m pytest -q > \"$plan_path\"",
+            "Read `candidates[].id` from `PLAN.json`; choose one ID and pass that exact ID to `verify`:",
+            "Everything after `--` in `plan` remains the normal test command's native argv; do not turn it\n"
+            "into a shell command string. `plan` runs no baseline, test command, worker copy, or session.\n"
+            "Each `verify` runs a fresh baseline and never reuses a session.",
+            "- `verify` exit 0 means the selected candidates completed with no survivor. Exit 1 means at least\n"
+            "  one selected candidate survived. Exit 3 means the fresh baseline failed. Exit 4 is incomplete;\n"
+            "  exit 130 is cancelled. For exits 2, 3, 4, or 130, stop and diagnose before changing tests.",
+            "- A `plan.source.changed` or `plan.fingerprint_input.changed` rejection means the manifest is\n"
+            "  stale. Regenerate it before any further verify. Also replan when selector, operators, profile,\n"
+            "  limits, or test argv must change.",
         ),
     },
     "hoimin-mutation-improvement": {
@@ -36,34 +37,28 @@ SKILLS = {
             "until the current target's progress is saturated or complete."
         ),
         "required_blocks": (
-            "2. Create a temporary directory outside the repository. Save every "
-            "complete `hoimin run --format json` result there in oldest-to-newest "
-            "order.",
-            "3. Run the normal test command before each mutation run. If it fails, "
-            "repair the normal test failure before collecting or scoring another "
-            "mutation report. Do not use a report whose baseline failed or whose run "
-            "is incomplete in the progress history.",
-            "4. Default to `--profile focused`. Do not use persistent reports or "
-            "`--session` / `--resume` unless the user requests them.",
-            "hoimin progress --format json report-001.json report-002.json",
-            "Read `latest.state` and `latest.consecutive_stalls` from the JSON "
-            "result. Decide from `latest.state`, **終了コードではなく**. Use "
-            "`latest.consecutive_stalls` to report and confirm the default patience; "
-            "`latest.state` remains the control signal.",
-            "| `improving` | Progress reset the stall count. Select one remaining "
-            "survivor and continue. |\n"
-            "| `stalled` | Try one more focused behavioral-test improvement; it has "
-            "not yet reached patience. |\n"
-            "| `saturated` | Stop. Confirm `latest.consecutive_stalls` has reached "
-            "the default three comparable stalls; report residual survivors, "
-            "attempted contracts, and this stop reason. |\n"
-            "| `regressing` | Stop and diagnose the previous test change or target drift. "
-            "Do not hide regression by adding another test. |\n"
-            "| `indeterminate` | Repair the baseline, incomplete run, or changed "
-            "selection and rebuild a comparable history. Do not count it as a stall. |",
-            "State the production target, test argv, report count, final "
-            "`latest.state` and `latest.consecutive_stalls`, tests added or "
-            "strengthened, and unresolved survivors with their rationale.",
+            "1. Keep `PLAN.json` and verify reports in a temporary directory outside the repository.",
+            "2. Keep the plan's root, selector, profile, operators, limits, fingerprint inputs, and test argv\n"
+            "   unchanged while improving tests. Test-only changes are expected: every verify still runs a\n"
+            "   fresh baseline with those new tests.",
+            "3. Discard and regenerate the plan before verify if production target source or a fingerprint\n"
+            "   input changes. Also replan before changing selector, operators, profile, limits, or test argv.",
+            "1. Read a candidate ID from `PLAN.json` and verify it. Preserve the report.",
+            "2. If it survives, read its original expression, replacement, symbol, and line. Add or strengthen\n"
+            "   the smallest behavioral test that observes the violated contract. Do not add implementation-\n"
+            "   detail mocks, unrelated tests, or production-code changes made only to kill the mutant.",
+            "3. Run the normal test command. If it fails, repair or report that failure before verifying again.",
+            "4. Reverify the same candidate. A completed killed result closes that candidate; a survivor needs\n"
+            "   another contract investigation; a baseline failure, incomplete run, cancellation, or error\n"
+            "   stops the loop for diagnosis.",
+            "Use `hoimin progress --format json` only when every supplied report covers the identical candidate-ID set.\n"
+            "Do not use arbitrary one-candidate or changing-subset verify reports to infer\n"
+            "improvement, stalls, or saturation. When a planned candidate remains unverified, say so. When\n"
+            "`PLAN.json` was truncated, also say that candidates outside its retained partial set were never\n"
+            "enumerated.",
+            "State the production target, test argv, plan profile and fingerprint inputs, selected candidate\n"
+            "IDs, each candidate's final status, tests added or strengthened, any replan reason, and unverified\n"
+            "or truncated-away candidates with their rationale.",
         ),
     },
 }
