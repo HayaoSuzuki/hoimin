@@ -26,6 +26,9 @@ hoimin plan --root . --source <dir> --changed --profile focused \
   --fingerprint-include pyproject.toml -- python -m pytest -q > "$plan_path"
 ```
 
+`plan` always writes one JSON document to standard output and diagnostics to standard error;
+do not pass `--format` to `plan`.
+
 `--fingerprint-include` records root-relative configuration or fixtures that affect test behavior
 but are not selected production sources. It does not copy files into workers. Add `--include`
 only when normal worker-copy policy would otherwise omit a required file.

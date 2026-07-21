@@ -81,6 +81,26 @@ By default there are no include/exclude overrides or SQLite session, and `--chan
 
 Every numeric limit must be nonzero. Memory, process, copy, and total-timeout limits are run-wide and are not multiplied by `--jobs`. On Windows, Job Objects provide hard process and memory enforcement. On Linux, delegated cgroup v2 provides hard enforcement. When hard enforcement is unavailable, Unix uses best-effort process-group and rlimit controls; such a run is rejected unless `--allow-best-effort-memory` is explicit. Reports identify `hard` or `best_effort` resource mode.
 
+### Tuning parallel runs
+
+Start with `--jobs 1` and a focused test command. Record the baseline elapsed time and
+estimate one test worker's memory use before increasing concurrency gradually. A small
+target can often keep `--jobs 1 --max-memory 1GiB --mutant-timeout auto`.
+
+`--max-memory` is one run-wide limit shared by the analyzer, baseline, and all concurrent
+workers; it is not multiplied by `--jobs`. When increasing `--jobs`, set an explicit
+`--mutant-timeout` with headroom for contention instead of assuming that the `auto` value
+derived from a single baseline will remain sufficient. For example, a focused baseline
+that takes about 14 seconds can be tried with the following measured settings:
+
+```console
+hoimin run --root . --source src --profile focused --jobs 4 --max-memory 4GiB --mutant-timeout 2m -- python -m pytest -q
+```
+
+Measure your own suite rather than treating these values as a sizing formula. If results
+contain `out_of_memory`, lower `--jobs` or raise `--max-memory`. If they contain `timeout`,
+lower `--jobs` or raise `--mutant-timeout`.
+
 hoimin copies regular files into isolated workers. It does not follow or copy symlinks; each skipped symlink produces a diagnostic. The original tree is checked for changes and workers are reset between mutants.
 
 These controls reduce accidental resource exhaustion. hoimin executes user-selected Python and test programs and is **not a security boundary** for untrusted code.
