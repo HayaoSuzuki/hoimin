@@ -108,6 +108,7 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
+      - run: uv run --frozen python -m unittest discover -s tests -p 'test_*.py' -v
       - run: uvx maturin build --release
       - run: uv run --frozen python tests/wheel_smoke.py
 

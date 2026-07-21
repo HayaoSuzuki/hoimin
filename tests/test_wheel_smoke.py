@@ -1,28 +1,443 @@
 from pathlib import Path
+import subprocess
+from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
+import zipfile
 
-from wheel_smoke import is_compatible_wheel
+from wheel_smoke import (
+    COMMAND_TIMEOUT_SECONDS,
+    WheelMetadata,
+    assert_help_hides_python_option,
+    assert_mutation_result,
+    environment_hoimin,
+    environment_python,
+    is_compatible_wheel,
+    isolated_environment,
+    run,
+    select_compatible_wheel,
+    validate_wheel_metadata,
+    wheel_metadata,
+    wheel_path,
+    write_fixture,
+)
 
 
-class CompatibleWheelTests(unittest.TestCase):
-    def test_accepts_only_arm64_macos_wheels_on_apple_silicon(self) -> None:
-        arm64 = Path("hoimin-0.1.0-py3-none-macosx_11_0_arm64.whl")
-        x86_64 = Path("hoimin-0.1.0-py3-none-macosx_10_12_x86_64.whl")
-        universal2 = Path("hoimin-0.1.0-py3-none-macosx_10_12_universal2.whl")
+class WheelSelectionTests(unittest.TestCase):
+    def test_compatibility_cases(self) -> None:
+        cases = (
+            ("Linux accepts x86_64", "hoimin-manylinux_x86_64.whl", "linux", "x86_64", True),
+            ("Linux rejects Windows", "hoimin-win_amd64.whl", "linux", "x86_64", False),
+            ("Windows accepts amd64", "hoimin-win_amd64.whl", "win32", "amd64", True),
+            ("Windows rejects Linux", "hoimin-manylinux_x86_64.whl", "win32", "amd64", False),
+            ("macOS arm64 accepts arm64", "hoimin-macosx_11_0_arm64.whl", "darwin", "arm64", True),
+            ("macOS arm64 rejects universal2", "hoimin-macosx_11_0_universal2.whl", "darwin", "arm64", False),
+            ("macOS Intel rejects arm64", "hoimin-macosx_11_0_arm64.whl", "darwin", "x86_64", False),
+            ("unknown system rejects all", "hoimin-any_x86_64.whl", "freebsd", "x86_64", False),
+        )
 
-        self.assertTrue(is_compatible_wheel(arm64, "darwin", "arm64"))
-        self.assertFalse(is_compatible_wheel(x86_64, "darwin", "arm64"))
-        self.assertFalse(is_compatible_wheel(universal2, "darwin", "arm64"))
-        self.assertFalse(is_compatible_wheel(arm64, "darwin", "x86_64"))
+        for name, filename, system, machine, expected in cases:
+            with self.subTest(name=name):
+                # Arrange
+                wheel = Path(filename)
 
-    def test_preserves_linux_and_windows_wheel_selection(self) -> None:
-        linux = Path("hoimin-0.1.0-py3-none-manylinux_2_17_x86_64.whl")
-        windows = Path("hoimin-0.1.0-py3-none-win_amd64.whl")
+                # Act
+                actual = is_compatible_wheel(wheel, system, machine)
 
-        self.assertTrue(is_compatible_wheel(linux, "linux", "x86_64"))
-        self.assertFalse(is_compatible_wheel(windows, "linux", "x86_64"))
-        self.assertTrue(is_compatible_wheel(windows, "win32", "amd64"))
-        self.assertFalse(is_compatible_wheel(linux, "win32", "amd64"))
+                # Assert
+                self.assertIs(actual, expected)
+
+    def test_selects_the_latest_compatible_wheel(self) -> None:
+        # Arrange
+        wheels = [
+            Path("hoimin-0.2.0-manylinux_x86_64.whl"),
+            Path("hoimin-0.1.0-manylinux_x86_64.whl"),
+            Path("hoimin-0.3.0-win_amd64.whl"),
+        ]
+
+        # Act
+        actual = select_compatible_wheel(wheels, system="linux", machine="x86_64")
+
+        # Assert
+        self.assertEqual(actual, Path("hoimin-0.2.0-manylinux_x86_64.whl"))
+
+    def test_rejects_a_candidate_list_without_a_compatible_wheel(self) -> None:
+        # Arrange
+        wheels = [Path("hoimin-0.1.0-win_amd64.whl")]
+
+        # Act
+        error = self.assertRaisesRegex(AssertionError, "no wheel for linux")
+
+        # Assert
+        with error:
+            select_compatible_wheel(wheels, system="linux", machine="x86_64")
+
+    def test_uses_the_explicit_wheel_override(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            # Arrange
+            override = Path(temporary_directory) / "override.whl"
+            override.touch()
+
+            # Act
+            actual = wheel_path(
+                environment={"HOIMIN_WHEEL": str(override)},
+                wheel_directory=Path(temporary_directory) / "wheels",
+                system="linux",
+                machine="x86_64",
+            )
+
+            # Assert
+            self.assertEqual(actual, override.resolve())
+
+    def test_rejects_a_missing_explicit_wheel_override(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            # Arrange
+            missing = Path(temporary_directory) / "missing.whl"
+
+            # Act
+            error = self.assertRaisesRegex(AssertionError, "HOIMIN_WHEEL does not exist")
+
+            # Assert
+            with error:
+                wheel_path(
+                    environment={"HOIMIN_WHEEL": str(missing)},
+                    wheel_directory=Path(temporary_directory),
+                    system="linux",
+                    machine="x86_64",
+                )
+
+    def test_rejects_an_empty_wheel_directory(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            # Arrange
+            wheel_directory = Path(temporary_directory)
+
+            # Act
+            error = self.assertRaisesRegex(AssertionError, "build a wheel first")
+
+            # Assert
+            with error:
+                wheel_path(
+                    environment={},
+                    wheel_directory=wheel_directory,
+                    system="linux",
+                    machine="x86_64",
+                )
+
+    def test_discovers_the_latest_compatible_wheel(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            # Arrange
+            wheel_directory = Path(temporary_directory)
+            older = wheel_directory / "hoimin-0.1.0-manylinux_x86_64.whl"
+            latest = wheel_directory / "hoimin-0.2.0-manylinux_x86_64.whl"
+            incompatible = wheel_directory / "hoimin-0.3.0-win_amd64.whl"
+            older.touch()
+            latest.touch()
+            incompatible.touch()
+
+            # Act
+            actual = wheel_path(
+                environment={},
+                wheel_directory=wheel_directory,
+                system="linux",
+                machine="x86_64",
+            )
+
+            # Assert
+            self.assertEqual(actual, latest)
+
+
+class WheelMetadataTests(unittest.TestCase):
+    def test_reads_the_single_metadata_member(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            # Arrange
+            wheel = Path(temporary_directory) / "hoimin.whl"
+            text = (
+                "Requires-Python: >=3.14, <3.15\n"
+                "License-Expression: MIT\n"
+                "Project-URL: Repository, https://github.com/tokyogas-tech/hoimin\n"
+            )
+            with zipfile.ZipFile(wheel, "w") as archive:
+                archive.writestr("hoimin-0.1.0.dist-info/METADATA", text)
+
+            # Act
+            actual = wheel_metadata(wheel)
+
+            # Assert
+            self.assertEqual(
+                actual,
+                WheelMetadata(
+                    requires_python=">=3.14, <3.15",
+                    requires_dist=None,
+                    license_expression="MIT",
+                    project_urls=[
+                        "Repository, https://github.com/tokyogas-tech/hoimin"
+                    ],
+                ),
+            )
+
+    def test_rejects_an_archive_without_metadata(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            # Arrange
+            wheel = Path(temporary_directory) / "hoimin.whl"
+            with zipfile.ZipFile(wheel, "w"):
+                pass
+
+            # Act
+            error = self.assertRaisesRegex(AssertionError, "expected exactly one METADATA")
+
+            # Assert
+            with error:
+                wheel_metadata(wheel)
+
+    def test_rejects_an_archive_with_multiple_metadata_members(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            # Arrange
+            wheel = Path(temporary_directory) / "hoimin.whl"
+            with zipfile.ZipFile(wheel, "w") as archive:
+                archive.writestr("one.dist-info/METADATA", "License-Expression: MIT\n")
+                archive.writestr("two.dist-info/METADATA", "License-Expression: MIT\n")
+
+            # Act
+            error = self.assertRaisesRegex(AssertionError, "expected exactly one METADATA")
+
+            # Assert
+            with error:
+                wheel_metadata(wheel)
+
+    def test_accepts_the_expected_metadata(self) -> None:
+        # Arrange
+        metadata = WheelMetadata(
+            requires_python=">=3.14, <3.15",
+            requires_dist=None,
+            license_expression="MIT",
+            project_urls=["Repository, https://github.com/tokyogas-tech/hoimin"],
+        )
+
+        # Act
+        actual = validate_wheel_metadata(metadata)
+
+        # Assert
+        self.assertIsNone(actual)
+
+    def test_rejects_each_unexpected_metadata_field(self) -> None:
+        cases = (
+            (
+                "Requires-Python",
+                WheelMetadata(
+                    requires_python=">=3.13,<3.15",
+                    requires_dist=None,
+                    license_expression="MIT",
+                    project_urls=["Repository, https://github.com/tokyogas-tech/hoimin"],
+                ),
+            ),
+            (
+                "Requires-Dist",
+                WheelMetadata(
+                    requires_python=">=3.14,<3.15",
+                    requires_dist=["pytest"],
+                    license_expression="MIT",
+                    project_urls=["Repository, https://github.com/tokyogas-tech/hoimin"],
+                ),
+            ),
+            (
+                "License-Expression",
+                WheelMetadata(
+                    requires_python=">=3.14,<3.15",
+                    requires_dist=None,
+                    license_expression="Apache-2.0",
+                    project_urls=["Repository, https://github.com/tokyogas-tech/hoimin"],
+                ),
+            ),
+            (
+                "Project-URL",
+                WheelMetadata(
+                    requires_python=">=3.14,<3.15",
+                    requires_dist=None,
+                    license_expression="MIT",
+                    project_urls=["Homepage, https://example.invalid/"],
+                ),
+            ),
+        )
+
+        for field, metadata in cases:
+            with self.subTest(field=field):
+                # Arrange
+                invalid_metadata = metadata
+
+                # Act
+                error = self.assertRaisesRegex(AssertionError, field)
+
+                # Assert
+                with error:
+                    validate_wheel_metadata(invalid_metadata)
+
+
+class SmokeFixtureTests(unittest.TestCase):
+    def test_isolated_environment_removes_python_import_state(self) -> None:
+        # Arrange
+        source = {
+            "KEEP": "value",
+            "PYTHONHOME": "/python-home",
+            "PYTHONPATH": "/checkout",
+            "VIRTUAL_ENV": "/virtual-environment",
+        }
+
+        # Act
+        actual = isolated_environment(source)
+
+        # Assert
+        self.assertEqual(actual, {"KEEP": "value", "PYTHONNOUSERSITE": "1"})
+
+    def test_environment_python_paths(self) -> None:
+        cases = (
+            ("POSIX", False, Path("environment/bin/python")),
+            ("Windows", True, Path("environment/Scripts/python.exe")),
+        )
+
+        for name, is_windows, expected in cases:
+            with self.subTest(name=name):
+                # Arrange
+                root = Path("environment")
+
+                # Act
+                actual = environment_python(root, is_windows=is_windows)
+
+                # Assert
+                self.assertEqual(actual, expected)
+
+    def test_environment_hoimin_paths(self) -> None:
+        cases = (
+            ("POSIX", False, Path("environment/bin/hoimin")),
+            ("Windows", True, Path("environment/Scripts/hoimin.exe")),
+        )
+
+        for name, is_windows, expected in cases:
+            with self.subTest(name=name):
+                # Arrange
+                root = Path("environment")
+
+                # Act
+                actual = environment_hoimin(root, is_windows=is_windows)
+
+                # Assert
+                self.assertEqual(actual, expected)
+
+    def test_write_fixture_creates_the_expected_project(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            # Arrange
+            root = Path(temporary_directory) / "project"
+
+            # Act
+            target = write_fixture(root)
+
+            # Assert
+            self.assertEqual(target, root / "src" / "calc.py")
+            self.assertEqual((root / "src" / "__init__.py").read_text(), "")
+            self.assertEqual(
+                target.read_text(),
+                "def add(left, right):\n    return left + right\n",
+            )
+            self.assertEqual(
+                (root / "tests" / "test_calc.py").read_text(),
+                "from src.calc import add\n\n\ndef test_add():\n    assert add(2, 1) == 3\n",
+            )
+
+
+class CommandAndResultTests(unittest.TestCase):
+    def test_run_returns_a_successful_completed_process(self) -> None:
+        # Arrange
+        argv = ["hoimin", "--version"]
+        completed = subprocess.CompletedProcess(argv, 0, stdout="hoimin 0.1.0\n", stderr="")
+        with patch("wheel_smoke.subprocess.run", return_value=completed) as mocked_run:
+            # Act
+            actual = run(argv, cwd=Path("work"), env={"PYTHONNOUSERSITE": "1"})
+
+            # Assert
+            self.assertIs(actual, completed)
+            mocked_run.assert_called_once_with(
+                argv,
+                cwd=Path("work"),
+                env={"PYTHONNOUSERSITE": "1"},
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                shell=False,
+                timeout=COMMAND_TIMEOUT_SECONDS,
+                check=False,
+            )
+
+    def test_run_reports_command_output_for_a_failure(self) -> None:
+        # Arrange
+        argv = ["hoimin", "run"]
+        completed = subprocess.CompletedProcess(argv, 7, stdout="command output", stderr="command error")
+        with patch("wheel_smoke.subprocess.run", return_value=completed):
+            # Act
+            error = self.assertRaisesRegex(
+                AssertionError,
+                r"(?s)command failed \(7\): .*stdout:\ncommand output\nstderr:\ncommand error",
+            )
+
+            # Assert
+            with error:
+                run(argv, cwd=Path("work"), env={})
+
+    def test_help_output_rejects_the_python_option(self) -> None:
+        cases = (
+            ("stdout", subprocess.CompletedProcess(["hoimin"], 0, stdout="--python", stderr="")),
+            ("stderr", subprocess.CompletedProcess(["hoimin"], 0, stdout="", stderr="--python")),
+        )
+
+        for channel, completed in cases:
+            with self.subTest(channel=channel):
+                # Arrange
+                help_output = completed
+
+                # Act
+                error = self.assertRaisesRegex(AssertionError, "--python")
+
+                # Assert
+                with error:
+                    assert_help_hides_python_option(help_output)
+
+    def test_mutation_result_accepts_terminal_mutants(self) -> None:
+        cases = (
+            ("killed", '{"mutants": [{"status": "killed"}]}'),
+            ("survived", '{"mutants": [{"status": "survived"}]}'),
+        )
+
+        for status, output in cases:
+            with self.subTest(status=status):
+                # Arrange
+                result_output = output
+
+                # Act
+                actual = assert_mutation_result(result_output)
+
+                # Assert
+                self.assertIsNone(actual)
+
+    def test_mutation_result_rejects_an_empty_mutant_list(self) -> None:
+        # Arrange
+        output = '{"mutants": []}'
+
+        # Act
+        error = self.assertRaises(AssertionError)
+
+        # Assert
+        with error:
+            assert_mutation_result(output)
+
+    def test_mutation_result_rejects_a_nonterminal_mutant_list(self) -> None:
+        # Arrange
+        output = '{"mutants": [{"status": "timeout"}]}'
+
+        # Act
+        error = self.assertRaises(AssertionError)
+
+        # Assert
+        with error:
+            assert_mutation_result(output)
 
 
 if __name__ == "__main__":

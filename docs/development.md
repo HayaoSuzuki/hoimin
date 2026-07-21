@@ -6,8 +6,9 @@ Run the Rust quality gate locally with the same commands used in CI:
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+uv run --frozen python -m unittest discover -s tests -p 'test_*.py' -v
 uv run maturin build --release
-uv run python tests/wheel_smoke.py
+uv run --frozen python tests/wheel_smoke.py
 ```
 
 The standalone wheel smoke script builds a release wheel unless `HOIMIN_WHEEL`
