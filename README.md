@@ -10,6 +10,19 @@ hoimin is a bounded mutation-testing CLI for focused Python changes. Its Rust an
 uvx hoimin run --root . --file src/calc.py --format json -- python -m pytest -q
 ```
 
+### Plan and verify with an agent
+
+Create a plan before improving tests, then verify the candidate IDs selected from that plan:
+
+```console
+hoimin plan --root . --source src --profile focused \
+  --fingerprint-include pyproject.toml -- python -m pytest -q > PLAN.json
+# improve tests, then choose IDs from PLAN.json
+hoimin verify PLAN.json --candidate m1_example --format json
+```
+
+`plan` discovers candidates but does not run a baseline or test command, copy a worker, or create or reuse a session. A manifest with `truncated` set to `true` contains only a partial candidate set, and `plan` exits 4; it cannot establish full coverage of the selected targets. `verify` rejects a changed target or fingerprint input before its baseline runs. Each `verify` command runs a fresh baseline and does not use a session. Plan manifests are trusted local invocation data, not a security boundary.
+
 Use a narrower selector to check one symbol:
 
 ```console

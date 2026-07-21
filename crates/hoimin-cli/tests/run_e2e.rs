@@ -539,6 +539,21 @@ fn readme_documents_focused_profile_selection_and_session_compatibility() {
     }
 }
 
+#[test]
+fn readme_documents_agent_plan_workflow() {
+    let readme = std::fs::read_to_string(repo_root().join("README.md")).unwrap();
+    let documented_readme = readme.replace("\r\n", "\n");
+
+    for expected in [
+        "hoimin plan",
+        "hoimin verify PLAN.json --candidate",
+        "`--fingerprint-include GLOB`",
+        "`truncated`",
+    ] {
+        assert!(documented_readme.contains(expected), "missing {expected}");
+    }
+}
+
 #[tokio::test]
 async fn sqlite_save_failure_is_fatal_and_leaves_no_partial_result() {
     let directory = tempfile::tempdir().unwrap();
