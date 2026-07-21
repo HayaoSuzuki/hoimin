@@ -153,6 +153,13 @@ fn line_and_symbol_are_independent_target_selectors() {
     .unwrap();
     assert_eq!(line.selection.lines.len(), 1);
 
+    let ParsedCommand::Run(symbol_only) =
+        parse_from(["hoimin", "run", "--symbol", "pkg.a:run", "--", "python"]).unwrap()
+    else {
+        panic!("expected run");
+    };
+    assert_eq!(symbol_only.symbol, ["pkg.a:run"]);
+
     let symbol = hoimin_cli::cli::parse_config_from([
         "hoimin",
         "run",
