@@ -1195,7 +1195,7 @@ fn timeout_marks_the_session_and_final_report_incomplete() {
         state,
         RunEvent::OriginalsVerified(OriginalsVerified {
             id: verify.id,
-            checkpoint: verify.checkpoint.clone(),
+            checkpoint: verify.checkpoint,
         }),
     )
     .unwrap();
