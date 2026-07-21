@@ -160,8 +160,12 @@ pub async fn prepare_verify(
         .await
         .map_err(|error| PlanError::SourceChanged(error.to_string()))?;
     ensure_exact_records(&manifest.sources, &current_sources, RecordMismatch::Source)?;
-    let current_inputs = fingerprint_inputs::resolve(&config.root, &config.fingerprint_includes)
-        .map_err(|error| PlanError::FingerprintInputChanged(error.to_string()))?;
+    let current_inputs = fingerprint_inputs::resolve(
+        &config.root,
+        &config.fingerprint_includes,
+        &config.fingerprint_files,
+    )
+    .map_err(|error| PlanError::FingerprintInputChanged(error.to_string()))?;
     ensure_exact_records(
         &manifest.fingerprint_inputs,
         &current_inputs,

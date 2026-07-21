@@ -508,8 +508,11 @@ fn session<Stdout, Stderr>(
 pub fn prepare_run_config(
     mut config: RunConfig,
 ) -> Result<RunConfig, crate::fingerprint_inputs::FingerprintInputError> {
-    config.fingerprint_inputs =
-        crate::fingerprint_inputs::resolve(&config.root, &config.fingerprint_includes)?;
+    config.fingerprint_inputs = crate::fingerprint_inputs::resolve(
+        &config.root,
+        &config.fingerprint_includes,
+        &config.fingerprint_files,
+    )?;
     Ok(config)
 }
 

@@ -38,6 +38,7 @@ fn resolve_sorts_deduplicates_and_hashes_matching_regular_files() {
             "**/*.toml".into(),
             "fixtures/*.json".into(),
         ],
+        &[],
     )
     .unwrap();
 
@@ -56,7 +57,7 @@ fn resolve_sorts_deduplicates_and_hashes_matching_regular_files() {
 fn resolve_considers_explicitly_named_ignored_files() {
     let fixture = fixture_root(&[(".gitignore", "ignored.json\n"), ("ignored.json", "data")]);
 
-    let records = resolve(&fixture.root, &["ignored.json".into()]).unwrap();
+    let records = resolve(&fixture.root, &["ignored.json".into()], &[]).unwrap();
 
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].path, "ignored.json");
@@ -66,7 +67,7 @@ fn resolve_considers_explicitly_named_ignored_files() {
 fn resolve_rejects_unmatched_patterns() {
     let fixture = fixture_root(&[("file.txt", "x")]);
 
-    let error = resolve(&fixture.root, &["missing/*.json".into()]).unwrap_err();
+    let error = resolve(&fixture.root, &["missing/*.json".into()], &[]).unwrap_err();
 
     assert_error_prefix(&error, "fingerprint.include.unmatched");
 }
@@ -83,7 +84,7 @@ fn resolve_rejects_absolute_parent_nul_and_invalid_glob_patterns() {
         "file\0name",
         "[",
     ] {
-        let error = resolve(&fixture.root, &[pattern.into()]).unwrap_err();
+        let error = resolve(&fixture.root, &[pattern.into()], &[]).unwrap_err();
         assert_error_prefix(&error, "fingerprint.include.invalid_glob");
     }
 }
@@ -93,7 +94,7 @@ fn resolve_rejects_directories() {
     let fixture = fixture_root(&[("file.txt", "x")]);
     std::fs::create_dir(fixture.root.join("dir")).unwrap();
 
-    let error = resolve(&fixture.root, &["dir".into()]).unwrap_err();
+    let error = resolve(&fixture.root, &["dir".into()], &[]).unwrap_err();
 
     assert_error_prefix(&error, "fingerprint.include.unsupported_file");
 }
@@ -104,7 +105,7 @@ fn resolve_rejects_symlinks() {
     let fixture = fixture_root(&[("file.txt", "x")]);
     std::os::unix::fs::symlink("file.txt", fixture.root.join("link.txt")).unwrap();
 
-    let error = resolve(&fixture.root, &["link.txt".into()]).unwrap_err();
+    let error = resolve(&fixture.root, &["link.txt".into()], &[]).unwrap_err();
 
     assert_error_prefix(&error, "fingerprint.include.unsupported_file");
 }
@@ -118,7 +119,7 @@ fn resolve_rejects_non_utf8_paths() {
     let name = std::ffi::OsString::from_vec(vec![b'f', 0x80]);
     std::fs::write(fixture.root.as_std_path().join(name), "x").unwrap();
 
-    let error = resolve(&fixture.root, &["*".into()]).unwrap_err();
+    let error = resolve(&fixture.root, &["*".into()], &[]).unwrap_err();
 
     assert_error_prefix(&error, "fingerprint.include.unsupported_file");
 }
@@ -132,9 +133,93 @@ fn resolve_rejects_read_failures() {
     let path = fixture.root.join("unreadable.txt");
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
 
-    let result = resolve(&fixture.root, &["unreadable.txt".into()]);
+    let result = resolve(&fixture.root, &["unreadable.txt".into()], &[]);
 
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
     let error = result.unwrap_err();
     assert_error_prefix(&error, "fingerprint.include.unsupported_file");
+}
+
+#[test]
+fn exact_file_selects_only_the_named_root_relative_file() {
+    let fixture = fixture_root(&[
+        ("pyproject.toml", "root"),
+        (".worktrees/a/pyproject.toml", "nested"),
+    ]);
+
+    let records = resolve(&fixture.root, &[], &["pyproject.toml".into()]).unwrap();
+
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| record.path.as_str())
+            .collect::<Vec<_>>(),
+        ["pyproject.toml"]
+    );
+    assert_eq!(records[0].hash, blake3::hash(b"root").to_hex().to_string());
+}
+
+#[test]
+fn glob_and_exact_file_are_deduplicated() {
+    let fixture = fixture_root(&[("pyproject.toml", "root")]);
+
+    let records = resolve(
+        &fixture.root,
+        &["pyproject.toml".into()],
+        &["./pyproject.toml".into(), "pyproject.toml".into()],
+    )
+    .unwrap();
+
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].path, "pyproject.toml");
+}
+
+#[test]
+fn exact_file_treats_glob_metacharacters_literally() {
+    let fixture = fixture_root(&[("settings[prod]*.toml", "x")]);
+
+    let records = resolve(&fixture.root, &[], &["settings[prod]*.toml".into()]).unwrap();
+
+    assert_eq!(records[0].path, "settings[prod]*.toml");
+}
+
+#[test]
+fn exact_file_rejects_unsafe_and_missing_paths() {
+    let fixture = fixture_root(&[("file.txt", "x")]);
+    for path in [
+        "",
+        "/tmp/x",
+        "C:\\tmp\\x",
+        "\\\\server\\share\\x",
+        "../x",
+        "nested\\..\\x",
+        "file\0name",
+    ] {
+        let error = resolve(&fixture.root, &[], &[path.into()]).unwrap_err();
+        assert_error_prefix(&error, "fingerprint.file.invalid_path");
+    }
+
+    let error = resolve(&fixture.root, &[], &["missing.toml".into()]).unwrap_err();
+    assert_error_prefix(&error, "fingerprint.file.not_found");
+}
+
+#[test]
+fn exact_file_rejects_directories() {
+    let fixture = fixture_root(&[("file.txt", "x")]);
+    std::fs::create_dir(fixture.root.join("dir")).unwrap();
+
+    let error = resolve(&fixture.root, &[], &["dir".into()]).unwrap_err();
+
+    assert_error_prefix(&error, "fingerprint.file.unsupported_file");
+}
+
+#[cfg(unix)]
+#[test]
+fn exact_file_rejects_symlinks() {
+    let fixture = fixture_root(&[("file.txt", "x")]);
+    std::os::unix::fs::symlink("file.txt", fixture.root.join("link.txt")).unwrap();
+
+    let error = resolve(&fixture.root, &[], &["link.txt".into()]).unwrap_err();
+
+    assert_error_prefix(&error, "fingerprint.file.unsupported_file");
 }
