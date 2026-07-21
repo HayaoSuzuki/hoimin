@@ -141,6 +141,57 @@ fn run_requires_test_argv() {
 }
 
 #[test]
+fn line_and_symbol_are_independent_target_selectors() {
+    let line = hoimin_cli::cli::parse_config_from([
+        "hoimin",
+        "run",
+        "--line",
+        "pkg/a.py:4-7",
+        "--",
+        "python",
+    ])
+    .unwrap();
+    assert_eq!(line.selection.lines.len(), 1);
+
+    let ParsedCommand::Run(symbol_only) =
+        parse_from(["hoimin", "run", "--symbol", "pkg.a:run", "--", "python"]).unwrap()
+    else {
+        panic!("expected run");
+    };
+    assert_eq!(symbol_only.symbol, ["pkg.a:run"]);
+
+    let symbol = hoimin_cli::cli::parse_config_from([
+        "hoimin",
+        "run",
+        "--source",
+        "pkg",
+        "--symbol",
+        "pkg.a:run",
+        "--",
+        "python",
+    ])
+    .unwrap();
+    assert_eq!(symbol.selection.symbols.len(), 1);
+}
+
+#[test]
+fn binary_byte_units_preserve_their_1024_multiplier() {
+    let config = hoimin_cli::cli::parse_config_from([
+        "hoimin",
+        "run",
+        "--file",
+        "pkg/a.py",
+        "--max-memory",
+        "2MiB",
+        "--",
+        "python",
+    ])
+    .unwrap();
+
+    assert_eq!(config.limits.max_memory.get(), 2 * 1024 * 1024);
+}
+
+#[test]
 fn documented_defaults_are_applied() {
     let ParsedCommand::Run(cli) = parse_from([
         "hoimin",

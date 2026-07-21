@@ -4,8 +4,8 @@ use std::time::Duration;
 use camino::Utf8PathBuf;
 use hoimin_core::{
     ConfigError, DiscoveredFile, LineRange, LineSelection, MAX_JOBS, RawRunConfig, RunConfig,
-    Selection, SymbolSelection, TargetError, TargetSlice, auto_mutant_timeout, intersect_changed,
-    resolve_explicit,
+    Selection, SymbolSelection, TargetError, TargetSlice, auto_mutant_timeout,
+    changed_is_normalized, intersect_changed, resolve_explicit, targets_are_normalized,
 };
 use hoimin_core::{MutationOperator, MutationProfile};
 
@@ -145,6 +145,77 @@ fn automatic_mutant_timeout_uses_baseline_duration() {
         auto_mutant_timeout(Duration::from_secs(8)),
         Duration::from_secs(17)
     );
+}
+
+#[test]
+fn changed_normalization_rejects_empty_invalid_adjacent_and_overlapping_ranges() {
+    let path = Utf8PathBuf::from("pkg/a.py");
+    let changed = |ranges| BTreeMap::from([(path.clone(), ranges)]);
+
+    assert!(changed_is_normalized(&changed(vec![
+        LineRange { start: 1, end: 3 },
+        LineRange { start: 5, end: 5 },
+    ])));
+    assert!(!changed_is_normalized(&changed(Vec::new())));
+    assert!(!changed_is_normalized(&changed(vec![LineRange {
+        start: 0,
+        end: 3,
+    }])));
+    assert!(!changed_is_normalized(&changed(vec![LineRange {
+        start: 4,
+        end: 3,
+    }])));
+    assert!(!changed_is_normalized(&changed(vec![
+        LineRange { start: 1, end: 3 },
+        LineRange { start: 4, end: 5 },
+    ])));
+    assert!(!changed_is_normalized(&changed(vec![
+        LineRange { start: 1, end: 3 },
+        LineRange { start: 3, end: 5 },
+    ])));
+}
+
+#[test]
+fn target_normalization_requires_sorted_paths_and_valid_disjoint_ranges() {
+    let target = |path, lines| TargetSlice {
+        path: Utf8PathBuf::from(path),
+        lines,
+        symbols: Vec::new(),
+    };
+
+    assert!(targets_are_normalized(&[
+        target("pkg/a.py", Vec::new()),
+        target(
+            "pkg/b.py",
+            vec![
+                LineRange { start: 1, end: 3 },
+                LineRange { start: 4, end: 5 }
+            ],
+        ),
+    ]));
+    assert!(!targets_are_normalized(&[
+        target("pkg/b.py", Vec::new()),
+        target("pkg/a.py", Vec::new()),
+    ]));
+    assert!(!targets_are_normalized(&[
+        target("pkg/a.py", Vec::new()),
+        target("pkg/a.py", Vec::new()),
+    ]));
+    assert!(!targets_are_normalized(&[target(
+        "pkg/a.py",
+        vec![
+            LineRange { start: 1, end: 3 },
+            LineRange { start: 3, end: 5 }
+        ],
+    )]));
+    assert!(!targets_are_normalized(&[target(
+        "pkg/a.py",
+        vec![LineRange { start: 0, end: 3 }],
+    )]));
+    assert!(!targets_are_normalized(&[target(
+        "pkg/a.py",
+        vec![LineRange { start: 4, end: 3 }],
+    )]));
 }
 
 #[test]

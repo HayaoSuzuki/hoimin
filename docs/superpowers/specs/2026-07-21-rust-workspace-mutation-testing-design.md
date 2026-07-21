@@ -44,7 +44,7 @@ tool's scratch-copy default protects the developer's checkout.
 The standard commands are:
 
 ```console
-cargo install --locked cargo-mutants
+cargo install --locked cargo-mutants --version 27.1.0
 cargo mutants
 ```
 

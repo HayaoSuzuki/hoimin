@@ -4,6 +4,31 @@
 
 **Goal:** `cargo-mutants` で hoimin の全 Rust ワークスペースを検査し、等価または実行不能と根拠付きで除外したもの以外の survivor と timeout をなくす。
 
+> **2026-07-21 scope update (user-approved):** The original full-workspace
+> run enumerates too many mutants for the available iteration budget. Apply
+> this plan only to the highest-impact contracts: `ParsedCommand::try_from`,
+> `raw_config`, and `parse_bytes` in `crates/hoimin-cli/src/cli.rs`;
+> cancellation and `ProcessHandler::run` in
+> `crates/hoimin-cli/src/process/mod.rs`; `RunState::accept_completion` and
+> `RunState::schedule_read_or_finalize` in `crates/hoimin-core/src/machine.rs`;
+> and `changed_is_normalized` / `targets_are_normalized` in
+> `crates/hoimin-core/src/target.rs`. Keep `test_workspace = true`, and run
+> the selected 78 mutants with `--workspace`, one `--file` flag for each of
+> those four paths, the exact regex recorded in Task 2, and `--jobs 4`.
+> The acceptance criterion is therefore limited to this selected set; no
+> conclusion is made about unselected workspace modules.
+
+The reproducible priority command is:
+
+```console
+cargo mutants --workspace --jobs 4 \
+  --file crates/hoimin-core/src/machine.rs \
+  --file crates/hoimin-core/src/target.rs \
+  --file crates/hoimin-cli/src/cli.rs \
+  --file crates/hoimin-cli/src/process/mod.rs \
+  --re '(TryFrom<Command> for ParsedCommand>::try_from|parse_bytes|raw_config|ProcessHandler::run|ProcessStartGate::cancel|ProcessCancellation::cancel|RunState::accept_completion|RunState::schedule_read_or_finalize|targets_are_normalized|changed_is_normalized)'
+```
+
 **Architecture:** `.cargo/mutants.toml` が全 workspace mutant と全 workspace test の実行契約を所有する。ローカルの `mutants.out` は発見・反復用の一時成果物とし、結果を起点に既存の crate test を振る舞い単位で強化する。除外は完全な mutant 名にアンカーした `exclude_re` だけに限定する。
 
 **Tech Stack:** Rust 2024（MSRV 1.85）、Cargo workspace、cargo-mutants、既存の Rust integration/unit tests、Maturin、uv。
@@ -67,7 +92,7 @@ Keep the leading slash so an unrelated nested directory with this name is not si
 Append a `## Rust mutation testing` section to `docs/development.md` after the existing analyzer-specific mutation command. Include this exact command sequence and acceptance rule:
 
 ```console
-cargo install --locked cargo-mutants
+cargo install --locked cargo-mutants --version 27.1.0
 
 # Discover all remaining outcomes.
 cargo mutants --workspace
@@ -86,7 +111,7 @@ State that `mutants.out/missed.txt` requires a behavior test unless the exact mu
 Run:
 
 ```console
-cargo install --locked cargo-mutants
+cargo install --locked cargo-mutants --version 27.1.0
 ```
 
 Expected: `cargo mutants --version` prints an installed version. This installs
@@ -237,6 +262,54 @@ behavior (for example, `test: cover normalized run configuration`).
 
 Expected: every commit contains a test and, only when necessary, its minimal testability refactor. Do not combine unrelated survivor fixes or stage `.idea/` or `tests/fixtures/projects/basic/uv.lock`.
 
+#### Priority-scope manifest (2026-07-21)
+
+The user-approved priority run selected 78 mutants and completed with 33
+missed, 37 caught, 8 unviable, and 0 timeout. The actionable rows form these
+test-gap subtasks; no production refactor is required.
+
+1. `crates/hoimin-cli/src/cli.rs` →
+   `crates/hoimin-cli/tests/cli_config.rs`, new tests
+   `line_and_symbol_are_independent_target_selectors` and
+   `binary_byte_units_preserve_their_1024_multiplier`. Use a line-only run
+   input, a symbol-only run input, and `--max-memory 2MiB`; assert successful
+   parsing and `2 * 1024 * 1024` in the normalized limit. This kills the
+   line-315 `|| → &&` mutant and both line-524 `* → +` / `* → /` mutants.
+   In a disposable scratch copy, apply each corresponding
+   `mutants.out/diff/crates__hoimin-cli__src__cli.rs_line_{315,524}_col_21.diff`
+   before `cargo test -p hoimin-cli --test cli_config`; the assertion must
+   fail. Run that command again on the original implementation, then commit
+   `test: cover CLI selector and byte-unit parsing`.
+2. `crates/hoimin-core/src/machine.rs:324:21: replace match guard id.0 >=
+   self.next_effect_id with true in RunState::accept_completion` is
+   **equivalent** under supported transitions: allocation inserts a pending
+   ID, completion records it in the duplicate ledger before removal, and
+   retirement records it as retired. Therefore no allocated ID can reach the
+   fallback while neither pending, duplicate, nor retired; the existing
+   machine tests already observe those three reachable classifications.
+3. `crates/hoimin-core/src/target.rs` →
+   `crates/hoimin-core/tests/target_policy.rs`, new tests
+   `changed_normalization_rejects_empty_invalid_adjacent_and_overlapping_ranges`
+   and `target_normalization_requires_sorted_paths_and_valid_disjoint_ranges`.
+   Assert true for nonempty, positive, strictly disjoint ranges and false for
+   each listed boundary case, including an empty target-line list (which is a
+   valid whole-file target). These assertions cover every missed
+   `changed_is_normalized` and `targets_are_normalized` row. Apply the matching
+   diff from `mutants.out/diff/` in a scratch copy and run
+   `cargo test -p hoimin-core --test target_policy` for RED, then rerun it on
+   original code and commit `test: cover target normalization boundaries`.
+4. `crates/hoimin-cli/src/process/mod.rs:61:12: delete ! in
+   ProcessStartGate::cancel` is **equivalent**: after the first cancellation,
+   the atomic state remains true and all callers of `cancelled()` return before
+   observing any later notification; an extra notification has no supported
+   observable effect. Add its anchored exclusion and the machine exclusion
+   from item 2 to `.cargo/mutants.toml`; prove their narrowness with the
+   selected `cargo mutants ... --list` command before committing only that
+   file. The emitted names are excluded by these exact patterns:
+   `^crates/hoimin-cli/src/process/mod\\.rs:61:12: delete ! in ProcessStartGate::cancel$`
+   and
+   `^crates/hoimin-core/src/machine\\.rs:324:21: replace match guard id\\.0 >= self\\.next_effect_id with true in RunState::accept_completion$`.
+
 ### Task 4: Add only reviewed exact-mutant exclusions
 
 **Files:**
@@ -281,7 +354,7 @@ git commit -m "test: document equivalent mutants"
 
 Expected: the commit contains only configuration comments and exact patterns. If no exception exists, omit this task and do not create an empty `exclude_re` key.
 
-### Task 5: Verify the completed mutation-quality gate
+### Task 5: Verify the completed priority mutation-quality gate
 
 **Files:**
 - Read: `.cargo/mutants.toml`
@@ -292,7 +365,7 @@ Expected: the commit contains only configuration comments and exact patterns. If
 
 **Interfaces:**
 - Consumes: all Task 3 test improvements and Task 4 reviewed exclusions.
-- Produces: current full-workspace mutation evidence and the existing release-quality evidence.
+- Produces: current priority-scope mutation evidence and the existing release-quality evidence. The unfiltered full-workspace workflow remains documented in `docs/development.md`, but is outside this run's acceptance claim.
 
 - [ ] **Step 1: Run the existing full quality gate**
 
@@ -318,15 +391,20 @@ rm -rf mutants.out mutants.out.old
 
 Expected: the explicitly named ignored diagnostic directories are absent before the independent final run.
 
-- [ ] **Step 3: Run a fresh, unfiltered final mutation test**
+- [ ] **Step 3: Run a fresh priority-scope final mutation test**
 
 Run:
 
 ```console
-cargo mutants --workspace
+cargo mutants --workspace --jobs 4 \
+  --file crates/hoimin-core/src/machine.rs \
+  --file crates/hoimin-core/src/target.rs \
+  --file crates/hoimin-cli/src/cli.rs \
+  --file crates/hoimin-cli/src/process/mod.rs \
+  --re '(TryFrom<Command> for ParsedCommand>::try_from|parse_bytes|raw_config|ProcessHandler::run|ProcessStartGate::cancel|ProcessCancellation::cancel|RunState::accept_completion|RunState::schedule_read_or_finalize|targets_are_normalized|changed_is_normalized)'
 ```
 
-Expected: a successful baseline, no tool error, no `--iterate`, no path/regex CLI filter, and no in-place mutation.
+Expected: a successful baseline, no tool error, no `--iterate`, exactly the reviewed priority path/regex filters above, and no in-place mutation.
 
 - [ ] **Step 4: Assert the final outcome files meet the acceptance contract**
 
