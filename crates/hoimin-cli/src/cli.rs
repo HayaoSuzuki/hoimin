@@ -105,6 +105,10 @@ struct RawMutationArgs {
     #[arg(long, value_name = "GLOB")]
     fingerprint_include: Vec<String>,
 
+    /// Add one exact root-relative file to the session fingerprint; may be repeated.
+    #[arg(long, value_name = "PATH")]
+    fingerprint_file: Vec<String>,
+
     /// Exclude a path while copying; may be repeated and wins over include.
     #[arg(long, value_name = "GLOB")]
     exclude: Vec<String>,
@@ -247,6 +251,7 @@ pub struct RunArgs {
     pub diff_base: Option<String>,
     pub include: Vec<String>,
     pub fingerprint_includes: Vec<String>,
+    pub fingerprint_files: Vec<String>,
     pub exclude: Vec<String>,
     pub operators: Vec<String>,
     profile: ProfileArg,
@@ -438,6 +443,7 @@ fn run_args_from_mutation(
         diff_base: raw.diff_base,
         include: raw.include,
         fingerprint_includes: raw.fingerprint_include,
+        fingerprint_files: raw.fingerprint_file,
         exclude: raw.exclude,
         operators: raw.operators,
         profile: raw.profile,
@@ -549,6 +555,7 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
         includes: args.include,
         excludes: args.exclude,
         fingerprint_includes: args.fingerprint_includes,
+        fingerprint_files: args.fingerprint_files,
         operators: args.operators,
         exclude_operators: args.exclude_operators,
         allow_best_effort_memory: args.allow_best_effort_memory,
