@@ -126,6 +126,40 @@ async fn plan_invalid_syntax_returns_two_without_a_manifest() {
     assert!(!marker.exists());
 }
 
+#[tokio::test]
+async fn plan_preparation_failures_return_two_without_a_manifest() {
+    let project = Project::new();
+    for (case, options) in [
+        (
+            "unmatched fingerprint include",
+            vec![
+                "--file",
+                "src/calc.py",
+                "--fingerprint-include",
+                "missing.toml",
+            ],
+        ),
+        ("unresolved target", vec!["--file", "src/missing.py"]),
+    ] {
+        let marker = project.path.join(format!("test-command-ran-{case}"));
+        let args = plan_args(&project, options, &marker);
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+
+        assert_eq!(
+            code,
+            2,
+            "case={case}, stderr={}",
+            String::from_utf8_lossy(&stderr)
+        );
+        assert!(stdout.is_empty(), "case={case}");
+        assert!(!stderr.is_empty(), "case={case}");
+        assert!(!marker.exists(), "case={case}");
+    }
+}
+
 async fn discover_for_plan_args(args: Vec<OsString>) -> Vec<MutationCandidate> {
     let ParsedCommand::Plan(plan) = parse_from(args).unwrap() else {
         panic!("expected plan arguments");
