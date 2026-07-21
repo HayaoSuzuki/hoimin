@@ -1,2 +1,9 @@
 # Run all workspace tests against each mutant, including cross-crate tests.
 test_workspace = true
+
+exclude_re = [
+    # A repeated cancellation leaves the atomic state true, and every supported waiter returns before a later notification is observable.
+    '^crates/hoimin-cli/src/process/mod\.rs:61:12: delete ! in ProcessStartGate::cancel$',
+    # Supported transitions classify every allocated ID as pending, retired, or duplicate before this unreachable non-pending fallback.
+    '^crates/hoimin-core/src/machine\.rs:324:21: replace match guard id\.0 >= self\.next_effect_id with true in RunState::accept_completion$',
+]
