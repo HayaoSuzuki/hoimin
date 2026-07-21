@@ -17,8 +17,8 @@ Create a plan before improving tests, then verify the candidate IDs selected fro
 ```console
 hoimin plan --root . --source src --profile focused \
   --fingerprint-include pyproject.toml -- python -m pytest -q > PLAN.json
-# improve tests, then choose IDs from PLAN.json
-hoimin verify PLAN.json --candidate m1_example --format json
+# improve tests, then replace <ID_FROM_PLAN_JSON> with an exact candidates[].id value
+hoimin verify PLAN.json --candidate '<ID_FROM_PLAN_JSON>' --format json
 ```
 
 `plan` discovers candidates but does not run a baseline or test command, copy a worker, or create or reuse a session. A manifest with `truncated` set to `true` contains only a partial candidate set, and `plan` exits 4; it cannot establish full coverage of the selected targets. `verify` rejects a changed target or fingerprint input before its baseline runs. Each `verify` command runs a fresh baseline and does not use a session. Plan manifests are trusted local invocation data, not a security boundary.
