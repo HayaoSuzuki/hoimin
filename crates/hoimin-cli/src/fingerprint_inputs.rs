@@ -48,11 +48,15 @@ pub fn resolve(
 }
 
 fn validate_pattern(root: &Utf8Path, pattern: &str) -> Result<(), FingerprintInputError> {
+    let slash_pattern = pattern.replace('\\', "/");
     if pattern.contains('\0')
         || Utf8Path::new(pattern).is_absolute()
-        || pattern
-            .split(['/', '\\'])
-            .any(|component| component == "..")
+        || slash_pattern.starts_with('/')
+        || slash_pattern
+            .split('/')
+            .next()
+            .is_some_and(|component| component.contains(':'))
+        || slash_pattern.split('/').any(|component| component == "..")
     {
         return Err(FingerprintInputError::InvalidGlob(pattern.to_owned()));
     }
@@ -92,6 +96,7 @@ fn resolve_one(root: &Utf8Path, pattern: &str) -> Result<Vec<Utf8PathBuf>, Finge
         let relative = Utf8PathBuf::from_path_buf(relative.to_path_buf()).map_err(|_| {
             FingerprintInputError::UnsupportedFile("selected path must be valid UTF-8".to_owned())
         })?;
+        let relative = Utf8PathBuf::from(relative.as_str().replace('\\', "/"));
         let file_type = entry
             .file_type()
             .ok_or_else(|| FingerprintInputError::UnsupportedFile(relative.as_str().to_owned()))?;

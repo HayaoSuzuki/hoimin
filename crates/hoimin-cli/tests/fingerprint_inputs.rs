@@ -75,7 +75,14 @@ fn resolve_rejects_unmatched_patterns() {
 fn resolve_rejects_absolute_parent_nul_and_invalid_glob_patterns() {
     let fixture = fixture_root(&[("file.txt", "x")]);
 
-    for pattern in ["/tmp/x", "../x", "nested\\..\\x", "file\0name", "["] {
+    for pattern in [
+        "/tmp/x",
+        "C:\\tmp\\x",
+        "../x",
+        "nested\\..\\x",
+        "file\0name",
+        "[",
+    ] {
         let error = resolve(&fixture.root, &[pattern.into()]).unwrap_err();
         assert_error_prefix(&error, "fingerprint.include.invalid_glob");
     }
