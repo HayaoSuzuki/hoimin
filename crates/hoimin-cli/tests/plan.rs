@@ -23,6 +23,8 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
             "src/calc.py",
             "--fingerprint-include",
             "config.toml",
+            "--fingerprint-file",
+            "pyproject.toml",
         ],
         &workspace_marker,
     );
@@ -51,7 +53,11 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
             .iter()
             .all(|candidate| candidate["id"].as_str().unwrap().starts_with("m1_"))
     );
-    assert_eq!(manifest["fingerprint_inputs"].as_array().unwrap().len(), 1);
+    assert_eq!(manifest["fingerprint_inputs"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        manifest["normalized_config"]["fingerprint_files"],
+        serde_json::json!(["pyproject.toml"])
+    );
     assert!(manifest["normalized_config"].get("session").is_none());
     assert!(manifest["normalized_config"].get("resume").is_none());
     assert!(!workspace_marker.exists());
@@ -195,6 +201,45 @@ async fn verify_rejects_changed_fingerprint_input_before_baseline() {
 
     assert_error_code(error, "plan.fingerprint_input.changed");
     assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_exact_file_ignores_nested_names_but_rejects_root_change() {
+    let project = Project::new();
+    let nested = project.path.join(".worktrees/a/pyproject.toml");
+    std::fs::create_dir_all(nested.parent().unwrap()).unwrap();
+    std::fs::write(&nested, "nested = 1\n").unwrap();
+    let (path, manifest, marker) =
+        write_plan_manifest(&project, &["--fingerprint-file", "pyproject.toml"]).await;
+    let requested = vec![manifest.candidates[0].id.clone()];
+
+    std::fs::write(&nested, "nested = 2\n").unwrap();
+    let verified = prepare_verify(&path, &requested, OutputFormat::Json).await;
+    assert!(verified.is_ok(), "{verified:?}");
+
+    std::fs::write(project.path.join("pyproject.toml"), "value = 2\n").unwrap();
+    let error = prepare_verify(&path, &requested, OutputFormat::Json)
+        .await
+        .unwrap_err();
+    assert_error_code(error, "plan.fingerprint_input.changed");
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_accepts_legacy_manifest_without_fingerprint_files() {
+    let project = Project::new();
+    let (path, manifest, _marker) = write_plan_manifest(&project, &[]).await;
+    let requested = vec![manifest.candidates[0].id.clone()];
+    let mut value = serde_json::to_value(manifest).unwrap();
+    value["normalized_config"]
+        .as_object_mut()
+        .unwrap()
+        .remove("fingerprint_files");
+    write_json(&path, &value);
+
+    let verified = prepare_verify(&path, &requested, OutputFormat::Json).await;
+
+    assert!(verified.is_ok(), "{verified:?}");
 }
 
 #[tokio::test]
@@ -544,6 +589,7 @@ impl Project {
         std::fs::create_dir(path.join("src")).unwrap();
         std::fs::write(path.join("src/calc.py"), source).unwrap();
         std::fs::write(path.join("config.toml"), "[tool.hoimin]\n").unwrap();
+        std::fs::write(path.join("pyproject.toml"), "value = 1\n").unwrap();
         Self {
             _directory: directory,
             path,
