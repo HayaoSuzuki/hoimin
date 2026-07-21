@@ -228,6 +228,82 @@ async fn session_is_not_created_when_the_option_is_absent_and_stdout_is_one_json
 }
 
 #[tokio::test]
+async fn fingerprint_include_unmatched_fails_before_creating_session() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = directory.path().join("session.sqlite3");
+    let root = fixture_root();
+    let python = python_executable();
+    let args = [
+        OsString::from("hoimin"),
+        OsString::from("run"),
+        OsString::from("--root"),
+        root.as_os_str().to_owned(),
+        OsString::from("--source"),
+        OsString::from("src"),
+        OsString::from("--file"),
+        OsString::from("src/calc.py"),
+        OsString::from("--session"),
+        database.as_os_str().to_owned(),
+        OsString::from("--fingerprint-include"),
+        OsString::from("missing.toml"),
+        OsString::from("--format"),
+        OsString::from("json"),
+        OsString::from("--allow-best-effort-memory"),
+        OsString::from("--"),
+        python.as_os_str().to_owned(),
+        OsString::from("-m"),
+        OsString::from("unittest"),
+        OsString::from("discover"),
+        OsString::from("-s"),
+        OsString::from("tests"),
+    ];
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    let exit_code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let stderr = String::from_utf8(stderr).unwrap();
+
+    assert_eq!(exit_code, 2);
+    assert!(stderr.contains("fingerprint.include.unmatched"));
+    assert!(!database.exists());
+}
+
+#[tokio::test]
+async fn fingerprint_include_is_reported() {
+    let options = ["--fingerprint-include", "pyproject.toml"];
+    let test_args = ["-m", "unittest", "discover", "-s", "tests"];
+
+    let json = run_fixture_options_extra(&test_args, None, false, &options).await;
+    assert_eq!(json.exit_code, 0, "stderr={}", json.stderr);
+    assert_eq!(
+        json.document["run"]["normalized_config"]["fingerprint_includes"],
+        serde_json::json!(["pyproject.toml"])
+    );
+    assert_eq!(
+        json.document["run"]["normalized_config"]["fingerprint_inputs"][0]["path"],
+        "pyproject.toml"
+    );
+
+    let jsonl =
+        run_fixture_options_extra_with_format(&test_args, None, false, "jsonl", &options).await;
+    assert_eq!(jsonl.exit_code, 0, "stderr={}", jsonl.stderr);
+    let run_started = jsonl
+        .stdout
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find(|record| record["kind"] == "run_started")
+        .unwrap();
+    assert_eq!(
+        run_started["normalized_config"]["fingerprint_includes"],
+        serde_json::json!(["pyproject.toml"])
+    );
+    assert_eq!(
+        run_started["normalized_config"]["fingerprint_inputs"][0]["path"],
+        "pyproject.toml"
+    );
+}
+
+#[tokio::test]
 async fn shell_context_construction_performs_no_project_io() {
     let directory = tempfile::tempdir().unwrap();
     let missing_root = directory.path().join("missing-project");
@@ -300,6 +376,57 @@ async fn sqlite_session_saves_and_resumes_a_determinate_result_without_reexecuti
         resumed.document["summary"]["run_id"].as_str().unwrap(),
         resumed_run_id
     );
+}
+
+#[tokio::test]
+async fn fingerprint_include_change_starts_a_distinct_session_run() {
+    let project = tempfile::tempdir().unwrap();
+    let sessions = tempfile::tempdir().unwrap();
+    let database = sessions.path().join("session.sqlite3");
+    let watched = project.path().join("watched.toml");
+    write_parallel_project(project.path());
+    std::fs::write(&watched, "value = 1\n").unwrap();
+    let command = "from src.calc import total; assert total(1, 2, 3, 4, 5) == 15";
+    let fingerprint_include = ["--fingerprint-include", "watched.toml"];
+
+    let first = run_project_with_session_options(
+        project.path(),
+        &database,
+        false,
+        1,
+        command,
+        &fingerprint_include,
+    )
+    .await;
+    assert_eq!(first.exit_code, 4, "stderr={}", first.stderr);
+    let first_run_id = first.document["run"]["run_id"].as_str().unwrap().to_owned();
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    connection
+        .execute("UPDATE runs SET complete=0", [])
+        .unwrap();
+    drop(connection);
+    std::fs::write(&watched, "value = 2\n").unwrap();
+
+    let resumed = run_project_with_session_options(
+        project.path(),
+        &database,
+        true,
+        1,
+        command,
+        &fingerprint_include,
+    )
+    .await;
+
+    assert_eq!(resumed.exit_code, 4, "stderr={}", resumed.stderr);
+    assert_ne!(
+        resumed.document["run"]["run_id"].as_str().unwrap(),
+        first_run_id
+    );
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    let run_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM runs", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(run_count, 2);
 }
 
 #[tokio::test]
@@ -409,6 +536,21 @@ fn readme_documents_focused_profile_selection_and_session_compatibility() {
         assert!(documented_readme.contains(
             "Profile selection is part of session compatibility, so a focused run never resumes results from a full run and vice versa."
         ));
+    }
+}
+
+#[test]
+fn readme_documents_agent_plan_workflow() {
+    let readme = std::fs::read_to_string(repo_root().join("README.md")).unwrap();
+    let documented_readme = readme.replace("\r\n", "\n");
+
+    for expected in [
+        "hoimin plan",
+        "hoimin verify PLAN.json --candidate",
+        "`--fingerprint-include GLOB`",
+        "`truncated`",
+    ] {
+        assert!(documented_readme.contains(expected), "missing {expected}");
     }
 }
 
@@ -800,6 +942,16 @@ async fn run_fixture_options_extra(
     resume: bool,
     extra_options: &[&str],
 ) -> FixtureRun {
+    run_fixture_options_extra_with_format(test_args, session, resume, "json", extra_options).await
+}
+
+async fn run_fixture_options_extra_with_format(
+    test_args: &[&str],
+    session: Option<&Path>,
+    resume: bool,
+    format: &str,
+    extra_options: &[&str],
+) -> FixtureRun {
     let root = fixture_root();
     let python = python_executable();
     let mut args = vec![
@@ -812,7 +964,7 @@ async fn run_fixture_options_extra(
         OsString::from("--file"),
         OsString::from("src/calc.py"),
         OsString::from("--format"),
-        OsString::from("json"),
+        OsString::from(format),
         OsString::from("--allow-best-effort-memory"),
         OsString::from("--"),
         python.as_os_str().to_owned(),
@@ -836,17 +988,24 @@ async fn run_fixture_options_extra(
     let exit_code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
     let stdout = String::from_utf8(stdout).unwrap();
     let stderr = String::from_utf8(stderr).unwrap();
-    let document: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|error| {
-        panic!(
-            "invalid JSON report ({error}); exit={exit_code}; stdout={stdout:?}; stderr={stderr:?}"
-        )
-    });
+    let document = if format == "json" {
+        serde_json::from_str(stdout.trim()).unwrap_or_else(|error| {
+            panic!(
+                "invalid JSON report ({error}); exit={exit_code}; stdout={stdout:?}; stderr={stderr:?}"
+            )
+        })
+    } else {
+        serde_json::Value::Null
+    };
     let statuses = document["mutants"]
         .as_array()
-        .unwrap()
-        .iter()
-        .map(|mutant| mutant["status"].as_str().unwrap().to_owned())
-        .collect();
+        .map(|mutants| {
+            mutants
+                .iter()
+                .map(|mutant| mutant["status"].as_str().unwrap().to_owned())
+                .collect()
+        })
+        .unwrap_or_default();
     FixtureRun {
         exit_code,
         statuses,
@@ -1033,6 +1192,17 @@ async fn run_project_with_session(
     max_mutants: usize,
     command: &str,
 ) -> FixtureRun {
+    run_project_with_session_options(root, session, resume, max_mutants, command, &[]).await
+}
+
+async fn run_project_with_session_options(
+    root: &Path,
+    session: &Path,
+    resume: bool,
+    max_mutants: usize,
+    command: &str,
+    options: &[&str],
+) -> FixtureRun {
     let python = python_executable();
     let mut args = vec![
         OsString::from("hoimin"),
@@ -1049,6 +1219,7 @@ async fn run_project_with_session(
     if resume {
         args.push(OsString::from("--resume"));
     }
+    args.extend(options.iter().copied().map(OsString::from));
     args.extend([
         OsString::from("--max-mutants"),
         OsString::from(max_mutants.to_string()),

@@ -30,6 +30,10 @@ struct RootCli {
 enum Command {
     /// Run mutation tests for an explicitly selected target.
     Run(RawRunArgs),
+    /// Discover mutation candidates without executing tests.
+    Plan(RawPlanArgs),
+    /// Execute selected candidates from a previously generated plan.
+    Verify(RawVerifyArgs),
     /// Compare chronologically ordered mutation run reports.
     Progress(RawProgressArgs),
 }
@@ -64,7 +68,7 @@ impl From<ProfileArg> for MutationProfile {
 }
 
 #[derive(Debug, Args)]
-struct RawRunArgs {
+struct RawMutationArgs {
     /// Project root used to resolve relative paths.
     #[arg(long, default_value = ".", value_name = "DIR")]
     root: PathBuf,
@@ -96,6 +100,10 @@ struct RawRunArgs {
     /// Include a normally ignored path while copying; may be repeated.
     #[arg(long, value_name = "GLOB")]
     include: Vec<String>,
+
+    /// Add a root-relative file glob to the session fingerprint; may be repeated.
+    #[arg(long, value_name = "GLOB")]
+    fingerprint_include: Vec<String>,
 
     /// Exclude a path while copying; may be repeated and wins over include.
     #[arg(long, value_name = "GLOB")]
@@ -160,6 +168,12 @@ struct RawRunArgs {
     /// Permit best-effort memory enforcement when hard limits are unavailable.
     #[arg(long)]
     allow_best_effort_memory: bool,
+}
+
+#[derive(Debug, Args)]
+struct RawRunArgs {
+    #[command(flatten)]
+    mutation: RawMutationArgs,
 
     /// Machine-readable output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
@@ -176,6 +190,31 @@ struct RawRunArgs {
     /// Test executable and arguments, passed directly without a shell.
     #[arg(last = true, num_args = 1.., value_name = "TEST_ARGV")]
     test_argv: Vec<OsString>,
+}
+
+#[derive(Debug, Args)]
+struct RawPlanArgs {
+    #[command(flatten)]
+    mutation: RawMutationArgs,
+
+    /// Test executable and arguments, passed directly without a shell.
+    #[arg(last = true, num_args = 1.., value_name = "TEST_ARGV")]
+    test_argv: Vec<OsString>,
+}
+
+#[derive(Debug, Args)]
+struct RawVerifyArgs {
+    /// Path to a version-1 plan manifest.
+    #[arg(value_name = "PLAN")]
+    manifest: PathBuf,
+
+    /// Candidate ID to execute; may be repeated.
+    #[arg(long = "candidate", required = true, value_name = "ID")]
+    candidate_ids: Vec<String>,
+
+    /// Machine-readable output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    format: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -207,6 +246,7 @@ pub struct RunArgs {
     pub changed: bool,
     pub diff_base: Option<String>,
     pub include: Vec<String>,
+    pub fingerprint_includes: Vec<String>,
     pub exclude: Vec<String>,
     pub operators: Vec<String>,
     profile: ProfileArg,
@@ -237,12 +277,39 @@ pub struct ProgressArgs {
 }
 
 #[derive(Debug)]
+pub struct PlanArgs {
+    run_args: RunArgs,
+}
+
+impl PlanArgs {
+    /// Converts planning arguments into the normalized configuration used to create a manifest.
+    ///
+    /// Planning always uses JSON output and does not retain a session or resume state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the shared mutation arguments are invalid.
+    pub fn into_run_config(self) -> Result<RunConfig, CliError> {
+        run_config_from_args(self.run_args)
+    }
+}
+
+#[derive(Debug)]
+pub struct VerifyArgs {
+    pub manifest: PathBuf,
+    pub candidate_ids: Vec<String>,
+    pub format: OutputFormat,
+}
+
+#[derive(Debug)]
 #[allow(
     clippy::large_enum_variant,
     reason = "the public parser API deliberately exposes direct RunArgs and ProgressArgs values"
 )]
 pub enum ParsedCommand {
     Run(RunArgs),
+    Plan(PlanArgs),
+    Verify(VerifyArgs),
     Progress(ProgressArgs),
 }
 
@@ -308,48 +375,29 @@ impl TryFrom<Command> for ParsedCommand {
 
     fn try_from(command: Command) -> Result<Self, Self::Error> {
         match command {
-            Command::Run(raw) => {
-                let has_selector = !raw.source.is_empty()
-                    || !raw.file.is_empty()
-                    || !raw.line.is_empty()
-                    || !raw.symbol.is_empty()
-                    || raw.changed;
-                if !has_selector {
-                    return Err(CliError::MissingTargetSelector);
-                }
-                if raw.test_argv.is_empty() {
-                    return Err(CliError::MissingTestArgv);
-                }
-
-                Ok(Self::Run(RunArgs {
-                    root: raw.root,
-                    source: raw.source,
-                    file: raw.file,
-                    line: raw.line,
-                    symbol: raw.symbol,
-                    changed: raw.changed,
-                    diff_base: raw.diff_base,
-                    include: raw.include,
-                    exclude: raw.exclude,
-                    operators: raw.operators,
-                    profile: raw.profile,
-                    exclude_operators: raw.exclude_operators,
-                    jobs: raw.jobs,
-                    max_mutants: raw.max_mutants,
-                    max_candidates: raw.max_candidates,
-                    analyzer_timeout: raw.analyzer_timeout,
-                    baseline_timeout: raw.baseline_timeout,
-                    mutant_timeout: raw.mutant_timeout,
-                    total_timeout: raw.total_timeout,
-                    max_memory: raw.max_memory,
-                    max_output: raw.max_output,
-                    max_copy_size: raw.max_copy_size,
-                    max_processes: raw.max_processes,
-                    allow_best_effort_memory: raw.allow_best_effort_memory,
+            Command::Run(raw) => Ok(Self::Run(run_args_from_mutation(
+                raw.mutation,
+                raw.test_argv,
+                raw.format,
+                raw.session,
+                raw.resume,
+            )?)),
+            Command::Plan(raw) => Ok(Self::Plan(PlanArgs {
+                run_args: run_args_from_mutation(
+                    raw.mutation,
+                    raw.test_argv,
+                    OutputFormat::Json,
+                    None,
+                    false,
+                )?,
+            })),
+            Command::Verify(mut raw) => {
+                let mut seen = std::collections::BTreeSet::new();
+                raw.candidate_ids.retain(|id| seen.insert(id.clone()));
+                Ok(Self::Verify(VerifyArgs {
+                    manifest: raw.manifest,
+                    candidate_ids: raw.candidate_ids,
                     format: raw.format,
-                    session: raw.session,
-                    resume: raw.resume,
-                    test_argv: raw.test_argv,
                 }))
             }
             Command::Progress(raw) => Ok(Self::Progress(ProgressArgs {
@@ -359,6 +407,58 @@ impl TryFrom<Command> for ParsedCommand {
             })),
         }
     }
+}
+
+fn run_args_from_mutation(
+    raw: RawMutationArgs,
+    test_argv: Vec<OsString>,
+    format: OutputFormat,
+    session: Option<PathBuf>,
+    resume: bool,
+) -> Result<RunArgs, CliError> {
+    let has_selector = !raw.source.is_empty()
+        || !raw.file.is_empty()
+        || !raw.line.is_empty()
+        || !raw.symbol.is_empty()
+        || raw.changed;
+    if !has_selector {
+        return Err(CliError::MissingTargetSelector);
+    }
+    if test_argv.is_empty() {
+        return Err(CliError::MissingTestArgv);
+    }
+
+    Ok(RunArgs {
+        root: raw.root,
+        source: raw.source,
+        file: raw.file,
+        line: raw.line,
+        symbol: raw.symbol,
+        changed: raw.changed,
+        diff_base: raw.diff_base,
+        include: raw.include,
+        fingerprint_includes: raw.fingerprint_include,
+        exclude: raw.exclude,
+        operators: raw.operators,
+        profile: raw.profile,
+        exclude_operators: raw.exclude_operators,
+        jobs: raw.jobs,
+        max_mutants: raw.max_mutants,
+        max_candidates: raw.max_candidates,
+        analyzer_timeout: raw.analyzer_timeout,
+        baseline_timeout: raw.baseline_timeout,
+        mutant_timeout: raw.mutant_timeout,
+        total_timeout: raw.total_timeout,
+        max_memory: raw.max_memory,
+        max_output: raw.max_output,
+        max_copy_size: raw.max_copy_size,
+        max_processes: raw.max_processes,
+        allow_best_effort_memory: raw.allow_best_effort_memory,
+        format,
+        session,
+        resume,
+        test_argv,
+    })
 }
 
 /// Parses command-line arguments into a command and its executable arguments.
@@ -448,6 +548,7 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
         diff_base: args.diff_base,
         includes: args.include,
         excludes: args.exclude,
+        fingerprint_includes: args.fingerprint_includes,
         operators: args.operators,
         exclude_operators: args.exclude_operators,
         allow_best_effort_memory: args.allow_best_effort_memory,

@@ -168,6 +168,7 @@ pub struct RunState {
     pending_failure: Option<EffectFailed>,
     flags: RunFlags,
     stopped_candidates: VecDeque<StoppedCandidate>,
+    candidate_filter: Option<BTreeSet<String>>,
 }
 
 impl RunState {
@@ -226,6 +227,7 @@ impl RunState {
                 },
             },
             stopped_candidates: VecDeque::new(),
+            candidate_filter: None,
         }
     }
 
@@ -236,6 +238,18 @@ impl RunState {
     ) -> Self {
         let mut state = Self::new(run_id, config);
         state.fingerprint = Some(fingerprint);
+        state
+    }
+
+    /// Creates a state that executes only candidates whose IDs are explicitly selected.
+    #[must_use]
+    pub fn with_candidate_filter(
+        run_id: impl Into<String>,
+        config: RunConfig,
+        candidate_ids: BTreeSet<String>,
+    ) -> Self {
+        let mut state = Self::new(run_id, config);
+        state.candidate_filter = Some(candidate_ids);
         state
     }
 
@@ -883,6 +897,8 @@ pub enum MachineError {
     Budget(String),
     #[error("session configuration requires a run fingerprint")]
     MissingFingerprint,
+    #[error("selected candidate execution requires an analyzer candidate spool")]
+    MissingCandidateSpool,
     #[error("configured worker count does not fit in u32")]
     WorkerCountOverflow,
     #[error("configured maximum process count does not fit in u32")]
@@ -920,6 +936,7 @@ impl MachineError {
             Self::EffectIdOverflow => "machine.effect_id.overflow",
             Self::Budget(_) => "machine.budget",
             Self::MissingFingerprint => "machine.fingerprint.missing",
+            Self::MissingCandidateSpool => "machine.candidate_spool.missing",
             Self::WorkerCountOverflow => "machine.worker.count_overflow",
             Self::ProcessCountOverflow => "machine.process.count_overflow",
             Self::WorkerCountMismatch { .. } => "machine.worker.count_mismatch",
@@ -1061,13 +1078,12 @@ pub fn transition(
             effects
         }
         RunEvent::AnalysisFinished(value) if state.phase == RunPhase::Analyze => {
-            state.flags.outcome.incomplete |= value.truncated;
-            if value.truncated {
-                state.phase = RunPhase::Finalize;
-                state.finalize_effects()?
-            } else {
+            if state.candidate_filter.is_some() {
                 match value.spool {
-                    None => state.analyze_next()?,
+                    None if !value.truncated && !state.targets.is_empty() => {
+                        state.analyze_next()?
+                    }
+                    None => return Err(MachineError::MissingCandidateSpool),
                     Some(spool) if spool.records == 0 => {
                         state.candidate_spool = Some(spool);
                         state.phase = RunPhase::Finalize;
@@ -1075,8 +1091,28 @@ pub fn transition(
                     }
                     Some(spool) => {
                         state.phase = RunPhase::Mutants;
-                        state.candidate_spool = Some(spool.clone());
+                        state.candidate_spool = Some(spool);
                         state.schedule_read_or_finalize()?
+                    }
+                }
+            } else {
+                state.flags.outcome.incomplete |= value.truncated;
+                if value.truncated {
+                    state.phase = RunPhase::Finalize;
+                    state.finalize_effects()?
+                } else {
+                    match value.spool {
+                        None => state.analyze_next()?,
+                        Some(spool) if spool.records == 0 => {
+                            state.candidate_spool = Some(spool);
+                            state.phase = RunPhase::Finalize;
+                            state.finalize_effects()?
+                        }
+                        Some(spool) => {
+                            state.phase = RunPhase::Mutants;
+                            state.candidate_spool = Some(spool.clone());
+                            state.schedule_read_or_finalize()?
+                        }
                     }
                 }
             }
@@ -1087,7 +1123,16 @@ pub fn transition(
             }
             let worker = value.worker;
             state.candidate_offset = value.next_offset;
-            if state.flags.scheduling.stop_requested {
+            let selected = value.candidate.as_ref().is_none_or(|candidate| {
+                state
+                    .candidate_filter
+                    .as_ref()
+                    .is_none_or(|filter| filter.contains(&candidate.id))
+            });
+            if !selected {
+                *state.worker_mut(worker)? = WorkerState::default();
+                state.schedule_read_or_finalize()?
+            } else if state.flags.scheduling.stop_requested {
                 if let Some(candidate) = value.candidate {
                     let worker_state = state.worker_mut(worker)?;
                     worker_state.candidate = Some(candidate);

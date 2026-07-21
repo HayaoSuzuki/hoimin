@@ -64,12 +64,19 @@ async fn documentation_contract() {
     let fixture = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(fixture.path().join("src")).unwrap();
     std::fs::create_dir_all(fixture.path().join("tests")).unwrap();
+    std::fs::create_dir_all(fixture.path().join("tests/fixtures")).unwrap();
     std::fs::write(
         fixture.path().join("src/calc.py"),
         "def add(left, right) -> int:\n    return left + right\n",
     )
     .unwrap();
     std::fs::write(fixture.path().join("src/__init__.py"), "").unwrap();
+    std::fs::write(fixture.path().join(".gitignore"), "tests/fixtures/\n").unwrap();
+    std::fs::write(
+        fixture.path().join("tests/fixtures/settings.toml"),
+        "[fixture]\nvalue = 1\n",
+    )
+    .unwrap();
     let python = repository_python();
     let mut documented_outputs = Vec::new();
     let mut documented_type_operator = false;
@@ -872,7 +879,63 @@ fn human_format_writes_progress_to_stdout_and_diagnostics_to_stderr() {
 }
 
 #[test]
-fn human_format_includes_profile_for_normalized_runs() {
+fn human_format_includes_profile_and_fingerprint_provenance_for_normalized_runs() {
+    let stdout = SharedWriter::default();
+    let mut handler = ReportHandler::new(
+        OutputFormat::Human,
+        stdout.clone(),
+        io::sink(),
+        std::env::temp_dir(),
+    )
+    .unwrap();
+    let mut started = RunStarted::minimal("run-1", 1);
+    started.normalized_config = Some({
+        let mut config = hoimin_cli::cli::parse_config_from([
+            "hoimin",
+            "run",
+            "--file",
+            "x.py",
+            "--profile",
+            "focused",
+            "--fingerprint-include",
+            "pyproject.toml",
+            "--",
+            "check",
+        ])
+        .unwrap();
+        config.fingerprint_inputs = vec![hoimin_core::FingerprintInputFile {
+            path: "pyproject.toml".into(),
+            hash: "sha256:fixture".into(),
+        }];
+        config
+    });
+
+    handler
+        .handle(EmitOutput {
+            id: EffectId(1),
+            event: OutputEvent::RunStarted(started),
+        })
+        .unwrap();
+
+    assert!(
+        stdout
+            .text()
+            .contains("run started: run-1 (profile: focused)")
+    );
+    assert!(
+        stdout
+            .text()
+            .contains("fingerprint includes: [pyproject.toml]")
+    );
+    assert!(
+        stdout
+            .text()
+            .contains("fingerprint inputs: [pyproject.toml=")
+    );
+}
+
+#[test]
+fn human_format_omits_fingerprint_provenance_without_patterns() {
     let stdout = SharedWriter::default();
     let mut handler = ReportHandler::new(
         OutputFormat::Human,
@@ -908,6 +971,8 @@ fn human_format_includes_profile_for_normalized_runs() {
             .text()
             .contains("run started: run-1 (profile: focused)")
     );
+    assert!(!stdout.text().contains("fingerprint includes:"));
+    assert!(!stdout.text().contains("fingerprint inputs:"));
 }
 
 struct FailingWriter;

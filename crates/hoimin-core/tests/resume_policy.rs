@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use hoimin_core::{
-    CommandArg, FingerprintInput, LineRange, MutationProfile, MutationStatus, RawRunLimits,
-    ResourceMode, ResumeDecision, SourceHash, StoredResult, TargetSlice, fingerprint,
+    CommandArg, FingerprintInput, FingerprintInputFile, LineRange, MutationProfile, MutationStatus,
+    RawRunLimits, ResourceMode, ResumeDecision, SourceHash, StoredResult, TargetSlice, fingerprint,
     resume_policy,
 };
 use proptest::prelude::*;
@@ -37,6 +37,35 @@ fn fingerprint_is_canonical_for_set_like_fields() {
     reordered.targets.reverse();
     reordered.operators.reverse();
     assert_eq!(fingerprint(&fixture_input()), fingerprint(&reordered));
+}
+
+#[test]
+fn fingerprint_inputs_are_canonical_and_compatibility_relevant() {
+    let original = fixture_input();
+    let mut reordered = original.clone();
+    reordered.fingerprint_inputs.reverse();
+    assert_eq!(fingerprint(&original), fingerprint(&reordered));
+
+    let mut changed_hash = original.clone();
+    changed_hash.fingerprint_inputs[0]
+        .hash
+        .replace_range(0..1, "f");
+    assert_ne!(fingerprint(&original), fingerprint(&changed_hash));
+
+    let mut changed_path = original.clone();
+    changed_path.fingerprint_inputs[0].path = "pyproject.changed.toml".into();
+    assert_ne!(fingerprint(&original), fingerprint(&changed_path));
+
+    let mut added = original.clone();
+    added.fingerprint_inputs.push(FingerprintInputFile {
+        path: "fixtures/additional.json".into(),
+        hash: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".to_owned(),
+    });
+    assert_ne!(fingerprint(&original), fingerprint(&added));
+
+    let mut removed = original.clone();
+    removed.fingerprint_inputs.clear();
+    assert_ne!(fingerprint(&original), fingerprint(&removed));
 }
 
 proptest! {
@@ -196,6 +225,16 @@ fn fixture_input() -> FingerprintInput {
         test_argv: vec![CommandArg::Unix(vec![0xff, 0, b'x'])],
         limits: (&fixture_raw_limits()).try_into().unwrap(),
         resource_mode: ResourceMode::Hard,
+        fingerprint_inputs: vec![
+            FingerprintInputFile {
+                path: "pyproject.toml".into(),
+                hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+            },
+            FingerprintInputFile {
+                path: "fixtures/case.json".into(),
+                hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned(),
+            },
+        ],
     }
 }
 

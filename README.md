@@ -10,6 +10,19 @@ hoimin is a bounded mutation-testing CLI for focused Python changes. Its Rust an
 uvx hoimin run --root . --file src/calc.py --format json -- python -m pytest -q
 ```
 
+### Plan and verify with an agent
+
+Create a plan before improving tests, then verify the candidate IDs selected from that plan:
+
+```console
+hoimin plan --root . --source src --profile focused \
+  --fingerprint-include pyproject.toml -- python -m pytest -q > PLAN.json
+# improve tests, then replace <ID_FROM_PLAN_JSON> with an exact candidates[].id value
+hoimin verify PLAN.json --candidate '<ID_FROM_PLAN_JSON>' --format json
+```
+
+`plan` discovers candidates but does not run a baseline or test command, copy a worker, or create or reuse a session. A manifest with `truncated` set to `true` contains only a partial candidate set, and `plan` exits 4; it cannot establish full coverage of the selected targets. `verify` rejects a changed target or fingerprint input before its baseline runs. Each `verify` command runs a fresh baseline and does not use a session. Plan manifests are trusted local invocation data, not a security boundary.
+
 Use a narrower selector to check one symbol:
 
 ```console
@@ -35,6 +48,14 @@ Explicit selectors form a union. For example, `--source src --file src/calc.py` 
 
 `--include GLOB` can restore files excluded by ignore rules or built-in copy exclusions. `--exclude GLOB` adds exclusions and wins when both match. Both options may be repeated.
 
+`--fingerprint-include GLOB` records matching files as explicit session-fingerprint inputs. It only invalidates compatible-run reuse: it does not control worker copying, select mutation targets, or implicitly watch files. Use `--include GLOB` independently when a fingerprinted input must also be copied into each worker; no files are implicitly watched.
+
+For example, when a test needs an ignored fixture input copied into its worker:
+
+```console
+hoimin run --root . --source src --fingerprint-include tests/fixtures/settings.toml --include tests/fixtures/settings.toml -- python -m pytest -q
+```
+
 ## Limits and defaults
 
 The defaults are:
@@ -54,6 +75,7 @@ The defaults are:
 | `--max-processes` | `64` | run-wide descendants |
 | `--format` | `json` | `json`, `jsonl`, or `human` |
 | `--profile full|focused` | `full` | candidate-selection profile |
+| `--fingerprint-include GLOB` | none | invalidates compatible session reuse; does not copy worker files |
 
 By default there are no include/exclude overrides or SQLite session, and `--changed`, `--resume`, and `--allow-best-effort-memory` are disabled.
 

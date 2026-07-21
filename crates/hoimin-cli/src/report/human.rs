@@ -5,12 +5,25 @@ use hoimin_core::{MutationStatus, OutputEvent};
 pub(super) fn write_event(writer: &mut impl Write, event: &OutputEvent) -> io::Result<()> {
     match event {
         OutputEvent::RunStarted(value) => match value.normalized_config.as_ref() {
-            Some(config) => writeln!(
-                writer,
-                "run started: {} (profile: {})",
-                value.run_id,
-                config.profile.as_str(),
-            )?,
+            Some(config) => {
+                let patterns = config.fingerprint_includes.join(", ");
+                let inputs = config
+                    .fingerprint_inputs
+                    .iter()
+                    .map(|input| format!("{}={}", input.path, input.hash))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                writeln!(
+                    writer,
+                    "run started: {} (profile: {})",
+                    value.run_id,
+                    config.profile.as_str(),
+                )?;
+                if !config.fingerprint_includes.is_empty() {
+                    writeln!(writer, "fingerprint includes: [{patterns}]")?;
+                    writeln!(writer, "fingerprint inputs: [{inputs}]")?;
+                }
+            }
             None => writeln!(writer, "run started: {}", value.run_id)?,
         },
         OutputEvent::BaselineFinished(value) => {

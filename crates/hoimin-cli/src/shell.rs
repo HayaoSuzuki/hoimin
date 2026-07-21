@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -206,6 +206,7 @@ async fn prepare_fingerprint<Stdout, Stderr>(
     }
     Ok(fingerprint(&FingerprintInput {
         sources,
+        fingerprint_inputs: context.config.fingerprint_inputs.clone(),
         targets: targets.clone(),
         operators: context.config.operators.names(),
         profile: context.config.profile,
@@ -499,6 +500,19 @@ fn session<Stdout, Stderr>(
     Ok(context.session.as_mut().expect("initialized above"))
 }
 
+/// Resolves filesystem-backed records that participate in a run fingerprint.
+///
+/// # Errors
+///
+/// Returns an error when a configured fingerprint input pattern cannot be resolved.
+pub fn prepare_run_config(
+    mut config: RunConfig,
+) -> Result<RunConfig, crate::fingerprint_inputs::FingerprintInputError> {
+    config.fingerprint_inputs =
+        crate::fingerprint_inputs::resolve(&config.root, &config.fingerprint_includes)?;
+    Ok(config)
+}
+
 /// Runs the configured mutation-test state machine.
 ///
 /// # Errors
@@ -513,14 +527,40 @@ where
     Stdout: Write,
     Stderr: Write,
 {
-    run_loop_with_control(config, stdout, stderr, RunControl::new()).await
+    let config = prepare_run_config(config).map_err(|error| error.to_string())?;
+    run_loop_prepared(config, stdout, stderr, RunControl::new(), None).await
+}
+
+/// Runs an already-validated plan configuration for exactly the requested candidate IDs.
+///
+/// # Errors
+///
+/// Returns an error when a session or resume configuration is supplied, or when run
+/// infrastructure, state transitions, or cleanup fail.
+pub async fn run_selected_loop<Stdout, Stderr>(
+    config: RunConfig,
+    candidate_ids: BTreeSet<String>,
+    stdout: Stdout,
+    stderr: Stderr,
+) -> Result<i32, String>
+where
+    Stdout: Write,
+    Stderr: Write,
+{
+    if config.session.is_some() || config.resume {
+        return Err("selected candidate execution does not support sessions or resume".to_owned());
+    }
+    run_loop_prepared(
+        config,
+        stdout,
+        stderr,
+        RunControl::new(),
+        Some(candidate_ids),
+    )
+    .await
 }
 
 #[doc(hidden)]
-#[expect(
-    clippy::too_many_lines,
-    reason = "the loop keeps cancellation, completion, and state-transition ordering in one auditable sequence"
-)]
 pub async fn run_loop_with_control<Stdout, Stderr>(
     config: RunConfig,
     stdout: Stdout,
@@ -531,12 +571,36 @@ where
     Stdout: Write,
     Stderr: Write,
 {
+    let config = prepare_run_config(config).map_err(|error| error.to_string())?;
+    run_loop_prepared(config, stdout, stderr, control, None).await
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "the loop keeps cancellation, completion, and state-transition ordering in one auditable sequence"
+)]
+async fn run_loop_prepared<Stdout, Stderr>(
+    config: RunConfig,
+    stdout: Stdout,
+    stderr: Stderr,
+    control: RunControl,
+    candidate_filter: Option<BTreeSet<String>>,
+) -> Result<i32, String>
+where
+    Stdout: Write,
+    Stderr: Write,
+{
     let mut context = ShellContext::new(&config, stdout, stderr).await?;
     let deadline = tokio::time::Instant::now() + config.limits.total_timeout.get();
     let max_jobs = config.limits.jobs.get();
     let channel_capacity = config.limits.jobs.get().saturating_add(1);
     let run_result = async {
-        let mut state = RunState::new(Uuid::new_v4().to_string(), config);
+        let mut state = match candidate_filter {
+            Some(candidate_ids) => {
+                RunState::with_candidate_filter(Uuid::new_v4().to_string(), config, candidate_ids)
+            }
+            None => RunState::new(Uuid::new_v4().to_string(), config),
+        };
         let (next, initial) = transition(state, RunEvent::StartRequested(StartRequested))
             .map_err(|error| error.to_string())?;
         state = next;

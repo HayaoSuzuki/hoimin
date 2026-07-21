@@ -2,6 +2,8 @@ use std::ffi::OsString;
 
 pub mod analyzer;
 pub mod cli;
+pub mod fingerprint_inputs;
+pub mod plan;
 pub mod process;
 pub mod progress;
 pub mod report;
@@ -53,6 +55,53 @@ where
                 2
             }
         },
+        Ok(cli::ParsedCommand::Plan(args)) => match args.into_run_config() {
+            Ok(config) => match plan::create(config).await {
+                Ok(output) => match serde_json::to_writer(&mut *stdout, &output.manifest) {
+                    Ok(()) => match writeln!(stdout) {
+                        Ok(()) => output.exit_code,
+                        Err(error) => {
+                            let _ = writeln!(stderr, "{error}");
+                            2
+                        }
+                    },
+                    Err(error) => {
+                        let _ = writeln!(stderr, "{error}");
+                        2
+                    }
+                },
+                Err(error) => {
+                    let _ = writeln!(stderr, "{error}");
+                    2
+                }
+            },
+            Err(error) => {
+                let _ = writeln!(stderr, "{error}");
+                2
+            }
+        },
+        Ok(cli::ParsedCommand::Verify(args)) => {
+            match plan::prepare_verify(&args.manifest, &args.candidate_ids, args.format).await {
+                Ok(verified) => match shell::run_selected_loop(
+                    verified.config,
+                    verified.candidate_ids,
+                    &mut *stdout,
+                    &mut *stderr,
+                )
+                .await
+                {
+                    Ok(code) => code,
+                    Err(error) => {
+                        let _ = writeln!(stderr, "{error}");
+                        2
+                    }
+                },
+                Err(error) => {
+                    let _ = writeln!(stderr, "{error}");
+                    2
+                }
+            }
+        }
         Err(cli::CliError::Clap(error)) => {
             let exit_code = error.exit_code();
             let _ = writeln!(stderr, "{error}");

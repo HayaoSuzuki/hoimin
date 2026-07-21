@@ -20,6 +20,96 @@ fn progress_requires_two_reports_and_positive_patience() {
 }
 
 #[test]
+fn plan_accepts_run_selection_but_rejects_report_and_session_options() {
+    let ParsedCommand::Plan(args) = parse_from([
+        "hoimin",
+        "plan",
+        "--file",
+        "src/calc.py",
+        "--fingerprint-include",
+        "pyproject.toml",
+        "--",
+        "python",
+        "-m",
+        "pytest",
+    ])
+    .unwrap() else {
+        panic!("expected plan");
+    };
+    let config = args.into_run_config().unwrap();
+    assert_eq!(config.output.format, hoimin_core::OutputFormat::Json);
+    assert_eq!(config.session, None);
+    assert!(!config.resume);
+    assert_eq!(config.fingerprint_includes, ["pyproject.toml"]);
+    assert_eq!(config.test_argv.len(), 3);
+    for option in ["--format", "--session", "--resume"] {
+        assert!(
+            parse_from([
+                "hoimin",
+                "plan",
+                "--file",
+                "src/calc.py",
+                option,
+                "x",
+                "--",
+                "python",
+            ])
+            .is_err(),
+            "{option}"
+        );
+    }
+}
+
+#[test]
+fn verify_requires_candidates_and_accepts_only_format_override() {
+    let ParsedCommand::Verify(args) = parse_from([
+        "hoimin",
+        "verify",
+        "plan.json",
+        "--format",
+        "jsonl",
+        "--candidate",
+        "m1_a",
+        "--candidate",
+        "m1_a",
+    ])
+    .unwrap() else {
+        panic!("expected verify");
+    };
+    assert_eq!(args.manifest, std::path::PathBuf::from("plan.json"));
+    assert_eq!(args.candidate_ids, ["m1_a"]);
+    assert_eq!(args.format, hoimin_cli::cli::OutputFormat::Jsonl);
+    assert!(parse_from(["hoimin", "verify", "plan.json"]).is_err());
+    for option in ["--source", "--session"] {
+        assert!(
+            parse_from([
+                "hoimin",
+                "verify",
+                "plan.json",
+                "--candidate",
+                "m1_a",
+                option,
+                "x",
+            ])
+            .is_err(),
+            "{option}"
+        );
+    }
+    assert!(
+        parse_from([
+            "hoimin",
+            "verify",
+            "plan.json",
+            "--candidate",
+            "m1_a",
+            "--",
+            "python",
+        ])
+        .is_err()
+    );
+}
+
+#[test]
 fn run_requires_a_selector_and_test_argv() {
     let err = parse_from(["hoimin", "run", "--", "python", "-m", "unittest"]).unwrap_err();
     assert!(err.to_string().contains("target selector"));
@@ -206,6 +296,34 @@ fn parse_run_config_parses_ranges_limits_and_output() {
     );
     assert_eq!(config.output.format, hoimin_core::OutputFormat::Jsonl);
     assert_eq!(config.test_argv.len(), 3);
+}
+
+#[test]
+fn run_preserves_repeated_fingerprint_include_patterns() {
+    let config = hoimin_cli::cli::parse_config_from([
+        "hoimin",
+        "run",
+        "--file",
+        "src/calc.py",
+        "--fingerprint-include",
+        "pyproject.toml",
+        "--fingerprint-include",
+        "fixtures/**/*.json",
+        "--include",
+        "fixtures/**",
+        "--",
+        "python",
+        "-m",
+        "pytest",
+    ])
+    .unwrap();
+
+    assert_eq!(
+        config.fingerprint_includes,
+        ["pyproject.toml", "fixtures/**/*.json"]
+    );
+    assert_eq!(config.selection.includes, ["fixtures/**"]);
+    assert!(config.fingerprint_inputs.is_empty());
 }
 
 #[test]
