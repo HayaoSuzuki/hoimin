@@ -12,6 +12,10 @@ fn plan_config_round_trips_run_semantics_without_session_or_resume() {
     config.resume = true;
 
     let value = serde_json::to_value(config.clone().into_plan_config()).unwrap();
+    assert_eq!(
+        value["fingerprint_files"],
+        serde_json::json!(["pyproject.toml"])
+    );
     assert!(value.get("session").is_none());
     assert!(value.get("resume").is_none());
 
@@ -32,6 +36,17 @@ fn plan_config_round_trips_run_semantics_without_session_or_resume() {
     assert_eq!(restored, expected);
     assert_eq!(restored.session, None);
     assert!(!restored.resume);
+    assert_eq!(restored.fingerprint_files, ["pyproject.toml"]);
+}
+
+#[test]
+fn plan_config_defaults_missing_fingerprint_files() {
+    let mut value = serde_json::to_value(fixture_run_config().into_plan_config()).unwrap();
+    value.as_object_mut().unwrap().remove("fingerprint_files");
+
+    let plan: PlanConfig = serde_json::from_value(value).unwrap();
+
+    assert!(plan.fingerprint_files.is_empty());
 }
 
 fn fixture_run_config() -> RunConfig {
@@ -39,6 +54,7 @@ fn fixture_run_config() -> RunConfig {
         root: "project".into(),
         files: vec!["src/lib.py".into()],
         fingerprint_includes: vec!["pyproject.toml".to_owned()],
+        fingerprint_files: vec!["pyproject.toml".to_owned()],
         operators: vec!["compare_eq_ne".to_owned()],
         allow_best_effort_memory: true,
         profile: MutationProfile::Focused,
