@@ -19,6 +19,8 @@ SKILLS = {
             "   its plan.",
             "hoimin plan --root . --source <dir> --changed --profile focused \\\n"
             "  --fingerprint-include pyproject.toml -- python -m pytest -q > \"$plan_path\"",
+            "`plan` always writes one JSON document to standard output and diagnostics to standard error;\n"
+            "do not pass `--format` to `plan`.",
             "Read `candidates[].id` from `PLAN.json`; choose one ID and pass that exact ID to `verify`:",
             "Everything after `--` in `plan` remains the normal test command's native argv; do not turn it\n"
             "into a shell command string. `plan` runs no baseline, test command, worker copy, or session.\n"
