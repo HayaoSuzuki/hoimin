@@ -451,6 +451,7 @@ fn output_config(format: OutputFormat) -> OutputConfig {
             OutputFormat::Jsonl => hoimin_core::OutputFormat::Jsonl,
             OutputFormat::Human => hoimin_core::OutputFormat::Human,
         },
+        metrics: None,
     }
 }
 

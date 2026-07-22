@@ -15,7 +15,7 @@ use hoimin_core::{
     name = "hoimin",
     version,
     about = "Bounded mutation testing for focused Python changes",
-    after_help = "Run contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates --analyzer-timeout\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-processes --allow-best-effort-memory\nOutput/session options:\n  --format <json|jsonl|human> --session --resume"
+    after_help = "Run contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates --analyzer-timeout\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-processes --allow-best-effort-memory\nOutput/session options:\n  --format <json|jsonl|human> --metrics <PATH> --session --resume"
 )]
 struct RootCli {
     #[command(subcommand)]
@@ -183,6 +183,10 @@ struct RawRunArgs {
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     format: OutputFormat,
 
+    /// Write performance metrics to PATH.
+    #[arg(long, value_name = "PATH")]
+    metrics: Option<PathBuf>,
+
     /// `SQLite` session path; no database is created unless specified.
     #[arg(long, value_name = "PATH")]
     session: Option<PathBuf>,
@@ -269,6 +273,7 @@ pub struct RunArgs {
     pub max_processes: usize,
     pub allow_best_effort_memory: bool,
     pub format: OutputFormat,
+    pub metrics: Option<PathBuf>,
     pub session: Option<PathBuf>,
     pub resume: bool,
     pub test_argv: Vec<OsString>,
@@ -384,6 +389,7 @@ impl TryFrom<Command> for ParsedCommand {
                 raw.mutation,
                 raw.test_argv,
                 raw.format,
+                raw.metrics,
                 raw.session,
                 raw.resume,
             )?)),
@@ -392,6 +398,7 @@ impl TryFrom<Command> for ParsedCommand {
                     raw.mutation,
                     raw.test_argv,
                     OutputFormat::Json,
+                    None,
                     None,
                     false,
                 )?,
@@ -418,6 +425,7 @@ fn run_args_from_mutation(
     raw: RawMutationArgs,
     test_argv: Vec<OsString>,
     format: OutputFormat,
+    metrics: Option<PathBuf>,
     session: Option<PathBuf>,
     resume: bool,
 ) -> Result<RunArgs, CliError> {
@@ -461,6 +469,7 @@ fn run_args_from_mutation(
         max_processes: raw.max_processes,
         allow_best_effort_memory: raw.allow_best_effort_memory,
         format,
+        metrics,
         session,
         resume,
         test_argv,
@@ -527,6 +536,22 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
         .session
         .map(|path| utf8_path(path, "--session").map(|path| SessionConfig { path }))
         .transpose()?;
+    let metrics = args
+        .metrics
+        .map(|path| {
+            let path = if path.is_absolute() {
+                path
+            } else {
+                std::env::current_dir()
+                    .map_err(|error| CliError::InvalidValue {
+                        name: "--metrics",
+                        value: error.to_string(),
+                    })?
+                    .join(path)
+            };
+            utf8_path(path, "--metrics")
+        })
+        .transpose()?;
     let limits = RawRunLimits {
         jobs: args.jobs,
         max_mutants: args.max_mutants,
@@ -568,6 +593,7 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
                 OutputFormat::Jsonl => hoimin_core::OutputFormat::Jsonl,
                 OutputFormat::Human => hoimin_core::OutputFormat::Human,
             },
+            metrics,
         },
         session,
         resume: args.resume,

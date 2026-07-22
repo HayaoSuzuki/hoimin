@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     CommandArg, FingerprintInputFile, MutantTimeout, MutationCandidate, MutationProfile,
-    MutationStatus, OutputSpoolRef, ResourceMode, RunLimits, TargetSlice,
+    MutationStatus, OutputSpoolRef, ResourceMode, RunConfig, RunLimits, TargetSlice,
 };
 
 pub const FINGERPRINT_SCHEMA_VERSION: u8 = 4;
@@ -26,6 +26,27 @@ pub struct FingerprintInput {
     pub test_argv: Vec<CommandArg>,
     pub limits: RunLimits,
     pub resource_mode: ResourceMode,
+}
+
+impl FingerprintInput {
+    #[must_use]
+    pub fn from_config(
+        config: &RunConfig,
+        sources: Vec<SourceHash>,
+        targets: Vec<TargetSlice>,
+        resource_mode: ResourceMode,
+    ) -> Self {
+        Self {
+            sources,
+            fingerprint_inputs: config.fingerprint_inputs.clone(),
+            targets,
+            operators: config.operators.names(),
+            profile: config.profile,
+            test_argv: config.test_argv.clone(),
+            limits: config.limits.clone(),
+            resource_mode,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]

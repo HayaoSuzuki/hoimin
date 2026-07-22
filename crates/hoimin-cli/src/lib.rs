@@ -3,6 +3,7 @@ use std::ffi::OsString;
 pub mod analyzer;
 pub mod cli;
 pub mod fingerprint_inputs;
+mod metrics;
 pub mod plan;
 pub mod process;
 pub mod progress;

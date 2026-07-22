@@ -260,12 +260,15 @@ pub enum OutputFormat {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct OutputConfig {
     pub format: OutputFormat,
+    #[serde(default)]
+    pub metrics: Option<Utf8PathBuf>,
 }
 
 impl Default for OutputConfig {
     fn default() -> Self {
         Self {
             format: OutputFormat::Json,
+            metrics: None,
         }
     }
 }

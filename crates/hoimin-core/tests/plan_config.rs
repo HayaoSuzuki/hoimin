@@ -23,11 +23,13 @@ fn plan_config_round_trips_run_semantics_without_session_or_resume() {
         .unwrap()
         .into_run_config(OutputConfig {
             format: OutputFormat::Json,
+            metrics: None,
         });
 
     let expected = RunConfig {
         output: OutputConfig {
             format: OutputFormat::Json,
+            metrics: None,
         },
         session: None,
         resume: false,
@@ -66,6 +68,7 @@ fn fixture_run_config() -> RunConfig {
         test_argv: vec![CommandArg::Unix(b"python".to_vec())],
         output: OutputConfig {
             format: OutputFormat::Human,
+            metrics: None,
         },
         ..RawRunConfig::default()
     })

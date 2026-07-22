@@ -51,6 +51,20 @@ async fn documentation_contract() {
     let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
     assert!(
         readme.contains(
+            "hoimin run --root . --source src --metrics metrics.json -- python -m pytest -q"
+        ),
+        "README must contain the documented --metrics metrics.json example",
+    );
+    assert!(
+        readme.contains("opt-in") && readme.contains("separate from the run JSON"),
+        "README must identify metrics as opt-in and separate from run JSON",
+    );
+    assert!(
+        readme.contains("warns without changing the mutation result"),
+        "README must document metrics write-failure behavior",
+    );
+    assert!(
+        readme.contains(
             "`complete` is `false` when any mutant is inconclusive or the run fails or is interrupted"
         ),
         "README must define the machine-readable complete field",
@@ -233,6 +247,11 @@ fn normalize_documented_command(command: &[String], root: &Path, python: &Path) 
     for index in 0..argv.len() {
         if index > 0 && argv[index - 1] == "--root" {
             root.clone_into(&mut argv[index]);
+        } else if index > 0 && argv[index - 1] == "--metrics" {
+            argv[index] = Path::new(root)
+                .join("metrics.json")
+                .to_string_lossy()
+                .into_owned();
         } else if argv[index] == "python" {
             python.clone_into(&mut argv[index]);
         }

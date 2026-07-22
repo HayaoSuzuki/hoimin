@@ -2,10 +2,49 @@ use std::time::Duration;
 
 use hoimin_core::{
     CommandArg, FingerprintInput, FingerprintInputFile, LineRange, MutationProfile, MutationStatus,
-    RawRunLimits, ResourceMode, ResumeDecision, SourceHash, StoredResult, TargetSlice, fingerprint,
-    resume_policy,
+    OutputConfig, OutputFormat, RawRunConfig, RawRunLimits, ResourceMode, ResumeDecision,
+    RunConfig, SourceHash, StoredResult, TargetSlice, fingerprint, resume_policy,
 };
 use proptest::prelude::*;
+
+#[test]
+fn metrics_output_does_not_change_fingerprint() {
+    let first_config = config_with_metrics("first.json");
+    let second_config = config_with_metrics("second.json");
+    let runtime = fixture_input();
+    let first = FingerprintInput::from_config(
+        &first_config,
+        runtime.sources.clone(),
+        runtime.targets.clone(),
+        runtime.resource_mode,
+    );
+    let second = FingerprintInput::from_config(
+        &second_config,
+        runtime.sources,
+        runtime.targets,
+        runtime.resource_mode,
+    );
+
+    assert_ne!(first_config.output, second_config.output);
+    assert_eq!(
+        fingerprint(&first),
+        fingerprint(&second),
+        "metrics output is not execution compatibility"
+    );
+}
+
+fn config_with_metrics(path: &str) -> RunConfig {
+    RunConfig::try_from(RawRunConfig {
+        files: vec!["src/a.py".into()],
+        test_argv: vec![CommandArg::Unix(b"python".to_vec())],
+        output: OutputConfig {
+            format: OutputFormat::Json,
+            metrics: Some(path.into()),
+        },
+        ..RawRunConfig::default()
+    })
+    .unwrap()
+}
 
 #[test]
 fn resume_decides_one_stored_result_without_collecting_the_run() {

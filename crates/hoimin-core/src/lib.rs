@@ -11,6 +11,7 @@ pub mod model;
 pub mod report;
 pub mod resume;
 pub mod target;
+pub mod telemetry;
 
 pub use budget::*;
 pub use candidate::*;
@@ -23,3 +24,4 @@ pub use model::*;
 pub use report::*;
 pub use resume::*;
 pub use target::*;
+pub use telemetry::*;

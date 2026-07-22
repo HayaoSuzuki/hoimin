@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/tokyogas-tech/hoimin/main/docs/json-schema/run-metrics.schema.json",
+  "title": "hoimin run metrics sidecar",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "elapsed_ms",
+    "stages",
+    "workers",
+    "discovered",
+    "executed"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "elapsed_ms": {
+      "$ref": "#/$defs/nonnegativeInteger"
+    },
+    "stages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/stage"
+      }
+    },
+    "workers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/worker"
+      }
+    },
+    "discovered": {
+      "$ref": "#/$defs/nonnegativeInteger"
+    },
+    "executed": {
+      "$ref": "#/$defs/nonnegativeInteger"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "nonnegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "stage": {
+      "type": "object",
+      "required": ["name", "elapsed_ms"],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "elapsed_ms": {
+          "$ref": "#/$defs/nonnegativeInteger"
+        }
+      },
+      "additionalProperties": false
+    },
+    "worker": {
+      "type": "object",
+      "required": ["worker", "busy_ms", "queue_wait_ms", "processes"],
+      "properties": {
+        "worker": {
+          "$ref": "#/$defs/nonnegativeInteger"
+        },
+        "busy_ms": {
+          "$ref": "#/$defs/nonnegativeInteger"
+        },
+        "queue_wait_ms": {
+          "$ref": "#/$defs/nonnegativeInteger"
+        },
+        "processes": {
+          "$ref": "#/$defs/nonnegativeInteger"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
