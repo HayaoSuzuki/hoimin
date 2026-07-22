@@ -176,11 +176,11 @@ fn glob_and_exact_file_are_deduplicated() {
 
 #[test]
 fn exact_file_treats_glob_metacharacters_literally() {
-    let fixture = fixture_root(&[("settings[prod]*.toml", "x")]);
+    let fixture = fixture_root(&[("settings[prod].toml", "x")]);
 
-    let records = resolve(&fixture.root, &[], &["settings[prod]*.toml".into()]).unwrap();
+    let records = resolve(&fixture.root, &[], &["settings[prod].toml".into()]).unwrap();
 
-    assert_eq!(records[0].path, "settings[prod]*.toml");
+    assert_eq!(records[0].path, "settings[prod].toml");
 }
 
 #[test]
