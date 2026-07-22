@@ -1283,6 +1283,8 @@ mod tests {
 
     use hoimin_core::CommandArg;
 
+    use crate::resource::PortableBackend;
+
     #[cfg(unix)]
     fn missing_executable_arg() -> CommandArg {
         CommandArg::Unix(b"definitely-missing-hoimin-executable".to_vec())
