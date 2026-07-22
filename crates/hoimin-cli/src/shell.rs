@@ -5,9 +5,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use camino::Utf8PathBuf;
 use hoimin_core::{
-    CandidateLoaded, EffectFailed, EffectId, FingerprintInput, OutputEvent, ReportVersions,
-    RunConfig, RunEffect, RunEvent, RunPhase, RunProcess, RunState, SourceHash, StartRequested,
-    TargetSlice, fingerprint, transition,
+    CandidateLoaded, Diagnostic, EffectFailed, EffectId, EmitOutput, FingerprintInput, OutputEvent,
+    ReportVersions, RunConfig, RunEffect, RunEvent, RunPhase, RunProcess, RunState, SourceHash,
+    StartRequested, TargetSlice, fingerprint, transition,
 };
 use tempfile::TempDir;
 use tokio::sync::mpsc;
@@ -15,6 +15,7 @@ use tokio::task::JoinSet;
 use uuid::Uuid;
 
 use crate::analyzer::{AnalyzerHandler, CandidateStore};
+use crate::metrics::{MetricsCollector, MetricsError, write_metrics};
 use crate::process::{ProcessCancellation, ProcessHandler, ProcessRequest, ProcessStartGate};
 use crate::report::ReportHandler;
 #[cfg(not(any(windows, target_os = "linux")))]
@@ -95,6 +96,7 @@ impl Default for RunControl {
 struct ShellCompletion {
     event: RunEvent,
     process_task: bool,
+    process: Option<(u32, bool)>,
 }
 
 pub struct ShellContext<Stdout, Stderr> {
@@ -204,16 +206,12 @@ async fn prepare_fingerprint<Stdout, Stderr>(
             hash: *blake3::hash(&bytes).as_bytes(),
         });
     }
-    Ok(fingerprint(&FingerprintInput {
+    Ok(fingerprint(&FingerprintInput::from_config(
+        &context.config,
         sources,
-        fingerprint_inputs: context.config.fingerprint_inputs.clone(),
-        targets: targets.clone(),
-        operators: context.config.operators.names(),
-        profile: context.config.profile,
-        test_argv: context.config.test_argv.clone(),
-        limits: context.config.limits.clone(),
-        resource_mode: context.process.mode(),
-    }))
+        targets.clone(),
+        context.process.mode(),
+    )))
 }
 
 #[cfg(windows)]
@@ -593,10 +591,15 @@ where
     Stdout: Write,
     Stderr: Write,
 {
+    let metrics_path = config.output.metrics.clone();
     let mut context = ShellContext::new(&config, stdout, stderr).await?;
     let deadline = tokio::time::Instant::now() + config.limits.total_timeout.get();
     let max_jobs = config.limits.jobs.get();
     let channel_capacity = config.limits.jobs.get().saturating_add(1);
+    let mut metrics = None;
+    let mut metrics_warnings = Vec::new();
+    let mut discovered = 0_u64;
+    let mut executed = 0_u64;
     let run_result = async {
         let mut state = match candidate_filter {
             Some(candidate_ids) => {
@@ -607,7 +610,15 @@ where
         let (next, initial) = transition(state, RunEvent::StartRequested(StartRequested))
             .map_err(|error| error.to_string())?;
         state = next;
+        if metrics_path.is_some() {
+            let mut collector = MetricsCollector::new(state.run_id());
+            if let Err(error) = collector.begin_stage("targets") {
+                metrics_warnings.push(("metrics.state", error.to_string()));
+            }
+            metrics = Some(collector);
+        }
         let mut effects = VecDeque::from(initial);
+        record_ready_processes(&effects, &mut metrics, &mut metrics_warnings);
         let cancellation = ProcessCancellation::new();
         let (completion_tx, mut completion_rx) = mpsc::channel(channel_capacity);
         let mut process_tasks = JoinSet::new();
@@ -634,6 +645,7 @@ where
                 if !stop_signalled
                     && (control.is_cancelled() || tokio::time::Instant::now() >= deadline)
                 {
+                    cancel_queued_effect(&effect, &mut metrics, &mut metrics_warnings);
                     cancellation.cancel();
                     stop_signalled = true;
                     priority_event = Some(if control.is_cancelled() {
@@ -644,11 +656,13 @@ where
                     break;
                 }
                 if !state.is_effect_pending(effect.id()) {
+                    cancel_queued_effect(&effect, &mut metrics, &mut metrics_warnings);
                     continue;
                 }
                 match effect {
                     RunEffect::RunBaseline(request) => {
                         let id = request.id;
+                        let worker = request.worker;
                         match worker_process_request(
                             &context,
                             id,
@@ -657,24 +671,36 @@ where
                             Some(control.start_gate()),
                         ) {
                             Ok(request) => {
-                                if !spawn_process(
-                                    Arc::clone(&context.process),
-                                    request,
-                                    true,
-                                    completion_tx.clone(),
-                                    &mut process_tasks,
+                                let Some(worker) = worker else {
+                                    unreachable!("worker process request accepted without worker")
+                                };
+                                let Some(dispatch) = accept_process_dispatch(
                                     &control,
-                                ) {
+                                    &mut metrics,
+                                    &mut metrics_warnings,
+                                    worker,
+                                ) else {
                                     cancellation.cancel();
                                     stop_signalled = true;
                                     priority_event = Some(RunEvent::CancellationRequested);
                                     break;
-                                }
+                                };
+                                spawn_process(
+                                    Arc::clone(&context.process),
+                                    request,
+                                    worker,
+                                    true,
+                                    completion_tx.clone(),
+                                    &mut process_tasks,
+                                    dispatch,
+                                );
                             }
                             Err(error) => {
+                                cancel_queued_worker(worker, &mut metrics, &mut metrics_warnings);
                                 serial_completion = Some(ShellCompletion {
                                     event: RunEvent::EffectFailed(error),
                                     process_task: false,
+                                    process: None,
                                 });
                             }
                         }
@@ -687,6 +713,7 @@ where
                     }
                     RunEffect::RunMutant(request) => {
                         let id = request.id;
+                        let worker = request.worker;
                         match worker_process_request(
                             &context,
                             id,
@@ -695,24 +722,36 @@ where
                             Some(control.start_gate()),
                         ) {
                             Ok(request) => {
-                                if !spawn_process(
-                                    Arc::clone(&context.process),
-                                    request,
-                                    false,
-                                    completion_tx.clone(),
-                                    &mut process_tasks,
+                                let Some(worker) = worker else {
+                                    unreachable!("worker process request accepted without worker")
+                                };
+                                let Some(dispatch) = accept_process_dispatch(
                                     &control,
-                                ) {
+                                    &mut metrics,
+                                    &mut metrics_warnings,
+                                    worker,
+                                ) else {
                                     cancellation.cancel();
                                     stop_signalled = true;
                                     priority_event = Some(RunEvent::CancellationRequested);
                                     break;
-                                }
+                                };
+                                spawn_process(
+                                    Arc::clone(&context.process),
+                                    request,
+                                    worker,
+                                    false,
+                                    completion_tx.clone(),
+                                    &mut process_tasks,
+                                    dispatch,
+                                );
                             }
                             Err(error) => {
+                                cancel_queued_worker(worker, &mut metrics, &mut metrics_warnings);
                                 serial_completion = Some(ShellCompletion {
                                     event: RunEvent::EffectFailed(error),
                                     process_task: false,
+                                    process: None,
                                 });
                             }
                         }
@@ -776,6 +815,7 @@ where
                             serial_completion = Some(ShellCompletion {
                                 event,
                                 process_task: false,
+                                process: None,
                             });
                         }
                     }
@@ -787,10 +827,15 @@ where
 
             if let Some(error) = signal_failure.take() {
                 cancellation.cancel();
-                let drain_failure =
-                    drain_processes(&mut process_tasks, &mut completion_rx, &mut in_flight)
-                        .await
-                        .err();
+                let drain_failure = drain_processes(
+                    &mut process_tasks,
+                    &mut completion_rx,
+                    &mut in_flight,
+                    &mut metrics,
+                    &mut metrics_warnings,
+                )
+                .await
+                .err();
                 return Err(match drain_failure {
                     Some(drain_failure) => format!("{error}; {drain_failure}"),
                     None => error,
@@ -811,6 +856,7 @@ where
                 ShellCompletion {
                     event,
                     process_task: false,
+                    process: None,
                 }
             } else if let Some(completion) = ready_process_completion {
                 completion
@@ -828,6 +874,7 @@ where
                         ShellCompletion {
                             event: RunEvent::CancellationRequested,
                             process_task: false,
+                            process: None,
                         }
                     }
                     () = tokio::time::sleep_until(deadline) => {
@@ -836,6 +883,7 @@ where
                         ShellCompletion {
                             event: RunEvent::DeadlineReached,
                             process_task: false,
+                            process: None,
                         }
                     }
                     signal = &mut ctrl_c => {
@@ -845,12 +893,14 @@ where
                             Ok(event) => ShellCompletion {
                                 event,
                                 process_task: false,
+                                process: None,
                             },
                             Err(error) => {
                                 signal_failure = Some(error);
                                 ShellCompletion {
                                     event: RunEvent::CancellationRequested,
                                     process_task: false,
+                                    process: None,
                                 }
                             }
                         }
@@ -862,10 +912,15 @@ where
             };
             if let Some(error) = signal_failure.take() {
                 cancellation.cancel();
-                let drain_failure =
-                    drain_processes(&mut process_tasks, &mut completion_rx, &mut in_flight)
-                        .await
-                        .err();
+                let drain_failure = drain_processes(
+                    &mut process_tasks,
+                    &mut completion_rx,
+                    &mut in_flight,
+                    &mut metrics,
+                    &mut metrics_warnings,
+                )
+                .await
+                .err();
                 return Err(match drain_failure {
                     Some(drain_failure) => format!("{error}; {drain_failure}"),
                     None => error,
@@ -874,7 +929,19 @@ where
             let ShellCompletion {
                 event,
                 process_task: process_completion,
+                process,
             } = completion;
+            let previous_phase = state.phase();
+            let accepted_mutant = matches!(&event, RunEvent::MutantFinished(_));
+            let targets_resolved = matches!(&event, RunEvent::TargetsResolved(_));
+            let preflight_completed = matches!(&event, RunEvent::PreflightCompleted(_));
+            let cleanup_finished = matches!(&event, RunEvent::CleanupFinished(_));
+            let analyzed_records = match &event {
+                RunEvent::AnalysisFinished(value) => {
+                    value.spool.as_ref().map(|spool| spool.records)
+                }
+                _ => None,
+            };
             let external_stop = matches!(
                 event,
                 RunEvent::DeadlineReached | RunEvent::CancellationRequested
@@ -882,6 +949,11 @@ where
             let failed = matches!(event, RunEvent::EffectFailed(_));
             if !external_stop && process_completion {
                 in_flight = in_flight.saturating_sub(1);
+            }
+            if let Some((worker, _)) = process {
+                record_metrics(&mut metrics, &mut metrics_warnings, |metrics| {
+                    metrics.process_finished(worker)
+                });
             }
             if failed {
                 cancellation.cancel();
@@ -892,15 +964,47 @@ where
                 Ok(value) => value,
                 Err(error) => {
                     cancellation.cancel();
-                    drain_processes(&mut process_tasks, &mut completion_rx, &mut in_flight).await?;
+                    drain_processes(
+                        &mut process_tasks,
+                        &mut completion_rx,
+                        &mut in_flight,
+                        &mut metrics,
+                        &mut metrics_warnings,
+                    )
+                    .await?;
                     return Err(error.to_string());
                 }
             };
             state = next;
+            if let Some(records) = analyzed_records {
+                discovered = records;
+                if let Some(metrics) = metrics.as_mut() {
+                    metrics.discovered(records);
+                }
+            }
+            if accepted_mutant {
+                executed = executed.saturating_add(1);
+            }
+            observe_accepted_transition(
+                &mut metrics,
+                &mut metrics_warnings,
+                previous_phase,
+                state.phase(),
+                targets_resolved,
+                preflight_completed,
+                cleanup_finished,
+            );
 
             if external_stop || failed {
-                effects.clear();
-                drain_processes(&mut process_tasks, &mut completion_rx, &mut in_flight).await?;
+                discard_queued_effects(&mut effects, &mut metrics, &mut metrics_warnings);
+                drain_processes(
+                    &mut process_tasks,
+                    &mut completion_rx,
+                    &mut in_flight,
+                    &mut metrics,
+                    &mut metrics_warnings,
+                )
+                .await?;
             } else if process_completion {
                 let process_failure = match process_tasks.join_next().await {
                     Some(Ok(())) => None,
@@ -909,10 +1013,15 @@ where
                 };
                 if let Some(process_failure) = process_failure {
                     cancellation.cancel();
-                    let drain_failure =
-                        drain_processes(&mut process_tasks, &mut completion_rx, &mut in_flight)
-                            .await
-                            .err();
+                    let drain_failure = drain_processes(
+                        &mut process_tasks,
+                        &mut completion_rx,
+                        &mut in_flight,
+                        &mut metrics,
+                        &mut metrics_warnings,
+                    )
+                    .await
+                    .err();
                     return Err(match drain_failure {
                         Some(drain_failure) => {
                             format!("{process_failure}; {drain_failure}")
@@ -921,14 +1030,168 @@ where
                     });
                 }
             }
+            record_ready_processes(&produced, &mut metrics, &mut metrics_warnings);
             effects.extend(produced);
         }
-        Ok(state.exit_code())
+        if let Some(metrics) = metrics.as_mut() {
+            metrics.set_run_id(state.run_id());
+        }
+        Ok((state.exit_code(), state.run_id().to_owned()))
     }
     .await;
     let close_result = context.process.close().map_err(|error| error.to_string());
     let workspace_close = context.workspace.close().map_err(|error| error.to_string());
-    combine_close_results(run_result, workspace_close, close_result)
+    let run_id = run_result.as_ref().ok().map(|(_, run_id)| run_id.clone());
+    let combined = combine_close_results(
+        run_result.map(|(exit_code, _)| exit_code),
+        workspace_close,
+        close_result,
+    );
+    if let (Some(path), Some(collector), Some(run_id)) = (metrics_path, metrics, run_id) {
+        match collector.finish(discovered, executed) {
+            Ok(metrics) => {
+                if let Err(error) = write_metrics(path.as_std_path(), &metrics) {
+                    metrics_warnings.push(("metrics.write", error.to_string()));
+                }
+            }
+            Err(error) => metrics_warnings.push(("metrics.state", error.to_string())),
+        }
+        for (code, message) in metrics_warnings {
+            emit_metrics_warning(&mut context, &run_id, code, message);
+        }
+    }
+    combined
+}
+
+fn record_metrics(
+    collector: &mut Option<MetricsCollector>,
+    warnings: &mut Vec<(&'static str, String)>,
+    observation: impl FnOnce(&mut MetricsCollector) -> Result<(), MetricsError>,
+) {
+    if let Some(collector) = collector.as_mut()
+        && let Err(error) = observation(collector)
+    {
+        warnings.push(("metrics.state", error.to_string()));
+    }
+}
+
+fn cancel_queued_worker(
+    worker: Option<u32>,
+    collector: &mut Option<MetricsCollector>,
+    warnings: &mut Vec<(&'static str, String)>,
+) {
+    if let Some(worker) = worker {
+        record_metrics(collector, warnings, |metrics| metrics.cancel_queued(worker));
+    }
+}
+
+fn cancel_queued_effect(
+    effect: &RunEffect,
+    collector: &mut Option<MetricsCollector>,
+    warnings: &mut Vec<(&'static str, String)>,
+) {
+    match effect {
+        RunEffect::RunBaseline(request) | RunEffect::RunMutant(request) => {
+            cancel_queued_worker(request.worker, collector, warnings);
+        }
+        _ => {}
+    }
+}
+
+fn discard_queued_effects(
+    effects: &mut VecDeque<RunEffect>,
+    collector: &mut Option<MetricsCollector>,
+    warnings: &mut Vec<(&'static str, String)>,
+) {
+    for effect in effects.drain(..) {
+        cancel_queued_effect(&effect, collector, warnings);
+    }
+}
+
+fn record_ready_processes<'a>(
+    effects: impl IntoIterator<Item = &'a RunEffect>,
+    collector: &mut Option<MetricsCollector>,
+    warnings: &mut Vec<(&'static str, String)>,
+) {
+    for worker in effects.into_iter().filter_map(|effect| match effect {
+        RunEffect::RunBaseline(request) | RunEffect::RunMutant(request) => request.worker,
+        _ => None,
+    }) {
+        record_metrics(collector, warnings, |metrics| metrics.queued(worker));
+    }
+}
+
+fn accept_process_dispatch<'a>(
+    control: &'a RunControl,
+    collector: &mut Option<MetricsCollector>,
+    warnings: &mut Vec<(&'static str, String)>,
+    worker: u32,
+) -> Option<std::sync::MutexGuard<'a, ()>> {
+    let Some(dispatch) = control.begin_dispatch() else {
+        record_metrics(collector, warnings, |metrics| metrics.cancel_queued(worker));
+        return None;
+    };
+    record_metrics(collector, warnings, |metrics| {
+        metrics.process_started(worker)
+    });
+    Some(dispatch)
+}
+
+fn observe_accepted_transition(
+    collector: &mut Option<MetricsCollector>,
+    warnings: &mut Vec<(&'static str, String)>,
+    previous: RunPhase,
+    next: RunPhase,
+    targets_resolved: bool,
+    preflight_completed: bool,
+    cleanup_finished: bool,
+) {
+    record_metrics(collector, warnings, |metrics| {
+        if targets_resolved {
+            metrics.finish_stage("targets")?;
+            metrics.begin_stage("preflight")?;
+        }
+        if preflight_completed {
+            metrics.finish_stage("preflight")?;
+        }
+        if previous != next {
+            if let Some(stage) = phase_stage(previous)
+                && !(previous == RunPhase::Cleaning && cleanup_finished)
+            {
+                metrics.finish_stage(stage)?;
+            }
+            if let Some(stage) = phase_stage(next) {
+                metrics.begin_stage(stage)?;
+            }
+        }
+        if cleanup_finished {
+            metrics.finish_stage("cleanup")?;
+        }
+        Ok(())
+    });
+}
+
+fn phase_stage(phase: RunPhase) -> Option<&'static str> {
+    match phase {
+        RunPhase::Copy => Some("copy"),
+        RunPhase::Baseline => Some("baseline"),
+        RunPhase::Analyze => Some("analysis"),
+        RunPhase::Mutants => Some("mutants"),
+        RunPhase::Cleaning => Some("cleanup"),
+        _ => None,
+    }
+}
+
+fn emit_metrics_warning<Stdout: Write, Stderr: Write>(
+    context: &mut ShellContext<Stdout, Stderr>,
+    run_id: &str,
+    code: &str,
+    message: String,
+) {
+    let _ = context.report.handle(EmitOutput {
+        id: EffectId(u64::MAX),
+        event: OutputEvent::Diagnostic(Diagnostic::new(run_id, u64::MAX, "warning", code, message)),
+    });
 }
 
 fn ctrl_c_event(signal: std::io::Result<()>) -> Result<RunEvent, String> {
@@ -940,14 +1203,12 @@ fn ctrl_c_event(signal: std::io::Result<()>) -> Result<RunEvent, String> {
 fn spawn_process(
     process: Arc<ProcessHandler>,
     request: ProcessRequest,
+    worker: u32,
     baseline: bool,
     sender: mpsc::Sender<ShellCompletion>,
     tasks: &mut JoinSet<()>,
-    control: &RunControl,
-) -> bool {
-    let Some(_dispatch) = control.begin_dispatch() else {
-        return false;
-    };
+    _dispatch: std::sync::MutexGuard<'_, ()>,
+) {
     tasks.spawn(async move {
         let event = match process.run(request).await {
             Ok(value) if baseline => RunEvent::BaselineFinished(value),
@@ -958,16 +1219,18 @@ fn spawn_process(
             .send(ShellCompletion {
                 event,
                 process_task: true,
+                process: Some((worker, !baseline)),
             })
             .await;
     });
-    true
 }
 
 async fn drain_processes(
     tasks: &mut JoinSet<()>,
     receiver: &mut mpsc::Receiver<ShellCompletion>,
     in_flight: &mut usize,
+    metrics: &mut Option<MetricsCollector>,
+    metrics_warnings: &mut Vec<(&'static str, String)>,
 ) -> Result<(), String> {
     let mut first_failure = None;
     while let Some(result) = tasks.join_next().await {
@@ -977,7 +1240,12 @@ async fn drain_processes(
             first_failure = Some(format!("process task failed while stopping: {error}"));
         }
     }
-    while receiver.try_recv().is_ok() {
+    while let Ok(completion) = receiver.try_recv() {
+        if let Some((worker, _)) = completion.process {
+            record_metrics(metrics, metrics_warnings, |metrics| {
+                metrics.process_finished(worker)
+            });
+        }
         *in_flight = in_flight.saturating_sub(1);
     }
     *in_flight = 0;
@@ -1011,6 +1279,279 @@ fn combine_close_results(
 mod tests {
     use super::*;
     use std::ffi::OsString;
+    use std::time::Duration;
+
+    use hoimin_core::CommandArg;
+
+    use crate::resource::PortableBackend;
+
+    #[cfg(unix)]
+    fn missing_executable_arg() -> CommandArg {
+        CommandArg::Unix(b"definitely-missing-hoimin-executable".to_vec())
+    }
+
+    #[cfg(windows)]
+    fn missing_executable_arg() -> CommandArg {
+        use std::os::windows::ffi::OsStrExt;
+
+        CommandArg::Windows(
+            std::ffi::OsStr::new("definitely-missing-hoimin-executable")
+                .encode_wide()
+                .collect(),
+        )
+    }
+
+    fn process_effect(worker: u32) -> RunEffect {
+        RunEffect::RunMutant(RunProcess {
+            id: EffectId(1),
+            worker: Some(worker),
+            run_id: Some("run-1".into()),
+            mutant_id: Some("mutant-1".into()),
+            argv: Vec::new(),
+            cwd: Utf8PathBuf::from("."),
+            limits: hoimin_core::ProcessLimits {
+                timeout: Duration::from_secs(1),
+                max_output_bytes: 1,
+                max_memory_bytes: 1,
+                max_processes: 1,
+            },
+        })
+    }
+
+    fn assert_metrics_sidecar_finishes(
+        metrics: Option<MetricsCollector>,
+        warnings: &[(&'static str, String)],
+    ) {
+        assert!(warnings.is_empty(), "warnings={warnings:?}");
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("metrics.json");
+        let metrics = metrics.unwrap().finish(0, 0).unwrap();
+        write_metrics(&path, &metrics).unwrap();
+        assert!(path.is_file());
+    }
+
+    #[test]
+    fn rejected_dispatch_does_not_start_a_queued_metrics_process() {
+        let control = RunControl::new();
+        control.cancel();
+        let mut metrics = Some(MetricsCollector::new("run-1"));
+        metrics.as_mut().unwrap().queued(0).unwrap();
+        let mut warnings = Vec::new();
+
+        let dispatch = accept_process_dispatch(&control, &mut metrics, &mut warnings, 0);
+
+        assert!(dispatch.is_none());
+        assert!(warnings.is_empty());
+        let metrics = metrics.unwrap().finish(0, 0).unwrap();
+        assert_eq!(metrics.workers[0].processes, 0);
+        assert_eq!(metrics.workers[0].busy_ms, 0);
+    }
+
+    #[test]
+    fn cancellation_before_dispatch_discards_all_queued_process_metrics() {
+        let mut metrics = Some(MetricsCollector::new("run-1"));
+        for worker in [0, 1] {
+            metrics.as_mut().unwrap().queued(worker).unwrap();
+        }
+        let mut effects = VecDeque::from([process_effect(0), process_effect(1)]);
+        let mut warnings = Vec::new();
+
+        let first = effects.pop_front().unwrap();
+        cancel_queued_effect(&first, &mut metrics, &mut warnings);
+        discard_queued_effects(&mut effects, &mut metrics, &mut warnings);
+
+        assert_metrics_sidecar_finishes(metrics, &warnings);
+    }
+
+    #[test]
+    fn process_preparation_failure_discards_its_queued_metric() {
+        let mut metrics = Some(MetricsCollector::new("run-1"));
+        metrics.as_mut().unwrap().queued(7).unwrap();
+        let mut warnings = Vec::new();
+
+        cancel_queued_worker(Some(7), &mut metrics, &mut warnings);
+
+        assert_metrics_sidecar_finishes(metrics, &warnings);
+    }
+
+    #[test]
+    fn ready_process_effects_are_recorded_as_queued() {
+        let effects = [process_effect(3)];
+        let mut metrics = Some(MetricsCollector::new("run-1"));
+        let mut warnings = Vec::new();
+
+        record_ready_processes(&effects, &mut metrics, &mut warnings);
+        cancel_queued_effect(&effects[0], &mut metrics, &mut warnings);
+
+        assert!(warnings.is_empty());
+        let metrics = metrics.unwrap().finish(0, 0).unwrap();
+        assert_eq!(metrics.workers.len(), 1);
+        assert_eq!(metrics.workers[0].worker, 3);
+        assert_eq!(metrics.workers[0].processes, 0);
+    }
+
+    #[tokio::test]
+    async fn drain_closes_failed_and_cancelled_process_metrics() {
+        let mut metrics = Some(MetricsCollector::new("run-1"));
+        for worker in [0, 1] {
+            metrics.as_mut().unwrap().queued(worker).unwrap();
+            metrics.as_mut().unwrap().process_started(worker).unwrap();
+        }
+        let mut warnings = Vec::new();
+        let mut tasks = JoinSet::new();
+        let (sender, mut receiver) = mpsc::channel(2);
+        sender
+            .send(ShellCompletion {
+                event: RunEvent::EffectFailed(hoimin_core::EffectFailed::other(
+                    EffectId(1),
+                    "process.spawn",
+                    "failed",
+                )),
+                process_task: true,
+                process: Some((0, true)),
+            })
+            .await
+            .unwrap();
+        sender
+            .send(ShellCompletion {
+                event: RunEvent::CancellationRequested,
+                process_task: true,
+                process: Some((1, true)),
+            })
+            .await
+            .unwrap();
+        drop(sender);
+        let mut in_flight = 2;
+
+        drain_processes(
+            &mut tasks,
+            &mut receiver,
+            &mut in_flight,
+            &mut metrics,
+            &mut warnings,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(in_flight, 0);
+        assert!(warnings.is_empty());
+        let metrics = metrics.unwrap().finish(0, 0).unwrap();
+        assert_eq!(
+            metrics
+                .workers
+                .iter()
+                .map(|worker| worker.processes)
+                .sum::<u64>(),
+            2
+        );
+    }
+
+    #[test]
+    fn direct_early_cleanup_finishes_the_departed_active_stage() {
+        for (phase, stage) in [
+            (RunPhase::Baseline, "baseline"),
+            (RunPhase::Analyze, "analysis"),
+        ] {
+            let mut collector = MetricsCollector::new("run-1");
+            collector.begin_stage(stage).unwrap();
+            let mut metrics = Some(collector);
+            let mut warnings = Vec::new();
+
+            observe_accepted_transition(
+                &mut metrics,
+                &mut warnings,
+                phase,
+                RunPhase::Cleaning,
+                false,
+                false,
+                false,
+            );
+            observe_accepted_transition(
+                &mut metrics,
+                &mut warnings,
+                RunPhase::Cleaning,
+                RunPhase::Finished,
+                false,
+                false,
+                true,
+            );
+
+            assert!(warnings.is_empty());
+            let metrics = metrics.unwrap().finish(0, 0).unwrap();
+            assert!(metrics.stages.iter().any(|metric| metric.name == stage));
+            assert!(metrics.stages.iter().any(|metric| metric.name == "cleanup"));
+        }
+    }
+
+    #[test]
+    fn leaving_cleanup_without_a_completion_signal_finishes_the_stage() {
+        let mut collector = MetricsCollector::new("run-1");
+        collector.begin_stage("cleanup").unwrap();
+        let mut metrics = Some(collector);
+        let mut warnings = Vec::new();
+
+        observe_accepted_transition(
+            &mut metrics,
+            &mut warnings,
+            RunPhase::Cleaning,
+            RunPhase::Finished,
+            false,
+            false,
+            false,
+        );
+
+        assert!(warnings.is_empty());
+        let metrics = metrics.unwrap().finish(0, 0).unwrap();
+        assert_eq!(metrics.stages.len(), 1);
+        assert_eq!(metrics.stages[0].name, "cleanup");
+    }
+
+    #[tokio::test]
+    async fn spawned_mutant_reports_completion_and_mutant_accounting() {
+        let output = tempfile::tempdir().unwrap();
+        let output = Utf8PathBuf::from_path_buf(output.path().to_owned()).unwrap();
+        let process = Arc::new(ProcessHandler::new(
+            ResourceBackend::Portable(PortableBackend::for_tests()),
+            output,
+        ));
+        let request = RunProcess {
+            id: EffectId(9),
+            worker: Some(4),
+            run_id: Some("run-1".into()),
+            mutant_id: Some("mutant-1".into()),
+            argv: vec![missing_executable_arg()],
+            cwd: Utf8PathBuf::from("."),
+            limits: hoimin_core::ProcessLimits {
+                timeout: Duration::from_secs(1),
+                max_output_bytes: 1,
+                max_memory_bytes: 1,
+                max_processes: 1,
+            },
+        };
+        let control = RunControl::new();
+        let dispatch = control.begin_dispatch().unwrap();
+        let (sender, mut receiver) = mpsc::channel(1);
+        let mut tasks = JoinSet::new();
+
+        spawn_process(
+            process,
+            request.into(),
+            4,
+            false,
+            sender,
+            &mut tasks,
+            dispatch,
+        );
+
+        let completion = tokio::time::timeout(Duration::from_secs(2), receiver.recv())
+            .await
+            .expect("spawned process must complete")
+            .expect("completion channel must remain open");
+        assert!(matches!(completion.event, RunEvent::EffectFailed(_)));
+        assert!(completion.process_task);
+        assert_eq!(completion.process, Some((4, true)));
+        tasks.join_next().await.unwrap().unwrap();
+    }
 
     #[test]
     fn worker_metadata_removes_case_variants_and_baseline_mutant_leakage() {

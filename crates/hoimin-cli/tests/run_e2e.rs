@@ -207,6 +207,221 @@ async fn joinset_and_completion_queue_stay_bounded_across_many_mutants() {
 }
 
 #[tokio::test]
+async fn metrics_sidecar_observes_complete_parallel_run_without_changing_report() {
+    let directory = tempfile::tempdir().unwrap();
+    let metrics_path = directory.path().join("metrics.json");
+    let project = tempfile::tempdir().unwrap();
+    let source = project.path().join("src");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("__init__.py"), "").unwrap();
+    std::fs::write(
+        source.join("calc.py"),
+        "def total():\n    return 1 + 2 + 3\n",
+    )
+    .unwrap();
+    let run = run_project_options(
+        project.path(),
+        2,
+        "from src.calc import total; assert total() == 6",
+        &[
+            "--max-mutants",
+            "2",
+            "--metrics",
+            metrics_path.to_str().unwrap(),
+        ],
+    )
+    .await;
+
+    assert_eq!(run.exit_code, 0, "stderr={}", run.stderr);
+    assert_eq!(
+        run.document.as_object().unwrap().keys().collect::<Vec<_>>(),
+        vec!["baseline", "mutants", "run", "schema_version", "summary"]
+    );
+    let metrics_text = std::fs::read_to_string(&metrics_path).unwrap();
+    assert!(!metrics_text.contains(project.path().to_str().unwrap()));
+    let metrics_value: serde_json::Value = serde_json::from_str(&metrics_text).unwrap();
+    let metrics_schema: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(repo_root().join("docs/json-schema/run-metrics.schema.json")).unwrap(),
+    )
+    .unwrap();
+    assert_schema_valid(&metrics_schema, &metrics_value);
+    let metrics: hoimin_core::RunMetrics = serde_json::from_str(&metrics_text).unwrap();
+    metrics.validate().unwrap();
+    assert_eq!(metrics.run_id, run.document["run"]["run_id"]);
+    assert_eq!(
+        metrics
+            .stages
+            .iter()
+            .map(|stage| stage.name.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "analysis",
+            "baseline",
+            "cleanup",
+            "copy",
+            "mutants",
+            "preflight",
+            "targets"
+        ]
+    );
+    assert_eq!(metrics.discovered, 2);
+    assert_eq!(metrics.executed, 2);
+    assert!(metrics.workers.iter().all(|worker| worker.processes > 0));
+    assert!(
+        metrics
+            .workers
+            .windows(2)
+            .all(|workers| workers[0].worker < workers[1].worker)
+    );
+}
+
+fn assert_schema_valid(schema: &serde_json::Value, instance: &serde_json::Value) {
+    if let Err(error) = validate_schema(schema, instance, schema, "$") {
+        panic!("schema validation failed: {error}\ninstance: {instance}");
+    }
+}
+
+fn validate_schema(
+    schema: &serde_json::Value,
+    instance: &serde_json::Value,
+    root: &serde_json::Value,
+    path: &str,
+) -> Result<(), String> {
+    if let Some(reference) = schema.get("$ref").and_then(serde_json::Value::as_str) {
+        let pointer = reference
+            .strip_prefix('#')
+            .ok_or_else(|| format!("{path}: unsupported schema reference {reference}"))?;
+        let target = root
+            .pointer(pointer)
+            .ok_or_else(|| format!("{path}: unresolved schema reference {reference}"))?;
+        return validate_schema(target, instance, root, path);
+    }
+    if let Some(expected) = schema.get("const")
+        && instance != expected
+    {
+        return Err(format!("{path}: expected const {expected}, got {instance}"));
+    }
+    if let Some(kind) = schema.get("type").and_then(serde_json::Value::as_str) {
+        let matches = match kind {
+            "object" => instance.is_object(),
+            "array" => instance.is_array(),
+            "integer" => instance.as_i64().is_some() || instance.as_u64().is_some(),
+            "string" => instance.is_string(),
+            _ => false,
+        };
+        if !matches {
+            return Err(format!("{path}: {instance} does not have type {kind}"));
+        }
+    }
+    if let Some(minimum) = schema.get("minimum").and_then(serde_json::Value::as_f64)
+        && instance.as_f64().is_some_and(|value| value < minimum)
+    {
+        return Err(format!("{path}: number is below {minimum}"));
+    }
+    if let Some(object) = instance.as_object() {
+        let properties = schema
+            .get("properties")
+            .and_then(serde_json::Value::as_object);
+        if let Some(required) = schema.get("required").and_then(serde_json::Value::as_array) {
+            for name in required.iter().filter_map(serde_json::Value::as_str) {
+                if !object.contains_key(name) {
+                    return Err(format!("{path}: missing required property {name}"));
+                }
+            }
+        }
+        if let Some(properties) = properties {
+            for (name, value) in object {
+                let property_schema = properties
+                    .get(name)
+                    .ok_or_else(|| format!("{path}: unexpected property {name}"))?;
+                validate_schema(property_schema, value, root, &format!("{path}.{name}"))?;
+            }
+        }
+    }
+    if let (Some(items), Some(values)) = (schema.get("items"), instance.as_array()) {
+        for (index, value) in values.iter().enumerate() {
+            validate_schema(items, value, root, &format!("{path}[{index}]"))?;
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn metrics_write_failure_warns_without_changing_run_result() {
+    let directory = tempfile::tempdir().unwrap();
+    let ordinary = run_fixture_options_extra(
+        &["-m", "unittest", "discover", "-s", "tests"],
+        None,
+        false,
+        &["--jobs", "2", "--max-mutants", "2"],
+    )
+    .await;
+    let failed = run_fixture_options_extra(
+        &["-m", "unittest", "discover", "-s", "tests"],
+        None,
+        false,
+        &[
+            "--jobs",
+            "2",
+            "--max-mutants",
+            "2",
+            "--metrics",
+            directory.path().to_str().unwrap(),
+        ],
+    )
+    .await;
+
+    assert_eq!(failed.exit_code, ordinary.exit_code);
+    assert_eq!(failed.statuses, ordinary.statuses);
+    assert_eq!(
+        failed.document["summary"]["counts"],
+        ordinary.document["summary"]["counts"]
+    );
+    assert_eq!(
+        failed.document["summary"]["exit_code"],
+        ordinary.document["summary"]["exit_code"]
+    );
+    assert_eq!(
+        failed
+            .document
+            .as_object()
+            .unwrap()
+            .keys()
+            .collect::<Vec<_>>(),
+        ordinary
+            .document
+            .as_object()
+            .unwrap()
+            .keys()
+            .collect::<Vec<_>>()
+    );
+    assert!(directory.path().is_dir());
+    assert!(failed.stderr.contains("metrics.write"), "{}", failed.stderr);
+}
+
+#[tokio::test]
+async fn metrics_finish_baseline_timing_before_early_cleanup() {
+    let directory = tempfile::tempdir().unwrap();
+    let metrics_path = directory.path().join("metrics.json");
+    let run = run_fixture_options_extra(
+        &["-c", "raise SystemExit(1)"],
+        None,
+        false,
+        &["--metrics", metrics_path.to_str().unwrap()],
+    )
+    .await;
+
+    assert_eq!(run.exit_code, 3, "stderr={}", run.stderr);
+    let metrics: hoimin_core::RunMetrics =
+        serde_json::from_slice(&std::fs::read(metrics_path).unwrap()).unwrap();
+    metrics.validate().unwrap();
+    assert!(metrics.stages.iter().any(|stage| stage.name == "baseline"));
+    assert!(metrics.stages.iter().any(|stage| stage.name == "cleanup"));
+    assert!(!metrics.stages.iter().any(|stage| stage.name == "analysis"));
+    assert!(!metrics.stages.iter().any(|stage| stage.name == "mutants"));
+}
+
+#[tokio::test]
 async fn failing_baseline_runs_no_mutants_and_returns_three() {
     let run = run_fixture(&["-c", "raise SystemExit(1)"]).await;
 
@@ -846,6 +1061,8 @@ async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_in
 #[tokio::test]
 async fn serial_output_that_requests_stop_is_accepted_before_cancellation() {
     let project = tempfile::tempdir().unwrap();
+    let metrics_directory = tempfile::tempdir().unwrap();
+    let metrics_path = metrics_directory.path().join("metrics.json");
     write_parallel_project(project.path());
     let python = python_executable();
     let args = [
@@ -862,6 +1079,8 @@ async fn serial_output_that_requests_stop_is_accepted_before_cancellation() {
         OsString::from("--format"),
         OsString::from("jsonl"),
         OsString::from("--allow-best-effort-memory"),
+        OsString::from("--metrics"),
+        metrics_path.as_os_str().to_owned(),
         OsString::from("--"),
         python.as_os_str().to_owned(),
         OsString::from("-c"),
@@ -900,6 +1119,17 @@ async fn serial_output_that_requests_stop_is_accepted_before_cancellation() {
         "a completed output was re-emitted"
     );
     assert!(mutants.iter().any(|event| event["status"] != "not_run"));
+    let metrics: hoimin_core::RunMetrics =
+        serde_json::from_slice(&std::fs::read(metrics_path).unwrap()).unwrap();
+    metrics.validate().unwrap();
+    assert_eq!(
+        metrics.executed,
+        mutants
+            .iter()
+            .filter(|event| event["status"] != "not_run")
+            .count() as u64
+    );
+    assert!(metrics.workers.iter().all(|worker| worker.processes > 0));
 }
 
 #[tokio::test]
@@ -1382,8 +1612,17 @@ async fn run_project_with_session_options(
     }
 }
 async fn run_project(root: &Path, jobs: usize, command: &str) -> FixtureRun {
+    run_project_options(root, jobs, command, &[]).await
+}
+
+async fn run_project_options(
+    root: &Path,
+    jobs: usize,
+    command: &str,
+    extra_options: &[&str],
+) -> FixtureRun {
     let python = python_executable();
-    let args = [
+    let mut args = vec![
         OsString::from("hoimin"),
         OsString::from("run"),
         OsString::from("--root"),
@@ -1402,6 +1641,11 @@ async fn run_project(root: &Path, jobs: usize, command: &str) -> FixtureRun {
         OsString::from("-c"),
         OsString::from(command),
     ];
+    let separator = args.iter().position(|arg| arg == "--").unwrap();
+    args.splice(
+        separator..separator,
+        extra_options.iter().copied().map(OsString::from),
+    );
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     let exit_code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;

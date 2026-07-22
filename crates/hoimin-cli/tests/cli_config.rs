@@ -2,6 +2,56 @@ use hoimin_cli::cli::{ParsedCommand, ProgressOutputFormat, parse_from};
 use hoimin_core::{MutationOperator, MutationProfile};
 
 #[test]
+fn run_resolves_metrics_path_from_invocation_directory() {
+    let invocation_dir = std::env::current_dir().unwrap();
+    let config = hoimin_cli::cli::parse_config_from([
+        "hoimin",
+        "run",
+        "--file",
+        "src/calc.py",
+        "--metrics",
+        "metrics.json",
+        "--",
+        "python",
+    ])
+    .unwrap();
+
+    let expected = camino::Utf8PathBuf::from_path_buf(invocation_dir)
+        .unwrap()
+        .join("metrics.json");
+    assert_eq!(config.output.metrics.as_ref(), Some(&expected));
+}
+
+#[test]
+fn metrics_is_rejected_outside_run() {
+    assert!(
+        parse_from([
+            "hoimin",
+            "plan",
+            "--file",
+            "src/calc.py",
+            "--metrics",
+            "metrics.json",
+            "--",
+            "python",
+        ])
+        .is_err()
+    );
+    assert!(
+        parse_from([
+            "hoimin",
+            "verify",
+            "plan.json",
+            "--candidate",
+            "m1_a",
+            "--metrics",
+            "metrics.json",
+        ])
+        .is_err()
+    );
+}
+
+#[test]
 fn progress_defaults_to_human_and_three_stalls() {
     let ParsedCommand::Progress(args) =
         parse_from(["hoimin", "progress", "before.json", "after.json"]).unwrap()
