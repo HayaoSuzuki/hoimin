@@ -16,7 +16,7 @@ Create a plan before improving tests, then verify the candidate IDs selected fro
 
 ```console
 hoimin plan --root . --source src --profile focused \
-  --fingerprint-include pyproject.toml -- python -m pytest -q > PLAN.json
+  --fingerprint-file pyproject.toml -- python -m pytest -q > PLAN.json
 # improve tests, then replace <ID_FROM_PLAN_JSON> with an exact candidates[].id value
 hoimin verify PLAN.json --candidate '<ID_FROM_PLAN_JSON>' --format json
 ```
@@ -48,7 +48,9 @@ Explicit selectors form a union. For example, `--source src --file src/calc.py` 
 
 `--include GLOB` can restore files excluded by ignore rules or built-in copy exclusions. `--exclude GLOB` adds exclusions and wins when both match. Both options may be repeated.
 
-`--fingerprint-include GLOB` records matching files as explicit session-fingerprint inputs. It only invalidates compatible-run reuse: it does not control worker copying, select mutation targets, or implicitly watch files. Use `--include GLOB` independently when a fingerprinted input must also be copied into each worker; no files are implicitly watched.
+`--fingerprint-file PATH` records exactly one regular file at the specified `--root`-relative path and may be repeated. It does not search nested directories, and characters such as `*`, `?`, and `[` are treated literally. Use it for a root-level configuration file without also selecting files with the same name in nested worktrees.
+
+`--fingerprint-include GLOB` records every matching file as an explicit session-fingerprint input. A basename-only glob such as `pyproject.toml` can match that name at any depth. Both fingerprint options only invalidate compatible-run reuse: they do not control worker copying, select mutation targets, or implicitly watch files. Use `--include GLOB` independently when a fingerprinted input must also be copied into each worker; no files are implicitly watched.
 
 For example, when a test needs an ignored fixture input copied into its worker:
 
@@ -76,6 +78,7 @@ The defaults are:
 | `--format` | `json` | `json`, `jsonl`, or `human` |
 | `--profile full|focused` | `full` | candidate-selection profile |
 | `--fingerprint-include GLOB` | none | invalidates compatible session reuse; does not copy worker files |
+| `--fingerprint-file PATH` | none | fingerprints one exact root-relative file; does not copy worker files |
 
 By default there are no include/exclude overrides or SQLite session, and `--changed`, `--resume`, and `--allow-best-effort-memory` are disabled.
 

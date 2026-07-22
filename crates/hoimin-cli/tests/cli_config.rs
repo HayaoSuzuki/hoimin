@@ -28,6 +28,8 @@ fn plan_accepts_run_selection_but_rejects_report_and_session_options() {
         "src/calc.py",
         "--fingerprint-include",
         "pyproject.toml",
+        "--fingerprint-file",
+        "pyproject.toml",
         "--",
         "python",
         "-m",
@@ -41,6 +43,7 @@ fn plan_accepts_run_selection_but_rejects_report_and_session_options() {
     assert_eq!(config.session, None);
     assert!(!config.resume);
     assert_eq!(config.fingerprint_includes, ["pyproject.toml"]);
+    assert_eq!(config.fingerprint_files, ["pyproject.toml"]);
     assert_eq!(config.test_argv.len(), 3);
     for option in ["--format", "--session", "--resume"] {
         assert!(
@@ -80,7 +83,7 @@ fn verify_requires_candidates_and_accepts_only_format_override() {
     assert_eq!(args.candidate_ids, ["m1_a"]);
     assert_eq!(args.format, hoimin_cli::cli::OutputFormat::Jsonl);
     assert!(parse_from(["hoimin", "verify", "plan.json"]).is_err());
-    for option in ["--source", "--session"] {
+    for option in ["--source", "--session", "--fingerprint-file"] {
         assert!(
             parse_from([
                 "hoimin",
@@ -360,6 +363,10 @@ fn run_preserves_repeated_fingerprint_include_patterns() {
         "pyproject.toml",
         "--fingerprint-include",
         "fixtures/**/*.json",
+        "--fingerprint-file",
+        "pyproject.toml",
+        "--fingerprint-file",
+        "config/settings[prod].toml",
         "--include",
         "fixtures/**",
         "--",
@@ -374,6 +381,10 @@ fn run_preserves_repeated_fingerprint_include_patterns() {
         ["pyproject.toml", "fixtures/**/*.json"]
     );
     assert_eq!(config.selection.includes, ["fixtures/**"]);
+    assert_eq!(
+        config.fingerprint_files,
+        ["pyproject.toml", "config/settings[prod].toml"]
+    );
     assert!(config.fingerprint_inputs.is_empty());
 }
 

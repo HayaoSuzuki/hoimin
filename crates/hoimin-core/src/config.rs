@@ -237,6 +237,7 @@ pub struct RawRunConfig {
     pub includes: Vec<String>,
     pub excludes: Vec<String>,
     pub fingerprint_includes: Vec<String>,
+    pub fingerprint_files: Vec<String>,
     pub operators: Vec<String>,
     pub exclude_operators: Vec<String>,
     pub allow_best_effort_memory: bool,
@@ -318,6 +319,7 @@ pub struct RunConfig {
     pub root: Utf8PathBuf,
     pub selection: Selection,
     pub fingerprint_includes: Vec<String>,
+    pub fingerprint_files: Vec<String>,
     pub fingerprint_inputs: Vec<FingerprintInputFile>,
     pub limits: RunLimits,
     pub test_argv: Vec<CommandArg>,
@@ -341,6 +343,8 @@ pub struct PlanConfig {
     pub allow_best_effort_memory: bool,
     pub profile: MutationProfile,
     pub fingerprint_includes: Vec<String>,
+    #[serde(default)]
+    pub fingerprint_files: Vec<String>,
     pub fingerprint_inputs: Vec<FingerprintInputFile>,
 }
 
@@ -357,6 +361,7 @@ impl RunConfig {
             allow_best_effort_memory: self.allow_best_effort_memory,
             profile: self.profile,
             fingerprint_includes: self.fingerprint_includes,
+            fingerprint_files: self.fingerprint_files,
             fingerprint_inputs: self.fingerprint_inputs,
         }
     }
@@ -369,6 +374,7 @@ impl PlanConfig {
             root: self.root,
             selection: self.selection,
             fingerprint_includes: self.fingerprint_includes,
+            fingerprint_files: self.fingerprint_files,
             fingerprint_inputs: self.fingerprint_inputs,
             limits: self.limits,
             test_argv: self.test_argv,
@@ -529,6 +535,7 @@ impl TryFrom<RawRunConfig> for RunConfig {
             root: raw.root,
             selection,
             fingerprint_includes: raw.fingerprint_includes,
+            fingerprint_files: raw.fingerprint_files,
             fingerprint_inputs: Vec::new(),
             limits,
             test_argv: raw.test_argv,

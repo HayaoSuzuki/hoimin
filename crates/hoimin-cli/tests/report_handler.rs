@@ -905,6 +905,8 @@ fn human_format_includes_profile_and_fingerprint_provenance_for_normalized_runs(
             "focused",
             "--fingerprint-include",
             "pyproject.toml",
+            "--fingerprint-file",
+            "pyproject.toml",
             "--",
             "check",
         ])
@@ -932,6 +934,11 @@ fn human_format_includes_profile_and_fingerprint_provenance_for_normalized_runs(
         stdout
             .text()
             .contains("fingerprint includes: [pyproject.toml]")
+    );
+    assert!(
+        stdout
+            .text()
+            .contains("fingerprint files: [pyproject.toml]")
     );
     assert!(
         stdout

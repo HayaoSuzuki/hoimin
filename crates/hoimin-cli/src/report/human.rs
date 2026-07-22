@@ -21,6 +21,15 @@ pub(super) fn write_event(writer: &mut impl Write, event: &OutputEvent) -> io::R
                 )?;
                 if !config.fingerprint_includes.is_empty() {
                     writeln!(writer, "fingerprint includes: [{patterns}]")?;
+                }
+                if !config.fingerprint_files.is_empty() {
+                    writeln!(
+                        writer,
+                        "fingerprint files: [{}]",
+                        config.fingerprint_files.join(", ")
+                    )?;
+                }
+                if !config.fingerprint_inputs.is_empty() {
                     writeln!(writer, "fingerprint inputs: [{inputs}]")?;
                 }
             }
