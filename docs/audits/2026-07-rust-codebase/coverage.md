@@ -12,10 +12,10 @@
 | delivery | `crates/hoimin-cli/src/lib.rs` | complete | complete | complete | portable | complete | Parse/config/prepare/run dispatch, stdout/stderr separation, plan JSON, report failures, and exit-code mapping traced; CLI and delivery suites pass. |
 | delivery | `crates/hoimin-cli/src/main.rs` | complete | complete | complete | portable/Linux launcher | complete | Linux launcher interception, Tokio runtime construction, async CLI dispatch, and process exit propagation traced; cross-platform CI and wheel smoke exercise the binary entry point. |
 | orchestration | `crates/hoimin-cli/src/metrics.rs` | complete | complete | complete | portable | complete | Stage and worker lifecycle traced; maps are bounded by fixed stage names and configured workers, and `finish` rejects outstanding process state. |
-| persistence | `crates/hoimin-cli/src/plan.rs` | complete | complete | complete | portable | complete | Manifest header/record/candidate validation, source and fingerprint revalidation, requested-ID normalization, rediscovery, baseline handoff, and selected replay traced. RUST-005 records normalized-config invariants bypassed by direct deserialization. |
-| orchestration | `crates/hoimin-cli/src/process/mod.rs` | complete | complete | complete | portable | complete | Prepare/spawn/attach/select/terminate/wait/classify/output traced. Successful cancellation and timeout reap descendants; RUST-003 records the terminate-error branch that skips explicit root reap. |
+| persistence | `crates/hoimin-cli/src/plan.rs` | complete | complete | complete | portable | complete | Manifest header/record/candidate validation, source and fingerprint revalidation, requested-ID normalization, rediscovery, baseline handoff, and selected replay traced. RUST-AUDIT-005 records normalized-config invariants bypassed by direct deserialization. |
+| orchestration | `crates/hoimin-cli/src/process/mod.rs` | complete | complete | complete | portable | complete | Prepare/spawn/attach/select/terminate/wait/classify/output traced. Successful cancellation and timeout reap descendants; RUST-AUDIT-003 records the terminate-error branch that skips explicit root reap. |
 | orchestration | `crates/hoimin-cli/src/process/output.rs` | complete | complete | complete | portable | complete | Two 8 KiB readers feed an eight-chunk bounded channel; retained bytes are capped and the collector drains to EOF even after spool failure. |
-| analysis-output | `crates/hoimin-cli/src/progress/compare.rs` | complete | complete | complete | portable | complete | Semantic-key indexing, ambiguity, conclusive transitions, scores, added/removed candidates, stall accumulation, and saturation were traced; existing tests cover the current added/removed behavior. The exact candidate-ID set eligibility contract and its missing enforcement were traced, while the absent eligibility-boundary test remains part of the RUST-007 gap. RUST-008 records the intentional stall-retention design's ambiguity with the public “consecutive stalls” contract. |
+| analysis-output | `crates/hoimin-cli/src/progress/compare.rs` | complete | complete | complete | portable | complete | Semantic-key indexing, ambiguity, conclusive transitions, scores, added/removed candidates, stall accumulation, and saturation were traced; existing tests cover the current added/removed behavior. The exact candidate-ID set eligibility contract and its missing enforcement were traced, while the absent eligibility-boundary test remains part of the RUST-AUDIT-007 gap. RUST-AUDIT-008 records the intentional stall-retention design's ambiguity with the public “consecutive stalls” contract. |
 | analysis-output | `crates/hoimin-cli/src/progress/input.rs` | complete | complete | complete | portable | complete | Deny-unknown JSON documents, nested schema versions, exact event positions, run identity, strict sequence order, baseline success, and summary completeness traced and tested. |
 | analysis-output | `crates/hoimin-cli/src/progress/mod.rs` | complete | complete | complete | portable | complete | Ordered read/compare/render dispatch and exit-2 error handoff traced; progress CLI integration tests pass. |
 | analysis-output | `crates/hoimin-cli/src/progress/render.rs` | complete | complete | complete | portable | complete | Versioned JSON decision fields, human output, unusable/ambiguity diagnostics, serialization/write failures, and schema validation traced and tested. |
@@ -25,9 +25,9 @@
 | analysis-output | `crates/hoimin-cli/src/report/mod.rs` | complete | complete | complete | portable | complete | Format routing, diagnostic stderr separation, JSON spool ownership, exact event forwarding, and report failure mapping traced; report suites pass. |
 | isolation | `crates/hoimin-cli/src/resource/linux.rs` | complete | complete | limited | Linux cgroup | limited | Probe, stopped-launcher attach, run/root accounting, classification, recursive termination, and retryable cleanup traced statically. Delegated cgroup v2 execution was not run on the macOS audit host. |
 | isolation | `crates/hoimin-cli/src/resource/mod.rs` | complete | complete | complete | portable | complete | Shared prepare/attach/terminate/classify/close dispatch traced; platform-hard variants retain their platform-limited evidence status. |
-| isolation | `crates/hoimin-cli/src/resource/portable.rs` | complete | complete | complete | macOS portable | complete | Best-effort mode, pre-exec process group/CPU limit, descendant termination, and no-op backend close traced; 14 portable process tests passed. Windows portable attach remains owned by RUST-001. |
+| isolation | `crates/hoimin-cli/src/resource/portable.rs` | complete | complete | complete | macOS portable | complete | Best-effort mode, pre-exec process group/CPU limit, descendant termination, and no-op backend close traced; 14 portable process tests passed. Windows portable attach remains owned by RUST-AUDIT-001. |
 | isolation | `crates/hoimin-cli/src/resource/windows.rs` | complete | complete | limited | Windows Job Object | limited | Suspended hard-backend attach, run/root Job Objects, notification classification, termination, and retryable close traced statically. Windows execution was not run on the macOS audit host. |
-| persistence | `crates/hoimin-cli/src/session/mod.rs` | complete | complete | complete | portable | complete | Begin/persist/replace/finish transactions, rollback, finality, run-scoped row shape, resume selection, and caller dispatch traced. The two-statement lookup/finalize interleaving was reviewed and rejected as RUST-006 because lookup can linearize before completion and finish does not mutate stored rows. |
+| persistence | `crates/hoimin-cli/src/session/mod.rs` | complete | complete | complete | portable | complete | Begin/persist/replace/finish transactions, rollback, finality, run-scoped row shape, resume selection, and caller dispatch traced. The two-statement lookup/finalize interleaving was reviewed and rejected as RUST-AUDIT-006 because lookup can linearize before completion and finish does not mutate stored rows. |
 | persistence | `crates/hoimin-cli/src/session/schema.rs` | complete | complete | complete | SQLite/WAL | complete | Five-second busy bound, foreign keys, WAL setup, atomic versioned migrations, failed-upgrade rollback, data preservation, and idempotent reopen traced and tested. |
 | orchestration | `crates/hoimin-cli/src/shell.rs` | complete | complete | complete | portable | complete | All effects, process completion, cancellation, drain, close/error precedence, metrics, and four proposed extraction boundaries traced; process/run E2E suites pass. |
 | persistence | `crates/hoimin-cli/src/target/fs.rs` | complete | complete | complete | portable | complete | Default ignore behavior, explicit include restoration, exclude precedence, regular Python files, non-UTF-8 rejection, non-followed symlinks, and root-relative discovery traced. |
@@ -35,10 +35,10 @@
 | persistence | `crates/hoimin-cli/src/target/mod.rs` | complete | complete | complete | portable/Git | complete | Explicit normalization and changed-line intersection preserve core target invariants; empty explicit selections and effect-ID/error mapping traced. |
 | isolation | `crates/hoimin-cli/src/workspace/copy.rs` | complete | complete | complete | portable | complete | Preflight identity, aggregate allowance binding, partial-copy charge rollback, original recheck, and worker-slot rollback traced. |
 | isolation | `crates/hoimin-cli/src/workspace/manifest.rs` | complete | complete | complete | portable | complete | Canonical-root manifest discovery, normalized relative entries, content hashes, exclusions, and non-followed symlink diagnostics traced. |
-| isolation | `crates/hoimin-cli/src/workspace/mod.rs` | complete | complete | complete | portable | complete | Handler lifecycle, reservation identity, retryable cleanup, read-only tree removal, and drop accounting traced. RUST-004 records an actor-conditional workspace-integrity race after path validation. |
-| isolation | `crates/hoimin-cli/src/workspace/mutation.rs` | complete | complete | complete | portable | complete | Original integrity, manifest/hash/span/original-byte checks, writable conversion, and mutation postcondition traced; path operation remains subject to RUST-004. |
+| isolation | `crates/hoimin-cli/src/workspace/mod.rs` | complete | complete | complete | portable | complete | Handler lifecycle, reservation identity, retryable cleanup, read-only tree removal, and drop accounting traced. RUST-AUDIT-004 records an actor-conditional workspace-integrity race after path validation. |
+| isolation | `crates/hoimin-cli/src/workspace/mutation.rs` | complete | complete | complete | portable | complete | Original integrity, manifest/hash/span/original-byte checks, writable conversion, and mutation postcondition traced; path operation remains subject to RUST-AUDIT-004. |
 | isolation | `crates/hoimin-cli/src/workspace/reset.rs` | complete | complete | complete | portable | complete | Original recheck, unexpected-entry removal, byte/permission restoration, post-reset snapshot comparison, and poisoned-worker discard/retry traced. |
-| core | `crates/hoimin-core/src/budget.rs` | complete | complete | complete | portable | complete | Reservation/grant/release traced; contracts and budget policy tests pass. RUST-002 records the unchecked reservation-ID boundary. |
+| core | `crates/hoimin-core/src/budget.rs` | complete | complete | complete | portable | complete | Reservation/grant/release traced; contracts and budget policy tests pass. RUST-AUDIT-002 records the unchecked reservation-ID boundary. |
 | core | `crates/hoimin-core/src/candidate.rs` | complete | complete | complete | portable | complete | Hash/path/span/location validation traced; candidate and machine policy tests pass. |
 | core | `crates/hoimin-core/src/config.rs` | complete | complete | complete | portable | complete | Raw limits, duration arithmetic, selector/operator normalization, and resume preconditions traced. |
 | core | `crates/hoimin-core/src/contracts.rs` | complete | complete | complete | portable | complete | Contract feature evidence exercises stable invariant IDs. |
@@ -76,7 +76,7 @@ count.
 - `metrics.rs`: temporary-file write, flush, sync, and persist failures propagate.
   Time conversion deliberately saturates; `Drop` restores only test process state.
 - `process/{mod,output}.rs`: spawn, attach, wait, kill, join, and spool failures are
-  surfaced or combined on ordinary paths. RUST-003 records the cancellation/timeout
+  surfaced or combined on ordinary paths. RUST-AUDIT-003 records the cancellation/timeout
   exception where a supervisor termination error skips the explicit root wait. The
   ignored second `start_kill` is a best-effort fallback after a bounded wait.
 - `progress/{compare,input,mod,render}.rs`: indexing is through validated collections
@@ -86,14 +86,14 @@ count.
   `EffectFailed`; temporary JSON storage is owned and checked.
 - `resource/mod.rs` and `resource/portable.rs`: unsafe blocks are narrow FFI calls with
   ownership/lifetime comments; termination errors propagate from the explicit path.
-  The Windows attach race remains as `RUST-001`.
+  The Windows attach race remains as `RUST-AUDIT-001`.
 - `resource/linux.rs`: cgroup paths are canonicalized and subtree walks reject
   symlinks. Kill/reap/cleanup errors are retained in retryable pending-cleanup values;
   ignored operations occur only in `Drop` fallback paths. Linux-only execution remains
   a platform evidence gap, not an additional static lead.
 - `resource/windows.rs`: Win32 handles use an owning wrapper and checked API results;
   integer conversions are bounded by API constants/layout sizes. The platform was not
-  executable on this host; the pre-assignment race is recorded as `RUST-001`.
+  executable on this host; the pre-assignment race is recorded as `RUST-AUDIT-001`.
 - `session/{mod,schema}.rs`: state transitions use transactions and commit errors
   propagate; migrations advance `user_version` inside the same transaction. Schema
   `unwrap`s are confined to tests.
@@ -104,7 +104,7 @@ count.
   path validation, symlink rejection, snapshots, and post-reset comparison normally
   bound file access. Cleanup failures remain retryable and prevent accounting release;
   defaults represent unavailable advisory metadata or absent environment values.
-  RUST-004 records the remaining actor-conditional race between component validation
+  RUST-AUDIT-004 records the remaining actor-conditional race between component validation
   and later path-based worker operations; ordinary same-worker sequencing does not
   overlap mutation/reset with its supervised process.
 - `hoimin-core` modules: matches are declarative attributes/slice types or checked,
@@ -123,7 +123,7 @@ precedence, workspace budget grant/release, fingerprint compatibility, and
 stored-result replacement through the CLI session caller.
 
 Task 3 retained no core lead: its sole retained item is the CLI isolation lead
-`RUST-001`. Task 4 added `RUST-002` for the reservation-ID exhaustion boundary;
+`RUST-AUDIT-001`. Task 4 added `RUST-AUDIT-002` for the reservation-ID exhaustion boundary;
 the current machine reserves one copy grant per run, but the public budget
 ledger can reuse `ReservationId(u64::MAX)` and replace an active entry.
 
@@ -147,7 +147,7 @@ release, so retry is safe and accounting remains exactly once. `WorkerWorkspace`
 drop releases its observed copy charge and slot only after the temporary directory
 is absent. The focused recovery tests cover partial-copy rollback, original changes,
 reset discard/recreate, read-only files and mode-000 directories, symlink rejection,
-and reservation mismatch. RUST-004 is the exception to the otherwise normalized
+and reservation mismatch. RUST-AUDIT-004 is the exception to the otherwise normalized
 path boundary: public `read`/`write`/`remove`/`exists`, mutation, and reset restore
 operations do not share a directory-handle capability across validation and use.
 The normal same-worker lifecycle does not race: mutation precedes process execution,
@@ -161,7 +161,7 @@ Resource backend contracts differ as follows:
 | Contract item | Linux hard cgroup v2 | Windows hard Job Object | Portable |
 | --- | --- | --- | --- |
 | capability probe | Resolves the delegated unified hierarchy, enables `memory`/`pids`, creates and migration-tests an owned subtree; unavailable/pending cleanup can select portable only with opt-in. | Construction validates numeric limits and creates/configures the run Job Object and completion port; no separate public probe. | Constructor requires explicit best-effort memory opt-in on Linux/macOS; other targets construct directly. |
-| attach timing | Wrapper launcher stops before target exec; parent moves the stopped PID to the root cgroup, then sends `SIGCONT`. | Hard backend spawns suspended, assigns the PID to run-wide and nested jobs, then resumes it. | Unix creates the process group and limits in `pre_exec`, then attach records the PID; Windows portable assigns after spawn and retains the RUST-001 race. |
+| attach timing | Wrapper launcher stops before target exec; parent moves the stopped PID to the root cgroup, then sends `SIGCONT`. | Hard backend spawns suspended, assigns the PID to run-wide and nested jobs, then resumes it. | Unix creates the process group and limits in `pre_exec`, then attach records the PID; Windows portable assigns after spawn and retains the RUST-AUDIT-001 race. |
 | memory accounting | Run-wide `memory.max`; event-counter deltas attribute an observed violation to roots active at refresh. | Run-wide `JOB_OBJECT_LIMIT_JOB_MEMORY`; completion-port job-memory notification marks roots active when drained. | Linux uses per-process `RLIMIT_AS`; macOS does not enforce memory; other portable targets have no memory accounting. |
 | process accounting | Run-wide `pids.max`; `pids.events` deltas mark active roots. | Run-wide active-process limit; completion-port notification marks active roots. | No process-count enforcement or violation accounting. |
 | descendant termination | `cgroup.kill`, with verified process-group/member-PID fallback, waits for the owned subtree to empty. | Nested root Job Object terminates each tree; run Job Object terminates all trees on close. | Unix kills the process group; Windows portable terminates its kill-on-close job; unsupported targets supervise only the root. |
@@ -172,8 +172,8 @@ Resource backend contracts differ as follows:
 The semantic gaps above are public guarantees rather than interchangeable
 implementations: portable mode explicitly reports weaker memory/process enforcement
 and classification. Windows hard attach is suspended and therefore does not
-duplicate RUST-001, which applies to Windows *portable* attach after spawn.
-RUST-003 remains the post-attach cancellation/timeout branch where a termination
+duplicate RUST-AUDIT-001, which applies to Windows *portable* attach after spawn.
+RUST-AUDIT-003 remains the post-attach cancellation/timeout branch where a termination
 error skips explicit root reap; this task adds no duplicate process-lifecycle lead.
 Delegated Linux cgroup v2 and Windows Job Object behavior remain `limited` because
 they were reviewed statically but were not dynamically executed on this macOS host.
@@ -197,7 +197,7 @@ before any newly produced effects are queued, cancels processes, and drains the
 process set. Process effects acquire a worker environment, dispatch/start gates,
 supervisor attachment, pipe tasks, a spool, and one completion slot; the normal,
 cancellation, timeout, and attach-failure paths release these obligations, subject
-to RUST-003 on supervisor-termination failure.
+to RUST-AUDIT-003 on supervisor-termination failure.
 
 The run loop preserves cleanup visibility in two layers. The state machine turns
 effect failures into cleanup/report/session effects, while the outer close always
@@ -230,9 +230,9 @@ Boundedness was checked collection by collection:
 Focused evidence is
 `.audit/rust-codebase/orchestration-tests.log`: 50 tests passed (17
 `process_handler`, 33 `run_e2e`) on the macOS portable backend. Delegated Linux
-cgroup and Windows Job Object behavior remain platform-limited evidence. RUST-001
+cgroup and Windows Job Object behavior remain platform-limited evidence. RUST-AUDIT-001
 continues to own the Windows pre-attach isolation race; Task 5 created no duplicate
-lead. RUST-003 instead covers post-attach terminate-error cleanup and reap.
+lead. RUST-AUDIT-003 instead covers post-attach terminate-error cleanup and reap.
 
 ## Persistence, plan, fingerprint, and target-input audit
 
@@ -246,7 +246,7 @@ and completed runs reject writes. Candidate, result, and diagnostic rows are key
 the same `(run_id, mutant_id)`, so a single result-shape query cannot mix runs.
 Lookup checks `runs.complete` and reads the result in two autocommit statements, so
 another connection can commit completion between their snapshots. That observation
-is recorded as rejected RUST-006: completion does not mutate candidate/result rows,
+is recorded as rejected RUST-AUDIT-006: completion does not mutate candidate/result rows,
 the returned value is the same value available immediately before completion, and
 lookup can linearize at its first read. An explicit WAL read transaction could also
 legitimately retain a pre-completion snapshot; no stronger response-time finality
@@ -260,7 +260,7 @@ or fingerprint records, invalid stable descriptors, and candidates no longer
 discoverable under the recorded configuration. Only after this preparation does the
 CLI hand the reconstructed configuration to `run_selected_loop`, which executes one
 fresh baseline and only the requested candidates without session persistence.
-RUST-005 is the exception: `PlanConfig` and its nested normalized types deserialize
+RUST-AUDIT-005 is the exception: `PlanConfig` and its nested normalized types deserialize
 without replaying the cross-field and nonzero-duration validation performed for CLI
 configuration, and the selected-run path deliberately skips normal preparation.
 
@@ -279,9 +279,9 @@ non-ignored files are added separately, while deleted, binary, empty, ignored, a
 non-UTF-8-path inputs fail closed or are excluded according to target policy.
 Renamed Python destinations and hostile repository diff configuration are covered.
 No additional fingerprint/target lead remains beyond the actor-conditional pathname
-race already owned by RUST-004.
+race already owned by RUST-AUDIT-004.
 
-Task 7 therefore retains one lead, RUST-005, and rejects the reviewed RUST-006
+Task 7 therefore retains one lead, RUST-AUDIT-005, and rejects the reviewed RUST-AUDIT-006
 observation.
 
 Focused evidence is `.audit/rust-codebase/persistence-input-tests.log`: 59 tests

@@ -98,8 +98,9 @@ delegated Linux cgroup v2 hard enforcement were statically reviewed but not exec
 remain `limited`. The Windows reproduction required by
 [#23](https://github.com/tokyogas-tech/hoimin/issues/23) must run on Windows; the
 capability-relative filesystem design in
-[#28](https://github.com/tokyogas-tech/hoimin/issues/28) requires explicit per-platform
-verification.
+[#28](https://github.com/tokyogas-tech/hoimin/issues/28) requires one dedicated PR containing
+the Linux parent-swap race proof plus a macOS and Windows equivalent implementation test or
+explicit fail-closed test, followed by every applicable platform CI gate.
 
 Initial sandboxed `uv` and nested `uvx` attempts could not write their user cache/tool
 directories. Workspace-local cache reruns and an unrestricted wheel-smoke rerun passed; those
