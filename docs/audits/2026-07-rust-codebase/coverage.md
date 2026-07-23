@@ -23,10 +23,10 @@
 | analysis-output | `crates/hoimin-cli/src/report/json.rs` | pending | pending | pending | pending | pending | |
 | analysis-output | `crates/hoimin-cli/src/report/jsonl.rs` | pending | pending | pending | pending | pending | |
 | analysis-output | `crates/hoimin-cli/src/report/mod.rs` | pending | pending | pending | pending | pending | |
-| isolation | `crates/hoimin-cli/src/resource/linux.rs` | pending | pending | pending | pending | pending | |
+| isolation | `crates/hoimin-cli/src/resource/linux.rs` | pending | pending | limited | Linux cgroup | limited | Delegated Linux cgroup execution was not run on the macOS audit host. |
 | isolation | `crates/hoimin-cli/src/resource/mod.rs` | pending | pending | pending | pending | pending | |
 | isolation | `crates/hoimin-cli/src/resource/portable.rs` | pending | pending | pending | pending | pending | |
-| isolation | `crates/hoimin-cli/src/resource/windows.rs` | pending | pending | pending | pending | pending | |
+| isolation | `crates/hoimin-cli/src/resource/windows.rs` | pending | pending | limited | Windows | limited | Windows execution was not run on the macOS audit host. |
 | persistence | `crates/hoimin-cli/src/session/mod.rs` | pending | pending | pending | pending | pending | |
 | persistence | `crates/hoimin-cli/src/session/schema.rs` | pending | pending | pending | pending | pending | |
 | orchestration | `crates/hoimin-cli/src/shell.rs` | pending | pending | pending | pending | pending | |
