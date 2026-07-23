@@ -32,7 +32,7 @@ enum Command {
     Run(RawRunArgs),
     /// Discover mutation candidates without executing tests.
     Plan(RawPlanArgs),
-    /// Execute selected candidates from a previously generated plan.
+    /// Execute one or more candidates using settings from a previously generated plan.
     Verify(RawVerifyArgs),
     /// Compare chronologically ordered mutation run reports.
     Progress(RawProgressArgs),
@@ -211,12 +211,15 @@ struct RawPlanArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(
+    after_help = "Execution and resource settings come from PLAN and cannot be overridden. Create a new plan to change them."
+)]
 struct RawVerifyArgs {
     /// Path to a version-1 plan manifest.
     #[arg(value_name = "PLAN")]
     manifest: PathBuf,
 
-    /// Candidate ID to execute; may be repeated.
+    /// Candidate ID to execute; repeat for multiple planned candidates.
     #[arg(long = "candidate", required = true, value_name = "ID")]
     candidate_ids: Vec<String>,
 

@@ -124,13 +124,13 @@ fn verify_requires_candidates_and_accepts_only_format_override() {
         "--candidate",
         "m1_a",
         "--candidate",
-        "m1_a",
+        "m2_b",
     ])
     .unwrap() else {
         panic!("expected verify");
     };
     assert_eq!(args.manifest, std::path::PathBuf::from("plan.json"));
-    assert_eq!(args.candidate_ids, ["m1_a"]);
+    assert_eq!(args.candidate_ids, ["m1_a", "m2_b"]);
     assert_eq!(args.format, hoimin_cli::cli::OutputFormat::Jsonl);
     assert!(parse_from(["hoimin", "verify", "plan.json"]).is_err());
     for option in ["--source", "--session", "--fingerprint-file"] {
@@ -333,6 +333,25 @@ fn root_help_exposes_the_run_contract() {
         !help.contains("--python"),
         "obsolete option in help:\n{help}"
     );
+}
+
+#[test]
+fn verify_help_explains_repeatable_candidates_and_plan_inheritance() {
+    let error = parse_from(["hoimin", "verify", "--help"]).unwrap_err();
+    let help = error.to_string();
+
+    for expected in [
+        "one or more candidates",
+        "repeat",
+        "Execution and resource settings come from PLAN",
+        "cannot be overridden",
+        "Create a new plan",
+    ] {
+        assert!(
+            help.contains(expected),
+            "missing `{expected}` from help:\n{help}"
+        );
+    }
 }
 
 #[test]

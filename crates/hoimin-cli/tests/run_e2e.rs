@@ -887,7 +887,16 @@ fn readme_documents_agent_plan_workflow() {
 
     for expected in [
         "hoimin plan",
-        "hoimin verify PLAN.json --candidate",
+        "--allow-best-effort-memory",
+        "--total-timeout 15m",
+        "--candidate 'ID1' \\",
+        "--candidate 'ID2' \\",
+        "inherits the test command, execution limits, timeout settings, and resource policy",
+        "create a new plan",
+        "identical candidate-ID set",
+        "After every test improvement, rerun every stable batch and save each report separately.",
+        "same current test revision",
+        "must not be combined",
         "`--fingerprint-include GLOB`",
         "`truncated`",
     ] {
