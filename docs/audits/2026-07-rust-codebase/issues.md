@@ -8,6 +8,7 @@
 | RUST-002 | pending Task 10 | P2 correctness | none | pending | accepted |
 | RUST-005 | pending Task 10 | P2 correctness | none | pending | accepted |
 | RUST-004 | pending Task 10 | P2 design | none | pending | accepted |
+| RUST-008 | pending Task 10 | P2 design | none | pending | accepted |
 
 ## Recommended execution order
 
@@ -15,7 +16,10 @@
    proceed in parallel; their table order is not a dependency.
 2. RUST-002 and RUST-005 are P2 confirmed-correctness roots. They may proceed independently
    of the P1 work and of each other.
-3. RUST-004 is the remaining P2 design root and has no predecessor.
+3. RUST-004 and RUST-008 are the remaining P2 design roots and have no predecessors. For
+   RUST-008, remediation must choose either (a) reset on adjacency-breaking same-set
+   regression and status-induced indeterminate transitions, or (b) rename and document the
+   policy as cumulative since improvement and align its tests.
 
-RUST-006 and RUST-008 are rejected and receive no issues. Task 10 will replace each pending
-issue and branch cell after creating the corresponding GitHub issue.
+RUST-006 is rejected and receives no issue. Task 10 will replace each pending issue and
+branch cell after creating the corresponding GitHub issue.

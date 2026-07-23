@@ -19,7 +19,7 @@ Severity accepts only `P0`, `P1`, `P2`, or `P3`.
 | RUST-005 | persistence | confirmed bug | P2 | accepted | `crates/hoimin-cli/src/plan.rs:144-175`; `crates/hoimin-core/src/config.rs:282-290`; `crates/hoimin-core/src/config.rs:305-351`; `crates/hoimin-core/src/config.rs:420-470`; `crates/hoimin-cli/src/shell.rs:541-560`; `crates/hoimin-core/src/machine.rs:1455-1474` | `prepare_verify` deserializes `PlanConfig`, calls the infallible `into_run_config`, and treats it as validated. Serde enforces `NonZeroUsize`/`NonZeroU64` representation but directly constructs the private `NonZeroDuration(Duration)` wrapper and does not replay `RunLimits::try_from` checks such as nonzero durations, `jobs <= MAX_JOBS`, `jobs <= max_processes`, `max_processes <= u32::MAX`, or safe baseline-timeout arithmetic. It also does not replay selector/test-argv configuration checks. `run_selected_loop` then calls `run_loop_prepared` directly. With the `contracts` feature, the executable `machine.budget.invariant` explicitly observes `jobs <= max_processes`; a tampered `jobs > max_processes` configuration violates it during transition. Existing malformed-plan tests alter headers, records, roots, candidates, and `max_mutants`, but not these normalized-config invariants. | A syntactically valid edited manifest can therefore pass `validate_header`, source/fingerprint revalidation, and candidate rediscovery with a configuration the CLI constructor rejects. For example, `jobs=2,max_processes=1` reaches execution and is observed as a `machine.budget.invariant` violation in contracts-enabled builds, while an empty `test_argv` reaches baseline preparation and fails only as `process.argv.empty`; zero analyzer/baseline/total durations and unsupported process counts likewise reach later infrastructure paths instead of failing as an invalid manifest. This does not require or duplicate any prior isolation lead: the failure path is manifest deserialization -> verify preparation -> selected-run reconstruction. | Add one normalized `RunConfig`/`PlanConfig` invariant validator used after deserialization and before target resolution or analyzer launch; make normalized wrapper deserialization validate its own representation. Add table-driven tampered-manifest tests for empty argv, selector dependencies, zero durations, excessive jobs/processes, and `jobs > max_processes`, asserting `plan.manifest.invalid` and no analyzer/baseline marker. |
 | RUST-006 | persistence | high-risk design | P2 | rejected | `crates/hoimin-cli/src/session/mod.rs:85-129`; `crates/hoimin-cli/src/session/mod.rs:281-307`; `crates/hoimin-cli/src/shell.rs:391-404` | `SessionHandler::lookup` reads `runs.complete` in one autocommit query, then calls `result_shape` in a second query, so a second connection can commit `finish(complete=true)` between the statements. | Rejected: `finish` changes only run finality and does not modify candidate/result rows. The lookup can linearize at its first state read and returns exactly the result available immediately before completion. A single WAL read transaction would likewise be permitted to retain a pre-finish snapshot after the concurrent commit. No documented strong response-time finality contract requires a lookup already in progress to fail, and no caller-visible incorrect value or other harm was established. | No product change. Retain the observation as reviewed concurrency semantics; add a stronger contract and linearizability test only if lookup is later specified to reject completion that occurs before its response. |
 | RUST-007 | analysis-output | confirmed bug | P1 | accepted | `crates/hoimin-cli/src/progress/compare.rs:44-51`; `crates/hoimin-cli/src/progress/compare.rs:107-204`; `crates/hoimin-cli/tests/progress.rs:202-223`; `README.md:178-187` | `compare_usable_reports` counts `added` and `removed` semantic keys but derives `Stalled`, `Improving`, or `Regressing` solely from the conclusive common subset. `compare_reports` then increments the saturation counter for a `Stalled` comparison even when either count is nonzero. The existing added/removed test asserts only the counts and does not constrain the state. | The caller-facing contract says progress inputs must cover the identical candidate-ID set and forbids combining changing subsets into whole-plan progress, but the command never validates that eligibility precondition. Four reports can each retain one unchanged common killed candidate while rotating arbitrary other candidates; with default patience, the third comparison publishes agent-facing `latest.state = saturated` despite no adjacent pair covering the same candidate-ID set. Relying only on callers to uphold this safety-critical decision precondition is insufficient defense in depth because the command accepts the reports, emits no mismatch diagnostic, exits successfully, and tells agents to drive decisions from `latest.state`. This failure path is report JSON -> unchecked set eligibility -> common-subset comparison -> premature saturated decision, and does not overlap prior execution, isolation, or persistence leads. | Before status comparison, validate that adjacent usable reports have identical, unambiguous candidate-ID sets; a mismatch must be `Indeterminate`, break the comparable stall chain, and emit a diagnostic. After eligibility succeeds, preserve the intentional semantic transition key `(path, original, replacement, operator, symbol)` without candidate ID so mutants remain comparable across source-position/hash changes. Add integration tests with one common semantic key plus added/removed/rotated candidate IDs that assert saturation is impossible, and an identical-ID-set control that still compares through the existing semantic key. |
-| RUST-008 | analysis-output | high-risk design | P2 | rejected | `crates/hoimin-cli/src/progress/compare.rs:59-95`; `crates/hoimin-cli/tests/progress.rs:155-164`; `crates/hoimin-cli/tests/progress.rs:245-269`; `docs/superpowers/plans/2026-07-20-mutation-progress.md:185-230`; `README.md:171-178` | Only `Improving` resets `consecutive_stalls`; `Regressing` and `Indeterminate` retain prior stalls. This is intentional rather than an implementation accident: the original progress plan explicitly requires regression, an empty common set, and a broken chain to leave the count unchanged, and existing regression and indeterminate-status tests preserve that policy. | The intended policy conflicts with the public wording “consecutive comparable stalls.” With an identical candidate-ID set and semantic keys, `Stalled -> Regressing -> Stalled` at patience two publishes `Saturated`; likewise, a same-set comparison made `Indeterminate` solely by an inconclusive mutant status can bridge two stalls. Those histories are not consecutive under the ordinary reading, but the design treats the counter as retained stall evidence. The specification does not say whether intervening negative/unknown evidence invalidates that evidence, so this is a high-risk agent-decision ambiguity rather than a confirmed implementation bug. This boundary excludes set mismatch and empty-common histories, which are owned by RUST-007 eligibility rather than this lead. | Decide and document whether patience means consecutive adjacent stalled comparisons or cumulative stalls since the last improvement. If consecutive, reset on same-set regression and same-set status-induced indeterminate transitions; if cumulative-since-improvement, rename the fields and README language so agents cannot infer adjacency. Add same-ID-set histories for stall/regression/stall and stall/inconclusive/stall at patience two for the selected policy, without using set mismatch or empty common sets. |
+| RUST-008 | analysis-output | high-risk design | P2 | accepted | `crates/hoimin-cli/src/progress/compare.rs:59-95`; `crates/hoimin-cli/tests/progress.rs:155-164`; `crates/hoimin-cli/tests/progress.rs:245-269`; `docs/superpowers/plans/2026-07-20-mutation-progress.md:185-230`; `README.md:171-178` | Only `Improving` resets `consecutive_stalls`; `Regressing` and `Indeterminate` retain prior stalls. This is intentional rather than an implementation accident: the original progress plan explicitly requires regression, an empty common set, and a broken chain to leave the count unchanged, and existing regression and indeterminate-status tests preserve that policy. | The intended policy conflicts with the public wording “consecutive comparable stalls.” With an identical candidate-ID set and semantic keys, `Stalled -> Regressing -> Stalled` at patience two publishes `Saturated`; likewise, a same-set comparison made `Indeterminate` solely by an inconclusive mutant status can bridge two stalls. Those histories are not consecutive under the ordinary reading, but the design treats the counter as retained stall evidence. The public consecutive-stalls contract requires intervening negative or unknown evidence to break adjacency, while the internal plan and tests retain it; this unresolved contract/implementation conflict is a high-risk agent-decision design defect. This boundary excludes set mismatch and empty-common histories, which are owned by RUST-007 eligibility rather than this lead. | Decide and document whether patience means consecutive adjacent stalled comparisons or cumulative stalls since the last improvement. If consecutive, reset on same-set regression and same-set status-induced indeterminate transitions; if cumulative-since-improvement, rename the fields and README language so agents cannot infer adjacency. Add same-ID-set histories for stall/regression/stall and stall/inconclusive/stall at patience two for the selected policy, without using set mismatch or empty common sets. |
 
 ## Task 9 validation and consolidation
 
@@ -80,14 +80,17 @@ Complete outputs are retained locally under
   and post-reset integrity checks. Why insufficient: those checks do not make lookup and use
   atomic against the stated concurrent actors. The constrained actors and non-privileged
   boundary justify P2.
-- **RUST-008 — rejected.** Trigger histories are reproducible, but the required invariant is
-  not established: the original plan and tests intentionally retain stall evidence across
-  regression and indeterminate transitions, while README wording suggests adjacent
-  “consecutive” stalls. Therefore no transition violates a selected contract, and no
-  objective expected result distinguishes a fix from a policy change. RUST-007 removes
-  candidate-set mismatch from this ambiguity. If product requirements later choose
-  adjacent-only or cumulative-since-improvement semantics, that specification change can
-  name the matching tests; the current audit does not create an implementation issue.
+- **RUST-008 — accepted, P2.** Trigger: with an identical candidate-ID set,
+  `Stalled -> Regressing -> Stalled` or `Stalled -> status-induced Indeterminate -> Stalled`
+  at patience two. Unenforced invariant: the public README contract says saturation requires
+  consecutive comparable stalls, but neither transition invalidates retained stall evidence.
+  Failure propagation: the counter survives the intervening non-stall comparison and the
+  final stall becomes `Saturated`. Observable impact: agents can stop improving tests on
+  evidence that is not consecutive under the public contract. Existing mitigation: the
+  original implementation plan and focused tests explicitly preserve cumulative stall
+  evidence until improvement. Why insufficient: internal implementation intent exposes the
+  contract conflict but does not supersede the caller-facing README semantics. RUST-007
+  separately rejects candidate-set mismatch before this same-set policy applies.
 
 ### Maintainability assessment and semantic roots
 
@@ -98,13 +101,16 @@ refactor (`run loop -> dispatcher -> adapters`) with characterization tests and 
 adapter-extraction first PR, but no independent defect-risk root remains after RUST-003 owns
 the concrete cleanup gap, so it is not promoted to a finding.
 
-The six accepted rows are six independent semantic roots. RUST-001 (pre-attach containment),
+The seven accepted rows are seven independent semantic roots. RUST-001 (pre-attach containment),
 RUST-003 (post-attach termination-error reap), and RUST-004 (filesystem validation/use)
 require different interfaces and platform tests. RUST-002 (reservation identity), RUST-005
-(deserialized configuration validation), and RUST-007 (progress eligibility) likewise have
-distinct fixes and regression suites. Combining any pair would fail the rule that one fix
-and one regression strategy resolve every symptom. No accepted root changes an interface or
-invariant required to implement another, so there are no true issue dependencies.
+(deserialized configuration validation), RUST-007 (progress eligibility), and RUST-008
+(same-set stall-policy semantics) likewise have distinct fixes and regression suites.
+RUST-007 establishes which report pairs are eligible; it does not select how an eligible
+regression or status-induced indeterminate affects RUST-008's counter. Combining any pair
+would fail the rule that one fix and one regression strategy resolve every symptom. No
+accepted root changes an interface or invariant required to implement another, so there are
+no true issue dependencies.
 
 ## Task 3 core lead disposition
 
@@ -160,12 +166,13 @@ reported but do not prevent a common subset from producing an agent-facing satur
 decision. Eligibility must be checked with exact IDs, after which the intentional five-field
 semantic key remains the transition-comparison key.
 
-RUST-008 is rejected after Task 9 validation. The original implementation plan and tests
-intentionally retain stalls across regression, empty-common, and broken-chain transitions,
-while the public wording calls the counter consecutive. No selected product contract defines
-whether patience is adjacent-only or cumulative since improvement, so changing either code
-or documentation would select policy rather than correct a demonstrated defect. Candidate-set
-mismatch and empty-common eligibility remain owned by RUST-007.
+RUST-008 is accepted as a separate P2 design conflict. The original implementation plan and
+tests intentionally retain stalls across regression, empty-common, and broken-chain
+transitions, while the public contract calls the counter consecutive. Remediation must choose
+one coherent policy: either reset on same-set regression and status-induced indeterminate
+transitions to preserve adjacency, or define cumulative-since-improvement publicly and align
+field names, explanations, and tests. Candidate-set mismatch and empty-common eligibility
+remain owned by RUST-007.
 
 Analyzer input, Rust parsing, candidate validation, and candidate spool replay produced no
 additional lead. Byte spans remain Ruff byte offsets while displayed columns count Unicode
