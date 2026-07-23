@@ -35,7 +35,7 @@
 | persistence | `crates/hoimin-cli/src/target/mod.rs` | complete | pending | pending | pending | pending | |
 | isolation | `crates/hoimin-cli/src/workspace/copy.rs` | complete | complete | complete | portable | complete | Preflight identity, aggregate allowance binding, partial-copy charge rollback, original recheck, and worker-slot rollback traced. |
 | isolation | `crates/hoimin-cli/src/workspace/manifest.rs` | complete | complete | complete | portable | complete | Canonical-root manifest discovery, normalized relative entries, content hashes, exclusions, and non-followed symlink diagnostics traced. |
-| isolation | `crates/hoimin-cli/src/workspace/mod.rs` | complete | complete | complete | portable | complete | Handler lifecycle, reservation identity, retryable cleanup, read-only tree removal, and drop accounting traced. RUST-004 records the check/use race after path validation. |
+| isolation | `crates/hoimin-cli/src/workspace/mod.rs` | complete | complete | complete | portable | complete | Handler lifecycle, reservation identity, retryable cleanup, read-only tree removal, and drop accounting traced. RUST-004 records an actor-conditional workspace-integrity race after path validation. |
 | isolation | `crates/hoimin-cli/src/workspace/mutation.rs` | complete | complete | complete | portable | complete | Original integrity, manifest/hash/span/original-byte checks, writable conversion, and mutation postcondition traced; path operation remains subject to RUST-004. |
 | isolation | `crates/hoimin-cli/src/workspace/reset.rs` | complete | complete | complete | portable | complete | Original recheck, unexpected-entry removal, byte/permission restoration, post-reset snapshot comparison, and poisoned-worker discard/retry traced. |
 | core | `crates/hoimin-core/src/budget.rs` | complete | complete | complete | portable | complete | Reservation/grant/release traced; contracts and budget policy tests pass. RUST-002 records the unchecked reservation-ID boundary. |
@@ -104,8 +104,9 @@ count.
   path validation, symlink rejection, snapshots, and post-reset comparison normally
   bound file access. Cleanup failures remain retryable and prevent accounting release;
   defaults represent unavailable advisory metadata or absent environment values.
-  RUST-004 records the remaining race between component validation and the later
-  path-based filesystem operation.
+  RUST-004 records the remaining actor-conditional race between component validation
+  and later path-based worker operations; ordinary same-worker sequencing does not
+  overlap mutation/reset with its supervised process.
 - `hoimin-core` modules: matches are declarative attributes/slice types or checked,
   saturating conversions. `machine.rs` collection indexing follows registered-effect
   and worker-state checks; `resume.rs` casts encode platform-bounded lengths into the
@@ -147,8 +148,13 @@ drop releases its observed copy charge and slot only after the temporary directo
 is absent. The focused recovery tests cover partial-copy rollback, original changes,
 reset discard/recreate, read-only files and mode-000 directories, symlink rejection,
 and reservation mismatch. RUST-004 is the exception to the otherwise normalized
-path boundary: validation and the subsequent filesystem call do not share a
-directory-handle capability and are vulnerable to a concurrent symlink swap.
+path boundary: public `read`/`write`/`remove`/`exists`, mutation, and reset restore
+operations do not share a directory-handle capability across validation and use.
+The normal same-worker lifecycle does not race: mutation precedes process execution,
+and reset follows termination and reap. A swap therefore requires another worker,
+a same-UID external actor, or a descendant that escaped process containment and can
+reach the worker tree. The result is a conditional workspace isolation/integrity
+risk, not a privilege-escalation or host security boundary.
 
 Resource backend contracts differ as follows:
 
