@@ -77,7 +77,11 @@ Tests follow red-green order:
 
 The focused integration suite is
 `cargo test -p hoimin-cli --test progress`. Final verification also runs
-formatting, Clippy, and the full workspace test suite.
+formatting, Clippy, and the full workspace test suite. To check test quality
+without paying for a workspace-wide mutation run, `cargo-mutants` targets only
+the new candidate-set eligibility classifier, state classifier, and stall-chain
+gate. Every surviving or timed-out mutant in that focused scope must be
+resolved or justified before the branch is complete.
 
 ## Non-goals
 
