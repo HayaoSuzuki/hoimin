@@ -15,11 +15,28 @@ uvx hoimin run --root . --file src/calc.py --format json -- python -m pytest -q
 Create a plan before improving tests, then verify the candidate IDs selected from that plan:
 
 ```console
-hoimin plan --root . --source src --profile focused \
-  --fingerprint-file pyproject.toml -- python -m pytest -q > PLAN.json
-# improve tests, then replace <ID_FROM_PLAN_JSON> with an exact candidates[].id value
-hoimin verify PLAN.json --candidate '<ID_FROM_PLAN_JSON>' --format json
+hoimin plan --root . --file path/to/module.py \
+  --allow-best-effort-memory \
+  --total-timeout 15m \
+  -- python -m pytest -q > PLAN.json
+# improve tests, then replace ID1 and ID2 with exact candidates[].id values
+hoimin verify PLAN.json \
+  --candidate 'ID1' \
+  --candidate 'ID2' \
+  --format json > reports/batch-a-001.json
 ```
+
+`--candidate` is repeatable, so one `verify` invocation can execute multiple planned
+candidates. `verify`
+inherits the test command, execution limits, timeout settings, and resource policy from
+`PLAN.json`; only verify-specific output choices such as `--format` are selected at verify
+time. It cannot override plan-time settings. To change `--total-timeout`,
+`--allow-best-effort-memory`, or another execution or resource setting, create a new plan.
+
+The default total timeout is five minutes. Give a large candidate selection enough headroom
+when creating the plan, or split it into stable batches across multiple `verify` invocations.
+On macOS, hard memory enforcement is unavailable, so pass `--allow-best-effort-memory` to
+`plan` when best-effort enforcement is acceptable; `verify` does not provide that option.
 
 `plan` discovers candidates but does not run a baseline or test command, copy a worker, or create or reuse a session. A manifest with `truncated` set to `true` contains only a partial candidate set, and `plan` exits 4; it cannot establish full coverage of the selected targets. `verify` rejects a changed target or fingerprint input before its baseline runs. Each `verify` command runs a fresh baseline and does not use a session. Plan manifests are trusted local invocation data, not a security boundary.
 
@@ -160,6 +177,14 @@ hoimin progress --format json reports/*.json
 ```
 
 Comparisons require adjacent reports that are both complete and have successful baselines. `saturated` means the configured number of consecutive comparable stalls was reached. JSON output exposes `latest.state`; agents should use that field, rather than the command exit code, to make progress decisions. A surviving mutant is not proof of behavioral equivalence.
+
+For split verification, choose stable candidate batches and keep a separate oldest-to-newest
+report history for each batch. Pass `hoimin progress` only reports covering the
+identical candidate-ID set. If batch membership changes, start a new history. Reports from
+different
+subsets, their scores, and their saturation states must not be combined into a synthetic
+whole-plan result. To summarize overall completion, inspect the latest complete report for
+every batch and account for the union of candidate IDs selected from the plan.
 
 `--format json` emits one document. `--format jsonl` emits flushed lifecycle events; diagnostics are JSON Lines on stderr. Public JSON contracts are versioned in [`run-result.schema.json`](docs/json-schema/run-result.schema.json) and [`run-event.schema.json`](docs/json-schema/run-event.schema.json). Event kinds are `run_started`, `baseline_finished`, `mutant_started`, `mutant_finished`, `diagnostic`, and `run_finished`. Parallel events are emitted in completion order; candidate sequence numbers allow stable reordering.
 
