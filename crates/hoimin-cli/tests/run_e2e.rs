@@ -894,6 +894,8 @@ fn readme_documents_agent_plan_workflow() {
         "inherits the test command, execution limits, timeout settings, and resource policy",
         "create a new plan",
         "identical candidate-ID set",
+        "After every test improvement, rerun every stable batch and save each report separately.",
+        "same current test revision",
         "must not be combined",
         "`--fingerprint-include GLOB`",
         "`truncated`",

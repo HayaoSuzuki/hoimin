@@ -87,4 +87,3 @@ test harness. A final formatting and diff check confirms that no runtime behavio
 - `crates/hoimin-cli/tests/cli_config.rs`: help and repeated-option contract coverage.
 - `crates/hoimin-cli/tests/run_e2e.rs`: README example contract coverage if that is where the
   existing README assertion is most naturally extended.
-

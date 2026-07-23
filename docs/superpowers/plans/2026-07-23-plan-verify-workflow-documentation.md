@@ -277,4 +277,3 @@ Expected: no whitespace errors; only `README.md`, Clap documentation in `cli.rs`
 - [ ] **Step 4: Record verification without another source commit**
 
 Do not create a verification-only commit. Report the exact commands and outcomes in the final handoff, including that `[skip ci]` intentionally prevented remote CI from running.
-

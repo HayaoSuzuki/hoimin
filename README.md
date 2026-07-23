@@ -26,9 +26,8 @@ hoimin verify PLAN.json \
   --format json > reports/batch-a-001.json
 ```
 
-`--candidate` is repeatable, so one `verify` invocation can execute multiple planned
-candidates. `verify`
-inherits the test command, execution limits, timeout settings, and resource policy from
+`--candidate` is repeatable, so one `verify` invocation can execute multiple planned candidates.
+`verify` inherits the test command, execution limits, timeout settings, and resource policy from
 `PLAN.json`; only verify-specific output choices such as `--format` are selected at verify
 time. It cannot override plan-time settings. To change `--total-timeout`,
 `--allow-best-effort-memory`, or another execution or resource setting, create a new plan.
@@ -179,12 +178,13 @@ hoimin progress --format json reports/*.json
 Comparisons require adjacent reports that are both complete and have successful baselines. `saturated` means the configured number of consecutive comparable stalls was reached. JSON output exposes `latest.state`; agents should use that field, rather than the command exit code, to make progress decisions. A surviving mutant is not proof of behavioral equivalence.
 
 For split verification, choose stable candidate batches and keep a separate oldest-to-newest
-report history for each batch. Pass `hoimin progress` only reports covering the
-identical candidate-ID set. If batch membership changes, start a new history. Reports from
-different
-subsets, their scores, and their saturation states must not be combined into a synthetic
-whole-plan result. To summarize overall completion, inspect the latest complete report for
-every batch and account for the union of candidate IDs selected from the plan.
+report history for each batch.
+After every test improvement, rerun every stable batch and save each report separately.
+Pass `hoimin progress` only reports covering the identical candidate-ID set.
+If batch membership changes, start a new history. Reports from different subsets, their
+scores, and their saturation states must not be combined into a synthetic whole-plan result.
+Judge overall completion from each batch's latest complete report for the same current test revision,
+accounting for the union of candidate IDs selected from the plan.
 
 `--format json` emits one document. `--format jsonl` emits flushed lifecycle events; diagnostics are JSON Lines on stderr. Public JSON contracts are versioned in [`run-result.schema.json`](docs/json-schema/run-result.schema.json) and [`run-event.schema.json`](docs/json-schema/run-event.schema.json). Event kinds are `run_started`, `baseline_finished`, `mutant_started`, `mutant_finished`, `diagnostic`, and `run_finished`. Parallel events are emitted in completion order; candidate sequence numbers allow stable reordering.
 
