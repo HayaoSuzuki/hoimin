@@ -27,7 +27,7 @@
 | isolation | `crates/hoimin-cli/src/resource/mod.rs` | complete | complete | complete | portable | complete | Shared prepare/attach/terminate/classify/close dispatch traced; platform-hard variants retain their platform-limited evidence status. |
 | isolation | `crates/hoimin-cli/src/resource/portable.rs` | complete | complete | complete | macOS portable | complete | Best-effort mode, pre-exec process group/CPU limit, descendant termination, and no-op backend close traced; 14 portable process tests passed. Windows portable attach remains owned by RUST-001. |
 | isolation | `crates/hoimin-cli/src/resource/windows.rs` | complete | complete | limited | Windows Job Object | limited | Suspended hard-backend attach, run/root Job Objects, notification classification, termination, and retryable close traced statically. Windows execution was not run on the macOS audit host. |
-| persistence | `crates/hoimin-cli/src/session/mod.rs` | complete | complete | complete | portable | complete | Begin/persist/replace/finish transactions, rollback, finality, run-scoped row shape, resume selection, and caller dispatch traced. RUST-006 records the non-atomic incomplete-run check and stored-result lookup across concurrent connections. |
+| persistence | `crates/hoimin-cli/src/session/mod.rs` | complete | complete | complete | portable | complete | Begin/persist/replace/finish transactions, rollback, finality, run-scoped row shape, resume selection, and caller dispatch traced. The two-statement lookup/finalize interleaving was reviewed and rejected as RUST-006 because lookup can linearize before completion and finish does not mutate stored rows. |
 | persistence | `crates/hoimin-cli/src/session/schema.rs` | complete | complete | complete | SQLite/WAL | complete | Five-second busy bound, foreign keys, WAL setup, atomic versioned migrations, failed-upgrade rollback, data preservation, and idempotent reopen traced and tested. |
 | orchestration | `crates/hoimin-cli/src/shell.rs` | complete | complete | complete | portable | complete | All effects, process completion, cancellation, drain, close/error precedence, metrics, and four proposed extraction boundaries traced; process/run E2E suites pass. |
 | persistence | `crates/hoimin-cli/src/target/fs.rs` | complete | complete | complete | portable | complete | Default ignore behavior, explicit include restoration, exclude precedence, regular Python files, non-UTF-8 rejection, non-followed symlinks, and root-relative discovery traced. |
@@ -244,9 +244,13 @@ replacement, and finish are transactional. Deferred foreign keys make a result f
 missing run fail at commit and restore any deleted prior result; determinate results
 and completed runs reject writes. Candidate, result, and diagnostic rows are keyed by
 the same `(run_id, mutant_id)`, so a single result-shape query cannot mix runs.
-RUST-006 is the remaining concurrency exception: lookup checks `runs.complete` and
-reads the result in two autocommit statements, allowing another connection to commit
-completion between their snapshots.
+Lookup checks `runs.complete` and reads the result in two autocommit statements, so
+another connection can commit completion between their snapshots. That observation
+is recorded as rejected RUST-006: completion does not mutate candidate/result rows,
+the returned value is the same value available immediately before completion, and
+lookup can linearize at its first read. An explicit WAL read transaction could also
+legitimately retain a pre-completion snapshot; no stronger response-time finality
+contract or caller-visible harm is established.
 
 Plan creation resolves fingerprint inputs and normalized targets before discovery,
 records exact source hashes, and serializes candidate descriptors. Verification
@@ -276,6 +280,9 @@ non-UTF-8-path inputs fail closed or are excluded according to target policy.
 Renamed Python destinations and hostile repository diff configuration are covered.
 No additional fingerprint/target lead remains beyond the actor-conditional pathname
 race already owned by RUST-004.
+
+Task 7 therefore retains one lead, RUST-005, and rejects the reviewed RUST-006
+observation.
 
 Focused evidence is `.audit/rust-codebase/persistence-input-tests.log`: 59 tests
 passed (10 `session_handler`, 17 `plan`, 13 `fingerprint_inputs`, and 19
