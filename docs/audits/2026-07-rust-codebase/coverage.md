@@ -8,11 +8,11 @@
 | analysis-output | `crates/hoimin-cli/src/analyzer/rust_tests.rs` | complete | pending | pending | pending | pending | |
 | analysis-output | `crates/hoimin-cli/src/analyzer/store.rs` | complete | pending | pending | pending | pending | |
 | delivery | `crates/hoimin-cli/src/cli.rs` | complete | pending | pending | pending | pending | |
-| persistence | `crates/hoimin-cli/src/fingerprint_inputs.rs` | complete | pending | pending | pending | pending | |
+| persistence | `crates/hoimin-cli/src/fingerprint_inputs.rs` | complete | complete | complete | portable | complete | Exact and glob inputs, ignored-file policy, sorting/deduplication, path normalization, read failures, regular-file checks, and non-followed symlinks traced; focused input tests pass. |
 | delivery | `crates/hoimin-cli/src/lib.rs` | complete | pending | pending | pending | pending | |
 | delivery | `crates/hoimin-cli/src/main.rs` | complete | pending | pending | pending | pending | |
 | orchestration | `crates/hoimin-cli/src/metrics.rs` | complete | complete | complete | portable | complete | Stage and worker lifecycle traced; maps are bounded by fixed stage names and configured workers, and `finish` rejects outstanding process state. |
-| persistence | `crates/hoimin-cli/src/plan.rs` | complete | pending | pending | pending | pending | |
+| persistence | `crates/hoimin-cli/src/plan.rs` | complete | complete | complete | portable | complete | Manifest header/record/candidate validation, source and fingerprint revalidation, requested-ID normalization, rediscovery, baseline handoff, and selected replay traced. RUST-005 records normalized-config invariants bypassed by direct deserialization. |
 | orchestration | `crates/hoimin-cli/src/process/mod.rs` | complete | complete | complete | portable | complete | Prepare/spawn/attach/select/terminate/wait/classify/output traced. Successful cancellation and timeout reap descendants; RUST-003 records the terminate-error branch that skips explicit root reap. |
 | orchestration | `crates/hoimin-cli/src/process/output.rs` | complete | complete | complete | portable | complete | Two 8 KiB readers feed an eight-chunk bounded channel; retained bytes are capped and the collector drains to EOF even after spool failure. |
 | analysis-output | `crates/hoimin-cli/src/progress/compare.rs` | complete | pending | pending | pending | pending | |
@@ -27,12 +27,12 @@
 | isolation | `crates/hoimin-cli/src/resource/mod.rs` | complete | complete | complete | portable | complete | Shared prepare/attach/terminate/classify/close dispatch traced; platform-hard variants retain their platform-limited evidence status. |
 | isolation | `crates/hoimin-cli/src/resource/portable.rs` | complete | complete | complete | macOS portable | complete | Best-effort mode, pre-exec process group/CPU limit, descendant termination, and no-op backend close traced; 14 portable process tests passed. Windows portable attach remains owned by RUST-001. |
 | isolation | `crates/hoimin-cli/src/resource/windows.rs` | complete | complete | limited | Windows Job Object | limited | Suspended hard-backend attach, run/root Job Objects, notification classification, termination, and retryable close traced statically. Windows execution was not run on the macOS audit host. |
-| persistence | `crates/hoimin-cli/src/session/mod.rs` | complete | pending | pending | pending | pending | |
-| persistence | `crates/hoimin-cli/src/session/schema.rs` | complete | pending | pending | pending | pending | |
+| persistence | `crates/hoimin-cli/src/session/mod.rs` | complete | complete | complete | portable | complete | Begin/persist/replace/finish transactions, rollback, finality, run-scoped row shape, resume selection, and caller dispatch traced. RUST-006 records the non-atomic incomplete-run check and stored-result lookup across concurrent connections. |
+| persistence | `crates/hoimin-cli/src/session/schema.rs` | complete | complete | complete | SQLite/WAL | complete | Five-second busy bound, foreign keys, WAL setup, atomic versioned migrations, failed-upgrade rollback, data preservation, and idempotent reopen traced and tested. |
 | orchestration | `crates/hoimin-cli/src/shell.rs` | complete | complete | complete | portable | complete | All effects, process completion, cancellation, drain, close/error precedence, metrics, and four proposed extraction boundaries traced; process/run E2E suites pass. |
-| persistence | `crates/hoimin-cli/src/target/fs.rs` | complete | pending | pending | pending | pending | |
-| persistence | `crates/hoimin-cli/src/target/git.rs` | complete | pending | pending | pending | pending | |
-| persistence | `crates/hoimin-cli/src/target/mod.rs` | complete | pending | pending | pending | pending | |
+| persistence | `crates/hoimin-cli/src/target/fs.rs` | complete | complete | complete | portable | complete | Default ignore behavior, explicit include restoration, exclude precedence, regular Python files, non-UTF-8 rejection, non-followed symlinks, and root-relative discovery traced. |
+| persistence | `crates/hoimin-cli/src/target/git.rs` | complete | complete | complete | Git | complete | HEAD/merge-base diffs, staged/unstaged/untracked and unborn repositories, deletion/binary exclusion, UTF-8 path handling, rename detection, hostile revisions/config, and pinned diff format traced and tested. |
+| persistence | `crates/hoimin-cli/src/target/mod.rs` | complete | complete | complete | portable/Git | complete | Explicit normalization and changed-line intersection preserve core target invariants; empty explicit selections and effect-ID/error mapping traced. |
 | isolation | `crates/hoimin-cli/src/workspace/copy.rs` | complete | complete | complete | portable | complete | Preflight identity, aggregate allowance binding, partial-copy charge rollback, original recheck, and worker-slot rollback traced. |
 | isolation | `crates/hoimin-cli/src/workspace/manifest.rs` | complete | complete | complete | portable | complete | Canonical-root manifest discovery, normalized relative entries, content hashes, exclusions, and non-followed symlink diagnostics traced. |
 | isolation | `crates/hoimin-cli/src/workspace/mod.rs` | complete | complete | complete | portable | complete | Handler lifecycle, reservation identity, retryable cleanup, read-only tree removal, and drop accounting traced. RUST-004 records an actor-conditional workspace-integrity race after path validation. |
@@ -233,3 +233,50 @@ Focused evidence is
 cgroup and Windows Job Object behavior remain platform-limited evidence. RUST-001
 continues to own the Windows pre-attach isolation race; Task 5 created no duplicate
 lead. RUST-003 instead covers post-attach terminate-error cleanup and reap.
+
+## Persistence, plan, fingerprint, and target-input audit
+
+Session schema setup applies a five-second busy timeout, enables foreign keys and WAL,
+and advances both schema versions inside transactions. The v1-to-v2 evidence covers
+preserved rows, idempotent reopen, and rollback of both the new index and
+`user_version` after a failed upgrade. Run creation, each result write, inconclusive
+replacement, and finish are transactional. Deferred foreign keys make a result for a
+missing run fail at commit and restore any deleted prior result; determinate results
+and completed runs reject writes. Candidate, result, and diagnostic rows are keyed by
+the same `(run_id, mutant_id)`, so a single result-shape query cannot mix runs.
+RUST-006 is the remaining concurrency exception: lookup checks `runs.complete` and
+reads the result in two autocommit statements, allowing another connection to commit
+completion between their snapshots.
+
+Plan creation resolves fingerprint inputs and normalized targets before discovery,
+records exact source hashes, and serializes candidate descriptors. Verification
+rejects unknown fields, headers, incoherent roots, unsafe or duplicate records,
+malformed/duplicate candidate IDs, missing or excessive requested IDs, changed source
+or fingerprint records, invalid stable descriptors, and candidates no longer
+discoverable under the recorded configuration. Only after this preparation does the
+CLI hand the reconstructed configuration to `run_selected_loop`, which executes one
+fresh baseline and only the requested candidates without session persistence.
+RUST-005 is the exception: `PlanConfig` and its nested normalized types deserialize
+without replaying the cross-field and nonzero-duration validation performed for CLI
+configuration, and the selected-run path deliberately skips normal preparation.
+
+Fingerprint globs ignore ignore files by policy, reject unmatched/unsafe patterns,
+hash only sorted root-relative regular UTF-8 paths, and do not follow symlinks.
+Exact files treat glob metacharacters literally, override glob deduplication, and
+reject missing, unsafe, directory, or symlink inputs. Filesystem target discovery
+uses normal Git/ignore policy, permits explicit includes to restore ignored files,
+applies excludes last, does not follow symlinks, and rejects non-UTF-8 paths.
+
+Changed-target Git commands pin color, prefixes, text conversion, external diffs,
+rename detection, hunk context, diff algorithm, indentation heuristic, and rename
+limit. A supplied revision is resolved with `--end-of-options` to a full commit ID
+before use. The combined worktree diff covers staged plus unstaged changes; untracked
+non-ignored files are added separately, while deleted, binary, empty, ignored, and
+non-UTF-8-path inputs fail closed or are excluded according to target policy.
+Renamed Python destinations and hostile repository diff configuration are covered.
+No additional fingerprint/target lead remains beyond the actor-conditional pathname
+race already owned by RUST-004.
+
+Focused evidence is `.audit/rust-codebase/persistence-input-tests.log`: 59 tests
+passed (10 `session_handler`, 17 `plan`, 13 `fingerprint_inputs`, and 19
+`target_handler`) on macOS with the installed Git and SQLite/WAL implementations.
