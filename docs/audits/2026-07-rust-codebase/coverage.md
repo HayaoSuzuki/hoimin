@@ -11,10 +11,10 @@
 | persistence | `crates/hoimin-cli/src/fingerprint_inputs.rs` | complete | pending | pending | pending | pending | |
 | delivery | `crates/hoimin-cli/src/lib.rs` | complete | pending | pending | pending | pending | |
 | delivery | `crates/hoimin-cli/src/main.rs` | complete | pending | pending | pending | pending | |
-| orchestration | `crates/hoimin-cli/src/metrics.rs` | complete | pending | pending | pending | pending | |
+| orchestration | `crates/hoimin-cli/src/metrics.rs` | complete | complete | complete | portable | complete | Stage and worker lifecycle traced; maps are bounded by fixed stage names and configured workers, and `finish` rejects outstanding process state. |
 | persistence | `crates/hoimin-cli/src/plan.rs` | complete | pending | pending | pending | pending | |
-| orchestration | `crates/hoimin-cli/src/process/mod.rs` | complete | pending | pending | pending | pending | |
-| orchestration | `crates/hoimin-cli/src/process/output.rs` | complete | pending | pending | pending | pending | |
+| orchestration | `crates/hoimin-cli/src/process/mod.rs` | complete | complete | complete | portable | complete | Prepare/spawn/attach/select/terminate/wait/classify/output traced. Successful cancellation and timeout reap descendants; RUST-003 records the terminate-error branch that skips explicit root reap. |
+| orchestration | `crates/hoimin-cli/src/process/output.rs` | complete | complete | complete | portable | complete | Two 8 KiB readers feed an eight-chunk bounded channel; retained bytes are capped and the collector drains to EOF even after spool failure. |
 | analysis-output | `crates/hoimin-cli/src/progress/compare.rs` | complete | pending | pending | pending | pending | |
 | analysis-output | `crates/hoimin-cli/src/progress/input.rs` | complete | pending | pending | pending | pending | |
 | analysis-output | `crates/hoimin-cli/src/progress/mod.rs` | complete | pending | pending | pending | pending | |
@@ -29,7 +29,7 @@
 | isolation | `crates/hoimin-cli/src/resource/windows.rs` | complete | pending | limited | Windows | limited | Windows execution was not run on the macOS audit host. |
 | persistence | `crates/hoimin-cli/src/session/mod.rs` | complete | pending | pending | pending | pending | |
 | persistence | `crates/hoimin-cli/src/session/schema.rs` | complete | pending | pending | pending | pending | |
-| orchestration | `crates/hoimin-cli/src/shell.rs` | complete | pending | pending | pending | pending | |
+| orchestration | `crates/hoimin-cli/src/shell.rs` | complete | complete | complete | portable | complete | All effects, process completion, cancellation, drain, close/error precedence, metrics, and four proposed extraction boundaries traced; process/run E2E suites pass. |
 | persistence | `crates/hoimin-cli/src/target/fs.rs` | complete | pending | pending | pending | pending | |
 | persistence | `crates/hoimin-cli/src/target/git.rs` | complete | pending | pending | pending | pending | |
 | persistence | `crates/hoimin-cli/src/target/mod.rs` | complete | pending | pending | pending | pending | |
@@ -76,8 +76,9 @@ count.
 - `metrics.rs`: temporary-file write, flush, sync, and persist failures propagate.
   Time conversion deliberately saturates; `Drop` restores only test process state.
 - `process/{mod,output}.rs`: spawn, attach, wait, kill, join, and spool failures are
-  surfaced or combined. The ignored second `start_kill` is a best-effort fallback after
-  a bounded wait and `kill_on_drop(true)` remains armed.
+  surfaced or combined on ordinary paths. RUST-003 records the cancellation/timeout
+  exception where a supervisor termination error skips the explicit root wait. The
+  ignored second `start_kill` is a best-effort fallback after a bounded wait.
 - `progress/{compare,input,mod,render}.rs`: indexing is through validated collections
   or map entry APIs. The `unreachable!` arm follows the local two-input comparison
   state invariant.
@@ -122,3 +123,54 @@ Task 3 retained no core lead: its sole retained item is the CLI isolation lead
 `RUST-001`. Task 4 added `RUST-002` for the reservation-ID exhaustion boundary;
 the current machine reserves one copy grant per run, but the public budget
 ledger can reuse `ReservationId(u64::MAX)` and replace an active entry.
+
+## CLI orchestration and process-lifecycle audit
+
+Task 5 traced each `RunEffect` from acquisition through its completion event.
+Target resolution retains the resolved target vector for fingerprinting; preflight,
+worker creation, mutation/reset, verification, and cleanup acquire workspace state
+released by `Cleanup` and the unconditional outer `workspace.close`. Candidate replay
+retains at most one active candidate per configured worker and removes it on EOF or
+successful reset. Session effects lazily acquire one handler, whose transactional
+operations are completed by `FinishSession` or connection drop. Output emission owns
+no external resource, and a report write error becomes `EffectFailed`, is accepted
+before any newly produced effects are queued, cancels processes, and drains the
+process set. Process effects acquire a worker environment, dispatch/start gates,
+supervisor attachment, pipe tasks, a spool, and one completion slot; the normal,
+cancellation, timeout, and attach-failure paths release these obligations, subject
+to RUST-003 on supervisor-termination failure.
+
+The run loop preserves cleanup visibility in two layers. The state machine turns
+effect failures into cleanup/report/session effects, while the outer close always
+attempts both workspace and process backend close. `combine_close_results` keeps a
+run infrastructure error first and appends workspace then process-close failures.
+Metrics observation errors and atomic-write errors remain warning diagnostics and
+do not replace the run result. Accepted phase transitions finish the departed
+metrics stage, including direct early cleanup; process drain closes worker timing
+state before `MetricsCollector::finish`.
+
+Boundedness was checked collection by collection:
+
+- `JoinSet` and in-flight completions are bounded by `jobs` and `jobs + 1`;
+  `joinset_and_completion_queue_stay_bounded_across_many_mutants` observes those
+  bounds, and every stop/failure path joins the set then drains the channel.
+- Each process has two 8 KiB read buffers and an eight-element pipe channel.
+  Spool retention is bounded by `max_output_bytes`; observed output is streamed and
+  counted with saturation rather than retained in memory.
+- `active_candidates` and metrics worker state are bounded by configured workers.
+  Metrics stages are the fixed run-phase set. Resolved targets and candidate/report
+  spools scale with selected project input and are lifecycle-owned by the temporary
+  run directory rather than accumulated across runs.
+- The effect deque and core pending/completion collections are drained by accepted
+  transitions and bounded by the core worker/effect protocol; queued process metrics
+  are cancelled when effects are discarded. `metrics_warnings` is run-lifetime
+  retained and has no explicit numeric cap, but additions require a metrics invariant
+  or write failure rather than ordinary candidate throughput, so it is not retained
+  as a production lead.
+
+Focused evidence is
+`.audit/rust-codebase/orchestration-tests.log`: 50 tests passed (17
+`process_handler`, 33 `run_e2e`) on the macOS portable backend. Delegated Linux
+cgroup and Windows Job Object behavior remain platform-limited evidence. RUST-001
+continues to own the Windows pre-attach isolation race; Task 5 created no duplicate
+lead. RUST-003 instead covers post-attach terminate-error cleanup and reap.
