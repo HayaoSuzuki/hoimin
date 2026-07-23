@@ -38,19 +38,19 @@
 | isolation | `crates/hoimin-cli/src/workspace/mod.rs` | complete | pending | pending | pending | pending | |
 | isolation | `crates/hoimin-cli/src/workspace/mutation.rs` | complete | pending | pending | pending | pending | |
 | isolation | `crates/hoimin-cli/src/workspace/reset.rs` | complete | pending | pending | pending | pending | |
-| core | `crates/hoimin-core/src/budget.rs` | complete | pending | pending | pending | pending | |
-| core | `crates/hoimin-core/src/candidate.rs` | complete | pending | pending | pending | pending | |
-| core | `crates/hoimin-core/src/config.rs` | complete | pending | pending | pending | pending | |
-| core | `crates/hoimin-core/src/contracts.rs` | complete | pending | pending | pending | pending | |
-| core | `crates/hoimin-core/src/effect.rs` | complete | pending | pending | pending | pending | |
-| core | `crates/hoimin-core/src/event.rs` | complete | pending | pending | pending | pending | |
-| core | `crates/hoimin-core/src/lib.rs` | complete | pending | pending | pending | pending | |
-| core | `crates/hoimin-core/src/machine.rs` | complete | pending | pending | pending | pending | |
-| core | `crates/hoimin-core/src/model.rs` | complete | pending | pending | pending | pending | |
-| core | `crates/hoimin-core/src/report.rs` | complete | pending | pending | pending | pending | |
-| core | `crates/hoimin-core/src/resume.rs` | complete | pending | pending | pending | pending | |
-| core | `crates/hoimin-core/src/target.rs` | complete | pending | pending | pending | pending | |
-| core | `crates/hoimin-core/src/telemetry.rs` | complete | pending | pending | pending | pending | |
+| core | `crates/hoimin-core/src/budget.rs` | complete | complete | complete | portable | complete | Reservation/grant/release traced; contracts and budget policy tests pass. RUST-002 records the unchecked reservation-ID boundary. |
+| core | `crates/hoimin-core/src/candidate.rs` | complete | complete | complete | portable | complete | Hash/path/span/location validation traced; candidate and machine policy tests pass. |
+| core | `crates/hoimin-core/src/config.rs` | complete | complete | complete | portable | complete | Raw limits, duration arithmetic, selector/operator normalization, and resume preconditions traced. |
+| core | `crates/hoimin-core/src/contracts.rs` | complete | complete | complete | portable | complete | Contract feature evidence exercises stable invariant IDs. |
+| core | `crates/hoimin-core/src/effect.rs` | complete | complete | complete | portable | complete | Every effect is mapped to its completion kind, worker, and registered ID. |
+| core | `crates/hoimin-core/src/event.rs` | complete | complete | complete | portable | complete | Completion and typed failure payloads traced through machine acceptance. |
+| core | `crates/hoimin-core/src/lib.rs` | complete | complete | complete | portable | complete | Public core surface reviewed with all module policy suites. |
+| core | `crates/hoimin-core/src/machine.rs` | complete | complete | complete | portable | complete | Terminal candidate, failure, cleanup-once, report, and bounded-ledger paths traced against 33 machine tests. |
+| core | `crates/hoimin-core/src/model.rs` | complete | complete | complete | portable | complete | Numeric protocol fields traced through validation, persistence, reporting, and fingerprint encoding. |
+| core | `crates/hoimin-core/src/report.rs` | complete | complete | complete | portable | complete | Score denominator, exit precedence, event identity/order, and report summary traced. |
+| core | `crates/hoimin-core/src/resume.rs` | complete | complete | complete | portable | complete | Compatibility fields, canonical set ordering, native argv units, and reuse policy traced. |
+| core | `crates/hoimin-core/src/target.rs` | complete | complete | complete | portable | complete | Root/path checks and file/line/symbol/changed union/intersection normalization traced. |
+| core | `crates/hoimin-core/src/telemetry.rs` | complete | complete | complete | portable | complete | Metric duration and worker-accounting invariants covered by focused core contracts evidence. |
 
 ## Static-scan triage notes
 
@@ -108,3 +108,17 @@ count.
   and worker-state checks; `resume.rs` casts encode platform-bounded lengths into the
   stable fingerprint format; `target.rs` fallbacks implement normalization policy.
   No unsafe block or cleanup side effect exists in core production code.
+
+## Core state and policy audit
+
+The Task 4 call/effect map is recorded in
+`.audit/rust-codebase/core/invariants.md`. The trace covers configuration and
+target normalization, candidate validation, effect/completion registration,
+terminal candidate drain, cleanup-once behavior, report construction and exit
+precedence, workspace budget grant/release, fingerprint compatibility, and
+stored-result replacement through the CLI session caller.
+
+Task 3 retained no core lead: its sole retained item is the CLI isolation lead
+`RUST-001`. Task 4 added `RUST-002` for the reservation-ID exhaustion boundary;
+the current machine reserves one copy grant per run, but the public budget
+ledger can reuse `ReservationId(u64::MAX)` and replace an active entry.
