@@ -9,7 +9,7 @@ use hoimin_cli::{
     shell,
     target::TargetHandler,
 };
-use hoimin_core::{MutationCandidate, OutputFormat as CoreOutputFormat};
+use hoimin_core::{MAX_JOBS, MutationCandidate, OutputFormat as CoreOutputFormat};
 
 #[tokio::test]
 async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
@@ -185,6 +185,174 @@ async fn verify_rejects_changed_source_before_baseline() {
 
     assert_error_code(error, "plan.source.changed");
     assert!(!marker.exists());
+}
+
+type ManifestMutation = fn(&mut serde_json::Value);
+type InvalidManifestCase = (&'static str, ManifestMutation, &'static str);
+
+fn invalid_normalized_config_cases() -> Vec<InvalidManifestCase> {
+    let cases: Vec<InvalidManifestCase> = vec![
+        (
+            "empty argv",
+            |value| {
+                value["normalized_config"]["test_argv"] = serde_json::json!([]);
+            },
+            "at least one test argv element is required",
+        ),
+        (
+            "jobs exceed processes",
+            |value| {
+                value["normalized_config"]["limits"]["jobs"] = serde_json::json!(2);
+                value["normalized_config"]["limits"]["max_processes"] = serde_json::json!(1);
+            },
+            "--jobs 2 exceeds --max-processes 1",
+        ),
+        (
+            "zero total timeout",
+            |value| {
+                value["normalized_config"]["limits"]["total_timeout"] =
+                    serde_json::json!({"secs": 0, "nanos": 0});
+            },
+            "invalid zero or overflowing limit: total_timeout",
+        ),
+        (
+            "missing selector",
+            |value| {
+                let selection = &mut value["normalized_config"]["selection"];
+                selection["sources"] = serde_json::json!([]);
+                selection["files"] = serde_json::json!([]);
+                selection["lines"] = serde_json::json!([]);
+                selection["symbols"] = serde_json::json!([]);
+                selection["changed"] = serde_json::json!(false);
+            },
+            "at least one target selector is required",
+        ),
+        (
+            "diff base without changed",
+            |value| {
+                let selection = &mut value["normalized_config"]["selection"];
+                selection["diff_base"] = serde_json::json!("HEAD");
+                selection["changed"] = serde_json::json!(false);
+            },
+            "--diff-base requires --changed",
+        ),
+        (
+            "changed without source",
+            |value| {
+                let selection = &mut value["normalized_config"]["selection"];
+                selection["sources"] = serde_json::json!([]);
+                selection["changed"] = serde_json::json!(true);
+            },
+            "--changed requires --source",
+        ),
+        (
+            "symbol without source",
+            |value| {
+                let selection = &mut value["normalized_config"]["selection"];
+                selection["sources"] = serde_json::json!([]);
+                selection["files"] = serde_json::json!([]);
+                selection["symbols"] = serde_json::json!([{
+                    "module": "calc",
+                    "qualname": "only_add",
+                }]);
+            },
+            "--symbol requires --source",
+        ),
+        (
+            "jobs exceed maximum",
+            |value| {
+                value["normalized_config"]["limits"]["jobs"] = serde_json::json!(MAX_JOBS + 1);
+            },
+            "--jobs 257 exceeds the supported maximum 256",
+        ),
+        (
+            "overflowing baseline timeout",
+            |value| {
+                value["normalized_config"]["limits"]["baseline_timeout"] =
+                    serde_json::json!({"secs": u64::MAX, "nanos": 0});
+            },
+            "invalid zero or overflowing limit: baseline_timeout",
+        ),
+    ];
+    #[cfg(target_pointer_width = "64")]
+    let cases = {
+        let mut cases = cases;
+        cases.push((
+            "processes exceed u32",
+            |value| {
+                value["normalized_config"]["limits"]["max_processes"] =
+                    serde_json::json!(u64::from(u32::MAX) + 1);
+            },
+            "invalid zero or overflowing limit: max_processes",
+        ));
+        cases
+    };
+    cases
+}
+
+#[tokio::test]
+async fn verify_rejects_invalid_normalized_config_before_project_work() {
+    for (name, mutate, expected_message) in invalid_normalized_config_cases() {
+        let project = Project::new();
+        let (path, manifest, baseline_marker) = write_plan_manifest(&project, &[]).await;
+        let requested = vec![manifest.candidates[0].id.clone()];
+        let mut value = serde_json::to_value(manifest).unwrap();
+        mutate(&mut value);
+        let tampered: PlanManifest = serde_json::from_value(value.clone())
+            .unwrap_or_else(|error| panic!("{name} must remain structurally valid: {error}"));
+        assert_eq!(
+            tampered
+                .normalized_config
+                .validate()
+                .unwrap_err()
+                .to_string(),
+            expected_message,
+            "{name}"
+        );
+        write_json(&path, &value);
+
+        std::fs::remove_file(project.path.join("src/calc.py")).unwrap();
+        let error = prepare_verify(&path, &requested, OutputFormat::Json)
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("plan.manifest.invalid: {expected_message}"),
+            "{name}"
+        );
+        assert!(!baseline_marker.exists(), "{name}");
+    }
+}
+
+#[tokio::test]
+async fn verify_prioritizes_invalid_normalized_config_over_requested_id_limits() {
+    let project = Project::new();
+    let (path, manifest, baseline_marker) = write_plan_manifest(&project, &[]).await;
+    assert!(manifest.candidates.len() >= 2);
+    let requested = manifest
+        .candidates
+        .iter()
+        .take(2)
+        .map(|candidate| candidate.id.clone())
+        .collect::<Vec<_>>();
+    let mut value = serde_json::to_value(manifest).unwrap();
+    value["normalized_config"]["test_argv"] = serde_json::json!([]);
+    value["normalized_config"]["limits"]["max_mutants"] = serde_json::json!(1);
+    let tampered: PlanManifest = serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(tampered.normalized_config.limits.max_mutants.get(), 1);
+    assert!(tampered.normalized_config.test_argv.is_empty());
+    write_json(&path, &value);
+
+    let error = prepare_verify(&path, &requested, OutputFormat::Json)
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "plan.manifest.invalid: at least one test argv element is required"
+    );
+    assert!(!baseline_marker.exists());
 }
 
 #[tokio::test]
