@@ -1,6 +1,8 @@
 mod linux;
 mod portable;
 #[cfg(windows)]
+mod suspended;
+#[cfg(windows)]
 mod windows;
 
 use hoimin_core::{ProcessLimits, ResourceMode};

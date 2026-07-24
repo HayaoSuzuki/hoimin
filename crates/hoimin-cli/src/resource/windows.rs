@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use std::ffi::c_void;
 use std::io;
 use std::mem::{size_of, zeroed};
-use std::os::windows::process::CommandExt;
 use std::ptr::{dangling_mut, null, null_mut};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -11,24 +10,16 @@ use std::time::{Duration, Instant};
 use hoimin_core::{ProcessLimits, ProcessTermination, ResourceMode, RunLimits};
 use tokio::process::{Child, Command};
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE, WAIT_TIMEOUT};
-use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-    CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
-};
 use windows_sys::Win32::System::IO::{CreateIoCompletionPort, GetQueuedCompletionStatus};
 use windows_sys::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
-    JOB_OBJECT_LIMIT_JOB_MEMORY, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-    JOBOBJECT_ASSOCIATE_COMPLETION_PORT, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-    JobObjectAssociateCompletionPortInformation, JobObjectExtendedLimitInformation,
-    SetInformationJobObject, TerminateJobObject,
+    CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_JOB_MEMORY,
+    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_ASSOCIATE_COMPLETION_PORT,
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectAssociateCompletionPortInformation,
+    JobObjectExtendedLimitInformation, SetInformationJobObject, TerminateJobObject,
 };
 use windows_sys::Win32::System::SystemServices::{
     JOB_OBJECT_MSG_ACTIVE_PROCESS_LIMIT, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO,
     JOB_OBJECT_MSG_EXIT_PROCESS, JOB_OBJECT_MSG_JOB_MEMORY_LIMIT,
-};
-use windows_sys::Win32::System::Threading::{
-    CREATE_SUSPENDED, OpenProcess, OpenThread, PROCESS_QUERY_LIMITED_INFORMATION,
-    PROCESS_SET_QUOTA, PROCESS_TERMINATE, ResumeThread, THREAD_SUSPEND_RESUME,
 };
 
 use super::{ProcessSupervisor, ResourceError};
@@ -113,7 +104,7 @@ impl WindowsBackend {
                 return Err(ResourceError::RunClosed);
             }
         }
-        command.as_std_mut().creation_flags(CREATE_SUSPENDED);
+        super::suspended::configure(command);
         Ok(ProcessSupervisor::Windows(WindowsSupervisor {
             run: Arc::clone(&self.inner),
             root_job: create_kill_on_close_job()?,
@@ -198,7 +189,6 @@ impl WindowsRunJob {
     ) -> Result<u32, ResourceError> {
         #[cfg(not(test))]
         let _ = attach_fault;
-        let pid = child.id().ok_or(ResourceError::MissingProcessId)?;
         let mut state = self
             .state
             .lock()
@@ -214,13 +204,10 @@ impl WindowsRunJob {
                 io::Error::other("injected assignment failure"),
             ));
         }
-        let process = open_process(pid)?;
-        assign_process(
-            self.job.raw(),
-            process.raw(),
-            "assign process to run-wide job",
-        )?;
-        assign_process(root_job, process.raw(), "assign process to nested root job")?;
+        let child = super::suspended::SuspendedChild::open(child)?;
+        let pid = child.pid();
+        child.assign(self.job.raw(), "assign process to run-wide job")?;
+        child.assign(root_job, "assign process to nested root job")?;
         state.active.push(ActiveRoot {
             pid,
             signal: Arc::downgrade(signal),
@@ -233,7 +220,7 @@ impl WindowsRunJob {
                 io::Error::other("injected resume failure"),
             ));
         }
-        if let Err(error) = resume_primary_thread(pid) {
+        if let Err(error) = child.resume() {
             state.active.retain(|root| root.pid != pid);
             return Err(error);
         }
@@ -431,10 +418,10 @@ impl Drop for WindowsSupervisor {
 }
 
 #[derive(Debug)]
-struct OwnedHandle(isize);
+pub(super) struct OwnedHandle(isize);
 
 impl OwnedHandle {
-    fn new(handle: HANDLE, operation: &'static str) -> Result<Self, ResourceError> {
+    pub(super) fn new(handle: HANDLE, operation: &'static str) -> Result<Self, ResourceError> {
         if handle.is_null() || handle == INVALID_HANDLE_VALUE {
             Err(ResourceError::io(operation, io::Error::last_os_error()))
         } else {
@@ -442,7 +429,7 @@ impl OwnedHandle {
         }
     }
 
-    fn raw(&self) -> HANDLE {
+    pub(super) fn raw(&self) -> HANDLE {
         self.0 as HANDLE
     }
 }
@@ -535,81 +522,6 @@ fn associate_completion_port(job: HANDLE, port: HANDLE) -> Result<(), ResourceEr
     } else {
         Ok(())
     }
-}
-
-fn open_process(pid: u32) -> Result<OwnedHandle, ResourceError> {
-    // SAFETY: pid comes from the just-spawned child and the handle is owned on success.
-    OwnedHandle::new(
-        unsafe {
-            OpenProcess(
-                PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SET_QUOTA | PROCESS_TERMINATE,
-                0,
-                pid,
-            )
-        },
-        "open suspended root process",
-    )
-}
-
-fn assign_process(
-    job: HANDLE,
-    process: HANDLE,
-    operation: &'static str,
-) -> Result<(), ResourceError> {
-    // SAFETY: job and process are live handles with assignment rights.
-    if unsafe { AssignProcessToJobObject(job, process) } == 0 {
-        Err(ResourceError::io(operation, io::Error::last_os_error()))
-    } else {
-        Ok(())
-    }
-}
-
-fn resume_primary_thread(pid: u32) -> Result<(), ResourceError> {
-    // SAFETY: snapshot handle is validated and owned by the guard.
-    let snapshot = OwnedHandle::new(
-        unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) },
-        "snapshot suspended process threads",
-    )?;
-    let mut entry = THREADENTRY32 {
-        dwSize: u32::try_from(size_of::<THREADENTRY32>())
-            .expect("Windows thread entry size fits u32"),
-        ..Default::default()
-    };
-    // SAFETY: entry has the documented size and remains writable through enumeration.
-    if unsafe { Thread32First(snapshot.raw(), &raw mut entry) } == 0 {
-        return Err(ResourceError::io(
-            "enumerate suspended process threads",
-            io::Error::last_os_error(),
-        ));
-    }
-    loop {
-        if entry.th32OwnerProcessID == pid {
-            // SAFETY: thread id came from a live snapshot entry.
-            let thread = OwnedHandle::new(
-                unsafe { OpenThread(THREAD_SUSPEND_RESUME, 0, entry.th32ThreadID) },
-                "open suspended primary thread",
-            )?;
-            // SAFETY: thread is the sole primary thread of a CREATE_SUSPENDED process.
-            if unsafe { ResumeThread(thread.raw()) } == u32::MAX {
-                return Err(ResourceError::io(
-                    "resume suspended primary thread",
-                    io::Error::last_os_error(),
-                ));
-            }
-            return Ok(());
-        }
-        // SAFETY: entry remains valid and has unchanged dwSize.
-        if unsafe { Thread32Next(snapshot.raw(), &raw mut entry) } == 0 {
-            break;
-        }
-    }
-    Err(ResourceError::io(
-        "find suspended primary thread",
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            "suspended primary thread not found",
-        ),
-    ))
 }
 
 fn terminate_job(job: HANDLE, operation: &'static str) -> Result<(), ResourceError> {
