@@ -1,4 +1,8 @@
 use std::io;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU8, Ordering},
+};
 
 use hoimin_core::{ProcessLimits, ResourceMode};
 use tokio::process::{Child, Command};
@@ -12,6 +16,7 @@ const MACOS_BEST_EFFORT_DIAGNOSTIC: &str =
 #[derive(Clone, Debug, Default)]
 pub struct PortableBackend {
     diagnostic: Option<String>,
+    termination_failures: Arc<AtomicU8>,
 }
 
 impl PortableBackend {
@@ -28,7 +33,10 @@ impl PortableBackend {
                         .into(),
                 ));
             }
-            Ok(Self { diagnostic: None })
+            Ok(Self {
+                diagnostic: None,
+                termination_failures: Arc::new(AtomicU8::new(0)),
+            })
         }
         #[cfg(target_os = "macos")]
         {
@@ -42,7 +50,10 @@ impl PortableBackend {
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         {
             let _ = allow_best_effort_memory;
-            Ok(Self { diagnostic: None })
+            Ok(Self {
+                diagnostic: None,
+                termination_failures: Arc::new(AtomicU8::new(0)),
+            })
         }
     }
 
@@ -51,9 +62,19 @@ impl PortableBackend {
         Self::default()
     }
 
+    #[doc(hidden)]
+    #[must_use]
+    pub fn for_tests_with_termination_failure() -> Self {
+        Self {
+            diagnostic: None,
+            termination_failures: Arc::new(AtomicU8::new(1)),
+        }
+    }
+
     pub(crate) fn with_diagnostic(diagnostic: String) -> Self {
         Self {
             diagnostic: Some(diagnostic),
+            termination_failures: Arc::new(AtomicU8::new(0)),
         }
     }
 
@@ -72,9 +93,10 @@ impl PortableBackend {
         command: &mut Command,
         limits: ProcessLimits,
     ) -> Result<ProcessSupervisor, ResourceError> {
-        let _ = self;
         configure_command(command, limits)?;
-        Ok(ProcessSupervisor::Portable(PortableSupervisor::new()?))
+        Ok(ProcessSupervisor::Portable(PortableSupervisor::new(
+            Arc::clone(&self.termination_failures),
+        )?))
     }
 }
 
@@ -85,6 +107,7 @@ pub(crate) struct PortableSupervisor {
     #[cfg(windows)]
     job: isize,
     terminated: bool,
+    termination_failures: Arc<AtomicU8>,
 }
 
 impl PortableSupervisor {
@@ -92,7 +115,7 @@ impl PortableSupervisor {
         clippy::unnecessary_wraps,
         reason = "Windows job-object creation is fallible while Unix construction is not."
     )]
-    fn new() -> Result<Self, ResourceError> {
+    fn new(termination_failures: Arc<AtomicU8>) -> Result<Self, ResourceError> {
         #[cfg(windows)]
         let job = create_kill_on_close_job()?;
         Ok(Self {
@@ -101,6 +124,7 @@ impl PortableSupervisor {
             #[cfg(windows)]
             job,
             terminated: false,
+            termination_failures,
         })
     }
 
@@ -125,6 +149,18 @@ impl PortableSupervisor {
     pub(crate) fn terminate(&mut self) -> Result<(), ResourceError> {
         if self.terminated {
             return Ok(());
+        }
+        if self
+            .termination_failures
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |remaining| {
+                remaining.checked_sub(1)
+            })
+            .is_ok()
+        {
+            return Err(ResourceError::io(
+                "terminate portable supervisor",
+                io::Error::other("injected portable termination failure"),
+            ));
         }
         #[cfg(unix)]
         if let Some(group) = self.process_group {
