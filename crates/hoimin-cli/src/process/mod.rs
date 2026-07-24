@@ -773,15 +773,33 @@ fn native_argv(_argv: &[CommandArg]) -> Result<Vec<OsString>, String> {
 #[cfg(test)]
 mod tests {
     use std::future::{pending, ready};
+    use std::process::Stdio;
     use std::time::Duration;
 
     use hoimin_core::{EffectFailure, EffectId, ProcessTermination};
+    use tokio::process::Command;
 
     use super::{
         ProcessCancellation, ProcessSelection, ProcessStartGate, append_cleanup_failure,
-        attach_failure, combine_process_and_output, select_process_result,
+        attach_failure, combine_process_and_output, select_process_result, wait_after_termination,
     };
     use crate::resource::ResourceError;
+
+    #[tokio::test]
+    async fn wait_after_termination_reaps_the_root_child() {
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--list")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+
+        wait_after_termination(EffectId(43), &mut child)
+            .await
+            .unwrap();
+
+        assert_eq!(child.id(), None);
+    }
 
     #[test]
     fn cancellation_and_spawn_are_linearized_by_the_spawn_gate() {
