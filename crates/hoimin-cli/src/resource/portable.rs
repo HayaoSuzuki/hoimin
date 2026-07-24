@@ -9,7 +9,7 @@ use tokio::process::{Child, Command};
 
 use super::{ProcessSupervisor, ResourceError};
 
-#[cfg(windows)]
+#[cfg(all(windows, test))]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum AttachFault {
     #[default]
@@ -26,7 +26,7 @@ const MACOS_BEST_EFFORT_DIAGNOSTIC: &str =
 pub struct PortableBackend {
     diagnostic: Option<String>,
     termination_failures: Arc<AtomicU8>,
-    #[cfg(windows)]
+    #[cfg(all(windows, test))]
     attach_fault: AttachFault,
 }
 
@@ -47,7 +47,7 @@ impl PortableBackend {
             Ok(Self {
                 diagnostic: None,
                 termination_failures: Arc::new(AtomicU8::new(0)),
-                #[cfg(windows)]
+                #[cfg(all(windows, test))]
                 attach_fault: AttachFault::None,
             })
         }
@@ -66,7 +66,7 @@ impl PortableBackend {
             Ok(Self {
                 diagnostic: None,
                 termination_failures: Arc::new(AtomicU8::new(0)),
-                #[cfg(windows)]
+                #[cfg(all(windows, test))]
                 attach_fault: AttachFault::None,
             })
         }
@@ -83,7 +83,7 @@ impl PortableBackend {
         Self {
             diagnostic: None,
             termination_failures: Arc::new(AtomicU8::new(1)),
-            #[cfg(windows)]
+            #[cfg(all(windows, test))]
             attach_fault: AttachFault::None,
         }
     }
@@ -92,7 +92,7 @@ impl PortableBackend {
         Self {
             diagnostic: Some(diagnostic),
             termination_failures: Arc::new(AtomicU8::new(0)),
-            #[cfg(windows)]
+            #[cfg(all(windows, test))]
             attach_fault: AttachFault::None,
         }
     }
@@ -124,7 +124,7 @@ impl PortableBackend {
         configure_command(command, limits)?;
         Ok(ProcessSupervisor::Portable(PortableSupervisor::new(
             Arc::clone(&self.termination_failures),
-            #[cfg(windows)]
+            #[cfg(all(windows, test))]
             self.attach_fault,
         )?))
     }
@@ -136,7 +136,7 @@ pub(crate) struct PortableSupervisor {
     process_group: Option<i32>,
     #[cfg(windows)]
     job: isize,
-    #[cfg(windows)]
+    #[cfg(all(windows, test))]
     attach_fault: AttachFault,
     terminated: bool,
     termination_failures: Arc<AtomicU8>,
@@ -149,7 +149,7 @@ impl PortableSupervisor {
     )]
     fn new(
         termination_failures: Arc<AtomicU8>,
-        #[cfg(windows)] attach_fault: AttachFault,
+        #[cfg(all(windows, test))] attach_fault: AttachFault,
     ) -> Result<Self, ResourceError> {
         #[cfg(windows)]
         let job = create_kill_on_close_job()?;
@@ -158,7 +158,7 @@ impl PortableSupervisor {
             process_group: None,
             #[cfg(windows)]
             job,
-            #[cfg(windows)]
+            #[cfg(all(windows, test))]
             attach_fault,
             terminated: false,
             termination_failures,
