@@ -439,18 +439,22 @@ mod tests {
         unsafe {
             let process = OpenProcess(PROCESS_TERMINATE | PROCESS_SYNCHRONIZE, 0, pid);
             assert!(!process.is_null(), "detached fixture process must open");
+            let terminated = TerminateProcess(process, 1);
+            let termination_error = (terminated == 0).then(std::io::Error::last_os_error);
+            let wait_result = WaitForSingleObject(process, 1_000);
+            let close_result = CloseHandle(process);
+
             assert_ne!(
-                TerminateProcess(process, 1),
+                terminated,
                 0,
                 "detached fixture termination must succeed: {}",
-                std::io::Error::last_os_error()
+                termination_error.expect("failed termination records its error")
             );
             assert_eq!(
-                WaitForSingleObject(process, 1_000),
-                WAIT_OBJECT_0,
+                wait_result, WAIT_OBJECT_0,
                 "detached fixture must terminate within one second"
             );
-            assert_ne!(CloseHandle(process), 0, "fixture handle must close");
+            assert_ne!(close_result, 0, "fixture handle must close");
         }
     }
 
