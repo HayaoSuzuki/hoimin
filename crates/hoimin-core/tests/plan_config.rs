@@ -58,6 +58,15 @@ fn plan_config_defaults_missing_fingerprint_files() {
 }
 
 #[test]
+fn valid_normalized_plan_and_run_configs_pass_validation() {
+    let run = fixture_run_config();
+    let plan = run.clone().into_plan_config();
+
+    assert_eq!(plan.validate(), Ok(()));
+    assert_eq!(run.validate(), Ok(()));
+}
+
+#[test]
 fn plan_config_rejects_invalid_normalized_semantics() {
     let cases: &[InvalidPlanCase] = &[
         (
