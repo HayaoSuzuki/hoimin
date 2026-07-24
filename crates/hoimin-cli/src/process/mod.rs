@@ -826,7 +826,12 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(started.elapsed() >= POST_TERMINATION_GRACE);
+        let elapsed = started.elapsed();
+        assert!(elapsed >= POST_TERMINATION_GRACE);
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "root kill and bounded reap took {elapsed:?}"
+        );
         assert_eq!(child.id(), None);
     }
 
