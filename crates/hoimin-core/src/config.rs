@@ -352,6 +352,21 @@ pub struct PlanConfig {
 }
 
 impl RunConfig {
+    /// Validates normalized run configuration semantics.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError`] when selection, runtime resume state, test command, or limits are
+    /// invalid.
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        validate_selection(&self.selection)?;
+        if self.resume && self.session.is_none() {
+            return Err(ConfigError::ResumeRequiresSession);
+        }
+        validate_test_argv(&self.test_argv)?;
+        validate_limits(&self.limits)
+    }
+
     #[must_use]
     pub fn into_plan_config(self) -> PlanConfig {
         PlanConfig {
@@ -371,6 +386,17 @@ impl RunConfig {
 }
 
 impl PlanConfig {
+    /// Validates normalized persisted plan semantics.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError`] when selection, test command, or limits are invalid.
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        validate_selection(&self.selection)?;
+        validate_test_argv(&self.test_argv)?;
+        validate_limits(&self.limits)
+    }
+
     #[must_use]
     pub fn into_run_config(self, output: OutputConfig) -> RunConfig {
         RunConfig {
@@ -480,33 +506,97 @@ fn nonzero_usize(value: usize, name: &'static str) -> Result<NonZeroUsize, Confi
     NonZeroUsize::new(value).ok_or(ConfigError::InvalidLimit(name))
 }
 
+fn validate_selection(selection: &Selection) -> Result<(), ConfigError> {
+    let has_selector = !selection.sources.is_empty()
+        || !selection.files.is_empty()
+        || !selection.lines.is_empty()
+        || !selection.symbols.is_empty()
+        || selection.changed;
+    if !has_selector {
+        return Err(ConfigError::MissingSelector);
+    }
+    if selection.diff_base.is_some() && !selection.changed {
+        return Err(ConfigError::DiffBaseRequiresChanged);
+    }
+    if selection.changed && selection.sources.is_empty() {
+        return Err(ConfigError::ChangedRequiresSource);
+    }
+    if !selection.symbols.is_empty() && selection.sources.is_empty() {
+        return Err(ConfigError::SymbolRequiresSource);
+    }
+    Ok(())
+}
+
+fn validate_test_argv(test_argv: &[CommandArg]) -> Result<(), ConfigError> {
+    if test_argv.is_empty() {
+        Err(ConfigError::MissingTestArgv)
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_limits(limits: &RunLimits) -> Result<(), ConfigError> {
+    if limits.jobs.get() > MAX_JOBS {
+        return Err(ConfigError::JobsExceedsMaximum {
+            jobs: limits.jobs.get(),
+            maximum: MAX_JOBS,
+        });
+    }
+    if u32::try_from(limits.max_processes.get()).is_err() {
+        return Err(ConfigError::InvalidLimit("max_processes"));
+    }
+    if limits.jobs.get() > limits.max_processes.get() {
+        return Err(ConfigError::JobsExceedsProcesses {
+            jobs: limits.jobs.get(),
+            max_processes: limits.max_processes.get(),
+        });
+    }
+    for (name, duration) in [
+        ("analyzer_timeout", limits.analyzer_timeout.get()),
+        ("baseline_timeout", limits.baseline_timeout.get()),
+        ("total_timeout", limits.total_timeout.get()),
+    ] {
+        if duration.is_zero() {
+            return Err(ConfigError::InvalidLimit(name));
+        }
+    }
+    if let MutantTimeout::Fixed(duration) = limits.mutant_timeout
+        && duration.get().is_zero()
+    {
+        return Err(ConfigError::InvalidLimit("mutant_timeout"));
+    }
+    if limits
+        .baseline_timeout
+        .get()
+        .checked_mul(2)
+        .and_then(|value| value.checked_add(Duration::from_secs(1)))
+        .is_none()
+    {
+        return Err(ConfigError::InvalidLimit("baseline_timeout"));
+    }
+    Ok(())
+}
+
 impl TryFrom<RawRunConfig> for RunConfig {
     type Error = ConfigError;
 
     fn try_from(raw: RawRunConfig) -> Result<Self, Self::Error> {
-        let has_selector = !raw.sources.is_empty()
-            || !raw.files.is_empty()
-            || !raw.lines.is_empty()
-            || !raw.symbols.is_empty()
-            || raw.changed;
-        if !has_selector {
-            return Err(ConfigError::MissingSelector);
-        }
-        if raw.diff_base.is_some() && !raw.changed {
-            return Err(ConfigError::DiffBaseRequiresChanged);
-        }
-        if raw.changed && raw.sources.is_empty() {
-            return Err(ConfigError::ChangedRequiresSource);
-        }
-        if !raw.symbols.is_empty() && raw.sources.is_empty() {
-            return Err(ConfigError::SymbolRequiresSource);
-        }
+        let selection = Selection {
+            root: raw.root.clone(),
+            sources: raw.sources,
+            files: raw.files,
+            lines: raw.lines,
+            symbols: raw.symbols,
+            changed: raw.changed,
+            diff_base: raw.diff_base,
+            includes: raw.includes,
+            excludes: raw.excludes,
+        };
+        validate_selection(&selection)?;
         if raw.resume && raw.session.is_none() {
             return Err(ConfigError::ResumeRequiresSession);
         }
-        if raw.test_argv.is_empty() {
-            return Err(ConfigError::MissingTestArgv);
-        }
+        validate_test_argv(&raw.test_argv)?;
         let mut operators = if raw.operators.is_empty() {
             MutationOperatorSelection::all_legacy()
         } else {
@@ -523,17 +613,7 @@ impl TryFrom<RawRunConfig> for RunConfig {
             }
         }
         let limits = RunLimits::try_from(&raw.limits)?;
-        let selection = Selection {
-            root: raw.root.clone(),
-            sources: raw.sources,
-            files: raw.files,
-            lines: raw.lines,
-            symbols: raw.symbols,
-            changed: raw.changed,
-            diff_base: raw.diff_base,
-            includes: raw.includes,
-            excludes: raw.excludes,
-        };
+        validate_limits(&limits)?;
         Ok(Self {
             root: raw.root,
             selection,
