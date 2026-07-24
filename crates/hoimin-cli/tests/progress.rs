@@ -220,6 +220,60 @@ fn compare_counts_added_and_removed_mutants() {
     assert_eq!(comparison.added, 1);
     assert_eq!(comparison.removed, 1);
     assert_eq!(comparison.ambiguous, 0);
+    assert_eq!(comparison.state, ProgressState::Indeterminate);
+    assert_eq!(result.consecutive_stalls, 0);
+    assert_eq!(result.latest, ProgressState::Indeterminate);
+}
+
+#[test]
+fn changing_candidate_id_sets_break_the_stall_chain() {
+    let result = compare_reports(
+        &[
+            usable(vec![mutant("common", MutationStatus::Killed)]),
+            usable(vec![mutant("common", MutationStatus::Killed)]),
+            usable(vec![
+                mutant("common", MutationStatus::Killed),
+                mutant("rotated-a", MutationStatus::Killed),
+            ]),
+            usable(vec![
+                mutant("common", MutationStatus::Killed),
+                mutant("rotated-b", MutationStatus::Killed),
+            ]),
+            usable(vec![mutant("common", MutationStatus::Killed)]),
+        ],
+        nz(2),
+    );
+
+    assert!(
+        result
+            .comparisons
+            .iter()
+            .skip(1)
+            .all(|comparison| comparison.state == ProgressState::Indeterminate)
+    );
+    assert_eq!(result.consecutive_stalls, 0);
+    assert_eq!(result.latest, ProgressState::Indeterminate);
+}
+
+#[test]
+fn duplicate_candidate_ids_are_ineligible() {
+    let result = compare_reports(
+        &[
+            usable(vec![
+                mutant_with_id("duplicate-id", "first", MutationStatus::Killed),
+                mutant_with_id("duplicate-id", "second", MutationStatus::Killed),
+            ]),
+            usable(vec![
+                mutant_with_id("duplicate-id", "first", MutationStatus::Killed),
+                mutant_with_id("duplicate-id", "second", MutationStatus::Killed),
+            ]),
+        ],
+        nz(1),
+    );
+
+    assert_eq!(result.comparisons[0].state, ProgressState::Indeterminate);
+    assert_eq!(result.consecutive_stalls, 0);
+    assert_eq!(result.latest, ProgressState::Indeterminate);
 }
 
 #[test]
@@ -275,7 +329,11 @@ fn compare_an_empty_common_set_does_not_change_stalls() {
         &[
             killed(),
             killed(),
-            usable(vec![mutant("different", MutationStatus::Killed)]),
+            usable(vec![mutant_with_id(
+                "common",
+                "different",
+                MutationStatus::Killed,
+            )]),
         ],
         nz(3),
     );
@@ -612,6 +670,12 @@ fn mutant(key: &str, status: MutationStatus) -> MutantFinished {
         resource_mode: ResourceMode::Hard,
         output: None,
     }
+}
+
+fn mutant_with_id(id: &str, semantic_key: &str, status: MutationStatus) -> MutantFinished {
+    let mut value = mutant(semantic_key, status);
+    value.candidate.id = id.to_owned();
+    value
 }
 
 fn write_json(fixture: &tempfile::TempDir, name: &str, document: &Value) -> PathBuf {
