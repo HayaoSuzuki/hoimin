@@ -727,7 +727,7 @@ fn mutant(key: &str, status: MutationStatus) -> MutantFinished {
 
 fn mutant_with_id(id: &str, semantic_key: &str, status: MutationStatus) -> MutantFinished {
     let mut value = mutant(semantic_key, status);
-    value.candidate.id = id.to_owned();
+    id.clone_into(&mut value.candidate.id);
     value
 }
 
