@@ -728,7 +728,7 @@ mod portable {
         let output = tempfile::tempdir().unwrap();
         let output_dir = Utf8Path::from_path(output.path()).unwrap();
         let pid_file = output_dir.join("termination-failure-fixture-child.pid");
-        let _guard = FixtureChildGuard::new(pid_file.clone());
+        let guard = FixtureChildGuard::new(pid_file.clone());
         let handler = portable_handler_with_termination_failure(output_dir);
         let cancellation = ProcessCancellation::new();
         let request = ProcessRequest::from(RunProcess {
@@ -756,6 +756,7 @@ mod portable {
             }
             cancellation.cancel();
         });
+        guard.pid().expect("fixture child wrote its pid");
 
         let failure = event.expect_err("injected supervisor failure remains observable");
         assert!(matches!(
