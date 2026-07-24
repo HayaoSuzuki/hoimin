@@ -37,6 +37,14 @@ pub struct LimitReached {
     pub available: u64,
 }
 
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum ReserveError {
+    #[error(transparent)]
+    LimitReached(#[from] LimitReached),
+    #[error("reservation identifier space is exhausted")]
+    ReservationIdsExhausted,
+}
+
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub enum BudgetError {
     #[error("reservation {0:?} was already released")]
@@ -50,7 +58,7 @@ pub struct BudgetLedger {
     limits: RunBudgets,
     reservations: BTreeMap<ReservationId, Reservation>,
     released: BTreeSet<ReservationId>,
-    next_id: u64,
+    next_id: Option<u64>,
 }
 
 impl BudgetLedger {
@@ -60,7 +68,7 @@ impl BudgetLedger {
             limits,
             reservations: BTreeMap::new(),
             released: BTreeSet::new(),
-            next_id: 0,
+            next_id: Some(0),
         }
     }
 
@@ -71,13 +79,19 @@ impl BudgetLedger {
 
     /// # Errors
     ///
-    /// Returns [`LimitReached`] when the requested amount exceeds the remaining budget for `kind`.
+    /// Returns [`ReserveError::LimitReached`] when the requested amount exceeds the remaining
+    /// budget for `kind`, or [`ReserveError::ReservationIdsExhausted`] when no reservation
+    /// identifier remains.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the allocator's next identifier has already been used.
     ///
     pub fn reserve(
         &mut self,
         kind: BudgetKind,
         amount: u64,
-    ) -> Result<ReservationId, LimitReached> {
+    ) -> Result<ReservationId, ReserveError> {
         let reserved = self.reserved(kind);
         let available = self.limit(kind).saturating_sub(reserved);
         if amount > available {
@@ -86,12 +100,33 @@ impl BudgetLedger {
                 kind,
                 requested: amount,
                 available,
-            });
+            }
+            .into());
         }
-        let id = ReservationId(self.next_id);
-        self.next_id = self.next_id.saturating_add(1);
-        self.reservations.insert(id, Reservation { kind, amount });
+        let id = match self.allocate_reservation_id() {
+            Ok(id) => id,
+            Err(error) => {
+                self.check_invariant();
+                return Err(error);
+            }
+        };
+        let replaced = self.reservations.insert(id, Reservation { kind, amount });
+        assert!(
+            replaced.is_none(),
+            "allocated reservation identifier must be unique"
+        );
         self.check_invariant();
+        Ok(id)
+    }
+
+    fn allocate_reservation_id(&mut self) -> Result<ReservationId, ReserveError> {
+        let value = self.next_id.ok_or(ReserveError::ReservationIdsExhausted)?;
+        let id = ReservationId(value);
+        assert!(
+            !self.reservations.contains_key(&id) && !self.released.contains(&id),
+            "next reservation identifier must be globally unused"
+        );
+        self.next_id = value.checked_add(1);
         Ok(id)
     }
 
@@ -144,9 +179,125 @@ impl BudgetLedger {
 
 impl ContractInvariant for BudgetLedger {
     fn invariant(&self) -> bool {
-        [BudgetKind::Memory, BudgetKind::Copy, BudgetKind::Processes]
+        let totals_fit = [BudgetKind::Memory, BudgetKind::Copy, BudgetKind::Processes]
             .into_iter()
-            .all(|kind| self.reserved(kind) <= self.limit(kind))
+            .all(|kind| self.reserved(kind) <= self.limit(kind));
+        let active_and_released_are_disjoint = self
+            .reservations
+            .keys()
+            .all(|id| !self.released.contains(id));
+        let ids_precede_frontier = self.next_id.is_none_or(|next| {
+            self.reservations
+                .keys()
+                .chain(self.released.iter())
+                .all(|id| id.0 < next)
+        });
+        totals_fit && active_and_released_are_disjoint && ids_precede_frontier
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        BudgetKind, BudgetLedger, PreflightCompleted, ReservationId, ReserveError, RunBudgets,
+        WorkspaceBudgetError, reserve_workspace_copy,
+    };
+    use crate::EffectId;
+
+    fn ledger() -> BudgetLedger {
+        BudgetLedger::new(RunBudgets {
+            memory: 8,
+            copy: 8,
+            processes: 8,
+        })
+    }
+
+    #[test]
+    fn allocator_exhaustion_preserves_the_last_active_reservation() {
+        let mut ledger = ledger();
+        ledger.next_id = Some(u64::MAX);
+
+        let last = ledger.reserve(BudgetKind::Copy, 1).unwrap();
+        assert_eq!(last, ReservationId(u64::MAX));
+        assert_eq!(ledger.reserved(BudgetKind::Copy), 1);
+
+        let error = ledger.reserve(BudgetKind::Copy, 1).unwrap_err();
+        assert_eq!(error, ReserveError::ReservationIdsExhausted);
+        assert_eq!(ledger.reserved(BudgetKind::Copy), 1);
+        assert_eq!(ledger.reservation(last).unwrap().amount, 1);
+
+        ledger.release(last).unwrap();
+        assert_eq!(ledger.reserved(BudgetKind::Copy), 0);
+        assert_eq!(
+            ledger.reserve(BudgetKind::Copy, 1),
+            Err(ReserveError::ReservationIdsExhausted)
+        );
+    }
+
+    #[test]
+    fn limit_error_precedes_identifier_exhaustion_without_mutating_the_ledger() {
+        let mut ledger = ledger();
+        let existing = ledger.reserve(BudgetKind::Copy, 1).unwrap();
+        ledger.next_id = None;
+
+        let error = ledger.reserve(BudgetKind::Copy, 8).unwrap_err();
+
+        assert_eq!(
+            error,
+            ReserveError::LimitReached(super::LimitReached {
+                kind: BudgetKind::Copy,
+                requested: 8,
+                available: 7,
+            })
+        );
+        assert_eq!(ledger.reserved(BudgetKind::Copy), 1);
+        assert_eq!(ledger.reservation(existing).unwrap().amount, 1);
+        assert_eq!(ledger.next_id, None);
+    }
+
+    #[test]
+    fn workspace_reservation_reports_identifier_exhaustion_without_accounting() {
+        let mut ledger = ledger();
+        ledger.next_id = None;
+        let preflight = PreflightCompleted {
+            id: EffectId(90),
+            per_worker_logical_bytes: 1,
+            requested_workers: 1,
+            aggregate_logical_bytes: 1,
+            fingerprint: None,
+        };
+
+        let error = reserve_workspace_copy(&mut ledger, &preflight).unwrap_err();
+
+        assert_eq!(
+            error,
+            WorkspaceBudgetError::Reserve(ReserveError::ReservationIdsExhausted)
+        );
+        assert_eq!(error.code(), "workspace.reservation_id.exhausted");
+        assert_eq!(ledger.reserved(BudgetKind::Copy), 0);
+    }
+
+    #[test]
+    fn workspace_limit_code_is_preserved_after_reserve_error_wrapping() {
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 8,
+            copy: 0,
+            processes: 8,
+        });
+        let preflight = PreflightCompleted {
+            id: EffectId(91),
+            per_worker_logical_bytes: 1,
+            requested_workers: 1,
+            aggregate_logical_bytes: 1,
+            fingerprint: None,
+        };
+
+        let error = reserve_workspace_copy(&mut ledger, &preflight).unwrap_err();
+        assert!(matches!(
+            error,
+            WorkspaceBudgetError::Reserve(ReserveError::LimitReached(_))
+        ));
+        assert_eq!(error.code(), "workspace.copy.limit");
     }
 }
 
@@ -163,7 +314,7 @@ pub enum WorkspaceBudgetError {
     #[error("worker {worker} is outside requested worker count {requested_workers}")]
     WorkerOutOfRange { worker: u32, requested_workers: u32 },
     #[error(transparent)]
-    LimitReached(#[from] LimitReached),
+    Reserve(#[from] ReserveError),
 }
 
 impl WorkspaceBudgetError {
@@ -173,7 +324,10 @@ impl WorkspaceBudgetError {
             Self::AggregateOverflow => "workspace.preflight.aggregate_overflow",
             Self::AggregateMismatch { .. } => "workspace.preflight.aggregate_mismatch",
             Self::WorkerOutOfRange { .. } => "workspace.worker.out_of_range",
-            Self::LimitReached(_) => "workspace.copy.limit",
+            Self::Reserve(ReserveError::LimitReached(_)) => "workspace.copy.limit",
+            Self::Reserve(ReserveError::ReservationIdsExhausted) => {
+                "workspace.reservation_id.exhausted"
+            }
         }
     }
 }
@@ -247,7 +401,10 @@ impl WorkspaceCopyGrant {
 
 /// # Errors
 ///
-/// Returns [`WorkspaceBudgetError::AggregateOverflow`] or [`WorkspaceBudgetError::AggregateMismatch`] for invalid preflight bytes, and [`WorkspaceBudgetError::LimitReached`] when the copy budget is exhausted.
+/// Returns [`WorkspaceBudgetError::AggregateOverflow`] or
+/// [`WorkspaceBudgetError::AggregateMismatch`] for invalid preflight bytes, or
+/// [`WorkspaceBudgetError::Reserve`] when the copy budget or reservation identifiers are
+/// exhausted.
 ///
 pub fn reserve_workspace_copy(
     ledger: &mut BudgetLedger,

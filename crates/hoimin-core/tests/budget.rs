@@ -1,6 +1,6 @@
 use hoimin_core::{
     BudgetError, BudgetKind, BudgetLedger, CleanupFinished, ContractInvariant, EffectId,
-    PreflightCompleted, RunBudgets, release_workspace_copy, reserve_workspace_copy,
+    PreflightCompleted, ReserveError, RunBudgets, release_workspace_copy, reserve_workspace_copy,
 };
 
 fn budgets(copy: u64) -> RunBudgets {
@@ -18,9 +18,14 @@ fn reservations_share_one_run_wide_allowance() {
     assert_eq!(ledger.reserved(BudgetKind::Copy), 6);
 
     let error = ledger.reserve(BudgetKind::Copy, 5).unwrap_err();
-    assert_eq!(error.kind, BudgetKind::Copy);
-    assert_eq!(error.requested, 5);
-    assert_eq!(error.available, 4);
+    assert_eq!(
+        error,
+        ReserveError::LimitReached(hoimin_core::LimitReached {
+            kind: BudgetKind::Copy,
+            requested: 5,
+            available: 4,
+        })
+    );
 
     ledger.release(first).unwrap();
     assert_eq!(ledger.reserved(BudgetKind::Copy), 0);
