@@ -30,7 +30,6 @@ pub struct Comparison {
     pub current_score: Option<f64>,
     pub score_delta: Option<f64>,
     pub state: ProgressState,
-    pub(crate) candidate_set_eligibility: CandidateSetEligibility,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -85,8 +84,9 @@ pub fn compare_reports(reports: &[InputReport], patience: NonZeroUsize) -> Progr
             continue;
         };
 
-        let comparison = compare_usable_reports(previous, current);
-        if !comparison.candidate_set_eligibility.is_matching() {
+        let eligibility = candidate_set_eligibility(previous, current);
+        let comparison = compare_usable_reports(previous, current, eligibility);
+        if !eligibility.is_matching() {
             consecutive_stalls = 0;
         }
         match comparison.state {
@@ -121,8 +121,11 @@ pub fn compare_reports(reports: &[InputReport], patience: NonZeroUsize) -> Progr
     }
 }
 
-fn compare_usable_reports(previous: &UsableReport, current: &UsableReport) -> Comparison {
-    let candidate_set_eligibility = candidate_set_eligibility(previous, current);
+fn compare_usable_reports(
+    previous: &UsableReport,
+    current: &UsableReport,
+    candidate_set_eligibility: CandidateSetEligibility,
+) -> Comparison {
     let previous = index_mutants(&previous.mutants);
     let current = index_mutants(&current.mutants);
     let ambiguous: HashSet<_> = previous
@@ -223,11 +226,10 @@ fn compare_usable_reports(previous: &UsableReport, current: &UsableReport) -> Co
         current_score,
         score_delta,
         state,
-        candidate_set_eligibility,
     }
 }
 
-fn candidate_set_eligibility(
+pub(crate) fn candidate_set_eligibility(
     previous: &UsableReport,
     current: &UsableReport,
 ) -> CandidateSetEligibility {

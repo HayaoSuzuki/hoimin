@@ -39,10 +39,11 @@ the stall counter. It also breaks the comparable stall chain by resetting
 candidate-set mismatch from producing `Saturated`.
 
 The comparison continues to expose the existing semantic `common`, `added`, and
-`removed` counts. A comparison-level eligibility flag is retained internally
-so stderr rendering can explain why an otherwise usable pair is
-`Indeterminate`. The public JSON schema and human stdout fields do not change;
-`latest.state` remains the machine decision field.
+`removed` counts. Eligibility is computed internally from each adjacent usable
+input pair wherever comparison state or stderr diagnostics need it; it is not
+stored on the public `Comparison` type. The public Rust API, JSON schema, and
+human stdout fields do not change; `latest.state` remains the machine decision
+field.
 
 Duplicate candidate IDs make `candidate_set_match` false even if the deduplicated
 sets appear equal. This keeps the eligibility claim unambiguous rather than

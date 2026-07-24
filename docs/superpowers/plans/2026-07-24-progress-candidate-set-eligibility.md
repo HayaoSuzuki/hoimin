@@ -28,7 +28,8 @@
 
 **Interfaces:**
 - Consumes: `UsableReport.mutants: Vec<MutantFinished>` and each `MutationCandidate.id: String`.
-- Produces: private `CandidateSetEligibility`, stored on each `Comparison` for renderer diagnostics.
+- Produces: crate-visible `CandidateSetEligibility`, recomputed from adjacent
+  usable inputs for renderer diagnostics without changing public result types.
 - Preserves: public `compare_reports(&[InputReport], NonZeroUsize) -> ProgressResult`.
 
 - [ ] **Step 1: Write failing mismatch and rotating-history tests**
@@ -193,11 +194,7 @@ fn candidate_set_eligibility(
 }
 ```
 
-Add a crate-visible field to `Comparison`:
-
-```rust
-pub(crate) candidate_set_eligibility: CandidateSetEligibility,
-```
+Keep the public `Comparison` and `ProgressResult` field shapes unchanged.
 
 Add a small state-classification helper so the eligibility decision remains
 independently testable and mutation-testable:
@@ -222,8 +219,8 @@ fn comparison_state(
 }
 ```
 
-Compute eligibility before indexing semantic keys in
-`compare_usable_reports`. Preserve all existing counts and call:
+Compute eligibility in `compare_reports` before indexing semantic keys. Pass it
+to `compare_usable_reports`, preserve all existing counts, and call:
 
 ```rust
 let state = comparison_state(
@@ -252,8 +249,9 @@ In `compare_reports`, reset the stall chain only for candidate-set
 ineligibility before applying the existing state policy:
 
 ```rust
-let comparison = compare_usable_reports(previous, current);
-if !comparison.candidate_set_eligibility.is_matching() {
+let eligibility = candidate_set_eligibility(previous, current);
+let comparison = compare_usable_reports(previous, current, eligibility);
+if !eligibility.is_matching() {
     consecutive_stalls = 0;
 }
 match comparison.state {
@@ -299,7 +297,8 @@ git commit -m "fix: reject mismatched progress candidate sets"
 - Modify: `README.md`
 
 **Interfaces:**
-- Consumes: `Comparison.candidate_set_eligibility`.
+- Consumes: adjacent usable `InputReport` pairs and the crate-visible
+  `candidate_set_eligibility` helper.
 - Produces: one stderr warning per ineligible adjacent comparison.
 - Preserves: exit code zero, progress JSON schema version 1, and all existing stdout fields.
 
@@ -353,29 +352,40 @@ ambiguous semantic keys.
 
 - [ ] **Step 3: Render one warning for each ineligible comparison**
 
-Import `CandidateSetEligibility` in `render.rs`. Extend the existing comparison
-diagnostic loop:
+Import `candidate_set_eligibility` and `CandidateSetEligibility` in `render.rs`.
+Walk adjacent input pairs, skip pairs containing an unusable report, and
+recompute eligibility for each usable pair. Track a separate one-based usable
+comparison index so warnings align with `ProgressResult.comparisons`:
 
 ```rust
-match comparison.candidate_set_eligibility {
+let mut comparison_index = 0;
+for pair in inputs.windows(2) {
+    let [InputReport::Usable(previous), InputReport::Usable(current)] = pair else {
+        continue;
+    };
+    comparison_index += 1;
+    match candidate_set_eligibility(previous, current) {
     CandidateSetEligibility::Matching => {}
     CandidateSetEligibility::Different => writeln!(
         stderr,
         "warning: comparison {} has different candidate ID sets; progress is indeterminate",
-        index + 1
+        comparison_index
     )
     .map_err(write_error)?,
     CandidateSetEligibility::Duplicate => writeln!(
         stderr,
         "warning: comparison {} has duplicate candidate IDs; progress is indeterminate",
-        index + 1
+        comparison_index
     )
     .map_err(write_error)?,
+    }
 }
 ```
 
-Do not add the eligibility field to `ComparisonDocument`, human stdout, or
-`docs/json-schema/progress-result.schema.json`.
+Do not add an eligibility field to the public `Comparison`,
+`ComparisonDocument`, human stdout, or
+`docs/json-schema/progress-result.schema.json`. `ProgressResult` also retains
+its existing public field shape.
 
 - [ ] **Step 4: Clarify the README enforcement**
 
