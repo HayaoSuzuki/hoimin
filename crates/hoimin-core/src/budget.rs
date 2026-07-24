@@ -198,7 +198,11 @@ impl ContractInvariant for BudgetLedger {
 
 #[cfg(test)]
 mod tests {
-    use super::{BudgetKind, BudgetLedger, ReservationId, ReserveError, RunBudgets};
+    use super::{
+        BudgetKind, BudgetLedger, PreflightCompleted, ReservationId, ReserveError, RunBudgets,
+        WorkspaceBudgetError, reserve_workspace_copy,
+    };
+    use crate::EffectId;
 
     fn ledger() -> BudgetLedger {
         BudgetLedger::new(RunBudgets {
@@ -249,6 +253,51 @@ mod tests {
         assert_eq!(ledger.reserved(BudgetKind::Copy), 1);
         assert_eq!(ledger.reservation(existing).unwrap().amount, 1);
         assert_eq!(ledger.next_id, None);
+    }
+
+    #[test]
+    fn workspace_reservation_reports_identifier_exhaustion_without_accounting() {
+        let mut ledger = ledger();
+        ledger.next_id = None;
+        let preflight = PreflightCompleted {
+            id: EffectId(90),
+            per_worker_logical_bytes: 1,
+            requested_workers: 1,
+            aggregate_logical_bytes: 1,
+            fingerprint: None,
+        };
+
+        let error = reserve_workspace_copy(&mut ledger, &preflight).unwrap_err();
+
+        assert_eq!(
+            error,
+            WorkspaceBudgetError::Reserve(ReserveError::ReservationIdsExhausted)
+        );
+        assert_eq!(error.code(), "workspace.reservation_id.exhausted");
+        assert_eq!(ledger.reserved(BudgetKind::Copy), 0);
+    }
+
+    #[test]
+    fn workspace_limit_code_is_preserved_after_reserve_error_wrapping() {
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 8,
+            copy: 0,
+            processes: 8,
+        });
+        let preflight = PreflightCompleted {
+            id: EffectId(91),
+            per_worker_logical_bytes: 1,
+            requested_workers: 1,
+            aggregate_logical_bytes: 1,
+            fingerprint: None,
+        };
+
+        let error = reserve_workspace_copy(&mut ledger, &preflight).unwrap_err();
+        assert!(matches!(
+            error,
+            WorkspaceBudgetError::Reserve(ReserveError::LimitReached(_))
+        ));
+        assert_eq!(error.code(), "workspace.copy.limit");
     }
 }
 
