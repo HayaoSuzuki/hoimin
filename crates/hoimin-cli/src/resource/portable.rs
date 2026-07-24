@@ -177,20 +177,25 @@ impl PortableSupervisor {
         #[cfg(windows)]
         {
             let suspended = super::suspended::SuspendedChild::open(child)?;
-            #[cfg(test)]
-            if self.attach_fault == AttachFault::AssignAfterDelay {
-                std::thread::sleep(std::time::Duration::from_millis(200));
-                return Err(ResourceError::io(
-                    "assign spawned process to job",
-                    io::Error::other("injected delayed assignment failure"),
-                ));
-            }
-            suspended.assign(self.job as _, "assign spawned process to job")?;
+            self.assign_suspended(&suspended)?;
             suspended.resume()?;
         }
         #[cfg(not(any(unix, windows)))]
         let _ = child.id().ok_or(ResourceError::MissingProcessId)?;
         Ok(())
+    }
+
+    #[cfg(windows)]
+    fn assign_suspended(
+        &self,
+        suspended: &super::suspended::SuspendedChild,
+    ) -> Result<(), ResourceError> {
+        #[cfg(test)]
+        if self.attach_fault == AttachFault::AssignAfterDelay {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            return suspended.assign(std::ptr::null_mut(), "assign spawned process to job");
+        }
+        suspended.assign(self.job as _, "assign spawned process to job")
     }
 
     pub(crate) fn terminate(&mut self) -> Result<(), ResourceError> {
@@ -389,12 +394,14 @@ mod tests {
     use std::ffi::OsStr;
     use std::fs;
     use std::os::windows::ffi::OsStrExt;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use camino::{Utf8Path, Utf8PathBuf};
     use hoimin_core::{CommandArg, EffectFailure, EffectId, ProcessLimits, RunProcess};
-    use windows_sys::Win32::Foundation::CloseHandle;
-    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_TERMINATE, TerminateProcess};
+    use windows_sys::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, TerminateProcess, WaitForSingleObject,
+    };
 
     use super::PortableBackend;
     use crate::process::ProcessHandler;
@@ -415,19 +422,35 @@ mod tests {
     }
 
     fn terminate_fixture(pid_path: &std::path::Path) {
-        let Ok(pid) = fs::read_to_string(pid_path) else {
-            return;
-        };
-        let Ok(pid) = pid.parse() else {
-            return;
-        };
-        // SAFETY: the handle is checked and closed after terminating the test fixture.
-        unsafe {
-            let process = OpenProcess(PROCESS_TERMINATE, 0, pid);
-            if !process.is_null() {
-                TerminateProcess(process, 1);
-                CloseHandle(process);
+        let deadline = Instant::now() + Duration::from_millis(500);
+        let pid = loop {
+            if let Ok(pid) = fs::read_to_string(pid_path) {
+                break pid
+                    .parse()
+                    .expect("detached fixture PID must be an unsigned integer");
             }
+            if Instant::now() >= deadline {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        // SAFETY: the PID names the test fixture, access is limited to termination and waiting,
+        // and the checked handle is closed after the process reaches a terminal state.
+        unsafe {
+            let process = OpenProcess(PROCESS_TERMINATE | PROCESS_SYNCHRONIZE, 0, pid);
+            assert!(!process.is_null(), "detached fixture process must open");
+            assert_ne!(
+                TerminateProcess(process, 1),
+                0,
+                "detached fixture termination must succeed: {}",
+                std::io::Error::last_os_error()
+            );
+            assert_eq!(
+                WaitForSingleObject(process, 1_000),
+                WAIT_OBJECT_0,
+                "detached fixture must terminate within one second"
+            );
+            assert_ne!(CloseHandle(process), 0, "fixture handle must close");
         }
     }
 
@@ -466,11 +489,12 @@ mod tests {
                 },
             };
 
-            let error = tokio::time::timeout(Duration::from_secs(2), handler.handle(request))
-                .await
+            let outcome =
+                tokio::time::timeout(Duration::from_secs(2), handler.handle(request)).await;
+            terminate_fixture(descendant_pid.as_std_path());
+            let error = outcome
                 .expect("attach failure cleanup is bounded")
                 .expect_err("delayed assignment failure is returned");
-            terminate_fixture(descendant_pid.as_std_path());
 
             assert!(matches!(
                 error.failure,
