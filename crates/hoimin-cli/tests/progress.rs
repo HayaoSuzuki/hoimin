@@ -547,6 +547,59 @@ async fn output_unusable_reports_are_indeterminate_and_exit_zero() {
 }
 
 #[tokio::test]
+async fn output_warns_when_candidate_id_sets_differ() {
+    let fixture = tempfile::tempdir().unwrap();
+    let before = valid_report();
+    let mut after = valid_report();
+    after["mutants"][0]["candidate"]["id"] = json!("different-id");
+    let reports = vec![
+        write_json(&fixture, "before.json", &before),
+        write_json(&fixture, "after.json", &after),
+    ];
+
+    let (code, stdout, stderr) = run_progress(&reports, "json").await;
+    let value: Value = serde_json::from_slice(&stdout).unwrap();
+    let diagnostics = String::from_utf8(stderr).unwrap();
+
+    assert_eq!(code, 0);
+    assert_eq!(value["latest"]["state"], "indeterminate");
+    assert_eq!(value["latest"]["consecutive_stalls"], 0);
+    assert!(
+        diagnostics
+            .contains("comparison 1 has different candidate ID sets; progress is indeterminate")
+    );
+    assert!(value["comparisons"][0].get("candidate_set_match").is_none());
+}
+
+#[tokio::test]
+async fn output_warns_about_duplicate_candidate_ids() {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut report = valid_report();
+    let mut duplicate = report["mutants"][0].clone();
+    duplicate["sequence"] = json!(4);
+    duplicate["candidate"]["sequence"] = json!(2);
+    duplicate["candidate"]["path"] = json!("src/other.py");
+    report["mutants"].as_array_mut().unwrap().push(duplicate);
+    report["summary"]["sequence"] = json!(5);
+    let reports = vec![
+        write_json(&fixture, "before.json", &report),
+        write_json(&fixture, "after.json", &report),
+    ];
+
+    let (code, stdout, stderr) = run_progress(&reports, "json").await;
+    let value: Value = serde_json::from_slice(&stdout).unwrap();
+    let diagnostics = String::from_utf8(stderr).unwrap();
+
+    assert_eq!(code, 0);
+    assert_eq!(value["latest"]["state"], "indeterminate");
+    assert_eq!(value["latest"]["consecutive_stalls"], 0);
+    assert!(
+        diagnostics.contains("comparison 1 has duplicate candidate IDs; progress is indeterminate")
+    );
+    assert!(value["comparisons"][0].get("candidate_set_match").is_none());
+}
+
+#[tokio::test]
 async fn output_ambiguity_is_structured_and_warned_on_stderr() {
     let fixture = tempfile::tempdir().unwrap();
     let mut ambiguous = valid_report();

@@ -181,7 +181,10 @@ For split verification, choose stable candidate batches and keep a separate olde
 report history for each batch.
 After every test improvement, rerun every stable batch and save each report separately.
 Pass `hoimin progress` only reports covering the identical candidate-ID set.
-If batch membership changes, start a new history. Reports from different subsets, their
+The command marks a comparison `indeterminate`, resets its comparable stall
+chain, and writes a warning when adjacent candidate-ID sets differ or contain
+duplicates. If batch membership changes, start a new history.
+Reports from different subsets, their
 scores, and their saturation states must not be combined into a synthetic whole-plan result.
 Judge overall completion from each batch's latest complete report for the same current test revision,
 accounting for the union of candidate IDs selected from the plan.
