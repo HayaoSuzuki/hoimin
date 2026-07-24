@@ -419,18 +419,12 @@ impl ProcessHandler {
                     &error,
                 )),
             },
-            ProcessSelection::Cancelled => match terminate_supervised(id, &mut supervisor, true) {
-                Ok(()) => wait_after_termination(id, &mut child)
-                    .await
-                    .map(|()| ProcessTermination::Cancelled),
-                Err(error) => Err(error),
-            },
-            ProcessSelection::Timeout => match terminate_supervised(id, &mut supervisor, true) {
-                Ok(()) => wait_after_termination(id, &mut child)
-                    .await
-                    .map(|()| ProcessTermination::Timeout),
-                Err(error) => Err(error),
-            },
+            ProcessSelection::Cancelled => terminate_and_reap(id, &mut supervisor, &mut child)
+                .await
+                .map(|()| ProcessTermination::Cancelled),
+            ProcessSelection::Timeout => terminate_and_reap(id, &mut supervisor, &mut child)
+                .await
+                .map(|()| ProcessTermination::Timeout),
         };
 
         let output_result = await_output(
@@ -550,7 +544,7 @@ pub(crate) async fn wait_after_termination(
     child: &mut Child,
 ) -> Result<(), EffectFailed> {
     if let Ok(result) = tokio::time::timeout(POST_TERMINATION_GRACE, child.wait()).await {
-        result.map(|_| ()).map_err(|error| {
+        return result.map(|_| ()).map_err(|error| {
             io_failure(
                 id,
                 "process.wait",
@@ -558,14 +552,96 @@ pub(crate) async fn wait_after_termination(
                 None,
                 &error,
             )
-        })
-    } else {
-        let _ = child.start_kill();
-        Err(EffectFailed::other(
+        });
+    }
+
+    let kill_failure = child.start_kill().err().map(|error| {
+        io_failure(
+            id,
+            "process.kill",
+            "kill root after wait timeout",
+            None,
+            &error,
+        )
+    });
+    let wait_result = tokio::time::timeout(POST_TERMINATION_GRACE, child.wait()).await;
+    let wait_failure = match wait_result {
+        Ok(Ok(_)) => None,
+        Ok(Err(error)) => Some(io_failure(
+            id,
+            "process.wait",
+            "wait after root kill",
+            None,
+            &error,
+        )),
+        Err(_) => Some(EffectFailed::other(
             id,
             "process.wait.timeout",
-            "timed out waiting for process termination",
-        ))
+            "timed out reaping root after kill",
+        )),
+    };
+
+    match (kill_failure, wait_failure) {
+        (None, None) => Ok(()),
+        (Some(error), None) | (None, Some(error)) => Err(error),
+        (Some(mut primary), Some(cleanup)) => {
+            append_cleanup_failure(&mut primary, "root wait also failed", &cleanup);
+            Err(primary)
+        }
+    }
+}
+
+fn failure_message(failure: &EffectFailed) -> &str {
+    match &failure.failure {
+        EffectFailure::Io { message, .. } | EffectFailure::Other { message, .. } => message,
+        _ => "non-process cleanup failure",
+    }
+}
+
+fn append_cleanup_failure(primary: &mut EffectFailed, label: &str, cleanup: &EffectFailed) {
+    let detail = failure_message(cleanup);
+    match &mut primary.failure {
+        EffectFailure::Io { message, .. } | EffectFailure::Other { message, .. } => {
+            message.push_str("; ");
+            message.push_str(label);
+            message.push_str(": ");
+            message.push_str(detail);
+        }
+        _ => unreachable!("process cleanup produces only I/O or other failures"),
+    }
+}
+
+async fn terminate_and_reap(
+    id: EffectId,
+    supervisor: &mut ProcessSupervisor,
+    child: &mut Child,
+) -> Result<(), EffectFailed> {
+    match terminate_supervised(id, supervisor, true) {
+        Ok(()) => wait_after_termination(id, child).await,
+        Err(mut primary) => {
+            let root_kill = child.start_kill().err().map(|error| {
+                io_failure(
+                    id,
+                    "process.kill",
+                    "kill root after supervisor termination failure",
+                    None,
+                    &error,
+                )
+            });
+            let tree_retry = terminate_supervised(id, supervisor, true).err();
+            let root_wait = wait_after_termination(id, child).await.err();
+
+            for (label, cleanup) in [
+                ("direct root kill failed", root_kill),
+                ("supervisor termination retry failed", tree_retry),
+                ("root reap failed", root_wait),
+            ] {
+                if let Some(cleanup) = cleanup {
+                    append_cleanup_failure(&mut primary, label, &cleanup);
+                }
+            }
+            Err(primary)
+        }
     }
 }
 
@@ -702,8 +778,8 @@ mod tests {
     use hoimin_core::{EffectFailure, EffectId, ProcessTermination};
 
     use super::{
-        ProcessCancellation, ProcessSelection, ProcessStartGate, attach_failure,
-        combine_process_and_output, select_process_result,
+        ProcessCancellation, ProcessSelection, ProcessStartGate, append_cleanup_failure,
+        attach_failure, combine_process_and_output, select_process_result,
     };
     use crate::resource::ResourceError;
 
@@ -761,6 +837,50 @@ mod tests {
             .expect_err("primary process failure wins");
 
         assert_eq!(error, primary);
+    }
+
+    #[test]
+    fn cleanup_failures_preserve_primary_error_and_append_details_in_order() {
+        let mut primary = hoimin_core::EffectFailed {
+            id: EffectId(44),
+            failure: EffectFailure::Io {
+                code: "process.resource.terminate".into(),
+                operation: "terminate supervised process tree".into(),
+                path: None,
+                message: "primary termination failure".into(),
+            },
+        };
+        let root_kill =
+            hoimin_core::EffectFailed::other(EffectId(44), "process.kill", "root kill detail");
+        let tree_retry = hoimin_core::EffectFailed::other(
+            EffectId(44),
+            "process.resource.terminate",
+            "tree retry detail",
+        );
+
+        append_cleanup_failure(&mut primary, "direct root kill failed", &root_kill);
+        append_cleanup_failure(
+            &mut primary,
+            "supervisor termination retry failed",
+            &tree_retry,
+        );
+
+        assert_eq!(primary.id, EffectId(44));
+        assert!(matches!(
+            primary.failure,
+            EffectFailure::Io {
+                ref code,
+                ref operation,
+                ref message,
+                ..
+            } if code == "process.resource.terminate"
+                && operation == "terminate supervised process tree"
+                && message.starts_with("primary termination failure")
+                && message.ends_with(
+                    "direct root kill failed: root kill detail; \
+                     supervisor termination retry failed: tree retry detail"
+                )
+        ));
     }
 
     #[test]
