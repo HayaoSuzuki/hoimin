@@ -130,8 +130,9 @@ pub async fn create(config: RunConfig) -> Result<PlanOutput, PlanError> {
 ///
 /// # Errors
 ///
-/// Returns an error when the manifest is malformed, the current target or fingerprint-input
-/// records differ, or a requested candidate no longer has the exact planned descriptor.
+/// Returns an error when the manifest is malformed or has invalid normalized configuration, the
+/// current target or fingerprint-input records differ, or a requested candidate no longer has the
+/// exact planned descriptor.
 pub async fn prepare_verify(
     manifest_path: impl AsRef<Path>,
     requested_ids: &[String],
@@ -144,6 +145,10 @@ pub async fn prepare_verify(
     let manifest: PlanManifest = serde_json::from_slice(&bytes)
         .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
     validate_header(&manifest)?;
+    manifest
+        .normalized_config
+        .validate()
+        .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
 
     let candidate_ids = normalize_requested_ids(
         requested_ids,

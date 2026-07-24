@@ -9,7 +9,7 @@ use hoimin_cli::{
     shell,
     target::TargetHandler,
 };
-use hoimin_core::{MutationCandidate, OutputFormat as CoreOutputFormat};
+use hoimin_core::{MAX_JOBS, MutationCandidate, OutputFormat as CoreOutputFormat};
 
 #[tokio::test]
 async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
@@ -185,6 +185,75 @@ async fn verify_rejects_changed_source_before_baseline() {
 
     assert_error_code(error, "plan.source.changed");
     assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_rejects_invalid_normalized_config_before_project_work() {
+    type ManifestMutation = fn(&mut serde_json::Value);
+    let cases: &[(&str, ManifestMutation)] = &[
+        ("empty argv", |value| {
+            value["normalized_config"]["test_argv"] = serde_json::json!([]);
+        }),
+        ("jobs exceed processes", |value| {
+            value["normalized_config"]["limits"]["jobs"] = serde_json::json!(2);
+            value["normalized_config"]["limits"]["max_processes"] = serde_json::json!(1);
+        }),
+        ("zero total timeout", |value| {
+            value["normalized_config"]["limits"]["total_timeout"] =
+                serde_json::json!({"secs": 0, "nanos": 0});
+        }),
+        ("missing selector", |value| {
+            let selection = &mut value["normalized_config"]["selection"];
+            selection["sources"] = serde_json::json!([]);
+            selection["files"] = serde_json::json!([]);
+            selection["lines"] = serde_json::json!([]);
+            selection["symbols"] = serde_json::json!([]);
+            selection["changed"] = serde_json::json!(false);
+        }),
+        ("diff base without changed", |value| {
+            let selection = &mut value["normalized_config"]["selection"];
+            selection["diff_base"] = serde_json::json!("HEAD");
+            selection["changed"] = serde_json::json!(false);
+        }),
+        ("changed without source", |value| {
+            let selection = &mut value["normalized_config"]["selection"];
+            selection["sources"] = serde_json::json!([]);
+            selection["changed"] = serde_json::json!(true);
+        }),
+        ("symbol without source", |value| {
+            let selection = &mut value["normalized_config"]["selection"];
+            selection["sources"] = serde_json::json!([]);
+            selection["symbols"] = serde_json::json!(["calc:only_add"]);
+        }),
+        ("jobs exceed maximum", |value| {
+            value["normalized_config"]["limits"]["jobs"] = serde_json::json!(MAX_JOBS + 1);
+        }),
+        ("processes exceed u32", |value| {
+            value["normalized_config"]["limits"]["max_processes"] =
+                serde_json::json!(u64::from(u32::MAX) + 1);
+        }),
+        ("overflowing baseline timeout", |value| {
+            value["normalized_config"]["limits"]["baseline_timeout"] =
+                serde_json::json!({"secs": u64::MAX, "nanos": 0});
+        }),
+    ];
+
+    for (name, mutate) in cases {
+        let project = Project::new();
+        let (path, manifest, baseline_marker) = write_plan_manifest(&project, &[]).await;
+        let requested = vec![manifest.candidates[0].id.clone()];
+        let mut value = serde_json::to_value(manifest).unwrap();
+        mutate(&mut value);
+        write_json(&path, &value);
+
+        std::fs::remove_file(project.path.join("src/calc.py")).unwrap();
+        let error = prepare_verify(&path, &requested, OutputFormat::Json)
+            .await
+            .unwrap_err();
+
+        assert_error_code(error, "plan.manifest.invalid");
+        assert!(!baseline_marker.exists(), "{name}");
+    }
 }
 
 #[tokio::test]
