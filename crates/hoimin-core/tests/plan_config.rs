@@ -183,6 +183,16 @@ fn normalized_limit_validation_rejects_cross_field_violations() {
     );
 }
 
+#[test]
+fn normalized_limit_validation_accepts_maximum_jobs() {
+    let mut value = plan_value();
+    value["limits"]["jobs"] = serde_json::json!(MAX_JOBS);
+    value["limits"]["max_processes"] = serde_json::json!(MAX_JOBS);
+    let config: PlanConfig = serde_json::from_value(value).unwrap();
+
+    assert_eq!(config.validate(), Ok(()));
+}
+
 #[cfg(target_pointer_width = "64")]
 #[test]
 fn normalized_limit_validation_rejects_process_count_above_u32() {
