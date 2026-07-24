@@ -83,6 +83,13 @@ fn portable_handler(output_dir: &Utf8Path) -> ProcessHandler {
     )
 }
 
+fn portable_handler_with_termination_failure(output_dir: &Utf8Path) -> ProcessHandler {
+    ProcessHandler::new(
+        ResourceBackend::Portable(PortableBackend::for_tests_with_termination_failure()),
+        output_dir.to_owned(),
+    )
+}
+
 #[cfg(any(target_os = "linux", windows))]
 fn hard_run_limits(max_memory: u64, max_processes: usize) -> RunLimits {
     let raw = RawRunLimits {
@@ -714,6 +721,103 @@ mod portable {
 
         assert_eq!(event.unwrap().termination, ProcessTermination::Cancelled);
         assert!(wait_until_process_stops(child_pid).await);
+    }
+
+    #[tokio::test]
+    async fn cancellation_reaps_after_injected_termination_failure() {
+        let output = tempfile::tempdir().unwrap();
+        let output_dir = Utf8Path::from_path(output.path()).unwrap();
+        let pid_file = output_dir.join("termination-failure-fixture-child.pid");
+        let guard = FixtureChildGuard::new(pid_file.clone());
+        let handler = portable_handler_with_termination_failure(output_dir);
+        let cancellation = ProcessCancellation::new();
+        let request = ProcessRequest::from(RunProcess {
+            id: EffectId(11),
+            worker: None,
+            run_id: None,
+            mutant_id: None,
+            argv: vec![
+                python_executable(),
+                utf8_arg("-c"),
+                utf8_arg(
+                    "import pathlib,subprocess,sys,time; time.sleep(0.2); child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']); pathlib.Path(sys.argv[1]).write_text(str(child.pid)); time.sleep(30)",
+                ),
+                native_arg(pid_file.as_std_path().as_os_str()),
+            ],
+            cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
+            limits: limits(Duration::from_secs(10), 64),
+        })
+        .with_cancellation(cancellation.clone());
+
+        let (event, cleanup_elapsed) = tokio::join!(handler.run(request), async {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+            while !pid_file.exists() && tokio::time::Instant::now() < deadline {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            let cleanup_started = Instant::now();
+            cancellation.cancel();
+            cleanup_started
+        });
+        let child_pid = guard.pid().expect("fixture child wrote its pid");
+        let cleanup_elapsed = cleanup_elapsed.elapsed();
+
+        let failure = event.expect_err("injected supervisor failure remains observable");
+        assert!(matches!(
+            failure.failure,
+            EffectFailure::Io { ref code, ref message, .. }
+                if code == "process.resource.terminate"
+                    && message.contains("injected portable termination failure")
+        ));
+        assert!(wait_until_process_stops(child_pid).await);
+        assert!(
+            cleanup_elapsed < Duration::from_millis(900),
+            "cancellation cleanup took {cleanup_elapsed:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn timeout_reaps_after_injected_termination_failure() {
+        let output = tempfile::tempdir().unwrap();
+        let output_dir = Utf8Path::from_path(output.path()).unwrap();
+        let pid_file = output_dir.join("timeout-termination-failure-fixture-child.pid");
+        let guard = FixtureChildGuard::new(pid_file.clone());
+        let handler = portable_handler_with_termination_failure(output_dir);
+        let timeout = Duration::from_secs(1);
+        let request = RunProcess {
+            id: EffectId(12),
+            worker: None,
+            run_id: None,
+            mutant_id: None,
+            argv: vec![
+                python_executable(),
+                utf8_arg("-c"),
+                utf8_arg(
+                    "import pathlib,subprocess,sys,time; child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']); pathlib.Path(sys.argv[1]).write_text(str(child.pid)); time.sleep(30)",
+                ),
+                native_arg(pid_file.as_std_path().as_os_str()),
+            ],
+            cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
+            limits: limits(timeout, 64),
+        };
+        let started = Instant::now();
+
+        let event = handler.handle(request).await;
+        let total_elapsed = started.elapsed();
+        let cleanup_elapsed = total_elapsed.saturating_sub(timeout);
+        let child_pid = guard.pid().expect("fixture child wrote its pid");
+
+        let failure = event.expect_err("injected supervisor failure remains observable");
+        assert!(matches!(
+            failure.failure,
+            EffectFailure::Io { ref code, ref message, .. }
+                if code == "process.resource.terminate"
+                    && message.contains("injected portable termination failure")
+        ));
+        assert!(wait_until_process_stops(child_pid).await);
+        assert!(
+            cleanup_elapsed < Duration::from_millis(900),
+            "timeout cleanup took {cleanup_elapsed:?} ({total_elapsed:?} total)"
+        );
     }
 
     #[test]
