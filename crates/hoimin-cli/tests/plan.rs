@@ -190,8 +190,8 @@ async fn verify_rejects_changed_source_before_baseline() {
 type ManifestMutation = fn(&mut serde_json::Value);
 type InvalidManifestCase = (&'static str, ManifestMutation, &'static str);
 
-fn invalid_normalized_config_cases() -> &'static [InvalidManifestCase] {
-    &[
+fn invalid_normalized_config_cases() -> Vec<InvalidManifestCase> {
+    let cases: Vec<InvalidManifestCase> = vec![
         (
             "empty argv",
             |value| {
@@ -266,14 +266,6 @@ fn invalid_normalized_config_cases() -> &'static [InvalidManifestCase] {
             "--jobs 257 exceeds the supported maximum 256",
         ),
         (
-            "processes exceed u32",
-            |value| {
-                value["normalized_config"]["limits"]["max_processes"] =
-                    serde_json::json!(u64::from(u32::MAX) + 1);
-            },
-            "invalid zero or overflowing limit: max_processes",
-        ),
-        (
             "overflowing baseline timeout",
             |value| {
                 value["normalized_config"]["limits"]["baseline_timeout"] =
@@ -281,7 +273,21 @@ fn invalid_normalized_config_cases() -> &'static [InvalidManifestCase] {
             },
             "invalid zero or overflowing limit: baseline_timeout",
         ),
-    ]
+    ];
+    #[cfg(target_pointer_width = "64")]
+    let cases = {
+        let mut cases = cases;
+        cases.push((
+            "processes exceed u32",
+            |value| {
+                value["normalized_config"]["limits"]["max_processes"] =
+                    serde_json::json!(u64::from(u32::MAX) + 1);
+            },
+            "invalid zero or overflowing limit: max_processes",
+        ));
+        cases
+    };
+    cases
 }
 
 #[tokio::test]
@@ -300,7 +306,7 @@ async fn verify_rejects_invalid_normalized_config_before_project_work() {
                 .validate()
                 .unwrap_err()
                 .to_string(),
-            *expected_message,
+            expected_message,
             "{name}"
         );
         write_json(&path, &value);
