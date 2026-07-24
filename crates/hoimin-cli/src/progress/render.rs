@@ -158,14 +158,12 @@ where
             CandidateSetEligibility::Matching => {}
             CandidateSetEligibility::Different => writeln!(
                 stderr,
-                "warning: comparison {} has different candidate ID sets; progress is indeterminate",
-                comparison_index
+                "warning: comparison {comparison_index} has different candidate ID sets; progress is indeterminate"
             )
             .map_err(write_error)?,
             CandidateSetEligibility::Duplicate => writeln!(
                 stderr,
-                "warning: comparison {} has duplicate candidate IDs; progress is indeterminate",
-                comparison_index
+                "warning: comparison {comparison_index} has duplicate candidate IDs; progress is indeterminate"
             )
             .map_err(write_error)?,
         }
