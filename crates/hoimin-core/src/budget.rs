@@ -229,6 +229,27 @@ mod tests {
             Err(ReserveError::ReservationIdsExhausted)
         );
     }
+
+    #[test]
+    fn limit_error_precedes_identifier_exhaustion_without_mutating_the_ledger() {
+        let mut ledger = ledger();
+        let existing = ledger.reserve(BudgetKind::Copy, 1).unwrap();
+        ledger.next_id = None;
+
+        let error = ledger.reserve(BudgetKind::Copy, 8).unwrap_err();
+
+        assert_eq!(
+            error,
+            ReserveError::LimitReached(super::LimitReached {
+                kind: BudgetKind::Copy,
+                requested: 8,
+                available: 7,
+            })
+        );
+        assert_eq!(ledger.reserved(BudgetKind::Copy), 1);
+        assert_eq!(ledger.reservation(existing).unwrap().amount, 1);
+        assert_eq!(ledger.next_id, None);
+    }
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
