@@ -247,19 +247,23 @@ Under `#[cfg(all(test, windows))]`, add a constructor that selects
 Before changing production startup ordering, add a Windows-only async unit test
 whose command immediately writes a root marker, starts a detached Python
 descendant that writes a descendant marker, and then waits. The injected attach
-fault sleeps for 200 ms and returns:
+fault is applied inside the portable assignment helper: it sleeps for 200 ms,
+then calls the real `SuspendedChild::assign` operation with an invalid Job
+Object handle so Win32 returns an assignment error. It must not return before
+the assignment call:
 
 ```rust
-ResourceError::io(
-    "assign spawned process to job",
-    io::Error::other("injected delayed assignment failure"),
-)
+suspended.assign(std::ptr::null_mut(), "assign spawned process to job")
 ```
 
 Use `subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP` for the
 descendant. Repeat the scenario four times with unique marker paths. Bound each
-handler call to two seconds and explicitly terminate any observed detached
-fixture process during RED cleanup.
+handler call to two seconds. Before interpreting or asserting the handler
+result, poll briefly for any detached fixture PID, open it with
+`PROCESS_TERMINATE | SYNCHRONIZE`, require `TerminateProcess` to succeed, and
+require `WaitForSingleObject` to report termination within one second. This
+cleanup order must also run when the handler times out or unexpectedly
+succeeds, so assertion failure cannot leave the 30-second fixture alive.
 
 Assertions after each run:
 
@@ -315,24 +319,41 @@ Replace the Windows PID reopen/assignment path in
 #[cfg(windows)]
 {
     let suspended = super::suspended::SuspendedChild::open(child)?;
+    self.assign_suspended(&suspended)?;
+    suspended.resume()?;
+}
+```
+
+Add a Windows-only `assign_suspended` helper. Ordinary execution passes
+`self.job`; the test fault sleeps inside this helper and passes a null handle
+to the real assignment operation:
+
+```rust
+#[cfg(windows)]
+fn assign_suspended(
+    &self,
+    suspended: &super::suspended::SuspendedChild,
+) -> Result<(), ResourceError> {
     #[cfg(test)]
     if self.attach_fault == AttachFault::AssignAfterDelay {
-        std::thread::sleep(Duration::from_millis(200));
-        return Err(ResourceError::io(
-            "assign spawned process to job",
-            io::Error::other("injected delayed assignment failure"),
-        ));
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        return suspended.assign(std::ptr::null_mut(), "assign spawned process to job");
     }
-    suspended.assign(self.job as _, "assign spawned process to job")?;
-    suspended.resume()?;
+    suspended.assign(self.job as _, "assign spawned process to job")
 }
 ```
 
 Set the Unix process group from the PID as before. Remove the obsolete
 portable-local `assign_to_job` function and Windows `OpenProcess` imports.
 
-The injected delay occurs while the child is already suspended. Do not resume
-on assignment failure and do not mark the supervisor terminated.
+The injected delay occurs at the actual assignment boundary while the child is
+already suspended. Do not resume on assignment failure and do not mark the
+supervisor terminated. The test must also be demonstrated RED with both of
+these temporary mutations:
+
+- delete/bypass `assign_suspended` so the child resumes without containment;
+- call `suspended.resume()` before `assign_suspended`, so the 200 ms delay runs
+  after user code is released.
 
 - [ ] **Step 5: Run the regression to verify GREEN**
 
@@ -343,6 +364,11 @@ cargo test -p hoimin-cli resource::portable::tests::attach_failure_prevents_imme
 ```
 
 Expected: PASS in all four iterations; neither marker exists and attach-failure cleanup is bounded.
+
+Temporarily bypassing assignment or reversing assignment/resume must FAIL by
+creating the root marker (and normally the descendant marker). Restore the
+correct implementation before continuing and record both RED results in the
+task report.
 
 - [ ] **Step 6: Prove successful portable children resume**
 
