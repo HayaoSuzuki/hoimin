@@ -33,6 +33,19 @@ pub struct Comparison {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CandidateSetEligibility {
+    Matching,
+    Different,
+    Duplicate,
+}
+
+impl CandidateSetEligibility {
+    fn is_matching(self) -> bool {
+        self == Self::Matching
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProgressState {
     Improving,
     Regressing,
@@ -71,7 +84,11 @@ pub fn compare_reports(reports: &[InputReport], patience: NonZeroUsize) -> Progr
             continue;
         };
 
-        let comparison = compare_usable_reports(previous, current);
+        let eligibility = candidate_set_eligibility(previous, current);
+        let comparison = compare_usable_reports(previous, current, eligibility);
+        if !eligibility.is_matching() {
+            consecutive_stalls = 0;
+        }
         match comparison.state {
             ProgressState::Improving => {
                 consecutive_stalls = 0;
@@ -104,7 +121,11 @@ pub fn compare_reports(reports: &[InputReport], patience: NonZeroUsize) -> Progr
     }
 }
 
-fn compare_usable_reports(previous: &UsableReport, current: &UsableReport) -> Comparison {
+fn compare_usable_reports(
+    previous: &UsableReport,
+    current: &UsableReport,
+    candidate_set_eligibility: CandidateSetEligibility,
+) -> Comparison {
     let previous = index_mutants(&previous.mutants);
     let current = index_mutants(&current.mutants);
     let ambiguous: HashSet<_> = previous
@@ -185,15 +206,12 @@ fn compare_usable_reports(previous: &UsableReport, current: &UsableReport) -> Co
     let score_delta = previous_score
         .zip(current_score)
         .map(|(before, after)| after - before);
-    let state = if comparable_common == 0 {
-        ProgressState::Indeterminate
-    } else if regressions > 0 {
-        ProgressState::Regressing
-    } else if improvements > 0 {
-        ProgressState::Improving
-    } else {
-        ProgressState::Stalled
-    };
+    let state = comparison_state(
+        candidate_set_eligibility,
+        comparable_common,
+        regressions,
+        improvements,
+    );
 
     Comparison {
         common,
@@ -208,6 +226,47 @@ fn compare_usable_reports(previous: &UsableReport, current: &UsableReport) -> Co
         current_score,
         score_delta,
         state,
+    }
+}
+
+pub(crate) fn candidate_set_eligibility(
+    previous: &UsableReport,
+    current: &UsableReport,
+) -> CandidateSetEligibility {
+    fn ids(report: &UsableReport) -> Option<HashSet<&str>> {
+        let ids = report
+            .mutants
+            .iter()
+            .map(|mutant| mutant.candidate.id.as_str())
+            .collect::<HashSet<_>>();
+        (ids.len() == report.mutants.len()).then_some(ids)
+    }
+
+    let (Some(previous), Some(current)) = (ids(previous), ids(current)) else {
+        return CandidateSetEligibility::Duplicate;
+    };
+    if previous == current {
+        CandidateSetEligibility::Matching
+    } else {
+        CandidateSetEligibility::Different
+    }
+}
+
+fn comparison_state(
+    eligibility: CandidateSetEligibility,
+    comparable_common: usize,
+    regressions: usize,
+    improvements: usize,
+) -> ProgressState {
+    if !eligibility.is_matching() || comparable_common == 0 {
+        return ProgressState::Indeterminate;
+    }
+    if regressions > 0 {
+        ProgressState::Regressing
+    } else if improvements > 0 {
+        ProgressState::Improving
+    } else {
+        ProgressState::Stalled
     }
 }
 

@@ -4,6 +4,7 @@ use serde::Serialize;
 
 use crate::cli::ProgressOutputFormat;
 
+use super::compare::{CandidateSetEligibility, candidate_set_eligibility};
 use super::{
     Comparison, InputReport, ProgressError, ProgressResult, ProgressState, UnusableReason,
 };
@@ -145,6 +146,26 @@ where
                 unusable_reason_label(*reason)
             )
             .map_err(write_error)?;
+        }
+    }
+    let mut comparison_index = 0;
+    for pair in inputs.windows(2) {
+        let [InputReport::Usable(previous), InputReport::Usable(current)] = pair else {
+            continue;
+        };
+        comparison_index += 1;
+        match candidate_set_eligibility(previous, current) {
+            CandidateSetEligibility::Matching => {}
+            CandidateSetEligibility::Different => writeln!(
+                stderr,
+                "warning: comparison {comparison_index} has different candidate ID sets; progress is indeterminate"
+            )
+            .map_err(write_error)?,
+            CandidateSetEligibility::Duplicate => writeln!(
+                stderr,
+                "warning: comparison {comparison_index} has duplicate candidate IDs; progress is indeterminate"
+            )
+            .map_err(write_error)?,
         }
     }
     for (index, comparison) in result.comparisons.iter().enumerate() {

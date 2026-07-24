@@ -220,6 +220,60 @@ fn compare_counts_added_and_removed_mutants() {
     assert_eq!(comparison.added, 1);
     assert_eq!(comparison.removed, 1);
     assert_eq!(comparison.ambiguous, 0);
+    assert_eq!(comparison.state, ProgressState::Indeterminate);
+    assert_eq!(result.consecutive_stalls, 0);
+    assert_eq!(result.latest, ProgressState::Indeterminate);
+}
+
+#[test]
+fn changing_candidate_id_sets_break_the_stall_chain() {
+    let result = compare_reports(
+        &[
+            usable(vec![mutant("common", MutationStatus::Killed)]),
+            usable(vec![mutant("common", MutationStatus::Killed)]),
+            usable(vec![
+                mutant("common", MutationStatus::Killed),
+                mutant("rotated-a", MutationStatus::Killed),
+            ]),
+            usable(vec![
+                mutant("common", MutationStatus::Killed),
+                mutant("rotated-b", MutationStatus::Killed),
+            ]),
+            usable(vec![mutant("common", MutationStatus::Killed)]),
+        ],
+        nz(2),
+    );
+
+    assert!(
+        result
+            .comparisons
+            .iter()
+            .skip(1)
+            .all(|comparison| comparison.state == ProgressState::Indeterminate)
+    );
+    assert_eq!(result.consecutive_stalls, 0);
+    assert_eq!(result.latest, ProgressState::Indeterminate);
+}
+
+#[test]
+fn duplicate_candidate_ids_are_ineligible() {
+    let result = compare_reports(
+        &[
+            usable(vec![
+                mutant_with_id("duplicate-id", "first", MutationStatus::Killed),
+                mutant_with_id("duplicate-id", "second", MutationStatus::Killed),
+            ]),
+            usable(vec![
+                mutant_with_id("duplicate-id", "first", MutationStatus::Killed),
+                mutant_with_id("duplicate-id", "second", MutationStatus::Killed),
+            ]),
+        ],
+        nz(1),
+    );
+
+    assert_eq!(result.comparisons[0].state, ProgressState::Indeterminate);
+    assert_eq!(result.consecutive_stalls, 0);
+    assert_eq!(result.latest, ProgressState::Indeterminate);
 }
 
 #[test]
@@ -275,7 +329,11 @@ fn compare_an_empty_common_set_does_not_change_stalls() {
         &[
             killed(),
             killed(),
-            usable(vec![mutant("different", MutationStatus::Killed)]),
+            usable(vec![mutant_with_id(
+                "common",
+                "different",
+                MutationStatus::Killed,
+            )]),
         ],
         nz(3),
     );
@@ -489,6 +547,59 @@ async fn output_unusable_reports_are_indeterminate_and_exit_zero() {
 }
 
 #[tokio::test]
+async fn output_warns_when_candidate_id_sets_differ() {
+    let fixture = tempfile::tempdir().unwrap();
+    let before = valid_report();
+    let mut after = valid_report();
+    after["mutants"][0]["candidate"]["id"] = json!("different-id");
+    let reports = vec![
+        write_json(&fixture, "before.json", &before),
+        write_json(&fixture, "after.json", &after),
+    ];
+
+    let (code, stdout, stderr) = run_progress(&reports, "json").await;
+    let value: Value = serde_json::from_slice(&stdout).unwrap();
+    let diagnostics = String::from_utf8(stderr).unwrap();
+
+    assert_eq!(code, 0);
+    assert_eq!(value["latest"]["state"], "indeterminate");
+    assert_eq!(value["latest"]["consecutive_stalls"], 0);
+    assert!(
+        diagnostics
+            .contains("comparison 1 has different candidate ID sets; progress is indeterminate")
+    );
+    assert!(value["comparisons"][0].get("candidate_set_match").is_none());
+}
+
+#[tokio::test]
+async fn output_warns_about_duplicate_candidate_ids() {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut report = valid_report();
+    let mut duplicate = report["mutants"][0].clone();
+    duplicate["sequence"] = json!(4);
+    duplicate["candidate"]["sequence"] = json!(2);
+    duplicate["candidate"]["path"] = json!("src/other.py");
+    report["mutants"].as_array_mut().unwrap().push(duplicate);
+    report["summary"]["sequence"] = json!(5);
+    let reports = vec![
+        write_json(&fixture, "before.json", &report),
+        write_json(&fixture, "after.json", &report),
+    ];
+
+    let (code, stdout, stderr) = run_progress(&reports, "json").await;
+    let value: Value = serde_json::from_slice(&stdout).unwrap();
+    let diagnostics = String::from_utf8(stderr).unwrap();
+
+    assert_eq!(code, 0);
+    assert_eq!(value["latest"]["state"], "indeterminate");
+    assert_eq!(value["latest"]["consecutive_stalls"], 0);
+    assert!(
+        diagnostics.contains("comparison 1 has duplicate candidate IDs; progress is indeterminate")
+    );
+    assert!(value["comparisons"][0].get("candidate_set_match").is_none());
+}
+
+#[tokio::test]
 async fn output_ambiguity_is_structured_and_warned_on_stderr() {
     let fixture = tempfile::tempdir().unwrap();
     let mut ambiguous = valid_report();
@@ -612,6 +723,12 @@ fn mutant(key: &str, status: MutationStatus) -> MutantFinished {
         resource_mode: ResourceMode::Hard,
         output: None,
     }
+}
+
+fn mutant_with_id(id: &str, semantic_key: &str, status: MutationStatus) -> MutantFinished {
+    let mut value = mutant(semantic_key, status);
+    id.clone_into(&mut value.candidate.id);
+    value
 }
 
 fn write_json(fixture: &tempfile::TempDir, name: &str, document: &Value) -> PathBuf {
