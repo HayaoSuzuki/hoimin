@@ -780,10 +780,17 @@ mod tests {
     use tokio::process::Command;
 
     use super::{
-        ProcessCancellation, ProcessSelection, ProcessStartGate, append_cleanup_failure,
-        attach_failure, combine_process_and_output, select_process_result, wait_after_termination,
+        POST_TERMINATION_GRACE, ProcessCancellation, ProcessSelection, ProcessStartGate,
+        append_cleanup_failure, attach_failure, combine_process_and_output, select_process_result,
+        wait_after_termination,
     };
     use crate::resource::ResourceError;
+
+    #[test]
+    #[ignore = "subprocess fixture for bounded reap tests"]
+    fn root_child_fixture_waits() {
+        std::thread::sleep(Duration::from_secs(10));
+    }
 
     #[tokio::test]
     async fn wait_after_termination_reaps_the_root_child() {
@@ -798,6 +805,28 @@ mod tests {
             .await
             .unwrap();
 
+        assert_eq!(child.id(), None);
+    }
+
+    #[tokio::test]
+    async fn wait_after_termination_kills_and_reaps_after_grace_expires() {
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "process::tests::root_child_fixture_waits",
+            ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let started = tokio::time::Instant::now();
+
+        wait_after_termination(EffectId(45), &mut child)
+            .await
+            .unwrap();
+
+        assert!(started.elapsed() >= POST_TERMINATION_GRACE);
         assert_eq!(child.id(), None);
     }
 
