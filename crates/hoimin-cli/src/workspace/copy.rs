@@ -340,7 +340,7 @@ impl WorkspacePlan {
             return Err(error);
         }
 
-        Ok(WorkerWorkspace::from_materialized(
+        WorkerWorkspace::from_materialized(
             temp,
             root,
             self.original_root.clone(),
@@ -351,7 +351,7 @@ impl WorkspacePlan {
             Arc::clone(&self.state),
             worker,
             charged,
-        ))
+        )
     }
 }
 

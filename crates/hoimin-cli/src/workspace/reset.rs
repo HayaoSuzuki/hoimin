@@ -39,7 +39,7 @@ impl WorkerWorkspace {
                 error
             } else {
                 WorkspaceError::WorkspaceRestore {
-                    path: self.root.clone(),
+                    path: self.root.path().to_owned(),
                     message: error.to_string(),
                 }
             }
@@ -47,21 +47,21 @@ impl WorkerWorkspace {
     }
 
     fn reset_from_snapshot(&self) -> Result<(), WorkspaceError> {
-        let existing = collect_worker_entries(&self.root)?;
+        let existing = collect_worker_entries(self.root.path())?;
         for (path, is_dir) in existing.iter().rev() {
             if *is_dir {
                 if !required_directory(path, &self.manifest) {
-                    remove_directory_if_empty(&self.root.join(path))?;
+                    remove_directory_if_empty(&self.root.path().join(path))?;
                 }
                 continue;
             }
             if self.manifest.entry(path).is_none() {
-                remove_any(&self.root.join(path))?;
+                remove_any(&self.root.path().join(path))?;
             }
         }
 
         for (path, snapshot) in &self.snapshot {
-            let destination = self.root.join(path);
+            let destination = self.root.path().join(path);
             let unchanged = fs::symlink_metadata(&destination)
                 .ok()
                 .filter(|metadata| metadata.file_type().is_file())
@@ -93,14 +93,14 @@ impl WorkerWorkspace {
             Ok(())
         } else {
             Err(WorkspaceError::WorkspaceRestore {
-                path: self.root.clone(),
+                path: self.root.path().to_owned(),
                 message: "post-reset manifest comparison failed".to_owned(),
             })
         }
     }
 
     fn matches_snapshot(&self) -> Result<bool, WorkspaceError> {
-        let entries = collect_worker_entries(&self.root)?;
+        let entries = collect_worker_entries(self.root.path())?;
         let actual_files = entries
             .iter()
             .filter(|(_, is_dir)| !*is_dir)
@@ -111,7 +111,7 @@ impl WorkerWorkspace {
             return Ok(false);
         }
         for (path, snapshot) in &self.snapshot {
-            let destination = self.root.join(path);
+            let destination = self.root.path().join(path);
             let metadata = fs::symlink_metadata(&destination)
                 .map_err(|error| WorkspaceError::io("verify restored file", path, error))?;
             if !metadata.file_type().is_file() {

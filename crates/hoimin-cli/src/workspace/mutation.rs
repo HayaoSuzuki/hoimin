@@ -13,7 +13,7 @@ impl WorkerWorkspace {
     /// mutated file cannot be written.
     pub fn apply_mutation(&mut self, candidate: &MutationCandidate) -> Result<(), WorkspaceError> {
         self.verify_originals()?;
-        let path = resolve_worker_path(&self.root, &candidate.path)?;
+        let path = resolve_worker_path(self.root.path(), &candidate.path)?;
         let expected = self.manifest.entry(&candidate.path).ok_or_else(|| {
             WorkspaceError::MutationTargetMissing {
                 path: candidate.path.clone(),

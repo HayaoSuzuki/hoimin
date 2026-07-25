@@ -2,6 +2,7 @@ mod copy;
 mod manifest;
 mod mutation;
 mod reset;
+mod root;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
@@ -20,6 +21,7 @@ use hoimin_core::{
 pub use copy::WorkspacePlan;
 pub use manifest::{ManifestEntry, WorkspaceManifest};
 use reset::make_writable;
+use root::WorkerRoot;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CopyOptions {
@@ -254,7 +256,7 @@ fn make_cleanup_entry_accessible(
 #[derive(Debug)]
 pub struct WorkerWorkspace {
     temp: tempfile::TempDir,
-    root: Utf8PathBuf,
+    root: WorkerRoot,
     original_root: Utf8PathBuf,
     options: CopyOptions,
     manifest: WorkspaceManifest,
@@ -268,7 +270,7 @@ pub struct WorkerWorkspace {
 
 impl WorkerWorkspace {
     #[allow(clippy::too_many_arguments)]
-    pub(crate) const fn from_materialized(
+    pub(crate) fn from_materialized(
         temp: tempfile::TempDir,
         root: Utf8PathBuf,
         original_root: Utf8PathBuf,
@@ -279,8 +281,9 @@ impl WorkerWorkspace {
         plan_state: Arc<Mutex<copy::PlanState>>,
         worker: u32,
         charged: u64,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, WorkspaceError> {
+        let root = WorkerRoot::open(root)?;
+        Ok(Self {
             temp,
             root,
             original_root,
@@ -292,12 +295,12 @@ impl WorkerWorkspace {
             worker,
             charged,
             cleanup_complete: false,
-        }
+        })
     }
 
     #[must_use]
     pub fn root(&self) -> &Utf8Path {
-        &self.root
+        self.root.path()
     }
 
     #[must_use]
@@ -309,7 +312,7 @@ impl WorkerWorkspace {
     /// Returns `InvalidPath` or an I/O failure when the path cannot be read.
     pub fn read(&self, path: impl AsRef<Utf8Path>) -> Result<Vec<u8>, WorkspaceError> {
         let path = path.as_ref();
-        let destination = resolve_worker_path(&self.root, path)?;
+        let destination = resolve_worker_path(self.root.path(), path)?;
         fs::read(destination).map_err(|error| WorkspaceError::io("read worker file", path, error))
     }
 
@@ -321,7 +324,7 @@ impl WorkerWorkspace {
         contents: &[u8],
     ) -> Result<(), WorkspaceError> {
         let path = path.as_ref();
-        let destination = resolve_worker_path(&self.root, path)?;
+        let destination = resolve_worker_path(self.root.path(), path)?;
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent)
                 .map_err(|error| WorkspaceError::io("create worker directory", parent, error))?;
@@ -337,7 +340,7 @@ impl WorkerWorkspace {
     /// Returns `InvalidPath` or an I/O failure when the file cannot be removed.
     pub fn remove(&mut self, path: impl AsRef<Utf8Path>) -> Result<(), WorkspaceError> {
         let path = path.as_ref();
-        let destination = resolve_worker_path(&self.root, path)?;
+        let destination = resolve_worker_path(self.root.path(), path)?;
         make_writable(&destination)?;
         fs::remove_file(destination)
             .map_err(|error| WorkspaceError::io("remove worker file", path, error))
@@ -346,7 +349,7 @@ impl WorkerWorkspace {
     /// # Errors
     /// Returns `InvalidPath` when the supplied path is not root-relative.
     pub fn exists(&self, path: impl AsRef<Utf8Path>) -> Result<bool, WorkspaceError> {
-        Ok(resolve_worker_path(&self.root, path.as_ref())?.exists())
+        Ok(resolve_worker_path(self.root.path(), path.as_ref())?.exists())
     }
 
     /// # Errors
@@ -367,7 +370,7 @@ impl WorkerWorkspace {
             }
             Err(error) => Err(WorkspaceError::io(
                 "remove worker workspace",
-                &self.root,
+                self.root.path(),
                 error,
             )),
         }
