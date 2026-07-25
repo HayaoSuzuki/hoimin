@@ -1,13 +1,59 @@
 use std::ffi::OsString;
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io;
+#[cfg(unix)]
+use std::io::{Read, Write};
 use std::path::Path;
 
 use camino::{Utf8Path, Utf8PathBuf};
+#[cfg(unix)]
 use cap_fs_ext::OpenOptionsFollowExt;
 use cap_primitives::fs::FollowSymlinks;
 
 use super::WorkspaceError;
+
+#[cfg(windows)]
+mod windows;
+
+#[cfg(any(windows, test))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum WindowsCreateDisposition {
+    Open,
+    OpenIf,
+}
+
+#[cfg(any(windows, test))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum WindowsFinalOperation {
+    Read,
+    Write,
+    Remove,
+}
+
+#[cfg(any(windows, test))]
+impl WindowsFinalOperation {
+    const fn create_disposition(self) -> WindowsCreateDisposition {
+        match self {
+            Self::Read | Self::Remove => WindowsCreateDisposition::Open,
+            Self::Write => WindowsCreateDisposition::OpenIf,
+        }
+    }
+
+    #[cfg(test)]
+    const fn needs_delete_access(self) -> bool {
+        matches!(self, Self::Remove)
+    }
+}
+
+#[cfg(any(windows, test))]
+fn windows_final_name_is_valid(name: &str) -> bool {
+    !name.is_empty()
+        && name != "."
+        && name != ".."
+        && !name.contains('/')
+        && !name.contains('\\')
+        && !name.contains('\0')
+}
 
 #[derive(Debug)]
 pub(crate) struct WorkerRoot {
@@ -32,61 +78,84 @@ impl WorkerRoot {
 
     pub(crate) fn read(&self, path: &Utf8Path) -> Result<Vec<u8>, WorkspaceError> {
         let (parent, name) = self.open_parent(path, false)?;
-        Self::reject_link(&parent, &name, path, "read worker file")?;
-        let mut options = cap_primitives::fs::OpenOptions::new();
-        options.read(true).follow(FollowSymlinks::No);
-        let mut file = cap_primitives::fs::open(&parent, Path::new(&name), &options)
-            .map_err(|error| Self::map_entry_error("read worker file", path, error))?;
-        let metadata = file
-            .metadata()
-            .map_err(|error| WorkspaceError::io("inspect worker file", path, error))?;
-        if !metadata.is_file() {
-            return Err(WorkspaceError::InvalidPath {
-                path: path.to_owned(),
-            });
+        #[cfg(windows)]
+        {
+            return windows::read(&parent, &name, path);
         }
-        let mut contents = Vec::new();
-        file.read_to_end(&mut contents)
-            .map_err(|error| WorkspaceError::io("read worker file", path, error))?;
-        Ok(contents)
+        #[cfg(unix)]
+        {
+            Self::reject_link(&parent, &name, path, "read worker file")?;
+            let mut options = cap_primitives::fs::OpenOptions::new();
+            options.read(true).follow(FollowSymlinks::No);
+            let mut file = cap_primitives::fs::open(&parent, Path::new(&name), &options)
+                .map_err(|error| Self::map_entry_error("read worker file", path, error))?;
+            let metadata = file
+                .metadata()
+                .map_err(|error| WorkspaceError::io("inspect worker file", path, error))?;
+            if !metadata.is_file() {
+                return Err(WorkspaceError::InvalidPath {
+                    path: path.to_owned(),
+                });
+            }
+            let mut contents = Vec::new();
+            file.read_to_end(&mut contents)
+                .map_err(|error| WorkspaceError::io("read worker file", path, error))?;
+            Ok(contents)
+        }
     }
 
     pub(crate) fn write(&self, path: &Utf8Path, contents: &[u8]) -> Result<(), WorkspaceError> {
         let (parent, name) = self.open_parent(path, true)?;
-        Self::reject_link_if_present(&parent, &name, path, "write worker file")?;
-        make_directory_writable(&parent, path)?;
-        if cap_primitives::fs::stat(&parent, Path::new(&name), FollowSymlinks::No).is_ok() {
-            let mut inspect_options = cap_primitives::fs::OpenOptions::new();
-            inspect_options.read(true).follow(FollowSymlinks::No);
-            let file = cap_primitives::fs::open(&parent, Path::new(&name), &inspect_options)
-                .map_err(|error| Self::map_entry_error("open worker file", path, error))?;
-            make_file_writable(&file, path)?;
+        #[cfg(windows)]
+        {
+            make_directory_writable(&parent, path)?;
+            return windows::write(&parent, &name, path, contents);
         }
-        let mut options = cap_primitives::fs::OpenOptions::new();
-        options
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .follow(FollowSymlinks::No);
-        let mut file = cap_primitives::fs::open(&parent, Path::new(&name), &options)
-            .map_err(|error| Self::map_entry_error("write worker file", path, error))?;
-        make_file_writable(&file, path)?;
-        file.write_all(contents)
-            .map_err(|error| WorkspaceError::io("write worker file", path, error))
+        #[cfg(unix)]
+        {
+            Self::reject_link_if_present(&parent, &name, path, "write worker file")?;
+            make_directory_writable(&parent, path)?;
+            if cap_primitives::fs::stat(&parent, Path::new(&name), FollowSymlinks::No).is_ok() {
+                let mut inspect_options = cap_primitives::fs::OpenOptions::new();
+                inspect_options.read(true).follow(FollowSymlinks::No);
+                let file = cap_primitives::fs::open(&parent, Path::new(&name), &inspect_options)
+                    .map_err(|error| Self::map_entry_error("open worker file", path, error))?;
+                make_file_writable(&file, path)?;
+            }
+            let mut options = cap_primitives::fs::OpenOptions::new();
+            options
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .follow(FollowSymlinks::No);
+            let mut file = cap_primitives::fs::open(&parent, Path::new(&name), &options)
+                .map_err(|error| Self::map_entry_error("write worker file", path, error))?;
+            make_file_writable(&file, path)?;
+            file.write_all(contents)
+                .map_err(|error| WorkspaceError::io("write worker file", path, error))
+        }
     }
 
     pub(crate) fn remove_file(&self, path: &Utf8Path) -> Result<(), WorkspaceError> {
         let (parent, name) = self.open_parent(path, false)?;
-        Self::reject_link(&parent, &name, path, "remove worker file")?;
-        make_directory_writable(&parent, path)?;
-        let mut options = cap_primitives::fs::OpenOptions::new();
-        options.read(true).follow(FollowSymlinks::No);
-        let file = cap_primitives::fs::open(&parent, Path::new(&name), &options)
-            .map_err(|error| Self::map_entry_error("remove worker file", path, error))?;
-        make_file_writable(&file, path)?;
-        drop(file);
-        cap_primitives::fs::remove_file(&parent, Path::new(&name))
-            .map_err(|error| Self::map_entry_error("remove worker file", path, error))
+        #[cfg(windows)]
+        {
+            make_directory_writable(&parent, path)?;
+            return windows::remove_file(&parent, &name, path);
+        }
+        #[cfg(unix)]
+        {
+            Self::reject_link(&parent, &name, path, "remove worker file")?;
+            make_directory_writable(&parent, path)?;
+            let mut options = cap_primitives::fs::OpenOptions::new();
+            options.read(true).follow(FollowSymlinks::No);
+            let file = cap_primitives::fs::open(&parent, Path::new(&name), &options)
+                .map_err(|error| Self::map_entry_error("remove worker file", path, error))?;
+            make_file_writable(&file, path)?;
+            drop(file);
+            cap_primitives::fs::remove_file(&parent, Path::new(&name))
+                .map_err(|error| Self::map_entry_error("remove worker file", path, error))
+        }
     }
 
     pub(crate) fn try_exists(&self, path: &Utf8Path) -> Result<bool, WorkspaceError> {
@@ -302,6 +371,35 @@ mod tests {
     use camino::{Utf8Path, Utf8PathBuf};
 
     use super::*;
+
+    #[test]
+    fn windows_final_operations_open_without_destructive_dispositions() {
+        assert_eq!(
+            WindowsFinalOperation::Read.create_disposition(),
+            WindowsCreateDisposition::Open
+        );
+        assert_eq!(
+            WindowsFinalOperation::Write.create_disposition(),
+            WindowsCreateDisposition::OpenIf
+        );
+        assert_eq!(
+            WindowsFinalOperation::Remove.create_disposition(),
+            WindowsCreateDisposition::Open
+        );
+        assert!(!WindowsFinalOperation::Read.needs_delete_access());
+        assert!(!WindowsFinalOperation::Write.needs_delete_access());
+        assert!(WindowsFinalOperation::Remove.needs_delete_access());
+    }
+
+    #[test]
+    fn windows_final_names_are_single_components() {
+        for valid in ["file.py", "a b", "日本語.txt"] {
+            assert!(windows_final_name_is_valid(valid));
+        }
+        for invalid in ["", ".", "..", "a/b", r"a\b", "nul\0byte"] {
+            assert!(!windows_final_name_is_valid(invalid));
+        }
+    }
 
     struct RootFixture {
         _temp: tempfile::TempDir,
