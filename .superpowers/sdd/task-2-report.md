@@ -77,3 +77,28 @@ Complete.
 - A minimal Windows-target harness including the production `root/windows.rs` compiled
   successfully offline against windows-sys 0.60.2, validating the native backend's FFI
   types, constants, and Rust syntax.
+
+## Independent-review follow-up: Windows read-only replacement
+
+- Root cause: the first write open requested `FILE_WRITE_DATA`, so an existing
+  read-only file could fail before handle-based permission repair was reached.
+- RED: the Windows access-policy regression requires a pre-write inspection profile
+  with `FILE_WRITE_ATTRIBUTES` and without `FILE_WRITE_DATA`.
+- GREEN: writes now open an existing entry relative to the stable parent with
+  `FILE_OPEN_REPARSE_POINT`, reject reparse/non-file handles, clear read-only through
+  that handle, then reopen relative to the same parent for data write and revalidate
+  before truncation.
+- Missing entries proceed directly to non-destructive `FILE_OPEN_IF`. If the entry is
+  replaced between opens, the second opened handle is independently validated; any
+  read-only replacement fails safely without an ambient fallback or truncation.
+- Removal still clears read-only through its opened handle before the legacy
+  handle-only disposition fallback.
+- `cargo fmt --all -- --check`: pass.
+- `cargo clippy -p hoimin-cli --tests -- -D warnings`: pass.
+- `cargo check --all-features`: pass.
+- `cargo test -p hoimin-cli`: pass, including 81 unit tests, all integration
+  suites, and one intentionally ignored subprocess fixture.
+- `cargo test -p hoimin-cli --test workspace_handler --test workspace_recovery`: pass,
+  33 passed and 0 failed.
+- `cargo check --offline --target x86_64-pc-windows-msvc --tests` in the minimal
+  production-source harness: pass, including the Windows access-policy regression.

@@ -25,6 +25,7 @@ enum WindowsCreateDisposition {
 #[cfg(any(windows, test))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum WindowsFinalOperation {
+    InspectForWrite,
     Read,
     Write,
     Remove,
@@ -34,7 +35,7 @@ enum WindowsFinalOperation {
 impl WindowsFinalOperation {
     const fn create_disposition(self) -> WindowsCreateDisposition {
         match self {
-            Self::Read | Self::Remove => WindowsCreateDisposition::Open,
+            Self::InspectForWrite | Self::Read | Self::Remove => WindowsCreateDisposition::Open,
             Self::Write => WindowsCreateDisposition::OpenIf,
         }
     }
@@ -375,6 +376,10 @@ mod tests {
     #[test]
     fn windows_final_operations_open_without_destructive_dispositions() {
         assert_eq!(
+            WindowsFinalOperation::InspectForWrite.create_disposition(),
+            WindowsCreateDisposition::Open
+        );
+        assert_eq!(
             WindowsFinalOperation::Read.create_disposition(),
             WindowsCreateDisposition::Open
         );
@@ -387,6 +392,7 @@ mod tests {
             WindowsCreateDisposition::Open
         );
         assert!(!WindowsFinalOperation::Read.needs_delete_access());
+        assert!(!WindowsFinalOperation::InspectForWrite.needs_delete_access());
         assert!(!WindowsFinalOperation::Write.needs_delete_access());
         assert!(WindowsFinalOperation::Remove.needs_delete_access());
     }

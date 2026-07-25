@@ -47,8 +47,15 @@ pub(super) fn write(
     logical_path: &Utf8Path,
     contents: &[u8],
 ) -> Result<(), WorkspaceError> {
+    if let Some(file) = open_final_if_present(
+        parent,
+        name,
+        logical_path,
+        WindowsFinalOperation::InspectForWrite,
+    )? {
+        make_file_writable(&file, logical_path)?;
+    }
     let mut file = open_final(parent, name, logical_path, WindowsFinalOperation::Write)?;
-    make_file_writable(&file, logical_path)?;
     file.set_len(0)
         .map_err(|error| WorkspaceError::io("truncate worker file", logical_path, error))?;
     file.write_all(contents)
@@ -72,20 +79,47 @@ fn open_final(
     logical_path: &Utf8Path,
     operation: WindowsFinalOperation,
 ) -> Result<File, WorkspaceError> {
-    let name = name.to_string_lossy();
-    if !windows_final_name_is_valid(&name) {
-        return Err(WorkspaceError::InvalidPath {
-            path: logical_path.to_owned(),
-        });
+    validate_final_name(name, logical_path)?;
+    match open_final_handle(parent, name, operation) {
+        Ok(file) => validate_opened_file(file, logical_path),
+        Err(error) => Err(WorkspaceError::io(
+            operation_name(operation),
+            logical_path,
+            error,
+        )),
     }
+}
+
+fn open_final_if_present(
+    parent: &File,
+    name: &OsStr,
+    logical_path: &Utf8Path,
+    operation: WindowsFinalOperation,
+) -> Result<Option<File>, WorkspaceError> {
+    validate_final_name(name, logical_path)?;
+    match open_final_handle(parent, name, operation) {
+        Ok(file) => validate_opened_file(file, logical_path).map(Some),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(WorkspaceError::io(
+            operation_name(operation),
+            logical_path,
+            error,
+        )),
+    }
+}
+
+fn open_final_handle(
+    parent: &File,
+    name: &OsStr,
+    operation: WindowsFinalOperation,
+) -> Result<File, io::Error> {
+    let name = name.to_string_lossy();
     let mut wide = OsStr::new(name.as_ref()).encode_wide().collect::<Vec<_>>();
     let byte_len = wide
         .len()
         .checked_mul(size_of::<u16>())
         .and_then(|length| u16::try_from(length).ok())
-        .ok_or_else(|| WorkspaceError::InvalidPath {
-            path: logical_path.to_owned(),
-        })?;
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "file name is too long"))?;
     let unicode_name = UNICODE_STRING {
         Length: byte_len,
         MaximumLength: byte_len,
@@ -122,14 +156,23 @@ fn open_final(
         )
     };
     if status < 0 {
-        return Err(WorkspaceError::io(
-            operation_name(operation),
-            logical_path,
-            io_error_from_ntstatus(status),
-        ));
+        return Err(io_error_from_ntstatus(status));
     }
     // SAFETY: successful `NtCreateFile` returns one newly owned kernel handle.
-    let file = unsafe { File::from_raw_handle(handle as _) };
+    Ok(unsafe { File::from_raw_handle(handle as _) })
+}
+
+fn validate_final_name(name: &OsStr, logical_path: &Utf8Path) -> Result<(), WorkspaceError> {
+    if windows_final_name_is_valid(&name.to_string_lossy()) {
+        Ok(())
+    } else {
+        Err(WorkspaceError::InvalidPath {
+            path: logical_path.to_owned(),
+        })
+    }
+}
+
+fn validate_opened_file(file: File, logical_path: &Utf8Path) -> Result<File, WorkspaceError> {
     let metadata = file
         .metadata()
         .map_err(|error| WorkspaceError::io("inspect worker file", logical_path, error))?;
@@ -145,6 +188,7 @@ fn open_final(
 const fn desired_access(operation: WindowsFinalOperation) -> u32 {
     let common = SYNCHRONIZE | FILE_READ_ATTRIBUTES;
     match operation {
+        WindowsFinalOperation::InspectForWrite => common | FILE_WRITE_ATTRIBUTES,
         WindowsFinalOperation::Read => common | FILE_READ_DATA,
         WindowsFinalOperation::Write => common | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES,
         WindowsFinalOperation::Remove => common | DELETE | FILE_WRITE_ATTRIBUTES,
@@ -153,6 +197,7 @@ const fn desired_access(operation: WindowsFinalOperation) -> u32 {
 
 const fn operation_name(operation: WindowsFinalOperation) -> &'static str {
     match operation {
+        WindowsFinalOperation::InspectForWrite => "prepare worker file",
         WindowsFinalOperation::Read => "read worker file",
         WindowsFinalOperation::Write => "write worker file",
         WindowsFinalOperation::Remove => "remove worker file",
@@ -207,6 +252,14 @@ mod tests {
 
     #[test]
     fn access_profiles_match_operation_side_effects() {
+        assert_eq!(
+            desired_access(WindowsFinalOperation::InspectForWrite) & FILE_WRITE_DATA,
+            0
+        );
+        assert_ne!(
+            desired_access(WindowsFinalOperation::InspectForWrite) & FILE_WRITE_ATTRIBUTES,
+            0
+        );
         assert_eq!(desired_access(WindowsFinalOperation::Read) & DELETE, 0);
         assert_eq!(desired_access(WindowsFinalOperation::Write) & DELETE, 0);
         assert_ne!(desired_access(WindowsFinalOperation::Remove) & DELETE, 0);
