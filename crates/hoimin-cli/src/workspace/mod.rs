@@ -168,6 +168,7 @@ fn permission_fingerprint(permissions: &fs::Permissions) -> PermissionFingerprin
     permissions.mode()
 }
 
+// Kept for the mutation path until its capability-relative migration in Task 3.
 fn resolve_worker_path(root: &Utf8Path, path: &Utf8Path) -> Result<Utf8PathBuf, WorkspaceError> {
     if !hoimin_core::normalized_relative_path(path.as_str()) {
         return Err(WorkspaceError::InvalidPath {
@@ -311,9 +312,7 @@ impl WorkerWorkspace {
     /// # Errors
     /// Returns `InvalidPath` or an I/O failure when the path cannot be read.
     pub fn read(&self, path: impl AsRef<Utf8Path>) -> Result<Vec<u8>, WorkspaceError> {
-        let path = path.as_ref();
-        let destination = resolve_worker_path(self.root.path(), path)?;
-        fs::read(destination).map_err(|error| WorkspaceError::io("read worker file", path, error))
+        self.root.read(path.as_ref())
     }
 
     /// # Errors
@@ -323,33 +322,19 @@ impl WorkerWorkspace {
         path: impl AsRef<Utf8Path>,
         contents: &[u8],
     ) -> Result<(), WorkspaceError> {
-        let path = path.as_ref();
-        let destination = resolve_worker_path(self.root.path(), path)?;
-        if let Some(parent) = destination.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|error| WorkspaceError::io("create worker directory", parent, error))?;
-        }
-        if destination.exists() {
-            make_writable(&destination)?;
-        }
-        fs::write(destination, contents)
-            .map_err(|error| WorkspaceError::io("write worker file", path, error))
+        self.root.write(path.as_ref(), contents)
     }
 
     /// # Errors
     /// Returns `InvalidPath` or an I/O failure when the file cannot be removed.
     pub fn remove(&mut self, path: impl AsRef<Utf8Path>) -> Result<(), WorkspaceError> {
-        let path = path.as_ref();
-        let destination = resolve_worker_path(self.root.path(), path)?;
-        make_writable(&destination)?;
-        fs::remove_file(destination)
-            .map_err(|error| WorkspaceError::io("remove worker file", path, error))
+        self.root.remove_file(path.as_ref())
     }
 
     /// # Errors
     /// Returns `InvalidPath` when the supplied path is not root-relative.
     pub fn exists(&self, path: impl AsRef<Utf8Path>) -> Result<bool, WorkspaceError> {
-        Ok(resolve_worker_path(self.root.path(), path.as_ref())?.exists())
+        self.root.try_exists(path.as_ref())
     }
 
     /// # Errors

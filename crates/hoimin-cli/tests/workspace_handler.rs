@@ -77,6 +77,25 @@ fn reset_restores_changed_and_deleted_files_and_removes_new_files() {
 }
 
 #[test]
+fn file_apis_create_nested_replace_read_only_and_remove_files() {
+    let project = FixtureProject::new();
+    let mut worker = create_worker(project.root());
+    let read_only = worker.root().join("pkg/a.py");
+    let mut permissions = fs::metadata(&read_only).unwrap().permissions();
+    permissions.set_readonly(true);
+    fs::set_permissions(&read_only, permissions).unwrap();
+
+    worker.write("generated/nested.txt", b"nested\n").unwrap();
+    worker.write("pkg/a.py", b"replacement\n").unwrap();
+
+    assert_eq!(worker.read("generated/nested.txt").unwrap(), b"nested\n");
+    assert_eq!(worker.read("pkg/a.py").unwrap(), b"replacement\n");
+    assert!(!worker.exists("missing.txt").unwrap());
+    worker.remove("generated/nested.txt").unwrap();
+    assert!(!worker.exists("generated/nested.txt").unwrap());
+}
+
+#[test]
 fn excludes_git_venv_and_caches() {
     let project = FixtureProject::new();
     for path in [

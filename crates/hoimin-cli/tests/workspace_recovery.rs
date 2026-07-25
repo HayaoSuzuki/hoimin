@@ -422,6 +422,74 @@ fn root_relative_file_apis_reject_symlink_escape() {
     assert!(!outside.path().join("new.txt").exists());
 }
 
+#[test]
+fn root_relative_file_apis_reject_final_link_without_touching_outside() {
+    let project = tempfile::tempdir().unwrap();
+    let root = Utf8Path::from_path(project.path()).unwrap();
+    write(root, "pkg/a.py", b"original\n");
+    let outside = tempfile::tempdir().unwrap();
+    let sentinel = outside.path().join("sentinel.txt");
+    fs::write(&sentinel, b"outside").unwrap();
+    let mut handler = handler(root, 1);
+    let (_ledger, grant) = preflight_and_grant(&mut handler, 9);
+    handler
+        .handle_create_worker(grant.create_worker(EffectId(136), 0).unwrap())
+        .unwrap();
+    let link = handler.worker(0).unwrap().root().join("sentinel-link");
+    if create_file_symlink(&sentinel, link.as_std_path()).is_err() {
+        return;
+    }
+
+    assert!(matches!(
+        handler
+            .worker_mut(0)
+            .unwrap()
+            .write("sentinel-link", b"changed"),
+        Err(WorkspaceError::InvalidPath { .. })
+    ));
+    assert!(matches!(
+        handler.worker_mut(0).unwrap().remove("sentinel-link"),
+        Err(WorkspaceError::InvalidPath { .. })
+    ));
+    assert_eq!(fs::read(&sentinel).unwrap(), b"outside");
+}
+
+#[test]
+fn root_relative_file_apis_remain_bound_to_open_worker_root() {
+    let project = tempfile::tempdir().unwrap();
+    let root = Utf8Path::from_path(project.path()).unwrap();
+    write(root, "pkg/a.py", b"original\n");
+    let mut handler = handler(root, 1);
+    let (_ledger, grant) = preflight_and_grant(&mut handler, 9);
+    handler
+        .handle_create_worker(grant.create_worker(EffectId(137), 0).unwrap())
+        .unwrap();
+    let worker_root = handler.worker(0).unwrap().root().to_owned();
+    let moved_root = worker_root.with_extension("moved");
+    if fs::rename(&worker_root, &moved_root).is_err() {
+        return;
+    }
+    fs::create_dir(&worker_root).unwrap();
+    fs::write(worker_root.join("sentinel.txt"), b"outside").unwrap();
+
+    handler
+        .worker_mut(0)
+        .unwrap()
+        .write("sentinel.txt", b"worker")
+        .unwrap();
+
+    assert_eq!(
+        fs::read(moved_root.join("sentinel.txt")).unwrap(),
+        b"worker"
+    );
+    assert_eq!(
+        fs::read(worker_root.join("sentinel.txt")).unwrap(),
+        b"outside"
+    );
+    fs::remove_dir_all(&worker_root).unwrap();
+    fs::rename(&moved_root, &worker_root).unwrap();
+}
+
 #[cfg(unix)]
 fn create_dir_symlink(target: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
     std::os::unix::fs::symlink(target, link)
@@ -430,6 +498,16 @@ fn create_dir_symlink(target: &std::path::Path, link: &std::path::Path) -> std::
 #[cfg(windows)]
 fn create_dir_symlink(target: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
     std::os::windows::fs::symlink_dir(target, link)
+}
+
+#[cfg(unix)]
+fn create_file_symlink(target: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+}
+
+#[cfg(windows)]
+fn create_file_symlink(target: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_file(target, link)
 }
 
 #[test]
