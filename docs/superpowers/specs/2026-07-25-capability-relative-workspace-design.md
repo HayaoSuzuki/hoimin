@@ -16,8 +16,8 @@ than falling back to the current check-then-use sequence.
 
 ## Decision
 
-Introduce a private `WorkerRoot` abstraction backed by the `cap-std` and
-`cap-primitives` filesystem APIs.
+Introduce a private `WorkerRoot` abstraction backed by the `cap-primitives`
+filesystem APIs and `cap-fs-ext` no-follow open options.
 
 - `WorkerRoot` owns an open handle for the materialized worker root and retains
   its path only for display and process-working-directory compatibility.
