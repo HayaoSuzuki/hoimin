@@ -88,7 +88,7 @@ impl WorkerWorkspace {
         }
 
         let matches = self.matches_snapshot()?;
-        hoimin_core::contract_ensure!("workspace.reset.post", matches, self.root.as_str(),);
+        hoimin_core::contract_ensure!("workspace.reset.post", matches, self.root.path().as_str(),);
         if matches {
             Ok(())
         } else {
