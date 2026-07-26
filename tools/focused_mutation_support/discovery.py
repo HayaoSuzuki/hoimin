@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 import re
-from typing import Protocol, Sequence
+from typing import Callable, Protocol, Sequence
 
 from .model import Candidate
 
@@ -27,7 +27,7 @@ class RepositorySnapshot:
 
 
 class CommandProbe(Protocol):
-    def text(self, argv: list[str]) -> str:
+    def text(self, argv: list[str], timeout: float) -> str:
         raise NotImplementedError
 
 
@@ -96,17 +96,24 @@ def _line_paths(text: str) -> tuple[str, ...]:
 
 
 def discover_repository(
-    repository: Path, base: str, probe: CommandProbe
+    repository: Path,
+    base: str,
+    probe: CommandProbe,
+    timeout: Callable[[], float],
 ) -> RepositorySnapshot:
-    root_text = probe.text(["git", "rev-parse", "--show-toplevel"]).strip()
+    root_text = probe.text(
+        ["git", "rev-parse", "--show-toplevel"], timeout()
+    ).strip()
     root = Path(root_text)
     expected_root = repository.resolve()
     if not root.is_absolute() or root.resolve() != expected_root:
         raise ValueError(
             f"git repository root {root} does not match requested root {repository}"
         )
-    head = probe.text(["git", "rev-parse", "HEAD"]).strip()
-    branch = probe.text(["git", "branch", "--show-current"]).strip()
+    head = probe.text(["git", "rev-parse", "HEAD"], timeout()).strip()
+    branch = probe.text(
+        ["git", "branch", "--show-current"], timeout()
+    ).strip()
     status = probe.text(
         [
             "git",
@@ -114,7 +121,8 @@ def discover_repository(
             "--porcelain=v1",
             "-z",
             "--untracked-files=all",
-        ]
+        ],
+        timeout(),
     )
     changed = probe.text(
         [
@@ -125,10 +133,12 @@ def discover_repository(
             f"{base}...HEAD",
             "--",
             "*.rs",
-        ]
+        ],
+        timeout(),
     )
     history = probe.text(
-        ["git", "log", "--first-parent", "-20", "--name-only", "--format="]
+        ["git", "log", "--first-parent", "-20", "--name-only", "--format="],
+        timeout(),
     )
     return RepositorySnapshot(
         root=root,
@@ -145,6 +155,7 @@ def discover_candidates(
     explicit_files: Sequence[str],
     explicit_symbols: Sequence[str],
     probe: CommandProbe,
+    timeout: Callable[[], float],
 ) -> list[Candidate]:
     seen_paths: set[str] = set()
     candidates: list[Candidate] = []
@@ -190,7 +201,8 @@ def discover_candidates(
     )
     if requested_symbols:
         inventory = probe.text(
-            ["rg", "--files", "--glob", "*.rs", str(snapshot.root)]
+            ["rg", "--files", "--glob", "*.rs", str(snapshot.root)],
+            timeout(),
         )
         resolved_root = snapshot.root.resolve()
         for value in inventory.splitlines():

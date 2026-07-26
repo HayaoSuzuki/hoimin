@@ -14,11 +14,11 @@ from tools.focused_mutation_support.ranking import rank_candidates
 class FakeProbe:
     def __init__(self, replies: dict[tuple[str, ...], str]):
         self.replies = replies
-        self.calls: list[tuple[str, ...]] = []
+        self.calls: list[tuple[tuple[str, ...], float]] = []
 
-    def text(self, argv: list[str]) -> str:
+    def text(self, argv: list[str], timeout: float) -> str:
         key = tuple(argv)
-        self.calls.append(key)
+        self.calls.append((key, timeout))
         return self.replies[key]
 
 
@@ -45,7 +45,7 @@ class DiscoveryTests(unittest.TestCase):
             snapshot = RepositorySnapshot(root, "abc", "feature", (), (), ())
 
             candidates = discover_candidates(
-                snapshot, (), ("cancel",), probe
+                snapshot, (), ("cancel",), probe, lambda: 17.0
             )
 
         self.assertEqual(
@@ -54,7 +54,7 @@ class DiscoveryTests(unittest.TestCase):
         )
         self.assertEqual(
             probe.calls,
-            [("rg", "--files", "--glob", "*.rs", str(root))],
+            [(("rg", "--files", "--glob", "*.rs", str(root)), 17.0)],
         )
 
     def test_explicit_rust_file_overrides_implicit_path_exclusions(self) -> None:
@@ -77,6 +77,7 @@ class DiscoveryTests(unittest.TestCase):
                 ("tests/generated/fixture.rs",),
                 (),
                 FakeProbe({}),
+                lambda: 10.0,
             )
 
         self.assertEqual(
@@ -107,7 +108,9 @@ class DiscoveryTests(unittest.TestCase):
                 ("crates/core/src/recent.rs",),
             )
 
-            candidates = discover_candidates(snapshot, (), (), FakeProbe({}))
+            candidates = discover_candidates(
+                snapshot, (), (), FakeProbe({}), lambda: 10.0
+            )
 
         self.assertEqual(len(candidates), 10)
         self.assertEqual(candidates[-1].symbol, "recent_first")
@@ -128,7 +131,9 @@ class DiscoveryTests(unittest.TestCase):
                 root, "abc", "feature", paths, (), ()
             )
 
-            candidates = discover_candidates(snapshot, (), (), FakeProbe({}))
+            candidates = discover_candidates(
+                snapshot, (), (), FakeProbe({}), lambda: 10.0
+            )
 
         self.assertEqual(
             [item.path for item in candidates],
@@ -194,7 +199,10 @@ class DiscoveryTests(unittest.TestCase):
             }
         )
 
-        snapshot = discover_repository(Path("/repo"), "origin/main", probe)
+        timeouts = iter((12.0, 11.0, 10.0, 9.0, 8.0, 7.0))
+        snapshot = discover_repository(
+            Path("/repo"), "origin/main", probe, lambda: next(timeouts)
+        )
 
         self.assertEqual(snapshot.root, Path("/repo"))
         self.assertEqual(snapshot.dirty_paths, ("crates/core/src/dirty.rs",))
@@ -203,33 +211,21 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(
             probe.calls,
             [
-                ("git", "rev-parse", "--show-toplevel"),
-                ("git", "rev-parse", "HEAD"),
-                ("git", "branch", "--show-current"),
-                (
-                    "git",
-                    "status",
-                    "--porcelain=v1",
-                    "-z",
+                (("git", "rev-parse", "--show-toplevel"), 12.0),
+                (("git", "rev-parse", "HEAD"), 11.0),
+                (("git", "branch", "--show-current"), 10.0),
+                ((
+                    "git", "status", "--porcelain=v1", "-z",
                     "--untracked-files=all",
-                ),
-                (
-                    "git",
-                    "diff",
-                    "--name-only",
-                    "-z",
-                    "origin/main...HEAD",
-                    "--",
-                    "*.rs",
-                ),
-                (
-                    "git",
-                    "log",
-                    "--first-parent",
-                    "-20",
-                    "--name-only",
-                    "--format=",
-                ),
+                ), 9.0),
+                ((
+                    "git", "diff", "--name-only", "-z",
+                    "origin/main...HEAD", "--", "*.rs",
+                ), 8.0),
+                ((
+                    "git", "log", "--first-parent", "-20",
+                    "--name-only", "--format=",
+                ), 7.0),
             ],
         )
 
@@ -276,6 +272,7 @@ class DiscoveryTests(unittest.TestCase):
                 explicit_files=("crates/core/src/explicit.rs",),
                 explicit_symbols=(),
                 probe=FakeProbe({}),
+                timeout=lambda: 10.0,
             )
 
         self.assertEqual(len(candidates), 10)
@@ -304,7 +301,9 @@ class DiscoveryTests(unittest.TestCase):
         )
 
         with self.assertRaises(ValueError):
-            discover_candidates(snapshot, (), (), FakeProbe({}))
+            discover_candidates(
+                snapshot, (), (), FakeProbe({}), lambda: 10.0
+            )
 
     def test_ranking_uses_explicit_risk_signals_and_stable_ties(self) -> None:
         snapshot = RepositorySnapshot(

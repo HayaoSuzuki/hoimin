@@ -9,10 +9,15 @@ def render_markdown(record: RunRecord) -> str:
     elapsed = record.elapsed_seconds if record.elapsed_seconds is not None else 0.0
     head = record.repository.get("head", "unknown")
     dirty = "yes" if record.repository.get("dirty", False) else "no"
+    conclusive_states = {
+        CandidateState.KILLED,
+        CandidateState.SURVIVED,
+        CandidateState.UNVIABLE,
+    }
     verified = [
         candidate
         for candidate in record.candidates
-        if candidate.state not in {CandidateState.PENDING, CandidateState.NOT_RUN}
+        if candidate.state in conclusive_states
     ]
     investigation = [
         candidate
@@ -28,7 +33,7 @@ def render_markdown(record: RunRecord) -> str:
     unverified = [
         candidate
         for candidate in record.candidates
-        if candidate.state in {CandidateState.PENDING, CandidateState.NOT_RUN}
+        if candidate.state not in conclusive_states
     ]
     lines = [
         "# Focused mutation report",
@@ -55,7 +60,8 @@ def render_markdown(record: RunRecord) -> str:
         lines.append("- none")
     lines.extend(["", "## Unverified candidates"])
     lines.extend(
-        f"- {_code(item.symbol)} — {item.not_run_reason or 'not_run'}"
+        f"- {_code(item.symbol)} — "
+        f"{item.not_run_reason or item.state.value}"
         for item in unverified
     )
     if not unverified:

@@ -108,11 +108,20 @@ class FakeClock:
 
 
 class WorkflowProbe:
-    def __init__(self, root: Path, *, dirty: bool = False) -> None:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        dirty: bool = False,
+        timeout_command: str | None = None,
+    ) -> None:
         self.root = root
         self.dirty = dirty
+        self.timeout_command = timeout_command
 
-    def text(self, argv: list[str]) -> str:
+    def text(self, argv: list[str], timeout: float) -> str:
+        if self.timeout_command in argv:
+            raise subprocess.TimeoutExpired(argv, timeout)
         replies = {
             ("git", "rev-parse", "--show-toplevel"): f"{self.root}\n",
             ("git", "rev-parse", "HEAD"): "abc\n",
@@ -281,6 +290,41 @@ class FocusedMutationReportingTests(unittest.TestCase):
         self.assertIn("`b` — reporting_reserve", markdown)
         self.assertLess(markdown.index("`a`"), markdown.index("`b`"))
 
+    def test_timeout_and_error_are_unverified_and_recommended_in_record_order(self) -> None:
+        record = fixture_record(
+            candidates=[
+                fixture_candidate("timed", CandidateState.TIMEOUT),
+                fixture_candidate("broken", CandidateState.ERROR),
+                fixture_candidate("killed", CandidateState.KILLED),
+            ],
+            state=RunState.COMPLETED,
+        )
+
+        markdown = render_markdown(record)
+        verified = markdown.split("## Verified candidates", 1)[1].split(
+            "## Investigation results", 1
+        )[0]
+        unverified = markdown.split("## Unverified candidates", 1)[1].split(
+            "## Next recommended order", 1
+        )[0]
+        recommended = markdown.split("## Next recommended order", 1)[1].split(
+            "## Manual classification", 1
+        )[0]
+
+        self.assertIn("`killed` — killed", verified)
+        self.assertNotIn("`timed`", verified)
+        self.assertNotIn("`broken`", verified)
+        self.assertIn("`timed` — timeout", unverified)
+        self.assertIn("`broken` — error", unverified)
+        self.assertIn("1. `timed`", recommended)
+        self.assertIn("2. `broken`", recommended)
+        self.assertLess(recommended.index("`timed`"), recommended.index("`broken`"))
+        encoded = json.loads(json.dumps(record.to_dict()))
+        self.assertEqual(
+            [item["state"] for item in encoded["candidates"]],
+            ["timeout", "error", "killed"],
+        )
+
     def test_baseline_failure_checkpoints_and_skips_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             options, dependencies, runner = workflow_fixture(
@@ -355,6 +399,62 @@ class FocusedMutationReportingTests(unittest.TestCase):
                         for item in record.candidates
                     )
                 )
+
+    def test_git_probe_timeout_is_command_failure_without_candidate_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            options, dependencies, _ = workflow_fixture(directory)
+            dependencies = Dependencies(
+                dependencies.monotonic,
+                dependencies.utc_now,
+                WorkflowProbe(options.repository, timeout_command="status"),
+                dependencies.runner,
+            )
+
+            record = run_workflow(options, dependencies)
+
+        self.assertEqual(record.state, RunState.COMMAND_FAILED)
+        self.assertFalse(
+            any(item.state is CandidateState.TIMEOUT for item in record.candidates)
+        )
+
+    def test_initial_repository_validation_uses_overall_budget_deadline(self) -> None:
+        repository_result = subprocess.CompletedProcess(
+            ["git"], 0, stdout=str(Path.cwd()), stderr=""
+        )
+        clock = mock.Mock(side_effect=[100.0, 130.0])
+        record = fixture_record(candidates=[], state=RunState.COMPLETED)
+        with (
+            mock.patch("tools.focused_mutation.time.monotonic", clock),
+            mock.patch(
+                "tools.focused_mutation.subprocess.run",
+                return_value=repository_result,
+            ) as run,
+            mock.patch(
+                "tools.focused_mutation.run_workflow",
+                return_value=record,
+            ) as workflow,
+        ):
+            self.assertEqual(main(["--budget", "3m", "--output", "/tmp/out"]), 0)
+
+        self.assertEqual(run.call_args.kwargs["timeout"], 30.0)
+        self.assertEqual(
+            run.call_args.args[0],
+            ["git", "rev-parse", "--show-toplevel"],
+        )
+        self.assertFalse(run.call_args.kwargs["shell"])
+        self.assertEqual(workflow.call_args.kwargs["budget"].started, 100.0)
+
+    def test_initial_repository_validation_timeout_exits_two(self) -> None:
+        with (
+            mock.patch(
+                "tools.focused_mutation.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(["git"], 1.0),
+            ),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            main(["--budget", "3s", "--output", "/tmp/out"])
+
+        self.assertEqual(raised.exception.code, 2)
 
     def test_baseline_timeout_is_baseline_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

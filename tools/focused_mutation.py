@@ -20,7 +20,12 @@ from tools.focused_mutation_support.discovery import (
     discover_candidates,
     discover_repository,
 )
-from tools.focused_mutation_support.model import CandidateState, RunRecord, RunState
+from tools.focused_mutation_support.model import (
+    CandidateState,
+    CommandRecord,
+    RunRecord,
+    RunState,
+)
 from tools.focused_mutation_support.mutation import (
     build_baseline_command,
     build_list_command,
@@ -63,7 +68,7 @@ class SubprocessProbe:
     def __init__(self, cwd: Path) -> None:
         self.cwd = cwd
 
-    def text(self, argv: list[str]) -> str:
+    def text(self, argv: list[str], timeout: float) -> str:
         return subprocess.run(
             argv,
             cwd=self.cwd,
@@ -71,10 +76,11 @@ class SubprocessProbe:
             capture_output=True,
             text=True,
             shell=False,
+            timeout=timeout,
         ).stdout
 
 
-def _read_stdout(command: object) -> str:
+def _read_stdout(command: CommandRecord) -> str:
     return Path(command.stdout_path).read_text(encoding="utf-8")
 
 
@@ -113,9 +119,15 @@ def _comparison(path: Path | None, focused_count: int) -> dict[str, object] | No
     }
 
 
-def run_workflow(options: Options, dependencies: Dependencies) -> RunRecord:
-    started = dependencies.monotonic()
-    budget = RunBudget.start(options.budget_seconds, started)
+def run_workflow(
+    options: Options,
+    dependencies: Dependencies,
+    *,
+    budget: RunBudget | None = None,
+) -> RunRecord:
+    if budget is None:
+        budget = RunBudget.start(options.budget_seconds, dependencies.monotonic())
+    started = budget.started
     record = RunRecord.new(options.budget_seconds)
     record.started_at = dependencies.utc_now().isoformat()
     store = RunStore(options.output)
@@ -142,7 +154,15 @@ def run_workflow(options: Options, dependencies: Dependencies) -> RunRecord:
         return command
 
     try:
-        snapshot = discover_repository(options.repository, options.base, dependencies.probe)
+        discovery_timeout = lambda: budget.discovery_timeout(
+            dependencies.monotonic()
+        )
+        snapshot = discover_repository(
+            options.repository,
+            options.base,
+            dependencies.probe,
+            discovery_timeout,
+        )
         record.repository = {
             "root": str(snapshot.root),
             "head": snapshot.head,
@@ -153,7 +173,11 @@ def run_workflow(options: Options, dependencies: Dependencies) -> RunRecord:
         }
         checkpoint()
         selected = discover_candidates(
-            snapshot, options.files, options.symbols, dependencies.probe
+            snapshot,
+            options.files,
+            options.symbols,
+            dependencies.probe,
+            discovery_timeout,
         )
         selected = rank_candidates(
             selected, snapshot, options.files, options.symbols
@@ -280,6 +304,10 @@ def run_workflow(options: Options, dependencies: Dependencies) -> RunRecord:
     except (CommandInterrupted, KeyboardInterrupt):
         record.state = RunState.INTERRUPTED
         _mark_pending(record, "interrupted")
+    except subprocess.TimeoutExpired as error:
+        record.state = RunState.COMMAND_FAILED
+        record.error = f"{error.cmd} timed out"
+        _mark_pending(record, "command_failed")
     except (OSError, subprocess.SubprocessError) as error:
         record.state = RunState.TOOL_UNAVAILABLE
         record.error = str(error)
@@ -321,6 +349,8 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     try:
+        budget_seconds = parse_duration(arguments.budget)
+        budget = RunBudget.start(budget_seconds, time.monotonic())
         repository = Path(
             subprocess.run(
                 ["git", "rev-parse", "--show-toplevel"],
@@ -328,12 +358,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 capture_output=True,
                 text=True,
                 shell=False,
+                timeout=budget.discovery_timeout(time.monotonic()),
             ).stdout.strip()
         ).resolve()
         options = Options(
             repository,
             arguments.output.resolve(),
-            parse_duration(arguments.budget),
+            budget_seconds,
             arguments.base,
             tuple(arguments.file),
             tuple(arguments.symbol),
@@ -350,6 +381,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 SubprocessProbe(repository),
                 runner,
             ),
+            budget=budget,
         )
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         _parser().error(str(error))
