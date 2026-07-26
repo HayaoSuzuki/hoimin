@@ -316,6 +316,7 @@ impl WorkerWorkspace {
         if self.cleanup_complete {
             return Ok(());
         }
+        self.root.close();
         make_tree_writable(self.temp.path())?;
         match fs::remove_dir_all(self.temp.path()) {
             Ok(()) => {

@@ -116,7 +116,7 @@ fn windows_final_name_is_valid(name: &str) -> bool {
 #[derive(Debug)]
 pub(crate) struct WorkerRoot {
     path: Utf8PathBuf,
-    handle: File,
+    handle: Option<File>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -194,11 +194,24 @@ impl WorkerRoot {
             cap_primitives::ambient_authority(),
         )
         .map_err(|error| WorkspaceError::io("open worker root", &path, error))?;
-        Ok(Self { path, handle })
+        Ok(Self {
+            path,
+            handle: Some(handle),
+        })
     }
 
     pub(crate) fn path(&self) -> &Utf8Path {
         &self.path
+    }
+
+    pub(crate) fn close(&mut self) {
+        self.handle = None;
+    }
+
+    fn handle(&self) -> &File {
+        self.handle
+            .as_ref()
+            .expect("worker root capability is open")
     }
 
     pub(crate) fn read(&self, path: &Utf8Path) -> Result<Vec<u8>, WorkspaceError> {
@@ -360,7 +373,7 @@ impl WorkerRoot {
 
     pub(crate) fn entries(&self) -> Result<Vec<WorkerEntry>, WorkspaceError> {
         let mut entries = Vec::new();
-        Self::collect_entries(&self.handle, Utf8Path::new(""), &mut entries)?;
+        Self::collect_entries(self.handle(), Utf8Path::new(""), &mut entries)?;
         entries.sort_by(|left, right| {
             left.path
                 .components()
@@ -603,7 +616,7 @@ impl WorkerRoot {
         let components = Self::components(path)?;
         let (name, parents) = components.split_last().expect("validated nonempty path");
         let mut parent = self
-            .handle
+            .handle()
             .try_clone()
             .map_err(|error| WorkspaceError::io("clone worker root", path, error))?;
 
