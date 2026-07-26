@@ -20,6 +20,60 @@ After changing the Rust analyzer or its tests, run mutation analysis with:
 uv run hoimin run --root . --file crates/hoimin-cli/src/analyzer/mod.rs --max-candidates 1000 --max-mutants 1000 --jobs 1 --total-timeout 10m --allow-best-effort-memory --format json -- cargo test --workspace
 ```
 
+## Focused 30-minute Rust mutation workflow
+
+Use `tools/focused_mutation.py` to collect bounded evidence about the
+highest-ranked Rust changes. It requires `cargo-mutants` 27.1.0. Run it from
+the repository worktree and put its artifacts outside the repository:
+
+```console
+output_dir="$(mktemp -d /tmp/hoimin-focused-run.XXXXXX)"
+uv run --frozen python tools/focused_mutation.py \
+  --budget 30m \
+  --base origin/main \
+  --output "$output_dir"
+```
+
+For a fixed path in automation, the equivalent output argument is
+`--output /tmp/hoimin-focused-run`. Do not name the output directory with a
+`mutants.out` prefix.
+
+By default, the tool discovers eligible Rust files changed from `--base` and
+ranks their cargo-mutants inventory. Repeat `--file PATH` and `--symbol NAME`
+to explicitly focus discovery; either selector can be supplied more than once.
+Add `--iterate` only when deliberately reusing cargo-mutants' prior caught and
+unviable results during test development. The 30-minute budget reserves the
+last five minutes for checkpointing and reporting, so it stops starting
+mutations at that boundary.
+
+`run.json` is the checkpointed machine-readable record and source of truth.
+`report.md` is its human-readable summary; per-command arguments, stdout, and
+stderr are retained below the same output directory. These files are updated
+during the run, and the tool attempts a final checkpoint and report after a
+timeout, interruption, baseline failure, or tool error. Treat such output as a
+partial report: candidates marked `not_run`, `pending`, `timeout`, `unviable`,
+or `error` remain unverified.
+
+Exit code `0` means the run reached `completed` or `budget_exhausted`; the
+latter is an expected bounded result, not evidence that every candidate ran.
+Exit code `130` means interruption. Exit code `2` means a configuration,
+baseline, cargo-mutants, command, or reporting failure. A killed mutant is
+evidence that the selected test command detects that change. A survivor is not proof of a bug.
+Manually classify each survived result by inspecting the exact mutation,
+relevant production behavior, tests, and recorded command artifacts.
+Also investigate timeouts, unviable mutants, errors, and unverified candidates
+instead of treating them as passes.
+
+To measure how much a focused run reduced the candidate set, pass a compatible
+previous full `run.json` with `--prior-inventory PATH`. The report then compares
+the focused candidate count with that inventory; without it, the reduction
+ratio is explicitly unmeasured. This comparison does not make a focused run a
+complete inventory.
+
+Focused results guide short test-improvement loops, but release evidence still
+requires the full command below. Run `cargo mutants --workspace` after the
+focused work, and do not use `--iterate` for the required final inventory.
+
 ## Rust mutation testing
 
 Install `cargo-mutants` locally, then use the full command to discover every
