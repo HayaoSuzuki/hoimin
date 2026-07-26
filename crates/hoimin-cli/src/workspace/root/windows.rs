@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::mem::{size_of, zeroed};
 use std::os::windows::ffi::OsStrExt;
+use std::os::windows::fs::MetadataExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle};
 use std::ptr;
 
@@ -206,9 +207,10 @@ fn open_final_handle(
         Buffer: wide.as_mut_ptr(),
     };
     let attributes = OBJECT_ATTRIBUTES {
-        Length: size_of::<OBJECT_ATTRIBUTES>() as u32,
+        Length: u32::try_from(size_of::<OBJECT_ATTRIBUTES>())
+            .expect("OBJECT_ATTRIBUTES size fits in u32"),
         RootDirectory: parent.as_raw_handle() as HANDLE,
-        ObjectName: &unicode_name,
+        ObjectName: ptr::from_ref(&unicode_name),
         Attributes: OBJ_CASE_INSENSITIVE,
         SecurityDescriptor: ptr::null(),
         SecurityQualityOfService: ptr::null(),
@@ -219,10 +221,10 @@ fn open_final_handle(
     let status = unsafe {
         let mut io_status: IO_STATUS_BLOCK = zeroed();
         NtCreateFile(
-            &mut handle,
+            ptr::from_mut(&mut handle),
             desired_access(operation),
-            &attributes,
-            &mut io_status,
+            ptr::from_ref(&attributes),
+            ptr::from_mut(&mut io_status),
             ptr::null(),
             0,
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
@@ -239,7 +241,7 @@ fn open_final_handle(
         return Err(io_error_from_ntstatus(status));
     }
     // SAFETY: successful `NtCreateFile` returns one newly owned kernel handle.
-    Ok(unsafe { File::from_raw_handle(handle as _) })
+    Ok(unsafe { File::from_raw_handle(handle.cast()) })
 }
 
 const fn create_options(operation: WindowsFinalOperation) -> u32 {
@@ -265,7 +267,6 @@ fn validate_opened_file(file: File, logical_path: &Utf8Path) -> Result<File, Wor
     let metadata = file
         .metadata()
         .map_err(|error| WorkspaceError::io("inspect worker file", logical_path, error))?;
-    use std::os::windows::fs::MetadataExt;
     if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 || !metadata.is_file() {
         return Err(WorkspaceError::InvalidPath {
             path: logical_path.to_owned(),
@@ -287,7 +288,11 @@ fn file_identity(file: &File, logical_path: &Utf8Path) -> Result<(u32, u64), Wor
     // owns a live handle opened with `FILE_READ_ATTRIBUTES`.
     let information = unsafe {
         let mut information: BY_HANDLE_FILE_INFORMATION = zeroed();
-        if GetFileInformationByHandle(file.as_raw_handle() as HANDLE, &mut information) == 0 {
+        if GetFileInformationByHandle(
+            file.as_raw_handle() as HANDLE,
+            ptr::from_mut(&mut information),
+        ) == 0
+        {
             return Err(WorkspaceError::io(
                 "inspect mutation target",
                 logical_path,
@@ -307,11 +312,13 @@ const fn desired_access(operation: WindowsFinalOperation) -> u32 {
     match operation {
         WindowsFinalOperation::InspectForWrite => common | FILE_WRITE_ATTRIBUTES,
         WindowsFinalOperation::InspectMutation => common | FILE_READ_DATA | FILE_WRITE_ATTRIBUTES,
-        WindowsFinalOperation::WriteMutation => common | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES,
+        WindowsFinalOperation::WriteMutation | WindowsFinalOperation::Write => {
+            common | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES
+        }
         WindowsFinalOperation::Read => common | FILE_READ_DATA,
-        WindowsFinalOperation::Write => common | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES,
-        WindowsFinalOperation::Remove => common | DELETE | FILE_WRITE_ATTRIBUTES,
-        WindowsFinalOperation::RemoveEntry => common | DELETE | FILE_WRITE_ATTRIBUTES,
+        WindowsFinalOperation::Remove | WindowsFinalOperation::RemoveEntry => {
+            common | DELETE | FILE_WRITE_ATTRIBUTES
+        }
     }
 }
 
@@ -330,7 +337,8 @@ const fn operation_name(operation: WindowsFinalOperation) -> &'static str {
 
 fn io_error_from_ntstatus(status: i32) -> io::Error {
     // SAFETY: `RtlNtStatusToDosError` accepts every NTSTATUS value.
-    io::Error::from_raw_os_error(unsafe { RtlNtStatusToDosError(status) } as i32)
+    let code = unsafe { RtlNtStatusToDosError(status) };
+    io::Error::from_raw_os_error(i32::try_from(code).unwrap_or(i32::MAX))
 }
 
 fn mark_delete_by_handle(file: &File) -> io::Result<()> {
@@ -346,7 +354,8 @@ fn mark_delete_by_handle(file: &File) -> io::Result<()> {
             file.as_raw_handle() as HANDLE,
             FileDispositionInfoEx,
             ptr::from_ref(&extended).cast::<c_void>(),
-            size_of::<FILE_DISPOSITION_INFO_EX>() as u32,
+            u32::try_from(size_of::<FILE_DISPOSITION_INFO_EX>())
+                .expect("FILE_DISPOSITION_INFO_EX size fits in u32"),
         )
     } != 0
     {
@@ -360,7 +369,8 @@ fn mark_delete_by_handle(file: &File) -> io::Result<()> {
             file.as_raw_handle() as HANDLE,
             FileDispositionInfo,
             ptr::from_ref(&legacy).cast::<c_void>(),
-            size_of::<FILE_DISPOSITION_INFO>() as u32,
+            u32::try_from(size_of::<FILE_DISPOSITION_INFO>())
+                .expect("FILE_DISPOSITION_INFO size fits in u32"),
         )
     } != 0
     {

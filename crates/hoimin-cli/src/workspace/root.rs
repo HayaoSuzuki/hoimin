@@ -207,7 +207,7 @@ impl WorkerRoot {
         parent_opened("read", path);
         #[cfg(windows)]
         {
-            return windows::read(&parent, &name, path);
+            windows::read(&parent, &name, path)
         }
         #[cfg(unix)]
         {
@@ -240,10 +240,10 @@ impl WorkerRoot {
         parent_opened("mutation", path);
         #[cfg(windows)]
         {
-            return windows::open_mutation_file(&parent, &name, path).map(|file| MutationFile {
+            windows::open_mutation_file(&parent, &name, path).map(|file| MutationFile {
                 file,
                 reopen: Some((parent, name)),
-            });
+            })
         }
         #[cfg(unix)]
         {
@@ -295,7 +295,7 @@ impl WorkerRoot {
         #[cfg(windows)]
         {
             make_directory_writable(parent, path)?;
-            return windows::write(parent, name, path, contents);
+            windows::write(parent, name, path, contents)
         }
         #[cfg(unix)]
         {
@@ -329,7 +329,7 @@ impl WorkerRoot {
         #[cfg(windows)]
         {
             make_directory_writable(&parent, path)?;
-            return windows::remove_file(&parent, &name, path);
+            windows::remove_file(&parent, &name, path)
         }
         #[cfg(unix)]
         {
@@ -460,7 +460,7 @@ impl WorkerRoot {
             drop(directory);
             #[cfg(windows)]
             {
-                return windows::remove_entry(parent, name, logical_path);
+                windows::remove_entry(parent, name, logical_path)
             }
             #[cfg(unix)]
             cap_primitives::fs::remove_dir(parent, Path::new(name)).map_err(|error| {
@@ -469,7 +469,7 @@ impl WorkerRoot {
         } else {
             #[cfg(windows)]
             {
-                return windows::remove_file(parent, name, logical_path);
+                windows::remove_file(parent, name, logical_path)
             }
             #[cfg(unix)]
             {
@@ -500,7 +500,7 @@ impl WorkerRoot {
         Self::write_entry(&parent, &name, path, contents)?;
         #[cfg(windows)]
         {
-            return windows::set_permissions(&parent, &name, path, permissions);
+            windows::set_permissions(&parent, &name, path, permissions)
         }
         #[cfg(unix)]
         {
@@ -732,7 +732,7 @@ fn remove_link_or_reparse(
     #[cfg(windows)]
     {
         let _ = metadata;
-        return windows::remove_entry(parent, name, path);
+        windows::remove_entry(parent, name, path)
     }
     #[cfg(unix)]
     let is_directory = metadata.is_dir();
@@ -753,7 +753,10 @@ fn is_nofollow_link_error(error: &io::Error) -> bool {
 
 #[cfg(windows)]
 fn is_nofollow_link_error(error: &io::Error) -> bool {
-    error.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_STOPPED_ON_SYMLINK as i32)
+    error
+        .raw_os_error()
+        .and_then(|code| u32::try_from(code).ok())
+        == Some(windows_sys::Win32::Foundation::ERROR_STOPPED_ON_SYMLINK)
 }
 
 #[cfg(unix)]
