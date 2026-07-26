@@ -206,7 +206,19 @@ mod tests {
         });
 
         opened_rx.recv_timeout(Duration::from_secs(5)).unwrap();
-        fs::rename(root.join("swap"), root.join("held")).unwrap();
+        if let Err(error) = fs::rename(root.join("swap"), root.join("held")) {
+            #[cfg(windows)]
+            {
+                assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+                resume_tx.send(()).unwrap();
+                let (worker, result) = operation.join().unwrap();
+                result.unwrap();
+                assert_eq!(worker.read("swap/target.py").unwrap(), b"mutated!\n");
+                return;
+            }
+            #[cfg(not(windows))]
+            panic!("rename of opened mutation parent failed unexpectedly: {error}");
+        }
         fs::create_dir(root.join("swap")).unwrap();
         let outside = root.join("swap/target.py");
         fs::write(&outside, b"outside\n").unwrap();

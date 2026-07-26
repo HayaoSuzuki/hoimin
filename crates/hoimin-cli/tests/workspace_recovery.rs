@@ -37,6 +37,26 @@ fn preflight_and_grant(
     (ledger, grant)
 }
 
+fn link_created_or_platform_denied(result: std::io::Result<()>) -> bool {
+    match result {
+        Ok(()) => true,
+        Err(error) => {
+            #[cfg(windows)]
+            {
+                assert!(
+                    error.kind() == std::io::ErrorKind::PermissionDenied
+                        || error.kind() == std::io::ErrorKind::Unsupported
+                        || error.raw_os_error() == Some(1314),
+                    "unexpected Windows link setup failure: {error}"
+                );
+                false
+            }
+            #[cfg(not(windows))]
+            panic!("link setup failed unexpectedly: {error}");
+        }
+    }
+}
+
 #[test]
 fn shell_materializes_only_from_a_matching_core_copy_grant() {
     let project = tempfile::tempdir().unwrap();
@@ -404,7 +424,7 @@ fn root_relative_file_apis_reject_symlink_escape() {
         .handle_create_worker(grant.create_worker(EffectId(135), 0).unwrap())
         .unwrap();
     let link = handler.worker(0).unwrap().root().join("escape");
-    if create_dir_symlink(outside.path(), link.as_std_path()).is_err() {
+    if !link_created_or_platform_denied(create_dir_symlink(outside.path(), link.as_std_path())) {
         return;
     }
 
@@ -436,7 +456,7 @@ fn root_relative_file_apis_reject_final_link_without_touching_outside() {
         .handle_create_worker(grant.create_worker(EffectId(136), 0).unwrap())
         .unwrap();
     let link = handler.worker(0).unwrap().root().join("sentinel-link");
-    if create_file_symlink(&sentinel, link.as_std_path()).is_err() {
+    if !link_created_or_platform_denied(create_file_symlink(&sentinel, link.as_std_path())) {
         return;
     }
 
@@ -466,8 +486,23 @@ fn root_relative_file_apis_remain_bound_to_open_worker_root() {
         .unwrap();
     let worker_root = handler.worker(0).unwrap().root().to_owned();
     let moved_root = worker_root.with_extension("moved");
-    if fs::rename(&worker_root, &moved_root).is_err() {
-        return;
+    if let Err(error) = fs::rename(&worker_root, &moved_root) {
+        #[cfg(windows)]
+        {
+            assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+            handler
+                .worker_mut(0)
+                .unwrap()
+                .write("sentinel.txt", b"worker")
+                .unwrap();
+            assert_eq!(
+                fs::read(worker_root.join("sentinel.txt")).unwrap(),
+                b"worker"
+            );
+            return;
+        }
+        #[cfg(not(windows))]
+        panic!("worker-root rename failed unexpectedly: {error}");
     }
     fs::create_dir(&worker_root).unwrap();
     fs::write(worker_root.join("sentinel.txt"), b"outside").unwrap();
@@ -548,7 +583,7 @@ fn reset_removes_worker_link_without_traversing_outside() {
     let outside = tempfile::tempdir().unwrap();
     fs::write(outside.path().join("sentinel"), b"outside").unwrap();
     let link = handler.worker(0).unwrap().root().join("unexpected");
-    if create_dir_symlink(outside.path(), link.as_std_path()).is_err() {
+    if !link_created_or_platform_denied(create_dir_symlink(outside.path(), link.as_std_path())) {
         return;
     }
 

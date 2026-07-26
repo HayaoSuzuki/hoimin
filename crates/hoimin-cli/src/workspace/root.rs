@@ -793,6 +793,27 @@ mod tests {
         resume: Mutex<Receiver<()>>,
     }
 
+    enum ParentReplacement {
+        Replaced(TestPermissionFingerprint),
+        #[cfg(windows)]
+        Denied,
+    }
+
+    impl ParentReplacement {
+        fn permissions(self) -> TestPermissionFingerprint {
+            #[cfg(windows)]
+            match self {
+                Self::Replaced(permissions) => permissions,
+                Self::Denied => unreachable!(),
+            }
+            #[cfg(not(windows))]
+            {
+                let Self::Replaced(permissions) = self;
+                permissions
+            }
+        }
+    }
+
     impl PausedParent {
         fn new(operation: &'static str, path: &str) -> (Arc<Self>, Receiver<()>, SyncSender<()>) {
             let (opened_tx, opened_rx) = sync_channel(0);
@@ -814,16 +835,25 @@ mod tests {
             worker: &Utf8Path,
             opened: &Receiver<()>,
             resume: &SyncSender<()>,
-        ) -> TestPermissionFingerprint {
+        ) -> ParentReplacement {
             opened.recv_timeout(Duration::from_secs(5)).unwrap();
-            fs::rename(worker.join("swap"), worker.join("held")).unwrap();
+            if let Err(error) = fs::rename(worker.join("swap"), worker.join("held")) {
+                #[cfg(windows)]
+                {
+                    assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+                    resume.send(()).unwrap();
+                    return ParentReplacement::Denied;
+                }
+                #[cfg(not(windows))]
+                panic!("rename of opened parent failed unexpectedly: {error}");
+            }
             fs::create_dir(worker.join("swap")).unwrap();
             let outside = worker.join("swap/target");
             fs::write(&outside, b"outside").unwrap();
             make_read_only(&outside);
             let permissions = permission_fingerprint(&outside);
             resume.send(()).unwrap();
-            permissions
+            ParentReplacement::Replaced(permissions)
         }
     }
 
@@ -1039,10 +1069,19 @@ mod tests {
             root.read(Utf8Path::new("swap/target"))
         });
 
-        let outside_permissions = PausedParent::replace_parent(&fixture.worker, &opened, &resume);
+        let replacement = PausedParent::replace_parent(&fixture.worker, &opened, &resume);
         let result = operation.join().unwrap();
 
         assert_eq!(result.unwrap(), b"worker");
+        #[cfg(windows)]
+        if matches!(replacement, ParentReplacement::Denied) {
+            assert_eq!(
+                fs::read(fixture.worker.join("swap/target")).unwrap(),
+                b"worker"
+            );
+            return;
+        }
+        let outside_permissions = replacement.permissions();
         let outside = fixture.worker.join("swap/target");
         assert_eq!(fs::read(&outside).unwrap(), b"outside",);
         assert_eq!(permission_fingerprint(&outside), outside_permissions);
@@ -1061,11 +1100,20 @@ mod tests {
             root.write(Utf8Path::new("swap/target"), b"changed")
         });
 
-        let outside_permissions = PausedParent::replace_parent(&fixture.worker, &opened, &resume);
-        let outside = fixture.worker.join("swap/target");
+        let replacement = PausedParent::replace_parent(&fixture.worker, &opened, &resume);
         let result = operation.join().unwrap();
 
         result.unwrap();
+        #[cfg(windows)]
+        if matches!(replacement, ParentReplacement::Denied) {
+            assert_eq!(
+                fs::read(fixture.worker.join("swap/target")).unwrap(),
+                b"changed"
+            );
+            return;
+        }
+        let outside_permissions = replacement.permissions();
+        let outside = fixture.worker.join("swap/target");
         assert_eq!(
             fs::read(fixture.worker.join("held/target")).unwrap(),
             b"changed"
@@ -1087,11 +1135,17 @@ mod tests {
             root.remove_file(Utf8Path::new("swap/target"))
         });
 
-        let outside_permissions = PausedParent::replace_parent(&fixture.worker, &opened, &resume);
-        let outside = fixture.worker.join("swap/target");
+        let replacement = PausedParent::replace_parent(&fixture.worker, &opened, &resume);
         let result = operation.join().unwrap();
 
         result.unwrap();
+        #[cfg(windows)]
+        if matches!(replacement, ParentReplacement::Denied) {
+            assert!(!fixture.worker.join("swap/target").exists());
+            return;
+        }
+        let outside_permissions = replacement.permissions();
+        let outside = fixture.worker.join("swap/target");
         assert!(!fixture.worker.join("held/target").exists());
         assert_eq!(fs::read(&outside).unwrap(), b"outside");
         assert_eq!(permission_fingerprint(&outside), outside_permissions);

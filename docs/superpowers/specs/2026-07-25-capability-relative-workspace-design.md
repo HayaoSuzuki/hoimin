@@ -155,6 +155,13 @@ capability has been acquired and before the final operation. Tests replace the
 parent pathname with a symlink, junction, or alternate directory while the
 operation is paused, then resume it.
 
+On Windows, an opened directory capability may intentionally omit delete
+sharing. If that prevents the test harness from renaming the parent, the test
+must assert the sharing denial, resume and join the paused operation, and
+verify that it affected only the still-bound worker entry. Link creation that
+requires unavailable Windows privileges is likewise accepted only after the
+specific platform setup denial is asserted; it is never silently skipped.
+
 For read, write, remove, mutation, and reset, assertions verify:
 
 - the operation affects only the originally opened worker directory or fails;

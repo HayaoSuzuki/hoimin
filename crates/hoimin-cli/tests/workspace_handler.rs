@@ -57,6 +57,26 @@ fn create_worker(root: &Utf8Path) -> WorkerWorkspace {
         .unwrap()
 }
 
+fn link_created_or_platform_denied(result: std::io::Result<()>) -> bool {
+    match result {
+        Ok(()) => true,
+        Err(error) => {
+            #[cfg(windows)]
+            {
+                assert!(
+                    error.kind() == std::io::ErrorKind::PermissionDenied
+                        || error.kind() == std::io::ErrorKind::Unsupported
+                        || error.raw_os_error() == Some(1314),
+                    "unexpected Windows link setup failure: {error}"
+                );
+                false
+            }
+            #[cfg(not(windows))]
+            panic!("link setup failed unexpectedly: {error}");
+        }
+    }
+}
+
 fn mutation_candidate(worker: &WorkerWorkspace) -> MutationCandidate {
     MutationCandidate {
         id: "candidate".into(),
@@ -181,7 +201,10 @@ fn explicit_exclude_wins_over_include_and_gitignore() {
 fn skips_symlink_with_typed_diagnostic() {
     let project = FixtureProject::new();
     let link = project.temp.path().join("linked.py");
-    if create_file_symlink(project.temp.path().join("pkg/a.py"), &link).is_err() {
+    if !link_created_or_platform_denied(create_file_symlink(
+        project.temp.path().join("pkg/a.py"),
+        &link,
+    )) {
         return;
     }
 
@@ -350,7 +373,10 @@ fn mutation_rejects_linked_target_with_matching_bytes() {
     fs::write(outside.path(), b"original\n").unwrap();
     let target = worker.root().join("pkg/a.py");
     fs::remove_file(&target).unwrap();
-    if create_file_symlink(outside.path().to_path_buf(), target.as_std_path()).is_err() {
+    if !link_created_or_platform_denied(create_file_symlink(
+        outside.path().to_path_buf(),
+        target.as_std_path(),
+    )) {
         return;
     }
 
