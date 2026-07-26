@@ -625,7 +625,7 @@ git commit -m "test: strengthen capability workspace guarantees"
 
 If no files changed after verification, do not create an empty commit.
 
-- [ ] **Step 6: Push and open the Issue #28 PR**
+- [x] **Step 6: Push and open the Issue #28 PR**
 
 ```bash
 git push -u origin refactor/issue-28-capability-relative-workspace
