@@ -489,7 +489,7 @@ fn root_relative_file_apis_remain_bound_to_open_worker_root() {
     if let Err(error) = fs::rename(&worker_root, &moved_root) {
         #[cfg(windows)]
         {
-            assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+            assert_eq!(error.raw_os_error(), Some(32));
             handler
                 .worker_mut(0)
                 .unwrap()
@@ -676,7 +676,26 @@ fn reset_remains_bound_to_the_open_worker_root() {
         .unwrap();
     let worker_root = handler.worker(0).unwrap().root().to_owned();
     let moved_root = worker_root.with_file_name("moved-worker");
-    fs::rename(&worker_root, &moved_root).unwrap();
+    if let Err(error) = fs::rename(&worker_root, &moved_root) {
+        #[cfg(windows)]
+        {
+            assert_eq!(error.raw_os_error(), Some(32));
+            write(&worker_root, "pkg/a.py", b"changed!\n");
+            handler
+                .handle_reset_worker(ResetWorker {
+                    id: EffectId(146),
+                    worker: 0,
+                })
+                .unwrap();
+            assert_eq!(
+                fs::read(worker_root.join("pkg/a.py")).unwrap(),
+                b"original\n"
+            );
+            return;
+        }
+        #[cfg(not(windows))]
+        panic!("worker-root rename failed unexpectedly: {error}");
+    }
     write(&moved_root, "pkg/a.py", b"changed!\n");
     write(&worker_root, "pkg/a.py", b"outside!\n");
 
