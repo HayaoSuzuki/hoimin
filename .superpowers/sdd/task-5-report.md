@@ -63,3 +63,13 @@ Complete.
 - The reset restore race records the worker snapshot's exact permission fingerprint and verifies
   both restored bytes and permissions on the held target. Its read-only alternate sentinel keeps
   distinct content and permissions unchanged.
+
+## Re-review follow-up: deleted snapshot parents
+
+- Added a characterization test that removes an entire snapshot parent directory before reset.
+- RED: reset failed while checking the missing file because restoration had no opportunity to
+  recreate its parent.
+- GREEN: reset uses its initial capability-relative entry inventory to skip matching checks for
+  absent/non-file snapshot entries, and `restore` opens the parent with creation enabled once.
+- The created parent handle remains stable across remove, write, and permission restoration;
+  the parent-replacement race suite remains green.

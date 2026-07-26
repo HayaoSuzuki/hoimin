@@ -47,6 +47,11 @@ impl WorkerWorkspace {
 
     fn reset_from_snapshot(&self) -> Result<(), WorkspaceError> {
         let existing = self.root.entries()?;
+        let existing_files = existing
+            .iter()
+            .filter(|entry| entry.kind == WorkerEntryKind::File)
+            .map(|entry| entry.path.clone())
+            .collect::<BTreeSet<_>>();
         for entry in existing.iter().rev() {
             match entry.kind {
                 WorkerEntryKind::Directory => {
@@ -66,9 +71,12 @@ impl WorkerWorkspace {
         }
 
         for (path, snapshot) in &self.snapshot {
-            if self
-                .root
-                .snapshot_matches(path, &snapshot.bytes, snapshot.permission_fingerprint)?
+            if existing_files.contains(path)
+                && self.root.snapshot_matches(
+                    path,
+                    &snapshot.bytes,
+                    snapshot.permission_fingerprint,
+                )?
             {
                 continue;
             }
@@ -245,5 +253,20 @@ mod tests {
         assert_eq!(fs::read(&outside).unwrap(), b"outside\n");
         assert_eq!(permission_fingerprint(&outside), outside_permissions);
         drop(worker);
+    }
+
+    #[test]
+    fn reset_recreates_a_deleted_snapshot_parent_directory() {
+        let (_project, mut worker, snapshot_permissions) = changed_worker();
+        worker
+            .root
+            .remove_any_if_exists(Utf8Path::new("swap"))
+            .unwrap();
+
+        worker.reset().unwrap();
+
+        let restored = worker.root().join("swap/target.py");
+        assert_eq!(fs::read(&restored).unwrap(), b"original\n");
+        assert_eq!(permission_fingerprint(&restored), snapshot_permissions);
     }
 }

@@ -493,7 +493,7 @@ impl WorkerRoot {
         contents: &[u8],
         permissions: std::fs::Permissions,
     ) -> Result<(), WorkspaceError> {
-        let (parent, name) = self.open_parent(path, false)?;
+        let (parent, name) = self.open_parent(path, true)?;
         #[cfg(test)]
         parent_opened("reset", path);
         Self::remove_entry_if_exists(&parent, &name, path)?;
