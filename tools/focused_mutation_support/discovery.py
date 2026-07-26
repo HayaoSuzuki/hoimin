@@ -6,7 +6,9 @@ from typing import Protocol, Sequence
 from .model import Candidate
 
 
-_EXCLUDED_PARTS = frozenset({"tests", "target", ".worktrees", ".idea"})
+_EXCLUDED_PARTS = frozenset(
+    {"tests", "target", ".worktrees", ".idea", "generated", "gen"}
+)
 _FUNCTION = re.compile(
     r"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?"
     r"(?:(?:async|const|unsafe|extern(?:\s+\"[^\"]+\")?)\s+)*"
@@ -39,7 +41,14 @@ def _normalize_path(value: str) -> str:
     return path.as_posix()
 
 
-def _eligible_path(value: str) -> str | None:
+def _explicit_path(value: str) -> str | None:
+    path = _normalize_path(value)
+    if not path.endswith(".rs"):
+        return None
+    return path
+
+
+def _implicit_path(value: str) -> str | None:
     path = _normalize_path(value)
     parts = PurePosixPath(path).parts
     if not path.endswith(".rs") or any(part in _EXCLUDED_PARTS for part in parts):
@@ -51,7 +60,7 @@ def _unique_eligible(paths: Sequence[str]) -> tuple[str, ...]:
     result: list[str] = []
     seen: set[str] = set()
     for value in paths:
-        path = _eligible_path(value)
+        path = _implicit_path(value)
         if path is not None and path not in seen:
             seen.add(path)
             result.append(path)
@@ -137,13 +146,18 @@ def discover_candidates(
     explicit_symbols: Sequence[str],
     probe: CommandProbe,
 ) -> list[Candidate]:
-    del explicit_symbols, probe
     seen_paths: set[str] = set()
     candidates: list[Candidate] = []
     seen_candidates: set[tuple[str, str]] = set()
 
-    def add_path(value: str) -> None:
-        path = _eligible_path(value)
+    def add_path(
+        value: str,
+        *,
+        explicit: bool = False,
+        symbols: frozenset[str] | None = None,
+        candidate_limit: int | None = None,
+    ) -> None:
+        path = _explicit_path(value) if explicit else _implicit_path(value)
         if path is None or path in seen_paths:
             return
         seen_paths.add(path)
@@ -153,17 +167,48 @@ def discover_candidates(
         except (OSError, UnicodeError):
             return
         for symbol in _FUNCTION.findall(source):
+            if symbols is not None and symbol.casefold() not in symbols:
+                continue
             key = (path, symbol)
             if key not in seen_candidates:
                 seen_candidates.add(key)
                 candidates.append(Candidate(path, symbol, None))
+                if (
+                    candidate_limit is not None
+                    and len(candidates) >= candidate_limit
+                ):
+                    return
 
-    for values in (explicit_files, snapshot.dirty_paths, snapshot.base_paths):
+    for value in explicit_files:
+        add_path(value, explicit=True)
+    for values in (snapshot.dirty_paths, snapshot.base_paths):
         for value in values:
             add_path(value)
+
+    requested_symbols = frozenset(
+        symbol.rsplit("::", 1)[-1].casefold() for symbol in explicit_symbols
+    )
+    if requested_symbols:
+        inventory = probe.text(
+            ["rg", "--files", "--glob", "*.rs", str(snapshot.root)]
+        )
+        resolved_root = snapshot.root.resolve()
+        for value in inventory.splitlines():
+            inventory_path = Path(value)
+            if inventory_path.is_absolute():
+                try:
+                    value = inventory_path.resolve().relative_to(
+                        resolved_root
+                    ).as_posix()
+                except ValueError as error:
+                    raise ValueError(
+                        f"inventory path is outside repository: {inventory_path}"
+                    ) from error
+            add_path(value, symbols=requested_symbols)
+
     if len(candidates) < 10:
         for value in snapshot.recent_paths:
-            add_path(value)
+            add_path(value, candidate_limit=10)
             if len(candidates) >= 10:
                 break
     return candidates

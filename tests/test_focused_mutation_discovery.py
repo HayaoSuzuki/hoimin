@@ -23,6 +23,118 @@ class FakeProbe:
 
 
 class DiscoveryTests(unittest.TestCase):
+    def test_symbol_only_selection_uses_inventory_to_find_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "crates/core/src/machine.rs"
+            target.parent.mkdir(parents=True)
+            target.write_text(
+                "fn ordinary() {}\npub fn cancel() {}\n", encoding="utf-8"
+            )
+            probe = FakeProbe(
+                {
+                    (
+                        "rg",
+                        "--files",
+                        "--glob",
+                        "*.rs",
+                        str(root),
+                    ): f"{target}\n"
+                }
+            )
+            snapshot = RepositorySnapshot(root, "abc", "feature", (), (), ())
+
+            candidates = discover_candidates(
+                snapshot, (), ("cancel",), probe
+            )
+
+        self.assertEqual(
+            [(item.path, item.symbol) for item in candidates],
+            [("crates/core/src/machine.rs", "cancel")],
+        )
+        self.assertEqual(
+            probe.calls,
+            [("rg", "--files", "--glob", "*.rs", str(root))],
+        )
+
+    def test_explicit_rust_file_overrides_implicit_path_exclusions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "tests/generated/fixture.rs"
+            target.parent.mkdir(parents=True)
+            target.write_text("fn explicit_fixture() {}\n", encoding="utf-8")
+            snapshot = RepositorySnapshot(
+                root,
+                "abc",
+                "feature",
+                ("tests/generated/fixture.rs",),
+                (),
+                (),
+            )
+
+            candidates = discover_candidates(
+                snapshot,
+                ("tests/generated/fixture.rs",),
+                (),
+                FakeProbe({}),
+            )
+
+        self.assertEqual(
+            [(item.path, item.symbol) for item in candidates],
+            [("tests/generated/fixture.rs", "explicit_fixture")],
+        )
+
+    def test_recent_history_stops_while_adding_tenth_unique_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            current = root / "crates/core/src/current.rs"
+            recent = root / "crates/core/src/recent.rs"
+            current.parent.mkdir(parents=True)
+            current.write_text(
+                "\n".join(f"fn current_{number}() {{}}" for number in range(9)),
+                encoding="utf-8",
+            )
+            recent.write_text(
+                "fn recent_first() {}\nfn recent_second() {}\n",
+                encoding="utf-8",
+            )
+            snapshot = RepositorySnapshot(
+                root,
+                "abc",
+                "feature",
+                ("crates/core/src/current.rs",),
+                (),
+                ("crates/core/src/recent.rs",),
+            )
+
+            candidates = discover_candidates(snapshot, (), (), FakeProbe({}))
+
+        self.assertEqual(len(candidates), 10)
+        self.assertEqual(candidates[-1].symbol, "recent_first")
+
+    def test_generated_components_are_excluded_from_implicit_discovery(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = (
+                "crates/core/generated/output.rs",
+                "crates/core/gen/output.rs",
+                "crates/core/src/generated_name.rs",
+            )
+            for path in paths:
+                target = root / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("fn candidate() {}\n", encoding="utf-8")
+            snapshot = RepositorySnapshot(
+                root, "abc", "feature", paths, (), ()
+            )
+
+            candidates = discover_candidates(snapshot, (), (), FakeProbe({}))
+
+        self.assertEqual(
+            [item.path for item in candidates],
+            ["crates/core/src/generated_name.rs"],
+        )
+
     def test_changed_and_explicit_targets_rank_deterministically(self) -> None:
         snapshot = RepositorySnapshot(
             root=Path("/repo"),
