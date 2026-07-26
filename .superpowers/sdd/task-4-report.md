@@ -79,3 +79,13 @@ would address the replacement pathname rather than the opened worker root.
   open disposition, reparse-point opening, and directory acceptance for `RemoveEntry`.
 - Re-ran the Windows minimal native-backend harness successfully for
   `x86_64-pc-windows-msvc`.
+
+### Read-only entry follow-up
+
+- After the reparse-safe entry open, `remove_entry` now clears a read-only attribute through
+  that same validated handle before requesting deletion.
+- This preserves handle-only behavior while allowing the legacy `FileDispositionInfo` fallback
+  to remove read-only files, directory links, or other reparse entries when
+  `FileDispositionInfoEx` is unavailable.
+- The Windows access-policy regression now explicitly requires `FILE_WRITE_ATTRIBUTES` as well
+  as `DELETE` for `RemoveEntry`.

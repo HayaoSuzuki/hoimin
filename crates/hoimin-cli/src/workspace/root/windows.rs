@@ -148,6 +148,7 @@ pub(super) fn remove_entry(
     validate_final_name(name, logical_path)?;
     let file = open_final_handle(parent, name, WindowsFinalOperation::RemoveEntry)
         .map_err(|error| WorkspaceError::io("remove worker entry", logical_path, error))?;
+    make_file_writable(&file, logical_path)?;
     mark_delete_by_handle(&file)
         .map_err(|error| WorkspaceError::io("remove worker entry", logical_path, error))
 }
@@ -404,6 +405,10 @@ mod tests {
         assert_ne!(desired_access(WindowsFinalOperation::Remove) & DELETE, 0);
         assert_ne!(
             desired_access(WindowsFinalOperation::RemoveEntry) & DELETE,
+            0
+        );
+        assert_ne!(
+            desired_access(WindowsFinalOperation::RemoveEntry) & FILE_WRITE_ATTRIBUTES,
             0
         );
         assert_ne!(
