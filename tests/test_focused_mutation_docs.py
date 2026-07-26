@@ -21,3 +21,14 @@ class FocusedMutationDocumentationTests(unittest.TestCase):
         ):
             with self.subTest(required=required):
                 self.assertIn(required, text)
+
+    def test_development_guide_documents_artifact_lifecycle(self) -> None:
+        text = (ROOT / "docs" / "development.md").read_text(encoding="utf-8")
+        normalized = " ".join(text.split())
+        for required in (
+            "`run.json` is checkpointed throughout",
+            "`report.md` is generated or refreshed during finalization",
+            "may be absent after an abrupt unhandled process termination",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, normalized)
