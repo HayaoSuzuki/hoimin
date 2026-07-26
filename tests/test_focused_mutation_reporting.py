@@ -8,8 +8,11 @@ from tools.focused_mutation_support.model import (
     Candidate,
     CandidateState,
     CommandRecord,
+    RankingReason,
+    RunRecord,
     RunState,
 )
+from tools.focused_mutation_support.reporting import render_markdown
 from tools.focused_mutation_support.mutation import (
     build_baseline_command,
     build_list_command,
@@ -46,6 +49,34 @@ LIST_JSON_27_1_0 = json.dumps(
 )
 
 
+def fixture_candidate(
+    symbol: str,
+    state: CandidateState,
+    *,
+    not_run_reason: str | None = None,
+) -> Candidate:
+    return Candidate(
+        path="crates/hoimin-core/src/machine.rs",
+        symbol=symbol,
+        mutant_name=f"machine.rs:1: replace {symbol}",
+        score=100,
+        reasons=[RankingReason("fixture", 100, "test fixture")],
+        state=state,
+        not_run_reason=not_run_reason,
+    )
+
+
+def fixture_record(
+    *, candidates: list[Candidate], state: RunState
+) -> RunRecord:
+    record = RunRecord.new(total_budget_seconds=1_800.0)
+    record.candidates = candidates
+    record.state = state
+    record.repository = {"head": "abc", "dirty": False}
+    record.elapsed_seconds = 12.5
+    return record
+
+
 def command_record(*, exit_code: int = 0) -> CommandRecord:
     return CommandRecord(
         sequence=1,
@@ -60,6 +91,24 @@ def command_record(*, exit_code: int = 0) -> CommandRecord:
 
 
 class FocusedMutationReportingTests(unittest.TestCase):
+    def test_report_preserves_verified_unverified_and_next_order(self) -> None:
+        record = fixture_record(
+            candidates=[
+                fixture_candidate("a", CandidateState.SURVIVED),
+                fixture_candidate(
+                    "b",
+                    CandidateState.NOT_RUN,
+                    not_run_reason="reporting_reserve",
+                ),
+            ],
+            state=RunState.BUDGET_EXHAUSTED,
+        )
+        markdown = render_markdown(record)
+        self.assertIn("State: `budget_exhausted`", markdown)
+        self.assertIn("`a` — survived", markdown)
+        self.assertIn("`b` — reporting_reserve", markdown)
+        self.assertLess(markdown.index("`a`"), markdown.index("`b`"))
+
     def test_list_command_is_workspace_json_and_narrow_files(self) -> None:
         argv = build_list_command(
             Path("/repo"),
