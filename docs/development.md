@@ -46,15 +46,16 @@ unviable results during test development. The 30-minute budget reserves the
 last five minutes for checkpointing and reporting, so it stops starting
 mutations at that boundary.
 
-`run.json` is checkpointed throughout and is the recoverable machine-readable
-source of truth. Per-command arguments, stdout, and stderr are also retained
-below the same output directory. `report.md` is generated or refreshed during
-finalization as the human-readable summary. The tool attempts finalization
-after a timeout, handled interruption, baseline failure, or tool error, but
-`report.md` may be absent after an abrupt unhandled process termination before
-finalization. In that case, recover from `run.json` and the command artifacts.
-Treat incomplete output as a partial report: candidates marked `not_run`,
-`pending`, `timeout`, `unviable`, or `error` remain unverified.
+`run.json` is checkpointed throughout. `run.json` remains the recoverable
+machine-readable source of truth. Per-command arguments, stdout, and stderr are
+also retained below the same output directory. `report.md` is generated or
+refreshed during finalization as the human-readable summary. The tool attempts
+finalization after a timeout, handled interruption, baseline failure, or tool
+error, but `report.md` may be absent after an abrupt unhandled process
+termination before finalization. In that case, recover from `run.json` and the
+command artifacts. Treat incomplete output as a partial report: candidates
+marked `not_run`, `pending`, `timeout`, `unviable`, or `error` remain
+unverified.
 
 Exit code `0` means the run reached `completed` or `budget_exhausted`; the
 latter is an expected bounded result, not evidence that every candidate ran.

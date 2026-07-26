@@ -27,6 +27,7 @@ class FocusedMutationDocumentationTests(unittest.TestCase):
         normalized = " ".join(text.split())
         for required in (
             "`run.json` is checkpointed throughout",
+            "`run.json` remains the recoverable machine-readable source of truth",
             "`report.md` is generated or refreshed during finalization",
             "may be absent after an abrupt unhandled process termination",
         ):
