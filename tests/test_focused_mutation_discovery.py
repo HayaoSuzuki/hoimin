@@ -167,67 +167,69 @@ class DiscoveryTests(unittest.TestCase):
         )
 
     def test_repository_discovery_uses_bounded_read_only_git_commands(self) -> None:
-        probe = FakeProbe(
-            {
-                ("git", "rev-parse", "--show-toplevel"): "/repo\n",
-                ("git", "rev-parse", "HEAD"): "abc\n",
-                ("git", "branch", "--show-current"): "feature\n",
-                (
-                    "git",
-                    "status",
-                    "--porcelain=v1",
-                    "-z",
-                    "--untracked-files=all",
-                ): " M crates/core/src/dirty.rs\0D  crates/core/src/gone.rs\0",
-                (
-                    "git",
-                    "diff",
-                    "--name-only",
-                    "-z",
-                    "origin/main...HEAD",
-                    "--",
-                    "*.rs",
-                ): "crates/core/src/base.rs\0",
-                (
-                    "git",
-                    "log",
-                    "--first-parent",
-                    "-20",
-                    "--name-only",
-                    "--format=",
-                ): "crates/core/src/recent.rs\n",
-            }
-        )
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory).resolve()
+            probe = FakeProbe(
+                {
+                    ("git", "rev-parse", "--show-toplevel"): f"{repository}\n",
+                    ("git", "rev-parse", "HEAD"): "abc\n",
+                    ("git", "branch", "--show-current"): "feature\n",
+                    (
+                        "git",
+                        "status",
+                        "--porcelain=v1",
+                        "-z",
+                        "--untracked-files=all",
+                    ): " M crates/core/src/dirty.rs\0D  crates/core/src/gone.rs\0",
+                    (
+                        "git",
+                        "diff",
+                        "--name-only",
+                        "-z",
+                        "origin/main...HEAD",
+                        "--",
+                        "*.rs",
+                    ): "crates/core/src/base.rs\0",
+                    (
+                        "git",
+                        "log",
+                        "--first-parent",
+                        "-20",
+                        "--name-only",
+                        "--format=",
+                    ): "crates/core/src/recent.rs\n",
+                }
+            )
 
-        timeouts = iter((12.0, 11.0, 10.0, 9.0, 8.0, 7.0))
-        snapshot = discover_repository(
-            Path("/repo"), "origin/main", probe, lambda: next(timeouts)
-        )
+            timeouts = iter((12.0, 11.0, 10.0, 9.0, 8.0, 7.0))
+            snapshot = discover_repository(
+                repository, "origin/main", probe, lambda: next(timeouts)
+            )
 
-        self.assertEqual(snapshot.root, Path("/repo"))
-        self.assertEqual(snapshot.dirty_paths, ("crates/core/src/dirty.rs",))
-        self.assertEqual(snapshot.base_paths, ("crates/core/src/base.rs",))
-        self.assertEqual(snapshot.recent_paths, ("crates/core/src/recent.rs",))
-        self.assertEqual(
-            probe.calls,
-            [
-                (("git", "rev-parse", "--show-toplevel"), 12.0),
-                (("git", "rev-parse", "HEAD"), 11.0),
-                (("git", "branch", "--show-current"), 10.0),
-                ((
-                    "git", "status", "--porcelain=v1", "-z",
-                    "--untracked-files=all",
-                ), 9.0),
-                ((
-                    "git", "diff", "--name-only", "-z",
-                    "origin/main...HEAD", "--", "*.rs",
-                ), 8.0),
-                ((
-                    "git", "log", "--first-parent", "-20",
-                    "--name-only", "--format=",
-                ), 7.0),
-            ],
-        )
+            self.assertEqual(snapshot.root, repository)
+            self.assertEqual(snapshot.dirty_paths, ("crates/core/src/dirty.rs",))
+            self.assertEqual(snapshot.base_paths, ("crates/core/src/base.rs",))
+            self.assertEqual(snapshot.recent_paths, ("crates/core/src/recent.rs",))
+            self.assertEqual(
+                probe.calls,
+                [
+                    (("git", "rev-parse", "--show-toplevel"), 12.0),
+                    (("git", "rev-parse", "HEAD"), 11.0),
+                    (("git", "branch", "--show-current"), 10.0),
+                    ((
+                        "git", "status", "--porcelain=v1", "-z",
+                        "--untracked-files=all",
+                    ), 9.0),
+                    ((
+                        "git", "diff", "--name-only", "-z",
+                        "origin/main...HEAD", "--", "*.rs",
+                    ), 8.0),
+                    ((
+                        "git", "log", "--first-parent", "-20",
+                        "--name-only", "--format=",
+                    ), 7.0),
+                ],
+            )
 
     def test_candidate_discovery_filters_and_deduplicates_before_ten(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

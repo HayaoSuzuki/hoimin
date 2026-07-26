@@ -2,6 +2,7 @@ import json
 from datetime import datetime, timezone
 import inspect
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -619,7 +620,7 @@ class FocusedMutationReportingTests(unittest.TestCase):
                 "--list",
                 "--json",
                 "--manifest-path",
-                "/repo/Cargo.toml",
+                str(Path("/repo") / "Cargo.toml"),
                 "--file",
                 "crates/hoimin-core/src/machine.rs",
             ],
@@ -644,7 +645,7 @@ class FocusedMutationReportingTests(unittest.TestCase):
         )
         self.assertEqual(
             argv[argv.index("--output") + 1],
-            "/evidence/cargo-mutants/0001",
+            str(Path("/evidence/cargo-mutants/0001")),
         )
         self.assertIn(
             (
@@ -728,6 +729,9 @@ class FocusedMutationReportingTests(unittest.TestCase):
     def test_real_workspace_list_is_safe_from_per_candidate_directory(
         self,
     ) -> None:
+        if shutil.which("cargo-mutants") is None:
+            self.skipTest("cargo-mutants 27.1.0 is not installed")
+
         repository = Path(__file__).resolve().parents[1]
         before = self._root_mutants_artifacts(repository)
         version = subprocess.run(

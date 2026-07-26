@@ -83,7 +83,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_records_native_arguments_output_and_nonzero_exit(self) -> None:
         record = self.runner(extra_env={"FAKE_EXIT": "7"}).run(
-            [str(self.fake), "a b", "$(never-run)"],
+            [sys.executable, str(self.fake), "a b", "$(never-run)"],
             cwd=self.work,
             timeout=5.0,
             label="baseline",
@@ -101,7 +101,7 @@ class RunnerTests(unittest.TestCase):
     def test_timeout_terminates_process_and_keeps_partial_logs(self) -> None:
         with self.assertRaises(CommandTimedOut) as caught:
             self.runner().run(
-                [str(self.fake), "--sleep"],
+                [sys.executable, str(self.fake), "--sleep"],
                 cwd=self.work,
                 timeout=0.5,
                 label="mutation",
