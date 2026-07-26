@@ -304,6 +304,9 @@ class FocusedMutationReportingTests(unittest.TestCase):
         verified = markdown.split("## Verified candidates", 1)[1].split(
             "## Investigation results", 1
         )[0]
+        investigation = markdown.split("## Investigation results", 1)[1].split(
+            "## Unverified candidates", 1
+        )[0]
         unverified = markdown.split("## Unverified candidates", 1)[1].split(
             "## Next recommended order", 1
         )[0]
@@ -314,6 +317,8 @@ class FocusedMutationReportingTests(unittest.TestCase):
         self.assertIn("`killed` — killed", verified)
         self.assertNotIn("`timed`", verified)
         self.assertNotIn("`broken`", verified)
+        self.assertIn("`timed` — timeout", investigation)
+        self.assertIn("`broken` — error", investigation)
         self.assertIn("`timed` — timeout", unverified)
         self.assertIn("`broken` — error", unverified)
         self.assertIn("1. `timed`", recommended)

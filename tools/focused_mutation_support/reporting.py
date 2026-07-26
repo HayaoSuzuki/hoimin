@@ -21,7 +21,7 @@ def render_markdown(record: RunRecord) -> str:
     ]
     investigation = [
         candidate
-        for candidate in verified
+        for candidate in record.candidates
         if candidate.state
         in {
             CandidateState.SURVIVED,
