@@ -74,3 +74,116 @@ impl WorkerWorkspace {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+
+    use camino::{Utf8Path, Utf8PathBuf};
+    use hoimin_core::{
+        BudgetLedger, ByteSpan, EffectId, MutationCandidate, RunBudgets, reserve_workspace_copy,
+    };
+
+    use super::super::root::{WorkspaceRaceHook, install_workspace_race_hook};
+    use super::super::{CopyOptions, WorkerWorkspace, WorkspacePlan};
+
+    struct MutationPause {
+        fired: AtomicBool,
+        opened: Barrier,
+        resume: Barrier,
+    }
+
+    impl WorkspaceRaceHook for MutationPause {
+        fn parent_opened(&self, operation: &'static str, path: &Utf8Path) {
+            if operation == "mutation"
+                && path == Utf8Path::new("swap/target.py")
+                && !self.fired.swap(true, Ordering::SeqCst)
+            {
+                self.opened.wait();
+                self.resume.wait();
+            }
+        }
+    }
+
+    fn worker_and_candidate() -> (tempfile::TempDir, WorkerWorkspace, MutationCandidate) {
+        let project = tempfile::tempdir().unwrap();
+        fs::create_dir(project.path().join("swap")).unwrap();
+        fs::write(project.path().join("swap/target.py"), b"original\n").unwrap();
+        let root = Utf8Path::from_path(project.path()).unwrap();
+        let plan = WorkspacePlan::preflight(root, EffectId(1), 1, CopyOptions::default()).unwrap();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: plan.aggregate_bytes(),
+            processes: 1,
+        });
+        let reservation = reserve_workspace_copy(&mut ledger, &plan.completed()).unwrap();
+        let worker = plan
+            .create_worker(&reservation.create_worker(EffectId(2), 0).unwrap())
+            .unwrap();
+        let hash = worker
+            .manifest()
+            .entry(Utf8Path::new("swap/target.py"))
+            .unwrap()
+            .blake3
+            .to_hex()
+            .to_string();
+        let candidate = MutationCandidate {
+            id: "race".into(),
+            sequence: 0,
+            path: Utf8PathBuf::from("swap/target.py"),
+            span: ByteSpan {
+                start: 0,
+                length: 8,
+            },
+            original: "original".into(),
+            replacement: "mutated!".into(),
+            operator: "test".into(),
+            line: 1,
+            column: 0,
+            symbol: None,
+            file_hash: hash,
+        };
+        (project, worker, candidate)
+    }
+
+    #[test]
+    fn parent_replacement_mutation_uses_the_opened_parent() {
+        let (_project, mut worker, candidate) = worker_and_candidate();
+        let root = worker.root().to_owned();
+        let hook = Arc::new(MutationPause {
+            fired: AtomicBool::new(false),
+            opened: Barrier::new(2),
+            resume: Barrier::new(2),
+        });
+        let thread_hook = Arc::clone(&hook);
+        let operation = thread::spawn(move || {
+            let _guard = install_workspace_race_hook(thread_hook);
+            let result = worker.apply_mutation(&candidate);
+            (worker, result)
+        });
+
+        hook.opened.wait();
+        fs::rename(root.join("swap"), root.join("held")).unwrap();
+        fs::create_dir(root.join("swap")).unwrap();
+        let outside = root.join("swap/target.py");
+        fs::write(&outside, b"outside\n").unwrap();
+        let outside_readonly = fs::metadata(&outside).unwrap().permissions().readonly();
+        hook.resume.wait();
+        let (worker, result) = operation.join().unwrap();
+
+        result.unwrap();
+        assert_eq!(
+            fs::read(root.join("held/target.py")).unwrap(),
+            b"mutated!\n"
+        );
+        assert_eq!(fs::read(&outside).unwrap(), b"outside\n");
+        assert_eq!(
+            fs::metadata(&outside).unwrap().permissions().readonly(),
+            outside_readonly
+        );
+        drop(worker);
+    }
+}

@@ -4,6 +4,8 @@ use std::fs::File;
 use std::io::Write;
 use std::io::{self, Read};
 use std::path::Path;
+#[cfg(test)]
+use std::sync::Arc;
 
 use camino::{Utf8Path, Utf8PathBuf};
 #[cfg(unix)]
@@ -11,6 +13,48 @@ use cap_fs_ext::OpenOptionsFollowExt;
 use cap_primitives::fs::FollowSymlinks;
 
 use super::WorkspaceError;
+
+#[cfg(test)]
+pub(super) trait WorkspaceRaceHook: Send + Sync {
+    fn parent_opened(&self, operation: &'static str, path: &Utf8Path);
+}
+
+#[cfg(test)]
+thread_local! {
+    static WORKSPACE_RACE_HOOK: std::cell::RefCell<Option<Arc<dyn WorkspaceRaceHook>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub(super) struct WorkspaceRaceHookGuard;
+
+#[cfg(test)]
+impl Drop for WorkspaceRaceHookGuard {
+    fn drop(&mut self) {
+        WORKSPACE_RACE_HOOK.with(|slot| {
+            slot.borrow_mut().take();
+        });
+    }
+}
+
+#[cfg(test)]
+pub(super) fn install_workspace_race_hook(
+    hook: Arc<dyn WorkspaceRaceHook>,
+) -> WorkspaceRaceHookGuard {
+    WORKSPACE_RACE_HOOK.with(|slot| {
+        assert!(slot.borrow_mut().replace(hook).is_none());
+    });
+    WorkspaceRaceHookGuard
+}
+
+#[cfg(test)]
+fn parent_opened(operation: &'static str, path: &Utf8Path) {
+    WORKSPACE_RACE_HOOK.with(|slot| {
+        if let Some(hook) = slot.borrow().as_ref() {
+            hook.parent_opened(operation, path);
+        }
+    });
+}
 
 #[cfg(windows)]
 mod windows;
@@ -159,6 +203,8 @@ impl WorkerRoot {
 
     pub(crate) fn read(&self, path: &Utf8Path) -> Result<Vec<u8>, WorkspaceError> {
         let (parent, name) = self.open_parent(path, false)?;
+        #[cfg(test)]
+        parent_opened("read", path);
         #[cfg(windows)]
         {
             return windows::read(&parent, &name, path);
@@ -190,6 +236,8 @@ impl WorkerRoot {
         path: &Utf8Path,
     ) -> Result<MutationFile, WorkspaceError> {
         let (parent, name) = self.open_parent(path, false)?;
+        #[cfg(test)]
+        parent_opened("mutation", path);
         #[cfg(windows)]
         {
             return windows::open_mutation_file(&parent, &name, path).map(|file| MutationFile {
@@ -233,19 +281,30 @@ impl WorkerRoot {
 
     pub(crate) fn write(&self, path: &Utf8Path, contents: &[u8]) -> Result<(), WorkspaceError> {
         let (parent, name) = self.open_parent(path, true)?;
+        #[cfg(test)]
+        parent_opened("write", path);
+        Self::write_entry(&parent, &name, path, contents)
+    }
+
+    fn write_entry(
+        parent: &File,
+        name: &OsString,
+        path: &Utf8Path,
+        contents: &[u8],
+    ) -> Result<(), WorkspaceError> {
         #[cfg(windows)]
         {
-            make_directory_writable(&parent, path)?;
-            return windows::write(&parent, &name, path, contents);
+            make_directory_writable(parent, path)?;
+            return windows::write(parent, name, path, contents);
         }
         #[cfg(unix)]
         {
-            Self::reject_link_if_present(&parent, &name, path, "write worker file")?;
-            make_directory_writable(&parent, path)?;
-            if cap_primitives::fs::stat(&parent, Path::new(&name), FollowSymlinks::No).is_ok() {
+            Self::reject_link_if_present(parent, name, path, "write worker file")?;
+            make_directory_writable(parent, path)?;
+            if cap_primitives::fs::stat(parent, Path::new(name), FollowSymlinks::No).is_ok() {
                 let mut inspect_options = cap_primitives::fs::OpenOptions::new();
                 inspect_options.read(true).follow(FollowSymlinks::No);
-                let file = cap_primitives::fs::open(&parent, Path::new(&name), &inspect_options)
+                let file = cap_primitives::fs::open(parent, Path::new(name), &inspect_options)
                     .map_err(|error| Self::map_entry_error("open worker file", path, error))?;
                 make_file_writable(&file, path)?;
             }
@@ -255,7 +314,7 @@ impl WorkerRoot {
                 .create(true)
                 .truncate(true)
                 .follow(FollowSymlinks::No);
-            let mut file = cap_primitives::fs::open(&parent, Path::new(&name), &options)
+            let mut file = cap_primitives::fs::open(parent, Path::new(name), &options)
                 .map_err(|error| Self::map_entry_error("write worker file", path, error))?;
             make_file_writable(&file, path)?;
             file.write_all(contents)
@@ -265,6 +324,8 @@ impl WorkerRoot {
 
     pub(crate) fn remove_file(&self, path: &Utf8Path) -> Result<(), WorkspaceError> {
         let (parent, name) = self.open_parent(path, false)?;
+        #[cfg(test)]
+        parent_opened("remove", path);
         #[cfg(windows)]
         {
             make_directory_writable(&parent, path)?;
@@ -354,6 +415,8 @@ impl WorkerRoot {
 
     pub(crate) fn remove_any_if_exists(&self, path: &Utf8Path) -> Result<(), WorkspaceError> {
         let (parent, name) = self.open_parent(path, false)?;
+        #[cfg(test)]
+        parent_opened("reset", path);
         Self::remove_entry_if_exists(&parent, &name, path)
     }
 
@@ -430,9 +493,11 @@ impl WorkerRoot {
         contents: &[u8],
         permissions: std::fs::Permissions,
     ) -> Result<(), WorkspaceError> {
-        self.remove_any_if_exists(path)?;
-        self.write(path, contents)?;
         let (parent, name) = self.open_parent(path, false)?;
+        #[cfg(test)]
+        parent_opened("reset", path);
+        Self::remove_entry_if_exists(&parent, &name, path)?;
+        Self::write_entry(&parent, &name, path, contents)?;
         #[cfg(windows)]
         {
             return windows::set_permissions(&parent, &name, path, permissions);
@@ -710,10 +775,64 @@ fn is_link_or_reparse(metadata: &cap_primitives::fs::Metadata) -> bool {
 mod tests {
     use std::ffi::OsStr;
     use std::fs;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Barrier};
+    use std::thread;
 
     use camino::{Utf8Path, Utf8PathBuf};
 
     use super::*;
+
+    struct PausedParent {
+        operation: &'static str,
+        path: Utf8PathBuf,
+        fired: AtomicBool,
+        opened: Barrier,
+        resume: Barrier,
+    }
+
+    impl PausedParent {
+        fn new(operation: &'static str, path: &str) -> Arc<Self> {
+            Arc::new(Self {
+                operation,
+                path: path.into(),
+                fired: AtomicBool::new(false),
+                opened: Barrier::new(2),
+                resume: Barrier::new(2),
+            })
+        }
+
+        fn replace_parent(&self, worker: &Utf8Path) {
+            self.opened.wait();
+            fs::rename(worker.join("swap"), worker.join("held")).unwrap();
+            fs::create_dir(worker.join("swap")).unwrap();
+            fs::write(worker.join("swap/target"), b"outside").unwrap();
+            self.resume.wait();
+        }
+    }
+
+    impl WorkspaceRaceHook for PausedParent {
+        fn parent_opened(&self, operation: &'static str, path: &Utf8Path) {
+            if operation == self.operation
+                && path == self.path
+                && !self.fired.swap(true, Ordering::SeqCst)
+            {
+                self.opened.wait();
+                self.resume.wait();
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    fn permission_fingerprint(path: &Utf8Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        fs::metadata(path).unwrap().permissions().mode()
+    }
+
+    #[cfg(windows)]
+    fn permission_fingerprint(path: &Utf8Path) -> bool {
+        fs::metadata(path).unwrap().permissions().readonly()
+    }
 
     #[test]
     fn windows_final_operations_open_without_destructive_dispositions() {
@@ -862,6 +981,80 @@ mod tests {
             root.open_parent(Utf8Path::new("file/child"), false),
             Err(WorkspaceError::Io { .. })
         ));
+    }
+
+    #[test]
+    fn parent_replacement_read_uses_the_opened_parent() {
+        let fixture = RootFixture::new();
+        fs::create_dir(fixture.worker.join("swap")).unwrap();
+        fs::write(fixture.worker.join("swap/target"), b"worker").unwrap();
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+        let hook = PausedParent::new("read", "swap/target");
+        let thread_hook = Arc::clone(&hook);
+        let operation = thread::spawn(move || {
+            let _guard = install_workspace_race_hook(thread_hook);
+            root.read(Utf8Path::new("swap/target"))
+        });
+
+        hook.replace_parent(&fixture.worker);
+        let result = operation.join().unwrap();
+
+        assert_eq!(result.unwrap(), b"worker");
+        assert_eq!(
+            fs::read(fixture.worker.join("swap/target")).unwrap(),
+            b"outside"
+        );
+    }
+
+    #[test]
+    fn parent_replacement_write_uses_the_opened_parent() {
+        let fixture = RootFixture::new();
+        fs::create_dir(fixture.worker.join("swap")).unwrap();
+        fs::write(fixture.worker.join("swap/target"), b"worker").unwrap();
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+        let hook = PausedParent::new("write", "swap/target");
+        let thread_hook = Arc::clone(&hook);
+        let operation = thread::spawn(move || {
+            let _guard = install_workspace_race_hook(thread_hook);
+            root.write(Utf8Path::new("swap/target"), b"changed")
+        });
+
+        hook.replace_parent(&fixture.worker);
+        let outside = fixture.worker.join("swap/target");
+        let outside_permissions = permission_fingerprint(&outside);
+        let result = operation.join().unwrap();
+
+        result.unwrap();
+        assert_eq!(
+            fs::read(fixture.worker.join("held/target")).unwrap(),
+            b"changed"
+        );
+        assert_eq!(fs::read(&outside).unwrap(), b"outside");
+        assert_eq!(permission_fingerprint(&outside), outside_permissions);
+    }
+
+    #[test]
+    fn parent_replacement_remove_uses_the_opened_parent() {
+        let fixture = RootFixture::new();
+        fs::create_dir(fixture.worker.join("swap")).unwrap();
+        fs::write(fixture.worker.join("swap/target"), b"worker").unwrap();
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+        let hook = PausedParent::new("remove", "swap/target");
+        let thread_hook = Arc::clone(&hook);
+        let operation = thread::spawn(move || {
+            let _guard = install_workspace_race_hook(thread_hook);
+            root.remove_file(Utf8Path::new("swap/target"))
+        });
+
+        hook.replace_parent(&fixture.worker);
+        let outside = fixture.worker.join("swap/target");
+        let outside_permissions = permission_fingerprint(&outside);
+        let result = operation.join().unwrap();
+
+        result.unwrap();
+        assert!(!fixture.worker.join("held/target").exists());
+        assert_eq!(fs::read(&outside).unwrap(), b"outside");
+        assert_eq!(permission_fingerprint(&outside), outside_permissions);
     }
 
     #[test]
