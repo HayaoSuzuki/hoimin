@@ -57,6 +57,51 @@ fn create_worker(root: &Utf8Path) -> WorkerWorkspace {
         .unwrap()
 }
 
+fn link_created_or_platform_denied(result: std::io::Result<()>) -> bool {
+    match result {
+        Ok(()) => true,
+        Err(error) => {
+            #[cfg(windows)]
+            {
+                assert!(
+                    error.kind() == std::io::ErrorKind::PermissionDenied
+                        || error.kind() == std::io::ErrorKind::Unsupported
+                        || error.raw_os_error() == Some(1314),
+                    "unexpected Windows link setup failure: {error}"
+                );
+                false
+            }
+            #[cfg(not(windows))]
+            panic!("link setup failed unexpectedly: {error}");
+        }
+    }
+}
+
+fn mutation_candidate(worker: &WorkerWorkspace) -> MutationCandidate {
+    MutationCandidate {
+        id: "candidate".into(),
+        sequence: 0,
+        path: "pkg/a.py".into(),
+        span: ByteSpan {
+            start: 0,
+            length: 8,
+        },
+        original: "original".into(),
+        replacement: "mutated!".into(),
+        operator: "test".into(),
+        line: 1,
+        column: 0,
+        symbol: None,
+        file_hash: worker
+            .manifest()
+            .entry(Utf8Path::new("pkg/a.py"))
+            .unwrap()
+            .blake3
+            .to_hex()
+            .to_string(),
+    }
+}
+
 #[test]
 fn reset_restores_changed_and_deleted_files_and_removes_new_files() {
     let project = FixtureProject::new();
@@ -74,6 +119,25 @@ fn reset_restores_changed_and_deleted_files_and_removes_new_files() {
         fs::read(project.root().join("pkg/a.py")).unwrap(),
         b"original\n"
     );
+}
+
+#[test]
+fn file_apis_create_nested_replace_read_only_and_remove_files() {
+    let project = FixtureProject::new();
+    let mut worker = create_worker(project.root());
+    let read_only = worker.root().join("pkg/a.py");
+    let mut permissions = fs::metadata(&read_only).unwrap().permissions();
+    permissions.set_readonly(true);
+    fs::set_permissions(&read_only, permissions).unwrap();
+
+    worker.write("generated/nested.txt", b"nested\n").unwrap();
+    worker.write("pkg/a.py", b"replacement\n").unwrap();
+
+    assert_eq!(worker.read("generated/nested.txt").unwrap(), b"nested\n");
+    assert_eq!(worker.read("pkg/a.py").unwrap(), b"replacement\n");
+    assert!(!worker.exists("missing.txt").unwrap());
+    worker.remove("generated/nested.txt").unwrap();
+    assert!(!worker.exists("generated/nested.txt").unwrap());
 }
 
 #[test]
@@ -137,7 +201,10 @@ fn explicit_exclude_wins_over_include_and_gitignore() {
 fn skips_symlink_with_typed_diagnostic() {
     let project = FixtureProject::new();
     let link = project.temp.path().join("linked.py");
-    if create_file_symlink(project.temp.path().join("pkg/a.py"), &link).is_err() {
+    if !link_created_or_platform_denied(create_file_symlink(
+        project.temp.path().join("pkg/a.py"),
+        &link,
+    )) {
         return;
     }
 
@@ -284,29 +351,7 @@ fn detects_original_change() {
 fn mutation_checks_hash_exact_original_and_span() {
     let project = FixtureProject::new();
     let mut worker = create_worker(project.root());
-    let hash = worker
-        .manifest()
-        .entry(Utf8Path::new("pkg/a.py"))
-        .unwrap()
-        .blake3
-        .to_hex()
-        .to_string();
-    let candidate = MutationCandidate {
-        id: "candidate".into(),
-        sequence: 0,
-        path: "pkg/a.py".into(),
-        span: ByteSpan {
-            start: 0,
-            length: 8,
-        },
-        original: "original".into(),
-        replacement: "mutated!".into(),
-        operator: "test".into(),
-        line: 1,
-        column: 0,
-        symbol: None,
-        file_hash: hash,
-    };
+    let candidate = mutation_candidate(&worker);
 
     worker.apply_mutation(&candidate).unwrap();
     assert_eq!(worker.read("pkg/a.py").unwrap(), b"mutated!\n");
@@ -317,6 +362,64 @@ fn mutation_checks_hash_exact_original_and_span() {
         Err(WorkspaceError::MutationHashMismatch { .. }
             | WorkspaceError::MutationOriginalMismatch { .. })
     ));
+}
+
+#[test]
+fn mutation_rejects_linked_target_with_matching_bytes() {
+    let project = FixtureProject::new();
+    let mut worker = create_worker(project.root());
+    let candidate = mutation_candidate(&worker);
+    let outside = tempfile::NamedTempFile::new().unwrap();
+    fs::write(outside.path(), b"original\n").unwrap();
+    let target = worker.root().join("pkg/a.py");
+    fs::remove_file(&target).unwrap();
+    if !link_created_or_platform_denied(create_file_symlink(
+        outside.path().to_path_buf(),
+        target.as_std_path(),
+    )) {
+        return;
+    }
+
+    assert!(matches!(
+        worker.apply_mutation(&candidate),
+        Err(WorkspaceError::InvalidPath { .. })
+    ));
+    assert_eq!(fs::read(outside.path()).unwrap(), b"original\n");
+}
+
+#[test]
+fn mutation_updates_a_read_only_regular_file() {
+    let project = FixtureProject::new();
+    let mut worker = create_worker(project.root());
+    let candidate = mutation_candidate(&worker);
+    let target = worker.root().join("pkg/a.py");
+    let mut permissions = fs::metadata(&target).unwrap().permissions();
+    permissions.set_readonly(true);
+    fs::set_permissions(&target, permissions).unwrap();
+
+    worker.apply_mutation(&candidate).unwrap();
+
+    assert_eq!(worker.read("pkg/a.py").unwrap(), b"mutated!\n");
+}
+
+#[test]
+fn rejected_mutation_does_not_make_the_target_writable() {
+    let project = FixtureProject::new();
+    let mut worker = create_worker(project.root());
+    let mut candidate = mutation_candidate(&worker);
+    candidate.original = "mismatch".into();
+    let target = worker.root().join("pkg/a.py");
+    let mut permissions = fs::metadata(&target).unwrap().permissions();
+    permissions.set_readonly(true);
+    fs::set_permissions(&target, permissions).unwrap();
+
+    assert!(matches!(
+        worker.apply_mutation(&candidate),
+        Err(WorkspaceError::MutationOriginalMismatch { .. })
+    ));
+
+    assert!(fs::metadata(&target).unwrap().permissions().readonly());
+    assert_eq!(fs::read(&target).unwrap(), b"original\n");
 }
 
 #[test]

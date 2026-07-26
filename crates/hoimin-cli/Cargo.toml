@@ -19,6 +19,8 @@ contracts = ["hoimin-core/contracts"]
 
 [dependencies]
 blake3 = "1.8"
+cap-fs-ext = "4.0"
+cap-primitives = "4.0"
 clap = { version = "4.5", features = ["derive"] }
 camino = "1.1"
 hoimin-core = { path = "../hoimin-core" }
@@ -37,7 +39,7 @@ ruff_python_ast = { version = "0.6.2", package = "littrs-ruff-python-ast" }
 ruff_text_size = { version = "0.6.2", package = "littrs-ruff-text-size" }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Diagnostics_ToolHelp", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_SystemServices", "Win32_System_Threading"] }
+windows-sys = { version = "0.60", features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Diagnostics_ToolHelp", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_SystemServices", "Win32_System_Threading"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
