@@ -79,8 +79,10 @@ impl WorkerWorkspace {
 mod tests {
     use std::fs;
     use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::{Arc, Barrier};
+    use std::sync::mpsc::sync_channel;
+    use std::sync::{Arc, Mutex};
     use std::thread;
+    use std::time::Duration;
 
     use camino::{Utf8Path, Utf8PathBuf};
     use hoimin_core::{
@@ -109,8 +111,8 @@ mod tests {
 
     struct MutationPause {
         fired: AtomicBool,
-        opened: Barrier,
-        resume: Barrier,
+        opened: std::sync::mpsc::SyncSender<()>,
+        resume: Mutex<std::sync::mpsc::Receiver<()>>,
     }
 
     impl WorkspaceRaceHook for MutationPause {
@@ -119,8 +121,12 @@ mod tests {
                 && path == Utf8Path::new("swap/target.py")
                 && !self.fired.swap(true, Ordering::SeqCst)
             {
-                self.opened.wait();
-                self.resume.wait();
+                self.opened.send(()).unwrap();
+                self.resume
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(5))
+                    .unwrap();
             }
         }
     }
@@ -167,16 +173,30 @@ mod tests {
     }
 
     #[test]
+    fn mutation_rejects_candidate_hash_when_worker_bytes_still_match() {
+        let (_project, mut worker, mut candidate) = worker_and_candidate();
+        candidate.file_hash = "not-the-manifest-hash".into();
+
+        assert!(matches!(
+            worker.apply_mutation(&candidate),
+            Err(super::WorkspaceError::MutationHashMismatch { .. })
+        ));
+        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n",);
+    }
+
+    #[test]
     fn parent_replacement_mutation_uses_the_opened_parent() {
         let (_project, mut worker, candidate) = worker_and_candidate();
         let root = worker.root().to_owned();
         let target = root.join("swap/target.py");
         make_read_only(&target);
         assert!(fs::metadata(&target).unwrap().permissions().readonly());
+        let (opened_tx, opened_rx) = sync_channel(0);
+        let (resume_tx, resume_rx) = sync_channel(0);
         let hook = Arc::new(MutationPause {
             fired: AtomicBool::new(false),
-            opened: Barrier::new(2),
-            resume: Barrier::new(2),
+            opened: opened_tx,
+            resume: Mutex::new(resume_rx),
         });
         let thread_hook = Arc::clone(&hook);
         let operation = thread::spawn(move || {
@@ -185,14 +205,14 @@ mod tests {
             (worker, result)
         });
 
-        hook.opened.wait();
+        opened_rx.recv_timeout(Duration::from_secs(5)).unwrap();
         fs::rename(root.join("swap"), root.join("held")).unwrap();
         fs::create_dir(root.join("swap")).unwrap();
         let outside = root.join("swap/target.py");
         fs::write(&outside, b"outside\n").unwrap();
         make_read_only(&outside);
         let outside_permissions = permission_fingerprint(&outside);
-        hook.resume.wait();
+        resume_tx.send(()).unwrap();
         let (worker, result) = operation.join().unwrap();
 
         result.unwrap();

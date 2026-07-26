@@ -131,8 +131,10 @@ fn required_directory<'a>(
 mod tests {
     use std::fs;
     use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::{Arc, Barrier};
+    use std::sync::mpsc::sync_channel;
+    use std::sync::{Arc, Mutex};
     use std::thread;
+    use std::time::Duration;
 
     use camino::Utf8Path;
     use hoimin_core::{BudgetLedger, EffectId, RunBudgets, reserve_workspace_copy};
@@ -164,8 +166,8 @@ mod tests {
 
     struct ResetPause {
         fired: AtomicBool,
-        opened: Barrier,
-        resume: Barrier,
+        opened: std::sync::mpsc::SyncSender<()>,
+        resume: Mutex<std::sync::mpsc::Receiver<()>>,
     }
 
     impl WorkspaceRaceHook for ResetPause {
@@ -174,8 +176,12 @@ mod tests {
                 && path == Utf8Path::new("swap/target.py")
                 && !self.fired.swap(true, Ordering::SeqCst)
             {
-                self.opened.wait();
-                self.resume.wait();
+                self.opened.send(()).unwrap();
+                self.resume
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(5))
+                    .unwrap();
             }
         }
     }
@@ -213,10 +219,12 @@ mod tests {
         let permissions = fs::metadata(root.join("swap/target.py"))
             .unwrap()
             .permissions();
+        let (opened_tx, opened_rx) = sync_channel(0);
+        let (resume_tx, resume_rx) = sync_channel(0);
         let hook = Arc::new(ResetPause {
             fired: AtomicBool::new(false),
-            opened: Barrier::new(2),
-            resume: Barrier::new(2),
+            opened: opened_tx,
+            resume: Mutex::new(resume_rx),
         });
         let thread_hook = Arc::clone(&hook);
         let operation = thread::spawn(move || {
@@ -228,14 +236,14 @@ mod tests {
             (worker, result)
         });
 
-        hook.opened.wait();
+        opened_rx.recv_timeout(Duration::from_secs(5)).unwrap();
         fs::rename(root.join("swap"), root.join("held")).unwrap();
         fs::create_dir(root.join("swap")).unwrap();
         let outside = root.join("swap/target.py");
         fs::write(&outside, b"outside\n").unwrap();
         make_read_only(&outside);
         let outside_permissions = permission_fingerprint(&outside);
-        hook.resume.wait();
+        resume_tx.send(()).unwrap();
         let (worker, result) = operation.join().unwrap();
 
         assert!(
@@ -268,5 +276,27 @@ mod tests {
         let restored = worker.root().join("swap/target.py");
         assert_eq!(fs::read(&restored).unwrap(), b"original\n");
         assert_eq!(permission_fingerprint(&restored), snapshot_permissions);
+    }
+
+    #[test]
+    fn matches_snapshot_detects_changed_bytes() {
+        let (_project, worker, _snapshot_permissions) = changed_worker();
+
+        assert!(!worker.matches_snapshot().unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unchanged_reset_keeps_the_existing_file_object() {
+        use std::os::unix::fs::MetadataExt;
+
+        let (_project, mut worker, _snapshot_permissions) = changed_worker();
+        worker.reset().unwrap();
+        let target = worker.root().join("swap/target.py");
+        let inode = fs::metadata(&target).unwrap().ino();
+
+        worker.reset().unwrap();
+
+        assert_eq!(fs::metadata(target).unwrap().ino(), inode);
     }
 }

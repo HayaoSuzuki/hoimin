@@ -776,8 +776,10 @@ mod tests {
     use std::ffi::OsStr;
     use std::fs;
     use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::{Arc, Barrier};
+    use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
+    use std::sync::{Arc, Mutex};
     use std::thread;
+    use std::time::Duration;
 
     use camino::{Utf8Path, Utf8PathBuf};
 
@@ -787,30 +789,40 @@ mod tests {
         operation: &'static str,
         path: Utf8PathBuf,
         fired: AtomicBool,
-        opened: Barrier,
-        resume: Barrier,
+        opened: SyncSender<()>,
+        resume: Mutex<Receiver<()>>,
     }
 
     impl PausedParent {
-        fn new(operation: &'static str, path: &str) -> Arc<Self> {
-            Arc::new(Self {
-                operation,
-                path: path.into(),
-                fired: AtomicBool::new(false),
-                opened: Barrier::new(2),
-                resume: Barrier::new(2),
-            })
+        fn new(operation: &'static str, path: &str) -> (Arc<Self>, Receiver<()>, SyncSender<()>) {
+            let (opened_tx, opened_rx) = sync_channel(0);
+            let (resume_tx, resume_rx) = sync_channel(0);
+            (
+                Arc::new(Self {
+                    operation,
+                    path: path.into(),
+                    fired: AtomicBool::new(false),
+                    opened: opened_tx,
+                    resume: Mutex::new(resume_rx),
+                }),
+                opened_rx,
+                resume_tx,
+            )
         }
 
-        fn replace_parent(&self, worker: &Utf8Path) -> TestPermissionFingerprint {
-            self.opened.wait();
+        fn replace_parent(
+            worker: &Utf8Path,
+            opened: &Receiver<()>,
+            resume: &SyncSender<()>,
+        ) -> TestPermissionFingerprint {
+            opened.recv_timeout(Duration::from_secs(5)).unwrap();
             fs::rename(worker.join("swap"), worker.join("held")).unwrap();
             fs::create_dir(worker.join("swap")).unwrap();
             let outside = worker.join("swap/target");
             fs::write(&outside, b"outside").unwrap();
             make_read_only(&outside);
             let permissions = permission_fingerprint(&outside);
-            self.resume.wait();
+            resume.send(()).unwrap();
             permissions
         }
     }
@@ -821,8 +833,12 @@ mod tests {
                 && path == self.path
                 && !self.fired.swap(true, Ordering::SeqCst)
             {
-                self.opened.wait();
-                self.resume.wait();
+                self.opened.send(()).unwrap();
+                self.resume
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(5))
+                    .unwrap();
             }
         }
     }
@@ -968,6 +984,18 @@ mod tests {
     }
 
     #[test]
+    fn missing_parent_is_created_only_when_requested() {
+        let fixture = RootFixture::new();
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+
+        assert!(
+            root.open_parent(Utf8Path::new("missing/file.py"), false)
+                .is_err()
+        );
+        assert!(!fixture.worker.join("missing").exists());
+    }
+
+    #[test]
     fn rejects_non_normal_and_linked_parent_components() {
         let fixture = RootFixture::new();
         fixture.link_dir("outside", "linked").unwrap();
@@ -1004,14 +1032,14 @@ mod tests {
         fs::create_dir(fixture.worker.join("swap")).unwrap();
         fs::write(fixture.worker.join("swap/target"), b"worker").unwrap();
         let root = WorkerRoot::open(fixture.worker_path()).unwrap();
-        let hook = PausedParent::new("read", "swap/target");
+        let (hook, opened, resume) = PausedParent::new("read", "swap/target");
         let thread_hook = Arc::clone(&hook);
         let operation = thread::spawn(move || {
             let _guard = install_workspace_race_hook(thread_hook);
             root.read(Utf8Path::new("swap/target"))
         });
 
-        let outside_permissions = hook.replace_parent(&fixture.worker);
+        let outside_permissions = PausedParent::replace_parent(&fixture.worker, &opened, &resume);
         let result = operation.join().unwrap();
 
         assert_eq!(result.unwrap(), b"worker");
@@ -1026,14 +1054,14 @@ mod tests {
         fs::create_dir(fixture.worker.join("swap")).unwrap();
         fs::write(fixture.worker.join("swap/target"), b"worker").unwrap();
         let root = WorkerRoot::open(fixture.worker_path()).unwrap();
-        let hook = PausedParent::new("write", "swap/target");
+        let (hook, opened, resume) = PausedParent::new("write", "swap/target");
         let thread_hook = Arc::clone(&hook);
         let operation = thread::spawn(move || {
             let _guard = install_workspace_race_hook(thread_hook);
             root.write(Utf8Path::new("swap/target"), b"changed")
         });
 
-        let outside_permissions = hook.replace_parent(&fixture.worker);
+        let outside_permissions = PausedParent::replace_parent(&fixture.worker, &opened, &resume);
         let outside = fixture.worker.join("swap/target");
         let result = operation.join().unwrap();
 
@@ -1052,14 +1080,14 @@ mod tests {
         fs::create_dir(fixture.worker.join("swap")).unwrap();
         fs::write(fixture.worker.join("swap/target"), b"worker").unwrap();
         let root = WorkerRoot::open(fixture.worker_path()).unwrap();
-        let hook = PausedParent::new("remove", "swap/target");
+        let (hook, opened, resume) = PausedParent::new("remove", "swap/target");
         let thread_hook = Arc::clone(&hook);
         let operation = thread::spawn(move || {
             let _guard = install_workspace_race_hook(thread_hook);
             root.remove_file(Utf8Path::new("swap/target"))
         });
 
-        let outside_permissions = hook.replace_parent(&fixture.worker);
+        let outside_permissions = PausedParent::replace_parent(&fixture.worker, &opened, &resume);
         let outside = fixture.worker.join("swap/target");
         let result = operation.join().unwrap();
 
@@ -1079,5 +1107,133 @@ mod tests {
             root.open_parent(&absolute, false),
             Err(WorkspaceError::InvalidPath { .. })
         ));
+    }
+
+    #[test]
+    fn snapshot_matching_distinguishes_missing_kind_bytes_and_permissions() {
+        let fixture = RootFixture::new();
+        fs::write(fixture.worker.join("target"), b"expected").unwrap();
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+        let permissions = fs::metadata(fixture.worker.join("target"))
+            .unwrap()
+            .permissions();
+        let fingerprint = super::super::permission_fingerprint(&permissions);
+
+        assert!(
+            root.snapshot_matches(Utf8Path::new("target"), b"expected", fingerprint)
+                .unwrap()
+        );
+        assert!(
+            !root
+                .snapshot_matches(Utf8Path::new("target"), b"different", fingerprint)
+                .unwrap()
+        );
+        assert!(
+            !root
+                .snapshot_matches(Utf8Path::new("missing"), b"expected", fingerprint)
+                .unwrap()
+        );
+
+        fs::remove_file(fixture.worker.join("target")).unwrap();
+        fs::create_dir(fixture.worker.join("target")).unwrap();
+        assert!(
+            !root
+                .snapshot_matches(Utf8Path::new("target"), b"expected", fingerprint)
+                .unwrap()
+        );
+        fs::remove_dir(fixture.worker.join("target")).unwrap();
+        fs::write(fixture.worker.join("target"), b"expected").unwrap();
+        let mut changed_permissions = permissions;
+        changed_permissions.set_readonly(true);
+        fs::set_permissions(fixture.worker.join("target"), changed_permissions).unwrap();
+        assert!(
+            !root
+                .snapshot_matches(Utf8Path::new("target"), b"expected", fingerprint)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn missing_removal_is_a_noop_and_link_guards_reject_links() {
+        let fixture = RootFixture::new();
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+        assert!(root.remove_any_if_exists(Utf8Path::new("missing")).is_ok());
+
+        let link = fixture.worker.join("linked");
+        if fixture.link_dir("outside", "linked").is_err() {
+            return;
+        }
+        let (parent, name) = root.open_parent(Utf8Path::new("linked"), false).unwrap();
+        assert!(matches!(
+            WorkerRoot::reject_link(&parent, &name, Utf8Path::new("linked"), "test link",),
+            Err(WorkspaceError::InvalidPath { .. })
+        ));
+        assert!(matches!(
+            WorkerRoot::reject_link_if_present(
+                &parent,
+                &name,
+                Utf8Path::new("linked"),
+                "test link",
+            ),
+            Err(WorkspaceError::InvalidPath { .. })
+        ));
+        fs::remove_file(link)
+            .or_else(|_| fs::remove_dir(fixture.worker.join("linked")))
+            .unwrap();
+        assert!(
+            WorkerRoot::reject_link_if_present(
+                &parent,
+                &name,
+                Utf8Path::new("linked"),
+                "test link",
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn non_directory_parent_errors_are_not_treated_as_missing_entries() {
+        let fixture = RootFixture::new();
+        let regular = fixture.worker.join("regular");
+        fs::write(&regular, b"contents").unwrap();
+        let parent = File::open(regular).unwrap();
+        let name = OsString::from("child");
+        let path = Utf8Path::new("regular/child");
+
+        assert!(WorkerRoot::remove_entry_if_exists(&parent, &name, path).is_err());
+        assert!(
+            WorkerRoot::reject_link_if_present(&parent, &name, path, "inspect test entry",)
+                .is_err()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn mutation_writable_reopen_rejects_same_device_replacement() {
+        use cap_fs_ext::OpenOptionsFollowExt;
+
+        let fixture = RootFixture::new();
+        let target = fixture.worker.join("target");
+        fs::write(&target, b"original").unwrap();
+        make_read_only(&target);
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+        let (parent, name) = root.open_parent(Utf8Path::new("target"), false).unwrap();
+        let mut options = cap_primitives::fs::OpenOptions::new();
+        options
+            .read(true)
+            .follow(cap_primitives::fs::FollowSymlinks::No);
+        let inspected = cap_primitives::fs::open(&parent, Path::new(&name), &options).unwrap();
+        let mutation_file = MutationFile {
+            file: inspected,
+            reopen: Some((parent, name)),
+        };
+        fs::remove_file(&target).unwrap();
+        fs::write(&target, b"replacement").unwrap();
+
+        assert!(matches!(
+            mutation_file.into_writable(Utf8Path::new("target")),
+            Err(WorkspaceError::InvalidPath { .. })
+        ));
+        assert_eq!(fs::read(target).unwrap(), b"replacement");
     }
 }
