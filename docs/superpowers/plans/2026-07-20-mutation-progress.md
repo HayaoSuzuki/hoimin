@@ -196,9 +196,11 @@ fn three_adjacent_stalls_are_saturated() {
 }
 
 #[test]
-fn improvement_resets_and_regression_does_not_increment_stalls() {
+fn improvement_and_regression_break_the_stall_chain() {
     assert_eq!(compare_reports(&[survived(), killed()], nz(3)).consecutive_stalls, 0);
-    assert_eq!(compare_reports(&[killed(), survived()], nz(3)).latest, ProgressState::Regressing);
+    let regression = compare_reports(&[killed(), killed(), survived()], nz(3));
+    assert_eq!(regression.consecutive_stalls, 0);
+    assert_eq!(regression.latest, ProgressState::Regressing);
 }
 ```
 
@@ -227,7 +229,7 @@ fn key(candidate: &MutationCandidate) -> MutantKey { /* copy these five fields o
 
 Create a per-report map of unique keys and a duplicate-key set. For each immediately adjacent pair of `Usable` reports, exclude a key duplicated in either side, then count common, added, removed, and inconclusive mutants. `survived -> killed` is improvement; `killed -> survived` is regression. Common-set score is `killed / (killed + survived)` and is null if its denominator is zero.
 
-Increment stalls only for a nonempty common set with neither improvement nor regression. Reset to zero on improvement without regression. Leave the count unchanged for regression (including a comparison containing both improvement and regression), an empty common set, or a broken chain. When both transition directions occur, retain both aggregate counts but publish `Regressing`. Publish `Improving`, `Regressing`, `Stalled`, `Saturated`, or `Indeterminate`; `Saturated` requires a latest stalled comparison and `stalls >= patience`.
+Increment stalls only for a nonempty common set with neither improvement nor regression. Reset to zero on improvement, regression (including a comparison containing both improvement and regression), an indeterminate comparison, or a broken adjacency gap. When both transition directions occur, retain both aggregate counts but publish `Regressing`. Publish `Improving`, `Regressing`, `Stalled`, `Saturated`, or `Indeterminate`; `Saturated` requires a latest stalled comparison and `stalls >= patience`.
 
 - [ ] **Step 4: Verify comparison behavior**
 

@@ -153,14 +153,34 @@ fn compare_three_adjacent_stalls_are_saturated() {
 }
 
 #[test]
-fn compare_improvement_resets_and_regression_does_not_increment_stalls() {
+fn compare_improvement_and_regression_break_the_stall_chain() {
     let improvement = compare_reports(&[survived(), killed()], nz(3));
     assert_eq!(improvement.consecutive_stalls, 0);
     assert_eq!(improvement.latest, ProgressState::Improving);
 
     let regression = compare_reports(&[killed(), killed(), survived()], nz(3));
-    assert_eq!(regression.consecutive_stalls, 1);
+    assert_eq!(regression.consecutive_stalls, 0);
     assert_eq!(regression.latest, ProgressState::Regressing);
+}
+
+#[test]
+fn compare_regression_between_stalls_breaks_adjacency() {
+    let result = compare_reports(&[killed(), killed(), survived(), survived()], nz(2));
+
+    assert_eq!(
+        result
+            .comparisons
+            .iter()
+            .map(|comparison| comparison.state)
+            .collect::<Vec<_>>(),
+        vec![
+            ProgressState::Stalled,
+            ProgressState::Regressing,
+            ProgressState::Stalled,
+        ]
+    );
+    assert_eq!(result.consecutive_stalls, 1);
+    assert_eq!(result.latest, ProgressState::Stalled);
 }
 
 #[test]
@@ -195,7 +215,7 @@ fn compare_regression_takes_precedence_over_improvement_in_a_mixed_transition() 
     assert_eq!(comparison.improvements, 1);
     assert_eq!(comparison.regressions, 1);
     assert_eq!(comparison.state, ProgressState::Regressing);
-    assert_eq!(result.consecutive_stalls, 1);
+    assert_eq!(result.consecutive_stalls, 0);
     assert_eq!(result.latest, ProgressState::Regressing);
 }
 
@@ -324,7 +344,37 @@ fn compare_excludes_each_inconclusive_status_from_judgments_and_scores() {
 }
 
 #[test]
-fn compare_an_empty_common_set_does_not_change_stalls() {
+fn compare_inconclusive_status_between_stalls_breaks_adjacency() {
+    let result = compare_reports(
+        &[
+            killed(),
+            killed(),
+            usable(vec![mutant("common", MutationStatus::Timeout)]),
+            killed(),
+            killed(),
+        ],
+        nz(2),
+    );
+
+    assert_eq!(
+        result
+            .comparisons
+            .iter()
+            .map(|comparison| comparison.state)
+            .collect::<Vec<_>>(),
+        vec![
+            ProgressState::Stalled,
+            ProgressState::Indeterminate,
+            ProgressState::Indeterminate,
+            ProgressState::Stalled,
+        ]
+    );
+    assert_eq!(result.consecutive_stalls, 1);
+    assert_eq!(result.latest, ProgressState::Stalled);
+}
+
+#[test]
+fn compare_an_empty_common_set_breaks_the_stall_chain() {
     let result = compare_reports(
         &[
             killed(),
@@ -340,7 +390,7 @@ fn compare_an_empty_common_set_does_not_change_stalls() {
 
     assert_eq!(result.comparisons.len(), 2);
     assert_eq!(result.comparisons[1].common, 0);
-    assert_eq!(result.consecutive_stalls, 1);
+    assert_eq!(result.consecutive_stalls, 0);
     assert_eq!(result.latest, ProgressState::Indeterminate);
 }
 

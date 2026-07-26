@@ -80,21 +80,20 @@ pub fn compare_reports(reports: &[InputReport], patience: NonZeroUsize) -> Progr
         };
         let (InputReport::Usable(previous), InputReport::Usable(current)) = (previous, current)
         else {
+            consecutive_stalls = 0;
             latest = ProgressState::Indeterminate;
             continue;
         };
 
         let eligibility = candidate_set_eligibility(previous, current);
         let comparison = compare_usable_reports(previous, current, eligibility);
-        if !eligibility.is_matching() {
-            consecutive_stalls = 0;
-        }
         match comparison.state {
             ProgressState::Improving => {
                 consecutive_stalls = 0;
                 latest = ProgressState::Improving;
             }
             ProgressState::Regressing => {
+                consecutive_stalls = 0;
                 latest = ProgressState::Regressing;
             }
             ProgressState::Stalled => {
@@ -106,6 +105,7 @@ pub fn compare_reports(reports: &[InputReport], patience: NonZeroUsize) -> Progr
                 };
             }
             ProgressState::Indeterminate => {
+                consecutive_stalls = 0;
                 latest = ProgressState::Indeterminate;
             }
             ProgressState::Saturated => unreachable!("individual comparisons cannot saturate"),
