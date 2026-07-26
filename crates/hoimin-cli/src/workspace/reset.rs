@@ -132,6 +132,28 @@ mod tests {
     use super::super::root::{WorkspaceRaceHook, install_workspace_race_hook};
     use super::super::{CopyOptions, WorkerWorkspace, WorkspaceError, WorkspacePlan};
 
+    #[cfg(unix)]
+    type TestPermissionFingerprint = u32;
+    #[cfg(windows)]
+    type TestPermissionFingerprint = bool;
+
+    #[cfg(unix)]
+    fn permission_fingerprint(path: &Utf8Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        fs::metadata(path).unwrap().permissions().mode()
+    }
+
+    #[cfg(windows)]
+    fn permission_fingerprint(path: &Utf8Path) -> bool {
+        fs::metadata(path).unwrap().permissions().readonly()
+    }
+
+    fn make_read_only(path: &Utf8Path) {
+        let mut permissions = fs::metadata(path).unwrap().permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(path, permissions).unwrap();
+    }
+
     struct ResetPause {
         fired: AtomicBool,
         opened: Barrier,
@@ -150,7 +172,11 @@ mod tests {
         }
     }
 
-    fn changed_worker() -> (tempfile::TempDir, WorkerWorkspace) {
+    fn changed_worker() -> (
+        tempfile::TempDir,
+        WorkerWorkspace,
+        TestPermissionFingerprint,
+    ) {
         let project = tempfile::tempdir().unwrap();
         fs::create_dir(project.path().join("swap")).unwrap();
         fs::write(project.path().join("swap/target.py"), b"original\n").unwrap();
@@ -165,15 +191,16 @@ mod tests {
         let mut worker = plan
             .create_worker(&reservation.create_worker(EffectId(2), 0).unwrap())
             .unwrap();
+        let snapshot_permissions = permission_fingerprint(&worker.root().join("swap/target.py"));
         worker
             .write("swap/target.py", b"changed contents\n")
             .unwrap();
-        (project, worker)
+        (project, worker, snapshot_permissions)
     }
 
     #[test]
     fn parent_replacement_reset_restore_uses_the_opened_parent() {
-        let (_project, worker) = changed_worker();
+        let (_project, worker, snapshot_permissions) = changed_worker();
         let root = worker.root().to_owned();
         let permissions = fs::metadata(root.join("swap/target.py"))
             .unwrap()
@@ -198,7 +225,8 @@ mod tests {
         fs::create_dir(root.join("swap")).unwrap();
         let outside = root.join("swap/target.py");
         fs::write(&outside, b"outside\n").unwrap();
-        let outside_readonly = fs::metadata(&outside).unwrap().permissions().readonly();
+        make_read_only(&outside);
+        let outside_permissions = permission_fingerprint(&outside);
         hook.resume.wait();
         let (worker, result) = operation.join().unwrap();
 
@@ -206,11 +234,16 @@ mod tests {
             result.is_ok() || matches!(result, Err(WorkspaceError::WorkspaceRestore { .. })),
             "{result:?}"
         );
-        assert_eq!(fs::read(&outside).unwrap(), b"outside\n");
         assert_eq!(
-            fs::metadata(&outside).unwrap().permissions().readonly(),
-            outside_readonly
+            fs::read(root.join("held/target.py")).unwrap(),
+            b"original\n"
         );
+        assert_eq!(
+            permission_fingerprint(&root.join("held/target.py")),
+            snapshot_permissions
+        );
+        assert_eq!(fs::read(&outside).unwrap(), b"outside\n");
+        assert_eq!(permission_fingerprint(&outside), outside_permissions);
         drop(worker);
     }
 }

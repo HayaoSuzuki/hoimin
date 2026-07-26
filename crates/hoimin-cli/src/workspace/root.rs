@@ -802,12 +802,16 @@ mod tests {
             })
         }
 
-        fn replace_parent(&self, worker: &Utf8Path) {
+        fn replace_parent(&self, worker: &Utf8Path) -> TestPermissionFingerprint {
             self.opened.wait();
             fs::rename(worker.join("swap"), worker.join("held")).unwrap();
             fs::create_dir(worker.join("swap")).unwrap();
-            fs::write(worker.join("swap/target"), b"outside").unwrap();
+            let outside = worker.join("swap/target");
+            fs::write(&outside, b"outside").unwrap();
+            make_read_only(&outside);
+            let permissions = permission_fingerprint(&outside);
             self.resume.wait();
+            permissions
         }
     }
 
@@ -821,6 +825,17 @@ mod tests {
                 self.resume.wait();
             }
         }
+    }
+
+    #[cfg(unix)]
+    type TestPermissionFingerprint = u32;
+    #[cfg(windows)]
+    type TestPermissionFingerprint = bool;
+
+    fn make_read_only(path: &Utf8Path) {
+        let mut permissions = fs::metadata(path).unwrap().permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(path, permissions).unwrap();
     }
 
     #[cfg(unix)]
@@ -996,14 +1011,13 @@ mod tests {
             root.read(Utf8Path::new("swap/target"))
         });
 
-        hook.replace_parent(&fixture.worker);
+        let outside_permissions = hook.replace_parent(&fixture.worker);
         let result = operation.join().unwrap();
 
         assert_eq!(result.unwrap(), b"worker");
-        assert_eq!(
-            fs::read(fixture.worker.join("swap/target")).unwrap(),
-            b"outside"
-        );
+        let outside = fixture.worker.join("swap/target");
+        assert_eq!(fs::read(&outside).unwrap(), b"outside",);
+        assert_eq!(permission_fingerprint(&outside), outside_permissions);
     }
 
     #[test]
@@ -1019,9 +1033,8 @@ mod tests {
             root.write(Utf8Path::new("swap/target"), b"changed")
         });
 
-        hook.replace_parent(&fixture.worker);
+        let outside_permissions = hook.replace_parent(&fixture.worker);
         let outside = fixture.worker.join("swap/target");
-        let outside_permissions = permission_fingerprint(&outside);
         let result = operation.join().unwrap();
 
         result.unwrap();
@@ -1046,9 +1059,8 @@ mod tests {
             root.remove_file(Utf8Path::new("swap/target"))
         });
 
-        hook.replace_parent(&fixture.worker);
+        let outside_permissions = hook.replace_parent(&fixture.worker);
         let outside = fixture.worker.join("swap/target");
-        let outside_permissions = permission_fingerprint(&outside);
         let result = operation.join().unwrap();
 
         result.unwrap();

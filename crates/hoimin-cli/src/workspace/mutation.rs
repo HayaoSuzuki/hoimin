@@ -90,6 +90,23 @@ mod tests {
     use super::super::root::{WorkspaceRaceHook, install_workspace_race_hook};
     use super::super::{CopyOptions, WorkerWorkspace, WorkspacePlan};
 
+    #[cfg(unix)]
+    fn permission_fingerprint(path: &Utf8Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        fs::metadata(path).unwrap().permissions().mode()
+    }
+
+    #[cfg(windows)]
+    fn permission_fingerprint(path: &Utf8Path) -> bool {
+        fs::metadata(path).unwrap().permissions().readonly()
+    }
+
+    fn make_read_only(path: &Utf8Path) {
+        let mut permissions = fs::metadata(path).unwrap().permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(path, permissions).unwrap();
+    }
+
     struct MutationPause {
         fired: AtomicBool,
         opened: Barrier,
@@ -153,6 +170,9 @@ mod tests {
     fn parent_replacement_mutation_uses_the_opened_parent() {
         let (_project, mut worker, candidate) = worker_and_candidate();
         let root = worker.root().to_owned();
+        let target = root.join("swap/target.py");
+        make_read_only(&target);
+        assert!(fs::metadata(&target).unwrap().permissions().readonly());
         let hook = Arc::new(MutationPause {
             fired: AtomicBool::new(false),
             opened: Barrier::new(2),
@@ -170,7 +190,8 @@ mod tests {
         fs::create_dir(root.join("swap")).unwrap();
         let outside = root.join("swap/target.py");
         fs::write(&outside, b"outside\n").unwrap();
-        let outside_readonly = fs::metadata(&outside).unwrap().permissions().readonly();
+        make_read_only(&outside);
+        let outside_permissions = permission_fingerprint(&outside);
         hook.resume.wait();
         let (worker, result) = operation.join().unwrap();
 
@@ -179,11 +200,14 @@ mod tests {
             fs::read(root.join("held/target.py")).unwrap(),
             b"mutated!\n"
         );
-        assert_eq!(fs::read(&outside).unwrap(), b"outside\n");
-        assert_eq!(
-            fs::metadata(&outside).unwrap().permissions().readonly(),
-            outside_readonly
+        assert!(
+            !fs::metadata(root.join("held/target.py"))
+                .unwrap()
+                .permissions()
+                .readonly()
         );
+        assert_eq!(fs::read(&outside).unwrap(), b"outside\n");
+        assert_eq!(permission_fingerprint(&outside), outside_permissions);
         drop(worker);
     }
 }

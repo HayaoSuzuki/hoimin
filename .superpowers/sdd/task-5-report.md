@@ -52,3 +52,14 @@ Complete.
 - Reset's previously vulnerable multi-step reopen was fixed at the capability boundary rather
   than weakened in the test.
 - `.serena` and the unrelated modified Task 1 report are excluded from the commit.
+
+## Review follow-up: meaningful permission sentinels
+
+- Every alternate-directory sentinel is explicitly made read-only before the paused operation
+  resumes; its platform permission fingerprint is captured before the race and compared after.
+- The mutation race also makes the originally opened target read-only. This exercises the Unix
+  identity-checked reopen and Windows inspect/clear/reopen backend, then verifies the held file
+  contains the mutation and became writable while the alternate sentinel remains read-only.
+- The reset restore race records the worker snapshot's exact permission fingerprint and verifies
+  both restored bytes and permissions on the held target. Its read-only alternate sentinel keeps
+  distinct content and permissions unchanged.
