@@ -1,8 +1,10 @@
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 from tools.focused_mutation_support.model import (
     Candidate,
@@ -13,6 +15,14 @@ from tools.focused_mutation_support.model import (
     RunState,
 )
 from tools.focused_mutation_support.reporting import render_markdown
+from tools.focused_mutation_support.runner import CommandTimedOut
+from tools.focused_mutation import (
+    Dependencies,
+    Options,
+    _parser,
+    main,
+    run_workflow,
+)
 from tools.focused_mutation_support.mutation import (
     build_baseline_command,
     build_list_command,
@@ -48,6 +58,17 @@ LIST_JSON_27_1_0 = json.dumps(
     ]
 )
 
+WORKFLOW_LIST_JSON = json.dumps(
+    [
+        {
+            "file": "crates/hoimin-core/src/machine.rs",
+            "name": f"machine.rs:1: replace {symbol}",
+            "function": {"function_name": symbol},
+        }
+        for symbol in ("a", "b")
+    ]
+)
+
 
 def fixture_candidate(
     symbol: str,
@@ -75,6 +96,156 @@ def fixture_record(
     record.repository = {"head": "abc", "dirty": False}
     record.elapsed_seconds = 12.5
     return record
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+class WorkflowProbe:
+    def __init__(self, root: Path, *, dirty: bool = False) -> None:
+        self.root = root
+        self.dirty = dirty
+
+    def text(self, argv: list[str]) -> str:
+        replies = {
+            ("git", "rev-parse", "--show-toplevel"): f"{self.root}\n",
+            ("git", "rev-parse", "HEAD"): "abc\n",
+            ("git", "branch", "--show-current"): "feature\n",
+            (
+                "git",
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=all",
+            ): (
+                " M crates/hoimin-core/src/machine.rs\0"
+                if self.dirty
+                else ""
+            ),
+            (
+                "git",
+                "diff",
+                "--name-only",
+                "-z",
+                "origin/main...HEAD",
+                "--",
+                "*.rs",
+            ): "crates/hoimin-core/src/machine.rs\0",
+            (
+                "git",
+                "log",
+                "--first-parent",
+                "-20",
+                "--name-only",
+                "--format=",
+            ): "",
+        }
+        return replies[tuple(argv)]
+
+
+class WorkflowRunner:
+    def __init__(
+        self,
+        output: Path,
+        *,
+        fail_label: str | None = None,
+        timeout_label: str | None = None,
+        interrupt_label: str | None = None,
+        malformed_inventory: bool = False,
+        after_baseline: object | None = None,
+    ) -> None:
+        self.output = output
+        self.fail_label = fail_label
+        self.timeout_label = timeout_label
+        self.interrupt_label = interrupt_label
+        self.malformed_inventory = malformed_inventory
+        self.after_baseline = after_baseline
+        self.calls: list[tuple[list[str], Path, float, str]] = []
+        self.checkpoint_command_counts: list[int] = []
+
+    def _record(
+        self, argv: list[str], cwd: Path, label: str, sequence: int
+    ) -> CommandRecord:
+        stdout = self.output / "commands" / f"{sequence:04d}.stdout"
+        stderr = self.output / "commands" / f"{sequence:04d}.stderr"
+        if label == "cargo-mutants-version":
+            value = "cargo-mutants 27.1.0\n"
+        elif label == "inventory":
+            value = "{" if self.malformed_inventory else WORKFLOW_LIST_JSON
+        else:
+            value = ""
+        stdout.write_text(value, encoding="utf-8")
+        stderr.write_text("", encoding="utf-8")
+        return CommandRecord(
+            sequence,
+            label,
+            argv,
+            str(cwd),
+            "2026-07-26T00:00:00+00:00",
+            "2026-07-26T00:00:01+00:00",
+            1.0,
+            1 if label == self.fail_label else 0,
+            stdout_path=str(stdout),
+            stderr_path=str(stderr),
+        )
+
+    def run(
+        self, argv: list[str], cwd: Path, timeout: float, label: str
+    ) -> CommandRecord:
+        saved = self.output / "run.json"
+        if saved.is_file():
+            self.checkpoint_command_counts.append(
+                len(json.loads(saved.read_text())["commands"])
+            )
+        self.calls.append((argv, cwd, timeout, label))
+        record = self._record(argv, cwd, label, len(self.calls))
+        if label == self.timeout_label:
+            record.timed_out = True
+            record.exit_code = -15
+            raise CommandTimedOut(record)
+        if label == self.interrupt_label:
+            raise KeyboardInterrupt
+        if label.startswith("baseline-") and self.after_baseline is not None:
+            self.after_baseline()
+        if label.startswith("mutation-"):
+            results = cwd / "mutants.out"
+            results.mkdir(parents=True)
+            (results / "caught.txt").write_text(
+                f"machine.rs:1: replace {label.removeprefix('mutation-') == '0001' and 'a' or 'b'}\n",
+                encoding="utf-8",
+            )
+        return record
+
+
+def workflow_fixture(
+    directory: str,
+    *,
+    clock: FakeClock | None = None,
+    dirty: bool = False,
+    **runner_options: object,
+) -> tuple[Options, Dependencies, WorkflowRunner]:
+    root = Path(directory) / "repo"
+    output = Path(directory) / "output"
+    source = root / "crates/hoimin-core/src/machine.rs"
+    source.parent.mkdir(parents=True)
+    source.write_text("fn a() {}\nfn b() {}\n", encoding="utf-8")
+    actual_clock = clock or FakeClock()
+    runner = WorkflowRunner(output, **runner_options)
+    options = Options(
+        root, output, 1_800.0, "origin/main", (), (), False, None
+    )
+    dependencies = Dependencies(
+        actual_clock,
+        lambda: datetime(2026, 7, 26, tzinfo=timezone.utc),
+        WorkflowProbe(root, dirty=dirty),
+        runner,
+    )
+    return options, dependencies, runner
 
 
 def command_record(*, exit_code: int = 0) -> CommandRecord:
@@ -108,6 +279,225 @@ class FocusedMutationReportingTests(unittest.TestCase):
         self.assertIn("`a` — survived", markdown)
         self.assertIn("`b` — reporting_reserve", markdown)
         self.assertLess(markdown.index("`a`"), markdown.index("`b`"))
+
+    def test_baseline_failure_checkpoints_and_skips_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            options, dependencies, runner = workflow_fixture(
+                directory, fail_label="baseline-hoimin-core"
+            )
+            record = run_workflow(options, dependencies)
+            self.assertEqual(record.state, RunState.BASELINE_FAILED)
+            self.assertFalse(
+                any(label.startswith("mutation-") for *_, label in runner.calls)
+            )
+            self.assertTrue((options.output / "run.json").is_file())
+            self.assertTrue(
+                all(
+                    item.not_run_reason == "baseline_failed"
+                    for item in record.candidates
+                )
+            )
+
+    def test_reporting_reserve_is_rechecked_after_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            clock = FakeClock()
+
+            def enter_reserve() -> None:
+                clock.now = 1_500.0
+
+            options, dependencies, runner = workflow_fixture(
+                directory, clock=clock, after_baseline=enter_reserve
+            )
+            record = run_workflow(options, dependencies)
+            self.assertEqual(record.state, RunState.BUDGET_EXHAUSTED)
+            self.assertFalse(
+                any(label.startswith("mutation-") for *_, label in runner.calls)
+            )
+            self.assertTrue(
+                all(
+                    item.not_run_reason == "reporting_reserve"
+                    for item in record.candidates
+                )
+            )
+
+    def test_tool_absence_is_infrastructure_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            options, dependencies, runner = workflow_fixture(directory)
+            runner.run = mock.Mock(side_effect=FileNotFoundError("cargo"))
+            record = run_workflow(options, dependencies)
+            self.assertEqual(record.state, RunState.TOOL_UNAVAILABLE)
+            self.assertTrue((options.output / "run.json").is_file())
+            self.assertFalse(
+                any(item.state is CandidateState.TIMEOUT for item in record.candidates)
+            )
+
+    def test_malformed_inventory_is_command_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            options, dependencies, _ = workflow_fixture(
+                directory, malformed_inventory=True
+            )
+            record = run_workflow(options, dependencies)
+            self.assertEqual(record.state, RunState.COMMAND_FAILED)
+            self.assertTrue((options.output / "run.json").is_file())
+
+    def test_discovery_command_timeout_does_not_timeout_candidate(self) -> None:
+        for label in ("cargo-mutants-version", "inventory"):
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                options, dependencies, _ = workflow_fixture(
+                    directory, timeout_label=label
+                )
+                record = run_workflow(options, dependencies)
+                self.assertEqual(record.state, RunState.COMMAND_FAILED)
+                self.assertFalse(
+                    any(
+                        item.state is CandidateState.TIMEOUT
+                        for item in record.candidates
+                    )
+                )
+
+    def test_baseline_timeout_is_baseline_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            options, dependencies, _ = workflow_fixture(
+                directory, timeout_label="baseline-hoimin-core"
+            )
+            record = run_workflow(options, dependencies)
+            self.assertEqual(record.state, RunState.BASELINE_FAILED)
+            self.assertTrue(
+                all(
+                    item.not_run_reason == "baseline_failed"
+                    for item in record.candidates
+                )
+            )
+
+    def test_mutation_timeout_is_attributed_to_active_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            options, dependencies, _ = workflow_fixture(
+                directory, timeout_label="mutation-0001"
+            )
+            record = run_workflow(options, dependencies)
+            self.assertEqual(record.candidates[0].state, CandidateState.TIMEOUT)
+            self.assertEqual(record.candidates[0].command_sequences, [4])
+            self.assertNotEqual(record.candidates[1].state, CandidateState.TIMEOUT)
+
+    def test_keyboard_interrupt_checkpoints_partial_run(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            options, dependencies, _ = workflow_fixture(
+                directory, interrupt_label="mutation-0001"
+            )
+            record = run_workflow(options, dependencies)
+            self.assertEqual(record.state, RunState.INTERRUPTED)
+            self.assertTrue((options.output / "run.json").is_file())
+            self.assertEqual(
+                json.loads((options.output / "run.json").read_text())["state"],
+                "interrupted",
+            )
+
+    def test_dirty_repository_metadata_is_persisted(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            options, dependencies, _ = workflow_fixture(directory, dirty=True)
+            record = run_workflow(options, dependencies)
+            self.assertTrue(record.repository["dirty"])
+            self.assertEqual(
+                record.repository["dirty_paths"],
+                ["crates/hoimin-core/src/machine.rs"],
+            )
+
+    def test_each_command_observes_previous_command_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            options, dependencies, runner = workflow_fixture(directory)
+            run_workflow(options, dependencies)
+            self.assertEqual(
+                runner.checkpoint_command_counts,
+                list(range(len(runner.calls))),
+            )
+
+    def test_cli_preserves_repeated_file_and_symbol_selectors(self) -> None:
+        arguments = _parser().parse_args(
+            [
+                "--output",
+                "/tmp/out",
+                "--file",
+                "a.rs",
+                "--file",
+                "b.rs",
+                "--symbol",
+                "a",
+                "--symbol",
+                "b",
+            ]
+        )
+        self.assertEqual(arguments.file, ["a.rs", "b.rs"])
+        self.assertEqual(arguments.symbol, ["a", "b"])
+
+    def test_cli_maps_run_states_to_exit_codes(self) -> None:
+        expected = {
+            RunState.COMPLETED: 0,
+            RunState.BUDGET_EXHAUSTED: 0,
+            RunState.INTERRUPTED: 130,
+            RunState.COMMAND_FAILED: 2,
+            RunState.BASELINE_FAILED: 2,
+            RunState.TOOL_UNAVAILABLE: 2,
+        }
+        repository_result = subprocess.CompletedProcess(
+            ["git"], 0, stdout=str(Path.cwd()), stderr=""
+        )
+        for state, exit_code in expected.items():
+            with self.subTest(state=state):
+                record = fixture_record(candidates=[], state=state)
+                with (
+                    mock.patch(
+                        "tools.focused_mutation.subprocess.run",
+                        return_value=repository_result,
+                    ),
+                    mock.patch(
+                        "tools.focused_mutation.run_workflow",
+                        return_value=record,
+                    ),
+                ):
+                    self.assertEqual(
+                        main(["--output", "/tmp/focused-cli-test"]),
+                        exit_code,
+                    )
+
+    def test_output_path_rejection_happens_before_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            options, dependencies, runner = workflow_fixture(directory)
+            options = Options(
+                options.repository,
+                Path(directory) / "mutants.out-focused",
+                options.budget_seconds,
+                options.base,
+                options.files,
+                options.symbols,
+                options.iterate,
+                options.prior_inventory,
+            )
+            with self.assertRaisesRegex(ValueError, "mutants.out"):
+                run_workflow(options, dependencies)
+            self.assertEqual(runner.calls, [])
+
+    def test_prior_inventory_comparison_is_recorded(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            options, dependencies, _ = workflow_fixture(directory)
+            prior = Path(directory) / "prior.json"
+            prior.write_text(
+                json.dumps({"candidates": [{}, {}, {}, {}]}),
+                encoding="utf-8",
+            )
+            options = Options(
+                options.repository,
+                options.output,
+                options.budget_seconds,
+                options.base,
+                options.files,
+                options.symbols,
+                options.iterate,
+                prior,
+            )
+            record = run_workflow(options, dependencies)
+            self.assertEqual(record.comparison["full_candidates"], 4)
+            self.assertEqual(record.comparison["focused_candidates"], 2)
+            self.assertEqual(record.comparison["reduction_ratio"], 0.5)
 
     def test_list_command_is_workspace_json_and_narrow_files(self) -> None:
         argv = build_list_command(

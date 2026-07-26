@@ -85,6 +85,20 @@ def _mark_pending(record: RunRecord, reason: str) -> None:
             candidate.not_run_reason = reason
 
 
+def _mark_pending_package(
+    record: RunRecord, package: str, reason: str
+) -> None:
+    for candidate in record.candidates:
+        parts = Path(candidate.path).parts
+        if (
+            candidate.state is CandidateState.PENDING
+            and len(parts) > 1
+            and parts[1] == package
+        ):
+            candidate.state = CandidateState.NOT_RUN
+            candidate.not_run_reason = reason
+
+
 def _comparison(path: Path | None, focused_count: int) -> dict[str, object] | None:
     if path is None:
         return None
@@ -106,6 +120,9 @@ def run_workflow(options: Options, dependencies: Dependencies) -> RunRecord:
     record.started_at = dependencies.utc_now().isoformat()
     store = RunStore(options.output)
     store.initialize(record)
+    command_stage = "discovery"
+    active_candidate = None
+    active_package = None
 
     def checkpoint() -> None:
         record.elapsed_seconds = dependencies.monotonic() - started
@@ -146,6 +163,7 @@ def run_workflow(options: Options, dependencies: Dependencies) -> RunRecord:
 
         inventory_dir = options.output / "cargo-mutants" / "inventory"
         inventory_dir.mkdir(parents=True, exist_ok=True)
+        command_stage = "discovery"
         version = run_command(
             ["cargo", "mutants", "--version"],
             inventory_dir,
@@ -163,6 +181,7 @@ def run_workflow(options: Options, dependencies: Dependencies) -> RunRecord:
                 record.tools["cargo-mutants"] = _read_stdout(version).strip()
 
         if record.state is RunState.RUNNING:
+            command_stage = "discovery"
             list_command = run_command(
                 build_list_command(options.repository, [item.path for item in selected]),
                 inventory_dir,
@@ -197,6 +216,8 @@ def run_workflow(options: Options, dependencies: Dependencies) -> RunRecord:
                 break
             package = Path(candidate.path).parts[1]
             if package not in baseline_by_package:
+                command_stage = "baseline"
+                active_package = package
                 baseline = run_command(
                     build_baseline_command(candidate),
                     options.repository,
@@ -205,14 +226,20 @@ def run_workflow(options: Options, dependencies: Dependencies) -> RunRecord:
                 )
                 baseline_by_package[package] = baseline.exit_code == 0
             if not baseline_by_package[package]:
-                candidate.state = CandidateState.NOT_RUN
-                candidate.not_run_reason = "baseline_failed"
+                _mark_pending_package(record, package, "baseline_failed")
                 record.state = RunState.BASELINE_FAILED
-                _mark_pending(record, "baseline_failed")
+                _mark_pending(record, "run_stopped")
+                checkpoint()
+                break
+            if not budget.may_start_mutation(dependencies.monotonic()):
+                record.state = RunState.BUDGET_EXHAUSTED
+                _mark_pending(record, "reporting_reserve")
                 checkpoint()
                 break
             run_directory = options.output / "cargo-mutants" / f"{index + 1:04d}"
             run_directory.mkdir(parents=True, exist_ok=True)
+            command_stage = "mutation"
+            active_candidate = candidate
             mutation = run_command(
                 build_mutation_command(options.repository, candidate, options.iterate),
                 run_directory,
@@ -227,16 +254,24 @@ def run_workflow(options: Options, dependencies: Dependencies) -> RunRecord:
         if record.state is RunState.RUNNING:
             record.state = RunState.COMPLETED
     except CommandTimedOut as error:
-        if record.candidates:
-            current = next(
-                (item for item in record.candidates if item.state is CandidateState.PENDING),
-                None,
-            )
-            if current is not None:
-                current.state = CandidateState.TIMEOUT
-                current.command_sequences.append(error.record.sequence)
-        record.state = RunState.BUDGET_EXHAUSTED
-        _mark_pending(record, "command_timeout")
+        if command_stage == "discovery":
+            record.state = RunState.COMMAND_FAILED
+            record.error = f"{error.record.label} timed out"
+            _mark_pending(record, "command_failed")
+        elif command_stage == "baseline":
+            record.state = RunState.BASELINE_FAILED
+            record.error = f"{error.record.label} timed out"
+            if active_package is not None:
+                _mark_pending_package(
+                    record, active_package, "baseline_failed"
+                )
+            _mark_pending(record, "run_stopped")
+        else:
+            if active_candidate is not None:
+                active_candidate.state = CandidateState.TIMEOUT
+                active_candidate.command_sequences.append(error.record.sequence)
+            record.state = RunState.BUDGET_EXHAUSTED
+            _mark_pending(record, "command_timeout")
     except (CommandInterrupted, KeyboardInterrupt):
         record.state = RunState.INTERRUPTED
         _mark_pending(record, "interrupted")
