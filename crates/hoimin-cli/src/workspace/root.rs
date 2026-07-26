@@ -385,7 +385,7 @@ impl WorkerRoot {
                 .file_name()
                 .into_string()
                 .map_err(|_| WorkspaceError::NonUtf8Path)?;
-            let path = prefix.join(&name);
+            let path = Self::logical_child_path(prefix, &name);
             let metadata =
                 cap_primitives::fs::stat(directory, Path::new(&name), FollowSymlinks::No)
                     .map_err(|error| Self::map_entry_error("inspect worker entry", &path, error))?;
@@ -427,7 +427,9 @@ impl WorkerRoot {
     ) -> Result<(), WorkspaceError> {
         let metadata = match cap_primitives::fs::stat(parent, Path::new(name), FollowSymlinks::No) {
             Ok(metadata) => metadata,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                return Self::validate_missing_entry_parent(parent, logical_path);
+            }
             Err(error) => {
                 return Err(Self::map_entry_error(
                     "inspect worker entry",
@@ -453,7 +455,7 @@ impl WorkerRoot {
                 })?;
                 let child_name = child.file_name();
                 let child_utf8 = child_name.to_str().ok_or(WorkspaceError::NonUtf8Path)?;
-                let child_path = logical_path.join(child_utf8);
+                let child_path = Self::logical_child_path(logical_path, child_utf8);
                 Self::remove_entry_if_exists(&directory, &child_name, &child_path)?;
             }
             make_directory_writable(&directory, logical_path)?;
@@ -564,6 +566,35 @@ impl WorkerRoot {
         Ok(path.components().map(|part| part.as_str()).collect())
     }
 
+    fn logical_child_path(parent: &Utf8Path, name: &str) -> Utf8PathBuf {
+        if parent.as_str().is_empty() {
+            Utf8PathBuf::from(name)
+        } else {
+            Utf8PathBuf::from(format!("{parent}/{name}"))
+        }
+    }
+
+    fn validate_missing_entry_parent(
+        parent: &File,
+        logical_path: &Utf8Path,
+    ) -> Result<(), WorkspaceError> {
+        let metadata = parent
+            .metadata()
+            .map_err(|error| WorkspaceError::io("inspect worker parent", logical_path, error))?;
+        if metadata.is_dir() {
+            Ok(())
+        } else {
+            Err(WorkspaceError::io(
+                "inspect worker entry",
+                logical_path,
+                io::Error::new(
+                    io::ErrorKind::NotADirectory,
+                    "worker parent is not a directory",
+                ),
+            ))
+        }
+    }
+
     pub(crate) fn open_parent(
         &self,
         path: &Utf8Path,
@@ -646,7 +677,9 @@ impl WorkerRoot {
                 path: logical_path.to_owned(),
             }),
             Ok(_) => Ok(()),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                Self::validate_missing_entry_parent(parent, logical_path)
+            }
             Err(error) => Err(Self::map_entry_error(operation, logical_path, error)),
         }
     }
@@ -843,7 +876,7 @@ mod tests {
             if let Err(error) = fs::rename(worker.join("swap"), worker.join("held")) {
                 #[cfg(windows)]
                 {
-                    assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+                    assert_eq!(error.raw_os_error(), Some(32));
                     resume.send(()).unwrap();
                     return ParentReplacement::Denied;
                 }
@@ -1164,6 +1197,18 @@ mod tests {
             root.open_parent(&absolute, false),
             Err(WorkspaceError::InvalidPath { .. })
         ));
+    }
+
+    #[test]
+    fn logical_child_paths_always_use_portable_separators() {
+        assert_eq!(
+            WorkerRoot::logical_child_path(Utf8Path::new("parent"), "child").as_str(),
+            "parent/child"
+        );
+        assert_eq!(
+            WorkerRoot::logical_child_path(Utf8Path::new(""), "child").as_str(),
+            "child"
+        );
     }
 
     #[test]

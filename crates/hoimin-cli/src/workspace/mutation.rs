@@ -209,7 +209,7 @@ mod tests {
         if let Err(error) = fs::rename(root.join("swap"), root.join("held")) {
             #[cfg(windows)]
             {
-                assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+                assert_eq!(error.raw_os_error(), Some(32));
                 resume_tx.send(()).unwrap();
                 let (worker, result) = operation.join().unwrap();
                 result.unwrap();
