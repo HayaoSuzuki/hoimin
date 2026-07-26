@@ -31,6 +31,7 @@ enum WindowsFinalOperation {
     Read,
     Write,
     Remove,
+    RemoveEntry,
 }
 
 #[cfg(any(windows, test))]
@@ -41,14 +42,20 @@ impl WindowsFinalOperation {
             | Self::InspectMutation
             | Self::WriteMutation
             | Self::Read
-            | Self::Remove => WindowsCreateDisposition::Open,
+            | Self::Remove
+            | Self::RemoveEntry => WindowsCreateDisposition::Open,
             Self::Write => WindowsCreateDisposition::OpenIf,
         }
     }
 
     #[cfg(test)]
     const fn needs_delete_access(self) -> bool {
-        matches!(self, Self::Remove)
+        matches!(self, Self::Remove | Self::RemoveEntry)
+    }
+
+    #[cfg(test)]
+    const fn accepts_directory_or_reparse(self) -> bool {
+        matches!(self, Self::RemoveEntry)
     }
 }
 
@@ -388,6 +395,11 @@ impl WorkerRoot {
             }
             make_directory_writable(&directory, logical_path)?;
             drop(directory);
+            #[cfg(windows)]
+            {
+                return windows::remove_entry(parent, name, logical_path);
+            }
+            #[cfg(unix)]
             cap_primitives::fs::remove_dir(parent, Path::new(name)).map_err(|error| {
                 Self::map_entry_error("remove worker directory", logical_path, error)
             })
@@ -652,20 +664,20 @@ fn remove_link_or_reparse(
     path: &Utf8Path,
     metadata: &cap_primitives::fs::Metadata,
 ) -> Result<(), WorkspaceError> {
+    #[cfg(windows)]
+    {
+        let _ = metadata;
+        return windows::remove_entry(parent, name, path);
+    }
     #[cfg(unix)]
     let is_directory = metadata.is_dir();
-    #[cfg(windows)]
-    let is_directory = {
-        use cap_primitives::fs::MetadataExt;
-        metadata.file_attributes()
-            & windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_DIRECTORY
-            != 0
-    };
+    #[cfg(unix)]
     let result = if is_directory {
         cap_primitives::fs::remove_dir(parent, Path::new(name))
     } else {
         cap_primitives::fs::remove_file(parent, Path::new(name))
     };
+    #[cfg(unix)]
     result.map_err(|error| WorkerRoot::map_entry_error("remove worker link", path, error))
 }
 
@@ -729,12 +741,19 @@ mod tests {
             WindowsFinalOperation::Remove.create_disposition(),
             WindowsCreateDisposition::Open
         );
+        assert_eq!(
+            WindowsFinalOperation::RemoveEntry.create_disposition(),
+            WindowsCreateDisposition::Open
+        );
         assert!(!WindowsFinalOperation::Read.needs_delete_access());
         assert!(!WindowsFinalOperation::InspectForWrite.needs_delete_access());
         assert!(!WindowsFinalOperation::InspectMutation.needs_delete_access());
         assert!(!WindowsFinalOperation::WriteMutation.needs_delete_access());
         assert!(!WindowsFinalOperation::Write.needs_delete_access());
         assert!(WindowsFinalOperation::Remove.needs_delete_access());
+        assert!(WindowsFinalOperation::RemoveEntry.needs_delete_access());
+        assert!(!WindowsFinalOperation::Remove.accepts_directory_or_reparse());
+        assert!(WindowsFinalOperation::RemoveEntry.accepts_directory_or_reparse());
     }
 
     #[test]

@@ -140,6 +140,18 @@ pub(super) fn remove_file(
         .map_err(|error| WorkspaceError::io("remove worker file", logical_path, error))
 }
 
+pub(super) fn remove_entry(
+    parent: &File,
+    name: &OsString,
+    logical_path: &Utf8Path,
+) -> Result<(), WorkspaceError> {
+    validate_final_name(name, logical_path)?;
+    let file = open_final_handle(parent, name, WindowsFinalOperation::RemoveEntry)
+        .map_err(|error| WorkspaceError::io("remove worker entry", logical_path, error))?;
+    mark_delete_by_handle(&file)
+        .map_err(|error| WorkspaceError::io("remove worker entry", logical_path, error))
+}
+
 fn open_final(
     parent: &File,
     name: &OsStr,
@@ -217,7 +229,7 @@ fn open_final_handle(
                 WindowsCreateDisposition::Open => FILE_OPEN,
                 WindowsCreateDisposition::OpenIf => FILE_OPEN_IF,
             },
-            FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
+            create_options(operation),
             ptr::null(),
             0,
         )
@@ -227,6 +239,15 @@ fn open_final_handle(
     }
     // SAFETY: successful `NtCreateFile` returns one newly owned kernel handle.
     Ok(unsafe { File::from_raw_handle(handle as _) })
+}
+
+const fn create_options(operation: WindowsFinalOperation) -> u32 {
+    let common = FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT;
+    if matches!(operation, WindowsFinalOperation::RemoveEntry) {
+        common
+    } else {
+        common | FILE_NON_DIRECTORY_FILE
+    }
 }
 
 fn validate_final_name(name: &OsStr, logical_path: &Utf8Path) -> Result<(), WorkspaceError> {
@@ -289,6 +310,7 @@ const fn desired_access(operation: WindowsFinalOperation) -> u32 {
         WindowsFinalOperation::Read => common | FILE_READ_DATA,
         WindowsFinalOperation::Write => common | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES,
         WindowsFinalOperation::Remove => common | DELETE | FILE_WRITE_ATTRIBUTES,
+        WindowsFinalOperation::RemoveEntry => common | DELETE | FILE_WRITE_ATTRIBUTES,
     }
 }
 
@@ -301,6 +323,7 @@ const fn operation_name(operation: WindowsFinalOperation) -> &'static str {
         WindowsFinalOperation::Read => "read worker file",
         WindowsFinalOperation::Write => "write worker file",
         WindowsFinalOperation::Remove => "remove worker file",
+        WindowsFinalOperation::RemoveEntry => "remove worker entry",
     }
 }
 
@@ -380,7 +403,19 @@ mod tests {
         assert_eq!(desired_access(WindowsFinalOperation::Write) & DELETE, 0);
         assert_ne!(desired_access(WindowsFinalOperation::Remove) & DELETE, 0);
         assert_ne!(
+            desired_access(WindowsFinalOperation::RemoveEntry) & DELETE,
+            0
+        );
+        assert_ne!(
             desired_access(WindowsFinalOperation::Write) & FILE_WRITE_DATA,
+            0
+        );
+        assert_eq!(
+            create_options(WindowsFinalOperation::RemoveEntry) & FILE_NON_DIRECTORY_FILE,
+            0
+        );
+        assert_ne!(
+            create_options(WindowsFinalOperation::RemoveEntry) & FILE_OPEN_REPARSE_POINT,
             0
         );
     }

@@ -61,3 +61,21 @@ would address the replacement pathname rather than the opened worker root.
 - Restoration and permission changes are capability-relative on Unix and Windows.
 - Changes are limited to Task 4 production files, recovery tests, this report, and the required
   stable-API repair for Task 3's Windows identity comparison.
+
+## Independent-review follow-up: Windows entry deletion
+
+- Removed the remaining Windows reset deletion calls through `cap_primitives`.
+- Added `WindowsFinalOperation::RemoveEntry`, which opens the exact final entry relative to the
+  stable parent `HANDLE` using `OBJECT_ATTRIBUTES::RootDirectory`, `FILE_OPEN_REPARSE_POINT`,
+  `FILE_OPEN`, and `DELETE` access.
+- Unlike regular-file operations, this operation deliberately omits
+  `FILE_NON_DIRECTORY_FILE`, allowing empty directories and directory reparse points to be
+  opened as entries.
+- Deletion uses only `SetFileInformationByHandle`, first with `FileDispositionInfoEx` and then
+  the legacy handle-only disposition. There is no ambient-path fallback.
+- A name replacement race can therefore delete only the independently opened replacement entry
+  or fail; it cannot traverse a symlink/junction into its external target.
+- Extended the cross-platform operation-policy test to require delete access, non-destructive
+  open disposition, reparse-point opening, and directory acceptance for `RemoveEntry`.
+- Re-ran the Windows minimal native-backend harness successfully for
+  `x86_64-pc-windows-msvc`.
