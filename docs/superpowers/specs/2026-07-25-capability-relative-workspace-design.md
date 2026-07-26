@@ -17,7 +17,8 @@ than falling back to the current check-then-use sequence.
 ## Decision
 
 Introduce a private `WorkerRoot` abstraction backed by the `cap-primitives`
-filesystem APIs and `cap-fs-ext` no-follow open options.
+filesystem APIs and `cap-fs-ext` no-follow open options on Unix, plus a
+handle-relative native Windows final-entry backend.
 
 - `WorkerRoot` owns an open handle for the materialized worker root and retains
   its path only for display and process-working-directory compatibility.
@@ -34,10 +35,13 @@ filesystem APIs and `cap-fs-ext` no-follow open options.
 - Failure to open the initial root capability or to perform a no-follow
   operation is an operation error. There is no ambient-path fallback.
 
-This uses a maintained cross-platform implementation while making the stricter
-hoimin contract explicit: cap-std's general guarantee that a path remains
-beneath a directory is not by itself sufficient, because hoimin rejects
-symlinks rather than accepting safe in-root symlinks.
+On Windows, `cap-primitives` remains responsible for stable parent traversal,
+but final reads, writes, removals, reset entry deletion, mutation reopen, and
+permission changes use `NtCreateFile` relative to the open parent
+`RootDirectory`. Final handles are opened with `FILE_OPEN_REPARSE_POINT`,
+validated before side effects, and deleted with
+`SetFileInformationByHandle`. This avoids Windows implementations that derive
+an ambient pathname from a directory handle.
 
 ## Capability and Path Contract
 
@@ -203,5 +207,6 @@ expanded to unrelated process, scheduler, or reporting code.
 - Linux `openat2` documents `RESOLVE_BENEATH` and `RESOLVE_NO_SYMLINKS` as
   pathname-resolution race defenses.
 - Windows `NtCreateFile` supports names relative to an open `RootDirectory`
-  and `FILE_OPEN_REPARSE_POINT`; the selected library encapsulates those
-  platform details.
+  and `FILE_OPEN_REPARSE_POINT`; hoimin uses these primitives directly for
+  final entries because pathname reconstruction does not satisfy the stable
+  capability contract.

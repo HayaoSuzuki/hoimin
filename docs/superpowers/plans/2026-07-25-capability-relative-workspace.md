@@ -34,7 +34,7 @@
 - Consumes: a materialized worker-root `Utf8PathBuf`.
 - Produces: `WorkerRoot::open(path) -> Result<Self, WorkspaceError>`, `WorkerRoot::path() -> &Utf8Path`, `WorkerRoot::open_parent(path, create) -> Result<(File, OsString), WorkspaceError>`, and no-follow metadata/open helpers used by later tasks.
 
-- [ ] **Step 1: Add failing path and no-follow traversal unit tests**
+- [x] **Step 1: Add failing path and no-follow traversal unit tests**
 
 Add tests in `root.rs` that open a temporary root, assert normal nested
 components resolve, and assert `""`, `"."`, `".."`, `"../outside"`,
@@ -61,7 +61,7 @@ fn rejects_non_normal_and_linked_parent_components() {
 }
 ```
 
-- [ ] **Step 2: Run the focused unit tests and verify RED**
+- [x] **Step 2: Run the focused unit tests and verify RED**
 
 Run:
 
@@ -72,7 +72,7 @@ cargo test -p hoimin-cli workspace::root::tests -- --nocapture
 Expected: compilation fails because `WorkerRoot` and `open_parent` do not yet
 exist.
 
-- [ ] **Step 3: Add the capability dependency and root abstraction**
+- [x] **Step 3: Add the capability dependency and root abstraction**
 
 Add `cap-primitives = "4.0"` and `cap-fs-ext = "4.0"` to `hoimin-cli`.
 Implement `WorkerRoot` with an
@@ -111,7 +111,7 @@ ordinary I/O failures through `WorkspaceError::io` with the logical path.
 Use `File::try_clone` for the root parent and retain every newly opened parent
 handle until the next component has been opened.
 
-- [ ] **Step 4: Make worker construction fail closed**
+- [x] **Step 4: Make worker construction fail closed**
 
 Replace the `root: Utf8PathBuf` field with `root: WorkerRoot`, change
 `from_materialized` from `const fn -> Self` to `fn -> Result<Self,
@@ -131,7 +131,7 @@ pub fn root(&self) -> &Utf8Path {
 }
 ```
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 Run:
 
@@ -164,7 +164,7 @@ git commit -m "refactor: establish worker root capabilities"
   `Result<_, WorkspaceError>` signatures; `WorkerWorkspace` delegates its
   public operations to these methods.
 
-- [ ] **Step 1: Add characterization and external-sentinel tests**
+- [x] **Step 1: Add characterization and external-sentinel tests**
 
 Extend integration tests to cover nested creation, read-only replacement,
 missing existence, removal, and rejection of final-component links. Assert an
@@ -195,7 +195,7 @@ fn file_apis_reject_final_link_without_touching_outside() {
 }
 ```
 
-- [ ] **Step 2: Run the new tests and verify RED**
+- [x] **Step 2: Run the new tests and verify RED**
 
 Run:
 
@@ -207,7 +207,7 @@ cargo test -p hoimin-cli --test workspace_recovery root_relative_ -- --nocapture
 Expected: final-link write/remove behavior fails under the pathname
 implementation.
 
-- [ ] **Step 3: Implement handle-based read/write/remove/exists**
+- [x] **Step 3: Implement handle-based read/write/remove/exists**
 
 In `WorkerRoot`, open the stable parent first. For read, open the final name
 with `FollowSymlinks::No`, verify regular-file metadata from the opened handle,
@@ -241,7 +241,7 @@ file-handle and directory-handle helpers in `root.rs`. Keep ambient
 `make_tree_writable` only for final temporary-directory cleanup, which is
 outside the worker content authorization boundary and owns the `TempDir`.
 
-- [ ] **Step 4: Delegate `WorkerWorkspace` APIs and run tests**
+- [x] **Step 4: Delegate `WorkerWorkspace` APIs and run tests**
 
 ```rust
 pub fn read(&self, path: impl AsRef<Utf8Path>) -> Result<Vec<u8>, WorkspaceError> {
@@ -264,7 +264,7 @@ cargo test -p hoimin-cli --test workspace_handler --test workspace_recovery
 Expected: all integration tests pass, including new final-link and sentinel
 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/hoimin-cli/src/workspace/root.rs crates/hoimin-cli/src/workspace/mod.rs crates/hoimin-cli/tests/workspace_handler.rs crates/hoimin-cli/tests/workspace_recovery.rs
@@ -283,7 +283,7 @@ git commit -m "refactor: route workspace file APIs through capabilities"
 - Produces: mutation reads, validates, makes writable, truncates, and writes
   through one `std::fs::File`; no pathname is resolved after validation.
 
-- [ ] **Step 1: Add a mutation final-link regression test**
+- [x] **Step 1: Add a mutation final-link regression test**
 
 Create a valid candidate for `pkg/a.py`, replace the worker target with a link
 to an outside file containing matching original bytes, invoke
@@ -305,7 +305,7 @@ fn mutation_rejects_linked_target_with_matching_bytes() {
 }
 ```
 
-- [ ] **Step 2: Run the mutation test and verify RED**
+- [x] **Step 2: Run the mutation test and verify RED**
 
 Run:
 
@@ -316,7 +316,7 @@ cargo test -p hoimin-cli --test workspace_handler mutation_rejects_linked_target
 Expected: the current read/check/write sequence does not satisfy the new
 handle-bound contract.
 
-- [ ] **Step 3: Refactor mutation to retain the opened file**
+- [x] **Step 3: Refactor mutation to retain the opened file**
 
 Open the target once without following links and with read/write access. Read
 bytes from the handle, perform the existing manifest hash, candidate hash,
@@ -338,7 +338,7 @@ file.write_all(&mutated)
     .map_err(|error| WorkspaceError::io("write mutation target", &candidate.path, error))?;
 ```
 
-- [ ] **Step 4: Run mutation and workspace tests**
+- [x] **Step 4: Run mutation and workspace tests**
 
 Run:
 
@@ -349,7 +349,7 @@ cargo test -p hoimin-cli --test workspace_recovery
 
 Expected: mutation regressions and all recovery tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/hoimin-cli/src/workspace/root.rs crates/hoimin-cli/src/workspace/mutation.rs crates/hoimin-cli/tests/workspace_handler.rs
@@ -369,7 +369,7 @@ git commit -m "fix: bind mutation writes to verified file handles"
   WorkspaceError>`, recursive no-follow removal, snapshot comparison, content
   restoration, and permission restoration without ambient joins.
 
-- [ ] **Step 1: Add reset characterization and link-safety tests**
+- [x] **Step 1: Add reset characterization and link-safety tests**
 
 Cover extra nested files/directories, files replaced by directories, read-only
 files, mode restoration on Unix, and an unexpected directory link/junction to
@@ -391,7 +391,7 @@ fn reset_removes_worker_link_without_traversing_outside() {
 }
 ```
 
-- [ ] **Step 2: Run reset tests and verify RED**
+- [x] **Step 2: Run reset tests and verify RED**
 
 Run:
 
@@ -402,7 +402,7 @@ cargo test -p hoimin-cli --test workspace_recovery reset_ -- --nocapture
 Expected: at least the link/junction safety or new characterization assertions
 fail with the ambient `WalkBuilder` and pathname restore implementation.
 
-- [ ] **Step 3: Implement capability-relative enumeration and removal**
+- [x] **Step 3: Implement capability-relative enumeration and removal**
 
 Define:
 
@@ -426,7 +426,7 @@ parent, making actual files/directories writable through handles, and removing
 one final component. Links/reparse points are removed as entries and never
 opened as directories.
 
-- [ ] **Step 4: Rewrite reset and snapshot verification**
+- [x] **Step 4: Rewrite reset and snapshot verification**
 
 Replace `collect_worker_entries`, `remove_any`,
 `remove_directory_if_empty`, and path-based `make_writable` with `WorkerRoot`
@@ -444,7 +444,7 @@ for (path, snapshot) in &self.snapshot {
 }
 ```
 
-- [ ] **Step 5: Run reset tests and commit**
+- [x] **Step 5: Run reset tests and commit**
 
 Run:
 
@@ -478,7 +478,7 @@ git commit -m "refactor: restore workers through directory capabilities"
   parent acquisition, plus deterministic read/write/remove/mutation/reset race
   regressions on all supported OSes.
 
-- [ ] **Step 1: Add a test-only race hook**
+- [x] **Step 1: Add a test-only race hook**
 
 Keep the hook private and compiled only for unit tests. It must pause after a
 parent capability is opened but before the final entry operation.
@@ -495,7 +495,7 @@ symbol. Place the race tests in the three workspace source modules so they can
 install the private hook without enabling it in integration or all-feature
 builds.
 
-- [ ] **Step 2: Add deterministic race tests**
+- [x] **Step 2: Add deterministic race tests**
 
 For each operation, use two barriers: the operation signals that its parent is
 open; the test renames the real parent and installs a symlink/junction or
@@ -520,7 +520,7 @@ directory junction when symlink privileges are unavailable; if neither can be
 created, exercise and assert the explicit fail-closed setup path instead of
 silently returning from the test.
 
-- [ ] **Step 3: Run race tests and normal-build checks**
+- [x] **Step 3: Run race tests and normal-build checks**
 
 Run:
 
@@ -532,7 +532,7 @@ cargo check -p hoimin-cli --all-targets
 Expected: all race tests pass and the normal library/binary compile without
 test-hook linkage.
 
-- [ ] **Step 4: Run the platform-relevant test suite and commit**
+- [x] **Step 4: Run the platform-relevant test suite and commit**
 
 Run:
 
@@ -563,7 +563,7 @@ git commit -m "test: cover workspace parent replacement races"
 - Produces: caught viable mutants in the security-critical target set, clean
   formatting/lints/tests, and recorded verification evidence.
 
-- [ ] **Step 1: Run focused mutation testing**
+- [x] **Step 1: Run focused mutation testing**
 
 Target only the new root boundary plus mutation/reset decision functions:
 
@@ -579,14 +579,23 @@ cargo mutants -p hoimin-cli \
 Expected: every viable retained mutant is caught. Record unviable and timeout
 mutants separately; do not broaden the target to unrelated CLI modules.
 
-- [ ] **Step 2: Close meaningful survivors with RED/GREEN tests**
+- [x] **Step 2: Close meaningful survivors with RED/GREEN tests**
 
 For each meaningful survivor, add the smallest behavior assertion that fails
 when the predicate is inverted or removed, verify the individual mutant is
 missed before the test and caught afterward, then rerun the focused command.
 Do not change production behavior merely to satisfy an unviable mutant.
 
-- [ ] **Step 3: Run complete local verification**
+Focused mutation retained the same 62-candidate set and test argv across
+comparison runs. The initial run produced 36 caught, 20 missed, 2 unviable,
+and 4 timeout outcomes. The final run produced 55 caught, 5 missed,
+2 unviable, and 0 timeout outcomes. The remaining misses are one
+filesystem-identity combination without a meaningful reachable scenario, one
+non-`NotFound` final-stat injection that would require a mutant-only production
+seam, and three Windows-only snapshot predicates not executable on the macOS
+mutation host. Windows CI exercises the corresponding runtime behavior.
+
+- [x] **Step 3: Run complete local verification**
 
 Run:
 
@@ -600,14 +609,14 @@ git diff --check
 
 Expected: every command exits zero.
 
-- [ ] **Step 4: Verify documentation consistency**
+- [x] **Step 4: Verify documentation consistency**
 
 Compare the final implementation against every design section. Update the
 design only for implementation facts that changed without weakening the
 approved security contract. Check off completed plan steps and record the
 focused mutation outcome without generated `mutants.out` artifacts.
 
-- [ ] **Step 5: Commit final verification changes**
+- [x] **Step 5: Commit final verification changes**
 
 ```bash
 git add crates/hoimin-cli/src/workspace/root.rs crates/hoimin-cli/tests/workspace_handler.rs crates/hoimin-cli/tests/workspace_recovery.rs docs/superpowers/specs/2026-07-25-capability-relative-workspace-design.md docs/superpowers/plans/2026-07-25-capability-relative-workspace.md
