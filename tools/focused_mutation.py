@@ -241,7 +241,12 @@ def run_workflow(options: Options, dependencies: Dependencies) -> RunRecord:
             command_stage = "mutation"
             active_candidate = candidate
             mutation = run_command(
-                build_mutation_command(options.repository, candidate, options.iterate),
+                build_mutation_command(
+                    options.repository,
+                    run_directory,
+                    candidate,
+                    options.iterate,
+                ),
                 run_directory,
                 budget.mutation_timeout(dependencies.monotonic()),
                 f"mutation-{index + 1:04d}",

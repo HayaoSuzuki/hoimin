@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timezone
+import inspect
 from pathlib import Path
 import subprocess
 import tempfile
@@ -520,6 +521,11 @@ class FocusedMutationReportingTests(unittest.TestCase):
         )
 
     def test_focused_command_uses_exact_anchored_mutant_name(self) -> None:
+        self.assertIn(
+            "output_directory",
+            inspect.signature(build_mutation_command).parameters,
+            "focused mutations must explicitly isolate cargo-mutants output",
+        )
         candidate = Candidate(
             path="crates/hoimin-core/src/machine.rs",
             symbol="RunState::accept_completion",
@@ -527,7 +533,14 @@ class FocusedMutationReportingTests(unittest.TestCase):
                 "crates/hoimin-core/src/machine.rs:324: replace guard"
             ),
         )
-        argv = build_mutation_command(Path("/repo"), candidate, iterate=False)
+        argv = build_mutation_command(
+            Path("/repo"), Path("/evidence/cargo-mutants/0001"), candidate,
+            iterate=False,
+        )
+        self.assertEqual(
+            argv[argv.index("--output") + 1],
+            "/evidence/cargo-mutants/0001",
+        )
         self.assertIn(
             (
                 "^crates/hoimin\\-core/src/machine\\.rs:324:"
@@ -540,14 +553,21 @@ class FocusedMutationReportingTests(unittest.TestCase):
     def test_focused_command_enables_reuse_only_when_requested(self) -> None:
         candidate = Candidate("crates/a/src/lib.rs", "f", "name")
         self.assertEqual(
-            build_mutation_command(Path("/repo"), candidate, iterate=True)[-1],
+            build_mutation_command(
+                Path("/repo"), Path("/evidence/run"), candidate, iterate=True
+            )[-1],
             "--iterate",
         )
 
     def test_focused_command_requires_inventory_name(self) -> None:
         candidate = Candidate("crates/a/src/lib.rs", "f", None)
         with self.assertRaisesRegex(ValueError, "mutant name"):
-            build_mutation_command(Path("/repo"), candidate, iterate=False)
+            build_mutation_command(
+                Path("/repo"),
+                Path("/evidence/run"),
+                candidate,
+                iterate=False,
+            )
 
     def test_baseline_is_scoped_to_the_candidate_crate(self) -> None:
         core = Candidate(

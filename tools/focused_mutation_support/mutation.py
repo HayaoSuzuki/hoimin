@@ -73,6 +73,7 @@ def build_baseline_command(candidate: Candidate) -> list[str]:
 
 def build_mutation_command(
     repository: Path,
+    output_directory: Path,
     candidate: Candidate,
     iterate: bool,
 ) -> list[str]:
@@ -84,6 +85,8 @@ def build_mutation_command(
         "--workspace",
         "--manifest-path",
         str(repository / "Cargo.toml"),
+        "--output",
+        str(output_directory),
         "--file",
         candidate.path,
         "--re",
