@@ -536,6 +536,135 @@ fn reset_restores_permissions_even_when_bytes_are_unchanged() {
 }
 
 #[test]
+fn reset_removes_worker_link_without_traversing_outside() {
+    let project = tempfile::tempdir().unwrap();
+    let root = Utf8Path::from_path(project.path()).unwrap();
+    write(root, "pkg/a.py", b"original\n");
+    let mut handler = handler(root, 1);
+    let (_ledger, grant) = preflight_and_grant(&mut handler, 9);
+    handler
+        .handle_create_worker(grant.create_worker(EffectId(143), 0).unwrap())
+        .unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join("sentinel"), b"outside").unwrap();
+    let link = handler.worker(0).unwrap().root().join("unexpected");
+    if create_dir_symlink(outside.path(), link.as_std_path()).is_err() {
+        return;
+    }
+
+    handler
+        .handle_reset_worker(ResetWorker {
+            id: EffectId(144),
+            worker: 0,
+        })
+        .unwrap();
+
+    assert_eq!(
+        fs::read(outside.path().join("sentinel")).unwrap(),
+        b"outside"
+    );
+    assert!(fs::symlink_metadata(link).is_err());
+    assert_eq!(
+        handler.worker(0).unwrap().read("pkg/a.py").unwrap(),
+        b"original\n"
+    );
+}
+
+#[test]
+fn reset_removes_nested_extras_and_restores_file_replaced_by_directory() {
+    let project = tempfile::tempdir().unwrap();
+    let root = Utf8Path::from_path(project.path()).unwrap();
+    write(root, "pkg/a.py", b"original\n");
+    let mut handler = handler(root, 1);
+    let (_ledger, grant) = preflight_and_grant(&mut handler, 9);
+    handler
+        .handle_create_worker(grant.create_worker(EffectId(147), 0).unwrap())
+        .unwrap();
+    let worker_root = handler.worker(0).unwrap().root().to_owned();
+    fs::remove_file(worker_root.join("pkg/a.py")).unwrap();
+    write(&worker_root, "pkg/a.py/nested.txt", b"extra");
+    write(&worker_root, "extra/deep/file.txt", b"extra");
+
+    handler
+        .handle_reset_worker(ResetWorker {
+            id: EffectId(148),
+            worker: 0,
+        })
+        .unwrap();
+
+    assert_eq!(
+        fs::read(worker_root.join("pkg/a.py")).unwrap(),
+        b"original\n"
+    );
+    assert!(fs::symlink_metadata(worker_root.join("extra")).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn reset_restores_original_unix_mode() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let project = tempfile::tempdir().unwrap();
+    let root = Utf8Path::from_path(project.path()).unwrap();
+    write(root, "pkg/a.py", b"original\n");
+    fs::set_permissions(root.join("pkg/a.py"), fs::Permissions::from_mode(0o640)).unwrap();
+    let mut handler = handler(root, 1);
+    let (_ledger, grant) = preflight_and_grant(&mut handler, 9);
+    handler
+        .handle_create_worker(grant.create_worker(EffectId(149), 0).unwrap())
+        .unwrap();
+    let target = handler.worker(0).unwrap().root().join("pkg/a.py");
+    fs::set_permissions(&target, fs::Permissions::from_mode(0o777)).unwrap();
+
+    handler
+        .handle_reset_worker(ResetWorker {
+            id: EffectId(150),
+            worker: 0,
+        })
+        .unwrap();
+
+    assert_eq!(
+        fs::metadata(target).unwrap().permissions().mode() & 0o777,
+        0o640
+    );
+}
+
+#[test]
+fn reset_remains_bound_to_the_open_worker_root() {
+    let project = tempfile::tempdir().unwrap();
+    let root = Utf8Path::from_path(project.path()).unwrap();
+    write(root, "pkg/a.py", b"original\n");
+    let mut handler = handler(root, 1);
+    let (_ledger, grant) = preflight_and_grant(&mut handler, 9);
+    handler
+        .handle_create_worker(grant.create_worker(EffectId(145), 0).unwrap())
+        .unwrap();
+    let worker_root = handler.worker(0).unwrap().root().to_owned();
+    let moved_root = worker_root.with_file_name("moved-worker");
+    fs::rename(&worker_root, &moved_root).unwrap();
+    write(&moved_root, "pkg/a.py", b"changed!\n");
+    write(&worker_root, "pkg/a.py", b"outside!\n");
+
+    handler
+        .handle_reset_worker(ResetWorker {
+            id: EffectId(146),
+            worker: 0,
+        })
+        .unwrap();
+
+    assert_eq!(
+        fs::read(moved_root.join("pkg/a.py")).unwrap(),
+        b"original\n"
+    );
+    assert_eq!(
+        fs::read(worker_root.join("pkg/a.py")).unwrap(),
+        b"outside!\n"
+    );
+    fs::remove_dir_all(&worker_root).unwrap();
+    fs::rename(&moved_root, &worker_root).unwrap();
+}
+
+#[test]
 fn explicit_original_integrity_checkpoint_returns_typed_completion_or_failure() {
     let project = tempfile::tempdir().unwrap();
     let root = Utf8Path::from_path(project.path()).unwrap();

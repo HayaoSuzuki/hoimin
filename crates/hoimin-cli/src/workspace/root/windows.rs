@@ -16,11 +16,12 @@ use windows_sys::Win32::Foundation::{
     HANDLE, OBJ_CASE_INSENSITIVE, RtlNtStatusToDosError, UNICODE_STRING,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    DELETE, FILE_ATTRIBUTE_REPARSE_POINT, FILE_DISPOSITION_FLAG_DELETE,
+    BY_HANDLE_FILE_INFORMATION, DELETE, FILE_ATTRIBUTE_REPARSE_POINT, FILE_DISPOSITION_FLAG_DELETE,
     FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE, FILE_DISPOSITION_FLAG_POSIX_SEMANTICS,
     FILE_DISPOSITION_INFO, FILE_DISPOSITION_INFO_EX, FILE_READ_ATTRIBUTES, FILE_READ_DATA,
     FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_WRITE_ATTRIBUTES, FILE_WRITE_DATA,
-    FileDispositionInfo, FileDispositionInfoEx, SYNCHRONIZE, SetFileInformationByHandle,
+    FileDispositionInfo, FileDispositionInfoEx, GetFileInformationByHandle, SYNCHRONIZE,
+    SetFileInformationByHandle,
 };
 use windows_sys::Win32::System::IO::IO_STATUS_BLOCK;
 
@@ -39,6 +40,38 @@ pub(super) fn read(
     file.read_to_end(&mut contents)
         .map_err(|error| WorkspaceError::io("read worker file", logical_path, error))?;
     Ok(contents)
+}
+
+pub(super) fn snapshot(
+    parent: &File,
+    name: &OsString,
+    logical_path: &Utf8Path,
+) -> Result<(Vec<u8>, std::fs::Permissions), WorkspaceError> {
+    let mut file = open_final(parent, name, logical_path, WindowsFinalOperation::Read)?;
+    let permissions = file
+        .metadata()
+        .map_err(|error| WorkspaceError::io("verify restored file", logical_path, error))?
+        .permissions();
+    let mut contents = Vec::new();
+    file.read_to_end(&mut contents)
+        .map_err(|error| WorkspaceError::io("verify restored file", logical_path, error))?;
+    Ok((contents, permissions))
+}
+
+pub(super) fn set_permissions(
+    parent: &File,
+    name: &OsString,
+    logical_path: &Utf8Path,
+    permissions: std::fs::Permissions,
+) -> Result<(), WorkspaceError> {
+    let file = open_final(
+        parent,
+        name,
+        logical_path,
+        WindowsFinalOperation::InspectForWrite,
+    )?;
+    file.set_permissions(permissions)
+        .map_err(|error| WorkspaceError::io("restore worker permissions", logical_path, error))
 }
 
 pub(super) fn open_mutation_file(
@@ -224,18 +257,27 @@ fn same_file_identity(
     writable: &File,
     logical_path: &Utf8Path,
 ) -> Result<bool, WorkspaceError> {
-    use std::os::windows::fs::MetadataExt;
+    Ok(file_identity(inspected, logical_path)? == file_identity(writable, logical_path)?)
+}
 
-    let inspected = inspected
-        .metadata()
-        .map_err(|error| WorkspaceError::io("inspect mutation target", logical_path, error))?;
-    let writable = writable
-        .metadata()
-        .map_err(|error| WorkspaceError::io("inspect mutation target", logical_path, error))?;
-    Ok(inspected.volume_serial_number().is_some()
-        && inspected.volume_serial_number() == writable.volume_serial_number()
-        && inspected.file_index().is_some()
-        && inspected.file_index() == writable.file_index())
+fn file_identity(file: &File, logical_path: &Utf8Path) -> Result<(u32, u64), WorkspaceError> {
+    // SAFETY: the output buffer is valid and writable for the duration of the call, and `file`
+    // owns a live handle opened with `FILE_READ_ATTRIBUTES`.
+    let information = unsafe {
+        let mut information: BY_HANDLE_FILE_INFORMATION = zeroed();
+        if GetFileInformationByHandle(file.as_raw_handle() as HANDLE, &mut information) == 0 {
+            return Err(WorkspaceError::io(
+                "inspect mutation target",
+                logical_path,
+                io::Error::last_os_error(),
+            ));
+        }
+        information
+    };
+    Ok((
+        information.dwVolumeSerialNumber,
+        (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow),
+    ))
 }
 
 const fn desired_access(operation: WindowsFinalOperation) -> u32 {
