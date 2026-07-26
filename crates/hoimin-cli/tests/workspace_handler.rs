@@ -57,6 +57,31 @@ fn create_worker(root: &Utf8Path) -> WorkerWorkspace {
         .unwrap()
 }
 
+fn mutation_candidate(worker: &WorkerWorkspace) -> MutationCandidate {
+    MutationCandidate {
+        id: "candidate".into(),
+        sequence: 0,
+        path: "pkg/a.py".into(),
+        span: ByteSpan {
+            start: 0,
+            length: 8,
+        },
+        original: "original".into(),
+        replacement: "mutated!".into(),
+        operator: "test".into(),
+        line: 1,
+        column: 0,
+        symbol: None,
+        file_hash: worker
+            .manifest()
+            .entry(Utf8Path::new("pkg/a.py"))
+            .unwrap()
+            .blake3
+            .to_hex()
+            .to_string(),
+    }
+}
+
 #[test]
 fn reset_restores_changed_and_deleted_files_and_removes_new_files() {
     let project = FixtureProject::new();
@@ -303,29 +328,7 @@ fn detects_original_change() {
 fn mutation_checks_hash_exact_original_and_span() {
     let project = FixtureProject::new();
     let mut worker = create_worker(project.root());
-    let hash = worker
-        .manifest()
-        .entry(Utf8Path::new("pkg/a.py"))
-        .unwrap()
-        .blake3
-        .to_hex()
-        .to_string();
-    let candidate = MutationCandidate {
-        id: "candidate".into(),
-        sequence: 0,
-        path: "pkg/a.py".into(),
-        span: ByteSpan {
-            start: 0,
-            length: 8,
-        },
-        original: "original".into(),
-        replacement: "mutated!".into(),
-        operator: "test".into(),
-        line: 1,
-        column: 0,
-        symbol: None,
-        file_hash: hash,
-    };
+    let candidate = mutation_candidate(&worker);
 
     worker.apply_mutation(&candidate).unwrap();
     assert_eq!(worker.read("pkg/a.py").unwrap(), b"mutated!\n");
@@ -336,6 +339,61 @@ fn mutation_checks_hash_exact_original_and_span() {
         Err(WorkspaceError::MutationHashMismatch { .. }
             | WorkspaceError::MutationOriginalMismatch { .. })
     ));
+}
+
+#[test]
+fn mutation_rejects_linked_target_with_matching_bytes() {
+    let project = FixtureProject::new();
+    let mut worker = create_worker(project.root());
+    let candidate = mutation_candidate(&worker);
+    let outside = tempfile::NamedTempFile::new().unwrap();
+    fs::write(outside.path(), b"original\n").unwrap();
+    let target = worker.root().join("pkg/a.py");
+    fs::remove_file(&target).unwrap();
+    if create_file_symlink(outside.path().to_path_buf(), target.as_std_path()).is_err() {
+        return;
+    }
+
+    assert!(matches!(
+        worker.apply_mutation(&candidate),
+        Err(WorkspaceError::InvalidPath { .. })
+    ));
+    assert_eq!(fs::read(outside.path()).unwrap(), b"original\n");
+}
+
+#[test]
+fn mutation_updates_a_read_only_regular_file() {
+    let project = FixtureProject::new();
+    let mut worker = create_worker(project.root());
+    let candidate = mutation_candidate(&worker);
+    let target = worker.root().join("pkg/a.py");
+    let mut permissions = fs::metadata(&target).unwrap().permissions();
+    permissions.set_readonly(true);
+    fs::set_permissions(&target, permissions).unwrap();
+
+    worker.apply_mutation(&candidate).unwrap();
+
+    assert_eq!(worker.read("pkg/a.py").unwrap(), b"mutated!\n");
+}
+
+#[test]
+fn rejected_mutation_does_not_make_the_target_writable() {
+    let project = FixtureProject::new();
+    let mut worker = create_worker(project.root());
+    let mut candidate = mutation_candidate(&worker);
+    candidate.original = "mismatch".into();
+    let target = worker.root().join("pkg/a.py");
+    let mut permissions = fs::metadata(&target).unwrap().permissions();
+    permissions.set_readonly(true);
+    fs::set_permissions(&target, permissions).unwrap();
+
+    assert!(matches!(
+        worker.apply_mutation(&candidate),
+        Err(WorkspaceError::MutationOriginalMismatch { .. })
+    ));
+
+    assert!(fs::metadata(&target).unwrap().permissions().readonly());
+    assert_eq!(fs::read(&target).unwrap(), b"original\n");
 }
 
 #[test]

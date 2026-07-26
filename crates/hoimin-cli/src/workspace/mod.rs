@@ -20,7 +20,6 @@ use hoimin_core::{
 
 pub use copy::WorkspacePlan;
 pub use manifest::{ManifestEntry, WorkspaceManifest};
-use reset::make_writable;
 use root::WorkerRoot;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -166,32 +165,6 @@ fn permission_fingerprint(permissions: &fs::Permissions) -> PermissionFingerprin
 fn permission_fingerprint(permissions: &fs::Permissions) -> PermissionFingerprint {
     use std::os::unix::fs::PermissionsExt;
     permissions.mode()
-}
-
-// Kept for the mutation path until its capability-relative migration in Task 3.
-fn resolve_worker_path(root: &Utf8Path, path: &Utf8Path) -> Result<Utf8PathBuf, WorkspaceError> {
-    if !hoimin_core::normalized_relative_path(path.as_str()) {
-        return Err(WorkspaceError::InvalidPath {
-            path: path.to_owned(),
-        });
-    }
-    let mut current = root.to_owned();
-    for component in path.components() {
-        current.push(component.as_str());
-        match fs::symlink_metadata(&current) {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
-                return Err(WorkspaceError::InvalidPath {
-                    path: path.to_owned(),
-                });
-            }
-            Ok(_) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
-            Err(error) => {
-                return Err(WorkspaceError::io("validate worker path", path, error));
-            }
-        }
-    }
-    Ok(root.join(path))
 }
 
 fn make_tree_writable(root: &Path) -> Result<(), WorkspaceError> {

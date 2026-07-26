@@ -1,8 +1,8 @@
 use std::ffi::OsString;
 use std::fs::File;
-use std::io;
 #[cfg(unix)]
-use std::io::{Read, Write};
+use std::io::Write;
+use std::io::{self, Read};
 use std::path::Path;
 
 use camino::{Utf8Path, Utf8PathBuf};
@@ -26,6 +26,8 @@ enum WindowsCreateDisposition {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum WindowsFinalOperation {
     InspectForWrite,
+    InspectMutation,
+    WriteMutation,
     Read,
     Write,
     Remove,
@@ -35,7 +37,11 @@ enum WindowsFinalOperation {
 impl WindowsFinalOperation {
     const fn create_disposition(self) -> WindowsCreateDisposition {
         match self {
-            Self::InspectForWrite | Self::Read | Self::Remove => WindowsCreateDisposition::Open,
+            Self::InspectForWrite
+            | Self::InspectMutation
+            | Self::WriteMutation
+            | Self::Read
+            | Self::Remove => WindowsCreateDisposition::Open,
             Self::Write => WindowsCreateDisposition::OpenIf,
         }
     }
@@ -60,6 +66,60 @@ fn windows_final_name_is_valid(name: &str) -> bool {
 pub(crate) struct WorkerRoot {
     path: Utf8PathBuf,
     handle: File,
+}
+
+pub(crate) struct MutationFile {
+    file: File,
+    reopen: Option<(File, OsString)>,
+}
+
+impl MutationFile {
+    pub(crate) fn read_to_end(
+        &mut self,
+        contents: &mut Vec<u8>,
+        path: &Utf8Path,
+    ) -> Result<(), WorkspaceError> {
+        self.file
+            .read_to_end(contents)
+            .map(|_| ())
+            .map_err(|error| WorkspaceError::io("read mutation target", path, error))
+    }
+
+    pub(crate) fn into_writable(mut self, path: &Utf8Path) -> Result<File, WorkspaceError> {
+        make_file_writable(&self.file, path)?;
+        #[cfg(windows)]
+        if let Some((parent, name)) = self.reopen {
+            self.file = windows::reopen_mutation_file(&self.file, &parent, &name, path)?;
+        }
+        #[cfg(unix)]
+        if let Some((parent, name)) = self.reopen {
+            use std::os::unix::fs::MetadataExt;
+
+            let inspected_metadata = self
+                .file
+                .metadata()
+                .map_err(|error| WorkspaceError::io("inspect mutation target", path, error))?;
+            let mut options = cap_primitives::fs::OpenOptions::new();
+            options.read(true).write(true).follow(FollowSymlinks::No);
+            let file =
+                cap_primitives::fs::open(&parent, Path::new(&name), &options).map_err(|error| {
+                    WorkerRoot::map_entry_error("open mutation target", path, error)
+                })?;
+            let metadata = file
+                .metadata()
+                .map_err(|error| WorkspaceError::io("inspect mutation target", path, error))?;
+            if !metadata.is_file()
+                || metadata.dev() != inspected_metadata.dev()
+                || metadata.ino() != inspected_metadata.ino()
+            {
+                return Err(WorkspaceError::InvalidPath {
+                    path: path.to_owned(),
+                });
+            }
+            self.file = file;
+        }
+        Ok(self.file)
+    }
 }
 
 #[allow(dead_code)]
@@ -102,6 +162,52 @@ impl WorkerRoot {
             file.read_to_end(&mut contents)
                 .map_err(|error| WorkspaceError::io("read worker file", path, error))?;
             Ok(contents)
+        }
+    }
+
+    pub(crate) fn open_mutation_file(
+        &self,
+        path: &Utf8Path,
+    ) -> Result<MutationFile, WorkspaceError> {
+        let (parent, name) = self.open_parent(path, false)?;
+        #[cfg(windows)]
+        {
+            return windows::open_mutation_file(&parent, &name, path).map(|file| MutationFile {
+                file,
+                reopen: Some((parent, name)),
+            });
+        }
+        #[cfg(unix)]
+        {
+            Self::reject_link(&parent, &name, path, "open mutation target")?;
+            let mut options = cap_primitives::fs::OpenOptions::new();
+            options.read(true).write(true).follow(FollowSymlinks::No);
+            let (file, reopen) = match cap_primitives::fs::open(&parent, Path::new(&name), &options)
+            {
+                Ok(file) => (file, None),
+                Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
+                    let mut inspect_options = cap_primitives::fs::OpenOptions::new();
+                    inspect_options.read(true).follow(FollowSymlinks::No);
+                    let file =
+                        cap_primitives::fs::open(&parent, Path::new(&name), &inspect_options)
+                            .map_err(|error| {
+                                Self::map_entry_error("open mutation target", path, error)
+                            })?;
+                    (file, Some((parent, name)))
+                }
+                Err(error) => {
+                    return Err(Self::map_entry_error("open mutation target", path, error));
+                }
+            };
+            let metadata = file
+                .metadata()
+                .map_err(|error| WorkspaceError::io("inspect mutation target", path, error))?;
+            if !metadata.is_file() {
+                return Err(WorkspaceError::InvalidPath {
+                    path: path.to_owned(),
+                });
+            }
+            Ok(MutationFile { file, reopen })
         }
     }
 
@@ -380,6 +486,14 @@ mod tests {
             WindowsCreateDisposition::Open
         );
         assert_eq!(
+            WindowsFinalOperation::InspectMutation.create_disposition(),
+            WindowsCreateDisposition::Open
+        );
+        assert_eq!(
+            WindowsFinalOperation::WriteMutation.create_disposition(),
+            WindowsCreateDisposition::Open
+        );
+        assert_eq!(
             WindowsFinalOperation::Read.create_disposition(),
             WindowsCreateDisposition::Open
         );
@@ -393,6 +507,8 @@ mod tests {
         );
         assert!(!WindowsFinalOperation::Read.needs_delete_access());
         assert!(!WindowsFinalOperation::InspectForWrite.needs_delete_access());
+        assert!(!WindowsFinalOperation::InspectMutation.needs_delete_access());
+        assert!(!WindowsFinalOperation::WriteMutation.needs_delete_access());
         assert!(!WindowsFinalOperation::Write.needs_delete_access());
         assert!(WindowsFinalOperation::Remove.needs_delete_access());
     }

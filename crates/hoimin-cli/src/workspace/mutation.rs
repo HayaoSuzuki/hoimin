@@ -1,8 +1,8 @@
-use std::fs;
+use std::io::{Seek, SeekFrom, Write};
 
 use hoimin_core::MutationCandidate;
 
-use super::{WorkerWorkspace, WorkspaceError, make_writable, resolve_worker_path};
+use super::{WorkerWorkspace, WorkspaceError};
 
 impl WorkerWorkspace {
     /// Applies a candidate only when the original workspace and target bytes still match.
@@ -13,14 +13,14 @@ impl WorkerWorkspace {
     /// mutated file cannot be written.
     pub fn apply_mutation(&mut self, candidate: &MutationCandidate) -> Result<(), WorkspaceError> {
         self.verify_originals()?;
-        let path = resolve_worker_path(self.root.path(), &candidate.path)?;
         let expected = self.manifest.entry(&candidate.path).ok_or_else(|| {
             WorkspaceError::MutationTargetMissing {
                 path: candidate.path.clone(),
             }
         })?;
-        let bytes = fs::read(&path)
-            .map_err(|error| WorkspaceError::io("read mutation target", &candidate.path, error))?;
+        let mut target = self.root.open_mutation_file(&candidate.path)?;
+        let mut bytes = Vec::new();
+        target.read_to_end(&mut bytes, &candidate.path)?;
         let actual_hash = blake3::hash(&bytes);
         if candidate.file_hash != expected.blake3.to_hex().as_str()
             || actual_hash != expected.blake3
@@ -56,8 +56,13 @@ impl WorkerWorkspace {
         mutated.extend_from_slice(&bytes[..start]);
         mutated.extend_from_slice(candidate.replacement.as_bytes());
         mutated.extend_from_slice(&bytes[end..]);
-        make_writable(&path)?;
-        fs::write(&path, &mutated)
+        let mut file = target.into_writable(&candidate.path)?;
+        file.seek(SeekFrom::Start(0))
+            .map_err(|error| WorkspaceError::io("write mutation target", &candidate.path, error))?;
+        file.set_len(0)
+            .map_err(|error| WorkspaceError::io("write mutation target", &candidate.path, error))?;
+        file.write_all(&mutated)
+            .and_then(|()| file.flush())
             .map_err(|error| WorkspaceError::io("write mutation target", &candidate.path, error))?;
 
         hoimin_core::contract_ensure!(

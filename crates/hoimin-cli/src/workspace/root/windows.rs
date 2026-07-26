@@ -41,6 +41,40 @@ pub(super) fn read(
     Ok(contents)
 }
 
+pub(super) fn open_mutation_file(
+    parent: &File,
+    name: &OsString,
+    logical_path: &Utf8Path,
+) -> Result<File, WorkspaceError> {
+    open_final(
+        parent,
+        name,
+        logical_path,
+        WindowsFinalOperation::InspectMutation,
+    )
+}
+
+pub(super) fn reopen_mutation_file(
+    inspected: &File,
+    parent: &File,
+    name: &OsString,
+    logical_path: &Utf8Path,
+) -> Result<File, WorkspaceError> {
+    let writable = open_final(
+        parent,
+        name,
+        logical_path,
+        WindowsFinalOperation::WriteMutation,
+    )?;
+    if same_file_identity(inspected, &writable, logical_path)? {
+        Ok(writable)
+    } else {
+        Err(WorkspaceError::InvalidPath {
+            path: logical_path.to_owned(),
+        })
+    }
+}
+
 pub(super) fn write(
     parent: &File,
     name: &OsString,
@@ -185,10 +219,31 @@ fn validate_opened_file(file: File, logical_path: &Utf8Path) -> Result<File, Wor
     Ok(file)
 }
 
+fn same_file_identity(
+    inspected: &File,
+    writable: &File,
+    logical_path: &Utf8Path,
+) -> Result<bool, WorkspaceError> {
+    use std::os::windows::fs::MetadataExt;
+
+    let inspected = inspected
+        .metadata()
+        .map_err(|error| WorkspaceError::io("inspect mutation target", logical_path, error))?;
+    let writable = writable
+        .metadata()
+        .map_err(|error| WorkspaceError::io("inspect mutation target", logical_path, error))?;
+    Ok(inspected.volume_serial_number().is_some()
+        && inspected.volume_serial_number() == writable.volume_serial_number()
+        && inspected.file_index().is_some()
+        && inspected.file_index() == writable.file_index())
+}
+
 const fn desired_access(operation: WindowsFinalOperation) -> u32 {
     let common = SYNCHRONIZE | FILE_READ_ATTRIBUTES;
     match operation {
         WindowsFinalOperation::InspectForWrite => common | FILE_WRITE_ATTRIBUTES,
+        WindowsFinalOperation::InspectMutation => common | FILE_READ_DATA | FILE_WRITE_ATTRIBUTES,
+        WindowsFinalOperation::WriteMutation => common | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES,
         WindowsFinalOperation::Read => common | FILE_READ_DATA,
         WindowsFinalOperation::Write => common | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES,
         WindowsFinalOperation::Remove => common | DELETE | FILE_WRITE_ATTRIBUTES,
@@ -198,6 +253,9 @@ const fn desired_access(operation: WindowsFinalOperation) -> u32 {
 const fn operation_name(operation: WindowsFinalOperation) -> &'static str {
     match operation {
         WindowsFinalOperation::InspectForWrite => "prepare worker file",
+        WindowsFinalOperation::InspectMutation | WindowsFinalOperation::WriteMutation => {
+            "open mutation target"
+        }
         WindowsFinalOperation::Read => "read worker file",
         WindowsFinalOperation::Write => "write worker file",
         WindowsFinalOperation::Remove => "remove worker file",
@@ -258,6 +316,22 @@ mod tests {
         );
         assert_ne!(
             desired_access(WindowsFinalOperation::InspectForWrite) & FILE_WRITE_ATTRIBUTES,
+            0
+        );
+        assert_ne!(
+            desired_access(WindowsFinalOperation::InspectMutation) & FILE_READ_DATA,
+            0
+        );
+        assert_eq!(
+            desired_access(WindowsFinalOperation::InspectMutation) & FILE_WRITE_DATA,
+            0
+        );
+        assert_ne!(
+            desired_access(WindowsFinalOperation::InspectMutation) & FILE_WRITE_ATTRIBUTES,
+            0
+        );
+        assert_ne!(
+            desired_access(WindowsFinalOperation::WriteMutation) & FILE_WRITE_DATA,
             0
         );
         assert_eq!(desired_access(WindowsFinalOperation::Read) & DELETE, 0);
