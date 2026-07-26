@@ -102,6 +102,7 @@ def classify_mutation_output(
     if (
         candidate.mutant_name is None
         or record.exit_code is None
+        or record.timed_out
         or record.interrupted
     ):
         return CandidateState.ERROR

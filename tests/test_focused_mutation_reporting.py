@@ -284,6 +284,21 @@ class FocusedMutationReportingTests(unittest.TestCase):
                 CandidateState.ERROR,
             )
 
+    def test_timed_out_command_does_not_accept_stale_result(self) -> None:
+        candidate = Candidate("crates/a/src/lib.rs", "f", "exact mutant")
+        record = command_record(exit_code=-15)
+        record.timed_out = True
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "mutants.out"
+            output.mkdir()
+            (output / "caught.txt").write_text(
+                "exact mutant\n", encoding="utf-8"
+            )
+            self.assertEqual(
+                classify_mutation_output(Path(tmp), record, candidate),
+                CandidateState.ERROR,
+            )
+
     @staticmethod
     def _root_mutants_artifacts(
         repository: Path,
