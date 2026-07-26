@@ -81,6 +81,12 @@ class RunnerTests(unittest.TestCase):
     def stdout(self, record: CommandRecord) -> str:
         return Path(record.stdout_path).read_text()
 
+    def assert_recorded_working_directory(self, record: CommandRecord) -> None:
+        stderr = Path(record.stderr_path).read_text()
+        self.assertTrue(stderr.startswith("ERR:"), stderr)
+        recorded = Path(stderr.removeprefix("ERR:").strip())
+        self.assertTrue(recorded.samefile(self.work), (recorded, self.work))
+
     def test_records_native_arguments_output_and_nonzero_exit(self) -> None:
         record = self.runner(extra_env={"FAKE_EXIT": "7"}).run(
             [sys.executable, str(self.fake), "a b", "$(never-run)"],
@@ -93,10 +99,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(record.started_at, "2026-07-26T00:00:00+00:00")
         self.assertEqual(record.ended_at, "2026-07-26T00:00:00+00:00")
         self.assertIn("OUT:a b|$(never-run)", self.stdout(record))
-        self.assertEqual(
-            Path(record.stderr_path).read_text(),
-            f"ERR:{self.work.resolve()}\n",
-        )
+        self.assert_recorded_working_directory(record)
 
     def test_timeout_terminates_process_and_keeps_partial_logs(self) -> None:
         with self.assertRaises(CommandTimedOut) as caught:
@@ -110,7 +113,7 @@ class RunnerTests(unittest.TestCase):
         self.assertTrue(record.timed_out)
         self.assertIsNotNone(record.elapsed_seconds)
         self.assertIn("OUT:--sleep", self.stdout(record))
-        self.assertIn(f"ERR:{self.work.resolve()}", Path(record.stderr_path).read_text())
+        self.assert_recorded_working_directory(record)
 
     def test_interruption_terminates_process_and_returns_completed_record(self) -> None:
         process = InterruptingProcess()
