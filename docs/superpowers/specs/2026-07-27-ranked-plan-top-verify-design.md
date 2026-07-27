@@ -160,8 +160,8 @@ Responsibilities are:
 - **Manifest validation:** verify ranking and existing integrity invariants before
   project work.
 - **Verify selection:** choose either exact IDs or the ranked retained prefix.
-- **Rendering:** expose ranks and reasons in structured and human plan output and
-  describe top-N selection scope in verify output.
+- **Rendering:** expose ranks and reasons in the JSON plan output and describe top-N
+  selection scope in structured and human verify output.
 
 The ranking component must not read files, run Git, or mutate candidates. This keeps
 ranking independently testable and prevents verify from changing a plan's meaning.
