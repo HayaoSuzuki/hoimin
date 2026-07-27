@@ -140,6 +140,14 @@ struct CleanupFlags {
 }
 
 #[derive(Clone, Debug)]
+struct OrderedCandidateState {
+    ids: Vec<String>,
+    discovered: BTreeMap<String, MutationCandidate>,
+    ready: VecDeque<MutationCandidate>,
+    collection_complete: bool,
+}
+
+#[derive(Clone, Debug)]
 pub struct RunState {
     run_id: String,
     config: RunConfig,
@@ -170,10 +178,7 @@ pub struct RunState {
     flags: RunFlags,
     stopped_candidates: VecDeque<StoppedCandidate>,
     candidate_filter: Option<BTreeSet<String>>,
-    ordered_candidate_ids: Option<Vec<String>>,
-    ordered_candidates: BTreeMap<String, MutationCandidate>,
-    ordered_candidates_ready: VecDeque<MutationCandidate>,
-    ordered_collection_complete: bool,
+    ordered_candidates: Option<Box<OrderedCandidateState>>,
     verification_selection: Option<VerificationSelection>,
 }
 
@@ -234,10 +239,7 @@ impl RunState {
             },
             stopped_candidates: VecDeque::new(),
             candidate_filter: None,
-            ordered_candidate_ids: None,
-            ordered_candidates: BTreeMap::new(),
-            ordered_candidates_ready: VecDeque::new(),
-            ordered_collection_complete: false,
+            ordered_candidates: None,
             verification_selection: None,
         }
     }
@@ -273,7 +275,12 @@ impl RunState {
     ) -> Self {
         let mut state = Self::new(run_id, config);
         state.candidate_filter = Some(ordered_candidate_ids.iter().cloned().collect());
-        state.ordered_candidate_ids = Some(ordered_candidate_ids);
+        state.ordered_candidates = Some(Box::new(OrderedCandidateState {
+            ids: ordered_candidate_ids,
+            discovered: BTreeMap::new(),
+            ready: VecDeque::new(),
+            collection_complete: false,
+        }));
         state
     }
 
@@ -651,8 +658,12 @@ impl RunState {
     }
 
     fn schedule_read_or_finalize(&mut self) -> Result<Vec<RunEffect>, MachineError> {
-        if self.ordered_candidate_ids.is_some() {
-            if !self.ordered_collection_complete {
+        if self.ordered_candidates.is_some() {
+            if self
+                .ordered_candidates
+                .as_ref()
+                .is_some_and(|ordered| !ordered.collection_complete)
+            {
                 if !self.candidate_read_pending()
                     && let Some(worker) = self.idle_worker()
                 {
@@ -663,7 +674,11 @@ impl RunState {
 
             let mut effects = Vec::new();
             while let Some(worker) = self.idle_worker() {
-                let Some(candidate) = self.ordered_candidates_ready.pop_front() else {
+                let Some(candidate) = self
+                    .ordered_candidates
+                    .as_mut()
+                    .and_then(|ordered| ordered.ready.pop_front())
+                else {
                     break;
                 };
                 let worker_state = self.worker_mut(worker)?;
@@ -676,7 +691,10 @@ impl RunState {
                     effects.extend(self.candidate_effects(worker)?);
                 }
             }
-            if self.ordered_candidates_ready.is_empty()
+            if self
+                .ordered_candidates
+                .as_ref()
+                .is_some_and(|ordered| ordered.ready.is_empty())
                 && self
                     .workers
                     .values()
@@ -719,29 +737,34 @@ impl RunState {
                 .is_some_and(|filter| filter.contains(&candidate.id))
             {
                 self.ordered_candidates
+                    .as_mut()
+                    .expect("ordered collection requires ordered state")
+                    .discovered
                     .insert(candidate.id.clone(), candidate);
             }
             return self.schedule_read_or_finalize();
         }
 
-        let ordered_ids = self
-            .ordered_candidate_ids
-            .as_ref()
-            .expect("ordered collection requires ordered ids");
-        for candidate_id in ordered_ids {
-            if !self.ordered_candidates.contains_key(candidate_id) {
+        let ordered = self
+            .ordered_candidates
+            .as_mut()
+            .expect("ordered collection requires ordered state");
+        for candidate_id in &ordered.ids {
+            if !ordered.discovered.contains_key(candidate_id) {
                 return Err(MachineError::SelectedCandidateMissing(candidate_id.clone()));
             }
         }
-        self.ordered_candidates_ready = ordered_ids
+        ordered.ready = ordered
+            .ids
             .iter()
             .map(|candidate_id| {
-                self.ordered_candidates
+                ordered
+                    .discovered
                     .remove(candidate_id)
                     .expect("ordered candidate presence was validated")
             })
             .collect();
-        self.ordered_collection_complete = true;
+        ordered.collection_complete = true;
         self.schedule_read_or_finalize()
     }
 
@@ -895,12 +918,12 @@ impl RunState {
                 stopped.push(candidate);
             }
         }
-        if self.ordered_collection_complete {
-            stopped.extend(
-                self.ordered_candidates_ready
-                    .drain(..)
-                    .map(StoppedCandidate::NotStarted),
-            );
+        if let Some(ordered) = self
+            .ordered_candidates
+            .as_mut()
+            .filter(|ordered| ordered.collection_complete)
+        {
+            stopped.extend(ordered.ready.drain(..).map(StoppedCandidate::NotStarted));
             self.flags.scheduling.candidate_exhausted = true;
         }
         stopped.sort_by_key(|candidate| {
@@ -911,9 +934,9 @@ impl RunState {
                 | StoppedCandidate::SyntheticFinished(candidate, _) => candidate,
                 StoppedCandidate::Finished(result) => &result.candidate,
             };
-            self.ordered_candidate_ids
+            self.ordered_candidates
                 .as_ref()
-                .and_then(|ids| ids.iter().position(|id| id == &candidate.id))
+                .and_then(|ordered| ordered.ids.iter().position(|id| id == &candidate.id))
                 .unwrap_or_else(|| usize::try_from(candidate.sequence).unwrap_or(usize::MAX))
         });
         self.stopped_candidates = stopped.into();
@@ -1264,7 +1287,11 @@ pub fn transition(
             }
             let worker = value.worker;
             state.candidate_offset = value.next_offset;
-            if state.ordered_candidate_ids.is_some() && !state.ordered_collection_complete {
+            if state
+                .ordered_candidates
+                .as_ref()
+                .is_some_and(|ordered| !ordered.collection_complete)
+            {
                 state.collect_ordered_candidate(worker, value.candidate)?
             } else {
                 let selected = value.candidate.as_ref().is_none_or(|candidate| {

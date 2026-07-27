@@ -643,7 +643,7 @@ where
     let mut discovered = 0_u64;
     let mut executed = 0_u64;
     let run_result = async {
-        let mut state = match candidate_selection {
+        let mut state = Box::new(match candidate_selection {
             CandidateSelection::Explicit(candidate_ids, verification_selection) => {
                 RunState::with_candidate_filter(Uuid::new_v4().to_string(), config, candidate_ids)
                     .with_verification_selection(verification_selection)
@@ -657,10 +657,10 @@ where
                 .with_verification_selection(verification_selection)
             }
             CandidateSelection::All => RunState::new(Uuid::new_v4().to_string(), config),
-        };
-        let (next, initial) = transition(state, RunEvent::StartRequested(StartRequested))
+        });
+        let (next, initial) = transition(*state, RunEvent::StartRequested(StartRequested))
             .map_err(|error| error.to_string())?;
-        state = next;
+        *state = next;
         if metrics_path.is_some() {
             let mut collector = MetricsCollector::new(state.run_id());
             if let Err(error) = collector.begin_stage("targets") {
@@ -1010,7 +1010,8 @@ where
                 cancellation.cancel();
                 stop_signalled = true;
             }
-            let transition_result = transition(state, event);
+            let transition_result =
+                transition(*state, event).map(|(next, produced)| (Box::new(next), produced));
             let (next, produced) = match transition_result {
                 Ok(value) => value,
                 Err(error) => {
