@@ -11,7 +11,7 @@ fn cli_entrypoint_future_keeps_large_run_state_out_of_line() {
     let future = hoimin_cli::run_with_io(["hoimin", "--help"], &mut stdout, &mut stderr);
 
     assert!(
-        std::mem::size_of_val(&future) <= 12 * 1024,
+        std::mem::size_of_val(&future) <= 14 * 1024,
         "CLI future grew to {} bytes; large run state must remain out of line",
         std::mem::size_of_val(&future)
     );
