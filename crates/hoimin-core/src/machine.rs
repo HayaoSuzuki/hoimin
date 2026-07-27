@@ -169,6 +169,10 @@ pub struct RunState {
     flags: RunFlags,
     stopped_candidates: VecDeque<StoppedCandidate>,
     candidate_filter: Option<BTreeSet<String>>,
+    ordered_candidate_ids: Option<Vec<String>>,
+    ordered_candidates: BTreeMap<String, MutationCandidate>,
+    ordered_candidates_ready: VecDeque<MutationCandidate>,
+    ordered_collection_complete: bool,
 }
 
 impl RunState {
@@ -228,6 +232,10 @@ impl RunState {
             },
             stopped_candidates: VecDeque::new(),
             candidate_filter: None,
+            ordered_candidate_ids: None,
+            ordered_candidates: BTreeMap::new(),
+            ordered_candidates_ready: VecDeque::new(),
+            ordered_collection_complete: false,
         }
     }
 
@@ -250,6 +258,19 @@ impl RunState {
     ) -> Self {
         let mut state = Self::new(run_id, config);
         state.candidate_filter = Some(candidate_ids);
+        state
+    }
+
+    /// Creates a state that executes selected candidates in the supplied order.
+    #[must_use]
+    pub fn with_ordered_candidate_filter(
+        run_id: impl Into<String>,
+        config: RunConfig,
+        ordered_candidate_ids: Vec<String>,
+    ) -> Self {
+        let mut state = Self::new(run_id, config);
+        state.candidate_filter = Some(ordered_candidate_ids.iter().cloned().collect());
+        state.ordered_candidate_ids = Some(ordered_candidate_ids);
         state
     }
 
@@ -489,9 +510,14 @@ impl RunState {
     }
 
     fn apply_worker_effects(&mut self, worker: u32) -> Result<Vec<RunEffect>, MachineError> {
+        let candidate = self.candidate(worker)?;
         self.worker_mut(worker)?.phase = WorkerPhase::Applying;
         let id = self.allocate_id()?;
-        Ok(vec![RunEffect::ApplyMutation(ApplyMutation { id, worker })])
+        Ok(vec![RunEffect::ApplyMutation(ApplyMutation {
+            id,
+            worker,
+            candidate,
+        })])
     }
 
     fn candidate_effects(&mut self, worker: u32) -> Result<Vec<RunEffect>, MachineError> {
@@ -613,6 +639,43 @@ impl RunState {
     }
 
     fn schedule_read_or_finalize(&mut self) -> Result<Vec<RunEffect>, MachineError> {
+        if self.ordered_candidate_ids.is_some() {
+            if !self.ordered_collection_complete {
+                if !self.candidate_read_pending()
+                    && let Some(worker) = self.idle_worker()
+                {
+                    return self.read_next_candidate(worker);
+                }
+                return Ok(Vec::new());
+            }
+
+            let mut effects = Vec::new();
+            while let Some(worker) = self.idle_worker() {
+                let Some(candidate) = self.ordered_candidates_ready.pop_front() else {
+                    break;
+                };
+                let worker_state = self.worker_mut(worker)?;
+                worker_state.candidate = Some(candidate);
+                worker_state.phase = WorkerPhase::Idle;
+                if self.flags.scheduling.stop_requested {
+                    effects.extend(self.synthetic_started_output(worker, MutationStatus::NotRun)?);
+                } else {
+                    self.scheduled_mutants += 1;
+                    effects.extend(self.candidate_effects(worker)?);
+                }
+            }
+            if self.ordered_candidates_ready.is_empty()
+                && self
+                    .workers
+                    .values()
+                    .all(|worker| worker.phase == WorkerPhase::Idle)
+            {
+                self.flags.scheduling.candidate_exhausted = true;
+                self.phase = RunPhase::Finalize;
+                effects.extend(self.finalize_effects()?);
+            }
+            return Ok(effects);
+        }
         if !self.flags.scheduling.candidate_exhausted
             && !self.candidate_read_pending()
             && let Some(worker) = self.idle_worker()
@@ -629,6 +692,45 @@ impl RunState {
             return self.finalize_effects();
         }
         Ok(Vec::new())
+    }
+
+    fn collect_ordered_candidate(
+        &mut self,
+        worker: u32,
+        candidate: Option<MutationCandidate>,
+    ) -> Result<Vec<RunEffect>, MachineError> {
+        *self.worker_mut(worker)? = WorkerState::default();
+        if let Some(candidate) = candidate {
+            if self
+                .candidate_filter
+                .as_ref()
+                .is_some_and(|filter| filter.contains(&candidate.id))
+            {
+                self.ordered_candidates
+                    .insert(candidate.id.clone(), candidate);
+            }
+            return self.schedule_read_or_finalize();
+        }
+
+        let ordered_ids = self
+            .ordered_candidate_ids
+            .as_ref()
+            .expect("ordered collection requires ordered ids");
+        for candidate_id in ordered_ids {
+            if !self.ordered_candidates.contains_key(candidate_id) {
+                return Err(MachineError::SelectedCandidateMissing(candidate_id.clone()));
+            }
+        }
+        self.ordered_candidates_ready = ordered_ids
+            .iter()
+            .map(|candidate_id| {
+                self.ordered_candidates
+                    .remove(candidate_id)
+                    .expect("ordered candidate presence was validated")
+            })
+            .collect();
+        self.ordered_collection_complete = true;
+        self.schedule_read_or_finalize()
     }
 
     fn candidate(&self, worker: u32) -> Result<MutationCandidate, MachineError> {
@@ -908,6 +1010,8 @@ pub enum MachineError {
     MissingFingerprint,
     #[error("selected candidate execution requires an analyzer candidate spool")]
     MissingCandidateSpool,
+    #[error("selected candidate was not discovered: {0}")]
+    SelectedCandidateMissing(String),
     #[error("configured worker count does not fit in u32")]
     WorkerCountOverflow,
     #[error("configured maximum process count does not fit in u32")]
@@ -946,6 +1050,7 @@ impl MachineError {
             Self::Budget(_) => "machine.budget",
             Self::MissingFingerprint => "machine.fingerprint.missing",
             Self::MissingCandidateSpool => "machine.candidate_spool.missing",
+            Self::SelectedCandidateMissing(_) => "machine.candidate.missing",
             Self::WorkerCountOverflow => "machine.worker.count_overflow",
             Self::ProcessCountOverflow => "machine.process.count_overflow",
             Self::WorkerCountMismatch { .. } => "machine.worker.count_mismatch",
@@ -1132,55 +1237,59 @@ pub fn transition(
             }
             let worker = value.worker;
             state.candidate_offset = value.next_offset;
-            let selected = value.candidate.as_ref().is_none_or(|candidate| {
-                state
-                    .candidate_filter
-                    .as_ref()
-                    .is_none_or(|filter| filter.contains(&candidate.id))
-            });
-            if !selected {
-                *state.worker_mut(worker)? = WorkerState::default();
-                state.schedule_read_or_finalize()?
-            } else if state.flags.scheduling.stop_requested {
-                if let Some(candidate) = value.candidate {
-                    let worker_state = state.worker_mut(worker)?;
-                    worker_state.candidate = Some(candidate);
-                    worker_state.result = None;
-                    worker_state.phase = WorkerPhase::Idle;
-                    state.synthetic_started_output(worker, MutationStatus::NotRun)?
-                } else {
-                    let worker_state = state.worker_mut(worker)?;
-                    *worker_state = WorkerState::default();
-                    state.flags.scheduling.candidate_exhausted = true;
-                    state.next_stopped_candidate_effects()?
-                }
+            if state.ordered_candidate_ids.is_some() && !state.ordered_collection_complete {
+                state.collect_ordered_candidate(worker, value.candidate)?
             } else {
-                let mut effects = if let Some(candidate) = value.candidate {
-                    contract_ensure!(
-                        "machine.worker.candidate.pre",
-                        state.worker_mut(worker)?.candidate.is_none(),
-                        (worker, &candidate)
-                    );
-                    let worker_state = state.worker_mut(worker)?;
-                    worker_state.candidate = Some(candidate);
-                    worker_state.phase = WorkerPhase::Idle;
-                    if state.scheduled_mutants >= state.config.limits.max_mutants.get() as u64 {
-                        state.flags.scheduling.mutant_limit_reached = true;
-                        state.flags.outcome.incomplete = true;
+                let selected = value.candidate.as_ref().is_none_or(|candidate| {
+                    state
+                        .candidate_filter
+                        .as_ref()
+                        .is_none_or(|filter| filter.contains(&candidate.id))
+                });
+                if !selected {
+                    *state.worker_mut(worker)? = WorkerState::default();
+                    state.schedule_read_or_finalize()?
+                } else if state.flags.scheduling.stop_requested {
+                    if let Some(candidate) = value.candidate {
+                        let worker_state = state.worker_mut(worker)?;
+                        worker_state.candidate = Some(candidate);
+                        worker_state.result = None;
+                        worker_state.phase = WorkerPhase::Idle;
                         state.synthetic_started_output(worker, MutationStatus::NotRun)?
                     } else {
-                        state.scheduled_mutants += 1;
-                        state.candidate_effects(worker)?
+                        let worker_state = state.worker_mut(worker)?;
+                        *worker_state = WorkerState::default();
+                        state.flags.scheduling.candidate_exhausted = true;
+                        state.next_stopped_candidate_effects()?
                     }
                 } else {
-                    let worker_state = state.worker_mut(worker)?;
-                    worker_state.phase = WorkerPhase::Idle;
-                    worker_state.candidate = None;
-                    state.flags.scheduling.candidate_exhausted = true;
-                    Vec::new()
-                };
-                effects.extend(state.schedule_read_or_finalize()?);
-                effects
+                    let mut effects = if let Some(candidate) = value.candidate {
+                        contract_ensure!(
+                            "machine.worker.candidate.pre",
+                            state.worker_mut(worker)?.candidate.is_none(),
+                            (worker, &candidate)
+                        );
+                        let worker_state = state.worker_mut(worker)?;
+                        worker_state.candidate = Some(candidate);
+                        worker_state.phase = WorkerPhase::Idle;
+                        if state.scheduled_mutants >= state.config.limits.max_mutants.get() as u64 {
+                            state.flags.scheduling.mutant_limit_reached = true;
+                            state.flags.outcome.incomplete = true;
+                            state.synthetic_started_output(worker, MutationStatus::NotRun)?
+                        } else {
+                            state.scheduled_mutants += 1;
+                            state.candidate_effects(worker)?
+                        }
+                    } else {
+                        let worker_state = state.worker_mut(worker)?;
+                        worker_state.phase = WorkerPhase::Idle;
+                        worker_state.candidate = None;
+                        state.flags.scheduling.candidate_exhausted = true;
+                        Vec::new()
+                    };
+                    effects.extend(state.schedule_read_or_finalize()?);
+                    effects
+                }
             }
         }
         RunEvent::StoredResultLoaded(value) if state.phase == RunPhase::Mutants => {

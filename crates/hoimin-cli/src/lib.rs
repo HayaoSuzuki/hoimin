@@ -82,21 +82,37 @@ where
             }
         },
         Ok(cli::ParsedCommand::Verify(args)) => {
-            match plan::prepare_verify(&args.manifest, &args.candidate_ids, args.format).await {
-                Ok(verified) => match shell::run_selected_loop(
-                    verified.config,
-                    verified.candidate_ids,
-                    &mut *stdout,
-                    &mut *stderr,
-                )
-                .await
-                {
-                    Ok(code) => code,
-                    Err(error) => {
-                        let _ = writeln!(stderr, "{error}");
-                        2
+            match plan::prepare_verify_selection(&args.manifest, &args.selection, args.format).await
+            {
+                Ok(verified) => {
+                    let result = match verified.selection {
+                        plan::ResolvedVerifySelection::ExplicitCandidates(candidate_ids) => {
+                            shell::run_selected_loop(
+                                verified.config,
+                                candidate_ids,
+                                &mut *stdout,
+                                &mut *stderr,
+                            )
+                            .await
+                        }
+                        plan::ResolvedVerifySelection::RankedCandidates(candidate_ids) => {
+                            shell::run_ordered_selected_loop(
+                                verified.config,
+                                candidate_ids,
+                                &mut *stdout,
+                                &mut *stderr,
+                            )
+                            .await
+                        }
+                    };
+                    match result {
+                        Ok(code) => code,
+                        Err(error) => {
+                            let _ = writeln!(stderr, "{error}");
+                            2
+                        }
                     }
-                },
+                }
                 Err(error) => {
                     let _ = writeln!(stderr, "{error}");
                     2

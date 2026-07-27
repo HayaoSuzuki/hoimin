@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::analyzer::{AnalyzerDiagnostic, AnalyzerDiagnosticCode, discover_targets};
-use crate::cli::OutputFormat;
+use crate::cli::{OutputFormat, VerifySelection};
 use crate::fingerprint_inputs;
 use crate::shell;
 use crate::target::TargetHandler;
@@ -57,7 +57,21 @@ pub struct PlanOutput {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifiedPlan {
     pub config: RunConfig,
-    pub candidate_ids: BTreeSet<String>,
+    pub selection: ResolvedVerifySelection,
+    pub selection_scope: VerifySelectionScope,
+    pub plan_truncated: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ResolvedVerifySelection {
+    ExplicitCandidates(BTreeSet<String>),
+    RankedCandidates(Vec<String>),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VerifySelectionScope {
+    ExplicitCandidates,
+    RetainedCandidates,
 }
 
 #[derive(Debug, Error)]
@@ -148,6 +162,24 @@ pub async fn prepare_verify(
     requested_ids: &[String],
     format: OutputFormat,
 ) -> Result<VerifiedPlan, PlanError> {
+    prepare_verify_selection(
+        manifest_path,
+        &VerifySelection::CandidateIds(requested_ids.to_vec()),
+        format,
+    )
+    .await
+}
+
+/// Validates a plan and resolves an explicit-ID or ranked top-N verification selection.
+///
+/// # Errors
+///
+/// Returns an error when the manifest, selection, sources, or planned candidates are invalid.
+pub async fn prepare_verify_selection(
+    manifest_path: impl AsRef<Path>,
+    requested_selection: &VerifySelection,
+    format: OutputFormat,
+) -> Result<VerifiedPlan, PlanError> {
     let manifest_path = manifest_path.as_ref();
     let bytes = std::fs::read(manifest_path).map_err(|error| {
         PlanError::ManifestInvalid(format!("{}: {error}", manifest_path.display()))
@@ -171,10 +203,40 @@ pub async fn prepare_verify(
         .validate()
         .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
 
-    let candidate_ids = normalize_requested_ids(
-        requested_ids,
-        manifest.normalized_config.limits.max_mutants.get(),
-    )?;
+    let max_mutants = manifest.normalized_config.limits.max_mutants.get();
+    let (selection, selection_scope) = match requested_selection {
+        VerifySelection::CandidateIds(requested_ids) => (
+            ResolvedVerifySelection::ExplicitCandidates(normalize_requested_ids(
+                requested_ids,
+                max_mutants,
+            )?),
+            VerifySelectionScope::ExplicitCandidates,
+        ),
+        VerifySelection::Top(count) => {
+            let candidate_ids = manifest
+                .candidates
+                .iter()
+                .take(count.get())
+                .map(|candidate| candidate.id.clone())
+                .collect::<Vec<_>>();
+            if candidate_ids.len() > max_mutants {
+                return Err(PlanError::CandidateInvalid(format!(
+                    "selected {} candidates exceeds max_mutants {max_mutants}",
+                    candidate_ids.len()
+                )));
+            }
+            (
+                ResolvedVerifySelection::RankedCandidates(candidate_ids),
+                VerifySelectionScope::RetainedCandidates,
+            )
+        }
+    };
+    let candidate_ids = match &selection {
+        ResolvedVerifySelection::ExplicitCandidates(candidate_ids) => candidate_ids.clone(),
+        ResolvedVerifySelection::RankedCandidates(candidate_ids) => {
+            candidate_ids.iter().cloned().collect()
+        }
+    };
     let mut config = manifest
         .normalized_config
         .clone()
@@ -202,7 +264,9 @@ pub async fn prepare_verify(
 
     Ok(VerifiedPlan {
         config,
-        candidate_ids,
+        selection,
+        selection_scope,
+        plan_truncated: manifest.truncated,
     })
 }
 

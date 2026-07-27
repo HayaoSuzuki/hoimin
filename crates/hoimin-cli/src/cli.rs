@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 use camino::Utf8PathBuf;
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use hoimin_core::{
     CommandArg, ConfigError, LineRange, LineSelection, MutationProfile, OutputConfig, RawRunConfig,
     RawRunLimits, RunConfig, SessionConfig, SymbolSelection,
@@ -212,16 +212,26 @@ struct RawPlanArgs {
 
 #[derive(Debug, Args)]
 #[command(
+    group(
+        ArgGroup::new("selection")
+            .required(true)
+            .multiple(false)
+            .args(["candidate_ids", "top"])
+    ),
     after_help = "Execution and resource settings come from PLAN and cannot be overridden. Create a new plan to change them."
 )]
 struct RawVerifyArgs {
-    /// Path to a version-1 plan manifest.
+    /// Path to a version-2 plan manifest.
     #[arg(value_name = "PLAN")]
     manifest: PathBuf,
 
     /// Candidate ID to execute; repeat for multiple planned candidates.
-    #[arg(long = "candidate", required = true, value_name = "ID")]
+    #[arg(long = "candidate", value_name = "ID")]
     candidate_ids: Vec<String>,
+
+    /// Execute the N highest-ranked candidates retained in the plan.
+    #[arg(long, value_name = "N")]
+    top: Option<NonZeroUsize>,
 
     /// Machine-readable output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
@@ -307,10 +317,16 @@ impl PlanArgs {
     }
 }
 
+#[derive(Debug, Eq, PartialEq)]
+pub enum VerifySelection {
+    CandidateIds(Vec<String>),
+    Top(NonZeroUsize),
+}
+
 #[derive(Debug)]
 pub struct VerifyArgs {
     pub manifest: PathBuf,
-    pub candidate_ids: Vec<String>,
+    pub selection: VerifySelection,
     pub format: OutputFormat,
 }
 
@@ -409,9 +425,13 @@ impl TryFrom<Command> for ParsedCommand {
             Command::Verify(mut raw) => {
                 let mut seen = std::collections::BTreeSet::new();
                 raw.candidate_ids.retain(|id| seen.insert(id.clone()));
+                let selection = match raw.top {
+                    Some(top) => VerifySelection::Top(top),
+                    None => VerifySelection::CandidateIds(raw.candidate_ids),
+                };
                 Ok(Self::Verify(VerifyArgs {
                     manifest: raw.manifest,
-                    candidate_ids: raw.candidate_ids,
+                    selection,
                     format: raw.format,
                 }))
             }

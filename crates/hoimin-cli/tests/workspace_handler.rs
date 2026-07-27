@@ -522,6 +522,7 @@ fn effect_handlers_preserve_original_ids_for_success_and_failure() {
                 ApplyMutation {
                     id: EffectId(3),
                     worker: 0,
+                    candidate: candidate.clone(),
                 },
                 &candidate,
             )

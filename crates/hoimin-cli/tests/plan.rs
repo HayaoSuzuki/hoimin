@@ -4,8 +4,11 @@ use std::path::{Path, PathBuf};
 
 use hoimin_cli::{
     analyzer::discover_targets,
-    cli::{OutputFormat, ParsedCommand, parse_from},
-    plan::{PlanManifest, create, prepare_verify},
+    cli::{OutputFormat, ParsedCommand, VerifySelection, parse_from},
+    plan::{
+        PlanManifest, ResolvedVerifySelection, VerifySelectionScope, create, prepare_verify,
+        prepare_verify_selection,
+    },
     shell,
     target::TargetHandler,
 };
@@ -540,8 +543,10 @@ async fn verify_deduplicates_requested_ids_and_rejects_max_mutants_overflow() {
     let verified = prepare_verify(&path, &[first.clone(), first.clone()], OutputFormat::Human)
         .await
         .unwrap();
-    assert_eq!(verified.candidate_ids.len(), 1);
-    assert!(verified.candidate_ids.contains(&first));
+    assert_eq!(
+        verified.selection,
+        ResolvedVerifySelection::ExplicitCandidates(BTreeSet::from([first.clone()]))
+    );
     assert_eq!(verified.config.output.format, CoreOutputFormat::Human);
     assert_eq!(verified.config.session, None);
     assert!(!verified.config.resume);
@@ -567,8 +572,74 @@ async fn truncated_plan_accepts_a_contained_candidate() {
         .await
         .unwrap();
 
-    assert_eq!(verified.candidate_ids.len(), 1);
+    assert!(matches!(
+        verified.selection,
+        ResolvedVerifySelection::ExplicitCandidates(ref ids) if ids.len() == 1
+    ));
     assert_eq!(verified.config.output.format, CoreOutputFormat::Jsonl);
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_top_resolves_the_saved_rank_prefix_and_retained_scope() {
+    let project = Project::new();
+    let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
+    assert!(manifest.candidates.len() >= 2);
+    let expected = manifest
+        .candidates
+        .iter()
+        .take(1)
+        .map(|candidate| candidate.id.clone())
+        .collect::<Vec<_>>();
+
+    let verified = prepare_verify_selection(
+        &path,
+        &VerifySelection::Top(std::num::NonZeroUsize::new(1).unwrap()),
+        OutputFormat::Json,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        verified.selection,
+        ResolvedVerifySelection::RankedCandidates(expected)
+    );
+    assert_eq!(
+        verified.selection_scope,
+        VerifySelectionScope::RetainedCandidates
+    );
+    assert!(!verified.plan_truncated);
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_top_above_a_truncated_plan_selects_every_retained_candidate() {
+    let project = Project::new();
+    let (path, manifest, marker) = write_plan_manifest(&project, &["--max-candidates", "1"]).await;
+    assert!(manifest.truncated);
+    let expected = manifest
+        .candidates
+        .iter()
+        .map(|candidate| candidate.id.clone())
+        .collect::<Vec<_>>();
+
+    let verified = prepare_verify_selection(
+        &path,
+        &VerifySelection::Top(std::num::NonZeroUsize::new(30).unwrap()),
+        OutputFormat::Json,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        verified.selection,
+        ResolvedVerifySelection::RankedCandidates(expected)
+    );
+    assert_eq!(
+        verified.selection_scope,
+        VerifySelectionScope::RetainedCandidates
+    );
+    assert!(verified.plan_truncated);
     assert!(!marker.exists());
 }
 
@@ -640,7 +711,7 @@ async fn verify_runs_only_requested_candidates() {
 }
 
 #[tokio::test]
-async fn verify_executes_retained_candidate_from_truncated_plan() {
+async fn verify_top_executes_the_highest_ranked_retained_candidate() {
     let project = Project::new();
     let coordinator = tempfile::tempdir().unwrap();
     let marker = coordinator.path().join("test-command-ran");
@@ -652,8 +723,8 @@ async fn verify_executes_retained_candidate_from_truncated_plan() {
         OsString::from("hoimin"),
         OsString::from("verify"),
         path.as_os_str().to_owned(),
-        OsString::from("--candidate"),
-        OsString::from(&candidate_id),
+        OsString::from("--top"),
+        OsString::from("1"),
     ];
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
