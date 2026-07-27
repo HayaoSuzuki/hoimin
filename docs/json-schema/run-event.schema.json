@@ -123,6 +123,21 @@
       },
       "additionalProperties": false
     },
+    "verificationSelection": {
+      "type": "object",
+      "required": ["mode", "requested", "selected", "scope", "plan_truncated"],
+      "properties": {
+        "mode": { "type": "string", "enum": ["candidate_ids", "top"] },
+        "requested": { "type": "integer", "minimum": 1 },
+        "selected": { "type": "integer", "minimum": 0 },
+        "scope": {
+          "type": "string",
+          "enum": ["explicit_candidates", "retained_candidates"]
+        },
+        "plan_truncated": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
     "runStarted": {
       "type": "object",
       "required": [
@@ -161,7 +176,8 @@
             "mechanism": { "type": "string" }
           },
           "additionalProperties": false
-        }
+        },
+        "verification_selection": { "$ref": "#/$defs/verificationSelection" }
       },
       "additionalProperties": false
     },
@@ -287,7 +303,8 @@
         "run_id": { "type": "string" },
         "counts": { "$ref": "#/$defs/counts" },
         "complete": { "type": "boolean" },
-        "exit_code": { "type": "integer", "enum": [0, 1, 2, 3, 4, 130] }
+        "exit_code": { "type": "integer", "enum": [0, 1, 2, 3, 4, 130] },
+        "verification_selection": { "$ref": "#/$defs/verificationSelection" }
       },
       "additionalProperties": false
     }

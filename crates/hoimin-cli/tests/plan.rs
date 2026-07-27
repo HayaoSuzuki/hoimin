@@ -4,8 +4,11 @@ use std::path::{Path, PathBuf};
 
 use hoimin_cli::{
     analyzer::discover_targets,
-    cli::{OutputFormat, ParsedCommand, parse_from},
-    plan::{PlanManifest, create, prepare_verify},
+    cli::{OutputFormat, ParsedCommand, VerifySelection, parse_from},
+    plan::{
+        PlanManifest, ResolvedVerifySelection, VerifySelectionScope, create, prepare_verify,
+        prepare_verify_selection,
+    },
     shell,
     target::TargetHandler,
 };
@@ -37,7 +40,8 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
     let stdout = String::from_utf8(stdout).unwrap();
     assert_eq!(stdout.matches('\n').count(), 1);
     let manifest: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(manifest["schema_version"], 1);
+    assert_eq!(manifest["schema_version"], 2);
+    assert_eq!(manifest["ranking_rule_version"], 1);
     assert_eq!(manifest["kind"], "plan");
     assert!(
         manifest["sources"]
@@ -53,6 +57,16 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
             .iter()
             .all(|candidate| candidate["id"].as_str().unwrap().starts_with("m1_"))
     );
+    for (index, candidate) in manifest["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+    {
+        assert_eq!(candidate["rank"], index + 1);
+        assert!(candidate["score"].is_u64());
+        assert!(candidate["ranking_reasons"].is_array());
+    }
     assert_eq!(manifest["fingerprint_inputs"].as_array().unwrap().len(), 2);
     assert_eq!(
         manifest["normalized_config"]["fingerprint_files"],
@@ -76,7 +90,7 @@ async fn plan_candidates_match_shared_discovery_for_normalized_selectors() {
     ] {
         let marker = project.path.join("test-command-ran");
         let args = plan_args(&project, options.iter().copied(), &marker);
-        let expected = discover_for_plan_args(args.clone()).await;
+        let mut expected = discover_for_plan_args(args.clone()).await;
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
 
@@ -84,8 +98,10 @@ async fn plan_candidates_match_shared_discovery_for_normalized_selectors() {
 
         assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
         let manifest: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
-        let actual: Vec<MutationCandidate> =
+        let mut actual: Vec<MutationCandidate> =
             serde_json::from_value(manifest["candidates"].clone()).unwrap();
+        actual.sort_by(|left, right| left.id.cmp(&right.id));
+        expected.sort_by(|left, right| left.id.cmp(&right.id));
         assert_eq!(actual, expected, "options={options:?}");
         assert!(!marker.exists());
     }
@@ -467,7 +483,7 @@ async fn verify_rejects_malformed_headers_and_source_paths() {
     for case in ["schema", "kind", "parent_path", "absolute_path"] {
         let mut value = original.clone();
         match case {
-            "schema" => value["schema_version"] = serde_json::json!(2),
+            "schema" => value["schema_version"] = serde_json::json!(1),
             "kind" => value["kind"] = serde_json::json!("report"),
             "parent_path" => value["sources"][0]["path"] = serde_json::json!("../outside.py"),
             "absolute_path" => value["sources"][0]["path"] = serde_json::json!("/outside.py"),
@@ -502,7 +518,7 @@ async fn verify_rejects_duplicate_manifest_candidates_and_missing_requested_ids(
     )
     .await
     .unwrap_err();
-    assert_error_code(error, "plan.candidate.invalid");
+    assert_error_code(error, "plan.manifest.invalid");
 
     write_json(&path, &serde_json::to_value(manifest).unwrap());
     let error = prepare_verify(
@@ -527,8 +543,10 @@ async fn verify_deduplicates_requested_ids_and_rejects_max_mutants_overflow() {
     let verified = prepare_verify(&path, &[first.clone(), first.clone()], OutputFormat::Human)
         .await
         .unwrap();
-    assert_eq!(verified.candidate_ids.len(), 1);
-    assert!(verified.candidate_ids.contains(&first));
+    assert_eq!(
+        verified.selection,
+        ResolvedVerifySelection::ExplicitCandidates(BTreeSet::from([first.clone()]))
+    );
     assert_eq!(verified.config.output.format, CoreOutputFormat::Human);
     assert_eq!(verified.config.session, None);
     assert!(!verified.config.resume);
@@ -554,8 +572,74 @@ async fn truncated_plan_accepts_a_contained_candidate() {
         .await
         .unwrap();
 
-    assert_eq!(verified.candidate_ids.len(), 1);
+    assert!(matches!(
+        verified.selection,
+        ResolvedVerifySelection::ExplicitCandidates(ref ids) if ids.len() == 1
+    ));
     assert_eq!(verified.config.output.format, CoreOutputFormat::Jsonl);
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_top_resolves_the_saved_rank_prefix_and_retained_scope() {
+    let project = Project::new();
+    let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
+    assert!(manifest.candidates.len() >= 2);
+    let expected = manifest
+        .candidates
+        .iter()
+        .take(1)
+        .map(|candidate| candidate.id.clone())
+        .collect::<Vec<_>>();
+
+    let verified = prepare_verify_selection(
+        &path,
+        &VerifySelection::Top(std::num::NonZeroUsize::new(1).unwrap()),
+        OutputFormat::Json,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        verified.selection,
+        ResolvedVerifySelection::RankedCandidates(expected)
+    );
+    assert_eq!(
+        verified.selection_scope,
+        VerifySelectionScope::RetainedCandidates
+    );
+    assert!(!verified.plan_truncated);
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_top_above_a_truncated_plan_selects_every_retained_candidate() {
+    let project = Project::new();
+    let (path, manifest, marker) = write_plan_manifest(&project, &["--max-candidates", "1"]).await;
+    assert!(manifest.truncated);
+    let expected = manifest
+        .candidates
+        .iter()
+        .map(|candidate| candidate.id.clone())
+        .collect::<Vec<_>>();
+
+    let verified = prepare_verify_selection(
+        &path,
+        &VerifySelection::Top(std::num::NonZeroUsize::new(30).unwrap()),
+        OutputFormat::Json,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        verified.selection,
+        ResolvedVerifySelection::RankedCandidates(expected)
+    );
+    assert_eq!(
+        verified.selection_scope,
+        VerifySelectionScope::RetainedCandidates
+    );
+    assert!(verified.plan_truncated);
     assert!(!marker.exists());
 }
 
@@ -609,6 +693,16 @@ async fn verify_runs_only_requested_candidates() {
         .iter()
         .find(|event| event["kind"] == "run_started")
         .unwrap();
+    assert_eq!(
+        started["verification_selection"],
+        serde_json::json!({
+            "mode": "candidate_ids",
+            "requested": 2,
+            "selected": 2,
+            "scope": "explicit_candidates",
+            "plan_truncated": false,
+        })
+    );
     let mut expected_config = serde_json::to_value(&manifest.normalized_config).unwrap();
     expected_config["output"]["format"] = serde_json::json!("jsonl");
     expected_config["session"] = serde_json::Value::Null;
@@ -627,7 +721,7 @@ async fn verify_runs_only_requested_candidates() {
 }
 
 #[tokio::test]
-async fn verify_executes_retained_candidate_from_truncated_plan() {
+async fn verify_top_executes_the_highest_ranked_retained_candidate() {
     let project = Project::new();
     let coordinator = tempfile::tempdir().unwrap();
     let marker = coordinator.path().join("test-command-ran");
@@ -639,8 +733,8 @@ async fn verify_executes_retained_candidate_from_truncated_plan() {
         OsString::from("hoimin"),
         OsString::from("verify"),
         path.as_os_str().to_owned(),
-        OsString::from("--candidate"),
-        OsString::from(&candidate_id),
+        OsString::from("--top"),
+        OsString::from("1"),
     ];
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -654,6 +748,21 @@ async fn verify_executes_retained_candidate_from_truncated_plan() {
     );
     let document: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
     assert!(!document["baseline"].is_null());
+    let expected_selection = serde_json::json!({
+        "mode": "top",
+        "requested": 1,
+        "selected": 1,
+        "scope": "retained_candidates",
+        "plan_truncated": true,
+    });
+    assert_eq!(
+        document["run"]["verification_selection"],
+        expected_selection
+    );
+    assert_eq!(
+        document["summary"]["verification_selection"],
+        expected_selection
+    );
     let mutants = document["mutants"].as_array().unwrap();
     assert_eq!(mutants.len(), 1);
     assert_eq!(mutants[0]["candidate"]["id"], candidate_id);

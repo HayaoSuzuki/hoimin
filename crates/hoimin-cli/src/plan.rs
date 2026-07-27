@@ -4,28 +4,38 @@ use std::path::Path;
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{
     CandidateDescriptor, FingerprintInputFile, MutationCandidate, OutputConfig, PlanConfig,
-    RunConfig, TargetSlice, normalized_relative_path, validate_candidate,
+    RunConfig, TargetSlice, VerificationSelection, VerificationSelectionMode,
+    VerificationSelectionScope as ReportVerificationSelectionScope, normalized_relative_path,
+    validate_candidate,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::analyzer::{AnalyzerDiagnostic, AnalyzerDiagnosticCode, discover_targets};
-use crate::cli::OutputFormat;
+use crate::cli::{OutputFormat, VerifySelection};
 use crate::fingerprint_inputs;
 use crate::shell;
 use crate::target::TargetHandler;
 
-pub const PLAN_SCHEMA_VERSION: u32 = 1;
+mod ranking;
+#[cfg(test)]
+mod ranking_tests;
+
+use ranking::{RANKING_RULE_VERSION, rank_candidates, validate_ranking, validate_ranking_against};
+pub use ranking::{RankedPlanCandidate, RankingReason, RankingReasonCode};
+
+pub const PLAN_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PlanManifest {
     pub schema_version: u32,
     pub kind: String,
+    pub ranking_rule_version: u32,
     pub normalized_config: PlanConfig,
     pub sources: Vec<FingerprintInputFile>,
     pub fingerprint_inputs: Vec<FingerprintInputFile>,
-    pub candidates: Vec<MutationCandidate>,
+    pub candidates: Vec<RankedPlanCandidate>,
     pub truncated: bool,
     pub diagnostics: Vec<PlanDiagnostic>,
 }
@@ -49,7 +59,22 @@ pub struct PlanOutput {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifiedPlan {
     pub config: RunConfig,
-    pub candidate_ids: BTreeSet<String>,
+    pub selection: ResolvedVerifySelection,
+    pub selection_scope: VerifySelectionScope,
+    pub plan_truncated: bool,
+    pub verification_selection: VerificationSelection,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ResolvedVerifySelection {
+    ExplicitCandidates(BTreeSet<String>),
+    RankedCandidates(Vec<String>),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VerifySelectionScope {
+    ExplicitCandidates,
+    RetainedCandidates,
 }
 
 #[derive(Debug, Error)]
@@ -110,13 +135,15 @@ pub async fn create(config: RunConfig) -> Result<PlanOutput, PlanError> {
     }
     let diagnostics = discovery.diagnostics.iter().map(plan_diagnostic).collect();
     let truncated = discovery.truncated;
+    let candidates = rank_candidates(&config.selection, &targets, discovery.candidates);
     let manifest = PlanManifest {
         schema_version: PLAN_SCHEMA_VERSION,
         kind: "plan".to_owned(),
+        ranking_rule_version: RANKING_RULE_VERSION,
         normalized_config: config.clone().into_plan_config(),
         sources,
         fingerprint_inputs: config.fingerprint_inputs,
-        candidates: discovery.candidates,
+        candidates,
         truncated,
         diagnostics,
     };
@@ -138,11 +165,40 @@ pub async fn prepare_verify(
     requested_ids: &[String],
     format: OutputFormat,
 ) -> Result<VerifiedPlan, PlanError> {
+    prepare_verify_selection(
+        manifest_path,
+        &VerifySelection::CandidateIds(requested_ids.to_vec()),
+        format,
+    )
+    .await
+}
+
+/// Validates a plan and resolves an explicit-ID or ranked top-N verification selection.
+///
+/// # Errors
+///
+/// Returns an error when the manifest, selection, sources, or planned candidates are invalid.
+pub async fn prepare_verify_selection(
+    manifest_path: impl AsRef<Path>,
+    requested_selection: &VerifySelection,
+    format: OutputFormat,
+) -> Result<VerifiedPlan, PlanError> {
     let manifest_path = manifest_path.as_ref();
     let bytes = std::fs::read(manifest_path).map_err(|error| {
         PlanError::ManifestInvalid(format!("{}: {error}", manifest_path.display()))
     })?;
-    let manifest: PlanManifest = serde_json::from_slice(&bytes)
+    let value: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
+    let schema_version = value
+        .get("schema_version")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| PlanError::ManifestInvalid("missing schema version".to_owned()))?;
+    if schema_version != u64::from(PLAN_SCHEMA_VERSION) {
+        return Err(PlanError::ManifestInvalid(format!(
+            "unsupported schema version {schema_version}; regenerate the plan with this hoimin version"
+        )));
+    }
+    let manifest: PlanManifest = serde_json::from_value(value)
         .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
     validate_header(&manifest)?;
     manifest
@@ -150,10 +206,14 @@ pub async fn prepare_verify(
         .validate()
         .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
 
-    let candidate_ids = normalize_requested_ids(
-        requested_ids,
-        manifest.normalized_config.limits.max_mutants.get(),
-    )?;
+    let (selection, selection_scope, verification_selection) =
+        resolve_verify_selection(&manifest, requested_selection)?;
+    let candidate_ids = match &selection {
+        ResolvedVerifySelection::ExplicitCandidates(candidate_ids) => candidate_ids.clone(),
+        ResolvedVerifySelection::RankedCandidates(candidate_ids) => {
+            candidate_ids.iter().cloned().collect()
+        }
+    };
     let mut config = manifest
         .normalized_config
         .clone()
@@ -161,6 +221,12 @@ pub async fn prepare_verify(
     let targets = TargetHandler::resolve(&config.selection)
         .await
         .map_err(|error| PlanError::SourceChanged(error.to_string()))?;
+    validate_ranking_against(
+        &manifest.normalized_config.selection,
+        &targets,
+        &manifest.candidates,
+    )
+    .map_err(PlanError::ManifestInvalid)?;
     let current_sources = source_records(&config.root, &targets)
         .await
         .map_err(|error| PlanError::SourceChanged(error.to_string()))?;
@@ -181,8 +247,79 @@ pub async fn prepare_verify(
 
     Ok(VerifiedPlan {
         config,
-        candidate_ids,
+        verification_selection,
+        selection,
+        selection_scope,
+        plan_truncated: manifest.truncated,
     })
+}
+
+fn resolve_verify_selection(
+    manifest: &PlanManifest,
+    requested_selection: &VerifySelection,
+) -> Result<
+    (
+        ResolvedVerifySelection,
+        VerifySelectionScope,
+        VerificationSelection,
+    ),
+    PlanError,
+> {
+    let max_mutants = manifest.normalized_config.limits.max_mutants.get();
+    let (selection, selection_scope, mode, requested) = match requested_selection {
+        VerifySelection::CandidateIds(requested_ids) => (
+            ResolvedVerifySelection::ExplicitCandidates(normalize_requested_ids(
+                requested_ids,
+                max_mutants,
+            )?),
+            VerifySelectionScope::ExplicitCandidates,
+            VerificationSelectionMode::CandidateIds,
+            requested_ids.iter().collect::<BTreeSet<_>>().len(),
+        ),
+        VerifySelection::Top(count) => {
+            let candidate_ids = manifest
+                .candidates
+                .iter()
+                .take(count.get())
+                .map(|candidate| candidate.id.clone())
+                .collect::<Vec<_>>();
+            if candidate_ids.len() > max_mutants {
+                return Err(PlanError::CandidateInvalid(format!(
+                    "selected {} candidates exceeds max_mutants {max_mutants}",
+                    candidate_ids.len()
+                )));
+            }
+            (
+                ResolvedVerifySelection::RankedCandidates(candidate_ids),
+                VerifySelectionScope::RetainedCandidates,
+                VerificationSelectionMode::Top,
+                count.get(),
+            )
+        }
+    };
+    let selected = match &selection {
+        ResolvedVerifySelection::ExplicitCandidates(ids) => ids.len(),
+        ResolvedVerifySelection::RankedCandidates(ids) => ids.len(),
+    };
+    let scope = match selection_scope {
+        VerifySelectionScope::ExplicitCandidates => {
+            ReportVerificationSelectionScope::ExplicitCandidates
+        }
+        VerifySelectionScope::RetainedCandidates => {
+            ReportVerificationSelectionScope::RetainedCandidates
+        }
+    };
+    Ok((
+        selection,
+        selection_scope,
+        VerificationSelection {
+            mode,
+            requested,
+            selected,
+            scope,
+            plan_truncated: manifest.truncated,
+        },
+    ))
 }
 
 async fn source_records(
@@ -209,7 +346,7 @@ async fn source_records(
 fn validate_header(manifest: &PlanManifest) -> Result<(), PlanError> {
     if manifest.schema_version != PLAN_SCHEMA_VERSION {
         return Err(PlanError::ManifestInvalid(format!(
-            "unsupported schema version {}",
+            "unsupported schema version {}; regenerate the plan with this hoimin version",
             manifest.schema_version
         )));
     }
@@ -217,6 +354,12 @@ fn validate_header(manifest: &PlanManifest) -> Result<(), PlanError> {
         return Err(PlanError::ManifestInvalid(format!(
             "unexpected kind {}",
             manifest.kind
+        )));
+    }
+    if manifest.ranking_rule_version != RANKING_RULE_VERSION {
+        return Err(PlanError::ManifestInvalid(format!(
+            "unsupported ranking rule version {}",
+            manifest.ranking_rule_version
         )));
     }
     if manifest.normalized_config.selection.root != manifest.normalized_config.root {
@@ -238,6 +381,7 @@ fn validate_header(manifest: &PlanManifest) -> Result<(), PlanError> {
         ));
     }
 
+    validate_ranking(&manifest.candidates).map_err(PlanError::ManifestInvalid)?;
     let mut candidate_ids = BTreeSet::new();
     for candidate in &manifest.candidates {
         if !valid_candidate_id(&candidate.id) {
@@ -365,7 +509,7 @@ async fn validate_requested_candidates(
     let candidates = manifest
         .candidates
         .iter()
-        .map(|candidate| (candidate.id.as_str(), candidate))
+        .map(|candidate| (candidate.id.as_str(), &candidate.candidate))
         .collect::<BTreeMap<_, _>>();
     let mut source_bytes = BTreeMap::new();
     for candidate_id in requested_ids {

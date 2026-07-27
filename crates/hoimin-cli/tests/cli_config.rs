@@ -114,7 +114,7 @@ fn plan_accepts_run_selection_but_rejects_report_and_session_options() {
 }
 
 #[test]
-fn verify_requires_candidates_and_accepts_only_format_override() {
+fn verify_requires_an_explicit_selection_and_accepts_only_format_override() {
     let ParsedCommand::Verify(args) = parse_from([
         "hoimin",
         "verify",
@@ -130,9 +130,34 @@ fn verify_requires_candidates_and_accepts_only_format_override() {
         panic!("expected verify");
     };
     assert_eq!(args.manifest, std::path::PathBuf::from("plan.json"));
-    assert_eq!(args.candidate_ids, ["m1_a", "m2_b"]);
+    assert_eq!(
+        args.selection,
+        hoimin_cli::cli::VerifySelection::CandidateIds(vec!["m1_a".into(), "m2_b".into()])
+    );
     assert_eq!(args.format, hoimin_cli::cli::OutputFormat::Jsonl);
     assert!(parse_from(["hoimin", "verify", "plan.json"]).is_err());
+    let ParsedCommand::Verify(args) =
+        parse_from(["hoimin", "verify", "plan.json", "--top", "30"]).unwrap()
+    else {
+        panic!("expected verify");
+    };
+    assert_eq!(
+        args.selection,
+        hoimin_cli::cli::VerifySelection::Top(std::num::NonZeroUsize::new(30).unwrap())
+    );
+    assert!(
+        parse_from([
+            "hoimin",
+            "verify",
+            "plan.json",
+            "--candidate",
+            "m1_a",
+            "--top",
+            "30",
+        ])
+        .is_err()
+    );
+    assert!(parse_from(["hoimin", "verify", "plan.json", "--top", "0"]).is_err());
     for option in ["--source", "--session", "--fingerprint-file"] {
         assert!(
             parse_from([
@@ -343,6 +368,8 @@ fn verify_help_explains_repeatable_candidates_and_plan_inheritance() {
     for expected in [
         "one or more candidates",
         "repeat",
+        "--top",
+        "highest-ranked",
         "Execution and resource settings come from PLAN",
         "cannot be overridden",
         "Create a new plan",

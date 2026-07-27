@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use camino::Utf8PathBuf;
 
 use crate::{
-    CandidateSpoolRef, CommandArg, IntegrityCheckpoint, MutantResult, OutputEvent, ProcessLimits,
-    ReservationId, RunFingerprint, Selection, TargetSlice,
+    CandidateSpoolRef, CommandArg, IntegrityCheckpoint, MutantResult, MutationCandidate,
+    OutputEvent, ProcessLimits, ReservationId, RunFingerprint, Selection, TargetSlice,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -148,6 +148,7 @@ impl CreateWorker {
 pub struct ApplyMutation {
     pub id: EffectId,
     pub worker: u32,
+    pub candidate: MutationCandidate,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

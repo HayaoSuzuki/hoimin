@@ -4,6 +4,19 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+#[test]
+fn cli_entrypoint_future_keeps_large_run_state_out_of_line() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let future = hoimin_cli::run_with_io(["hoimin", "--help"], &mut stdout, &mut stderr);
+
+    assert!(
+        std::mem::size_of_val(&future) <= 14 * 1024,
+        "CLI future grew to {} bytes; large run state must remain out of line",
+        std::mem::size_of_val(&future)
+    );
+}
+
 #[tokio::test]
 async fn unittest_command_produces_the_expected_mutant_statuses() {
     let unittest = run_fixture(&["-m", "unittest", "discover", "-s", "tests"]).await;
@@ -889,8 +902,9 @@ fn readme_documents_agent_plan_workflow() {
         "hoimin plan",
         "--allow-best-effort-memory",
         "--total-timeout 15m",
-        "--candidate 'ID1' \\",
-        "--candidate 'ID2' \\",
+        "hoimin verify PLAN.json --top 10",
+        "`ranking_reasons`",
+        "mutually exclusive",
         "inherits the test command, execution limits, timeout settings, and resource policy",
         "create a new plan",
         "identical candidate-ID set",

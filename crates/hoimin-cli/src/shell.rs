@@ -331,17 +331,16 @@ where
                 )),
             }
         }
-        RunEffect::ApplyMutation(request) => match context.active_candidates.get(&request.worker) {
-            Some(candidate) => context
+        RunEffect::ApplyMutation(request) => {
+            let candidate = request.candidate.clone();
+            context
+                .active_candidates
+                .insert(request.worker, candidate.clone());
+            context
                 .workspace
-                .handle_apply_mutation(request, candidate)
-                .map(RunEvent::MutationApplied),
-            None => Err(EffectFailed::other(
-                id,
-                "shell.candidate.missing",
-                "active candidate is missing",
-            )),
-        },
+                .handle_apply_mutation(request, &candidate)
+                .map(RunEvent::MutationApplied)
+        }
         RunEffect::RunMutant(request) => {
             match worker_process_request(context, id, request, cancellation.clone(), None) {
                 Ok(request) => context
@@ -529,7 +528,14 @@ where
     Stderr: Write,
 {
     let config = prepare_run_config(config).map_err(|error| error.to_string())?;
-    run_loop_prepared(config, stdout, stderr, RunControl::new(), None).await
+    run_loop_prepared(
+        config,
+        stdout,
+        stderr,
+        RunControl::new(),
+        CandidateSelection::All,
+    )
+    .await
 }
 
 /// Runs an already-validated plan configuration for exactly the requested candidate IDs.
@@ -541,6 +547,7 @@ where
 pub async fn run_selected_loop<Stdout, Stderr>(
     config: RunConfig,
     candidate_ids: BTreeSet<String>,
+    verification_selection: hoimin_core::VerificationSelection,
     stdout: Stdout,
     stderr: Stderr,
 ) -> Result<i32, String>
@@ -556,7 +563,36 @@ where
         stdout,
         stderr,
         RunControl::new(),
-        Some(candidate_ids),
+        CandidateSelection::Explicit(candidate_ids, verification_selection),
+    )
+    .await
+}
+
+/// Runs an already-validated plan configuration in saved manifest rank order.
+///
+/// # Errors
+///
+/// Returns an error when run infrastructure, state transitions, or cleanup fail.
+pub async fn run_ordered_selected_loop<Stdout, Stderr>(
+    config: RunConfig,
+    candidate_ids: Vec<String>,
+    verification_selection: hoimin_core::VerificationSelection,
+    stdout: Stdout,
+    stderr: Stderr,
+) -> Result<i32, String>
+where
+    Stdout: Write,
+    Stderr: Write,
+{
+    if config.session.is_some() || config.resume {
+        return Err("selected candidate execution does not support sessions or resume".to_owned());
+    }
+    run_loop_prepared(
+        config,
+        stdout,
+        stderr,
+        RunControl::new(),
+        CandidateSelection::Ordered(candidate_ids, verification_selection),
     )
     .await
 }
@@ -573,7 +609,13 @@ where
     Stderr: Write,
 {
     let config = prepare_run_config(config).map_err(|error| error.to_string())?;
-    run_loop_prepared(config, stdout, stderr, control, None).await
+    run_loop_prepared(config, stdout, stderr, control, CandidateSelection::All).await
+}
+
+enum CandidateSelection {
+    All,
+    Explicit(BTreeSet<String>, hoimin_core::VerificationSelection),
+    Ordered(Vec<String>, hoimin_core::VerificationSelection),
 }
 
 #[expect(
@@ -585,7 +627,7 @@ async fn run_loop_prepared<Stdout, Stderr>(
     stdout: Stdout,
     stderr: Stderr,
     control: RunControl,
-    candidate_filter: Option<BTreeSet<String>>,
+    candidate_selection: CandidateSelection,
 ) -> Result<i32, String>
 where
     Stdout: Write,
@@ -601,15 +643,24 @@ where
     let mut discovered = 0_u64;
     let mut executed = 0_u64;
     let run_result = async {
-        let mut state = match candidate_filter {
-            Some(candidate_ids) => {
+        let mut state = Box::new(match candidate_selection {
+            CandidateSelection::Explicit(candidate_ids, verification_selection) => {
                 RunState::with_candidate_filter(Uuid::new_v4().to_string(), config, candidate_ids)
+                    .with_verification_selection(verification_selection)
             }
-            None => RunState::new(Uuid::new_v4().to_string(), config),
-        };
-        let (next, initial) = transition(state, RunEvent::StartRequested(StartRequested))
+            CandidateSelection::Ordered(candidate_ids, verification_selection) => {
+                RunState::with_ordered_candidate_filter(
+                    Uuid::new_v4().to_string(),
+                    config,
+                    candidate_ids,
+                )
+                .with_verification_selection(verification_selection)
+            }
+            CandidateSelection::All => RunState::new(Uuid::new_v4().to_string(), config),
+        });
+        let (next, initial) = transition(*state, RunEvent::StartRequested(StartRequested))
             .map_err(|error| error.to_string())?;
-        state = next;
+        *state = next;
         if metrics_path.is_some() {
             let mut collector = MetricsCollector::new(state.run_id());
             if let Err(error) = collector.begin_stage("targets") {
@@ -959,7 +1010,8 @@ where
                 cancellation.cancel();
                 stop_signalled = true;
             }
-            let transition_result = transition(state, event);
+            let transition_result =
+                transition(*state, event).map(|(next, produced)| (Box::new(next), produced));
             let (next, produced) = match transition_result {
                 Ok(value) => value,
                 Err(error) => {

@@ -571,6 +571,171 @@ fn candidate_filter_skips_unrequested_candidates() {
 }
 
 #[test]
+fn ordered_candidate_filter_defers_and_preserves_requested_order() {
+    let first = fixture_candidate(1);
+    let second = fixture_candidate(2);
+    let third = fixture_candidate(3);
+    let (state, effects) = waiting_for_ordered_analysis(vec![third.id.clone(), first.id.clone()]);
+    let analysis_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::AnalyzeFile(_))
+    }));
+    let (mut state, mut effects) = transition(
+        state,
+        RunEvent::AnalysisFinished(AnalysisFinished {
+            id: analysis_id,
+            spool: Some(CandidateSpoolRef {
+                token: "ordered".to_owned(),
+                records: 3,
+            }),
+            truncated: false,
+        }),
+    )
+    .unwrap();
+
+    for (candidate, offset) in [(first.clone(), 10), (second, 20), (third.clone(), 30)] {
+        let read_id = effect_id(find_effect(&effects, |effect| {
+            matches!(effect, RunEffect::ReadCandidate(_))
+        }));
+        (state, effects) = transition(
+            state,
+            RunEvent::CandidateLoaded(CandidateLoaded {
+                id: read_id,
+                worker: 0,
+                candidate: Some(candidate),
+                next_offset: offset,
+            }),
+        )
+        .unwrap();
+        assert!(!effects.iter().any(|effect| {
+            matches!(
+                effect,
+                RunEffect::ApplyMutation(_) | RunEffect::RunMutant(_) | RunEffect::EmitOutput(_)
+            )
+        }));
+    }
+
+    let read_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read_id,
+            worker: 0,
+            candidate: None,
+            next_offset: 30,
+        }),
+    )
+    .unwrap();
+    let apply_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ApplyMutation(_))
+    }));
+    let (_, effects) = transition(
+        state,
+        RunEvent::MutationApplied(MutationApplied {
+            id: apply_id,
+            worker: 0,
+        }),
+    )
+    .unwrap();
+    assert!(effects.iter().any(|effect| {
+        matches!(
+            effect,
+            RunEffect::EmitOutput(value)
+                if matches!(
+                    &value.event,
+                    OutputEvent::MutantStarted(started) if started.mutant_id == third.id
+                )
+        )
+    }));
+}
+
+#[test]
+fn ordered_candidate_cancellation_drains_remaining_candidates_in_requested_order() {
+    let first = fixture_candidate(1);
+    let second = fixture_candidate(2);
+    let third = fixture_candidate(3);
+    let (state, effects) = waiting_for_ordered_analysis(vec![third.id.clone(), first.id.clone()]);
+    let analysis_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::AnalyzeFile(_))
+    }));
+    let (mut state, mut effects) = transition(
+        state,
+        RunEvent::AnalysisFinished(AnalysisFinished {
+            id: analysis_id,
+            spool: Some(CandidateSpoolRef {
+                token: "ordered-cancel".to_owned(),
+                records: 3,
+            }),
+            truncated: false,
+        }),
+    )
+    .unwrap();
+    for (candidate, offset) in [(first.clone(), 10), (second, 20), (third.clone(), 30)] {
+        let read_id = effect_id(find_effect(&effects, |effect| {
+            matches!(effect, RunEffect::ReadCandidate(_))
+        }));
+        (state, effects) = transition(
+            state,
+            RunEvent::CandidateLoaded(CandidateLoaded {
+                id: read_id,
+                worker: 0,
+                candidate: Some(candidate),
+                next_offset: offset,
+            }),
+        )
+        .unwrap();
+    }
+    let read_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }));
+    (state, _) = transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read_id,
+            worker: 0,
+            candidate: None,
+            next_offset: 30,
+        }),
+    )
+    .unwrap();
+
+    (state, effects) = transition(state, RunEvent::CancellationRequested).unwrap();
+    assert_mutant_started_id(&effects, &third.id);
+    (state, effects) = complete_mutant_started(state, &effects);
+    let finished_id = effect_id(find_effect(&effects, |effect| {
+        matches!(
+            effect,
+            RunEffect::EmitOutput(value)
+                if matches!(
+                    &value.event,
+                    OutputEvent::MutantFinished(finished)
+                        if finished.candidate.id == third.id
+                )
+        )
+    }));
+    (_, effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: finished_id }),
+    )
+    .unwrap();
+    assert_mutant_started_id(&effects, &first.id);
+}
+
+fn assert_mutant_started_id(effects: &[RunEffect], expected: &str) {
+    assert!(effects.iter().any(|effect| {
+        matches!(
+            effect,
+            RunEffect::EmitOutput(value)
+                if matches!(
+                    &value.event,
+                    OutputEvent::MutantStarted(started) if started.mutant_id == expected
+                )
+        )
+    }));
+}
+
+#[test]
 #[allow(
     clippy::too_many_lines,
     reason = "the completion-order matrix is intentionally kept in one test"
@@ -2222,6 +2387,16 @@ fn waiting_for_candidate() -> (RunState, Vec<RunEffect>) {
 
 fn waiting_for_filtered_analysis(candidate_ids: BTreeSet<String>) -> (RunState, Vec<RunEffect>) {
     let initial_state = RunState::with_candidate_filter("run-1", fixture_config(), candidate_ids);
+    waiting_for_selected_analysis(initial_state)
+}
+
+fn waiting_for_ordered_analysis(candidate_ids: Vec<String>) -> (RunState, Vec<RunEffect>) {
+    let initial_state =
+        RunState::with_ordered_candidate_filter("run-1", fixture_config(), candidate_ids);
+    waiting_for_selected_analysis(initial_state)
+}
+
+fn waiting_for_selected_analysis(initial_state: RunState) -> (RunState, Vec<RunEffect>) {
     let (state, effects) =
         transition(initial_state, RunEvent::StartRequested(StartRequested)).unwrap();
     let resolve_id = effect_id(find_effect(&effects, |effect| {
