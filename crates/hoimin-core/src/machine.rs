@@ -10,8 +10,9 @@ use crate::{
     MutationStatus, MutationSummary, OutputEvent, PersistResult, Preflight, ProcessFinished,
     ProcessLimits, ProcessTermination, ReadCandidate, ResetWorker, ResolveTargets, ResumeDecision,
     RunBudgets, RunConfig, RunEffect, RunEvent, RunFingerprint, RunProcess, RunStarted, RunSummary,
-    TargetSlice, VerifyOriginals, WorkspaceCopyGrant, auto_mutant_timeout, classify_mutant,
-    contract_ensure, exit_code_for, release_workspace_copy, reserve_workspace_copy,
+    TargetSlice, VerificationSelection, VerifyOriginals, WorkspaceCopyGrant, auto_mutant_timeout,
+    classify_mutant, contract_ensure, exit_code_for, release_workspace_copy,
+    reserve_workspace_copy,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -173,6 +174,7 @@ pub struct RunState {
     ordered_candidates: BTreeMap<String, MutationCandidate>,
     ordered_candidates_ready: VecDeque<MutationCandidate>,
     ordered_collection_complete: bool,
+    verification_selection: Option<VerificationSelection>,
 }
 
 impl RunState {
@@ -236,6 +238,7 @@ impl RunState {
             ordered_candidates: BTreeMap::new(),
             ordered_candidates_ready: VecDeque::new(),
             ordered_collection_complete: false,
+            verification_selection: None,
         }
     }
 
@@ -272,6 +275,12 @@ impl RunState {
         state.candidate_filter = Some(ordered_candidate_ids.iter().cloned().collect());
         state.ordered_candidate_ids = Some(ordered_candidate_ids);
         state
+    }
+
+    #[must_use]
+    pub fn with_verification_selection(mut self, selection: VerificationSelection) -> Self {
+        self.verification_selection = Some(selection);
+        self
     }
 
     #[must_use]
@@ -503,6 +512,9 @@ impl RunState {
         let sequence = self.output_sequence();
         let mut run_started = RunStarted::minimal(self.run_id.clone(), sequence);
         run_started.normalized_config = Some(self.config.clone());
+        run_started
+            .verification_selection
+            .clone_from(&self.verification_selection);
         Ok(vec![RunEffect::EmitOutput(EmitOutput {
             id,
             event: OutputEvent::RunStarted(run_started),
@@ -961,6 +973,7 @@ impl RunState {
                 counts: self.summary.clone(),
                 complete: self.complete(),
                 exit_code: self.exit_code(),
+                verification_selection: self.verification_selection.clone(),
             }),
         })])
     }

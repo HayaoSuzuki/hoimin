@@ -547,6 +547,7 @@ where
 pub async fn run_selected_loop<Stdout, Stderr>(
     config: RunConfig,
     candidate_ids: BTreeSet<String>,
+    verification_selection: hoimin_core::VerificationSelection,
     stdout: Stdout,
     stderr: Stderr,
 ) -> Result<i32, String>
@@ -562,7 +563,7 @@ where
         stdout,
         stderr,
         RunControl::new(),
-        CandidateSelection::Explicit(candidate_ids),
+        CandidateSelection::Explicit(candidate_ids, verification_selection),
     )
     .await
 }
@@ -575,6 +576,7 @@ where
 pub async fn run_ordered_selected_loop<Stdout, Stderr>(
     config: RunConfig,
     candidate_ids: Vec<String>,
+    verification_selection: hoimin_core::VerificationSelection,
     stdout: Stdout,
     stderr: Stderr,
 ) -> Result<i32, String>
@@ -590,7 +592,7 @@ where
         stdout,
         stderr,
         RunControl::new(),
-        CandidateSelection::Ordered(candidate_ids),
+        CandidateSelection::Ordered(candidate_ids, verification_selection),
     )
     .await
 }
@@ -612,8 +614,8 @@ where
 
 enum CandidateSelection {
     All,
-    Explicit(BTreeSet<String>),
-    Ordered(Vec<String>),
+    Explicit(BTreeSet<String>, hoimin_core::VerificationSelection),
+    Ordered(Vec<String>, hoimin_core::VerificationSelection),
 }
 
 #[expect(
@@ -642,14 +644,18 @@ where
     let mut executed = 0_u64;
     let run_result = async {
         let mut state = match candidate_selection {
-            CandidateSelection::Explicit(candidate_ids) => {
+            CandidateSelection::Explicit(candidate_ids, verification_selection) => {
                 RunState::with_candidate_filter(Uuid::new_v4().to_string(), config, candidate_ids)
+                    .with_verification_selection(verification_selection)
             }
-            CandidateSelection::Ordered(candidate_ids) => RunState::with_ordered_candidate_filter(
-                Uuid::new_v4().to_string(),
-                config,
-                candidate_ids,
-            ),
+            CandidateSelection::Ordered(candidate_ids, verification_selection) => {
+                RunState::with_ordered_candidate_filter(
+                    Uuid::new_v4().to_string(),
+                    config,
+                    candidate_ids,
+                )
+                .with_verification_selection(verification_selection)
+            }
             CandidateSelection::All => RunState::new(Uuid::new_v4().to_string(), config),
         };
         let (next, initial) = transition(state, RunEvent::StartRequested(StartRequested))

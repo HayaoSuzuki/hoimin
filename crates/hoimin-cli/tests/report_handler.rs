@@ -370,6 +370,7 @@ fn actual_pre_baseline_report() -> serde_json::Value {
             counts: MutationSummary::default(),
             complete: false,
             exit_code: 4,
+            verification_selection: None,
         }),
     );
     serde_json::from_str(stdout.text().trim()).unwrap()
@@ -466,6 +467,7 @@ fn documented_events() -> Vec<OutputEvent> {
         counts: summary,
         complete: false,
         exit_code: 2,
+        verification_selection: None,
     }));
     events
 }
@@ -1107,6 +1109,7 @@ fn run_summary(sequence: u64) -> OutputEvent {
         },
         complete: true,
         exit_code: 0,
+        verification_selection: None,
     })
 }
 

@@ -693,6 +693,16 @@ async fn verify_runs_only_requested_candidates() {
         .iter()
         .find(|event| event["kind"] == "run_started")
         .unwrap();
+    assert_eq!(
+        started["verification_selection"],
+        serde_json::json!({
+            "mode": "candidate_ids",
+            "requested": 2,
+            "selected": 2,
+            "scope": "explicit_candidates",
+            "plan_truncated": false,
+        })
+    );
     let mut expected_config = serde_json::to_value(&manifest.normalized_config).unwrap();
     expected_config["output"]["format"] = serde_json::json!("jsonl");
     expected_config["session"] = serde_json::Value::Null;
@@ -738,6 +748,21 @@ async fn verify_top_executes_the_highest_ranked_retained_candidate() {
     );
     let document: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
     assert!(!document["baseline"].is_null());
+    let expected_selection = serde_json::json!({
+        "mode": "top",
+        "requested": 1,
+        "selected": 1,
+        "scope": "retained_candidates",
+        "plan_truncated": true,
+    });
+    assert_eq!(
+        document["run"]["verification_selection"],
+        expected_selection
+    );
+    assert_eq!(
+        document["summary"]["verification_selection"],
+        expected_selection
+    );
     let mutants = document["mutants"].as_array().unwrap();
     assert_eq!(mutants.len(), 1);
     assert_eq!(mutants[0]["candidate"]["id"], candidate_id);

@@ -1,6 +1,8 @@
 use std::io::{self, Write};
 
-use hoimin_core::{MutationStatus, OutputEvent};
+use hoimin_core::{
+    MutationStatus, OutputEvent, VerificationSelectionMode, VerificationSelectionScope,
+};
 
 pub(super) fn write_event(writer: &mut impl Write, event: &OutputEvent) -> io::Result<()> {
     match event {
@@ -31,6 +33,21 @@ pub(super) fn write_event(writer: &mut impl Write, event: &OutputEvent) -> io::R
                 }
                 if !config.fingerprint_inputs.is_empty() {
                     writeln!(writer, "fingerprint inputs: [{inputs}]")?;
+                }
+                if let Some(selection) = &value.verification_selection {
+                    let mode = match selection.mode {
+                        VerificationSelectionMode::CandidateIds => "candidate_ids",
+                        VerificationSelectionMode::Top => "top",
+                    };
+                    let scope = match selection.scope {
+                        VerificationSelectionScope::ExplicitCandidates => "explicit_candidates",
+                        VerificationSelectionScope::RetainedCandidates => "retained_candidates",
+                    };
+                    writeln!(
+                        writer,
+                        "verification selection: mode={mode} requested={} selected={} scope={scope} plan_truncated={}",
+                        selection.requested, selection.selected, selection.plan_truncated
+                    )?;
                 }
             }
             None => writeln!(writer, "run started: {}", value.run_id)?,

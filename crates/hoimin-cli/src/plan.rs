@@ -4,7 +4,9 @@ use std::path::Path;
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{
     CandidateDescriptor, FingerprintInputFile, MutationCandidate, OutputConfig, PlanConfig,
-    RunConfig, TargetSlice, normalized_relative_path, validate_candidate,
+    RunConfig, TargetSlice, VerificationSelection, VerificationSelectionMode,
+    VerificationSelectionScope as ReportVerificationSelectionScope, normalized_relative_path,
+    validate_candidate,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -60,6 +62,7 @@ pub struct VerifiedPlan {
     pub selection: ResolvedVerifySelection,
     pub selection_scope: VerifySelectionScope,
     pub plan_truncated: bool,
+    pub verification_selection: VerificationSelection,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -203,34 +206,8 @@ pub async fn prepare_verify_selection(
         .validate()
         .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
 
-    let max_mutants = manifest.normalized_config.limits.max_mutants.get();
-    let (selection, selection_scope) = match requested_selection {
-        VerifySelection::CandidateIds(requested_ids) => (
-            ResolvedVerifySelection::ExplicitCandidates(normalize_requested_ids(
-                requested_ids,
-                max_mutants,
-            )?),
-            VerifySelectionScope::ExplicitCandidates,
-        ),
-        VerifySelection::Top(count) => {
-            let candidate_ids = manifest
-                .candidates
-                .iter()
-                .take(count.get())
-                .map(|candidate| candidate.id.clone())
-                .collect::<Vec<_>>();
-            if candidate_ids.len() > max_mutants {
-                return Err(PlanError::CandidateInvalid(format!(
-                    "selected {} candidates exceeds max_mutants {max_mutants}",
-                    candidate_ids.len()
-                )));
-            }
-            (
-                ResolvedVerifySelection::RankedCandidates(candidate_ids),
-                VerifySelectionScope::RetainedCandidates,
-            )
-        }
-    };
+    let (selection, selection_scope, verification_selection) =
+        resolve_verify_selection(&manifest, requested_selection)?;
     let candidate_ids = match &selection {
         ResolvedVerifySelection::ExplicitCandidates(candidate_ids) => candidate_ids.clone(),
         ResolvedVerifySelection::RankedCandidates(candidate_ids) => {
@@ -264,10 +241,79 @@ pub async fn prepare_verify_selection(
 
     Ok(VerifiedPlan {
         config,
+        verification_selection,
         selection,
         selection_scope,
         plan_truncated: manifest.truncated,
     })
+}
+
+fn resolve_verify_selection(
+    manifest: &PlanManifest,
+    requested_selection: &VerifySelection,
+) -> Result<
+    (
+        ResolvedVerifySelection,
+        VerifySelectionScope,
+        VerificationSelection,
+    ),
+    PlanError,
+> {
+    let max_mutants = manifest.normalized_config.limits.max_mutants.get();
+    let (selection, selection_scope, mode, requested) = match requested_selection {
+        VerifySelection::CandidateIds(requested_ids) => (
+            ResolvedVerifySelection::ExplicitCandidates(normalize_requested_ids(
+                requested_ids,
+                max_mutants,
+            )?),
+            VerifySelectionScope::ExplicitCandidates,
+            VerificationSelectionMode::CandidateIds,
+            requested_ids.iter().collect::<BTreeSet<_>>().len(),
+        ),
+        VerifySelection::Top(count) => {
+            let candidate_ids = manifest
+                .candidates
+                .iter()
+                .take(count.get())
+                .map(|candidate| candidate.id.clone())
+                .collect::<Vec<_>>();
+            if candidate_ids.len() > max_mutants {
+                return Err(PlanError::CandidateInvalid(format!(
+                    "selected {} candidates exceeds max_mutants {max_mutants}",
+                    candidate_ids.len()
+                )));
+            }
+            (
+                ResolvedVerifySelection::RankedCandidates(candidate_ids),
+                VerifySelectionScope::RetainedCandidates,
+                VerificationSelectionMode::Top,
+                count.get(),
+            )
+        }
+    };
+    let selected = match &selection {
+        ResolvedVerifySelection::ExplicitCandidates(ids) => ids.len(),
+        ResolvedVerifySelection::RankedCandidates(ids) => ids.len(),
+    };
+    let scope = match selection_scope {
+        VerifySelectionScope::ExplicitCandidates => {
+            ReportVerificationSelectionScope::ExplicitCandidates
+        }
+        VerifySelectionScope::RetainedCandidates => {
+            ReportVerificationSelectionScope::RetainedCandidates
+        }
+    };
+    Ok((
+        selection,
+        selection_scope,
+        VerificationSelection {
+            mode,
+            requested,
+            selected,
+            scope,
+            plan_truncated: manifest.truncated,
+        },
+    ))
 }
 
 async fn source_records(

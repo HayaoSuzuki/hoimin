@@ -85,11 +85,13 @@ where
             match plan::prepare_verify_selection(&args.manifest, &args.selection, args.format).await
             {
                 Ok(verified) => {
+                    let verification_selection = verified.verification_selection;
                     let result = match verified.selection {
                         plan::ResolvedVerifySelection::ExplicitCandidates(candidate_ids) => {
                             shell::run_selected_loop(
                                 verified.config,
                                 candidate_ids,
+                                verification_selection,
                                 &mut *stdout,
                                 &mut *stderr,
                             )
@@ -99,6 +101,7 @@ where
                             shell::run_ordered_selected_loop(
                                 verified.config,
                                 candidate_ids,
+                                verification_selection,
                                 &mut *stdout,
                                 &mut *stderr,
                             )

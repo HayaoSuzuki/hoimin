@@ -128,6 +128,30 @@ pub struct ResourceControl {
     pub mechanism: String,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerificationSelectionMode {
+    CandidateIds,
+    Top,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerificationSelectionScope {
+    ExplicitCandidates,
+    RetainedCandidates,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VerificationSelection {
+    pub mode: VerificationSelectionMode,
+    pub requested: usize,
+    pub selected: usize,
+    pub scope: VerificationSelectionScope,
+    pub plan_truncated: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RunStarted {
     pub schema_version: u32,
@@ -136,6 +160,8 @@ pub struct RunStarted {
     pub normalized_config: Option<RunConfig>,
     pub versions: ReportVersions,
     pub resource_control: ResourceControl,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verification_selection: Option<VerificationSelection>,
 }
 
 impl RunStarted {
@@ -150,6 +176,7 @@ impl RunStarted {
                 mode: ResourceMode::Hard,
                 mechanism: String::new(),
             },
+            verification_selection: None,
         }
     }
 }
@@ -241,6 +268,8 @@ pub struct RunSummary {
     pub counts: MutationSummary,
     pub complete: bool,
     pub exit_code: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verification_selection: Option<VerificationSelection>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
