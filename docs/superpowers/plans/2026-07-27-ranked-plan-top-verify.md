@@ -4,7 +4,7 @@
 
 **Goal:** Rank planned mutation candidates with explainable deterministic reasons and let users execute the retained top N with `hoimin verify PLAN.json --top N`.
 
-**Architecture:** A pure CLI-side ranking module wraps analyzer candidates in version-2 plan candidates without changing the analyzer or the shared `MutationCandidate` report contract. Verify parses legacy version-1 and ranked version-2 manifests, validates ranking integrity, and resolves an explicit-ID or top-N selection. Only the top-N path passes manifest order into the core run machine; it defers selected candidate dispatch until discovery completes and then schedules by rank, while ordinary `run` and existing explicit-ID verification preserve their current discovery-order behavior.
+**Architecture:** A pure CLI-side ranking module wraps analyzer candidates in version-2 plan candidates without changing the analyzer or the shared `MutationCandidate` report contract. Verify accepts only version-2 manifests, validates ranking integrity, and resolves an explicit-ID or top-N selection. Only the top-N path passes manifest order into the core run machine; it defers selected candidate dispatch until discovery completes and then schedules by rank, while ordinary `run` and existing explicit-ID verification preserve their current discovery-order behavior.
 
 **Tech Stack:** Rust 2024, clap, serde/serde_json, Tokio, existing hoimin analyzer and state machine, JSON Schema, Cargo integration tests.
 
@@ -14,7 +14,7 @@
 - Ranking scores are fixed: `explicit_line=300`, `explicit_symbol=250`, `changed_line=200`, `high_value_control=100`, `arithmetic=70`, `type_annotation=50`.
 - Ranking ties break by root-relative path, line, column, operator ID, then candidate ID.
 - Verify uses the saved ranking and never recomputes ranking from source or Git.
-- Version-1 manifests remain valid with `--candidate` and are rejected with `--top`.
+- Version-1 manifests are rejected before baseline execution with regeneration guidance.
 - A truncated plan's top N means top N among retained candidates, never global top N.
 - Ranking does not filter candidates or claim to estimate defect probability.
 - Existing `run`, exact `verify --candidate`, Linux, macOS, and Windows behavior must remain compatible.
@@ -25,18 +25,18 @@
 
 - Create `crates/hoimin-cli/src/plan/ranking.rs`: pure ranking types, fixed reason scores, operator categories, deterministic ordering, and ranking validation.
 - Create `crates/hoimin-cli/src/plan/ranking_tests.rs`: unit tests for scoring, accumulation, tie breaking, and tamper validation.
-- Modify `crates/hoimin-cli/src/plan.rs`: version-2 manifest types, version-1 compatibility parser, ranking integration, selection resolution, and manifest validation.
+- Modify `crates/hoimin-cli/src/plan.rs`: version-2 manifest types, ranking integration, selection resolution, and manifest validation.
 - Modify `crates/hoimin-cli/src/cli.rs`: mutually exclusive `--candidate`/`--top` parsing and public verify selection type.
 - Modify `crates/hoimin-cli/src/lib.rs`: pass the resolved ordered selection and provenance into the run loop.
 - Modify `crates/hoimin-cli/src/shell.rs`: expose the ordered selected-run entry point to the core machine.
 - Modify `crates/hoimin-core/src/machine.rs`: preserve manifest order for verify-only candidate filters after discovery completes.
 - Modify `crates/hoimin-core/src/config.rs` and `crates/hoimin-core/src/event.rs`: carry output-only verification selection provenance into run reports.
 - Modify `crates/hoimin-cli/tests/cli_config.rs`: CLI selection and help contracts.
-- Modify `crates/hoimin-cli/tests/plan.rs`: manifest v2, legacy compatibility, top-N selection, tamper rejection, and end-to-end execution order.
+- Modify `crates/hoimin-cli/tests/plan.rs`: manifest v2, old-version rejection, top-N selection, tamper rejection, and end-to-end execution order.
 - Modify `crates/hoimin-core/tests/machine.rs`: ordered-filter scheduling without changing ordinary streaming runs.
 - Modify `crates/hoimin-cli/tests/report_handler.rs`: structured provenance output.
 - Modify `docs/json-schema/run-event.schema.json` and `docs/json-schema/run-result.schema.json`: optional verification selection metadata.
-- Modify `README.md`: ranked plan fields, `verify --top`, legacy behavior, and truncated-plan warning.
+- Modify `README.md`: ranked plan fields, `verify --top`, version-1 rejection, and truncated-plan warning.
 - Create `tests/test_ranked_plan_docs.py`: README contract for the ranked two-command workflow and its safety qualifications.
 
 ---
@@ -210,7 +210,7 @@ git commit -m "feat: rank planned mutation candidates"
 
 ---
 
-### Task 2: Version-2 Plan Manifest and Legacy Compatibility
+### Task 2: Version-2 Plan Manifest and Ranking Integrity
 
 **Files:**
 - Modify: `crates/hoimin-cli/src/plan.rs`
@@ -238,14 +238,7 @@ pub struct PlanManifest {
     pub diagnostics: Vec<PlanDiagnostic>,
 }
 
-enum ParsedPlanManifest {
-    Ranked(PlanManifest),
-    Legacy(LegacyPlanManifest),
-}
 ```
-
-`LegacyPlanManifest` is private, uses `Vec<MutationCandidate>`, and otherwise mirrors
-the exact version-1 serialized fields.
 
 - [ ] **Step 1: Write failing version-2 serialization tests**
 
@@ -286,11 +279,11 @@ let candidates = rank_candidates(&config.selection, &targets, discovery.candidat
 Set `ranking_rule_version` to `RANKING_RULE_VERSION`, serialize flattened ranked
 candidates, and keep the analyzer's `truncated` and diagnostics unchanged.
 
-- [ ] **Step 4: Write failing legacy and tamper-validation tests**
+- [ ] **Step 4: Write failing version and tamper-validation tests**
 
-Generate a version-2 fixture, convert it to version 1 by removing
-`ranking_rule_version`, `rank`, `score`, and `ranking_reasons`, and assert explicit-ID
-verification still prepares successfully. Add version-2 cases for every ranking
+Generate a version-2 fixture, change `schema_version` to 1, and assert verification
+rejects it before the marker test command runs with guidance to regenerate the plan.
+Add version-2 cases for every ranking
 tamper from Task 1 and assert rejection happens before the marker test command runs.
 Add a wrong `ranking_rule_version` case with the exact diagnostic:
 
@@ -298,22 +291,23 @@ Add a wrong `ranking_rule_version` case with the exact diagnostic:
 plan.manifest.invalid: unsupported ranking rule version 99
 ```
 
-- [ ] **Step 5: Implement version-discriminated parsing and validation**
+- [ ] **Step 5: Implement strict version-2 parsing and validation**
 
 Read `schema_version` from a `serde_json::Value` before deserializing:
 
 ```rust
-match value.get("schema_version").and_then(Value::as_u64) {
-    Some(2) => ParsedPlanManifest::Ranked(serde_json::from_value(value)?),
-    Some(1) => ParsedPlanManifest::Legacy(serde_json::from_value(value)?),
-    Some(version) => return Err(unsupported(version)),
-    None => return Err(missing_schema_version()),
+let version = value
+    .get("schema_version")
+    .and_then(Value::as_u64)
+    .ok_or_else(missing_schema_version)?;
+if version != u64::from(PLAN_SCHEMA_VERSION) {
+    return Err(unsupported_with_regeneration_guidance(version));
 }
+let manifest: PlanManifest = serde_json::from_value(value)?;
 ```
 
-Convert either representation into a private common view for existing source,
-fingerprint, candidate ID, descriptor, and rediscovery validation. Run
-`validate_ranking` only for version 2. Do not assign ranks to legacy array order.
+Run `validate_ranking` before existing source, fingerprint, candidate ID, descriptor,
+and rediscovery validation.
 
 - [ ] **Step 6: Run tests and commit**
 
@@ -447,7 +441,7 @@ git commit -m "feat: add exclusive top-n verify selection"
 - Modify: `crates/hoimin-core/tests/machine.rs`
 
 **Interfaces:**
-- Consumes: `VerifySelection` from Task 3 and ranked/legacy parsed manifests from Task 2.
+- Consumes: `VerifySelection` from Task 3 and the ranked manifest from Task 2.
 - Produces:
 
 ```rust
@@ -486,8 +480,8 @@ Create a plan with at least three ranked candidates and assert:
 - `--top` equal to candidate count selects all;
 - `--top` above candidate count selects all;
 - explicit IDs retain the existing set-based discovery-order execution behavior;
-- legacy plus explicit IDs succeeds;
-- legacy plus top N fails before baseline with guidance to regenerate the plan; and
+- version 1 plus either selection mode fails before baseline with guidance to
+  regenerate the plan; and
 - ranked truncated plus top N succeeds with `RetainedCandidates` and
   `plan_truncated=true`.
 
@@ -497,7 +491,7 @@ Run:
 
 ```console
 cargo test -p hoimin-cli --test plan verify_top
-cargo test -p hoimin-cli --test plan legacy
+cargo test -p hoimin-cli --test plan old_version
 ```
 
 Expected: compilation fails because `prepare_verify` does not accept
@@ -514,8 +508,7 @@ let selection = match selection {
         validate_explicit_ids(ids, max_mutants)?,
     ),
     VerifySelection::Top(count) => ResolvedVerifySelection::RankedCandidates(
-        ranked_manifest
-            .ok_or_else(legacy_top_error)?
+        manifest
             .candidates
             .iter()
             .take(count.get())
@@ -701,7 +694,7 @@ asserts these exact public-contract concepts:
 - `hoimin verify PLAN.json --top 10`;
 - rank, score, and ranking reason explanation;
 - `--candidate`/`--top` exclusivity;
-- version-1 explicit-ID compatibility and top-N rejection;
+- version-1 rejection with regeneration guidance;
 - oversized top behavior; and
 - the retained-subset warning for truncated plans.
 
@@ -723,7 +716,7 @@ class RankedPlanDocumentationTests(unittest.TestCase):
             "ranking_reasons",
             "ordering heuristic",
             "mutually exclusive",
-            "version-1",
+            "version-1 manifests must be regenerated",
             "retained candidates",
         ]:
             self.assertIn(text, self.readme)

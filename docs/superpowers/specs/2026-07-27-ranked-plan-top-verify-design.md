@@ -119,12 +119,12 @@ New-version manifests are rejected before baseline execution when:
 The existing source, normalized-configuration, selection-root, candidate-integrity,
 and fingerprint validation remains in force.
 
-### Legacy manifests
+### Earlier manifests
 
-Legacy plan manifests remain usable with explicit `--candidate` selection. They do
-not contain a trustworthy ranking, so `--top` rejects them before baseline execution
-with a message that instructs the user to regenerate the plan or use `--candidate`.
-Legacy candidates are not assigned an implicit array-order ranking.
+Plan manifests are not yet a broadly published compatibility contract. Version 2 is
+the only accepted version after this change. Version-1 manifests are rejected before
+baseline execution with a message that instructs the user to regenerate the plan.
+No implicit conversion or array-order ranking is provided.
 
 ## Truncated Plans
 
@@ -178,7 +178,7 @@ tests where argument parsing permits:
 Manifest compatibility or integrity errors also use exit code 2 and occur before
 baseline execution:
 
-- `--top` with a legacy manifest lacking ranking data;
+- any manifest whose schema version is not 2;
 - invalid rank, score, or reason invariants; and
 - any existing manifest validation failure.
 
@@ -201,8 +201,8 @@ Unit and integration tests will cover:
 - `N` below, equal to, and above the retained candidate count;
 - mutual exclusion of `--top` and `--candidate`;
 - rejection of zero and missing selections;
-- legacy manifests remaining valid for `--candidate` and being rejected for
-  `--top`;
+- version-1 manifests being rejected before baseline execution with regeneration
+  guidance;
 - explicit treatment of truncated plans as retained-subset rankings;
 - JSON, human output, JSON Schemas, CLI help, and README examples; and
 - existing Linux, macOS, and Windows behavior.
@@ -215,7 +215,7 @@ The feature is complete when:
    extracting candidate IDs.
 2. The selected candidates and their order are reproducible from the saved manifest.
 3. Every rank is explainable through structured reason codes and fixed scores.
-4. Exact `--candidate` workflows and legacy manifests remain supported as specified.
+4. Exact `--candidate` workflows remain supported with version-2 manifests.
 5. Truncated plans cannot be mistaken for a ranking over undiscovered candidates.
 6. All repository tests, schema contracts, wheel smoke tests, and platform CI checks
    pass.
