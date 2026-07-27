@@ -220,6 +220,28 @@ fn compare_regression_takes_precedence_over_improvement_in_a_mixed_transition() 
 }
 
 #[test]
+fn compare_scores_include_survivors_from_both_reports() {
+    let result = compare_reports(
+        &[
+            usable(vec![
+                mutant("killed", MutationStatus::Killed),
+                mutant("survived", MutationStatus::Survived),
+            ]),
+            usable(vec![
+                mutant("killed", MutationStatus::Killed),
+                mutant("survived", MutationStatus::Survived),
+            ]),
+        ],
+        nz(3),
+    );
+
+    let comparison = &result.comparisons[0];
+    assert_eq!(comparison.previous_score, Some(0.5));
+    assert_eq!(comparison.current_score, Some(0.5));
+    assert_eq!(comparison.score_delta, Some(0.0));
+}
+
+#[test]
 fn compare_counts_added_and_removed_mutants() {
     let result = compare_reports(
         &[
