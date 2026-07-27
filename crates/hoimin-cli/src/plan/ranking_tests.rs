@@ -3,6 +3,7 @@ use hoimin_core::{ByteSpan, LineRange, LineSelection, MutationCandidate, Selecti
 
 use super::ranking::{
     RankedPlanCandidate, RankingReason, RankingReasonCode, rank_candidates, validate_ranking,
+    validate_ranking_against,
 };
 
 fn candidate(
@@ -167,6 +168,21 @@ fn ranking_validation_rejects_tampered_entries() {
         let error = validate_ranking(&tampered).unwrap_err();
         assert!(error.contains(expected), "{name}: {error}");
     }
+}
+
+#[test]
+fn ranking_semantic_validation_rejects_a_consistently_rescored_wrong_reason() {
+    let selection = Selection::default();
+    let mut ranked = rank_candidates(
+        &selection,
+        &[],
+        vec![candidate("a", "src/a.py", 1, 0, "binary_add_sub", None)],
+    );
+    ranked[0].ranking_reasons = vec![reason(RankingReasonCode::HighValueControl, 100)];
+    ranked[0].score = 100;
+
+    assert!(validate_ranking(&ranked).is_ok());
+    assert!(validate_ranking_against(&selection, &[], &ranked).is_err());
 }
 
 fn set_zero_rank(entries: &mut [RankedPlanCandidate]) {

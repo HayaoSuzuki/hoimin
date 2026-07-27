@@ -138,6 +138,25 @@ pub(crate) fn validate_ranking(candidates: &[RankedPlanCandidate]) -> Result<(),
     Ok(())
 }
 
+pub(crate) fn validate_ranking_against(
+    selection: &Selection,
+    targets: &[TargetSlice],
+    candidates: &[RankedPlanCandidate],
+) -> Result<(), String> {
+    let expected = rank_candidates(
+        selection,
+        targets,
+        candidates
+            .iter()
+            .map(|candidate| candidate.candidate.clone())
+            .collect(),
+    );
+    if expected != candidates {
+        return Err("candidate ranking differs from the deterministic ranking rules".to_owned());
+    }
+    Ok(())
+}
+
 fn reason(code: RankingReasonCode) -> RankingReason {
     RankingReason {
         code,

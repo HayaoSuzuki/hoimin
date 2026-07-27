@@ -895,12 +895,26 @@ impl RunState {
                 stopped.push(candidate);
             }
         }
-        stopped.sort_by_key(|candidate| match candidate {
-            StoppedCandidate::NotStarted(candidate)
-            | StoppedCandidate::SyntheticNotStarted(candidate, _)
-            | StoppedCandidate::StartedNotRun(candidate)
-            | StoppedCandidate::SyntheticFinished(candidate, _) => candidate.sequence,
-            StoppedCandidate::Finished(result) => result.candidate.sequence,
+        if self.ordered_collection_complete {
+            stopped.extend(
+                self.ordered_candidates_ready
+                    .drain(..)
+                    .map(StoppedCandidate::NotStarted),
+            );
+            self.flags.scheduling.candidate_exhausted = true;
+        }
+        stopped.sort_by_key(|candidate| {
+            let candidate = match candidate {
+                StoppedCandidate::NotStarted(candidate)
+                | StoppedCandidate::SyntheticNotStarted(candidate, _)
+                | StoppedCandidate::StartedNotRun(candidate)
+                | StoppedCandidate::SyntheticFinished(candidate, _) => candidate,
+                StoppedCandidate::Finished(result) => &result.candidate,
+            };
+            self.ordered_candidate_ids
+                .as_ref()
+                .and_then(|ids| ids.iter().position(|id| id == &candidate.id))
+                .unwrap_or_else(|| usize::try_from(candidate.sequence).unwrap_or(usize::MAX))
         });
         self.stopped_candidates = stopped.into();
         for worker in self.workers.values_mut() {

@@ -21,7 +21,7 @@ mod ranking;
 #[cfg(test)]
 mod ranking_tests;
 
-use ranking::{RANKING_RULE_VERSION, rank_candidates, validate_ranking};
+use ranking::{RANKING_RULE_VERSION, rank_candidates, validate_ranking, validate_ranking_against};
 pub use ranking::{RankedPlanCandidate, RankingReason, RankingReasonCode};
 
 pub const PLAN_SCHEMA_VERSION: u32 = 2;
@@ -221,6 +221,12 @@ pub async fn prepare_verify_selection(
     let targets = TargetHandler::resolve(&config.selection)
         .await
         .map_err(|error| PlanError::SourceChanged(error.to_string()))?;
+    validate_ranking_against(
+        &manifest.normalized_config.selection,
+        &targets,
+        &manifest.candidates,
+    )
+    .map_err(PlanError::ManifestInvalid)?;
     let current_sources = source_records(&config.root, &targets)
         .await
         .map_err(|error| PlanError::SourceChanged(error.to_string()))?;

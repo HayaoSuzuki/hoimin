@@ -651,6 +651,91 @@ fn ordered_candidate_filter_defers_and_preserves_requested_order() {
 }
 
 #[test]
+fn ordered_candidate_cancellation_drains_remaining_candidates_in_requested_order() {
+    let first = fixture_candidate(1);
+    let second = fixture_candidate(2);
+    let third = fixture_candidate(3);
+    let (state, effects) = waiting_for_ordered_analysis(vec![third.id.clone(), first.id.clone()]);
+    let analysis_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::AnalyzeFile(_))
+    }));
+    let (mut state, mut effects) = transition(
+        state,
+        RunEvent::AnalysisFinished(AnalysisFinished {
+            id: analysis_id,
+            spool: Some(CandidateSpoolRef {
+                token: "ordered-cancel".to_owned(),
+                records: 3,
+            }),
+            truncated: false,
+        }),
+    )
+    .unwrap();
+    for (candidate, offset) in [(first.clone(), 10), (second, 20), (third.clone(), 30)] {
+        let read_id = effect_id(find_effect(&effects, |effect| {
+            matches!(effect, RunEffect::ReadCandidate(_))
+        }));
+        (state, effects) = transition(
+            state,
+            RunEvent::CandidateLoaded(CandidateLoaded {
+                id: read_id,
+                worker: 0,
+                candidate: Some(candidate),
+                next_offset: offset,
+            }),
+        )
+        .unwrap();
+    }
+    let read_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }));
+    (state, _) = transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read_id,
+            worker: 0,
+            candidate: None,
+            next_offset: 30,
+        }),
+    )
+    .unwrap();
+
+    (state, effects) = transition(state, RunEvent::CancellationRequested).unwrap();
+    assert_mutant_started_id(&effects, &third.id);
+    (state, effects) = complete_mutant_started(state, &effects);
+    let finished_id = effect_id(find_effect(&effects, |effect| {
+        matches!(
+            effect,
+            RunEffect::EmitOutput(value)
+                if matches!(
+                    &value.event,
+                    OutputEvent::MutantFinished(finished)
+                        if finished.candidate.id == third.id
+                )
+        )
+    }));
+    (_, effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: finished_id }),
+    )
+    .unwrap();
+    assert_mutant_started_id(&effects, &first.id);
+}
+
+fn assert_mutant_started_id(effects: &[RunEffect], expected: &str) {
+    assert!(effects.iter().any(|effect| {
+        matches!(
+            effect,
+            RunEffect::EmitOutput(value)
+                if matches!(
+                    &value.event,
+                    OutputEvent::MutantStarted(started) if started.mutant_id == expected
+                )
+        )
+    }));
+}
+
+#[test]
 #[allow(
     clippy::too_many_lines,
     reason = "the completion-order matrix is intentionally kept in one test"
