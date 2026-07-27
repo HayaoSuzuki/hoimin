@@ -12,19 +12,28 @@ uvx hoimin run --root . --file src/calc.py --format json -- python -m pytest -q
 
 ### Plan and verify with an agent
 
-Create a plan before improving tests, then verify the candidate IDs selected from that plan:
+Create a ranked plan before improving tests, then verify its highest-ranked retained candidates:
 
 ```console
-hoimin plan --root . --file path/to/module.py \
+hoimin plan --root . --source src --changed \
   --allow-best-effort-memory \
   --total-timeout 15m \
   -- python -m pytest -q > PLAN.json
-# improve tests, then replace ID1 and ID2 with exact candidates[].id values
-hoimin verify PLAN.json \
-  --candidate 'ID1' \
-  --candidate 'ID2' \
-  --format json > reports/batch-a-001.json
+# improve tests, then run the saved top 10 without extracting IDs
+hoimin verify PLAN.json --top 10 --format json > reports/batch-a-001.json
 ```
+
+Each version-2 plan candidate records `rank`, `score`, and `ranking_reasons`.
+The scores are transparent ordering heuristics for focusing effort; they do not
+claim that a higher-ranked mutant is more likely to reveal a defect, and
+lower-ranked candidates remain valid. `verify` uses the saved ranks and never re-ranks
+against changed source or Git state.
+
+`--candidate ID` remains available for exact selection and may be repeated.
+`--candidate` and `--top` are mutually exclusive, and one selection mode is
+required. If `N` exceeds the retained candidate count, `--top N` selects every retained candidate
+and reports the actual selected count. Version-1 manifests
+must be regenerated with the current `hoimin plan`.
 
 `--candidate` is repeatable, so one `verify` invocation can execute multiple planned candidates.
 `verify` inherits the test command, execution limits, timeout settings, and resource policy from
@@ -37,7 +46,7 @@ when creating the plan, or split it into stable batches across multiple `verify`
 On macOS, hard memory enforcement is unavailable, so pass `--allow-best-effort-memory` to
 `plan` when best-effort enforcement is acceptable; `verify` does not provide that option.
 
-`plan` discovers candidates but does not run a baseline or test command, copy a worker, or create or reuse a session. A manifest with `truncated` set to `true` contains only a partial candidate set, and `plan` exits 4; it cannot establish full coverage of the selected targets. `verify` rejects a changed target or fingerprint input before its baseline runs. Each `verify` command runs a fresh baseline and does not use a session. Plan manifests are trusted local invocation data, not a security boundary.
+`plan` discovers candidates but does not run a baseline or test command, copy a worker, or create or reuse a session. A manifest with `truncated` set to `true` contains only a partial candidate set, and `plan` exits 4; it cannot establish full coverage of the selected targets. On such a plan, `--top N` means the top N among retained candidates, not among candidates that discovery did not retain. `verify` rejects a changed target or fingerprint input before its baseline runs. Each `verify` command runs a fresh baseline and does not use a session. Plan manifests are trusted local invocation data, not a security boundary.
 
 Use a narrower selector to check one symbol:
 
