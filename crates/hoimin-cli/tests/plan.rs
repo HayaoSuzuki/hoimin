@@ -37,7 +37,8 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
     let stdout = String::from_utf8(stdout).unwrap();
     assert_eq!(stdout.matches('\n').count(), 1);
     let manifest: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(manifest["schema_version"], 1);
+    assert_eq!(manifest["schema_version"], 2);
+    assert_eq!(manifest["ranking_rule_version"], 1);
     assert_eq!(manifest["kind"], "plan");
     assert!(
         manifest["sources"]
@@ -53,6 +54,16 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
             .iter()
             .all(|candidate| candidate["id"].as_str().unwrap().starts_with("m1_"))
     );
+    for (index, candidate) in manifest["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+    {
+        assert_eq!(candidate["rank"], index + 1);
+        assert!(candidate["score"].is_u64());
+        assert!(candidate["ranking_reasons"].is_array());
+    }
     assert_eq!(manifest["fingerprint_inputs"].as_array().unwrap().len(), 2);
     assert_eq!(
         manifest["normalized_config"]["fingerprint_files"],
@@ -76,7 +87,7 @@ async fn plan_candidates_match_shared_discovery_for_normalized_selectors() {
     ] {
         let marker = project.path.join("test-command-ran");
         let args = plan_args(&project, options.iter().copied(), &marker);
-        let expected = discover_for_plan_args(args.clone()).await;
+        let mut expected = discover_for_plan_args(args.clone()).await;
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
 
@@ -84,8 +95,10 @@ async fn plan_candidates_match_shared_discovery_for_normalized_selectors() {
 
         assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
         let manifest: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
-        let actual: Vec<MutationCandidate> =
+        let mut actual: Vec<MutationCandidate> =
             serde_json::from_value(manifest["candidates"].clone()).unwrap();
+        actual.sort_by(|left, right| left.id.cmp(&right.id));
+        expected.sort_by(|left, right| left.id.cmp(&right.id));
         assert_eq!(actual, expected, "options={options:?}");
         assert!(!marker.exists());
     }
@@ -467,7 +480,7 @@ async fn verify_rejects_malformed_headers_and_source_paths() {
     for case in ["schema", "kind", "parent_path", "absolute_path"] {
         let mut value = original.clone();
         match case {
-            "schema" => value["schema_version"] = serde_json::json!(2),
+            "schema" => value["schema_version"] = serde_json::json!(1),
             "kind" => value["kind"] = serde_json::json!("report"),
             "parent_path" => value["sources"][0]["path"] = serde_json::json!("../outside.py"),
             "absolute_path" => value["sources"][0]["path"] = serde_json::json!("/outside.py"),
@@ -502,7 +515,7 @@ async fn verify_rejects_duplicate_manifest_candidates_and_missing_requested_ids(
     )
     .await
     .unwrap_err();
-    assert_error_code(error, "plan.candidate.invalid");
+    assert_error_code(error, "plan.manifest.invalid");
 
     write_json(&path, &serde_json::to_value(manifest).unwrap());
     let error = prepare_verify(

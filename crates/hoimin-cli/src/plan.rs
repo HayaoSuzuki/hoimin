@@ -15,17 +15,25 @@ use crate::fingerprint_inputs;
 use crate::shell;
 use crate::target::TargetHandler;
 
-pub const PLAN_SCHEMA_VERSION: u32 = 1;
+mod ranking;
+#[cfg(test)]
+mod ranking_tests;
+
+use ranking::{RANKING_RULE_VERSION, rank_candidates, validate_ranking};
+pub use ranking::{RankedPlanCandidate, RankingReason, RankingReasonCode};
+
+pub const PLAN_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PlanManifest {
     pub schema_version: u32,
     pub kind: String,
+    pub ranking_rule_version: u32,
     pub normalized_config: PlanConfig,
     pub sources: Vec<FingerprintInputFile>,
     pub fingerprint_inputs: Vec<FingerprintInputFile>,
-    pub candidates: Vec<MutationCandidate>,
+    pub candidates: Vec<RankedPlanCandidate>,
     pub truncated: bool,
     pub diagnostics: Vec<PlanDiagnostic>,
 }
@@ -110,13 +118,15 @@ pub async fn create(config: RunConfig) -> Result<PlanOutput, PlanError> {
     }
     let diagnostics = discovery.diagnostics.iter().map(plan_diagnostic).collect();
     let truncated = discovery.truncated;
+    let candidates = rank_candidates(&config.selection, &targets, discovery.candidates);
     let manifest = PlanManifest {
         schema_version: PLAN_SCHEMA_VERSION,
         kind: "plan".to_owned(),
+        ranking_rule_version: RANKING_RULE_VERSION,
         normalized_config: config.clone().into_plan_config(),
         sources,
         fingerprint_inputs: config.fingerprint_inputs,
-        candidates: discovery.candidates,
+        candidates,
         truncated,
         diagnostics,
     };
@@ -142,7 +152,18 @@ pub async fn prepare_verify(
     let bytes = std::fs::read(manifest_path).map_err(|error| {
         PlanError::ManifestInvalid(format!("{}: {error}", manifest_path.display()))
     })?;
-    let manifest: PlanManifest = serde_json::from_slice(&bytes)
+    let value: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
+    let schema_version = value
+        .get("schema_version")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| PlanError::ManifestInvalid("missing schema version".to_owned()))?;
+    if schema_version != u64::from(PLAN_SCHEMA_VERSION) {
+        return Err(PlanError::ManifestInvalid(format!(
+            "unsupported schema version {schema_version}; regenerate the plan with this hoimin version"
+        )));
+    }
+    let manifest: PlanManifest = serde_json::from_value(value)
         .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
     validate_header(&manifest)?;
     manifest
@@ -209,7 +230,7 @@ async fn source_records(
 fn validate_header(manifest: &PlanManifest) -> Result<(), PlanError> {
     if manifest.schema_version != PLAN_SCHEMA_VERSION {
         return Err(PlanError::ManifestInvalid(format!(
-            "unsupported schema version {}",
+            "unsupported schema version {}; regenerate the plan with this hoimin version",
             manifest.schema_version
         )));
     }
@@ -217,6 +238,12 @@ fn validate_header(manifest: &PlanManifest) -> Result<(), PlanError> {
         return Err(PlanError::ManifestInvalid(format!(
             "unexpected kind {}",
             manifest.kind
+        )));
+    }
+    if manifest.ranking_rule_version != RANKING_RULE_VERSION {
+        return Err(PlanError::ManifestInvalid(format!(
+            "unsupported ranking rule version {}",
+            manifest.ranking_rule_version
         )));
     }
     if manifest.normalized_config.selection.root != manifest.normalized_config.root {
@@ -238,6 +265,7 @@ fn validate_header(manifest: &PlanManifest) -> Result<(), PlanError> {
         ));
     }
 
+    validate_ranking(&manifest.candidates).map_err(PlanError::ManifestInvalid)?;
     let mut candidate_ids = BTreeSet::new();
     for candidate in &manifest.candidates {
         if !valid_candidate_id(&candidate.id) {
@@ -365,7 +393,7 @@ async fn validate_requested_candidates(
     let candidates = manifest
         .candidates
         .iter()
-        .map(|candidate| (candidate.id.as_str(), candidate))
+        .map(|candidate| (candidate.id.as_str(), &candidate.candidate))
         .collect::<BTreeMap<_, _>>();
     let mut source_bytes = BTreeMap::new();
     for candidate_id in requested_ids {
