@@ -101,7 +101,7 @@ struct ShellCompletion {
 }
 
 fn remaining_budget_observed(
-    request: ObserveRemainingBudget,
+    request: &ObserveRemainingBudget,
     deadline: tokio::time::Instant,
     now: tokio::time::Instant,
 ) -> RemainingBudgetObserved {
@@ -835,7 +835,7 @@ where
                     RunEffect::ObserveRemainingBudget(request) => {
                         serial_completion = Some(ShellCompletion {
                             event: RunEvent::RemainingBudgetObserved(remaining_budget_observed(
-                                request,
+                                &request,
                                 deadline,
                                 tokio::time::Instant::now(),
                             )),
@@ -1406,12 +1406,12 @@ mod tests {
         let id = EffectId(17);
 
         let observed = remaining_budget_observed(
-            ObserveRemainingBudget { id },
+            &ObserveRemainingBudget { id },
             now + Duration::from_secs(281),
             now,
         );
         let expired = remaining_budget_observed(
-            ObserveRemainingBudget { id },
+            &ObserveRemainingBudget { id },
             now,
             now + Duration::from_secs(1),
         );
