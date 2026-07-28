@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 import os
 from pathlib import Path
@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 from unittest import mock
-from typing import Any
+from typing import Any, BinaryIO
 
 from tools.focused_mutation_support.model import CommandRecord
 from tools.focused_mutation_support.runner import (
@@ -84,11 +84,13 @@ class RunnerTests(unittest.TestCase):
         *,
         extra_env: dict[str, str] | None = None,
         popen_factory: Callable[..., Any] = subprocess.Popen,
+        log_cleanup: Callable[[Sequence[Path]], list[str]] | None = None,
     ) -> CommandRunner:
         return CommandRunner(
             self.store,
             extra_env=extra_env,
             popen_factory=popen_factory,
+            log_cleanup=log_cleanup,
             utc_now=lambda: datetime(2026, 7, 26, tzinfo=timezone.utc),
         )
 
@@ -197,15 +199,63 @@ class RunnerTests(unittest.TestCase):
         self.assertIn("OUT:a b|$(never-run)", self.stdout(record))
         self.assert_recorded_working_directory(record)
 
+    def test_runner_checks_logs_only_after_parent_streams_close(self) -> None:
+        streams: list[BinaryIO] = []
+
+        def popen_factory(
+            argv: Sequence[str],
+            *,
+            cwd: Path,
+            stdin: int,
+            stdout: BinaryIO,
+            stderr: BinaryIO,
+            env: Mapping[str, str],
+            shell: bool,
+            start_new_session: bool,
+        ) -> subprocess.Popen[bytes]:
+            streams.extend([stdout, stderr])
+            return subprocess.Popen(
+                argv,
+                cwd=cwd,
+                stdin=stdin,
+                stdout=stdout,
+                stderr=stderr,
+                env=env,
+                shell=shell,
+                start_new_session=start_new_session,
+            )
+
+        def cleanup(_: Sequence[Path]) -> list[str]:
+            self.assertTrue(all(stream.closed for stream in streams))
+            return []
+
+        record = self.runner(
+            popen_factory=popen_factory,
+            log_cleanup=cleanup,
+        ).run(
+            [sys.executable, str(self.fake)],
+            cwd=self.work,
+            timeout=5.0,
+            label="complete",
+        )
+
+        self.assertEqual(record.cleanup_errors, [])
+        self.assertEqual(len(streams), 2)
+
     def test_timeout_terminates_process_and_keeps_partial_logs(self) -> None:
+        cleanup_error = (
+            "stderr.log: log was not delete-ready within 2.0 seconds"
+        )
         with self.assertRaises(CommandTimedOut) as caught:
-            self.runner().run(
+            self.runner(log_cleanup=lambda _: [cleanup_error]).run(
                 [sys.executable, str(self.fake), "--sleep"],
                 cwd=self.work,
                 timeout=0.5,
                 label="mutation",
             )
         record = caught.exception.record
+        self.assertEqual(str(caught.exception), "command timed out: mutation")
+        self.assertEqual(record.cleanup_errors, [cleanup_error])
         self.assertTrue(record.timed_out)
         self.assertIsNotNone(record.elapsed_seconds)
         self.assertIn("OUT:--sleep", self.stdout(record))
@@ -214,8 +264,15 @@ class RunnerTests(unittest.TestCase):
     def test_interruption_terminates_process_and_returns_completed_record(self) -> None:
         process = InterruptingProcess()
         popen_factory = mock.Mock(return_value=process)
+        cleanup_error = (
+            "stderr.log: log was not delete-ready within 2.0 seconds"
+        )
+
         def invoke() -> None:
-            self.runner(popen_factory=popen_factory).run(
+            self.runner(
+                popen_factory=popen_factory,
+                log_cleanup=lambda _: [cleanup_error],
+            ).run(
                 [str(self.fake)],
                 cwd=self.work,
                 timeout=5.0,
@@ -236,6 +293,11 @@ class RunnerTests(unittest.TestCase):
             killpg.assert_called_once_with(process.pid, 15)
 
         record = caught.exception.record
+        self.assertEqual(
+            str(caught.exception),
+            "command interrupted: interrupted",
+        )
+        self.assertEqual(record.cleanup_errors, [cleanup_error])
         self.assertTrue(record.interrupted)
         self.assertEqual(record.exit_code, -15)
         self.assertIsNotNone(record.ended_at)

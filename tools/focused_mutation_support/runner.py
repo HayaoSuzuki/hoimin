@@ -9,6 +9,7 @@ from typing import Any
 
 from .model import CommandRecord
 from .store import RunStore
+from .windows_file import probe_delete_access
 
 
 WINDOWS_LOG_RELEASE_TIMEOUT = 2.0
@@ -71,13 +72,21 @@ class CommandRunner:
         extra_env: Mapping[str, str] | None = None,
         popen_factory: Callable[..., Any] = subprocess.Popen,
         monotonic: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
         utc_now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+        log_cleanup: Callable[[Sequence[Path]], list[str]] | None = None,
     ) -> None:
         self._store = store
         self._extra_env = dict(extra_env or {})
         self._popen_factory = popen_factory
         self._monotonic = monotonic
+        self._sleep = sleep
         self._utc_now = utc_now
+        self._log_cleanup = (
+            log_cleanup
+            if log_cleanup is not None
+            else self._default_log_cleanup
+        )
         self._next_sequence = 1
 
     def run(
@@ -103,6 +112,7 @@ class CommandRunner:
         environment = os.environ.copy()
         environment.update(self._extra_env)
 
+        outcome: type[CommandTimedOut] | type[CommandInterrupted] | None = None
         with (
             paths.stdout.open("wb") as stdout_file,
             paths.stderr.open("wb") as stderr_file,
@@ -122,15 +132,31 @@ class CommandRunner:
             except subprocess.TimeoutExpired:
                 record.timed_out = True
                 self._terminate(process)
-                self._complete(record, process, started)
-                raise CommandTimedOut(record) from None
+                outcome = CommandTimedOut
             except KeyboardInterrupt:
                 record.interrupted = True
                 self._terminate(process)
-                self._complete(record, process, started)
-                raise CommandInterrupted(record) from None
+                outcome = CommandInterrupted
             self._complete(record, process, started)
+
+        record.cleanup_errors.extend(
+            self._log_cleanup((paths.stdout, paths.stderr))
+        )
+        if outcome is CommandTimedOut:
+            raise CommandTimedOut(record) from None
+        if outcome is CommandInterrupted:
+            raise CommandInterrupted(record) from None
         return record
+
+    def _default_log_cleanup(self, paths: Sequence[Path]) -> list[str]:
+        if os.name != "nt":
+            return []
+        return wait_for_log_release(
+            paths,
+            probe=probe_delete_access,
+            monotonic=self._monotonic,
+            sleep=self._sleep,
+        )
 
     def _complete(
         self,
