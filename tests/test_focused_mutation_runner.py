@@ -77,59 +77,23 @@ INFINITE = 0xFFFFFFFF
 WAIT_OBJECT_0 = 0x00000000
 WAIT_TIMEOUT = 0x00000102
 WAIT_FAILED = 0xFFFFFFFF
-ERROR_INVALID_PARAMETER = 87
 
 
-def wait_for_ready_pids(
-    root_ready: Path,
-    descendant_ready: Path,
-    *,
-    timeout: float = 5.0,
-) -> tuple[int, int]:
-    deadline = time.monotonic() + timeout
-    pids: dict[Path, int] = {}
-    markers = (root_ready, descendant_ready)
-    while len(pids) != len(markers):
-        for marker in markers:
-            if marker in pids:
-                continue
-            try:
-                pids[marker] = int(marker.read_text(encoding="utf-8"))
-            except (FileNotFoundError, ValueError):
-                pass
-        if len(pids) == len(markers):
-            break
-        if time.monotonic() >= deadline:
-            missing = ", ".join(
-                str(marker) for marker in markers if marker not in pids
-            )
-            raise TimeoutError(f"process markers were not ready: {missing}")
-        time.sleep(0.01)
-    return pids[root_ready], pids[descendant_ready]
+class WindowsProcessHandle:
+    def __init__(
+        self,
+        value: int,
+        wait_for_single_object: Any,
+        terminate_process: Any,
+        close_handle: Any,
+    ) -> None:
+        self._value = value
+        self._wait_for_single_object = wait_for_single_object
+        self._terminate_process = terminate_process
+        self._close_handle = close_handle
 
-
-def release_descendant_after_root_exit(
-    root_ready: Path,
-    descendant_ready: Path,
-    release: Path,
-    ready_pids: dict[str, int],
-    errors: list[str],
-    errors_lock: threading.Lock,
-) -> None:
-    handle: int | None = None
-    close_handle: Any = None
-
-    def record_error(context: str, error: BaseException) -> None:
-        with errors_lock:
-            errors.append(f"{context}: {type(error).__name__}: {error}")
-
-    try:
-        root_pid, descendant_pid = wait_for_ready_pids(
-            root_ready,
-            descendant_ready,
-        )
-        with errors_lock:
-            ready_pids.update(root=root_pid, descendant=descendant_pid)
+    @classmethod
+    def open(cls, pid: int, access: int) -> WindowsProcessHandle:
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         open_process = kernel32.OpenProcess
         open_process.argtypes = (
@@ -141,81 +105,162 @@ def release_descendant_after_root_exit(
         wait_for_single_object = kernel32.WaitForSingleObject
         wait_for_single_object.argtypes = (wintypes.HANDLE, wintypes.DWORD)
         wait_for_single_object.restype = wintypes.DWORD
+        terminate_process = kernel32.TerminateProcess
+        terminate_process.argtypes = (wintypes.HANDLE, wintypes.UINT)
+        terminate_process.restype = wintypes.BOOL
         close_handle = kernel32.CloseHandle
         close_handle.argtypes = (wintypes.HANDLE,)
         close_handle.restype = wintypes.BOOL
 
-        handle = open_process(SYNCHRONIZE, False, root_pid)
-        if not handle:
+        value = open_process(access, False, pid)
+        if not value:
             raise ctypes.WinError(ctypes.get_last_error())
-        wait_result = wait_for_single_object(handle, INFINITE)
-        if wait_result != WAIT_OBJECT_0:
-            if wait_result == WAIT_FAILED:
-                raise ctypes.WinError(ctypes.get_last_error())
+        return cls(
+            value,
+            wait_for_single_object,
+            terminate_process,
+            close_handle,
+        )
+
+    def wait(self, timeout_ms: int) -> int:
+        wait_result = self._wait_for_single_object(self._value, timeout_ms)
+        if wait_result == WAIT_FAILED:
+            raise ctypes.WinError(ctypes.get_last_error())
+        if wait_result not in (WAIT_OBJECT_0, WAIT_TIMEOUT):
             raise OSError(
                 f"WaitForSingleObject returned unexpected result "
                 f"{wait_result:#x}"
             )
+        return wait_result
+
+    def stop(self, *, grace_ms: int) -> None:
+        if self.wait(grace_ms) == WAIT_OBJECT_0:
+            return
+        if not self._terminate_process(self._value, 1):
+            code = ctypes.get_last_error()
+            if self.wait(0) == WAIT_OBJECT_0:
+                return
+            raise ctypes.WinError(code)
+        if self.wait(5_000) != WAIT_OBJECT_0:
+            raise TimeoutError("terminated process did not signal")
+
+    def close(self) -> None:
+        if not self._value:
+            return
+        if not self._close_handle(self._value):
+            raise ctypes.WinError(ctypes.get_last_error())
+        self._value = 0
+
+
+def read_ready_pid(marker: Path) -> int | None:
+    try:
+        return int(marker.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def release_descendant_after_root_exit(
+    root_ready: Path,
+    descendant_ready: Path,
+    release: Path,
+    cleanup_wait_started: threading.Event,
+    captured_handles: dict[str, WindowsProcessHandle],
+    capture_done: threading.Event,
+    errors: list[str],
+    errors_lock: threading.Lock,
+) -> None:
+    root_wait_handle: WindowsProcessHandle | None = None
+
+    def record_error(context: str, error: BaseException) -> None:
+        with errors_lock:
+            errors.append(f"{context}: {type(error).__name__}: {error}")
+
+    try:
+        pending = {
+            "root": root_ready,
+            "descendant": descendant_ready,
+        }
+        deadline = time.monotonic() + 5.0
+        while pending:
+            for name, marker in tuple(pending.items()):
+                try:
+                    pid = read_ready_pid(marker)
+                except BaseException as error:
+                    record_error(f"{name} marker", error)
+                    del pending[name]
+                    continue
+                if pid is None:
+                    continue
+
+                cleanup_handle: WindowsProcessHandle | None = None
+                wait_handle: WindowsProcessHandle | None = None
+                try:
+                    cleanup_handle = WindowsProcessHandle.open(
+                        pid,
+                        SYNCHRONIZE | PROCESS_TERMINATE,
+                    )
+                    if name == "root":
+                        wait_handle = WindowsProcessHandle.open(
+                            pid,
+                            SYNCHRONIZE,
+                        )
+                except BaseException as error:
+                    record_error(f"{name} OpenProcess", error)
+                    for opened_handle in (wait_handle, cleanup_handle):
+                        if opened_handle is None:
+                            continue
+                        try:
+                            opened_handle.close()
+                        except BaseException as close_error:
+                            record_error(f"{name} CloseHandle", close_error)
+                    del pending[name]
+                    continue
+
+                with errors_lock:
+                    captured_handles[name] = cleanup_handle
+                if name == "root":
+                    root_wait_handle = wait_handle
+                del pending[name]
+
+            if not pending:
+                break
+            if time.monotonic() >= deadline:
+                for name in pending:
+                    record_error(
+                        f"{name} marker",
+                        TimeoutError("process marker was not ready"),
+                    )
+                break
+            time.sleep(0.01)
+    except BaseException as error:
+        record_error("process capture", error)
+    finally:
+        capture_done.set()
+
+    try:
+        if root_wait_handle is None:
+            return
+        if root_wait_handle.wait(INFINITE) != WAIT_OBJECT_0:
+            raise TimeoutError("root process did not signal")
+        if not cleanup_wait_started.wait(timeout=5.0):
+            raise TimeoutError("log cleanup did not observe the inherited lock")
         release.write_text("release", encoding="utf-8")
     except BaseException as error:
         record_error("descendant releaser", error)
     finally:
-        if handle and close_handle is not None and not close_handle(handle):
-            record_error(
-                "CloseHandle",
-                ctypes.WinError(ctypes.get_last_error()),
-            )
-
-
-def stop_windows_process(pid: int, *, grace_ms: int) -> None:
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    open_process = kernel32.OpenProcess
-    open_process.argtypes = (
-        wintypes.DWORD,
-        wintypes.BOOL,
-        wintypes.DWORD,
-    )
-    open_process.restype = wintypes.HANDLE
-    wait_for_single_object = kernel32.WaitForSingleObject
-    wait_for_single_object.argtypes = (wintypes.HANDLE, wintypes.DWORD)
-    wait_for_single_object.restype = wintypes.DWORD
-    terminate_process = kernel32.TerminateProcess
-    terminate_process.argtypes = (wintypes.HANDLE, wintypes.UINT)
-    terminate_process.restype = wintypes.BOOL
-    close_handle = kernel32.CloseHandle
-    close_handle.argtypes = (wintypes.HANDLE,)
-    close_handle.restype = wintypes.BOOL
-
-    handle = open_process(SYNCHRONIZE | PROCESS_TERMINATE, False, pid)
-    if not handle:
-        code = ctypes.get_last_error()
-        if code == ERROR_INVALID_PARAMETER:
-            return
-        raise ctypes.WinError(code)
-    try:
-        wait_result = wait_for_single_object(handle, grace_ms)
-        if wait_result == WAIT_TIMEOUT:
-            if not terminate_process(handle, 1):
-                raise ctypes.WinError(ctypes.get_last_error())
-            wait_result = wait_for_single_object(handle, 5_000)
-        if wait_result != WAIT_OBJECT_0:
-            if wait_result == WAIT_FAILED:
-                raise ctypes.WinError(ctypes.get_last_error())
-            raise OSError(
-                f"WaitForSingleObject returned unexpected result "
-                f"{wait_result:#x}"
-            )
-    finally:
-        if not close_handle(handle):
-            raise ctypes.WinError(ctypes.get_last_error())
+        if root_wait_handle is not None:
+            try:
+                root_wait_handle.close()
+            except BaseException as error:
+                record_error("root CloseHandle", error)
 
 
 def cleanup_inherited_handle_fixture(
-    root_ready: Path,
-    descendant_ready: Path,
     release: Path,
     releaser: threading.Thread,
-    ready_pids: dict[str, int],
+    captured_handles: dict[str, WindowsProcessHandle],
+    capture_done: threading.Event,
+    directory_cleanup_succeeded: threading.Event,
     thread_errors: list[str],
     errors_lock: threading.Lock,
 ) -> None:
@@ -224,26 +269,28 @@ def cleanup_inherited_handle_fixture(
     def record_cleanup_error(context: str, error: BaseException) -> None:
         cleanup_errors.append(f"{context}: {type(error).__name__}: {error}")
 
-    with errors_lock:
-        root_pid = ready_pids.get("root")
-        descendant_pid = ready_pids.get("descendant")
-    if root_pid is None or descendant_pid is None:
-        try:
-            root_pid, descendant_pid = wait_for_ready_pids(
-                root_ready,
-                descendant_ready,
-                timeout=0.5,
-            )
-        except TimeoutError:
-            pass
+    if not capture_done.wait(timeout=5.5):
+        record_cleanup_error(
+            "process capture",
+            TimeoutError("process-handle capture did not finish"),
+        )
 
-    if root_pid is not None:
+    with errors_lock:
+        root_handle = captured_handles.get("root")
+
+    if not directory_cleanup_succeeded.is_set() and root_handle is not None:
         try:
-            stop_windows_process(root_pid, grace_ms=0)
-            if release.parent.exists():
-                release.write_text("release", encoding="utf-8")
+            root_handle.stop(grace_ms=0)
         except BaseException as error:
             record_cleanup_error("root cleanup", error)
+
+    if not directory_cleanup_succeeded.is_set():
+        try:
+            release.write_text("release", encoding="utf-8")
+        except FileNotFoundError:
+            pass
+        except BaseException as error:
+            record_cleanup_error("release cleanup", error)
 
     releaser.join(timeout=5.0)
     if releaser.is_alive():
@@ -252,9 +299,13 @@ def cleanup_inherited_handle_fixture(
             RuntimeError("releaser thread did not exit"),
         )
 
-    if descendant_pid is not None:
+    with errors_lock:
+        handles = dict(captured_handles)
+
+    descendant_handle = handles.get("descendant")
+    if descendant_handle is not None:
         try:
-            stop_windows_process(descendant_pid, grace_ms=1_000)
+            descendant_handle.stop(grace_ms=1_000)
         except BaseException as error:
             record_cleanup_error("descendant cleanup", error)
 
@@ -268,6 +319,12 @@ def cleanup_inherited_handle_fixture(
                 sleep=time.sleep,
             )
         )
+
+    for name, handle in handles.items():
+        try:
+            handle.close()
+        except BaseException as error:
+            record_cleanup_error(f"{name} CloseHandle", error)
 
     with errors_lock:
         cleanup_errors.extend(thread_errors)
@@ -517,7 +574,10 @@ class RunnerTests(unittest.TestCase):
         root_ready = self.work / "root.ready"
         descendant_ready = self.work / "descendant.ready"
         release = self.work / "release"
-        ready_pids: dict[str, int] = {}
+        cleanup_wait_started = threading.Event()
+        captured_handles: dict[str, WindowsProcessHandle] = {}
+        capture_done = threading.Event()
+        directory_cleanup_succeeded = threading.Event()
         thread_errors: list[str] = []
         errors_lock = threading.Lock()
         releaser = threading.Thread(
@@ -526,7 +586,9 @@ class RunnerTests(unittest.TestCase):
                 root_ready,
                 descendant_ready,
                 release,
-                ready_pids,
+                cleanup_wait_started,
+                captured_handles,
+                capture_done,
                 thread_errors,
                 errors_lock,
             ),
@@ -535,16 +597,30 @@ class RunnerTests(unittest.TestCase):
         releaser.start()
         self.addCleanup(
             cleanup_inherited_handle_fixture,
-            root_ready,
-            descendant_ready,
             release,
             releaser,
-            ready_pids,
+            captured_handles,
+            capture_done,
+            directory_cleanup_succeeded,
             thread_errors,
             errors_lock,
         )
 
-        with self.assertRaises(CommandTimedOut) as caught:
+        def synchronized_probe(path: Path) -> None:
+            try:
+                probe_delete_access(path)
+            except OSError as error:
+                if getattr(error, "winerror", None) == 32:
+                    cleanup_wait_started.set()
+                raise
+
+        with (
+            mock.patch(
+                "tools.focused_mutation_support.runner.probe_delete_access",
+                side_effect=synchronized_probe,
+            ),
+            self.assertRaises(CommandTimedOut) as caught,
+        ):
             self.runner().run(
                 [
                     sys.executable,
@@ -558,10 +634,6 @@ class RunnerTests(unittest.TestCase):
                 label="inherited-handle",
             )
 
-        releaser.join(timeout=5.0)
-        self.assertFalse(releaser.is_alive())
-        with errors_lock:
-            self.assertEqual(thread_errors, [])
         record = caught.exception.record
         self.assertEqual(record.cleanup_errors, [])
         stdout = Path(record.stdout_path).read_text()
@@ -570,7 +642,14 @@ class RunnerTests(unittest.TestCase):
 
         temporary_root = Path(self.temporary.name)
         self.temporary.cleanup()
+        directory_cleanup_succeeded.set()
         self.assertFalse(temporary_root.exists())
+        self.assertTrue(cleanup_wait_started.is_set())
+
+        releaser.join(timeout=5.0)
+        self.assertFalse(releaser.is_alive())
+        with errors_lock:
+            self.assertEqual(thread_errors, [])
 
     def test_interruption_terminates_process_and_returns_completed_record(self) -> None:
         process = InterruptingProcess()
