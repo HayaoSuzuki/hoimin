@@ -716,6 +716,7 @@ async fn verify_runs_only_requested_candidates() {
         started["verification_selection"],
         serde_json::json!({
             "mode": "candidate_ids",
+            "policy": "explicit_candidates",
             "requested": 2,
             "selected": 2,
             "scope": "explicit_candidates",
@@ -769,6 +770,7 @@ async fn verify_top_executes_the_highest_ranked_retained_candidate() {
     assert!(!document["baseline"].is_null());
     let expected_selection = serde_json::json!({
         "mode": "top",
+        "policy": "strict",
         "requested": 1,
         "selected": 1,
         "scope": "retained_candidates",

@@ -9,8 +9,8 @@ use hoimin_core::{
     RemainingBudgetObserved, ResourceMode, ResultPersisted, RunConfig, RunEffect, RunEvent,
     RunFingerprint, RunPhase, RunState, SessionFinished, SessionLoaded, SessionResumeRef,
     SessionStarted, StartRequested, StoredResult, StoredResultLoaded, TargetSlice, TargetsResolved,
-    VerificationSelection, VerificationSelectionMode, VerificationSelectionScope, WorkerCreated,
-    WorkerReset, transition,
+    VerificationSelection, VerificationSelectionMode, VerificationSelectionPolicy,
+    VerificationSelectionScope, WorkerCreated, WorkerReset, transition,
 };
 
 #[test]
@@ -81,6 +81,7 @@ fn top_verification_observes_budget_after_successful_baseline() {
     let initial_state = RunState::new("run-1", fixture_config()).with_verification_selection(
         VerificationSelection {
             mode: VerificationSelectionMode::Top,
+            policy: VerificationSelectionPolicy::Strict,
             requested: 30,
             selected: 30,
             scope: VerificationSelectionScope::RetainedCandidates,
@@ -115,6 +116,7 @@ fn explicit_verification_skips_budget_observation() {
     let initial_state = RunState::new("run-1", fixture_config()).with_verification_selection(
         VerificationSelection {
             mode: VerificationSelectionMode::CandidateIds,
+            policy: VerificationSelectionPolicy::ExplicitCandidates,
             requested: 30,
             selected: 30,
             scope: VerificationSelectionScope::ExplicitCandidates,
@@ -2417,6 +2419,7 @@ fn waiting_for_top_budget_observation() -> (RunState, Vec<RunEffect>) {
     let initial_state = RunState::new("run-1", fixture_config()).with_verification_selection(
         VerificationSelection {
             mode: VerificationSelectionMode::Top,
+            policy: VerificationSelectionPolicy::Strict,
             requested: 30,
             selected: 30,
             scope: VerificationSelectionScope::RetainedCandidates,

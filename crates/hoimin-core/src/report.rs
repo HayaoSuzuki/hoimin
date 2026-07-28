@@ -137,6 +137,14 @@ pub enum VerificationSelectionMode {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum VerificationSelectionPolicy {
+    ExplicitCandidates,
+    Strict,
+    FileRoundRobinV1,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum VerificationSelectionScope {
     ExplicitCandidates,
     RetainedCandidates,
@@ -146,6 +154,7 @@ pub enum VerificationSelectionScope {
 #[serde(deny_unknown_fields)]
 pub struct VerificationSelection {
     pub mode: VerificationSelectionMode,
+    pub policy: VerificationSelectionPolicy,
     pub requested: usize,
     pub selected: usize,
     pub scope: VerificationSelectionScope,

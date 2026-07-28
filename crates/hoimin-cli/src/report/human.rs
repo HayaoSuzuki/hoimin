@@ -1,7 +1,8 @@
 use std::io::{self, Write};
 
 use hoimin_core::{
-    MutationStatus, OutputEvent, VerificationSelectionMode, VerificationSelectionScope,
+    MutationStatus, OutputEvent, VerificationSelectionMode, VerificationSelectionPolicy,
+    VerificationSelectionScope,
 };
 
 pub(super) fn write_event(writer: &mut impl Write, event: &OutputEvent) -> io::Result<()> {
@@ -43,9 +44,14 @@ pub(super) fn write_event(writer: &mut impl Write, event: &OutputEvent) -> io::R
                         VerificationSelectionScope::ExplicitCandidates => "explicit_candidates",
                         VerificationSelectionScope::RetainedCandidates => "retained_candidates",
                     };
+                    let policy = match selection.policy {
+                        VerificationSelectionPolicy::ExplicitCandidates => "explicit_candidates",
+                        VerificationSelectionPolicy::Strict => "strict",
+                        VerificationSelectionPolicy::FileRoundRobinV1 => "file_round_robin_v1",
+                    };
                     writeln!(
                         writer,
-                        "verification selection: mode={mode} requested={} selected={} scope={scope} plan_truncated={}",
+                        "verification selection: mode={mode} policy={policy} requested={} selected={} scope={scope} plan_truncated={}",
                         selection.requested, selection.selected, selection.plan_truncated
                     )?;
                 }

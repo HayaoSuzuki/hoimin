@@ -5,8 +5,8 @@ use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{
     CandidateDescriptor, FingerprintInputFile, MutationCandidate, OutputConfig, PlanConfig,
     RunConfig, TargetSlice, VerificationSelection, VerificationSelectionMode,
-    VerificationSelectionScope as ReportVerificationSelectionScope, normalized_relative_path,
-    validate_candidate,
+    VerificationSelectionPolicy, VerificationSelectionScope as ReportVerificationSelectionScope,
+    normalized_relative_path, validate_candidate,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -313,11 +313,16 @@ fn resolve_verify_selection(
             ReportVerificationSelectionScope::RetainedCandidates
         }
     };
+    let policy = match mode {
+        VerificationSelectionMode::CandidateIds => VerificationSelectionPolicy::ExplicitCandidates,
+        VerificationSelectionMode::Top => VerificationSelectionPolicy::Strict,
+    };
     Ok((
         selection,
         selection_scope,
         VerificationSelection {
             mode,
+            policy,
             requested,
             selected,
             scope,
