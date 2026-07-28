@@ -111,7 +111,7 @@ The defaults are:
 | `--max-copy-size` | `1GiB` | run-wide logical bytes copied across all workers |
 | `--max-processes` | `64` | run-wide descendants |
 | `--format` | `json` | `json`, `jsonl`, or `human` |
-| `--profile full|focused` | `full` | candidate-selection profile |
+| `--profile full` / `--profile focused` | `full` | candidate-selection profile |
 | `--fingerprint-include GLOB` | none | invalidates compatible session reuse; does not copy worker files |
 | `--fingerprint-file PATH` | none | fingerprints one exact root-relative file; does not copy worker files |
 
