@@ -27,6 +27,12 @@ macro_rules! completion_event {
 completion_event!(OutputEmitted,);
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RemainingBudgetObserved {
+    pub id: EffectId,
+    pub remaining: Duration,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AnalysisFinished {
     pub id: EffectId,
     pub spool: Option<CandidateSpoolRef>,
@@ -296,6 +302,7 @@ pub enum RunEvent {
     PreflightCompleted(PreflightCompleted),
     WorkerCreated(WorkerCreated),
     BaselineFinished(ProcessFinished),
+    RemainingBudgetObserved(RemainingBudgetObserved),
     AnalysisFinished(AnalysisFinished),
     CandidateLoaded(CandidateLoaded),
     MutationApplied(MutationApplied),

@@ -6,10 +6,11 @@ use hoimin_core::{
     EffectFailed, EffectId, MutationApplied, MutationCandidate, MutationProfile, MutationStatus,
     MutationSummary, OriginalsVerified, OutputConfig, OutputEmitted, OutputEvent,
     PreflightCompleted, ProcessFinished, ProcessTermination, RawRunConfig, RawRunLimits,
-    ResourceMode, ResultPersisted, RunConfig, RunEffect, RunEvent, RunFingerprint, RunPhase,
-    RunState, SessionFinished, SessionLoaded, SessionResumeRef, SessionStarted, StartRequested,
-    StoredResult, StoredResultLoaded, TargetSlice, TargetsResolved, WorkerCreated, WorkerReset,
-    transition,
+    RemainingBudgetObserved, ResourceMode, ResultPersisted, RunConfig, RunEffect, RunEvent,
+    RunFingerprint, RunPhase, RunState, SessionFinished, SessionLoaded, SessionResumeRef,
+    SessionStarted, StartRequested, StoredResult, StoredResultLoaded, TargetSlice, TargetsResolved,
+    VerificationSelection, VerificationSelectionMode, VerificationSelectionScope, WorkerCreated,
+    WorkerReset, transition,
 };
 
 #[test]
@@ -73,6 +74,192 @@ fn baseline_success_requests_analysis_without_performing_io() {
             .iter()
             .any(|effect| matches!(effect, RunEffect::AnalyzeFile(_)))
     );
+}
+
+#[test]
+fn top_verification_observes_budget_after_successful_baseline() {
+    let initial_state = RunState::new("run-1", fixture_config()).with_verification_selection(
+        VerificationSelection {
+            mode: VerificationSelectionMode::Top,
+            requested: 30,
+            selected: 30,
+            scope: VerificationSelectionScope::RetainedCandidates,
+            plan_truncated: false,
+        },
+    );
+    let (state, effects) = waiting_for_baseline_from(initial_state);
+    let baseline_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::RunBaseline(_))
+    }));
+    let mut baseline = process_finished(baseline_id, ProcessTermination::Exit(0));
+    baseline.elapsed = Duration::from_secs(17);
+
+    let (_, effects) = transition(state, RunEvent::BaselineFinished(baseline)).unwrap();
+
+    assert_eq!(
+        effects
+            .iter()
+            .filter(|effect| matches!(effect, RunEffect::ObserveRemainingBudget(_)))
+            .count(),
+        1
+    );
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::AnalyzeFile(_)))
+    );
+}
+
+#[test]
+fn explicit_verification_skips_budget_observation() {
+    let initial_state = RunState::new("run-1", fixture_config()).with_verification_selection(
+        VerificationSelection {
+            mode: VerificationSelectionMode::CandidateIds,
+            requested: 30,
+            selected: 30,
+            scope: VerificationSelectionScope::ExplicitCandidates,
+            plan_truncated: false,
+        },
+    );
+    let (state, effects) = waiting_for_baseline_from(initial_state);
+    let baseline_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::RunBaseline(_))
+    }));
+
+    let (_, effects) = transition(
+        state,
+        RunEvent::BaselineFinished(process_finished(baseline_id, ProcessTermination::Exit(0))),
+    )
+    .unwrap();
+
+    assert!(
+        effects
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::AnalyzeFile(_)))
+    );
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::ObserveRemainingBudget(_)))
+    );
+}
+
+#[test]
+fn ordinary_run_skips_budget_observation() {
+    let (state, effects) = waiting_for_baseline();
+    let baseline_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::RunBaseline(_))
+    }));
+
+    let (_, effects) = transition(
+        state,
+        RunEvent::BaselineFinished(process_finished(baseline_id, ProcessTermination::Exit(0))),
+    )
+    .unwrap();
+
+    assert!(
+        effects
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::AnalyzeFile(_)))
+    );
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::ObserveRemainingBudget(_)))
+    );
+}
+
+#[test]
+fn top_budget_shortfall_warns_before_requesting_analysis() {
+    let (state, effects) = waiting_for_top_budget_observation();
+    let observation_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ObserveRemainingBudget(_))
+    }));
+    let previous_exit = state.exit_code();
+
+    let (state, effects) = transition(
+        state,
+        RunEvent::RemainingBudgetObserved(RemainingBudgetObserved {
+            id: observation_id,
+            remaining: Duration::from_secs(281),
+        }),
+    )
+    .unwrap();
+
+    let RunEffect::EmitOutput(output) = effects.first().unwrap() else {
+        panic!("shortfall must emit a diagnostic first")
+    };
+    let OutputEvent::Diagnostic(diagnostic) = &output.event else {
+        panic!("shortfall output must be diagnostic")
+    };
+    assert_eq!(diagnostic.code, "budget.projected_shortfall");
+    for expected in [
+        "selected=30",
+        "jobs=1",
+        "planned_total_timeout=300s",
+        "baseline=17s",
+        "effective_mutant_timeout=35s",
+        "remaining=281s",
+        "projected_capacity=1050s",
+        "not a guaranteed failure",
+        "create a new plan with increased --jobs and/or --total-timeout",
+    ] {
+        assert!(
+            diagnostic.message.contains(expected),
+            "missing {expected:?} from {:?}",
+            diagnostic.message
+        );
+    }
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::AnalyzeFile(_)))
+    );
+    assert_eq!(state.exit_code(), previous_exit);
+
+    let (state, effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: output.id }),
+    )
+    .unwrap();
+    assert!(
+        effects
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::AnalyzeFile(_)))
+    );
+    assert_eq!(state.phase(), RunPhase::Analyze);
+    assert_eq!(state.exit_code(), previous_exit);
+}
+
+#[test]
+fn sufficient_top_budget_proceeds_directly_to_analysis() {
+    let (state, effects) = waiting_for_top_budget_observation();
+    let observation_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ObserveRemainingBudget(_))
+    }));
+    let previous_exit = state.exit_code();
+
+    let (state, effects) = transition(
+        state,
+        RunEvent::RemainingBudgetObserved(RemainingBudgetObserved {
+            id: observation_id,
+            remaining: Duration::from_secs(1_050),
+        }),
+    )
+    .unwrap();
+
+    assert!(!effects.iter().any(|effect| matches!(
+        effect,
+        RunEffect::EmitOutput(output)
+            if matches!(&output.event, OutputEvent::Diagnostic(_))
+    )));
+    assert!(
+        effects
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::AnalyzeFile(_)))
+    );
+    assert_eq!(state.phase(), RunPhase::Analyze);
+    assert_eq!(state.exit_code(), previous_exit);
 }
 
 #[test]
@@ -2175,7 +2362,12 @@ fn start_state() -> (RunState, Vec<RunEffect>) {
 }
 
 fn waiting_for_baseline() -> (RunState, Vec<RunEffect>) {
-    let (state, effects) = start_state();
+    waiting_for_baseline_from(RunState::new("run-1", fixture_config()))
+}
+
+fn waiting_for_baseline_from(initial_state: RunState) -> (RunState, Vec<RunEffect>) {
+    let (state, effects) =
+        transition(initial_state, RunEvent::StartRequested(StartRequested)).unwrap();
     let resolve_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::ResolveTargets(_))
     }));
@@ -2219,6 +2411,25 @@ fn waiting_for_baseline() -> (RunState, Vec<RunEffect>) {
     )
     .unwrap();
     (state, effects)
+}
+
+fn waiting_for_top_budget_observation() -> (RunState, Vec<RunEffect>) {
+    let initial_state = RunState::new("run-1", fixture_config()).with_verification_selection(
+        VerificationSelection {
+            mode: VerificationSelectionMode::Top,
+            requested: 30,
+            selected: 30,
+            scope: VerificationSelectionScope::RetainedCandidates,
+            plan_truncated: false,
+        },
+    );
+    let (state, effects) = waiting_for_baseline_from(initial_state);
+    let baseline_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::RunBaseline(_))
+    }));
+    let mut baseline = process_finished(baseline_id, ProcessTermination::Exit(0));
+    baseline.elapsed = Duration::from_secs(17);
+    transition(state, RunEvent::BaselineFinished(baseline)).unwrap()
 }
 
 fn waiting_for_analysis() -> (RunState, Vec<RunEffect>) {

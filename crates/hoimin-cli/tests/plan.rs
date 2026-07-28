@@ -787,6 +787,144 @@ async fn verify_top_executes_the_highest_ranked_retained_candidate() {
     assert_eq!(mutants[0]["candidate"]["id"], candidate_id);
 }
 
+#[tokio::test]
+async fn verify_top_budget_shortfall_warns_on_stderr_and_preserves_json_and_plan() {
+    let project = Project::new();
+    let coordinator = tempfile::tempdir().unwrap();
+    let marker = coordinator.path().join("test-command-ran");
+    let (path, manifest) = write_budget_plan_manifest(&project, &marker).await;
+    assert!(manifest.candidates.len() >= 2);
+    let plan_before = std::fs::read(&path).unwrap();
+    let limits_before =
+        serde_json::to_vec(&serde_json::to_value(&manifest.normalized_config.limits).unwrap())
+            .unwrap();
+    let args = [
+        OsString::from("hoimin"),
+        OsString::from("verify"),
+        path.as_os_str().to_owned(),
+        OsString::from("--top"),
+        OsString::from("2"),
+        OsString::from("--format"),
+        OsString::from("json"),
+    ];
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+
+    assert_eq!(code, 1, "stderr={}", String::from_utf8_lossy(&stderr));
+    let _: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    assert!(
+        !String::from_utf8_lossy(&stdout).contains("budget.projected_shortfall"),
+        "budget warning leaked to JSON stdout"
+    );
+    assert_budget_shortfall_warning(&stderr);
+    assert_eq!(std::fs::read(&path).unwrap(), plan_before);
+    let reloaded: PlanManifest = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let limits_after =
+        serde_json::to_vec(&serde_json::to_value(&reloaded.normalized_config.limits).unwrap())
+            .unwrap();
+    assert_eq!(limits_after, limits_before);
+}
+
+#[tokio::test]
+async fn verify_top_budget_shortfall_preserves_jsonl_stdout() {
+    let project = Project::new();
+    let coordinator = tempfile::tempdir().unwrap();
+    let marker = coordinator.path().join("test-command-ran");
+    let (path, manifest) = write_budget_plan_manifest(&project, &marker).await;
+    assert!(manifest.candidates.len() >= 2);
+    let args = [
+        OsString::from("hoimin"),
+        OsString::from("verify"),
+        path.as_os_str().to_owned(),
+        OsString::from("--top"),
+        OsString::from("2"),
+        OsString::from("--format"),
+        OsString::from("jsonl"),
+    ];
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+
+    assert_eq!(code, 1, "stderr={}", String::from_utf8_lossy(&stderr));
+    let lines = stdout
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+    assert!(!lines.is_empty());
+    for line in lines {
+        let _: serde_json::Value = serde_json::from_slice(line).unwrap();
+        assert!(
+            !String::from_utf8_lossy(line).contains("budget.projected_shortfall"),
+            "budget warning leaked to JSONL stdout"
+        );
+    }
+    assert_budget_shortfall_warning(&stderr);
+}
+
+#[tokio::test]
+async fn verify_explicit_candidates_do_not_emit_budget_shortfall_warning() {
+    let project = Project::new();
+    let coordinator = tempfile::tempdir().unwrap();
+    let marker = coordinator.path().join("test-command-ran");
+    let (path, manifest) = write_budget_plan_manifest(&project, &marker).await;
+    assert!(manifest.candidates.len() >= 2);
+    let mut args = vec![
+        OsString::from("hoimin"),
+        OsString::from("verify"),
+        path.as_os_str().to_owned(),
+        OsString::from("--format"),
+        OsString::from("json"),
+    ];
+    for candidate in manifest.candidates.iter().take(2) {
+        args.extend([OsString::from("--candidate"), OsString::from(&candidate.id)]);
+    }
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+
+    assert_eq!(code, 1, "stderr={}", String::from_utf8_lossy(&stderr));
+    let _: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    assert!(
+        !String::from_utf8_lossy(&stderr).contains("budget.projected_shortfall"),
+        "explicit candidate IDs must not emit the top-ranked budget warning"
+    );
+}
+
+fn assert_budget_shortfall_warning(stderr: &[u8]) {
+    let diagnostics = stderr
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice::<serde_json::Value>(line).unwrap())
+        .filter(|diagnostic| {
+            diagnostic["level"] == "warning" && diagnostic["code"] == "budget.projected_shortfall"
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(diagnostics.len(), 1);
+    let message = diagnostics[0]["message"].as_str().unwrap();
+    for expected in [
+        "selected=2",
+        "jobs=1",
+        "planned_total_timeout=10s",
+        "baseline=",
+        "effective_mutant_timeout=6s",
+        "remaining=",
+        "projected_capacity=12s",
+        "not a guaranteed failure",
+        "--jobs",
+        "--total-timeout",
+        "new plan",
+    ] {
+        assert!(
+            message.contains(expected),
+            "missing {expected:?} in diagnostic message: {message}"
+        );
+    }
+}
+
 fn assert_error_code(error: impl std::fmt::Display, code: &str) {
     assert!(
         error.to_string().starts_with(code),
@@ -809,6 +947,33 @@ async fn write_plan_manifest_with_marker(
     marker: &Path,
 ) -> (PathBuf, PlanManifest) {
     let args = plan_args(project, options.iter().copied(), marker);
+    let ParsedCommand::Plan(plan) = parse_from(args).unwrap() else {
+        panic!("expected plan arguments");
+    };
+    let output = create(plan.into_run_config().unwrap()).await.unwrap();
+    let path = project.path.join("plan.json");
+    write_json(&path, &serde_json::to_value(&output.manifest).unwrap());
+    (path, output.manifest)
+}
+
+async fn write_budget_plan_manifest(project: &Project, marker: &Path) -> (PathBuf, PlanManifest) {
+    let mut args = plan_args(
+        project,
+        [
+            "--jobs",
+            "1",
+            "--mutant-timeout",
+            "6s",
+            "--total-timeout",
+            "10s",
+        ],
+        marker,
+    );
+    *args.last_mut().unwrap() = OsString::from(format!(
+        "import time; from pathlib import Path; time.sleep(0.2); \
+         Path({:?}).write_text('executed')",
+        marker.to_string_lossy()
+    ));
     let ParsedCommand::Plan(plan) = parse_from(args).unwrap() else {
         panic!("expected plan arguments");
     };

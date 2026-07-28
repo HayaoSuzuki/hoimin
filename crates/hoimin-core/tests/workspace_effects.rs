@@ -1,9 +1,11 @@
 use camino::Utf8PathBuf;
 use hoimin_core::{
-    BudgetLedger, EffectFailed, EffectFailure, EffectId, IntegrityCheckpoint, OriginalsVerified,
-    Preflight, PreflightCompleted, RunBudgets, RunEffect, RunEvent, VerifyOriginals,
+    BudgetLedger, EffectFailed, EffectFailure, EffectId, IntegrityCheckpoint,
+    ObserveRemainingBudget, OriginalsVerified, Preflight, PreflightCompleted,
+    RemainingBudgetObserved, RunBudgets, RunEffect, RunEvent, VerifyOriginals,
     reserve_workspace_copy,
 };
+use std::time::Duration;
 
 #[test]
 fn workspace_failures_are_machine_readable_and_keep_the_effect_id() {
@@ -70,4 +72,27 @@ fn original_integrity_checkpoints_have_typed_effect_and_completion_events() {
         assert!(matches!(effect, RunEffect::VerifyOriginals(_)));
         assert!(matches!(event, RunEvent::OriginalsVerified(_)));
     }
+}
+
+#[test]
+fn remaining_budget_observation_round_trips_with_effect_identity() {
+    let id = EffectId(61);
+    let effect = RunEffect::ObserveRemainingBudget(ObserveRemainingBudget { id });
+    let event = RunEvent::RemainingBudgetObserved(RemainingBudgetObserved {
+        id,
+        remaining: Duration::from_secs(281),
+    });
+
+    let effect_json = serde_json::to_string(&effect).unwrap();
+    let event_json = serde_json::to_string(&event).unwrap();
+
+    assert_eq!(
+        serde_json::from_str::<RunEffect>(&effect_json).unwrap(),
+        effect
+    );
+    assert_eq!(effect.id(), id);
+    assert_eq!(
+        serde_json::from_str::<RunEvent>(&event_json).unwrap(),
+        event
+    );
 }

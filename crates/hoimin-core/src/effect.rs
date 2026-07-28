@@ -21,7 +21,7 @@ macro_rules! effect_request {
     };
 }
 
-effect_request!(Preflight,);
+effect_request!(Preflight, ObserveRemainingBudget);
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AnalyzeFile {
@@ -183,6 +183,7 @@ pub enum RunEffect {
     #[serde(skip_deserializing)]
     CreateWorker(CreateWorker),
     RunBaseline(RunProcess),
+    ObserveRemainingBudget(ObserveRemainingBudget),
     AnalyzeFile(AnalyzeFile),
     ReadCandidate(ReadCandidate),
     ApplyMutation(ApplyMutation),
@@ -206,6 +207,7 @@ impl RunEffect {
             Self::Preflight(value) => value.id,
             Self::CreateWorker(value) => value.id(),
             Self::RunBaseline(value) | Self::RunMutant(value) => value.id,
+            Self::ObserveRemainingBudget(value) => value.id,
             Self::AnalyzeFile(value) => value.id,
             Self::ReadCandidate(value) => value.id,
             Self::ApplyMutation(value) => value.id,

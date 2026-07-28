@@ -5,9 +5,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use camino::Utf8PathBuf;
 use hoimin_core::{
-    CandidateLoaded, Diagnostic, EffectFailed, EffectId, EmitOutput, FingerprintInput, OutputEvent,
-    ReportVersions, RunConfig, RunEffect, RunEvent, RunPhase, RunProcess, RunState, SourceHash,
-    StartRequested, TargetSlice, fingerprint, transition,
+    CandidateLoaded, Diagnostic, EffectFailed, EffectId, EmitOutput, FingerprintInput,
+    ObserveRemainingBudget, OutputEvent, RemainingBudgetObserved, ReportVersions, RunConfig,
+    RunEffect, RunEvent, RunPhase, RunProcess, RunState, SourceHash, StartRequested, TargetSlice,
+    fingerprint, transition,
 };
 use tempfile::TempDir;
 use tokio::sync::mpsc;
@@ -97,6 +98,17 @@ struct ShellCompletion {
     event: RunEvent,
     process_task: bool,
     process: Option<(u32, bool)>,
+}
+
+fn remaining_budget_observed(
+    request: &ObserveRemainingBudget,
+    deadline: tokio::time::Instant,
+    now: tokio::time::Instant,
+) -> RemainingBudgetObserved {
+    RemainingBudgetObserved {
+        id: request.id,
+        remaining: deadline.saturating_duration_since(now),
+    }
 }
 
 pub struct ShellContext<Stdout, Stderr> {
@@ -366,6 +378,11 @@ where
             .workspace
             .handle_verify_originals(request)
             .map(RunEvent::OriginalsVerified),
+        RunEffect::ObserveRemainingBudget(_) => Err(EffectFailed::other(
+            id,
+            "shell.budget.scheduler",
+            "remaining budget observation must run in the scheduler",
+        )),
         RunEffect::EmitOutput(mut request) => {
             if let OutputEvent::RunStarted(run_started) = &mut request.event {
                 run_started.versions = context.report_versions.clone();
@@ -812,6 +829,19 @@ where
                             in_flight += 1;
                             control.observe_completion_in_flight(in_flight);
                         }
+                    }
+                    // Wall-clock observation is scheduler-owned so it reads the same absolute
+                    // deadline that enforces the total timeout, without spawning worker work.
+                    RunEffect::ObserveRemainingBudget(request) => {
+                        serial_completion = Some(ShellCompletion {
+                            event: RunEvent::RemainingBudgetObserved(remaining_budget_observed(
+                                &request,
+                                deadline,
+                                tokio::time::Instant::now(),
+                            )),
+                            process_task: false,
+                            process: None,
+                        });
                     }
                     effect => {
                         let stopping = stop_signalled;
@@ -1333,7 +1363,7 @@ mod tests {
     use std::ffi::OsString;
     use std::time::Duration;
 
-    use hoimin_core::CommandArg;
+    use hoimin_core::{CommandArg, ObserveRemainingBudget};
 
     use crate::resource::PortableBackend;
 
@@ -1368,6 +1398,28 @@ mod tests {
                 max_processes: 1,
             },
         })
+    }
+
+    #[test]
+    fn remaining_budget_observes_live_deadline_and_preserves_effect_id() {
+        let now = tokio::time::Instant::now();
+        let id = EffectId(17);
+
+        let observed = remaining_budget_observed(
+            &ObserveRemainingBudget { id },
+            now + Duration::from_secs(281),
+            now,
+        );
+        let expired = remaining_budget_observed(
+            &ObserveRemainingBudget { id },
+            now,
+            now + Duration::from_secs(1),
+        );
+
+        assert_eq!(observed.id, id);
+        assert_eq!(observed.remaining, Duration::from_secs(281));
+        assert_eq!(expired.id, id);
+        assert_eq!(expired.remaining, Duration::ZERO);
     }
 
     fn assert_metrics_sidecar_finishes(
