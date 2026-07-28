@@ -21,7 +21,7 @@ fn candidate(id: &str, path: &str, rank: usize, score: u32) -> RankedPlanCandida
             original: "x".to_owned(),
             replacement: "y".to_owned(),
             operator: "binary_add_sub".to_owned(),
-            line: rank as u32,
+            line: u32::try_from(rank).expect("test fixture rank fits in u32"),
             column: 0,
             symbol: None,
             file_hash: "0".repeat(64),

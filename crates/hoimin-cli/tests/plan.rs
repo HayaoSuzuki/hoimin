@@ -839,21 +839,6 @@ async fn verify_top_real_cli_reports_diverse_order_and_preserves_strict_rank_pre
     ];
     let plan_before = std::fs::read(&path).unwrap();
 
-    let run = |policy: Option<&str>| {
-        let mut args = vec![
-            OsString::from("hoimin"),
-            OsString::from("verify"),
-            path.as_os_str().to_owned(),
-            OsString::from("--top"),
-            OsString::from("6"),
-        ];
-        if let Some(policy) = policy {
-            args.extend([OsString::from("--selection-policy"), OsString::from(policy)]);
-        }
-        args.extend([OsString::from("--format"), OsString::from("jsonl")]);
-        args
-    };
-
     for (policy, expected_policy, expected_ids) in [
         (
             Some("diverse"),
@@ -862,61 +847,93 @@ async fn verify_top_real_cli_reports_diverse_order_and_preserves_strict_rank_pre
         ),
         (None, "strict", ranked_ids.as_slice()),
     ] {
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-
-        let code = hoimin_cli::run_with_io(run(policy), &mut stdout, &mut stderr).await;
-
-        assert_eq!(code, 1, "stderr={}", String::from_utf8_lossy(&stderr));
-        let events = stdout
-            .split(|byte| *byte == b'\n')
-            .filter(|line| !line.is_empty())
-            .map(|line| serde_json::from_slice::<serde_json::Value>(line).unwrap())
-            .collect::<Vec<_>>();
-        let started = events
-            .iter()
-            .find(|event| event["kind"] == "run_started")
-            .unwrap();
-        assert_eq!(started["verification_selection"]["mode"], "top");
-        assert_eq!(started["verification_selection"]["policy"], expected_policy);
-        let actual_ids = events
-            .iter()
-            .filter(|event| event["kind"] == "mutant_started")
-            .map(|event| event["mutant_id"].as_str().unwrap().to_owned())
-            .collect::<Vec<_>>();
-        assert_eq!(actual_ids, expected_ids);
-        let lower_tier_position = actual_ids
-            .iter()
-            .position(|id| id == &ranked_ids[5])
-            .unwrap();
-        assert!(
-            ranked_ids[..5]
-                .iter()
-                .all(|id| actual_ids[..lower_tier_position].contains(id)),
-            "every high-tier candidate must be scheduled before the lower-tier candidate"
-        );
-        let actual_scores = actual_ids
-            .iter()
-            .map(|id| {
-                manifest
-                    .candidates
-                    .iter()
-                    .find(|candidate| candidate.id == *id)
-                    .unwrap()
-                    .score
-            })
-            .collect::<Vec<_>>();
-        assert!(
-            actual_scores.windows(2).all(|pair| pair[0] >= pair[1]),
-            "a lower-score candidate preceded a remaining higher-score candidate"
-        );
-        assert!(
-            stderr.is_empty(),
-            "unexpected policy warning or parse error: {}",
-            String::from_utf8_lossy(&stderr)
-        );
-        assert_eq!(std::fs::read(&path).unwrap(), plan_before);
+        assert_real_cli_top_selection(
+            &path,
+            &manifest,
+            &plan_before,
+            &ranked_ids,
+            policy,
+            expected_policy,
+            expected_ids,
+        )
+        .await;
     }
+}
+
+async fn assert_real_cli_top_selection(
+    path: &Path,
+    manifest: &PlanManifest,
+    plan_before: &[u8],
+    ranked_ids: &[String],
+    policy: Option<&str>,
+    expected_policy: &str,
+    expected_ids: &[String],
+) {
+    let mut args = vec![
+        OsString::from("hoimin"),
+        OsString::from("verify"),
+        path.as_os_str().to_owned(),
+        OsString::from("--top"),
+        OsString::from("6"),
+    ];
+    if let Some(policy) = policy {
+        args.extend([OsString::from("--selection-policy"), OsString::from(policy)]);
+    }
+    args.extend([OsString::from("--format"), OsString::from("jsonl")]);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+
+    assert_eq!(code, 1, "stderr={}", String::from_utf8_lossy(&stderr));
+    let events = stdout
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    let started = events
+        .iter()
+        .find(|event| event["kind"] == "run_started")
+        .unwrap();
+    assert_eq!(started["verification_selection"]["mode"], "top");
+    assert_eq!(started["verification_selection"]["policy"], expected_policy);
+    let actual_ids = events
+        .iter()
+        .filter(|event| event["kind"] == "mutant_started")
+        .map(|event| event["mutant_id"].as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(actual_ids, expected_ids);
+    let lower_tier_position = actual_ids
+        .iter()
+        .position(|id| id == &ranked_ids[5])
+        .unwrap();
+    assert!(
+        ranked_ids[..5]
+            .iter()
+            .all(|id| actual_ids[..lower_tier_position].contains(id)),
+        "every high-tier candidate must be scheduled before the lower-tier candidate"
+    );
+    let actual_scores = actual_ids
+        .iter()
+        .map(|id| {
+            manifest
+                .candidates
+                .iter()
+                .find(|candidate| candidate.id == *id)
+                .unwrap()
+                .score
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        actual_scores.windows(2).all(|pair| pair[0] >= pair[1]),
+        "a lower-score candidate preceded a remaining higher-score candidate"
+    );
+    assert!(
+        stderr.is_empty(),
+        "unexpected policy warning or parse error: {}",
+        String::from_utf8_lossy(&stderr)
+    );
+    assert_eq!(std::fs::read(path).unwrap(), plan_before);
 }
 
 #[tokio::test]
