@@ -63,6 +63,7 @@ class CommandRecord:
     interrupted: bool = False
     stdout_path: str = ""
     stderr_path: str = ""
+    cleanup_errors: list[str] = field(default_factory=list)
 
 
 @dataclass

@@ -273,6 +273,28 @@ def command_record(*, exit_code: int = 0) -> CommandRecord:
 
 
 class FocusedMutationReportingTests(unittest.TestCase):
+    def test_command_cleanup_errors_are_json_serializable(self) -> None:
+        record = fixture_record(candidates=[], state=RunState.COMMAND_FAILED)
+        command = command_record()
+        command.cleanup_errors.append(
+            "stderr log was not delete-ready within 2.0 seconds"
+        )
+        record.commands.append(command)
+
+        encoded = json.loads(json.dumps(record.to_dict()))
+
+        self.assertEqual(
+            encoded["commands"][0]["cleanup_errors"],
+            ["stderr log was not delete-ready within 2.0 seconds"],
+        )
+        self.assertEqual(CommandRecord(
+            sequence=2,
+            label="empty",
+            argv=[],
+            cwd=".",
+            started_at="2026-07-28T00:00:00+00:00",
+        ).cleanup_errors, [])
+
     def test_report_preserves_verified_unverified_and_next_order(self) -> None:
         record = fixture_record(
             candidates=[
