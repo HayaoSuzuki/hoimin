@@ -111,3 +111,19 @@ fn maximum_selected_count_and_duration_saturate_without_panic() {
     assert_eq!(projection.effective_mutant_timeout, Duration::MAX);
     assert_eq!(projection.projected_capacity, Duration::MAX);
 }
+
+#[test]
+fn maximum_selected_parallel_projection_preserves_the_ceiling_wave() {
+    let projection = project_top_budget(
+        usize::MAX,
+        NonZeroUsize::new(usize::MAX - 1).unwrap(),
+        Duration::from_secs(10),
+        Duration::from_secs(1),
+        fixed_timeout(Duration::from_secs(2)),
+        Duration::from_secs(3),
+    );
+
+    assert_eq!(projection.waves, 2);
+    assert_eq!(projection.projected_capacity, Duration::from_secs(4));
+    assert!(projection.is_shortfall());
+}
