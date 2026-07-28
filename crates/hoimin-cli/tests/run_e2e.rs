@@ -882,7 +882,7 @@ fn readme_documents_focused_profile_selection_and_session_compatibility() {
     for documented_readme in [&readme, &windows_readme] {
         let documented_readme = documented_readme.replace("\r\n", "\n");
 
-        assert!(documented_readme.contains("`--profile full|focused`"));
+        assert!(documented_readme.contains("`--profile full` / `--profile focused`"));
         assert!(documented_readme.contains(
             "`--profile full` is the default and considers every candidate produced by the selected\noperators."
         ));
