@@ -791,6 +791,117 @@ async fn verify_top_diverse_does_not_cross_score_tiers() {
 }
 
 #[tokio::test]
+async fn verify_top_real_cli_reports_diverse_order_and_preserves_strict_rank_prefix() {
+    let project = Project::new_with_sources(&[
+        (
+            "a.py",
+            "def a1(left, right):\n    return left == right\n\ndef a2(left, right):\n    return left == right\n",
+        ),
+        (
+            "b.py",
+            "def b1(left, right):\n    return left == right\n\ndef b2(left, right):\n    return left == right\n",
+        ),
+        ("c.py", "def c1(left, right):\n    return left == right\n"),
+    ]);
+    let coordinator = tempfile::tempdir().unwrap();
+    let marker = coordinator.path().join("test-command-ran");
+    let (path, manifest) =
+        write_plan_manifest_with_marker(&project, &["--operators", "compare_eq_ne"], &marker).await;
+    assert_eq!(manifest.candidates.len(), 5);
+    let ranked_ids = manifest
+        .candidates
+        .iter()
+        .map(|candidate| candidate.id.clone())
+        .collect::<Vec<_>>();
+    let ranked_paths = manifest
+        .candidates
+        .iter()
+        .map(|candidate| candidate.path.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        ranked_paths,
+        ["src/a.py", "src/a.py", "src/b.py", "src/b.py", "src/c.py"]
+    );
+    let diverse_ids = vec![
+        ranked_ids[0].clone(),
+        ranked_ids[2].clone(),
+        ranked_ids[4].clone(),
+        ranked_ids[1].clone(),
+        ranked_ids[3].clone(),
+    ];
+    let plan_before = std::fs::read(&path).unwrap();
+
+    let run = |policy: Option<&str>| {
+        let mut args = vec![
+            OsString::from("hoimin"),
+            OsString::from("verify"),
+            path.as_os_str().to_owned(),
+            OsString::from("--top"),
+            OsString::from("5"),
+        ];
+        if let Some(policy) = policy {
+            args.extend([OsString::from("--selection-policy"), OsString::from(policy)]);
+        }
+        args.extend([OsString::from("--format"), OsString::from("jsonl")]);
+        args
+    };
+
+    for (policy, expected_policy, expected_ids) in [
+        (
+            Some("diverse"),
+            "file_round_robin_v1",
+            diverse_ids.as_slice(),
+        ),
+        (None, "strict", ranked_ids.as_slice()),
+    ] {
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let code = hoimin_cli::run_with_io(run(policy), &mut stdout, &mut stderr).await;
+
+        assert_eq!(code, 1, "stderr={}", String::from_utf8_lossy(&stderr));
+        let events = stdout
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.is_empty())
+            .map(|line| serde_json::from_slice::<serde_json::Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        let started = events
+            .iter()
+            .find(|event| event["kind"] == "run_started")
+            .unwrap();
+        assert_eq!(started["verification_selection"]["mode"], "top");
+        assert_eq!(started["verification_selection"]["policy"], expected_policy);
+        let actual_ids = events
+            .iter()
+            .filter(|event| event["kind"] == "mutant_started")
+            .map(|event| event["mutant_id"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(actual_ids, expected_ids);
+        let actual_scores = actual_ids
+            .iter()
+            .map(|id| {
+                manifest
+                    .candidates
+                    .iter()
+                    .find(|candidate| candidate.id == *id)
+                    .unwrap()
+                    .score
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            actual_scores.windows(2).all(|pair| pair[0] >= pair[1]),
+            "a lower-score candidate preceded a remaining higher-score candidate"
+        );
+        assert!(
+            stderr.is_empty(),
+            "unexpected policy warning or parse error: {}",
+            String::from_utf8_lossy(&stderr)
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), plan_before);
+    }
+}
+
+#[tokio::test]
 async fn verify_runs_only_requested_candidates() {
     let project = Project::new();
     let coordinator = tempfile::tempdir().unwrap();
