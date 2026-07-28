@@ -32,10 +32,10 @@ lower-ranked candidates remain valid. `verify` uses the saved ranks and never re
 against changed source or Git state.
 
 The `strict` selection policy is the default and uses the saved rank prefix.
-The `diverse` policy round-robins production files only within equal-score tiers;
-it exhausts every high-score tier before selecting from a lower-score tier. The
-verification report records this policy as `file_round_robin_v1`. Verification
-does not rewrite the plan or change its execution limits.
+The `diverse` selection policy round-robins production files only within equal-score tiers.
+Higher-score tiers are exhausted before lower-score tiers.
+The verification report records `file_round_robin_v1`.
+Verification does not rewrite the plan or change its execution limits.
 
 `--candidate ID` remains available for exact selection and may be repeated.
 `--candidate` and `--top` are mutually exclusive, and one selection mode is

@@ -802,12 +802,12 @@ async fn verify_top_real_cli_reports_diverse_order_and_preserves_strict_rank_pre
             "def b1(left, right):\n    return left == right\n\ndef b2(left, right):\n    return left == right\n",
         ),
         ("c.py", "def c1(left, right):\n    return left == right\n"),
+        ("d.py", "def d1(left, right):\n    return left + right\n"),
     ]);
     let coordinator = tempfile::tempdir().unwrap();
     let marker = coordinator.path().join("test-command-ran");
-    let (path, manifest) =
-        write_plan_manifest_with_marker(&project, &["--operators", "compare_eq_ne"], &marker).await;
-    assert_eq!(manifest.candidates.len(), 5);
+    let (path, manifest) = write_plan_manifest_with_marker(&project, &[], &marker).await;
+    assert_eq!(manifest.candidates.len(), 6);
     let ranked_ids = manifest
         .candidates
         .iter()
@@ -820,7 +820,14 @@ async fn verify_top_real_cli_reports_diverse_order_and_preserves_strict_rank_pre
         .collect::<Vec<_>>();
     assert_eq!(
         ranked_paths,
-        ["src/a.py", "src/a.py", "src/b.py", "src/b.py", "src/c.py"]
+        [
+            "src/a.py", "src/a.py", "src/b.py", "src/b.py", "src/c.py", "src/d.py",
+        ]
+    );
+    assert!(
+        manifest.candidates[..5]
+            .iter()
+            .all(|candidate| candidate.score > manifest.candidates[5].score)
     );
     let diverse_ids = vec![
         ranked_ids[0].clone(),
@@ -828,6 +835,7 @@ async fn verify_top_real_cli_reports_diverse_order_and_preserves_strict_rank_pre
         ranked_ids[4].clone(),
         ranked_ids[1].clone(),
         ranked_ids[3].clone(),
+        ranked_ids[5].clone(),
     ];
     let plan_before = std::fs::read(&path).unwrap();
 
@@ -837,7 +845,7 @@ async fn verify_top_real_cli_reports_diverse_order_and_preserves_strict_rank_pre
             OsString::from("verify"),
             path.as_os_str().to_owned(),
             OsString::from("--top"),
-            OsString::from("5"),
+            OsString::from("6"),
         ];
         if let Some(policy) = policy {
             args.extend([OsString::from("--selection-policy"), OsString::from(policy)]);
@@ -877,6 +885,16 @@ async fn verify_top_real_cli_reports_diverse_order_and_preserves_strict_rank_pre
             .map(|event| event["mutant_id"].as_str().unwrap().to_owned())
             .collect::<Vec<_>>();
         assert_eq!(actual_ids, expected_ids);
+        let lower_tier_position = actual_ids
+            .iter()
+            .position(|id| id == &ranked_ids[5])
+            .unwrap();
+        assert!(
+            ranked_ids[..5]
+                .iter()
+                .all(|id| actual_ids[..lower_tier_position].contains(id)),
+            "every high-tier candidate must be scheduled before the lower-tier candidate"
+        );
         let actual_scores = actual_ids
             .iter()
             .map(|id| {
