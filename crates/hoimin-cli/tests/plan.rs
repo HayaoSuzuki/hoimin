@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use hoimin_cli::{
     analyzer::discover_targets,
-    cli::{OutputFormat, ParsedCommand, VerifySelection, parse_from},
+    cli::{OutputFormat, ParsedCommand, TopSelectionPolicy, VerifySelection, parse_from},
     plan::{
         PlanManifest, ResolvedVerifySelection, VerifySelectionScope, create, prepare_verify,
         prepare_verify_selection,
@@ -12,7 +12,9 @@ use hoimin_cli::{
     shell,
     target::TargetHandler,
 };
-use hoimin_core::{MAX_JOBS, MutationCandidate, OutputFormat as CoreOutputFormat};
+use hoimin_core::{
+    MAX_JOBS, MutationCandidate, OutputFormat as CoreOutputFormat, VerificationSelectionPolicy,
+};
 
 #[cfg(target_os = "macos")]
 #[tokio::test]
@@ -613,7 +615,10 @@ async fn verify_top_resolves_the_saved_rank_prefix_and_retained_scope() {
 
     let verified = prepare_verify_selection(
         &path,
-        &VerifySelection::Top(std::num::NonZeroUsize::new(1).unwrap()),
+        &VerifySelection::Top {
+            count: std::num::NonZeroUsize::new(1).unwrap(),
+            policy: hoimin_cli::cli::TopSelectionPolicy::Strict,
+        },
         OutputFormat::Json,
     )
     .await
@@ -644,7 +649,10 @@ async fn verify_top_above_a_truncated_plan_selects_every_retained_candidate() {
 
     let verified = prepare_verify_selection(
         &path,
-        &VerifySelection::Top(std::num::NonZeroUsize::new(30).unwrap()),
+        &VerifySelection::Top {
+            count: std::num::NonZeroUsize::new(30).unwrap(),
+            policy: hoimin_cli::cli::TopSelectionPolicy::Strict,
+        },
         OutputFormat::Json,
     )
     .await
@@ -660,6 +668,272 @@ async fn verify_top_above_a_truncated_plan_selects_every_retained_candidate() {
     );
     assert!(verified.plan_truncated);
     assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_top_diverse_round_robins_equal_score_candidates_without_mutating_the_manifest() {
+    let project = Project::new_with_sources(&[
+        (
+            "a.py",
+            "def a1(left, right):\n    return left == right\n\ndef a2(left, right):\n    return left == right\n",
+        ),
+        (
+            "b.py",
+            "def b1(left, right):\n    return left == right\n\ndef b2(left, right):\n    return left == right\n",
+        ),
+        ("c.py", "def c1(left, right):\n    return left == right\n"),
+    ]);
+    let (path, manifest, marker) =
+        write_plan_manifest(&project, &["--operators", "compare_eq_ne"]).await;
+    assert_eq!(manifest.candidates.len(), 5);
+    assert!(
+        manifest
+            .candidates
+            .windows(2)
+            .all(|pair| pair[0].score == pair[1].score)
+    );
+    let ids = manifest
+        .candidates
+        .iter()
+        .map(|candidate| candidate.id.clone())
+        .collect::<Vec<_>>();
+    let paths = manifest
+        .candidates
+        .iter()
+        .map(|candidate| candidate.path.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        paths,
+        ["src/a.py", "src/a.py", "src/b.py", "src/b.py", "src/c.py"]
+    );
+    let expected = vec![
+        ids[0].clone(),
+        ids[2].clone(),
+        ids[4].clone(),
+        ids[1].clone(),
+        ids[3].clone(),
+    ];
+    let before = std::fs::read(&path).unwrap();
+
+    let verified = prepare_verify_selection(
+        &path,
+        &VerifySelection::Top {
+            count: std::num::NonZeroUsize::new(5).unwrap(),
+            policy: TopSelectionPolicy::Diverse,
+        },
+        OutputFormat::Json,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        verified.selection,
+        ResolvedVerifySelection::RankedCandidates(expected)
+    );
+    assert_eq!(
+        verified.verification_selection.policy,
+        VerificationSelectionPolicy::FileRoundRobinV1
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_top_diverse_does_not_cross_score_tiers() {
+    let project = Project::new_with_sources(&[
+        (
+            "a.py",
+            "def a1(left, right):\n    return left == right\n\ndef a2(left, right):\n    return left == right\n",
+        ),
+        ("b.py", "def b1(left, right):\n    return left + right\n"),
+    ]);
+    let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
+    let a2 = manifest
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.path == Path::new("src/a.py"))
+        .nth(1)
+        .unwrap();
+    let b1 = manifest
+        .candidates
+        .iter()
+        .find(|candidate| candidate.path == Path::new("src/b.py"))
+        .unwrap();
+    assert!(a2.score > b1.score);
+    let expected = vec![
+        manifest.candidates[0].id.clone(),
+        a2.id.clone(),
+        b1.id.clone(),
+    ];
+    let before = std::fs::read(&path).unwrap();
+
+    let verified = prepare_verify_selection(
+        &path,
+        &VerifySelection::Top {
+            count: std::num::NonZeroUsize::new(3).unwrap(),
+            policy: TopSelectionPolicy::Diverse,
+        },
+        OutputFormat::Json,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        verified.selection,
+        ResolvedVerifySelection::RankedCandidates(expected)
+    );
+    assert_eq!(
+        verified.verification_selection.policy,
+        VerificationSelectionPolicy::FileRoundRobinV1
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_top_real_cli_reports_diverse_order_and_preserves_strict_rank_prefix() {
+    let project = Project::new_with_sources(&[
+        (
+            "a.py",
+            "def a1(left, right):\n    return left == right\n\ndef a2(left, right):\n    return left == right\n",
+        ),
+        (
+            "b.py",
+            "def b1(left, right):\n    return left == right\n\ndef b2(left, right):\n    return left == right\n",
+        ),
+        ("c.py", "def c1(left, right):\n    return left == right\n"),
+        ("d.py", "def d1(left, right):\n    return left + right\n"),
+    ]);
+    let coordinator = tempfile::tempdir().unwrap();
+    let marker = coordinator.path().join("test-command-ran");
+    let (path, manifest) = write_plan_manifest_with_marker(&project, &[], &marker).await;
+    assert_eq!(manifest.candidates.len(), 6);
+    let ranked_ids = manifest
+        .candidates
+        .iter()
+        .map(|candidate| candidate.id.clone())
+        .collect::<Vec<_>>();
+    let ranked_paths = manifest
+        .candidates
+        .iter()
+        .map(|candidate| candidate.path.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        ranked_paths,
+        [
+            "src/a.py", "src/a.py", "src/b.py", "src/b.py", "src/c.py", "src/d.py",
+        ]
+    );
+    assert!(
+        manifest.candidates[..5]
+            .iter()
+            .all(|candidate| candidate.score > manifest.candidates[5].score)
+    );
+    let diverse_ids = vec![
+        ranked_ids[0].clone(),
+        ranked_ids[2].clone(),
+        ranked_ids[4].clone(),
+        ranked_ids[1].clone(),
+        ranked_ids[3].clone(),
+        ranked_ids[5].clone(),
+    ];
+    let plan_before = std::fs::read(&path).unwrap();
+
+    for (policy, expected_policy, expected_ids) in [
+        (
+            Some("diverse"),
+            "file_round_robin_v1",
+            diverse_ids.as_slice(),
+        ),
+        (None, "strict", ranked_ids.as_slice()),
+    ] {
+        assert_real_cli_top_selection(
+            &path,
+            &manifest,
+            &plan_before,
+            &ranked_ids,
+            policy,
+            expected_policy,
+            expected_ids,
+        )
+        .await;
+    }
+}
+
+async fn assert_real_cli_top_selection(
+    path: &Path,
+    manifest: &PlanManifest,
+    plan_before: &[u8],
+    ranked_ids: &[String],
+    policy: Option<&str>,
+    expected_policy: &str,
+    expected_ids: &[String],
+) {
+    let mut args = vec![
+        OsString::from("hoimin"),
+        OsString::from("verify"),
+        path.as_os_str().to_owned(),
+        OsString::from("--top"),
+        OsString::from("6"),
+    ];
+    if let Some(policy) = policy {
+        args.extend([OsString::from("--selection-policy"), OsString::from(policy)]);
+    }
+    args.extend([OsString::from("--format"), OsString::from("jsonl")]);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+
+    assert_eq!(code, 1, "stderr={}", String::from_utf8_lossy(&stderr));
+    let events = stdout
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    let started = events
+        .iter()
+        .find(|event| event["kind"] == "run_started")
+        .unwrap();
+    assert_eq!(started["verification_selection"]["mode"], "top");
+    assert_eq!(started["verification_selection"]["policy"], expected_policy);
+    let actual_ids = events
+        .iter()
+        .filter(|event| event["kind"] == "mutant_started")
+        .map(|event| event["mutant_id"].as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(actual_ids, expected_ids);
+    let lower_tier_position = actual_ids
+        .iter()
+        .position(|id| id == &ranked_ids[5])
+        .unwrap();
+    assert!(
+        ranked_ids[..5]
+            .iter()
+            .all(|id| actual_ids[..lower_tier_position].contains(id)),
+        "every high-tier candidate must be scheduled before the lower-tier candidate"
+    );
+    let actual_scores = actual_ids
+        .iter()
+        .map(|id| {
+            manifest
+                .candidates
+                .iter()
+                .find(|candidate| candidate.id == *id)
+                .unwrap()
+                .score
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        actual_scores.windows(2).all(|pair| pair[0] >= pair[1]),
+        "a lower-score candidate preceded a remaining higher-score candidate"
+    );
+    assert!(
+        stderr.is_empty(),
+        "unexpected policy warning or parse error: {}",
+        String::from_utf8_lossy(&stderr)
+    );
+    assert_eq!(std::fs::read(path).unwrap(), plan_before);
 }
 
 #[tokio::test]
@@ -716,6 +990,7 @@ async fn verify_runs_only_requested_candidates() {
         started["verification_selection"],
         serde_json::json!({
             "mode": "candidate_ids",
+            "policy": "explicit_candidates",
             "requested": 2,
             "selected": 2,
             "scope": "explicit_candidates",
@@ -769,6 +1044,7 @@ async fn verify_top_executes_the_highest_ranked_retained_candidate() {
     assert!(!document["baseline"].is_null());
     let expected_selection = serde_json::json!({
         "mode": "top",
+        "policy": "strict",
         "requested": 1,
         "selected": 1,
         "scope": "retained_candidates",
@@ -1064,10 +1340,16 @@ impl Project {
     }
 
     fn new_with_source(source: &str) -> Self {
+        Self::new_with_sources(&[("calc.py", source)])
+    }
+
+    fn new_with_sources(sources: &[(&str, &str)]) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().to_owned();
         std::fs::create_dir(path.join("src")).unwrap();
-        std::fs::write(path.join("src/calc.py"), source).unwrap();
+        for (name, source) in sources {
+            std::fs::write(path.join("src").join(name), source).unwrap();
+        }
         std::fs::write(path.join("config.toml"), "[tool.hoimin]\n").unwrap();
         std::fs::write(path.join("pyproject.toml"), "value = 1\n").unwrap();
         Self {

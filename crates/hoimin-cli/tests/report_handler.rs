@@ -7,7 +7,8 @@ use hoimin_core::{
     BaselineFinished, ByteSpan, Diagnostic, EffectFailure, EffectId, EmitOutput, MutantFinished,
     MutantStarted, MutationCandidate, MutationStatus, MutationSummary, OutputEvent, OutputFormat,
     OutputSpoolRef, ProcessTermination, REPORT_SCHEMA_VERSION, ResourceMode, RunStarted,
-    RunSummary,
+    RunSummary, VerificationSelection, VerificationSelectionMode, VerificationSelectionPolicy,
+    VerificationSelectionScope,
 };
 
 #[derive(Clone, Default)]
@@ -966,6 +967,42 @@ fn human_format_includes_profile_and_fingerprint_provenance_for_normalized_runs(
             .text()
             .contains("fingerprint inputs: [pyproject.toml=")
     );
+}
+
+#[test]
+fn human_format_includes_verification_selection_policy() {
+    let stdout = SharedWriter::default();
+    let mut handler = ReportHandler::new(
+        OutputFormat::Human,
+        stdout.clone(),
+        io::sink(),
+        std::env::temp_dir(),
+    )
+    .unwrap();
+    let mut started = RunStarted::minimal("run-1", 1);
+    started.normalized_config = Some(
+        hoimin_cli::cli::parse_config_from(["hoimin", "run", "--file", "x.py", "--", "check"])
+            .unwrap(),
+    );
+    started.verification_selection = Some(VerificationSelection {
+        mode: VerificationSelectionMode::Top,
+        policy: VerificationSelectionPolicy::FileRoundRobinV1,
+        requested: 3,
+        selected: 3,
+        scope: VerificationSelectionScope::RetainedCandidates,
+        plan_truncated: false,
+    });
+
+    handler
+        .handle(EmitOutput {
+            id: EffectId(1),
+            event: OutputEvent::RunStarted(started),
+        })
+        .unwrap();
+
+    assert!(stdout.text().contains(
+        "verification selection: mode=top policy=file_round_robin_v1 requested=3 selected=3 scope=retained_candidates plan_truncated=false"
+    ));
 }
 
 #[test]

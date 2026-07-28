@@ -21,6 +21,8 @@ hoimin plan --root . --source src --changed \
   -- python -m pytest -q > PLAN.json
 # improve tests, then run the saved top 10 without extracting IDs
 hoimin verify PLAN.json --top 10 --format json > reports/batch-a-001.json
+# alternatively, spread an equal-score tier across production files
+hoimin verify PLAN.json --top 10 --selection-policy diverse
 ```
 
 Each version-2 plan candidate records `rank`, `score`, and `ranking_reasons`.
@@ -28,6 +30,12 @@ The scores are transparent ordering heuristics for focusing effort; they do not
 claim that a higher-ranked mutant is more likely to reveal a defect, and
 lower-ranked candidates remain valid. `verify` uses the saved ranks and never re-ranks
 against changed source or Git state.
+
+The `strict` selection policy is the default and uses the saved rank prefix.
+The `diverse` selection policy round-robins production files only within equal-score tiers.
+Higher-score tiers are exhausted before lower-score tiers.
+The verification report records `file_round_robin_v1`.
+Verification does not rewrite the plan or change its execution limits.
 
 `--candidate ID` remains available for exact selection and may be repeated.
 `--candidate` and `--top` are mutually exclusive, and one selection mode is

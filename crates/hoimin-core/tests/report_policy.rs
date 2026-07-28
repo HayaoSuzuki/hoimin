@@ -1,7 +1,7 @@
 use hoimin_core::{
     ByteSpan, ExitPolicy, MutantFinished, MutantStarted, MutationCandidate, MutationStatus,
     OutputEvent, ProcessTermination, ReportSequence, ReportVersions, ResourceMode, RunStarted,
-    exit_code, exit_code_for, summarize,
+    VerificationSelectionPolicy, exit_code, exit_code_for, summarize,
 };
 use serde_json::json;
 
@@ -14,6 +14,14 @@ fn run_started_versions_serialize_only_os_and_hoimin() {
     assert_eq!(
         serde_json::to_value(versions).unwrap(),
         json!({"os":"windows","hoimin":"0.1.0"})
+    );
+}
+
+#[test]
+fn verification_selection_policy_uses_stable_snake_case_serialization() {
+    assert_eq!(
+        serde_json::to_value(VerificationSelectionPolicy::FileRoundRobinV1).unwrap(),
+        serde_json::json!("file_round_robin_v1"),
     );
 }
 #[test]
