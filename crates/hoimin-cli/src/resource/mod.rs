@@ -70,6 +70,27 @@ impl ResourceError {
     }
 }
 
+fn validate_plan_resource_policy_for(
+    allow_best_effort_memory: bool,
+    best_effort_diagnostic: Option<&str>,
+) -> Result<(), ResourceError> {
+    if !allow_best_effort_memory && let Some(diagnostic) = best_effort_diagnostic {
+        return Err(ResourceError::BestEffortNotAllowed(diagnostic.to_owned()));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_plan_resource_policy(
+    allow_best_effort_memory: bool,
+) -> Result<(), ResourceError> {
+    #[cfg(target_os = "macos")]
+    let diagnostic = Some(portable::MACOS_BEST_EFFORT_DIAGNOSTIC);
+    #[cfg(not(target_os = "macos"))]
+    let diagnostic = None;
+
+    validate_plan_resource_policy_for(allow_best_effort_memory, diagnostic)
+}
+
 #[derive(Clone, Debug)]
 pub enum ResourceBackend {
     Portable(PortableBackend),
@@ -190,5 +211,34 @@ impl ProcessSupervisor {
             #[cfg(windows)]
             Self::Windows(supervisor) => supervisor.classify(termination),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ResourceError, validate_plan_resource_policy_for};
+
+    const DIAGNOSTIC: &str = "macOS uses process groups and RLIMIT_CPU; max-memory is not enforced";
+
+    #[test]
+    fn plan_policy_rejects_unapproved_best_effort_memory() {
+        let error = validate_plan_resource_policy_for(false, Some(DIAGNOSTIC)).unwrap_err();
+
+        assert!(matches!(&error, ResourceError::BestEffortNotAllowed(_)));
+        assert_eq!(
+            error.to_string(),
+            "portable resource limits require --allow-best-effort-memory: \
+             macOS uses process groups and RLIMIT_CPU; max-memory is not enforced"
+        );
+    }
+
+    #[test]
+    fn plan_policy_accepts_explicit_best_effort_memory() {
+        assert!(validate_plan_resource_policy_for(true, Some(DIAGNOSTIC)).is_ok());
+    }
+
+    #[test]
+    fn plan_policy_leaves_hard_platforms_unchanged() {
+        assert!(validate_plan_resource_policy_for(false, None).is_ok());
     }
 }
