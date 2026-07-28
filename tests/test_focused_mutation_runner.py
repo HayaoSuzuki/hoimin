@@ -81,6 +81,24 @@ class RunnerTests(unittest.TestCase):
     def stdout(self, record: CommandRecord) -> str:
         return Path(record.stdout_path).read_text()
 
+    @unittest.skipUnless(os.name == "nt", "requires Windows file sharing")
+    def test_delete_probe_reports_a_live_nonsharing_handle(self) -> None:
+        from tools.focused_mutation_support.windows_file import (
+            open_without_delete_sharing_for_tests,
+            probe_delete_access,
+        )
+
+        path = self.output / "locked.log"
+        path.write_bytes(b"partial")
+        handle = open_without_delete_sharing_for_tests(path)
+        self.addCleanup(handle.close)
+
+        with self.assertRaises(OSError) as caught:
+            probe_delete_access(path)
+
+        self.assertEqual(caught.exception.winerror, 32)
+        self.assertEqual(path.read_bytes(), b"partial")
+
     def assert_recorded_working_directory(self, record: CommandRecord) -> None:
         stderr = Path(record.stderr_path).read_text()
         self.assertTrue(stderr.startswith("ERR:"), stderr)
