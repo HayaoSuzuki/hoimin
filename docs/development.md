@@ -14,6 +14,26 @@ uv run --frozen python tests/wheel_smoke.py
 The standalone wheel smoke script builds a release wheel unless `HOIMIN_WHEEL`
 names an existing wheel to test.
 
+## Reproduce randomized Rust test order
+
+CI supplements the stable cross-platform suite with Rust's standard nightly
+test harness in randomized order:
+
+```console
+rustup toolchain install nightly-2026-07-27 --profile minimal
+cargo +nightly-2026-07-27 test --workspace -- -Z unstable-options --shuffle
+```
+
+The harness prints the generated seed. Replay a failing order exactly with:
+
+```console
+cargo +nightly-2026-07-27 test --workspace -- \
+  -Z unstable-options --shuffle-seed <SEED>
+```
+
+The nightly job supplements rather than replaces the stable Ubuntu, Windows,
+and macOS test jobs.
+
 After changing the Rust analyzer or its tests, run mutation analysis with:
 
 ```console
