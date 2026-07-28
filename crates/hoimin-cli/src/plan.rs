@@ -14,6 +14,7 @@ use thiserror::Error;
 use crate::analyzer::{AnalyzerDiagnostic, AnalyzerDiagnosticCode, discover_targets};
 use crate::cli::{OutputFormat, VerifySelection};
 use crate::fingerprint_inputs;
+use crate::resource::{self, ResourceError};
 use crate::shell;
 use crate::target::TargetHandler;
 
@@ -79,6 +80,8 @@ pub enum VerifySelectionScope {
 
 #[derive(Debug, Error)]
 pub enum PlanError {
+    #[error(transparent)]
+    ResourcePolicy(#[from] ResourceError),
     #[error("plan.manifest.invalid: {0}")]
     ManifestInvalid(String),
     #[error("plan.fingerprint_input: {0}")]
@@ -106,6 +109,7 @@ pub enum PlanError {
 /// Returns an error before manifest serialization when fingerprint inputs, targets, sources, or
 /// analysis cannot be resolved successfully.
 pub async fn create(config: RunConfig) -> Result<PlanOutput, PlanError> {
+    resource::validate_plan_resource_policy(config.allow_best_effort_memory)?;
     let config = shell::prepare_run_config(config)
         .map_err(|error| PlanError::FingerprintInput(error.to_string()))?;
     let targets = TargetHandler::resolve(&config.selection)

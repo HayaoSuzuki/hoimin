@@ -14,6 +14,25 @@ use hoimin_cli::{
 };
 use hoimin_core::{MAX_JOBS, MutationCandidate, OutputFormat as CoreOutputFormat};
 
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn plan_rejects_unapproved_best_effort_memory_before_project_work() {
+    let project = Project::new();
+    let marker = project.path.join("test-command-ran");
+    let args = plan_args_without_best_effort(&project, &marker);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    let exit = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+
+    assert_eq!(exit, 2);
+    assert!(stdout.is_empty(), "failed plan emitted stdout");
+    let stderr = String::from_utf8(stderr).unwrap();
+    assert!(stderr.contains("--allow-best-effort-memory"));
+    assert!(stderr.contains("max-memory is not enforced"));
+    assert!(!marker.exists(), "test command ran during plan validation");
+}
+
 #[tokio::test]
 async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
     let project = Project::new();
@@ -846,6 +865,25 @@ fn plan_args<'a>(
         )),
     ]);
     args
+}
+
+#[cfg(target_os = "macos")]
+fn plan_args_without_best_effort(project: &Project, marker: &Path) -> Vec<OsString> {
+    vec![
+        OsString::from("hoimin"),
+        OsString::from("plan"),
+        OsString::from("--root"),
+        project.path.as_os_str().to_owned(),
+        OsString::from("--source"),
+        OsString::from("src"),
+        OsString::from("--"),
+        python_executable().into_os_string(),
+        OsString::from("-c"),
+        OsString::from(format!(
+            "from pathlib import Path; Path({:?}).write_text('executed')",
+            marker.to_string_lossy()
+        )),
+    ]
 }
 
 struct Project {

@@ -19,7 +19,7 @@ enum AttachFault {
 }
 
 #[cfg(target_os = "macos")]
-const MACOS_BEST_EFFORT_DIAGNOSTIC: &str =
+pub(super) const MACOS_BEST_EFFORT_DIAGNOSTIC: &str =
     "macOS uses process groups and RLIMIT_CPU; max-memory is not enforced";
 
 #[derive(Clone, Debug, Default)]
