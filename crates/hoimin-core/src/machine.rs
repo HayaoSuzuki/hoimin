@@ -7,12 +7,12 @@ use crate::{
     CandidateSpoolRef, Cleanup, Diagnostic, EffectFailed, EffectId, EmitOutput, ExitPolicy,
     FinishSession, IntegrityCheckpoint, LoadSession, LookupStoredResult,
     MutantFinished as MutantOutput, MutantResult, MutantStarted, MutantTimeout, MutationCandidate,
-    MutationStatus, MutationSummary, OutputEvent, PersistResult, Preflight, ProcessFinished,
-    ProcessLimits, ProcessTermination, ReadCandidate, ResetWorker, ResolveTargets, ResumeDecision,
-    RunBudgets, RunConfig, RunEffect, RunEvent, RunFingerprint, RunProcess, RunStarted, RunSummary,
-    TargetSlice, VerificationSelection, VerifyOriginals, WorkspaceCopyGrant, auto_mutant_timeout,
-    classify_mutant, contract_ensure, exit_code_for, release_workspace_copy,
-    reserve_workspace_copy,
+    MutationStatus, MutationSummary, ObserveRemainingBudget, OutputEvent, PersistResult, Preflight,
+    ProcessFinished, ProcessLimits, ProcessTermination, ReadCandidate, ResetWorker, ResolveTargets,
+    ResumeDecision, RunBudgets, RunConfig, RunEffect, RunEvent, RunFingerprint, RunProcess,
+    RunStarted, RunSummary, TargetSlice, VerificationSelection, VerificationSelectionMode,
+    VerifyOriginals, WorkspaceCopyGrant, auto_mutant_timeout, classify_mutant, contract_ensure,
+    exit_code_for, project_top_budget, release_workspace_copy, reserve_workspace_copy,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -21,6 +21,7 @@ pub enum RunPhase {
     Preflight,
     Copy,
     Baseline,
+    BudgetCheck,
     Analyze,
     Mutants,
     Finalize,
@@ -34,6 +35,7 @@ pub enum CompletionKind {
     PreflightCompleted,
     WorkerCreated,
     BaselineFinished,
+    RemainingBudgetObserved,
     AnalysisFinished,
     CandidateLoaded,
     MutationApplied,
@@ -89,6 +91,7 @@ impl Default for WorkerState {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum OutputAction {
+    ContinueAfterBudgetWarning,
     StartMutant(u32),
     StartSynthetic(u32, MutationStatus),
     FinishMutant(u32),
@@ -288,6 +291,16 @@ impl RunState {
     pub fn with_verification_selection(mut self, selection: VerificationSelection) -> Self {
         self.verification_selection = Some(selection);
         self
+    }
+
+    fn is_top_verification(&self) -> bool {
+        matches!(
+            self.verification_selection,
+            Some(VerificationSelection {
+                mode: VerificationSelectionMode::Top,
+                ..
+            })
+        )
     }
 
     #[must_use]
@@ -1231,7 +1244,13 @@ pub fn transition(
                 id: output_id,
                 event: output,
             })];
-            if success {
+            if success && state.is_top_verification() {
+                state.phase = RunPhase::BudgetCheck;
+                let id = state.allocate_id()?;
+                effects.push(RunEffect::ObserveRemainingBudget(ObserveRemainingBudget {
+                    id,
+                }));
+            } else if success {
                 state.phase = RunPhase::Analyze;
                 effects.extend(state.analyze_next()?);
             } else {
@@ -1240,6 +1259,53 @@ pub fn transition(
                 effects.extend(state.finalize_effects()?);
             }
             effects
+        }
+        RunEvent::RemainingBudgetObserved(value) if state.phase == RunPhase::BudgetCheck => {
+            let selection = state
+                .verification_selection
+                .as_ref()
+                .ok_or(MachineError::WrongPhase { phase: state.phase })?;
+            let projection = project_top_budget(
+                selection.selected,
+                state.config.limits.jobs,
+                state.config.limits.total_timeout.get(),
+                state.baseline_elapsed,
+                state.config.limits.mutant_timeout,
+                value.remaining,
+            );
+            if projection.is_shortfall() {
+                let id = state.allocate_id()?;
+                state
+                    .output_actions
+                    .insert(id, OutputAction::ContinueAfterBudgetWarning);
+                vec![RunEffect::EmitOutput(EmitOutput {
+                    id,
+                    event: OutputEvent::Diagnostic(Diagnostic::new(
+                        state.run_id.clone(),
+                        state.output_sequence(),
+                        "warning",
+                        "budget.projected_shortfall",
+                        format!(
+                            "verify top budget projection: selected={}, jobs={}, \
+                             planned_total_timeout={}s, baseline={}s, \
+                             effective_mutant_timeout={}s, remaining={}s, \
+                             projected_capacity={}s. This is not a guaranteed failure; \
+                             consider increasing --jobs, increasing --total-timeout, \
+                             or creating a new plan.",
+                            projection.selected,
+                            projection.jobs,
+                            projection.planned_total_timeout.as_secs(),
+                            projection.baseline.as_secs(),
+                            projection.effective_mutant_timeout.as_secs(),
+                            projection.remaining.as_secs(),
+                            projection.projected_capacity.as_secs(),
+                        ),
+                    )),
+                })]
+            } else {
+                state.phase = RunPhase::Analyze;
+                state.analyze_next()?
+            }
         }
         RunEvent::AnalysisFinished(value) if state.phase == RunPhase::Analyze => {
             if state.candidate_filter.is_some() {
@@ -1451,6 +1517,10 @@ pub fn transition(
                 .remove(&value.id)
                 .ok_or(MachineError::WrongPhase { phase: state.phase })?
             {
+                OutputAction::ContinueAfterBudgetWarning => {
+                    state.phase = RunPhase::Analyze;
+                    state.analyze_next()?
+                }
                 OutputAction::StartMutant(worker) => state.mutant_process(worker)?,
                 OutputAction::StartSynthetic(worker, status) => {
                     state.synthetic_finished_output(worker, status)?
@@ -1603,7 +1673,7 @@ pub fn transition(
         "machine.worker.invariant",
         (!matches!(
             state.phase,
-            RunPhase::Baseline | RunPhase::Analyze | RunPhase::Mutants
+            RunPhase::Baseline | RunPhase::BudgetCheck | RunPhase::Analyze | RunPhase::Mutants
         ) || state.copy_grant.is_some())
             && state.worker_invariant(),
         (
@@ -1668,6 +1738,7 @@ fn expected_completion(effect: &RunEffect) -> CompletionKind {
         RunEffect::Preflight(_) => CompletionKind::PreflightCompleted,
         RunEffect::CreateWorker(_) => CompletionKind::WorkerCreated,
         RunEffect::RunBaseline(_) => CompletionKind::BaselineFinished,
+        RunEffect::ObserveRemainingBudget(_) => CompletionKind::RemainingBudgetObserved,
         RunEffect::AnalyzeFile(_) => CompletionKind::AnalysisFinished,
         RunEffect::ReadCandidate(_) => CompletionKind::CandidateLoaded,
         RunEffect::ApplyMutation(_) => CompletionKind::MutationApplied,
@@ -1706,6 +1777,9 @@ fn completion(event: &RunEvent) -> Option<(EffectId, CompletionKind)> {
         RunEvent::PreflightCompleted(value) => (value.id, CompletionKind::PreflightCompleted),
         RunEvent::WorkerCreated(value) => (value.id, CompletionKind::WorkerCreated),
         RunEvent::BaselineFinished(value) => (value.id, CompletionKind::BaselineFinished),
+        RunEvent::RemainingBudgetObserved(value) => {
+            (value.id, CompletionKind::RemainingBudgetObserved)
+        }
         RunEvent::AnalysisFinished(value) => (value.id, CompletionKind::AnalysisFinished),
         RunEvent::CandidateLoaded(value) => (value.id, CompletionKind::CandidateLoaded),
         RunEvent::MutationApplied(value) => (value.id, CompletionKind::MutationApplied),
