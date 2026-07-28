@@ -18,13 +18,16 @@ FILE_ATTRIBUTE_NORMAL: Final = 0x00000080
 
 class WindowsHandle:
     def __init__(self, value: int, close_handle: Callable[[int], int]) -> None:
-        self._value = value
+        self._value: int | None = value
         self._close_handle = close_handle
 
     def close(self) -> None:
-        if self._value:
-            self._close_handle(self._value)
-            self._value = 0
+        if self._value is None:
+            return
+        if not self._close_handle(self._value):
+            code = ctypes.get_last_error()
+            raise ctypes.WinError(code)
+        self._value = None
 
     def __enter__(self) -> WindowsHandle:
         return self

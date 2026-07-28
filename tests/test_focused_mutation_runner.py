@@ -21,7 +21,10 @@ from tools.focused_mutation_support.runner import (
     wait_for_log_release,
 )
 from tools.focused_mutation_support.store import RunStore
-from tools.focused_mutation_support.windows_file import probe_delete_access
+from tools.focused_mutation_support.windows_file import (
+    WindowsHandle,
+    probe_delete_access,
+)
 
 
 FAKE = f"""#!{sys.executable}
@@ -71,12 +74,23 @@ time.sleep(30)
 """
 
 
+LOG_CLEANUP_CALLBACK_ERROR = (
+    "log cleanup callback failed: RuntimeError: cleanup callback exploded"
+)
+
+
+def raising_log_cleanup(_: Sequence[Path]) -> list[str]:
+    raise RuntimeError("cleanup callback exploded")
+
+
 SYNCHRONIZE = 0x00100000
 PROCESS_TERMINATE = 0x0001
-INFINITE = 0xFFFFFFFF
 WAIT_OBJECT_0 = 0x00000000
 WAIT_TIMEOUT = 0x00000102
 WAIT_FAILED = 0xFFFFFFFF
+PROCESS_EXIT_WAIT_TIMEOUT = 5.0
+PROCESS_WAIT_SLICE_MS = 100
+EVENT_WAIT_SLICE_SECONDS = 0.05
 
 
 class WindowsProcessHandle:
@@ -152,6 +166,27 @@ class WindowsProcessHandle:
         self._value = 0
 
 
+class NeverSignaledWindowsProcessHandle:
+    def __init__(self, cancel: threading.Event) -> None:
+        self._cancel = cancel
+        self.wait_started = threading.Event()
+        self.wait_calls: list[int] = []
+        self.stop_calls: list[int] = []
+        self.closed = False
+
+    def wait(self, timeout_ms: int) -> int:
+        self.wait_calls.append(timeout_ms)
+        self.wait_started.set()
+        self._cancel.wait(timeout=min(timeout_ms / 1_000, 0.05))
+        return WAIT_TIMEOUT
+
+    def stop(self, *, grace_ms: int) -> None:
+        self.stop_calls.append(grace_ms)
+
+    def close(self) -> None:
+        self.closed = True
+
+
 def read_ready_pid(marker: Path) -> int | None:
     try:
         return int(marker.read_text(encoding="utf-8"))
@@ -159,11 +194,49 @@ def read_ready_pid(marker: Path) -> int | None:
         return None
 
 
+def wait_for_process_exit_or_cancel(
+    handle: WindowsProcessHandle,
+    cancel: threading.Event,
+    *,
+    timeout: float = PROCESS_EXIT_WAIT_TIMEOUT,
+) -> bool:
+    deadline = time.monotonic() + timeout
+    while not cancel.is_set():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("root process did not signal")
+        timeout_ms = max(
+            1,
+            min(PROCESS_WAIT_SLICE_MS, int(remaining * 1_000)),
+        )
+        if handle.wait(timeout_ms) == WAIT_OBJECT_0:
+            return True
+    return False
+
+
+def wait_for_event_or_cancel(
+    event: threading.Event,
+    cancel: threading.Event,
+    *,
+    timeout: float,
+) -> bool:
+    deadline = time.monotonic() + timeout
+    while not cancel.is_set():
+        if event.is_set():
+            return True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        cancel.wait(timeout=min(EVENT_WAIT_SLICE_SECONDS, remaining))
+    return False
+
+
 def release_descendant_after_root_exit(
     root_ready: Path,
     descendant_ready: Path,
     release: Path,
     cleanup_wait_started: threading.Event,
+    cancel: threading.Event,
     captured_handles: dict[str, WindowsProcessHandle],
     capture_done: threading.Event,
     errors: list[str],
@@ -181,7 +254,7 @@ def release_descendant_after_root_exit(
             "descendant": descendant_ready,
         }
         deadline = time.monotonic() + 5.0
-        while pending:
+        while pending and not cancel.is_set():
             for name, marker in tuple(pending.items()):
                 try:
                     pid = read_ready_pid(marker)
@@ -231,18 +304,24 @@ def release_descendant_after_root_exit(
                         TimeoutError("process marker was not ready"),
                     )
                 break
-            time.sleep(0.01)
+            cancel.wait(timeout=0.01)
     except BaseException as error:
         record_error("process capture", error)
     finally:
         capture_done.set()
 
     try:
-        if root_wait_handle is None:
+        if root_wait_handle is None or cancel.is_set():
             return
-        if root_wait_handle.wait(INFINITE) != WAIT_OBJECT_0:
-            raise TimeoutError("root process did not signal")
-        if not cleanup_wait_started.wait(timeout=5.0):
+        if not wait_for_process_exit_or_cancel(root_wait_handle, cancel):
+            return
+        if not wait_for_event_or_cancel(
+            cleanup_wait_started,
+            cancel,
+            timeout=5.0,
+        ):
+            if cancel.is_set():
+                return
             raise TimeoutError("log cleanup did not observe the inherited lock")
         release.write_text("release", encoding="utf-8")
     except BaseException as error:
@@ -258,6 +337,7 @@ def release_descendant_after_root_exit(
 def cleanup_inherited_handle_fixture(
     release: Path,
     releaser: threading.Thread,
+    cancel: threading.Event,
     captured_handles: dict[str, WindowsProcessHandle],
     capture_done: threading.Event,
     directory_cleanup_succeeded: threading.Event,
@@ -274,15 +354,7 @@ def cleanup_inherited_handle_fixture(
             "process capture",
             TimeoutError("process-handle capture did not finish"),
         )
-
-    with errors_lock:
-        root_handle = captured_handles.get("root")
-
-    if not directory_cleanup_succeeded.is_set() and root_handle is not None:
-        try:
-            root_handle.stop(grace_ms=0)
-        except BaseException as error:
-            record_cleanup_error("root cleanup", error)
+    cancel.set()
 
     if not directory_cleanup_succeeded.is_set():
         try:
@@ -302,12 +374,15 @@ def cleanup_inherited_handle_fixture(
     with errors_lock:
         handles = dict(captured_handles)
 
-    descendant_handle = handles.get("descendant")
-    if descendant_handle is not None:
-        try:
-            descendant_handle.stop(grace_ms=1_000)
-        except BaseException as error:
-            record_cleanup_error("descendant cleanup", error)
+    if not directory_cleanup_succeeded.is_set():
+        for name, grace_ms in (("root", 0), ("descendant", 1_000)):
+            handle = handles.get(name)
+            if handle is None:
+                continue
+            try:
+                handle.stop(grace_ms=grace_ms)
+            except BaseException as error:
+                record_cleanup_error(f"{name} cleanup", error)
 
     command_logs = release.parent.parent / "output" / "commands"
     if command_logs.exists():
@@ -469,6 +544,60 @@ class RunnerTests(unittest.TestCase):
         self.assertIn("access denied", errors[0].lower())
         self.assertEqual(clock.sleeps, [])
 
+    @unittest.skipUnless(os.name == "nt", "requires Windows last-error state")
+    def test_windows_handle_close_failure_preserves_ownership_and_error(
+        self,
+    ) -> None:
+        close_calls: list[int] = []
+
+        def close_handle(value: int) -> int:
+            close_calls.append(value)
+            if len(close_calls) == 1:
+                ctypes.set_last_error(6)
+                return 0
+            return 1
+
+        handle = WindowsHandle(123, close_handle)
+
+        with self.assertRaises(OSError) as caught:
+            handle.close()
+
+        self.assertEqual(caught.exception.winerror, 6)
+        handle.close()
+        handle.close()
+        self.assertEqual(close_calls, [123, 123])
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows last-error state")
+    def test_log_release_wait_reports_close_failure_once_for_its_path(
+        self,
+    ) -> None:
+        clock = FakeClock()
+        attempts = 0
+
+        def probe(_: Path) -> None:
+            nonlocal attempts
+            attempts += 1
+
+            def fail_close(_: int) -> int:
+                ctypes.set_last_error(6)
+                return 0
+
+            with WindowsHandle(123, fail_close):
+                pass
+
+        errors = wait_for_log_release(
+            [Path("stderr.log")],
+            probe=probe,
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+        )
+
+        self.assertEqual(attempts, 1)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("stderr.log", errors[0])
+        self.assertIn("WinError 6", errors[0])
+        self.assertEqual(clock.sleeps, [])
+
     @unittest.skipUnless(os.name == "nt", "requires Windows file sharing")
     def test_delete_probe_reports_a_live_nonsharing_handle(self) -> None:
         from tools.focused_mutation_support.windows_file import (
@@ -550,6 +679,56 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(record.cleanup_errors, [])
         self.assertEqual(len(streams), 2)
 
+    def test_normal_completion_preserves_exit_code_when_cleanup_callback_raises(
+        self,
+    ) -> None:
+        result: CommandRecord | BaseException
+        try:
+            result = self.runner(
+                extra_env={"FAKE_EXIT": "7"},
+                log_cleanup=raising_log_cleanup,
+            ).run(
+                [sys.executable, str(self.fake)],
+                cwd=self.work,
+                timeout=5.0,
+                label="complete-with-cleanup-error",
+            )
+        except BaseException as error:
+            result = error
+
+        self.assertIsInstance(result, CommandRecord)
+        if not isinstance(result, CommandRecord):
+            return
+        self.assertEqual(result.exit_code, 7)
+        self.assertEqual(
+            result.cleanup_errors,
+            [LOG_CLEANUP_CALLBACK_ERROR],
+        )
+
+    def test_timeout_remains_primary_when_cleanup_callback_raises(self) -> None:
+        result: CommandRecord | BaseException
+        try:
+            result = self.runner(log_cleanup=raising_log_cleanup).run(
+                [sys.executable, str(self.fake), "--sleep"],
+                cwd=self.work,
+                timeout=0.5,
+                label="timeout-with-cleanup-error",
+            )
+        except BaseException as error:
+            result = error
+
+        self.assertIsInstance(result, CommandTimedOut)
+        if not isinstance(result, CommandTimedOut):
+            return
+        self.assertEqual(
+            str(result),
+            "command timed out: timeout-with-cleanup-error",
+        )
+        self.assertEqual(
+            result.record.cleanup_errors,
+            [LOG_CLEANUP_CALLBACK_ERROR],
+        )
+
     def test_timeout_terminates_process_and_keeps_partial_logs(self) -> None:
         cleanup_error = (
             "stderr.log: log was not delete-ready within 2.0 seconds"
@@ -575,6 +754,7 @@ class RunnerTests(unittest.TestCase):
         descendant_ready = self.work / "descendant.ready"
         release = self.work / "release"
         cleanup_wait_started = threading.Event()
+        cancel = threading.Event()
         captured_handles: dict[str, WindowsProcessHandle] = {}
         capture_done = threading.Event()
         directory_cleanup_succeeded = threading.Event()
@@ -587,6 +767,7 @@ class RunnerTests(unittest.TestCase):
                 descendant_ready,
                 release,
                 cleanup_wait_started,
+                cancel,
                 captured_handles,
                 capture_done,
                 thread_errors,
@@ -599,6 +780,7 @@ class RunnerTests(unittest.TestCase):
             cleanup_inherited_handle_fixture,
             release,
             releaser,
+            cancel,
             captured_handles,
             capture_done,
             directory_cleanup_succeeded,
@@ -650,6 +832,233 @@ class RunnerTests(unittest.TestCase):
         self.assertFalse(releaser.is_alive())
         with errors_lock:
             self.assertEqual(thread_errors, [])
+
+    def test_inherited_handle_failure_cleanup_cancels_and_closes_handles(
+        self,
+    ) -> None:
+        root_ready = self.work / "root.ready"
+        root_ready.write_text("101", encoding="utf-8")
+        descendant_ready = self.work / "descendant.ready"
+        descendant_ready.write_text("202", encoding="utf-8")
+        release = self.work / "release"
+        cleanup_wait_started = threading.Event()
+        cancel = threading.Event()
+        captured_handles: dict[str, WindowsProcessHandle] = {}
+        capture_done = threading.Event()
+        directory_cleanup_succeeded = threading.Event()
+        thread_errors: list[str] = []
+        errors_lock = threading.Lock()
+        root_cleanup = NeverSignaledWindowsProcessHandle(cancel)
+        root_wait = NeverSignaledWindowsProcessHandle(cancel)
+        descendant_cleanup = NeverSignaledWindowsProcessHandle(cancel)
+
+        def invoke_releaser() -> None:
+            try:
+                release_descendant_after_root_exit(
+                    root_ready,
+                    descendant_ready,
+                    release,
+                    cleanup_wait_started,
+                    cancel,
+                    captured_handles,
+                    capture_done,
+                    thread_errors,
+                    errors_lock,
+                )
+            except BaseException as error:
+                with errors_lock:
+                    thread_errors.append(
+                        f"releaser call: {type(error).__name__}: {error}"
+                    )
+
+        with mock.patch.object(
+            WindowsProcessHandle,
+            "open",
+            side_effect=[root_cleanup, root_wait, descendant_cleanup],
+        ):
+            releaser = threading.Thread(target=invoke_releaser, daemon=True)
+            releaser.start()
+            self.assertTrue(capture_done.wait(timeout=1.0))
+            self.assertTrue(root_wait.wait_started.wait(timeout=1.0))
+
+            cleanup_inherited_handle_fixture(
+                release,
+                releaser,
+                cancel,
+                captured_handles,
+                capture_done,
+                directory_cleanup_succeeded,
+                thread_errors,
+                errors_lock,
+            )
+
+        self.assertTrue(cancel.is_set())
+        self.assertFalse(releaser.is_alive())
+        self.assertTrue(root_wait.wait_calls)
+        self.assertTrue(
+            all(
+                0 < timeout_ms <= PROCESS_WAIT_SLICE_MS
+                for timeout_ms in root_wait.wait_calls
+            )
+        )
+        self.assertEqual(root_cleanup.stop_calls, [0])
+        self.assertEqual(descendant_cleanup.stop_calls, [1_000])
+        self.assertTrue(root_cleanup.closed)
+        self.assertTrue(root_wait.closed)
+        self.assertTrue(descendant_cleanup.closed)
+
+    def test_early_failure_cleanup_captures_handles_before_cancelling(
+        self,
+    ) -> None:
+        second_marker_read = threading.Event()
+        cleanup_waiting_for_capture = threading.Event()
+        markers_ready = threading.Event()
+        cancel = threading.Event()
+
+        class ObservedCaptureEvent(threading.Event):
+            def wait(self, timeout: float | None = None) -> bool:
+                cleanup_waiting_for_capture.set()
+                return super().wait(timeout)
+
+        capture_done = ObservedCaptureEvent()
+        root_ready = self.work / "root.ready"
+        descendant_ready = self.work / "descendant.ready"
+        release = self.work / "release"
+        cleanup_wait_started = threading.Event()
+        captured_handles: dict[str, WindowsProcessHandle] = {}
+        directory_cleanup_succeeded = threading.Event()
+        thread_errors: list[str] = []
+        errors_lock = threading.Lock()
+        root_cleanup = NeverSignaledWindowsProcessHandle(cancel)
+        root_wait = NeverSignaledWindowsProcessHandle(cancel)
+        descendant_cleanup = NeverSignaledWindowsProcessHandle(cancel)
+        marker_reads = 0
+
+        def read_marker(path: Path) -> int | None:
+            nonlocal marker_reads
+            marker_reads += 1
+            if marker_reads == 1:
+                return None
+            if marker_reads == 2:
+                second_marker_read.set()
+                if not markers_ready.wait(timeout=1.0):
+                    raise TimeoutError("marker release was not signalled")
+            if cancel.is_set():
+                return None
+            return 101 if path == root_ready else 202
+
+        releaser = threading.Thread(
+            target=release_descendant_after_root_exit,
+            args=(
+                root_ready,
+                descendant_ready,
+                release,
+                cleanup_wait_started,
+                cancel,
+                captured_handles,
+                capture_done,
+                thread_errors,
+                errors_lock,
+            ),
+            daemon=True,
+        )
+        cleanup_failures: list[BaseException] = []
+
+        def invoke_cleanup() -> None:
+            try:
+                cleanup_inherited_handle_fixture(
+                    release,
+                    releaser,
+                    cancel,
+                    captured_handles,
+                    capture_done,
+                    directory_cleanup_succeeded,
+                    thread_errors,
+                    errors_lock,
+                )
+            except BaseException as error:
+                cleanup_failures.append(error)
+
+        cleanup_thread = threading.Thread(target=invoke_cleanup, daemon=True)
+        try:
+            with mock.patch.object(
+                sys.modules[__name__],
+                "read_ready_pid",
+                side_effect=read_marker,
+            ), mock.patch.object(
+                WindowsProcessHandle,
+                "open",
+                side_effect=[
+                    descendant_cleanup,
+                    root_cleanup,
+                    root_wait,
+                ],
+            ):
+                releaser.start()
+                self.assertTrue(second_marker_read.wait(timeout=1.0))
+                cleanup_thread.start()
+                self.assertTrue(
+                    cleanup_waiting_for_capture.wait(timeout=1.0)
+                )
+                markers_ready.set()
+                cleanup_thread.join(timeout=2.0)
+        finally:
+            markers_ready.set()
+            cancel.set()
+            releaser.join(timeout=1.0)
+            if cleanup_thread.ident is not None:
+                cleanup_thread.join(timeout=1.0)
+
+        self.assertFalse(cleanup_thread.is_alive())
+        self.assertFalse(releaser.is_alive())
+        self.assertEqual(cleanup_failures, [])
+        self.assertEqual(root_cleanup.stop_calls, [0])
+        self.assertEqual(descendant_cleanup.stop_calls, [1_000])
+        self.assertTrue(root_cleanup.closed)
+        self.assertTrue(root_wait.closed)
+        self.assertTrue(descendant_cleanup.closed)
+
+    def test_interruption_remains_primary_when_cleanup_callback_raises(
+        self,
+    ) -> None:
+        process = InterruptingProcess()
+        popen_factory = mock.Mock(return_value=process)
+
+        def invoke() -> CommandRecord:
+            return self.runner(
+                popen_factory=popen_factory,
+                log_cleanup=raising_log_cleanup,
+            ).run(
+                [str(self.fake)],
+                cwd=self.work,
+                timeout=5.0,
+                label="interruption-with-cleanup-error",
+            )
+
+        result: CommandRecord | BaseException
+        try:
+            if os.name == "nt":
+                result = invoke()
+            else:
+                with mock.patch(
+                    "tools.focused_mutation_support.runner.os.killpg"
+                ) as killpg:
+                    result = invoke()
+                killpg.assert_called_once_with(process.pid, 15)
+        except BaseException as error:
+            result = error
+
+        self.assertIsInstance(result, CommandInterrupted)
+        if not isinstance(result, CommandInterrupted):
+            return
+        self.assertEqual(
+            str(result),
+            "command interrupted: interruption-with-cleanup-error",
+        )
+        self.assertEqual(
+            result.record.cleanup_errors,
+            [LOG_CLEANUP_CALLBACK_ERROR],
+        )
 
     def test_interruption_terminates_process_and_returns_completed_record(self) -> None:
         process = InterruptingProcess()

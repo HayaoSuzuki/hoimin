@@ -139,9 +139,15 @@ class CommandRunner:
                 outcome = CommandInterrupted
             self._complete(record, process, started)
 
-        record.cleanup_errors.extend(
-            self._log_cleanup((paths.stdout, paths.stderr))
-        )
+        try:
+            cleanup_errors = self._log_cleanup((paths.stdout, paths.stderr))
+        except Exception as error:
+            record.cleanup_errors.append(
+                "log cleanup callback failed: "
+                f"{type(error).__name__}: {error}"
+            )
+        else:
+            record.cleanup_errors.extend(cleanup_errors)
         if outcome is CommandTimedOut:
             raise CommandTimedOut(record) from None
         if outcome is CommandInterrupted:
