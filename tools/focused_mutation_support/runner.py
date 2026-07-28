@@ -11,6 +11,46 @@ from .model import CommandRecord
 from .store import RunStore
 
 
+WINDOWS_LOG_RELEASE_TIMEOUT = 2.0
+WINDOWS_LOG_RELEASE_POLL_INTERVAL = 0.01
+
+
+def wait_for_log_release(
+    paths: Sequence[Path],
+    *,
+    probe: Callable[[Path], None],
+    monotonic: Callable[[], float],
+    sleep: Callable[[float], None],
+    timeout: float = WINDOWS_LOG_RELEASE_TIMEOUT,
+    poll_interval: float = WINDOWS_LOG_RELEASE_POLL_INTERVAL,
+) -> list[str]:
+    deadline = monotonic() + timeout
+    pending = list(paths)
+    failures: list[str] = []
+    while pending:
+        retry: list[Path] = []
+        for path in pending:
+            try:
+                probe(path)
+            except OSError as error:
+                if getattr(error, "winerror", None) == 32:
+                    retry.append(path)
+                else:
+                    failures.append(f"{path}: {error}")
+        if not retry:
+            break
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            failures.extend(
+                f"{path}: log was not delete-ready within {timeout} seconds"
+                for path in retry
+            )
+            break
+        sleep(min(poll_interval, remaining))
+        pending = retry
+    return failures
+
+
 class CommandTimedOut(Exception):
     def __init__(self, record: CommandRecord) -> None:
         super().__init__(f"command timed out: {record.label}")

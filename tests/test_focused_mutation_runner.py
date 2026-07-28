@@ -14,6 +14,7 @@ from tools.focused_mutation_support.runner import (
     CommandInterrupted,
     CommandRunner,
     CommandTimedOut,
+    wait_for_log_release,
 )
 from tools.focused_mutation_support.store import RunStore
 
@@ -50,6 +51,19 @@ class InterruptingProcess:
         raise AssertionError("kill should not be needed after successful termination")
 
 
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
 class RunnerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
@@ -80,6 +94,70 @@ class RunnerTests(unittest.TestCase):
 
     def stdout(self, record: CommandRecord) -> str:
         return Path(record.stdout_path).read_text()
+
+    def test_log_release_wait_retries_sharing_violation_until_success(self) -> None:
+        clock = FakeClock()
+        attempts = 0
+
+        def probe(_: Path) -> None:
+            nonlocal attempts
+            attempts += 1
+            if attempts < 3:
+                error = OSError(32, "sharing violation")
+                error.winerror = 32
+                raise error
+
+        errors = wait_for_log_release(
+            [Path("stderr.log")],
+            probe=probe,
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+            timeout=0.2,
+            poll_interval=0.05,
+        )
+
+        self.assertEqual(errors, [])
+        self.assertEqual(attempts, 3)
+        self.assertEqual(clock.sleeps, [0.05, 0.05])
+
+    def test_log_release_wait_reports_each_path_at_deadline(self) -> None:
+        clock = FakeClock()
+
+        def locked(_: Path) -> None:
+            error = OSError(32, "sharing violation")
+            error.winerror = 32
+            raise error
+
+        errors = wait_for_log_release(
+            [Path("stdout.log"), Path("stderr.log")],
+            probe=locked,
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+            timeout=0.1,
+            poll_interval=0.05,
+        )
+
+        self.assertEqual(len(errors), 2)
+        self.assertIn("stdout.log", errors[0])
+        self.assertIn("stderr.log", errors[1])
+        self.assertTrue(all("0.1 seconds" in error for error in errors))
+
+    def test_log_release_wait_reports_nonsharing_error_without_retry(self) -> None:
+        clock = FakeClock()
+
+        def denied(path: Path) -> None:
+            raise OSError(5, "access denied", str(path))
+
+        errors = wait_for_log_release(
+            [Path("stderr.log")],
+            probe=denied,
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+        )
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("access denied", errors[0].lower())
+        self.assertEqual(clock.sleeps, [])
 
     @unittest.skipUnless(os.name == "nt", "requires Windows file sharing")
     def test_delete_probe_reports_a_live_nonsharing_handle(self) -> None:
