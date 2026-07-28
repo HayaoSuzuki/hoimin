@@ -202,9 +202,7 @@ fn top_budget_shortfall_warns_before_requesting_analysis() {
         "remaining=281s",
         "projected_capacity=1050s",
         "not a guaranteed failure",
-        "--jobs",
-        "--total-timeout",
-        "new plan",
+        "create a new plan with increased --jobs and/or --total-timeout",
     ] {
         assert!(
             diagnostic.message.contains(expected),

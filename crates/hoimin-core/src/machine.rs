@@ -1290,8 +1290,8 @@ pub fn transition(
                              planned_total_timeout={}s, baseline={}s, \
                              effective_mutant_timeout={}s, remaining={}s, \
                              projected_capacity={}s. This is not a guaranteed failure; \
-                             consider increasing --jobs, increasing --total-timeout, \
-                             or creating a new plan.",
+                             create a new plan with increased --jobs and/or \
+                             --total-timeout.",
                             projection.selected,
                             projection.jobs,
                             projection.planned_total_timeout.as_secs(),
