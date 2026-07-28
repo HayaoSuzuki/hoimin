@@ -613,7 +613,10 @@ async fn verify_top_resolves_the_saved_rank_prefix_and_retained_scope() {
 
     let verified = prepare_verify_selection(
         &path,
-        &VerifySelection::Top(std::num::NonZeroUsize::new(1).unwrap()),
+        &VerifySelection::Top {
+            count: std::num::NonZeroUsize::new(1).unwrap(),
+            policy: hoimin_cli::cli::TopSelectionPolicy::Strict,
+        },
         OutputFormat::Json,
     )
     .await
@@ -644,7 +647,10 @@ async fn verify_top_above_a_truncated_plan_selects_every_retained_candidate() {
 
     let verified = prepare_verify_selection(
         &path,
-        &VerifySelection::Top(std::num::NonZeroUsize::new(30).unwrap()),
+        &VerifySelection::Top {
+            count: std::num::NonZeroUsize::new(30).unwrap(),
+            policy: hoimin_cli::cli::TopSelectionPolicy::Strict,
+        },
         OutputFormat::Json,
     )
     .await

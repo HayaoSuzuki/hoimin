@@ -229,9 +229,21 @@ struct RawVerifyArgs {
     #[arg(long = "candidate", value_name = "ID")]
     candidate_ids: Vec<String>,
 
-    /// Execute the N highest-ranked candidates retained in the plan.
+    /// Execute the N highest-ranked candidates retained in the plan; strict order is the default.
     #[arg(long, value_name = "N")]
     top: Option<NonZeroUsize>,
+
+    /// Select strict saved-rank order or equal-score file diversity for --top.
+    ///
+    /// Diverse round-robins files only within equal-score tiers.
+    #[arg(
+        long,
+        value_enum,
+        requires = "top",
+        conflicts_with = "candidate_ids",
+        value_name = "POLICY"
+    )]
+    selection_policy: Option<TopSelectionPolicy>,
 
     /// Machine-readable output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
@@ -317,10 +329,19 @@ impl PlanArgs {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
+pub enum TopSelectionPolicy {
+    Strict,
+    Diverse,
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub enum VerifySelection {
     CandidateIds(Vec<String>),
-    Top(NonZeroUsize),
+    Top {
+        count: NonZeroUsize,
+        policy: TopSelectionPolicy,
+    },
 }
 
 #[derive(Debug)]
@@ -426,7 +447,10 @@ impl TryFrom<Command> for ParsedCommand {
                 let mut seen = std::collections::BTreeSet::new();
                 raw.candidate_ids.retain(|id| seen.insert(id.clone()));
                 let selection = match raw.top {
-                    Some(top) => VerifySelection::Top(top),
+                    Some(count) => VerifySelection::Top {
+                        count,
+                        policy: raw.selection_policy.unwrap_or(TopSelectionPolicy::Strict),
+                    },
                     None => VerifySelection::CandidateIds(raw.candidate_ids),
                 };
                 Ok(Self::Verify(VerifyArgs {

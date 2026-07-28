@@ -280,7 +280,7 @@ fn resolve_verify_selection(
             VerificationSelectionMode::CandidateIds,
             requested_ids.iter().collect::<BTreeSet<_>>().len(),
         ),
-        VerifySelection::Top(count) => {
+        VerifySelection::Top { count, policy: _ } => {
             let candidate_ids = manifest
                 .candidates
                 .iter()

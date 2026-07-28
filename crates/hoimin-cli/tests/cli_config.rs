@@ -1,4 +1,8 @@
-use hoimin_cli::cli::{ParsedCommand, ProgressOutputFormat, parse_from};
+use std::num::NonZeroUsize;
+
+use hoimin_cli::cli::{
+    ParsedCommand, ProgressOutputFormat, TopSelectionPolicy, VerifySelection, parse_from,
+};
 use hoimin_core::{MutationOperator, MutationProfile};
 
 #[test]
@@ -132,7 +136,7 @@ fn verify_requires_an_explicit_selection_and_accepts_only_format_override() {
     assert_eq!(args.manifest, std::path::PathBuf::from("plan.json"));
     assert_eq!(
         args.selection,
-        hoimin_cli::cli::VerifySelection::CandidateIds(vec!["m1_a".into(), "m2_b".into()])
+        VerifySelection::CandidateIds(vec!["m1_a".into(), "m2_b".into()])
     );
     assert_eq!(args.format, hoimin_cli::cli::OutputFormat::Jsonl);
     assert!(parse_from(["hoimin", "verify", "plan.json"]).is_err());
@@ -143,7 +147,50 @@ fn verify_requires_an_explicit_selection_and_accepts_only_format_override() {
     };
     assert_eq!(
         args.selection,
-        hoimin_cli::cli::VerifySelection::Top(std::num::NonZeroUsize::new(30).unwrap())
+        VerifySelection::Top {
+            count: NonZeroUsize::new(30).unwrap(),
+            policy: TopSelectionPolicy::Strict,
+        }
+    );
+
+    let ParsedCommand::Verify(args) = parse_from([
+        "hoimin",
+        "verify",
+        "plan.json",
+        "--top",
+        "30",
+        "--selection-policy",
+        "diverse",
+    ])
+    .unwrap() else {
+        panic!("expected verify");
+    };
+    assert_eq!(
+        args.selection,
+        VerifySelection::Top {
+            count: NonZeroUsize::new(30).unwrap(),
+            policy: TopSelectionPolicy::Diverse,
+        }
+    );
+
+    let ParsedCommand::Verify(args) = parse_from([
+        "hoimin",
+        "verify",
+        "plan.json",
+        "--top",
+        "30",
+        "--selection-policy",
+        "strict",
+    ])
+    .unwrap() else {
+        panic!("expected verify");
+    };
+    assert_eq!(
+        args.selection,
+        VerifySelection::Top {
+            count: NonZeroUsize::new(30).unwrap(),
+            policy: TopSelectionPolicy::Strict,
+        }
     );
     assert!(
         parse_from([
@@ -154,6 +201,30 @@ fn verify_requires_an_explicit_selection_and_accepts_only_format_override() {
             "m1_a",
             "--top",
             "30",
+        ])
+        .is_err()
+    );
+    assert!(
+        parse_from([
+            "hoimin",
+            "verify",
+            "plan.json",
+            "--candidate",
+            "m1",
+            "--selection-policy",
+            "strict",
+        ])
+        .is_err()
+    );
+    assert!(
+        parse_from([
+            "hoimin",
+            "verify",
+            "plan.json",
+            "--top",
+            "3",
+            "--selection-policy",
+            "weighted",
         ])
         .is_err()
     );
