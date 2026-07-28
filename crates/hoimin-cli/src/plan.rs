@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::analyzer::{AnalyzerDiagnostic, AnalyzerDiagnosticCode, discover_targets};
-use crate::cli::{OutputFormat, VerifySelection};
+use crate::cli::{OutputFormat, TopSelectionPolicy, VerifySelection};
 use crate::fingerprint_inputs;
 use crate::resource::{self, ResourceError};
 use crate::shell;
@@ -21,6 +21,9 @@ use crate::target::TargetHandler;
 mod ranking;
 #[cfg(test)]
 mod ranking_tests;
+mod selection;
+#[cfg(test)]
+mod selection_tests;
 
 use ranking::{RANKING_RULE_VERSION, rank_candidates, validate_ranking, validate_ranking_against};
 pub use ranking::{RankedPlanCandidate, RankingReason, RankingReasonCode};
@@ -270,7 +273,7 @@ fn resolve_verify_selection(
     PlanError,
 > {
     let max_mutants = manifest.normalized_config.limits.max_mutants.get();
-    let (selection, selection_scope, mode, requested) = match requested_selection {
+    let (selection, selection_scope, mode, policy, requested) = match requested_selection {
         VerifySelection::CandidateIds(requested_ids) => (
             ResolvedVerifySelection::ExplicitCandidates(normalize_requested_ids(
                 requested_ids,
@@ -278,15 +281,16 @@ fn resolve_verify_selection(
             )?),
             VerifySelectionScope::ExplicitCandidates,
             VerificationSelectionMode::CandidateIds,
+            VerificationSelectionPolicy::ExplicitCandidates,
             requested_ids.iter().collect::<BTreeSet<_>>().len(),
         ),
-        VerifySelection::Top { count, policy: _ } => {
-            let candidate_ids = manifest
-                .candidates
-                .iter()
-                .take(count.get())
-                .map(|candidate| candidate.id.clone())
-                .collect::<Vec<_>>();
+        VerifySelection::Top { count, policy } => {
+            let candidate_ids =
+                selection::select_top_candidate_ids(&manifest.candidates, *count, *policy);
+            let report_policy = match policy {
+                TopSelectionPolicy::Strict => VerificationSelectionPolicy::Strict,
+                TopSelectionPolicy::Diverse => VerificationSelectionPolicy::FileRoundRobinV1,
+            };
             if candidate_ids.len() > max_mutants {
                 return Err(PlanError::CandidateInvalid(format!(
                     "selected {} candidates exceeds max_mutants {max_mutants}",
@@ -297,6 +301,7 @@ fn resolve_verify_selection(
                 ResolvedVerifySelection::RankedCandidates(candidate_ids),
                 VerifySelectionScope::RetainedCandidates,
                 VerificationSelectionMode::Top,
+                report_policy,
                 count.get(),
             )
         }
@@ -312,10 +317,6 @@ fn resolve_verify_selection(
         VerifySelectionScope::RetainedCandidates => {
             ReportVerificationSelectionScope::RetainedCandidates
         }
-    };
-    let policy = match mode {
-        VerificationSelectionMode::CandidateIds => VerificationSelectionPolicy::ExplicitCandidates,
-        VerificationSelectionMode::Top => VerificationSelectionPolicy::Strict,
     };
     Ok((
         selection,

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use hoimin_cli::{
     analyzer::discover_targets,
-    cli::{OutputFormat, ParsedCommand, VerifySelection, parse_from},
+    cli::{OutputFormat, ParsedCommand, TopSelectionPolicy, VerifySelection, parse_from},
     plan::{
         PlanManifest, ResolvedVerifySelection, VerifySelectionScope, create, prepare_verify,
         prepare_verify_selection,
@@ -12,7 +12,9 @@ use hoimin_cli::{
     shell,
     target::TargetHandler,
 };
-use hoimin_core::{MAX_JOBS, MutationCandidate, OutputFormat as CoreOutputFormat};
+use hoimin_core::{
+    MAX_JOBS, MutationCandidate, OutputFormat as CoreOutputFormat, VerificationSelectionPolicy,
+};
 
 #[cfg(target_os = "macos")]
 #[tokio::test]
@@ -669,6 +671,126 @@ async fn verify_top_above_a_truncated_plan_selects_every_retained_candidate() {
 }
 
 #[tokio::test]
+async fn verify_top_diverse_round_robins_equal_score_candidates_without_mutating_the_manifest() {
+    let project = Project::new_with_sources(&[
+        (
+            "a.py",
+            "def a1(left, right):\n    return left == right\n\ndef a2(left, right):\n    return left == right\n",
+        ),
+        (
+            "b.py",
+            "def b1(left, right):\n    return left == right\n\ndef b2(left, right):\n    return left == right\n",
+        ),
+        ("c.py", "def c1(left, right):\n    return left == right\n"),
+    ]);
+    let (path, manifest, marker) =
+        write_plan_manifest(&project, &["--operators", "compare_eq_ne"]).await;
+    assert_eq!(manifest.candidates.len(), 5);
+    assert!(
+        manifest
+            .candidates
+            .windows(2)
+            .all(|pair| pair[0].score == pair[1].score)
+    );
+    let ids = manifest
+        .candidates
+        .iter()
+        .map(|candidate| candidate.id.clone())
+        .collect::<Vec<_>>();
+    let paths = manifest
+        .candidates
+        .iter()
+        .map(|candidate| candidate.path.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        paths,
+        ["src/a.py", "src/a.py", "src/b.py", "src/b.py", "src/c.py"]
+    );
+    let expected = vec![
+        ids[0].clone(),
+        ids[2].clone(),
+        ids[4].clone(),
+        ids[1].clone(),
+        ids[3].clone(),
+    ];
+    let before = std::fs::read(&path).unwrap();
+
+    let verified = prepare_verify_selection(
+        &path,
+        &VerifySelection::Top {
+            count: std::num::NonZeroUsize::new(5).unwrap(),
+            policy: TopSelectionPolicy::Diverse,
+        },
+        OutputFormat::Json,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        verified.selection,
+        ResolvedVerifySelection::RankedCandidates(expected)
+    );
+    assert_eq!(
+        verified.verification_selection.policy,
+        VerificationSelectionPolicy::FileRoundRobinV1
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_top_diverse_does_not_cross_score_tiers() {
+    let project = Project::new_with_sources(&[
+        (
+            "a.py",
+            "def a1(left, right):\n    return left == right\n\ndef a2(left, right):\n    return left == right\n",
+        ),
+        ("b.py", "def b1(left, right):\n    return left + right\n"),
+    ]);
+    let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
+    let a2 = manifest
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.path == Path::new("src/a.py"))
+        .nth(1)
+        .unwrap();
+    let b1 = manifest
+        .candidates
+        .iter()
+        .find(|candidate| candidate.path == Path::new("src/b.py"))
+        .unwrap();
+    assert!(a2.score > b1.score);
+    let expected = vec![
+        manifest.candidates[0].id.clone(),
+        a2.id.clone(),
+        b1.id.clone(),
+    ];
+    let before = std::fs::read(&path).unwrap();
+
+    let verified = prepare_verify_selection(
+        &path,
+        &VerifySelection::Top {
+            count: std::num::NonZeroUsize::new(3).unwrap(),
+            policy: TopSelectionPolicy::Diverse,
+        },
+        OutputFormat::Json,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        verified.selection,
+        ResolvedVerifySelection::RankedCandidates(expected)
+    );
+    assert_eq!(
+        verified.verification_selection.policy,
+        VerificationSelectionPolicy::FileRoundRobinV1
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
 async fn verify_runs_only_requested_candidates() {
     let project = Project::new();
     let coordinator = tempfile::tempdir().unwrap();
@@ -1072,10 +1194,16 @@ impl Project {
     }
 
     fn new_with_source(source: &str) -> Self {
+        Self::new_with_sources(&[("calc.py", source)])
+    }
+
+    fn new_with_sources(sources: &[(&str, &str)]) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().to_owned();
         std::fs::create_dir(path.join("src")).unwrap();
-        std::fs::write(path.join("src/calc.py"), source).unwrap();
+        for (name, source) in sources {
+            std::fs::write(path.join("src").join(name), source).unwrap();
+        }
         std::fs::write(path.join("config.toml"), "[tool.hoimin]\n").unwrap();
         std::fs::write(path.join("pyproject.toml"), "value = 1\n").unwrap();
         Self {
