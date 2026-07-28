@@ -38,8 +38,10 @@ must be regenerated with the current `hoimin plan`.
 `--candidate` is repeatable, so one `verify` invocation can execute multiple planned candidates.
 `verify` inherits the test command, execution limits, timeout settings, and resource policy from
 `PLAN.json`; only verify-specific output choices such as `--format` are selected at verify
-time. It cannot override plan-time settings. To change `--total-timeout`,
-`--allow-best-effort-memory`, or another execution or resource setting, create a new plan.
+time. It cannot override plan-time settings. In particular, `verify --top` retains all limits
+from the manifest. A timeout-capacity warning is an estimate, not a guaranteed failure, and does
+not adjust those limits automatically. To change `--jobs` or `--total-timeout`, create a new plan;
+the same applies to `--allow-best-effort-memory` or another execution or resource setting.
 
 The default total timeout is five minutes. Give a large candidate selection enough headroom
 when creating the plan, or split it into stable batches across multiple `verify` invocations.
