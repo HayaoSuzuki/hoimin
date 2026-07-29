@@ -206,6 +206,59 @@ fn a_mutant_finish_must_follow_its_matching_start() {
         .unwrap();
 }
 
+#[cfg(not(feature = "contracts"))]
+#[test]
+fn run_finished_rejects_every_later_event() {
+    let mut sequence = ReportSequence::new();
+    sequence
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .unwrap();
+    sequence.observe(&run_finished_event(2)).unwrap();
+
+    assert_eq!(
+        sequence.observe(&OutputEvent::Diagnostic(hoimin_core::Diagnostic::new(
+            "run-1",
+            3,
+            "warning",
+            "late",
+            "late diagnostic",
+        ))),
+        Err(hoimin_core::ReportSequenceError::RunAlreadyFinished {
+            run_id: "run-1".to_owned(),
+        })
+    );
+    assert_eq!(
+        sequence.observe(&run_finished_event(4)),
+        Err(hoimin_core::ReportSequenceError::RunAlreadyFinished {
+            run_id: "run-1".to_owned(),
+        })
+    );
+}
+
+#[cfg(not(feature = "contracts"))]
+#[test]
+fn run_finished_rejects_active_mutants() {
+    let mut sequence = ReportSequence::new();
+    sequence
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .unwrap();
+    sequence
+        .observe(&OutputEvent::MutantStarted(MutantStarted::new(
+            "run-1", 2, "m1", 7,
+        )))
+        .unwrap();
+
+    assert_eq!(
+        sequence.observe(&run_finished_event(3)),
+        Err(hoimin_core::ReportSequenceError::RunFinishedWithActiveMutants { count: 1 },)
+    );
+
+    sequence
+        .observe(&finished_event(4, candidate("m1", 7)))
+        .unwrap();
+    sequence.observe(&run_finished_event(5)).unwrap();
+}
+
 #[test]
 fn all_event_variants_have_the_exact_public_kind() {
     let events = [
@@ -321,4 +374,29 @@ fn finished_event(sequence: u64, candidate: MutationCandidate) -> OutputEvent {
         resource_mode: ResourceMode::Hard,
         output: None,
     })
+}
+
+#[cfg(not(feature = "contracts"))]
+fn run_finished_event(sequence: u64) -> OutputEvent {
+    serde_json::from_value(serde_json::json!({
+        "kind": "run_finished",
+        "schema_version": 2,
+        "sequence": sequence,
+        "run_id": "run-1",
+        "counts": {
+            "killed": 0,
+            "survived": 0,
+            "timeout": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "error": 0,
+            "not_run": 0,
+            "inconclusive": 0,
+            "score": null
+        },
+        "complete": true,
+        "exit_code": 0,
+        "verification_selection": null
+    }))
+    .unwrap()
 }

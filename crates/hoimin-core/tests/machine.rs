@@ -444,6 +444,65 @@ fn deadline_and_cancellation_stop_scheduling_new_mutants() {
 }
 
 #[test]
+fn stop_signals_do_not_reopen_a_pending_final_report() {
+    for stop in [RunEvent::DeadlineReached, RunEvent::CancellationRequested] {
+        let (state, effects) = waiting_for_final_report();
+        let finished_id = effect_id(find_effect(&effects, |effect| {
+            matches!(
+                effect,
+                RunEffect::EmitOutput(value)
+                    if matches!(&value.event, OutputEvent::RunFinished(_))
+            )
+        }));
+        let original_exit = state.exit_code();
+
+        let (state, effects) = transition(state, stop).unwrap();
+
+        assert!(effects.is_empty());
+        assert_eq!(state.phase(), RunPhase::Finalize);
+        assert_eq!(state.exit_code(), original_exit);
+        assert!(!state.is_effect_retired(finished_id));
+
+        let (state, effects) = transition(
+            state,
+            RunEvent::OutputEmitted(OutputEmitted { id: finished_id }),
+        )
+        .unwrap();
+        assert!(effects.is_empty());
+        assert_eq!(state.phase(), RunPhase::Finished);
+        assert_eq!(state.exit_code(), original_exit);
+    }
+}
+
+#[test]
+fn stop_signals_do_not_reopen_a_finished_run() {
+    for stop in [RunEvent::DeadlineReached, RunEvent::CancellationRequested] {
+        let (state, effects) = waiting_for_final_report();
+        let finished_id = effect_id(find_effect(&effects, |effect| {
+            matches!(
+                effect,
+                RunEffect::EmitOutput(value)
+                    if matches!(&value.event, OutputEvent::RunFinished(_))
+            )
+        }));
+        let (state, effects) = transition(
+            state,
+            RunEvent::OutputEmitted(OutputEmitted { id: finished_id }),
+        )
+        .unwrap();
+        assert!(effects.is_empty());
+        assert_eq!(state.phase(), RunPhase::Finished);
+        let original_exit = state.exit_code();
+
+        let (state, effects) = transition(state, stop).unwrap();
+
+        assert!(effects.is_empty());
+        assert_eq!(state.phase(), RunPhase::Finished);
+        assert_eq!(state.exit_code(), original_exit);
+    }
+}
+
+#[test]
 fn deadline_before_preflight_still_emits_a_complete_report_before_cleanup() {
     let (state, _) = start_state();
     let (state, effects) = transition(state, RunEvent::DeadlineReached).unwrap();
@@ -2594,6 +2653,51 @@ fn waiting_for_candidate() -> (RunState, Vec<RunEffect>) {
                 records: 1,
             }),
             truncated: false,
+        }),
+    )
+    .unwrap()
+}
+
+fn waiting_for_final_report() -> (RunState, Vec<RunEffect>) {
+    let (state, effects) = waiting_for_analysis();
+    let analysis_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::AnalyzeFile(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::AnalysisFinished(AnalysisFinished {
+            id: analysis_id,
+            spool: Some(CandidateSpoolRef {
+                token: "empty".to_owned(),
+                records: 0,
+            }),
+            truncated: false,
+        }),
+    )
+    .unwrap();
+    let RunEffect::VerifyOriginals(verify) = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::VerifyOriginals(_))
+    }) else {
+        unreachable!()
+    };
+    let (state, effects) = transition(
+        state,
+        RunEvent::OriginalsVerified(OriginalsVerified {
+            id: verify.id,
+            checkpoint: verify.checkpoint,
+        }),
+    )
+    .unwrap();
+    let RunEffect::Cleanup(cleanup) =
+        find_effect(&effects, |effect| matches!(effect, RunEffect::Cleanup(_)))
+    else {
+        unreachable!()
+    };
+    transition(
+        state,
+        RunEvent::CleanupFinished(CleanupFinished {
+            id: cleanup.id,
+            released_reservations: cleanup.reservations.clone(),
         }),
     )
     .unwrap()
