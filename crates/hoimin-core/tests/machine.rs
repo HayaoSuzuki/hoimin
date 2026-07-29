@@ -6,8 +6,8 @@ use hoimin_core::{
     EffectFailed, EffectId, MutationApplied, MutationCandidate, MutationProfile, MutationStatus,
     MutationSummary, OriginalsVerified, OutputConfig, OutputEmitted, OutputEvent,
     PreflightCompleted, ProcessFinished, ProcessTermination, RawRunConfig, RawRunLimits,
-    RemainingBudgetObserved, ResourceMode, ResultPersisted, RunConfig, RunEffect, RunEvent,
-    RunFingerprint, RunPhase, RunState, SessionFinished, SessionLoaded, SessionResumeRef,
+    RemainingBudgetObserved, ReservationId, ResourceMode, ResultPersisted, RunConfig, RunEffect,
+    RunEvent, RunFingerprint, RunPhase, RunState, SessionFinished, SessionLoaded, SessionResumeRef,
     SessionStarted, StartRequested, StoredResult, StoredResultLoaded, TargetSlice, TargetsResolved,
     VerificationSelection, VerificationSelectionMode, VerificationSelectionPolicy,
     VerificationSelectionScope, WorkerCreated, WorkerReset, transition,
@@ -1207,6 +1207,55 @@ fn cleanup_failure_terminates_without_reemitting_cleanup() {
             .iter()
             .any(|effect| matches!(effect, RunEffect::Cleanup(_)))
     );
+}
+
+#[test]
+fn cleanup_rejects_mismatched_reservations_without_consuming_the_pending_effect() {
+    let (state, cleanup) = waiting_for_cleanup();
+    let expected = cleanup.reservations.clone();
+    let reservation = expected[0];
+    let mismatches = [
+        Vec::new(),
+        vec![reservation, reservation],
+        vec![reservation, ReservationId(reservation.0 + 100)],
+    ];
+
+    for received in mismatches {
+        let error = transition(
+            state.clone(),
+            RunEvent::CleanupFinished(CleanupFinished {
+                id: cleanup.id,
+                released_reservations: received.clone(),
+            }),
+        )
+        .unwrap_err();
+        assert_eq!(error.code(), "machine.cleanup.reservation_mismatch");
+        assert!(matches!(
+            error,
+            hoimin_core::MachineError::CleanupReservationMismatch {
+                id,
+                expected: ref actual_expected,
+                received: ref actual_received,
+            } if id == cleanup.id
+                && actual_expected == &expected
+                && actual_received == &received
+        ));
+
+        let (retried, effects) = transition(
+            state.clone(),
+            RunEvent::CleanupFinished(CleanupFinished {
+                id: cleanup.id,
+                released_reservations: expected.clone(),
+            }),
+        )
+        .unwrap();
+        assert_ne!(retried.phase(), RunPhase::Cleaning);
+        assert!(
+            !effects
+                .iter()
+                .any(|effect| matches!(effect, RunEffect::Cleanup(_)))
+        );
+    }
 }
 
 #[test]
@@ -2420,6 +2469,37 @@ fn start_state() -> (RunState, Vec<RunEffect>) {
         RunEvent::StartRequested(StartRequested),
     )
     .unwrap()
+}
+
+fn waiting_for_cleanup() -> (RunState, hoimin_core::Cleanup) {
+    let (state, effects) = waiting_for_analysis();
+    let analysis_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::AnalyzeFile(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::EffectFailed(EffectFailed::other(
+            analysis_id,
+            "analyzer.failed",
+            "fixture",
+        )),
+    )
+    .unwrap();
+    let diagnostic_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::EmitOutput(value)
+            if matches!(&value.event, hoimin_core::OutputEvent::Diagnostic(_)))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: diagnostic_id }),
+    )
+    .unwrap();
+    let RunEffect::Cleanup(cleanup) =
+        find_effect(&effects, |effect| matches!(effect, RunEffect::Cleanup(_)))
+    else {
+        unreachable!()
+    };
+    (state, cleanup.clone())
 }
 
 fn waiting_for_baseline() -> (RunState, Vec<RunEffect>) {

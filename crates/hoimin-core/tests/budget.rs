@@ -138,6 +138,26 @@ fn cleanup_completion_releases_the_core_copy_reservation_once() {
 }
 
 #[test]
+fn cleanup_release_is_atomic_when_any_reservation_is_unknown() {
+    let mut ledger = BudgetLedger::new(budgets(30));
+    let first = ledger.reserve(BudgetKind::Copy, 10).unwrap();
+    let second = ledger.reserve(BudgetKind::Copy, 20).unwrap();
+    let unknown = hoimin_core::ReservationId(100);
+    let cleanup = CleanupFinished {
+        id: EffectId(32),
+        released_reservations: vec![first, unknown],
+    };
+
+    assert_eq!(
+        release_workspace_copy(&mut ledger, &cleanup),
+        Err(BudgetError::UnknownReservation(unknown))
+    );
+    assert_eq!(ledger.reserved(BudgetKind::Copy), 30);
+    assert!(ledger.reservation(first).is_some());
+    assert!(ledger.reservation(second).is_some());
+}
+
+#[test]
 fn preflight_aggregate_overflow_is_typed_and_does_not_reserve() {
     let mut ledger = BudgetLedger::new(budgets(u64::MAX));
     let preflight = PreflightCompleted {

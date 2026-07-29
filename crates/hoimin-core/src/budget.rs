@@ -439,6 +439,15 @@ pub fn release_workspace_copy(
     ledger: &mut BudgetLedger,
     cleanup: &CleanupFinished,
 ) -> Result<(), BudgetError> {
+    let mut unique = BTreeSet::new();
+    for reservation in &cleanup.released_reservations {
+        if !unique.insert(*reservation) || ledger.released.contains(reservation) {
+            return Err(BudgetError::AlreadyReleased(*reservation));
+        }
+        if !ledger.reservations.contains_key(reservation) {
+            return Err(BudgetError::UnknownReservation(*reservation));
+        }
+    }
     for reservation in &cleanup.released_reservations {
         ledger.release(*reservation)?;
     }
