@@ -379,6 +379,7 @@ class FocusedMutationReportingTests(unittest.TestCase):
         self.assertIn("- Unverified candidates: `5`", markdown)
         for symbol in ("killed", "survived"):
             self.assertIn(f"`{symbol}`", verified)
+            self.assertNotIn(f"`{symbol}`", unverified)
         for symbol in ("pending", "timeout", "unviable", "not_run", "error"):
             self.assertNotIn(f"`{symbol}`", verified)
             self.assertIn(f"`{symbol}`", unverified)
