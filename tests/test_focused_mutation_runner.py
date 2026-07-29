@@ -4,6 +4,7 @@ from ctypes import wintypes
 from datetime import datetime, timezone
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import tempfile
@@ -834,10 +835,17 @@ class RunnerTests(unittest.TestCase):
             with (
                 mock.patch(
                     "tools.focused_mutation_support.runner.os.killpg"
-                ),
+                ) as killpg,
                 self.assertRaises(CommandTimedOut) as caught,
             ):
                 invoke()
+            self.assertEqual(
+                killpg.call_args_list,
+                [
+                    mock.call(process.pid, signal.SIGTERM),
+                    mock.call(process.pid, signal.SIGKILL),
+                ],
+            )
 
         record = caught.exception.record
         self.assertIsNone(record.exit_code)
@@ -1272,10 +1280,17 @@ class RunnerTests(unittest.TestCase):
             with (
                 mock.patch(
                     "tools.focused_mutation_support.runner.os.killpg"
-                ),
+                ) as killpg,
                 self.assertRaises(CommandInterrupted) as caught,
             ):
                 invoke()
+            self.assertEqual(
+                killpg.call_args_list,
+                [
+                    mock.call(process.pid, signal.SIGTERM),
+                    mock.call(process.pid, signal.SIGKILL),
+                ],
+            )
 
         record = caught.exception.record
         self.assertIsNone(record.exit_code)
