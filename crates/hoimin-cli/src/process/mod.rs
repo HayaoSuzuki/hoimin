@@ -398,19 +398,7 @@ impl ProcessHandler {
         .await
         {
             ProcessSelection::Exited(status) => match status {
-                Ok(status) => supervisor
-                    .classify(exit_termination(status))
-                    .map_err(|error| {
-                        resource_failure(
-                            id,
-                            "process.resource.classify",
-                            "classify process termination",
-                            &error,
-                        )
-                    })
-                    .and_then(|termination| {
-                        terminate_supervised(id, &mut supervisor, false).map(|()| termination)
-                    }),
+                Ok(status) => classify_and_terminate(id, &mut supervisor, exit_termination(status)),
                 Err(error) => Err(io_failure(
                     id,
                     "process.wait",
@@ -608,6 +596,39 @@ fn append_cleanup_failure(primary: &mut EffectFailed, label: &str, cleanup: &Eff
             message.push_str(detail);
         }
         _ => unreachable!("process cleanup produces only I/O or other failures"),
+    }
+}
+
+fn classify_and_terminate(
+    id: EffectId,
+    supervisor: &mut ProcessSupervisor,
+    termination: ProcessTermination,
+) -> Result<ProcessTermination, EffectFailed> {
+    let classification = supervisor.classify(termination).map_err(|error| {
+        resource_failure(
+            id,
+            "process.resource.classify",
+            "classify process termination",
+            &error,
+        )
+    });
+    let termination = match terminate_supervised(id, supervisor, false) {
+        Ok(()) => Ok(()),
+        Err(mut primary) => {
+            if let Err(retry) = terminate_supervised(id, supervisor, false) {
+                append_cleanup_failure(&mut primary, "supervisor termination retry failed", &retry);
+            }
+            Err(primary)
+        }
+    };
+
+    match (classification, termination) {
+        (Ok(classified), Ok(())) => Ok(classified),
+        (Err(error), Ok(())) | (Ok(_), Err(error)) => Err(error),
+        (Err(mut primary), Err(cleanup)) => {
+            append_cleanup_failure(&mut primary, "supervised termination also failed", &cleanup);
+            Err(primary)
+        }
     }
 }
 

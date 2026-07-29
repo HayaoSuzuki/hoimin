@@ -90,6 +90,24 @@ fn portable_handler_with_termination_failure(output_dir: &Utf8Path) -> ProcessHa
     )
 }
 
+fn portable_handler_with_classification_failure(output_dir: &Utf8Path) -> ProcessHandler {
+    ProcessHandler::new(
+        ResourceBackend::Portable(PortableBackend::for_tests_with_classification_failure()),
+        output_dir.to_owned(),
+    )
+}
+
+fn portable_handler_with_classification_and_termination_failure(
+    output_dir: &Utf8Path,
+) -> ProcessHandler {
+    ProcessHandler::new(
+        ResourceBackend::Portable(
+            PortableBackend::for_tests_with_classification_and_termination_failure(),
+        ),
+        output_dir.to_owned(),
+    )
+}
+
 #[cfg(any(target_os = "linux", windows))]
 fn hard_run_limits(max_memory: u64, max_processes: usize) -> RunLimits {
     let raw = RawRunLimits {
@@ -818,6 +836,93 @@ mod portable {
             cleanup_elapsed < Duration::from_millis(900),
             "timeout cleanup took {cleanup_elapsed:?} ({total_elapsed:?} total)"
         );
+    }
+
+    #[tokio::test]
+    async fn classification_failure_terminates_descendants_before_output_grace() {
+        let output = tempfile::tempdir().unwrap();
+        let output_dir = Utf8Path::from_path(output.path()).unwrap();
+        let pid_file = output_dir.join("classification-failure-child.pid");
+        let guard = FixtureChildGuard::new(pid_file.clone());
+        let handler = portable_handler_with_classification_failure(output_dir);
+        let request = RunProcess {
+            id: EffectId(13),
+            worker: None,
+            run_id: None,
+            mutant_id: None,
+            argv: vec![
+                python_executable(),
+                utf8_arg("-c"),
+                utf8_arg(
+                    "import pathlib,subprocess,sys; child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']); pathlib.Path(sys.argv[1]).write_text(str(child.pid))",
+                ),
+                native_arg(pid_file.as_std_path().as_os_str()),
+            ],
+            cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
+            limits: limits(Duration::from_secs(5), 64),
+        };
+        let (failure, cleanup_started) = tokio::join!(handler.handle(request), async {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+            while !pid_file.exists() && tokio::time::Instant::now() < deadline {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            Instant::now()
+        });
+        let failure = failure.expect_err("injected classification failure remains observable");
+        let cleanup_elapsed = cleanup_started.elapsed();
+        let child_pid = guard.pid().expect("fixture child wrote its pid");
+
+        assert!(matches!(
+            failure.failure,
+            EffectFailure::Io { ref code, ref message, .. }
+                if code == "process.resource.classify"
+                    && message.contains("injected portable classification failure")
+        ));
+        assert!(wait_until_process_stops(child_pid).await);
+        assert!(
+            cleanup_elapsed < Duration::from_millis(900),
+            "classification cleanup took {cleanup_elapsed:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn classification_failure_preserves_termination_failure_detail() {
+        let output = tempfile::tempdir().unwrap();
+        let output_dir = Utf8Path::from_path(output.path()).unwrap();
+        let pid_file = output_dir.join("classification-and-termination-failure-child.pid");
+        let guard = FixtureChildGuard::new(pid_file.clone());
+        let handler = portable_handler_with_classification_and_termination_failure(output_dir);
+        let request = RunProcess {
+            id: EffectId(14),
+            worker: None,
+            run_id: None,
+            mutant_id: None,
+            argv: vec![
+                python_executable(),
+                utf8_arg("-c"),
+                utf8_arg(
+                    "import pathlib,subprocess,sys; child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']); pathlib.Path(sys.argv[1]).write_text(str(child.pid))",
+                ),
+                native_arg(pid_file.as_std_path().as_os_str()),
+            ],
+            cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
+            limits: limits(Duration::from_secs(5), 64),
+        };
+
+        let failure = handler
+            .handle(request)
+            .await
+            .expect_err("classification remains primary");
+        let child_pid = guard.pid().expect("fixture child wrote its pid");
+
+        assert!(matches!(
+            failure.failure,
+            EffectFailure::Io { ref code, ref message, .. }
+                if code == "process.resource.classify"
+                    && message.contains("supervised termination also failed")
+                    && message.contains("injected portable termination failure")
+        ));
+        assert!(wait_until_process_stops(child_pid).await);
     }
 
     #[test]

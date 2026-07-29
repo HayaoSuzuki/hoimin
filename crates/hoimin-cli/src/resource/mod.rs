@@ -205,7 +205,7 @@ impl ProcessSupervisor {
         termination: hoimin_core::ProcessTermination,
     ) -> Result<hoimin_core::ProcessTermination, ResourceError> {
         match self {
-            Self::Portable(_) => Ok(termination),
+            Self::Portable(supervisor) => supervisor.classify(termination),
             #[cfg(target_os = "linux")]
             Self::Linux(supervisor) => supervisor.classify(termination),
             #[cfg(windows)]
