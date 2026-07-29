@@ -26,13 +26,13 @@
 - Consumes: `fingerprint_inputs::resolve`
 - Produces: a Unix regression test for an exact file beneath a linked parent
 
-- [ ] **Step 1: Add the failing linked-parent test**
+- [x] **Step 1: Add the failing linked-parent test**
 
 Create separate root and outside temporary directories, symlink
 `root/linked` to the outside directory, and request `linked/secret.txt`.
 Assert the exact unsupported-file error prefix.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `cargo test -p hoimin-cli --test fingerprint_inputs exact_file_rejects_symlinked_parent`
 
@@ -50,17 +50,17 @@ symlink and return a hash.
 - Produces: `workspace::read_root_relative(root, path) -> Result<Vec<u8>, WorkspaceError>`
 - Consumes: normalized selected fingerprint paths
 
-- [ ] **Step 1: Expose a narrow shared reader**
+- [x] **Step 1: Expose a narrow shared reader**
 
 Open a `WorkerRoot` for the supplied root and call its existing `read` method.
 Do not expose the handle type publicly.
 
-- [ ] **Step 2: Use the reader for fingerprint hashing**
+- [x] **Step 2: Use the reader for fingerprint hashing**
 
 Replace `std::fs::read(root.join(path))` with the shared reader and preserve
 the existing exact/glob error mapping.
 
-- [ ] **Step 3: Verify GREEN and existing behavior**
+- [x] **Step 3: Verify GREEN and existing behavior**
 
 Run:
 
@@ -71,7 +71,7 @@ cargo test -p hoimin-cli workspace::root
 
 Expected: all tests pass.
 
-- [ ] **Step 4: Run full verification**
+- [x] **Step 4: Run full verification**
 
 Run:
 

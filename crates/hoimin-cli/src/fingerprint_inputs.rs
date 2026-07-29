@@ -6,6 +6,8 @@ use hoimin_core::FingerprintInputFile;
 use ignore::WalkBuilder;
 use ignore::overrides::{Override, OverrideBuilder};
 
+use crate::workspace;
+
 #[derive(Debug, thiserror::Error)]
 pub enum FingerprintInputError {
     #[error("fingerprint.include.invalid_glob: {0}")]
@@ -51,7 +53,7 @@ pub fn resolve(
     selected
         .into_iter()
         .map(|(path, exact)| {
-            let bytes = std::fs::read(root.join(&path)).map_err(|error| {
+            let bytes = workspace::read_root_relative(root, &path).map_err(|error| {
                 if exact {
                     FingerprintInputError::ExactUnsupportedFile(format!("{path}: {error}"))
                 } else {

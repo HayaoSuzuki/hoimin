@@ -22,6 +22,13 @@ pub use copy::WorkspacePlan;
 pub use manifest::{ManifestEntry, WorkspaceManifest};
 use root::WorkerRoot;
 
+pub(crate) fn read_root_relative(
+    root: &Utf8Path,
+    path: &Utf8Path,
+) -> Result<Vec<u8>, WorkspaceError> {
+    WorkerRoot::open(root.to_owned())?.read(path)
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CopyOptions {
     pub includes: Vec<String>,
