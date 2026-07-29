@@ -92,6 +92,34 @@ fn input_accepts_a_canonical_null_score_summary() {
 }
 
 #[test]
+fn input_rejects_a_non_null_score_without_decidable_mutants() {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut document = valid_report();
+    document["mutants"][0]["status"] = json!("timeout");
+    document["mutants"][0]["termination"] = json!("Timeout");
+    document["summary"]["counts"] = json!({
+        "killed": 0,
+        "survived": 0,
+        "timeout": 1,
+        "out_of_memory": 0,
+        "process_limit": 0,
+        "error": 0,
+        "not_run": 0,
+        "inconclusive": 1,
+        "score": 0.0
+    });
+    let report = write_json(&fixture, "non-null-score.json", &document);
+
+    assert!(matches!(
+        read_report(&report),
+        Err(ProgressError::InvalidStructure {
+            message: "summary counts must match mutant events",
+            ..
+        })
+    ));
+}
+
+#[test]
 fn input_marks_missing_baseline_reports_unusable() {
     let fixture = tempfile::tempdir().unwrap();
     let mut document = valid_report();

@@ -27,4 +27,3 @@ Table-driven input tests will cover changed status/counts, missing and extra mut
 incorrect `inconclusive`, incorrect numeric score, incorrect non-null score for no decidable
 mutants, and valid controls including reordered status mixtures and the canonical null-score case.
 The CLI test will assert exit code 2 and an `invalid structure` diagnostic.
-
