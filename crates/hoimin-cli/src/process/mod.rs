@@ -399,9 +399,12 @@ impl ProcessHandler {
         {
             ProcessSelection::Exited(status) => match status {
                 Ok(status) => classify_and_terminate(id, &mut supervisor, exit_termination(status)),
-                Err(error) => {
-                    Err(wait_failure_after_cleanup(id, &mut supervisor, &mut child, &error).await)
-                }
+                Err(error) => Err(wait_failure_after_cleanup(
+                    id,
+                    &error,
+                    terminate_and_reap(id, &mut supervisor, &mut child),
+                )
+                .await),
             },
             ProcessSelection::Cancelled => terminate_and_reap(id, &mut supervisor, &mut child)
                 .await
@@ -609,17 +612,19 @@ where
     primary
 }
 
-async fn wait_failure_after_cleanup(
+async fn wait_failure_after_cleanup<F>(
     id: EffectId,
-    supervisor: &mut ProcessSupervisor,
-    child: &mut Child,
     error: &std::io::Error,
-) -> EffectFailed {
+    cleanup: F,
+) -> EffectFailed
+where
+    F: Future<Output = Result<(), EffectFailed>>,
+{
     let primary = io_failure(id, "process.wait", "wait for process", None, error);
     preserve_primary_after_cleanup(
         primary,
         "supervised cleanup after wait error failed",
-        terminate_and_reap(id, supervisor, child),
+        cleanup,
     )
     .await
 }
@@ -828,8 +833,8 @@ mod tests {
 
     use super::{
         POST_TERMINATION_GRACE, ProcessCancellation, ProcessSelection, ProcessStartGate,
-        append_cleanup_failure, attach_failure, combine_process_and_output, io_failure,
-        preserve_primary_after_cleanup, select_process_result, wait_after_termination,
+        append_cleanup_failure, attach_failure, combine_process_and_output, select_process_result,
+        wait_after_termination, wait_failure_after_cleanup,
     };
     use crate::resource::ResourceError;
 
@@ -986,43 +991,38 @@ mod tests {
     async fn wait_error_cleanup_runs_and_preserves_the_primary_failure() {
         let cleanup_ran = AtomicBool::new(false);
         let wait_error = std::io::Error::other("wait failed");
-        let primary = io_failure(
-            EffectId(46),
-            "process.wait",
-            "wait for process",
-            None,
-            &wait_error,
-        );
 
-        let error =
-            preserve_primary_after_cleanup(primary.clone(), "wait-error cleanup failed", async {
-                cleanup_ran.store(true, Ordering::SeqCst);
-                Ok(())
-            })
-            .await;
+        let error = wait_failure_after_cleanup(EffectId(46), &wait_error, async {
+            cleanup_ran.store(true, Ordering::SeqCst);
+            Ok(())
+        })
+        .await;
 
         assert!(cleanup_ran.load(Ordering::SeqCst));
-        assert_eq!(error, primary);
+        assert!(matches!(
+            error.failure,
+            EffectFailure::Io {
+                ref code,
+                ref operation,
+                ref message,
+                ..
+            } if code == "process.wait"
+                && operation == "wait for process"
+                && message == "wait failed"
+        ));
     }
 
     #[tokio::test]
     async fn wait_error_cleanup_appends_cleanup_failure_to_the_primary_error() {
         let cleanup_ran = AtomicBool::new(false);
         let wait_error = std::io::Error::other("wait failed");
-        let primary = io_failure(
-            EffectId(47),
-            "process.wait",
-            "wait for process",
-            None,
-            &wait_error,
-        );
         let cleanup = EffectFailed::other(
             EffectId(47),
             "process.resource.terminate",
             "tree cleanup failed",
         );
 
-        let error = preserve_primary_after_cleanup(primary, "wait-error cleanup failed", async {
+        let error = wait_failure_after_cleanup(EffectId(47), &wait_error, async {
             cleanup_ran.store(true, Ordering::SeqCst);
             Err(cleanup)
         })
@@ -1038,7 +1038,8 @@ mod tests {
                 ..
             } if code == "process.wait"
                 && operation == "wait for process"
-                && message == "wait failed; wait-error cleanup failed: tree cleanup failed"
+                && message == "wait failed; supervised cleanup after wait error failed: \
+                    tree cleanup failed"
         ));
     }
 

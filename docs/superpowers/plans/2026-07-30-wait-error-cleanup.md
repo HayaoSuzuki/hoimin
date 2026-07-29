@@ -23,11 +23,12 @@
 - Modify: `crates/hoimin-cli/src/process/mod.rs`
 
 **Interfaces:**
-- Produces: `preserve_primary_after_cleanup(primary, label, cleanup_future)`
+- Produces: `wait_failure_after_cleanup(id, wait_error, cleanup_future)`
 
 - [x] **Step 1: Add failing unit tests**
 
-Use an atomic flag set inside an injected cleanup future. Cover cleanup success
+Use an atomic flag set inside an injected cleanup future passed to the same
+wait-error handler used by the process-selection branch. Cover cleanup success
 and cleanup failure. Assert the future runs, the original wait error code and
 operation remain, and failure detail is appended only on cleanup failure.
 
