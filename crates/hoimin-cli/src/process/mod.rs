@@ -399,13 +399,12 @@ impl ProcessHandler {
         {
             ProcessSelection::Exited(status) => match status {
                 Ok(status) => classify_and_terminate(id, &mut supervisor, exit_termination(status)),
-                Err(error) => Err(io_failure(
+                Err(error) => Err(wait_failure_after_cleanup(
                     id,
-                    "process.wait",
-                    "wait for process",
-                    None,
                     &error,
-                )),
+                    Box::pin(terminate_and_reap(id, &mut supervisor, &mut child)),
+                )
+                .await),
             },
             ProcessSelection::Cancelled => terminate_and_reap(id, &mut supervisor, &mut child)
                 .await
@@ -597,6 +596,37 @@ fn append_cleanup_failure(primary: &mut EffectFailed, label: &str, cleanup: &Eff
         }
         _ => unreachable!("process cleanup produces only I/O or other failures"),
     }
+}
+
+async fn preserve_primary_after_cleanup<F>(
+    mut primary: EffectFailed,
+    label: &str,
+    cleanup: F,
+) -> EffectFailed
+where
+    F: Future<Output = Result<(), EffectFailed>>,
+{
+    if let Err(cleanup) = cleanup.await {
+        append_cleanup_failure(&mut primary, label, &cleanup);
+    }
+    primary
+}
+
+async fn wait_failure_after_cleanup<F>(
+    id: EffectId,
+    error: &std::io::Error,
+    cleanup: F,
+) -> EffectFailed
+where
+    F: Future<Output = Result<(), EffectFailed>>,
+{
+    let primary = io_failure(id, "process.wait", "wait for process", None, error);
+    preserve_primary_after_cleanup(
+        primary,
+        "supervised cleanup after wait error failed",
+        cleanup,
+    )
+    .await
 }
 
 fn classify_and_terminate(
@@ -795,15 +825,16 @@ fn native_argv(_argv: &[CommandArg]) -> Result<Vec<OsString>, String> {
 mod tests {
     use std::future::{pending, ready};
     use std::process::Stdio;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
 
-    use hoimin_core::{EffectFailure, EffectId, ProcessTermination};
+    use hoimin_core::{EffectFailed, EffectFailure, EffectId, ProcessTermination};
     use tokio::process::Command;
 
     use super::{
         POST_TERMINATION_GRACE, ProcessCancellation, ProcessSelection, ProcessStartGate,
         append_cleanup_failure, attach_failure, combine_process_and_output, select_process_result,
-        wait_after_termination,
+        wait_after_termination, wait_failure_after_cleanup,
     };
     use crate::resource::ResourceError;
 
@@ -953,6 +984,62 @@ mod tests {
                     "direct root kill failed: root kill detail; \
                      supervisor termination retry failed: tree retry detail"
                 )
+        ));
+    }
+
+    #[tokio::test]
+    async fn wait_error_cleanup_runs_and_preserves_the_primary_failure() {
+        let cleanup_ran = AtomicBool::new(false);
+        let wait_error = std::io::Error::other("wait failed");
+
+        let error = wait_failure_after_cleanup(EffectId(46), &wait_error, async {
+            cleanup_ran.store(true, Ordering::SeqCst);
+            Ok(())
+        })
+        .await;
+
+        assert!(cleanup_ran.load(Ordering::SeqCst));
+        assert!(matches!(
+            error.failure,
+            EffectFailure::Io {
+                ref code,
+                ref operation,
+                ref message,
+                ..
+            } if code == "process.wait"
+                && operation == "wait for process"
+                && message == "wait failed"
+        ));
+    }
+
+    #[tokio::test]
+    async fn wait_error_cleanup_appends_cleanup_failure_to_the_primary_error() {
+        let cleanup_ran = AtomicBool::new(false);
+        let wait_error = std::io::Error::other("wait failed");
+        let cleanup = EffectFailed::other(
+            EffectId(47),
+            "process.resource.terminate",
+            "tree cleanup failed",
+        );
+
+        let error = wait_failure_after_cleanup(EffectId(47), &wait_error, async {
+            cleanup_ran.store(true, Ordering::SeqCst);
+            Err(cleanup)
+        })
+        .await;
+
+        assert!(cleanup_ran.load(Ordering::SeqCst));
+        assert!(matches!(
+            error.failure,
+            EffectFailure::Io {
+                ref code,
+                ref operation,
+                ref message,
+                ..
+            } if code == "process.wait"
+                && operation == "wait for process"
+                && message == "wait failed; supervised cleanup after wait error failed: \
+                    tree cleanup failed"
         ));
     }
 
