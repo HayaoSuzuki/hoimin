@@ -110,7 +110,7 @@ impl PortableBackend {
         Self {
             diagnostic: None,
             classification_failures: Arc::new(AtomicU8::new(1)),
-            termination_failures: Arc::new(AtomicU8::new(1)),
+            termination_failures: Arc::new(AtomicU8::new(2)),
             #[cfg(all(windows, test))]
             attach_fault: AttachFault::None,
         }
