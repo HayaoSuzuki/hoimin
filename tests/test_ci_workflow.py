@@ -27,14 +27,26 @@ def trigger_events(workflow: str) -> set[str]:
 
 def job_event_conditions(workflow: str) -> set[str]:
     events: set[str] = set()
-    for job_name in re.findall(r"^  ([a-z0-9-]+):\n", workflow, re.MULTILINE):
+    jobs = workflow[workflow.index("jobs:\n") + len("jobs:\n") :]
+    for job_name in re.findall(r"^  ([a-z0-9-]+):\n", jobs, re.MULTILINE):
         block = job_block(workflow, job_name)
-        condition = re.search(r"^    if:\s*(.+)$", block, re.MULTILINE)
-        if condition is not None:
+        lines = block.splitlines()
+        for index, line in enumerate(lines):
+            if not line.startswith("    if:"):
+                continue
+            expression = line.partition("if:")[2].strip()
+            if expression in {"|", "|-", ">", ">-"}:
+                continuation = []
+                for candidate in lines[index + 1 :]:
+                    if candidate and len(candidate) - len(candidate.lstrip()) <= 4:
+                        break
+                    continuation.append(candidate.strip())
+                expression = " ".join(continuation)
             events.update(
-                re.findall(
-                    r"github\.event_name\s*==\s*'([^']+)'",
-                    condition.group(1),
+                match[1]
+                for match in re.findall(
+                    r"github\.event_name\s*==\s*(['\"])([^'\"]+)\1",
+                    expression,
                 )
             )
     return events
@@ -92,6 +104,28 @@ class ShuffleWorkflowContractTests(unittest.TestCase):
 
 
 class TriggerReachabilityContractTests(unittest.TestCase):
+    def test_job_event_extraction_covers_multiline_expressions_and_quote_styles(
+        self,
+    ) -> None:
+        workflow = """\
+name: fixture
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  guarded:
+    if: >-
+      ${{ github.event_name == "push" ||
+          github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+"""
+
+        self.assertEqual(
+            job_event_conditions(workflow),
+            {"push", "workflow_dispatch"},
+        )
+
     def test_every_job_event_condition_is_reachable_from_a_workflow_trigger(
         self,
     ) -> None:
