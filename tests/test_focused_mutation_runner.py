@@ -711,7 +711,7 @@ class RunnerTests(unittest.TestCase):
         with mock.patch.object(
             runner,
             "_default_log_cleanup",
-            return_value=[],
+            wraps=runner._default_log_cleanup,
         ) as fallback_cleanup:
             try:
                 result = runner.run(
