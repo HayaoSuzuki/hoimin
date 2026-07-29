@@ -402,7 +402,7 @@ impl ProcessHandler {
                 Err(error) => Err(wait_failure_after_cleanup(
                     id,
                     &error,
-                    terminate_and_reap(id, &mut supervisor, &mut child),
+                    Box::pin(terminate_and_reap(id, &mut supervisor, &mut child)),
                 )
                 .await),
             },
