@@ -19,6 +19,38 @@ def job_block(workflow: str, job_name: str) -> str:
     end = len(workflow) if next_job is None else start + len(marker) + next_job.start()
     return workflow[start:end]
 
+def trigger_events(workflow: str) -> set[str]:
+    start = workflow.index("on:\n") + len("on:\n")
+    end = workflow.index("\npermissions:", start)
+    return set(re.findall(r"^  ([a-z_]+):", workflow[start:end], re.MULTILINE))
+
+
+def job_event_conditions(workflow: str) -> set[str]:
+    events: set[str] = set()
+    jobs = workflow[workflow.index("jobs:\n") + len("jobs:\n") :]
+    for job_name in re.findall(r"^  ([a-z0-9-]+):\n", jobs, re.MULTILINE):
+        block = job_block(workflow, job_name)
+        lines = block.splitlines()
+        for index, line in enumerate(lines):
+            if not line.startswith("    if:"):
+                continue
+            expression = line.partition("if:")[2].strip()
+            if expression in {"|", "|-", ">", ">-"}:
+                continuation = []
+                for candidate in lines[index + 1 :]:
+                    if candidate and len(candidate) - len(candidate.lstrip()) <= 4:
+                        break
+                    continuation.append(candidate.strip())
+                expression = " ".join(continuation)
+            events.update(
+                match[1]
+                for match in re.findall(
+                    r"github\.event_name\s*==\s*(['\"])([^'\"]+)\1",
+                    expression,
+                )
+            )
+    return events
+
 
 class ShuffleWorkflowContractTests(unittest.TestCase):
     def test_shuffle_job_is_pinned_isolated_and_complete(self) -> None:
@@ -69,3 +101,49 @@ class ShuffleWorkflowContractTests(unittest.TestCase):
             "  -Z unstable-options --shuffle-seed <SEED>\n",
             guide,
         )
+
+
+class TriggerReachabilityContractTests(unittest.TestCase):
+    def test_job_event_extraction_covers_multiline_expressions_and_quote_styles(
+        self,
+    ) -> None:
+        workflow = """\
+name: fixture
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  guarded:
+    if: >-
+      ${{ github.event_name == "push" ||
+          github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+"""
+
+        self.assertEqual(
+            job_event_conditions(workflow),
+            {"push", "workflow_dispatch"},
+        )
+
+    def test_every_job_event_condition_is_reachable_from_a_workflow_trigger(
+        self,
+    ) -> None:
+        workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertLessEqual(job_event_conditions(workflow), trigger_events(workflow))
+
+    def test_delegated_cgroup_job_remains_main_only_opted_in_and_fail_closed(
+        self,
+    ) -> None:
+        workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+        delegated = job_block(workflow, "linux-cgroup-v2-hard")
+
+        self.assertIn("github.event_name == 'push'", delegated)
+        self.assertIn("github.ref == 'refs/heads/main'", delegated)
+        self.assertIn("vars.HOIMIN_CGROUP_V2_DELEGATED == 'true'", delegated)
+        self.assertIn(
+            "runs-on: [self-hosted, linux, x64, cgroup-v2-delegated]",
+            delegated,
+        )
+        self.assertIn("! grep -Fq 'SKIP:' cgroup-v2.log", delegated)
