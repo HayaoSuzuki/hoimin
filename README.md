@@ -79,7 +79,7 @@ At least one target selector is required:
 
 Explicit selectors form a union. For example, `--source src --file src/calc.py` selects `src/calc.py` and every Python file below `src`. Use `--file` alone for a run limited to named files.
 
-`--root DIR` resolves relative paths and defaults to the current directory. Combining explicit selectors with `--changed` takes their intersection with changed lines. A `--symbol` requires `--source`; when `--source` is present, file and line paths must be inside a source root.
+`--root DIR` resolves relative paths and defaults to the current directory. Combining explicit selectors with `--changed` intersects each explicit target with changed lines. When that target also has a symbol selector, a candidate must be both on a changed line and inside the selected symbol. A `--symbol` requires `--source`; when `--source` is present, file and line paths must be inside a source root.
 
 `--include GLOB` can restore files excluded by ignore rules or built-in copy exclusions. `--exclude GLOB` adds exclusions and wins when both match. Both options may be repeated.
 
