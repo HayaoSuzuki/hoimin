@@ -34,6 +34,28 @@ cargo +nightly-2026-07-27 test --workspace -- \
 The nightly job supplements rather than replaces the stable Ubuntu, Windows,
 and macOS test jobs.
 
+## Verify delegated cgroup v2 CI
+
+CI runs `linux-cgroup-v2-hard` only for a push to `main` when the repository
+variable `HOIMIN_CGROUP_V2_DELEGATED` is `true`. The matching self-hosted runner
+must be online and carry all of these labels: `self-hosted`, `linux`, `x64`,
+and `cgroup-v2-delegated`.
+
+Find the main-push run and inspect its jobs and delegated log:
+
+```console
+gh run list --workflow CI --event push --branch main
+gh run view <RUN_ID>
+gh run view <RUN_ID> --job <JOB_ID> --log
+```
+
+Successful hard-backend evidence requires `linux-cgroup-v2-hard` to complete
+and its `Require delegated cgroup v2 hard tests to run` log to contain no
+`SKIP:` marker. If no online idle runner matches every label, GitHub leaves the
+job queued until a matching runner becomes available and fails it after 24
+hours. Check the repository or organization Actions runner page for runner
+status and labels; do not replace the job with a hosted or best-effort runner.
+
 After changing the Rust analyzer or its tests, run mutation analysis with:
 
 ```console
