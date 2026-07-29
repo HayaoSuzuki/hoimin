@@ -254,9 +254,9 @@ fn run_finished_rejects_active_mutants() {
     );
 
     sequence
-        .observe(&finished_event(4, candidate("m1", 7)))
+        .observe(&finished_event(3, candidate("m1", 7)))
         .unwrap();
-    sequence.observe(&run_finished_event(5)).unwrap();
+    sequence.observe(&run_finished_event(4)).unwrap();
 }
 
 #[test]
