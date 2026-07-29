@@ -25,6 +25,7 @@ pub(super) const MACOS_BEST_EFFORT_DIAGNOSTIC: &str =
 #[derive(Clone, Debug, Default)]
 pub struct PortableBackend {
     diagnostic: Option<String>,
+    classification_failures: Arc<AtomicU8>,
     termination_failures: Arc<AtomicU8>,
     #[cfg(all(windows, test))]
     attach_fault: AttachFault,
@@ -46,6 +47,7 @@ impl PortableBackend {
             }
             Ok(Self {
                 diagnostic: None,
+                classification_failures: Arc::new(AtomicU8::new(0)),
                 termination_failures: Arc::new(AtomicU8::new(0)),
                 #[cfg(all(windows, test))]
                 attach_fault: AttachFault::None,
@@ -65,6 +67,7 @@ impl PortableBackend {
             let _ = allow_best_effort_memory;
             Ok(Self {
                 diagnostic: None,
+                classification_failures: Arc::new(AtomicU8::new(0)),
                 termination_failures: Arc::new(AtomicU8::new(0)),
                 #[cfg(all(windows, test))]
                 attach_fault: AttachFault::None,
@@ -82,6 +85,31 @@ impl PortableBackend {
     pub fn for_tests_with_termination_failure() -> Self {
         Self {
             diagnostic: None,
+            classification_failures: Arc::new(AtomicU8::new(0)),
+            termination_failures: Arc::new(AtomicU8::new(1)),
+            #[cfg(all(windows, test))]
+            attach_fault: AttachFault::None,
+        }
+    }
+
+    #[doc(hidden)]
+    #[must_use]
+    pub fn for_tests_with_classification_failure() -> Self {
+        Self {
+            diagnostic: None,
+            classification_failures: Arc::new(AtomicU8::new(1)),
+            termination_failures: Arc::new(AtomicU8::new(0)),
+            #[cfg(all(windows, test))]
+            attach_fault: AttachFault::None,
+        }
+    }
+
+    #[doc(hidden)]
+    #[must_use]
+    pub fn for_tests_with_classification_and_termination_failure() -> Self {
+        Self {
+            diagnostic: None,
+            classification_failures: Arc::new(AtomicU8::new(1)),
             termination_failures: Arc::new(AtomicU8::new(1)),
             #[cfg(all(windows, test))]
             attach_fault: AttachFault::None,
@@ -91,6 +119,7 @@ impl PortableBackend {
     pub(crate) fn with_diagnostic(diagnostic: String) -> Self {
         Self {
             diagnostic: Some(diagnostic),
+            classification_failures: Arc::new(AtomicU8::new(0)),
             termination_failures: Arc::new(AtomicU8::new(0)),
             #[cfg(all(windows, test))]
             attach_fault: AttachFault::None,
@@ -101,6 +130,7 @@ impl PortableBackend {
     fn with_delayed_assignment_failure() -> Self {
         Self {
             diagnostic: None,
+            classification_failures: Arc::new(AtomicU8::new(0)),
             termination_failures: Arc::new(AtomicU8::new(0)),
             attach_fault: AttachFault::AssignAfterDelay,
         }
@@ -123,6 +153,7 @@ impl PortableBackend {
     ) -> Result<ProcessSupervisor, ResourceError> {
         configure_command(command, limits)?;
         Ok(ProcessSupervisor::Portable(PortableSupervisor::new(
+            Arc::clone(&self.classification_failures),
             Arc::clone(&self.termination_failures),
             #[cfg(all(windows, test))]
             self.attach_fault,
@@ -139,6 +170,7 @@ pub(crate) struct PortableSupervisor {
     #[cfg(all(windows, test))]
     attach_fault: AttachFault,
     terminated: bool,
+    classification_failures: Arc<AtomicU8>,
     termination_failures: Arc<AtomicU8>,
 }
 
@@ -148,6 +180,7 @@ impl PortableSupervisor {
         reason = "Windows job-object creation is fallible while Unix construction is not."
     )]
     fn new(
+        classification_failures: Arc<AtomicU8>,
         termination_failures: Arc<AtomicU8>,
         #[cfg(all(windows, test))] attach_fault: AttachFault,
     ) -> Result<Self, ResourceError> {
@@ -161,8 +194,28 @@ impl PortableSupervisor {
             #[cfg(all(windows, test))]
             attach_fault,
             terminated: false,
+            classification_failures,
             termination_failures,
         })
+    }
+
+    pub(crate) fn classify(
+        &mut self,
+        termination: hoimin_core::ProcessTermination,
+    ) -> Result<hoimin_core::ProcessTermination, ResourceError> {
+        if self
+            .classification_failures
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |remaining| {
+                remaining.checked_sub(1)
+            })
+            .is_ok()
+        {
+            return Err(ResourceError::io(
+                "classify portable process",
+                io::Error::other("injected portable classification failure"),
+            ));
+        }
+        Ok(termination)
     }
 
     pub(crate) fn attach(&mut self, child: &Child) -> Result<(), ResourceError> {
