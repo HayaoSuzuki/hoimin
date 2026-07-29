@@ -25,13 +25,13 @@
 **Interfaces:**
 - Produces: `preserve_primary_after_cleanup(primary, label, cleanup_future)`
 
-- [ ] **Step 1: Add failing unit tests**
+- [x] **Step 1: Add failing unit tests**
 
 Use an atomic flag set inside an injected cleanup future. Cover cleanup success
 and cleanup failure. Assert the future runs, the original wait error code and
 operation remain, and failure detail is appended only on cleanup failure.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `cargo test -p hoimin-cli process::tests::wait_error_cleanup`
 
@@ -47,18 +47,18 @@ Expected: compilation fails because the composition helper does not exist.
 - Consumes: `terminate_and_reap(id, supervisor, child)`
 - Produces: `wait_failure_after_cleanup(...) -> EffectFailed`
 
-- [ ] **Step 1: Implement cleanup composition**
+- [x] **Step 1: Implement cleanup composition**
 
 Await the supplied cleanup future and append failure detail to the primary
 error only when it returns `Err`.
 
-- [ ] **Step 2: Implement wait-error cleanup**
+- [x] **Step 2: Implement wait-error cleanup**
 
 Construct the existing `process.wait` I/O failure, pass
 `terminate_and_reap(...)` to the composition helper, and await it in the
 `ProcessSelection::Exited(Err(...))` branch.
 
-- [ ] **Step 3: Verify focused process tests**
+- [x] **Step 3: Verify focused process tests**
 
 Run:
 
@@ -69,7 +69,7 @@ cargo test -p hoimin-cli --test process_handler --test run_e2e
 
 Expected: all tests pass.
 
-- [ ] **Step 4: Run full verification**
+- [x] **Step 4: Run full verification**
 
 Run:
 
