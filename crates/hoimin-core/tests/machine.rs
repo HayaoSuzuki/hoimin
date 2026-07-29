@@ -971,10 +971,6 @@ fn ordered_candidate_cancellation_drains_remaining_candidates_in_requested_order
 }
 
 #[test]
-#[allow(
-    clippy::too_many_lines,
-    reason = "the duplicate regression drives the full ordered end-of-spool lifecycle"
-)]
 fn ordered_candidate_filter_stably_deduplicates_requested_ids() {
     let first = fixture_candidate(1);
     let second = fixture_candidate(2);
@@ -1015,7 +1011,7 @@ fn ordered_candidate_filter_stably_deduplicates_requested_ids() {
     let read_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::ReadCandidate(_))
     }));
-    (state, _) = transition(
+    (state, effects) = transition(
         state,
         RunEvent::CandidateLoaded(CandidateLoaded {
             id: read_id,
@@ -1026,60 +1022,11 @@ fn ordered_candidate_filter_stably_deduplicates_requested_ids() {
     )
     .unwrap();
 
-    (state, effects) = transition(state, RunEvent::CancellationRequested).unwrap();
-    assert_mutant_started_id(&effects, &second.id);
-    (state, effects) = complete_mutant_started(state, &effects);
-    let second_finished_id = effect_id(find_effect(&effects, |effect| {
-        matches!(
-            effect,
-            RunEffect::EmitOutput(value)
-                if matches!(
-                    &value.event,
-                    OutputEvent::MutantFinished(finished)
-                        if finished.candidate.id == second.id
-                )
-        )
-    }));
-    (state, effects) = transition(
-        state,
-        RunEvent::OutputEmitted(OutputEmitted {
-            id: second_finished_id,
-        }),
-    )
-    .unwrap();
+    let (state, effects) = complete_killed_candidate(state, &effects, &second.id);
+    let (state, effects) = complete_killed_candidate(state, &effects, &first.id);
 
-    assert_mutant_started_id(&effects, &first.id);
-    (state, effects) = complete_mutant_started(state, &effects);
-    let first_finished_id = effect_id(find_effect(&effects, |effect| {
-        matches!(
-            effect,
-            RunEffect::EmitOutput(value)
-                if matches!(
-                    &value.event,
-                    OutputEvent::MutantFinished(finished)
-                        if finished.candidate.id == first.id
-                )
-        )
-    }));
-    let (state, effects) = transition(
-        state,
-        RunEvent::OutputEmitted(OutputEmitted {
-            id: first_finished_id,
-        }),
-    )
-    .unwrap();
-
-    assert_eq!(state.summary().not_run, 2);
-    assert!(!effects.iter().any(|effect| {
-        matches!(
-            effect,
-            RunEffect::EmitOutput(value)
-                if matches!(
-                    &value.event,
-                    OutputEvent::MutantStarted(started) if started.mutant_id == second.id
-                )
-        )
-    }));
+    assert_eq!(state.summary().killed, 2);
+    assert_eq!(state.summary().not_run, 0);
     assert!(
         effects
             .iter()
@@ -2832,6 +2779,64 @@ fn complete_mutant_started(state: RunState, effects: &[RunEffect]) -> (RunState,
     transition(
         state,
         RunEvent::OutputEmitted(OutputEmitted { id: output_id }),
+    )
+    .unwrap()
+}
+
+fn complete_killed_candidate(
+    state: RunState,
+    effects: &[RunEffect],
+    expected_candidate_id: &str,
+) -> (RunState, Vec<RunEffect>) {
+    let RunEffect::ApplyMutation(apply) = find_effect(effects, |effect| {
+        matches!(effect, RunEffect::ApplyMutation(_))
+    }) else {
+        unreachable!()
+    };
+    assert_eq!(apply.candidate.id, expected_candidate_id);
+    let (state, effects) = transition(
+        state,
+        RunEvent::MutationApplied(MutationApplied {
+            id: apply.id,
+            worker: apply.worker,
+        }),
+    )
+    .unwrap();
+    assert_mutant_started_id(&effects, expected_candidate_id);
+    let (state, effects) = complete_mutant_started(state, &effects);
+    let mutant_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::RunMutant(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::MutantFinished(process_finished(mutant_id, ProcessTermination::Exit(1))),
+    )
+    .unwrap();
+    let finished_id = effect_id(find_effect(&effects, |effect| {
+        matches!(
+            effect,
+            RunEffect::EmitOutput(value)
+                if matches!(
+                    &value.event,
+                    OutputEvent::MutantFinished(finished)
+                        if finished.candidate.id == expected_candidate_id
+                )
+        )
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: finished_id }),
+    )
+    .unwrap();
+    let reset_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ResetWorker(_))
+    }));
+    transition(
+        state,
+        RunEvent::WorkerReset(WorkerReset {
+            id: reset_id,
+            worker: 0,
+        }),
     )
     .unwrap()
 }
