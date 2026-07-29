@@ -8,11 +8,12 @@ use crate::{
     FinishSession, IntegrityCheckpoint, LoadSession, LookupStoredResult,
     MutantFinished as MutantOutput, MutantResult, MutantStarted, MutantTimeout, MutationCandidate,
     MutationStatus, MutationSummary, ObserveRemainingBudget, OutputEvent, PersistResult, Preflight,
-    ProcessFinished, ProcessLimits, ProcessTermination, ReadCandidate, ResetWorker, ResolveTargets,
-    ResumeDecision, RunBudgets, RunConfig, RunEffect, RunEvent, RunFingerprint, RunProcess,
-    RunStarted, RunSummary, TargetSlice, VerificationSelection, VerificationSelectionMode,
-    VerifyOriginals, WorkspaceCopyGrant, auto_mutant_timeout, classify_mutant, contract_ensure,
-    exit_code_for, project_top_budget, release_workspace_copy, reserve_workspace_copy,
+    ProcessFinished, ProcessLimits, ProcessTermination, ReadCandidate, ReservationId, ResetWorker,
+    ResolveTargets, ResumeDecision, RunBudgets, RunConfig, RunEffect, RunEvent, RunFingerprint,
+    RunProcess, RunStarted, RunSummary, TargetSlice, VerificationSelection,
+    VerificationSelectionMode, VerifyOriginals, WorkspaceCopyGrant, auto_mutant_timeout,
+    classify_mutant, contract_ensure, exit_code_for, project_top_budget, release_workspace_copy,
+    reserve_workspace_copy,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -51,10 +52,11 @@ pub enum CompletionKind {
     CleanupFinished,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct PendingEffect {
     kind: CompletionKind,
     worker: Option<u32>,
+    cleanup_reservations: Option<Vec<ReservationId>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -395,7 +397,7 @@ impl RunState {
         if id.0 <= self.completed_floor || self.completed_gaps.contains(&id) {
             return Err(MachineError::DuplicateEffect(id));
         }
-        let expected = match self.pending.get(&id).copied() {
+        let expected = match self.pending.get(&id).cloned() {
             Some(expected) => expected,
             None if id.0 >= self.next_effect_id => return Err(MachineError::UnknownEffect(id)),
             None => return Err(MachineError::EffectNotPending(id)),
@@ -406,6 +408,17 @@ impl RunState {
                 expected: expected.kind,
                 received,
             });
+        }
+        if let (Some(expected_reservations), RunEvent::CleanupFinished(cleanup)) =
+            (&expected.cleanup_reservations, event)
+        {
+            if !cleanup_reservations_match(expected_reservations, &cleanup.released_reservations) {
+                return Err(MachineError::CleanupReservationMismatch {
+                    id,
+                    expected: expected_reservations.clone(),
+                    received: cleanup.released_reservations.clone(),
+                });
+            }
         }
         self.pending.remove(&id);
         if id.0 == self.completed_floor.saturating_add(1) {
@@ -436,6 +449,10 @@ impl RunState {
                 PendingEffect {
                     kind: expected_completion(effect),
                     worker: effect_worker(effect),
+                    cleanup_reservations: match effect {
+                        RunEffect::Cleanup(cleanup) => Some(cleanup.reservations.clone()),
+                        _ => None,
+                    },
                 },
             );
         }
@@ -1063,6 +1080,12 @@ pub enum MachineError {
         expected: CompletionKind,
         received: CompletionKind,
     },
+    #[error("cleanup {id:?} released {received:?}, expected exactly {expected:?}")]
+    CleanupReservationMismatch {
+        id: EffectId,
+        expected: Vec<ReservationId>,
+        received: Vec<ReservationId>,
+    },
     #[error("event is invalid in phase {phase:?}")]
     WrongPhase { phase: RunPhase },
     #[error("effect ID overflow")]
@@ -1108,6 +1131,7 @@ impl MachineError {
             Self::EffectNotPending(_) => "machine.effect.not_pending",
             Self::RetiredEffect(_) => "machine.effect.retired",
             Self::WrongCompletion { .. } => "machine.effect.wrong_completion",
+            Self::CleanupReservationMismatch { .. } => "machine.cleanup.reservation_mismatch",
             Self::WrongPhase { .. } => "machine.phase.invalid",
             Self::EffectIdOverflow => "machine.effect_id.overflow",
             Self::Budget(_) => "machine.budget",
@@ -1805,4 +1829,40 @@ fn completion(event: &RunEvent) -> Option<(EffectId, CompletionKind)> {
             (value.id, expected)
         }
     })
+}
+
+fn cleanup_reservations_match(expected: &[ReservationId], received: &[ReservationId]) -> bool {
+    let expected_set = expected.iter().copied().collect::<BTreeSet<_>>();
+    let received_set = received.iter().copied().collect::<BTreeSet<_>>();
+    expected_set.len() == expected.len()
+        && received_set.len() == received.len()
+        && received_set == expected_set
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cleanup_reservations_match;
+    use crate::ReservationId;
+
+    #[test]
+    fn cleanup_acknowledgement_requires_exact_set_without_duplicates() {
+        let first = ReservationId(1);
+        let second = ReservationId(2);
+        let unexpected = ReservationId(3);
+
+        assert!(cleanup_reservations_match(
+            &[first, second],
+            &[second, first]
+        ));
+        assert!(!cleanup_reservations_match(&[first, second], &[]));
+        assert!(!cleanup_reservations_match(&[first, second], &[first]));
+        assert!(!cleanup_reservations_match(
+            &[first, second],
+            &[first, second, second]
+        ));
+        assert!(!cleanup_reservations_match(
+            &[first, second],
+            &[first, second, unexpected]
+        ));
+    }
 }
