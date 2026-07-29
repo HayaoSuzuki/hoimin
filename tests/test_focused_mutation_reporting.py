@@ -295,6 +295,34 @@ class FocusedMutationReportingTests(unittest.TestCase):
             started_at="2026-07-28T00:00:00+00:00",
         ).cleanup_errors, [])
 
+    def test_report_exposes_unknown_exit_after_lifecycle_cleanup_failure(
+        self,
+    ) -> None:
+        record = fixture_record(candidates=[], state=RunState.COMMAND_FAILED)
+        command = command_record()
+        command.label = "mutation-0001"
+        command.exit_code = None
+        command.cleanup_errors.append(
+            "process lifecycle cleanup failed: "
+            "root process 12345 was not reaped after forced kill"
+        )
+        record.commands.append(command)
+
+        encoded = json.loads(json.dumps(record.to_dict()))
+        markdown = render_markdown(record)
+
+        self.assertIsNone(encoded["commands"][0]["exit_code"])
+        self.assertEqual(
+            encoded["commands"][0]["cleanup_errors"],
+            [
+                "process lifecycle cleanup failed: "
+                "root process 12345 was not reaped after forced kill"
+            ],
+        )
+        self.assertIn("## Command cleanup failures", markdown)
+        self.assertIn("`mutation-0001` — exit `unknown`", markdown)
+        self.assertIn("not reaped after forced kill", markdown)
+
     def test_report_preserves_verified_unverified_and_next_order(self) -> None:
         record = fixture_record(
             candidates=[

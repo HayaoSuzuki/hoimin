@@ -18,6 +18,7 @@ from tools.focused_mutation_support.runner import (
     CommandInterrupted,
     CommandRunner,
     CommandTimedOut,
+    ProcessLifecycleError,
     wait_for_log_release,
 )
 from tools.focused_mutation_support.store import RunStore
@@ -192,6 +193,17 @@ def read_ready_pid(marker: Path) -> int | None:
         return int(marker.read_text(encoding="utf-8"))
     except (FileNotFoundError, ValueError):
         return None
+
+
+def wait_for_pid_exit(pid: int, timeout: float = 2.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        time.sleep(0.01)
+    return False
 
 
 def wait_for_process_exit_or_cancel(
@@ -427,6 +439,32 @@ class InterruptingProcess:
 
     def kill(self) -> None:
         raise AssertionError("kill should not be needed after successful termination")
+
+
+class UnreapableProcess:
+    pid = 12345
+    returncode: int | None = None
+
+    def __init__(self, initial_error: BaseException) -> None:
+        self._initial_error = initial_error
+        self.wait_calls: list[float | None] = []
+        self.terminate_calls = 0
+        self.kill_calls = 0
+
+    def wait(self, timeout: float | None = None) -> int:
+        self.wait_calls.append(timeout)
+        if len(self.wait_calls) == 1:
+            raise self._initial_error
+        raise subprocess.TimeoutExpired(
+            ["fake-command"],
+            timeout if timeout is not None else 0.0,
+        )
+
+    def terminate(self) -> None:
+        self.terminate_calls += 1
+
+    def kill(self) -> None:
+        self.kill_calls += 1
 
 
 class FakeClock:
@@ -772,6 +810,57 @@ class RunnerTests(unittest.TestCase):
         self.assertIn("OUT:--sleep", self.stdout(record))
         self.assert_recorded_working_directory(record)
 
+    def test_timeout_records_failed_post_kill_reap_and_blocks_reuse(
+        self,
+    ) -> None:
+        process = UnreapableProcess(
+            subprocess.TimeoutExpired(["fake-command"], 5.0)
+        )
+        popen_factory = mock.Mock(return_value=process)
+        runner = self.runner(popen_factory=popen_factory)
+
+        def invoke() -> None:
+            runner.run(
+                [str(self.fake)],
+                cwd=self.work,
+                timeout=5.0,
+                label="unreapable-timeout",
+            )
+
+        if os.name == "nt":
+            with self.assertRaises(CommandTimedOut) as caught:
+                invoke()
+        else:
+            with (
+                mock.patch(
+                    "tools.focused_mutation_support.runner.os.killpg"
+                ),
+                self.assertRaises(CommandTimedOut) as caught,
+            ):
+                invoke()
+
+        record = caught.exception.record
+        self.assertIsNone(record.exit_code)
+        self.assertEqual(
+            record.cleanup_errors,
+            [
+                "process lifecycle cleanup failed: "
+                "root process 12345 was not reaped after forced kill"
+            ],
+        )
+        self.assertEqual(process.wait_calls, [5.0, 2.0, 2.0])
+        self.assertEqual(process.terminate_calls, int(os.name == "nt"))
+        self.assertEqual(process.kill_calls, int(os.name == "nt"))
+
+        with self.assertRaises(ProcessLifecycleError):
+            runner.run(
+                [str(self.fake)],
+                cwd=self.work,
+                timeout=5.0,
+                label="must-not-start",
+            )
+        self.assertEqual(popen_factory.call_count, 1)
+
     @unittest.skipUnless(os.name == "nt", "requires Windows handle inheritance")
     def test_timeout_waits_for_inherited_log_handles_before_cleanup(self) -> None:
         root_ready = self.work / "root.ready"
@@ -856,6 +945,38 @@ class RunnerTests(unittest.TestCase):
         self.assertFalse(releaser.is_alive())
         with errors_lock:
             self.assertEqual(thread_errors, [])
+
+    @unittest.skipIf(os.name == "nt", "requires POSIX process groups")
+    def test_handled_timeout_leaves_no_posix_descendants(self) -> None:
+        root_ready = self.work / "posix-root.ready"
+        descendant_ready = self.work / "posix-descendant.ready"
+        release = self.work / "posix-release"
+
+        with self.assertRaises(CommandTimedOut):
+            self.runner().run(
+                [
+                    sys.executable,
+                    str(self.inherited_handle_fake),
+                    str(root_ready),
+                    str(descendant_ready),
+                    str(release),
+                ],
+                cwd=self.work,
+                timeout=1.0,
+                label="posix-process-tree-timeout",
+            )
+
+        root_pid = read_ready_pid(root_ready)
+        descendant_pid = read_ready_pid(descendant_ready)
+        self.assertIsNotNone(root_pid)
+        self.assertIsNotNone(descendant_pid)
+        if root_pid is None or descendant_pid is None:
+            return
+        self.assertTrue(wait_for_pid_exit(root_pid), f"root {root_pid} survived")
+        self.assertTrue(
+            wait_for_pid_exit(descendant_pid),
+            f"descendant {descendant_pid} survived",
+        )
 
     def test_inherited_handle_failure_cleanup_cancels_and_closes_handles(
         self,
@@ -1128,6 +1249,53 @@ class RunnerTests(unittest.TestCase):
         if os.name == "nt":
             self.assertTrue(process.terminated)
         self.assertEqual(process.wait_calls, [5.0, 2.0])
+
+    def test_interruption_records_failed_post_kill_reap_and_blocks_reuse(
+        self,
+    ) -> None:
+        process = UnreapableProcess(KeyboardInterrupt())
+        popen_factory = mock.Mock(return_value=process)
+        runner = self.runner(popen_factory=popen_factory)
+
+        def invoke() -> None:
+            runner.run(
+                [str(self.fake)],
+                cwd=self.work,
+                timeout=5.0,
+                label="unreapable-interruption",
+            )
+
+        if os.name == "nt":
+            with self.assertRaises(CommandInterrupted) as caught:
+                invoke()
+        else:
+            with (
+                mock.patch(
+                    "tools.focused_mutation_support.runner.os.killpg"
+                ),
+                self.assertRaises(CommandInterrupted) as caught,
+            ):
+                invoke()
+
+        record = caught.exception.record
+        self.assertIsNone(record.exit_code)
+        self.assertEqual(
+            record.cleanup_errors,
+            [
+                "process lifecycle cleanup failed: "
+                "root process 12345 was not reaped after forced kill"
+            ],
+        )
+        self.assertEqual(process.wait_calls, [5.0, 2.0, 2.0])
+
+        with self.assertRaises(ProcessLifecycleError):
+            runner.run(
+                [str(self.fake)],
+                cwd=self.work,
+                timeout=5.0,
+                label="must-not-start",
+            )
+        self.assertEqual(popen_factory.call_count, 1)
 
 
 if __name__ == "__main__":

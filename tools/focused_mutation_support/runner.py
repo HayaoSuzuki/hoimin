@@ -64,6 +64,14 @@ class CommandInterrupted(Exception):
         self.record = record
 
 
+class ProcessLifecycleError(RuntimeError):
+    def __init__(self, pid: int) -> None:
+        self.pid = pid
+        super().__init__(
+            f"root process {pid} was not reaped after forced kill"
+        )
+
+
 class CommandRunner:
     def __init__(
         self,
@@ -89,6 +97,7 @@ class CommandRunner:
         )
         self._has_custom_log_cleanup = log_cleanup is not None
         self._next_sequence = 1
+        self._lifecycle_error: ProcessLifecycleError | None = None
 
     def run(
         self,
@@ -97,6 +106,8 @@ class CommandRunner:
         timeout: float,
         label: str,
     ) -> CommandRecord:
+        if self._lifecycle_error is not None:
+            raise self._lifecycle_error
         sequence = self._next_sequence
         self._next_sequence += 1
         paths = self._store.command_paths(sequence, label)
@@ -132,11 +143,17 @@ class CommandRunner:
                 process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 record.timed_out = True
-                self._terminate(process)
+                try:
+                    self._terminate(process)
+                except ProcessLifecycleError as error:
+                    self._record_lifecycle_error(record, error)
                 outcome = CommandTimedOut
             except KeyboardInterrupt:
                 record.interrupted = True
-                self._terminate(process)
+                try:
+                    self._terminate(process)
+                except ProcessLifecycleError as error:
+                    self._record_lifecycle_error(record, error)
                 outcome = CommandInterrupted
             self._complete(record, process, started)
 
@@ -187,6 +204,16 @@ class CommandRunner:
         record.ended_at = self._utc_now().isoformat()
         record.elapsed_seconds = self._monotonic() - started
 
+    def _record_lifecycle_error(
+        self,
+        record: CommandRecord,
+        error: ProcessLifecycleError,
+    ) -> None:
+        self._lifecycle_error = error
+        record.cleanup_errors.append(
+            f"process lifecycle cleanup failed: {error}"
+        )
+
     def _terminate(self, process: Any) -> None:
         if os.name == "nt":
             process.terminate()
@@ -211,4 +238,4 @@ class CommandRunner:
         try:
             process.wait(timeout=2.0)
         except subprocess.TimeoutExpired:
-            pass
+            raise ProcessLifecycleError(process.pid) from None
