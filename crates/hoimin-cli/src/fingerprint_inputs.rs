@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
-use std::io::ErrorKind;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::FingerprintInputFile;
 use ignore::WalkBuilder;
 use ignore::overrides::{Override, OverrideBuilder};
+
+use crate::workspace::{self, RootRelativeReadError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum FingerprintInputError {
@@ -41,23 +42,36 @@ pub fn resolve(
             return Err(FingerprintInputError::Unmatched(pattern.clone()));
         }
         for path in matched {
-            selected.entry(path).or_insert(false);
+            selected.entry(path).or_insert(None);
         }
     }
     for file in files {
-        selected.insert(resolve_exact(root, file)?, true);
+        let path = resolve_exact(file)?;
+        let bytes = workspace::read_root_relative(root, &path).map_err(|error| match error {
+            RootRelativeReadError::NotFound => FingerprintInputError::NotFound(file.clone()),
+            RootRelativeReadError::Other(error) => {
+                FingerprintInputError::ExactUnsupportedFile(format!("{path}: {error}"))
+            }
+        })?;
+        selected.insert(path, Some(bytes));
     }
 
     selected
         .into_iter()
-        .map(|(path, exact)| {
-            let bytes = std::fs::read(root.join(&path)).map_err(|error| {
-                if exact {
-                    FingerprintInputError::ExactUnsupportedFile(format!("{path}: {error}"))
-                } else {
-                    FingerprintInputError::UnsupportedFile(format!("{path}: {error}"))
-                }
-            })?;
+        .map(|(path, exact_bytes)| {
+            let bytes = exact_bytes.map_or_else(
+                || {
+                    workspace::read_root_relative(root, &path).map_err(|error| match error {
+                        RootRelativeReadError::NotFound => {
+                            FingerprintInputError::UnsupportedFile(format!("{path}: not found"))
+                        }
+                        RootRelativeReadError::Other(error) => {
+                            FingerprintInputError::UnsupportedFile(format!("{path}: {error}"))
+                        }
+                    })
+                },
+                Ok,
+            )?;
             Ok(FingerprintInputFile {
                 path,
                 hash: blake3::hash(&bytes).to_hex().to_string(),
@@ -66,22 +80,8 @@ pub fn resolve(
         .collect()
 }
 
-fn resolve_exact(root: &Utf8Path, input: &str) -> Result<Utf8PathBuf, FingerprintInputError> {
-    let path = normalize_exact_path(input)?;
-    let metadata = std::fs::symlink_metadata(root.join(&path)).map_err(|error| {
-        if error.kind() == ErrorKind::NotFound {
-            FingerprintInputError::NotFound(input.to_owned())
-        } else {
-            FingerprintInputError::ExactUnsupportedFile(format!("{path}: {error}"))
-        }
-    })?;
-    let file_type = metadata.file_type();
-    if file_type.is_symlink() || !file_type.is_file() {
-        return Err(FingerprintInputError::ExactUnsupportedFile(
-            path.as_str().to_owned(),
-        ));
-    }
-    Ok(path)
+fn resolve_exact(input: &str) -> Result<Utf8PathBuf, FingerprintInputError> {
+    normalize_exact_path(input)
 }
 
 fn normalize_exact_path(input: &str) -> Result<Utf8PathBuf, FingerprintInputError> {

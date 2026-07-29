@@ -213,6 +213,23 @@ fn exact_file_rejects_directories() {
     assert_error_prefix(&error, "fingerprint.file.unsupported_file");
 }
 
+#[test]
+fn exact_files_preserve_input_order_and_original_error_spelling() {
+    let fixture = fixture_root(&[]);
+    std::fs::create_dir(fixture.root.join("dir")).unwrap();
+
+    let error = resolve(&fixture.root, &[], &["dir".into(), "../bad".into()]).unwrap_err();
+    assert_error_prefix(&error, "fingerprint.file.unsupported_file: dir");
+
+    let error = resolve(
+        &fixture.root,
+        &[],
+        &["./first-missing".into(), "earlier-missing".into()],
+    )
+    .unwrap_err();
+    assert_error_prefix(&error, "fingerprint.file.not_found: ./first-missing");
+}
+
 #[cfg(unix)]
 #[test]
 fn exact_file_rejects_symlinks() {
@@ -220,6 +237,31 @@ fn exact_file_rejects_symlinks() {
     std::os::unix::fs::symlink("file.txt", fixture.root.join("link.txt")).unwrap();
 
     let error = resolve(&fixture.root, &[], &["link.txt".into()]).unwrap_err();
+
+    assert_error_prefix(&error, "fingerprint.file.unsupported_file");
+}
+
+#[cfg(unix)]
+#[test]
+fn exact_file_rejects_symlinked_parent() {
+    let fixture = fixture_root(&[]);
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("secret.txt"), "outside").unwrap();
+    std::os::unix::fs::symlink(outside.path(), fixture.root.join("linked")).unwrap();
+
+    let error = resolve(&fixture.root, &[], &["linked/secret.txt".into()]).unwrap_err();
+
+    assert_error_prefix(&error, "fingerprint.file.unsupported_file");
+}
+
+#[cfg(unix)]
+#[test]
+fn exact_missing_file_beneath_symlinked_parent_does_not_probe_outside() {
+    let fixture = fixture_root(&[]);
+    let outside = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(outside.path(), fixture.root.join("linked")).unwrap();
+
+    let error = resolve(&fixture.root, &[], &["linked/missing.txt".into()]).unwrap_err();
 
     assert_error_prefix(&error, "fingerprint.file.unsupported_file");
 }

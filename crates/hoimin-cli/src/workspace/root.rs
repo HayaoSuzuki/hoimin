@@ -244,6 +244,42 @@ impl WorkerRoot {
         }
     }
 
+    pub(crate) fn is_missing(&self, path: &Utf8Path) -> Result<bool, WorkspaceError> {
+        let components = Self::components(path)?;
+        let (name, parents) =
+            components
+                .split_last()
+                .ok_or_else(|| WorkspaceError::InvalidPath {
+                    path: path.to_owned(),
+                })?;
+        let mut parent = self
+            .handle()
+            .try_clone()
+            .map_err(|error| WorkspaceError::io("clone worker root", path, error))?;
+
+        for component in parents {
+            let component = Path::new(component);
+            if cap_primitives::fs::stat(&parent, component, FollowSymlinks::No)
+                .is_ok_and(|metadata| is_link_or_reparse(&metadata))
+            {
+                return Err(WorkspaceError::InvalidPath {
+                    path: path.to_owned(),
+                });
+            }
+            match cap_primitives::fs::open_dir_nofollow(&parent, component) {
+                Ok(opened) => parent = opened,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(true),
+                Err(error) => return Err(Self::map_parent_error(path, error)),
+            }
+        }
+
+        match cap_primitives::fs::stat(&parent, Path::new(name), FollowSymlinks::No) {
+            Ok(_) => Ok(false),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(true),
+            Err(error) => Err(Self::map_entry_error("inspect worker file", path, error)),
+        }
+    }
+
     pub(crate) fn open_mutation_file(
         &self,
         path: &Utf8Path,

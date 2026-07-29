@@ -83,7 +83,7 @@ Explicit selectors form a union. For example, `--source src --file src/calc.py` 
 
 `--include GLOB` can restore files excluded by ignore rules or built-in copy exclusions. `--exclude GLOB` adds exclusions and wins when both match. Both options may be repeated.
 
-`--fingerprint-file PATH` records exactly one regular file at the specified `--root`-relative path and may be repeated. It does not search nested directories, and characters such as `*`, `?`, and `[` are treated literally. Use it for a root-level configuration file without also selecting files with the same name in nested worktrees.
+`--fingerprint-file PATH` records exactly one regular file at the specified `--root`-relative path and may be repeated. Every path component must remain beneath `--root`; symlink and reparse-point components are rejected instead of followed. It does not search nested directories, and characters such as `*`, `?`, and `[` are treated literally. Use it for a root-level configuration file without also selecting files with the same name in nested worktrees.
 
 `--fingerprint-include GLOB` records every matching file as an explicit session-fingerprint input. A basename-only glob such as `pyproject.toml` can match that name at any depth. Both fingerprint options only invalidate compatible-run reuse: they do not control worker copying, select mutation targets, or implicitly watch files. Use `--include GLOB` independently when a fingerprinted input must also be copied into each worker; no files are implicitly watched.
 
