@@ -970,6 +970,123 @@ fn ordered_candidate_cancellation_drains_remaining_candidates_in_requested_order
     assert_mutant_started_id(&effects, &first.id);
 }
 
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the duplicate regression drives the full ordered end-of-spool lifecycle"
+)]
+fn ordered_candidate_filter_stably_deduplicates_requested_ids() {
+    let first = fixture_candidate(1);
+    let second = fixture_candidate(2);
+    let (state, effects) =
+        waiting_for_ordered_analysis(vec![second.id.clone(), first.id.clone(), second.id.clone()]);
+    let analysis_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::AnalyzeFile(_))
+    }));
+    let (mut state, mut effects) = transition(
+        state,
+        RunEvent::AnalysisFinished(AnalysisFinished {
+            id: analysis_id,
+            spool: Some(CandidateSpoolRef {
+                token: "ordered-duplicates".to_owned(),
+                records: 2,
+            }),
+            truncated: false,
+        }),
+    )
+    .unwrap();
+
+    for (candidate, offset) in [(first.clone(), 10), (second.clone(), 20)] {
+        let read_id = effect_id(find_effect(&effects, |effect| {
+            matches!(effect, RunEffect::ReadCandidate(_))
+        }));
+        (state, effects) = transition(
+            state,
+            RunEvent::CandidateLoaded(CandidateLoaded {
+                id: read_id,
+                worker: 0,
+                candidate: Some(candidate),
+                next_offset: offset,
+            }),
+        )
+        .unwrap();
+    }
+
+    let read_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }));
+    (state, _) = transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read_id,
+            worker: 0,
+            candidate: None,
+            next_offset: 20,
+        }),
+    )
+    .unwrap();
+
+    (state, effects) = transition(state, RunEvent::CancellationRequested).unwrap();
+    assert_mutant_started_id(&effects, &second.id);
+    (state, effects) = complete_mutant_started(state, &effects);
+    let second_finished_id = effect_id(find_effect(&effects, |effect| {
+        matches!(
+            effect,
+            RunEffect::EmitOutput(value)
+                if matches!(
+                    &value.event,
+                    OutputEvent::MutantFinished(finished)
+                        if finished.candidate.id == second.id
+                )
+        )
+    }));
+    (state, effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted {
+            id: second_finished_id,
+        }),
+    )
+    .unwrap();
+
+    assert_mutant_started_id(&effects, &first.id);
+    (state, effects) = complete_mutant_started(state, &effects);
+    let first_finished_id = effect_id(find_effect(&effects, |effect| {
+        matches!(
+            effect,
+            RunEffect::EmitOutput(value)
+                if matches!(
+                    &value.event,
+                    OutputEvent::MutantFinished(finished)
+                        if finished.candidate.id == first.id
+                )
+        )
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted {
+            id: first_finished_id,
+        }),
+    )
+    .unwrap();
+
+    assert_eq!(state.summary().not_run, 2);
+    assert!(!effects.iter().any(|effect| {
+        matches!(
+            effect,
+            RunEffect::EmitOutput(value)
+                if matches!(
+                    &value.event,
+                    OutputEvent::MutantStarted(started) if started.mutant_id == second.id
+                )
+        )
+    }));
+    assert!(
+        effects
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::VerifyOriginals(_)))
+    );
+}
+
 fn assert_mutant_started_id(effects: &[RunEffect], expected: &str) {
     assert!(effects.iter().any(|effect| {
         matches!(

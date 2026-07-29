@@ -272,6 +272,9 @@ impl RunState {
     }
 
     /// Creates a state that executes selected candidates in the supplied order.
+    ///
+    /// Duplicate candidate IDs are ignored after their first occurrence, preserving
+    /// the requested order of unique IDs.
     #[must_use]
     pub fn with_ordered_candidate_filter(
         run_id: impl Into<String>,
@@ -279,7 +282,12 @@ impl RunState {
         ordered_candidate_ids: Vec<String>,
     ) -> Self {
         let mut state = Self::new(run_id, config);
-        state.candidate_filter = Some(ordered_candidate_ids.iter().cloned().collect());
+        let mut candidate_filter = BTreeSet::new();
+        let ordered_candidate_ids = ordered_candidate_ids
+            .into_iter()
+            .filter(|candidate_id| candidate_filter.insert(candidate_id.clone()))
+            .collect();
+        state.candidate_filter = Some(candidate_filter);
         state.ordered_candidates = Some(Box::new(OrderedCandidateState {
             ids: ordered_candidate_ids,
             discovered: BTreeMap::new(),
