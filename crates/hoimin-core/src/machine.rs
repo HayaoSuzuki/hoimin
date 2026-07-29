@@ -1137,6 +1137,13 @@ pub fn transition(
     mut state: RunState,
     event: RunEvent,
 ) -> Result<(RunState, Vec<RunEffect>), MachineError> {
+    if matches!(
+        event,
+        RunEvent::DeadlineReached | RunEvent::CancellationRequested
+    ) && (state.run_finished_output_id.is_some() || state.phase == RunPhase::Finished)
+    {
+        return Ok((state, Vec::new()));
+    }
     #[cfg(feature = "contracts")]
     let was_fatal = state.flags.outcome.infrastructure_error;
     let completed = state.accept_completion(&event)?;

@@ -337,6 +337,10 @@ pub enum ReportSequenceError {
     RunNotStarted,
     #[error("run_started was emitted more than once for {run_id}")]
     RunAlreadyStarted { run_id: String },
+    #[error("report event followed run_finished for {run_id}")]
+    RunAlreadyFinished { run_id: String },
+    #[error("run_finished was emitted with {count} active mutants")]
+    RunFinishedWithActiveMutants { count: usize },
     #[error("report event belongs to run {received}, expected {expected}")]
     RunIdMismatch { expected: String, received: String },
     #[error("report sequence {received} does not follow {previous}")]
@@ -358,6 +362,7 @@ pub struct ReportSequence {
     last: Option<u64>,
     run_id: Option<String>,
     active_mutants: BTreeSet<(String, u64)>,
+    finished: bool,
 }
 
 impl ReportSequence {
@@ -371,21 +376,27 @@ impl ReportSequence {
     /// Returns [`ReportSequenceError`] when the event violates the run,
     /// mutant-lifecycle, or strictly increasing sequence invariants.
     pub fn observe(&mut self, event: &OutputEvent) -> Result<(), ReportSequenceError> {
-        let lifecycle_error = match (event, self.run_id.as_deref()) {
-            (OutputEvent::RunStarted(value), Some(_)) => {
-                Some(ReportSequenceError::RunAlreadyStarted {
-                    run_id: value.run_id.clone(),
-                })
+        let lifecycle_error = if self.finished {
+            Some(ReportSequenceError::RunAlreadyFinished {
+                run_id: self.run_id.clone().unwrap_or_default(),
+            })
+        } else {
+            match (event, self.run_id.as_deref()) {
+                (OutputEvent::RunStarted(value), Some(_)) => {
+                    Some(ReportSequenceError::RunAlreadyStarted {
+                        run_id: value.run_id.clone(),
+                    })
+                }
+                (OutputEvent::RunStarted(_), None) => None,
+                (_, None) => Some(ReportSequenceError::RunNotStarted),
+                (_, Some(expected)) if event.run_id() != expected => {
+                    Some(ReportSequenceError::RunIdMismatch {
+                        expected: expected.to_owned(),
+                        received: event.run_id().to_owned(),
+                    })
+                }
+                _ => None,
             }
-            (OutputEvent::RunStarted(_), None) => None,
-            (_, None) => Some(ReportSequenceError::RunNotStarted),
-            (_, Some(expected)) if event.run_id() != expected => {
-                Some(ReportSequenceError::RunIdMismatch {
-                    expected: expected.to_owned(),
-                    received: event.run_id().to_owned(),
-                })
-            }
-            _ => None,
         };
         let mutant_error = lifecycle_error.or_else(|| match event {
             OutputEvent::MutantStarted(value) => {
@@ -405,6 +416,11 @@ impl ReportSequence {
                         mutant_sequence: value.candidate.sequence,
                     },
                 )
+            }
+            OutputEvent::RunFinished(_) if !self.active_mutants.is_empty() => {
+                Some(ReportSequenceError::RunFinishedWithActiveMutants {
+                    count: self.active_mutants.len(),
+                })
             }
             _ => None,
         });
@@ -441,6 +457,7 @@ impl ReportSequence {
                 self.active_mutants
                     .remove(&(value.candidate.id.clone(), value.candidate.sequence));
             }
+            OutputEvent::RunFinished(_) => self.finished = true,
             _ => {}
         }
         Ok(())
