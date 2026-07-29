@@ -15,14 +15,16 @@ module rather than duplicating Unix and Windows security logic.
 
 Fingerprint discovery and exact-path normalization remain responsible for
 selection. The final hashing pass uses the capability reader for both glob and
-exact inputs. Exact `not_found` classification comes from the I/O kind returned
-by that reader; no ambient metadata preflight probes the normalized pathname.
+exact inputs. Exact inputs are read in caller order before sorted output is
+assembled, preserving error precedence and original path spelling. A
+crate-private read error distinguishes a securely observed missing entry from
+other workspace failures; no ambient metadata preflight probes the pathname.
 
 ## Error handling
 
 Capability-reader errors are mapped to the existing exact or glob
-`unsupported_file` variants, except a secure exact-file `NotFound` result,
-which retains `fingerprint.file.not_found`.
+`unsupported_file` variants, except a securely classified exact-file missing
+entry, which retains `fingerprint.file.not_found`.
 
 ## Testing
 

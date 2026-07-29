@@ -6,8 +6,8 @@ mod root;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
+use std::fmt;
 use std::fs;
-use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -22,11 +22,23 @@ pub use copy::WorkspacePlan;
 pub use manifest::{ManifestEntry, WorkspaceManifest};
 use root::WorkerRoot;
 
+pub(crate) enum RootRelativeReadError {
+    NotFound,
+    Other(WorkspaceError),
+}
+
 pub(crate) fn read_root_relative(
     root: &Utf8Path,
     path: &Utf8Path,
-) -> Result<Vec<u8>, WorkspaceError> {
-    WorkerRoot::open(root.to_owned())?.read(path)
+) -> Result<Vec<u8>, RootRelativeReadError> {
+    let root = WorkerRoot::open(root.to_owned()).map_err(RootRelativeReadError::Other)?;
+    match root.read(path) {
+        Ok(bytes) => Ok(bytes),
+        Err(error) => match root.is_missing(path) {
+            Ok(true) => Err(RootRelativeReadError::NotFound),
+            Ok(false) | Err(_) => Err(RootRelativeReadError::Other(error)),
+        },
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -100,7 +112,6 @@ pub enum WorkspaceError {
     Io {
         operation: &'static str,
         path: Utf8PathBuf,
-        kind: io::ErrorKind,
         message: String,
     },
 }
@@ -109,23 +120,12 @@ impl WorkspaceError {
     pub(crate) fn io(
         operation: &'static str,
         path: impl AsRef<Utf8Path>,
-        error: impl Into<io::Error>,
+        error: impl fmt::Display,
     ) -> Self {
-        let error = error.into();
-        let kind = error.kind();
-        let message = error.to_string();
         Self::Io {
             operation,
             path: path.as_ref().to_owned(),
-            kind,
-            message,
-        }
-    }
-
-    pub(crate) const fn io_kind(&self) -> Option<io::ErrorKind> {
-        match self {
-            Self::Io { kind, .. } => Some(*kind),
-            _ => None,
+            message: error.to_string(),
         }
     }
 
@@ -939,7 +939,6 @@ fn effect_failed(id: hoimin_core::EffectId, error: WorkspaceError) -> EffectFail
             operation,
             path,
             message,
-            ..
         } => EffectFailure::Io {
             code,
             operation: operation.to_owned(),

@@ -213,6 +213,23 @@ fn exact_file_rejects_directories() {
     assert_error_prefix(&error, "fingerprint.file.unsupported_file");
 }
 
+#[test]
+fn exact_files_preserve_input_order_and_original_error_spelling() {
+    let fixture = fixture_root(&[]);
+    std::fs::create_dir(fixture.root.join("dir")).unwrap();
+
+    let error = resolve(&fixture.root, &[], &["dir".into(), "../bad".into()]).unwrap_err();
+    assert_error_prefix(&error, "fingerprint.file.unsupported_file: dir");
+
+    let error = resolve(
+        &fixture.root,
+        &[],
+        &["./first-missing".into(), "earlier-missing".into()],
+    )
+    .unwrap_err();
+    assert_error_prefix(&error, "fingerprint.file.not_found: ./first-missing");
+}
+
 #[cfg(unix)]
 #[test]
 fn exact_file_rejects_symlinks() {

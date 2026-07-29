@@ -92,19 +92,19 @@ Expected: all commands exit zero.
 - Test: `crates/hoimin-cli/tests/fingerprint_inputs.rs`
 
 **Interfaces:**
-- Consumes: `WorkspaceError::io_kind()`
-- Produces: secure exact-file `not_found` classification without ambient path probing
+- Consumes: `WorkerRoot::is_missing(path)`
+- Produces: crate-private `RootRelativeReadError` and secure exact-file classification
 
 - [x] **Step 1: Reproduce a missing file beneath a linked parent**
 
 Assert the request is rejected as unsupported rather than probing the outside
 directory and reporting `not_found`.
 
-- [x] **Step 2: Preserve I/O kinds in workspace errors**
+- [x] **Step 2: Classify missing entries without changing the public error**
 
-Record `std::io::ErrorKind` in `WorkspaceError::Io` and expose it
-crate-privately for fingerprint error mapping. Wrap the one non-I/O manifest
-metadata error as `ErrorKind::Other`.
+After a capability read failure, securely walk the same root capability with
+no-follow handles to distinguish a missing entry. Return a crate-private
+classification and leave `WorkspaceError`'s public variant layout unchanged.
 
 - [x] **Step 3: Remove `symlink_metadata` exact preflight**
 
@@ -116,3 +116,23 @@ capability-reader `NotFound` to the existing exact not-found variant.
 Run: `cargo test -p hoimin-cli --test fingerprint_inputs`
 
 Expected: all tests pass.
+
+### Task 4: Preserve exact-input error behavior
+
+**Files:**
+- Modify: `crates/hoimin-cli/src/fingerprint_inputs.rs`
+- Test: `crates/hoimin-cli/tests/fingerprint_inputs.rs`
+
+**Interfaces:**
+- Consumes: normalized exact paths and `RootRelativeReadError`
+- Produces: input-order validation, original error spelling, sorted deduplicated output
+
+- [x] **Step 1: Resolve and read exact inputs in caller order**
+
+Store successfully read bytes alongside their normalized paths so final output
+sorting does not reopen exact files or reorder failures.
+
+- [x] **Step 2: Add precedence and spelling coverage**
+
+Assert an unsupported first input wins over a later invalid path, and
+`./first-missing` is retained verbatim in the not-found message.
