@@ -27,6 +27,99 @@ fn input_accepts_a_complete_baseline_success_report() {
 }
 
 #[test]
+fn input_rejects_every_summary_mutant_consistency_mismatch() {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut cases = Vec::new();
+
+    let mut status = valid_report();
+    status["mutants"][0]["status"] = json!("survived");
+    cases.push(("status", status));
+
+    let mut missing = valid_report();
+    missing["mutants"] = json!([]);
+    cases.push(("missing", missing));
+
+    let mut extra = valid_report();
+    let mut duplicate = extra["mutants"][0].clone();
+    duplicate["sequence"] = json!(4);
+    duplicate["candidate"]["id"] = json!("mutant-2");
+    duplicate["candidate"]["sequence"] = json!(2);
+    extra["mutants"].as_array_mut().unwrap().push(duplicate);
+    extra["summary"]["sequence"] = json!(5);
+    cases.push(("extra", extra));
+
+    let mut inconclusive = valid_report();
+    inconclusive["summary"]["counts"]["inconclusive"] = json!(1);
+    cases.push(("inconclusive", inconclusive));
+
+    let mut score = valid_report();
+    score["summary"]["counts"]["score"] = json!(0.5);
+    cases.push(("score", score));
+
+    for (name, document) in cases {
+        let report = write_json(&fixture, &format!("{name}.json"), &document);
+        let error = read_report(&report).unwrap_err();
+        assert!(matches!(
+            error,
+            ProgressError::InvalidStructure {
+                message: "summary counts must match mutant events",
+                ..
+            }
+        ));
+    }
+}
+
+#[test]
+fn input_accepts_a_canonical_null_score_summary() {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut document = valid_report();
+    document["mutants"][0]["status"] = json!("timeout");
+    document["mutants"][0]["termination"] = json!("Timeout");
+    document["summary"]["counts"] = json!({
+        "killed": 0,
+        "survived": 0,
+        "timeout": 1,
+        "out_of_memory": 0,
+        "process_limit": 0,
+        "error": 0,
+        "not_run": 0,
+        "inconclusive": 1,
+        "score": null
+    });
+    let report = write_json(&fixture, "null-score.json", &document);
+
+    assert!(matches!(read_report(&report), Ok(InputReport::Usable(_))));
+}
+
+#[test]
+fn input_rejects_a_non_null_score_without_decidable_mutants() {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut document = valid_report();
+    document["mutants"][0]["status"] = json!("timeout");
+    document["mutants"][0]["termination"] = json!("Timeout");
+    document["summary"]["counts"] = json!({
+        "killed": 0,
+        "survived": 0,
+        "timeout": 1,
+        "out_of_memory": 0,
+        "process_limit": 0,
+        "error": 0,
+        "not_run": 0,
+        "inconclusive": 1,
+        "score": 0.0
+    });
+    let report = write_json(&fixture, "non-null-score.json", &document);
+
+    assert!(matches!(
+        read_report(&report),
+        Err(ProgressError::InvalidStructure {
+            message: "summary counts must match mutant events",
+            ..
+        })
+    ));
+}
+
+#[test]
 fn input_marks_missing_baseline_reports_unusable() {
     let fixture = tempfile::tempdir().unwrap();
     let mut document = valid_report();
@@ -588,6 +681,23 @@ async fn output_invalid_structure_returns_exit_two() {
 }
 
 #[tokio::test]
+async fn output_inconsistent_summary_returns_exit_two() {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut invalid = valid_report();
+    invalid["summary"]["counts"]["killed"] = json!(0);
+    let invalid = write_json(&fixture, "inconsistent-summary.json", &invalid);
+    let valid = write_json(&fixture, "valid.json", &valid_report());
+
+    let (code, stdout, stderr) = run_progress(&[invalid, valid], "json").await;
+
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty());
+    let diagnostic = String::from_utf8(stderr).unwrap();
+    assert!(diagnostic.contains("invalid structure in progress report"));
+    assert!(diagnostic.contains("summary counts must match mutant events"));
+}
+
+#[tokio::test]
 async fn output_unusable_reports_are_indeterminate_and_exit_zero() {
     let fixture = tempfile::tempdir().unwrap();
     let mut missing_baseline = valid_report();
@@ -653,6 +763,7 @@ async fn output_warns_about_duplicate_candidate_ids() {
     duplicate["candidate"]["path"] = json!("src/other.py");
     report["mutants"].as_array_mut().unwrap().push(duplicate);
     report["summary"]["sequence"] = json!(5);
+    report["summary"]["counts"]["killed"] = json!(2);
     let reports = vec![
         write_json(&fixture, "before.json", &report),
         write_json(&fixture, "after.json", &report),
@@ -680,6 +791,7 @@ async fn output_ambiguity_is_structured_and_warned_on_stderr() {
     duplicate_mutant["sequence"] = json!(4);
     ambiguous["mutants"] = json!([first_mutant, duplicate_mutant]);
     ambiguous["summary"]["sequence"] = json!(5);
+    ambiguous["summary"]["counts"]["killed"] = json!(2);
     let reports = vec![
         write_json(&fixture, "before.json", &ambiguous),
         write_json(&fixture, "after.json", &ambiguous),

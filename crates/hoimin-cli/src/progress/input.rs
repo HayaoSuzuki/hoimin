@@ -1,7 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use hoimin_core::{MutantFinished, OutputEvent, ProcessTermination, REPORT_SCHEMA_VERSION};
+use hoimin_core::{
+    MutantFinished, OutputEvent, ProcessTermination, REPORT_SCHEMA_VERSION, summarize,
+};
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -173,6 +175,23 @@ fn validate_structure(path: &Path, document: &RunReportDocument) -> Result<(), P
         return Err(invalid_structure(
             path,
             "summary must be a run_finished event",
+        ));
+    }
+    let statuses = document
+        .mutants
+        .iter()
+        .map(|event| match event {
+            OutputEvent::MutantFinished(mutant) => mutant.status,
+            _ => unreachable!("mutant event kinds were validated above"),
+        })
+        .collect::<Vec<_>>();
+    let OutputEvent::RunFinished(summary) = &document.summary else {
+        unreachable!("summary event kind was validated above");
+    };
+    if summarize(&statuses) != summary.counts {
+        return Err(invalid_structure(
+            path,
+            "summary counts must match mutant events",
         ));
     }
 
