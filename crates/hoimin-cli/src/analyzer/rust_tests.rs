@@ -729,12 +729,15 @@ fn assigns_nested_definition_symbols_and_init_module_selectors() {
 }
 
 #[test]
-fn filters_candidates_by_line_or_symbol() {
-    let source = "def first(a, b):\n    return a == b\n\ndef second(a, b):\n    return a == b\n";
+fn filters_candidates_by_line_and_symbol() {
+    let source = "def selected(a, b, c, d):\n    first = a == b\n    return c == d\n\ndef other(a, b):\n    return a == b\n";
     let output = analyze_with(
         Utf8Path::new("pkg/sample.py"),
-        &[LineRange { start: 2, end: 2 }],
-        &["pkg.sample:second".to_owned()],
+        &[
+            LineRange { start: 2, end: 2 },
+            LineRange { start: 6, end: 6 },
+        ],
+        &["pkg.sample:selected".to_owned()],
         10_000,
         source,
     );
@@ -742,9 +745,9 @@ fn filters_candidates_by_line_or_symbol() {
         output
             .candidates
             .iter()
-            .map(|candidate| candidate.symbol.as_deref())
+            .map(|candidate| (candidate.line, candidate.symbol.as_deref()))
             .collect::<Vec<_>>(),
-        vec![Some("first"), Some("second")]
+        vec![(2, Some("selected"))]
     );
 }
 

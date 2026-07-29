@@ -225,13 +225,12 @@ fn line_and_column(source: &str, offset: usize) -> (u32, u32) {
 }
 
 fn selected(request: &AnalyzeRequest<'_>, line: u32, symbol: Option<&str>) -> bool {
-    if request.lines.is_empty() && request.symbols.is_empty() {
-        return true;
-    }
-    request
-        .lines
-        .iter()
-        .any(|range| range.start <= line && line <= range.end)
+    let line_selected = request.lines.is_empty()
+        || request
+            .lines
+            .iter()
+            .any(|range| range.start <= line && line <= range.end);
+    let symbol_selected = request.symbols.is_empty()
         || request.symbols.iter().any(|selector| {
             let Some((module, qualname)) = selector.rsplit_once(':') else {
                 return false;
@@ -241,7 +240,8 @@ fn selected(request: &AnalyzeRequest<'_>, line: u32, symbol: Option<&str>) -> bo
                 && symbol.is_some_and(|symbol| {
                     symbol == qualname || symbol.starts_with(&format!("{qualname}."))
                 })
-        })
+        });
+    line_selected && symbol_selected
 }
 
 fn module_name(path: &Utf8Path) -> String {
