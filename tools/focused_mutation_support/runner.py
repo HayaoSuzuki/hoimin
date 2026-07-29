@@ -87,6 +87,7 @@ class CommandRunner:
             if log_cleanup is not None
             else self._default_log_cleanup
         )
+        self._has_custom_log_cleanup = log_cleanup is not None
         self._next_sequence = 1
 
     def run(
@@ -146,6 +147,18 @@ class CommandRunner:
                 "log cleanup callback failed: "
                 f"{type(error).__name__}: {error}"
             )
+            if self._has_custom_log_cleanup:
+                try:
+                    fallback_errors = self._default_log_cleanup(
+                        (paths.stdout, paths.stderr)
+                    )
+                except Exception as fallback_error:
+                    record.cleanup_errors.append(
+                        "default log cleanup failed: "
+                        f"{type(fallback_error).__name__}: {fallback_error}"
+                    )
+                else:
+                    record.cleanup_errors.extend(fallback_errors)
         else:
             record.cleanup_errors.extend(cleanup_errors)
         if outcome is CommandTimedOut:
