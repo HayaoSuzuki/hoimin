@@ -14,15 +14,15 @@ validated handle. Expose a narrow crate-private helper from the workspace
 module rather than duplicating Unix and Windows security logic.
 
 Fingerprint discovery and exact-path normalization remain responsible for
-selection and error categories. The final hashing pass uses the capability
-reader for both glob and exact inputs. Existing preflight metadata checks may
-improve error specificity, but they are not trusted for the bytes being hashed.
+selection. The final hashing pass uses the capability reader for both glob and
+exact inputs. Exact `not_found` classification comes from the I/O kind returned
+by that reader; no ambient metadata preflight probes the normalized pathname.
 
 ## Error handling
 
 Capability-reader errors are mapped to the existing exact or glob
-`unsupported_file` variants. The existing explicit missing-file preflight
-continues to produce `fingerprint.file.not_found`.
+`unsupported_file` variants, except a secure exact-file `NotFound` result,
+which retains `fingerprint.file.not_found`.
 
 ## Testing
 

@@ -47,14 +47,16 @@ pub fn resolve(
         }
     }
     for file in files {
-        selected.insert(resolve_exact(root, file)?, true);
+        selected.insert(resolve_exact(file)?, true);
     }
 
     selected
         .into_iter()
         .map(|(path, exact)| {
             let bytes = workspace::read_root_relative(root, &path).map_err(|error| {
-                if exact {
+                if exact && error.io_kind() == Some(ErrorKind::NotFound) {
+                    FingerprintInputError::NotFound(path.as_str().to_owned())
+                } else if exact {
                     FingerprintInputError::ExactUnsupportedFile(format!("{path}: {error}"))
                 } else {
                     FingerprintInputError::UnsupportedFile(format!("{path}: {error}"))
@@ -68,22 +70,8 @@ pub fn resolve(
         .collect()
 }
 
-fn resolve_exact(root: &Utf8Path, input: &str) -> Result<Utf8PathBuf, FingerprintInputError> {
-    let path = normalize_exact_path(input)?;
-    let metadata = std::fs::symlink_metadata(root.join(&path)).map_err(|error| {
-        if error.kind() == ErrorKind::NotFound {
-            FingerprintInputError::NotFound(input.to_owned())
-        } else {
-            FingerprintInputError::ExactUnsupportedFile(format!("{path}: {error}"))
-        }
-    })?;
-    let file_type = metadata.file_type();
-    if file_type.is_symlink() || !file_type.is_file() {
-        return Err(FingerprintInputError::ExactUnsupportedFile(
-            path.as_str().to_owned(),
-        ));
-    }
-    Ok(path)
+fn resolve_exact(input: &str) -> Result<Utf8PathBuf, FingerprintInputError> {
+    normalize_exact_path(input)
 }
 
 fn normalize_exact_path(input: &str) -> Result<Utf8PathBuf, FingerprintInputError> {

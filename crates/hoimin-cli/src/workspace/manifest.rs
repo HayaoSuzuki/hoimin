@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io;
 use std::path::Path;
 use std::time::SystemTime;
 
@@ -186,9 +187,9 @@ fn collect(
         }
         let bytes = fs::read(entry.path())
             .map_err(|error| WorkspaceError::io("read manifest file", &path, error))?;
-        let metadata = entry
-            .metadata()
-            .map_err(|error| WorkspaceError::io("read manifest metadata", &path, error))?;
+        let metadata = entry.metadata().map_err(|error| {
+            WorkspaceError::io("read manifest metadata", &path, io::Error::other(error))
+        })?;
         let size = u64::try_from(bytes.len()).map_err(|_| WorkspaceError::CopySizeOverflow)?;
         entries.insert(
             path.clone(),

@@ -6,8 +6,8 @@ mod root;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
-use std::fmt;
 use std::fs;
+use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -100,6 +100,7 @@ pub enum WorkspaceError {
     Io {
         operation: &'static str,
         path: Utf8PathBuf,
+        kind: io::ErrorKind,
         message: String,
     },
 }
@@ -108,12 +109,23 @@ impl WorkspaceError {
     pub(crate) fn io(
         operation: &'static str,
         path: impl AsRef<Utf8Path>,
-        error: impl fmt::Display,
+        error: impl Into<io::Error>,
     ) -> Self {
+        let error = error.into();
+        let kind = error.kind();
+        let message = error.to_string();
         Self::Io {
             operation,
             path: path.as_ref().to_owned(),
-            message: error.to_string(),
+            kind,
+            message,
+        }
+    }
+
+    pub(crate) const fn io_kind(&self) -> Option<io::ErrorKind> {
+        match self {
+            Self::Io { kind, .. } => Some(*kind),
+            _ => None,
         }
     }
 
@@ -927,6 +939,7 @@ fn effect_failed(id: hoimin_core::EffectId, error: WorkspaceError) -> EffectFail
             operation,
             path,
             message,
+            ..
         } => EffectFailure::Io {
             code,
             operation: operation.to_owned(),

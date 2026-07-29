@@ -236,3 +236,15 @@ fn exact_file_rejects_symlinked_parent() {
 
     assert_error_prefix(&error, "fingerprint.file.unsupported_file");
 }
+
+#[cfg(unix)]
+#[test]
+fn exact_missing_file_beneath_symlinked_parent_does_not_probe_outside() {
+    let fixture = fixture_root(&[]);
+    let outside = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(outside.path(), fixture.root.join("linked")).unwrap();
+
+    let error = resolve(&fixture.root, &[], &["linked/missing.txt".into()]).unwrap_err();
+
+    assert_error_prefix(&error, "fingerprint.file.unsupported_file");
+}

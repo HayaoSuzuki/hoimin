@@ -82,3 +82,37 @@ cargo test --workspace
 ```
 
 Expected: all commands exit zero.
+
+### Task 3: Remove ambient exact-file preflight
+
+**Files:**
+- Modify: `crates/hoimin-cli/src/fingerprint_inputs.rs`
+- Modify: `crates/hoimin-cli/src/workspace/mod.rs`
+- Modify: `crates/hoimin-cli/src/workspace/manifest.rs`
+- Test: `crates/hoimin-cli/tests/fingerprint_inputs.rs`
+
+**Interfaces:**
+- Consumes: `WorkspaceError::io_kind()`
+- Produces: secure exact-file `not_found` classification without ambient path probing
+
+- [x] **Step 1: Reproduce a missing file beneath a linked parent**
+
+Assert the request is rejected as unsupported rather than probing the outside
+directory and reporting `not_found`.
+
+- [x] **Step 2: Preserve I/O kinds in workspace errors**
+
+Record `std::io::ErrorKind` in `WorkspaceError::Io` and expose it
+crate-privately for fingerprint error mapping. Wrap the one non-I/O manifest
+metadata error as `ErrorKind::Other`.
+
+- [x] **Step 3: Remove `symlink_metadata` exact preflight**
+
+Normalize the exact path without touching the filesystem, then map a
+capability-reader `NotFound` to the existing exact not-found variant.
+
+- [x] **Step 4: Verify both linked-parent cases and exact missing behavior**
+
+Run: `cargo test -p hoimin-cli --test fingerprint_inputs`
+
+Expected: all tests pass.
