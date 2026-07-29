@@ -25,13 +25,13 @@
 - Consumes: `analyze_with(path, lines, symbols, max_candidates, source)`
 - Produces: a regression test requiring the intersection of non-empty line and symbol axes
 
-- [ ] **Step 1: Change the existing union test into an intersection fixture**
+- [x] **Step 1: Change the existing union test into an intersection fixture**
 
 Use three mutation sites: one matching both constraints, one matching only the
 symbol, and one matching only the line. Assert the returned descriptor is the
 single both-matching site.
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `cargo test -p hoimin-cli analyzer::rust::rust_tests::filters_candidates_by_line_and_symbol -- --exact`
 
@@ -48,18 +48,18 @@ either axis.
 - Consumes: `AnalyzeRequest.lines`, `AnalyzeRequest.symbols`, candidate line and symbol
 - Produces: `selected(...) -> bool` with AND semantics across non-empty axes
 
-- [ ] **Step 1: Implement the minimal predicate**
+- [x] **Step 1: Implement the minimal predicate**
 
 Compute `line_selected` as empty-or-matching and `symbol_selected` as
 empty-or-matching, then return `line_selected && symbol_selected`.
 
-- [ ] **Step 2: Verify GREEN**
+- [x] **Step 2: Verify GREEN**
 
 Run: `cargo test -p hoimin-cli analyzer::rust::rust_tests::filters_candidates_by_line_and_symbol -- --exact`
 
 Expected: PASS.
 
-- [ ] **Step 3: Run focused and workspace verification**
+- [x] **Step 3: Run focused and workspace verification**
 
 Run:
 
@@ -71,7 +71,7 @@ cargo test --workspace
 
 Expected: all commands exit zero.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 Commit the design, plan, regression test, and implementation together with a
 message referencing #62.
