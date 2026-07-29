@@ -733,8 +733,20 @@ class RunnerTests(unittest.TestCase):
         cleanup_error = (
             "stderr.log: log was not delete-ready within 2.0 seconds"
         )
+
+        def report_cleanup_error(paths: Sequence[Path]) -> list[str]:
+            if os.name == "nt":
+                release_errors = wait_for_log_release(
+                    paths,
+                    probe=probe_delete_access,
+                    monotonic=time.monotonic,
+                    sleep=time.sleep,
+                )
+                self.assertEqual(release_errors, [])
+            return [cleanup_error]
+
         with self.assertRaises(CommandTimedOut) as caught:
-            self.runner(log_cleanup=lambda _: [cleanup_error]).run(
+            self.runner(log_cleanup=report_cleanup_error).run(
                 [sys.executable, str(self.fake), "--sleep"],
                 cwd=self.work,
                 timeout=0.5,
