@@ -26,13 +26,13 @@
 - Consumes: `render_markdown(RunRecord) -> str`
 - Produces: a state-table regression test for all report sections
 
-- [ ] **Step 1: Add the all-state report test**
+- [x] **Step 1: Add the all-state report test**
 
 Create one candidate per `CandidateState`, split the rendered Markdown into its
 sections, and assert literal expected symbol sets and recommendation order.
 Assert the unverified count is five.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `./.venv/bin/python -m unittest tests.test_focused_mutation_reporting.FocusedMutationReportingTests.test_every_candidate_state_has_documented_report_membership -v`
 
@@ -48,15 +48,15 @@ Expected: FAIL because `unviable` appears as verified and the count is absent.
 - Consumes: `CandidateState`
 - Produces: Markdown with consistent verified/unverified membership and count
 
-- [ ] **Step 1: Remove `UNVIABLE` from conclusive states**
+- [x] **Step 1: Remove `UNVIABLE` from conclusive states**
 
 Leave killed and survived as the only verified states.
 
-- [ ] **Step 2: Render the unverified total**
+- [x] **Step 2: Render the unverified total**
 
 Add `- Unverified candidates: <count>` to the report summary header.
 
-- [ ] **Step 3: Verify focused and full Python suites**
+- [x] **Step 3: Verify focused and full Python suites**
 
 Run:
 
