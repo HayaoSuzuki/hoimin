@@ -706,20 +706,32 @@ class RunnerTests(unittest.TestCase):
         )
 
     def test_timeout_remains_primary_when_cleanup_callback_raises(self) -> None:
+        runner = self.runner(log_cleanup=raising_log_cleanup)
         result: CommandRecord | BaseException
-        try:
-            result = self.runner(log_cleanup=raising_log_cleanup).run(
-                [sys.executable, str(self.fake), "--sleep"],
-                cwd=self.work,
-                timeout=0.5,
-                label="timeout-with-cleanup-error",
-            )
-        except BaseException as error:
-            result = error
+        with mock.patch.object(
+            runner,
+            "_default_log_cleanup",
+            wraps=runner._default_log_cleanup,
+        ) as fallback_cleanup:
+            try:
+                result = runner.run(
+                    [sys.executable, str(self.fake), "--sleep"],
+                    cwd=self.work,
+                    timeout=0.5,
+                    label="timeout-with-cleanup-error",
+                )
+            except BaseException as error:
+                result = error
 
         self.assertIsInstance(result, CommandTimedOut)
         if not isinstance(result, CommandTimedOut):
             return
+        fallback_cleanup.assert_called_once_with(
+            (
+                Path(result.record.stdout_path),
+                Path(result.record.stderr_path),
+            )
+        )
         self.assertEqual(
             str(result),
             "command timed out: timeout-with-cleanup-error",

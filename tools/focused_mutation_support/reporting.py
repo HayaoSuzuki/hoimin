@@ -12,7 +12,6 @@ def render_markdown(record: RunRecord) -> str:
     conclusive_states = {
         CandidateState.KILLED,
         CandidateState.SURVIVED,
-        CandidateState.UNVIABLE,
     }
     verified = [
         candidate
@@ -42,6 +41,7 @@ def render_markdown(record: RunRecord) -> str:
         f"- Elapsed: `{elapsed:.1f}s` of `{record.total_budget_seconds:.1f}s`",
         f"- Commit: {_code(head)}",
         f"- Dirty worktree: `{dirty}`",
+        f"- Unverified candidates: `{len(unverified)}`",
         "",
         "## Verified candidates",
     ]

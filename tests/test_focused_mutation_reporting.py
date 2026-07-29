@@ -353,6 +353,49 @@ class FocusedMutationReportingTests(unittest.TestCase):
             ["timeout", "error", "killed"],
         )
 
+    def test_every_candidate_state_has_documented_report_membership(self) -> None:
+        record = fixture_record(
+            candidates=[
+                fixture_candidate(state.value, state)
+                for state in CandidateState
+            ],
+            state=RunState.COMPLETED,
+        )
+
+        markdown = render_markdown(record)
+        verified = markdown.split("## Verified candidates", 1)[1].split(
+            "## Investigation results", 1
+        )[0]
+        investigation = markdown.split("## Investigation results", 1)[1].split(
+            "## Unverified candidates", 1
+        )[0]
+        unverified = markdown.split("## Unverified candidates", 1)[1].split(
+            "## Next recommended order", 1
+        )[0]
+        recommended = markdown.split("## Next recommended order", 1)[1].split(
+            "## Manual classification", 1
+        )[0]
+
+        self.assertIn("- Unverified candidates: `5`", markdown)
+        for symbol in ("killed", "survived"):
+            self.assertIn(f"`{symbol}`", verified)
+            self.assertNotIn(f"`{symbol}`", unverified)
+        for symbol in ("pending", "timeout", "unviable", "not_run", "error"):
+            self.assertNotIn(f"`{symbol}`", verified)
+            self.assertIn(f"`{symbol}`", unverified)
+        for symbol in ("survived", "timeout", "unviable", "error"):
+            self.assertIn(f"`{symbol}`", investigation)
+        for symbol in ("pending", "killed", "not_run"):
+            self.assertNotIn(f"`{symbol}`", investigation)
+        self.assertEqual(
+            [
+                line.split("`", 2)[1]
+                for line in recommended.splitlines()
+                if line[:1].isdigit()
+            ],
+            ["pending", "timeout", "unviable", "not_run", "error"],
+        )
+
     def test_baseline_failure_checkpoints_and_skips_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             options, dependencies, runner = workflow_fixture(
