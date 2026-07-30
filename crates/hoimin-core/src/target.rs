@@ -287,11 +287,11 @@ fn normalize_ranges(ranges: &mut Vec<LineRange>) {
     ranges.sort_by_key(|range| (range.start, range.end));
     let mut merged: Vec<LineRange> = Vec::with_capacity(ranges.len());
     for range in ranges.drain(..) {
-        if let Some(previous) = merged.last_mut() {
-            if range.start <= previous.end.saturating_add(1) {
-                previous.end = previous.end.max(range.end);
-                continue;
-            }
+        if let Some(previous) = merged.last_mut()
+            && range.start <= previous.end.saturating_add(1)
+        {
+            previous.end = previous.end.max(range.end);
+            continue;
         }
         merged.push(range);
     }

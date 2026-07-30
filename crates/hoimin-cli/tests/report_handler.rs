@@ -529,15 +529,15 @@ fn validate_schema(
         }
     }
 
-    if let Some(expected) = schema.get("const") {
-        if instance != expected {
-            return Err(format!("{path}: expected const {expected}, got {instance}"));
-        }
+    if let Some(expected) = schema.get("const")
+        && instance != expected
+    {
+        return Err(format!("{path}: expected const {expected}, got {instance}"));
     }
-    if let Some(values) = schema.get("enum").and_then(serde_json::Value::as_array) {
-        if !values.contains(instance) {
-            return Err(format!("{path}: {instance} is not in enum"));
-        }
+    if let Some(values) = schema.get("enum").and_then(serde_json::Value::as_array)
+        && !values.contains(instance)
+    {
+        return Err(format!("{path}: {instance} is not in enum"));
     }
     if let Some(expected) = schema.get("type") {
         let matches = match expected {
@@ -553,15 +553,15 @@ fn validate_schema(
         }
     }
 
-    if let Some(minimum) = schema.get("minimum").and_then(serde_json::Value::as_f64) {
-        if instance.as_f64().is_some_and(|value| value < minimum) {
-            return Err(format!("{path}: number is below {minimum}"));
-        }
+    if let Some(minimum) = schema.get("minimum").and_then(serde_json::Value::as_f64)
+        && instance.as_f64().is_some_and(|value| value < minimum)
+    {
+        return Err(format!("{path}: number is below {minimum}"));
     }
-    if let Some(maximum) = schema.get("maximum").and_then(serde_json::Value::as_f64) {
-        if instance.as_f64().is_some_and(|value| value > maximum) {
-            return Err(format!("{path}: number is above {maximum}"));
-        }
+    if let Some(maximum) = schema.get("maximum").and_then(serde_json::Value::as_f64)
+        && instance.as_f64().is_some_and(|value| value > maximum)
+    {
+        return Err(format!("{path}: number is above {maximum}"));
     }
 
     if let Some(object) = instance.as_object() {

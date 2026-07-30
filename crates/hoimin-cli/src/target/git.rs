@@ -150,21 +150,20 @@ fn parse_diff(
             let raw_path = std::str::from_utf8(raw_path)
                 .map_err(|_| TargetError::GitFailed("Git diff path is not valid UTF-8".into()))?;
             path = parse_patch_path(raw_path)?;
-            if path.is_none() {
-                if let Some(old_path) = &old_path {
-                    if is_python(old_path) {
-                        excluded.insert(old_path.clone());
-                    }
-                }
+            if path.is_none()
+                && let Some(old_path) = &old_path
+                && is_python(old_path)
+            {
+                excluded.insert(old_path.clone());
             }
         } else if line.starts_with(b"@@") {
             let line = std::str::from_utf8(line)
                 .map_err(|_| TargetError::GitFailed("invalid Git hunk header".into()))?;
             let range = parse_hunk_range(line)?;
-            if let (Some(path), Some(range)) = (&path, range) {
-                if is_python(path) {
-                    changed.entry(path.clone()).or_default().push(range);
-                }
+            if let (Some(path), Some(range)) = (&path, range)
+                && is_python(path)
+            {
+                changed.entry(path.clone()).or_default().push(range);
             }
         } else if line.starts_with(b"Binary files ") || line == b"GIT binary patch" {
             let binary_path = if line.starts_with(b"Binary files ") {
@@ -179,10 +178,10 @@ fn parse_diff(
             } else {
                 path.clone()
             };
-            if let Some(path) = binary_path {
-                if is_python(&path) {
-                    excluded.insert(path);
-                }
+            if let Some(path) = binary_path
+                && is_python(&path)
+            {
+                excluded.insert(path);
             }
         }
     }

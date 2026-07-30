@@ -32,7 +32,7 @@ pub fn project_top_budget(
     remaining: Duration,
 ) -> TopBudgetProjection {
     let jobs = jobs.get();
-    let waves = selected / jobs + usize::from(selected % jobs != 0);
+    let waves = selected / jobs + usize::from(!selected.is_multiple_of(jobs));
     let effective_mutant_timeout = match mutant_timeout {
         MutantTimeout::Auto => auto_mutant_timeout(baseline),
         MutantTimeout::Fixed(value) => value.get(),
