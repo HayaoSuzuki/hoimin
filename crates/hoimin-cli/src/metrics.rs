@@ -174,7 +174,11 @@ impl<C: Clock> MetricsCollector<C> {
         Ok(())
     }
 
-    pub(crate) fn process_finished(&mut self, worker: u32) -> Result<(), MetricsError> {
+    pub(crate) fn process_finished(
+        &mut self,
+        worker: u32,
+        executed: bool,
+    ) -> Result<(), MetricsError> {
         let now = self.clock.elapsed();
         let state = self.workers.entry(worker).or_default();
         let started = state
@@ -187,7 +191,9 @@ impl<C: Clock> MetricsCollector<C> {
         metric.busy_ms = metric
             .busy_ms
             .saturating_add(duration_ms(now.saturating_sub(started)));
-        metric.processes = metric.processes.saturating_add(1);
+        if executed {
+            metric.processes = metric.processes.saturating_add(1);
+        }
         Ok(())
     }
 
@@ -222,16 +228,21 @@ impl<C: Clock> MetricsCollector<C> {
             .workers
             .into_values()
             .filter_map(|state| state.metric)
+            .filter(|metric| metric.processes > 0)
             .collect();
         metrics.discovered = discovered.max(self.discovered);
         metrics.executed = executed;
-        metrics.validate().map_err(MetricsError::Validation)?;
+        metrics
+            .validate()
+            .map_err(|error| MetricsError::Validation(error.to_string()))?;
         Ok(metrics)
     }
 }
 
 pub(crate) fn write_metrics(path: &Path, metrics: &RunMetrics) -> Result<(), MetricsError> {
-    metrics.validate().map_err(MetricsError::Validation)?;
+    metrics
+        .validate()
+        .map_err(|error| MetricsError::Validation(error.to_string()))?;
     let parent = destination_parent(path);
     let mut temporary =
         NamedTempFile::new_in(parent).map_err(|source| MetricsError::TemporaryFileCreation {
@@ -317,16 +328,16 @@ mod tests {
         collector.clock.advance_ms(2);
         collector.process_started(1).unwrap();
         collector.clock.advance_ms(9);
-        collector.process_finished(2).unwrap();
+        collector.process_finished(2, true).unwrap();
         collector.clock.advance_ms(2);
-        collector.process_finished(1).unwrap();
+        collector.process_finished(1, true).unwrap();
         collector.discovered(4);
 
-        let metrics = collector.finish(3, 1).unwrap();
+        let metrics = collector.finish(3, 2).unwrap();
 
         assert_eq!(metrics.elapsed_ms, 23);
         assert_eq!(metrics.discovered, 4);
-        assert_eq!(metrics.executed, 1);
+        assert_eq!(metrics.executed, 2);
         assert_eq!(metrics.stages[0].elapsed_ms, 7);
         assert_eq!(
             metrics.workers[0],
@@ -357,12 +368,12 @@ mod tests {
         collector.finish_stage("alpha").unwrap();
         collector.queued(9).unwrap();
         collector.process_started(9).unwrap();
-        collector.process_finished(9).unwrap();
+        collector.process_finished(9, true).unwrap();
         collector.queued(2).unwrap();
         collector.process_started(2).unwrap();
-        collector.process_finished(2).unwrap();
+        collector.process_finished(2, true).unwrap();
 
-        let metrics = collector.finish(0, 0).unwrap();
+        let metrics = collector.finish(2, 2).unwrap();
         assert_eq!(
             metrics
                 .stages
@@ -391,7 +402,7 @@ mod tests {
             Err(MetricsError::StageAlreadyFinished { .. })
         ));
         assert!(matches!(
-            collector.process_finished(7),
+            collector.process_finished(7, true),
             Err(MetricsError::ProcessNotStarted { worker: 7 })
         ));
     }
@@ -434,6 +445,22 @@ mod tests {
         write_metrics(&path, &metrics).unwrap();
         let actual: RunMetrics = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
         assert_eq!(actual, metrics);
+    }
+
+    #[test]
+    fn writer_preserves_destination_when_accounting_is_invalid() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("metrics.json");
+        fs::write(&path, "old").unwrap();
+        let mut metrics = RunMetrics::empty("run-1");
+        metrics.discovered = 1;
+        metrics.executed = 2;
+
+        assert!(matches!(
+            write_metrics(&path, &metrics),
+            Err(MetricsError::Validation(_))
+        ));
+        assert_eq!(fs::read_to_string(path).unwrap(), "old");
     }
 
     #[test]
