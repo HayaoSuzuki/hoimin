@@ -751,14 +751,14 @@ fn annotation_replacements(
 }
 
 fn nullable_removal(annotation: &Expr, source: &str, imports: &KnownImports) -> Option<String> {
-    if let Expr::BinOp(binary) = annotation {
-        if binary.op == Operator::BitOr {
-            if is_none(binary.left.as_ref()) {
-                return Some(expression_source(binary.right.as_ref(), source));
-            }
-            if is_none(binary.right.as_ref()) {
-                return Some(expression_source(binary.left.as_ref(), source));
-            }
+    if let Expr::BinOp(binary) = annotation
+        && binary.op == Operator::BitOr
+    {
+        if is_none(binary.left.as_ref()) {
+            return Some(expression_source(binary.right.as_ref(), source));
+        }
+        if is_none(binary.right.as_ref()) {
+            return Some(expression_source(binary.left.as_ref(), source));
         }
     }
     let Expr::Subscript(subscript) = annotation else {

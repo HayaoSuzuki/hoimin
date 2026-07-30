@@ -1936,10 +1936,9 @@ async fn wait_for_descendant_process(marker: &Path, timeout: Duration) -> Descen
         if let Some(pid) = std::fs::read_to_string(marker)
             .ok()
             .and_then(|value| value.trim().parse().ok())
+            && let Some(process) = DescendantProcess::open(pid)
         {
-            if let Some(process) = DescendantProcess::open(pid) {
-                return process;
-            }
+            return process;
         }
         assert!(
             tokio::time::Instant::now() < deadline,

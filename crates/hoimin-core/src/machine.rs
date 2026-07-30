@@ -421,14 +421,13 @@ impl RunState {
         }
         if let (Some(expected_reservations), RunEvent::CleanupFinished(cleanup)) =
             (&expected.cleanup_reservations, event)
+            && !cleanup_reservations_match(expected_reservations, &cleanup.released_reservations)
         {
-            if !cleanup_reservations_match(expected_reservations, &cleanup.released_reservations) {
-                return Err(MachineError::CleanupReservationMismatch {
-                    id,
-                    expected: expected_reservations.clone(),
-                    received: cleanup.released_reservations.clone(),
-                });
-            }
+            return Err(MachineError::CleanupReservationMismatch {
+                id,
+                expected: expected_reservations.clone(),
+                received: cleanup.released_reservations.clone(),
+            });
         }
         self.pending.remove(&id);
         if id.0 == self.completed_floor.saturating_add(1) {
