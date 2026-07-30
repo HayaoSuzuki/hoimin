@@ -11,6 +11,24 @@ uv run maturin build --release
 uv run --frozen python tests/wheel_smoke.py
 ```
 
+## Minimum supported Rust version
+
+`workspace.package.rust-version` in `Cargo.toml` is the minimum supported Rust
+version (MSRV). CI checks the complete locked workspace with that compiler.
+Run the same gate locally before updating Rust dependencies:
+
+```console
+rustup toolchain install 1.88 --profile minimal
+cargo +1.88 check --workspace --all-targets --all-features --locked
+```
+
+The committed `Cargo.lock` must remain compilable on the MSRV. When a dependency
+update raises its compiler requirement, select the newest dependency release
+that still supports the MSRV. If the project deliberately raises its MSRV,
+update `workspace.package.rust-version`, the `msrv` CI job, its workflow
+contract test, and this section in the same pull request. Stable CI remains
+required in addition to the MSRV gate.
+
 Before running the standalone wheel smoke script, you must build a release wheel
 first with `uv run maturin build --release`. Alternatively, set `HOIMIN_WHEEL`
 to the exact path of an existing wheel to test. The script only selects and

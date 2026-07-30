@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -9,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 DEVELOPMENT_GUIDE = ROOT / "docs" / "development.md"
+CARGO_MANIFEST = ROOT / "Cargo.toml"
 
 
 def job_block(workflow: str, job_name: str) -> str:
@@ -53,6 +55,24 @@ def job_event_conditions(workflow: str) -> set[str]:
 
 
 class ShuffleWorkflowContractTests(unittest.TestCase):
+    def test_msrv_job_matches_the_manifest_and_checks_the_locked_workspace(self) -> None:
+        workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+        manifest = tomllib.loads(CARGO_MANIFEST.read_text(encoding="utf-8"))
+        msrv = manifest["workspace"]["package"]["rust-version"]
+        job = job_block(workflow, "msrv")
+
+        self.assertRegex(job, r"(?m)^    needs: quality$")
+        self.assertRegex(job, r"(?m)^    runs-on: ubuntu-latest$")
+        self.assertIn(
+            f"rustup toolchain install {msrv} --profile minimal",
+            job,
+        )
+        self.assertRegex(
+            job,
+            rf"(?m)^      - run: cargo \+{re.escape(msrv)} check "
+            r"--workspace --all-targets --all-features --locked$",
+        )
+
     def test_wheel_smoke_build_starts_from_an_empty_artifact_directory(self) -> None:
         workflow = CI_WORKFLOW.read_text(encoding="utf-8")
         wheel_smoke = job_block(workflow, "wheel-smoke")
