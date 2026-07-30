@@ -1,6 +1,7 @@
 mod schema;
 
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 #[cfg(feature = "contracts")]
 use std::time::Duration;
 
@@ -23,6 +24,8 @@ pub enum SessionError {
     Schema(#[from] SchemaError),
     #[error("failed to open SQLite session: {0}")]
     Open(#[from] rusqlite::Error),
+    #[error("SQLite session blocking task failed: {0}")]
+    Task(String),
 }
 
 pub struct SessionHandler {
@@ -372,6 +375,77 @@ impl SessionHandler {
     }
 }
 
+#[derive(Clone)]
+pub(crate) struct SessionDispatcher {
+    handler: Arc<Mutex<SessionHandler>>,
+}
+
+impl SessionDispatcher {
+    pub(crate) async fn open(path: impl AsRef<Path>) -> Result<Self, SessionError> {
+        let path = path.as_ref().to_owned();
+        let handler = tokio::task::spawn_blocking(move || SessionHandler::open(path))
+            .await
+            .map_err(|error| SessionError::Task(error.to_string()))??;
+        Ok(Self {
+            handler: Arc::new(Mutex::new(handler)),
+        })
+    }
+
+    pub(crate) async fn load(&self, request: LoadSession) -> Result<SessionLoaded, EffectFailed> {
+        let id = request.id;
+        self.call(id, move |handler| handler.load(&request)).await
+    }
+
+    pub(crate) async fn lookup(
+        &self,
+        request: LookupStoredResult,
+    ) -> Result<StoredResultLoaded, EffectFailed> {
+        let id = request.id;
+        self.call(id, move |handler| handler.lookup(&request)).await
+    }
+
+    pub(crate) async fn begin(
+        &self,
+        request: BeginSession,
+    ) -> Result<SessionStarted, EffectFailed> {
+        let id = request.id;
+        self.call(id, move |handler| handler.begin(request)).await
+    }
+
+    pub(crate) async fn persist(
+        &self,
+        request: PersistResult,
+    ) -> Result<ResultPersisted, EffectFailed> {
+        let id = request.id;
+        self.call(id, move |handler| handler.persist(&request))
+            .await
+    }
+
+    pub(crate) async fn finish(
+        &self,
+        request: FinishSession,
+    ) -> Result<SessionFinished, EffectFailed> {
+        let id = request.id;
+        self.call(id, move |handler| handler.finish(request)).await
+    }
+
+    async fn call<T, F>(&self, id: EffectId, operation: F) -> Result<T, EffectFailed>
+    where
+        T: Send + 'static,
+        F: FnOnce(&mut SessionHandler) -> Result<T, EffectFailed> + Send + 'static,
+    {
+        let handler = self.handler.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut handler = handler.lock().map_err(|_| {
+                EffectFailed::other(id, "session.dispatch", "session lock poisoned")
+            })?;
+            operation(&mut handler)
+        })
+        .await
+        .map_err(|error| EffectFailed::other(id, "session.dispatch", error.to_string()))?
+    }
+}
+
 fn insert_candidate(transaction: &Transaction<'_>, result: &MutantResult) -> rusqlite::Result<()> {
     let candidate = &result.candidate;
     transaction.execute(
@@ -665,5 +739,39 @@ impl RawResult {
             output,
             diagnostics: Vec::new(),
         })
+    }
+}
+
+#[cfg(test)]
+mod dispatch_tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn conflicting_lock_does_not_block_the_async_deadline() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("locked.sqlite3");
+        drop(SessionHandler::open(&path).unwrap());
+        let blocker = Connection::open(&path).unwrap();
+        blocker.execute_batch("BEGIN IMMEDIATE").unwrap();
+        let dispatcher = SessionDispatcher::open(path).await.unwrap();
+        let operation = dispatcher.begin(BeginSession {
+            id: EffectId(91),
+            run_id: "blocked".to_owned(),
+            fingerprint: hoimin_core::RunFingerprint::from_bytes([9; 32]),
+        });
+        tokio::pin!(operation);
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), &mut operation)
+                .await
+                .is_err(),
+            "the real SQLite operation must still be waiting on the lock"
+        );
+        blocker.execute_batch("ROLLBACK").unwrap();
+
+        let started = operation.await.unwrap();
+        assert_eq!(started.id, EffectId(91));
+        assert_eq!(started.run_id, "blocked");
     }
 }

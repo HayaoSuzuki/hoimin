@@ -22,7 +22,7 @@ use crate::report::ReportHandler;
 #[cfg(not(any(windows, target_os = "linux")))]
 use crate::resource::PortableBackend;
 use crate::resource::ResourceBackend;
-use crate::session::SessionHandler;
+use crate::session::SessionDispatcher;
 use crate::target::TargetHandler;
 use crate::workspace::{CopyOptions, WorkspaceHandler};
 
@@ -116,7 +116,7 @@ pub struct ShellContext<Stdout, Stderr> {
     analyzer: AnalyzerHandler,
     process: Arc<ProcessHandler>,
     report: ReportHandler<Stdout, Stderr>,
-    session: Option<SessionHandler>,
+    session: Option<SessionDispatcher>,
     session_path: Option<Utf8PathBuf>,
     active_candidates: BTreeMap<u32, hoimin_core::MutationCandidate>,
     _spool_dir: TempDir,
@@ -400,24 +400,30 @@ where
                 error.to_string(),
             )),
         },
-        RunEffect::LoadSession(request) => match session(context, id) {
-            Ok(handler) => handler.load(&request).map(RunEvent::SessionLoaded),
+        RunEffect::LoadSession(request) => match session(context, id).await {
+            Ok(handler) => handler.load(request).await.map(RunEvent::SessionLoaded),
             Err(error) => Err(error),
         },
-        RunEffect::LookupStoredResult(request) => match session(context, id) {
-            Ok(handler) => handler.lookup(&request).map(RunEvent::StoredResultLoaded),
+        RunEffect::LookupStoredResult(request) => match session(context, id).await {
+            Ok(handler) => handler
+                .lookup(request)
+                .await
+                .map(RunEvent::StoredResultLoaded),
             Err(error) => Err(error),
         },
-        RunEffect::BeginSession(request) => match session(context, id) {
-            Ok(handler) => handler.begin(request).map(RunEvent::SessionStarted),
+        RunEffect::BeginSession(request) => match session(context, id).await {
+            Ok(handler) => handler.begin(request).await.map(RunEvent::SessionStarted),
             Err(error) => Err(error),
         },
-        RunEffect::PersistResult(request) => match session(context, id) {
-            Ok(handler) => handler.persist(&request).map(RunEvent::ResultPersisted),
+        RunEffect::PersistResult(request) => match session(context, id).await {
+            Ok(handler) => handler
+                .persist(request)
+                .await
+                .map(RunEvent::ResultPersisted),
             Err(error) => Err(error),
         },
-        RunEffect::FinishSession(request) => match session(context, id) {
-            Ok(handler) => handler.finish(request).map(RunEvent::SessionFinished),
+        RunEffect::FinishSession(request) => match session(context, id).await {
+            Ok(handler) => handler.finish(request).await.map(RunEvent::SessionFinished),
             Err(error) => Err(error),
         },
     };
@@ -498,20 +504,21 @@ fn remove_environment_key(
     }
 }
 
-fn session<Stdout, Stderr>(
+async fn session<Stdout, Stderr>(
     context: &mut ShellContext<Stdout, Stderr>,
     id: EffectId,
-) -> Result<&mut SessionHandler, EffectFailed> {
+) -> Result<SessionDispatcher, EffectFailed> {
     if context.session.is_none() {
-        let path = context.session_path.as_ref().ok_or_else(|| {
+        let path = context.session_path.clone().ok_or_else(|| {
             EffectFailed::other(id, "session.missing", "session effect without --session")
         })?;
         context.session = Some(
-            SessionHandler::open(path)
+            SessionDispatcher::open(path)
+                .await
                 .map_err(|error| EffectFailed::other(id, "session.open", error.to_string()))?,
         );
     }
-    Ok(context.session.as_mut().expect("initialized above"))
+    Ok(context.session.as_ref().expect("initialized above").clone())
 }
 
 /// Resolves filesystem-backed records that participate in a run fingerprint.
