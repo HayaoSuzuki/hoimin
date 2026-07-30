@@ -27,6 +27,36 @@ fn input_accepts_a_complete_baseline_success_report() {
 }
 
 #[test]
+fn input_rejects_repeated_stable_mutant_identities() {
+    let fixture = tempfile::tempdir().unwrap();
+    for (name, candidate_sequence, expected_message) in [
+        ("duplicate", 1, "mutant stable IDs must appear at most once"),
+        (
+            "mismatch",
+            2,
+            "mutant stable IDs must map to one candidate sequence",
+        ),
+    ] {
+        let mut document = valid_report();
+        let mut duplicate = document["mutants"][0].clone();
+        duplicate["sequence"] = json!(4);
+        duplicate["candidate"]["sequence"] = json!(candidate_sequence);
+        document["mutants"].as_array_mut().unwrap().push(duplicate);
+        document["summary"]["sequence"] = json!(5);
+        document["summary"]["counts"]["killed"] = json!(2);
+
+        let report = write_json(&fixture, &format!("{name}.json"), &document);
+        assert!(matches!(
+            read_report(&report),
+            Err(ProgressError::InvalidStructure {
+                message,
+                ..
+            }) if message == expected_message
+        ));
+    }
+}
+
+#[test]
 fn input_rejects_every_summary_mutant_consistency_mismatch() {
     let fixture = tempfile::tempdir().unwrap();
     let mut cases = Vec::new();
@@ -681,6 +711,28 @@ async fn output_invalid_structure_returns_exit_two() {
 }
 
 #[tokio::test]
+async fn output_repeated_stable_identity_returns_exit_two() {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut invalid = valid_report();
+    let mut duplicate = invalid["mutants"][0].clone();
+    duplicate["sequence"] = json!(4);
+    duplicate["candidate"]["sequence"] = json!(2);
+    invalid["mutants"].as_array_mut().unwrap().push(duplicate);
+    invalid["summary"]["sequence"] = json!(5);
+    invalid["summary"]["counts"]["killed"] = json!(2);
+    let invalid = write_json(&fixture, "repeated-identity.json", &invalid);
+    let valid = write_json(&fixture, "valid.json", &valid_report());
+
+    let (code, stdout, stderr) = run_progress(&[invalid, valid], "json").await;
+
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty());
+    let diagnostic = String::from_utf8(stderr).unwrap();
+    assert!(diagnostic.contains("invalid structure in progress report"));
+    assert!(diagnostic.contains("mutant stable IDs must map to one candidate sequence"));
+}
+
+#[tokio::test]
 async fn output_inconsistent_summary_returns_exit_two() {
     let fixture = tempfile::tempdir().unwrap();
     let mut invalid = valid_report();
@@ -754,41 +806,14 @@ async fn output_warns_when_candidate_id_sets_differ() {
 }
 
 #[tokio::test]
-async fn output_warns_about_duplicate_candidate_ids() {
-    let fixture = tempfile::tempdir().unwrap();
-    let mut report = valid_report();
-    let mut duplicate = report["mutants"][0].clone();
-    duplicate["sequence"] = json!(4);
-    duplicate["candidate"]["sequence"] = json!(2);
-    duplicate["candidate"]["path"] = json!("src/other.py");
-    report["mutants"].as_array_mut().unwrap().push(duplicate);
-    report["summary"]["sequence"] = json!(5);
-    report["summary"]["counts"]["killed"] = json!(2);
-    let reports = vec![
-        write_json(&fixture, "before.json", &report),
-        write_json(&fixture, "after.json", &report),
-    ];
-
-    let (code, stdout, stderr) = run_progress(&reports, "json").await;
-    let value: Value = serde_json::from_slice(&stdout).unwrap();
-    let diagnostics = String::from_utf8(stderr).unwrap();
-
-    assert_eq!(code, 0);
-    assert_eq!(value["latest"]["state"], "indeterminate");
-    assert_eq!(value["latest"]["consecutive_stalls"], 0);
-    assert!(
-        diagnostics.contains("comparison 1 has duplicate candidate IDs; progress is indeterminate")
-    );
-    assert!(value["comparisons"][0].get("candidate_set_match").is_none());
-}
-
-#[tokio::test]
 async fn output_ambiguity_is_structured_and_warned_on_stderr() {
     let fixture = tempfile::tempdir().unwrap();
     let mut ambiguous = valid_report();
     let first_mutant = ambiguous["mutants"][0].clone();
     let mut duplicate_mutant = first_mutant.clone();
     duplicate_mutant["sequence"] = json!(4);
+    duplicate_mutant["candidate"]["id"] = json!("mutant-2");
+    duplicate_mutant["candidate"]["sequence"] = json!(2);
     ambiguous["mutants"] = json!([first_mutant, duplicate_mutant]);
     ambiguous["summary"]["sequence"] = json!(5);
     ambiguous["summary"]["counts"]["killed"] = json!(2);

@@ -208,6 +208,131 @@ fn a_mutant_finish_must_follow_its_matching_start() {
 
 #[cfg(not(feature = "contracts"))]
 #[test]
+fn sequence_rejects_sequential_stable_identity_reuse_with_another_sequence() {
+    let mut sequence = ReportSequence::new();
+    sequence
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .unwrap();
+    sequence
+        .observe(&OutputEvent::MutantStarted(MutantStarted::new(
+            "run-1", 2, "m1", 7,
+        )))
+        .unwrap();
+    sequence
+        .observe(&finished_event(3, candidate("m1", 7)))
+        .unwrap();
+
+    assert_eq!(
+        sequence.observe(&OutputEvent::MutantStarted(MutantStarted::new(
+            "run-1", 4, "m1", 8,
+        ))),
+        Err(
+            hoimin_core::ReportSequenceError::MutantIdentitySequenceMismatch {
+                mutant_id: "m1".to_owned(),
+                expected_sequence: 7,
+                received_sequence: 8,
+            }
+        )
+    );
+}
+
+#[cfg(not(feature = "contracts"))]
+#[test]
+fn sequence_rejects_concurrent_stable_identity_reuse_with_another_sequence() {
+    let mut sequence = ReportSequence::new();
+    sequence
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .unwrap();
+    sequence
+        .observe(&OutputEvent::MutantStarted(MutantStarted::new(
+            "run-1", 2, "m1", 7,
+        )))
+        .unwrap();
+
+    assert_eq!(
+        sequence.observe(&OutputEvent::MutantStarted(MutantStarted::new(
+            "run-1", 3, "m1", 8,
+        ))),
+        Err(
+            hoimin_core::ReportSequenceError::MutantIdentitySequenceMismatch {
+                mutant_id: "m1".to_owned(),
+                expected_sequence: 7,
+                received_sequence: 8,
+            }
+        )
+    );
+}
+
+#[cfg(not(feature = "contracts"))]
+#[test]
+fn sequence_rejects_duplicate_stable_identity_with_the_same_sequence() {
+    let mut sequence = ReportSequence::new();
+    sequence
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .unwrap();
+    sequence
+        .observe(&OutputEvent::MutantStarted(MutantStarted::new(
+            "run-1", 2, "m1", 7,
+        )))
+        .unwrap();
+    sequence
+        .observe(&finished_event(3, candidate("m1", 7)))
+        .unwrap();
+
+    assert_eq!(
+        sequence.observe(&OutputEvent::MutantStarted(MutantStarted::new(
+            "run-1", 4, "m1", 7,
+        ))),
+        Err(hoimin_core::ReportSequenceError::DuplicateMutantIdentity {
+            mutant_id: "m1".to_owned(),
+            mutant_sequence: 7,
+        })
+    );
+}
+
+#[cfg(not(feature = "contracts"))]
+#[test]
+fn sequence_rejects_finish_with_a_different_identity_sequence() {
+    let mut sequence = ReportSequence::new();
+    sequence
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .unwrap();
+    sequence
+        .observe(&OutputEvent::MutantStarted(MutantStarted::new(
+            "run-1", 2, "m1", 7,
+        )))
+        .unwrap();
+
+    assert_eq!(
+        sequence.observe(&finished_event(3, candidate("m1", 8))),
+        Err(
+            hoimin_core::ReportSequenceError::MutantIdentitySequenceMismatch {
+                mutant_id: "m1".to_owned(),
+                expected_sequence: 7,
+                received_sequence: 8,
+            }
+        )
+    );
+}
+
+#[cfg(not(feature = "contracts"))]
+#[test]
+fn sequence_accepts_distinct_stable_identities_executing_concurrently() {
+    let mut sequence = ReportSequence::new();
+    for event in [
+        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)),
+        OutputEvent::MutantStarted(MutantStarted::new("run-1", 2, "m1", 7)),
+        OutputEvent::MutantStarted(MutantStarted::new("run-1", 3, "m2", 8)),
+        finished_event(4, candidate("m2", 8)),
+        finished_event(5, candidate("m1", 7)),
+        run_finished_event(6),
+    ] {
+        sequence.observe(&event).unwrap();
+    }
+}
+
+#[cfg(not(feature = "contracts"))]
+#[test]
 fn run_finished_rejects_every_later_event() {
     let mut sequence = ReportSequence::new();
     sequence

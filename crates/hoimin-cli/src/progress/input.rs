@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -176,6 +177,22 @@ fn validate_structure(path: &Path, document: &RunReportDocument) -> Result<(), P
             path,
             "summary must be a run_finished event",
         ));
+    }
+    let mut stable_identities = BTreeMap::new();
+    for event in &document.mutants {
+        let OutputEvent::MutantFinished(mutant) = event else {
+            unreachable!("mutant event kinds were validated above");
+        };
+        if let Some(expected_sequence) =
+            stable_identities.insert(&mutant.candidate.id, mutant.candidate.sequence)
+        {
+            let message = if expected_sequence == mutant.candidate.sequence {
+                "mutant stable IDs must appear at most once"
+            } else {
+                "mutant stable IDs must map to one candidate sequence"
+            };
+            return Err(invalid_structure(path, message));
+        }
     }
     let statuses = document
         .mutants
