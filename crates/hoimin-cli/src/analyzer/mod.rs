@@ -15,9 +15,11 @@ use hoimin_core::{
 
 use crate::process::ProcessCancellation;
 use crate::resource::ResourceBackend;
+use crate::workspace::RootRelativeReader;
 
 pub struct AnalyzerHandler {
-    root: Utf8PathBuf,
+    root_path: Utf8PathBuf,
+    root: Option<RootRelativeReader>,
     store: Option<CandidateStore>,
 }
 
@@ -38,17 +40,18 @@ pub async fn discover_targets(
     profile: MutationProfile,
     max_candidates: usize,
 ) -> Result<Discovery, EffectFailed> {
+    let root = RootRelativeReader::open(root.to_owned()).map_err(|error| {
+        EffectFailed::other(EffectId(0), "analyzer.source.read", error.to_string())
+    })?;
     let mut discovery = Discovery {
         candidates: Vec::new(),
         diagnostics: Vec::new(),
         truncated: false,
     };
     for target in targets {
-        let source = tokio::fs::read(root.join(&target.path))
-            .await
-            .map_err(|error| {
-                EffectFailed::other(EffectId(0), "analyzer.source.read", error.to_string())
-            })?;
+        let source = root.read(&target.path).map_err(|error| {
+            EffectFailed::other(EffectId(0), "analyzer.source.read", error.to_string())
+        })?;
         let module = String::from_utf8(source.clone()).map_err(|error| {
             EffectFailed::other(EffectId(0), "analyzer.source.utf8", error.to_string())
         })?;
@@ -93,7 +96,11 @@ impl AnalyzerHandler {
         reason = "The preserved fallible API currently has no error-producing path."
     )]
     pub fn new(root: Utf8PathBuf) -> Result<Self, std::io::Error> {
-        Ok(Self { root, store: None })
+        Ok(Self {
+            root_path: root,
+            root: None,
+            store: None,
+        })
     }
 
     #[allow(
@@ -106,7 +113,7 @@ impl AnalyzerHandler {
         _max_memory_bytes: u64,
         _max_processes: u32,
     ) -> Result<Self, std::io::Error> {
-        Ok(Self { root, store: None })
+        Self::new(root)
     }
 
     /// # Errors
@@ -143,7 +150,7 @@ impl AnalyzerHandler {
             () = cancellation.cancelled() => {
                 return Err(EffectFailed::other(id, "analyzer.cancelled", "analyzer was cancelled"));
             }
-            result = tokio::fs::read(self.root.join(&request.target.path)) => result
+            result = async { self.read_source(&request.target.path) } => result
                 .map_err(|error| EffectFailed::other(id, "analyzer.source.read", error.to_string()))?,
         };
         let module = String::from_utf8(source.clone())
@@ -189,6 +196,22 @@ impl AnalyzerHandler {
             spool,
             truncated: output.truncated,
         })
+    }
+
+    fn read_source(
+        &mut self,
+        path: &Utf8Path,
+    ) -> Result<Vec<u8>, crate::workspace::RootRelativeReadError> {
+        if self.root.is_none() {
+            self.root = Some(
+                RootRelativeReader::open(self.root_path.clone())
+                    .map_err(crate::workspace::RootRelativeReadError::Other)?,
+            );
+        }
+        self.root
+            .as_ref()
+            .expect("root reader initialized")
+            .read(path)
     }
 }
 

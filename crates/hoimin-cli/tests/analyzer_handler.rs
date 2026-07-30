@@ -49,6 +49,40 @@ fn handler(root: Utf8PathBuf) -> AnalyzerHandler {
     AnalyzerHandler::new(root).unwrap()
 }
 
+#[cfg(unix)]
+fn create_dir_link(target: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+}
+
+#[cfg(windows)]
+fn create_dir_link(target: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
+    match std::os::windows::fs::symlink_dir(target, link) {
+        Ok(()) => Ok(()),
+        Err(error)
+            if error.kind() == std::io::ErrorKind::PermissionDenied
+                || error.kind() == std::io::ErrorKind::Unsupported
+                || error.raw_os_error() == Some(1314) =>
+        {
+            let output = std::process::Command::new("cmd")
+                .arg("/C")
+                .arg("mklink")
+                .arg("/J")
+                .arg(link)
+                .arg(target)
+                .output()?;
+            if output.status.success() {
+                Ok(())
+            } else {
+                Err(std::io::Error::other(format!(
+                    "failed to create Windows test junction: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                )))
+            }
+        }
+        Err(error) => Err(error),
+    }
+}
+
 fn two_target_fixture() -> (
     tempfile::TempDir,
     Utf8PathBuf,
@@ -133,6 +167,84 @@ async fn in_memory_discovery_matches_runtime_candidate_descriptors() {
 
     assert_eq!(planned.candidates, runtime);
     assert!(!planned.truncated);
+}
+
+#[tokio::test]
+async fn analyzer_rejects_replaced_source_parent() {
+    let project = tempfile::tempdir().unwrap();
+    let source_parent = project.path().join("src");
+    fs::create_dir(&source_parent).unwrap();
+    fs::write(
+        source_parent.join("calc.py"),
+        "def selected():\n    return 1 + 2\n",
+    )
+    .unwrap();
+    let root = Utf8PathBuf::from_path_buf(project.path().to_owned()).unwrap();
+    let mut analyzer = handler(root);
+    let original_parent = project.path().join("original-src");
+    fs::rename(&source_parent, &original_parent).unwrap();
+
+    let outside = tempfile::tempdir().unwrap();
+    let sentinel = outside.path().join("sentinel.txt");
+    fs::write(&sentinel, b"outside sentinel").unwrap();
+    fs::write(
+        outside.path().join("calc.py"),
+        "def outside_secret():\n    return left == right\n",
+    )
+    .unwrap();
+    create_dir_link(outside.path(), &source_parent).unwrap();
+
+    let result = analyzer
+        .handle(
+            analysis_request(82, "src/calc.py", true, 10),
+            &MutationOperatorSelection::default(),
+            MutationProfile::Full,
+        )
+        .await;
+
+    assert!(matches!(
+        result,
+        Err(error)
+            if error.id == EffectId(82) && error.failure.code() == "analyzer.source.read"
+    ));
+    assert_eq!(fs::read(&sentinel).unwrap(), b"outside sentinel");
+}
+
+#[tokio::test]
+async fn discover_targets_rejects_linked_source_parent() {
+    let project = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let sentinel = outside.path().join("sentinel.txt");
+    fs::write(&sentinel, b"outside sentinel").unwrap();
+    fs::write(
+        outside.path().join("calc.py"),
+        "def outside_secret():\n    return left == right\n",
+    )
+    .unwrap();
+    let link = project.path().join("src");
+    create_dir_link(outside.path(), &link).unwrap();
+    let root = Utf8PathBuf::from_path_buf(project.path().to_owned()).unwrap();
+    let targets = vec![TargetSlice {
+        path: "src/calc.py".into(),
+        lines: Vec::new(),
+        symbols: Vec::new(),
+    }];
+
+    let result = discover_targets(
+        &root,
+        &targets,
+        &MutationOperatorSelection::default(),
+        MutationProfile::Full,
+        10,
+    )
+    .await;
+
+    assert!(matches!(
+        result,
+        Err(error)
+            if error.id == EffectId(0) && error.failure.code() == "analyzer.source.read"
+    ));
+    assert_eq!(fs::read(&sentinel).unwrap(), b"outside sentinel");
 }
 
 #[tokio::test]
