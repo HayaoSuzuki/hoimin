@@ -183,6 +183,7 @@ pub struct RunState {
     flags: RunFlags,
     stopped_candidates: VecDeque<StoppedCandidate>,
     candidate_filter: Option<BTreeSet<String>>,
+    matched_candidate_ids: BTreeSet<String>,
     ordered_candidates: Option<Box<OrderedCandidateState>>,
     verification_selection: Option<VerificationSelection>,
 }
@@ -244,6 +245,7 @@ impl RunState {
             },
             stopped_candidates: VecDeque::new(),
             candidate_filter: None,
+            matched_candidate_ids: BTreeSet::new(),
             ordered_candidates: None,
             verification_selection: None,
         }
@@ -1354,6 +1356,14 @@ pub fn transition(
                     }
                     None => return Err(MachineError::MissingCandidateSpool),
                     Some(spool) if spool.records == 0 => {
+                        if state.ordered_candidates.is_none()
+                            && let Some(missing) = state
+                                .candidate_filter
+                                .as_ref()
+                                .and_then(|candidate_filter| candidate_filter.iter().next())
+                        {
+                            return Err(MachineError::SelectedCandidateMissing(missing.clone()));
+                        }
                         state.candidate_spool = Some(spool);
                         state.phase = RunPhase::Finalize;
                         state.finalize_effects()?
@@ -1399,11 +1409,24 @@ pub fn transition(
             {
                 state.collect_ordered_candidate(worker, value.candidate)?
             } else {
+                if value.candidate.is_none()
+                    && let Some(missing) =
+                        state
+                            .candidate_filter
+                            .as_ref()
+                            .and_then(|candidate_filter| {
+                                candidate_filter.iter().find(|candidate_id| {
+                                    !state.matched_candidate_ids.contains(*candidate_id)
+                                })
+                            })
+                {
+                    return Err(MachineError::SelectedCandidateMissing(missing.clone()));
+                }
                 let selected = value.candidate.as_ref().is_none_or(|candidate| {
-                    state
-                        .candidate_filter
-                        .as_ref()
-                        .is_none_or(|filter| filter.contains(&candidate.id))
+                    state.candidate_filter.as_ref().is_none_or(|filter| {
+                        filter.contains(&candidate.id)
+                            && state.matched_candidate_ids.insert(candidate.id.clone())
+                    })
                 });
                 if !selected {
                     *state.worker_mut(worker)? = WorkerState::default();
