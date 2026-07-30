@@ -1,12 +1,13 @@
 import os
-from pathlib import Path
 import subprocess
 import sys
-from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import patch
 import zipfile
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
+from packaging.tags import Tag
 from wheel_smoke import (
     COMMAND_TIMEOUT_SECONDS,
     WheelMetadata,
@@ -24,13 +25,28 @@ from wheel_smoke import (
     write_fixture,
 )
 
+LINUX_RUNTIME_TAGS = frozenset(
+    {
+        Tag("cp314", "cp314", "manylinux_2_17_x86_64"),
+        Tag("cp314", "abi3", "manylinux_2_17_x86_64"),
+    }
+)
+WINDOWS_RUNTIME_TAGS = frozenset({Tag("cp314", "cp314", "win_amd64")})
+MACOS_RUNTIME_TAGS = frozenset({Tag("cp314", "cp314", "macosx_11_0_arm64")})
+
+
+def runtime_tags_for(system: str) -> frozenset[Tag]:
+    return {
+        "linux": LINUX_RUNTIME_TAGS,
+        "win32": WINDOWS_RUNTIME_TAGS,
+        "darwin": MACOS_RUNTIME_TAGS,
+    }.get(system, frozenset())
+
 
 class StandaloneContractTests(unittest.TestCase):
     def test_documentation_requires_build_before_standalone_smoke(self) -> None:
         repository_root = Path(__file__).resolve().parents[1]
-        development = (repository_root / "docs/development.md").read_text(
-            encoding="utf-8"
-        )
+        development = (repository_root / "docs/development.md").read_text(encoding="utf-8")
         readme = (repository_root / "README.md").read_text(encoding="utf-8")
         build_command = "uv run maturin build --release"
         development_smoke = "uv run --frozen python tests/wheel_smoke.py"
@@ -77,14 +93,104 @@ class StandaloneContractTests(unittest.TestCase):
 class WheelSelectionTests(unittest.TestCase):
     def test_compatibility_cases(self) -> None:
         cases = (
-            ("Linux accepts x86_64", "hoimin-manylinux_x86_64.whl", "linux", "x86_64", True),
-            ("Linux rejects Windows", "hoimin-win_amd64.whl", "linux", "x86_64", False),
-            ("Windows accepts amd64", "hoimin-win_amd64.whl", "win32", "amd64", True),
-            ("Windows rejects Linux", "hoimin-manylinux_x86_64.whl", "win32", "amd64", False),
-            ("macOS arm64 accepts arm64", "hoimin-macosx_11_0_arm64.whl", "darwin", "arm64", True),
-            ("macOS arm64 rejects universal2", "hoimin-macosx_11_0_universal2.whl", "darwin", "arm64", False),
-            ("macOS Intel rejects arm64", "hoimin-macosx_11_0_arm64.whl", "darwin", "x86_64", False),
-            ("unknown system rejects all", "hoimin-any_x86_64.whl", "freebsd", "x86_64", False),
+            (
+                "Linux accepts x86_64",
+                "hoimin-0.1.0-cp314-cp314-manylinux_2_17_x86_64.whl",
+                "linux",
+                "x86_64",
+                True,
+            ),
+            (
+                "Linux rejects Windows",
+                "hoimin-0.1.0-cp314-cp314-win_amd64.whl",
+                "linux",
+                "x86_64",
+                False,
+            ),
+            (
+                "Linux rejects macOS x86_64",
+                "hoimin-0.1.0-cp314-cp314-macosx_14_0_x86_64.whl",
+                "linux",
+                "x86_64",
+                False,
+            ),
+            (
+                "Linux rejects a wheel for another Python ABI",
+                "hoimin-0.1.0-cp313-cp313-manylinux_2_17_x86_64.whl",
+                "linux",
+                "x86_64",
+                False,
+            ),
+            (
+                "Linux rejects musllinux on a glibc runtime",
+                "hoimin-0.1.0-cp314-cp314-musllinux_1_2_x86_64.whl",
+                "linux",
+                "x86_64",
+                False,
+            ),
+            (
+                "Linux rejects a newer unsupported manylinux baseline",
+                "hoimin-0.1.0-cp314-cp314-manylinux_2_99_x86_64.whl",
+                "linux",
+                "x86_64",
+                False,
+            ),
+            (
+                "Windows accepts amd64",
+                "hoimin-0.1.0-cp314-cp314-win_amd64.whl",
+                "win32",
+                "amd64",
+                True,
+            ),
+            (
+                "Windows rejects Linux",
+                "hoimin-0.1.0-cp314-cp314-manylinux_2_17_x86_64.whl",
+                "win32",
+                "amd64",
+                False,
+            ),
+            (
+                "macOS arm64 accepts arm64",
+                "hoimin-0.1.0-cp314-cp314-macosx_11_0_arm64.whl",
+                "darwin",
+                "arm64",
+                True,
+            ),
+            (
+                "macOS arm64 rejects universal2",
+                "hoimin-0.1.0-cp314-cp314-macosx_11_0_universal2.whl",
+                "darwin",
+                "arm64",
+                False,
+            ),
+            (
+                "macOS rejects a newer unsupported deployment target",
+                "hoimin-0.1.0-cp314-cp314-macosx_99_0_arm64.whl",
+                "darwin",
+                "arm64",
+                False,
+            ),
+            (
+                "macOS Intel rejects arm64",
+                "hoimin-0.1.0-cp314-cp314-macosx_11_0_arm64.whl",
+                "darwin",
+                "x86_64",
+                False,
+            ),
+            (
+                "unknown system rejects all",
+                "hoimin-0.1.0-cp314-cp314-manylinux_2_17_x86_64.whl",
+                "freebsd",
+                "x86_64",
+                False,
+            ),
+            (
+                "malformed filename fails closed",
+                "hoimin-any_x86_64.whl",
+                "linux",
+                "x86_64",
+                False,
+            ),
         )
 
         for name, filename, system, machine, expected in cases:
@@ -93,40 +199,93 @@ class WheelSelectionTests(unittest.TestCase):
                 wheel = Path(filename)
 
                 # Act
-                actual = is_compatible_wheel(wheel, system, machine)
+                actual = is_compatible_wheel(
+                    wheel,
+                    system,
+                    machine,
+                    supported_tags=runtime_tags_for(system),
+                )
 
                 # Assert
                 self.assertIs(actual, expected)
 
-    def test_selects_the_latest_compatible_wheel(self) -> None:
+    def test_selects_the_expected_semantic_version(self) -> None:
         # Arrange
         wheels = [
-            Path("hoimin-0.2.0-manylinux_x86_64.whl"),
-            Path("hoimin-0.1.0-manylinux_x86_64.whl"),
-            Path("hoimin-0.3.0-win_amd64.whl"),
+            Path("hoimin-0.9.0-cp314-cp314-manylinux_2_17_x86_64.whl"),
+            Path("hoimin-0.10.0-cp314-cp314-manylinux_2_17_x86_64.whl"),
+            Path("hoimin-0.10.0-cp314-cp314-win_amd64.whl"),
         ]
 
         # Act
-        actual = select_compatible_wheel(wheels, system="linux", machine="x86_64")
+        actual = select_compatible_wheel(
+            wheels,
+            system="linux",
+            machine="x86_64",
+            expected_name="hoimin",
+            expected_version="0.10.0",
+            supported_tags=LINUX_RUNTIME_TAGS,
+        )
 
         # Assert
-        self.assertEqual(actual, Path("hoimin-0.2.0-manylinux_x86_64.whl"))
+        self.assertEqual(
+            actual,
+            Path("hoimin-0.10.0-cp314-cp314-manylinux_2_17_x86_64.whl"),
+        )
 
     def test_rejects_a_candidate_list_without_a_compatible_wheel(self) -> None:
         # Arrange
-        wheels = [Path("hoimin-0.1.0-win_amd64.whl")]
+        wheels = [Path("hoimin-0.1.0-cp314-cp314-win_amd64.whl")]
 
         # Act
-        error = self.assertRaisesRegex(AssertionError, "no wheel for linux")
+        error = self.assertRaisesRegex(AssertionError, "no current compatible wheel")
 
         # Assert
         with error:
-            select_compatible_wheel(wheels, system="linux", machine="x86_64")
+            select_compatible_wheel(
+                wheels,
+                system="linux",
+                machine="x86_64",
+                expected_name="hoimin",
+                expected_version="0.1.0",
+                supported_tags=LINUX_RUNTIME_TAGS,
+            )
+
+    def test_rejects_stale_compatible_wheels(self) -> None:
+        wheels = [
+            Path("hoimin-0.9.0-cp314-cp314-manylinux_2_17_x86_64.whl"),
+        ]
+
+        with self.assertRaisesRegex(AssertionError, "no current compatible wheel"):
+            select_compatible_wheel(
+                wheels,
+                system="linux",
+                machine="x86_64",
+                expected_name="hoimin",
+                expected_version="0.10.0",
+                supported_tags=LINUX_RUNTIME_TAGS,
+            )
+
+    def test_rejects_ambiguous_current_compatible_wheels(self) -> None:
+        wheels = [
+            Path("hoimin-0.1.0-cp314-cp314-manylinux_2_17_x86_64.whl"),
+            Path("hoimin-0.1.0-cp314-abi3-manylinux_2_17_x86_64.whl"),
+        ]
+
+        with self.assertRaisesRegex(AssertionError, "multiple current compatible wheels"):
+            select_compatible_wheel(
+                wheels,
+                system="linux",
+                machine="x86_64",
+                expected_name="hoimin",
+                expected_version="0.1.0",
+                supported_tags=LINUX_RUNTIME_TAGS,
+            )
 
     def test_uses_the_explicit_wheel_override(self) -> None:
         with TemporaryDirectory() as temporary_directory:
             # Arrange
-            override = Path(temporary_directory) / "override.whl"
+            override = Path(temporary_directory) / "hoimin-0.1.0-cp314-cp314-manylinux_2_17_x86_64.whl"
             override.touch()
 
             # Act
@@ -135,10 +294,25 @@ class WheelSelectionTests(unittest.TestCase):
                 wheel_directory=Path(temporary_directory) / "wheels",
                 system="linux",
                 machine="x86_64",
+                supported_tags=LINUX_RUNTIME_TAGS,
             )
 
             # Assert
             self.assertEqual(actual, override.resolve())
+
+    def test_rejects_a_stale_explicit_wheel_override(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            override = Path(temporary_directory) / "hoimin-0.9.0-cp314-cp314-manylinux_2_17_x86_64.whl"
+            override.touch()
+
+            with self.assertRaisesRegex(AssertionError, "no current compatible wheel"):
+                wheel_path(
+                    environment={"HOIMIN_WHEEL": str(override)},
+                    wheel_directory=Path(temporary_directory) / "wheels",
+                    system="linux",
+                    machine="x86_64",
+                    supported_tags=LINUX_RUNTIME_TAGS,
+                )
 
     def test_rejects_a_missing_explicit_wheel_override(self) -> None:
         with TemporaryDirectory() as temporary_directory:
@@ -174,15 +348,15 @@ class WheelSelectionTests(unittest.TestCase):
                     machine="x86_64",
                 )
 
-    def test_discovers_the_latest_compatible_wheel(self) -> None:
+    def test_discovers_the_current_compatible_wheel(self) -> None:
         with TemporaryDirectory() as temporary_directory:
             # Arrange
             wheel_directory = Path(temporary_directory)
-            older = wheel_directory / "hoimin-0.1.0-manylinux_x86_64.whl"
-            latest = wheel_directory / "hoimin-0.2.0-manylinux_x86_64.whl"
-            incompatible = wheel_directory / "hoimin-0.3.0-win_amd64.whl"
-            older.touch()
-            latest.touch()
+            stale = wheel_directory / "hoimin-0.0.9-cp314-cp314-manylinux_2_17_x86_64.whl"
+            current = wheel_directory / "hoimin-0.1.0-cp314-cp314-manylinux_2_17_x86_64.whl"
+            incompatible = wheel_directory / "hoimin-0.1.0-cp314-cp314-win_amd64.whl"
+            stale.touch()
+            current.touch()
             incompatible.touch()
 
             # Act
@@ -191,10 +365,11 @@ class WheelSelectionTests(unittest.TestCase):
                 wheel_directory=wheel_directory,
                 system="linux",
                 machine="x86_64",
+                supported_tags=LINUX_RUNTIME_TAGS,
             )
 
             # Assert
-            self.assertEqual(actual, latest)
+            self.assertEqual(actual, current)
 
 
 class WheelMetadataTests(unittest.TestCase):
@@ -220,9 +395,7 @@ class WheelMetadataTests(unittest.TestCase):
                     requires_python=">=3.14, <3.15",
                     requires_dist=None,
                     license_expression="MIT",
-                    project_urls=[
-                        "Repository, https://github.com/tokyogas-tech/hoimin"
-                    ],
+                    project_urls=["Repository, https://github.com/tokyogas-tech/hoimin"],
                 ),
             )
 
@@ -435,8 +608,14 @@ class CommandAndResultTests(unittest.TestCase):
 
     def test_help_output_rejects_the_python_option(self) -> None:
         cases = (
-            ("stdout", subprocess.CompletedProcess(["hoimin"], 0, stdout="--python", stderr="")),
-            ("stderr", subprocess.CompletedProcess(["hoimin"], 0, stdout="", stderr="--python")),
+            (
+                "stdout",
+                subprocess.CompletedProcess(["hoimin"], 0, stdout="--python", stderr=""),
+            ),
+            (
+                "stderr",
+                subprocess.CompletedProcess(["hoimin"], 0, stdout="", stderr="--python"),
+            ),
         )
 
         for channel, completed in cases:

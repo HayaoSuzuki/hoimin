@@ -53,6 +53,22 @@ def job_event_conditions(workflow: str) -> set[str]:
 
 
 class ShuffleWorkflowContractTests(unittest.TestCase):
+    def test_wheel_smoke_build_starts_from_an_empty_artifact_directory(self) -> None:
+        workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+        wheel_smoke = job_block(workflow, "wheel-smoke")
+
+        unit_tests = "uv run --frozen python -m unittest discover"
+        reset = (
+            "python -c \"import shutil; "
+            "shutil.rmtree('target/wheels', ignore_errors=True)\""
+        )
+        build = "uvx maturin build --release"
+        smoke = "uv run --frozen python tests/wheel_smoke.py"
+
+        self.assertLess(wheel_smoke.index(unit_tests), wheel_smoke.index(reset))
+        self.assertLess(wheel_smoke.index(reset), wheel_smoke.index(build))
+        self.assertLess(wheel_smoke.index(build), wheel_smoke.index(smoke))
+
     def test_shuffle_job_is_pinned_isolated_and_complete(self) -> None:
         workflow = CI_WORKFLOW.read_text(encoding="utf-8")
 

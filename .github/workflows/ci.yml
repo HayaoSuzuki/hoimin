@@ -129,6 +129,8 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
       - run: uv run --frozen python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Reset wheel artifact directory
+        run: python -c "import shutil; shutil.rmtree('target/wheels', ignore_errors=True)"
       - run: uvx maturin build --release
       - run: uv run --frozen python tests/wheel_smoke.py
 
