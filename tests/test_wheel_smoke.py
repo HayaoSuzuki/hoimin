@@ -1,5 +1,7 @@
+import os
 from pathlib import Path
 import subprocess
+import sys
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -21,6 +23,55 @@ from wheel_smoke import (
     wheel_path,
     write_fixture,
 )
+
+
+class StandaloneContractTests(unittest.TestCase):
+    def test_documentation_requires_build_before_standalone_smoke(self) -> None:
+        repository_root = Path(__file__).resolve().parents[1]
+        development = (repository_root / "docs/development.md").read_text(
+            encoding="utf-8"
+        )
+        readme = (repository_root / "README.md").read_text(encoding="utf-8")
+        build_command = "uv run maturin build --release"
+        development_smoke = "uv run --frozen python tests/wheel_smoke.py"
+        readme_smoke = "uv run python tests/wheel_smoke.py"
+
+        self.assertIn(
+            "must build a release wheel first",
+            " ".join(development.split()),
+        )
+        self.assertLess(
+            development.index(build_command),
+            development.index(development_smoke),
+        )
+        self.assertLess(readme.index(build_command), readme.index(readme_smoke))
+
+    def test_standalone_script_rejects_an_empty_wheel_directory(self) -> None:
+        repository_root = Path(__file__).resolve().parents[1]
+        source = repository_root / "tests/wheel_smoke.py"
+        with TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            tests = temporary_root / "tests"
+            tests.mkdir()
+            script = tests / "wheel_smoke.py"
+            script.write_bytes(source.read_bytes())
+            environment = os.environ.copy()
+            environment.pop("HOIMIN_WHEEL", None)
+
+            completed = subprocess.run(
+                [sys.executable, str(script)],
+                cwd=temporary_root,
+                env=environment,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+            )
+
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("build a wheel first", completed.stderr)
+            self.assertFalse((temporary_root / "target/wheels").exists())
 
 
 class WheelSelectionTests(unittest.TestCase):
