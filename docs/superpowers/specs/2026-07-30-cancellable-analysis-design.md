@@ -43,4 +43,3 @@ spool as complete.
   completion while existing ordering and candidate-limit tests remain green.
 - Tests use platform-neutral synchronization primitives and no timing-sensitive
   sleeps beyond an outer failure bound.
-
