@@ -742,12 +742,7 @@ where
                                 let Some(worker) = worker else {
                                     unreachable!("worker process request accepted without worker")
                                 };
-                                let Some(dispatch) = accept_process_dispatch(
-                                    &control,
-                                    &mut metrics,
-                                    &mut metrics_warnings,
-                                    worker,
-                                ) else {
+                                let Some(dispatch) = control.begin_dispatch() else {
                                     cancellation.cancel();
                                     stop_signalled = true;
                                     priority_event = Some(RunEvent::CancellationRequested);
@@ -764,7 +759,6 @@ where
                                 );
                             }
                             Err(error) => {
-                                cancel_queued_worker(worker, &mut metrics, &mut metrics_warnings);
                                 serial_completion = Some(ShellCompletion {
                                     event: RunEvent::EffectFailed(error),
                                     process_task: false,
@@ -1031,11 +1025,6 @@ where
             if !external_stop && process_completion {
                 in_flight = in_flight.saturating_sub(1);
             }
-            if let Some((worker, _)) = process {
-                record_metrics(&mut metrics, &mut metrics_warnings, |metrics| {
-                    metrics.process_finished(worker)
-                });
-            }
             if failed {
                 cancellation.cancel();
                 stop_signalled = true;
@@ -1058,6 +1047,11 @@ where
                 }
             };
             state = next;
+            if let Some((worker, true)) = process {
+                record_metrics(&mut metrics, &mut metrics_warnings, |metrics| {
+                    metrics.process_finished(worker, accepted_mutant)
+                });
+            }
             if let Some(records) = analyzed_records {
                 discovered = records;
                 if let Some(metrics) = metrics.as_mut() {
@@ -1172,11 +1166,8 @@ fn cancel_queued_effect(
     collector: &mut Option<MetricsCollector>,
     warnings: &mut Vec<(&'static str, String)>,
 ) {
-    match effect {
-        RunEffect::RunBaseline(request) | RunEffect::RunMutant(request) => {
-            cancel_queued_worker(request.worker, collector, warnings);
-        }
-        _ => {}
+    if let RunEffect::RunMutant(request) = effect {
+        cancel_queued_worker(request.worker, collector, warnings);
     }
 }
 
@@ -1196,7 +1187,7 @@ fn record_ready_processes<'a>(
     warnings: &mut Vec<(&'static str, String)>,
 ) {
     for worker in effects.into_iter().filter_map(|effect| match effect {
-        RunEffect::RunBaseline(request) | RunEffect::RunMutant(request) => request.worker,
+        RunEffect::RunMutant(request) => request.worker,
         _ => None,
     }) {
         record_metrics(collector, warnings, |metrics| metrics.queued(worker));
@@ -1323,9 +1314,9 @@ async fn drain_processes(
         }
     }
     while let Ok(completion) = receiver.try_recv() {
-        if let Some((worker, _)) = completion.process {
+        if let Some((worker, true)) = completion.process {
             record_metrics(metrics, metrics_warnings, |metrics| {
-                metrics.process_finished(worker)
+                metrics.process_finished(worker, false)
             });
         }
         *in_flight = in_flight.saturating_sub(1);
@@ -1447,8 +1438,7 @@ mod tests {
         assert!(dispatch.is_none());
         assert!(warnings.is_empty());
         let metrics = metrics.unwrap().finish(0, 0).unwrap();
-        assert_eq!(metrics.workers[0].processes, 0);
-        assert_eq!(metrics.workers[0].busy_ms, 0);
+        assert!(metrics.workers.is_empty());
     }
 
     #[test]
@@ -1489,9 +1479,7 @@ mod tests {
 
         assert!(warnings.is_empty());
         let metrics = metrics.unwrap().finish(0, 0).unwrap();
-        assert_eq!(metrics.workers.len(), 1);
-        assert_eq!(metrics.workers[0].worker, 3);
-        assert_eq!(metrics.workers[0].processes, 0);
+        assert!(metrics.workers.is_empty());
     }
 
     #[tokio::test]
@@ -1539,14 +1527,14 @@ mod tests {
 
         assert_eq!(in_flight, 0);
         assert!(warnings.is_empty());
-        let metrics = metrics.unwrap().finish(0, 0).unwrap();
+        let metrics = metrics.unwrap().finish(2, 0).unwrap();
         assert_eq!(
             metrics
                 .workers
                 .iter()
                 .map(|worker| worker.processes)
                 .sum::<u64>(),
-            2
+            0
         );
     }
 

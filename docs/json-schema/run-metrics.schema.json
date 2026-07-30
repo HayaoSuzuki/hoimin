@@ -31,15 +31,18 @@
     },
     "workers": {
       "type": "array",
+      "description": "Per-worker mutant execution metrics. The sum of processes must equal executed.",
       "items": {
         "$ref": "#/$defs/worker"
       }
     },
     "discovered": {
-      "$ref": "#/$defs/nonnegativeInteger"
+      "allOf": [{"$ref": "#/$defs/nonnegativeInteger"}],
+      "description": "Total mutation candidates discovered."
     },
     "executed": {
-      "$ref": "#/$defs/nonnegativeInteger"
+      "allOf": [{"$ref": "#/$defs/nonnegativeInteger"}],
+      "description": "Total mutants executed. Must not exceed discovered and must equal the sum of workers[*].processes."
     }
   },
   "additionalProperties": false,
