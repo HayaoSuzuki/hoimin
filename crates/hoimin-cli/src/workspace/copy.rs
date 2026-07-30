@@ -8,7 +8,7 @@ use hoimin_core::{CreateWorker, EffectId, PreflightCompleted, ReservationId};
 
 use super::manifest::build_manifest;
 use super::{
-    CopyOptions, SnapshotFile, WorkerWorkspace, WorkspaceDiagnostic, WorkspaceError,
+    CopyOptions, DiskSnapshot, SnapshotFile, WorkerWorkspace, WorkspaceDiagnostic, WorkspaceError,
     WorkspaceManifest,
 };
 
@@ -20,6 +20,7 @@ pub struct WorkspacePlan {
     requested_workers: u32,
     aggregate_bytes: u64,
     manifest: WorkspaceManifest,
+    snapshot: Arc<DiskSnapshot>,
     diagnostics: Vec<WorkspaceDiagnostic>,
     allowance: Arc<CopyAllowance>,
     state: Arc<Mutex<PlanState>>,
@@ -150,6 +151,15 @@ impl WorkspacePlan {
         let original_root =
             Utf8PathBuf::from_path_buf(canonical).map_err(|_| WorkspaceError::NonUtf8Path)?;
         let (manifest, diagnostics) = build_manifest(&original_root, &options)?;
+        let snapshot = Arc::new(create_disk_snapshot(&original_root, &manifest)?);
+        let (current, _) = build_manifest(&original_root, &options)?;
+        if !manifest.content_matches(&current) {
+            return Err(WorkspaceError::OriginalChanged {
+                path: manifest
+                    .first_content_difference(&current)
+                    .unwrap_or_default(),
+            });
+        }
         let aggregate_bytes = manifest
             .logical_bytes()
             .checked_mul(u64::from(requested_workers))
@@ -161,6 +171,7 @@ impl WorkspacePlan {
             requested_workers,
             aggregate_bytes,
             manifest,
+            snapshot,
             diagnostics,
             allowance: Arc::new(CopyAllowance {
                 granted: AtomicU64::new(0),
@@ -286,6 +297,7 @@ impl WorkspacePlan {
     }
 
     fn materialize_worker(&self, worker: u32) -> Result<WorkerWorkspace, WorkspaceError> {
+        self.verify_originals_for_materialization()?;
         let temp = tempfile::Builder::new()
             .prefix("hoimin-worker-")
             .tempdir()
@@ -296,9 +308,65 @@ impl WorkspacePlan {
         })?;
         let root =
             Utf8PathBuf::from_path_buf(root_path).map_err(|_| WorkspaceError::NonUtf8Path)?;
-        let mut snapshot = BTreeMap::new();
         let mut charged = 0_u64;
 
+        let result = (|| {
+            for entry in self.manifest.entries() {
+                let bytes = self.snapshot.read(&entry.path)?;
+                let amount =
+                    u64::try_from(bytes.len()).map_err(|_| WorkspaceError::CopySizeOverflow)?;
+                self.allowance.charge(amount)?;
+                charged = charged
+                    .checked_add(amount)
+                    .ok_or(WorkspaceError::CopySizeOverflow)?;
+                if amount != entry.size || blake3::hash(&bytes) != entry.blake3 {
+                    return Err(WorkspaceError::WorkspaceRestore {
+                        path: entry.path.clone(),
+                        message: "shared snapshot does not match its manifest".to_owned(),
+                    });
+                }
+                let snapshot = self.snapshot.files.get(&entry.path).ok_or_else(|| {
+                    WorkspaceError::WorkspaceRestore {
+                        path: entry.path.clone(),
+                        message: "shared snapshot is missing a manifest entry".to_owned(),
+                    }
+                })?;
+                let destination = root.join(&entry.path);
+                if let Some(parent) = destination.parent() {
+                    fs::create_dir_all(parent).map_err(|error| {
+                        WorkspaceError::io("create worker directory", parent, error)
+                    })?;
+                }
+                fs::write(&destination, &bytes)
+                    .map_err(|error| WorkspaceError::io("copy worker file", &entry.path, error))?;
+                fs::set_permissions(&destination, snapshot.permissions.clone()).map_err(
+                    |error| WorkspaceError::io("copy worker permissions", &entry.path, error),
+                )?;
+            }
+            self.verify_originals()
+        })();
+
+        if let Err(error) = result {
+            self.allowance.release(charged);
+            return Err(error);
+        }
+
+        WorkerWorkspace::from_materialized(
+            temp,
+            root,
+            self.original_root.clone(),
+            self.options.clone(),
+            self.manifest.clone(),
+            Arc::clone(&self.snapshot),
+            Arc::clone(&self.allowance),
+            Arc::clone(&self.state),
+            worker,
+            charged,
+        )
+    }
+
+    fn verify_originals_for_materialization(&self) -> Result<(), WorkspaceError> {
+        let mut charged = 0_u64;
         let result = (|| {
             for entry in self.manifest.entries() {
                 let source = self.original_root.join(&entry.path);
@@ -315,44 +383,60 @@ impl WorkspacePlan {
                         path: entry.path.clone(),
                     });
                 }
-                let metadata = fs::metadata(&source).map_err(|error| {
+                fs::metadata(&source).map_err(|error| {
                     WorkspaceError::io("read original metadata", &entry.path, error)
                 })?;
-                let permissions = metadata.permissions();
-                let destination = root.join(&entry.path);
-                if let Some(parent) = destination.parent() {
-                    fs::create_dir_all(parent).map_err(|error| {
-                        WorkspaceError::io("create worker directory", parent, error)
-                    })?;
-                }
-                fs::write(&destination, &bytes)
-                    .map_err(|error| WorkspaceError::io("copy worker file", &entry.path, error))?;
-                fs::set_permissions(&destination, permissions.clone()).map_err(|error| {
-                    WorkspaceError::io("copy worker permissions", &entry.path, error)
-                })?;
-                snapshot.insert(entry.path.clone(), SnapshotFile::new(bytes, permissions));
             }
             self.verify_originals()
         })();
-
-        if let Err(error) = result {
-            self.allowance.release(charged);
-            return Err(error);
-        }
-
-        WorkerWorkspace::from_materialized(
-            temp,
-            root,
-            self.original_root.clone(),
-            self.options.clone(),
-            self.manifest.clone(),
-            snapshot,
-            Arc::clone(&self.allowance),
-            Arc::clone(&self.state),
-            worker,
-            charged,
-        )
+        self.allowance.release(charged);
+        result
     }
+}
+
+fn create_disk_snapshot(
+    original_root: &Utf8Path,
+    manifest: &WorkspaceManifest,
+) -> Result<DiskSnapshot, WorkspaceError> {
+    let temp = tempfile::Builder::new()
+        .prefix("hoimin-snapshot-")
+        .tempdir()
+        .map_err(|error| WorkspaceError::io("create shared snapshot", original_root, error))?;
+    let root_path = temp.path().join("workspace");
+    fs::create_dir(&root_path)
+        .map_err(|error| WorkspaceError::io("create shared snapshot root", original_root, error))?;
+    let root = Utf8PathBuf::from_path_buf(root_path).map_err(|_| WorkspaceError::NonUtf8Path)?;
+    let mut files = BTreeMap::new();
+
+    for entry in manifest.entries() {
+        let source = original_root.join(&entry.path);
+        let bytes = fs::read(&source)
+            .map_err(|error| WorkspaceError::io("read original", &entry.path, error))?;
+        let amount = u64::try_from(bytes.len()).map_err(|_| WorkspaceError::CopySizeOverflow)?;
+        if amount != entry.size || blake3::hash(&bytes) != entry.blake3 {
+            return Err(WorkspaceError::OriginalChanged {
+                path: entry.path.clone(),
+            });
+        }
+        let permissions = fs::metadata(&source)
+            .map_err(|error| WorkspaceError::io("read original metadata", &entry.path, error))?
+            .permissions();
+        let destination = root.join(&entry.path);
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent).map_err(|error| {
+                WorkspaceError::io("create shared snapshot directory", parent, error)
+            })?;
+        }
+        fs::write(&destination, bytes)
+            .map_err(|error| WorkspaceError::io("write shared snapshot", &entry.path, error))?;
+        files.insert(entry.path.clone(), SnapshotFile::new(permissions));
+    }
+
+    Ok(DiskSnapshot {
+        _temp: temp,
+        root,
+        files,
+    })
 }
 
 #[cfg(test)]

@@ -131,6 +131,12 @@ workers; it is not multiplied by `--jobs`. When increasing `--jobs`, set an expl
 derived from a single baseline will remain sufficient. For example, a focused baseline
 that takes about 14 seconds can be tried with the following measured settings:
 
+`--max-memory` constrains descendant processes, not the hoimin CLI itself. The CLI keeps
+one immutable pristine workspace snapshot on disk for the run and shares it across
+workers, reading files on demand for reset. Per-worker copy accounting remains governed
+by `--max-copy-size`; allow disk capacity for the shared pristine copy in addition to the
+materialized workers.
+
 ```console
 hoimin run --root . --source src --profile focused --jobs 4 --max-memory 4GiB --mutant-timeout 2m -- python -m pytest -q
 ```
