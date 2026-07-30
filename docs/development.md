@@ -11,8 +11,10 @@ uv run maturin build --release
 uv run --frozen python tests/wheel_smoke.py
 ```
 
-The standalone wheel smoke script builds a release wheel unless `HOIMIN_WHEEL`
-names an existing wheel to test.
+Before running the standalone wheel smoke script, you must build a release wheel
+first with `uv run maturin build --release`. Alternatively, set `HOIMIN_WHEEL`
+to the exact path of an existing wheel to test. The script only selects and
+tests an existing artifact; it does not build one.
 
 ## Reproduce randomized Rust test order
 
