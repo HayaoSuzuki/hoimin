@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -350,6 +350,19 @@ pub enum ReportSequenceError {
         mutant_id: String,
         mutant_sequence: u64,
     },
+    #[error("mutant {mutant_id} sequence {mutant_sequence} reused a stable identity")]
+    DuplicateMutantIdentity {
+        mutant_id: String,
+        mutant_sequence: u64,
+    },
+    #[error(
+        "mutant {mutant_id} identity maps to sequence {expected_sequence}, received {received_sequence}"
+    )]
+    MutantIdentitySequenceMismatch {
+        mutant_id: String,
+        expected_sequence: u64,
+        received_sequence: u64,
+    },
     #[error("mutant {mutant_id} sequence {mutant_sequence} finished before it started")]
     MutantNotStarted {
         mutant_id: String,
@@ -362,6 +375,7 @@ pub struct ReportSequence {
     last: Option<u64>,
     run_id: Option<String>,
     active_mutants: BTreeSet<(String, u64)>,
+    seen_mutants: BTreeMap<String, u64>,
     finished: bool,
 }
 
@@ -369,6 +383,63 @@ impl ReportSequence {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    fn mutant_error(&self, event: &OutputEvent) -> Option<ReportSequenceError> {
+        match event {
+            OutputEvent::MutantStarted(value) => {
+                let key = (value.mutant_id.clone(), value.mutant_sequence);
+                if self.active_mutants.contains(&key) {
+                    Some(ReportSequenceError::MutantAlreadyStarted {
+                        mutant_id: value.mutant_id.clone(),
+                        mutant_sequence: value.mutant_sequence,
+                    })
+                } else {
+                    match self.seen_mutants.get(&value.mutant_id) {
+                        Some(expected_sequence) if *expected_sequence == value.mutant_sequence => {
+                            Some(ReportSequenceError::DuplicateMutantIdentity {
+                                mutant_id: value.mutant_id.clone(),
+                                mutant_sequence: value.mutant_sequence,
+                            })
+                        }
+                        Some(expected_sequence) => {
+                            Some(ReportSequenceError::MutantIdentitySequenceMismatch {
+                                mutant_id: value.mutant_id.clone(),
+                                expected_sequence: *expected_sequence,
+                                received_sequence: value.mutant_sequence,
+                            })
+                        }
+                        None => None,
+                    }
+                }
+            }
+            OutputEvent::MutantFinished(value) => {
+                match self.seen_mutants.get(&value.candidate.id) {
+                    Some(expected_sequence) if *expected_sequence != value.candidate.sequence => {
+                        Some(ReportSequenceError::MutantIdentitySequenceMismatch {
+                            mutant_id: value.candidate.id.clone(),
+                            expected_sequence: *expected_sequence,
+                            received_sequence: value.candidate.sequence,
+                        })
+                    }
+                    _ => {
+                        let key = (value.candidate.id.clone(), value.candidate.sequence);
+                        (!self.active_mutants.contains(&key)).then_some(
+                            ReportSequenceError::MutantNotStarted {
+                                mutant_id: value.candidate.id.clone(),
+                                mutant_sequence: value.candidate.sequence,
+                            },
+                        )
+                    }
+                }
+            }
+            OutputEvent::RunFinished(_) if !self.active_mutants.is_empty() => {
+                Some(ReportSequenceError::RunFinishedWithActiveMutants {
+                    count: self.active_mutants.len(),
+                })
+            }
+            _ => None,
+        }
     }
 
     /// # Errors
@@ -398,32 +469,7 @@ impl ReportSequence {
                 _ => None,
             }
         };
-        let mutant_error = lifecycle_error.or_else(|| match event {
-            OutputEvent::MutantStarted(value) => {
-                let key = (value.mutant_id.clone(), value.mutant_sequence);
-                self.active_mutants.contains(&key).then_some(
-                    ReportSequenceError::MutantAlreadyStarted {
-                        mutant_id: value.mutant_id.clone(),
-                        mutant_sequence: value.mutant_sequence,
-                    },
-                )
-            }
-            OutputEvent::MutantFinished(value) => {
-                let key = (value.candidate.id.clone(), value.candidate.sequence);
-                (!self.active_mutants.contains(&key)).then_some(
-                    ReportSequenceError::MutantNotStarted {
-                        mutant_id: value.candidate.id.clone(),
-                        mutant_sequence: value.candidate.sequence,
-                    },
-                )
-            }
-            OutputEvent::RunFinished(_) if !self.active_mutants.is_empty() => {
-                Some(ReportSequenceError::RunFinishedWithActiveMutants {
-                    count: self.active_mutants.len(),
-                })
-            }
-            _ => None,
-        });
+        let mutant_error = lifecycle_error.or_else(|| self.mutant_error(event));
         let error = mutant_error.or_else(|| {
             self.last.and_then(|previous| {
                 (event.sequence() <= previous).then_some(ReportSequenceError::NotMonotonic {
@@ -438,6 +484,7 @@ impl ReportSequence {
             (
                 &self.run_id,
                 &self.active_mutants,
+                &self.seen_mutants,
                 self.last,
                 event.run_id(),
                 event.sequence()
@@ -450,6 +497,8 @@ impl ReportSequence {
         match event {
             OutputEvent::RunStarted(value) => self.run_id = Some(value.run_id.clone()),
             OutputEvent::MutantStarted(value) => {
+                self.seen_mutants
+                    .insert(value.mutant_id.clone(), value.mutant_sequence);
                 self.active_mutants
                     .insert((value.mutant_id.clone(), value.mutant_sequence));
             }
