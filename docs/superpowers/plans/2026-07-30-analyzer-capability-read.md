@@ -29,10 +29,11 @@
 
 - [ ] **Step 1: Add platform link helpers**
 
-Add `create_dir_symlink` implementations using
+Add `create_dir_link` implementations using
 `std::os::unix::fs::symlink` and
-`std::os::windows::fs::symlink_dir`, plus the existing
-permission-denial-aware Windows skip predicate used by workspace tests.
+`std::os::windows::fs::symlink_dir`. When Windows symlink privilege is
+unavailable, create a directory junction with `mklink /J`; the regression must
+not silently skip reparse-point coverage.
 
 - [ ] **Step 2: Add the runtime-handler replacement test**
 

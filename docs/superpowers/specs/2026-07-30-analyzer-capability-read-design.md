@@ -51,9 +51,9 @@ metadata preflight is added.
 
 Tests use the existing platform-specific symlink helpers. A handler is created
 before its selected parent is replaced, making the discovery-to-analysis
-replacement deterministic. On Windows, inability to create a symlink is
-accepted only for the known privilege/platform denial; when creation succeeds,
-the reparse-point rejection assertion is mandatory.
+replacement deterministic. On Windows, a directory junction is the fallback
+when symlink creation lacks privilege, so the reparse-point rejection
+assertion is mandatory rather than skipped.
 
 ## Testing
 

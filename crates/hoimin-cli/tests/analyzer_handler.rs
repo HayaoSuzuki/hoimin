@@ -49,34 +49,38 @@ fn handler(root: Utf8PathBuf) -> AnalyzerHandler {
     AnalyzerHandler::new(root).unwrap()
 }
 
-fn link_created_or_platform_denied(result: std::io::Result<()>) -> bool {
-    match result {
-        Ok(()) => true,
-        Err(error) => {
-            #[cfg(windows)]
-            {
-                assert!(
-                    error.kind() == std::io::ErrorKind::PermissionDenied
-                        || error.kind() == std::io::ErrorKind::Unsupported
-                        || error.raw_os_error() == Some(1314),
-                    "unexpected Windows link setup failure: {error}"
-                );
-                false
-            }
-            #[cfg(not(windows))]
-            panic!("link setup failed unexpectedly: {error}");
-        }
-    }
-}
-
 #[cfg(unix)]
-fn create_dir_symlink(target: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
+fn create_dir_link(target: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
     std::os::unix::fs::symlink(target, link)
 }
 
 #[cfg(windows)]
-fn create_dir_symlink(target: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
-    std::os::windows::fs::symlink_dir(target, link)
+fn create_dir_link(target: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
+    match std::os::windows::fs::symlink_dir(target, link) {
+        Ok(()) => Ok(()),
+        Err(error)
+            if error.kind() == std::io::ErrorKind::PermissionDenied
+                || error.kind() == std::io::ErrorKind::Unsupported
+                || error.raw_os_error() == Some(1314) =>
+        {
+            let output = std::process::Command::new("cmd")
+                .arg("/C")
+                .arg("mklink")
+                .arg("/J")
+                .arg(link)
+                .arg(target)
+                .output()?;
+            if output.status.success() {
+                Ok(())
+            } else {
+                Err(std::io::Error::other(format!(
+                    "failed to create Windows test junction: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                )))
+            }
+        }
+        Err(error) => Err(error),
+    }
 }
 
 fn two_target_fixture() -> (
@@ -188,9 +192,7 @@ async fn analyzer_rejects_replaced_source_parent() {
         "def outside_secret():\n    return left == right\n",
     )
     .unwrap();
-    if !link_created_or_platform_denied(create_dir_symlink(outside.path(), &source_parent)) {
-        return;
-    }
+    create_dir_link(outside.path(), &source_parent).unwrap();
 
     let result = analyzer
         .handle(
@@ -220,9 +222,7 @@ async fn discover_targets_rejects_linked_source_parent() {
     )
     .unwrap();
     let link = project.path().join("src");
-    if !link_created_or_platform_denied(create_dir_symlink(outside.path(), &link)) {
-        return;
-    }
+    create_dir_link(outside.path(), &link).unwrap();
     let root = Utf8PathBuf::from_path_buf(project.path().to_owned()).unwrap();
     let targets = vec![TargetSlice {
         path: "src/calc.py".into(),
