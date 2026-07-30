@@ -21,6 +21,8 @@ pub struct AnalyzerHandler {
     root_path: Utf8PathBuf,
     root: Option<RootRelativeReader>,
     store: Option<CandidateStore>,
+    #[cfg(test)]
+    analysis_hook: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -100,6 +102,8 @@ impl AnalyzerHandler {
             root_path: root,
             root: None,
             store: None,
+            #[cfg(test)]
+            analysis_hook: None,
         })
     }
 
@@ -155,47 +159,41 @@ impl AnalyzerHandler {
         };
         let module = String::from_utf8(source.clone())
             .map_err(|error| EffectFailed::other(id, "analyzer.source.utf8", error.to_string()))?;
-        let store = self.store.as_mut().expect("store initialized");
+        let store = self.store.take().expect("store initialized");
         let remaining = request.max_candidates.saturating_sub(store.count());
         let max_candidates = usize::try_from(remaining).unwrap_or(usize::MAX);
-        let output = rust::analyze_source(
-            &rust::AnalyzeRequest {
-                path: &request.target.path,
-                lines: &request.target.lines,
-                symbols: &request.target.symbols,
+        let operators = operators.clone();
+        let task_cancellation = cancellation.clone();
+        #[cfg(test)]
+        let analysis_hook = self.analysis_hook.clone();
+        let task = tokio::task::spawn_blocking(move || {
+            #[cfg(test)]
+            if let Some(hook) = analysis_hook {
+                hook();
+            }
+            analyze_and_store(BlockingAnalysis {
+                request,
                 operators,
                 profile,
+                source,
+                module,
+                store,
                 max_candidates,
-            },
-            &module,
-        );
-        for candidate in output.candidates {
-            let sequence = store.count().checked_add(1).ok_or_else(|| {
-                EffectFailed::other(id, "analyzer.candidate", "candidate sequence overflow")
-            })?;
-            let candidate = mutation_candidate(&source, candidate, sequence)?;
-            store
-                .push(&candidate)
-                .map_err(|error| EffectFailed::other(id, "analyzer.store", error.to_string()))?;
-        }
-        let spool = if request.final_target || output.truncated {
-            Some(
-                self.store
-                    .take()
-                    .expect("store initialized")
-                    .finish()
-                    .map_err(|error| {
-                        EffectFailed::other(id, "analyzer.store", error.to_string())
-                    })?,
-            )
-        } else {
-            None
-        };
-        Ok(AnalysisFinished {
-            id,
-            spool,
-            truncated: output.truncated,
-        })
+                cancellation: task_cancellation,
+            })
+        });
+        tokio::pin!(task);
+        let result = tokio::select! {
+            biased;
+            () = cancellation.cancelled() => {
+                return Err(cancelled(id));
+            }
+            result = &mut task => result.map_err(|error| {
+                EffectFailed::other(id, "analyzer.task", error.to_string())
+            })?,
+        }?;
+        self.store = result.1;
+        Ok(result.0)
     }
 
     fn read_source(
@@ -213,6 +211,85 @@ impl AnalyzerHandler {
             .expect("root reader initialized")
             .read(path)
     }
+}
+
+struct BlockingAnalysis {
+    request: AnalyzeFile,
+    operators: MutationOperatorSelection,
+    profile: MutationProfile,
+    source: Vec<u8>,
+    module: String,
+    store: CandidateStore,
+    max_candidates: usize,
+    cancellation: ProcessCancellation,
+}
+
+fn analyze_and_store(
+    work: BlockingAnalysis,
+) -> Result<(AnalysisFinished, Option<CandidateStore>), EffectFailed> {
+    let BlockingAnalysis {
+        request,
+        operators,
+        profile,
+        source,
+        module,
+        mut store,
+        max_candidates,
+        cancellation,
+    } = work;
+    let id = request.id;
+    let output = rust::analyze_source_cancellable(
+        &rust::AnalyzeRequest {
+            path: &request.target.path,
+            lines: &request.target.lines,
+            symbols: &request.target.symbols,
+            operators: &operators,
+            profile,
+            max_candidates,
+        },
+        &module,
+        || cancellation.is_cancelled(),
+    )
+    .map_err(|_| cancelled(id))?;
+    for candidate in output.candidates {
+        if cancellation.is_cancelled() {
+            return Err(cancelled(id));
+        }
+        let sequence = store.count().checked_add(1).ok_or_else(|| {
+            EffectFailed::other(id, "analyzer.candidate", "candidate sequence overflow")
+        })?;
+        let candidate = mutation_candidate(&source, candidate, sequence)?;
+        store
+            .push(&candidate)
+            .map_err(|error| EffectFailed::other(id, "analyzer.store", error.to_string()))?;
+    }
+    if cancellation.is_cancelled() {
+        return Err(cancelled(id));
+    }
+    let truncated = output.truncated;
+    let (spool, store) =
+        if request.final_target || truncated {
+            (
+                Some(store.finish().map_err(|error| {
+                    EffectFailed::other(id, "analyzer.store", error.to_string())
+                })?),
+                None,
+            )
+        } else {
+            (None, Some(store))
+        };
+    Ok((
+        AnalysisFinished {
+            id,
+            spool,
+            truncated,
+        },
+        store,
+    ))
+}
+
+fn cancelled(id: EffectId) -> EffectFailed {
+    EffectFailed::other(id, "analyzer.cancelled", "analyzer was cancelled")
 }
 
 fn mutation_candidate(
@@ -301,5 +378,52 @@ mod tests {
 
         assert_eq!(spool.records, 1);
         assert!(handler.store.is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn in_progress_analysis_is_cancellable() {
+        use std::sync::{Arc, Barrier};
+        use std::time::Duration;
+
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::create_dir(directory.path().join("src")).unwrap();
+        std::fs::write(
+            directory.path().join("src/calc.py"),
+            "result = left == right\n",
+        )
+        .unwrap();
+        let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
+        let entered = Arc::new(Barrier::new(2));
+        let hook_entered = entered.clone();
+        let mut handler = AnalyzerHandler::new(root).unwrap();
+        handler.analysis_hook = Some(Arc::new(move || {
+            hook_entered.wait();
+            std::thread::sleep(Duration::from_millis(500));
+        }));
+        let operators = MutationOperatorSelection::default();
+        let cancellation = ProcessCancellation::new();
+        let task_cancellation = cancellation.clone();
+        let task = tokio::spawn(async move {
+            handler
+                .handle_with_cancellation(
+                    request(84),
+                    &operators,
+                    MutationProfile::Full,
+                    task_cancellation,
+                )
+                .await
+        });
+        entered.wait();
+        cancellation.cancel();
+
+        let result = tokio::time::timeout(Duration::from_millis(200), task)
+            .await
+            .expect("cancellation must not wait for blocking analysis")
+            .unwrap();
+
+        assert!(matches!(
+            result,
+            Err(error) if error.id == EffectId(84) && error.failure.code() == "analyzer.cancelled"
+        ));
     }
 }

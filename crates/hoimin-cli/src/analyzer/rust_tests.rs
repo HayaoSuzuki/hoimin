@@ -1,4 +1,4 @@
-use super::{AnalyzeRequest, analyze_source};
+use super::{AnalyzeRequest, analyze_source, analyze_source_cancellable};
 use crate::analyzer::AnalyzerDiagnosticCode;
 use camino::Utf8Path;
 use hoimin_core::{
@@ -8,6 +8,28 @@ use proptest::prelude::*;
 
 fn analyze(source: &str) -> super::AnalyzerOutput {
     analyze_with(Utf8Path::new("pkg/sample.py"), &[], &[], 10_000, source)
+}
+
+#[test]
+fn large_source_analysis_observes_cancellation_during_token_traversal() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let source = "value = left == right\n".repeat(20_000);
+    let probes = AtomicUsize::new(0);
+    let result = analyze_source_cancellable(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/large.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &MutationOperatorSelection::default(),
+            profile: MutationProfile::Full,
+            max_candidates: usize::MAX,
+        },
+        &source,
+        || probes.fetch_add(1, Ordering::Relaxed) >= 128,
+    );
+
+    assert!(matches!(result, Err(super::AnalysisCancelled)));
 }
 
 fn analyze_types(source: &str) -> super::AnalyzerOutput {
