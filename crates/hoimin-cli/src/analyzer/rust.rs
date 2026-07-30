@@ -26,18 +26,42 @@ pub(crate) struct AnalyzerOutput {
     pub truncated: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct AnalysisCancelled;
+
+pub(crate) fn analyze_source(request: &AnalyzeRequest<'_>, source: &str) -> AnalyzerOutput {
+    analyze_source_cancellable(request, source, || false)
+        .expect("the non-cancellable analyzer probe never cancels")
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "token and type-annotation candidates share local byte-span and source-order control flow"
 )]
-pub(crate) fn analyze_source(request: &AnalyzeRequest<'_>, source: &str) -> AnalyzerOutput {
+pub(crate) fn analyze_source_cancellable(
+    request: &AnalyzeRequest<'_>,
+    source: &str,
+    cancelled: impl Fn() -> bool,
+) -> Result<AnalyzerOutput, AnalysisCancelled> {
+    if cancelled() {
+        return Err(AnalysisCancelled);
+    }
     let Ok(parsed) = parse_module(source) else {
-        return invalid_syntax(request.path);
+        return Ok(invalid_syntax(request.path));
     };
+    if cancelled() {
+        return Err(AnalysisCancelled);
+    }
     let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens());
+    if cancelled() {
+        return Err(AnalysisCancelled);
+    }
     let mut candidates = Vec::new();
     let tokens: Vec<_> = parsed.tokens().iter().collect();
     for (index, token) in tokens.iter().enumerate() {
+        if cancelled() {
+            return Err(AnalysisCancelled);
+        }
         let range = token.range();
         let start = usize::from(range.start());
         let end = usize::from(range.end());
@@ -109,12 +133,18 @@ pub(crate) fn analyze_source(request: &AnalyzeRequest<'_>, source: &str) -> Anal
             });
         }
     }
+    if cancelled() {
+        return Err(AnalysisCancelled);
+    }
     candidates.extend(type_annotation_candidates(
         parsed.syntax(),
         source,
         &facts.imports,
         request,
     ));
+    if cancelled() {
+        return Err(AnalysisCancelled);
+    }
     if request.profile == MutationProfile::Focused {
         candidates.retain(|candidate| {
             if candidate.operator.starts_with("type_") {
@@ -159,11 +189,11 @@ pub(crate) fn analyze_source(request: &AnalyzeRequest<'_>, source: &str) -> Anal
         })
         .into_iter()
         .collect();
-    AnalyzerOutput {
+    Ok(AnalyzerOutput {
         candidates,
         diagnostics,
         truncated,
-    }
+    })
 }
 
 fn invalid_syntax(path: &Utf8Path) -> AnalyzerOutput {
