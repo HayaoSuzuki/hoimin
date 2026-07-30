@@ -33,4 +33,3 @@ threading or path behavior is introduced.
   result and the dispatcher remains usable.
 - Run existing rollback, resume, finality, WAL, and schema tests unchanged on
   Linux, macOS, and Windows.
-
