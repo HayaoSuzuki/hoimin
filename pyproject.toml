@@ -29,5 +29,6 @@ manifest-path = "crates/hoimin-cli/Cargo.toml"
 dev = [
     "maturin>=1.11,<2",
     "mypy>=2.3.0",
+    "packaging>=26.0",
     "ty>=0.0.61",
 ]

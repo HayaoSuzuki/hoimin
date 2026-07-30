@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 import hashlib
 import json
 import os
@@ -8,11 +7,21 @@ import platform
 import subprocess
 import sys
 import tempfile
+import tomllib
 import venv
 import zipfile
+from collections.abc import Mapping
 from dataclasses import dataclass
 from email.parser import Parser
 from pathlib import Path
+
+from packaging.tags import sys_tags
+from packaging.utils import (
+    InvalidWheelFilename,
+    canonicalize_name,
+    parse_wheel_filename,
+)
+from packaging.version import Version
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 COMMAND_TIMEOUT_SECONDS = 120
@@ -38,9 +47,7 @@ FIXTURE_SOURCE = "def add(left, right):\n    return left + right\n"
 FIXTURE_TEST = "from src.calc import add\n\n\ndef test_add():\n    assert add(2, 1) == 3\n"
 
 
-def run(
-    argv: list[str], *, cwd: Path, env: dict[str, str]
-) -> subprocess.CompletedProcess[str]:
+def run(argv: list[str], *, cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     completed = subprocess.run(
         argv,
         cwd=cwd,
@@ -54,9 +61,7 @@ def run(
         check=False,
     )
     assert completed.returncode == 0, (
-        f"command failed ({completed.returncode}): {argv!r}\n"
-        f"stdout:\n{completed.stdout}\n"
-        f"stderr:\n{completed.stderr}"
+        f"command failed ({completed.returncode}): {argv!r}\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
     )
     return completed
 
@@ -82,25 +87,58 @@ def assert_mutation_result(output: str) -> None:
 
 
 def is_compatible_wheel(wheel: Path, system: str, machine: str) -> bool:
+    try:
+        _, _, _, tags = parse_wheel_filename(wheel.name)
+    except InvalidWheelFilename:
+        return False
+    runtime_tags = {(tag.interpreter, tag.abi) for tag in sys_tags()}
+    platforms = {tag.platform for tag in tags if (tag.interpreter, tag.abi) in runtime_tags}
+    normalized_machine = machine.lower()
     if system == "win32":
-        return "win_amd64" in wheel.name
+        return normalized_machine in {"amd64", "x86_64"} and "win_amd64" in platforms
     if system.startswith("linux"):
-        return "x86_64" in wheel.name
+        return normalized_machine in {"amd64", "x86_64"} and any(
+            platform_tag.endswith("_x86_64") and platform_tag.startswith(("linux_", "manylinux", "musllinux"))
+            for platform_tag in platforms
+        )
     if system == "darwin":
-        return machine == "arm64" and "macosx" in wheel.name and "arm64" in wheel.name
+        return normalized_machine == "arm64" and any(
+            platform_tag.startswith("macosx_") and platform_tag.endswith("_arm64") for platform_tag in platforms
+        )
     return False
 
 
+def project_identity() -> tuple[str, Version]:
+    document = tomllib.loads((REPOSITORY_ROOT / "pyproject.toml").read_text())
+    project = document["project"]
+    return canonicalize_name(project["name"]), Version(project["version"])
+
+
 def select_compatible_wheel(
-    wheels: list[Path], *, system: str, machine: str
+    wheels: list[Path],
+    *,
+    system: str,
+    machine: str,
+    expected_name: str,
+    expected_version: str | Version,
 ) -> Path:
-    compatible = sorted(
-        wheel
-        for wheel in wheels
-        if is_compatible_wheel(wheel, system, machine)
+    normalized_name = canonicalize_name(expected_name)
+    version = Version(expected_version) if isinstance(expected_version, str) else expected_version
+    compatible = []
+    for wheel in wheels:
+        try:
+            name, candidate_version, _, _ = parse_wheel_filename(wheel.name)
+        except InvalidWheelFilename:
+            continue
+        if name == normalized_name and candidate_version == version and is_compatible_wheel(wheel, system, machine):
+            compatible.append(wheel)
+    names = [wheel.name for wheel in wheels]
+    assert compatible, f"no current compatible wheel for {normalized_name} {version} on {system}/{machine}: {names}"
+    assert len(compatible) == 1, (
+        f"multiple current compatible wheels for {normalized_name} {version} on "
+        f"{system}/{machine}: {[wheel.name for wheel in compatible]}"
     )
-    assert compatible, f"no wheel for {system}: {[wheel.name for wheel in wheels]}"
-    return compatible[-1]
+    return compatible[0]
 
 
 def wheel_path(
@@ -114,22 +152,30 @@ def wheel_path(
     if override:
         wheel = Path(override).resolve()
         assert wheel.is_file(), f"HOIMIN_WHEEL does not exist: {wheel}"
-        return wheel
+        expected_name, expected_version = project_identity()
+        return select_compatible_wheel(
+            [wheel],
+            system=system,
+            machine=machine,
+            expected_name=expected_name,
+            expected_version=expected_version,
+        )
     wheels = sorted(wheel_directory.glob("hoimin-*.whl"))
     assert wheels, "build a wheel first with uv run maturin build --release"
-    return select_compatible_wheel(wheels, system=system, machine=machine)
+    expected_name, expected_version = project_identity()
+    return select_compatible_wheel(
+        wheels,
+        system=system,
+        machine=machine,
+        expected_name=expected_name,
+        expected_version=expected_version,
+    )
 
 
 def wheel_metadata(wheel: Path) -> WheelMetadata:
     with zipfile.ZipFile(wheel) as archive:
-        metadata_files = sorted(
-            name
-            for name in archive.namelist()
-            if name.endswith(".dist-info/METADATA")
-        )
-        assert len(metadata_files) == 1, (
-            f"expected exactly one METADATA member in {wheel}: {metadata_files}"
-        )
+        metadata_files = sorted(name for name in archive.namelist() if name.endswith(".dist-info/METADATA"))
+        assert len(metadata_files) == 1, f"expected exactly one METADATA member in {wheel}: {metadata_files}"
         parsed = Parser().parsestr(archive.read(metadata_files[0]).decode("utf-8"))
 
     return WheelMetadata(
@@ -141,9 +187,9 @@ def wheel_metadata(wheel: Path) -> WheelMetadata:
 
 
 def validate_wheel_metadata(metadata: WheelMetadata) -> None:
-    assert metadata.requires_python.replace(" ", "") == (
-        EXPECTED_WHEEL_METADATA.requires_python
-    ), f"unexpected Requires-Python: {metadata.requires_python!r}"
+    assert metadata.requires_python.replace(" ", "") == (EXPECTED_WHEEL_METADATA.requires_python), (
+        f"unexpected Requires-Python: {metadata.requires_python!r}"
+    )
     assert metadata.requires_dist == EXPECTED_WHEEL_METADATA.requires_dist, (
         f"unexpected Requires-Dist: {metadata.requires_dist!r}"
     )
