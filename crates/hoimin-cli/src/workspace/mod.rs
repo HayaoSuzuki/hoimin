@@ -22,23 +22,40 @@ pub use copy::WorkspacePlan;
 pub use manifest::{ManifestEntry, WorkspaceManifest};
 use root::WorkerRoot;
 
+#[derive(Debug, thiserror::Error)]
 pub(crate) enum RootRelativeReadError {
+    #[error("root-relative file was not found")]
     NotFound,
-    Other(WorkspaceError),
+    #[error(transparent)]
+    Other(#[from] WorkspaceError),
+}
+
+#[derive(Debug)]
+pub(crate) struct RootRelativeReader {
+    root: WorkerRoot,
+}
+
+impl RootRelativeReader {
+    pub(crate) fn open(root: Utf8PathBuf) -> Result<Self, WorkspaceError> {
+        WorkerRoot::open(root).map(|root| Self { root })
+    }
+
+    pub(crate) fn read(&self, path: &Utf8Path) -> Result<Vec<u8>, RootRelativeReadError> {
+        match self.root.read(path) {
+            Ok(bytes) => Ok(bytes),
+            Err(error) => match self.root.is_missing(path) {
+                Ok(true) => Err(RootRelativeReadError::NotFound),
+                Ok(false) | Err(_) => Err(RootRelativeReadError::Other(error)),
+            },
+        }
+    }
 }
 
 pub(crate) fn read_root_relative(
     root: &Utf8Path,
     path: &Utf8Path,
 ) -> Result<Vec<u8>, RootRelativeReadError> {
-    let root = WorkerRoot::open(root.to_owned()).map_err(RootRelativeReadError::Other)?;
-    match root.read(path) {
-        Ok(bytes) => Ok(bytes),
-        Err(error) => match root.is_missing(path) {
-            Ok(true) => Err(RootRelativeReadError::NotFound),
-            Ok(false) | Err(_) => Err(RootRelativeReadError::Other(error)),
-        },
-    }
+    RootRelativeReader::open(root.to_owned())?.read(path)
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
