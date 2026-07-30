@@ -1356,6 +1356,14 @@ pub fn transition(
                     }
                     None => return Err(MachineError::MissingCandidateSpool),
                     Some(spool) if spool.records == 0 => {
+                        if state.ordered_candidates.is_none()
+                            && let Some(missing) = state
+                                .candidate_filter
+                                .as_ref()
+                                .and_then(|candidate_filter| candidate_filter.iter().next())
+                        {
+                            return Err(MachineError::SelectedCandidateMissing(missing.clone()));
+                        }
                         state.candidate_spool = Some(spool);
                         state.phase = RunPhase::Finalize;
                         state.finalize_effects()?

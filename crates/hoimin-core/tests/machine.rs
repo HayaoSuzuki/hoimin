@@ -819,6 +819,59 @@ fn candidate_filter_skips_unrequested_candidates() {
 }
 
 #[test]
+fn explicit_candidate_filter_rejects_an_empty_spool() {
+    let missing = fixture_candidate(1);
+    let (state, effects) = waiting_for_filtered_analysis(BTreeSet::from([missing.id.clone()]));
+    let analysis_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::AnalyzeFile(_))
+    }));
+
+    let error = transition(
+        state,
+        RunEvent::AnalysisFinished(AnalysisFinished {
+            id: analysis_id,
+            spool: Some(CandidateSpoolRef {
+                token: "empty-explicit".to_owned(),
+                records: 0,
+            }),
+            truncated: false,
+        }),
+    )
+    .unwrap_err();
+
+    assert_eq!(error, MachineError::SelectedCandidateMissing(missing.id));
+}
+
+#[test]
+fn ordered_candidate_filter_preserves_empty_spool_finalization() {
+    let requested = fixture_candidate(1);
+    let (state, effects) = waiting_for_ordered_analysis(vec![requested.id]);
+    let analysis_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::AnalyzeFile(_))
+    }));
+
+    let (state, effects) = transition(
+        state,
+        RunEvent::AnalysisFinished(AnalysisFinished {
+            id: analysis_id,
+            spool: Some(CandidateSpoolRef {
+                token: "empty-ordered".to_owned(),
+                records: 0,
+            }),
+            truncated: false,
+        }),
+    )
+    .unwrap();
+
+    assert_eq!(state.phase(), RunPhase::Finalize);
+    assert!(
+        effects
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::VerifyOriginals(_)))
+    );
+}
+
+#[test]
 fn explicit_candidate_filter_rejects_missing_selected_candidate() {
     let first = fixture_candidate(1);
     let second = fixture_candidate(2);

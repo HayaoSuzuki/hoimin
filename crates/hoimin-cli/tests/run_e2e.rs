@@ -42,43 +42,13 @@ async fn unittest_command_produces_the_expected_mutant_statuses() {
 async fn explicit_candidate_run_rejects_a_missing_candidate() {
     let project = tempfile::tempdir().unwrap();
     write_parallel_project(project.path());
-    let python = python_executable();
-    let config = hoimin_cli::cli::parse_config_from([
-        OsString::from("hoimin"),
-        OsString::from("run"),
-        OsString::from("--root"),
-        project.path().as_os_str().to_owned(),
-        OsString::from("--file"),
-        OsString::from("src/calc.py"),
-        OsString::from("--format"),
-        OsString::from("json"),
-        OsString::from("--allow-best-effort-memory"),
-        OsString::from("--"),
-        python.as_os_str().to_owned(),
-        OsString::from("-c"),
-        OsString::from("from src.calc import total; assert total(1, 2, 3, 4, 5) == 15"),
-    ])
-    .unwrap();
     let missing_id = "candidate-that-is-not-in-the-spool";
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-
-    let error = hoimin_cli::shell::run_selected_loop(
-        config,
-        BTreeSet::from([missing_id.to_owned()]),
-        VerificationSelection {
-            mode: VerificationSelectionMode::CandidateIds,
-            policy: VerificationSelectionPolicy::ExplicitCandidates,
-            requested: 1,
-            selected: 1,
-            scope: VerificationSelectionScope::ExplicitCandidates,
-            plan_truncated: false,
-        },
-        &mut stdout,
-        &mut stderr,
+    let (error, stdout) = run_missing_explicit_candidate(
+        project.path(),
+        missing_id,
+        "from src.calc import total; assert total(1, 2, 3, 4, 5) == 15",
     )
-    .await
-    .unwrap_err();
+    .await;
 
     assert!(error.contains(missing_id), "{error}");
     assert!(
@@ -86,6 +56,31 @@ async fn explicit_candidate_run_rejects_a_missing_candidate() {
             .unwrap()
             .contains("\"complete\":true"),
         "a missing explicit candidate must not produce a complete report"
+    );
+}
+
+#[tokio::test]
+async fn explicit_candidate_run_rejects_an_empty_candidate_spool() {
+    let project = tempfile::tempdir().unwrap();
+    let source = project.path().join("src");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("__init__.py"), "").unwrap();
+    std::fs::write(source.join("calc.py"), "def noop():\n    pass\n").unwrap();
+    let missing_id = "candidate-missing-from-empty-spool";
+
+    let (error, stdout) = run_missing_explicit_candidate(
+        project.path(),
+        missing_id,
+        "from src.calc import noop; assert noop() is None",
+    )
+    .await;
+
+    assert!(error.contains(missing_id), "{error}");
+    assert!(
+        !str::from_utf8(&stdout)
+            .unwrap()
+            .contains("\"complete\":true"),
+        "an empty spool must not produce a complete explicit verification report"
     );
 }
 #[tokio::test]
@@ -1322,6 +1317,49 @@ impl Write for SharedBuffer {
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
+}
+
+async fn run_missing_explicit_candidate(
+    project: &Path,
+    missing_id: &str,
+    test_code: &str,
+) -> (String, Vec<u8>) {
+    let python = python_executable();
+    let config = hoimin_cli::cli::parse_config_from([
+        OsString::from("hoimin"),
+        OsString::from("run"),
+        OsString::from("--root"),
+        project.as_os_str().to_owned(),
+        OsString::from("--file"),
+        OsString::from("src/calc.py"),
+        OsString::from("--format"),
+        OsString::from("json"),
+        OsString::from("--allow-best-effort-memory"),
+        OsString::from("--"),
+        python.as_os_str().to_owned(),
+        OsString::from("-c"),
+        OsString::from(test_code),
+    ])
+    .unwrap();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let error = hoimin_cli::shell::run_selected_loop(
+        config,
+        BTreeSet::from([missing_id.to_owned()]),
+        VerificationSelection {
+            mode: VerificationSelectionMode::CandidateIds,
+            policy: VerificationSelectionPolicy::ExplicitCandidates,
+            requested: 1,
+            selected: 1,
+            scope: VerificationSelectionScope::ExplicitCandidates,
+            plan_truncated: false,
+        },
+        &mut stdout,
+        &mut stderr,
+    )
+    .await
+    .unwrap_err();
+    (error, stdout)
 }
 
 async fn run_fixture(test_args: &[&str]) -> FixtureRun {
