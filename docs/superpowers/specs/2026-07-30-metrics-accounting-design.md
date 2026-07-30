@@ -26,4 +26,3 @@ JSON Schema retains nonnegative integer constraints for every expressible
 field. Draft 2020-12 cannot compare sibling numeric values without a
 nonstandard `$data` extension, so descriptions explicitly state the
 cross-field invariants and identify the Rust validator as authoritative.
-
