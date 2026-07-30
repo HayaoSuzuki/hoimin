@@ -3,6 +3,12 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use std::{collections::BTreeSet, str};
+
+use hoimin_core::{
+    VerificationSelection, VerificationSelectionMode, VerificationSelectionPolicy,
+    VerificationSelectionScope,
+};
 
 #[test]
 fn cli_entrypoint_future_keeps_large_run_state_out_of_line() {
@@ -29,6 +35,57 @@ async fn unittest_command_produces_the_expected_mutant_statuses() {
             "os": std::env::consts::OS,
             "hoimin": env!("CARGO_PKG_VERSION"),
         })
+    );
+}
+
+#[tokio::test]
+async fn explicit_candidate_run_rejects_a_missing_candidate() {
+    let project = tempfile::tempdir().unwrap();
+    write_parallel_project(project.path());
+    let python = python_executable();
+    let config = hoimin_cli::cli::parse_config_from([
+        OsString::from("hoimin"),
+        OsString::from("run"),
+        OsString::from("--root"),
+        project.path().as_os_str().to_owned(),
+        OsString::from("--file"),
+        OsString::from("src/calc.py"),
+        OsString::from("--format"),
+        OsString::from("json"),
+        OsString::from("--allow-best-effort-memory"),
+        OsString::from("--"),
+        python.as_os_str().to_owned(),
+        OsString::from("-c"),
+        OsString::from("from src.calc import total; assert total(1, 2, 3, 4, 5) == 15"),
+    ])
+    .unwrap();
+    let missing_id = "candidate-that-is-not-in-the-spool";
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    let error = hoimin_cli::shell::run_selected_loop(
+        config,
+        BTreeSet::from([missing_id.to_owned()]),
+        VerificationSelection {
+            mode: VerificationSelectionMode::CandidateIds,
+            policy: VerificationSelectionPolicy::ExplicitCandidates,
+            requested: 1,
+            selected: 1,
+            scope: VerificationSelectionScope::ExplicitCandidates,
+            plan_truncated: false,
+        },
+        &mut stdout,
+        &mut stderr,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(error.contains(missing_id), "{error}");
+    assert!(
+        !str::from_utf8(&stdout)
+            .unwrap()
+            .contains("\"complete\":true"),
+        "a missing explicit candidate must not produce a complete report"
     );
 }
 #[tokio::test]

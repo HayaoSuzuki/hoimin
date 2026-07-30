@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use hoimin_core::{
     AnalysisFinished, ByteSpan, CandidateLoaded, CandidateSpoolRef, CleanupFinished, CommandArg,
-    EffectFailed, EffectId, MutationApplied, MutationCandidate, MutationProfile, MutationStatus,
-    MutationSummary, OriginalsVerified, OutputConfig, OutputEmitted, OutputEvent,
+    EffectFailed, EffectId, MachineError, MutationApplied, MutationCandidate, MutationProfile,
+    MutationStatus, MutationSummary, OriginalsVerified, OutputConfig, OutputEmitted, OutputEvent,
     PreflightCompleted, ProcessFinished, ProcessTermination, RawRunConfig, RawRunLimits,
     RemainingBudgetObserved, ReservationId, ResourceMode, ResultPersisted, RunConfig, RunEffect,
     RunEvent, RunFingerprint, RunPhase, RunState, SessionFinished, SessionLoaded, SessionResumeRef,
@@ -816,6 +816,112 @@ fn candidate_filter_skips_unrequested_candidates() {
     .unwrap();
     assert_eq!(state.summary().killed, 1);
     assert_eq!(state.summary().not_run, 0);
+}
+
+#[test]
+fn explicit_candidate_filter_rejects_missing_selected_candidate() {
+    let first = fixture_candidate(1);
+    let second = fixture_candidate(2);
+    let (state, effects) = waiting_for_filtered_analysis(BTreeSet::from([second.id.clone()]));
+    let analysis_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::AnalyzeFile(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::AnalysisFinished(AnalysisFinished {
+            id: analysis_id,
+            spool: Some(CandidateSpoolRef {
+                token: "missing-explicit".to_owned(),
+                records: 1,
+            }),
+            truncated: false,
+        }),
+    )
+    .unwrap();
+    let read_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read_id,
+            worker: 0,
+            candidate: Some(first),
+            next_offset: 10,
+        }),
+    )
+    .unwrap();
+    let eof_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }));
+
+    let error = transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: eof_id,
+            worker: 0,
+            candidate: None,
+            next_offset: 10,
+        }),
+    )
+    .unwrap_err();
+
+    assert_eq!(error, MachineError::SelectedCandidateMissing(second.id));
+}
+
+#[test]
+fn explicit_candidate_filter_rejects_missing_after_partial_match() {
+    let first = fixture_candidate(1);
+    let second = fixture_candidate(2);
+    let (state, effects) =
+        waiting_for_filtered_analysis(BTreeSet::from([first.id.clone(), second.id.clone()]));
+    let analysis_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::AnalyzeFile(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::AnalysisFinished(AnalysisFinished {
+            id: analysis_id,
+            spool: Some(CandidateSpoolRef {
+                token: "partial-explicit".to_owned(),
+                records: 1,
+            }),
+            truncated: false,
+        }),
+    )
+    .unwrap();
+    let read_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read_id,
+            worker: 0,
+            candidate: Some(first.clone()),
+            next_offset: 10,
+        }),
+    )
+    .unwrap();
+    let (state, effects) = complete_killed_candidate(state, &effects, &first.id);
+    assert_eq!(state.summary().killed, 1);
+    assert_eq!(state.summary().not_run, 0);
+    let eof_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }));
+
+    let error = transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: eof_id,
+            worker: 0,
+            candidate: None,
+            next_offset: 10,
+        }),
+    )
+    .unwrap_err();
+
+    assert_eq!(error, MachineError::SelectedCandidateMissing(second.id));
 }
 
 #[test]
