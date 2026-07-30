@@ -154,18 +154,30 @@ impl WorkspaceError {
 
 #[derive(Debug)]
 pub(crate) struct SnapshotFile {
-    bytes: Vec<u8>,
     permissions: fs::Permissions,
     permission_fingerprint: PermissionFingerprint,
 }
 
 impl SnapshotFile {
-    fn new(bytes: Vec<u8>, permissions: fs::Permissions) -> Self {
+    fn new(permissions: fs::Permissions) -> Self {
         Self {
-            bytes,
             permission_fingerprint: permission_fingerprint(&permissions),
             permissions,
         }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct DiskSnapshot {
+    _temp: tempfile::TempDir,
+    root: Utf8PathBuf,
+    files: BTreeMap<Utf8PathBuf, SnapshotFile>,
+}
+
+impl DiskSnapshot {
+    fn read(&self, path: &Utf8Path) -> Result<Vec<u8>, WorkspaceError> {
+        fs::read(self.root.join(path))
+            .map_err(|error| WorkspaceError::io("read shared snapshot", path, error))
     }
 }
 
@@ -253,7 +265,7 @@ pub struct WorkerWorkspace {
     original_root: Utf8PathBuf,
     options: CopyOptions,
     manifest: WorkspaceManifest,
-    snapshot: BTreeMap<Utf8PathBuf, SnapshotFile>,
+    snapshot: Arc<DiskSnapshot>,
     allowance: Arc<copy::CopyAllowance>,
     plan_state: Arc<Mutex<copy::PlanState>>,
     worker: u32,
@@ -269,7 +281,7 @@ impl WorkerWorkspace {
         original_root: Utf8PathBuf,
         options: CopyOptions,
         manifest: WorkspaceManifest,
-        snapshot: BTreeMap<Utf8PathBuf, SnapshotFile>,
+        snapshot: Arc<DiskSnapshot>,
         allowance: Arc<copy::CopyAllowance>,
         plan_state: Arc<Mutex<copy::PlanState>>,
         worker: u32,

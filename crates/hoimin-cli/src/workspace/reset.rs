@@ -55,12 +55,12 @@ impl WorkerWorkspace {
         for entry in existing.iter().rev() {
             match entry.kind {
                 WorkerEntryKind::Directory => {
-                    if !required_directory(&entry.path, self.snapshot.keys()) {
+                    if !required_directory(&entry.path, self.snapshot.files.keys()) {
                         self.root.remove_any_if_exists(&entry.path)?;
                     }
                 }
                 WorkerEntryKind::File => {
-                    if !self.snapshot.contains_key(&entry.path) {
+                    if !self.snapshot.files.contains_key(&entry.path) {
                         self.root.remove_any_if_exists(&entry.path)?;
                     }
                 }
@@ -70,18 +70,17 @@ impl WorkerWorkspace {
             }
         }
 
-        for (path, snapshot) in &self.snapshot {
+        for (path, snapshot) in &self.snapshot.files {
+            let bytes = self.snapshot.read(path)?;
             if existing_files.contains(path)
-                && self.root.snapshot_matches(
-                    path,
-                    &snapshot.bytes,
-                    snapshot.permission_fingerprint,
-                )?
+                && self
+                    .root
+                    .snapshot_matches(path, &bytes, snapshot.permission_fingerprint)?
             {
                 continue;
             }
             self.root
-                .restore(path, &snapshot.bytes, snapshot.permissions.clone())?;
+                .restore(path, &bytes, snapshot.permissions.clone())?;
         }
 
         let matches = self.matches_snapshot()?;
@@ -103,16 +102,16 @@ impl WorkerWorkspace {
             .filter(|entry| entry.kind != WorkerEntryKind::Directory)
             .map(|entry| &entry.path)
             .collect::<BTreeSet<_>>();
-        let expected_files = self.snapshot.keys().collect::<BTreeSet<_>>();
+        let expected_files = self.snapshot.files.keys().collect::<BTreeSet<_>>();
         if actual_files != expected_files {
             return Ok(false);
         }
-        for (path, snapshot) in &self.snapshot {
-            if !self.root.snapshot_matches(
-                path,
-                &snapshot.bytes,
-                snapshot.permission_fingerprint,
-            )? {
+        for (path, snapshot) in &self.snapshot.files {
+            let bytes = self.snapshot.read(path)?;
+            if !self
+                .root
+                .snapshot_matches(path, &bytes, snapshot.permission_fingerprint)?
+            {
                 return Ok(false);
             }
         }
@@ -299,6 +298,16 @@ mod tests {
         let (_project, worker, _snapshot_permissions) = changed_worker();
 
         assert!(!worker.matches_snapshot().unwrap());
+    }
+
+    #[test]
+    fn shared_snapshot_restores_after_original_source_changes() {
+        let (project, worker, _snapshot_permissions) = changed_worker();
+        fs::write(project.path().join("swap/target.py"), b"external change\n").unwrap();
+
+        worker.reset_from_snapshot().unwrap();
+
+        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
     }
 
     #[cfg(unix)]
