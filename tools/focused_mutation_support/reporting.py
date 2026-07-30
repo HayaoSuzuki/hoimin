@@ -90,5 +90,19 @@ def render_markdown(record: RunRecord) -> str:
             f"{record.comparison.get('full_candidates', 0)} full candidates; "
             f"reduction ratio {record.comparison.get('reduction_ratio', 0):.3f}`"
         )
+    lines.extend(["", "## Command cleanup failures"])
+    cleanup_failure_count = 0
+    for command in record.commands:
+        exit_status = (
+            "unknown" if command.exit_code is None else str(command.exit_code)
+        )
+        for error in command.cleanup_errors:
+            cleanup_failure_count += 1
+            lines.append(
+                f"- {_code(command.label)} — exit {_code(exit_status)} — "
+                f"{_code(error)}"
+            )
+    if cleanup_failure_count == 0:
+        lines.append("- none")
     lines.append("")
     return "\n".join(lines)
