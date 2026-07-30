@@ -7,6 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+from packaging.tags import Tag
 from wheel_smoke import (
     COMMAND_TIMEOUT_SECONDS,
     WheelMetadata,
@@ -23,6 +24,23 @@ from wheel_smoke import (
     wheel_path,
     write_fixture,
 )
+
+LINUX_RUNTIME_TAGS = frozenset(
+    {
+        Tag("cp314", "cp314", "manylinux_2_17_x86_64"),
+        Tag("cp314", "abi3", "manylinux_2_17_x86_64"),
+    }
+)
+WINDOWS_RUNTIME_TAGS = frozenset({Tag("cp314", "cp314", "win_amd64")})
+MACOS_RUNTIME_TAGS = frozenset({Tag("cp314", "cp314", "macosx_11_0_arm64")})
+
+
+def runtime_tags_for(system: str) -> frozenset[Tag]:
+    return {
+        "linux": LINUX_RUNTIME_TAGS,
+        "win32": WINDOWS_RUNTIME_TAGS,
+        "darwin": MACOS_RUNTIME_TAGS,
+    }.get(system, frozenset())
 
 
 class StandaloneContractTests(unittest.TestCase):
@@ -104,6 +122,20 @@ class WheelSelectionTests(unittest.TestCase):
                 False,
             ),
             (
+                "Linux rejects musllinux on a glibc runtime",
+                "hoimin-0.1.0-cp314-cp314-musllinux_1_2_x86_64.whl",
+                "linux",
+                "x86_64",
+                False,
+            ),
+            (
+                "Linux rejects a newer unsupported manylinux baseline",
+                "hoimin-0.1.0-cp314-cp314-manylinux_2_99_x86_64.whl",
+                "linux",
+                "x86_64",
+                False,
+            ),
+            (
                 "Windows accepts amd64",
                 "hoimin-0.1.0-cp314-cp314-win_amd64.whl",
                 "win32",
@@ -127,6 +159,13 @@ class WheelSelectionTests(unittest.TestCase):
             (
                 "macOS arm64 rejects universal2",
                 "hoimin-0.1.0-cp314-cp314-macosx_11_0_universal2.whl",
+                "darwin",
+                "arm64",
+                False,
+            ),
+            (
+                "macOS rejects a newer unsupported deployment target",
+                "hoimin-0.1.0-cp314-cp314-macosx_99_0_arm64.whl",
                 "darwin",
                 "arm64",
                 False,
@@ -160,7 +199,12 @@ class WheelSelectionTests(unittest.TestCase):
                 wheel = Path(filename)
 
                 # Act
-                actual = is_compatible_wheel(wheel, system, machine)
+                actual = is_compatible_wheel(
+                    wheel,
+                    system,
+                    machine,
+                    supported_tags=runtime_tags_for(system),
+                )
 
                 # Assert
                 self.assertIs(actual, expected)
@@ -180,6 +224,7 @@ class WheelSelectionTests(unittest.TestCase):
             machine="x86_64",
             expected_name="hoimin",
             expected_version="0.10.0",
+            supported_tags=LINUX_RUNTIME_TAGS,
         )
 
         # Assert
@@ -203,6 +248,7 @@ class WheelSelectionTests(unittest.TestCase):
                 machine="x86_64",
                 expected_name="hoimin",
                 expected_version="0.1.0",
+                supported_tags=LINUX_RUNTIME_TAGS,
             )
 
     def test_rejects_stale_compatible_wheels(self) -> None:
@@ -217,6 +263,7 @@ class WheelSelectionTests(unittest.TestCase):
                 machine="x86_64",
                 expected_name="hoimin",
                 expected_version="0.10.0",
+                supported_tags=LINUX_RUNTIME_TAGS,
             )
 
     def test_rejects_ambiguous_current_compatible_wheels(self) -> None:
@@ -232,6 +279,7 @@ class WheelSelectionTests(unittest.TestCase):
                 machine="x86_64",
                 expected_name="hoimin",
                 expected_version="0.1.0",
+                supported_tags=LINUX_RUNTIME_TAGS,
             )
 
     def test_uses_the_explicit_wheel_override(self) -> None:
@@ -246,6 +294,7 @@ class WheelSelectionTests(unittest.TestCase):
                 wheel_directory=Path(temporary_directory) / "wheels",
                 system="linux",
                 machine="x86_64",
+                supported_tags=LINUX_RUNTIME_TAGS,
             )
 
             # Assert
@@ -262,6 +311,7 @@ class WheelSelectionTests(unittest.TestCase):
                     wheel_directory=Path(temporary_directory) / "wheels",
                     system="linux",
                     machine="x86_64",
+                    supported_tags=LINUX_RUNTIME_TAGS,
                 )
 
     def test_rejects_a_missing_explicit_wheel_override(self) -> None:
@@ -315,6 +365,7 @@ class WheelSelectionTests(unittest.TestCase):
                 wheel_directory=wheel_directory,
                 system="linux",
                 machine="x86_64",
+                supported_tags=LINUX_RUNTIME_TAGS,
             )
 
             # Assert

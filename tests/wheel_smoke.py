@@ -10,12 +10,12 @@ import tempfile
 import tomllib
 import venv
 import zipfile
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from email.parser import Parser
 from pathlib import Path
 
-from packaging.tags import sys_tags
+from packaging.tags import Tag, sys_tags
 from packaging.utils import (
     InvalidWheelFilename,
     canonicalize_name,
@@ -86,13 +86,19 @@ def assert_mutation_result(output: str) -> None:
     )
 
 
-def is_compatible_wheel(wheel: Path, system: str, machine: str) -> bool:
+def is_compatible_wheel(
+    wheel: Path,
+    system: str,
+    machine: str,
+    *,
+    supported_tags: Collection[Tag] | None = None,
+) -> bool:
     try:
         _, _, _, tags = parse_wheel_filename(wheel.name)
     except InvalidWheelFilename:
         return False
-    runtime_tags = {(tag.interpreter, tag.abi) for tag in sys_tags()}
-    platforms = {tag.platform for tag in tags if (tag.interpreter, tag.abi) in runtime_tags}
+    runtime_tags = frozenset(sys_tags()) if supported_tags is None else frozenset(supported_tags)
+    platforms = {tag.platform for tag in tags & runtime_tags}
     normalized_machine = machine.lower()
     if system == "win32":
         return normalized_machine in {"amd64", "x86_64"} and "win_amd64" in platforms
@@ -121,6 +127,7 @@ def select_compatible_wheel(
     machine: str,
     expected_name: str,
     expected_version: str | Version,
+    supported_tags: Collection[Tag] | None = None,
 ) -> Path:
     normalized_name = canonicalize_name(expected_name)
     version = Version(expected_version) if isinstance(expected_version, str) else expected_version
@@ -130,7 +137,16 @@ def select_compatible_wheel(
             name, candidate_version, _, _ = parse_wheel_filename(wheel.name)
         except InvalidWheelFilename:
             continue
-        if name == normalized_name and candidate_version == version and is_compatible_wheel(wheel, system, machine):
+        if (
+            name == normalized_name
+            and candidate_version == version
+            and is_compatible_wheel(
+                wheel,
+                system,
+                machine,
+                supported_tags=supported_tags,
+            )
+        ):
             compatible.append(wheel)
     names = [wheel.name for wheel in wheels]
     assert compatible, f"no current compatible wheel for {normalized_name} {version} on {system}/{machine}: {names}"
@@ -147,6 +163,7 @@ def wheel_path(
     wheel_directory: Path,
     system: str,
     machine: str,
+    supported_tags: Collection[Tag] | None = None,
 ) -> Path:
     override = environment.get("HOIMIN_WHEEL")
     if override:
@@ -159,6 +176,7 @@ def wheel_path(
             machine=machine,
             expected_name=expected_name,
             expected_version=expected_version,
+            supported_tags=supported_tags,
         )
     wheels = sorted(wheel_directory.glob("hoimin-*.whl"))
     assert wheels, "build a wheel first with uv run maturin build --release"
@@ -169,6 +187,7 @@ def wheel_path(
         machine=machine,
         expected_name=expected_name,
         expected_version=expected_version,
+        supported_tags=supported_tags,
     )
 
 
