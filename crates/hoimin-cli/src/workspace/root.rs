@@ -11,6 +11,8 @@ use camino::{Utf8Path, Utf8PathBuf};
 #[cfg(unix)]
 use cap_fs_ext::OpenOptionsFollowExt;
 use cap_primitives::fs::FollowSymlinks;
+#[cfg(unix)]
+use cap_primitives::fs::OpenOptionsExt;
 
 use super::WorkspaceError;
 
@@ -164,7 +166,11 @@ impl MutationFile {
                 .metadata()
                 .map_err(|error| WorkspaceError::io("inspect mutation target", path, error))?;
             let mut options = cap_primitives::fs::OpenOptions::new();
-            options.read(true).write(true).follow(FollowSymlinks::No);
+            options
+                .read(true)
+                .write(true)
+                .follow(FollowSymlinks::No)
+                .custom_flags(libc::O_NONBLOCK);
             let file =
                 cap_primitives::fs::open(&parent, Path::new(&name), &options).map_err(|error| {
                     WorkerRoot::map_entry_error("open mutation target", path, error)
@@ -226,7 +232,10 @@ impl WorkerRoot {
         {
             Self::reject_link(&parent, &name, path, "read worker file")?;
             let mut options = cap_primitives::fs::OpenOptions::new();
-            options.read(true).follow(FollowSymlinks::No);
+            options
+                .read(true)
+                .follow(FollowSymlinks::No)
+                .custom_flags(libc::O_NONBLOCK);
             let mut file = cap_primitives::fs::open(&parent, Path::new(&name), &options)
                 .map_err(|error| Self::map_entry_error("read worker file", path, error))?;
             let metadata = file
@@ -298,13 +307,20 @@ impl WorkerRoot {
         {
             Self::reject_link(&parent, &name, path, "open mutation target")?;
             let mut options = cap_primitives::fs::OpenOptions::new();
-            options.read(true).write(true).follow(FollowSymlinks::No);
+            options
+                .read(true)
+                .write(true)
+                .follow(FollowSymlinks::No)
+                .custom_flags(libc::O_NONBLOCK);
             let (file, reopen) = match cap_primitives::fs::open(&parent, Path::new(&name), &options)
             {
                 Ok(file) => (file, None),
                 Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
                     let mut inspect_options = cap_primitives::fs::OpenOptions::new();
-                    inspect_options.read(true).follow(FollowSymlinks::No);
+                    inspect_options
+                        .read(true)
+                        .follow(FollowSymlinks::No)
+                        .custom_flags(libc::O_NONBLOCK);
                     let file =
                         cap_primitives::fs::open(&parent, Path::new(&name), &inspect_options)
                             .map_err(|error| {
@@ -352,9 +368,21 @@ impl WorkerRoot {
             make_directory_writable(parent, path)?;
             if cap_primitives::fs::stat(parent, Path::new(name), FollowSymlinks::No).is_ok() {
                 let mut inspect_options = cap_primitives::fs::OpenOptions::new();
-                inspect_options.read(true).follow(FollowSymlinks::No);
+                inspect_options
+                    .read(true)
+                    .follow(FollowSymlinks::No)
+                    .custom_flags(libc::O_NONBLOCK);
                 let file = cap_primitives::fs::open(parent, Path::new(name), &inspect_options)
                     .map_err(|error| Self::map_entry_error("open worker file", path, error))?;
+                if !file
+                    .metadata()
+                    .map_err(|error| WorkspaceError::io("inspect worker file", path, error))?
+                    .is_file()
+                {
+                    return Err(WorkspaceError::InvalidPath {
+                        path: path.to_owned(),
+                    });
+                }
                 make_file_writable(&file, path)?;
             }
             let mut options = cap_primitives::fs::OpenOptions::new();
@@ -362,9 +390,19 @@ impl WorkerRoot {
                 .write(true)
                 .create(true)
                 .truncate(true)
-                .follow(FollowSymlinks::No);
+                .follow(FollowSymlinks::No)
+                .custom_flags(libc::O_NONBLOCK);
             let mut file = cap_primitives::fs::open(parent, Path::new(name), &options)
                 .map_err(|error| Self::map_entry_error("write worker file", path, error))?;
+            if !file
+                .metadata()
+                .map_err(|error| WorkspaceError::io("inspect worker file", path, error))?
+                .is_file()
+            {
+                return Err(WorkspaceError::InvalidPath {
+                    path: path.to_owned(),
+                });
+            }
             make_file_writable(&file, path)?;
             file.write_all(contents)
                 .map_err(|error| WorkspaceError::io("write worker file", path, error))
@@ -385,9 +423,21 @@ impl WorkerRoot {
             Self::reject_link(&parent, &name, path, "remove worker file")?;
             make_directory_writable(&parent, path)?;
             let mut options = cap_primitives::fs::OpenOptions::new();
-            options.read(true).follow(FollowSymlinks::No);
+            options
+                .read(true)
+                .follow(FollowSymlinks::No)
+                .custom_flags(libc::O_NONBLOCK);
             let file = cap_primitives::fs::open(&parent, Path::new(&name), &options)
                 .map_err(|error| Self::map_entry_error("remove worker file", path, error))?;
+            if !file
+                .metadata()
+                .map_err(|error| WorkspaceError::io("inspect worker file", path, error))?
+                .is_file()
+            {
+                return Err(WorkspaceError::InvalidPath {
+                    path: path.to_owned(),
+                });
+            }
             make_file_writable(&file, path)?;
             drop(file);
             cap_primitives::fs::remove_file(&parent, Path::new(&name))
@@ -524,11 +574,42 @@ impl WorkerRoot {
             }
             #[cfg(unix)]
             {
+                if !metadata.is_file() {
+                    return cap_primitives::fs::remove_file(parent, Path::new(name)).map_err(
+                        |error| {
+                            Self::map_entry_error(
+                                "remove worker special entry",
+                                logical_path,
+                                error,
+                            )
+                        },
+                    );
+                }
                 let mut options = cap_primitives::fs::OpenOptions::new();
-                options.read(true).follow(FollowSymlinks::No);
+                options
+                    .read(true)
+                    .follow(FollowSymlinks::No)
+                    .custom_flags(libc::O_NONBLOCK);
                 let file = cap_primitives::fs::open(parent, Path::new(name), &options).map_err(
                     |error| Self::map_entry_error("open worker file", logical_path, error),
                 )?;
+                if !file
+                    .metadata()
+                    .map_err(|error| {
+                        WorkspaceError::io("inspect worker file", logical_path, error)
+                    })?
+                    .is_file()
+                {
+                    return cap_primitives::fs::remove_file(parent, Path::new(name)).map_err(
+                        |error| {
+                            Self::map_entry_error(
+                                "remove worker special entry",
+                                logical_path,
+                                error,
+                            )
+                        },
+                    );
+                }
                 make_file_writable(&file, logical_path)?;
                 drop(file);
                 cap_primitives::fs::remove_file(parent, Path::new(name)).map_err(|error| {
@@ -556,9 +637,21 @@ impl WorkerRoot {
         #[cfg(unix)]
         {
             let mut options = cap_primitives::fs::OpenOptions::new();
-            options.read(true).follow(FollowSymlinks::No);
+            options
+                .read(true)
+                .follow(FollowSymlinks::No)
+                .custom_flags(libc::O_NONBLOCK);
             let file = cap_primitives::fs::open(&parent, Path::new(&name), &options)
                 .map_err(|error| Self::map_entry_error("open restored file", path, error))?;
+            if !file
+                .metadata()
+                .map_err(|error| WorkspaceError::io("inspect restored file", path, error))?
+                .is_file()
+            {
+                return Err(WorkspaceError::InvalidPath {
+                    path: path.to_owned(),
+                });
+            }
             file.set_permissions(permissions)
                 .map_err(|error| WorkspaceError::io("restore worker permissions", path, error))
         }
@@ -591,12 +684,18 @@ impl WorkerRoot {
         #[cfg(unix)]
         {
             let mut options = cap_primitives::fs::OpenOptions::new();
-            options.read(true).follow(FollowSymlinks::No);
+            options
+                .read(true)
+                .follow(FollowSymlinks::No)
+                .custom_flags(libc::O_NONBLOCK);
             let mut file = cap_primitives::fs::open(&parent, Path::new(&name), &options)
                 .map_err(|error| Self::map_entry_error("verify restored file", path, error))?;
             let file_metadata = file
                 .metadata()
                 .map_err(|error| WorkspaceError::io("verify restored file", path, error))?;
+            if !file_metadata.is_file() {
+                return Ok(false);
+            }
             let mut bytes = Vec::new();
             file.read_to_end(&mut bytes)
                 .map_err(|error| WorkspaceError::io("verify restored file", path, error))?;

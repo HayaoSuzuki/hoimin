@@ -2,6 +2,12 @@ use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
+use std::sync::mpsc::{RecvTimeoutError, sync_channel};
+#[cfg(unix)]
+use std::thread;
+#[cfg(unix)]
+use std::time::Duration;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_cli::workspace::{
@@ -55,6 +61,66 @@ fn create_worker(root: &Utf8Path) -> WorkerWorkspace {
     let grant = grant_plan(&plan, plan.aggregate_bytes());
     plan.create_worker(&grant.create_worker(EffectId(901), 0).unwrap())
         .unwrap()
+}
+
+#[cfg(unix)]
+fn create_fifo(path: &Path) {
+    use std::os::unix::ffi::OsStrExt;
+
+    let path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+    assert_eq!(
+        unsafe { libc::mkfifo(path.as_ptr(), 0o600) },
+        0,
+        "failed to create FIFO: {}",
+        std::io::Error::last_os_error()
+    );
+}
+
+#[cfg(unix)]
+fn run_fifo_operation(
+    worker: WorkerWorkspace,
+    fifo: &Path,
+    operation: impl FnOnce(&mut WorkerWorkspace) -> Result<(), WorkspaceError> + Send + 'static,
+) -> (WorkerWorkspace, Result<(), WorkspaceError>) {
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::io::FromRawFd;
+
+    let cleanup_fifo = fifo.to_owned();
+    let (sender, receiver) = sync_channel(1);
+    let handle = thread::spawn(move || {
+        let mut worker = worker;
+        let result = operation(&mut worker);
+        let _ = fs::remove_file(cleanup_fifo);
+        sender.send((worker, result)).unwrap();
+    });
+
+    let returned_before_timeout = match receiver.recv_timeout(Duration::from_secs(1)) {
+        Ok(completed) => {
+            handle.join().unwrap();
+            return completed;
+        }
+        Err(RecvTimeoutError::Timeout) => false,
+        Err(RecvTimeoutError::Disconnected) => panic!("FIFO operation thread disconnected"),
+    };
+
+    let fifo = std::ffi::CString::new(fifo.as_os_str().as_bytes()).unwrap();
+    let rescue = unsafe { libc::open(fifo.as_ptr(), libc::O_RDWR | libc::O_NONBLOCK) };
+    assert!(
+        rescue >= 0,
+        "failed to open FIFO rescue peer: {}",
+        std::io::Error::last_os_error()
+    );
+    let rescue = unsafe { fs::File::from_raw_fd(rescue) };
+    let completed = receiver
+        .recv_timeout(Duration::from_secs(2))
+        .expect("blocked FIFO operation did not recover");
+    drop(rescue);
+    handle.join().unwrap();
+    assert!(
+        returned_before_timeout,
+        "worker operation blocked while opening a FIFO"
+    );
+    completed
 }
 
 fn link_created_or_platform_denied(result: std::io::Result<()>) -> bool {
@@ -138,6 +204,66 @@ fn file_apis_create_nested_replace_read_only_and_remove_files() {
     assert!(!worker.exists("missing.txt").unwrap());
     worker.remove("generated/nested.txt").unwrap();
     assert!(!worker.exists("generated/nested.txt").unwrap());
+}
+
+#[cfg(unix)]
+#[test]
+fn reading_a_fifo_returns_without_waiting_for_a_peer() {
+    let project = FixtureProject::new();
+    let worker = create_worker(project.root());
+    let fifo = worker.root().join("planted");
+    create_fifo(fifo.as_std_path());
+
+    let (_worker, result) = run_fifo_operation(worker, fifo.as_std_path(), |worker| {
+        worker.read("planted").map(|_| ())
+    });
+
+    assert!(matches!(result, Err(WorkspaceError::InvalidPath { .. })));
+}
+
+#[cfg(unix)]
+#[test]
+fn writing_a_fifo_returns_without_waiting_for_a_peer() {
+    let project = FixtureProject::new();
+    let worker = create_worker(project.root());
+    let fifo = worker.root().join("planted");
+    create_fifo(fifo.as_std_path());
+
+    let (_worker, result) = run_fifo_operation(worker, fifo.as_std_path(), |worker| {
+        worker.write("planted", b"replacement")
+    });
+
+    assert!(matches!(result, Err(WorkspaceError::InvalidPath { .. })));
+}
+
+#[cfg(unix)]
+#[test]
+fn removing_a_fifo_returns_without_waiting_for_a_peer() {
+    let project = FixtureProject::new();
+    let worker = create_worker(project.root());
+    let fifo = worker.root().join("planted");
+    create_fifo(fifo.as_std_path());
+
+    let (_worker, result) = run_fifo_operation(worker, fifo.as_std_path(), |worker| {
+        worker.remove("planted")
+    });
+
+    assert!(matches!(result, Err(WorkspaceError::InvalidPath { .. })));
+}
+
+#[cfg(unix)]
+#[test]
+fn reset_removes_a_fifo_without_waiting_for_a_peer() {
+    let project = FixtureProject::new();
+    let worker = create_worker(project.root());
+    let fifo = worker.root().join("planted");
+    create_fifo(fifo.as_std_path());
+
+    let (worker, result) = run_fifo_operation(worker, fifo.as_std_path(), WorkerWorkspace::reset);
+
+    result.unwrap();
+    assert!(!worker.exists("planted").unwrap());
+    assert_eq!(worker.read("pkg/a.py").unwrap(), b"original\n");
 }
 
 #[test]
