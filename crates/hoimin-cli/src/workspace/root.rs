@@ -1301,7 +1301,11 @@ mod tests {
         }
 
         fn create_nested_directories(&self, root_name: &str, depth: usize) {
-            let root = File::open(&self.worker).unwrap();
+            let root = cap_primitives::fs::open_ambient_dir(
+                self.worker.as_std_path(),
+                cap_primitives::ambient_authority(),
+            )
+            .unwrap();
             cap_primitives::fs::create_dir(
                 &root,
                 Path::new(root_name),

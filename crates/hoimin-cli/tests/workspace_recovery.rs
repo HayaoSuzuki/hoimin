@@ -21,7 +21,8 @@ fn write(root: &Utf8Path, path: &str, bytes: &[u8]) {
 }
 
 fn create_nested_directories(root: &Path, depth: usize) -> String {
-    let mut directory = fs::File::open(root).unwrap();
+    let mut directory =
+        cap_primitives::fs::open_ambient_dir(root, cap_primitives::ambient_authority()).unwrap();
     let mut logical_path = String::new();
     for index in 0..depth {
         let name = format!("d{index}");
