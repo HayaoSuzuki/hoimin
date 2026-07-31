@@ -843,7 +843,32 @@ fn explicit_candidate_filter_rejects_an_empty_spool() {
 }
 
 #[test]
-fn ordered_candidate_filter_preserves_empty_spool_finalization() {
+fn ordered_candidate_filter_rejects_an_empty_spool() {
+    let requested = fixture_candidate(1);
+    let requested_id = requested.id.clone();
+    let (state, effects) = waiting_for_ordered_analysis(vec![requested.id]);
+    let analysis_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::AnalyzeFile(_))
+    }));
+
+    let error = transition(
+        state,
+        RunEvent::AnalysisFinished(AnalysisFinished {
+            id: analysis_id,
+            spool: Some(CandidateSpoolRef {
+                token: "empty-ordered".to_owned(),
+                records: 0,
+            }),
+            truncated: false,
+        }),
+    )
+    .unwrap_err();
+
+    assert_eq!(error, MachineError::SelectedCandidateMissing(requested_id));
+}
+
+#[test]
+fn ordered_candidate_filter_marks_truncated_analysis_incomplete_but_replays() {
     let requested = fixture_candidate(1);
     let (state, effects) = waiting_for_ordered_analysis(vec![requested.id]);
     let analysis_id = effect_id(find_effect(&effects, |effect| {
@@ -855,20 +880,21 @@ fn ordered_candidate_filter_preserves_empty_spool_finalization() {
         RunEvent::AnalysisFinished(AnalysisFinished {
             id: analysis_id,
             spool: Some(CandidateSpoolRef {
-                token: "empty-ordered".to_owned(),
-                records: 0,
+                token: "truncated-ordered".to_owned(),
+                records: 1,
             }),
-            truncated: false,
+            truncated: true,
         }),
     )
     .unwrap();
 
-    assert_eq!(state.phase(), RunPhase::Finalize);
+    assert_eq!(state.phase(), RunPhase::Mutants);
     assert!(
         effects
             .iter()
-            .any(|effect| matches!(effect, RunEffect::VerifyOriginals(_)))
+            .any(|effect| matches!(effect, RunEffect::ReadCandidate(_)))
     );
+    assert_eq!(state.exit_code(), 4);
 }
 
 #[test]

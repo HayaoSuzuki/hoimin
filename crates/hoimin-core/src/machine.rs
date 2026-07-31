@@ -784,15 +784,11 @@ impl RunState {
             return self.schedule_read_or_finalize();
         }
 
+        self.ensure_selected_candidates_discovered()?;
         let ordered = self
             .ordered_candidates
             .as_mut()
             .expect("ordered collection requires ordered state");
-        for candidate_id in &ordered.ids {
-            if !ordered.discovered.contains_key(candidate_id) {
-                return Err(MachineError::SelectedCandidateMissing(candidate_id.clone()));
-            }
-        }
         ordered.ready = ordered
             .ids
             .iter()
@@ -805,6 +801,29 @@ impl RunState {
             .collect();
         ordered.collection_complete = true;
         self.schedule_read_or_finalize()
+    }
+
+    fn ensure_selected_candidates_discovered(&self) -> Result<(), MachineError> {
+        let missing = if let Some(ordered) = &self.ordered_candidates {
+            if ordered.collection_complete {
+                None
+            } else {
+                ordered
+                    .ids
+                    .iter()
+                    .find(|candidate_id| !ordered.discovered.contains_key(*candidate_id))
+            }
+        } else {
+            self.candidate_filter.as_ref().and_then(|candidate_filter| {
+                candidate_filter
+                    .iter()
+                    .find(|candidate_id| !self.matched_candidate_ids.contains(*candidate_id))
+            })
+        };
+        if let Some(candidate_id) = missing {
+            return Err(MachineError::SelectedCandidateMissing(candidate_id.clone()));
+        }
+        Ok(())
     }
 
     fn candidate(&self, worker: u32) -> Result<MutationCandidate, MachineError> {
@@ -1349,20 +1368,14 @@ pub fn transition(
         }
         RunEvent::AnalysisFinished(value) if state.phase == RunPhase::Analyze => {
             if state.candidate_filter.is_some() {
+                state.flags.outcome.incomplete |= value.truncated;
                 match value.spool {
                     None if !value.truncated && !state.targets.is_empty() => {
                         state.analyze_next()?
                     }
                     None => return Err(MachineError::MissingCandidateSpool),
                     Some(spool) if spool.records == 0 => {
-                        if state.ordered_candidates.is_none()
-                            && let Some(missing) = state
-                                .candidate_filter
-                                .as_ref()
-                                .and_then(|candidate_filter| candidate_filter.iter().next())
-                        {
-                            return Err(MachineError::SelectedCandidateMissing(missing.clone()));
-                        }
+                        state.ensure_selected_candidates_discovered()?;
                         state.candidate_spool = Some(spool);
                         state.phase = RunPhase::Finalize;
                         state.finalize_effects()?
@@ -1408,18 +1421,8 @@ pub fn transition(
             {
                 state.collect_ordered_candidate(worker, value.candidate)?
             } else {
-                if value.candidate.is_none()
-                    && let Some(missing) =
-                        state
-                            .candidate_filter
-                            .as_ref()
-                            .and_then(|candidate_filter| {
-                                candidate_filter.iter().find(|candidate_id| {
-                                    !state.matched_candidate_ids.contains(*candidate_id)
-                                })
-                            })
-                {
-                    return Err(MachineError::SelectedCandidateMissing(missing.clone()));
+                if value.candidate.is_none() {
+                    state.ensure_selected_candidates_discovered()?;
                 }
                 let selected = value.candidate.as_ref().is_none_or(|candidate| {
                     state.candidate_filter.as_ref().is_none_or(|filter| {
