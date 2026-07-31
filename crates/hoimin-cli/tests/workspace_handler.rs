@@ -289,7 +289,7 @@ fn windows_reset_handles_or_explicitly_rejects_a_lone_surrogate_name() {
     let native_path = worker
         .root()
         .as_std_path()
-        .join(OsString::from_wide(&[b'x' as u16, 0xD800]));
+        .join(OsString::from_wide(&[u16::from(b'x'), 0xD800]));
     match fs::write(&native_path, b"untracked") {
         Ok(()) => {
             worker.reset().unwrap();

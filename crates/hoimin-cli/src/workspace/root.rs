@@ -106,13 +106,13 @@ impl WindowsFinalOperation {
 }
 
 #[cfg(any(windows, test))]
-fn windows_final_name_is_valid(name: &str) -> bool {
+fn windows_final_name_units_are_valid(name: &[u16]) -> bool {
     !name.is_empty()
-        && name != "."
-        && name != ".."
-        && !name.contains('/')
-        && !name.contains('\\')
-        && !name.contains('\0')
+        && name != [u16::from(b'.')]
+        && name != [u16::from(b'.'), u16::from(b'.')]
+        && !name.contains(&u16::from(b'/'))
+        && !name.contains(&u16::from(b'\\'))
+        && !name.contains(&0)
 }
 
 #[derive(Debug)]
@@ -1341,11 +1341,19 @@ mod tests {
     #[test]
     fn windows_final_names_are_single_components() {
         for valid in ["file.py", "a b", "日本語.txt"] {
-            assert!(windows_final_name_is_valid(valid));
+            assert!(windows_final_name_units_are_valid(
+                &valid.encode_utf16().collect::<Vec<_>>()
+            ));
         }
         for invalid in ["", ".", "..", "a/b", r"a\b", "nul\0byte"] {
-            assert!(!windows_final_name_is_valid(invalid));
+            assert!(!windows_final_name_units_are_valid(
+                &invalid.encode_utf16().collect::<Vec<_>>()
+            ));
         }
+        assert!(windows_final_name_units_are_valid(&[
+            u16::from(b'x'),
+            0xD800,
+        ]));
     }
 
     struct RootFixture {
