@@ -237,6 +237,146 @@ fn reset_restores_changed_and_deleted_files_and_removes_new_files() {
     );
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn reset_removes_a_non_utf8_file_and_restores_manifest_content() {
+    use std::os::unix::ffi::OsStringExt;
+
+    let project = FixtureProject::new();
+    let mut worker = create_worker(project.root());
+    worker.write("pkg/a.py", b"changed\n").unwrap();
+    let native_name = OsString::from_vec(vec![b'g', 0x80]);
+    let native_path = worker.root().as_std_path().join(&native_name);
+    fs::write(&native_path, b"untracked\n").unwrap();
+
+    worker.reset().unwrap();
+
+    assert!(!native_path.exists());
+    assert_eq!(worker.read("pkg/a.py").unwrap(), b"original\n");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn reset_removes_nested_non_utf8_directories() {
+    use std::os::unix::ffi::OsStringExt;
+    use std::os::unix::fs::symlink;
+
+    let project = FixtureProject::new();
+    let mut worker = create_worker(project.root());
+    let outer = worker
+        .root()
+        .as_std_path()
+        .join(OsString::from_vec(vec![b'd', 0x80]));
+    let inner = outer.join(OsString::from_vec(vec![b'n', 0x81]));
+    fs::create_dir(&outer).unwrap();
+    fs::create_dir(&inner).unwrap();
+    fs::write(inner.join(OsString::from_vec(vec![b'f', 0x82])), b"data").unwrap();
+    symlink("missing", inner.join(OsString::from_vec(vec![b'l', 0x83]))).unwrap();
+    create_fifo(&inner.join(OsString::from_vec(vec![b'p', 0x84])));
+
+    worker.reset().unwrap();
+
+    assert!(!outer.exists());
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_reset_handles_or_explicitly_rejects_a_lone_surrogate_name() {
+    use std::os::windows::ffi::OsStringExt;
+
+    let project = FixtureProject::new();
+    let mut worker = create_worker(project.root());
+    let native_path = worker
+        .root()
+        .as_std_path()
+        .join(OsString::from_wide(&[b'x' as u16, 0xD800]));
+    match fs::write(&native_path, b"untracked") {
+        Ok(()) => {
+            worker.reset().unwrap();
+            assert!(!native_path.exists());
+        }
+        Err(error) => assert!(
+            error.kind() == std::io::ErrorKind::InvalidInput
+                || error.kind() == std::io::ErrorKind::PermissionDenied
+                || error.raw_os_error() == Some(123),
+            "unexpected Windows lone-surrogate setup failure: {error}"
+        ),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn cleanup_removes_read_only_non_utf8_entries() {
+    use std::os::unix::ffi::OsStringExt;
+    use std::os::unix::fs::PermissionsExt;
+
+    let project = FixtureProject::new();
+    let mut worker = create_worker(project.root());
+    let wrapper = worker.root().parent().unwrap().to_owned();
+    let directory = worker
+        .root()
+        .as_std_path()
+        .join(OsString::from_vec(vec![b'd', 0x80]));
+    fs::create_dir(&directory).unwrap();
+    let file = directory.join(OsString::from_vec(vec![b'f', 0x81]));
+    fs::write(&file, b"data").unwrap();
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o400)).unwrap();
+    fs::set_permissions(&directory, fs::Permissions::from_mode(0o500)).unwrap();
+
+    worker.try_cleanup().unwrap();
+
+    assert!(!wrapper.exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn handler_reset_and_cleanup_release_non_utf8_worker_state() {
+    use std::os::unix::ffi::OsStringExt;
+
+    let project = FixtureProject::new();
+    let mut handler = WorkspaceHandler::new(
+        project.root().to_owned(),
+        Vec::new(),
+        1,
+        CopyOptions::default(),
+    );
+    let completed = handler
+        .handle_preflight(Preflight { id: EffectId(910) })
+        .unwrap();
+    let mut ledger = BudgetLedger::new(RunBudgets {
+        memory: 1,
+        copy: completed.aggregate_logical_bytes,
+        processes: 1,
+    });
+    let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+    handler
+        .handle_create_worker(grant.create_worker(EffectId(911), 0).unwrap())
+        .unwrap();
+    let worker_root = handler.worker(0).unwrap().root().to_owned();
+    fs::write(
+        worker_root
+            .as_std_path()
+            .join(OsString::from_vec(vec![b'x', 0x80])),
+        b"untracked",
+    )
+    .unwrap();
+
+    handler
+        .handle_reset_worker(hoimin_core::ResetWorker {
+            id: EffectId(912),
+            worker: 0,
+        })
+        .unwrap();
+    let cleaned = handler
+        .handle_cleanup(grant.cleanup(EffectId(913)))
+        .unwrap();
+
+    assert_eq!(cleaned.released_reservations, vec![grant.reservation_id()]);
+    assert_eq!(handler.worker_count(), 0);
+    assert_eq!(handler.pending_cleanup_count(), 0);
+    assert!(!worker_root.exists());
+}
+
 #[test]
 fn reset_handles_a_tree_at_the_supported_depth() {
     let project = FixtureProject::new();

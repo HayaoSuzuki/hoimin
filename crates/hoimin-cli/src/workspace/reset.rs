@@ -53,22 +53,34 @@ impl WorkerWorkspace {
         let existing_files = existing
             .iter()
             .filter(|entry| entry.kind == WorkerEntryKind::File)
-            .map(|entry| entry.path.clone())
+            .filter_map(|entry| entry.logical_path.clone())
             .collect::<BTreeSet<_>>();
         for entry in existing.iter().rev() {
+            let remove = || {
+                self.root
+                    .remove_native_if_exists(&entry.native_path, entry.logical_path.as_deref())
+            };
             match entry.kind {
                 WorkerEntryKind::Directory => {
-                    if !required_directory(&entry.path, self.snapshot.files.keys()) {
-                        self.root.remove_any_if_exists(&entry.path)?;
+                    if entry
+                        .logical_path
+                        .as_ref()
+                        .is_none_or(|path| !required_directory(path, self.snapshot.files.keys()))
+                    {
+                        remove()?;
                     }
                 }
                 WorkerEntryKind::File => {
-                    if !self.snapshot.files.contains_key(&entry.path) {
-                        self.root.remove_any_if_exists(&entry.path)?;
+                    if entry
+                        .logical_path
+                        .as_ref()
+                        .is_none_or(|path| !self.snapshot.files.contains_key(path))
+                    {
+                        remove()?;
                     }
                 }
                 WorkerEntryKind::LinkOrReparse => {
-                    self.root.remove_any_if_exists(&entry.path)?;
+                    remove()?;
                 }
             }
         }
@@ -100,10 +112,13 @@ impl WorkerWorkspace {
 
     fn matches_snapshot(&self) -> Result<bool, WorkspaceError> {
         let entries = self.root.entries()?;
+        if entries.iter().any(|entry| entry.logical_path.is_none()) {
+            return Ok(false);
+        }
         let actual_files = entries
             .iter()
             .filter(|entry| entry.kind != WorkerEntryKind::Directory)
-            .map(|entry| &entry.path)
+            .filter_map(|entry| entry.logical_path.as_ref())
             .collect::<BTreeSet<_>>();
         let expected_files = self.snapshot.files.keys().collect::<BTreeSet<_>>();
         if actual_files != expected_files {

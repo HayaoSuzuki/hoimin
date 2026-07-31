@@ -222,35 +222,36 @@ fn permission_fingerprint(permissions: &fs::Permissions) -> PermissionFingerprin
     permissions.mode()
 }
 
-fn make_tree_writable(root: &Path) -> Result<(), WorkspaceError> {
+fn make_tree_writable(root: &Path, error_path: &Utf8Path) -> Result<(), WorkspaceError> {
     let mut stack = vec![(root.to_owned(), 0_usize)];
     while let Some((path, depth)) = stack.pop() {
         let metadata = match fs::symlink_metadata(&path) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(error) => {
-                let path = Utf8Path::from_path(&path).ok_or(WorkspaceError::NonUtf8Path)?;
-                return Err(WorkspaceError::io("inspect cleanup path", path, error));
+                return Err(WorkspaceError::io(
+                    "inspect cleanup path",
+                    error_path,
+                    error,
+                ));
             }
         };
         if metadata.file_type().is_symlink() {
             continue;
         }
-        make_cleanup_entry_accessible(&path, &metadata)?;
+        make_cleanup_entry_accessible(&path, &metadata, error_path)?;
         if metadata.is_dir() {
-            let utf8_path = Utf8Path::from_path(&path).ok_or(WorkspaceError::NonUtf8Path)?;
             let entries = fs::read_dir(&path)
-                .map_err(|error| WorkspaceError::io("read cleanup directory", utf8_path, error))?;
+                .map_err(|error| WorkspaceError::io("read cleanup directory", error_path, error))?;
             for entry in entries {
                 let entry = entry
-                    .map_err(|error| WorkspaceError::io("read cleanup entry", utf8_path, error))?;
+                    .map_err(|error| WorkspaceError::io("read cleanup entry", error_path, error))?;
                 let child = entry.path();
                 let child_depth = depth + 1;
                 if child_depth > MAX_WORKER_TREE_DEPTH {
-                    let child = Utf8PathBuf::from_path_buf(child)
-                        .map_err(|_| WorkspaceError::NonUtf8Path)?;
                     return Err(WorkspaceError::TreeDepthExceeded {
-                        path: child,
+                        path: Utf8PathBuf::from_path_buf(child)
+                            .unwrap_or_else(|_| error_path.to_owned()),
                         limit: MAX_WORKER_TREE_DEPTH,
                     });
                 }
@@ -266,13 +267,13 @@ fn make_tree_writable(root: &Path) -> Result<(), WorkspaceError> {
 fn make_cleanup_entry_accessible(
     path: &Path,
     metadata: &fs::Metadata,
+    error_path: &Utf8Path,
 ) -> Result<(), WorkspaceError> {
     let mut permissions = metadata.permissions();
     if permissions.readonly() {
         permissions.set_readonly(false);
-        let path = Utf8Path::from_path(path).ok_or(WorkspaceError::NonUtf8Path)?;
         fs::set_permissions(path, permissions)
-            .map_err(|error| WorkspaceError::io("prepare cleanup path", path, error))?;
+            .map_err(|error| WorkspaceError::io("prepare cleanup path", error_path, error))?;
     }
     Ok(())
 }
@@ -281,6 +282,7 @@ fn make_cleanup_entry_accessible(
 fn make_cleanup_entry_accessible(
     path: &Path,
     metadata: &fs::Metadata,
+    error_path: &Utf8Path,
 ) -> Result<(), WorkspaceError> {
     use std::os::unix::fs::PermissionsExt;
 
@@ -288,9 +290,8 @@ fn make_cleanup_entry_accessible(
     let required = if metadata.is_dir() { 0o700 } else { 0o200 };
     if permissions.mode() & required != required {
         permissions.set_mode(permissions.mode() | required);
-        let path = Utf8Path::from_path(path).ok_or(WorkspaceError::NonUtf8Path)?;
         fs::set_permissions(path, permissions)
-            .map_err(|error| WorkspaceError::io("prepare cleanup path", path, error))?;
+            .map_err(|error| WorkspaceError::io("prepare cleanup path", error_path, error))?;
     }
     Ok(())
 }
@@ -401,8 +402,9 @@ impl WorkerWorkspace {
                 ));
             }
         };
-        make_cleanup_entry_accessible(wrapper, &wrapper_metadata)?;
-        make_tree_writable(self.root.path().as_std_path())?;
+        let wrapper_error_path = Utf8Path::from_path(wrapper).unwrap_or(self.root.path());
+        make_cleanup_entry_accessible(wrapper, &wrapper_metadata, wrapper_error_path)?;
+        make_tree_writable(self.root.path().as_std_path(), self.root.path())?;
         match fs::remove_dir_all(self.temp.path()) {
             Ok(()) => {
                 self.cleanup_complete = true;
