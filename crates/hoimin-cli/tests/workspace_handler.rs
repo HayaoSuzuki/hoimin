@@ -170,6 +170,65 @@ fn excludes_git_venv_and_caches() {
 }
 
 #[test]
+fn broad_include_restores_gitignored_files_without_default_excluded_directories() {
+    let project = FixtureProject::new();
+    write_file(project.temp.path(), ".gitignore", b"ignored.txt\n");
+    write_file(project.temp.path(), "ignored.txt", b"included");
+    for path in [
+        ".git/config",
+        ".venv/lib/site.py",
+        "venv/lib/site.py",
+        "env/lib/site.py",
+        "pkg/__pycache__/a.pyc",
+        ".pytest_cache/state",
+        ".mypy_cache/state",
+        ".ruff_cache/state",
+        ".pyre/state",
+        ".pytype/state",
+        ".tox/state",
+        ".nox/state",
+    ] {
+        write_file(project.temp.path(), path, b"excluded");
+    }
+
+    let plan = preflight_plan(
+        project.root(),
+        1,
+        CopyOptions {
+            includes: vec!["**".into()],
+            excludes: Vec::new(),
+        },
+    );
+    let paths = plan
+        .manifest()
+        .entries()
+        .iter()
+        .map(|entry| entry.path.as_str())
+        .collect::<Vec<_>>();
+
+    assert!(paths.contains(&"ignored.txt"));
+    for excluded in [
+        ".git/config",
+        ".venv/lib/site.py",
+        "venv/lib/site.py",
+        "env/lib/site.py",
+        "pkg/__pycache__/a.pyc",
+        ".pytest_cache/state",
+        ".mypy_cache/state",
+        ".ruff_cache/state",
+        ".pyre/state",
+        ".pytype/state",
+        ".tox/state",
+        ".nox/state",
+    ] {
+        assert!(
+            !paths.contains(&excluded),
+            "{excluded} entered the manifest"
+        );
+    }
+}
+
+#[test]
 fn explicit_exclude_wins_over_include_and_gitignore() {
     let project = FixtureProject::new();
     write_file(project.temp.path(), ".gitignore", b"fixtures/\n");

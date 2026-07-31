@@ -110,7 +110,8 @@ pub fn build_manifest(
             .git_exclude(false)
             .parents(false)
             .follow_links(false)
-            .overrides(include_overrides);
+            .overrides(include_overrides)
+            .filter_entry(|entry| !default_excluded(entry));
         collect(included, root, &mut entries, &mut symlinks)?;
     }
 
