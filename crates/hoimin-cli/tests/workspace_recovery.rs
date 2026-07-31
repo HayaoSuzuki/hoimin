@@ -323,17 +323,26 @@ fn cleanup_releases_state_when_the_temporary_wrapper_was_already_removed() {
     handler
         .handle_create_worker(grant.create_worker(EffectId(111), 0).unwrap())
         .unwrap();
-    let wrapper = handler
-        .worker(0)
-        .unwrap()
-        .root()
-        .parent()
-        .unwrap()
-        .to_owned();
+    let worker_root = handler.worker(0).unwrap().root().to_owned();
+    create_nested_directories(worker_root.as_std_path(), SUPPORTED_WORKER_TREE_DEPTH + 1);
+    let failed = handler
+        .handle_reset_worker(ResetWorker {
+            id: EffectId(112),
+            worker: 0,
+        })
+        .unwrap_err();
+    assert!(matches!(
+        failed.failure,
+        EffectFailure::Io { ref code, .. } if code == "workspace.path.depth"
+    ));
+    assert_eq!(handler.worker_count(), 0);
+    assert_eq!(handler.pending_cleanup_count(), 1);
+
+    let wrapper = worker_root.parent().unwrap().to_owned();
     fs::remove_dir_all(&wrapper).unwrap();
 
     let completed = handler
-        .handle_cleanup(grant.cleanup(EffectId(112)))
+        .handle_cleanup(grant.cleanup(EffectId(113)))
         .unwrap();
     release_workspace_copy(&mut ledger, &completed).unwrap();
 
