@@ -23,6 +23,14 @@ pub enum FingerprintInputError {
     ExactUnsupportedFile(String),
 }
 
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum FingerprintInputRecheckError {
+    #[error(transparent)]
+    Resolution(#[from] FingerprintInputError),
+    #[error("resolved fingerprint input records differ from prepared configuration")]
+    RecordsChanged,
+}
+
 /// Resolves root-relative fingerprint input glob patterns to sorted, hashed file records.
 ///
 /// # Errors
@@ -78,6 +86,21 @@ pub fn resolve(
             })
         })
         .collect()
+}
+
+/// Re-resolves fingerprint inputs and compares them with the records frozen into configuration.
+pub(crate) fn recheck(
+    root: &Utf8Path,
+    patterns: &[String],
+    files: &[String],
+    expected: &[FingerprintInputFile],
+) -> Result<(), FingerprintInputRecheckError> {
+    let current = resolve(root, patterns, files)?;
+    if current == expected {
+        Ok(())
+    } else {
+        Err(FingerprintInputRecheckError::RecordsChanged)
+    }
 }
 
 fn resolve_exact(input: &str) -> Result<Utf8PathBuf, FingerprintInputError> {

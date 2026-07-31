@@ -409,6 +409,57 @@ async fn verify_rejects_changed_fingerprint_input_before_baseline() {
 }
 
 #[tokio::test]
+async fn verify_rejects_fingerprint_input_changed_after_preparation_before_execution() {
+    let project = Project::new();
+    let (path, manifest, marker) =
+        write_plan_manifest(&project, &["--fingerprint-include", "config.toml"]).await;
+    let requested = vec![manifest.candidates[0].id.clone()];
+    let verified = prepare_verify(&path, &requested, OutputFormat::Jsonl)
+        .await
+        .unwrap();
+    std::fs::write(project.path.join("config.toml"), "[changed]\n").unwrap();
+    let ResolvedVerifySelection::ExplicitCandidates(candidate_ids) = verified.selection else {
+        panic!("explicit candidate verification must retain an explicit selection");
+    };
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    let exit = shell::run_selected_loop(
+        verified.config,
+        candidate_ids,
+        verified.verification_selection,
+        &mut stdout,
+        &mut stderr,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(exit, 2, "stderr={}", String::from_utf8_lossy(&stderr));
+    let diagnostics = stderr
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic["code"] == "plan.fingerprint_input.changed"),
+        "missing changed-input diagnostic: {}",
+        String::from_utf8_lossy(&stderr)
+    );
+    let events = stdout
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert!(events.iter().all(|event| !matches!(
+        event["kind"].as_str(),
+        Some("baseline_finished" | "mutant_started" | "mutant_finished")
+    )));
+    assert!(!marker.exists(), "test command ran after fingerprint drift");
+}
+
+#[tokio::test]
 async fn verify_exact_file_ignores_nested_names_but_rejects_root_change() {
     let project = Project::new();
     let nested = project.path.join(".worktrees/a/pyproject.toml");

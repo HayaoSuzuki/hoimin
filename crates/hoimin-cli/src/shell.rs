@@ -226,6 +226,19 @@ async fn prepare_fingerprint<Stdout, Stderr>(
     )))
 }
 
+fn recheck_fingerprint_inputs<Stdout, Stderr>(
+    context: &ShellContext<Stdout, Stderr>,
+    id: EffectId,
+) -> Result<(), EffectFailed> {
+    crate::fingerprint_inputs::recheck(
+        &context.config.root,
+        &context.config.fingerprint_includes,
+        &context.config.fingerprint_files,
+        &context.config.fingerprint_inputs,
+    )
+    .map_err(|error| EffectFailed::other(id, "plan.fingerprint_input.changed", error.to_string()))
+}
+
 #[cfg(windows)]
 fn resource_backend(config: &RunConfig) -> Result<ResourceBackend, crate::resource::ResourceError> {
     crate::resource::WindowsBackend::new(&config.limits).map(ResourceBackend::Windows)
@@ -278,15 +291,20 @@ where
             Err(error) => Err(error),
         },
         RunEffect::Preflight(request) => match context.workspace.handle_preflight(request) {
-            Ok(mut value) => match prepare_fingerprint(context).await {
-                Ok(run_fingerprint) => {
-                    value.fingerprint = Some(run_fingerprint);
-                    Ok(RunEvent::PreflightCompleted(value))
-                }
-                Err(mut error) => {
-                    error.id = value.id;
-                    Err(error)
-                }
+            Ok(mut value) => match recheck_fingerprint_inputs(context, value.id) {
+                // Once this succeeds, later original-root changes cannot alter the completed
+                // immutable snapshot that baseline and mutant workers are created from.
+                Ok(()) => match prepare_fingerprint(context).await {
+                    Ok(run_fingerprint) => {
+                        value.fingerprint = Some(run_fingerprint);
+                        Ok(RunEvent::PreflightCompleted(value))
+                    }
+                    Err(mut error) => {
+                        error.id = value.id;
+                        Err(error)
+                    }
+                },
+                Err(error) => Err(error),
             },
             Err(error) => Err(error),
         },
