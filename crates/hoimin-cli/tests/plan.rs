@@ -1035,7 +1035,7 @@ async fn verify_top_executes_the_highest_ranked_retained_candidate() {
 
     let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
 
-    assert_eq!(code, 1, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert_eq!(code, 4, "stderr={}", String::from_utf8_lossy(&stderr));
     assert!(
         marker.exists(),
         "verify must execute the baseline and selected mutant"
@@ -1058,6 +1058,7 @@ async fn verify_top_executes_the_highest_ranked_retained_candidate() {
         document["summary"]["verification_selection"],
         expected_selection
     );
+    assert_eq!(document["summary"]["complete"], false);
     let mutants = document["mutants"].as_array().unwrap();
     assert_eq!(mutants.len(), 1);
     assert_eq!(mutants[0]["candidate"]["id"], candidate_id);
