@@ -1,6 +1,8 @@
+mod ownership;
 mod schema;
 
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 #[cfg(feature = "contracts")]
 use std::time::Duration;
@@ -26,10 +28,14 @@ pub enum SessionError {
     Open(#[from] rusqlite::Error),
     #[error("SQLite session blocking task failed: {0}")]
     Task(String),
+    #[error("failed to prepare session ownership: {0}")]
+    Ownership(#[source] std::io::Error),
 }
 
 pub struct SessionHandler {
     connection: Connection,
+    lock_directory: PathBuf,
+    ownerships: HashMap<String, ownership::RunOwnership>,
 }
 
 impl SessionHandler {
@@ -40,9 +46,15 @@ impl SessionHandler {
     /// Returns [`SessionError`] when `SQLite` cannot open the database or its schema cannot be
     /// configured.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, SessionError> {
+        let path = path.as_ref();
         let connection = Connection::open(path)?;
         schema::configure(&connection)?;
-        Ok(Self { connection })
+        let lock_directory = ownership::lock_directory(path).map_err(SessionError::Ownership)?;
+        Ok(Self {
+            connection,
+            lock_directory,
+            ownerships: HashMap::new(),
+        })
     }
 
     /// Finds the latest incomplete run compatible with `request`.
@@ -53,7 +65,8 @@ impl SessionHandler {
     /// run identifier.
     pub fn load(&mut self, request: &LoadSession) -> Result<SessionLoaded, EffectFailed> {
         let id = request.id;
-        self.connection
+        let run_id = self
+            .connection
             .query_row(
                 "SELECT run_id FROM runs
                  WHERE fingerprint=?1 AND complete=0 ORDER BY id DESC LIMIT 1",
@@ -61,16 +74,39 @@ impl SessionHandler {
                 |row| row.get::<_, Option<String>>(0),
             )
             .optional()
-            .map_err(|error| failed(id, "session.read", "load resume run", &error))
-            .and_then(|run_id| match run_id {
-                Some(None) => Err(EffectFailed {
-                    id,
-                    failure: corrupt("NULL run ID"),
-                }),
-                Some(Some(run_id)) => Ok(Some(SessionResumeRef { run_id })),
-                None => Ok(None),
-            })
-            .map(|resume| SessionLoaded { id, resume })
+            .map_err(|error| failed(id, "session.read", "load resume run", &error))?;
+        let Some(run_id) = run_id else {
+            return Ok(SessionLoaded { id, resume: None });
+        };
+        let run_id = run_id.ok_or_else(|| EffectFailed {
+            id,
+            failure: corrupt("NULL run ID"),
+        })?;
+        let ownership = if self.ownerships.contains_key(&run_id) {
+            None
+        } else {
+            Some(self.acquire_ownership(id, &run_id, "claim resume run")?)
+        };
+        let eligible = self
+            .connection
+            .query_row(
+                "SELECT 1 FROM runs WHERE run_id=?1 AND fingerprint=?2 AND complete=0",
+                params![run_id, request.fingerprint.as_bytes().as_slice()],
+                |_| Ok(()),
+            )
+            .optional()
+            .map_err(|error| failed(id, "session.read", "re-read resume run", &error))?
+            .is_some();
+        if !eligible {
+            return Ok(SessionLoaded { id, resume: None });
+        }
+        if let Some(ownership) = ownership {
+            self.ownerships.insert(run_id.clone(), ownership);
+        }
+        Ok(SessionLoaded {
+            id,
+            resume: Some(SessionResumeRef { run_id }),
+        })
     }
 
     /// Looks up a stored mutant result for an incomplete run.
@@ -140,6 +176,11 @@ impl SessionHandler {
     /// transaction.
     pub fn begin(&mut self, request: BeginSession) -> Result<SessionStarted, EffectFailed> {
         let id = request.id;
+        let ownership = if self.ownerships.contains_key(&request.run_id) {
+            None
+        } else {
+            Some(self.acquire_ownership(id, &request.run_id, "claim new run")?)
+        };
         let transaction = self
             .connection
             .transaction()
@@ -162,6 +203,9 @@ impl SessionHandler {
         transaction
             .commit()
             .map_err(|error| failed(id, "session.commit", "commit run", &error))?;
+        if let Some(ownership) = ownership {
+            self.ownerships.insert(request.run_id.clone(), ownership);
+        }
         Ok(SessionStarted {
             id,
             run_id: request.run_id,
@@ -308,10 +352,36 @@ impl SessionHandler {
         transaction
             .commit()
             .map_err(|error| failed(id, "session.commit", "commit run finish", &error))?;
+        self.ownerships.remove(&request.run_id);
         Ok(SessionFinished {
             id,
             run_id: request.run_id,
             complete: request.complete,
+        })
+    }
+
+    fn acquire_ownership(
+        &self,
+        id: EffectId,
+        run_id: &str,
+        operation: &str,
+    ) -> Result<ownership::RunOwnership, EffectFailed> {
+        ownership::RunOwnership::acquire(&self.lock_directory, run_id).map_err(|error| {
+            let (code, message) = match error {
+                ownership::AcquireError::Active => (
+                    "session.resume.active",
+                    "session run is active in another process".to_owned(),
+                ),
+                ownership::AcquireError::Io(error) => ("session.ownership", error.to_string()),
+            };
+            EffectFailed {
+                id,
+                failure: EffectFailure::SessionDatabase {
+                    code: code.to_owned(),
+                    operation: operation.to_owned(),
+                    message,
+                },
+            }
         })
     }
 
