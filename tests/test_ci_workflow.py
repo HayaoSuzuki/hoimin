@@ -4,7 +4,10 @@ import re
 import tomllib
 import unittest
 from collections import Counter
+from collections.abc import Iterator
 from pathlib import Path
+
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,7 +40,7 @@ TAG_VALIDATION_COMMAND = (
 WHEEL_SMOKE_COMMAND = "uv run --frozen python tests/wheel_smoke.py"
 EXPECTED_RELEASE_RUN_COMMANDS = Counter(
     {
-        TAG_VALIDATION_COMMAND: 1,
+        f"{TAG_VALIDATION_COMMAND}\n": 1,
         WHEEL_SMOKE_COMMAND: 2,
     }
 )
@@ -84,98 +87,80 @@ def job_event_conditions(workflow: str) -> set[str]:
     return events
 
 
-def release_run_commands(test: unittest.TestCase, workflow: str) -> Counter[str]:
-    commands: list[str] = []
-    lines = workflow.splitlines()
-    index = 0
-    while index < len(lines):
-        line = lines[index]
-        inline = re.fullmatch(r"      - run: (.+)", line)
-        if inline is not None:
-            commands.append(inline.group(1))
-            index += 1
-            continue
-        if line == "        run: |":
-            block: list[str] = []
-            index += 1
-            while index < len(lines) and lines[index].startswith("          "):
-                block.append(lines[index][10:])
-                index += 1
-            commands.append("\n".join(block))
-            continue
-        index += 1
-
-    run_keys = re.findall(
-        r"""(?i)(?:["']run["']|run)[ \t]*:""",
-        workflow,
-    )
-    test.assertEqual(len(run_keys), len(commands))
-    return Counter(commands)
+def decoded_strings(value: object) -> Iterator[str]:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            yield from decoded_strings(key)
+            yield from decoded_strings(item)
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        for item in value:
+            yield from decoded_strings(item)
+    elif isinstance(value, str):
+        yield value
 
 
 def assert_artifact_only_release(test: unittest.TestCase, workflow: str) -> None:
-    jobs = workflow[workflow.index("jobs:\n") + len("jobs:\n") :]
+    decoded = yaml.safe_load(workflow)
+    test.assertIsInstance(decoded, dict)
+    test.assertEqual(decoded.get("permissions"), {"contents": "read"})
+
+    jobs = decoded.get("jobs")
+    test.assertIsInstance(jobs, dict)
     test.assertEqual(
-        set(
-            re.findall(
-                r"^  ([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(?:#.*)?$",
-                jobs,
-                re.MULTILINE,
-            )
-        ),
+        set(jobs),
         {"validate-tag", "windows-wheel", "linux-wheel"},
     )
+
+    actions: Counter[str] = Counter()
+    run_commands: Counter[str] = Counter()
+    for job in jobs.values():
+        test.assertIsInstance(job, dict)
+        test.assertNotIn("environment", job)
+        permissions = job.get("permissions", {})
+        test.assertIsInstance(permissions, dict)
+        for permission in permissions.values():
+            test.assertFalse(
+                isinstance(permission, str)
+                and permission.casefold() == "write"
+            )
+
+        steps = job.get("steps")
+        test.assertIsInstance(steps, list)
+        for step in steps:
+            test.assertIsInstance(step, dict)
+            if "uses" in step:
+                test.assertIsInstance(step["uses"], str)
+                actions[step["uses"]] += 1
+            if "run" in step:
+                test.assertIsInstance(step["run"], str)
+                run_commands[step["run"]] += 1
+
+    test.assertEqual(actions, EXPECTED_RELEASE_ACTIONS)
+    test.assertEqual(run_commands, EXPECTED_RELEASE_RUN_COMMANDS)
 
     for job_name, artifact_name in (
         ("windows-wheel", "wheels-windows-x86_64"),
         ("linux-wheel", "wheels-linux-x86_64"),
     ):
-        wheel = job_block(workflow, job_name)
+        uploads = [
+            step
+            for step in jobs[job_name]["steps"]
+            if step.get("uses") == UPLOAD_ARTIFACT_ACTION
+        ]
+        test.assertEqual(len(uploads), 1)
         test.assertEqual(
-            wheel.count(f"- uses: {UPLOAD_ARTIFACT_ACTION}"),
-            1,
-        )
-        test.assertRegex(
-            wheel,
-            rf"(?m)^      - uses: {re.escape(UPLOAD_ARTIFACT_ACTION)}"
-            rf"(?:[ \t]+#.*)?\n"
-            rf"        with:\n"
-            rf"          name: {re.escape(artifact_name)}\n"
-            rf"          path: target/wheels/\*\.whl$",
+            uploads[0].get("with"),
+            {
+                "name": artifact_name,
+                "path": "target/wheels/*.whl",
+            },
         )
 
-    test.assertNotRegex(
-        workflow,
-        r"""(?i)["'](?:uses|run|permissions|environment)["'][ \t]*:""",
-    )
-    actions = re.findall(
-        r"^      - uses: ([^ \t#\r\n]+)(?:[ \t]+#.*)?$",
-        workflow,
-        re.MULTILINE,
-    )
-    uses_keys = re.findall(
-        r"""(?i)(?:["']uses["']|uses)[ \t]*:""",
-        workflow,
-    )
-    test.assertEqual(len(uses_keys), len(actions))
-    test.assertEqual(Counter(actions), EXPECTED_RELEASE_ACTIONS)
-    test.assertEqual(release_run_commands(test, workflow), EXPECTED_RELEASE_RUN_COMMANDS)
-    test.assertRegex(workflow, r"(?m)^permissions:\n  contents: read$")
-    test.assertEqual(
-        len(
-            re.findall(
-                r"""(?i)(?:["']permissions["']|permissions)[ \t]*:""",
-                workflow,
-            )
-        ),
-        1,
-    )
-    test.assertNotRegex(
-        workflow,
-        r"""(?i)(?:["']environment["']|environment)[ \t]*:""",
-    )
-    test.assertNotRegex(workflow, r"(?i)\bsecrets[ \t]*(?:\.|\[)")
-    test.assertNotRegex(workflow, r"(?i)id-token")
+    for value in decoded_strings(decoded):
+        test.assertNotEqual(value.casefold(), "id-token")
+        test.assertIsNone(
+            re.search(r"\bsecrets\s*(?:\.|\[)", value, re.IGNORECASE)
+        )
 
 
 class ShuffleWorkflowContractTests(unittest.TestCase):
@@ -383,6 +368,17 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
                 "      - run: uv run --frozen python tests/wheel_smoke.py\n"
                 '      - "uses": attacker/publish@0123456789abcdef\n',
                 1,
+            ),
+            "explicit mapping uses key": workflow.replace(
+                "      - run: uv run --frozen python tests/wheel_smoke.py\n",
+                "      - run: uv run --frozen python tests/wheel_smoke.py\n"
+                "      - ? uses\n"
+                "        : attacker/publish@0123456789abcdef\n",
+                1,
+            ),
+            "escaped OIDC permission key": workflow.replace(
+                "permissions:\n  contents: read",
+                'permissions:\n  contents: read\n  "id\\u002dtoken": write',
             ),
         }
 

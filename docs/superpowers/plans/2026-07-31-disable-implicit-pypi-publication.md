@@ -4,20 +4,22 @@
 
 **Goal:** Ensure an ordinary version tag builds retained wheel artifacts without obtaining PyPI publication credentials or invoking a package publisher.
 
-**Architecture:** Keep the existing tag validation and Windows/Linux wheel build jobs unchanged. Remove the default publisher job, protect the artifact-only release graph with a standard-library Python contract test, and document the explicit controls required before a future public-distribution workflow is introduced.
+**Architecture:** Keep the existing tag validation and Windows/Linux wheel build jobs unchanged. Remove the default publisher job, decode the release YAML with `yaml.safe_load`, enforce an exact artifact-only job/action/command graph over the decoded structures, and document the explicit controls required before a future public-distribution workflow is introduced.
 
-**Tech Stack:** GitHub Actions YAML, Python 3.14 `unittest`, Markdown.
+**Tech Stack:** GitHub Actions YAML, Python 3.14 `unittest`, PyYAML 6.x, Markdown.
 
 ## Global Constraints
 
 - An ordinary `v*` tag may validate metadata, build wheels, smoke-test them, and upload GitHub Actions artifacts.
 - The default tag workflow job set must be exactly `validate-tag`,
   `windows-wheel`, and `linux-wheel`.
-- The default tag workflow must not request `id-token: write`.
+- The decoded default tag workflow must not contain an `id-token` key.
 - The default tag workflow must not reference a GitHub environment or secret.
 - Every `uses:` entry must match the exact pinned checkout, setup-python,
   setup-uv, Maturin, or upload-artifact action already required to build the
   retained wheels.
+- Security decisions must use decoded YAML structures, not raw-text regexes,
+  so alternate YAML key syntax and escape sequences cannot bypass the policy.
 - Future public publication must use a separate explicit manual or controlled opt-in and a protected GitHub environment.
 - Keep all action revisions pinned exactly as they are.
 - Do not change wheel targets, Maturin arguments, tag validation, or smoke-test commands.
@@ -31,19 +33,28 @@
 - Modify: `.github/workflows/release.yml`
 - Modify: `README.md`
 - Modify: `docs/superpowers/plans/2026-07-31-disable-implicit-pypi-publication.md`
+- Modify: `pyproject.toml`
+- Modify: `uv.lock`
 
 **Interfaces:**
-- Consumes: `RELEASE_WORKFLOW`, `job_block`, and the existing standard-library workflow contract suite.
+- Consumes: `RELEASE_WORKFLOW`, `yaml.safe_load`, and the existing workflow contract suite.
 - Produces: `ReleaseWorkflowContractTests`, an artifact-only `release.yml`, and the documented future-publication controls.
+
+- [ ] **Step 0: Add the YAML parser test dependency**
+
+```console
+uv add --dev 'pyyaml>=6.0.2,<7'
+```
 
 - [ ] **Step 1: Add the failing release-policy contract**
 
 Add a shared assertion and contract tests to `tests/test_ci_workflow.py`.
 The assertion must require the exact three-job graph, both exact pinned wheel
 uploads and their artifact names and paths, the exact action allowlist, and no
-job-level environment, secret reference, or OIDC permission. It must parse only
-canonical `uses:` and `run:` keys, require the exact current action and command
-multisets, and reject quoted or otherwise noncanonical structural keys:
+job-level environment, secret reference, or write permission. It must decode
+all YAML representations with `yaml.safe_load`, require the exact current
+decoded action and command multisets, and recursively inspect decoded keys and
+values:
 
 ```python
 UPLOAD_ARTIFACT_ACTION = (
@@ -61,61 +72,50 @@ EXPECTED_RELEASE_ACTIONS = Counter(
 )
 EXPECTED_RELEASE_RUN_COMMANDS = Counter(
     {
-        TAG_VALIDATION_COMMAND: 1,
+        f"{TAG_VALIDATION_COMMAND}\n": 1,
         "uv run --frozen python tests/wheel_smoke.py": 2,
     }
 )
 
 
 def assert_artifact_only_release(test: unittest.TestCase, workflow: str) -> None:
-    jobs = workflow[workflow.index("jobs:\n") + len("jobs:\n") :]
-    test.assertEqual(
-        set(
-            re.findall(
-                r"^  ([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(?:#.*)?$",
-                jobs,
-                re.MULTILINE,
-            )
-        ),
-        {"validate-tag", "windows-wheel", "linux-wheel"},
-    )
+    decoded = yaml.safe_load(workflow)
+    test.assertEqual(decoded["permissions"], {"contents": "read"})
+    jobs = decoded["jobs"]
+    test.assertEqual(set(jobs), {"validate-tag", "windows-wheel", "linux-wheel"})
 
+    actions = Counter()
+    run_commands = Counter()
+    for job in jobs.values():
+        test.assertNotIn("environment", job)
+        for permission in job.get("permissions", {}).values():
+            test.assertNotEqual(str(permission).casefold(), "write")
+        for step in job["steps"]:
+            if "uses" in step:
+                actions[step["uses"]] += 1
+            if "run" in step:
+                run_commands[step["run"]] += 1
+
+    test.assertEqual(actions, EXPECTED_RELEASE_ACTIONS)
+    test.assertEqual(run_commands, EXPECTED_RELEASE_RUN_COMMANDS)
     for job_name, artifact_name in (
         ("windows-wheel", "wheels-windows-x86_64"),
         ("linux-wheel", "wheels-linux-x86_64"),
     ):
-        wheel = job_block(workflow, job_name)
-        test.assertEqual(wheel.count(f"- uses: {UPLOAD_ARTIFACT_ACTION}"), 1)
-        test.assertRegex(
-            wheel,
-            rf"(?m)^      - uses: {re.escape(UPLOAD_ARTIFACT_ACTION)}"
-            rf"(?:[ \t]+#.*)?\n"
-            rf"        with:\n"
-            rf"          name: {re.escape(artifact_name)}\n"
-            rf"          path: target/wheels/\*\.whl$",
+        uploads = [
+            step
+            for step in jobs[job_name]["steps"]
+            if step.get("uses") == UPLOAD_ARTIFACT_ACTION
+        ]
+        test.assertEqual(len(uploads), 1)
+        test.assertEqual(
+            uploads[0]["with"],
+            {"name": artifact_name, "path": "target/wheels/*.whl"},
         )
 
-    test.assertNotRegex(
-        workflow,
-        r"""(?i)["'](?:uses|run|permissions|environment)["'][ \t]*:""",
-    )
-    actions = re.findall(
-        r"^      - uses: ([^ \t#\r\n]+)(?:[ \t]+#.*)?$",
-        workflow,
-        re.MULTILINE,
-    )
-    test.assertEqual(Counter(actions), EXPECTED_RELEASE_ACTIONS)
-    test.assertEqual(
-        release_run_commands(test, workflow),
-        EXPECTED_RELEASE_RUN_COMMANDS,
-    )
-    test.assertRegex(workflow, r"(?m)^permissions:\n  contents: read$")
-    test.assertNotRegex(
-        workflow,
-        r"""(?i)(?:["']environment["']|environment)[ \t]*:""",
-    )
-    test.assertNotRegex(workflow, r"(?i)\bsecrets[ \t]*(?:\.|\[)")
-    test.assertNotRegex(workflow, r"(?i)id-token")
+    for value in decoded_strings(decoded):
+        test.assertNotEqual(value.casefold(), "id-token")
+        test.assertIsNone(re.search(r"\bsecrets\s*(?:\.|\[)", value, re.I))
 
 
 class ReleaseWorkflowContractTests(unittest.TestCase):
@@ -130,7 +130,8 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
 Add a hostile-fixture test that proves the assertion rejects an aliased
 publisher job, an unexpected action, altered artifact names or paths, a
 job-level environment, dot and bracket secret references, block and flow OIDC
-permissions, added publisher commands, and quoted structural keys.
+permissions, added publisher commands, quoted structural keys, explicit
+mapping keys, and escaped OIDC keys.
 
 - [ ] **Step 2: Run the focused contract and verify RED**
 
@@ -184,12 +185,13 @@ Expected: every command passes. `release.yml` has exactly the three expected
 jobs, contains both exact pinned wheel artifact uploads with the expected
 artifact names and paths, uses only the exact expected pinned action multiset,
 runs only the exact tag-validation and two wheel-smoke commands, and contains
-no environment, secret context, OIDC permission, or noncanonical structural
-key.
+no decoded environment, secret context, OIDC key, or write permission.
 
 - [ ] **Step 6: Commit the implementation**
 
 ```console
-git add tests/test_ci_workflow.py .github/workflows/release.yml README.md
+git add tests/test_ci_workflow.py .github/workflows/release.yml README.md \
+  pyproject.toml uv.lock \
+  docs/superpowers/plans/2026-07-31-disable-implicit-pypi-publication.md
 git commit -m "release: make tagged builds artifact-only"
 ```
