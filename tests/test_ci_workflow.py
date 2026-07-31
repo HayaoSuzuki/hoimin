@@ -11,6 +11,17 @@ CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 DEVELOPMENT_GUIDE = ROOT / "docs" / "development.md"
 CARGO_MANIFEST = ROOT / "Cargo.toml"
+UPLOAD_ARTIFACT_ACTION = (
+    "actions/upload-artifact@"
+    "ea165f8d65b6e75b540449e92b4886f43607fa02"
+)
+ALLOWED_RELEASE_ACTIONS = {
+    "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10",
+    "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
+    "astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b",
+    "PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b",
+    UPLOAD_ARTIFACT_ACTION,
+}
 
 
 def job_block(workflow: str, job_name: str) -> str:
@@ -52,6 +63,54 @@ def job_event_conditions(workflow: str) -> set[str]:
                 )
             )
     return events
+
+
+def assert_artifact_only_release(test: unittest.TestCase, workflow: str) -> None:
+    jobs = workflow[workflow.index("jobs:\n") + len("jobs:\n") :]
+    test.assertEqual(
+        set(
+            re.findall(
+                r"^  ([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(?:#.*)?$",
+                jobs,
+                re.MULTILINE,
+            )
+        ),
+        {"validate-tag", "windows-wheel", "linux-wheel"},
+    )
+
+    for job_name, artifact_name in (
+        ("windows-wheel", "wheels-windows-x86_64"),
+        ("linux-wheel", "wheels-linux-x86_64"),
+    ):
+        wheel = job_block(workflow, job_name)
+        test.assertEqual(
+            wheel.count(f"- uses: {UPLOAD_ARTIFACT_ACTION}"),
+            1,
+        )
+        test.assertRegex(
+            wheel,
+            rf"(?m)^      - uses: {re.escape(UPLOAD_ARTIFACT_ACTION)}"
+            rf"(?:[ \t]+#.*)?\n"
+            rf"        with:\n"
+            rf"          name: {re.escape(artifact_name)}\n"
+            rf"          path: target/wheels/\*\.whl$",
+        )
+
+    actions = set(
+        re.findall(
+            r"^[ \t]+- uses[ \t]*:[ \t]*([^ \t#\r\n]+)",
+            workflow,
+            re.MULTILINE,
+        )
+    )
+    test.assertEqual(actions, ALLOWED_RELEASE_ACTIONS)
+    test.assertNotRegex(workflow, r"(?m)^    environment[ \t]*:")
+    test.assertNotIn("${{ secrets.", workflow)
+    test.assertNotRegex(
+        workflow,
+        r"(?mi)^[ \t]*id-token[ \t]*:[ \t]*['\"]?write['\"]?"
+        r"[ \t]*(?:#.*)?$",
+    )
 
 
 class ShuffleWorkflowContractTests(unittest.TestCase):
@@ -191,7 +250,55 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
     ) -> None:
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
 
-        self.assertIn("actions/upload-artifact@", workflow)
-        self.assertNotIn("\n  publish:\n", workflow)
-        self.assertNotIn("id-token: write", workflow)
-        self.assertNotIn("pypa/gh-action-pypi-publish@", workflow)
+        assert_artifact_only_release(self, workflow)
+
+    def test_artifact_only_policy_rejects_disguised_publication_paths(self) -> None:
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        hostile_workflows = {
+            "aliased publisher job": (
+                workflow
+                + """\
+
+  upload_pypi:
+    runs-on: ubuntu-latest
+    steps:
+      - run: uv publish
+"""
+            ),
+            "unexpected action": workflow.replace(
+                UPLOAD_ARTIFACT_ACTION,
+                "attacker/publish@0123456789abcdef",
+                1,
+            ),
+            "job environment": workflow.replace(
+                "    runs-on: ubuntu-latest\n",
+                "    runs-on: ubuntu-latest\n    environment: pypi\n",
+                1,
+            ),
+            "unexpected artifact name": workflow.replace(
+                "          name: wheels-windows-x86_64",
+                "          name: pypi-distribution",
+                1,
+            ),
+            "unexpected artifact path": workflow.replace(
+                "          path: target/wheels/*.whl",
+                "          path: dist/*",
+                1,
+            ),
+            "publication secret": workflow.replace(
+                "    runs-on: ubuntu-latest\n",
+                "    runs-on: ubuntu-latest\n"
+                "    env:\n"
+                "      PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}\n",
+                1,
+            ),
+            "OIDC publication permission": workflow.replace(
+                "permissions:\n  contents: read",
+                "permissions:\n  contents: read\n  id-token: write",
+            ),
+        }
+
+        for case, hostile_workflow in hostile_workflows.items():
+            with self.subTest(case=case):
+                with self.assertRaises(AssertionError):
+                    assert_artifact_only_release(self, hostile_workflow)

@@ -11,8 +11,13 @@
 ## Global Constraints
 
 - An ordinary `v*` tag may validate metadata, build wheels, smoke-test them, and upload GitHub Actions artifacts.
+- The default tag workflow job set must be exactly `validate-tag`,
+  `windows-wheel`, and `linux-wheel`.
 - The default tag workflow must not request `id-token: write`.
-- The default tag workflow must not invoke `pypa/gh-action-pypi-publish` or another package publisher.
+- The default tag workflow must not reference a GitHub environment or secret.
+- Every `uses:` entry must match the exact pinned checkout, setup-python,
+  setup-uv, Maturin, or upload-artifact action already required to build the
+  retained wheels.
 - Future public publication must use a separate explicit manual or controlled opt-in and a protected GitHub environment.
 - Keep all action revisions pinned exactly as they are.
 - Do not change wheel targets, Maturin arguments, tag validation, or smoke-test commands.
@@ -25,6 +30,7 @@
 - Modify: `tests/test_ci_workflow.py`
 - Modify: `.github/workflows/release.yml`
 - Modify: `README.md`
+- Modify: `docs/superpowers/plans/2026-07-31-disable-implicit-pypi-publication.md`
 
 **Interfaces:**
 - Consumes: `RELEASE_WORKFLOW`, `job_block`, and the existing standard-library workflow contract suite.
@@ -32,20 +38,82 @@
 
 - [ ] **Step 1: Add the failing release-policy contract**
 
-Append this class to `tests/test_ci_workflow.py`:
+Add a shared assertion and contract tests to `tests/test_ci_workflow.py`.
+The assertion must require the exact three-job graph, both exact pinned wheel
+uploads and their artifact names and paths, the exact action allowlist, and no
+job-level environment, secret reference, or OIDC write permission:
 
 ```python
+UPLOAD_ARTIFACT_ACTION = (
+    "actions/upload-artifact@"
+    "ea165f8d65b6e75b540449e92b4886f43607fa02"
+)
+ALLOWED_RELEASE_ACTIONS = {
+    "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10",
+    "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
+    "astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b",
+    "PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b",
+    UPLOAD_ARTIFACT_ACTION,
+}
+
+
+def assert_artifact_only_release(test: unittest.TestCase, workflow: str) -> None:
+    jobs = workflow[workflow.index("jobs:\n") + len("jobs:\n") :]
+    test.assertEqual(
+        set(
+            re.findall(
+                r"^  ([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(?:#.*)?$",
+                jobs,
+                re.MULTILINE,
+            )
+        ),
+        {"validate-tag", "windows-wheel", "linux-wheel"},
+    )
+
+    for job_name, artifact_name in (
+        ("windows-wheel", "wheels-windows-x86_64"),
+        ("linux-wheel", "wheels-linux-x86_64"),
+    ):
+        wheel = job_block(workflow, job_name)
+        test.assertEqual(wheel.count(f"- uses: {UPLOAD_ARTIFACT_ACTION}"), 1)
+        test.assertRegex(
+            wheel,
+            rf"(?m)^      - uses: {re.escape(UPLOAD_ARTIFACT_ACTION)}"
+            rf"(?:[ \t]+#.*)?\n"
+            rf"        with:\n"
+            rf"          name: {re.escape(artifact_name)}\n"
+            rf"          path: target/wheels/\*\.whl$",
+        )
+
+    actions = set(
+        re.findall(
+            r"^[ \t]+- uses[ \t]*:[ \t]*([^ \t#\r\n]+)",
+            workflow,
+            re.MULTILINE,
+        )
+    )
+    test.assertEqual(actions, ALLOWED_RELEASE_ACTIONS)
+    test.assertNotRegex(workflow, r"(?m)^    environment[ \t]*:")
+    test.assertNotIn("${{ secrets.", workflow)
+    test.assertNotRegex(
+        workflow,
+        r"(?mi)^[ \t]*id-token[ \t]*:[ \t]*['\"]?write['\"]?"
+        r"[ \t]*(?:#.*)?$",
+    )
+
+
 class ReleaseWorkflowContractTests(unittest.TestCase):
     def test_version_tags_build_artifacts_without_publication_credentials(
         self,
     ) -> None:
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
 
-        self.assertIn("actions/upload-artifact@", workflow)
-        self.assertNotIn("\n  publish:\n", workflow)
-        self.assertNotIn("id-token: write", workflow)
-        self.assertNotIn("pypa/gh-action-pypi-publish@", workflow)
+        assert_artifact_only_release(self, workflow)
 ```
+
+Add a hostile-fixture test that proves the assertion rejects an aliased
+publisher job, an unexpected action, altered artifact names or paths, a
+job-level environment, a secret reference, and an OIDC write permission.
 
 - [ ] **Step 2: Run the focused contract and verify RED**
 
@@ -56,8 +124,10 @@ uv run --frozen python -m unittest \
   tests.test_ci_workflow.ReleaseWorkflowContractTests -v
 ```
 
-Expected: the test fails because the workflow contains the current `publish`
-job and its OIDC publication permission.
+Expected: the contract fails because the workflow contains a fourth job and
+publication action, environment, and OIDC permission. The hostile-fixture test
+must also be observed failing against the earlier weak string checks before the
+shared assertion is strengthened.
 
 - [ ] **Step 3: Remove the default publisher**
 
@@ -93,8 +163,10 @@ cargo test --workspace
 git diff --check
 ```
 
-Expected: every command passes. `release.yml` still contains both wheel
-artifact uploads and contains no publisher job or OIDC publication permission.
+Expected: every command passes. `release.yml` has exactly the three expected
+jobs, contains both exact pinned wheel artifact uploads with the expected
+artifact names and paths, uses only the exact allowed pinned actions, and
+contains no job-level environment, secret reference, or OIDC write permission.
 
 - [ ] **Step 6: Commit the implementation**
 
