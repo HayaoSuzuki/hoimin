@@ -773,6 +773,44 @@ async fn sqlite_session_saves_and_resumes_a_determinate_result_without_reexecuti
 }
 
 #[tokio::test]
+async fn fresh_session_and_sessionless_results_preserve_the_same_termination() {
+    let sessions = tempfile::tempdir().unwrap();
+    let database = sessions.path().join("session.sqlite3");
+    let command = ["-m", "unittest", "discover", "-s", "tests"];
+
+    let sessionless = run_fixture_options(&command, None, false).await;
+    let session = run_fixture_with_session(&command, &database, false).await;
+    assert_eq!(sessionless.exit_code, 0, "{}", sessionless.stderr);
+    assert_eq!(session.exit_code, 0, "{}", session.stderr);
+
+    let normalize = |mut value: serde_json::Value| {
+        value["run_id"] = serde_json::Value::Null;
+        value["elapsed_ms"] = serde_json::Value::Null;
+        value["output"]["token"] = serde_json::Value::Null;
+        value
+    };
+    let sessionless_mutant = normalize(sessionless.document["mutants"][0].clone());
+    let session_mutant = normalize(session.document["mutants"][0].clone());
+    assert_eq!(sessionless_mutant, session_mutant);
+    assert_eq!(
+        session_mutant["termination"],
+        serde_json::json!({ "Exit": 1 })
+    );
+
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    connection
+        .execute("UPDATE runs SET complete=0", [])
+        .unwrap();
+    drop(connection);
+    let reused = run_fixture_with_session(&command, &database, true).await;
+    assert_eq!(reused.exit_code, 0, "{}", reused.stderr);
+    assert_eq!(
+        reused.document["mutants"][0]["termination"],
+        serde_json::Value::Null
+    );
+}
+
+#[tokio::test]
 async fn fingerprint_include_change_starts_a_distinct_session_run() {
     let project = tempfile::tempdir().unwrap();
     let sessions = tempfile::tempdir().unwrap();

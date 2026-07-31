@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use rusqlite::{Connection, ErrorCode, Transaction, TransactionBehavior};
 use thiserror::Error;
 
-pub(crate) const SCHEMA_VERSION: i64 = 2;
+pub(crate) const SCHEMA_VERSION: i64 = 3;
 
 #[derive(Debug, Error)]
 pub enum SchemaError {
@@ -45,6 +45,9 @@ fn configure_observed(
     }
     if version <= 1 {
         migrate_v2(&transaction)?;
+    }
+    if version <= 2 {
+        migrate_v3(&transaction)?;
     }
     transaction.commit()?;
     Ok(())
@@ -145,6 +148,49 @@ fn migrate_v2(transaction: &Transaction<'_>) -> Result<(), rusqlite::Error> {
     Ok(())
 }
 
+fn migrate_v3(transaction: &Transaction<'_>) -> Result<(), rusqlite::Error> {
+    transaction.execute_batch(
+        "CREATE TABLE results_v3 (
+             run_id TEXT NOT NULL,
+             mutant_id TEXT NOT NULL,
+             status TEXT NOT NULL,
+             elapsed_secs INTEGER NOT NULL,
+             elapsed_nanos INTEGER NOT NULL,
+             resource_mode TEXT NOT NULL,
+             output_token TEXT,
+             output_retained INTEGER,
+             output_observed INTEGER,
+             termination_kind TEXT,
+             termination_exit_code INTEGER,
+             PRIMARY KEY(run_id, mutant_id),
+             FOREIGN KEY(run_id, mutant_id) REFERENCES candidates(run_id, mutant_id)
+                 DEFERRABLE INITIALLY DEFERRED,
+             CHECK(CASE
+                 WHEN termination_kind IS NULL THEN termination_exit_code IS NULL
+                 WHEN termination_kind = 'exit' THEN
+                     termination_exit_code IS NOT NULL
+                     AND typeof(termination_exit_code) = 'integer'
+                     AND termination_exit_code BETWEEN -2147483648 AND 2147483647
+                 WHEN termination_kind IN (
+                     'timeout', 'out_of_memory', 'process_limit', 'cancelled'
+                 ) THEN termination_exit_code IS NULL
+                 ELSE 0
+             END)
+         );
+         INSERT INTO results_v3(
+             run_id,mutant_id,status,elapsed_secs,elapsed_nanos,resource_mode,
+             output_token,output_retained,output_observed
+         ) SELECT
+             run_id,mutant_id,status,elapsed_secs,elapsed_nanos,resource_mode,
+             output_token,output_retained,output_observed
+         FROM results;
+         DROP TABLE results;
+         ALTER TABLE results_v3 RENAME TO results;
+         PRAGMA user_version=3;",
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -195,7 +241,7 @@ mod tests {
         for _ in 0..2 {
             let mut connection = Connection::open(&path).unwrap();
             configure(&mut connection).unwrap();
-            assert_eq!(user_version(&connection), 2);
+            assert_eq!(user_version(&connection), 3);
             assert_eq!(
                 connection
                     .query_row("SELECT message FROM diagnostics WHERE id=7", [], |row| {
@@ -215,7 +261,119 @@ mod tests {
                     .unwrap(),
                 1
             );
+            assert_eq!(
+                connection
+                    .query_row(
+                        "SELECT termination_kind,termination_exit_code FROM results
+                         WHERE run_id='run-1' AND mutant_id='m1'",
+                        [],
+                        |row| Ok((
+                            row.get::<_, Option<String>>(0)?,
+                            row.get::<_, Option<i64>>(1)?
+                        )),
+                    )
+                    .unwrap(),
+                (None, None)
+            );
         }
+    }
+
+    #[test]
+    fn termination_columns_reject_inconsistent_shapes() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        configure(&mut connection).unwrap();
+        connection
+            .execute_batch(
+                "INSERT INTO fingerprints(digest,schema_version) VALUES (zeroblob(32),1);
+                 INSERT INTO runs(run_id,fingerprint) VALUES ('run-1',zeroblob(32));
+                 INSERT INTO candidates(
+                     run_id,mutant_id,sequence,path,span_start,span_length,original,
+                     replacement,operator,line,column_number,symbol,file_hash
+                 ) VALUES ('run-1','m1',0,'src/a.py',0,1,'+','-','binary',1,0,NULL,'hash');",
+            )
+            .unwrap();
+
+        let columns: Vec<String> = connection
+            .prepare("PRAGMA table_info(results)")
+            .unwrap()
+            .query_map([], |row| row.get(1))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(columns.iter().any(|column| column == "termination_kind"));
+        assert!(
+            columns
+                .iter()
+                .any(|column| column == "termination_exit_code")
+        );
+
+        for (kind, code) in [
+            ("NULL", "NULL"),
+            ("'exit'", "-2147483648"),
+            ("'exit'", "2147483647"),
+            ("'timeout'", "NULL"),
+            ("'out_of_memory'", "NULL"),
+            ("'process_limit'", "NULL"),
+            ("'cancelled'", "NULL"),
+        ] {
+            let sql = format!(
+                "INSERT INTO results(
+                    run_id,mutant_id,status,elapsed_secs,elapsed_nanos,resource_mode,
+                    termination_kind,termination_exit_code
+                 ) VALUES ('run-1','m1','killed',0,0,'hard',{kind},{code})"
+            );
+            connection.execute(&sql, []).unwrap();
+            connection.execute("DELETE FROM results", []).unwrap();
+        }
+
+        for (kind, code) in [
+            ("'exit'", "NULL"),
+            ("'timeout'", "1"),
+            ("'unknown'", "NULL"),
+            ("NULL", "1"),
+            ("'exit'", "2147483648"),
+        ] {
+            let sql = format!(
+                "INSERT INTO results(
+                    run_id,mutant_id,status,elapsed_secs,elapsed_nanos,resource_mode,
+                    termination_kind,termination_exit_code
+                 ) VALUES ('run-1','m1','killed',0,0,'hard',{kind},{code})"
+            );
+            assert!(
+                connection.execute(&sql, []).is_err(),
+                "accepted {kind}/{code}"
+            );
+        }
+    }
+
+    #[test]
+    fn upgrades_v2_results_with_legacy_null_termination() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        create_v1_fixture(&mut connection, true);
+        let transaction = connection.transaction().unwrap();
+        migrate_v2(&transaction).unwrap();
+        transaction.commit().unwrap();
+
+        configure(&mut connection).unwrap();
+
+        assert_eq!(user_version(&connection), 3);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT status,termination_kind,termination_exit_code FROM results
+                     WHERE run_id='run-1' AND mutant_id='m1'",
+                    [],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                            row.get::<_, Option<i64>>(2)?,
+                        ))
+                    },
+                )
+                .unwrap(),
+            ("killed".to_owned(), None, None)
+        );
     }
 
     #[test]
@@ -239,20 +397,59 @@ mod tests {
     }
 
     #[test]
+    fn failed_v2_upgrade_rolls_back_the_replacement_results_table() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        let transaction = connection.transaction().unwrap();
+        migrate_v1(&transaction).unwrap();
+        migrate_v2(&transaction).unwrap();
+        transaction.commit().unwrap();
+        connection
+            .execute_batch(
+                "ALTER TABLE results RENAME TO valid_results;
+                 CREATE TABLE results(run_id TEXT);",
+            )
+            .unwrap();
+
+        assert!(configure(&mut connection).is_err());
+        assert_eq!(user_version(&connection), 2);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT count(*) FROM sqlite_master
+                     WHERE type='table' AND name='results_v3'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT count(*) FROM pragma_table_info('results')",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
     fn future_version_is_rejected_without_modifying_the_database() {
         let mut connection = Connection::open_in_memory().unwrap();
         connection
             .execute_batch(
                 "CREATE TABLE future_schema_marker(value TEXT);
-                 PRAGMA user_version=3;",
+                 PRAGMA user_version=4;",
             )
             .unwrap();
 
         assert!(matches!(
             configure(&mut connection),
-            Err(SchemaError::FutureVersion(3))
+            Err(SchemaError::FutureVersion(4))
         ));
-        assert_eq!(user_version(&connection), 3);
+        assert_eq!(user_version(&connection), 4);
         assert_eq!(
             connection
                 .query_row(
@@ -419,7 +616,11 @@ mod tests {
                          replacement,operator,line,column_number,symbol,file_hash
                      ) VALUES (
                          'run-1','m1',0,'src/a.py',0,1,'+','-','binary',1,0,NULL,'hash'
-                     );",
+                     );
+                     INSERT INTO results(
+                         run_id,mutant_id,status,elapsed_secs,elapsed_nanos,resource_mode,
+                         output_token,output_retained,output_observed
+                     ) VALUES ('run-1','m1','killed',0,0,'hard',NULL,NULL,NULL);",
                 )
                 .unwrap();
             connection

@@ -973,11 +973,7 @@ impl RunState {
         })])
     }
 
-    fn finished_output(
-        &mut self,
-        worker: u32,
-        termination: Option<ProcessTermination>,
-    ) -> Result<Vec<RunEffect>, MachineError> {
+    fn finished_output(&mut self, worker: u32) -> Result<Vec<RunEffect>, MachineError> {
         let result = self
             .workers
             .get(&worker)
@@ -995,7 +991,7 @@ impl RunState {
                 run_id: self.run_id.clone(),
                 candidate: result.candidate,
                 status: result.status,
-                termination,
+                termination: result.termination,
                 elapsed_ms: elapsed_millis(result.elapsed),
                 resource_mode: result.resource_mode,
                 output: result.output,
@@ -1104,7 +1100,7 @@ impl RunState {
                     let worker_state = self.worker_mut(worker)?;
                     worker_state.candidate = Some(result.candidate.clone());
                     worker_state.result = Some(result);
-                    self.finished_output(worker, None)
+                    self.finished_output(worker)
                 }
                 StoppedCandidate::SyntheticFinished(candidate, status) => {
                     self.worker_mut(worker)?.candidate = Some(candidate);
@@ -1570,6 +1566,7 @@ pub fn transition(
                     .unwrap_or_else(|| state.run_id.clone()),
                 candidate,
                 status,
+                termination: Some(value.termination),
                 elapsed: value.elapsed,
                 resource_mode: value.resource_mode,
                 output: Some(value.output),
@@ -1586,7 +1583,7 @@ pub fn transition(
                 })]
             } else {
                 state.summary.record(status);
-                state.finished_output(worker, Some(value.termination))?
+                state.finished_output(worker)?
             }
         }
         RunEvent::ResultPersisted(value) if state.phase == RunPhase::Mutants => {
@@ -1616,7 +1613,7 @@ pub fn transition(
                 });
             }
             state.summary.record(result.status);
-            state.finished_output(worker, None)?
+            state.finished_output(worker)?
         }
         RunEvent::OutputEmitted(value) if state.output_actions.contains_key(&value.id) => {
             match state
