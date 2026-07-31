@@ -384,6 +384,92 @@ fn run_finished_rejects_active_mutants() {
     sequence.observe(&run_finished_event(4)).unwrap();
 }
 
+#[cfg(not(feature = "contracts"))]
+#[test]
+fn sequence_rejects_status_that_disagrees_with_termination_without_advancing() {
+    let mut sequence = ReportSequence::new();
+    sequence
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .unwrap();
+    sequence
+        .observe(&OutputEvent::MutantStarted(MutantStarted::new(
+            "run-1", 2, "m1", 7,
+        )))
+        .unwrap();
+
+    let inconsistent = finished_event_with(
+        3,
+        candidate("m1", 7),
+        MutationStatus::Survived,
+        Some(ProcessTermination::Exit(1)),
+    );
+    assert_eq!(
+        sequence.observe(&inconsistent),
+        Err(
+            hoimin_core::ReportSequenceError::MutantStatusTerminationMismatch {
+                mutant_id: "m1".to_owned(),
+                mutant_sequence: 7,
+                status: MutationStatus::Survived,
+                termination: ProcessTermination::Exit(1),
+                expected_status: MutationStatus::Killed,
+            }
+        )
+    );
+
+    sequence
+        .observe(&finished_event(3, candidate("m1", 7)))
+        .unwrap();
+    sequence.observe(&run_finished_event(4)).unwrap();
+}
+
+#[cfg(not(feature = "contracts"))]
+#[test]
+fn sequence_accepts_every_classified_status_and_an_absent_termination() {
+    let cases = [
+        (MutationStatus::Survived, Some(ProcessTermination::Exit(0))),
+        (MutationStatus::Killed, Some(ProcessTermination::Exit(7))),
+        (MutationStatus::Timeout, Some(ProcessTermination::Timeout)),
+        (
+            MutationStatus::OutOfMemory,
+            Some(ProcessTermination::OutOfMemory),
+        ),
+        (
+            MutationStatus::ProcessLimit,
+            Some(ProcessTermination::ProcessLimit),
+        ),
+        (MutationStatus::NotRun, Some(ProcessTermination::Cancelled)),
+        (MutationStatus::Error, None),
+    ];
+    let mut sequence = ReportSequence::new();
+    sequence
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .unwrap();
+
+    let mut event_sequence = 2;
+    for (index, (status, termination)) in cases.into_iter().enumerate() {
+        let mutant_id = format!("m{index}");
+        let mutant_sequence = u64::try_from(index).unwrap();
+        sequence
+            .observe(&OutputEvent::MutantStarted(MutantStarted::new(
+                "run-1",
+                event_sequence,
+                &mutant_id,
+                mutant_sequence,
+            )))
+            .unwrap();
+        event_sequence += 1;
+        sequence
+            .observe(&finished_event_with(
+                event_sequence,
+                candidate(&mutant_id, mutant_sequence),
+                status,
+                termination,
+            ))
+            .unwrap();
+        event_sequence += 1;
+    }
+}
+
 #[test]
 fn all_event_variants_have_the_exact_public_kind() {
     let events = [
@@ -468,6 +554,27 @@ fn cross_run_event_trips_the_ci_contract() {
     )));
 }
 
+#[cfg(feature = "contracts")]
+#[test]
+#[should_panic(expected = "report.sequence.invariant")]
+fn incoherent_mutant_finish_trips_the_ci_contract() {
+    let mut sequence = ReportSequence::new();
+    sequence
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .unwrap();
+    sequence
+        .observe(&OutputEvent::MutantStarted(MutantStarted::new(
+            "run-1", 2, "m1", 7,
+        )))
+        .unwrap();
+    let _ = sequence.observe(&finished_event_with(
+        3,
+        candidate("m1", 7),
+        MutationStatus::Survived,
+        Some(ProcessTermination::Exit(1)),
+    ));
+}
+
 fn candidate(id: &str, sequence: u64) -> MutationCandidate {
     MutationCandidate {
         id: id.to_owned(),
@@ -488,13 +595,27 @@ fn candidate(id: &str, sequence: u64) -> MutationCandidate {
 }
 
 fn finished_event(sequence: u64, candidate: MutationCandidate) -> OutputEvent {
+    finished_event_with(
+        sequence,
+        candidate,
+        MutationStatus::Killed,
+        Some(ProcessTermination::Exit(1)),
+    )
+}
+
+fn finished_event_with(
+    sequence: u64,
+    candidate: MutationCandidate,
+    status: MutationStatus,
+    termination: Option<ProcessTermination>,
+) -> OutputEvent {
     OutputEvent::MutantFinished(MutantFinished {
         schema_version: 1,
         sequence,
         run_id: "run-1".to_owned(),
         candidate,
-        status: MutationStatus::Killed,
-        termination: Some(ProcessTermination::Exit(1)),
+        status,
+        termination,
         elapsed_ms: 2,
         resource_mode: ResourceMode::Hard,
         output: None,
