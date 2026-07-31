@@ -5,12 +5,165 @@ import tomllib
 import unittest
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 DEVELOPMENT_GUIDE = ROOT / "docs" / "development.md"
 CARGO_MANIFEST = ROOT / "Cargo.toml"
+UPLOAD_ARTIFACT_ACTION = (
+    "actions/upload-artifact@"
+    "ea165f8d65b6e75b540449e92b4886f43607fa02"
+)
+TAG_VALIDATION_COMMAND = (
+    'python -c "import os, pathlib, tomllib; '
+    "py=tomllib.loads(pathlib.Path('pyproject.toml').read_text())"
+    "['project']['version']; "
+    "cargo=tomllib.loads(pathlib.Path('Cargo.toml').read_text())"
+    "['workspace']['package']['version']; "
+    "tag=os.environ['TAG']; "
+    "assert tag == f'v{py}' == f'v{cargo}', (tag, py, cargo)\""
+)
+WHEEL_SMOKE_COMMAND = "uv run --frozen python tests/wheel_smoke.py"
+EXPECTED_RELEASE_JOBS = {
+    "validate-tag": {
+        "runs-on": "ubuntu-latest",
+        "steps": [
+            {
+                "uses": (
+                    "actions/checkout@"
+                    "df4cb1c069e1874edd31b4311f1884172cec0e10"
+                )
+            },
+            {
+                "uses": (
+                    "actions/setup-python@"
+                    "ece7cb06caefa5fff74198d8649806c4678c61a1"
+                ),
+                "with": {"python-version": "3.14"},
+            },
+            {
+                "name": "Require the tag to match package metadata",
+                "env": {"TAG": "${{ github.ref_name }}"},
+                "run": f"{TAG_VALIDATION_COMMAND}\n",
+            },
+        ],
+    },
+    "windows-wheel": {
+        "needs": "validate-tag",
+        "runs-on": "windows-latest",
+        "steps": [
+            {
+                "uses": (
+                    "actions/checkout@"
+                    "df4cb1c069e1874edd31b4311f1884172cec0e10"
+                )
+            },
+            {
+                "uses": (
+                    "actions/setup-python@"
+                    "ece7cb06caefa5fff74198d8649806c4678c61a1"
+                ),
+                "with": {"python-version": "3.14"},
+            },
+            {
+                "uses": (
+                    "astral-sh/setup-uv@"
+                    "08807647e7069bb48b6ef5acd8ec9567f424441b"
+                ),
+                "with": {"enable-cache": True},
+            },
+            {
+                "uses": (
+                    "PyO3/maturin-action@"
+                    "e83996d129638aa358a18fbd1dfb82f0b0fb5d3b"
+                ),
+                "with": {
+                    "command": "build",
+                    "args": (
+                        "--release --locked --compatibility pypi "
+                        "--no-default-features"
+                    ),
+                    "maturin-version": "v1.14.1",
+                    "target": "x86_64-pc-windows-msvc",
+                },
+            },
+            {"run": WHEEL_SMOKE_COMMAND},
+            {
+                "uses": (
+                    "actions/upload-artifact@"
+                    "ea165f8d65b6e75b540449e92b4886f43607fa02"
+                ),
+                "with": {
+                    "name": "wheels-windows-x86_64",
+                    "path": "target/wheels/*.whl",
+                },
+            },
+        ],
+    },
+    "linux-wheel": {
+        "needs": "validate-tag",
+        "runs-on": "ubuntu-latest",
+        "steps": [
+            {
+                "uses": (
+                    "actions/checkout@"
+                    "df4cb1c069e1874edd31b4311f1884172cec0e10"
+                )
+            },
+            {
+                "uses": (
+                    "actions/setup-python@"
+                    "ece7cb06caefa5fff74198d8649806c4678c61a1"
+                ),
+                "with": {"python-version": "3.14"},
+            },
+            {
+                "uses": (
+                    "astral-sh/setup-uv@"
+                    "08807647e7069bb48b6ef5acd8ec9567f424441b"
+                ),
+                "with": {"enable-cache": True},
+            },
+            {
+                "uses": (
+                    "PyO3/maturin-action@"
+                    "e83996d129638aa358a18fbd1dfb82f0b0fb5d3b"
+                ),
+                "with": {
+                    "command": "build",
+                    "args": (
+                        "--release --locked --compatibility pypi "
+                        "--no-default-features"
+                    ),
+                    "maturin-version": "v1.14.1",
+                    "target": "x86_64-unknown-linux-gnu",
+                    "manylinux": "2014",
+                },
+            },
+            {"run": WHEEL_SMOKE_COMMAND},
+            {
+                "uses": (
+                    "actions/upload-artifact@"
+                    "ea165f8d65b6e75b540449e92b4886f43607fa02"
+                ),
+                "with": {
+                    "name": "wheels-linux-x86_64",
+                    "path": "target/wheels/*.whl",
+                },
+            },
+        ],
+    },
+}
+EXPECTED_RELEASE_WORKFLOW = {
+    "name": "Release wheels",
+    # PyYAML's YAML 1.1 resolver decodes the unquoted `on` key as `True`.
+    True: {"push": {"tags": ["v*"]}},
+    "permissions": {"contents": "read"},
+    "jobs": EXPECTED_RELEASE_JOBS,
+}
 
 
 def job_block(workflow: str, job_name: str) -> str:
@@ -52,6 +205,12 @@ def job_event_conditions(workflow: str) -> set[str]:
                 )
             )
     return events
+
+
+def assert_artifact_only_release(test: unittest.TestCase, workflow: str) -> None:
+    decoded = yaml.safe_load(workflow)
+    test.assertIsInstance(decoded, dict)
+    test.assertEqual(decoded, EXPECTED_RELEASE_WORKFLOW)
 
 
 class ShuffleWorkflowContractTests(unittest.TestCase):
@@ -183,3 +342,127 @@ jobs:
             delegated,
         )
         self.assertIn("! grep -Fq 'SKIP:' cgroup-v2.log", delegated)
+
+
+class ReleaseWorkflowContractTests(unittest.TestCase):
+    def test_version_tags_build_artifacts_without_publication_credentials(
+        self,
+    ) -> None:
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+
+        assert_artifact_only_release(self, workflow)
+
+    def test_artifact_only_policy_rejects_disguised_publication_paths(self) -> None:
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        hostile_workflows = {
+            "aliased publisher job": (
+                workflow
+                + """\
+
+  upload_pypi:
+    runs-on: ubuntu-latest
+    steps:
+      - run: uv publish
+"""
+            ),
+            "unexpected action": workflow.replace(
+                UPLOAD_ARTIFACT_ACTION,
+                "attacker/publish@0123456789abcdef",
+                1,
+            ),
+            "job environment": workflow.replace(
+                "    runs-on: ubuntu-latest\n",
+                "    runs-on: ubuntu-latest\n    environment: pypi\n",
+                1,
+            ),
+            "unexpected artifact name": workflow.replace(
+                "          name: wheels-windows-x86_64",
+                "          name: pypi-distribution",
+                1,
+            ),
+            "unexpected artifact path": workflow.replace(
+                "          path: target/wheels/*.whl",
+                "          path: dist/*",
+                1,
+            ),
+            "publication secret": workflow.replace(
+                "    runs-on: ubuntu-latest\n",
+                "    runs-on: ubuntu-latest\n"
+                "    env:\n"
+                "      PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}\n",
+                1,
+            ),
+            "OIDC publication permission": workflow.replace(
+                "permissions:\n  contents: read",
+                "permissions:\n  contents: read\n  id-token: write",
+            ),
+            "publisher run command": workflow.replace(
+                "      - run: uv run --frozen python tests/wheel_smoke.py\n",
+                "      - run: uv run --frozen python tests/wheel_smoke.py\n"
+                "      - run: uv publish\n",
+                1,
+            ),
+            "bracketed publication secret": workflow.replace(
+                "    runs-on: ubuntu-latest\n",
+                "    runs-on: ubuntu-latest\n"
+                "    env:\n"
+                "      PYPI_TOKEN: ${{ secrets['PYPI_TOKEN'] }}\n",
+                1,
+            ),
+            "flow OIDC permission": workflow.replace(
+                "permissions:\n  contents: read",
+                "permissions: {contents: read, id-token: write}",
+            ),
+            "quoted uses key": workflow.replace(
+                "      - run: uv run --frozen python tests/wheel_smoke.py\n",
+                "      - run: uv run --frozen python tests/wheel_smoke.py\n"
+                '      - "uses": attacker/publish@0123456789abcdef\n',
+                1,
+            ),
+            "explicit mapping uses key": workflow.replace(
+                "      - run: uv run --frozen python tests/wheel_smoke.py\n",
+                "      - run: uv run --frozen python tests/wheel_smoke.py\n"
+                "      - ? uses\n"
+                "        : attacker/publish@0123456789abcdef\n",
+                1,
+            ),
+            "escaped OIDC permission key": workflow.replace(
+                "permissions:\n  contents: read",
+                'permissions:\n  contents: read\n  "id\\u002dtoken": write',
+            ),
+            "publisher shell on expected smoke command": workflow.replace(
+                "      - run: uv run --frozen python tests/wheel_smoke.py\n",
+                "      - run: uv run --frozen python tests/wheel_smoke.py\n"
+                "        shell: bash -c 'uv publish && bash \"$1\"' -- {0}\n",
+                1,
+            ),
+            "literal publication token on expected smoke command": (
+                workflow.replace(
+                    "      - run: uv run --frozen python tests/wheel_smoke.py\n",
+                    "      - run: uv run --frozen python tests/wheel_smoke.py\n"
+                    "        env:\n"
+                    "          UV_PUBLISH_TOKEN: pypi-hostile-token\n",
+                    1,
+                )
+            ),
+            "Maturin publish command": workflow.replace(
+                "          command: build\n",
+                "          command: publish\n",
+                1,
+            ),
+            "top-level environment and default publishing shell": workflow.replace(
+                "\npermissions:\n",
+                "\nenv:\n"
+                "  UV_PUBLISH_TOKEN: pypi-hostile-token\n"
+                "defaults:\n"
+                "  run:\n"
+                "    shell: bash -c 'uv publish && bash \"$1\"' -- {0}\n"
+                "\npermissions:\n",
+                1,
+            ),
+        }
+
+        for case, hostile_workflow in hostile_workflows.items():
+            with self.subTest(case=case):
+                with self.assertRaises(AssertionError):
+                    assert_artifact_only_release(self, hostile_workflow)
