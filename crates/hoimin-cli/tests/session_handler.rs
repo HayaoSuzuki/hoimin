@@ -1,4 +1,7 @@
+use std::process::{Command, Stdio};
+use std::thread;
 use std::time::Duration;
+use std::time::Instant;
 
 use hoimin_cli::session::SessionHandler;
 use hoimin_core::{
@@ -201,6 +204,184 @@ fn load_selects_only_the_newest_compatible_incomplete_run() {
             .resume
             .is_none()
     );
+}
+
+#[test]
+fn a_live_run_cannot_be_resumed_by_another_handler() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("sessions.sqlite3");
+    let mut owner = SessionHandler::open(&path).unwrap();
+    let mut contender = SessionHandler::open(&path).unwrap();
+    let fingerprint = RunFingerprint::from_bytes([1; 32]);
+    owner.begin(begin_request(1, "owned")).unwrap();
+
+    let failed = contender
+        .load(&LoadSession {
+            id: EffectId(2),
+            fingerprint,
+        })
+        .unwrap_err();
+
+    assert_eq!(failed.id, EffectId(2));
+    assert_eq!(failed.failure.code(), "session.resume.active");
+}
+
+#[test]
+fn incomplete_finish_releases_run_ownership_for_resume() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("sessions.sqlite3");
+    let mut owner = SessionHandler::open(&path).unwrap();
+    let mut resumer = SessionHandler::open(&path).unwrap();
+    let fingerprint = RunFingerprint::from_bytes([1; 32]);
+    owner.begin(begin_request(1, "partial")).unwrap();
+
+    owner
+        .finish(FinishSession {
+            id: EffectId(2),
+            run_id: "partial".to_owned(),
+            complete: false,
+        })
+        .unwrap();
+
+    let loaded = resumer
+        .load(&LoadSession {
+            id: EffectId(3),
+            fingerprint,
+        })
+        .unwrap();
+    assert_eq!(loaded.resume.unwrap().run_id, "partial");
+}
+
+#[test]
+fn dropping_handler_releases_run_ownership_for_resume() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("sessions.sqlite3");
+    let fingerprint = RunFingerprint::from_bytes([1; 32]);
+    {
+        let mut owner = SessionHandler::open(&path).unwrap();
+        owner.begin(begin_request(1, "abandoned")).unwrap();
+    }
+
+    let mut resumer = SessionHandler::open(&path).unwrap();
+    let loaded = resumer
+        .load(&LoadSession {
+            id: EffectId(2),
+            fingerprint,
+        })
+        .unwrap();
+    assert_eq!(loaded.resume.unwrap().run_id, "abandoned");
+}
+
+#[test]
+fn completed_finish_releases_ownership_and_removes_run_from_resume() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("sessions.sqlite3");
+    let mut owner = SessionHandler::open(&path).unwrap();
+    let mut observer = SessionHandler::open(&path).unwrap();
+    let fingerprint = RunFingerprint::from_bytes([1; 32]);
+    owner.begin(begin_request(1, "complete")).unwrap();
+
+    owner.finish(finish_request(2, "complete")).unwrap();
+
+    assert!(
+        observer
+            .load(&LoadSession {
+                id: EffectId(3),
+                fingerprint,
+            })
+            .unwrap()
+            .resume
+            .is_none()
+    );
+}
+
+#[test]
+fn different_runs_can_be_owned_concurrently() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("sessions.sqlite3");
+    let mut first = SessionHandler::open(&path).unwrap();
+    let mut second = SessionHandler::open(&path).unwrap();
+
+    first.begin(begin_request(1, "first")).unwrap();
+    second
+        .begin(BeginSession {
+            id: EffectId(2),
+            run_id: "second".to_owned(),
+            fingerprint: RunFingerprint::from_bytes([2; 32]),
+        })
+        .unwrap();
+
+    let mut contender = SessionHandler::open(&path).unwrap();
+    for (id, fingerprint) in [(3, [1; 32]), (4, [2; 32])] {
+        let failed = contender
+            .load(&LoadSession {
+                id: EffectId(id),
+                fingerprint: RunFingerprint::from_bytes(fingerprint),
+            })
+            .unwrap_err();
+        assert_eq!(failed.failure.code(), "session.resume.active");
+    }
+}
+
+#[test]
+fn process_death_releases_run_ownership_for_immediate_resume() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("sessions.sqlite3");
+    let ready = temp.path().join("ready");
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args(["--ignored", "--exact", "ownership_child_fixture_holds_run"])
+        .env("HOIMIN_OWNERSHIP_DATABASE", &path)
+        .env("HOIMIN_OWNERSHIP_READY", &ready)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !ready.exists() && Instant::now() < deadline {
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "ownership child exited"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    if !ready.exists() {
+        child.kill().unwrap();
+        child.wait().unwrap();
+        panic!("ownership child did not become ready");
+    }
+
+    let mut contender = SessionHandler::open(&path).unwrap();
+    let contention = contender.load(&LoadSession {
+        id: EffectId(2),
+        fingerprint: RunFingerprint::from_bytes([1; 32]),
+    });
+    child.kill().unwrap();
+    child.wait().unwrap();
+
+    assert_eq!(
+        contention.unwrap_err().failure.code(),
+        "session.resume.active"
+    );
+    let resumed = contender
+        .load(&LoadSession {
+            id: EffectId(3),
+            fingerprint: RunFingerprint::from_bytes([1; 32]),
+        })
+        .unwrap();
+    assert_eq!(resumed.resume.unwrap().run_id, "crashed");
+}
+
+#[test]
+#[ignore = "subprocess fixture for session ownership crash test"]
+fn ownership_child_fixture_holds_run() {
+    let path = std::env::var_os("HOIMIN_OWNERSHIP_DATABASE").unwrap();
+    let ready = std::env::var_os("HOIMIN_OWNERSHIP_READY").unwrap();
+    let mut handler = SessionHandler::open(path).unwrap();
+    handler.begin(begin_request(1, "crashed")).unwrap();
+    std::fs::write(ready, b"ready").unwrap();
+    loop {
+        thread::sleep(Duration::from_secs(60));
+    }
 }
 
 #[test]
