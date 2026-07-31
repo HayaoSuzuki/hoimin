@@ -313,6 +313,37 @@ fn cleanup_reports_reservation_only_after_worker_directory_is_deleted() {
 }
 
 #[test]
+fn cleanup_releases_state_when_the_temporary_wrapper_was_already_removed() {
+    let project = tempfile::tempdir().unwrap();
+    let root = Utf8Path::from_path(project.path()).unwrap();
+    write(root, "pkg/a.py", b"original\n");
+    let mut handler = handler(root, 1);
+    let (mut ledger, grant) = preflight_and_grant(&mut handler, 9);
+    handler
+        .handle_create_worker(grant.create_worker(EffectId(111), 0).unwrap())
+        .unwrap();
+    let wrapper = handler
+        .worker(0)
+        .unwrap()
+        .root()
+        .parent()
+        .unwrap()
+        .to_owned();
+    fs::remove_dir_all(&wrapper).unwrap();
+
+    let completed = handler
+        .handle_cleanup(grant.cleanup(EffectId(112)))
+        .unwrap();
+    release_workspace_copy(&mut ledger, &completed).unwrap();
+
+    assert_eq!(handler.worker_count(), 0);
+    assert_eq!(handler.pending_cleanup_count(), 0);
+    assert_eq!(handler.observed_copy_bytes(), 0);
+    assert_eq!(handler.materialized_worker_slots(), 0);
+    assert_eq!(ledger.reserved(hoimin_core::BudgetKind::Copy), 0);
+}
+
+#[test]
 fn cleanup_releases_a_core_reservation_even_when_no_worker_was_created() {
     let project = tempfile::tempdir().unwrap();
     let root = Utf8Path::from_path(project.path()).unwrap();

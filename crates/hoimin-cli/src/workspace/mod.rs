@@ -386,10 +386,21 @@ impl WorkerWorkspace {
         }
         self.root.close();
         let wrapper = self.temp.path();
-        let wrapper_metadata = fs::symlink_metadata(wrapper).map_err(|error| {
-            let wrapper = Utf8Path::from_path(wrapper).unwrap_or(self.root.path());
-            WorkspaceError::io("inspect cleanup wrapper", wrapper, error)
-        })?;
+        let wrapper_metadata = match fs::symlink_metadata(wrapper) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                self.cleanup_complete = true;
+                return Ok(());
+            }
+            Err(error) => {
+                let wrapper = Utf8Path::from_path(wrapper).unwrap_or(self.root.path());
+                return Err(WorkspaceError::io(
+                    "inspect cleanup wrapper",
+                    wrapper,
+                    error,
+                ));
+            }
+        };
         make_cleanup_entry_accessible(wrapper, &wrapper_metadata)?;
         make_tree_writable(self.root.path().as_std_path())?;
         match fs::remove_dir_all(self.temp.path()) {
