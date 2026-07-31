@@ -3,7 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use hoimin_core::{
-    MutantFinished, OutputEvent, ProcessTermination, REPORT_SCHEMA_VERSION, summarize,
+    MutantFinished, OutputEvent, ProcessTermination, REPORT_SCHEMA_VERSION, ReportVersions,
+    ResourceControl, VerificationSelection, summarize,
 };
 use serde::Deserialize;
 use thiserror::Error;
@@ -66,10 +67,51 @@ pub enum ProgressError {
 }
 
 #[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum ProgressRunEvent {
+    RunStarted(ProgressRunStarted),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProgressRunStarted {
+    schema_version: u32,
+    sequence: u64,
+    run_id: String,
+    normalized_config: serde_json::Value,
+    #[serde(rename = "versions")]
+    _versions: ReportVersions,
+    #[serde(rename = "resource_control")]
+    _resource_control: ResourceControl,
+    #[serde(default, rename = "verification_selection")]
+    _verification_selection: Option<VerificationSelection>,
+}
+
+impl ProgressRunEvent {
+    fn value(&self) -> &ProgressRunStarted {
+        match self {
+            Self::RunStarted(value) => value,
+        }
+    }
+
+    fn schema_version(&self) -> u32 {
+        self.value().schema_version
+    }
+
+    fn sequence(&self) -> u64 {
+        self.value().sequence
+    }
+
+    fn run_id(&self) -> &str {
+        &self.value().run_id
+    }
+}
+
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RunReportDocument {
     schema_version: u32,
-    run: OutputEvent,
+    run: ProgressRunEvent,
     baseline: Option<OutputEvent>,
     mutants: Vec<OutputEvent>,
     summary: OutputEvent,
@@ -150,8 +192,12 @@ fn validate_schema_versions(
 }
 
 fn validate_structure(path: &Path, document: &RunReportDocument) -> Result<(), ProgressError> {
-    if !matches!(document.run, OutputEvent::RunStarted(_)) {
-        return Err(invalid_structure(path, "run must be a run_started event"));
+    let started = document.run.value();
+    if !started.normalized_config.is_null() && !started.normalized_config.is_object() {
+        return Err(invalid_structure(
+            path,
+            "normalized_config must be null or an object",
+        ));
     }
     if !matches!(
         document.baseline,
@@ -213,11 +259,12 @@ fn validate_structure(path: &Path, document: &RunReportDocument) -> Result<(), P
     }
 
     let run_id = document.run.run_id();
-    let events = std::iter::once(&document.run)
-        .chain(document.baseline.iter())
+    let events = document
+        .baseline
+        .iter()
         .chain(document.mutants.iter())
         .chain(std::iter::once(&document.summary));
-    let mut previous_sequence = None;
+    let mut previous_sequence = Some(document.run.sequence());
     for event in events {
         if event.run_id() != run_id {
             return Err(invalid_structure(
