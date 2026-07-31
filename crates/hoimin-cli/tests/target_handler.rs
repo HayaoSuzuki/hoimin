@@ -312,6 +312,59 @@ async fn changed_accepts_non_utf8_text_in_python_patch_bodies() {
 }
 
 #[tokio::test]
+async fn changed_content_cannot_replace_the_diff_destination() {
+    let repo = FixtureRepo::new();
+    repo.write(
+        "pkg/doc.py",
+        "one\nold two\nthree\nfour\nfive\nsix\nseven\nold eight\n",
+    );
+    repo.write("pkg/evil.py", "unchanged\n");
+    repo.commit_all("initial");
+    repo.write(
+        "pkg/doc.py",
+        "one\n++ b/pkg/evil.py\nthree\nfour\nfive\nsix\nseven\nnew eight\n",
+    );
+
+    assert_eq!(
+        repo.changed_lines(None).await.changed,
+        BTreeMap::from([(
+            Utf8PathBuf::from("pkg/doc.py"),
+            vec![
+                LineRange { start: 2, end: 2 },
+                LineRange { start: 8, end: 8 },
+            ],
+        )])
+    );
+}
+
+#[tokio::test]
+async fn changed_content_cannot_exclude_another_python_file() {
+    let repo = FixtureRepo::new();
+    repo.write(
+        "pkg/decoy.py",
+        "one\n-- a/pkg/innocent.py\nthree\nfour\nfive\n",
+    );
+    repo.write("pkg/innocent.py", "one\ntwo\nthree\n");
+    repo.commit_all("initial");
+    repo.write("pkg/decoy.py", "one\n++ /dev/null\nthree\nfour\nfive\n");
+    repo.write("pkg/innocent.py", "one\nTWO\nthree\n");
+
+    assert_eq!(
+        repo.changed_lines(None).await.changed,
+        BTreeMap::from([
+            (
+                Utf8PathBuf::from("pkg/decoy.py"),
+                vec![LineRange { start: 2, end: 2 }],
+            ),
+            (
+                Utf8PathBuf::from("pkg/innocent.py"),
+                vec![LineRange { start: 2, end: 2 }],
+            ),
+        ])
+    );
+}
+
+#[tokio::test]
 async fn tracks_renamed_python_destination() {
     let repo = FixtureRepo::new();
     repo.write("pkg/old.py", "one\ntwo\nthree\nfour\nfive\n");

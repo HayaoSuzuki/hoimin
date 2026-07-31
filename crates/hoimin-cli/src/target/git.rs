@@ -139,14 +139,32 @@ fn parse_diff(
     changed: &mut BTreeMap<Utf8PathBuf, Vec<LineRange>>,
     excluded: &mut BTreeSet<Utf8PathBuf>,
 ) -> Result<(), TargetError> {
+    #[derive(Clone, Copy, Eq, PartialEq)]
+    enum PatchState {
+        OutsideSection,
+        AwaitingOldHeader,
+        AwaitingNewHeader,
+        Body,
+    }
+
     let mut old_path = None;
     let mut path = None;
+    let mut state = PatchState::OutsideSection;
     for line in output.split(|byte| *byte == b'\n') {
-        if let Some(raw_path) = line.strip_prefix(b"--- ") {
+        if line.starts_with(b"diff --git ") {
+            old_path = None;
+            path = None;
+            state = PatchState::AwaitingOldHeader;
+        } else if state == PatchState::AwaitingOldHeader
+            && let Some(raw_path) = line.strip_prefix(b"--- ")
+        {
             let raw_path = std::str::from_utf8(raw_path)
                 .map_err(|_| TargetError::GitFailed("Git diff path is not valid UTF-8".into()))?;
             old_path = parse_patch_path(raw_path)?;
-        } else if let Some(raw_path) = line.strip_prefix(b"+++ ") {
+            state = PatchState::AwaitingNewHeader;
+        } else if state == PatchState::AwaitingNewHeader
+            && let Some(raw_path) = line.strip_prefix(b"+++ ")
+        {
             let raw_path = std::str::from_utf8(raw_path)
                 .map_err(|_| TargetError::GitFailed("Git diff path is not valid UTF-8".into()))?;
             path = parse_patch_path(raw_path)?;
@@ -156,7 +174,8 @@ fn parse_diff(
             {
                 excluded.insert(old_path.clone());
             }
-        } else if line.starts_with(b"@@") {
+            state = PatchState::Body;
+        } else if state == PatchState::Body && line.starts_with(b"@@") {
             let line = std::str::from_utf8(line)
                 .map_err(|_| TargetError::GitFailed("invalid Git hunk header".into()))?;
             let range = parse_hunk_range(line)?;
@@ -165,7 +184,9 @@ fn parse_diff(
             {
                 changed.entry(path.clone()).or_default().push(range);
             }
-        } else if line.starts_with(b"Binary files ") || line == b"GIT binary patch" {
+        } else if state != PatchState::OutsideSection
+            && (line.starts_with(b"Binary files ") || line == b"GIT binary patch")
+        {
             let binary_path = if line.starts_with(b"Binary files ") {
                 let line = std::str::from_utf8(line)
                     .map_err(|_| TargetError::GitFailed("invalid Git binary header".into()))?;
