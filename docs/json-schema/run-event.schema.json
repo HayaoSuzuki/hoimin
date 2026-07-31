@@ -167,7 +167,7 @@
         "run_id": { "type": "string" },
         "normalized_config": {
           "type": ["object", "null"],
-          "description": "Normalized invocation config. New config fields may be added in schema version 1.",
+          "description": "Normalized invocation config. New config fields may be added in schema version 2.",
           "additionalProperties": true
         },
         "versions": {

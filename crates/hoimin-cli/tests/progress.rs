@@ -14,6 +14,59 @@ use hoimin_core::{
 };
 use serde_json::{Value, json};
 
+fn original_schema_v2_report() -> PathBuf {
+    repo_root().join("crates/hoimin-cli/tests/fixtures/reports/schema-v2-original.json")
+}
+
+#[test]
+fn input_accepts_the_oldest_schema_v2_normalized_config() {
+    let report = original_schema_v2_report();
+
+    assert!(matches!(read_report(&report), Ok(InputReport::Usable(_))));
+}
+
+#[test]
+fn input_accepts_an_additive_future_normalized_config_object() {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut document = valid_report();
+    document["run"]["normalized_config"] = json!({
+        "future_field": { "nested": [true, 7, null] }
+    });
+    let report = write_json(&fixture, "future-config.json", &document);
+
+    assert!(matches!(read_report(&report), Ok(InputReport::Usable(_))));
+}
+
+#[test]
+fn input_rejects_non_object_non_null_normalized_configs() {
+    let fixture = tempfile::tempdir().unwrap();
+    for (name, value) in [
+        ("array", json!([])),
+        ("string", json!("config")),
+        ("number", json!(2)),
+        ("boolean", json!(true)),
+    ] {
+        let mut document = valid_report();
+        document["run"]["normalized_config"] = value;
+        let report = write_json(&fixture, &format!("{name}.json"), &document);
+
+        assert!(read_report(&report).is_err());
+    }
+}
+
+#[test]
+fn input_rejects_a_missing_normalized_config() {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut document = valid_report();
+    document["run"]
+        .as_object_mut()
+        .unwrap()
+        .remove("normalized_config");
+    let report = write_json(&fixture, "missing-config.json", &document);
+
+    assert!(read_report(&report).is_err());
+}
+
 #[test]
 fn input_accepts_a_complete_baseline_success_report() {
     let fixture = tempfile::tempdir().unwrap();
