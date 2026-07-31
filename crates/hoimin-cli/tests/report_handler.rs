@@ -20,6 +20,17 @@ struct WriterState {
     flushes: usize,
 }
 
+#[test]
+fn original_schema_v2_report_fixture_matches_the_published_schema() {
+    let root = repo_root();
+    let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
+    let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
+    let report =
+        read_schema(&root.join("crates/hoimin-cli/tests/fixtures/reports/schema-v2-original.json"));
+
+    assert_schema_valid(&result_schema, &report, &event_schema);
+}
+
 impl Write for SharedWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0.lock().unwrap().bytes.extend_from_slice(buf);
