@@ -176,6 +176,39 @@ async fn documentation_contract() {
     for event in &jsonl_events {
         assert_schema_valid(&event_schema, event, &event_schema);
     }
+    assert_eq!(
+        document["run"]["verification_selection"]["policy"],
+        "file_round_robin_v1"
+    );
+    assert_eq!(
+        document["summary"]["verification_selection"]["policy"],
+        "file_round_robin_v1"
+    );
+    for kind in ["run_started", "run_finished"] {
+        let event = jsonl_events
+            .iter()
+            .find(|event| event["kind"] == kind)
+            .unwrap_or_else(|| panic!("missing {kind} fixture"));
+        assert_eq!(
+            event["verification_selection"]["policy"],
+            "file_round_robin_v1"
+        );
+    }
+
+    let mut missing_result_policy = document.clone();
+    missing_result_policy["run"]["verification_selection"]
+        .as_object_mut()
+        .unwrap()
+        .remove("policy");
+    assert_schema_invalid(&result_schema, &missing_result_policy, &event_schema);
+
+    let mut unknown_event_policy = jsonl_events
+        .iter()
+        .find(|event| event["kind"] == "run_started")
+        .unwrap()
+        .clone();
+    unknown_event_policy["verification_selection"]["policy"] = serde_json::json!("weighted");
+    assert_schema_invalid(&event_schema, &unknown_event_policy, &event_schema);
 
     let incomplete = actual_pre_baseline_report();
     assert!(incomplete["baseline"].is_null());
@@ -377,9 +410,22 @@ fn actual_pre_baseline_report() -> serde_json::Value {
     serde_json::from_str(stdout.text().trim()).unwrap()
 }
 
+fn documented_verification_selection() -> VerificationSelection {
+    VerificationSelection {
+        mode: VerificationSelectionMode::Top,
+        policy: VerificationSelectionPolicy::FileRoundRobinV1,
+        requested: 3,
+        selected: 3,
+        scope: VerificationSelectionScope::RetainedCandidates,
+        plan_truncated: false,
+    }
+}
+
 fn documented_events() -> Vec<OutputEvent> {
+    let mut run_started = RunStarted::minimal("documented-run", 1);
+    run_started.verification_selection = Some(documented_verification_selection());
     let mut events = vec![
-        OutputEvent::RunStarted(RunStarted::minimal("documented-run", 1)),
+        OutputEvent::RunStarted(run_started),
         OutputEvent::BaselineFinished(BaselineFinished {
             schema_version: REPORT_SCHEMA_VERSION,
             sequence: 2,
@@ -468,7 +514,7 @@ fn documented_events() -> Vec<OutputEvent> {
         counts: summary,
         complete: false,
         exit_code: 2,
-        verification_selection: None,
+        verification_selection: Some(documented_verification_selection()),
     }));
     events
 }

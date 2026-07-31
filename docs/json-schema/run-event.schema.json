@@ -125,9 +125,20 @@
     },
     "verificationSelection": {
       "type": "object",
-      "required": ["mode", "requested", "selected", "scope", "plan_truncated"],
+      "required": [
+        "mode",
+        "policy",
+        "requested",
+        "selected",
+        "scope",
+        "plan_truncated"
+      ],
       "properties": {
         "mode": { "type": "string", "enum": ["candidate_ids", "top"] },
+        "policy": {
+          "type": "string",
+          "enum": ["explicit_candidates", "strict", "file_round_robin_v1"]
+        },
         "requested": { "type": "integer", "minimum": 1 },
         "selected": { "type": "integer", "minimum": 0 },
         "scope": {
