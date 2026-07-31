@@ -183,3 +183,15 @@ jobs:
             delegated,
         )
         self.assertIn("! grep -Fq 'SKIP:' cgroup-v2.log", delegated)
+
+
+class ReleaseWorkflowContractTests(unittest.TestCase):
+    def test_version_tags_build_artifacts_without_publication_credentials(
+        self,
+    ) -> None:
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn("actions/upload-artifact@", workflow)
+        self.assertNotIn("\n  publish:\n", workflow)
+        self.assertNotIn("id-token: write", workflow)
+        self.assertNotIn("pypa/gh-action-pypi-publish@", workflow)

@@ -280,4 +280,6 @@ uv run python tests/wheel_smoke.py
 
 Windows Job Object tests run on Windows and Linux hard-limit tests require a delegated cgroup v2 runner. The ordinary Linux CI job verifies the explicit best-effort path separately.
 
-Releases are built only from matching `v*` tags. Before enabling publication, protect the repository `pypi` environment with the required reviewers or rules and register PyPI Trusted Publishing for this workflow and environment; the release job uses that environment's OIDC token rather than a stored upload token.
+Releases are built only from matching `v*` tags. Version tags build and retain wheel artifacts without publishing them to PyPI. Public distribution is not enabled.
+
+Before enabling public distribution, add a separate manually triggered workflow, protect its GitHub environment with required reviewers or equivalent rules, and register PyPI Trusted Publishing for only that workflow and environment. Grant `id-token: write` only to its publication job, and update the workflow contract tests in the same change.
