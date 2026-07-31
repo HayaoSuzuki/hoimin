@@ -633,6 +633,37 @@ async fn concrete_handler_does_not_spawn_python_for_analysis() {
 }
 
 #[tokio::test]
+async fn concrete_handler_reports_invalid_syntax_with_the_source_path() {
+    let directory = tempfile::tempdir().unwrap();
+    fs::create_dir(directory.path().join("src")).unwrap();
+    fs::write(directory.path().join("src/broken.py"), "def broken(:\n").unwrap();
+    let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
+    let finished = handler(root)
+        .handle(
+            analysis_request(78, "src/broken.py", true, 10),
+            &MutationOperatorSelection::default(),
+            MutationProfile::Full,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(finished.diagnostics.len(), 1);
+    assert_eq!(finished.diagnostics[0].code, "analyzer.invalid_syntax");
+    assert!(
+        finished.diagnostics[0].message.contains("src/broken.py"),
+        "{}",
+        finished.diagnostics[0].message
+    );
+    assert!(
+        finished.diagnostics[0]
+            .message
+            .contains("source could not be parsed"),
+        "{}",
+        finished.diagnostics[0].message
+    );
+}
+
+#[tokio::test]
 async fn concrete_handler_reports_source_read_failure() {
     let directory = tempfile::tempdir().unwrap();
     let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
@@ -668,6 +699,13 @@ async fn concrete_handler_truncates_at_candidate_limit() {
         )
         .await
         .unwrap();
+    assert_eq!(finished.diagnostics.len(), 1);
+    assert_eq!(finished.diagnostics[0].code, "analyzer.candidate_limit");
+    assert!(
+        finished.diagnostics[0].message.contains("src/calc.py"),
+        "{}",
+        finished.diagnostics[0].message
+    );
     let spool = finished.spool.unwrap();
     let (candidate, offset) = CandidateStore::replay_one(&spool, 0).unwrap().unwrap();
 
