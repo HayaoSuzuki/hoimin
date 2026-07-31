@@ -63,9 +63,15 @@ pub(crate) struct MutantKey {
     symbol: Option<String>,
 }
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+enum ComparisonKey {
+    CandidateId(String),
+    Content(MutantKey),
+}
+
 struct ReportMutants<'a> {
-    unique: HashMap<MutantKey, &'a MutantFinished>,
-    duplicates: HashSet<MutantKey>,
+    unique: HashMap<ComparisonKey, &'a MutantFinished>,
+    duplicates: HashSet<ComparisonKey>,
 }
 
 #[must_use]
@@ -126,8 +132,8 @@ fn compare_usable_reports(
     current: &UsableReport,
     candidate_set_eligibility: CandidateSetEligibility,
 ) -> Comparison {
-    let previous = index_mutants(&previous.mutants);
-    let current = index_mutants(&current.mutants);
+    let previous = index_mutants(&previous.mutants, candidate_set_eligibility);
+    let current = index_mutants(&current.mutants, candidate_set_eligibility);
     let ambiguous: HashSet<_> = previous
         .duplicates
         .union(&current.duplicates)
@@ -270,14 +276,27 @@ fn comparison_state(
     }
 }
 
-fn index_mutants(mutants: &[MutantFinished]) -> ReportMutants<'_> {
+fn index_mutants(
+    mutants: &[MutantFinished],
+    eligibility: CandidateSetEligibility,
+) -> ReportMutants<'_> {
     let mut unique = HashMap::new();
     let mut duplicates = HashSet::new();
 
     for mutant in mutants {
-        let key = key(&mutant.candidate);
-        if unique.insert(key.clone(), mutant).is_some() {
-            duplicates.insert(key);
+        match eligibility {
+            CandidateSetEligibility::Matching => {
+                unique.insert(
+                    ComparisonKey::CandidateId(mutant.candidate.id.clone()),
+                    mutant,
+                );
+            }
+            CandidateSetEligibility::Different | CandidateSetEligibility::Duplicate => {
+                let key = ComparisonKey::Content(key(&mutant.candidate));
+                if unique.insert(key.clone(), mutant).is_some() {
+                    duplicates.insert(key);
+                }
+            }
         }
     }
 
