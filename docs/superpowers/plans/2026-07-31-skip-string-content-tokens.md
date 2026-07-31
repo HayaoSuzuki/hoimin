@@ -10,10 +10,11 @@
 
 ---
 
-## Task 1: Add the regression contract
+## Task 1: Add the regression contract and filter middle-string tokens
 
 **Files:**
 
+- Modify: `crates/hoimin-cli/src/analyzer/rust.rs`
 - Modify: `crates/hoimin-cli/src/analyzer/rust_tests.rs`
 
 ### Step 1: Add a failing literal-content test
@@ -49,18 +50,7 @@ Assert that literal `-` content is ignored while the `+` and `is not` expression
 
 Run the focused test and record its behavior before implementation.
 
-### Step 3: Commit the test-only RED state only if project conventions permit
-
-Do not leave the branch failing at task completion. The production fix belongs in Task 2 and may be committed together with these tests after GREEN.
-
-## Task 2: Filter only Ruff middle-string tokens
-
-**Files:**
-
-- Modify: `crates/hoimin-cli/src/analyzer/rust.rs`
-- Modify: `crates/hoimin-cli/src/analyzer/rust_tests.rs`
-
-### Step 1: Implement the minimal token-kind guard
+### Step 3: Implement the minimal token-kind guard
 
 Import Ruff's public token kind:
 
@@ -81,7 +71,7 @@ if matches!(
 
 Do not skip expression tokens between interpolation braces.
 
-### Step 2: Prove RED becomes GREEN
+### Step 4: Prove RED becomes GREEN
 
 Run both new focused tests. Expected: PASS.
 
@@ -93,7 +83,7 @@ cargo test -p hoimin-cli analyzer::rust::rust_tests
 
 Expected: all analyzer tests pass.
 
-### Step 3: Run full verification
+### Step 5: Run full verification
 
 Run:
 
@@ -107,7 +97,7 @@ git diff --check
 
 Expected: every command succeeds.
 
-### Step 4: Commit
+### Step 6: Commit
 
 Stage only the analyzer implementation, regression tests, and this plan:
 
