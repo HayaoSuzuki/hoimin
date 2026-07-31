@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 #[cfg(windows)]
 use std::ffi::{OsStr, OsString};
 use std::fs;
+use std::path::Path;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_cli::workspace::{CopyOptions, WorkspaceError, WorkspaceHandler};
@@ -11,10 +12,32 @@ use hoimin_core::{
     ResetWorker, RunBudgets, VerifyOriginals, release_workspace_copy, reserve_workspace_copy,
 };
 
+const SUPPORTED_WORKER_TREE_DEPTH: usize = 128;
+
 fn write(root: &Utf8Path, path: &str, bytes: &[u8]) {
     let destination = root.join(path);
     fs::create_dir_all(destination.parent().unwrap()).unwrap();
     fs::write(destination, bytes).unwrap();
+}
+
+fn create_nested_directories(root: &Path, depth: usize) -> String {
+    let mut directory = fs::File::open(root).unwrap();
+    let mut logical_path = String::new();
+    for index in 0..depth {
+        let name = format!("d{index}");
+        cap_primitives::fs::create_dir(
+            &directory,
+            Path::new(&name),
+            &cap_primitives::fs::DirOptions::new(),
+        )
+        .unwrap();
+        directory = cap_primitives::fs::open_dir_nofollow(&directory, Path::new(&name)).unwrap();
+        if !logical_path.is_empty() {
+            logical_path.push('/');
+        }
+        logical_path.push_str(&name);
+    }
+    logical_path
 }
 
 fn handler(root: &Utf8Path, workers: u32) -> WorkspaceHandler {
@@ -960,4 +983,50 @@ fn reset_retains_failed_discard_until_cleanup_then_allows_recreation() {
         .unwrap();
     release_workspace_copy(&mut ledger, &completed).unwrap();
     assert_eq!(ledger.reserved(hoimin_core::BudgetKind::Copy), 0);
+}
+
+#[test]
+fn reset_preserves_depth_error_while_discard_cleanup_is_pending() {
+    let project = tempfile::tempdir().unwrap();
+    let root = Utf8Path::from_path(project.path()).unwrap();
+    write(root, "pkg/a.py", b"original\n");
+    let mut handler = handler(root, 1);
+    let (_ledger, grant) = preflight_and_grant(&mut handler, 9);
+    handler
+        .handle_create_worker(grant.create_worker(EffectId(181), 0).unwrap())
+        .unwrap();
+    let worker_root = handler.worker(0).unwrap().root().to_owned();
+    let deepest =
+        create_nested_directories(worker_root.as_std_path(), SUPPORTED_WORKER_TREE_DEPTH + 1);
+
+    let failed = handler
+        .handle_reset_worker(ResetWorker {
+            id: EffectId(182),
+            worker: 0,
+        })
+        .unwrap_err();
+
+    assert!(matches!(
+        failed.failure,
+        EffectFailure::Io { ref code, .. } if code == "workspace.path.depth"
+    ));
+    assert_eq!(handler.worker_count(), 0);
+    assert_eq!(handler.pending_cleanup_count(), 1);
+    assert_eq!(handler.observed_copy_bytes(), 9);
+    assert_eq!(handler.materialized_worker_slots(), 1);
+
+    let retry = grant.create_worker(EffectId(183), 0).unwrap();
+    let blocked = handler.handle_create_worker(retry.clone()).unwrap_err();
+    assert!(matches!(
+        blocked.failure,
+        EffectFailure::Io { ref code, .. } if code == "workspace.path.depth"
+    ));
+    assert_eq!(handler.pending_cleanup_count(), 1);
+
+    fs::remove_dir(worker_root.join(deepest)).unwrap();
+    handler.handle_create_worker(retry).unwrap();
+    assert_eq!(handler.pending_cleanup_count(), 0);
+    assert_eq!(handler.worker_count(), 1);
+    assert_eq!(handler.observed_copy_bytes(), 9);
+    assert_eq!(handler.materialized_worker_slots(), 1);
 }

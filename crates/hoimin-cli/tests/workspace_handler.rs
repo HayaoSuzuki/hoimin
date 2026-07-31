@@ -65,6 +65,33 @@ fn create_nested_directories(root: &Path, depth: usize) -> String {
     logical_path
 }
 
+fn make_cleanup_wrapper_inaccessible(path: &Path) {
+    let mut permissions = fs::metadata(path).unwrap().permissions();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        permissions.set_mode(0o0);
+    }
+    #[cfg(windows)]
+    permissions.set_readonly(true);
+    fs::set_permissions(path, permissions).unwrap();
+}
+
+fn make_cleanup_wrapper_accessible(path: &Path) {
+    let mut permissions = fs::metadata(path).unwrap().permissions();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        permissions.set_mode(0o700);
+    }
+    #[cfg(windows)]
+    {
+        #[allow(clippy::permissions_set_readonly_false)]
+        permissions.set_readonly(false);
+    }
+    fs::set_permissions(path, permissions).unwrap();
+}
+
 fn preflight_plan(root: &Utf8Path, workers: u32, options: CopyOptions) -> WorkspacePlan {
     WorkspacePlan::preflight(root, EffectId(900), workers, options).unwrap()
 }
@@ -252,6 +279,22 @@ fn cleanup_reports_the_same_depth_error_as_reset() {
             ..
         }
     ));
+}
+
+#[test]
+fn cleanup_restores_access_to_the_temporary_wrapper() {
+    let project = FixtureProject::new();
+    let mut worker = create_worker(project.root());
+    let wrapper = worker.root().parent().unwrap().to_owned();
+    make_cleanup_wrapper_inaccessible(wrapper.as_std_path());
+
+    if let Err(error) = worker.try_cleanup() {
+        make_cleanup_wrapper_accessible(wrapper.as_std_path());
+        worker.try_cleanup().unwrap();
+        panic!("cleanup did not restore wrapper permissions: {error}");
+    }
+
+    assert!(!wrapper.exists());
 }
 
 #[test]

@@ -385,6 +385,12 @@ impl WorkerWorkspace {
             return Ok(());
         }
         self.root.close();
+        let wrapper = self.temp.path();
+        let wrapper_metadata = fs::symlink_metadata(wrapper).map_err(|error| {
+            let wrapper = Utf8Path::from_path(wrapper).unwrap_or(self.root.path());
+            WorkspaceError::io("inspect cleanup wrapper", wrapper, error)
+        })?;
+        make_cleanup_entry_accessible(wrapper, &wrapper_metadata)?;
         make_tree_writable(self.root.path().as_std_path())?;
         match fs::remove_dir_all(self.temp.path()) {
             Ok(()) => {
@@ -720,11 +726,15 @@ impl WorkspaceHandler {
                         Ok(()) => error,
                         Err(cleanup_error) => {
                             self.pending_cleanup.insert(worker, discarded);
-                            WorkspaceError::WorkspaceRestore {
-                                path: discarded_root,
-                                message: format!(
-                                    "{error}; discard cleanup failed: {cleanup_error}"
-                                ),
+                            if matches!(error, WorkspaceError::TreeDepthExceeded { .. }) {
+                                error
+                            } else {
+                                WorkspaceError::WorkspaceRestore {
+                                    path: discarded_root,
+                                    message: format!(
+                                        "{error}; discard cleanup failed: {cleanup_error}"
+                                    ),
+                                }
                             }
                         }
                     }
