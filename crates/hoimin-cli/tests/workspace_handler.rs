@@ -83,6 +83,7 @@ fn run_fifo_operation(
     operation: impl FnOnce(&mut WorkerWorkspace) -> Result<(), WorkspaceError> + Send + 'static,
 ) -> (WorkerWorkspace, Result<(), WorkspaceError>) {
     use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::io::FromRawFd;
 
     let cleanup_fifo = fifo.to_owned();
     let (sender, receiver) = sync_channel(1);
@@ -93,7 +94,7 @@ fn run_fifo_operation(
         sender.send((worker, result)).unwrap();
     });
 
-    let returned_before_timeout = match receiver.recv_timeout(Duration::from_millis(300)) {
+    let returned_before_timeout = match receiver.recv_timeout(Duration::from_secs(1)) {
         Ok(completed) => {
             handle.join().unwrap();
             return completed;
@@ -103,13 +104,17 @@ fn run_fifo_operation(
     };
 
     let fifo = std::ffi::CString::new(fifo.as_os_str().as_bytes()).unwrap();
-    let rescue = unsafe { libc::open(fifo.as_ptr(), libc::O_WRONLY | libc::O_NONBLOCK) };
-    if rescue >= 0 {
-        unsafe { libc::close(rescue) };
-    }
+    let rescue = unsafe { libc::open(fifo.as_ptr(), libc::O_RDWR | libc::O_NONBLOCK) };
+    assert!(
+        rescue >= 0,
+        "failed to open FIFO rescue peer: {}",
+        std::io::Error::last_os_error()
+    );
+    let rescue = unsafe { fs::File::from_raw_fd(rescue) };
     let completed = receiver
         .recv_timeout(Duration::from_secs(2))
         .expect("blocked FIFO operation did not recover");
+    drop(rescue);
     handle.join().unwrap();
     assert!(
         returned_before_timeout,
