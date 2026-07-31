@@ -343,6 +343,35 @@ fn compare_regression_takes_precedence_over_improvement_in_a_mixed_transition() 
 }
 
 #[test]
+fn matching_candidate_ids_pair_mutants_with_the_same_content_key() {
+    let same_status = || {
+        usable(vec![
+            mutant_with_id("stable-a", "shared", MutationStatus::Killed),
+            mutant_with_id("stable-b", "shared", MutationStatus::Killed),
+        ])
+    };
+    let result = compare_reports(
+        &[
+            same_status(),
+            same_status(),
+            usable(vec![
+                mutant_with_id("stable-a", "shared", MutationStatus::Killed),
+                mutant_with_id("stable-b", "shared", MutationStatus::Survived),
+            ]),
+        ],
+        nz(3),
+    );
+
+    let comparison = &result.comparisons[1];
+    assert_eq!(comparison.common, 2);
+    assert_eq!(comparison.ambiguous, 0);
+    assert_eq!(comparison.regressions, 1);
+    assert_eq!(comparison.state, ProgressState::Regressing);
+    assert_eq!(result.consecutive_stalls, 0);
+    assert_eq!(result.latest, ProgressState::Regressing);
+}
+
+#[test]
 fn compare_scores_include_survivors_from_both_reports() {
     let result = compare_reports(
         &[
@@ -525,7 +554,7 @@ fn compare_an_empty_common_set_breaks_the_stall_chain() {
             killed(),
             killed(),
             usable(vec![mutant_with_id(
-                "common",
+                "different-id",
                 "different",
                 MutationStatus::Killed,
             )]),
@@ -817,9 +846,11 @@ async fn output_ambiguity_is_structured_and_warned_on_stderr() {
     ambiguous["mutants"] = json!([first_mutant, duplicate_mutant]);
     ambiguous["summary"]["sequence"] = json!(5);
     ambiguous["summary"]["counts"]["killed"] = json!(2);
+    let mut different_ids = ambiguous.clone();
+    different_ids["mutants"][1]["candidate"]["id"] = json!("mutant-3");
     let reports = vec![
         write_json(&fixture, "before.json", &ambiguous),
-        write_json(&fixture, "after.json", &ambiguous),
+        write_json(&fixture, "after.json", &different_ids),
     ];
 
     let (code, stdout, stderr) = run_progress(&reports, "json").await;
