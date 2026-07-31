@@ -20,6 +20,8 @@ use hoimin_core::{
 };
 use tempfile::TempDir;
 
+const SUPPORTED_WORKER_TREE_DEPTH: usize = 128;
+
 struct FixtureProject {
     temp: TempDir,
 }
@@ -41,6 +43,26 @@ fn write_file(root: &Path, path: &str, contents: &[u8]) {
     let destination = root.join(path);
     fs::create_dir_all(destination.parent().unwrap()).unwrap();
     fs::write(destination, contents).unwrap();
+}
+
+fn create_nested_directories(root: &Path, depth: usize) -> String {
+    let mut directory = fs::File::open(root).unwrap();
+    let mut logical_path = String::new();
+    for index in 0..depth {
+        let name = format!("d{index}");
+        cap_primitives::fs::create_dir(
+            &directory,
+            Path::new(&name),
+            &cap_primitives::fs::DirOptions::new(),
+        )
+        .unwrap();
+        directory = cap_primitives::fs::open_dir_nofollow(&directory, Path::new(&name)).unwrap();
+        if !logical_path.is_empty() {
+            logical_path.push('/');
+        }
+        logical_path.push_str(&name);
+    }
+    logical_path
 }
 
 fn preflight_plan(root: &Utf8Path, workers: u32, options: CopyOptions) -> WorkspacePlan {
@@ -185,6 +207,51 @@ fn reset_restores_changed_and_deleted_files_and_removes_new_files() {
         fs::read(project.root().join("pkg/a.py")).unwrap(),
         b"original\n"
     );
+}
+
+#[test]
+fn reset_handles_a_tree_at_the_supported_depth() {
+    let project = FixtureProject::new();
+    let mut worker = create_worker(project.root());
+    create_nested_directories(worker.root().as_std_path(), SUPPORTED_WORKER_TREE_DEPTH);
+
+    worker.reset().unwrap();
+
+    assert!(!worker.exists("d0").unwrap());
+}
+
+#[test]
+fn reset_reports_a_depth_error_beyond_the_supported_depth() {
+    let project = FixtureProject::new();
+    let mut worker = create_worker(project.root());
+    create_nested_directories(worker.root().as_std_path(), SUPPORTED_WORKER_TREE_DEPTH + 1);
+
+    let error = worker.reset().unwrap_err();
+
+    assert!(matches!(
+        error,
+        WorkspaceError::TreeDepthExceeded {
+            limit: SUPPORTED_WORKER_TREE_DEPTH,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn cleanup_reports_the_same_depth_error_as_reset() {
+    let project = FixtureProject::new();
+    let mut worker = create_worker(project.root());
+    create_nested_directories(worker.root().as_std_path(), SUPPORTED_WORKER_TREE_DEPTH + 1);
+
+    let error = worker.try_cleanup().unwrap_err();
+
+    assert!(matches!(
+        error,
+        WorkspaceError::TreeDepthExceeded {
+            limit: SUPPORTED_WORKER_TREE_DEPTH,
+            ..
+        }
+    ));
 }
 
 #[test]

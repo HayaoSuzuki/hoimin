@@ -22,6 +22,10 @@ pub use copy::WorkspacePlan;
 pub use manifest::{ManifestEntry, WorkspaceManifest};
 use root::WorkerRoot;
 
+/// Each worker-tree level may retain a directory and iterator handle while it
+/// is being visited. Keep enough headroom for the process's other open files.
+pub(super) const MAX_WORKER_TREE_DEPTH: usize = 128;
+
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum RootRelativeReadError {
     #[error("root-relative file was not found")]
@@ -113,6 +117,8 @@ pub enum WorkspaceError {
     WorkerMissing { worker: u32 },
     #[error("workspace path is not a normalized root-relative path: {path}")]
     InvalidPath { path: Utf8PathBuf },
+    #[error("workspace tree depth exceeds limit {limit}: {path}")]
+    TreeDepthExceeded { path: Utf8PathBuf, limit: usize },
     #[error("workspace plan state was poisoned")]
     StatePoisoned,
     #[error("invalid workspace include/exclude glob: {0}")]
@@ -164,6 +170,7 @@ impl WorkspaceError {
             | Self::MutationOriginalMismatch { .. } => "workspace.mutation.invalid",
             Self::InvalidGlob(_) => "workspace.glob.invalid",
             Self::InvalidPath { .. } => "workspace.path.invalid",
+            Self::TreeDepthExceeded { .. } => "workspace.path.depth",
             _ => "workspace.io",
         }
     }
@@ -216,26 +223,39 @@ fn permission_fingerprint(permissions: &fs::Permissions) -> PermissionFingerprin
 }
 
 fn make_tree_writable(root: &Path) -> Result<(), WorkspaceError> {
-    let metadata = match fs::symlink_metadata(root) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => {
-            let path = Utf8Path::from_path(root).ok_or(WorkspaceError::NonUtf8Path)?;
-            return Err(WorkspaceError::io("inspect cleanup path", path, error));
+    let mut stack = vec![(root.to_owned(), 0_usize)];
+    while let Some((path, depth)) = stack.pop() {
+        let metadata = match fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                let path = Utf8Path::from_path(&path).ok_or(WorkspaceError::NonUtf8Path)?;
+                return Err(WorkspaceError::io("inspect cleanup path", path, error));
+            }
+        };
+        if metadata.file_type().is_symlink() {
+            continue;
         }
-    };
-    if metadata.file_type().is_symlink() {
-        return Ok(());
-    }
-    make_cleanup_entry_accessible(root, &metadata)?;
-    if metadata.is_dir() {
-        let path = Utf8Path::from_path(root).ok_or(WorkspaceError::NonUtf8Path)?;
-        let entries = fs::read_dir(root)
-            .map_err(|error| WorkspaceError::io("read cleanup directory", path, error))?;
-        for entry in entries {
-            let entry =
-                entry.map_err(|error| WorkspaceError::io("read cleanup entry", path, error))?;
-            make_tree_writable(&entry.path())?;
+        make_cleanup_entry_accessible(&path, &metadata)?;
+        if metadata.is_dir() {
+            let utf8_path = Utf8Path::from_path(&path).ok_or(WorkspaceError::NonUtf8Path)?;
+            let entries = fs::read_dir(&path)
+                .map_err(|error| WorkspaceError::io("read cleanup directory", utf8_path, error))?;
+            for entry in entries {
+                let entry = entry
+                    .map_err(|error| WorkspaceError::io("read cleanup entry", utf8_path, error))?;
+                let child = entry.path();
+                let child_depth = depth + 1;
+                if child_depth > MAX_WORKER_TREE_DEPTH {
+                    let child = Utf8PathBuf::from_path_buf(child)
+                        .map_err(|_| WorkspaceError::NonUtf8Path)?;
+                    return Err(WorkspaceError::TreeDepthExceeded {
+                        path: child,
+                        limit: MAX_WORKER_TREE_DEPTH,
+                    });
+                }
+                stack.push((child, child_depth));
+            }
         }
     }
     Ok(())
@@ -365,7 +385,7 @@ impl WorkerWorkspace {
             return Ok(());
         }
         self.root.close();
-        make_tree_writable(self.temp.path())?;
+        make_tree_writable(self.root.path().as_std_path())?;
         match fs::remove_dir_all(self.temp.path()) {
             Ok(()) => {
                 self.cleanup_complete = true;
