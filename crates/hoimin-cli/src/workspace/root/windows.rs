@@ -28,7 +28,7 @@ use windows_sys::Win32::System::IO::IO_STATUS_BLOCK;
 
 use super::{
     WindowsCreateDisposition, WindowsFinalOperation, WorkspaceError, make_file_writable,
-    windows_final_name_is_valid,
+    windows_final_name_units_are_valid,
 };
 
 pub(super) fn read(
@@ -194,8 +194,7 @@ fn open_final_handle(
     name: &OsStr,
     operation: WindowsFinalOperation,
 ) -> Result<File, io::Error> {
-    let name = name.to_string_lossy();
-    let mut wide = OsStr::new(name.as_ref()).encode_wide().collect::<Vec<_>>();
+    let mut wide = encode_final_name(name);
     let byte_len = wide
         .len()
         .checked_mul(size_of::<u16>())
@@ -254,13 +253,17 @@ const fn create_options(operation: WindowsFinalOperation) -> u32 {
 }
 
 fn validate_final_name(name: &OsStr, logical_path: &Utf8Path) -> Result<(), WorkspaceError> {
-    if windows_final_name_is_valid(&name.to_string_lossy()) {
+    if windows_final_name_units_are_valid(&encode_final_name(name)) {
         Ok(())
     } else {
         Err(WorkspaceError::InvalidPath {
             path: logical_path.to_owned(),
         })
     }
+}
+
+fn encode_final_name(name: &OsStr) -> Vec<u16> {
+    name.encode_wide().collect()
 }
 
 fn validate_opened_file(file: File, logical_path: &Utf8Path) -> Result<File, WorkspaceError> {
@@ -383,6 +386,15 @@ fn mark_delete_by_handle(file: &File) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn final_name_encoding_preserves_a_lone_surrogate() {
+        use std::os::windows::ffi::OsStringExt;
+
+        let name = OsString::from_wide(&[u16::from(b'x'), 0xD800]);
+
+        assert_eq!(encode_final_name(&name), vec![u16::from(b'x'), 0xD800]);
+    }
 
     #[test]
     fn access_profiles_match_operation_side_effects() {
