@@ -1,6 +1,7 @@
-use std::time::Duration;
+use std::thread;
+use std::time::{Duration, Instant};
 
-use rusqlite::Connection;
+use rusqlite::{Connection, ErrorCode, Transaction, TransactionBehavior};
 use thiserror::Error;
 
 pub(crate) const SCHEMA_VERSION: i64 = 2;
@@ -9,29 +10,74 @@ pub(crate) const SCHEMA_VERSION: i64 = 2;
 pub enum SchemaError {
     #[error("SQLite schema version {0} is newer than this hoimin build")]
     FutureVersion(i64),
+    #[error("SQLite refused WAL journal mode and remained in {0} mode")]
+    JournalMode(String),
     #[error("failed to configure or migrate SQLite session: {0}")]
     Database(#[from] rusqlite::Error),
 }
 
-pub(crate) fn configure(connection: &Connection) -> Result<(), SchemaError> {
-    connection.busy_timeout(Duration::from_secs(5))?;
+pub(crate) fn configure(connection: &mut Connection) -> Result<(), SchemaError> {
+    configure_observed(connection, || {})
+}
+
+fn configure_observed(
+    connection: &mut Connection,
+    after_initial_version_read: impl FnOnce(),
+) -> Result<(), SchemaError> {
+    const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+
+    connection.busy_timeout(BUSY_TIMEOUT)?;
     connection.pragma_update(None, "foreign_keys", "ON")?;
-    let _: String = connection.query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))?;
+    enable_wal(connection, BUSY_TIMEOUT)?;
     let version: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    after_initial_version_read();
+    if version == SCHEMA_VERSION {
+        return Ok(());
+    }
+
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let version: i64 = transaction.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version > SCHEMA_VERSION {
         return Err(SchemaError::FutureVersion(version));
     }
     if version == 0 {
-        migrate_v1(connection)?;
+        migrate_v1(&transaction)?;
     }
     if version <= 1 {
-        migrate_v2(connection)?;
+        migrate_v2(&transaction)?;
     }
+    transaction.commit()?;
     Ok(())
 }
 
-fn migrate_v1(connection: &Connection) -> Result<(), rusqlite::Error> {
-    let transaction = connection.unchecked_transaction()?;
+fn enable_wal(connection: &Connection, timeout: Duration) -> Result<(), SchemaError> {
+    const RETRY_BACKOFF: Duration = Duration::from_millis(5);
+
+    let deadline = Instant::now() + timeout;
+    loop {
+        match connection.query_row("PRAGMA journal_mode=WAL", [], |row| row.get::<_, String>(0)) {
+            Ok(mode) if mode.eq_ignore_ascii_case("wal") || mode.eq_ignore_ascii_case("memory") => {
+                return Ok(());
+            }
+            Ok(mode) => return Err(SchemaError::JournalMode(mode)),
+            Err(error) if is_lock_contention(&error) && Instant::now() < deadline => {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                thread::sleep(RETRY_BACKOFF.min(remaining));
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+}
+
+fn is_lock_contention(error: &rusqlite::Error) -> bool {
+    matches!(
+        error,
+        rusqlite::Error::SqliteFailure(failure, _)
+            if matches!(failure.code, ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked)
+    )
+}
+
+fn migrate_v1(transaction: &Transaction<'_>) -> Result<(), rusqlite::Error> {
     transaction.execute_batch(
         "CREATE TABLE fingerprints (
              digest BLOB PRIMARY KEY NOT NULL CHECK(length(digest) = 32),
@@ -88,26 +134,29 @@ fn migrate_v1(connection: &Connection) -> Result<(), rusqlite::Error> {
          );
          PRAGMA user_version=1;",
     )?;
-    transaction.commit()
+    Ok(())
 }
 
-fn migrate_v2(connection: &Connection) -> Result<(), rusqlite::Error> {
-    let transaction = connection.unchecked_transaction()?;
+fn migrate_v2(transaction: &Transaction<'_>) -> Result<(), rusqlite::Error> {
     transaction.execute_batch(
         "CREATE INDEX diagnostics_result ON diagnostics(run_id, mutant_id, id);
          PRAGMA user_version=2;",
     )?;
-    transaction.commit()
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+    use std::sync::{Arc, Condvar, Mutex, PoisonError};
+    use std::thread;
+    use std::time::Duration;
 
     #[test]
     fn configures_busy_timeout_on_the_handler_connection() {
-        let connection = Connection::open_in_memory().unwrap();
-        configure(&connection).unwrap();
+        let mut connection = Connection::open_in_memory().unwrap();
+        configure(&mut connection).unwrap();
 
         let timeout: i64 = connection
             .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
@@ -117,8 +166,8 @@ mod tests {
 
     #[test]
     fn diagnostics_queries_use_the_result_index() {
-        let connection = Connection::open_in_memory().unwrap();
-        configure(&connection).unwrap();
+        let mut connection = Connection::open_in_memory().unwrap();
+        configure(&mut connection).unwrap();
 
         for sql in [
             "SELECT mutant_id,level,code,message FROM diagnostics
@@ -139,13 +188,13 @@ mod tests {
     fn upgrades_v1_preserves_data_and_reopens_idempotently() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("session.sqlite3");
-        let connection = Connection::open(&path).unwrap();
-        create_v1_fixture(&connection, true);
+        let mut connection = Connection::open(&path).unwrap();
+        create_v1_fixture(&mut connection, true);
         drop(connection);
 
         for _ in 0..2 {
-            let connection = Connection::open(&path).unwrap();
-            configure(&connection).unwrap();
+            let mut connection = Connection::open(&path).unwrap();
+            configure(&mut connection).unwrap();
             assert_eq!(user_version(&connection), 2);
             assert_eq!(
                 connection
@@ -171,10 +220,10 @@ mod tests {
 
     #[test]
     fn failed_v1_upgrade_rolls_back_version_and_index() {
-        let connection = Connection::open_in_memory().unwrap();
-        create_v1_fixture(&connection, false);
+        let mut connection = Connection::open_in_memory().unwrap();
+        create_v1_fixture(&mut connection, false);
 
-        assert!(configure(&connection).is_err());
+        assert!(configure(&mut connection).is_err());
         assert_eq!(user_version(&connection), 1);
         assert_eq!(
             connection
@@ -187,6 +236,156 @@ mod tests {
                 .unwrap(),
             0
         );
+    }
+
+    #[test]
+    fn future_version_is_rejected_without_modifying_the_database() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE future_schema_marker(value TEXT);
+                 PRAGMA user_version=3;",
+            )
+            .unwrap();
+
+        assert!(matches!(
+            configure(&mut connection),
+            Err(SchemaError::FutureVersion(3))
+        ));
+        assert_eq!(user_version(&connection), 3);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT count(*) FROM sqlite_master
+                     WHERE type='table' AND name='future_schema_marker'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn concurrent_configure_of_fresh_database_succeeds_for_both_connections() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("session.sqlite3");
+
+        let results = configure_concurrently(&path);
+
+        assert!(
+            results.iter().all(Result::is_ok),
+            "concurrent schema configuration failed: {results:?}"
+        );
+        let connection = Connection::open(path).unwrap();
+        assert_eq!(user_version(&connection), SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn concurrent_v1_upgrade_succeeds_and_preserves_data() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("session.sqlite3");
+        let mut connection = Connection::open(&path).unwrap();
+        create_v1_fixture(&mut connection, true);
+        connection
+            .query_row("PRAGMA journal_mode=WAL", [], |row| row.get::<_, String>(0))
+            .unwrap();
+        drop(connection);
+
+        let results = configure_concurrently(&path);
+
+        assert!(
+            results.iter().all(Result::is_ok),
+            "concurrent schema upgrade failed: {results:?}"
+        );
+        let connection = Connection::open(path).unwrap();
+        assert_eq!(user_version(&connection), SCHEMA_VERSION);
+        assert_eq!(
+            connection
+                .query_row("SELECT message FROM diagnostics WHERE id=7", [], |row| {
+                    row.get::<_, String>(0)
+                })
+                .unwrap(),
+            "preserve me"
+        );
+    }
+
+    fn configure_concurrently(path: &Path) -> Vec<Result<(), String>> {
+        let start = Arc::new(MigrationRendezvous::default());
+        let migration = Arc::new(MigrationRendezvous::default());
+        let handles: Vec<_> = (0..2)
+            .map(|_| {
+                let path = path.to_owned();
+                let start = Arc::clone(&start);
+                let migration = Arc::clone(&migration);
+                thread::spawn(move || {
+                    let mut connection =
+                        Connection::open(path).map_err(|error| error.to_string())?;
+                    start.arrive_and_wait();
+                    configure_observed(&mut connection, || {
+                        migration.arrive_and_wait();
+                    })
+                    .map_err(|error| error.to_string())
+                })
+            })
+            .collect();
+        start.release_when_ready();
+        migration.release_when_ready();
+        let joined: Vec<_> = handles.into_iter().map(thread::JoinHandle::join).collect();
+        assert_eq!(start.failure(), None, "configure start rendezvous failed");
+        assert_eq!(migration.failure(), None, "migration rendezvous failed");
+        joined
+            .into_iter()
+            .map(|result| result.expect("configure thread panicked"))
+            .collect()
+    }
+
+    #[derive(Default)]
+    struct MigrationRendezvous {
+        state: Mutex<RendezvousState>,
+        changed: Condvar,
+    }
+
+    #[derive(Default)]
+    struct RendezvousState {
+        arrived: usize,
+        released: bool,
+        failure: Option<&'static str>,
+    }
+
+    impl MigrationRendezvous {
+        fn arrive_and_wait(&self) {
+            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            state.arrived += 1;
+            self.changed.notify_all();
+            let (mut state, timeout) = self
+                .changed
+                .wait_timeout_while(state, Duration::from_secs(5), |state| !state.released)
+                .unwrap_or_else(PoisonError::into_inner);
+            if timeout.timed_out() && !state.released {
+                state.failure.get_or_insert("participant timed out");
+            }
+        }
+
+        fn release_when_ready(&self) {
+            let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            let (mut state, timeout) = self
+                .changed
+                .wait_timeout_while(state, Duration::from_secs(5), |state| state.arrived < 2)
+                .unwrap_or_else(PoisonError::into_inner);
+            if timeout.timed_out() && state.arrived < 2 {
+                state.failure.get_or_insert("coordinator timed out");
+            }
+            state.released = true;
+            self.changed.notify_all();
+        }
+
+        fn failure(&self) -> Option<&'static str> {
+            self.state
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .failure
+        }
     }
 
     fn query_plan(connection: &Connection, sql: &str) -> Vec<String> {
@@ -206,9 +405,11 @@ mod tests {
             .unwrap()
     }
 
-    fn create_v1_fixture(connection: &Connection, valid: bool) {
+    fn create_v1_fixture(connection: &mut Connection, valid: bool) {
         if valid {
-            migrate_v1(connection).unwrap();
+            let transaction = connection.transaction().unwrap();
+            migrate_v1(&transaction).unwrap();
+            transaction.commit().unwrap();
             connection
                 .execute_batch(
                     "INSERT INTO fingerprints(digest,schema_version) VALUES (zeroblob(32),1);
