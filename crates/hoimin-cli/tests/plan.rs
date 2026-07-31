@@ -409,7 +409,7 @@ async fn verify_rejects_changed_fingerprint_input_before_baseline() {
 }
 
 #[tokio::test]
-async fn verify_rejects_fingerprint_input_changed_after_preparation_before_execution() {
+async fn verify_rejects_fingerprint_input_deleted_after_preparation_before_execution() {
     let project = Project::new();
     let (path, manifest, marker) =
         write_plan_manifest(&project, &["--fingerprint-include", "config.toml"]).await;
@@ -417,17 +417,19 @@ async fn verify_rejects_fingerprint_input_changed_after_preparation_before_execu
     let verified = prepare_verify(&path, &requested, OutputFormat::Jsonl)
         .await
         .unwrap();
-    std::fs::write(project.path.join("config.toml"), "[changed]\n").unwrap();
+    let fingerprint_copy_inputs = verified.fingerprint_copy_inputs();
+    std::fs::remove_file(project.path.join("config.toml")).unwrap();
     let ResolvedVerifySelection::ExplicitCandidates(candidate_ids) = verified.selection else {
         panic!("explicit candidate verification must retain an explicit selection");
     };
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
 
-    let exit = shell::run_selected_loop(
+    let exit = shell::run_selected_loop_with_fingerprint_inputs(
         verified.config,
         candidate_ids,
         verified.verification_selection,
+        fingerprint_copy_inputs,
         &mut stdout,
         &mut stderr,
     )

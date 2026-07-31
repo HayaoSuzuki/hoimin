@@ -24,6 +24,10 @@ where
     run_with_io(args, &mut stdout, &mut stderr).await
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "top-level command dispatch keeps each CLI result and diagnostic path explicit"
+)]
 pub async fn run_with_io<I, T, Stdout, Stderr>(
     args: I,
     stdout: &mut Stdout,
@@ -88,20 +92,22 @@ where
                     let verification_selection = verified.verification_selection;
                     let result = match verified.selection {
                         plan::ResolvedVerifySelection::ExplicitCandidates(candidate_ids) => {
-                            shell::run_selected_loop(
+                            shell::run_selected_loop_with_fingerprint_inputs(
                                 verified.config,
                                 candidate_ids,
                                 verification_selection,
+                                verified.fingerprint_copy_inputs,
                                 &mut *stdout,
                                 &mut *stderr,
                             )
                             .await
                         }
                         plan::ResolvedVerifySelection::RankedCandidates(candidate_ids) => {
-                            shell::run_ordered_selected_loop(
+                            shell::run_ordered_selected_loop_with_fingerprint_inputs(
                                 verified.config,
                                 candidate_ids,
                                 verification_selection,
+                                verified.fingerprint_copy_inputs,
                                 &mut *stdout,
                                 &mut *stderr,
                             )

@@ -11,17 +11,31 @@ attributing results to stale configuration provenance.
 
 ## Design
 
-Re-resolve fingerprint inputs immediately after
-`WorkspaceHandler::handle_preflight` has finished the shared snapshot and
-before `prepare_fingerprint` or `PreflightCompleted`. Compare the newly
-resolved records with the records frozen into normalized configuration.
+Re-resolve fingerprint inputs inside workspace preflight, after the initial
+workspace manifest is built and immediately before the shared snapshot is
+materialized. Compare the newly resolved records with the records frozen into
+normalized configuration.
 
 This ordering closes the relevant TOCTOU window:
 
-- A change before or during snapshot construction is visible to the
-  post-snapshot recheck and is rejected.
-- A change after the recheck cannot alter the already-materialized shared
-  snapshot used by workers.
+- A change before validation is visible to the recheck and is rejected.
+- A change between validation and snapshot materialization disagrees with the
+  initial manifest and is rejected while the snapshot is copied.
+- A change during or after snapshot materialization disagrees with either the
+  manifest hash or the final manifest rescan.
+
+Validation continues to read the original root, preserving the documented
+independence between fingerprint selection and worker-copy include/exclude
+policy. The surrounding manifest/snapshot checks couple copied inputs to the
+immutable worker view without requiring ignored or explicitly excluded
+fingerprint inputs to be copied.
+
+Record which prepared fingerprint paths are copy targets in `VerifiedPlan`,
+before verify preparation returns. Pass that private sidecar into selected
+execution. During preflight, compare those paths and all manifest-matched
+selectors directly with the initial manifest. This closes content, addition,
+and deletion ABA cycles without treating intentionally ignored or excluded
+fingerprint inputs as missing worker files.
 
 Reuse the existing capability-relative fingerprint resolver so link,
 reparse-point, traversal, UTF-8, and read-error policy stays identical. Report
@@ -50,28 +64,36 @@ focused cases for deletion or unsafe replacement only where they clarify
 error mapping; the resolver's no-follow and path behavior already has its own
 dedicated tests.
 
-## Task 2: Recheck against the completed snapshot boundary
+## Task 2: Recheck inside the snapshot boundary
 
 **Files:**
 
 - Modify: `crates/hoimin-cli/src/fingerprint_inputs.rs`
+- Modify: `crates/hoimin-cli/src/plan.rs`
 - Modify: `crates/hoimin-cli/src/shell.rs`
+- Modify: `crates/hoimin-cli/src/workspace/copy.rs`
+- Modify: `crates/hoimin-cli/src/workspace/mod.rs`
+- Modify: `crates/hoimin-cli/src/lib.rs`
 
 Add a small helper that resolves the normalized selectors from the original
 root and compares the sorted, unique records with the expected configuration
 records. Preserve existing resolver diagnostics internally, while mapping any
 failure at this lifecycle boundary to the stable changed-input code.
 
-In the `RunEffect::Preflight` handler, keep this order:
+Add an internal validated-preflight path while preserving the existing
+workspace handler API. Keep this order:
 
-1. Complete `handle_preflight` and its immutable shared snapshot.
-2. Recheck fingerprint inputs.
-3. Prepare the run fingerprint.
-4. Return `PreflightCompleted`.
+1. Build the initial workspace manifest.
+2. Recheck fingerprint inputs against the original root and directly compare
+   copied records with the initial manifest.
+3. Materialize the immutable shared snapshot from that manifest.
+4. Re-scan the workspace and reject manifest drift.
+5. Prepare the run fingerprint and return `PreflightCompleted`.
 
 On failure, use the existing preflight effect ID so the machine follows its
 normal fatal diagnostic and cleanup path before worker creation or baseline
-execution. Document the ordering invariant near the call site.
+execution. Cover content ABA and unchanged ignored/explicitly-excluded exact
+and glob inputs in deterministic tests.
 
 Run the focused plan and fingerprint-input suites, shell/machine lifecycle
 tests, formatting, Clippy, full workspace tests, contract-feature tests, and

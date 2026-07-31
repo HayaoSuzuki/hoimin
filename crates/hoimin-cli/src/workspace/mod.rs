@@ -18,9 +18,17 @@ use hoimin_core::{
     ResetWorker, VerifyOriginals, WorkerCreated, WorkerReset,
 };
 
+use copy::ValidatedPreflightError;
 pub use copy::WorkspacePlan;
 pub use manifest::{ManifestEntry, WorkspaceManifest};
 use root::WorkerRoot;
+
+pub(crate) fn build_validation_manifest(
+    root: &Utf8Path,
+    options: &CopyOptions,
+) -> Result<WorkspaceManifest, WorkspaceError> {
+    manifest::build_manifest(root, options).map(|(manifest, _)| manifest)
+}
 
 /// Each worker-tree level may retain a directory and iterator handle while it
 /// is being visited. Keep enough headroom for the process's other open files.
@@ -639,6 +647,33 @@ impl WorkspaceHandler {
             completed
         })
         .map_err(|error| effect_failed(id, error))
+    }
+
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "event ownership is the workspace state-machine boundary"
+    )]
+    pub(crate) fn handle_preflight_validated(
+        &mut self,
+        request: Preflight,
+        validate: impl FnOnce(&Utf8Path, &WorkspaceManifest) -> Result<(), EffectFailed>,
+    ) -> Result<PreflightCompleted, EffectFailed> {
+        let id = request.id;
+        match WorkspacePlan::preflight_validated(
+            &self.original_root,
+            id,
+            self.requested_workers,
+            self.options.clone(),
+            validate,
+        ) {
+            Ok(plan) => {
+                let completed = plan.completed();
+                self.plan = Some(plan);
+                Ok(completed)
+            }
+            Err(ValidatedPreflightError::Workspace(error)) => Err(effect_failed(id, error)),
+            Err(ValidatedPreflightError::Validation(error)) => Err(error),
+        }
     }
 
     /// # Errors
