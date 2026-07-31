@@ -53,8 +53,8 @@ impl SessionHandler {
     /// configured.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, SessionError> {
         let path = path.as_ref();
-        let connection = Connection::open(path)?;
-        schema::configure(&connection)?;
+        let mut connection = Connection::open(path)?;
+        schema::configure(&mut connection)?;
         let lock_directory = ownership::lock_directory(path).map_err(SessionError::Ownership)?;
         Ok(Self {
             connection,
