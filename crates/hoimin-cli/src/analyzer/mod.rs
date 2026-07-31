@@ -283,6 +283,7 @@ fn analyze_and_store(
             id,
             spool,
             truncated,
+            diagnostics: Vec::new(),
         },
         store,
     ))

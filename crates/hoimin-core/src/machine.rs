@@ -3,17 +3,17 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use thiserror::Error;
 
 use crate::{
-    AnalyzeFile, ApplyMutation, BaselineFinished as BaselineOutput, BeginSession, BudgetLedger,
-    CandidateSpoolRef, Cleanup, Diagnostic, EffectFailed, EffectId, EmitOutput, ExitPolicy,
-    FinishSession, IntegrityCheckpoint, LoadSession, LookupStoredResult,
-    MutantFinished as MutantOutput, MutantResult, MutantStarted, MutantTimeout, MutationCandidate,
-    MutationStatus, MutationSummary, ObserveRemainingBudget, OutputEvent, PersistResult, Preflight,
-    ProcessFinished, ProcessLimits, ProcessTermination, ReadCandidate, ReservationId, ResetWorker,
-    ResolveTargets, ResumeDecision, RunBudgets, RunConfig, RunEffect, RunEvent, RunFingerprint,
-    RunProcess, RunStarted, RunSummary, TargetSlice, VerificationSelection,
-    VerificationSelectionMode, VerifyOriginals, WorkspaceCopyGrant, auto_mutant_timeout,
-    classify_mutant, contract_ensure, exit_code_for, project_top_budget, release_workspace_copy,
-    reserve_workspace_copy,
+    AnalysisDiagnostic, AnalysisFinished, AnalyzeFile, ApplyMutation,
+    BaselineFinished as BaselineOutput, BeginSession, BudgetLedger, CandidateSpoolRef, Cleanup,
+    Diagnostic, EffectFailed, EffectId, EmitOutput, ExitPolicy, FinishSession, IntegrityCheckpoint,
+    LoadSession, LookupStoredResult, MutantFinished as MutantOutput, MutantResult, MutantStarted,
+    MutantTimeout, MutationCandidate, MutationStatus, MutationSummary, ObserveRemainingBudget,
+    OutputEvent, PersistResult, Preflight, ProcessFinished, ProcessLimits, ProcessTermination,
+    ReadCandidate, ReservationId, ResetWorker, ResolveTargets, ResumeDecision, RunBudgets,
+    RunConfig, RunEffect, RunEvent, RunFingerprint, RunProcess, RunStarted, RunSummary,
+    TargetSlice, VerificationSelection, VerificationSelectionMode, VerifyOriginals,
+    WorkspaceCopyGrant, auto_mutant_timeout, classify_mutant, contract_ensure, exit_code_for,
+    project_top_budget, release_workspace_copy, reserve_workspace_copy,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -94,6 +94,7 @@ impl Default for WorkerState {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum OutputAction {
     ContinueAfterBudgetWarning,
+    ContinueAfterAnalysisDiagnostic,
     StartMutant(u32),
     StartSynthetic(u32, MutationStatus),
     FinishMutant(u32),
@@ -186,6 +187,8 @@ pub struct RunState {
     matched_candidate_ids: BTreeSet<String>,
     ordered_candidates: Option<Box<OrderedCandidateState>>,
     verification_selection: Option<VerificationSelection>,
+    analysis_diagnostics: VecDeque<AnalysisDiagnostic>,
+    pending_analysis: Option<AnalysisFinished>,
 }
 
 impl RunState {
@@ -248,6 +251,8 @@ impl RunState {
             matched_candidate_ids: BTreeSet::new(),
             ordered_candidates: None,
             verification_selection: None,
+            analysis_diagnostics: VecDeque::new(),
+            pending_analysis: None,
         }
     }
 
@@ -479,6 +484,8 @@ impl RunState {
         self.completed_floor = self.next_effect_id.saturating_sub(1);
         self.completed_gaps.clear();
         self.output_actions.clear();
+        self.analysis_diagnostics.clear();
+        self.pending_analysis = None;
     }
 
     fn diagnostic_effect(&mut self, failed: &EffectFailed) -> Result<Vec<RunEffect>, MachineError> {
@@ -510,6 +517,74 @@ impl RunState {
             final_target,
             max_candidates: self.config.limits.max_candidates.get() as u64,
         })])
+    }
+
+    fn analysis_diagnostic_effects(&mut self) -> Result<Vec<RunEffect>, MachineError> {
+        if let Some(diagnostic) = self.analysis_diagnostics.pop_front() {
+            let id = self.allocate_id()?;
+            self.output_actions
+                .insert(id, OutputAction::ContinueAfterAnalysisDiagnostic);
+            Ok(vec![RunEffect::EmitOutput(EmitOutput {
+                id,
+                event: OutputEvent::Diagnostic(Diagnostic::new(
+                    self.run_id.clone(),
+                    self.output_sequence(),
+                    "warning",
+                    diagnostic.code,
+                    diagnostic.message,
+                )),
+            })])
+        } else {
+            let analysis = self
+                .pending_analysis
+                .take()
+                .ok_or(MachineError::WrongPhase { phase: self.phase })?;
+            self.apply_analysis_finished(analysis)
+        }
+    }
+
+    fn apply_analysis_finished(
+        &mut self,
+        value: AnalysisFinished,
+    ) -> Result<Vec<RunEffect>, MachineError> {
+        if self.candidate_filter.is_some() {
+            self.flags.outcome.incomplete |= value.truncated;
+            match value.spool {
+                None if !value.truncated && !self.targets.is_empty() => self.analyze_next(),
+                None => Err(MachineError::MissingCandidateSpool),
+                Some(spool) if spool.records == 0 => {
+                    self.ensure_selected_candidates_discovered()?;
+                    self.candidate_spool = Some(spool);
+                    self.phase = RunPhase::Finalize;
+                    self.finalize_effects()
+                }
+                Some(spool) => {
+                    self.phase = RunPhase::Mutants;
+                    self.candidate_spool = Some(spool);
+                    self.schedule_read_or_finalize()
+                }
+            }
+        } else {
+            self.flags.outcome.incomplete |= value.truncated;
+            if value.truncated {
+                self.phase = RunPhase::Finalize;
+                self.finalize_effects()
+            } else {
+                match value.spool {
+                    None => self.analyze_next(),
+                    Some(spool) if spool.records == 0 => {
+                        self.candidate_spool = Some(spool);
+                        self.phase = RunPhase::Finalize;
+                        self.finalize_effects()
+                    }
+                    Some(spool) => {
+                        self.phase = RunPhase::Mutants;
+                        self.candidate_spool = Some(spool);
+                        self.schedule_read_or_finalize()
+                    }
+                }
+            }
+        }
     }
 
     fn preflight_effects(&mut self) -> Result<Vec<RunEffect>, MachineError> {
@@ -1366,46 +1441,14 @@ pub fn transition(
                 state.analyze_next()?
             }
         }
-        RunEvent::AnalysisFinished(value) if state.phase == RunPhase::Analyze => {
-            if state.candidate_filter.is_some() {
-                state.flags.outcome.incomplete |= value.truncated;
-                match value.spool {
-                    None if !value.truncated && !state.targets.is_empty() => {
-                        state.analyze_next()?
-                    }
-                    None => return Err(MachineError::MissingCandidateSpool),
-                    Some(spool) if spool.records == 0 => {
-                        state.ensure_selected_candidates_discovered()?;
-                        state.candidate_spool = Some(spool);
-                        state.phase = RunPhase::Finalize;
-                        state.finalize_effects()?
-                    }
-                    Some(spool) => {
-                        state.phase = RunPhase::Mutants;
-                        state.candidate_spool = Some(spool);
-                        state.schedule_read_or_finalize()?
-                    }
-                }
+        RunEvent::AnalysisFinished(mut value) if state.phase == RunPhase::Analyze => {
+            if value.diagnostics.is_empty() {
+                state.apply_analysis_finished(value)?
             } else {
-                state.flags.outcome.incomplete |= value.truncated;
-                if value.truncated {
-                    state.phase = RunPhase::Finalize;
-                    state.finalize_effects()?
-                } else {
-                    match value.spool {
-                        None => state.analyze_next()?,
-                        Some(spool) if spool.records == 0 => {
-                            state.candidate_spool = Some(spool);
-                            state.phase = RunPhase::Finalize;
-                            state.finalize_effects()?
-                        }
-                        Some(spool) => {
-                            state.phase = RunPhase::Mutants;
-                            state.candidate_spool = Some(spool.clone());
-                            state.schedule_read_or_finalize()?
-                        }
-                    }
-                }
+                state.flags.outcome.incomplete = true;
+                state.analysis_diagnostics = std::mem::take(&mut value.diagnostics).into();
+                state.pending_analysis = Some(value);
+                state.analysis_diagnostic_effects()?
             }
         }
         RunEvent::CandidateLoaded(value) if state.phase == RunPhase::Mutants => {
@@ -1584,6 +1627,9 @@ pub fn transition(
                 OutputAction::ContinueAfterBudgetWarning => {
                     state.phase = RunPhase::Analyze;
                     state.analyze_next()?
+                }
+                OutputAction::ContinueAfterAnalysisDiagnostic => {
+                    state.analysis_diagnostic_effects()?
                 }
                 OutputAction::StartMutant(worker) => state.mutant_process(worker)?,
                 OutputAction::StartSynthetic(worker, status) => {

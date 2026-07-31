@@ -33,10 +33,18 @@ pub struct RemainingBudgetObserved {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AnalysisDiagnostic {
+    pub code: String,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AnalysisFinished {
     pub id: EffectId,
     pub spool: Option<CandidateSpoolRef>,
     pub truncated: bool,
+    #[serde(default)]
+    pub diagnostics: Vec<AnalysisDiagnostic>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

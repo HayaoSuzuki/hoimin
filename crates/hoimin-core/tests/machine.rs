@@ -2,15 +2,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use hoimin_core::{
-    AnalysisFinished, ByteSpan, CandidateLoaded, CandidateSpoolRef, CleanupFinished, CommandArg,
-    EffectFailed, EffectId, MachineError, MutationApplied, MutationCandidate, MutationProfile,
-    MutationStatus, MutationSummary, OriginalsVerified, OutputConfig, OutputEmitted, OutputEvent,
-    PreflightCompleted, ProcessFinished, ProcessTermination, RawRunConfig, RawRunLimits,
-    RemainingBudgetObserved, ReservationId, ResourceMode, ResultPersisted, RunConfig, RunEffect,
-    RunEvent, RunFingerprint, RunPhase, RunState, SessionFinished, SessionLoaded, SessionResumeRef,
-    SessionStarted, StartRequested, StoredResult, StoredResultLoaded, TargetSlice, TargetsResolved,
-    VerificationSelection, VerificationSelectionMode, VerificationSelectionPolicy,
-    VerificationSelectionScope, WorkerCreated, WorkerReset, transition,
+    AnalysisDiagnostic, AnalysisFinished, ByteSpan, CandidateLoaded, CandidateSpoolRef,
+    CleanupFinished, CommandArg, EffectFailed, EffectId, MachineError, MutationApplied,
+    MutationCandidate, MutationProfile, MutationStatus, MutationSummary, OriginalsVerified,
+    OutputConfig, OutputEmitted, OutputEvent, PreflightCompleted, ProcessFinished,
+    ProcessTermination, RawRunConfig, RawRunLimits, RemainingBudgetObserved, ReservationId,
+    ResourceMode, ResultPersisted, RunConfig, RunEffect, RunEvent, RunFingerprint, RunPhase,
+    RunState, SessionFinished, SessionLoaded, SessionResumeRef, SessionStarted, StartRequested,
+    StoredResult, StoredResultLoaded, TargetSlice, TargetsResolved, VerificationSelection,
+    VerificationSelectionMode, VerificationSelectionPolicy, VerificationSelectionScope,
+    WorkerCreated, WorkerReset, transition,
 };
 
 #[test]
@@ -346,6 +347,7 @@ fn empty_candidate_spool_finishes_with_null_score() {
                 records: 0,
             }),
             truncated: false,
+            diagnostics: Vec::new(),
         }),
     )
     .unwrap();
@@ -357,6 +359,86 @@ fn empty_candidate_spool_finishes_with_null_score() {
         !effects
             .iter()
             .any(|effect| matches!(effect, RunEffect::RunMutant(_)))
+    );
+}
+
+#[test]
+fn analyzer_diagnostic_is_emitted_before_incomplete_finalization() {
+    let (state, effects) = waiting_for_analysis();
+    let analysis_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::AnalyzeFile(_))
+    }));
+
+    let (state, effects) = transition(
+        state,
+        RunEvent::AnalysisFinished(AnalysisFinished {
+            id: analysis_id,
+            spool: Some(CandidateSpoolRef {
+                token: "empty".to_owned(),
+                records: 0,
+            }),
+            truncated: false,
+            diagnostics: vec![
+                AnalysisDiagnostic {
+                    code: "analyzer.invalid_syntax".to_owned(),
+                    message: "pkg/broken.py: source could not be parsed".to_owned(),
+                },
+                AnalysisDiagnostic {
+                    code: "analyzer.unsupported_syntax".to_owned(),
+                    message: "pkg/future.py: syntax is not supported".to_owned(),
+                },
+            ],
+        }),
+    )
+    .unwrap();
+
+    assert_eq!(effects.len(), 1);
+    let RunEffect::EmitOutput(output) = &effects[0] else {
+        panic!("analyzer warning must be emitted before finalization")
+    };
+    let OutputEvent::Diagnostic(diagnostic) = &output.event else {
+        panic!("analyzer warning must use diagnostic output")
+    };
+    assert_eq!(diagnostic.level, "warning");
+    assert_eq!(diagnostic.code, "analyzer.invalid_syntax");
+    assert_eq!(
+        diagnostic.message,
+        "pkg/broken.py: source could not be parsed"
+    );
+    assert_eq!(state.phase(), RunPhase::Analyze);
+    assert_eq!(state.exit_code(), 4);
+
+    let (state, effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: output.id }),
+    )
+    .unwrap();
+
+    assert_eq!(effects.len(), 1);
+    let RunEffect::EmitOutput(output) = &effects[0] else {
+        panic!("the next analyzer warning must precede finalization")
+    };
+    let OutputEvent::Diagnostic(diagnostic) = &output.event else {
+        panic!("the next analyzer warning must use diagnostic output")
+    };
+    assert_eq!(diagnostic.level, "warning");
+    assert_eq!(diagnostic.code, "analyzer.unsupported_syntax");
+    assert_eq!(diagnostic.message, "pkg/future.py: syntax is not supported");
+    assert_eq!(state.phase(), RunPhase::Analyze);
+    assert_eq!(state.exit_code(), 4);
+
+    let (state, effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: output.id }),
+    )
+    .unwrap();
+
+    assert_eq!(state.phase(), RunPhase::Finalize);
+    assert_eq!(state.exit_code(), 4);
+    assert!(
+        effects
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::VerifyOriginals(_)))
     );
 }
 
@@ -379,6 +461,7 @@ fn pending_effects_reject_unknown_duplicate_and_wrong_completion_kind() {
             id: resolve_id,
             spool: None,
             truncated: false,
+            diagnostics: Vec::new(),
         }),
     )
     .unwrap_err();
@@ -556,6 +639,7 @@ fn cancellation_flushes_active_and_remaining_candidates_as_not_run() {
                 records: 3,
             }),
             truncated: false,
+            diagnostics: Vec::new(),
         }),
     )
     .unwrap();
@@ -701,6 +785,7 @@ fn candidate_filter_skips_unrequested_candidates() {
                 records: 2,
             }),
             truncated: false,
+            diagnostics: Vec::new(),
         }),
     )
     .unwrap();
@@ -835,6 +920,7 @@ fn explicit_candidate_filter_rejects_an_empty_spool() {
                 records: 0,
             }),
             truncated: false,
+            diagnostics: Vec::new(),
         }),
     )
     .unwrap_err();
@@ -860,6 +946,7 @@ fn ordered_candidate_filter_rejects_an_empty_spool() {
                 records: 0,
             }),
             truncated: false,
+            diagnostics: Vec::new(),
         }),
     )
     .unwrap_err();
@@ -884,6 +971,7 @@ fn ordered_candidate_filter_marks_truncated_analysis_incomplete_but_replays() {
                 records: 1,
             }),
             truncated: true,
+            diagnostics: Vec::new(),
         }),
     )
     .unwrap();
@@ -914,6 +1002,7 @@ fn explicit_candidate_filter_rejects_missing_selected_candidate() {
                 records: 1,
             }),
             truncated: false,
+            diagnostics: Vec::new(),
         }),
     )
     .unwrap();
@@ -966,6 +1055,7 @@ fn explicit_candidate_filter_rejects_missing_after_partial_match() {
                 records: 1,
             }),
             truncated: false,
+            diagnostics: Vec::new(),
         }),
     )
     .unwrap();
@@ -1021,6 +1111,7 @@ fn ordered_candidate_filter_defers_and_preserves_requested_order() {
                 records: 3,
             }),
             truncated: false,
+            diagnostics: Vec::new(),
         }),
     )
     .unwrap();
@@ -1101,6 +1192,7 @@ fn ordered_candidate_cancellation_drains_remaining_candidates_in_requested_order
                 records: 3,
             }),
             truncated: false,
+            diagnostics: Vec::new(),
         }),
     )
     .unwrap();
@@ -1173,6 +1265,7 @@ fn ordered_candidate_filter_stably_deduplicates_requested_ids() {
                 records: 2,
             }),
             truncated: false,
+            diagnostics: Vec::new(),
         }),
     )
     .unwrap();
@@ -1253,6 +1346,7 @@ fn four_jobs_fill_four_independent_worker_chains_in_every_completion_order() {
                 records: 4,
             }),
             truncated: false,
+            diagnostics: Vec::new(),
         }),
     )
     .unwrap();
@@ -1688,6 +1782,7 @@ fn original_modification_is_fatal_before_the_final_report() {
                 records: 0,
             }),
             truncated: false,
+            diagnostics: Vec::new(),
         }),
     )
     .unwrap();
@@ -2229,6 +2324,7 @@ fn candidate_overflow_stops_before_any_mutant_execution() {
                 records: 100,
             }),
             truncated: true,
+            diagnostics: Vec::new(),
         }),
     )
     .unwrap();
@@ -2319,6 +2415,7 @@ fn multiple_target_files_are_analyzed_in_order_before_candidate_replay() {
             id: first.id,
             spool: None,
             truncated: false,
+            diagnostics: Vec::new(),
         }),
     )
     .unwrap();
@@ -2338,6 +2435,7 @@ fn multiple_target_files_are_analyzed_in_order_before_candidate_replay() {
                 records: 2,
             }),
             truncated: true,
+            diagnostics: Vec::new(),
         }),
     )
     .unwrap();
@@ -2431,6 +2529,7 @@ fn filtered_analysis_advances_across_nonfinal_targets_before_receiving_a_spool()
             id: first.id,
             spool: None,
             truncated: false,
+            diagnostics: Vec::new(),
         }),
     )
     .unwrap();
@@ -2519,6 +2618,7 @@ fn max_mutants_reports_remaining_candidates_as_not_run_in_stable_order() {
                 records: 2,
             }),
             truncated: false,
+            diagnostics: Vec::new(),
         }),
     )
     .unwrap();
@@ -2631,6 +2731,7 @@ fn completion_ledger_stays_bounded_across_ten_thousand_mutants() {
                 records: 10_000,
             }),
             truncated: false,
+            diagnostics: Vec::new(),
         }),
     )
     .unwrap();
@@ -3040,6 +3141,7 @@ fn waiting_for_candidate() -> (RunState, Vec<RunEffect>) {
                 records: 1,
             }),
             truncated: false,
+            diagnostics: Vec::new(),
         }),
     )
     .unwrap()
@@ -3059,6 +3161,7 @@ fn waiting_for_final_report() -> (RunState, Vec<RunEffect>) {
                 records: 0,
             }),
             truncated: false,
+            diagnostics: Vec::new(),
         }),
     )
     .unwrap();
@@ -3185,6 +3288,7 @@ fn waiting_for_session_candidate(resume: bool) -> (RunState, Vec<RunEffect>) {
                 records: 1,
             }),
             truncated: false,
+            diagnostics: Vec::new(),
         }),
     )
     .unwrap()
