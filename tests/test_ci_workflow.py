@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import tomllib
 import unittest
+from collections import Counter
 from pathlib import Path
 
 
@@ -15,13 +16,31 @@ UPLOAD_ARTIFACT_ACTION = (
     "actions/upload-artifact@"
     "ea165f8d65b6e75b540449e92b4886f43607fa02"
 )
-ALLOWED_RELEASE_ACTIONS = {
-    "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10",
-    "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
-    "astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b",
-    "PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b",
-    UPLOAD_ARTIFACT_ACTION,
-}
+EXPECTED_RELEASE_ACTIONS = Counter(
+    {
+        "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10": 3,
+        "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1": 3,
+        "astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b": 2,
+        "PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b": 2,
+        UPLOAD_ARTIFACT_ACTION: 2,
+    }
+)
+TAG_VALIDATION_COMMAND = (
+    'python -c "import os, pathlib, tomllib; '
+    "py=tomllib.loads(pathlib.Path('pyproject.toml').read_text())"
+    "['project']['version']; "
+    "cargo=tomllib.loads(pathlib.Path('Cargo.toml').read_text())"
+    "['workspace']['package']['version']; "
+    "tag=os.environ['TAG']; "
+    "assert tag == f'v{py}' == f'v{cargo}', (tag, py, cargo)\""
+)
+WHEEL_SMOKE_COMMAND = "uv run --frozen python tests/wheel_smoke.py"
+EXPECTED_RELEASE_RUN_COMMANDS = Counter(
+    {
+        TAG_VALIDATION_COMMAND: 1,
+        WHEEL_SMOKE_COMMAND: 2,
+    }
+)
 
 
 def job_block(workflow: str, job_name: str) -> str:
@@ -65,6 +84,35 @@ def job_event_conditions(workflow: str) -> set[str]:
     return events
 
 
+def release_run_commands(test: unittest.TestCase, workflow: str) -> Counter[str]:
+    commands: list[str] = []
+    lines = workflow.splitlines()
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        inline = re.fullmatch(r"      - run: (.+)", line)
+        if inline is not None:
+            commands.append(inline.group(1))
+            index += 1
+            continue
+        if line == "        run: |":
+            block: list[str] = []
+            index += 1
+            while index < len(lines) and lines[index].startswith("          "):
+                block.append(lines[index][10:])
+                index += 1
+            commands.append("\n".join(block))
+            continue
+        index += 1
+
+    run_keys = re.findall(
+        r"""(?i)(?:["']run["']|run)[ \t]*:""",
+        workflow,
+    )
+    test.assertEqual(len(run_keys), len(commands))
+    return Counter(commands)
+
+
 def assert_artifact_only_release(test: unittest.TestCase, workflow: str) -> None:
     jobs = workflow[workflow.index("jobs:\n") + len("jobs:\n") :]
     test.assertEqual(
@@ -96,21 +144,38 @@ def assert_artifact_only_release(test: unittest.TestCase, workflow: str) -> None
             rf"          path: target/wheels/\*\.whl$",
         )
 
-    actions = set(
-        re.findall(
-            r"^[ \t]+- uses[ \t]*:[ \t]*([^ \t#\r\n]+)",
-            workflow,
-            re.MULTILINE,
-        )
-    )
-    test.assertEqual(actions, ALLOWED_RELEASE_ACTIONS)
-    test.assertNotRegex(workflow, r"(?m)^    environment[ \t]*:")
-    test.assertNotIn("${{ secrets.", workflow)
     test.assertNotRegex(
         workflow,
-        r"(?mi)^[ \t]*id-token[ \t]*:[ \t]*['\"]?write['\"]?"
-        r"[ \t]*(?:#.*)?$",
+        r"""(?i)["'](?:uses|run|permissions|environment)["'][ \t]*:""",
     )
+    actions = re.findall(
+        r"^      - uses: ([^ \t#\r\n]+)(?:[ \t]+#.*)?$",
+        workflow,
+        re.MULTILINE,
+    )
+    uses_keys = re.findall(
+        r"""(?i)(?:["']uses["']|uses)[ \t]*:""",
+        workflow,
+    )
+    test.assertEqual(len(uses_keys), len(actions))
+    test.assertEqual(Counter(actions), EXPECTED_RELEASE_ACTIONS)
+    test.assertEqual(release_run_commands(test, workflow), EXPECTED_RELEASE_RUN_COMMANDS)
+    test.assertRegex(workflow, r"(?m)^permissions:\n  contents: read$")
+    test.assertEqual(
+        len(
+            re.findall(
+                r"""(?i)(?:["']permissions["']|permissions)[ \t]*:""",
+                workflow,
+            )
+        ),
+        1,
+    )
+    test.assertNotRegex(
+        workflow,
+        r"""(?i)(?:["']environment["']|environment)[ \t]*:""",
+    )
+    test.assertNotRegex(workflow, r"(?i)\bsecrets[ \t]*(?:\.|\[)")
+    test.assertNotRegex(workflow, r"(?i)id-token")
 
 
 class ShuffleWorkflowContractTests(unittest.TestCase):
@@ -295,6 +360,29 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
             "OIDC publication permission": workflow.replace(
                 "permissions:\n  contents: read",
                 "permissions:\n  contents: read\n  id-token: write",
+            ),
+            "publisher run command": workflow.replace(
+                "      - run: uv run --frozen python tests/wheel_smoke.py\n",
+                "      - run: uv run --frozen python tests/wheel_smoke.py\n"
+                "      - run: uv publish\n",
+                1,
+            ),
+            "bracketed publication secret": workflow.replace(
+                "    runs-on: ubuntu-latest\n",
+                "    runs-on: ubuntu-latest\n"
+                "    env:\n"
+                "      PYPI_TOKEN: ${{ secrets['PYPI_TOKEN'] }}\n",
+                1,
+            ),
+            "flow OIDC permission": workflow.replace(
+                "permissions:\n  contents: read",
+                "permissions: {contents: read, id-token: write}",
+            ),
+            "quoted uses key": workflow.replace(
+                "      - run: uv run --frozen python tests/wheel_smoke.py\n",
+                "      - run: uv run --frozen python tests/wheel_smoke.py\n"
+                '      - "uses": attacker/publish@0123456789abcdef\n',
+                1,
             ),
         }
 

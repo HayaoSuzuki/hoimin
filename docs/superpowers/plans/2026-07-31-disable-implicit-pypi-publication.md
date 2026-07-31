@@ -41,20 +41,30 @@
 Add a shared assertion and contract tests to `tests/test_ci_workflow.py`.
 The assertion must require the exact three-job graph, both exact pinned wheel
 uploads and their artifact names and paths, the exact action allowlist, and no
-job-level environment, secret reference, or OIDC write permission:
+job-level environment, secret reference, or OIDC permission. It must parse only
+canonical `uses:` and `run:` keys, require the exact current action and command
+multisets, and reject quoted or otherwise noncanonical structural keys:
 
 ```python
 UPLOAD_ARTIFACT_ACTION = (
     "actions/upload-artifact@"
     "ea165f8d65b6e75b540449e92b4886f43607fa02"
 )
-ALLOWED_RELEASE_ACTIONS = {
-    "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10",
-    "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
-    "astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b",
-    "PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b",
-    UPLOAD_ARTIFACT_ACTION,
-}
+EXPECTED_RELEASE_ACTIONS = Counter(
+    {
+        "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10": 3,
+        "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1": 3,
+        "astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b": 2,
+        "PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b": 2,
+        UPLOAD_ARTIFACT_ACTION: 2,
+    }
+)
+EXPECTED_RELEASE_RUN_COMMANDS = Counter(
+    {
+        TAG_VALIDATION_COMMAND: 1,
+        "uv run --frozen python tests/wheel_smoke.py": 2,
+    }
+)
 
 
 def assert_artifact_only_release(test: unittest.TestCase, workflow: str) -> None:
@@ -85,21 +95,27 @@ def assert_artifact_only_release(test: unittest.TestCase, workflow: str) -> None
             rf"          path: target/wheels/\*\.whl$",
         )
 
-    actions = set(
-        re.findall(
-            r"^[ \t]+- uses[ \t]*:[ \t]*([^ \t#\r\n]+)",
-            workflow,
-            re.MULTILINE,
-        )
-    )
-    test.assertEqual(actions, ALLOWED_RELEASE_ACTIONS)
-    test.assertNotRegex(workflow, r"(?m)^    environment[ \t]*:")
-    test.assertNotIn("${{ secrets.", workflow)
     test.assertNotRegex(
         workflow,
-        r"(?mi)^[ \t]*id-token[ \t]*:[ \t]*['\"]?write['\"]?"
-        r"[ \t]*(?:#.*)?$",
+        r"""(?i)["'](?:uses|run|permissions|environment)["'][ \t]*:""",
     )
+    actions = re.findall(
+        r"^      - uses: ([^ \t#\r\n]+)(?:[ \t]+#.*)?$",
+        workflow,
+        re.MULTILINE,
+    )
+    test.assertEqual(Counter(actions), EXPECTED_RELEASE_ACTIONS)
+    test.assertEqual(
+        release_run_commands(test, workflow),
+        EXPECTED_RELEASE_RUN_COMMANDS,
+    )
+    test.assertRegex(workflow, r"(?m)^permissions:\n  contents: read$")
+    test.assertNotRegex(
+        workflow,
+        r"""(?i)(?:["']environment["']|environment)[ \t]*:""",
+    )
+    test.assertNotRegex(workflow, r"(?i)\bsecrets[ \t]*(?:\.|\[)")
+    test.assertNotRegex(workflow, r"(?i)id-token")
 
 
 class ReleaseWorkflowContractTests(unittest.TestCase):
@@ -113,7 +129,8 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
 
 Add a hostile-fixture test that proves the assertion rejects an aliased
 publisher job, an unexpected action, altered artifact names or paths, a
-job-level environment, a secret reference, and an OIDC write permission.
+job-level environment, dot and bracket secret references, block and flow OIDC
+permissions, added publisher commands, and quoted structural keys.
 
 - [ ] **Step 2: Run the focused contract and verify RED**
 
@@ -165,8 +182,10 @@ git diff --check
 
 Expected: every command passes. `release.yml` has exactly the three expected
 jobs, contains both exact pinned wheel artifact uploads with the expected
-artifact names and paths, uses only the exact allowed pinned actions, and
-contains no job-level environment, secret reference, or OIDC write permission.
+artifact names and paths, uses only the exact expected pinned action multiset,
+runs only the exact tag-validation and two wheel-smoke commands, and contains
+no environment, secret context, OIDC permission, or noncanonical structural
+key.
 
 - [ ] **Step 6: Commit the implementation**
 
