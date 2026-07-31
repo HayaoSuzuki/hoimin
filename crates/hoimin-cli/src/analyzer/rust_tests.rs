@@ -238,6 +238,42 @@ fn omits_candidates_for_unselected_operators() {
 }
 
 #[test]
+fn skips_mutable_fstring_literal_content() {
+    let source = "label = f\"{start}-{end}\"\npath = f\"{left}/{right}\"\nflag = f\"True\"\nrelation = f\"in\"\n";
+
+    assert!(analyze(source).candidates.is_empty());
+}
+
+#[test]
+fn skips_mutable_tstring_literal_content() {
+    let source = "label = t\"{start}-{end}\"\nflag = t\"True\"\n";
+
+    assert!(analyze(source).candidates.is_empty());
+}
+
+#[test]
+fn retains_mutable_fstring_interpolation_expressions() {
+    let source = "value = f\"literal-{left + right}-{enabled is not None}\"\n";
+    let output = analyze(source);
+    let observed: Vec<_> = output
+        .candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        observed,
+        vec![("+", "-", "binary_add_sub"), ("is not", "is", "identity"),]
+    );
+}
+
+#[test]
 fn type_annotations_emit_supported_candidates_in_source_order() {
     let source = "from typing import AbstractSet, Iterator, Mapping, Optional\nimport typing as t\nfrom collections.abc import Iterable, Sequence\n\nmodule_value: Optional[int]\n\nclass Model:\n    names: list[str]\n\n    def convert(self, name: str | None, age: t.Optional[int]) -> set[str]:\n        mapping: dict[str, int] = {}\n        values: Iterable[str] = []\n        ordered: Sequence[str] = []\n        return set()\n";
     let output = analyze_types(source);

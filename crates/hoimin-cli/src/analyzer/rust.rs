@@ -4,6 +4,7 @@ use camino::Utf8Path;
 use hoimin_core::{
     ByteSpan, LineRange, MutationOperator, MutationOperatorSelection, MutationProfile,
 };
+use ruff_python_ast::token::TokenKind;
 use ruff_python_ast::visitor::Visitor;
 use ruff_python_ast::{CmpOp, Expr, ModModule, Operator, Stmt, UnaryOp, visitor};
 use ruff_python_parser::parse_module;
@@ -61,6 +62,12 @@ pub(crate) fn analyze_source_cancellable(
     for (index, token) in tokens.iter().enumerate() {
         if cancelled() {
             return Err(AnalysisCancelled);
+        }
+        if matches!(
+            token.kind(),
+            TokenKind::FStringMiddle | TokenKind::TStringMiddle
+        ) {
+            continue;
         }
         let range = token.range();
         let start = usize::from(range.start());
