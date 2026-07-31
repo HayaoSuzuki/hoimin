@@ -4,16 +4,19 @@
 
 **Goal:** Ensure an ordinary version tag builds retained wheel artifacts without obtaining PyPI publication credentials or invoking a package publisher.
 
-**Architecture:** Keep the existing tag validation and Windows/Linux wheel build jobs unchanged. Remove the default publisher job, decode the release YAML with `yaml.safe_load`, enforce exact equality between the decoded `jobs` object and a hand-authored nested mapping of every current job and step field, and document the explicit controls required before a future public-distribution workflow is introduced.
+**Architecture:** Keep the existing tag validation and Windows/Linux wheel build jobs unchanged. Remove the default publisher job, decode the release YAML with `yaml.safe_load`, enforce exact equality between the complete decoded workflow document and a hand-authored expected mapping, and document the explicit controls required before a future public-distribution workflow is introduced.
 
 **Tech Stack:** GitHub Actions YAML, Python 3.14 `unittest`, PyYAML 6.x, Markdown.
 
 ## Global Constraints
 
 - An ordinary `v*` tag may validate metadata, build wheels, smoke-test them, and upload GitHub Actions artifacts.
-- The decoded `jobs` object must equal the complete expected mapping for
-  `validate-tag`, `windows-wheel`, and `linux-wheel`, including each job's
-  dependencies, runner, and full ordered step mappings.
+- The complete decoded workflow document must equal the hand-authored expected
+  mapping for the exact name, version-tag trigger, read-only permissions, and
+  jobs. No additional top-level key is permitted.
+- The expected `jobs` mapping must contain exactly `validate-tag`,
+  `windows-wheel`, and `linux-wheel`, including each job's dependencies,
+  runner, and full ordered step mappings.
 - Every expected step field is part of that equality: action SHAs, `with`
   options, names, environment values, and run commands. Extra fields such as
   `shell`, credentials, or alternate Maturin commands must fail the contract.
@@ -53,8 +56,11 @@ Decode all YAML representations with `yaml.safe_load`. Hand-author
 `EXPECTED_RELEASE_JOBS` as the complete nested mapping of the three current
 jobs and every ordered step. Include every `needs`, `runs-on`, action SHA,
 `with` mapping, step `name`, `env`, and `run` field, including both exact
-artifact names and paths. Require exact equality for both the decoded `jobs`
-object and the top-level read-only permissions:
+artifact names and paths. Then hand-author `EXPECTED_RELEASE_WORKFLOW` with the
+exact workflow name, trigger, permissions, and jobs. PyYAML applies YAML 1.1
+boolean resolution, so the unquoted top-level `on` key must be represented by
+the `True` key in this decoded expectation. Require exact equality with the
+entire decoded workflow document:
 
 ```python
 EXPECTED_RELEASE_JOBS = {
@@ -79,12 +85,18 @@ EXPECTED_RELEASE_JOBS = {
         ],
     },
 }
+EXPECTED_RELEASE_WORKFLOW = {
+    "name": "Release wheels",
+    # PyYAML's YAML 1.1 resolver decodes the unquoted `on` key as `True`.
+    True: {"push": {"tags": ["v*"]}},
+    "permissions": {"contents": "read"},
+    "jobs": EXPECTED_RELEASE_JOBS,
+}
 
 
 def assert_artifact_only_release(test: unittest.TestCase, workflow: str) -> None:
     decoded = yaml.safe_load(workflow)
-    test.assertEqual(decoded.get("permissions"), {"contents": "read"})
-    test.assertEqual(decoded.get("jobs"), EXPECTED_RELEASE_JOBS)
+    test.assertEqual(decoded, EXPECTED_RELEASE_WORKFLOW)
 
 
 class ReleaseWorkflowContractTests(unittest.TestCase):
@@ -101,8 +113,9 @@ publisher job, an unexpected action, altered artifact names or paths, a
 job-level environment, dot and bracket secret references, block and flow OIDC
 permissions, added publisher commands, quoted structural keys, explicit
 mapping keys, escaped OIDC keys, a custom publishing shell on an expected smoke
-command, a literal publication token environment, and Maturin
-`command: publish`.
+command, a literal publication token environment, Maturin `command: publish`,
+and a combined top-level credential environment plus
+`defaults.run.shell` publisher.
 
 - [ ] **Step 2: Run the focused contract and verify RED**
 
@@ -152,12 +165,14 @@ cargo test --workspace
 git diff --check
 ```
 
-Expected: every command passes. `release.yml` has exactly the three expected
-decoded job mappings, including runner/dependency fields, all pinned action
-SHAs, every action `with` mapping, the tag-validation name/environment/command,
-the two wheel-smoke commands, and exact wheel artifact names and paths. Any
-added or changed decoded job or step field fails. Top-level permissions remain
-exactly read-only.
+Expected: every command passes. The complete decoded `release.yml` document
+equals the exact expected mapping for `name`, the version-tag trigger
+(`True` after PyYAML YAML 1.1 decoding of the unquoted `on` key), read-only
+permissions, and the three expected jobs. The jobs include runner/dependency
+fields, all pinned action SHAs, every action `with` mapping, the tag-validation
+name/environment/command, the two wheel-smoke commands, and exact wheel
+artifact names and paths. Any added or changed top-level, job, or step field
+fails.
 
 - [ ] **Step 6: Commit the implementation**
 

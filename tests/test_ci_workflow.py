@@ -157,6 +157,13 @@ EXPECTED_RELEASE_JOBS = {
         ],
     },
 }
+EXPECTED_RELEASE_WORKFLOW = {
+    "name": "Release wheels",
+    # PyYAML's YAML 1.1 resolver decodes the unquoted `on` key as `True`.
+    True: {"push": {"tags": ["v*"]}},
+    "permissions": {"contents": "read"},
+    "jobs": EXPECTED_RELEASE_JOBS,
+}
 
 
 def job_block(workflow: str, job_name: str) -> str:
@@ -203,8 +210,7 @@ def job_event_conditions(workflow: str) -> set[str]:
 def assert_artifact_only_release(test: unittest.TestCase, workflow: str) -> None:
     decoded = yaml.safe_load(workflow)
     test.assertIsInstance(decoded, dict)
-    test.assertEqual(decoded.get("permissions"), {"contents": "read"})
-    test.assertEqual(decoded.get("jobs"), EXPECTED_RELEASE_JOBS)
+    test.assertEqual(decoded, EXPECTED_RELEASE_WORKFLOW)
 
 
 class ShuffleWorkflowContractTests(unittest.TestCase):
@@ -442,6 +448,16 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
             "Maturin publish command": workflow.replace(
                 "          command: build\n",
                 "          command: publish\n",
+                1,
+            ),
+            "top-level environment and default publishing shell": workflow.replace(
+                "\npermissions:\n",
+                "\nenv:\n"
+                "  UV_PUBLISH_TOKEN: pypi-hostile-token\n"
+                "defaults:\n"
+                "  run:\n"
+                "    shell: bash -c 'uv publish && bash \"$1\"' -- {0}\n"
+                "\npermissions:\n",
                 1,
             ),
         }
