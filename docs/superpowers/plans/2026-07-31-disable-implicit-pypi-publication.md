@@ -4,20 +4,20 @@
 
 **Goal:** Ensure an ordinary version tag builds retained wheel artifacts without obtaining PyPI publication credentials or invoking a package publisher.
 
-**Architecture:** Keep the existing tag validation and Windows/Linux wheel build jobs unchanged. Remove the default publisher job, decode the release YAML with `yaml.safe_load`, enforce an exact artifact-only job/action/command graph over the decoded structures, and document the explicit controls required before a future public-distribution workflow is introduced.
+**Architecture:** Keep the existing tag validation and Windows/Linux wheel build jobs unchanged. Remove the default publisher job, decode the release YAML with `yaml.safe_load`, enforce exact equality between the decoded `jobs` object and a hand-authored nested mapping of every current job and step field, and document the explicit controls required before a future public-distribution workflow is introduced.
 
 **Tech Stack:** GitHub Actions YAML, Python 3.14 `unittest`, PyYAML 6.x, Markdown.
 
 ## Global Constraints
 
 - An ordinary `v*` tag may validate metadata, build wheels, smoke-test them, and upload GitHub Actions artifacts.
-- The default tag workflow job set must be exactly `validate-tag`,
-  `windows-wheel`, and `linux-wheel`.
-- The decoded default tag workflow must not contain an `id-token` key.
-- The default tag workflow must not reference a GitHub environment or secret.
-- Every `uses:` entry must match the exact pinned checkout, setup-python,
-  setup-uv, Maturin, or upload-artifact action already required to build the
-  retained wheels.
+- The decoded `jobs` object must equal the complete expected mapping for
+  `validate-tag`, `windows-wheel`, and `linux-wheel`, including each job's
+  dependencies, runner, and full ordered step mappings.
+- Every expected step field is part of that equality: action SHAs, `with`
+  options, names, environment values, and run commands. Extra fields such as
+  `shell`, credentials, or alternate Maturin commands must fail the contract.
+- Top-level permissions must equal `{"contents": "read"}`.
 - Security decisions must use decoded YAML structures, not raw-text regexes,
   so alternate YAML key syntax and escape sequences cannot bypass the policy.
 - Future public publication must use a separate explicit manual or controlled opt-in and a protected GitHub environment.
@@ -49,73 +49,42 @@ uv add --dev 'pyyaml>=6.0.2,<7'
 - [ ] **Step 1: Add the failing release-policy contract**
 
 Add a shared assertion and contract tests to `tests/test_ci_workflow.py`.
-The assertion must require the exact three-job graph, both exact pinned wheel
-uploads and their artifact names and paths, the exact action allowlist, and no
-job-level environment, secret reference, or write permission. It must decode
-all YAML representations with `yaml.safe_load`, require the exact current
-decoded action and command multisets, and recursively inspect decoded keys and
-values:
+Decode all YAML representations with `yaml.safe_load`. Hand-author
+`EXPECTED_RELEASE_JOBS` as the complete nested mapping of the three current
+jobs and every ordered step. Include every `needs`, `runs-on`, action SHA,
+`with` mapping, step `name`, `env`, and `run` field, including both exact
+artifact names and paths. Require exact equality for both the decoded `jobs`
+object and the top-level read-only permissions:
 
 ```python
-UPLOAD_ARTIFACT_ACTION = (
-    "actions/upload-artifact@"
-    "ea165f8d65b6e75b540449e92b4886f43607fa02"
-)
-EXPECTED_RELEASE_ACTIONS = Counter(
-    {
-        "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10": 3,
-        "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1": 3,
-        "astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b": 2,
-        "PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b": 2,
-        UPLOAD_ARTIFACT_ACTION: 2,
-    }
-)
-EXPECTED_RELEASE_RUN_COMMANDS = Counter(
-    {
-        f"{TAG_VALIDATION_COMMAND}\n": 1,
-        "uv run --frozen python tests/wheel_smoke.py": 2,
-    }
-)
+EXPECTED_RELEASE_JOBS = {
+    "validate-tag": {
+        "runs-on": "ubuntu-latest",
+        "steps": [
+            # Complete expected step mappings, with no omitted fields.
+        ],
+    },
+    "windows-wheel": {
+        "needs": "validate-tag",
+        "runs-on": "windows-latest",
+        "steps": [
+            # Complete expected step mappings, with no omitted fields.
+        ],
+    },
+    "linux-wheel": {
+        "needs": "validate-tag",
+        "runs-on": "ubuntu-latest",
+        "steps": [
+            # Complete expected step mappings, with no omitted fields.
+        ],
+    },
+}
 
 
 def assert_artifact_only_release(test: unittest.TestCase, workflow: str) -> None:
     decoded = yaml.safe_load(workflow)
-    test.assertEqual(decoded["permissions"], {"contents": "read"})
-    jobs = decoded["jobs"]
-    test.assertEqual(set(jobs), {"validate-tag", "windows-wheel", "linux-wheel"})
-
-    actions = Counter()
-    run_commands = Counter()
-    for job in jobs.values():
-        test.assertNotIn("environment", job)
-        for permission in job.get("permissions", {}).values():
-            test.assertNotEqual(str(permission).casefold(), "write")
-        for step in job["steps"]:
-            if "uses" in step:
-                actions[step["uses"]] += 1
-            if "run" in step:
-                run_commands[step["run"]] += 1
-
-    test.assertEqual(actions, EXPECTED_RELEASE_ACTIONS)
-    test.assertEqual(run_commands, EXPECTED_RELEASE_RUN_COMMANDS)
-    for job_name, artifact_name in (
-        ("windows-wheel", "wheels-windows-x86_64"),
-        ("linux-wheel", "wheels-linux-x86_64"),
-    ):
-        uploads = [
-            step
-            for step in jobs[job_name]["steps"]
-            if step.get("uses") == UPLOAD_ARTIFACT_ACTION
-        ]
-        test.assertEqual(len(uploads), 1)
-        test.assertEqual(
-            uploads[0]["with"],
-            {"name": artifact_name, "path": "target/wheels/*.whl"},
-        )
-
-    for value in decoded_strings(decoded):
-        test.assertNotEqual(value.casefold(), "id-token")
-        test.assertIsNone(re.search(r"\bsecrets\s*(?:\.|\[)", value, re.I))
+    test.assertEqual(decoded.get("permissions"), {"contents": "read"})
+    test.assertEqual(decoded.get("jobs"), EXPECTED_RELEASE_JOBS)
 
 
 class ReleaseWorkflowContractTests(unittest.TestCase):
@@ -131,7 +100,9 @@ Add a hostile-fixture test that proves the assertion rejects an aliased
 publisher job, an unexpected action, altered artifact names or paths, a
 job-level environment, dot and bracket secret references, block and flow OIDC
 permissions, added publisher commands, quoted structural keys, explicit
-mapping keys, and escaped OIDC keys.
+mapping keys, escaped OIDC keys, a custom publishing shell on an expected smoke
+command, a literal publication token environment, and Maturin
+`command: publish`.
 
 - [ ] **Step 2: Run the focused contract and verify RED**
 
@@ -182,10 +153,11 @@ git diff --check
 ```
 
 Expected: every command passes. `release.yml` has exactly the three expected
-jobs, contains both exact pinned wheel artifact uploads with the expected
-artifact names and paths, uses only the exact expected pinned action multiset,
-runs only the exact tag-validation and two wheel-smoke commands, and contains
-no decoded environment, secret context, OIDC key, or write permission.
+decoded job mappings, including runner/dependency fields, all pinned action
+SHAs, every action `with` mapping, the tag-validation name/environment/command,
+the two wheel-smoke commands, and exact wheel artifact names and paths. Any
+added or changed decoded job or step field fails. Top-level permissions remain
+exactly read-only.
 
 - [ ] **Step 6: Commit the implementation**
 

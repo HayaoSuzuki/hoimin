@@ -3,8 +3,6 @@ from __future__ import annotations
 import re
 import tomllib
 import unittest
-from collections import Counter
-from collections.abc import Iterator
 from pathlib import Path
 
 import yaml
@@ -19,15 +17,6 @@ UPLOAD_ARTIFACT_ACTION = (
     "actions/upload-artifact@"
     "ea165f8d65b6e75b540449e92b4886f43607fa02"
 )
-EXPECTED_RELEASE_ACTIONS = Counter(
-    {
-        "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10": 3,
-        "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1": 3,
-        "astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b": 2,
-        "PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b": 2,
-        UPLOAD_ARTIFACT_ACTION: 2,
-    }
-)
 TAG_VALIDATION_COMMAND = (
     'python -c "import os, pathlib, tomllib; '
     "py=tomllib.loads(pathlib.Path('pyproject.toml').read_text())"
@@ -38,12 +27,136 @@ TAG_VALIDATION_COMMAND = (
     "assert tag == f'v{py}' == f'v{cargo}', (tag, py, cargo)\""
 )
 WHEEL_SMOKE_COMMAND = "uv run --frozen python tests/wheel_smoke.py"
-EXPECTED_RELEASE_RUN_COMMANDS = Counter(
-    {
-        f"{TAG_VALIDATION_COMMAND}\n": 1,
-        WHEEL_SMOKE_COMMAND: 2,
-    }
-)
+EXPECTED_RELEASE_JOBS = {
+    "validate-tag": {
+        "runs-on": "ubuntu-latest",
+        "steps": [
+            {
+                "uses": (
+                    "actions/checkout@"
+                    "df4cb1c069e1874edd31b4311f1884172cec0e10"
+                )
+            },
+            {
+                "uses": (
+                    "actions/setup-python@"
+                    "ece7cb06caefa5fff74198d8649806c4678c61a1"
+                ),
+                "with": {"python-version": "3.14"},
+            },
+            {
+                "name": "Require the tag to match package metadata",
+                "env": {"TAG": "${{ github.ref_name }}"},
+                "run": f"{TAG_VALIDATION_COMMAND}\n",
+            },
+        ],
+    },
+    "windows-wheel": {
+        "needs": "validate-tag",
+        "runs-on": "windows-latest",
+        "steps": [
+            {
+                "uses": (
+                    "actions/checkout@"
+                    "df4cb1c069e1874edd31b4311f1884172cec0e10"
+                )
+            },
+            {
+                "uses": (
+                    "actions/setup-python@"
+                    "ece7cb06caefa5fff74198d8649806c4678c61a1"
+                ),
+                "with": {"python-version": "3.14"},
+            },
+            {
+                "uses": (
+                    "astral-sh/setup-uv@"
+                    "08807647e7069bb48b6ef5acd8ec9567f424441b"
+                ),
+                "with": {"enable-cache": True},
+            },
+            {
+                "uses": (
+                    "PyO3/maturin-action@"
+                    "e83996d129638aa358a18fbd1dfb82f0b0fb5d3b"
+                ),
+                "with": {
+                    "command": "build",
+                    "args": (
+                        "--release --locked --compatibility pypi "
+                        "--no-default-features"
+                    ),
+                    "maturin-version": "v1.14.1",
+                    "target": "x86_64-pc-windows-msvc",
+                },
+            },
+            {"run": WHEEL_SMOKE_COMMAND},
+            {
+                "uses": (
+                    "actions/upload-artifact@"
+                    "ea165f8d65b6e75b540449e92b4886f43607fa02"
+                ),
+                "with": {
+                    "name": "wheels-windows-x86_64",
+                    "path": "target/wheels/*.whl",
+                },
+            },
+        ],
+    },
+    "linux-wheel": {
+        "needs": "validate-tag",
+        "runs-on": "ubuntu-latest",
+        "steps": [
+            {
+                "uses": (
+                    "actions/checkout@"
+                    "df4cb1c069e1874edd31b4311f1884172cec0e10"
+                )
+            },
+            {
+                "uses": (
+                    "actions/setup-python@"
+                    "ece7cb06caefa5fff74198d8649806c4678c61a1"
+                ),
+                "with": {"python-version": "3.14"},
+            },
+            {
+                "uses": (
+                    "astral-sh/setup-uv@"
+                    "08807647e7069bb48b6ef5acd8ec9567f424441b"
+                ),
+                "with": {"enable-cache": True},
+            },
+            {
+                "uses": (
+                    "PyO3/maturin-action@"
+                    "e83996d129638aa358a18fbd1dfb82f0b0fb5d3b"
+                ),
+                "with": {
+                    "command": "build",
+                    "args": (
+                        "--release --locked --compatibility pypi "
+                        "--no-default-features"
+                    ),
+                    "maturin-version": "v1.14.1",
+                    "target": "x86_64-unknown-linux-gnu",
+                    "manylinux": "2014",
+                },
+            },
+            {"run": WHEEL_SMOKE_COMMAND},
+            {
+                "uses": (
+                    "actions/upload-artifact@"
+                    "ea165f8d65b6e75b540449e92b4886f43607fa02"
+                ),
+                "with": {
+                    "name": "wheels-linux-x86_64",
+                    "path": "target/wheels/*.whl",
+                },
+            },
+        ],
+    },
+}
 
 
 def job_block(workflow: str, job_name: str) -> str:
@@ -87,80 +200,11 @@ def job_event_conditions(workflow: str) -> set[str]:
     return events
 
 
-def decoded_strings(value: object) -> Iterator[str]:
-    if isinstance(value, dict):
-        for key, item in value.items():
-            yield from decoded_strings(key)
-            yield from decoded_strings(item)
-    elif isinstance(value, (list, tuple, set, frozenset)):
-        for item in value:
-            yield from decoded_strings(item)
-    elif isinstance(value, str):
-        yield value
-
-
 def assert_artifact_only_release(test: unittest.TestCase, workflow: str) -> None:
     decoded = yaml.safe_load(workflow)
     test.assertIsInstance(decoded, dict)
     test.assertEqual(decoded.get("permissions"), {"contents": "read"})
-
-    jobs = decoded.get("jobs")
-    test.assertIsInstance(jobs, dict)
-    test.assertEqual(
-        set(jobs),
-        {"validate-tag", "windows-wheel", "linux-wheel"},
-    )
-
-    actions: Counter[str] = Counter()
-    run_commands: Counter[str] = Counter()
-    for job in jobs.values():
-        test.assertIsInstance(job, dict)
-        test.assertNotIn("environment", job)
-        permissions = job.get("permissions", {})
-        test.assertIsInstance(permissions, dict)
-        for permission in permissions.values():
-            test.assertFalse(
-                isinstance(permission, str)
-                and permission.casefold() == "write"
-            )
-
-        steps = job.get("steps")
-        test.assertIsInstance(steps, list)
-        for step in steps:
-            test.assertIsInstance(step, dict)
-            if "uses" in step:
-                test.assertIsInstance(step["uses"], str)
-                actions[step["uses"]] += 1
-            if "run" in step:
-                test.assertIsInstance(step["run"], str)
-                run_commands[step["run"]] += 1
-
-    test.assertEqual(actions, EXPECTED_RELEASE_ACTIONS)
-    test.assertEqual(run_commands, EXPECTED_RELEASE_RUN_COMMANDS)
-
-    for job_name, artifact_name in (
-        ("windows-wheel", "wheels-windows-x86_64"),
-        ("linux-wheel", "wheels-linux-x86_64"),
-    ):
-        uploads = [
-            step
-            for step in jobs[job_name]["steps"]
-            if step.get("uses") == UPLOAD_ARTIFACT_ACTION
-        ]
-        test.assertEqual(len(uploads), 1)
-        test.assertEqual(
-            uploads[0].get("with"),
-            {
-                "name": artifact_name,
-                "path": "target/wheels/*.whl",
-            },
-        )
-
-    for value in decoded_strings(decoded):
-        test.assertNotEqual(value.casefold(), "id-token")
-        test.assertIsNone(
-            re.search(r"\bsecrets\s*(?:\.|\[)", value, re.IGNORECASE)
-        )
+    test.assertEqual(decoded.get("jobs"), EXPECTED_RELEASE_JOBS)
 
 
 class ShuffleWorkflowContractTests(unittest.TestCase):
@@ -379,6 +423,26 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
             "escaped OIDC permission key": workflow.replace(
                 "permissions:\n  contents: read",
                 'permissions:\n  contents: read\n  "id\\u002dtoken": write',
+            ),
+            "publisher shell on expected smoke command": workflow.replace(
+                "      - run: uv run --frozen python tests/wheel_smoke.py\n",
+                "      - run: uv run --frozen python tests/wheel_smoke.py\n"
+                "        shell: bash -c 'uv publish && bash \"$1\"' -- {0}\n",
+                1,
+            ),
+            "literal publication token on expected smoke command": (
+                workflow.replace(
+                    "      - run: uv run --frozen python tests/wheel_smoke.py\n",
+                    "      - run: uv run --frozen python tests/wheel_smoke.py\n"
+                    "        env:\n"
+                    "          UV_PUBLISH_TOKEN: pypi-hostile-token\n",
+                    1,
+                )
+            ),
+            "Maturin publish command": workflow.replace(
+                "          command: build\n",
+                "          command: publish\n",
+                1,
             ),
         }
 
