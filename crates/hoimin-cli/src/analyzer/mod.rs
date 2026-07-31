@@ -3,14 +3,16 @@ mod protocol;
 mod rust;
 mod store;
 
+use std::fmt::Write as _;
+
 pub use protocol::*;
 pub use store::*;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{
-    AnalysisFinished, AnalyzeFile, CANDIDATE_SCHEMA_VERSION, CandidateDescriptor, EffectFailed,
-    EffectId, MutationCandidate, MutationOperatorSelection, MutationProfile, TargetSlice,
-    validate_candidate,
+    AnalysisDiagnostic as RunAnalysisDiagnostic, AnalysisFinished, AnalyzeFile,
+    CANDIDATE_SCHEMA_VERSION, CandidateDescriptor, EffectFailed, EffectId, MutationCandidate,
+    MutationOperatorSelection, MutationProfile, TargetSlice, validate_candidate,
 };
 
 use crate::process::ProcessCancellation;
@@ -267,6 +269,11 @@ fn analyze_and_store(
         return Err(cancelled(id));
     }
     let truncated = output.truncated;
+    let diagnostics = output
+        .diagnostics
+        .into_iter()
+        .map(map_analyzer_diagnostic)
+        .collect();
     let (spool, store) =
         if request.final_target || truncated {
             (
@@ -283,9 +290,65 @@ fn analyze_and_store(
             id,
             spool,
             truncated,
+            diagnostics,
         },
         store,
     ))
+}
+
+fn map_analyzer_diagnostic(diagnostic: AnalyzerDiagnostic) -> RunAnalysisDiagnostic {
+    let (code, default_message) = match diagnostic.code {
+        AnalyzerDiagnosticCode::InvalidSyntax => {
+            ("analyzer.invalid_syntax", "source could not be parsed")
+        }
+        AnalyzerDiagnosticCode::UnreconstructableSpan => (
+            "analyzer.unreconstructable_span",
+            "source span could not be reconstructed",
+        ),
+        AnalyzerDiagnosticCode::UnparseableReplacement => (
+            "analyzer.unparseable_replacement",
+            "generated replacement could not be parsed",
+        ),
+        AnalyzerDiagnosticCode::CandidateLimitExceeded => (
+            "analyzer.candidate_limit",
+            "candidate limit reached before analysis completed",
+        ),
+        AnalyzerDiagnosticCode::InvalidRequest => {
+            ("analyzer.invalid_request", "analyzer request was invalid")
+        }
+    };
+    let explanation = diagnostic
+        .message
+        .unwrap_or_else(|| default_message.to_owned());
+    let mut location = diagnostic
+        .path
+        .map_or_else(String::new, |path| path.to_string());
+    if let Some(line) = diagnostic.line {
+        if location.is_empty() {
+            location = format!("line {line}");
+        } else {
+            let _ = write!(location, ":{line}");
+        }
+    }
+    if let Some(column) = diagnostic.column {
+        if location.is_empty() {
+            location = format!("column {column}");
+        } else if diagnostic.line.is_some() {
+            let _ = write!(location, ":{column}");
+        } else {
+            let _ = write!(location, " (column {column})");
+        }
+    }
+    let message = if location.is_empty() {
+        explanation
+    } else {
+        format!("{location}: {explanation}")
+    };
+
+    RunAnalysisDiagnostic {
+        code: code.to_owned(),
+        message,
+    }
 }
 
 fn cancelled(id: EffectId) -> EffectFailed {
@@ -343,6 +406,82 @@ mod tests {
             final_target: true,
             max_candidates: 10,
         }
+    }
+
+    #[test]
+    fn maps_every_analyzer_diagnostic_to_a_stable_run_diagnostic() {
+        let cases = [
+            (
+                AnalyzerDiagnostic {
+                    code: AnalyzerDiagnosticCode::InvalidSyntax,
+                    path: Some("src/broken.py".into()),
+                    line: None,
+                    column: None,
+                    message: None,
+                },
+                "analyzer.invalid_syntax",
+                "src/broken.py: source could not be parsed",
+            ),
+            (
+                AnalyzerDiagnostic {
+                    code: AnalyzerDiagnosticCode::UnreconstructableSpan,
+                    path: Some("src/calc.py".into()),
+                    line: Some(7),
+                    column: Some(12),
+                    message: None,
+                },
+                "analyzer.unreconstructable_span",
+                "src/calc.py:7:12: source span could not be reconstructed",
+            ),
+            (
+                AnalyzerDiagnostic {
+                    code: AnalyzerDiagnosticCode::UnparseableReplacement,
+                    path: Some("src/calc.py".into()),
+                    line: Some(9),
+                    column: Some(3),
+                    message: None,
+                },
+                "analyzer.unparseable_replacement",
+                "src/calc.py:9:3: generated replacement could not be parsed",
+            ),
+            (
+                AnalyzerDiagnostic {
+                    code: AnalyzerDiagnosticCode::CandidateLimitExceeded,
+                    path: Some("src/calc.py".into()),
+                    line: None,
+                    column: None,
+                    message: None,
+                },
+                "analyzer.candidate_limit",
+                "src/calc.py: candidate limit reached before analysis completed",
+            ),
+            (
+                AnalyzerDiagnostic {
+                    code: AnalyzerDiagnosticCode::InvalidRequest,
+                    path: None,
+                    line: None,
+                    column: None,
+                    message: None,
+                },
+                "analyzer.invalid_request",
+                "analyzer request was invalid",
+            ),
+        ];
+
+        for (diagnostic, expected_code, expected_message) in cases {
+            let mapped = map_analyzer_diagnostic(diagnostic);
+            assert_eq!(mapped.code, expected_code);
+            assert_eq!(mapped.message, expected_message);
+        }
+
+        let mapped = map_analyzer_diagnostic(AnalyzerDiagnostic {
+            code: AnalyzerDiagnosticCode::InvalidRequest,
+            path: None,
+            line: None,
+            column: None,
+            message: Some("operators must not be empty".to_owned()),
+        });
+        assert_eq!(mapped.message, "operators must not be empty");
     }
 
     #[tokio::test]

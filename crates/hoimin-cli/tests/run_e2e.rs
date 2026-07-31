@@ -39,6 +39,44 @@ async fn unittest_command_produces_the_expected_mutant_statuses() {
 }
 
 #[tokio::test]
+async fn invalid_syntax_warns_and_prevents_a_complete_zero_candidate_run() {
+    let project = tempfile::tempdir().unwrap();
+    let source = project.path().join("src");
+    std::fs::create_dir(&source).unwrap();
+    std::fs::write(source.join("__init__.py"), "").unwrap();
+    std::fs::write(source.join("calc.py"), "def broken(:\n").unwrap();
+
+    let run = run_project(project.path(), 1, "print('baseline succeeds')").await;
+
+    assert_eq!(
+        run.exit_code, 4,
+        "stderr={} stdout={}",
+        run.stderr, run.stdout
+    );
+    let diagnostic = run
+        .stderr
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .find(|record| record["code"] == "analyzer.invalid_syntax")
+        .unwrap_or_else(|| panic!("missing analyzer diagnostic in stderr: {}", run.stderr));
+    assert_eq!(diagnostic["level"], "warning");
+    assert!(
+        diagnostic["message"]
+            .as_str()
+            .unwrap()
+            .contains("src/calc.py"),
+        "{diagnostic}"
+    );
+    assert_eq!(run.document["summary"]["complete"], false);
+    assert!(run.document["mutants"].as_array().unwrap().is_empty());
+    assert!(
+        !run.stdout.contains("\"complete\":true"),
+        "invalid syntax must not produce a complete zero-candidate report: {}",
+        run.stdout
+    );
+}
+
+#[tokio::test]
 async fn explicit_candidate_run_rejects_a_missing_candidate() {
     let project = tempfile::tempdir().unwrap();
     write_parallel_project(project.path());
