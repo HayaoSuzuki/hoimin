@@ -34,7 +34,10 @@ impl WorkerWorkspace {
     pub fn reset(&mut self) -> Result<(), WorkspaceError> {
         self.verify_originals()?;
         self.reset_from_snapshot().map_err(|error| {
-            if matches!(error, WorkspaceError::WorkspaceRestore { .. }) {
+            if matches!(
+                error,
+                WorkspaceError::WorkspaceRestore { .. } | WorkspaceError::TreeDepthExceeded { .. }
+            ) {
                 error
             } else {
                 WorkspaceError::WorkspaceRestore {
