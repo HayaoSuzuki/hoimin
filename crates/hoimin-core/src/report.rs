@@ -368,6 +368,16 @@ pub enum ReportSequenceError {
         mutant_id: String,
         mutant_sequence: u64,
     },
+    #[error(
+        "mutant {mutant_id} sequence {mutant_sequence} status {status:?} disagrees with termination {termination:?}; expected {expected_status:?}"
+    )]
+    MutantStatusTerminationMismatch {
+        mutant_id: String,
+        mutant_sequence: u64,
+        status: MutationStatus,
+        termination: ProcessTermination,
+        expected_status: MutationStatus,
+    },
 }
 
 #[derive(Clone, Debug, Default)]
@@ -424,12 +434,25 @@ impl ReportSequence {
                     }
                     _ => {
                         let key = (value.candidate.id.clone(), value.candidate.sequence);
-                        (!self.active_mutants.contains(&key)).then_some(
-                            ReportSequenceError::MutantNotStarted {
+                        if !self.active_mutants.contains(&key) {
+                            Some(ReportSequenceError::MutantNotStarted {
                                 mutant_id: value.candidate.id.clone(),
                                 mutant_sequence: value.candidate.sequence,
-                            },
-                        )
+                            })
+                        } else if let Some(termination) = value.termination {
+                            let expected_status = classify_mutant(termination);
+                            (value.status != expected_status).then(|| {
+                                ReportSequenceError::MutantStatusTerminationMismatch {
+                                    mutant_id: value.candidate.id.clone(),
+                                    mutant_sequence: value.candidate.sequence,
+                                    status: value.status,
+                                    termination,
+                                    expected_status,
+                                }
+                            })
+                        } else {
+                            None
+                        }
                     }
                 }
             }
