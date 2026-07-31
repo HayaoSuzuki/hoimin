@@ -11,9 +11,10 @@ use std::time::Duration;
 
 use hoimin_core::{
     BeginSession, EffectFailed, EffectFailure, EffectId, FINGERPRINT_SCHEMA_VERSION, FinishSession,
-    LoadSession, LookupStoredResult, MutantResult, MutationStatus, PersistResult, ResourceMode,
-    ResultPersisted, SessionDiagnostic, SessionFinished, SessionLoaded, SessionResumeRef,
-    SessionStarted, StoredResult, StoredResultLoaded, contract_ensure,
+    LoadSession, LookupStoredResult, MutantResult, MutationStatus, PersistResult,
+    ProcessTermination, ResourceMode, ResultPersisted, SessionDiagnostic, SessionFinished,
+    SessionLoaded, SessionResumeRef, SessionStarted, StoredResult, StoredResultLoaded,
+    contract_ensure,
 };
 #[cfg(feature = "contracts")]
 use hoimin_core::{ByteSpan, MutationCandidate, OutputSpoolRef};
@@ -406,7 +407,8 @@ impl SessionHandler {
                 "SELECT c.sequence,c.path,c.span_start,c.span_length,c.original,c.replacement,
                         c.operator,c.line,c.column_number,c.symbol,c.file_hash,
                         r.status,r.elapsed_secs,r.elapsed_nanos,r.resource_mode,
-                        r.output_token,r.output_retained,r.output_observed
+                        r.output_token,r.output_retained,r.output_observed,
+                        r.termination_kind,r.termination_exit_code
                  FROM candidates c JOIN results r USING(run_id,mutant_id)
                  WHERE c.run_id=?1 AND c.mutant_id=?2",
                 params![run_id, mutant_id],
@@ -430,6 +432,8 @@ impl SessionHandler {
                         output_token: row.get(15)?,
                         output_retained: row.get(16)?,
                         output_observed: row.get(17)?,
+                        termination_kind: row.get(18)?,
+                        termination_exit_code: row.get(19)?,
                     })
                 },
             )
@@ -563,9 +567,11 @@ fn insert_result(transaction: &Transaction<'_>, result: &MutantResult) -> rusqli
         ),
         None => (None, None, None),
     };
+    let (termination_kind, termination_exit_code) = encode_termination(result.termination);
     transaction.execute(
         "INSERT INTO results(run_id,mutant_id,status,elapsed_secs,elapsed_nanos,resource_mode,
-         output_token,output_retained,output_observed) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+         output_token,output_retained,output_observed,termination_kind,termination_exit_code)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
         params![
             result.run_id,
             result.candidate.id,
@@ -576,9 +582,48 @@ fn insert_result(transaction: &Transaction<'_>, result: &MutantResult) -> rusqli
             token,
             retained,
             observed,
+            termination_kind,
+            termination_exit_code,
         ],
     )?;
     Ok(())
+}
+
+fn encode_termination(
+    termination: Option<ProcessTermination>,
+) -> (Option<&'static str>, Option<i64>) {
+    match termination {
+        Some(ProcessTermination::Exit(code)) => (Some("exit"), Some(i64::from(code))),
+        Some(ProcessTermination::Timeout) => (Some("timeout"), None),
+        Some(ProcessTermination::OutOfMemory) => (Some("out_of_memory"), None),
+        Some(ProcessTermination::ProcessLimit) => (Some("process_limit"), None),
+        Some(ProcessTermination::Cancelled) => (Some("cancelled"), None),
+        None => (None, None),
+    }
+}
+
+#[cfg(any(test, feature = "contracts"))]
+fn decode_termination(
+    kind: Option<&str>,
+    exit_code: Option<i64>,
+) -> Result<Option<ProcessTermination>, String> {
+    match (kind, exit_code) {
+        (None, None) => Ok(None),
+        (Some("exit"), Some(code)) => i32::try_from(code)
+            .map(ProcessTermination::Exit)
+            .map(Some)
+            .map_err(|_| "termination exit code is out of range".to_owned()),
+        (Some("timeout"), None) => Ok(Some(ProcessTermination::Timeout)),
+        (Some("out_of_memory"), None) => Ok(Some(ProcessTermination::OutOfMemory)),
+        (Some("process_limit"), None) => Ok(Some(ProcessTermination::ProcessLimit)),
+        (Some("cancelled"), None) => Ok(Some(ProcessTermination::Cancelled)),
+        (Some("exit"), None) => Err("exit termination is missing its code".to_owned()),
+        (None, Some(_)) => Err("termination code has no kind".to_owned()),
+        (Some("timeout" | "out_of_memory" | "process_limit" | "cancelled"), Some(_)) => {
+            Err("non-exit termination has an exit code".to_owned())
+        }
+        (Some(_), _) => Err("unknown termination kind".to_owned()),
+    }
 }
 
 fn persist_diagnostics(
@@ -768,6 +813,8 @@ struct RawResult {
     output_token: Option<String>,
     output_retained: Option<i64>,
     output_observed: Option<i64>,
+    termination_kind: Option<String>,
+    termination_exit_code: Option<i64>,
 }
 
 #[cfg(feature = "contracts")]
@@ -794,6 +841,8 @@ impl RawResult {
             }),
             _ => return Err("inconsistent output columns".to_owned()),
         };
+        let termination =
+            decode_termination(self.termination_kind.as_deref(), self.termination_exit_code)?;
         Ok(MutantResult {
             run_id: run_id.to_owned(),
             candidate: MutationCandidate {
@@ -813,6 +862,7 @@ impl RawResult {
                 file_hash: self.file_hash,
             },
             status,
+            termination,
             elapsed: Duration::new(
                 nonnegative(self.elapsed_secs, "elapsed seconds")?,
                 u32::try_from(self.elapsed_nanos)
@@ -830,6 +880,36 @@ mod dispatch_tests {
     use super::*;
     use hoimin_core::{ByteSpan, MutationCandidate, RunFingerprint};
     use std::time::Duration;
+
+    #[test]
+    fn termination_database_encoding_round_trips_and_rejects_corruption() {
+        for termination in [
+            None,
+            Some(ProcessTermination::Exit(i32::MIN)),
+            Some(ProcessTermination::Exit(i32::MAX)),
+            Some(ProcessTermination::Timeout),
+            Some(ProcessTermination::OutOfMemory),
+            Some(ProcessTermination::ProcessLimit),
+            Some(ProcessTermination::Cancelled),
+        ] {
+            let (kind, code) = encode_termination(termination);
+            assert_eq!(decode_termination(kind, code).unwrap(), termination);
+        }
+
+        for (kind, code) in [
+            (Some("unknown"), None),
+            (Some("exit"), None),
+            (None, Some(1)),
+            (Some("timeout"), Some(1)),
+            (Some("exit"), Some(i64::from(i32::MAX) + 1)),
+            (Some("exit"), Some(i64::from(i32::MIN) - 1)),
+        ] {
+            assert!(
+                decode_termination(kind, code).is_err(),
+                "accepted corrupt termination {kind:?}/{code:?}"
+            );
+        }
+    }
 
     #[test]
     fn persist_reserves_the_writer_before_reading_session_state() {
@@ -895,6 +975,7 @@ mod dispatch_tests {
                     file_hash: "hash".to_owned(),
                 },
                 status: MutationStatus::Killed,
+                termination: None,
                 elapsed: Duration::from_millis(5),
                 resource_mode: ResourceMode::Hard,
                 output: None,

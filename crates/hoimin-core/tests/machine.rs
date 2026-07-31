@@ -1872,6 +1872,20 @@ fn session_result_is_persisted_before_finished_output_and_reset() {
             .iter()
             .any(|effect| matches!(effect, RunEffect::EmitOutput(_) | RunEffect::ResetWorker(_)))
     );
+    let persisted_result = match find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::PersistResult(_))
+    }) {
+        RunEffect::PersistResult(value) => &value.result,
+        _ => unreachable!(),
+    };
+    assert_eq!(
+        persisted_result.termination,
+        Some(ProcessTermination::Exit(1))
+    );
+    let mut legacy = serde_json::to_value(persisted_result).unwrap();
+    legacy.as_object_mut().unwrap().remove("termination");
+    let legacy: hoimin_core::MutantResult = serde_json::from_value(legacy).unwrap();
+    assert_eq!(legacy.termination, None);
     let persist_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::PersistResult(_))
     }));
@@ -1886,11 +1900,16 @@ fn session_result_is_persisted_before_finished_output_and_reset() {
     )
     .unwrap();
     assert_eq!(state.summary().killed, 1);
-    assert!(
-        effects
-            .iter()
-            .any(|effect| matches!(effect, RunEffect::EmitOutput(_)))
-    );
+    let finished = match find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::EmitOutput(_))
+    }) {
+        RunEffect::EmitOutput(value) => match &value.event {
+            OutputEvent::MutantFinished(value) => value,
+            _ => unreachable!(),
+        },
+        _ => unreachable!(),
+    };
+    assert_eq!(finished.termination, Some(ProcessTermination::Exit(1)));
 }
 
 #[test]

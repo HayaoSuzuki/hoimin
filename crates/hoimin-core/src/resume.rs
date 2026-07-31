@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     CommandArg, FingerprintInputFile, MutantTimeout, MutationCandidate, MutationProfile,
-    MutationStatus, OutputSpoolRef, ResourceMode, RunConfig, RunLimits, TargetSlice,
+    MutationStatus, OutputSpoolRef, ProcessTermination, ResourceMode, RunConfig, RunLimits,
+    TargetSlice,
 };
 
 pub const FINGERPRINT_SCHEMA_VERSION: u8 = 4;
@@ -102,6 +103,8 @@ pub struct MutantResult {
     pub run_id: String,
     pub candidate: MutationCandidate,
     pub status: MutationStatus,
+    #[serde(default)]
+    pub termination: Option<ProcessTermination>,
     pub elapsed: Duration,
     pub resource_mode: ResourceMode,
     pub output: Option<OutputSpoolRef>,

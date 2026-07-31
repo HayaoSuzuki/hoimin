@@ -7,7 +7,7 @@ use hoimin_cli::session::SessionHandler;
 use hoimin_core::{
     BeginSession, ByteSpan, EffectFailure, EffectId, FinishSession, LoadSession,
     LookupStoredResult, MutantResult, MutationCandidate, MutationStatus, OutputSpoolRef,
-    PersistResult, ResourceMode, ResumeDecision, RunFingerprint, resume_policy,
+    PersistResult, ProcessTermination, ResourceMode, ResumeDecision, RunFingerprint, resume_policy,
 };
 use rusqlite::{Connection, OpenFlags};
 
@@ -70,7 +70,7 @@ fn migrates_schema_enables_wal_and_echoes_typed_completion_events() {
         observer
             .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
             .unwrap(),
-        2
+        3
     );
     assert_eq!(
         observer
@@ -167,6 +167,53 @@ fn timeout_can_be_replaced_then_resumed_and_completed_end_to_end() {
         .unwrap_err();
     assert_eq!(failed.id, EffectId(10));
     assert_eq!(failed.failure.code(), "session.persist.complete");
+}
+
+#[test]
+fn persists_every_typed_process_termination_shape() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("sessions.sqlite3");
+    let mut handler = SessionHandler::open(&path).unwrap();
+    handler.begin(begin_request(1, "run-1")).unwrap();
+    let cases = [
+        (Some(ProcessTermination::Exit(-7)), Some("exit"), Some(-7)),
+        (Some(ProcessTermination::Timeout), Some("timeout"), None),
+        (
+            Some(ProcessTermination::OutOfMemory),
+            Some("out_of_memory"),
+            None,
+        ),
+        (
+            Some(ProcessTermination::ProcessLimit),
+            Some("process_limit"),
+            None,
+        ),
+        (Some(ProcessTermination::Cancelled), Some("cancelled"), None),
+        (None, None, None),
+    ];
+
+    for (index, (termination, expected_kind, expected_code)) in cases.into_iter().enumerate() {
+        let mutant_id = format!("m{index}");
+        let mut request = persist_request(index as u64 + 2, "run-1", &mutant_id);
+        request.result.termination = termination;
+        handler.persist(&request).unwrap();
+
+        let connection = Connection::open(&path).unwrap();
+        let stored = connection
+            .query_row(
+                "SELECT termination_kind,termination_exit_code FROM results
+                 WHERE run_id='run-1' AND mutant_id=?1",
+                [&mutant_id],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<i64>>(1)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(stored, (expected_kind.map(str::to_owned), expected_code));
+    }
 }
 
 #[test]
@@ -682,6 +729,7 @@ fn persist_with_status(
                 file_hash: "hash".to_owned(),
             },
             status,
+            termination: None,
             elapsed: Duration::from_millis(5),
             resource_mode: ResourceMode::Hard,
             output: Some(OutputSpoolRef {
@@ -711,9 +759,12 @@ fn lookup_request(id: u64, run_id: &str, mutant_id: &str) -> LookupStoredResult 
 fn create_nullable_corrupt_database(path: &std::path::Path) {
     let db = Connection::open(path).unwrap();
     db.execute_batch(
-        "PRAGMA user_version=2;
+        "PRAGMA user_version=3;
          CREATE TABLE runs (id INTEGER PRIMARY KEY, run_id TEXT, fingerprint BLOB, complete INTEGER);
-         CREATE TABLE results (run_id TEXT, mutant_id TEXT, status TEXT);
+         CREATE TABLE results (
+             run_id TEXT, mutant_id TEXT, status TEXT,
+             termination_kind TEXT, termination_exit_code INTEGER
+         );
          CREATE TABLE fingerprints (digest BLOB PRIMARY KEY, schema_version INTEGER);
          CREATE TABLE candidates (run_id TEXT, mutant_id TEXT);
          CREATE TABLE diagnostics (id INTEGER PRIMARY KEY, run_id TEXT, level TEXT, code TEXT, message TEXT);
