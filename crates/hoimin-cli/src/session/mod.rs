@@ -3,6 +3,8 @@ mod schema;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::sync::Barrier;
 use std::sync::{Arc, Mutex};
 #[cfg(feature = "contracts")]
 use std::time::Duration;
@@ -15,7 +17,9 @@ use hoimin_core::{
 };
 #[cfg(feature = "contracts")]
 use hoimin_core::{ByteSpan, MutationCandidate, OutputSpoolRef};
-use rusqlite::{Connection, ErrorCode, OptionalExtension, Transaction, params};
+use rusqlite::{
+    Connection, ErrorCode, OptionalExtension, Transaction, TransactionBehavior, params,
+};
 use thiserror::Error;
 
 pub use schema::SchemaError;
@@ -36,6 +40,8 @@ pub struct SessionHandler {
     connection: Connection,
     lock_directory: PathBuf,
     ownerships: HashMap<String, ownership::RunOwnership>,
+    #[cfg(test)]
+    persist_after_reads: Option<Arc<Barrier>>,
 }
 
 impl SessionHandler {
@@ -54,6 +60,8 @@ impl SessionHandler {
             connection,
             lock_directory,
             ownerships: HashMap::new(),
+            #[cfg(test)]
+            persist_after_reads: None,
         })
     }
 
@@ -183,7 +191,7 @@ impl SessionHandler {
         };
         let transaction = self
             .connection
-            .transaction()
+            .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| failed(id, "session.begin", "begin run transaction", &error))?;
         transaction
             .execute(
@@ -225,7 +233,7 @@ impl SessionHandler {
         let mutant_id = request.result.candidate.id.clone();
         let transaction = self
             .connection
-            .transaction()
+            .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| failed(id, "session.persist", "begin result transaction", &error))?;
         let complete = transaction
             .query_row(
@@ -261,6 +269,11 @@ impl SessionHandler {
         let (candidate_count, result_count, status) =
             result_shape(&transaction, &run_id, &mutant_id)
                 .map_err(|error| failed(id, "session.persist", "read existing result", &error))?;
+        #[cfg(test)]
+        if let Some(barrier) = &self.persist_after_reads {
+            barrier.wait();
+            barrier.wait();
+        }
         if let Some(stored) =
             decode_stored_result(&mutant_id, candidate_count, result_count, status)
                 .map_err(|failure| EffectFailed { id, failure })?
@@ -329,7 +342,7 @@ impl SessionHandler {
         let id = request.id;
         let transaction = self
             .connection
-            .transaction()
+            .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| failed(id, "session.finish", "begin finish transaction", &error))?;
         let statement = if request.complete {
             "UPDATE runs SET finished=1, complete=1 WHERE run_id=?1 AND complete=0"
@@ -815,7 +828,80 @@ impl RawResult {
 #[cfg(test)]
 mod dispatch_tests {
     use super::*;
+    use hoimin_core::{ByteSpan, MutationCandidate, RunFingerprint};
     use std::time::Duration;
+
+    #[test]
+    fn persist_reserves_the_writer_before_reading_session_state() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("sessions.sqlite3");
+        let mut owner = SessionHandler::open(&path).unwrap();
+        for run_id in ["persisted-run", "competing-run"] {
+            owner
+                .begin(BeginSession {
+                    id: EffectId(1),
+                    run_id: run_id.to_owned(),
+                    fingerprint: RunFingerprint::from_bytes([1; 32]),
+                })
+                .unwrap();
+        }
+        let competitor = Connection::open(&path).unwrap();
+        competitor.busy_timeout(Duration::ZERO).unwrap();
+
+        let barrier = Arc::new(Barrier::new(2));
+        owner.persist_after_reads = Some(barrier.clone());
+        let persist = std::thread::spawn(move || owner.persist(&persist_request()));
+
+        barrier.wait();
+        let competing_write = competitor.execute(
+            "UPDATE runs SET finished=1 WHERE run_id='competing-run'",
+            [],
+        );
+        barrier.wait();
+        let persisted = persist.join().expect("persist thread must not panic");
+
+        assert!(
+            matches!(
+                competing_write,
+                Err(rusqlite::Error::SqliteFailure(error, _))
+                    if error.code == ErrorCode::DatabaseBusy
+                        && error.extended_code == rusqlite::ffi::SQLITE_BUSY
+            ),
+            "the competing writer must lose the writer reservation: competitor={competing_write:?}, persist={persisted:?}"
+        );
+        persisted.expect("persist must keep its valid snapshot and commit");
+    }
+
+    fn persist_request() -> PersistResult {
+        PersistResult {
+            id: EffectId(2),
+            worker: 0,
+            result: MutantResult {
+                run_id: "persisted-run".to_owned(),
+                candidate: MutationCandidate {
+                    id: "m1".to_owned(),
+                    sequence: 0,
+                    path: "src/example.py".into(),
+                    span: ByteSpan {
+                        start: 0,
+                        length: 1,
+                    },
+                    original: "+".to_owned(),
+                    replacement: "-".to_owned(),
+                    operator: "binary".to_owned(),
+                    line: 1,
+                    column: 0,
+                    symbol: None,
+                    file_hash: "hash".to_owned(),
+                },
+                status: MutationStatus::Killed,
+                elapsed: Duration::from_millis(5),
+                resource_mode: ResourceMode::Hard,
+                output: None,
+                diagnostics: Vec::new(),
+            },
+        }
+    }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn conflicting_lock_does_not_block_the_async_deadline() {
