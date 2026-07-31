@@ -63,10 +63,19 @@ pub struct PlanOutput {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifiedPlan {
     pub config: RunConfig,
+    pub(crate) fingerprint_copy_inputs: BTreeSet<Utf8PathBuf>,
     pub selection: ResolvedVerifySelection,
     pub selection_scope: VerifySelectionScope,
     pub plan_truncated: bool,
     pub verification_selection: VerificationSelection,
+}
+
+impl VerifiedPlan {
+    #[doc(hidden)]
+    #[must_use]
+    pub fn fingerprint_copy_inputs(&self) -> BTreeSet<Utf8PathBuf> {
+        self.fingerprint_copy_inputs.clone()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -101,6 +110,8 @@ pub enum PlanError {
     SourceChanged(String),
     #[error("plan.fingerprint_input.changed: {0}")]
     FingerprintInputChanged(String),
+    #[error("plan.workspace: {0}")]
+    Workspace(String),
     #[error("plan.candidate.invalid: {0}")]
     CandidateInvalid(String),
 }
@@ -250,10 +261,23 @@ pub async fn prepare_verify_selection(
         RecordMismatch::FingerprintInput,
     )?;
     config.fingerprint_inputs = current_inputs;
+    let copy_options = crate::workspace::CopyOptions {
+        includes: config.selection.includes.clone(),
+        excludes: config.selection.excludes.clone(),
+    };
+    let copy_manifest = crate::workspace::build_validation_manifest(&config.root, &copy_options)
+        .map_err(|error| PlanError::Workspace(error.to_string()))?;
+    let fingerprint_copy_inputs = config
+        .fingerprint_inputs
+        .iter()
+        .filter(|record| copy_manifest.entry(&record.path).is_some())
+        .map(|record| record.path.clone())
+        .collect();
     validate_requested_candidates(&manifest, &candidate_ids, &config, &targets).await?;
 
     Ok(VerifiedPlan {
         config,
+        fingerprint_copy_inputs,
         verification_selection,
         selection,
         selection_scope,

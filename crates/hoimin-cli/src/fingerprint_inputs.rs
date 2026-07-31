@@ -1,11 +1,11 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::FingerprintInputFile;
 use ignore::WalkBuilder;
 use ignore::overrides::{Override, OverrideBuilder};
 
-use crate::workspace::{self, RootRelativeReadError};
+use crate::workspace::{self, RootRelativeReadError, WorkspaceManifest};
 
 #[derive(Debug, thiserror::Error)]
 pub enum FingerprintInputError {
@@ -21,6 +21,14 @@ pub enum FingerprintInputError {
     NotFound(String),
     #[error("fingerprint.file.unsupported_file: {0}")]
     ExactUnsupportedFile(String),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum FingerprintInputRecheckError {
+    #[error(transparent)]
+    Resolution(#[from] FingerprintInputError),
+    #[error("resolved fingerprint input records differ from prepared configuration")]
+    RecordsChanged,
 }
 
 /// Resolves root-relative fingerprint input glob patterns to sorted, hashed file records.
@@ -78,6 +86,66 @@ pub fn resolve(
             })
         })
         .collect()
+}
+
+/// Re-resolves fingerprint inputs and compares them with the records frozen into configuration.
+pub(crate) fn recheck(
+    root: &Utf8Path,
+    patterns: &[String],
+    files: &[String],
+    expected: &[FingerprintInputFile],
+) -> Result<(), FingerprintInputRecheckError> {
+    let current = resolve(root, patterns, files)?;
+    if current == expected {
+        Ok(())
+    } else {
+        Err(FingerprintInputRecheckError::RecordsChanged)
+    }
+}
+
+pub(crate) fn recheck_manifest(
+    root: &Utf8Path,
+    patterns: &[String],
+    files: &[String],
+    expected: &[FingerprintInputFile],
+    initial: &WorkspaceManifest,
+    copied_at_start: &BTreeSet<Utf8PathBuf>,
+) -> Result<(), FingerprintInputRecheckError> {
+    let expected = expected
+        .iter()
+        .map(|record| (&record.path, record.hash.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    let mut selected = BTreeMap::new();
+
+    for pattern in patterns {
+        let overrides = build_override(root, pattern)?;
+        for entry in initial.entries() {
+            if overrides
+                .matched(root.join(&entry.path).as_std_path(), false)
+                .is_whitelist()
+            {
+                selected.insert(&entry.path, entry.blake3.to_hex().to_string());
+            }
+        }
+    }
+    for file in files {
+        let path = normalize_exact_path(file)?;
+        if let Some(entry) = initial.entry(&path) {
+            selected.insert(&entry.path, entry.blake3.to_hex().to_string());
+        }
+    }
+
+    if selected
+        .iter()
+        .any(|(path, hash)| expected.get(path).copied() != Some(hash.as_str()))
+        || copied_at_start
+            .iter()
+            .any(|path| initial.entry(path).is_none())
+    {
+        Err(FingerprintInputRecheckError::RecordsChanged)
+    } else {
+        Ok(())
+    }
 }
 
 fn resolve_exact(input: &str) -> Result<Utf8PathBuf, FingerprintInputError> {

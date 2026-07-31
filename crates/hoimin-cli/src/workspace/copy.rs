@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::convert::Infallible;
 use std::fs;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -24,6 +25,17 @@ pub struct WorkspacePlan {
     diagnostics: Vec<WorkspaceDiagnostic>,
     allowance: Arc<CopyAllowance>,
     state: Arc<Mutex<PlanState>>,
+}
+
+pub(crate) enum ValidatedPreflightError<E> {
+    Workspace(WorkspaceError),
+    Validation(E),
+}
+
+impl<E> From<WorkspaceError> for ValidatedPreflightError<E> {
+    fn from(error: WorkspaceError) -> Self {
+        Self::Workspace(error)
+    }
 }
 
 #[derive(Debug, Default)]
@@ -143,14 +155,31 @@ impl WorkspacePlan {
         requested_workers: u32,
         options: CopyOptions,
     ) -> Result<Self, WorkspaceError> {
+        match Self::preflight_validated(root, preflight_id, requested_workers, options, |_, _| {
+            Ok::<_, Infallible>(())
+        }) {
+            Ok(plan) => Ok(plan),
+            Err(ValidatedPreflightError::Workspace(error)) => Err(error),
+            Err(ValidatedPreflightError::Validation(never)) => match never {},
+        }
+    }
+
+    pub(crate) fn preflight_validated<E>(
+        root: &Utf8Path,
+        preflight_id: EffectId,
+        requested_workers: u32,
+        options: CopyOptions,
+        validate: impl FnOnce(&Utf8Path, &WorkspaceManifest) -> Result<(), E>,
+    ) -> Result<Self, ValidatedPreflightError<E>> {
         if requested_workers == 0 {
-            return Err(WorkspaceError::ZeroWorkers);
+            return Err(WorkspaceError::ZeroWorkers.into());
         }
         let canonical = fs::canonicalize(root)
             .map_err(|error| WorkspaceError::io("canonicalize root", root, error))?;
         let original_root =
             Utf8PathBuf::from_path_buf(canonical).map_err(|_| WorkspaceError::NonUtf8Path)?;
         let (manifest, diagnostics) = build_manifest(&original_root, &options)?;
+        validate(&original_root, &manifest).map_err(ValidatedPreflightError::Validation)?;
         let snapshot = Arc::new(create_disk_snapshot(&original_root, &manifest)?);
         let (current, _) = build_manifest(&original_root, &options)?;
         if !manifest.content_matches(&current) {
@@ -158,7 +187,8 @@ impl WorkspacePlan {
                 path: manifest
                     .first_content_difference(&current)
                     .unwrap_or_default(),
-            });
+            }
+            .into());
         }
         let aggregate_bytes = manifest
             .logical_bytes()

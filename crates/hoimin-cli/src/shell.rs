@@ -3,7 +3,7 @@ use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use camino::Utf8PathBuf;
+use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{
     CandidateLoaded, Diagnostic, EffectFailed, EffectId, EmitOutput, FingerprintInput,
     ObserveRemainingBudget, OutputEvent, RemainingBudgetObserved, ReportVersions, RunConfig,
@@ -24,7 +24,7 @@ use crate::resource::PortableBackend;
 use crate::resource::ResourceBackend;
 use crate::session::SessionDispatcher;
 use crate::target::TargetHandler;
-use crate::workspace::{CopyOptions, WorkspaceHandler};
+use crate::workspace::{CopyOptions, WorkspaceHandler, WorkspaceManifest};
 
 #[derive(Clone, Debug)]
 pub struct RunControl {
@@ -122,6 +122,7 @@ pub struct ShellContext<Stdout, Stderr> {
     _spool_dir: TempDir,
     resolved_targets: Option<Vec<TargetSlice>>,
     config: RunConfig,
+    fingerprint_copy_inputs: BTreeSet<Utf8PathBuf>,
     report_versions: ReportVersions,
 }
 
@@ -187,6 +188,7 @@ where
             _spool_dir: spool_dir,
             resolved_targets: None,
             config: config.clone(),
+            fingerprint_copy_inputs: BTreeSet::new(),
             report_versions: ReportVersions {
                 os: std::env::consts::OS.to_owned(),
                 hoimin: env!("CARGO_PKG_VERSION").to_owned(),
@@ -224,6 +226,33 @@ async fn prepare_fingerprint<Stdout, Stderr>(
         targets.clone(),
         context.process.mode(),
     )))
+}
+
+fn recheck_fingerprint_inputs(
+    config: &RunConfig,
+    root: &Utf8Path,
+    manifest: &WorkspaceManifest,
+    copied_at_start: &BTreeSet<Utf8PathBuf>,
+    id: EffectId,
+) -> Result<(), EffectFailed> {
+    crate::fingerprint_inputs::recheck(
+        root,
+        &config.fingerprint_includes,
+        &config.fingerprint_files,
+        &config.fingerprint_inputs,
+    )
+    .map_err(|error| {
+        EffectFailed::other(id, "plan.fingerprint_input.changed", error.to_string())
+    })?;
+    crate::fingerprint_inputs::recheck_manifest(
+        root,
+        &config.fingerprint_includes,
+        &config.fingerprint_files,
+        &config.fingerprint_inputs,
+        manifest,
+        copied_at_start,
+    )
+    .map_err(|error| EffectFailed::other(id, "plan.fingerprint_input.changed", error.to_string()))
 }
 
 #[cfg(windows)]
@@ -277,19 +306,27 @@ where
             }
             Err(error) => Err(error),
         },
-        RunEffect::Preflight(request) => match context.workspace.handle_preflight(request) {
-            Ok(mut value) => match prepare_fingerprint(context).await {
-                Ok(run_fingerprint) => {
-                    value.fingerprint = Some(run_fingerprint);
-                    Ok(RunEvent::PreflightCompleted(value))
-                }
-                Err(mut error) => {
-                    error.id = value.id;
-                    Err(error)
-                }
-            },
-            Err(error) => Err(error),
-        },
+        RunEffect::Preflight(request) => {
+            let config = &context.config;
+            let copied_at_start = &context.fingerprint_copy_inputs;
+            match context
+                .workspace
+                .handle_preflight_validated(request, |root, manifest| {
+                    recheck_fingerprint_inputs(config, root, manifest, copied_at_start, id)
+                }) {
+                Ok(mut value) => match prepare_fingerprint(context).await {
+                    Ok(run_fingerprint) => {
+                        value.fingerprint = Some(run_fingerprint);
+                        Ok(RunEvent::PreflightCompleted(value))
+                    }
+                    Err(mut error) => {
+                        error.id = value.id;
+                        Err(error)
+                    }
+                },
+                Err(error) => Err(error),
+            }
+        }
         RunEffect::CreateWorker(request) => context
             .workspace
             .handle_create_worker(request)
@@ -558,6 +595,7 @@ where
         stderr,
         RunControl::new(),
         CandidateSelection::All,
+        None,
     )
     .await
 }
@@ -579,6 +617,30 @@ where
     Stdout: Write,
     Stderr: Write,
 {
+    run_selected_loop_with_fingerprint_inputs(
+        config,
+        candidate_ids,
+        verification_selection,
+        BTreeSet::new(),
+        stdout,
+        stderr,
+    )
+    .await
+}
+
+#[doc(hidden)]
+pub async fn run_selected_loop_with_fingerprint_inputs<Stdout, Stderr>(
+    config: RunConfig,
+    candidate_ids: BTreeSet<String>,
+    verification_selection: hoimin_core::VerificationSelection,
+    fingerprint_copy_inputs: BTreeSet<Utf8PathBuf>,
+    stdout: Stdout,
+    stderr: Stderr,
+) -> Result<i32, String>
+where
+    Stdout: Write,
+    Stderr: Write,
+{
     if config.session.is_some() || config.resume {
         return Err("selected candidate execution does not support sessions or resume".to_owned());
     }
@@ -588,6 +650,7 @@ where
         stderr,
         RunControl::new(),
         CandidateSelection::Explicit(candidate_ids, verification_selection),
+        Some(fingerprint_copy_inputs),
     )
     .await
 }
@@ -608,6 +671,29 @@ where
     Stdout: Write,
     Stderr: Write,
 {
+    run_ordered_selected_loop_with_fingerprint_inputs(
+        config,
+        candidate_ids,
+        verification_selection,
+        BTreeSet::new(),
+        stdout,
+        stderr,
+    )
+    .await
+}
+
+pub(crate) async fn run_ordered_selected_loop_with_fingerprint_inputs<Stdout, Stderr>(
+    config: RunConfig,
+    candidate_ids: Vec<String>,
+    verification_selection: hoimin_core::VerificationSelection,
+    fingerprint_copy_inputs: BTreeSet<Utf8PathBuf>,
+    stdout: Stdout,
+    stderr: Stderr,
+) -> Result<i32, String>
+where
+    Stdout: Write,
+    Stderr: Write,
+{
     if config.session.is_some() || config.resume {
         return Err("selected candidate execution does not support sessions or resume".to_owned());
     }
@@ -617,6 +703,7 @@ where
         stderr,
         RunControl::new(),
         CandidateSelection::Ordered(candidate_ids, verification_selection),
+        Some(fingerprint_copy_inputs),
     )
     .await
 }
@@ -633,7 +720,15 @@ where
     Stderr: Write,
 {
     let config = prepare_run_config(config).map_err(|error| error.to_string())?;
-    run_loop_prepared(config, stdout, stderr, control, CandidateSelection::All).await
+    run_loop_prepared(
+        config,
+        stdout,
+        stderr,
+        control,
+        CandidateSelection::All,
+        None,
+    )
+    .await
 }
 
 enum CandidateSelection {
@@ -652,6 +747,7 @@ async fn run_loop_prepared<Stdout, Stderr>(
     stderr: Stderr,
     control: RunControl,
     candidate_selection: CandidateSelection,
+    fingerprint_copy_inputs: Option<BTreeSet<Utf8PathBuf>>,
 ) -> Result<i32, String>
 where
     Stdout: Write,
@@ -659,6 +755,9 @@ where
 {
     let metrics_path = config.output.metrics.clone();
     let mut context = ShellContext::new(&config, stdout, stderr).await?;
+    if let Some(fingerprint_copy_inputs) = fingerprint_copy_inputs {
+        context.fingerprint_copy_inputs = fingerprint_copy_inputs;
+    }
     let deadline = tokio::time::Instant::now() + config.limits.total_timeout.get();
     let max_jobs = config.limits.jobs.get();
     let channel_capacity = config.limits.jobs.get().saturating_add(1);
@@ -1418,6 +1517,188 @@ mod tests {
         assert_eq!(observed.remaining, Duration::from_secs(281));
         assert_eq!(expired.id, id);
         assert_eq!(expired.remaining, Duration::ZERO);
+    }
+
+    #[tokio::test]
+    async fn fingerprint_recheck_rejects_aba_change_during_validated_preflight() {
+        let project = tempfile::tempdir().unwrap();
+        let source = project.path().join("src");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::write(source.join("calc.py"), "def calc():\n    return 1\n").unwrap();
+        let input = project.path().join("config.toml");
+        std::fs::write(&input, "version = 'A'\n").unwrap();
+        let config = crate::cli::parse_config_from([
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("src/calc.py"),
+            OsString::from("--fingerprint-include"),
+            OsString::from("config.toml"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+            OsString::from("unused-test-command"),
+        ])
+        .unwrap();
+        let config = prepare_run_config(config).unwrap();
+        let mut context = ShellContext::new(&config, Vec::new(), Vec::new())
+            .await
+            .unwrap();
+        let id = EffectId(41);
+        let copied_at_start = context.fingerprint_copy_inputs.clone();
+
+        std::fs::write(&input, "version = 'B'\n").unwrap();
+        let error = context
+            .workspace
+            .handle_preflight_validated(hoimin_core::Preflight { id }, |root, manifest| {
+                std::fs::write(&input, "version = 'A'\n").unwrap();
+                let result =
+                    recheck_fingerprint_inputs(&config, root, manifest, &copied_at_start, id);
+                std::fs::write(&input, "version = 'B'\n").unwrap();
+                result
+            })
+            .unwrap_err();
+
+        assert_eq!(error.id, id);
+        assert_eq!(error.failure.code(), "plan.fingerprint_input.changed");
+    }
+
+    #[tokio::test]
+    async fn fingerprint_recheck_rejects_delete_restore_delete_aba() {
+        let project = tempfile::tempdir().unwrap();
+        let source = project.path().join("src");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::write(source.join("calc.py"), "def calc():\n    return 1\n").unwrap();
+        let input = project.path().join("config.toml");
+        std::fs::write(&input, "version = 'A'\n").unwrap();
+        let config = crate::cli::parse_config_from([
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("src/calc.py"),
+            OsString::from("--fingerprint-file"),
+            OsString::from("config.toml"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+            OsString::from("unused-test-command"),
+        ])
+        .unwrap();
+        let config = prepare_run_config(config).unwrap();
+        let mut context = ShellContext::new(&config, Vec::new(), Vec::new())
+            .await
+            .unwrap();
+        let id = EffectId(43);
+        context
+            .fingerprint_copy_inputs
+            .insert(Utf8PathBuf::from("config.toml"));
+        let copied_at_start = context.fingerprint_copy_inputs.clone();
+
+        std::fs::remove_file(&input).unwrap();
+        let error = context
+            .workspace
+            .handle_preflight_validated(hoimin_core::Preflight { id }, |root, manifest| {
+                std::fs::write(&input, "version = 'A'\n").unwrap();
+                let result =
+                    recheck_fingerprint_inputs(&config, root, manifest, &copied_at_start, id);
+                std::fs::remove_file(&input).unwrap();
+                result
+            })
+            .unwrap_err();
+
+        assert_eq!(error.id, id);
+        assert_eq!(error.failure.code(), "plan.fingerprint_input.changed");
+    }
+
+    #[tokio::test]
+    async fn fingerprint_recheck_rejects_add_remove_add_aba() {
+        let project = tempfile::tempdir().unwrap();
+        let source = project.path().join("src");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::write(source.join("calc.py"), "def calc():\n    return 1\n").unwrap();
+        std::fs::write(project.path().join("base.cfg"), "base = true\n").unwrap();
+        let added = project.path().join("added.cfg");
+        let config = crate::cli::parse_config_from([
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("src/calc.py"),
+            OsString::from("--fingerprint-include"),
+            OsString::from("*.cfg"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+            OsString::from("unused-test-command"),
+        ])
+        .unwrap();
+        let config = prepare_run_config(config).unwrap();
+        let mut context = ShellContext::new(&config, Vec::new(), Vec::new())
+            .await
+            .unwrap();
+        let id = EffectId(44);
+        let copied_at_start = context.fingerprint_copy_inputs.clone();
+
+        std::fs::write(&added, "added = true\n").unwrap();
+        let error = context
+            .workspace
+            .handle_preflight_validated(hoimin_core::Preflight { id }, |root, manifest| {
+                std::fs::remove_file(&added).unwrap();
+                let result =
+                    recheck_fingerprint_inputs(&config, root, manifest, &copied_at_start, id);
+                std::fs::write(&added, "added = true\n").unwrap();
+                result
+            })
+            .unwrap_err();
+
+        assert_eq!(error.id, id);
+        assert_eq!(error.failure.code(), "plan.fingerprint_input.changed");
+    }
+
+    #[tokio::test]
+    async fn fingerprint_recheck_accepts_unchanged_inputs_excluded_from_worker_copy() {
+        let project = tempfile::tempdir().unwrap();
+        let source = project.path().join("src");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::write(source.join("calc.py"), "def calc():\n    return 1\n").unwrap();
+        std::fs::write(project.path().join(".gitignore"), "ignored.cfg\n").unwrap();
+        std::fs::write(project.path().join("ignored.cfg"), "glob = true\n").unwrap();
+        std::fs::write(project.path().join("excluded.toml"), "exact = true\n").unwrap();
+        let config = crate::cli::parse_config_from([
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("src/calc.py"),
+            OsString::from("--exclude"),
+            OsString::from("excluded.toml"),
+            OsString::from("--fingerprint-include"),
+            OsString::from("*.cfg"),
+            OsString::from("--fingerprint-file"),
+            OsString::from("excluded.toml"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+            OsString::from("unused-test-command"),
+        ])
+        .unwrap();
+        let config = prepare_run_config(config).unwrap();
+        let mut context = ShellContext::new(&config, Vec::new(), Vec::new())
+            .await
+            .unwrap();
+        let id = EffectId(42);
+        let copied_at_start = context.fingerprint_copy_inputs.clone();
+
+        let completed = context
+            .workspace
+            .handle_preflight_validated(hoimin_core::Preflight { id }, |root, manifest| {
+                recheck_fingerprint_inputs(&config, root, manifest, &copied_at_start, id)
+            })
+            .unwrap();
+
+        assert_eq!(completed.id, id);
     }
 
     fn assert_metrics_sidecar_finishes(
