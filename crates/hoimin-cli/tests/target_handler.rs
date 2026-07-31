@@ -168,6 +168,48 @@ async fn changed_collects_staged_unstaged_and_untracked_python_lines() {
 }
 
 #[tokio::test]
+async fn changed_root_source_selects_changed_python_lines() {
+    let repo = FixtureRepo::new();
+    repo.write("root.py", "root_one\nroot_two\nroot_three\n");
+    repo.write(
+        "pkg/nested.py",
+        "nested_one\nnested_two\nnested_three\nnested_four\n",
+    );
+    repo.commit_all("initial");
+
+    repo.write("root.py", "root_one\nROOT_TWO\nroot_three\n");
+    repo.write(
+        "pkg/nested.py",
+        "nested_one\nnested_two\nnested_three\nNESTED_FOUR\n",
+    );
+
+    let targets = TargetHandler::resolve(&Selection {
+        root: repo.root(),
+        sources: vec![Utf8PathBuf::from(".")],
+        changed: true,
+        ..Selection::default()
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(
+        targets,
+        vec![
+            TargetSlice {
+                path: Utf8PathBuf::from("pkg/nested.py"),
+                lines: vec![LineRange { start: 4, end: 4 }],
+                symbols: Vec::new(),
+            },
+            TargetSlice {
+                path: Utf8PathBuf::from("root.py"),
+                lines: vec![LineRange { start: 2, end: 2 }],
+                symbols: Vec::new(),
+            },
+        ]
+    );
+}
+
+#[tokio::test]
 async fn changed_collects_untracked_python_in_unborn_repository() {
     let repo = FixtureRepo::new();
     repo.write("pkg/a.py", "one\ntwo\n");

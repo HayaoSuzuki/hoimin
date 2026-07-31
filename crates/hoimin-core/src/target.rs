@@ -226,6 +226,9 @@ fn strip_root(root: &Utf8Path, path: &Utf8Path) -> Option<Utf8PathBuf> {
 }
 
 fn is_within(path: &Utf8Path, directory: &Utf8Path) -> bool {
+    if directory.as_str().is_empty() {
+        return true;
+    }
     if cfg!(windows) {
         let path = path_key(path.as_str());
         let directory = path_key(directory.as_str());

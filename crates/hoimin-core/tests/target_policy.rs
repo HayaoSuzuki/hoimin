@@ -248,6 +248,71 @@ fn explicit_selectors_form_a_union_and_are_normalized() {
 }
 
 #[test]
+fn root_equal_source_selects_every_python_file() {
+    let root = if cfg!(windows) {
+        Utf8PathBuf::from("C:/project")
+    } else {
+        Utf8PathBuf::from("/project")
+    };
+    let discovered = [
+        DiscoveredFile::regular("notes.txt"),
+        DiscoveredFile::python("pkg/nested.py"),
+        DiscoveredFile::python("root.py"),
+    ];
+
+    for source in [
+        Utf8PathBuf::new(),
+        Utf8PathBuf::from("."),
+        Utf8PathBuf::from("./"),
+        Utf8PathBuf::from("pkg/.."),
+        root.clone(),
+    ] {
+        let selection = Selection {
+            root: root.clone(),
+            sources: vec![source.clone()],
+            ..Selection::default()
+        };
+
+        let targets = resolve_explicit(&selection, &discovered).unwrap();
+        assert_eq!(
+            targets
+                .iter()
+                .map(|target| target.path.as_str())
+                .collect::<Vec<_>>(),
+            ["pkg/nested.py", "root.py"],
+            "root-equivalent source {source:?} did not select the project"
+        );
+    }
+}
+
+#[test]
+fn root_source_contains_root_relative_file_and_line_selectors() {
+    let selection = Selection {
+        root: Utf8PathBuf::from("project"),
+        sources: vec![Utf8PathBuf::from(".")],
+        files: vec![Utf8PathBuf::from("root.py")],
+        lines: vec![LineSelection {
+            path: Utf8PathBuf::from("pkg/nested.py"),
+            range: LineRange { start: 2, end: 3 },
+        }],
+        ..Selection::default()
+    };
+    let discovered = [
+        DiscoveredFile::python("pkg/nested.py"),
+        DiscoveredFile::python("root.py"),
+    ];
+
+    let targets = resolve_explicit(&selection, &discovered).unwrap();
+    assert_eq!(
+        targets
+            .iter()
+            .map(|target| target.path.as_str())
+            .collect::<Vec<_>>(),
+        ["pkg/nested.py", "root.py"]
+    );
+}
+
+#[test]
 fn whole_file_union_wins_over_line_on_the_same_path() {
     let selection = Selection {
         root: Utf8PathBuf::from("project"),
