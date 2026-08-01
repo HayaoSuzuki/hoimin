@@ -18,8 +18,9 @@ use windows_sys::Win32::System::JobObjects::{
     JobObjectExtendedLimitInformation, SetInformationJobObject, TerminateJobObject,
 };
 use windows_sys::Win32::System::SystemServices::{
-    JOB_OBJECT_MSG_ACTIVE_PROCESS_LIMIT, JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO,
-    JOB_OBJECT_MSG_EXIT_PROCESS, JOB_OBJECT_MSG_JOB_MEMORY_LIMIT,
+    JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS, JOB_OBJECT_MSG_ACTIVE_PROCESS_LIMIT,
+    JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, JOB_OBJECT_MSG_EXIT_PROCESS,
+    JOB_OBJECT_MSG_JOB_MEMORY_LIMIT,
 };
 
 use super::{ProcessSupervisor, ResourceError};
@@ -343,7 +344,7 @@ fn record_notification(state: &mut RunState, message: u32, pid: u32) {
                 .extend(state.active.iter().map(|root| root.pid));
             state.active.clear();
         }
-        JOB_OBJECT_MSG_EXIT_PROCESS
+        JOB_OBJECT_MSG_EXIT_PROCESS | JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS
             if let Some(index) = state.active.iter().position(|root| root.pid == pid) =>
         {
             state.active.swap_remove(index);
@@ -720,5 +721,37 @@ mod tests {
         assert_eq!(exited.violations.load(Ordering::Acquire), 0);
         assert_eq!(active.violations.load(Ordering::Acquire), MEMORY_VIOLATION);
         assert!(state.exited_roots.contains(&301));
+    }
+
+    #[test]
+    fn abnormal_exit_marks_only_its_root_while_other_roots_remain_active() {
+        let crashed = std::sync::Arc::new(RootSignal::default());
+        let running = std::sync::Arc::new(RootSignal::default());
+        let mut state = RunState {
+            active: vec![
+                ActiveRoot {
+                    pid: 401,
+                    signal: std::sync::Arc::downgrade(&crashed),
+                },
+                ActiveRoot {
+                    pid: 402,
+                    signal: std::sync::Arc::downgrade(&running),
+                },
+            ],
+            ..RunState::default()
+        };
+
+        record_notification(
+            &mut state,
+            windows_sys::Win32::System::SystemServices::JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS,
+            401,
+        );
+
+        assert_eq!(
+            state.active.iter().map(|root| root.pid).collect::<Vec<_>>(),
+            vec![402]
+        );
+        assert_eq!(state.exited_roots.len(), 1);
+        assert!(state.exited_roots.contains(&401));
     }
 }
