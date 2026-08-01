@@ -4,7 +4,7 @@
 
 **Goal:** Keep cgroup v2 hard memory enforcement available when the requested byte limit is not aligned to the kernel page size.
 
-**Architecture:** Normalize only `memory.max` to the host base page size before writing, rounding down so the effective hard limit never exceeds the requested limit. Continue using byte-exact readback for the normalized value and for `pids.max`/`memory.oom.group`. Record a diagnostic whenever normalization changes the requested value so the effective enforcement remains observable.
+**Architecture:** Normalize only `memory.max` to the host base page size before writing, rounding down so the effective hard limit never exceeds the requested limit. Cap huge requests below the kernel's `PAGE_COUNTER_MAX` sentinel so readback remains a finite byte value instead of `max`. Continue using byte-exact readback for the normalized value and for `pids.max`/`memory.oom.group`. Record a diagnostic whenever normalization changes the requested value so the effective enforcement remains observable.
 
 **Tech Stack:** Rust, libc `sysconf(_SC_PAGESIZE)`, Linux cgroup v2, Cargo tests.
 
@@ -16,7 +16,7 @@
 - Modify: `crates/hoimin-cli/src/resource/linux.rs`
 
 1. Add a host-testable helper that rounds a byte limit down to a supplied nonzero page size.
-2. Cover decimal `1GB` with 4096-byte pages (`999,997,440`), already aligned limits, larger base pages, sub-page values, and invalid zero page size.
+2. Cover decimal `1GB` with 4096-byte pages (`999,997,440`), already aligned limits, larger base pages, sub-page values, invalid page metadata, and values above the largest finite page-counter limit.
 3. Run the focused helper tests and confirm the decimal-byte expectation fails before the production setup path uses normalization.
 
 ### Task 2: Normalize `memory.max` before strict verification

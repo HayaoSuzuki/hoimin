@@ -9,6 +9,26 @@ use super::{PortableBackend, ResourceBackend, ResourceError};
 #[cfg(any(target_os = "linux", test))]
 const INTERNAL_LAUNCHER_ARG: &str = "--hoimin-internal-cgroup-launch";
 
+#[cfg(any(target_os = "linux", test))]
+fn normalized_memory_limit(
+    limit: u64,
+    page_size: u64,
+    page_counter_max_pages: u64,
+) -> Result<u64, ResourceError> {
+    if page_size == 0 {
+        return Err(ResourceError::InvalidCgroupData(
+            "system page size must be positive".into(),
+        ));
+    }
+    let max_finite_pages = page_counter_max_pages.checked_sub(1).ok_or_else(|| {
+        ResourceError::InvalidCgroupData("cgroup page counter has no finite range".into())
+    })?;
+    let max_finite_bytes = max_finite_pages.checked_mul(page_size).ok_or_else(|| {
+        ResourceError::InvalidCgroupData("finite cgroup memory limit overflowed u64".into())
+    })?;
+    Ok((limit - limit % page_size).min(max_finite_bytes))
+}
+
 #[cfg(target_os = "linux")]
 pub(crate) use platform::LinuxSupervisor;
 #[cfg(target_os = "linux")]
@@ -365,9 +385,9 @@ mod platform {
 
     use super::{
         CgroupCapabilities, CgroupEventCounters, CleanupStrategy, INTERNAL_LAUNCHER_ARG,
-        cleanup_strategy, find_unified_mounts, parse_cgroup_event_counters, path_from_bytes,
-        remove_cgroup_dir, resolve_unified_cgroup, run_cleanup_after_accounting, violations_since,
-        wrap_launcher_argv,
+        cleanup_strategy, find_unified_mounts, normalized_memory_limit,
+        parse_cgroup_event_counters, path_from_bytes, remove_cgroup_dir, resolve_unified_cgroup,
+        run_cleanup_after_accounting, violations_since, wrap_launcher_argv,
     };
     use crate::resource::{ProcessSupervisor, ResourceError};
 
@@ -542,9 +562,10 @@ mod platform {
 
             let run_path = create_unique_child(&parent, "hoimin")?;
             let setup = (|| {
-                write_exact_limit(
+                write_memory_limit(
                     &run_path.join("memory.max"),
-                    limits.max_memory.get().to_string().as_bytes(),
+                    limits.max_memory.get(),
+                    diagnostics,
                 )?;
                 write_exact_limit(
                     &run_path.join("pids.max"),
@@ -1075,6 +1096,40 @@ mod platform {
         Ok(())
     }
 
+    fn system_page_size() -> Result<u64, ResourceError> {
+        // SAFETY: `_SC_PAGESIZE` is a side-effect-free process configuration query.
+        let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+        u64::try_from(page_size).map_err(|_| {
+            ResourceError::InvalidCgroupData(format!(
+                "system page size query returned invalid value {page_size}"
+            ))
+        })
+    }
+
+    fn write_memory_limit(
+        path: &Path,
+        requested: u64,
+        diagnostics: &mut Vec<String>,
+    ) -> Result<(), ResourceError> {
+        let page_size = system_page_size()?;
+        let long_max = u64::try_from(libc::c_long::MAX)
+            .expect("Linux signed long maximum is positive and fits u64");
+        let page_counter_max_pages = if cfg!(target_pointer_width = "32") {
+            long_max
+        } else {
+            long_max / page_size
+        };
+        let effective = normalized_memory_limit(requested, page_size, page_counter_max_pages)?;
+        let value = effective.to_string();
+        write_exact_limit(path, value.as_bytes())?;
+        if effective != requested {
+            diagnostics.push(format!(
+                "cgroup memory.max normalized down from {requested} to {effective} bytes for {page_size}-byte pages"
+            ));
+        }
+        Ok(())
+    }
+
     fn read_events(path: &Path) -> Result<CgroupEventCounters, ResourceError> {
         let memory = fs::read(path.join("memory.events"))
             .map_err(|error| ResourceError::io("read cgroup memory events", error))?;
@@ -1441,9 +1496,42 @@ mod tests {
 
     use super::{
         CgroupEventCounters, CleanupStrategy, ResourceError, cleanup_strategy, find_unified_mount,
-        find_unified_mounts, remove_cgroup_dir, resolve_unified_cgroup,
+        find_unified_mounts, normalized_memory_limit, remove_cgroup_dir, resolve_unified_cgroup,
         run_cleanup_after_accounting, violations_since, wrap_launcher_argv,
     };
+
+    #[test]
+    fn memory_limit_normalization_rounds_down_to_the_host_page_size() {
+        let page_counter_max_pages = 1_000_000_000;
+        for (requested, page_size, expected) in [
+            (1_000_000_000, 4_096, 999_997_440),
+            (1024 * 1024 * 1024, 4_096, 1024 * 1024 * 1024),
+            (1_000_000_000, 65_536, 999_948_288),
+            (1, 4_096, 0),
+        ] {
+            assert_eq!(
+                normalized_memory_limit(requested, page_size, page_counter_max_pages).unwrap(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn memory_limit_normalization_stays_below_the_kernel_max_sentinel() {
+        assert_eq!(normalized_memory_limit(u64::MAX, 4_096, 4).unwrap(), 12_288);
+    }
+
+    #[test]
+    fn memory_limit_normalization_rejects_invalid_kernel_boundaries() {
+        let zero_page = normalized_memory_limit(1_000_000_000, 0, 4).unwrap_err();
+        let no_finite_range = normalized_memory_limit(1_000_000_000, 4_096, 0).unwrap_err();
+
+        assert!(matches!(zero_page, ResourceError::InvalidCgroupData(_)));
+        assert!(matches!(
+            no_finite_range,
+            ResourceError::InvalidCgroupData(_)
+        ));
+    }
 
     #[test]
     fn launcher_wrapper_preserves_native_target_arguments() {

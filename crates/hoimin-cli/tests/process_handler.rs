@@ -192,6 +192,49 @@ mod cgroup_v2 {
         }
     }
 
+    #[test]
+    fn decimal_memory_limit_keeps_hard_cgroup_enforcement() {
+        let requested = 1_000_000_000;
+        let capabilities = probe_linux_cgroup_with_launcher(
+            &hard_run_limits(requested, 16),
+            OsString::from(env!("CARGO_BIN_EXE_hoimin")),
+        );
+        let backend = match capabilities {
+            CgroupCapabilities::Available(backend) => backend,
+            CgroupCapabilities::Unavailable(reason)
+                if reason.contains("cgroup limit readback mismatch") =>
+            {
+                panic!("non-page-aligned memory limit must not disable hard cgroups: {reason}")
+            }
+            CgroupCapabilities::Unavailable(reason) => {
+                eprintln!("SKIP: Linux cgroup v2 hard-limit capability unavailable: {reason}");
+                return;
+            }
+            CgroupCapabilities::CleanupPending(pending) => {
+                panic!(
+                    "Linux cgroup probe cleanup remained pending: {}",
+                    pending.reason()
+                )
+            }
+        };
+        // SAFETY: `_SC_PAGESIZE` is a side-effect-free process configuration query.
+        let page_size = u64::try_from(unsafe { libc::sysconf(libc::_SC_PAGESIZE) }).unwrap();
+        let expected = requested - requested % page_size;
+        let actual = fs::read_to_string(backend.run_cgroup_path_for_tests().join("memory.max"))
+            .unwrap()
+            .trim()
+            .parse::<u64>()
+            .unwrap();
+
+        assert_eq!(actual, expected);
+        assert!(backend.diagnostics().iter().any(|diagnostic| {
+            diagnostic.contains(&requested.to_string())
+                && diagnostic.contains(&expected.to_string())
+                && diagnostic.contains(&page_size.to_string())
+        }));
+        backend.close().unwrap();
+    }
+
     #[tokio::test]
     async fn removes_run_cgroup_and_rejects_future_spawn_after_close() {
         let output = tempfile::tempdir().unwrap();
