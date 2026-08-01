@@ -955,6 +955,62 @@ fn ordered_candidate_filter_rejects_an_empty_spool() {
 }
 
 #[test]
+fn ordered_candidate_filter_rejects_missing_after_partial_match() {
+    let first = fixture_candidate(1);
+    let second = fixture_candidate(2);
+    let (state, effects) = waiting_for_ordered_analysis(vec![first.id.clone(), second.id.clone()]);
+    let analysis_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::AnalyzeFile(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::AnalysisFinished(AnalysisFinished {
+            id: analysis_id,
+            spool: Some(CandidateSpoolRef {
+                token: "partial-ordered".to_owned(),
+                records: 1,
+            }),
+            truncated: false,
+            diagnostics: Vec::new(),
+        }),
+    )
+    .unwrap();
+    let RunEffect::ReadCandidate(read) = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }) else {
+        unreachable!()
+    };
+    let (state, effects) = transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read.id,
+            worker: read.worker,
+            candidate: Some(first),
+            next_offset: 10,
+        }),
+    )
+    .unwrap();
+    let RunEffect::ReadCandidate(eof) = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }) else {
+        unreachable!()
+    };
+
+    let error = transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: eof.id,
+            worker: eof.worker,
+            candidate: None,
+            next_offset: 10,
+        }),
+    )
+    .unwrap_err();
+
+    assert_eq!(error, MachineError::SelectedCandidateMissing(second.id));
+}
+
+#[test]
 fn ordered_candidate_filter_marks_truncated_analysis_incomplete_but_replays() {
     let requested = fixture_candidate(1);
     let (state, effects) = waiting_for_ordered_analysis(vec![requested.id]);
@@ -1245,6 +1301,174 @@ fn ordered_candidate_cancellation_drains_remaining_candidates_in_requested_order
     )
     .unwrap();
     assert_mutant_started_id(&effects, &first.id);
+}
+
+#[test]
+fn ordered_candidate_cancellation_mid_collection_drains_discovered_selection_without_resuming_reads()
+ {
+    assert_ordered_mid_collection_stop(RunEvent::CancellationRequested, 130);
+}
+
+#[test]
+fn ordered_candidate_deadline_mid_collection_drains_discovered_selection_without_resuming_reads() {
+    assert_ordered_mid_collection_stop(RunEvent::DeadlineReached, 4);
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "the driver verifies the complete interrupted ordered-report lifecycle"
+)]
+fn assert_ordered_mid_collection_stop(stop: RunEvent, expected_exit_code: i32) {
+    let first = fixture_candidate(1);
+    let second = fixture_candidate(2);
+    let third = fixture_candidate(3);
+    let fourth = fixture_candidate(4);
+    let requested = vec![
+        third.id.clone(),
+        first.id.clone(),
+        third.id.clone(),
+        fourth.id.clone(),
+        first.id.clone(),
+    ];
+    let (state, effects) = waiting_for_ordered_analysis_with_jobs(requested, 3);
+    let analysis_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::AnalyzeFile(_))
+    }));
+    let (mut state, mut effects) = transition(
+        state,
+        RunEvent::AnalysisFinished(AnalysisFinished {
+            id: analysis_id,
+            spool: Some(CandidateSpoolRef {
+                token: "ordered-mid-collection-stop".to_owned(),
+                records: 4,
+            }),
+            truncated: false,
+            diagnostics: Vec::new(),
+        }),
+    )
+    .unwrap();
+
+    for (candidate, offset) in [(first.clone(), 10), (second, 20), (third.clone(), 30)] {
+        let RunEffect::ReadCandidate(read) = find_effect(&effects, |effect| {
+            matches!(effect, RunEffect::ReadCandidate(_))
+        }) else {
+            unreachable!()
+        };
+        (state, effects) = transition(
+            state,
+            RunEvent::CandidateLoaded(CandidateLoaded {
+                id: read.id,
+                worker: read.worker,
+                candidate: Some(candidate),
+                next_offset: offset,
+            }),
+        )
+        .unwrap();
+    }
+    let RunEffect::ReadCandidate(in_flight_read) = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }) else {
+        unreachable!()
+    };
+    let in_flight_read = in_flight_read.clone();
+
+    (state, effects) = transition(state, stop).unwrap();
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::ReadCandidate(_)))
+    );
+    assert_mutant_started_id(&effects, &third.id);
+
+    let retired = transition(
+        state.clone(),
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: in_flight_read.id,
+            worker: in_flight_read.worker,
+            candidate: Some(fourth.clone()),
+            next_offset: 40,
+        }),
+    )
+    .unwrap_err();
+    assert_eq!(retired, MachineError::RetiredEffect(in_flight_read.id));
+
+    let mut reported = Vec::new();
+    for expected in [&third, &first] {
+        (state, effects) = complete_mutant_started(state, &effects);
+        let RunEffect::EmitOutput(finished) = find_effect(&effects, |effect| {
+            matches!(effect, RunEffect::EmitOutput(value)
+                if matches!(&value.event, OutputEvent::MutantFinished(event)
+                    if event.status == MutationStatus::NotRun))
+        }) else {
+            unreachable!()
+        };
+        let OutputEvent::MutantFinished(result) = &finished.event else {
+            unreachable!()
+        };
+        assert_eq!(result.candidate.id, expected.id);
+        reported.push(result.candidate.id.clone());
+        (state, effects) = transition(
+            state,
+            RunEvent::OutputEmitted(OutputEmitted { id: finished.id }),
+        )
+        .unwrap();
+        assert!(
+            !effects
+                .iter()
+                .any(|effect| matches!(effect, RunEffect::ReadCandidate(_)))
+        );
+    }
+    assert_eq!(reported, vec![third.id, first.id]);
+    assert!(!reported.contains(&fourth.id));
+
+    let RunEffect::VerifyOriginals(verify) = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::VerifyOriginals(_))
+    }) else {
+        unreachable!()
+    };
+    let (state, effects) = transition(
+        state,
+        RunEvent::OriginalsVerified(OriginalsVerified {
+            id: verify.id,
+            checkpoint: verify.checkpoint,
+        }),
+    )
+    .unwrap();
+    let RunEffect::Cleanup(cleanup) =
+        find_effect(&effects, |effect| matches!(effect, RunEffect::Cleanup(_)))
+    else {
+        unreachable!()
+    };
+    let (state, effects) = transition(
+        state,
+        RunEvent::CleanupFinished(CleanupFinished {
+            id: cleanup.id,
+            released_reservations: cleanup.reservations.clone(),
+        }),
+    )
+    .unwrap();
+    let reports: Vec<_> = effects
+        .iter()
+        .filter_map(|effect| match effect {
+            RunEffect::EmitOutput(output) => match &output.event {
+                OutputEvent::RunFinished(summary) => Some((output.id, summary)),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+    assert_eq!(reports.len(), 1);
+    let (report_id, summary) = reports[0];
+    assert!(!summary.complete);
+    assert_eq!(summary.exit_code, expected_exit_code);
+    assert_eq!(summary.counts.not_run, 2);
+    let (state, effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: report_id }),
+    )
+    .unwrap();
+    assert!(effects.is_empty());
+    assert_eq!(state.phase(), RunPhase::Finished);
 }
 
 #[test]
@@ -3214,16 +3438,33 @@ fn waiting_for_final_report() -> (RunState, Vec<RunEffect>) {
 
 fn waiting_for_filtered_analysis(candidate_ids: BTreeSet<String>) -> (RunState, Vec<RunEffect>) {
     let initial_state = RunState::with_candidate_filter("run-1", fixture_config(), candidate_ids);
-    waiting_for_selected_analysis(initial_state)
+    waiting_for_selected_analysis(initial_state, 1)
 }
 
 fn waiting_for_ordered_analysis(candidate_ids: Vec<String>) -> (RunState, Vec<RunEffect>) {
     let initial_state =
         RunState::with_ordered_candidate_filter("run-1", fixture_config(), candidate_ids);
-    waiting_for_selected_analysis(initial_state)
+    waiting_for_selected_analysis(initial_state, 1)
 }
 
-fn waiting_for_selected_analysis(initial_state: RunState) -> (RunState, Vec<RunEffect>) {
+fn waiting_for_ordered_analysis_with_jobs(
+    candidate_ids: Vec<String>,
+    jobs: u32,
+) -> (RunState, Vec<RunEffect>) {
+    let mut raw = fixture_raw_config();
+    raw.limits.jobs = usize::try_from(jobs).unwrap();
+    let initial_state = RunState::with_ordered_candidate_filter(
+        "run-1",
+        RunConfig::try_from(raw).unwrap(),
+        candidate_ids,
+    );
+    waiting_for_selected_analysis(initial_state, jobs)
+}
+
+fn waiting_for_selected_analysis(
+    initial_state: RunState,
+    requested_workers: u32,
+) -> (RunState, Vec<RunEffect>) {
     let (state, effects) =
         transition(initial_state, RunEvent::StartRequested(StartRequested)).unwrap();
     let resolve_id = effect_id(find_effect(&effects, |effect| {
@@ -3249,25 +3490,34 @@ fn waiting_for_selected_analysis(initial_state: RunState) -> (RunState, Vec<RunE
         RunEvent::PreflightCompleted(PreflightCompleted {
             id: preflight_id,
             per_worker_logical_bytes: 10,
-            requested_workers: 1,
-            aggregate_logical_bytes: 10,
+            requested_workers,
+            aggregate_logical_bytes: 10 * u64::from(requested_workers),
             fingerprint: None,
         }),
     )
     .unwrap();
     let (state, effects) = complete_run_started(state, &effects);
-    let create = find_effect(&effects, |effect| {
-        matches!(effect, RunEffect::CreateWorker(_))
-    });
-    let (state, effects) = transition(
-        state,
-        RunEvent::WorkerCreated(WorkerCreated {
-            id: effect_id(create),
-            worker: 0,
-            reservation_id: reservation_id(create),
-        }),
-    )
-    .unwrap();
+    let creates: Vec<_> = effects
+        .iter()
+        .filter_map(|effect| match effect {
+            RunEffect::CreateWorker(create) => {
+                Some((create.id(), create.worker(), create.reservation_id()))
+            }
+            _ => None,
+        })
+        .collect();
+    let (mut state, mut effects) = (state, effects);
+    for (id, worker, reservation_id) in creates {
+        (state, effects) = transition(
+            state,
+            RunEvent::WorkerCreated(WorkerCreated {
+                id,
+                worker,
+                reservation_id,
+            }),
+        )
+        .unwrap();
+    }
     let baseline_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunBaseline(_))
     }));
