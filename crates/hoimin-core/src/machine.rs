@@ -1047,12 +1047,21 @@ impl RunState {
                 stopped.push(candidate);
             }
         }
-        if let Some(ordered) = self
-            .ordered_candidates
-            .as_mut()
-            .filter(|ordered| ordered.collection_complete)
-        {
-            stopped.extend(ordered.ready.drain(..).map(StoppedCandidate::NotStarted));
+        if let Some(ordered) = self.ordered_candidates.as_mut() {
+            let requested_ids = ordered.ids.clone();
+            for candidate_id in requested_ids {
+                let candidate = ordered
+                    .ready
+                    .iter()
+                    .position(|candidate| candidate.id == candidate_id)
+                    .and_then(|position| ordered.ready.remove(position))
+                    .or_else(|| ordered.discovered.remove(&candidate_id));
+                if let Some(candidate) = candidate {
+                    stopped.push(StoppedCandidate::NotStarted(candidate));
+                }
+            }
+            ordered.ready.clear();
+            ordered.discovered.clear();
             self.flags.scheduling.candidate_exhausted = true;
         }
         stopped.sort_by_key(|candidate| {
