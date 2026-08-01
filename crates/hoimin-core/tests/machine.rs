@@ -2137,6 +2137,248 @@ fn session_result_is_persisted_before_finished_output_and_reset() {
 }
 
 #[test]
+fn cancellation_during_result_persistence_reports_the_classified_result() {
+    assert_persisting_stop_preserves_result(RunEvent::CancellationRequested, 130);
+}
+
+#[test]
+fn deadline_during_result_persistence_reports_the_classified_result() {
+    assert_persisting_stop_preserves_result(RunEvent::DeadlineReached, 4);
+}
+
+#[test]
+fn cancellation_during_mutant_execution_still_reports_not_run() {
+    let (state, effects) = waiting_for_candidate();
+    let read_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }));
+    let candidate = fixture_candidate(1);
+    let (state, effects) = transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read_id,
+            worker: 0,
+            candidate: Some(candidate.clone()),
+            next_offset: 1,
+        }),
+    )
+    .unwrap();
+    let apply_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ApplyMutation(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::MutationApplied(MutationApplied {
+            id: apply_id,
+            worker: 0,
+        }),
+    )
+    .unwrap();
+    let (state, effects) = complete_mutant_started(state, &effects);
+    let run_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::RunMutant(_))
+    }));
+
+    let (state, effects) = transition(state, RunEvent::CancellationRequested).unwrap();
+    let late = transition(
+        state.clone(),
+        RunEvent::MutantFinished(process_finished(run_id, ProcessTermination::Exit(1))),
+    )
+    .unwrap_err();
+    assert_eq!(late, MachineError::RetiredEffect(run_id));
+    let RunEffect::EmitOutput(finished) = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::EmitOutput(value)
+            if matches!(&value.event, OutputEvent::MutantFinished(_)))
+    }) else {
+        unreachable!()
+    };
+    let OutputEvent::MutantFinished(result) = &finished.event else {
+        unreachable!()
+    };
+    assert_eq!(result.candidate, candidate);
+    assert_eq!(result.status, MutationStatus::NotRun);
+    assert_eq!(result.termination, None);
+    assert_eq!(result.elapsed_ms, 0);
+    assert_eq!(result.output, None);
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "the driver verifies the complete interrupted persistence lifecycle"
+)]
+fn assert_persisting_stop_preserves_result(stop: RunEvent, expected_exit_code: i32) {
+    let (state, effects) = waiting_for_session_candidate(false);
+    let read_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }));
+    let candidate = fixture_candidate(1);
+    let (state, effects) = transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read_id,
+            worker: 0,
+            candidate: Some(candidate.clone()),
+            next_offset: 1,
+        }),
+    )
+    .unwrap();
+    let lookup_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::LookupStoredResult(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::StoredResultLoaded(StoredResultLoaded {
+            id: lookup_id,
+            worker: 0,
+            result: None,
+        }),
+    )
+    .unwrap();
+    let apply_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ApplyMutation(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::MutationApplied(MutationApplied {
+            id: apply_id,
+            worker: 0,
+        }),
+    )
+    .unwrap();
+    let (state, effects) = complete_mutant_started(state, &effects);
+    let mutant_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::RunMutant(_))
+    }));
+    let process = process_finished(mutant_id, ProcessTermination::Exit(1));
+    let expected_output = process.output.clone();
+    let expected_elapsed = process.elapsed;
+    let expected_resource_mode = process.resource_mode;
+    let (state, effects) = transition(state, RunEvent::MutantFinished(process)).unwrap();
+    let RunEffect::PersistResult(persist) = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::PersistResult(_))
+    }) else {
+        unreachable!()
+    };
+    let persist = persist.clone();
+
+    let (state, effects) = transition(state, stop).unwrap();
+    let late = transition(
+        state.clone(),
+        RunEvent::ResultPersisted(ResultPersisted {
+            id: persist.id,
+            worker: persist.worker,
+            run_id: persist.result.run_id.clone(),
+            mutant_id: persist.result.candidate.id.clone(),
+        }),
+    )
+    .unwrap_err();
+    assert_eq!(late, MachineError::RetiredEffect(persist.id));
+
+    let RunEffect::EmitOutput(finished) = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::EmitOutput(value)
+            if matches!(&value.event, OutputEvent::MutantFinished(_)))
+    }) else {
+        unreachable!()
+    };
+    let OutputEvent::MutantFinished(result) = &finished.event else {
+        unreachable!()
+    };
+    assert_eq!(result.candidate, candidate);
+    assert_eq!(result.status, MutationStatus::Killed);
+    assert_eq!(result.termination, Some(ProcessTermination::Exit(1)));
+    assert_eq!(
+        result.elapsed_ms,
+        u64::try_from(expected_elapsed.as_millis()).unwrap()
+    );
+    assert_eq!(result.resource_mode, expected_resource_mode);
+    assert_eq!(result.output.as_ref(), Some(&expected_output));
+
+    let (state, effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: finished.id }),
+    )
+    .unwrap();
+    assert_eq!(state.summary().killed, 1);
+    assert_eq!(state.summary().not_run, 0);
+    let RunEffect::ReadCandidate(read) = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }) else {
+        unreachable!()
+    };
+    let (state, effects) = transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read.id,
+            worker: read.worker,
+            candidate: None,
+            next_offset: 1,
+        }),
+    )
+    .unwrap();
+    let RunEffect::VerifyOriginals(verify) = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::VerifyOriginals(_))
+    }) else {
+        unreachable!()
+    };
+    let (state, effects) = transition(
+        state,
+        RunEvent::OriginalsVerified(OriginalsVerified {
+            id: verify.id,
+            checkpoint: verify.checkpoint,
+        }),
+    )
+    .unwrap();
+    let RunEffect::Cleanup(cleanup) =
+        find_effect(&effects, |effect| matches!(effect, RunEffect::Cleanup(_)))
+    else {
+        unreachable!()
+    };
+    let (state, effects) = transition(
+        state,
+        RunEvent::CleanupFinished(CleanupFinished {
+            id: cleanup.id,
+            released_reservations: cleanup.reservations.clone(),
+        }),
+    )
+    .unwrap();
+    let RunEffect::FinishSession(finish) = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::FinishSession(_))
+    }) else {
+        unreachable!()
+    };
+    assert!(!finish.complete);
+    let (state, effects) = transition(
+        state,
+        RunEvent::SessionFinished(SessionFinished {
+            id: finish.id,
+            run_id: finish.run_id.clone(),
+            complete: finish.complete,
+        }),
+    )
+    .unwrap();
+    let RunEffect::EmitOutput(output) = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::EmitOutput(value)
+            if matches!(&value.event, OutputEvent::RunFinished(_)))
+    }) else {
+        unreachable!()
+    };
+    let OutputEvent::RunFinished(summary) = &output.event else {
+        unreachable!()
+    };
+    assert!(!summary.complete);
+    assert_eq!(summary.exit_code, expected_exit_code);
+    assert_eq!(summary.counts.killed, 1);
+    assert_eq!(summary.counts.not_run, 0);
+    let (state, effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: output.id }),
+    )
+    .unwrap();
+    assert!(effects.is_empty());
+    assert_eq!(state.phase(), RunPhase::Finished);
+}
+
+#[test]
 #[allow(
     clippy::too_many_lines,
     reason = "the complete session lifecycle verifies one timeout regression"

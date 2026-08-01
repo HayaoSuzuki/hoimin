@@ -1027,6 +1027,7 @@ impl RunState {
 
     fn begin_stopped_mutant_drain(&mut self) -> Result<Vec<RunEffect>, MachineError> {
         let mut stopped = Vec::new();
+        let mut stopped_results_to_record = Vec::new();
         for worker in self.workers.values() {
             let candidate = worker.candidate.clone();
             let stopped_candidate = match worker.phase {
@@ -1035,9 +1036,11 @@ impl RunState {
                 }
                 WorkerPhase::SyntheticStarting(status) => candidate
                     .map(|candidate| StoppedCandidate::SyntheticNotStarted(candidate, status)),
-                WorkerPhase::Running | WorkerPhase::Persisting => {
-                    candidate.map(StoppedCandidate::StartedNotRun)
-                }
+                WorkerPhase::Running => candidate.map(StoppedCandidate::StartedNotRun),
+                WorkerPhase::Persisting => worker.result.clone().map(|result| {
+                    stopped_results_to_record.push(result.status);
+                    StoppedCandidate::Finished(result)
+                }),
                 WorkerPhase::Finishing => worker.result.clone().map(StoppedCandidate::Finished),
                 WorkerPhase::SyntheticFinishing(status) => candidate
                     .map(|candidate| StoppedCandidate::SyntheticFinished(candidate, status)),
@@ -1046,6 +1049,9 @@ impl RunState {
             if let Some(candidate) = stopped_candidate {
                 stopped.push(candidate);
             }
+        }
+        for status in stopped_results_to_record {
+            self.summary.record(status);
         }
         if let Some(ordered) = self.ordered_candidates.as_mut() {
             let requested_ids = ordered.ids.clone();
