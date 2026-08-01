@@ -5,6 +5,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use std::{collections::BTreeSet, str};
 
+#[cfg(unix)]
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader};
+
 use hoimin_core::{
     VerificationSelection, VerificationSelectionMode, VerificationSelectionPolicy,
     VerificationSelectionScope,
@@ -1215,6 +1218,90 @@ async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_in
     );
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn second_sigint_forces_130_while_session_finish_is_blocked() {
+    let project = tempfile::tempdir().unwrap();
+    let coordinator = tempfile::tempdir().unwrap();
+    write_parallel_project(project.path());
+    let session = coordinator.path().join("session.sqlite3");
+    let (mut child, active, descendant_ready) =
+        spawn_second_sigint_fixture(project.path(), coordinator.path(), &session);
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    let mut descendant = None;
+    let outcome: Result<_, String> = async {
+        let mut stdout_lines =
+            wait_for_jsonl_kind(&mut stdout, "mutant_started", Duration::from_secs(15)).await?;
+        descendant = Some(
+            try_wait_for_descendant_process(&descendant_ready, Duration::from_secs(15)).await?,
+        );
+        let lock = begin_immediate_with_retry(&session, Duration::from_secs(5)).await?;
+
+        let pid = child
+            .id()
+            .ok_or_else(|| "hoimin exited before first SIGINT".to_owned())
+            .and_then(|pid| i32::try_from(pid).map_err(|error| error.to_string()))?;
+        // SAFETY: `pid` belongs to the live child spawned above.
+        if unsafe { libc::kill(pid, libc::SIGINT) } != 0 {
+            return Err(format!(
+                "first SIGINT failed: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        let descendant_process = descendant.as_ref().expect("assigned above");
+        if !descendant_process
+            .wait_until_stops(Duration::from_secs(5))
+            .await
+        {
+            return Err(format!(
+                "first SIGINT did not reap descendant {}",
+                descendant_process.pid()
+            ));
+        }
+
+        let forced_at = Instant::now();
+        // SAFETY: the retained SQLite lock keeps the live child blocked in session finalization.
+        if unsafe { libc::kill(pid, libc::SIGINT) } != 0 {
+            return Err(format!(
+                "second SIGINT failed: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        let status = tokio::time::timeout(Duration::from_secs(1), child.wait())
+            .await
+            .map_err(|_| "second SIGINT must bypass blocked FinishSession".to_owned())?
+            .map_err(|error| error.to_string())?;
+        let forced_elapsed = forced_at.elapsed();
+        stdout
+            .read_to_string(&mut stdout_lines)
+            .await
+            .map_err(|error| error.to_string())?;
+        Ok((status, forced_elapsed, lock, stdout_lines))
+    }
+    .await;
+
+    let child_cleanup = reap_test_child(&mut child).await;
+    let process_cleanup = kill_fixture_processes(&active, &descendant_ready).await;
+    if let Err(error) = child_cleanup.and(process_cleanup) {
+        panic!("test teardown failed: {error}; outcome={outcome:?}");
+    }
+    let (status, forced_elapsed, lock, stdout_lines) = outcome.unwrap_or_else(|error| {
+        panic!("second-SIGINT scenario failed after successful teardown: {error}")
+    });
+
+    assert_eq!(status.code(), Some(130));
+    assert!(forced_elapsed < Duration::from_secs(1));
+    assert!(!lock.is_autocommit());
+    let events: Vec<serde_json::Value> = stdout_lines
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("complete stdout line must be JSON"))
+        .collect();
+    assert!(
+        !events.iter().any(|event| event["kind"] == "run_finished"),
+        "FinishSession was blocked, so run_finished must not be emitted: {stdout_lines}"
+    );
+}
+
 #[tokio::test]
 async fn serial_output_that_requests_stop_is_accepted_before_cancellation() {
     let project = tempfile::tempdir().unwrap();
@@ -2022,4 +2109,188 @@ async fn wait_for_descendant_process(marker: &Path, timeout: Duration) -> Descen
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
+}
+
+#[cfg(unix)]
+async fn wait_for_jsonl_kind<R: AsyncBufRead + Unpin>(
+    reader: &mut R,
+    kind: &str,
+    timeout: Duration,
+) -> Result<String, String> {
+    tokio::time::timeout(timeout, async {
+        let mut accepted = String::new();
+        loop {
+            let mut line = String::new();
+            let bytes = reader
+                .read_line(&mut line)
+                .await
+                .map_err(|error| error.to_string())?;
+            if bytes == 0 {
+                return Err(format!("stdout closed before {kind}: {accepted}"));
+            }
+            let event: serde_json::Value = serde_json::from_str(line.trim_end())
+                .map_err(|error| format!("invalid JSONL ({error}): {line:?}"))?;
+            accepted.push_str(&line);
+            if event["kind"] == kind {
+                return Ok(accepted);
+            }
+        }
+    })
+    .await
+    .map_err(|_| format!("timed out waiting for JSONL kind {kind}"))?
+}
+
+#[cfg(unix)]
+fn spawn_second_sigint_fixture(
+    project: &Path,
+    coordinator: &Path,
+    session: &Path,
+) -> (tokio::process::Child, PathBuf, PathBuf) {
+    let active = coordinator.join("active");
+    std::fs::create_dir(&active).unwrap();
+    let descendant_ready = coordinator.join("descendant-ready");
+    let descendant_ready_temp = coordinator.join("descendant-ready.tmp");
+    let descendant_command = "import time; time.sleep(20)";
+    let mutant_command = format!(
+        "from pathlib import Path; import os,subprocess,sys,time; Path({:?},str(os.getpid())).write_text('running'); time.sleep(0.5); child=subprocess.Popen([sys.executable,'-c',{:?}]); ready_temp=Path({:?}); ready_temp.write_text(str(child.pid)); ready_temp.replace({:?}); time.sleep(20)",
+        active.to_string_lossy(),
+        descendant_command,
+        descendant_ready_temp.to_string_lossy(),
+        descendant_ready.to_string_lossy(),
+    );
+    let original = "return a + b + c + d + e";
+    let test_command = format!(
+        "from pathlib import Path; source=Path('src/calc.py').read_text(); exec({mutant_command:?}) if {original:?} not in source else exec('from src.calc import total; assert total(1,2,3,4,5) == 15')",
+    );
+    let child = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+        .arg("run")
+        .arg("--root")
+        .arg(project)
+        .arg("--source")
+        .arg("src")
+        .arg("--file")
+        .arg("src/calc.py")
+        .arg("--jobs")
+        .arg("1")
+        .arg("--session")
+        .arg(session)
+        .arg("--format")
+        .arg("jsonl")
+        .arg("--allow-best-effort-memory")
+        .arg("--")
+        .arg(python_executable())
+        .arg("-c")
+        .arg(test_command)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    (child, active, descendant_ready)
+}
+
+#[cfg(unix)]
+async fn begin_immediate_with_retry(
+    path: &Path,
+    timeout: Duration,
+) -> Result<rusqlite::Connection, String> {
+    let connection = rusqlite::Connection::open(path).map_err(|error| error.to_string())?;
+    connection
+        .busy_timeout(Duration::ZERO)
+        .map_err(|error| error.to_string())?;
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        match connection.execute_batch("BEGIN IMMEDIATE") {
+            Ok(()) => return Ok(connection),
+            Err(error) if tokio::time::Instant::now() < deadline => {
+                if !matches!(
+                    error.sqlite_error_code(),
+                    Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
+                ) {
+                    return Err(format!("unexpected BEGIN IMMEDIATE failure: {error}"));
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            Err(error) => return Err(format!("could not retain session write lock: {error}")),
+        }
+    }
+}
+
+#[cfg(unix)]
+async fn try_wait_for_descendant_process(
+    marker: &Path,
+    timeout: Duration,
+) -> Result<DescendantProcess, String> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        if let Some(pid) = std::fs::read_to_string(marker)
+            .ok()
+            .and_then(|value| value.trim().parse().ok())
+            && let Some(process) = DescendantProcess::open(pid)
+        {
+            return Ok(process);
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err("descendant-ready marker did not yield an open process".to_owned());
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+#[cfg(unix)]
+async fn reap_test_child(child: &mut tokio::process::Child) -> Result<(), String> {
+    if child
+        .try_wait()
+        .map_err(|error| error.to_string())?
+        .is_some()
+    {
+        return Ok(());
+    }
+    child.start_kill().map_err(|error| error.to_string())?;
+    tokio::time::timeout(Duration::from_secs(5), child.wait())
+        .await
+        .map_err(|_| "timed out reaping hoimin test child".to_owned())?
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[cfg(unix)]
+async fn kill_fixture_processes(active: &Path, descendant_marker: &Path) -> Result<(), String> {
+    let mut pids = BTreeSet::new();
+    if let Ok(entries) = std::fs::read_dir(active) {
+        for entry in entries.flatten() {
+            if let Some(pid) = entry
+                .file_name()
+                .to_str()
+                .and_then(|value| value.parse::<u32>().ok())
+            {
+                pids.insert(pid);
+            }
+        }
+    }
+    if let Some(pid) = std::fs::read_to_string(descendant_marker)
+        .ok()
+        .and_then(|value| value.trim().parse::<u32>().ok())
+    {
+        pids.insert(pid);
+    }
+    for pid in pids {
+        let Some(process) = DescendantProcess::open(pid) else {
+            continue;
+        };
+        if !process.is_alive() {
+            continue;
+        }
+        // SAFETY: the PID was written by this test's live fixture process tree.
+        if unsafe { libc::kill(process.pid, libc::SIGKILL) } != 0 {
+            return Err(format!(
+                "failed to kill fixture process {pid}: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        if !process.wait_until_stops(Duration::from_secs(5)).await {
+            return Err(format!("fixture process {pid} survived SIGKILL"));
+        }
+    }
+    Ok(())
 }

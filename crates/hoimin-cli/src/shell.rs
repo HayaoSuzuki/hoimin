@@ -798,7 +798,7 @@ where
         let mut process_tasks = JoinSet::new();
         let mut in_flight = 0_usize;
         let mut stop_signalled = false;
-        let mut ctrl_c = Box::pin(tokio::signal::ctrl_c());
+        let mut interrupts = crate::interrupt::InterruptMonitor::spawn();
 
         while state.phase() != RunPhase::Finished {
             let mut serial_completion = None;
@@ -973,11 +973,11 @@ where
                                     stop_signalled = true;
                                     RunEvent::DeadlineReached
                                 }
-                                signal = &mut ctrl_c => {
+                                signal = interrupts.first() => {
                                     cancellation.cancel();
                                     let _ = execution.await;
                                     stop_signalled = true;
-                                    match ctrl_c_event(signal) {
+                                    match first_interrupt_event(signal) {
                                         Ok(event) => event,
                                         Err(error) => {
                                             signal_failure = Some(error);
@@ -1067,10 +1067,10 @@ where
                             process: None,
                         }
                     }
-                    signal = &mut ctrl_c => {
+                    signal = interrupts.first() => {
                         cancellation.cancel();
                         stop_signalled = true;
-                        match ctrl_c_event(signal) {
+                        match first_interrupt_event(signal) {
                             Ok(event) => ShellCompletion {
                                 event,
                                 process_task: false,
@@ -1373,10 +1373,8 @@ fn emit_metrics_warning<Stdout: Write, Stderr: Write>(
     });
 }
 
-fn ctrl_c_event(signal: std::io::Result<()>) -> Result<RunEvent, String> {
-    signal
-        .map(|()| RunEvent::CancellationRequested)
-        .map_err(|error| format!("install Ctrl+C handler: {error}"))
+fn first_interrupt_event(signal: Result<(), String>) -> Result<RunEvent, String> {
+    signal.map(|()| RunEvent::CancellationRequested)
 }
 
 fn spawn_process(
@@ -1972,13 +1970,13 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_c_handler_failure_is_infrastructure_not_cancellation() {
+    fn first_interrupt_maps_success_to_cancellation_and_preserves_failure() {
         assert!(matches!(
-            ctrl_c_event(Ok(())),
+            first_interrupt_event(Ok(())),
             Ok(RunEvent::CancellationRequested)
         ));
-        let error = ctrl_c_event(Err(std::io::Error::other("fixture"))).unwrap_err();
-        assert!(error.contains("install Ctrl+C handler"));
-        assert!(error.contains("fixture"));
+        let error =
+            first_interrupt_event(Err("install Ctrl+C handler: fixture".to_owned())).unwrap_err();
+        assert_eq!(error, "install Ctrl+C handler: fixture");
     }
 }
