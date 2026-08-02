@@ -49,7 +49,7 @@ def test_baseline_uses_mutation_deadline_after_discovery_window(self) -> None:
         baseline_call = next(
             call for call in runner.calls if call[3] == "baseline-hoimin-core"
         )
-        self.assertEqual(baseline_call[2], 950.0)
+        self.assertEqual(baseline_call[2], 850.0)
 ```
 
 - [ ] **Step 2: Run the regression test and verify RED**
@@ -60,7 +60,7 @@ Run:
 uv run --frozen python -m unittest tests.test_focused_mutation_reporting.FocusedMutationReportingTests.test_baseline_uses_mutation_deadline_after_discovery_window -v
 ```
 
-Expected: FAIL because the baseline timeout is `0.0`, not `950.0`.
+Expected: FAIL because the baseline timeout is `0.0`, not `850.0`.
 
 - [ ] **Step 3: Commit the RED test**
 

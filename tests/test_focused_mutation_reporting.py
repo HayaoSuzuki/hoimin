@@ -472,7 +472,7 @@ class FocusedMutationReportingTests(unittest.TestCase):
                 for call in runner.calls
                 if call[3] == "baseline-hoimin-core"
             )
-            self.assertEqual(baseline_call[2], 950.0)
+            self.assertEqual(baseline_call[2], 850.0)
 
     def test_candidates_outside_workspace_members_are_skipped_and_checkpointed(
         self,
