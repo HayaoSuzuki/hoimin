@@ -322,6 +322,24 @@ async fn ignores_deleted_and_binary_paths() {
 }
 
 #[tokio::test]
+async fn binary_path_with_and_does_not_exclude_an_unrelated_text_path() {
+    let repo = FixtureRepo::new();
+    repo.write("pkg/x and y.py", b"before\0bytes\n");
+    repo.write("y.py", "one\ntwo\n");
+    repo.commit_all("initial");
+    repo.write("pkg/x and y.py", b"after\0bytes\n");
+    repo.write("y.py", "one\nTWO\n");
+
+    assert_eq!(
+        repo.changed_lines(None).await.changed,
+        BTreeMap::from([(
+            Utf8PathBuf::from("y.py"),
+            vec![LineRange { start: 2, end: 2 }],
+        )])
+    );
+}
+
+#[tokio::test]
 async fn ignores_files_deleted_or_made_binary_after_staging() {
     let repo = FixtureRepo::new();
     repo.write("pkg/deleted.py", "one\ntwo\n");
