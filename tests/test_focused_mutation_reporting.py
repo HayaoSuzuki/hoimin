@@ -21,6 +21,7 @@ from tools.focused_mutation_support.runner import CommandTimedOut
 from tools.focused_mutation import (
     Dependencies,
     Options,
+    _candidate_package,
     _parser,
     main,
     run_workflow,
@@ -273,6 +274,11 @@ def command_record(*, exit_code: int = 0) -> CommandRecord:
 
 
 class FocusedMutationReportingTests(unittest.TestCase):
+    def test_candidate_package_accepts_shortest_workspace_member_path(
+        self,
+    ) -> None:
+        self.assertEqual(_candidate_package("crates/example/lib.rs"), "example")
+
     def test_command_cleanup_errors_are_json_serializable(self) -> None:
         record = fixture_record(candidates=[], state=RunState.COMMAND_FAILED)
         command = command_record()
@@ -442,7 +448,7 @@ class FocusedMutationReportingTests(unittest.TestCase):
                 )
             )
 
-    def test_root_level_inventory_candidate_is_skipped_and_checkpointed(
+    def test_candidates_outside_workspace_members_are_skipped_and_checkpointed(
         self,
     ) -> None:
         inventory = json.dumps(
@@ -451,7 +457,22 @@ class FocusedMutationReportingTests(unittest.TestCase):
                     "file": "build.rs",
                     "name": "build.rs:1: replace main with ()",
                     "function": {"function_name": "main"},
-                }
+                },
+                {
+                    "file": "crates/hoimin-core",
+                    "name": "hoimin-core: replace package entry",
+                    "function": {"function_name": "package"},
+                },
+                {
+                    "file": "tools/helper.py",
+                    "name": "helper.py:1: replace helper with ()",
+                    "function": {"function_name": "helper"},
+                },
+                {
+                    "file": "crates/hoimin-core/src/machine.rs",
+                    "name": "machine.rs:1: replace a",
+                    "function": {"function_name": "a"},
+                },
             ]
         )
         with tempfile.TemporaryDirectory() as directory:
@@ -465,13 +486,21 @@ class FocusedMutationReportingTests(unittest.TestCase):
                 record = run_workflow(options, dependencies)
 
             self.assertEqual(record.state, RunState.COMPLETED)
-            self.assertEqual(len(record.candidates), 1)
-            self.assertEqual(record.candidates[0].state, CandidateState.NOT_RUN)
-            self.assertEqual(
-                record.candidates[0].not_run_reason,
-                "outside_workspace_member",
+            self.assertEqual(len(record.candidates), 4)
+            by_path = {candidate.path: candidate for candidate in record.candidates}
+            self.assertTrue(
+                all(
+                    by_path[path].state is CandidateState.NOT_RUN
+                    and by_path[path].not_run_reason
+                    == "outside_workspace_member"
+                    for path in ("build.rs", "crates/hoimin-core", "tools/helper.py")
+                )
             )
-            self.assertFalse(
+            self.assertEqual(
+                by_path["crates/hoimin-core/src/machine.rs"].state,
+                CandidateState.KILLED,
+            )
+            self.assertTrue(
                 any(
                     label.startswith(("baseline-", "mutation-"))
                     for *_, label in runner.calls
