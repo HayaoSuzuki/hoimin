@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use hoimin_core::{ProcessLimits, ProcessTermination, ResourceMode, RunLimits};
 use tokio::process::{Child, Command};
+use uuid::Uuid;
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE, WAIT_TIMEOUT};
 use windows_sys::Win32::System::IO::{CreateIoCompletionPort, GetQueuedCompletionStatus};
 use windows_sys::Win32::System::JobObjects::{
@@ -109,6 +110,7 @@ impl WindowsBackend {
         Ok(ProcessSupervisor::Windows(WindowsSupervisor {
             run: Arc::clone(&self.inner),
             root_job: create_kill_on_close_job()?,
+            root_id: Uuid::new_v4(),
             signal: Arc::new(RootSignal::default()),
             pid: None,
             terminated: false,
@@ -131,11 +133,12 @@ struct RunState {
     closed: bool,
     terminated: bool,
     active: Vec<ActiveRoot>,
-    exited_roots: HashSet<u32>,
+    exited_roots: HashSet<Uuid>,
 }
 
 #[derive(Debug)]
 struct ActiveRoot {
+    id: Uuid,
     pid: u32,
     signal: Weak<RootSignal>,
 }
@@ -184,6 +187,7 @@ impl WindowsRunJob {
     fn attach_root(
         &self,
         root_job: HANDLE,
+        root_id: Uuid,
         signal: &Arc<RootSignal>,
         child: &Child,
         attach_fault: AttachFault,
@@ -210,19 +214,20 @@ impl WindowsRunJob {
         child.assign(self.job.raw(), "assign process to run-wide job")?;
         child.assign(root_job, "assign process to nested root job")?;
         state.active.push(ActiveRoot {
+            id: root_id,
             pid,
             signal: Arc::downgrade(signal),
         });
         #[cfg(test)]
         if attach_fault == AttachFault::Resume {
-            state.active.retain(|root| root.pid != pid);
+            state.active.retain(|root| root.id != root_id);
             return Err(ResourceError::io(
                 "resume suspended primary thread",
                 io::Error::other("injected resume failure"),
             ));
         }
         if let Err(error) = child.resume() {
-            state.active.retain(|root| root.pid != pid);
+            state.active.retain(|root| root.id != root_id);
             return Err(error);
         }
         Ok(pid)
@@ -230,7 +235,7 @@ impl WindowsRunJob {
 
     fn classify_root(
         &self,
-        pid: u32,
+        root_id: Uuid,
         signal: &RootSignal,
         termination: ProcessTermination,
     ) -> Result<ProcessTermination, ResourceError> {
@@ -238,9 +243,8 @@ impl WindowsRunJob {
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        self.drain_until_root_exit(&mut state, pid)?;
-        state.active.retain(|root| root.pid != pid);
-        state.exited_roots.remove(&pid);
+        self.drain_until_root_exit(&mut state, root_id)?;
+        forget_root_generation(&mut state, root_id);
         let violations = signal.violations.load(Ordering::Acquire);
         Ok(if violations & MEMORY_VIOLATION != 0 {
             ProcessTermination::OutOfMemory
@@ -251,13 +255,12 @@ impl WindowsRunJob {
         })
     }
 
-    fn unregister_root(&self, pid: u32) {
+    fn unregister_root(&self, root_id: Uuid) {
         let mut state = self
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        state.active.retain(|root| root.pid != pid);
-        state.exited_roots.remove(&pid);
+        forget_root_generation(&mut state, root_id);
     }
 
     fn drain_pending(&self, state: &mut RunState) -> Result<(), ResourceError> {
@@ -272,9 +275,9 @@ impl WindowsRunJob {
     fn drain_until_root_exit(
         &self,
         state: &mut RunState,
-        root_pid: u32,
+        root_id: Uuid,
     ) -> Result<(), ResourceError> {
-        if state.exited_roots.contains(&root_pid) {
+        if state.exited_roots.contains(&root_id) {
             return Ok(());
         }
         let deadline = Instant::now() + NOTIFICATION_BARRIER_TIMEOUT;
@@ -291,7 +294,7 @@ impl WindowsRunJob {
             match self.next_notification(timeout_ms.max(1))? {
                 Some((message, pid)) => {
                     record_notification(state, message, pid);
-                    if state.exited_roots.contains(&root_pid) {
+                    if state.exited_roots.contains(&root_id) {
                         return Ok(());
                     }
                 }
@@ -341,17 +344,22 @@ fn record_notification(state: &mut RunState, message: u32, pid: u32) {
         JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO => {
             state
                 .exited_roots
-                .extend(state.active.iter().map(|root| root.pid));
+                .extend(state.active.iter().map(|root| root.id));
             state.active.clear();
         }
         JOB_OBJECT_MSG_EXIT_PROCESS | JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS
             if let Some(index) = state.active.iter().position(|root| root.pid == pid) =>
         {
-            state.active.swap_remove(index);
-            state.exited_roots.insert(pid);
+            let root = state.active.remove(index);
+            state.exited_roots.insert(root.id);
         }
         _ => {}
     }
+}
+
+fn forget_root_generation(state: &mut RunState, root_id: Uuid) {
+    state.active.retain(|root| root.id != root_id);
+    state.exited_roots.remove(&root_id);
 }
 
 fn mark_active(state: &mut RunState, violation: u8) {
@@ -371,6 +379,7 @@ fn mark_active(state: &mut RunState, violation: u8) {
 pub(crate) struct WindowsSupervisor {
     run: Arc<WindowsRunJob>,
     root_job: OwnedHandle,
+    root_id: Uuid,
     signal: Arc<RootSignal>,
     pid: Option<u32>,
     terminated: bool,
@@ -381,6 +390,7 @@ impl WindowsSupervisor {
     pub(crate) fn attach(&mut self, child: &Child) -> Result<(), ResourceError> {
         self.pid = Some(self.run.attach_root(
             self.root_job.raw(),
+            self.root_id,
             &self.signal,
             child,
             self.attach_fault,
@@ -392,8 +402,9 @@ impl WindowsSupervisor {
         &mut self,
         termination: ProcessTermination,
     ) -> Result<ProcessTermination, ResourceError> {
-        let pid = self.pid.ok_or(ResourceError::MissingProcessId)?;
-        self.run.classify_root(pid, &self.signal, termination)
+        self.pid.ok_or(ResourceError::MissingProcessId)?;
+        self.run
+            .classify_root(self.root_id, &self.signal, termination)
     }
 
     pub(crate) fn terminate(&mut self) -> Result<(), ResourceError> {
@@ -402,8 +413,8 @@ impl WindowsSupervisor {
         }
         terminate_job(self.root_job.raw(), "terminate nested root process job")?;
         self.terminated = true;
-        if let Some(pid) = self.pid {
-            self.run.unregister_root(pid);
+        if self.pid.is_some() {
+            self.run.unregister_root(self.root_id);
         }
         Ok(())
     }
@@ -412,8 +423,8 @@ impl WindowsSupervisor {
 impl Drop for WindowsSupervisor {
     fn drop(&mut self) {
         let _ = self.terminate();
-        if let Some(pid) = self.pid {
-            self.run.unregister_root(pid);
+        if self.pid.is_some() {
+            self.run.unregister_root(self.root_id);
         }
     }
 }
@@ -545,10 +556,11 @@ mod tests {
     use hoimin_core::{
         CommandArg, EffectFailure, EffectId, ProcessLimits, RawRunLimits, RunLimits, RunProcess,
     };
+    use uuid::Uuid;
 
     use super::{
         ActiveRoot, AttachFault, MEMORY_VIOLATION, RootSignal, RunState, WindowsBackend,
-        record_notification,
+        forget_root_generation, record_notification,
     };
     use crate::process::ProcessHandler;
     use crate::resource::ResourceBackend;
@@ -693,13 +705,16 @@ mod tests {
     fn exited_root_is_not_marked_by_a_later_aggregate_violation() {
         let exited = std::sync::Arc::new(RootSignal::default());
         let active = std::sync::Arc::new(RootSignal::default());
+        let exited_id = Uuid::from_u128(301);
         let mut state = RunState {
             active: vec![
                 ActiveRoot {
+                    id: exited_id,
                     pid: 301,
                     signal: std::sync::Arc::downgrade(&exited),
                 },
                 ActiveRoot {
+                    id: Uuid::from_u128(302),
                     pid: 302,
                     signal: std::sync::Arc::downgrade(&active),
                 },
@@ -720,20 +735,23 @@ mod tests {
 
         assert_eq!(exited.violations.load(Ordering::Acquire), 0);
         assert_eq!(active.violations.load(Ordering::Acquire), MEMORY_VIOLATION);
-        assert!(state.exited_roots.contains(&301));
+        assert!(state.exited_roots.contains(&exited_id));
     }
 
     #[test]
     fn abnormal_exit_marks_only_its_root_while_other_roots_remain_active() {
         let crashed = std::sync::Arc::new(RootSignal::default());
         let running = std::sync::Arc::new(RootSignal::default());
+        let crashed_id = Uuid::from_u128(401);
         let mut state = RunState {
             active: vec![
                 ActiveRoot {
+                    id: crashed_id,
                     pid: 401,
                     signal: std::sync::Arc::downgrade(&crashed),
                 },
                 ActiveRoot {
+                    id: Uuid::from_u128(402),
                     pid: 402,
                     signal: std::sync::Arc::downgrade(&running),
                 },
@@ -752,15 +770,18 @@ mod tests {
             vec![402]
         );
         assert_eq!(state.exited_roots.len(), 1);
-        assert!(state.exited_roots.contains(&401));
+        assert!(state.exited_roots.contains(&crashed_id));
     }
 
     #[test]
     fn recycled_pid_exit_generations_are_recorded_independently() {
         let first = std::sync::Arc::new(RootSignal::default());
         let second = std::sync::Arc::new(RootSignal::default());
+        let first_id = Uuid::from_u128(501);
+        let second_id = Uuid::from_u128(502);
         let mut state = RunState {
             active: vec![ActiveRoot {
+                id: first_id,
                 pid: 501,
                 signal: std::sync::Arc::downgrade(&first),
             }],
@@ -773,6 +794,7 @@ mod tests {
             501,
         );
         state.active.push(ActiveRoot {
+            id: second_id,
             pid: 501,
             signal: std::sync::Arc::downgrade(&second),
         });
@@ -787,6 +809,91 @@ mod tests {
             state.exited_roots.len(),
             2,
             "each PID generation needs independent completion state"
+        );
+        assert!(state.exited_roots.contains(&first_id));
+        assert!(state.exited_roots.contains(&second_id));
+    }
+
+    #[test]
+    fn old_generation_cleanup_preserves_a_new_root_with_the_same_pid() {
+        let old = std::sync::Arc::new(RootSignal::default());
+        let new = std::sync::Arc::new(RootSignal::default());
+        let old_id = Uuid::from_u128(601);
+        let new_id = Uuid::from_u128(602);
+        let mut state = RunState {
+            active: vec![ActiveRoot {
+                id: old_id,
+                pid: 601,
+                signal: std::sync::Arc::downgrade(&old),
+            }],
+            ..RunState::default()
+        };
+        record_notification(
+            &mut state,
+            windows_sys::Win32::System::SystemServices::JOB_OBJECT_MSG_EXIT_PROCESS,
+            601,
+        );
+        state.active.push(ActiveRoot {
+            id: new_id,
+            pid: 601,
+            signal: std::sync::Arc::downgrade(&new),
+        });
+
+        forget_root_generation(&mut state, old_id);
+
+        assert_eq!(
+            state.active.iter().map(|root| root.id).collect::<Vec<_>>(),
+            vec![new_id]
+        );
+        assert!(state.exited_roots.is_empty());
+    }
+
+    #[test]
+    fn unrelated_exit_preserves_registration_order_for_a_recycled_pid() {
+        let other = std::sync::Arc::new(RootSignal::default());
+        let old = std::sync::Arc::new(RootSignal::default());
+        let new = std::sync::Arc::new(RootSignal::default());
+        let other_id = Uuid::from_u128(701);
+        let old_id = Uuid::from_u128(702);
+        let new_id = Uuid::from_u128(703);
+        let mut state = RunState {
+            active: vec![
+                ActiveRoot {
+                    id: other_id,
+                    pid: 700,
+                    signal: std::sync::Arc::downgrade(&other),
+                },
+                ActiveRoot {
+                    id: old_id,
+                    pid: 701,
+                    signal: std::sync::Arc::downgrade(&old),
+                },
+                ActiveRoot {
+                    id: new_id,
+                    pid: 701,
+                    signal: std::sync::Arc::downgrade(&new),
+                },
+            ],
+            ..RunState::default()
+        };
+
+        record_notification(
+            &mut state,
+            windows_sys::Win32::System::SystemServices::JOB_OBJECT_MSG_EXIT_PROCESS,
+            700,
+        );
+        record_notification(
+            &mut state,
+            windows_sys::Win32::System::SystemServices::JOB_OBJECT_MSG_EXIT_PROCESS,
+            701,
+        );
+
+        assert!(state.exited_roots.contains(&other_id));
+        assert!(state.exited_roots.contains(&old_id));
+        assert!(!state.exited_roots.contains(&new_id));
+        assert_eq!(
+            state.active.iter().map(|root| root.id).collect::<Vec<_>>(),
+            vec![new_id]
         );
     }
 }
