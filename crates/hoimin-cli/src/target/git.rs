@@ -419,6 +419,17 @@ mod tests {
         }
     }
 
+    #[test]
+    fn quoted_path_accepts_maximum_octal_byte_before_utf8_validation() {
+        let error = decode_git_quoted(r#""a/\377.py""#).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("Git diff path is not valid UTF-8")
+        );
+    }
+
     proptest! {
         #[test]
         fn quoted_path_decoding_is_total(path in any::<String>()) {
