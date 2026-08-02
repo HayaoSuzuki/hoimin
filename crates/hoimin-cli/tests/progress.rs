@@ -695,6 +695,53 @@ async fn output_human_includes_latest_comparison_fields() {
 }
 
 #[tokio::test]
+async fn output_human_omits_stale_comparison_fields_after_an_unusable_report() {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut before = valid_report();
+    before["mutants"][0]["status"] = json!("survived");
+    before["mutants"][0]["termination"] = json!({ "Exit": 0 });
+    before["summary"]["counts"]["killed"] = json!(0);
+    before["summary"]["counts"]["survived"] = json!(1);
+    before["summary"]["counts"]["score"] = json!(0.0);
+    let after = valid_report();
+    let mut incomplete = valid_report();
+    incomplete["summary"]["complete"] = json!(false);
+    incomplete["summary"]["exit_code"] = json!(4);
+    let reports = vec![
+        write_json(&fixture, "before.json", &before),
+        write_json(&fixture, "after.json", &after),
+        write_json(&fixture, "incomplete.json", &incomplete),
+    ];
+
+    let (code, stdout, stderr) = run_progress(&reports, "human").await;
+    let output = String::from_utf8(stdout).unwrap();
+
+    assert_eq!(code, 0);
+    assert!(output.contains("state: indeterminate"), "{output}");
+    for stale_field in [
+        "score:",
+        "delta:",
+        "improvements:",
+        "regressions:",
+        "carried_survivors:",
+        "added:",
+        "removed:",
+        "ambiguous:",
+        "inconclusive:",
+    ] {
+        assert!(
+            !output.contains(stale_field),
+            "unexpected stale field {stale_field:?} in:\n{output}"
+        );
+    }
+    assert!(
+        String::from_utf8(stderr)
+            .unwrap()
+            .contains("incomplete run")
+    );
+}
+
+#[tokio::test]
 async fn documented_progress_invocation_accepts_ordered_reports() {
     let fixture = tempfile::tempdir().unwrap();
     let first = write_json(&fixture, "before.json", &valid_report());
