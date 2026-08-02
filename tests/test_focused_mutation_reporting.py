@@ -170,6 +170,7 @@ class WorkflowRunner:
         interrupt_label: str | None = None,
         malformed_inventory: bool = False,
         after_baseline: object | None = None,
+        version_output: str = "cargo-mutants 27.1.0\n",
     ) -> None:
         self.output = output
         self.fail_label = fail_label
@@ -177,6 +178,7 @@ class WorkflowRunner:
         self.interrupt_label = interrupt_label
         self.malformed_inventory = malformed_inventory
         self.after_baseline = after_baseline
+        self.version_output = version_output
         self.calls: list[tuple[list[str], Path, float, str]] = []
         self.checkpoint_command_counts: list[int] = []
 
@@ -186,7 +188,7 @@ class WorkflowRunner:
         stdout = self.output / "commands" / f"{sequence:04d}.stdout"
         stderr = self.output / "commands" / f"{sequence:04d}.stderr"
         if label == "cargo-mutants-version":
-            value = "cargo-mutants 27.1.0\n"
+            value = self.version_output
         elif label == "inventory":
             value = "{" if self.malformed_inventory else WORKFLOW_LIST_JSON
         else:
@@ -612,6 +614,58 @@ class FocusedMutationReportingTests(unittest.TestCase):
             self.assertFalse(
                 any(item.state is CandidateState.TIMEOUT for item in record.candidates)
             )
+
+    def test_in_band_discovery_failures_mark_candidates_not_run(self) -> None:
+        cases = (
+            (
+                "version command",
+                {"fail_label": "cargo-mutants-version"},
+                RunState.TOOL_UNAVAILABLE,
+            ),
+            (
+                "unsupported version",
+                {"version_output": "cargo-mutants 27.2.0\n"},
+                RunState.TOOL_UNAVAILABLE,
+            ),
+            (
+                "inventory command",
+                {"fail_label": "inventory"},
+                RunState.COMMAND_FAILED,
+            ),
+        )
+        for name, runner_options, expected_state in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                options, dependencies, runner = workflow_fixture(
+                    directory, **runner_options
+                )
+
+                record = run_workflow(options, dependencies)
+
+                self.assertEqual(record.state, expected_state)
+                self.assertTrue(record.candidates)
+                self.assertTrue(
+                    all(
+                        candidate.state is CandidateState.NOT_RUN
+                        and candidate.not_run_reason == expected_state.value
+                        for candidate in record.candidates
+                    )
+                )
+                self.assertFalse(
+                    any(
+                        label.startswith(("baseline-", "mutation-"))
+                        for *_, label in runner.calls
+                    )
+                )
+                persisted = json.loads(
+                    (options.output / "run.json").read_text(encoding="utf-8")
+                )
+                self.assertTrue(
+                    all(
+                        candidate["state"] == CandidateState.NOT_RUN.value
+                        and candidate["not_run_reason"] == expected_state.value
+                        for candidate in persisted["candidates"]
+                    )
+                )
 
     def test_malformed_inventory_is_command_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
