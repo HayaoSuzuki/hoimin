@@ -1018,10 +1018,7 @@ where
                 )
                 .await
                 .err();
-                return Err(match drain_failure {
-                    Some(drain_failure) => format!("{error}; {drain_failure}"),
-                    None => error,
-                });
+                return Err(combine_shutdown_errors(error, drain_failure));
             }
 
             if in_flight == 0
@@ -1103,10 +1100,7 @@ where
                 )
                 .await
                 .err();
-                return Err(match drain_failure {
-                    Some(drain_failure) => format!("{error}; {drain_failure}"),
-                    None => error,
-                });
+                return Err(combine_shutdown_errors(error, drain_failure));
             }
             let ShellCompletion {
                 event,
@@ -1142,15 +1136,16 @@ where
                 Ok(value) => value,
                 Err(error) => {
                     cancellation.cancel();
-                    drain_processes(
+                    let drain_failure = drain_processes(
                         &mut process_tasks,
                         &mut completion_rx,
                         &mut in_flight,
                         &mut metrics,
                         &mut metrics_warnings,
                     )
-                    .await?;
-                    return Err(error.to_string());
+                    .await
+                    .err();
+                    return Err(combine_shutdown_errors(error.to_string(), drain_failure));
                 }
             };
             state = next;
@@ -1205,12 +1200,7 @@ where
                     )
                     .await
                     .err();
-                    return Err(match drain_failure {
-                        Some(drain_failure) => {
-                            format!("{process_failure}; {drain_failure}")
-                        }
-                        None => process_failure,
-                    });
+                    return Err(combine_shutdown_errors(process_failure, drain_failure));
                 }
             }
             record_ready_processes(&produced, &mut metrics, &mut metrics_warnings);
@@ -1430,6 +1420,13 @@ async fn drain_processes(
     match first_failure {
         Some(error) => Err(error),
         None => Ok(()),
+    }
+}
+
+fn combine_shutdown_errors(primary: String, drain_failure: Option<String>) -> String {
+    match drain_failure {
+        Some(drain_failure) => format!("{primary}; {drain_failure}"),
+        None => primary,
     }
 }
 
