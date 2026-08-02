@@ -23,5 +23,5 @@ running a baseline or mutation command for the invalid candidate.
 
 A workflow-level regression injects a root-level inventory candidate and asserts
 that the workflow completes, the candidate is persisted as `not_run` with the
-explicit reason, and no baseline or mutation command is launched. Focused helper
-tests cover valid and invalid path shapes.
+explicit reason, and no baseline or mutation command is launched. Existing
+workflow tests continue to cover valid workspace-member paths.
