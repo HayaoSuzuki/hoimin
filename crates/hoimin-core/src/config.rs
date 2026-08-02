@@ -194,6 +194,10 @@ impl MutationOperatorSelection {
         self.0.contains(&operator)
     }
     #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+    #[must_use]
     pub fn names(&self) -> Vec<String> {
         self.0
             .iter()
@@ -357,10 +361,11 @@ impl RunConfig {
     ///
     /// # Errors
     ///
-    /// Returns [`ConfigError`] when selection, runtime resume state, test command, or limits are
-    /// invalid.
+    /// Returns [`ConfigError`] when selection, mutation operators, runtime resume state, the test
+    /// command, or limits are invalid.
     pub fn validate(&self) -> Result<(), ConfigError> {
         validate_selection(&self.selection)?;
+        validate_operators(&self.operators)?;
         if self.resume && self.session.is_none() {
             return Err(ConfigError::ResumeRequiresSession);
         }
@@ -391,9 +396,11 @@ impl PlanConfig {
     ///
     /// # Errors
     ///
-    /// Returns [`ConfigError`] when selection, test command, or limits are invalid.
+    /// Returns [`ConfigError`] when selection, mutation operators, the test command, or limits are
+    /// invalid.
     pub fn validate(&self) -> Result<(), ConfigError> {
         validate_selection(&self.selection)?;
+        validate_operators(&self.operators)?;
         validate_test_argv(&self.test_argv)?;
         validate_limits(&self.limits)
     }
@@ -428,6 +435,10 @@ pub struct FingerprintInputFile {
 pub enum ConfigError {
     #[error("unknown mutation operator: {value}")]
     UnknownMutationOperator { value: String },
+    #[error(
+        "mutation operator selection is empty after applying --operators and --exclude-operators"
+    )]
+    EmptyMutationOperatorSelection,
     #[error("at least one target selector is required")]
     MissingSelector,
     #[error("--diff-base requires --changed")]
@@ -536,6 +547,14 @@ fn validate_test_argv(test_argv: &[CommandArg]) -> Result<(), ConfigError> {
     }
 }
 
+fn validate_operators(operators: &MutationOperatorSelection) -> Result<(), ConfigError> {
+    if operators.is_empty() {
+        Err(ConfigError::EmptyMutationOperatorSelection)
+    } else {
+        Ok(())
+    }
+}
+
 fn validate_limits(limits: &RunLimits) -> Result<(), ConfigError> {
     if limits.jobs.get() > MAX_JOBS {
         return Err(ConfigError::JobsExceedsMaximum {
@@ -613,6 +632,7 @@ impl TryFrom<RawRunConfig> for RunConfig {
                 operators.exclude(operator);
             }
         }
+        validate_operators(&operators)?;
         let limits = RunLimits::try_from(&raw.limits)?;
         validate_limits(&limits)?;
         Ok(Self {
