@@ -24,7 +24,7 @@ where
 {
     write_diagnostics(inputs, result, stderr)?;
     match format {
-        ProgressOutputFormat::Human => render_human(result, stdout),
+        ProgressOutputFormat::Human => render_human(inputs, result, stdout),
         ProgressOutputFormat::Json => render_json(inputs, result, stdout),
     }
 }
@@ -59,66 +59,44 @@ where
     writeln!(stdout).map_err(write_error)
 }
 
-fn render_human<Stdout>(result: &ProgressResult, stdout: &mut Stdout) -> Result<(), ProgressError>
+fn render_human<Stdout>(
+    inputs: &[InputReport],
+    result: &ProgressResult,
+    stdout: &mut Stdout,
+) -> Result<(), ProgressError>
 where
     Stdout: Write,
 {
-    let comparison = result.comparisons.last();
     writeln!(stdout, "state: {}", state_name(result.latest)).map_err(write_error)?;
-    writeln!(
-        stdout,
-        "score: {}",
-        optional_score(comparison.and_then(|value| value.current_score), false)
-    )
-    .map_err(write_error)?;
-    writeln!(
-        stdout,
-        "delta: {}",
-        optional_score(comparison.and_then(|value| value.score_delta), true)
-    )
-    .map_err(write_error)?;
-    writeln!(
-        stdout,
-        "improvements: {}",
-        comparison.map_or(0, |value| value.improvements)
-    )
-    .map_err(write_error)?;
-    writeln!(
-        stdout,
-        "regressions: {}",
-        comparison.map_or(0, |value| value.regressions)
-    )
-    .map_err(write_error)?;
-    writeln!(
-        stdout,
-        "carried_survivors: {}",
-        comparison.map_or(0, |value| value.carried_survivors)
-    )
-    .map_err(write_error)?;
-    writeln!(
-        stdout,
-        "added: {}",
-        comparison.map_or(0, |value| value.added)
-    )
-    .map_err(write_error)?;
-    writeln!(
-        stdout,
-        "removed: {}",
-        comparison.map_or(0, |value| value.removed)
-    )
-    .map_err(write_error)?;
-    writeln!(
-        stdout,
-        "ambiguous: {}",
-        comparison.map_or(0, |value| value.ambiguous)
-    )
-    .map_err(write_error)?;
-    writeln!(
-        stdout,
-        "inconclusive: {}",
-        comparison.map_or(0, |value| value.inconclusive)
-    )
-    .map_err(write_error)?;
+    if let Some(comparison) = final_pair_is_usable(inputs)
+        .then_some(result.comparisons.last())
+        .flatten()
+    {
+        writeln!(
+            stdout,
+            "score: {}",
+            optional_score(comparison.current_score, false)
+        )
+        .map_err(write_error)?;
+        writeln!(
+            stdout,
+            "delta: {}",
+            optional_score(comparison.score_delta, true)
+        )
+        .map_err(write_error)?;
+        writeln!(stdout, "improvements: {}", comparison.improvements).map_err(write_error)?;
+        writeln!(stdout, "regressions: {}", comparison.regressions).map_err(write_error)?;
+        writeln!(
+            stdout,
+            "carried_survivors: {}",
+            comparison.carried_survivors
+        )
+        .map_err(write_error)?;
+        writeln!(stdout, "added: {}", comparison.added).map_err(write_error)?;
+        writeln!(stdout, "removed: {}", comparison.removed).map_err(write_error)?;
+        writeln!(stdout, "ambiguous: {}", comparison.ambiguous).map_err(write_error)?;
+        writeln!(stdout, "inconclusive: {}", comparison.inconclusive).map_err(write_error)?;
+    }
     writeln!(stdout, "stalls: {}", result.consecutive_stalls).map_err(write_error)?;
     writeln!(stdout, "patience: {}", result.patience).map_err(write_error)?;
     writeln!(
@@ -127,6 +105,13 @@ where
         matches!(result.latest, ProgressState::Saturated)
     )
     .map_err(write_error)
+}
+
+fn final_pair_is_usable(inputs: &[InputReport]) -> bool {
+    inputs
+        .windows(2)
+        .last()
+        .is_some_and(|pair| matches!(pair, [InputReport::Usable(_), InputReport::Usable(_)]))
 }
 
 fn write_diagnostics<Stderr>(
