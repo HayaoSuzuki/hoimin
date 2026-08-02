@@ -20,6 +20,7 @@ from tools.focused_mutation_support.runner import (
     CommandRunner,
     CommandTimedOut,
     ProcessLifecycleError,
+    terminate_windows_process_tree,
     wait_for_log_release,
 )
 from tools.focused_mutation_support.store import RunStore
@@ -518,6 +519,32 @@ class RunnerTests(unittest.TestCase):
 
     def stdout(self, record: CommandRecord) -> str:
         return Path(record.stdout_path).read_text()
+
+    def test_windows_tree_terminator_uses_taskkill(self) -> None:
+        run = mock.Mock(
+            return_value=subprocess.CompletedProcess(["taskkill"], 0)
+        )
+
+        terminate_windows_process_tree(12345, run=run)
+
+        run.assert_called_once_with(
+            ["taskkill", "/PID", "12345", "/T", "/F"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=2.0,
+            check=False,
+        )
+
+    def test_windows_tree_terminator_rejects_nonzero_exit(self) -> None:
+        run = mock.Mock(
+            return_value=subprocess.CompletedProcess(["taskkill"], 1)
+        )
+
+        with self.assertRaisesRegex(
+            OSError, "taskkill exited with status 1"
+        ):
+            terminate_windows_process_tree(12345, run=run)
 
     def test_log_release_wait_retries_sharing_violation_until_success(self) -> None:
         clock = FakeClock()
