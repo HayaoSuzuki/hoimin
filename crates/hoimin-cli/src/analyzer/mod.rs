@@ -4,6 +4,7 @@ mod rust;
 mod store;
 
 use std::fmt::Write as _;
+use std::sync::Arc;
 
 pub use protocol::*;
 pub use store::*;
@@ -18,12 +19,13 @@ use hoimin_core::{
 use crate::process::ProcessCancellation;
 use crate::resource::ResourceBackend;
 use crate::workspace::RootRelativeReader;
+use tempfile::TempDir;
 
 pub struct AnalyzerHandler {
     root_path: Utf8PathBuf,
     root: Option<RootRelativeReader>,
     store: Option<CandidateStore>,
-    candidate_spool_dir: Option<Utf8PathBuf>,
+    candidate_spool_owner: Option<Arc<TempDir>>,
     #[cfg(test)]
     analysis_hook: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
 }
@@ -105,7 +107,7 @@ impl AnalyzerHandler {
             root_path: root,
             root: None,
             store: None,
-            candidate_spool_dir: None,
+            candidate_spool_owner: None,
             #[cfg(test)]
             analysis_hook: None,
         })
@@ -124,9 +126,8 @@ impl AnalyzerHandler {
         Self::new(root)
     }
 
-    #[must_use]
-    pub fn with_candidate_spool_dir(mut self, directory: Utf8PathBuf) -> Self {
-        self.candidate_spool_dir = Some(directory);
+    pub(crate) fn with_candidate_spool_owner(mut self, owner: Arc<TempDir>) -> Self {
+        self.candidate_spool_owner = Some(owner);
         self
     }
 
@@ -153,9 +154,9 @@ impl AnalyzerHandler {
     ) -> Result<AnalysisFinished, EffectFailed> {
         let id = request.id;
         if self.store.is_none() {
-            let store = self.candidate_spool_dir.as_ref().map_or_else(
+            let store = self.candidate_spool_owner.as_ref().map_or_else(
                 || CandidateStore::new(request.max_candidates),
-                |directory| CandidateStore::new_in(request.max_candidates, directory),
+                |owner| CandidateStore::new_in(request.max_candidates, owner.path()),
             );
             self.store =
                 Some(store.map_err(|error| {
@@ -179,7 +180,9 @@ impl AnalyzerHandler {
         let task_cancellation = cancellation.clone();
         #[cfg(test)]
         let analysis_hook = self.analysis_hook.clone();
+        let candidate_spool_owner = self.candidate_spool_owner.clone();
         let task = tokio::task::spawn_blocking(move || {
+            let _candidate_spool_owner = candidate_spool_owner;
             #[cfg(test)]
             if let Some(hook) = analysis_hook {
                 hook();
@@ -545,7 +548,11 @@ mod tests {
         let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
         let entered = Arc::new(Barrier::new(2));
         let hook_entered = entered.clone();
-        let mut handler = AnalyzerHandler::new(root).unwrap();
+        let spool_owner = Arc::new(tempfile::tempdir().unwrap());
+        let spool_path = spool_owner.path().to_owned();
+        let mut handler = AnalyzerHandler::new(root)
+            .unwrap()
+            .with_candidate_spool_owner(spool_owner.clone());
         handler.analysis_hook = Some(Arc::new(move || {
             hook_entered.wait();
             std::thread::sleep(Duration::from_millis(500));
@@ -575,5 +582,21 @@ mod tests {
             result,
             Err(error) if error.id == EffectId(84) && error.failure.code() == "analyzer.cancelled"
         ));
+        drop(spool_owner);
+        assert!(
+            spool_path.exists(),
+            "detached analysis must retain the spool owner"
+        );
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while spool_path.exists() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("detached analysis must eventually release the spool owner");
+        assert!(
+            !spool_path.exists(),
+            "spool owner must be released when detached analysis exits"
+        );
     }
 }
