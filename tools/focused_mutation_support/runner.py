@@ -14,6 +14,27 @@ from .windows_file import probe_delete_access
 
 WINDOWS_LOG_RELEASE_TIMEOUT = 2.0
 WINDOWS_LOG_RELEASE_POLL_INTERVAL = 0.01
+WINDOWS_PROCESS_TERMINATION_TIMEOUT = 2.0
+
+
+def terminate_windows_process_tree(
+    pid: int,
+    *,
+    run: Callable[..., Any] | None = None,
+) -> None:
+    execute = subprocess.run if run is None else run
+    completed = execute(
+        ["taskkill", "/PID", str(pid), "/T", "/F"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=WINDOWS_PROCESS_TERMINATION_TIMEOUT,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise OSError(
+            f"taskkill exited with status {completed.returncode}"
+        )
 
 
 def wait_for_log_release(
@@ -65,10 +86,12 @@ class CommandInterrupted(Exception):
 
 
 class ProcessLifecycleError(RuntimeError):
-    def __init__(self, pid: int) -> None:
+    def __init__(self, pid: int, message: str | None = None) -> None:
         self.pid = pid
         super().__init__(
-            f"root process {pid} was not reaped after forced kill"
+            message
+            if message is not None
+            else f"root process {pid} was not reaped after forced kill"
         )
 
 
@@ -83,6 +106,9 @@ class CommandRunner:
         sleep: Callable[[float], None] = time.sleep,
         utc_now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
         log_cleanup: Callable[[Sequence[Path]], list[str]] | None = None,
+        windows_tree_terminator: Callable[
+            [int], None
+        ] = terminate_windows_process_tree,
     ) -> None:
         self._store = store
         self._extra_env = dict(extra_env or {})
@@ -96,6 +122,7 @@ class CommandRunner:
             else self._default_log_cleanup
         )
         self._has_custom_log_cleanup = log_cleanup is not None
+        self._windows_tree_terminator = windows_tree_terminator
         self._next_sequence = 1
         self._lifecycle_error: ProcessLifecycleError | None = None
 
@@ -216,7 +243,19 @@ class CommandRunner:
 
     def _terminate(self, process: Any) -> None:
         if os.name == "nt":
-            process.terminate()
+            try:
+                self._windows_tree_terminator(process.pid)
+            except (OSError, subprocess.SubprocessError) as error:
+                try:
+                    process.kill()
+                    process.wait(timeout=2.0)
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
+                raise ProcessLifecycleError(
+                    process.pid,
+                    f"process tree {process.pid} termination failed: "
+                    f"{type(error).__name__}: {error}",
+                ) from None
         else:
             try:
                 os.killpg(process.pid, signal.SIGTERM)

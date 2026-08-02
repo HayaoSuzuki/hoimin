@@ -939,7 +939,10 @@ class RunnerTests(unittest.TestCase):
             subprocess.TimeoutExpired(["fake-command"], 5.0)
         )
         popen_factory = mock.Mock(return_value=process)
-        runner = self.runner(popen_factory=popen_factory)
+        runner = self.runner(
+            popen_factory=popen_factory,
+            windows_tree_terminator=mock.Mock(),
+        )
 
         def invoke() -> None:
             runner.run(
@@ -978,7 +981,7 @@ class RunnerTests(unittest.TestCase):
             ],
         )
         self.assertEqual(process.wait_calls, [5.0, 2.0, 2.0])
-        self.assertEqual(process.terminate_calls, int(os.name == "nt"))
+        self.assertEqual(process.terminate_calls, 0)
         self.assertEqual(process.kill_calls, int(os.name == "nt"))
 
         with self.assertRaises(ProcessLifecycleError):
@@ -991,60 +994,41 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(popen_factory.call_count, 1)
 
     @unittest.skipUnless(os.name == "nt", "requires Windows handle inheritance")
-    def test_timeout_waits_for_inherited_log_handles_before_cleanup(self) -> None:
+    def test_windows_timeout_terminates_inherited_handle_descendant(self) -> None:
         root_ready = self.work / "root.ready"
         descendant_ready = self.work / "descendant.ready"
         release = self.work / "release"
-        cleanup_wait_started = threading.Event()
-        cancel = threading.Event()
-        captured_handles: dict[str, WindowsProcessHandle] = {}
+        captured: list[WindowsProcessHandle] = []
         capture_done = threading.Event()
-        directory_cleanup_succeeded = threading.Event()
-        thread_errors: list[str] = []
-        errors_lock = threading.Lock()
-        releaser = threading.Thread(
-            target=release_descendant_after_root_exit,
-            args=(
-                root_ready,
-                descendant_ready,
-                release,
-                cleanup_wait_started,
-                cancel,
-                captured_handles,
-                capture_done,
-                thread_errors,
-                errors_lock,
-            ),
+        capture_errors: list[BaseException] = []
+
+        def capture_descendant() -> None:
+            try:
+                deadline = time.monotonic() + 5.0
+                while time.monotonic() < deadline:
+                    pid = read_ready_pid(descendant_ready)
+                    if pid is not None:
+                        captured.append(
+                            WindowsProcessHandle.open(
+                                pid,
+                                SYNCHRONIZE | PROCESS_TERMINATE,
+                            )
+                        )
+                        return
+                    time.sleep(0.01)
+                raise TimeoutError("descendant marker was not ready")
+            except BaseException as error:
+                capture_errors.append(error)
+            finally:
+                capture_done.set()
+
+        capture_thread = threading.Thread(
+            target=capture_descendant,
             daemon=True,
         )
-        releaser.start()
-        self.addCleanup(
-            cleanup_inherited_handle_fixture,
-            release,
-            releaser,
-            cancel,
-            captured_handles,
-            capture_done,
-            directory_cleanup_succeeded,
-            thread_errors,
-            errors_lock,
-        )
+        capture_thread.start()
 
-        def synchronized_probe(path: Path) -> None:
-            try:
-                probe_delete_access(path)
-            except OSError as error:
-                if getattr(error, "winerror", None) == 32:
-                    cleanup_wait_started.set()
-                raise
-
-        with (
-            mock.patch(
-                "tools.focused_mutation_support.runner.probe_delete_access",
-                side_effect=synchronized_probe,
-            ),
-            self.assertRaises(CommandTimedOut) as caught,
-        ):
+        with self.assertRaises(CommandTimedOut) as caught:
             self.runner().run(
                 [
                     sys.executable,
@@ -1058,22 +1042,25 @@ class RunnerTests(unittest.TestCase):
                 label="inherited-handle",
             )
 
+        capture_done.wait(timeout=5.0)
+        capture_thread.join(timeout=1.0)
+        self.assertFalse(capture_thread.is_alive())
+        self.assertEqual(capture_errors, [])
+        self.assertEqual(len(captured), 1)
+        if not captured:
+            return
+        descendant = captured[0]
+        try:
+            self.assertEqual(descendant.wait(5_000), WAIT_OBJECT_0)
+        finally:
+            descendant.stop(grace_ms=0)
+            descendant.close()
+
         record = caught.exception.record
         self.assertEqual(record.cleanup_errors, [])
         stdout = Path(record.stdout_path).read_text()
         self.assertIn("ROOT-READY", stdout)
         self.assertIn("DESCENDANT-READY", stdout)
-
-        temporary_root = Path(self.temporary.name)
-        self.temporary.cleanup()
-        directory_cleanup_succeeded.set()
-        self.assertFalse(temporary_root.exists())
-        self.assertTrue(cleanup_wait_started.is_set())
-
-        releaser.join(timeout=5.0)
-        self.assertFalse(releaser.is_alive())
-        with errors_lock:
-            self.assertEqual(thread_errors, [])
 
     @unittest.skipIf(os.name == "nt", "requires POSIX process groups")
     def test_handled_timeout_leaves_no_posix_descendants(self) -> None:
@@ -1302,6 +1289,7 @@ class RunnerTests(unittest.TestCase):
             return self.runner(
                 popen_factory=popen_factory,
                 log_cleanup=raising_log_cleanup,
+                windows_tree_terminator=mock.Mock(),
             ).run(
                 [str(self.fake)],
                 cwd=self.work,
@@ -1345,6 +1333,7 @@ class RunnerTests(unittest.TestCase):
             self.runner(
                 popen_factory=popen_factory,
                 log_cleanup=lambda _: [cleanup_error],
+                windows_tree_terminator=mock.Mock(),
             ).run(
                 [str(self.fake)],
                 cwd=self.work,
@@ -1376,7 +1365,7 @@ class RunnerTests(unittest.TestCase):
         self.assertIsNotNone(record.ended_at)
         self.assertIsNotNone(record.elapsed_seconds)
         if os.name == "nt":
-            self.assertTrue(process.terminated)
+            self.assertFalse(process.terminated)
         self.assertEqual(process.wait_calls, [5.0, 2.0])
 
     def test_interruption_records_failed_post_kill_reap_and_blocks_reuse(
@@ -1384,7 +1373,10 @@ class RunnerTests(unittest.TestCase):
     ) -> None:
         process = UnreapableProcess(KeyboardInterrupt())
         popen_factory = mock.Mock(return_value=process)
-        runner = self.runner(popen_factory=popen_factory)
+        runner = self.runner(
+            popen_factory=popen_factory,
+            windows_tree_terminator=mock.Mock(),
+        )
 
         def invoke() -> None:
             runner.run(
