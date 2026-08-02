@@ -52,16 +52,33 @@ pub(crate) async fn resolve_changed(
         "-l0",
         "--relative",
     ];
+    let mut numstat_args = vec![
+        "diff",
+        "--numstat",
+        "-z",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--find-renames",
+        "-l0",
+        "--relative",
+    ];
     if let Some(base) = diff_base {
         let base = resolve_commit(root, base).await?;
         diff_args.push("--merge-base");
         diff_args.push(&base);
+        numstat_args.push("--merge-base");
+        numstat_args.push(&base);
         let output = run_git(root, &diff_args).await?;
         parse_diff(&output, &mut changed, &mut excluded)?;
+        let output = run_git(root, &numstat_args).await?;
+        parse_binary_numstat(&output, &mut excluded)?;
     } else if head_exists(root).await? {
         diff_args.push("HEAD");
+        numstat_args.push("HEAD");
         let output = run_git(root, &diff_args).await?;
         parse_diff(&output, &mut changed, &mut excluded)?;
+        let output = run_git(root, &numstat_args).await?;
+        parse_binary_numstat(&output, &mut excluded)?;
     } else {
         let indexed = run_git(root, &["ls-files", "-z"]).await?;
         collect_current_worktree_paths(root, &indexed, &mut changed).await?;
@@ -184,27 +201,59 @@ fn parse_diff(
             {
                 changed.entry(path.clone()).or_default().push(range);
             }
-        } else if state != PatchState::OutsideSection
-            && (line.starts_with(b"Binary files ") || line == b"GIT binary patch")
-        {
-            let binary_path = if line.starts_with(b"Binary files ") {
-                let line = std::str::from_utf8(line)
-                    .map_err(|_| TargetError::GitFailed("invalid Git binary header".into()))?;
-                line.strip_prefix("Binary files ")
-                    .and_then(|line| line.strip_suffix(" differ"))
-                    .and_then(|line| line.rsplit_once(" and "))
-                    .map(|(_, destination)| parse_patch_path(destination))
-                    .transpose()?
-                    .flatten()
-            } else {
-                path.clone()
-            };
-            if let Some(path) = binary_path
-                && is_python(&path)
-            {
-                excluded.insert(path);
-            }
         }
+    }
+    Ok(())
+}
+
+fn parse_binary_numstat(
+    output: &[u8],
+    excluded: &mut BTreeSet<Utf8PathBuf>,
+) -> Result<(), TargetError> {
+    let mut records = output.split(|byte| *byte == 0);
+    while let Some(record) = records.next() {
+        if record.is_empty() {
+            continue;
+        }
+        let mut fields = record.splitn(3, |byte| *byte == b'\t');
+        let added = fields.next();
+        let deleted = fields.next();
+        let path = fields
+            .next()
+            .ok_or_else(|| TargetError::GitFailed("invalid Git numstat binary record".into()))?;
+        let binary = added == Some(b"-".as_slice()) && deleted == Some(b"-".as_slice());
+        if path.is_empty() {
+            let old_path = records.next().ok_or_else(|| {
+                TargetError::GitFailed("invalid Git numstat rename record".into())
+            })?;
+            let new_path = records.next().ok_or_else(|| {
+                TargetError::GitFailed("invalid Git numstat rename record".into())
+            })?;
+            if old_path.is_empty() || new_path.is_empty() {
+                return Err(TargetError::GitFailed(
+                    "invalid Git numstat rename record".into(),
+                ));
+            }
+            if binary {
+                insert_binary_numstat_path(old_path, excluded)?;
+                insert_binary_numstat_path(new_path, excluded)?;
+            }
+        } else if binary {
+            insert_binary_numstat_path(path, excluded)?;
+        }
+    }
+    Ok(())
+}
+
+fn insert_binary_numstat_path(
+    raw_path: &[u8],
+    excluded: &mut BTreeSet<Utf8PathBuf>,
+) -> Result<(), TargetError> {
+    let path = std::str::from_utf8(raw_path)
+        .map_err(|_| TargetError::GitFailed("Git numstat path is not valid UTF-8".into()))?;
+    let path = Utf8PathBuf::from(path.replace('\\', "/"));
+    if is_python(&path) {
+        excluded.insert(path);
     }
     Ok(())
 }
@@ -345,13 +394,43 @@ fn is_python(path: &Utf8Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::decode_git_quoted;
+    use std::collections::BTreeSet;
+
+    use camino::Utf8PathBuf;
+
+    use super::{decode_git_quoted, parse_binary_numstat};
 
     #[test]
     fn quoted_path_accepts_standard_control_escapes() {
         assert_eq!(
             decode_git_quoted(r#""a/\a\b\v\f.py""#).unwrap(),
             "a/\x07\x08\x0b\x0c.py"
+        );
+    }
+
+    #[test]
+    fn binary_numstat_collects_both_rename_paths() {
+        let mut excluded = BTreeSet::new();
+
+        parse_binary_numstat(b"-\t-\t\0old and name.py\0new and name.py\0", &mut excluded).unwrap();
+
+        assert_eq!(
+            excluded,
+            BTreeSet::from([
+                Utf8PathBuf::from("new and name.py"),
+                Utf8PathBuf::from("old and name.py"),
+            ])
+        );
+    }
+
+    #[test]
+    fn binary_numstat_rejects_an_incomplete_rename_record() {
+        let error = parse_binary_numstat(b"-\t-\t\0old.py\0", &mut BTreeSet::new()).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("invalid Git numstat rename record")
         );
     }
 }
