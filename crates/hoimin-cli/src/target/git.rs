@@ -312,11 +312,12 @@ fn decode_git_quoted(value: &str) -> Result<String, TargetError> {
                         "invalid octal Git path escape".into(),
                     ));
                 }
-                decoded.push(
-                    digits
-                        .iter()
-                        .fold(0_u8, |value, digit| value * 8 + (digit - b'0')),
-                );
+                let value = digits
+                    .iter()
+                    .fold(0_u16, |value, digit| value * 8 + u16::from(digit - b'0'));
+                let value = u8::try_from(value)
+                    .map_err(|_| TargetError::GitFailed("invalid octal Git path escape".into()))?;
+                decoded.push(value);
                 index += 2;
             }
             _ => return Err(TargetError::GitFailed("invalid Git path escape".into())),
@@ -397,6 +398,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use camino::Utf8PathBuf;
+    use proptest::prelude::*;
 
     use super::{decode_git_quoted, parse_binary_numstat};
 
@@ -406,6 +408,35 @@ mod tests {
             decode_git_quoted(r#""a/\a\b\v\f.py""#).unwrap(),
             "a/\x07\x08\x0b\x0c.py"
         );
+    }
+
+    #[test]
+    fn quoted_path_rejects_out_of_range_octal_escapes() {
+        for path in [r#""a/\400.py""#, r#""a/\777.py""#] {
+            let error = decode_git_quoted(path).unwrap_err();
+
+            assert!(error.to_string().contains("invalid octal Git path escape"));
+        }
+    }
+
+    #[test]
+    fn quoted_path_accepts_maximum_octal_byte_before_utf8_validation() {
+        let error = decode_git_quoted(r#""a/\377.py""#).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("Git diff path is not valid UTF-8")
+        );
+    }
+
+    proptest! {
+        #[test]
+        fn quoted_path_decoding_is_total(path in any::<String>()) {
+            let quoted = format!("\"{path}\"");
+
+            let _ = decode_git_quoted(&quoted);
+        }
     }
 
     #[test]
