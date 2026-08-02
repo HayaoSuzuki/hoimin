@@ -91,15 +91,20 @@ def _mark_pending(record: RunRecord, reason: str) -> None:
             candidate.not_run_reason = reason
 
 
+def _candidate_package(path: str) -> str | None:
+    parts = Path(path).parts
+    if len(parts) < 3 or parts[0] != "crates":
+        return None
+    return parts[1]
+
+
 def _mark_pending_package(
     record: RunRecord, package: str, reason: str
 ) -> None:
     for candidate in record.candidates:
-        parts = Path(candidate.path).parts
         if (
             candidate.state is CandidateState.PENDING
-            and len(parts) > 1
-            and parts[1] == package
+            and _candidate_package(candidate.path) == package
         ):
             candidate.state = CandidateState.NOT_RUN
             candidate.not_run_reason = reason
@@ -229,8 +234,20 @@ def run_workflow(
                 )
                 checkpoint()
 
+        for candidate in record.candidates:
+            package = _candidate_package(candidate.path)
+            if package is None:
+                candidate.state = CandidateState.NOT_RUN
+                candidate.not_run_reason = "outside_workspace_member"
+                checkpoint()
+
         baseline_by_package: dict[str, bool] = {}
         for index, candidate in enumerate(record.candidates):
+            if candidate.state is not CandidateState.PENDING:
+                continue
+            package = _candidate_package(candidate.path)
+            if package is None:
+                continue
             if record.state is not RunState.RUNNING:
                 break
             if not budget.may_start_mutation(dependencies.monotonic()):
@@ -238,7 +255,6 @@ def run_workflow(
                 _mark_pending(record, "reporting_reserve")
                 checkpoint()
                 break
-            package = Path(candidate.path).parts[1]
             if package not in baseline_by_package:
                 command_stage = "baseline"
                 active_package = package
