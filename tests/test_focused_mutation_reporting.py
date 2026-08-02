@@ -448,6 +448,32 @@ class FocusedMutationReportingTests(unittest.TestCase):
                 )
             )
 
+    def test_baseline_uses_mutation_deadline_after_discovery_window(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            clock = FakeClock()
+            options, dependencies, runner = workflow_fixture(
+                directory, clock=clock
+            )
+
+            def finish_discovery(*_: object) -> list[Candidate]:
+                clock.now = 650.0
+                return []
+
+            with mock.patch(
+                "tools.focused_mutation.discover_candidates",
+                side_effect=finish_discovery,
+            ):
+                run_workflow(options, dependencies)
+
+            baseline_call = next(
+                call
+                for call in runner.calls
+                if call[3] == "baseline-hoimin-core"
+            )
+            self.assertEqual(baseline_call[2], 950.0)
+
     def test_candidates_outside_workspace_members_are_skipped_and_checkpointed(
         self,
     ) -> None:
