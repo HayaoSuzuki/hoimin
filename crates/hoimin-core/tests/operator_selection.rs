@@ -1,16 +1,14 @@
-use hoimin_core::{
-    CommandArg, ConfigError, MutationOperator, RawRunConfig, RunConfig,
-};
+use hoimin_core::{CommandArg, ConfigError, MutationOperator, PlanConfig, RawRunConfig, RunConfig};
 
 #[test]
 fn raw_operator_includes_and_excludes_cannot_normalize_to_empty() {
     let mut raw = raw_config();
     raw.exclude_operators = vec!["compare_eq_ne".to_owned()];
 
-    assert_eq!(
-        RunConfig::try_from(raw),
-        Err(ConfigError::EmptyMutationOperatorSelection)
-    );
+    let error = RunConfig::try_from(raw).unwrap_err();
+    assert_eq!(error, ConfigError::EmptyMutationOperatorSelection);
+    assert!(error.to_string().contains("--operators"));
+    assert!(error.to_string().contains("--exclude-operators"));
 }
 
 #[test]
@@ -26,10 +24,12 @@ fn normalized_run_config_rejects_an_empty_operator_selection() {
 
 #[test]
 fn persisted_plan_config_rejects_an_empty_operator_selection() {
-    let mut plan = RunConfig::try_from(raw_config())
+    let plan = RunConfig::try_from(raw_config())
         .unwrap()
         .into_plan_config();
-    plan.operators.exclude(MutationOperator::CompareEqNe);
+    let mut value = serde_json::to_value(plan).unwrap();
+    value["operators"] = serde_json::json!([]);
+    let plan: PlanConfig = serde_json::from_value(value).unwrap();
 
     assert_eq!(
         plan.validate(),
