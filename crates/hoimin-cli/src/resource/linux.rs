@@ -1481,6 +1481,34 @@ mod platform {
             source,
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use std::process::Command;
+
+        use super::wait_for_launcher_stop;
+
+        #[test]
+        fn premature_launcher_exit_remains_reapable_by_its_child_owner() {
+            let mut child = Command::new("sh")
+                .args(["-c", "exit 23"])
+                .spawn()
+                .expect("spawn premature launcher exit fixture");
+            let pid = i32::try_from(child.id()).expect("fixture pid fits i32");
+
+            let error = wait_for_launcher_stop(pid).unwrap_err();
+            let status = child
+                .wait()
+                .expect("launcher status remains owned by Child");
+
+            assert_eq!(status.code(), Some(23));
+            assert!(
+                error
+                    .to_string()
+                    .contains("cgroup launcher did not stop before target execution")
+            );
+        }
+    }
 }
 
 #[cfg(all(any(target_os = "linux", test), not(unix)))]
