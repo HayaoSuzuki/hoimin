@@ -117,6 +117,39 @@ fn ranking_normalizes_explicit_line_paths_before_matching_candidates() {
     }
 }
 
+#[cfg(windows)]
+#[test]
+fn ranking_compares_explicit_line_paths_with_windows_case_rules() {
+    let selection = Selection {
+        root: Utf8PathBuf::from("C:/Workspace"),
+        lines: vec![LineSelection {
+            path: Utf8PathBuf::from("c:/workspace/SRC/CALC.py"),
+            range: LineRange { start: 5, end: 5 },
+        }],
+        ..Selection::default()
+    };
+
+    let ranked = rank_candidates(
+        &selection,
+        &[],
+        vec![candidate(
+            "candidate",
+            "src/calc.py",
+            5,
+            3,
+            "binary_add_sub",
+            None,
+        )],
+    );
+
+    assert!(
+        ranked[0]
+            .ranking_reasons
+            .iter()
+            .any(|reason| reason.code == RankingReasonCode::ExplicitLine)
+    );
+}
+
 #[test]
 fn ranking_assigns_every_operator_to_its_fixed_category() {
     for (operator, expected) in [
