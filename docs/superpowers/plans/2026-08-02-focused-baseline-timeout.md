@@ -6,7 +6,7 @@
 
 **Architecture:** Preserve the existing `RunBudget` allocation and workflow state machine. Change only the timeout selected for a package baseline, from `discovery_timeout` to `mutation_timeout`, and protect that phase boundary with a workflow-level regression test.
 
-**Tech Stack:** Python 3.13, `unittest`, existing focused-mutation fake clock and runner.
+**Tech Stack:** Python 3.14+, `unittest`, existing focused-mutation fake clock and runner.
 
 ## Global Constraints
 
