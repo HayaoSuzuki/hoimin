@@ -680,7 +680,7 @@ class FocusedMutationReportingTests(unittest.TestCase):
                 )
                 self.assertEqual(persisted["state"], expected_state.value)
                 self.assertIn(
-                    expected_state.value,
+                    f"- `main` — {expected_state.value}",
                     (options.output / "report.md").read_text(encoding="utf-8"),
                 )
 
