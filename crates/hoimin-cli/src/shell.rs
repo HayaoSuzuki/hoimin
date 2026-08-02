@@ -119,7 +119,7 @@ pub struct ShellContext<Stdout, Stderr> {
     session: Option<SessionDispatcher>,
     session_path: Option<Utf8PathBuf>,
     active_candidates: BTreeMap<u32, hoimin_core::MutationCandidate>,
-    _spool_dir: TempDir,
+    _spool_dir: Arc<TempDir>,
     resolved_targets: Option<Vec<TargetSlice>>,
     config: RunConfig,
     fingerprint_copy_inputs: BTreeSet<Utf8PathBuf>,
@@ -141,7 +141,7 @@ where
         reason = "the constructor remains asynchronous for compatibility with the run infrastructure API"
     )]
     pub async fn new(config: &RunConfig, stdout: Stdout, stderr: Stderr) -> Result<Self, String> {
-        let spool_dir = tempfile::tempdir().map_err(|error| error.to_string())?;
+        let spool_dir = Arc::new(tempfile::tempdir().map_err(|error| error.to_string())?);
         let spool_path = Utf8PathBuf::from_path_buf(spool_dir.path().to_owned())
             .map_err(|_| "temporary spool path is not UTF-8".to_owned())?;
         std::fs::create_dir_all(spool_path.join("report")).map_err(|error| error.to_string())?;
@@ -169,7 +169,8 @@ where
             u32::try_from(config.limits.max_processes.get())
                 .map_err(|_| "--max-processes exceeds the supported process count".to_owned())?,
         )
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error.to_string())?
+        .with_candidate_spool_owner(spool_dir.clone());
         let report = ReportHandler::new(
             config.output.format,
             stdout,
