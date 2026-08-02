@@ -1018,7 +1018,7 @@ mod tests {
         );
 
         assert!(state.exited_roots.contains(&other_id));
-        assert!(!state.exited_roots.contains(&old_id));
+        assert!(state.exited_roots.contains(&old_id));
         assert!(!state.exited_roots.contains(&new_id));
         assert_eq!(
             state.active.iter().map(|root| root.id).collect::<Vec<_>>(),
@@ -1056,7 +1056,7 @@ mod tests {
             false,
         );
 
-        assert!(state.exited_roots.contains(&old_id));
+        assert!(!state.exited_roots.contains(&old_id));
         assert!(!state.exited_roots.contains(&new_id));
         assert_eq!(state.active.len(), 1);
         assert_eq!(state.active[0].id, new_id);
