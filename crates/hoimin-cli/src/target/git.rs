@@ -312,12 +312,11 @@ fn decode_git_quoted(value: &str) -> Result<String, TargetError> {
                         "invalid octal Git path escape".into(),
                     ));
                 }
-                let value = digits.iter().fold(0_u16, |value, digit| {
-                    value * 8 + u16::from(digit - b'0')
-                });
-                let value = u8::try_from(value).map_err(|_| {
-                    TargetError::GitFailed("invalid octal Git path escape".into())
-                })?;
+                let value = digits
+                    .iter()
+                    .fold(0_u16, |value, digit| value * 8 + u16::from(digit - b'0'));
+                let value = u8::try_from(value)
+                    .map_err(|_| TargetError::GitFailed("invalid octal Git path escape".into()))?;
                 decoded.push(value);
                 index += 2;
             }
@@ -416,11 +415,7 @@ mod tests {
         for path in [r#""a/\400.py""#, r#""a/\777.py""#] {
             let error = decode_git_quoted(path).unwrap_err();
 
-            assert!(
-                error
-                    .to_string()
-                    .contains("invalid octal Git path escape")
-            );
+            assert!(error.to_string().contains("invalid octal Git path escape"));
         }
     }
 
