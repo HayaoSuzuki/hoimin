@@ -574,6 +574,10 @@ class RunnerTests(unittest.TestCase):
         ):
             terminate_windows_process_tree(12345, run=run)
 
+    def test_windows_tree_terminator_requires_keyword_runner(self) -> None:
+        with self.assertRaises(TypeError):
+            terminate_windows_process_tree(12345, mock.Mock())  # type: ignore
+
     def test_windows_interruption_terminates_the_process_tree(self) -> None:
         process = InterruptingProcess()
         tree_terminator = mock.Mock()
