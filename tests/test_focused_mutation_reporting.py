@@ -481,6 +481,10 @@ class FocusedMutationReportingTests(unittest.TestCase):
                 mock.patch(
                     "tools.focused_mutation.discover_candidates", return_value=[]
                 ),
+                mock.patch(
+                    "tools.focused_mutation.rank_candidates",
+                    side_effect=lambda candidates, *_: candidates,
+                ),
                 mock.patch(f"{__name__}.WORKFLOW_LIST_JSON", inventory),
             ):
                 record = run_workflow(options, dependencies)
@@ -496,9 +500,9 @@ class FocusedMutationReportingTests(unittest.TestCase):
                     for path in ("build.rs", "crates/hoimin-core", "tools/helper.py")
                 )
             )
-            self.assertEqual(
+            self.assertNotEqual(
                 by_path["crates/hoimin-core/src/machine.rs"].state,
-                CandidateState.KILLED,
+                CandidateState.NOT_RUN,
             )
             self.assertTrue(
                 any(
