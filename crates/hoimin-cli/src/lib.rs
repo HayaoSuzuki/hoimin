@@ -131,7 +131,11 @@ where
         }
         Err(cli::CliError::Clap(error)) => {
             let exit_code = error.exit_code();
-            let _ = writeln!(stderr, "{error}");
+            if exit_code == 0 {
+                let _ = write!(stdout, "{error}");
+            } else {
+                let _ = write!(stderr, "{error}");
+            }
             exit_code
         }
         Err(error) => {

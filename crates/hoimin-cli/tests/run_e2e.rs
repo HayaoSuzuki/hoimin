@@ -52,12 +52,8 @@ async fn invalid_clap_arguments_remain_on_stderr() {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
 
-    let exit = hoimin_cli::run_with_io(
-        ["hoimin", "--definitely-invalid"],
-        &mut stdout,
-        &mut stderr,
-    )
-    .await;
+    let exit =
+        hoimin_cli::run_with_io(["hoimin", "--definitely-invalid"], &mut stdout, &mut stderr).await;
 
     assert_ne!(exit, 0);
     assert!(stdout.is_empty(), "{stdout:?}");
