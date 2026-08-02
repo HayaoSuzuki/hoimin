@@ -754,4 +754,39 @@ mod tests {
         assert_eq!(state.exited_roots.len(), 1);
         assert!(state.exited_roots.contains(&401));
     }
+
+    #[test]
+    fn recycled_pid_exit_generations_are_recorded_independently() {
+        let first = std::sync::Arc::new(RootSignal::default());
+        let second = std::sync::Arc::new(RootSignal::default());
+        let mut state = RunState {
+            active: vec![ActiveRoot {
+                pid: 501,
+                signal: std::sync::Arc::downgrade(&first),
+            }],
+            ..RunState::default()
+        };
+
+        record_notification(
+            &mut state,
+            windows_sys::Win32::System::SystemServices::JOB_OBJECT_MSG_EXIT_PROCESS,
+            501,
+        );
+        state.active.push(ActiveRoot {
+            pid: 501,
+            signal: std::sync::Arc::downgrade(&second),
+        });
+        record_notification(
+            &mut state,
+            windows_sys::Win32::System::SystemServices::JOB_OBJECT_MSG_EXIT_PROCESS,
+            501,
+        );
+
+        assert!(state.active.is_empty());
+        assert_eq!(
+            state.exited_roots.len(),
+            2,
+            "each PID generation needs independent completion state"
+        );
+    }
 }
