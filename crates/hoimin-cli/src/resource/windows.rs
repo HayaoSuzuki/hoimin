@@ -147,7 +147,14 @@ struct ActiveRoot {
     signal: Option<Weak<RootSignal>>,
     // Keeping the process object open prevents Windows from recycling its PID before the
     // corresponding Job Object exit notification has been consumed.
-    _process: Option<OwnedHandle>,
+    process: Option<OwnedHandle>,
+}
+
+impl Drop for ActiveRoot {
+    fn drop(&mut self) {
+        // Make the PID-reuse barrier explicit: removing the registration closes its handle.
+        drop(self.process.take());
+    }
 }
 
 #[derive(Debug, Default)]
@@ -403,7 +410,7 @@ fn register_root(
         id: root_id,
         pid,
         signal: signal.map(Arc::downgrade),
-        _process: Some(child.into_process_handle()),
+        process: Some(child.into_process_handle()),
     });
 }
 
@@ -725,7 +732,7 @@ mod tests {
             } else {
                 assert_eq!(state.active.len(), 1);
                 assert!(state.active[0].signal.is_none());
-                assert!(state.active[0]._process.is_some());
+                assert!(state.active[0].process.is_some());
                 let root_id = state.active[0].id;
                 backend
                     .inner
@@ -771,7 +778,7 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         assert_eq!(state.active.len(), 1);
         assert!(state.active[0].signal.is_none());
-        assert!(state.active[0]._process.is_some());
+        assert!(state.active[0].process.is_some());
         let root_id = state.active[0].id;
         backend
             .inner
@@ -822,13 +829,13 @@ mod tests {
                     id: exited_id,
                     pid: 301,
                     signal: Some(std::sync::Arc::downgrade(&exited)),
-                    _process: None,
+                    process: None,
                 },
                 ActiveRoot {
                     id: Uuid::from_u128(302),
                     pid: 302,
                     signal: Some(std::sync::Arc::downgrade(&active)),
-                    _process: None,
+                    process: None,
                 },
             ],
             ..RunState::default()
@@ -863,13 +870,13 @@ mod tests {
                     id: crashed_id,
                     pid: 401,
                     signal: Some(std::sync::Arc::downgrade(&crashed)),
-                    _process: None,
+                    process: None,
                 },
                 ActiveRoot {
                     id: Uuid::from_u128(402),
                     pid: 402,
                     signal: Some(std::sync::Arc::downgrade(&running)),
-                    _process: None,
+                    process: None,
                 },
             ],
             ..RunState::default()
@@ -901,7 +908,7 @@ mod tests {
                 id: first_id,
                 pid: 501,
                 signal: Some(std::sync::Arc::downgrade(&first)),
-                _process: None,
+                process: None,
             }],
             ..RunState::default()
         };
@@ -916,7 +923,7 @@ mod tests {
             id: second_id,
             pid: 501,
             signal: Some(std::sync::Arc::downgrade(&second)),
-            _process: None,
+            process: None,
         });
         record_notification(
             &mut state,
@@ -946,7 +953,7 @@ mod tests {
                 id: old_id,
                 pid: 601,
                 signal: Some(std::sync::Arc::downgrade(&old)),
-                _process: None,
+                process: None,
             }],
             ..RunState::default()
         };
@@ -960,7 +967,7 @@ mod tests {
             id: new_id,
             pid: 601,
             signal: Some(std::sync::Arc::downgrade(&new)),
-            _process: None,
+            process: None,
         });
 
         forget_root_generation(&mut state, old_id);
@@ -986,19 +993,19 @@ mod tests {
                     id: other_id,
                     pid: 700,
                     signal: Some(std::sync::Arc::downgrade(&other)),
-                    _process: None,
+                    process: None,
                 },
                 ActiveRoot {
                     id: old_id,
                     pid: 701,
                     signal: Some(std::sync::Arc::downgrade(&old)),
-                    _process: None,
+                    process: None,
                 },
                 ActiveRoot {
                     id: new_id,
                     pid: 701,
                     signal: Some(std::sync::Arc::downgrade(&new)),
-                    _process: None,
+                    process: None,
                 },
             ],
             ..RunState::default()
@@ -1037,7 +1044,7 @@ mod tests {
                 id: old_id,
                 pid: 801,
                 signal: Some(std::sync::Arc::downgrade(&old)),
-                _process: None,
+                process: None,
             }],
             ..RunState::default()
         };
@@ -1047,7 +1054,7 @@ mod tests {
             id: new_id,
             pid: 801,
             signal: Some(std::sync::Arc::downgrade(&new)),
-            _process: None,
+            process: None,
         });
         record_notification(
             &mut state,
@@ -1071,7 +1078,7 @@ mod tests {
                 id: root_id,
                 pid: 901,
                 signal: Some(std::sync::Arc::downgrade(&root)),
-                _process: None,
+                process: None,
             }],
             ..RunState::default()
         };
@@ -1100,13 +1107,13 @@ mod tests {
                     id: first_id,
                     pid: 1001,
                     signal: Some(std::sync::Arc::downgrade(&first)),
-                    _process: None,
+                    process: None,
                 },
                 ActiveRoot {
                     id: second_id,
                     pid: 1002,
                     signal: Some(std::sync::Arc::downgrade(&second)),
-                    _process: None,
+                    process: None,
                 },
             ],
             ..RunState::default()
@@ -1137,13 +1144,13 @@ mod tests {
                     id: detached_id,
                     pid: 1101,
                     signal: Some(std::sync::Arc::downgrade(&detached)),
-                    _process: None,
+                    process: None,
                 },
                 ActiveRoot {
                     id: live_id,
                     pid: 1102,
                     signal: Some(std::sync::Arc::downgrade(&live)),
-                    _process: None,
+                    process: None,
                 },
             ],
             ..RunState::default()
