@@ -1,6 +1,6 @@
 use hoimin_core::{
-    CommandArg, ConfigError, FingerprintInputFile, MAX_JOBS, MutationProfile, OutputConfig,
-    OutputFormat, PlanConfig, RawRunConfig, RawRunLimits, RunConfig, SessionConfig,
+    CommandArg, ConfigError, FingerprintInputFile, MAX_JOBS, MutationOperator, MutationProfile,
+    OutputConfig, OutputFormat, PlanConfig, RawRunConfig, RawRunLimits, RunConfig, SessionConfig,
 };
 
 fn plan_value() -> serde_json::Value {
@@ -55,6 +55,27 @@ fn plan_config_defaults_missing_fingerprint_files() {
     let plan: PlanConfig = serde_json::from_value(value).unwrap();
 
     assert!(plan.fingerprint_files.is_empty());
+}
+
+#[test]
+fn plan_config_serializes_the_mapping_operator_with_its_canonical_name() {
+    let mut config = fixture_run_config();
+    config.operators.exclude(MutationOperator::CompareEqNe);
+    config.operators.include(MutationOperator::TypeMapping);
+
+    let value = serde_json::to_value(config.into_plan_config()).unwrap();
+
+    assert_eq!(value["operators"], serde_json::json!(["type_dict_mapping"]));
+}
+
+#[test]
+fn plan_config_accepts_the_historical_mapping_operator_name() {
+    let mut value = plan_value();
+    value["operators"] = serde_json::json!(["type_mapping"]);
+
+    let plan: PlanConfig = serde_json::from_value(value).unwrap();
+
+    assert!(plan.operators.contains(MutationOperator::TypeMapping));
 }
 
 #[test]
