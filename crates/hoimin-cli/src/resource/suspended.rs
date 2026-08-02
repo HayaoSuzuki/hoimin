@@ -54,8 +54,12 @@ impl SuspendedChild {
         }
     }
 
-    pub(super) fn resume(self) -> Result<(), ResourceError> {
+    pub(super) fn resume(&self) -> Result<(), ResourceError> {
         resume_primary_thread(self.pid)
+    }
+
+    pub(super) fn into_process_handle(self) -> OwnedHandle {
+        self.process
     }
 }
 
