@@ -58,7 +58,6 @@ impl SuspendedChild {
         resume_primary_thread(self.pid)
     }
 
-    #[cfg(not(test))]
     pub(super) fn into_process_handle(self) -> OwnedHandle {
         self.process
     }

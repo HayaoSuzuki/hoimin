@@ -44,6 +44,8 @@ enum AttachFault {
     #[cfg(test)]
     Assign,
     #[cfg(test)]
+    NestedAssign,
+    #[cfg(test)]
     Resume,
 }
 
@@ -145,8 +147,7 @@ struct ActiveRoot {
     signal: Option<Weak<RootSignal>>,
     // Keeping the process object open prevents Windows from recycling its PID before the
     // corresponding Job Object exit notification has been consumed.
-    #[cfg(not(test))]
-    _process: OwnedHandle,
+    _process: Option<OwnedHandle>,
 }
 
 #[derive(Debug, Default)]
@@ -218,22 +219,31 @@ impl WindowsRunJob {
         let child = super::suspended::SuspendedChild::open(child)?;
         let pid = child.pid();
         child.assign(self.job.raw(), "assign process to run-wide job")?;
-        child.assign(root_job, "assign process to nested root job")?;
+        #[cfg(test)]
+        if attach_fault == AttachFault::NestedAssign {
+            register_root(&mut state, root_id, pid, None, child);
+            return Err(ResourceError::io(
+                "assign process to nested root job",
+                io::Error::other("injected nested assignment failure"),
+            ));
+        }
+        if let Err(error) = child.assign(root_job, "assign process to nested root job") {
+            register_root(&mut state, root_id, pid, None, child);
+            return Err(error);
+        }
         #[cfg(test)]
         if attach_fault == AttachFault::Resume {
+            register_root(&mut state, root_id, pid, None, child);
             return Err(ResourceError::io(
                 "resume suspended primary thread",
                 io::Error::other("injected resume failure"),
             ));
         }
-        child.resume()?;
-        state.active.push(ActiveRoot {
-            id: root_id,
-            pid,
-            signal: Some(Arc::downgrade(signal)),
-            #[cfg(not(test))]
-            _process: child.into_process_handle(),
-        });
+        if let Err(error) = child.resume() {
+            register_root(&mut state, root_id, pid, None, child);
+            return Err(error);
+        }
+        register_root(&mut state, root_id, pid, Some(signal), child);
         Ok(pid)
     }
 
@@ -371,6 +381,21 @@ fn record_notification(state: &mut RunState, message: u32, pid: u32, job_is_empt
         }
         _ => {}
     }
+}
+
+fn register_root(
+    state: &mut RunState,
+    root_id: Uuid,
+    pid: u32,
+    signal: Option<&Arc<RootSignal>>,
+    child: super::suspended::SuspendedChild,
+) {
+    state.active.push(ActiveRoot {
+        id: root_id,
+        pid,
+        signal: signal.map(Arc::downgrade),
+        _process: Some(child.into_process_handle()),
+    });
 }
 
 fn forget_root_generation(state: &mut RunState, root_id: Uuid) {
@@ -629,18 +654,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn assign_and_resume_failures_kill_suspended_root_before_user_code() {
-        for (sequence, fault) in [AttachFault::Assign, AttachFault::Resume]
-            .into_iter()
-            .enumerate()
+    async fn attach_failures_kill_suspended_root_and_retain_assigned_identity_until_exit() {
+        for (sequence, fault) in [
+            AttachFault::Assign,
+            AttachFault::NestedAssign,
+            AttachFault::Resume,
+        ]
+        .into_iter()
+        .enumerate()
         {
             let temporary = tempfile::tempdir().unwrap();
             let output_dir = Utf8Path::from_path(temporary.path()).unwrap();
             let marker = output_dir.join(format!("fault-{sequence}.marker"));
+            let backend = WindowsBackend::with_test_fault(&run_limits(), fault).unwrap();
             let handler = ProcessHandler::new(
-                ResourceBackend::Windows(
-                    WindowsBackend::with_test_fault(&run_limits(), fault).unwrap(),
-                ),
+                ResourceBackend::Windows(backend.clone()),
                 output_dir.to_owned(),
             );
             let request = RunProcess {
@@ -677,11 +705,32 @@ mod tests {
                 error.failure,
                 EffectFailure::Io { ref code, .. } if code == "process.resource.attach"
             ));
+
+            let mut state = backend
+                .inner
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if fault == AttachFault::Assign {
+                assert!(state.active.is_empty());
+            } else {
+                assert_eq!(state.active.len(), 1);
+                assert!(state.active[0].signal.is_none());
+                assert!(state.active[0]._process.is_some());
+                let root_id = state.active[0].id;
+                backend
+                    .inner
+                    .drain_until_root_exit(&mut state, root_id)
+                    .unwrap();
+                forget_root_generation(&mut state, root_id);
+                assert!(state.active.is_empty());
+                assert!(state.exited_roots.is_empty());
+            }
         }
     }
 
     #[tokio::test]
-    async fn timed_out_root_is_unregistered_from_run_state() {
+    async fn timed_out_root_retains_identity_until_its_exit_notification() {
         let temporary = tempfile::tempdir().unwrap();
         let output_dir = Utf8Path::from_path(temporary.path()).unwrap();
         let backend = WindowsBackend::new(&run_limits()).unwrap();
@@ -707,11 +756,20 @@ mod tests {
         let event = handler.handle(request).await.unwrap();
         assert_eq!(event.termination, hoimin_core::ProcessTermination::Timeout);
 
-        let state = backend
+        let mut state = backend
             .inner
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert_eq!(state.active.len(), 1);
+        assert!(state.active[0].signal.is_none());
+        assert!(state.active[0]._process.is_some());
+        let root_id = state.active[0].id;
+        backend
+            .inner
+            .drain_until_root_exit(&mut state, root_id)
+            .unwrap();
+        forget_root_generation(&mut state, root_id);
         assert!(state.active.is_empty());
         assert!(state.exited_roots.is_empty());
     }
@@ -757,11 +815,13 @@ mod tests {
                     id: exited_id,
                     pid: 301,
                     signal: Some(std::sync::Arc::downgrade(&exited)),
+                    _process: None,
                 },
                 ActiveRoot {
                     id: Uuid::from_u128(302),
                     pid: 302,
                     signal: Some(std::sync::Arc::downgrade(&active)),
+                    _process: None,
                 },
             ],
             ..RunState::default()
@@ -796,11 +856,13 @@ mod tests {
                     id: crashed_id,
                     pid: 401,
                     signal: Some(std::sync::Arc::downgrade(&crashed)),
+                    _process: None,
                 },
                 ActiveRoot {
                     id: Uuid::from_u128(402),
                     pid: 402,
                     signal: Some(std::sync::Arc::downgrade(&running)),
+                    _process: None,
                 },
             ],
             ..RunState::default()
@@ -832,6 +894,7 @@ mod tests {
                 id: first_id,
                 pid: 501,
                 signal: Some(std::sync::Arc::downgrade(&first)),
+                _process: None,
             }],
             ..RunState::default()
         };
@@ -846,6 +909,7 @@ mod tests {
             id: second_id,
             pid: 501,
             signal: Some(std::sync::Arc::downgrade(&second)),
+            _process: None,
         });
         record_notification(
             &mut state,
@@ -875,6 +939,7 @@ mod tests {
                 id: old_id,
                 pid: 601,
                 signal: Some(std::sync::Arc::downgrade(&old)),
+                _process: None,
             }],
             ..RunState::default()
         };
@@ -888,6 +953,7 @@ mod tests {
             id: new_id,
             pid: 601,
             signal: Some(std::sync::Arc::downgrade(&new)),
+            _process: None,
         });
 
         forget_root_generation(&mut state, old_id);
@@ -913,16 +979,19 @@ mod tests {
                     id: other_id,
                     pid: 700,
                     signal: Some(std::sync::Arc::downgrade(&other)),
+                    _process: None,
                 },
                 ActiveRoot {
                     id: old_id,
                     pid: 701,
                     signal: Some(std::sync::Arc::downgrade(&old)),
+                    _process: None,
                 },
                 ActiveRoot {
                     id: new_id,
                     pid: 701,
                     signal: Some(std::sync::Arc::downgrade(&new)),
+                    _process: None,
                 },
             ],
             ..RunState::default()
@@ -961,6 +1030,7 @@ mod tests {
                 id: old_id,
                 pid: 801,
                 signal: Some(std::sync::Arc::downgrade(&old)),
+                _process: None,
             }],
             ..RunState::default()
         };
@@ -970,6 +1040,7 @@ mod tests {
             id: new_id,
             pid: 801,
             signal: Some(std::sync::Arc::downgrade(&new)),
+            _process: None,
         });
         record_notification(
             &mut state,
@@ -993,6 +1064,7 @@ mod tests {
                 id: root_id,
                 pid: 901,
                 signal: Some(std::sync::Arc::downgrade(&root)),
+                _process: None,
             }],
             ..RunState::default()
         };
@@ -1021,11 +1093,13 @@ mod tests {
                     id: first_id,
                     pid: 1001,
                     signal: Some(std::sync::Arc::downgrade(&first)),
+                    _process: None,
                 },
                 ActiveRoot {
                     id: second_id,
                     pid: 1002,
                     signal: Some(std::sync::Arc::downgrade(&second)),
+                    _process: None,
                 },
             ],
             ..RunState::default()
