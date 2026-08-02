@@ -397,6 +397,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use camino::Utf8PathBuf;
+    use proptest::prelude::*;
 
     use super::{decode_git_quoted, parse_binary_numstat};
 
@@ -406,6 +407,28 @@ mod tests {
             decode_git_quoted(r#""a/\a\b\v\f.py""#).unwrap(),
             "a/\x07\x08\x0b\x0c.py"
         );
+    }
+
+    #[test]
+    fn quoted_path_rejects_out_of_range_octal_escapes() {
+        for path in [r#""a/\400.py""#, r#""a/\777.py""#] {
+            let error = decode_git_quoted(path).unwrap_err();
+
+            assert!(
+                error
+                    .to_string()
+                    .contains("invalid octal Git path escape")
+            );
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn quoted_path_decoding_is_total(path in any::<String>()) {
+            let quoted = format!("\"{path}\"");
+
+            let _ = decode_git_quoted(&quoted);
+        }
     }
 
     #[test]
