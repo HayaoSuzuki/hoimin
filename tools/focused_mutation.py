@@ -91,6 +91,14 @@ def _mark_pending(record: RunRecord, reason: str) -> None:
             candidate.not_run_reason = reason
 
 
+def _stop_before_mutations(
+    record: RunRecord, state: RunState, error: str | None
+) -> None:
+    record.state = state
+    record.error = error
+    _mark_pending(record, state.value)
+
+
 def _candidate_package(path: str) -> str | None:
     parts = Path(path).parts
     if len(parts) < 3 or parts[0] != "crates":
@@ -200,12 +208,15 @@ def run_workflow(
             "cargo-mutants-version",
         )
         if version.exit_code != 0:
-            record.state = RunState.TOOL_UNAVAILABLE
-            record.error = "cargo-mutants --version failed"
+            _stop_before_mutations(
+                record,
+                RunState.TOOL_UNAVAILABLE,
+                "cargo-mutants --version failed",
+            )
         else:
             state, message = validate_cargo_mutants_version(_read_stdout(version))
             if state is not None:
-                record.state, record.error = state, message
+                _stop_before_mutations(record, state, message)
             else:
                 record.tools["cargo-mutants"] = _read_stdout(version).strip()
 
@@ -218,8 +229,11 @@ def run_workflow(
                 "inventory",
             )
             if list_command.exit_code != 0:
-                record.state = RunState.COMMAND_FAILED
-                record.error = "cargo-mutants inventory failed"
+                _stop_before_mutations(
+                    record,
+                    RunState.COMMAND_FAILED,
+                    "cargo-mutants inventory failed",
+                )
             else:
                 inventory = parse_list_json(_read_stdout(list_command))
                 wanted = {(item.path, item.symbol) for item in selected}
@@ -236,7 +250,7 @@ def run_workflow(
 
         for candidate in record.candidates:
             package = _candidate_package(candidate.path)
-            if package is None:
+            if candidate.state is CandidateState.PENDING and package is None:
                 candidate.state = CandidateState.NOT_RUN
                 candidate.not_run_reason = "outside_workspace_member"
                 checkpoint()
