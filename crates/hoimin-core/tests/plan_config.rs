@@ -1,7 +1,6 @@
 use hoimin_core::{
-    CommandArg, ConfigError, FingerprintInputFile, MAX_JOBS, MutationProfile, OutputConfig,
-    MutationOperator, OutputFormat, PlanConfig, RawRunConfig, RawRunLimits, RunConfig,
-    SessionConfig,
+    CommandArg, ConfigError, FingerprintInputFile, MAX_JOBS, MutationOperator, MutationProfile,
+    OutputConfig, OutputFormat, PlanConfig, RawRunConfig, RawRunLimits, RunConfig, SessionConfig,
 };
 
 fn plan_value() -> serde_json::Value {
@@ -66,10 +65,7 @@ fn plan_config_serializes_the_mapping_operator_with_its_canonical_name() {
 
     let value = serde_json::to_value(config.into_plan_config()).unwrap();
 
-    assert_eq!(
-        value["operators"],
-        serde_json::json!(["type_dict_mapping"])
-    );
+    assert_eq!(value["operators"], serde_json::json!(["type_dict_mapping"]));
 }
 
 #[test]

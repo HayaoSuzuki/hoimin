@@ -63,6 +63,7 @@ pub enum MutationOperator {
     TypeNullableAdd,
     TypeListSequence,
     TypeSetAbstractSet,
+    #[serde(rename = "type_dict_mapping", alias = "type_mapping")]
     TypeMapping,
     TypeIterableIterator,
     TypeSequenceIterable,
