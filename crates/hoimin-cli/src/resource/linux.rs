@@ -1278,17 +1278,17 @@ mod platform {
     }
 
     fn wait_for_launcher_stop(pid: i32) -> Result<(), ResourceError> {
-        let observed_id = libc::id_t::try_from(pid)
+        let launcher_id = libc::id_t::try_from(pid)
             .map_err(|_| ResourceError::InvalidCgroupData("invalid cgroup launcher pid".into()))?;
         let deadline = Instant::now() + CONTROL_WAIT;
         loop {
             let mut info = std::mem::MaybeUninit::<libc::siginfo_t>::zeroed();
-            // SAFETY: observed_id identifies our child, info points to writable storage, and
+            // SAFETY: launcher_id identifies our child, info points to writable storage, and
             // WNOWAIT leaves child status owned by the caller's Child handle.
             let result = unsafe {
                 libc::waitid(
                     libc::P_PID,
-                    observed_id,
+                    launcher_id,
                     info.as_mut_ptr(),
                     libc::WSTOPPED | libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
                 )
