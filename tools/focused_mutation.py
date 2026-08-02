@@ -261,7 +261,7 @@ def run_workflow(
                 baseline = run_command(
                     build_baseline_command(candidate),
                     options.repository,
-                    budget.discovery_timeout(dependencies.monotonic()),
+                    budget.mutation_timeout(dependencies.monotonic()),
                     f"baseline-{package}",
                 )
                 baseline_by_package[package] = baseline.exit_code == 0
