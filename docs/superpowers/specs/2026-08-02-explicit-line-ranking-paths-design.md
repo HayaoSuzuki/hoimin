@@ -27,4 +27,3 @@ No serialized format or ranking-rule score changes. Unit tests will prove that
 dot-prefixed and absolute selected paths receive the boost. Existing tests
 continue to cover ordinary normalized paths and deterministic ordering. The
 Windows equality helper remains covered by its platform-specific core tests.
-
