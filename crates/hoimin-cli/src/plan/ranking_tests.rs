@@ -80,10 +80,12 @@ fn ranking_accumulates_selector_and_operator_reasons() {
 
 #[test]
 fn ranking_normalizes_explicit_line_paths_before_matching_candidates() {
-    for (root, selected_path) in [
-        ("", "./src/calc.py"),
-        ("/workspace", "/workspace/src/calc.py"),
-    ] {
+    let (absolute_root, absolute_selection) = if cfg!(windows) {
+        ("C:/workspace", "C:/workspace/src/calc.py")
+    } else {
+        ("/workspace", "/workspace/src/calc.py")
+    };
+    for (root, selected_path) in [("", "./src/calc.py"), (absolute_root, absolute_selection)] {
         let selection = Selection {
             root: Utf8PathBuf::from(root),
             lines: vec![LineSelection {
