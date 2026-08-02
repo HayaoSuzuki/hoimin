@@ -16,7 +16,7 @@ use tokio::task::JoinSet;
 use uuid::Uuid;
 
 use crate::analyzer::{AnalyzerHandler, CandidateStore};
-use crate::metrics::{MetricsCollector, MetricsError, write_metrics};
+use crate::metrics::{MetricsCollector, MetricsError, finalize_metrics};
 use crate::process::{ProcessCancellation, ProcessHandler, ProcessRequest, ProcessStartGate};
 use crate::report::ReportHandler;
 #[cfg(not(any(windows, target_os = "linux")))]
@@ -766,25 +766,28 @@ where
     let mut metrics_warnings = Vec::new();
     let mut discovered = 0_u64;
     let mut executed = 0_u64;
+    let initial_run_id = Uuid::new_v4().to_string();
+    let mut diagnostic_run_id = initial_run_id.clone();
     let run_result = async {
         let mut state = Box::new(match candidate_selection {
             CandidateSelection::Explicit(candidate_ids, verification_selection) => {
-                RunState::with_candidate_filter(Uuid::new_v4().to_string(), config, candidate_ids)
+                RunState::with_candidate_filter(initial_run_id.clone(), config, candidate_ids)
                     .with_verification_selection(verification_selection)
             }
             CandidateSelection::Ordered(candidate_ids, verification_selection) => {
                 RunState::with_ordered_candidate_filter(
-                    Uuid::new_v4().to_string(),
+                    initial_run_id.clone(),
                     config,
                     candidate_ids,
                 )
                 .with_verification_selection(verification_selection)
             }
-            CandidateSelection::All => RunState::new(Uuid::new_v4().to_string(), config),
+            CandidateSelection::All => RunState::new(initial_run_id.clone(), config),
         });
         let (next, initial) = transition(*state, RunEvent::StartRequested(StartRequested))
             .map_err(|error| error.to_string())?;
         *state = next;
+        track_diagnostic_run_id(&mut diagnostic_run_id, &state);
         if metrics_path.is_some() {
             let mut collector = MetricsCollector::new(state.run_id());
             if let Err(error) = collector.begin_stage("targets") {
@@ -1149,6 +1152,7 @@ where
                 }
             };
             state = next;
+            track_diagnostic_run_id(&mut diagnostic_run_id, &state);
             if let Some((worker, true)) = process {
                 record_metrics(&mut metrics, &mut metrics_warnings, |metrics| {
                     metrics.process_finished(worker, accepted_mutant)
@@ -1214,26 +1218,29 @@ where
     .await;
     let close_result = context.process.close().map_err(|error| error.to_string());
     let workspace_close = context.workspace.close().map_err(|error| error.to_string());
-    let run_id = run_result.as_ref().ok().map(|(_, run_id)| run_id.clone());
-    let combined = combine_close_results(
+    if let Some(path) = metrics_path {
+        finalize_metrics(
+            path.as_std_path(),
+            metrics,
+            run_result.as_ref().err().map(String::as_str),
+            discovered,
+            executed,
+            &mut metrics_warnings,
+        );
+        for (code, message) in metrics_warnings {
+            emit_metrics_warning(&mut context, &diagnostic_run_id, code, message);
+        }
+    }
+    combine_close_results(
         run_result.map(|(exit_code, _)| exit_code),
         workspace_close,
         close_result,
-    );
-    if let (Some(path), Some(collector), Some(run_id)) = (metrics_path, metrics, run_id) {
-        match collector.finish(discovered, executed) {
-            Ok(metrics) => {
-                if let Err(error) = write_metrics(path.as_std_path(), &metrics) {
-                    metrics_warnings.push(("metrics.write", error.to_string()));
-                }
-            }
-            Err(error) => metrics_warnings.push(("metrics.state", error.to_string())),
-        }
-        for (code, message) in metrics_warnings {
-            emit_metrics_warning(&mut context, &run_id, code, message);
-        }
-    }
-    combined
+    )
+}
+
+fn track_diagnostic_run_id(diagnostic_run_id: &mut String, state: &RunState) {
+    diagnostic_run_id.clear();
+    diagnostic_run_id.push_str(state.run_id());
 }
 
 fn record_metrics(
@@ -1458,6 +1465,7 @@ mod tests {
 
     use hoimin_core::{CommandArg, ObserveRemainingBudget};
 
+    use crate::metrics::write_metrics;
     use crate::resource::PortableBackend;
 
     #[cfg(unix)]
@@ -1491,6 +1499,20 @@ mod tests {
                 max_processes: 1,
             },
         })
+    }
+
+    #[test]
+    fn diagnostic_run_id_tracks_a_session_adopted_id() {
+        let config = crate::cli::parse_config_from([
+            "hoimin", "run", "--root", ".", "--source", ".", "--", "python", "-m", "pytest",
+        ])
+        .unwrap();
+        let state = RunState::new("persisted-session-run", config);
+        let mut diagnostic_run_id = "initial-run".to_owned();
+
+        track_diagnostic_run_id(&mut diagnostic_run_id, &state);
+
+        assert_eq!(diagnostic_run_id, "persisted-session-run");
     }
 
     #[test]
