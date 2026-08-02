@@ -1497,6 +1497,25 @@ mod tests {
     }
 
     #[test]
+    fn shutdown_error_keeps_the_primary_failure_when_drain_succeeds() {
+        assert_eq!(
+            combine_shutdown_errors("transition rejected".to_owned(), None),
+            "transition rejected"
+        );
+    }
+
+    #[test]
+    fn shutdown_error_appends_a_drain_failure_after_the_primary_failure() {
+        assert_eq!(
+            combine_shutdown_errors(
+                "transition rejected".to_owned(),
+                Some("process task failed while stopping: panic".to_owned()),
+            ),
+            "transition rejected; process task failed while stopping: panic"
+        );
+    }
+
+    #[test]
     fn remaining_budget_observes_live_deadline_and_preserves_effect_id() {
         let now = tokio::time::Instant::now();
         let id = EffectId(17);
