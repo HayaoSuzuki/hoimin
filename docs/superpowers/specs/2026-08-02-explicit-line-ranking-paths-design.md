@@ -21,9 +21,11 @@ its infallible interface because it runs only after successful target
 resolution; an unexpectedly unnormalizable selection simply cannot match.
 Line-range checks and ranking scores do not change.
 
-## Compatibility and tests
+## Versioning and tests
 
-No serialized format or ranking-rule score changes. Unit tests will prove that
-dot-prefixed and absolute selected paths receive the boost. Existing tests
-continue to cover ordinary normalized paths and deterministic ordering. The
-Windows equality helper remains covered by its platform-specific core tests.
+No serialized fields or ranking scores change, but the deterministic ranking
+semantics do. New plans therefore use ranking-rule version 2; version 1 plans
+must be regenerated rather than translated. Unit tests prove that dot-prefixed
+and absolute selected paths receive the boost. Existing tests continue to
+cover ordinary normalized paths and deterministic ordering, and a Windows-only
+test covers case-insensitive path equality.

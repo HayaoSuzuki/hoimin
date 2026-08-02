@@ -6,5 +6,7 @@
    available to the CLI without duplicating platform rules.
 3. Normalize selected line paths before ranking comparisons and rerun the
    focused tests.
-4. Run formatting, lint, workspace tests, diff checks, and independent review.
-5. Commit, push the issue branch, and create a PR that closes #103.
+4. Bump the ranking-rule version so older plans are rejected as unsupported
+   instead of being misdiagnosed as tampered.
+5. Run formatting, lint, workspace tests, diff checks, and independent review.
+6. Commit, push the issue branch, and create a PR that closes #103.

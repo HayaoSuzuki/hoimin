@@ -7,7 +7,7 @@ use hoimin_core::{
 };
 use serde::{Deserialize, Serialize};
 
-pub(crate) const RANKING_RULE_VERSION: u32 = 1;
+pub(crate) const RANKING_RULE_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
