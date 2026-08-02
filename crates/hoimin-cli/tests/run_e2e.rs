@@ -27,6 +27,44 @@ fn cli_entrypoint_future_keeps_large_run_state_out_of_line() {
 }
 
 #[tokio::test]
+async fn successful_clap_displays_use_stdout() {
+    for (args, expected) in [
+        (["hoimin", "--help"], "Usage:"),
+        (["hoimin", "--version"], env!("CARGO_PKG_VERSION")),
+    ] {
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let exit = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+
+        assert_eq!(exit, 0, "args: {args:?}");
+        assert!(stderr.is_empty(), "args: {args:?}: {stderr:?}");
+        let stdout = String::from_utf8(stdout).unwrap();
+        assert!(
+            stdout.contains(expected),
+            "args: {args:?}, missing {expected:?} from:\n{stdout}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn invalid_clap_arguments_remain_on_stderr() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    let exit =
+        hoimin_cli::run_with_io(["hoimin", "--definitely-invalid"], &mut stdout, &mut stderr).await;
+
+    assert_ne!(exit, 0);
+    assert!(stdout.is_empty(), "{stdout:?}");
+    assert!(
+        String::from_utf8(stderr)
+            .unwrap()
+            .contains("--definitely-invalid")
+    );
+}
+
+#[tokio::test]
 async fn unittest_command_produces_the_expected_mutant_statuses() {
     let unittest = run_fixture(&["-m", "unittest", "discover", "-s", "tests"]).await;
 
