@@ -234,8 +234,20 @@ def run_workflow(
                 )
                 checkpoint()
 
+        for candidate in record.candidates:
+            package = _candidate_package(candidate.path)
+            if package is None:
+                candidate.state = CandidateState.NOT_RUN
+                candidate.not_run_reason = "outside_workspace_member"
+                checkpoint()
+
         baseline_by_package: dict[str, bool] = {}
         for index, candidate in enumerate(record.candidates):
+            if candidate.state is not CandidateState.PENDING:
+                continue
+            package = _candidate_package(candidate.path)
+            if package is None:
+                continue
             if record.state is not RunState.RUNNING:
                 break
             if not budget.may_start_mutation(dependencies.monotonic()):
@@ -243,12 +255,6 @@ def run_workflow(
                 _mark_pending(record, "reporting_reserve")
                 checkpoint()
                 break
-            package = _candidate_package(candidate.path)
-            if package is None:
-                candidate.state = CandidateState.NOT_RUN
-                candidate.not_run_reason = "outside_workspace_member"
-                checkpoint()
-                continue
             if package not in baseline_by_package:
                 command_stage = "baseline"
                 active_package = package

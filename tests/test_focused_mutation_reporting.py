@@ -509,6 +509,47 @@ class FocusedMutationReportingTests(unittest.TestCase):
             persisted = json.loads((options.output / "run.json").read_text())
             self.assertEqual(persisted["state"], RunState.COMPLETED.value)
 
+    def test_outside_workspace_candidate_is_classified_before_budget_stops_run(
+        self,
+    ) -> None:
+        inventory = json.dumps(
+            [
+                {
+                    "file": "build.rs",
+                    "name": "build.rs:1: replace main with ()",
+                    "function": {"function_name": "main"},
+                },
+                {
+                    "file": "crates/hoimin-core/src/machine.rs",
+                    "name": "machine.rs:1: replace a",
+                    "function": {"function_name": "a"},
+                },
+            ]
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            clock = FakeClock()
+
+            def enter_reserve() -> None:
+                clock.now = 1_500.0
+
+            options, dependencies, _ = workflow_fixture(
+                directory, clock=clock, after_baseline=enter_reserve
+            )
+            with (
+                mock.patch(
+                    "tools.focused_mutation.discover_candidates", return_value=[]
+                ),
+                mock.patch(f"{__name__}.WORKFLOW_LIST_JSON", inventory),
+            ):
+                record = run_workflow(options, dependencies)
+
+            by_path = {candidate.path: candidate for candidate in record.candidates}
+            self.assertEqual(record.state, RunState.BUDGET_EXHAUSTED)
+            self.assertEqual(
+                by_path["build.rs"].not_run_reason,
+                "outside_workspace_member",
+            )
+
     def test_reporting_reserve_is_rechecked_after_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             clock = FakeClock()
