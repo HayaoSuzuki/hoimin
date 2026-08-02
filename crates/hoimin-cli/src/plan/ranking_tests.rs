@@ -79,6 +79,45 @@ fn ranking_accumulates_selector_and_operator_reasons() {
 }
 
 #[test]
+fn ranking_normalizes_explicit_line_paths_before_matching_candidates() {
+    for (root, selected_path) in [
+        ("", "./src/calc.py"),
+        ("/workspace", "/workspace/src/calc.py"),
+    ] {
+        let selection = Selection {
+            root: Utf8PathBuf::from(root),
+            lines: vec![LineSelection {
+                path: Utf8PathBuf::from(selected_path),
+                range: LineRange { start: 5, end: 5 },
+            }],
+            ..Selection::default()
+        };
+
+        let ranked = rank_candidates(
+            &selection,
+            &[],
+            vec![candidate(
+                "candidate",
+                "src/calc.py",
+                5,
+                3,
+                "binary_add_sub",
+                None,
+            )],
+        );
+
+        assert_eq!(
+            ranked[0].ranking_reasons,
+            [
+                reason(RankingReasonCode::ExplicitLine, 300),
+                reason(RankingReasonCode::Arithmetic, 70),
+            ],
+            "selected path {selected_path}"
+        );
+    }
+}
+
+#[test]
 fn ranking_assigns_every_operator_to_its_fixed_category() {
     for (operator, expected) in [
         (
