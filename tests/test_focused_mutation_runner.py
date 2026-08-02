@@ -553,10 +553,19 @@ class RunnerTests(unittest.TestCase):
             return_value=subprocess.CompletedProcess(["taskkill"], 0)
         )
 
-        terminate_windows_process_tree(12345, run=run)
+        with mock.patch.dict(
+            os.environ, {"SystemRoot": r"C:\Windows"}
+        ):
+            terminate_windows_process_tree(12345, run=run)
 
         run.assert_called_once_with(
-            ["taskkill", "/PID", "12345", "/T", "/F"],
+            [
+                r"C:\Windows\System32\taskkill.exe",
+                "/PID",
+                "12345",
+                "/T",
+                "/F",
+            ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -571,8 +580,21 @@ class RunnerTests(unittest.TestCase):
 
         with self.assertRaisesRegex(
             OSError, "taskkill exited with status 1"
+        ), mock.patch.dict(
+            os.environ, {"SystemRoot": r"C:\Windows"}
         ):
             terminate_windows_process_tree(12345, run=run)
+
+    def test_windows_tree_terminator_requires_system_root(self) -> None:
+        run = mock.Mock()
+
+        with (
+            mock.patch.dict(os.environ, {}, clear=True),
+            self.assertRaisesRegex(OSError, "SystemRoot is not set"),
+        ):
+            terminate_windows_process_tree(12345, run=run)
+
+        run.assert_not_called()
 
     def test_windows_tree_terminator_requires_keyword_runner(self) -> None:
         with self.assertRaises(TypeError):
@@ -1030,6 +1052,19 @@ class RunnerTests(unittest.TestCase):
             target=capture_descendant,
             daemon=True,
         )
+
+        def cleanup_descendant() -> None:
+            release.write_text("release", encoding="utf-8")
+            capture_done.wait(timeout=5.0)
+            capture_thread.join(timeout=1.0)
+            while captured:
+                handle = captured.pop()
+                try:
+                    handle.stop(grace_ms=0)
+                finally:
+                    handle.close()
+
+        self.addCleanup(cleanup_descendant)
         capture_thread.start()
 
         with self.assertRaises(CommandTimedOut) as caught:
@@ -1053,7 +1088,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(len(captured), 1)
         if not captured:
             return
-        descendant = captured[0]
+        descendant = captured.pop()
         try:
             self.assertEqual(descendant.wait(5_000), WAIT_OBJECT_0)
         finally:

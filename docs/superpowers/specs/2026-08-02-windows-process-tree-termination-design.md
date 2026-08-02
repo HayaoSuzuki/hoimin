@@ -10,11 +10,13 @@ and poison later commands.
 
 ## Design
 
-Add a Windows tree terminator that invokes the system `taskkill` command as
-`taskkill /PID <pid> /T /F`. The `/T` option includes descendants and `/F`
+Add a Windows tree terminator that resolves
+`%SystemRoot%\System32\taskkill.exe` and invokes it as
+`taskkill.exe /PID <pid> /T /F`. The `/T` option includes descendants and `/F`
 provides the forced termination semantics required after a timeout or user
 interruption. Suppress taskkill output and bound the command itself with the
-same two-second lifecycle window used for root reaping.
+same two-second lifecycle window used for root reaping. A missing `SystemRoot`
+is a lifecycle failure rather than a reason to fall back to executable search.
 
 Inject the tree terminator into `CommandRunner` for deterministic tests. On
 Windows, `_terminate` calls it before waiting for the root process to be

@@ -33,7 +33,7 @@ Import `terminate_windows_process_tree`. Add one test with an injected mock runn
 
 ```python
 run.assert_called_once_with(
-    ["taskkill", "/PID", "12345", "/T", "/F"],
+    [r"C:\Windows\System32\taskkill.exe", "/PID", "12345", "/T", "/F"],
     stdin=subprocess.DEVNULL,
     stdout=subprocess.DEVNULL,
     stderr=subprocess.DEVNULL,
@@ -65,7 +65,10 @@ git commit -m "test: expose root-only Windows termination"
 
 - [ ] **Step 4: Implement the adapter**
 
-Add the timeout constant and function. Select `subprocess.run` only when no test runner is injected, invoke the exact argument vector above, and raise `OSError` for a nonzero return code.
+Add the timeout constant and function. Resolve the executable from `SystemRoot`
+without PATH lookup, select `subprocess.run` only when no test runner is
+injected, invoke the exact argument vector above, and raise `OSError` for a
+missing `SystemRoot` or nonzero return code.
 
 - [ ] **Step 5: Run adapter tests and verify GREEN**
 

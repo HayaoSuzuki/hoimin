@@ -1,7 +1,7 @@
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import signal
 import subprocess
 import time
@@ -22,9 +22,15 @@ def terminate_windows_process_tree(
     *,
     run: Callable[..., Any] | None = None,
 ) -> None:
+    system_root = os.environ.get("SystemRoot")
+    if system_root is None:
+        raise OSError("SystemRoot is not set")
+    taskkill = str(
+        PureWindowsPath(system_root) / "System32" / "taskkill.exe"
+    )
     execute = subprocess.run if run is None else run
     completed = execute(
-        ["taskkill", "/PID", str(pid), "/T", "/F"],
+        [taskkill, "/PID", str(pid), "/T", "/F"],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
