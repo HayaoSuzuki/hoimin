@@ -464,6 +464,36 @@ mod tests {
     }
 
     #[test]
+    fn failed_run_skips_the_sidecar_and_queues_an_explicit_diagnostic() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("metrics.json");
+        let collector = MetricsCollector::with_clock("run-1", FakeClock::default());
+        let mut warnings = vec![("metrics.state", "earlier warning".to_owned())];
+
+        finalize_metrics(
+            &path,
+            Some(collector),
+            Some("transition rejected"),
+            3,
+            1,
+            &mut warnings,
+        );
+
+        assert!(!path.exists());
+        assert_eq!(
+            warnings,
+            vec![
+                ("metrics.state", "earlier warning".to_owned()),
+                (
+                    "metrics.incomplete",
+                    "metrics output was not written because the run failed: transition rejected"
+                        .to_owned(),
+                ),
+            ]
+        );
+    }
+
+    #[test]
     fn writer_accepts_a_bare_relative_destination() {
         let _lock = CURRENT_DIR_LOCK.lock().unwrap();
         let directory = tempfile::tempdir().unwrap();
