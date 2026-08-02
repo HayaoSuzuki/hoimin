@@ -639,7 +639,19 @@ class FocusedMutationReportingTests(unittest.TestCase):
                     directory, **runner_options
                 )
 
-                record = run_workflow(options, dependencies)
+                discovered = [
+                    Candidate("build.rs", "main", "build.rs:1: replace main"),
+                    Candidate(
+                        "crates/hoimin-core/src/machine.rs",
+                        "a",
+                        "machine.rs:1: replace a",
+                    ),
+                ]
+                with mock.patch(
+                    "tools.focused_mutation.discover_candidates",
+                    return_value=discovered,
+                ):
+                    record = run_workflow(options, dependencies)
 
                 self.assertEqual(record.state, expected_state)
                 self.assertTrue(record.candidates)
@@ -665,6 +677,11 @@ class FocusedMutationReportingTests(unittest.TestCase):
                         and candidate["not_run_reason"] == expected_state.value
                         for candidate in persisted["candidates"]
                     )
+                )
+                self.assertEqual(persisted["state"], expected_state.value)
+                self.assertIn(
+                    expected_state.value,
+                    (options.output / "report.md").read_text(encoding="utf-8"),
                 )
 
     def test_malformed_inventory_is_command_failure(self) -> None:

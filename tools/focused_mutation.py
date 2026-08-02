@@ -250,7 +250,7 @@ def run_workflow(
 
         for candidate in record.candidates:
             package = _candidate_package(candidate.path)
-            if package is None:
+            if candidate.state is CandidateState.PENDING and package is None:
                 candidate.state = CandidateState.NOT_RUN
                 candidate.not_run_reason = "outside_workspace_member"
                 checkpoint()
