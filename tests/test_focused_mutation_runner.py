@@ -469,6 +469,28 @@ class UnreapableProcess:
         self.kill_calls += 1
 
 
+class TreeKillFallbackProcess:
+    pid = 12345
+    returncode: int | None = None
+
+    def __init__(self) -> None:
+        self.wait_calls: list[float | None] = []
+        self.kill_calls = 0
+
+    def wait(self, timeout: float | None = None) -> int:
+        self.wait_calls.append(timeout)
+        if len(self.wait_calls) == 1:
+            raise KeyboardInterrupt
+        self.returncode = -9
+        return self.returncode
+
+    def terminate(self) -> None:
+        raise AssertionError("root terminate must not replace tree termination")
+
+    def kill(self) -> None:
+        self.kill_calls += 1
+
+
 class FakeClock:
     def __init__(self) -> None:
         self.now = 0.0
@@ -508,13 +530,19 @@ class RunnerTests(unittest.TestCase):
         extra_env: dict[str, str] | None = None,
         popen_factory: Callable[..., Any] = subprocess.Popen,
         log_cleanup: Callable[[Sequence[Path]], list[str]] | None = None,
+        windows_tree_terminator: Callable[[int], None] | None = None,
     ) -> CommandRunner:
+        keyword_arguments: dict[str, object] = {
+            "extra_env": extra_env,
+            "popen_factory": popen_factory,
+            "log_cleanup": log_cleanup,
+            "utc_now": lambda: datetime(2026, 7, 26, tzinfo=timezone.utc),
+        }
+        if windows_tree_terminator is not None:
+            keyword_arguments["windows_tree_terminator"] = windows_tree_terminator
         return CommandRunner(
             self.store,
-            extra_env=extra_env,
-            popen_factory=popen_factory,
-            log_cleanup=log_cleanup,
-            utc_now=lambda: datetime(2026, 7, 26, tzinfo=timezone.utc),
+            **keyword_arguments,
         )
 
     def stdout(self, record: CommandRecord) -> str:
@@ -545,6 +573,72 @@ class RunnerTests(unittest.TestCase):
             OSError, "taskkill exited with status 1"
         ):
             terminate_windows_process_tree(12345, run=run)
+
+    def test_windows_interruption_terminates_the_process_tree(self) -> None:
+        process = InterruptingProcess()
+        tree_terminator = mock.Mock()
+        runner = self.runner(
+            popen_factory=mock.Mock(return_value=process),
+            log_cleanup=lambda _: [],
+            windows_tree_terminator=tree_terminator,
+        )
+
+        with (
+            mock.patch(
+                "tools.focused_mutation_support.runner.os.name", "nt"
+            ),
+            self.assertRaises(CommandInterrupted),
+        ):
+            runner.run(
+                [str(self.fake)],
+                cwd=self.work,
+                timeout=5.0,
+                label="interrupted-tree",
+            )
+
+        tree_terminator.assert_called_once_with(process.pid)
+        self.assertFalse(process.terminated)
+
+    def test_windows_tree_failure_blocks_reuse_after_root_cleanup(self) -> None:
+        process = TreeKillFallbackProcess()
+        popen_factory = mock.Mock(return_value=process)
+        runner = self.runner(
+            popen_factory=popen_factory,
+            log_cleanup=lambda _: [],
+            windows_tree_terminator=mock.Mock(
+                side_effect=OSError("taskkill unavailable")
+            ),
+        )
+
+        with (
+            mock.patch(
+                "tools.focused_mutation_support.runner.os.name", "nt"
+            ),
+            self.assertRaises(CommandInterrupted) as caught,
+        ):
+            runner.run(
+                [str(self.fake)],
+                cwd=self.work,
+                timeout=5.0,
+                label="tree-failure",
+            )
+
+        self.assertEqual(process.kill_calls, 1)
+        self.assertEqual(
+            caught.exception.record.cleanup_errors,
+            [
+                "process lifecycle cleanup failed: process tree 12345 "
+                "termination failed: OSError: taskkill unavailable"
+            ],
+        )
+        with self.assertRaises(ProcessLifecycleError):
+            runner.run(
+                [str(self.fake)],
+                cwd=self.work,
+                timeout=5.0,
+                label="must-not-start",
+            )
+        self.assertEqual(popen_factory.call_count, 1)
 
     def test_log_release_wait_retries_sharing_violation_until_success(self) -> None:
         clock = FakeClock()
