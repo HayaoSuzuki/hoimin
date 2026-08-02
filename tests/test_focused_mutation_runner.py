@@ -20,6 +20,7 @@ from tools.focused_mutation_support.runner import (
     CommandRunner,
     CommandTimedOut,
     ProcessLifecycleError,
+    terminate_windows_process_tree,
     wait_for_log_release,
 )
 from tools.focused_mutation_support.store import RunStore
@@ -468,6 +469,28 @@ class UnreapableProcess:
         self.kill_calls += 1
 
 
+class TreeKillFallbackProcess:
+    pid = 12345
+    returncode: int | None = None
+
+    def __init__(self) -> None:
+        self.wait_calls: list[float | None] = []
+        self.kill_calls = 0
+
+    def wait(self, timeout: float | None = None) -> int:
+        self.wait_calls.append(timeout)
+        if len(self.wait_calls) == 1:
+            raise KeyboardInterrupt
+        self.returncode = -9
+        return self.returncode
+
+    def terminate(self) -> None:
+        raise AssertionError("root terminate must not replace tree termination")
+
+    def kill(self) -> None:
+        self.kill_calls += 1
+
+
 class FakeClock:
     def __init__(self) -> None:
         self.now = 0.0
@@ -507,17 +530,141 @@ class RunnerTests(unittest.TestCase):
         extra_env: dict[str, str] | None = None,
         popen_factory: Callable[..., Any] = subprocess.Popen,
         log_cleanup: Callable[[Sequence[Path]], list[str]] | None = None,
+        windows_tree_terminator: Callable[[int], None] | None = None,
     ) -> CommandRunner:
+        keyword_arguments: dict[str, object] = {
+            "extra_env": extra_env,
+            "popen_factory": popen_factory,
+            "log_cleanup": log_cleanup,
+            "utc_now": lambda: datetime(2026, 7, 26, tzinfo=timezone.utc),
+        }
+        if windows_tree_terminator is not None:
+            keyword_arguments["windows_tree_terminator"] = windows_tree_terminator
         return CommandRunner(
             self.store,
-            extra_env=extra_env,
-            popen_factory=popen_factory,
-            log_cleanup=log_cleanup,
-            utc_now=lambda: datetime(2026, 7, 26, tzinfo=timezone.utc),
+            **keyword_arguments,
         )
 
     def stdout(self, record: CommandRecord) -> str:
         return Path(record.stdout_path).read_text()
+
+    def test_windows_tree_terminator_uses_taskkill(self) -> None:
+        run = mock.Mock(
+            return_value=subprocess.CompletedProcess(["taskkill"], 0)
+        )
+
+        with mock.patch.dict(
+            os.environ, {"SystemRoot": r"C:\Windows"}
+        ):
+            terminate_windows_process_tree(12345, run=run)
+
+        run.assert_called_once_with(
+            [
+                r"C:\Windows\System32\taskkill.exe",
+                "/PID",
+                "12345",
+                "/T",
+                "/F",
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=2.0,
+            check=False,
+        )
+
+    def test_windows_tree_terminator_rejects_nonzero_exit(self) -> None:
+        run = mock.Mock(
+            return_value=subprocess.CompletedProcess(["taskkill"], 1)
+        )
+
+        with self.assertRaisesRegex(
+            OSError, "taskkill exited with status 1"
+        ), mock.patch.dict(
+            os.environ, {"SystemRoot": r"C:\Windows"}
+        ):
+            terminate_windows_process_tree(12345, run=run)
+
+    def test_windows_tree_terminator_requires_system_root(self) -> None:
+        run = mock.Mock()
+
+        with (
+            mock.patch.dict(os.environ, {}, clear=True),
+            self.assertRaisesRegex(OSError, "SystemRoot is not set"),
+        ):
+            terminate_windows_process_tree(12345, run=run)
+
+        run.assert_not_called()
+
+    def test_windows_tree_terminator_requires_keyword_runner(self) -> None:
+        with self.assertRaises(TypeError):
+            terminate_windows_process_tree(12345, mock.Mock())  # type: ignore
+
+    def test_windows_interruption_terminates_the_process_tree(self) -> None:
+        process = InterruptingProcess()
+        tree_terminator = mock.Mock()
+        runner = self.runner(
+            popen_factory=mock.Mock(return_value=process),
+            log_cleanup=lambda _: [],
+            windows_tree_terminator=tree_terminator,
+        )
+
+        with (
+            mock.patch(
+                "tools.focused_mutation_support.runner.os.name", "nt"
+            ),
+            self.assertRaises(CommandInterrupted),
+        ):
+            runner.run(
+                [str(self.fake)],
+                cwd=self.work,
+                timeout=5.0,
+                label="interrupted-tree",
+            )
+
+        tree_terminator.assert_called_once_with(process.pid)
+        self.assertFalse(process.terminated)
+
+    def test_windows_tree_failure_blocks_reuse_after_root_cleanup(self) -> None:
+        process = TreeKillFallbackProcess()
+        popen_factory = mock.Mock(return_value=process)
+        runner = self.runner(
+            popen_factory=popen_factory,
+            log_cleanup=lambda _: [],
+            windows_tree_terminator=mock.Mock(
+                side_effect=OSError("taskkill unavailable")
+            ),
+        )
+
+        with (
+            mock.patch(
+                "tools.focused_mutation_support.runner.os.name", "nt"
+            ),
+            self.assertRaises(CommandInterrupted) as caught,
+        ):
+            runner.run(
+                [str(self.fake)],
+                cwd=self.work,
+                timeout=5.0,
+                label="tree-failure",
+            )
+
+        self.assertEqual(process.kill_calls, 1)
+        self.assertEqual(
+            caught.exception.record.cleanup_errors,
+            [
+                "process lifecycle cleanup failed: process tree 12345 "
+                "termination failed: OSError: taskkill unavailable"
+            ],
+        )
+        with self.assertRaises(ProcessLifecycleError):
+            runner.run(
+                [str(self.fake)],
+                cwd=self.work,
+                timeout=5.0,
+                label="must-not-start",
+            )
+        self.assertEqual(popen_factory.call_count, 1)
 
     def test_log_release_wait_retries_sharing_violation_until_success(self) -> None:
         clock = FakeClock()
@@ -818,7 +965,10 @@ class RunnerTests(unittest.TestCase):
             subprocess.TimeoutExpired(["fake-command"], 5.0)
         )
         popen_factory = mock.Mock(return_value=process)
-        runner = self.runner(popen_factory=popen_factory)
+        runner = self.runner(
+            popen_factory=popen_factory,
+            windows_tree_terminator=mock.Mock(),
+        )
 
         def invoke() -> None:
             runner.run(
@@ -857,7 +1007,7 @@ class RunnerTests(unittest.TestCase):
             ],
         )
         self.assertEqual(process.wait_calls, [5.0, 2.0, 2.0])
-        self.assertEqual(process.terminate_calls, int(os.name == "nt"))
+        self.assertEqual(process.terminate_calls, 0)
         self.assertEqual(process.kill_calls, int(os.name == "nt"))
 
         with self.assertRaises(ProcessLifecycleError):
@@ -870,60 +1020,54 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(popen_factory.call_count, 1)
 
     @unittest.skipUnless(os.name == "nt", "requires Windows handle inheritance")
-    def test_timeout_waits_for_inherited_log_handles_before_cleanup(self) -> None:
+    def test_windows_timeout_terminates_inherited_handle_descendant(self) -> None:
         root_ready = self.work / "root.ready"
         descendant_ready = self.work / "descendant.ready"
         release = self.work / "release"
-        cleanup_wait_started = threading.Event()
-        cancel = threading.Event()
-        captured_handles: dict[str, WindowsProcessHandle] = {}
+        captured: list[WindowsProcessHandle] = []
         capture_done = threading.Event()
-        directory_cleanup_succeeded = threading.Event()
-        thread_errors: list[str] = []
-        errors_lock = threading.Lock()
-        releaser = threading.Thread(
-            target=release_descendant_after_root_exit,
-            args=(
-                root_ready,
-                descendant_ready,
-                release,
-                cleanup_wait_started,
-                cancel,
-                captured_handles,
-                capture_done,
-                thread_errors,
-                errors_lock,
-            ),
+        capture_errors: list[BaseException] = []
+
+        def capture_descendant() -> None:
+            try:
+                deadline = time.monotonic() + 5.0
+                while time.monotonic() < deadline:
+                    pid = read_ready_pid(descendant_ready)
+                    if pid is not None:
+                        captured.append(
+                            WindowsProcessHandle.open(
+                                pid,
+                                SYNCHRONIZE | PROCESS_TERMINATE,
+                            )
+                        )
+                        return
+                    time.sleep(0.01)
+                raise TimeoutError("descendant marker was not ready")
+            except BaseException as error:
+                capture_errors.append(error)
+            finally:
+                capture_done.set()
+
+        capture_thread = threading.Thread(
+            target=capture_descendant,
             daemon=True,
         )
-        releaser.start()
-        self.addCleanup(
-            cleanup_inherited_handle_fixture,
-            release,
-            releaser,
-            cancel,
-            captured_handles,
-            capture_done,
-            directory_cleanup_succeeded,
-            thread_errors,
-            errors_lock,
-        )
 
-        def synchronized_probe(path: Path) -> None:
-            try:
-                probe_delete_access(path)
-            except OSError as error:
-                if getattr(error, "winerror", None) == 32:
-                    cleanup_wait_started.set()
-                raise
+        def cleanup_descendant() -> None:
+            release.write_text("release", encoding="utf-8")
+            capture_done.wait(timeout=5.0)
+            capture_thread.join(timeout=1.0)
+            while captured:
+                handle = captured.pop()
+                try:
+                    handle.stop(grace_ms=0)
+                finally:
+                    handle.close()
 
-        with (
-            mock.patch(
-                "tools.focused_mutation_support.runner.probe_delete_access",
-                side_effect=synchronized_probe,
-            ),
-            self.assertRaises(CommandTimedOut) as caught,
-        ):
+        self.addCleanup(cleanup_descendant)
+        capture_thread.start()
+
+        with self.assertRaises(CommandTimedOut) as caught:
             self.runner().run(
                 [
                     sys.executable,
@@ -937,22 +1081,25 @@ class RunnerTests(unittest.TestCase):
                 label="inherited-handle",
             )
 
+        capture_done.wait(timeout=5.0)
+        capture_thread.join(timeout=1.0)
+        self.assertFalse(capture_thread.is_alive())
+        self.assertEqual(capture_errors, [])
+        self.assertEqual(len(captured), 1)
+        if not captured:
+            return
+        descendant = captured.pop()
+        try:
+            self.assertEqual(descendant.wait(5_000), WAIT_OBJECT_0)
+        finally:
+            descendant.stop(grace_ms=0)
+            descendant.close()
+
         record = caught.exception.record
         self.assertEqual(record.cleanup_errors, [])
         stdout = Path(record.stdout_path).read_text()
         self.assertIn("ROOT-READY", stdout)
         self.assertIn("DESCENDANT-READY", stdout)
-
-        temporary_root = Path(self.temporary.name)
-        self.temporary.cleanup()
-        directory_cleanup_succeeded.set()
-        self.assertFalse(temporary_root.exists())
-        self.assertTrue(cleanup_wait_started.is_set())
-
-        releaser.join(timeout=5.0)
-        self.assertFalse(releaser.is_alive())
-        with errors_lock:
-            self.assertEqual(thread_errors, [])
 
     @unittest.skipIf(os.name == "nt", "requires POSIX process groups")
     def test_handled_timeout_leaves_no_posix_descendants(self) -> None:
@@ -1181,6 +1328,7 @@ class RunnerTests(unittest.TestCase):
             return self.runner(
                 popen_factory=popen_factory,
                 log_cleanup=raising_log_cleanup,
+                windows_tree_terminator=mock.Mock(),
             ).run(
                 [str(self.fake)],
                 cwd=self.work,
@@ -1224,6 +1372,7 @@ class RunnerTests(unittest.TestCase):
             self.runner(
                 popen_factory=popen_factory,
                 log_cleanup=lambda _: [cleanup_error],
+                windows_tree_terminator=mock.Mock(),
             ).run(
                 [str(self.fake)],
                 cwd=self.work,
@@ -1255,7 +1404,7 @@ class RunnerTests(unittest.TestCase):
         self.assertIsNotNone(record.ended_at)
         self.assertIsNotNone(record.elapsed_seconds)
         if os.name == "nt":
-            self.assertTrue(process.terminated)
+            self.assertFalse(process.terminated)
         self.assertEqual(process.wait_calls, [5.0, 2.0])
 
     def test_interruption_records_failed_post_kill_reap_and_blocks_reuse(
@@ -1263,7 +1412,10 @@ class RunnerTests(unittest.TestCase):
     ) -> None:
         process = UnreapableProcess(KeyboardInterrupt())
         popen_factory = mock.Mock(return_value=process)
-        runner = self.runner(popen_factory=popen_factory)
+        runner = self.runner(
+            popen_factory=popen_factory,
+            windows_tree_terminator=mock.Mock(),
+        )
 
         def invoke() -> None:
             runner.run(
