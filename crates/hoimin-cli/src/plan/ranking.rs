@@ -1,10 +1,13 @@
 use std::cmp::Ordering;
 use std::ops::Deref;
 
-use hoimin_core::{MutationCandidate, MutationOperator, Selection, TargetSlice};
+use hoimin_core::{
+    MutationCandidate, MutationOperator, Selection, TargetSlice, logical_paths_equal,
+    normalize_logical_path,
+};
 use serde::{Deserialize, Serialize};
 
-pub(crate) const RANKING_RULE_VERSION: u32 = 1;
+pub(crate) const RANKING_RULE_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -52,7 +55,8 @@ pub(crate) fn rank_candidates(
         .map(|candidate| {
             let mut ranking_reasons = Vec::new();
             if selection.lines.iter().any(|line| {
-                line.path == candidate.path
+                normalize_logical_path(&selection.root, &line.path)
+                    .is_ok_and(|path| logical_paths_equal(&path, &candidate.path))
                     && line.range.start <= candidate.line
                     && candidate.line <= line.range.end
             }) {

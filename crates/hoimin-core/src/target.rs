@@ -206,6 +206,20 @@ fn normalize_logical(root: &Utf8Path, path: &Utf8Path) -> Result<Utf8PathBuf, Ta
     Ok(Utf8PathBuf::from(parts.join("/")))
 }
 
+/// Converts a user-supplied target path to the root-relative logical form used
+/// by resolved targets and mutation candidates.
+///
+/// # Errors
+///
+/// Returns [`TargetError::PathOutsideRoot`] when an absolute path is outside
+/// `root` or relative parent components escape it.
+pub fn normalize_logical_path(
+    root: &Utf8Path,
+    path: &Utf8Path,
+) -> Result<Utf8PathBuf, TargetError> {
+    normalize_logical(root, path)
+}
+
 fn strip_root(root: &Utf8Path, path: &Utf8Path) -> Option<Utf8PathBuf> {
     if !cfg!(windows) {
         return path.strip_prefix(root).ok().map(Utf8Path::to_owned);
@@ -244,6 +258,13 @@ fn paths_equal(left: &Utf8Path, right: &Utf8Path) -> bool {
     } else {
         left == right
     }
+}
+
+/// Compares normalized logical paths using the platform rules applied during
+/// target resolution.
+#[must_use]
+pub fn logical_paths_equal(left: &Utf8Path, right: &Utf8Path) -> bool {
+    paths_equal(left, right)
 }
 
 fn path_key(value: &str) -> String {

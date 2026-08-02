@@ -62,7 +62,7 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
     assert_eq!(stdout.matches('\n').count(), 1);
     let manifest: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(manifest["schema_version"], 2);
-    assert_eq!(manifest["ranking_rule_version"], 1);
+    assert_eq!(manifest["ranking_rule_version"], 2);
     assert_eq!(manifest["kind"], "plan");
     assert!(
         manifest["sources"]
@@ -554,10 +554,17 @@ async fn verify_rejects_malformed_headers_and_source_paths() {
         .unwrap_err();
     assert_error_code(error, "plan.manifest.invalid");
 
-    for case in ["schema", "kind", "parent_path", "absolute_path"] {
+    for case in [
+        "schema",
+        "ranking_version",
+        "kind",
+        "parent_path",
+        "absolute_path",
+    ] {
         let mut value = original.clone();
         match case {
             "schema" => value["schema_version"] = serde_json::json!(1),
+            "ranking_version" => value["ranking_rule_version"] = serde_json::json!(1),
             "kind" => value["kind"] = serde_json::json!("report"),
             "parent_path" => value["sources"][0]["path"] = serde_json::json!("../outside.py"),
             "absolute_path" => value["sources"][0]["path"] = serde_json::json!("/outside.py"),
@@ -568,6 +575,14 @@ async fn verify_rejects_malformed_headers_and_source_paths() {
         let error = prepare_verify(&path, &requested, OutputFormat::Json)
             .await
             .unwrap_err();
+        if case == "ranking_version" {
+            assert!(
+                error
+                    .to_string()
+                    .contains("unsupported ranking rule version 1"),
+                "{error}"
+            );
+        }
         assert_error_code(error, "plan.manifest.invalid");
     }
     assert!(!marker.exists());
