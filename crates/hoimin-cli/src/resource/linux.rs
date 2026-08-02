@@ -1495,20 +1495,32 @@ mod platform {
 
     #[cfg(test)]
     mod tests {
-        use std::process::Command;
+        use std::process::{Child, Command};
 
         use super::wait_for_launcher_stop;
 
+        struct ReapingChild(Child);
+
+        impl Drop for ReapingChild {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+
         #[test]
         fn premature_launcher_exit_remains_reapable_by_its_child_owner() {
-            let mut child = Command::new("sh")
-                .args(["-c", "exit 23"])
-                .spawn()
-                .expect("spawn premature launcher exit fixture");
-            let pid = i32::try_from(child.id()).expect("fixture pid fits i32");
+            let mut child = ReapingChild(
+                Command::new("sh")
+                    .args(["-c", "exit 23"])
+                    .spawn()
+                    .expect("spawn premature launcher exit fixture"),
+            );
+            let pid = i32::try_from(child.0.id()).expect("fixture pid fits i32");
 
             let error = wait_for_launcher_stop(pid).unwrap_err();
             let status = child
+                .0
                 .wait()
                 .expect("launcher status remains owned by Child");
 
@@ -1522,16 +1534,18 @@ mod platform {
 
         #[test]
         fn stopped_launcher_is_observed_and_reaped_only_by_its_child_owner() {
-            let mut child = Command::new("sh")
-                .args(["-c", "kill -STOP $$; exit 0"])
-                .spawn()
-                .expect("spawn stopped launcher fixture");
-            let pid = i32::try_from(child.id()).expect("fixture pid fits i32");
+            let mut child = ReapingChild(
+                Command::new("sh")
+                    .args(["-c", "kill -STOP $$; exit 0"])
+                    .spawn()
+                    .expect("spawn stopped launcher fixture"),
+            );
+            let pid = i32::try_from(child.0.id()).expect("fixture pid fits i32");
 
             wait_for_launcher_stop(pid).expect("observe SIGSTOP");
             // SAFETY: pid still identifies the stopped child owned by this test.
             assert_eq!(unsafe { libc::kill(pid, libc::SIGCONT) }, 0);
-            let status = child.wait().expect("reap continued launcher");
+            let status = child.0.wait().expect("reap continued launcher");
 
             assert_eq!(status.code(), Some(0));
         }
