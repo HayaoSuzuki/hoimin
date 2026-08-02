@@ -289,6 +289,21 @@ fn candidate_store_enforces_limit_without_retaining_records() {
 }
 
 #[test]
+fn candidate_store_spool_follows_the_caller_owned_directory_lifetime() {
+    let owner = tempfile::tempdir().unwrap();
+    let mut store = CandidateStore::new_in(1, owner.path()).unwrap();
+    store.push(&candidate(1)).unwrap();
+    let reference = store.finish().unwrap();
+    let spool_path = std::path::PathBuf::from(&reference.token);
+
+    assert!(spool_path.starts_with(owner.path()));
+    assert!(spool_path.is_file());
+
+    drop(owner);
+    assert!(!spool_path.exists());
+}
+
+#[test]
 fn replays_in_stable_offset_order() {
     let mut store = CandidateStore::new(2).unwrap();
     store.push(&candidate(1)).unwrap();
