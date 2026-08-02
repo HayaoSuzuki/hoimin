@@ -1278,29 +1278,40 @@ mod platform {
     }
 
     fn wait_for_launcher_stop(pid: i32) -> Result<(), ResourceError> {
+        let observed_id = libc::id_t::try_from(pid)
+            .map_err(|_| ResourceError::InvalidCgroupData("invalid cgroup launcher pid".into()))?;
         let deadline = Instant::now() + CONTROL_WAIT;
         loop {
-            let mut status = 0;
-            // SAFETY: pid identifies our child and status points to initialized storage.
+            let mut info = std::mem::MaybeUninit::<libc::siginfo_t>::zeroed();
+            // SAFETY: observed_id identifies our child, info points to writable storage, and
+            // WNOWAIT leaves child status owned by the caller's Child handle.
             let result = unsafe {
-                libc::waitpid(
-                    pid,
-                    std::ptr::addr_of_mut!(status),
-                    libc::WUNTRACED | libc::WNOHANG,
+                libc::waitid(
+                    libc::P_PID,
+                    observed_id,
+                    info.as_mut_ptr(),
+                    libc::WSTOPPED | libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
                 )
             };
-            if result == pid {
-                if libc::WIFSTOPPED(status) && libc::WSTOPSIG(status) == libc::SIGSTOP {
-                    return Ok(());
-                }
-                return Err(ResourceError::InvalidCgroupData(
-                    "cgroup launcher did not stop before target execution".into(),
-                ));
-            }
             if result < 0 {
                 return Err(ResourceError::io(
                     "wait for stopped cgroup launcher",
                     io::Error::last_os_error(),
+                ));
+            }
+            // SAFETY: waitid returned success and therefore initialized the siginfo storage.
+            let info = unsafe { info.assume_init() };
+            // SAFETY: waitid populated siginfo with a SIGCHLD payload, or left the zeroed
+            // si_pid sentinel unchanged because WNOHANG found no matching state.
+            let observed_pid = unsafe { info.si_pid() };
+            if observed_pid != 0 {
+                // SAFETY: a nonzero si_pid denotes a populated SIGCHLD payload.
+                let status = unsafe { info.si_status() };
+                if info.si_code == libc::CLD_STOPPED && status == libc::SIGSTOP {
+                    return Ok(());
+                }
+                return Err(ResourceError::InvalidCgroupData(
+                    "cgroup launcher did not stop before target execution".into(),
                 ));
             }
             if Instant::now() >= deadline {
@@ -1507,6 +1518,22 @@ mod platform {
                     .to_string()
                     .contains("cgroup launcher did not stop before target execution")
             );
+        }
+
+        #[test]
+        fn stopped_launcher_is_observed_and_reaped_only_by_its_child_owner() {
+            let mut child = Command::new("sh")
+                .args(["-c", "kill -STOP $$; exit 0"])
+                .spawn()
+                .expect("spawn stopped launcher fixture");
+            let pid = i32::try_from(child.id()).expect("fixture pid fits i32");
+
+            wait_for_launcher_stop(pid).expect("observe SIGSTOP");
+            // SAFETY: pid still identifies the stopped child owned by this test.
+            assert_eq!(unsafe { libc::kill(pid, libc::SIGCONT) }, 0);
+            let status = child.wait().expect("reap continued launcher");
+
+            assert_eq!(status.code(), Some(0));
         }
     }
 }
