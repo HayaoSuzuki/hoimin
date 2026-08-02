@@ -23,6 +23,7 @@ pub struct AnalyzerHandler {
     root_path: Utf8PathBuf,
     root: Option<RootRelativeReader>,
     store: Option<CandidateStore>,
+    candidate_spool_dir: Option<Utf8PathBuf>,
     #[cfg(test)]
     analysis_hook: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
 }
@@ -104,6 +105,7 @@ impl AnalyzerHandler {
             root_path: root,
             root: None,
             store: None,
+            candidate_spool_dir: None,
             #[cfg(test)]
             analysis_hook: None,
         })
@@ -120,6 +122,12 @@ impl AnalyzerHandler {
         _max_processes: u32,
     ) -> Result<Self, std::io::Error> {
         Self::new(root)
+    }
+
+    #[must_use]
+    pub fn with_candidate_spool_dir(mut self, directory: Utf8PathBuf) -> Self {
+        self.candidate_spool_dir = Some(directory);
+        self
     }
 
     /// # Errors
@@ -145,11 +153,14 @@ impl AnalyzerHandler {
     ) -> Result<AnalysisFinished, EffectFailed> {
         let id = request.id;
         if self.store.is_none() {
-            self.store = Some(
-                CandidateStore::new(request.max_candidates).map_err(|error| {
-                    EffectFailed::other(id, "analyzer.store", error.to_string())
-                })?,
+            let store = self.candidate_spool_dir.as_ref().map_or_else(
+                || CandidateStore::new(request.max_candidates),
+                |directory| CandidateStore::new_in(request.max_candidates, directory),
             );
+            self.store =
+                Some(store.map_err(|error| {
+                    EffectFailed::other(id, "analyzer.store", error.to_string())
+                })?);
         }
         let source = tokio::select! {
             biased;

@@ -169,7 +169,8 @@ where
             u32::try_from(config.limits.max_processes.get())
                 .map_err(|_| "--max-processes exceeds the supported process count".to_owned())?,
         )
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error.to_string())?
+        .with_candidate_spool_dir(spool_path.clone());
         let report = ReportHandler::new(
             config.output.format,
             stdout,

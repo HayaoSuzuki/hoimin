@@ -1,5 +1,6 @@
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
+use std::path::Path;
 
 use hoimin_core::{CandidateSpoolRef, ContractInvariant, MutationCandidate, contract_ensure};
 use tempfile::NamedTempFile;
@@ -46,12 +47,31 @@ impl CandidateStore {
         if max_candidates == 0 {
             return Err(StoreError::LimitExceeded { limit: 0 });
         }
-        Ok(Self {
-            file: NamedTempFile::new().map_err(|error| io_error(&error))?,
+        let file = NamedTempFile::new().map_err(|error| io_error(&error))?;
+        Ok(Self::with_file(max_candidates, file))
+    }
+
+    /// Creates a candidate store inside a caller-owned directory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the candidate limit is zero or the temporary spool file cannot be
+    /// created in `directory`.
+    pub fn new_in(max_candidates: u64, directory: impl AsRef<Path>) -> Result<Self, StoreError> {
+        if max_candidates == 0 {
+            return Err(StoreError::LimitExceeded { limit: 0 });
+        }
+        let file = NamedTempFile::new_in(directory).map_err(|error| io_error(&error))?;
+        Ok(Self::with_file(max_candidates, file))
+    }
+
+    fn with_file(max_candidates: u64, file: NamedTempFile) -> Self {
+        Self {
+            file,
             count: 0,
             records_written: 0,
             max_candidates,
-        })
+        }
     }
 
     #[must_use]
