@@ -442,6 +442,44 @@ class FocusedMutationReportingTests(unittest.TestCase):
                 )
             )
 
+    def test_root_level_inventory_candidate_is_skipped_and_checkpointed(
+        self,
+    ) -> None:
+        inventory = json.dumps(
+            [
+                {
+                    "file": "build.rs",
+                    "name": "build.rs:1: replace main with ()",
+                    "function": {"function_name": "main"},
+                }
+            ]
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            options, dependencies, runner = workflow_fixture(directory)
+            with (
+                mock.patch(
+                    "tools.focused_mutation.discover_candidates", return_value=[]
+                ),
+                mock.patch(f"{__name__}.WORKFLOW_LIST_JSON", inventory),
+            ):
+                record = run_workflow(options, dependencies)
+
+            self.assertEqual(record.state, RunState.COMPLETED)
+            self.assertEqual(len(record.candidates), 1)
+            self.assertEqual(record.candidates[0].state, CandidateState.NOT_RUN)
+            self.assertEqual(
+                record.candidates[0].not_run_reason,
+                "outside_workspace_member",
+            )
+            self.assertFalse(
+                any(
+                    label.startswith(("baseline-", "mutation-"))
+                    for *_, label in runner.calls
+                )
+            )
+            persisted = json.loads((options.output / "run.json").read_text())
+            self.assertEqual(persisted["state"], RunState.COMPLETED.value)
+
     def test_reporting_reserve_is_rechecked_after_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             clock = FakeClock()
