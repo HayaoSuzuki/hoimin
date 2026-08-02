@@ -268,6 +268,34 @@ pub(crate) fn write_metrics(path: &Path, metrics: &RunMetrics) -> Result<(), Met
     Ok(())
 }
 
+pub(crate) fn finalize_metrics<C: Clock>(
+    path: &Path,
+    collector: Option<MetricsCollector<C>>,
+    run_failure: Option<&str>,
+    discovered: u64,
+    executed: u64,
+    warnings: &mut Vec<(&'static str, String)>,
+) {
+    if let Some(run_failure) = run_failure {
+        warnings.push((
+            "metrics.incomplete",
+            format!("metrics output was not written because the run failed: {run_failure}"),
+        ));
+        return;
+    }
+    let Some(collector) = collector else {
+        return;
+    };
+    match collector.finish(discovered, executed) {
+        Ok(metrics) => {
+            if let Err(error) = write_metrics(path, &metrics) {
+                warnings.push(("metrics.write", error.to_string()));
+            }
+        }
+        Err(error) => warnings.push(("metrics.state", error.to_string())),
+    }
+}
+
 fn destination_parent(path: &Path) -> &Path {
     path.parent()
         .filter(|parent| !parent.as_os_str().is_empty())

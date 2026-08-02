@@ -14,9 +14,11 @@ The current metrics schema has no completeness marker, so writing a normal-looki
 partial document would let dashboards mistake incomplete observations for a
 complete run.
 
-Create the run identifier before entering the fallible run future so diagnostics
-also have an identifier when the future returns an error. Move the metrics
-finalization decision into a small helper:
+Create the run identifier before entering the fallible run future and update a
+diagnostic identifier after every accepted transition. This preserves a usable
+identifier when the future returns an error and follows a session/resume run ID
+if preflight adopts one. Move the metrics finalization decision into a small
+helper:
 
 - with a run failure, do not write the sidecar and queue a `metrics.incomplete`
   warning that includes the run failure;
