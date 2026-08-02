@@ -291,7 +291,7 @@ impl WindowsRunJob {
         state: &mut RunState,
         root_id: Uuid,
     ) -> Result<(), ResourceError> {
-        if state.exited_roots.contains(&root_id) {
+        if root_notification_consumed(state, root_id) {
             return Ok(());
         }
         let deadline = Instant::now() + NOTIFICATION_BARRIER_TIMEOUT;
@@ -308,7 +308,7 @@ impl WindowsRunJob {
             match self.next_notification(timeout_ms.max(1))? {
                 Some((message, pid)) => {
                     self.record_notification(state, message, pid)?;
-                    if state.exited_roots.contains(&root_id) {
+                    if root_notification_consumed(state, root_id) {
                         return Ok(());
                     }
                 }
@@ -368,19 +368,28 @@ fn record_notification(state: &mut RunState, message: u32, pid: u32, job_is_empt
         JOB_OBJECT_MSG_JOB_MEMORY_LIMIT => mark_active(state, MEMORY_VIOLATION),
         JOB_OBJECT_MSG_ACTIVE_PROCESS_LIMIT => mark_active(state, PROCESS_VIOLATION),
         JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO if job_is_empty => {
-            state
-                .exited_roots
-                .extend(state.active.iter().map(|root| root.id));
-            state.active.clear();
+            state.exited_roots.extend(
+                state
+                    .active
+                    .drain(..)
+                    .filter(|root| root.signal.is_some())
+                    .map(|root| root.id),
+            );
         }
         JOB_OBJECT_MSG_EXIT_PROCESS | JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS
             if let Some(index) = state.active.iter().position(|root| root.pid == pid) =>
         {
             let root = state.active.remove(index);
-            state.exited_roots.insert(root.id);
+            if root.signal.is_some() {
+                state.exited_roots.insert(root.id);
+            }
         }
         _ => {}
     }
+}
+
+fn root_notification_consumed(state: &RunState, root_id: Uuid) -> bool {
+    state.exited_roots.contains(&root_id) || state.active.iter().all(|root| root.id != root_id)
 }
 
 fn register_root(
@@ -722,7 +731,6 @@ mod tests {
                     .inner
                     .drain_until_root_exit(&mut state, root_id)
                     .unwrap();
-                forget_root_generation(&mut state, root_id);
                 assert!(state.active.is_empty());
                 assert!(state.exited_roots.is_empty());
             }
@@ -769,7 +777,6 @@ mod tests {
             .inner
             .drain_until_root_exit(&mut state, root_id)
             .unwrap();
-        forget_root_generation(&mut state, root_id);
         assert!(state.active.is_empty());
         assert!(state.exited_roots.is_empty());
     }
@@ -1011,7 +1018,7 @@ mod tests {
         );
 
         assert!(state.exited_roots.contains(&other_id));
-        assert!(state.exited_roots.contains(&old_id));
+        assert!(!state.exited_roots.contains(&old_id));
         assert!(!state.exited_roots.contains(&new_id));
         assert_eq!(
             state.active.iter().map(|root| root.id).collect::<Vec<_>>(),
@@ -1116,5 +1123,43 @@ mod tests {
         assert_eq!(state.exited_roots.len(), 2);
         assert!(state.exited_roots.contains(&first_id));
         assert!(state.exited_roots.contains(&second_id));
+    }
+
+    #[test]
+    fn confirmed_active_process_zero_discards_detached_generations() {
+        let detached = std::sync::Arc::new(RootSignal::default());
+        let live = std::sync::Arc::new(RootSignal::default());
+        let detached_id = Uuid::from_u128(1101);
+        let live_id = Uuid::from_u128(1102);
+        let mut state = RunState {
+            active: vec![
+                ActiveRoot {
+                    id: detached_id,
+                    pid: 1101,
+                    signal: Some(std::sync::Arc::downgrade(&detached)),
+                    _process: None,
+                },
+                ActiveRoot {
+                    id: live_id,
+                    pid: 1102,
+                    signal: Some(std::sync::Arc::downgrade(&live)),
+                    _process: None,
+                },
+            ],
+            ..RunState::default()
+        };
+        detach_root_generation(&mut state, detached_id);
+
+        record_notification(
+            &mut state,
+            windows_sys::Win32::System::SystemServices::JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO,
+            0,
+            true,
+        );
+
+        assert!(state.active.is_empty());
+        assert_eq!(state.exited_roots.len(), 1);
+        assert!(!state.exited_roots.contains(&detached_id));
+        assert!(state.exited_roots.contains(&live_id));
     }
 }
