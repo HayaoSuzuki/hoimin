@@ -326,7 +326,7 @@ impl WorkerWorkspace {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn from_materialized(
         temp: tempfile::TempDir,
-        root: Utf8PathBuf,
+        root: WorkerRoot,
         original_root: Utf8PathBuf,
         options: CopyOptions,
         manifest: WorkspaceManifest,
@@ -335,9 +335,8 @@ impl WorkerWorkspace {
         plan_state: Arc<Mutex<copy::PlanState>>,
         worker: u32,
         charged: u64,
-    ) -> Result<Self, WorkspaceError> {
-        let root = WorkerRoot::open(root)?;
-        Ok(Self {
+    ) -> Self {
+        Self {
             temp,
             root,
             original_root,
@@ -349,7 +348,7 @@ impl WorkerWorkspace {
             worker,
             charged,
             cleanup_complete: false,
-        })
+        }
     }
 
     #[must_use]
