@@ -1358,6 +1358,61 @@ async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_in
 
 #[cfg(unix)]
 #[tokio::test]
+async fn first_sigint_finishes_a_parseable_incomplete_session() {
+    let project = tempfile::tempdir().unwrap();
+    let coordinator = tempfile::tempdir().unwrap();
+    write_parallel_project(project.path());
+    let session = coordinator.path().join("session.sqlite3");
+    let (mut child, active, descendant_ready) =
+        spawn_sigint_fixture(project.path(), coordinator.path(), &session, "json");
+    let mut stdout_reader = BufReader::new(child.stdout.take().unwrap());
+    let mut descendant = None;
+    let outcome: Result<_, String> = async {
+        descendant = Some(
+            try_wait_for_descendant_process(&descendant_ready, Duration::from_secs(15)).await?,
+        );
+        wait_for_live_session_readiness(
+            &descendant_ready,
+            &session,
+            &mut child,
+            Duration::from_secs(15),
+        )
+        .await?;
+
+        send_sigint(child.id())?;
+        let status = tokio::time::timeout(Duration::from_secs(15), child.wait())
+            .await
+            .map_err(|_| "hoimin did not finish after first SIGINT".to_owned())?
+            .map_err(|error| error.to_string())?;
+        let mut stdout = String::new();
+        stdout_reader
+            .read_to_string(&mut stdout)
+            .await
+            .map_err(|error| error.to_string())?;
+        Ok((status, stdout))
+    }
+    .await;
+
+    let child_cleanup = reap_test_child(&mut child).await;
+    let process_cleanup = kill_fixture_processes(&active, &descendant_ready).await;
+    if let Err(error) = child_cleanup.and(process_cleanup) {
+        panic!("test teardown failed: {error}; outcome={outcome:?}");
+    }
+    let (status, stdout) = outcome.unwrap_or_else(|error| {
+        panic!("first-SIGINT scenario failed after successful teardown: {error}")
+    });
+    let descendant = descendant.expect("descendant was ready before SIGINT");
+
+    assert_eq!(status.code(), Some(130));
+    let report: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|error| panic!("cancelled stdout must be JSON ({error}): {stdout:?}"));
+    assert_eq!(report["summary"]["complete"], false);
+    assert_eq!(session_complete(&session), 0);
+    assert!(descendant.wait_until_stops(Duration::from_secs(5)).await);
+}
+
+#[cfg(unix)]
+#[tokio::test]
 async fn second_sigint_forces_130_while_session_finish_is_blocked() {
     let project = tempfile::tempdir().unwrap();
     let coordinator = tempfile::tempdir().unwrap();
@@ -1377,15 +1432,8 @@ async fn second_sigint_forces_130_while_session_finish_is_blocked() {
 
         let pid = child
             .id()
-            .ok_or_else(|| "hoimin exited before first SIGINT".to_owned())
-            .and_then(|pid| i32::try_from(pid).map_err(|error| error.to_string()))?;
-        // SAFETY: `pid` belongs to the live child spawned above.
-        if unsafe { libc::kill(pid, libc::SIGINT) } != 0 {
-            return Err(format!(
-                "first SIGINT failed: {}",
-                std::io::Error::last_os_error()
-            ));
-        }
+            .ok_or_else(|| "hoimin exited before first SIGINT".to_owned())?;
+        send_sigint(Some(pid))?;
         let descendant_process = descendant.as_ref().expect("assigned above");
         if !descendant_process
             .wait_until_stops(Duration::from_secs(5))
@@ -1398,13 +1446,8 @@ async fn second_sigint_forces_130_while_session_finish_is_blocked() {
         }
 
         let forced_at = Instant::now();
-        // SAFETY: the retained SQLite lock keeps the live child blocked in session finalization.
-        if unsafe { libc::kill(pid, libc::SIGINT) } != 0 {
-            return Err(format!(
-                "second SIGINT failed: {}",
-                std::io::Error::last_os_error()
-            ));
-        }
+        // The retained SQLite lock keeps the live child blocked in session finalization.
+        send_sigint(Some(pid))?;
         let status = tokio::time::timeout(Duration::from_secs(1), child.wait())
             .await
             .map_err(|_| "second SIGINT must bypass blocked FinishSession".to_owned())?
@@ -2370,6 +2413,16 @@ fn spawn_second_sigint_fixture(
     coordinator: &Path,
     session: &Path,
 ) -> (tokio::process::Child, PathBuf, PathBuf) {
+    spawn_sigint_fixture(project, coordinator, session, "jsonl")
+}
+
+#[cfg(unix)]
+fn spawn_sigint_fixture(
+    project: &Path,
+    coordinator: &Path,
+    session: &Path,
+    format: &str,
+) -> (tokio::process::Child, PathBuf, PathBuf) {
     let active = coordinator.join("active");
     std::fs::create_dir(&active).unwrap();
     let descendant_ready = coordinator.join("descendant-ready");
@@ -2399,7 +2452,7 @@ fn spawn_second_sigint_fixture(
         .arg("--session")
         .arg(session)
         .arg("--format")
-        .arg("jsonl")
+        .arg(format)
         .arg("--allow-best-effort-memory")
         .arg("--")
         .arg(python_executable())
@@ -2411,6 +2464,14 @@ fn spawn_second_sigint_fixture(
         .spawn()
         .unwrap();
     (child, active, descendant_ready)
+}
+
+#[cfg(unix)]
+fn session_complete(session: &Path) -> i64 {
+    rusqlite::Connection::open(session)
+        .unwrap()
+        .query_row("SELECT complete FROM runs", [], |row| row.get(0))
+        .unwrap()
 }
 
 #[cfg(unix)]
