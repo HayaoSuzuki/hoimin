@@ -28,4 +28,3 @@ snapshot.
   `TARGET.py` and `target.py` and verifies that snapshot creation fails with
   `workspace.path.collision`.
 - Existing workspace and CLI tests continue to pass on all platforms.
-
