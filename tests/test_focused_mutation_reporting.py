@@ -754,8 +754,6 @@ class FocusedMutationReportingTests(unittest.TestCase):
         self.assertTrue(run.call_args.kwargs["text"])
         self.assertEqual(run.call_args.kwargs["encoding"], "utf-8")
         self.assertEqual(run.call_args.kwargs["errors"], "surrogateescape")
-        self.assertTrue(run.call_args.kwargs["text"])
-        self.assertFalse(run.call_args.kwargs["shell"])
         self.assertEqual(workflow.call_args.kwargs["budget"].started, 100.0)
 
     def test_git_probe_uses_utf8_independently_of_the_windows_locale(self) -> None:
@@ -773,6 +771,8 @@ class FocusedMutationReportingTests(unittest.TestCase):
         self.assertEqual(output, "日本語.py\n")
         self.assertEqual(run.call_args.kwargs["encoding"], "utf-8")
         self.assertEqual(run.call_args.kwargs["errors"], "surrogateescape")
+        self.assertTrue(run.call_args.kwargs["text"])
+        self.assertFalse(run.call_args.kwargs["shell"])
 
     def test_initial_repository_validation_timeout_exits_two(self) -> None:
         with (
