@@ -1389,7 +1389,12 @@ async fn first_sigint_finishes_a_parseable_incomplete_session() {
             .read_to_string(&mut stdout)
             .await
             .map_err(|error| error.to_string())?;
-        Ok((status, stdout))
+        let descendant_stopped = descendant
+            .as_ref()
+            .expect("assigned above")
+            .wait_until_stops(Duration::from_secs(5))
+            .await;
+        Ok((status, stdout, descendant_stopped))
     }
     .await;
 
@@ -1398,17 +1403,19 @@ async fn first_sigint_finishes_a_parseable_incomplete_session() {
     if let Err(error) = child_cleanup.and(process_cleanup) {
         panic!("test teardown failed: {error}; outcome={outcome:?}");
     }
-    let (status, stdout) = outcome.unwrap_or_else(|error| {
+    let (status, stdout, descendant_stopped) = outcome.unwrap_or_else(|error| {
         panic!("first-SIGINT scenario failed after successful teardown: {error}")
     });
-    let descendant = descendant.expect("descendant was ready before SIGINT");
 
     assert_eq!(status.code(), Some(130));
     let report: serde_json::Value = serde_json::from_str(&stdout)
         .unwrap_or_else(|error| panic!("cancelled stdout must be JSON ({error}): {stdout:?}"));
     assert_eq!(report["summary"]["complete"], false);
     assert_eq!(session_complete(&session), 0);
-    assert!(descendant.wait_until_stops(Duration::from_secs(5)).await);
+    assert!(
+        descendant_stopped,
+        "first SIGINT did not reap the ready descendant"
+    );
 }
 
 #[cfg(unix)]
