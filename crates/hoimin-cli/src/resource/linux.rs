@@ -1619,15 +1619,13 @@ mod tests {
     }
 
     impl CleanupSignalRecorder {
-        fn signal_numeric_pids(&self) -> Result<(), ResourceError> {
+        fn signal_numeric_pids(&self) {
             self.numeric_pid_calls.set(self.numeric_pid_calls.get() + 1);
-            Ok(())
         }
 
-        fn signal_process_group(&self, _pid: i32) -> Result<(), ResourceError> {
+        fn signal_process_group(&self, _pid: i32) {
             self.process_group_calls
                 .set(self.process_group_calls.get() + 1);
-            Ok(())
         }
 
         fn numeric_pid_calls(&self) -> usize {
@@ -1782,13 +1780,22 @@ mod tests {
         let strategy = begin_cgroup_member_cleanup(
             None,
             || kernel_group.kill(),
-            |pid| signals.signal_process_group(pid),
-            || signals.signal_numeric_pids(),
+            |pid| {
+                signals.signal_process_group(pid);
+                Ok(())
+            },
+            || {
+                signals.signal_numeric_pids();
+                Ok(())
+            },
         )
         .unwrap();
         finish_cgroup_member_cleanup(
             strategy,
-            || signals.signal_numeric_pids(),
+            || {
+                signals.signal_numeric_pids();
+                Ok(())
+            },
             || {
                 let check = emptiness_checks.get();
                 emptiness_checks.set(check + 1);
