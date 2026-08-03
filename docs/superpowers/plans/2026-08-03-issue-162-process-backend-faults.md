@@ -4,17 +4,20 @@ Parent: [#162](https://github.com/tokyogas-tech/hoimin/issues/162)
 
 This plan records the disposition of every process-backend audit row. The three
 Linux rows have executable coverage. The three Windows rows remain platform
-remainders and each requires its own open, linked follow-up before #162 can be
-closed. Direct `RunState` mutation, `record_notification`, and synthetic PIDs do
-not count as real Windows Job Object evidence.
+remainders, tracked by the created, open, and linked follow-ups W1
+([#221](https://github.com/tokyogas-tech/hoimin/issues/221)), W2
+([#222](https://github.com/tokyogas-tech/hoimin/issues/222)), and W3
+([#223](https://github.com/tokyogas-tech/hoimin/issues/223)). Direct `RunState`
+mutation, `record_notification`, and synthetic PIDs do not count as real Windows
+Job Object evidence.
 
 ## Six-row traceability
 
 | # | Exact audit row | Disposition | Test or required follow-up |
 |---|---|---|---|
-| 1 | Windows abnormal root exit crosses Job Object notification plumbing, classifies without timeout, and completes within a bound | Follow-up required before parent closure | W1, `test(windows): exercise abnormal root exit through Job Object completion notifications` |
-| 2 | Windows root exits while descendants remain assigned and cleanup stays bounded | Follow-up required before parent closure | W2, `test(windows): bound cleanup when a root exits before assigned descendants` |
-| 3 | Windows stale/recycled PID cleanup captures a real exited PID and never signals the recycled raw PID | Follow-up required before parent closure | W3, `test(windows): protect Job Object cleanup from a recycled real PID` |
+| 1 | Windows abnormal root exit crosses Job Object notification plumbing, classifies without timeout, and completes within a bound | Open linked follow-up; Windows coverage remains outstanding | W1 [#221](https://github.com/tokyogas-tech/hoimin/issues/221), `test(windows): exercise abnormal root exit through Job Object completion notifications` |
+| 2 | Windows root exits while descendants remain assigned and cleanup stays bounded | Open linked follow-up; Windows coverage remains outstanding | W2 [#222](https://github.com/tokyogas-tech/hoimin/issues/222), `test(windows): bound cleanup when a root exits before assigned descendants` |
+| 3 | Windows stale/recycled PID cleanup captures a real exited PID and never signals the recycled raw PID | Open linked follow-up; Windows coverage remains outstanding | W3 [#223](https://github.com/tokyogas-tech/hoimin/issues/223), `test(windows): protect Job Object cleanup from a recycled real PID` |
 | 4 | Linux cgroup abnormal root exit classifies without timeout and completes within a bound | Covered | `process_handler::cgroup_v2::abnormal_runtime_root_is_classified_and_cleaned_within_six_seconds`; real delegated cgroup-v2 container: pass, no `SKIP:`; attach the eventual `linux-cgroup-v2-hard` run URL before closing #162 |
 | 5 | Linux cgroup root exits while descendants persist and cleanup remains bounded | Covered | `process_handler::cgroup_v2::exited_root_is_observed_before_its_descendant_is_cleaned`; real delegated cgroup-v2 container: pass, no `SKIP:`; attach the eventual `linux-cgroup-v2-hard` run URL before closing #162 |
 | 6 | Linux cgroup cleanup uses kernel/group ownership and does not signal an unverified stale numeric PID | Covered | `resource::linux::tests::successful_kernel_kill_never_signals_a_numeric_pid_or_group`; exact call counts are numeric PID `0`, process group `0`, kernel group `1` |
@@ -40,13 +43,16 @@ enable `+memory +pids` because its non-root delegated cgroup was populated
 namespace fixture exposed `0::/`, writable cgroup2, and the `memory` and `pids`
 controllers, and produced no capability skip.
 
-## W1 follow-up proposal
+## W1 follow-up: [#221](https://github.com/tokyogas-tech/hoimin/issues/221)
 
 Title:
 
 ```text
 test(windows): exercise abnormal root exit through Job Object completion notifications
 ```
+
+Issue: [#221](https://github.com/tokyogas-tech/hoimin/issues/221) (created, open,
+and linked from #162)
 
 Body:
 
@@ -76,13 +82,16 @@ Keep this issue open and linked from #162 until a Windows CI URL demonstrates
 the passing fixture.
 ```
 
-## W2 follow-up proposal
+## W2 follow-up: [#222](https://github.com/tokyogas-tech/hoimin/issues/222)
 
 Title:
 
 ```text
 test(windows): bound cleanup when a root exits before assigned descendants
 ```
+
+Issue: [#222](https://github.com/tokyogas-tech/hoimin/issues/222) (created, open,
+and linked from #162)
 
 Body:
 
@@ -115,13 +124,16 @@ Keep this issue open and linked from #162 until a Windows CI URL demonstrates
 the passing fixture.
 ```
 
-## W3 follow-up proposal
+## W3 follow-up: [#223](https://github.com/tokyogas-tech/hoimin/issues/223)
 
 Title:
 
 ```text
 test(windows): protect Job Object cleanup from a recycled real PID
 ```
+
+Issue: [#223](https://github.com/tokyogas-tech/hoimin/issues/223) (created, open,
+and linked from #162)
 
 Body:
 
@@ -159,7 +171,13 @@ from synthetic coverage.
 
 Before closing #162:
 
-1. Create W1, W2, and W3 as three separate open issues and link each from #162.
-2. Replace their placeholders in the traceability table with the actual issue links.
-3. Attach the passing delegated `linux-cgroup-v2-hard` run URL to Linux rows 4 and 5.
-4. Do not treat a skipped platform test or direct-state test as evidence for any row.
+1. [x] W1 [#221](https://github.com/tokyogas-tech/hoimin/issues/221), W2
+   [#222](https://github.com/tokyogas-tech/hoimin/issues/222), and W3
+   [#223](https://github.com/tokyogas-tech/hoimin/issues/223) are created, open,
+   and linked from #162.
+2. [ ] Attach the passing delegated `linux-cgroup-v2-hard` run URL to Linux rows
+   4 and 5 after PR CI.
+3. [ ] Keep each Windows issue open until its real Job Object acceptance criteria
+   are covered; creation of the issue is not Windows coverage.
+4. [ ] Do not treat a skipped platform test or direct-state test as evidence for
+   any row.
