@@ -1,6 +1,8 @@
 use std::{
     num::NonZeroUsize,
     path::{Path, PathBuf},
+    process::Output,
+    time::Duration,
 };
 
 use camino::Utf8PathBuf;
@@ -23,6 +25,85 @@ fn input_accepts_the_oldest_schema_v2_normalized_config() {
     let report = original_schema_v2_report();
 
     assert!(matches!(read_report(&report), Ok(InputReport::Usable(_))));
+}
+
+#[tokio::test]
+async fn real_run_reports_expose_exact_regression_through_progress() {
+    let project = tempfile::tempdir().unwrap();
+    let source = project.path().join("src");
+    std::fs::create_dir(&source).unwrap();
+    std::fs::write(
+        project.path().join("pyproject.toml"),
+        "[project]\nname = \"hoimin-progress-fixture\"\nversion = \"0.0.0\"\nrequires-python = \">=3.12\"\n",
+    )
+    .unwrap();
+    std::fs::write(source.join("__init__.py"), "").unwrap();
+    std::fs::write(
+        source.join("calc.py"),
+        "def add(left: int, right: int) -> int:\n    return left + right\n",
+    )
+    .unwrap();
+
+    let before_output = run_real_binary(
+        project.path(),
+        "from src.calc import add; assert add(2, 3) == 5",
+    )
+    .await;
+    assert_eq!(
+        before_output.status.code(),
+        Some(0),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&before_output.stdout),
+        String::from_utf8_lossy(&before_output.stderr)
+    );
+    let before_report: Value = serde_json::from_slice(&before_output.stdout).unwrap();
+    let before_mutants = before_report["mutants"].as_array().unwrap();
+    assert_eq!(before_mutants.len(), 1);
+    assert_eq!(before_mutants[0]["status"], "killed");
+
+    let after_output = run_real_binary(project.path(), "from src.calc import add; add(2, 3)").await;
+    assert_eq!(
+        after_output.status.code(),
+        Some(1),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&after_output.stdout),
+        String::from_utf8_lossy(&after_output.stderr)
+    );
+    let after_report: Value = serde_json::from_slice(&after_output.stdout).unwrap();
+    let after_mutants = after_report["mutants"].as_array().unwrap();
+    assert_eq!(after_mutants.len(), 1);
+    assert_eq!(after_mutants[0]["status"], "survived");
+    assert_eq!(
+        before_mutants[0]["candidate"]["id"],
+        after_mutants[0]["candidate"]["id"]
+    );
+
+    let before = project.path().join("before.json");
+    let after = project.path().join("after.json");
+    std::fs::write(&before, &before_output.stdout).unwrap();
+    std::fs::write(&after, &after_output.stdout).unwrap();
+
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
+    command
+        .args(["progress", "--format", "json"])
+        .arg(&before)
+        .arg(&after);
+    let output = bounded_output(&mut command).await;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let progress: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(progress["latest"]["state"], "regressing");
+    assert_eq!(progress["comparisons"][0]["common"], 1);
+    assert_eq!(progress["comparisons"][0]["added"], 0);
+    assert_eq!(progress["comparisons"][0]["removed"], 0);
+    assert_eq!(progress["comparisons"][0]["improvements"], 0);
+    assert_eq!(progress["comparisons"][0]["regressions"], 1);
+    assert_eq!(progress["comparisons"][0]["previous_score"], 1.0);
+    assert_eq!(progress["comparisons"][0]["current_score"], 0.0);
+    assert_eq!(progress["comparisons"][0]["score_delta"], -1.0);
 }
 
 #[test]
@@ -1093,6 +1174,52 @@ async fn run_progress(reports: &[PathBuf], format: &str) -> (i32, Vec<u8>, Vec<u
     let mut stderr = Vec::new();
     let code = hoimin_cli::run_with_io(argv, &mut stdout, &mut stderr).await;
     (code, stdout, stderr)
+}
+
+async fn run_real_binary(project: &Path, test_command: &str) -> Output {
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
+    command
+        .arg("run")
+        .arg("--root")
+        .arg(project)
+        .arg("--source")
+        .arg("src")
+        .arg("--file")
+        .arg("src/calc.py")
+        .arg("--format")
+        .arg("json")
+        .arg("--operators")
+        .arg("binary_add_sub")
+        .arg("--max-mutants")
+        .arg("1")
+        .arg("--allow-best-effort-memory")
+        .arg("--")
+        .arg(python_executable())
+        .arg("-c")
+        .arg(test_command);
+    bounded_output(&mut command).await
+}
+
+async fn bounded_output(command: &mut tokio::process::Command) -> Output {
+    command.kill_on_drop(true);
+    tokio::time::timeout(Duration::from_secs(30), command.output())
+        .await
+        .expect("real CLI command timed out after 30 seconds")
+        .unwrap()
+}
+
+fn python_executable() -> PathBuf {
+    let executable = if cfg!(windows) {
+        repo_root().join(".venv/Scripts/python.exe")
+    } else {
+        repo_root().join(".venv/bin/python")
+    };
+    assert!(
+        executable.is_file(),
+        "missing controlled test Python interpreter: {}",
+        executable.display()
+    );
+    executable
 }
 
 fn repo_root() -> PathBuf {
