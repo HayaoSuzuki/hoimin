@@ -9,8 +9,8 @@ use hoimin_core::{CreateWorker, EffectId, PreflightCompleted, ReservationId};
 
 use super::manifest::build_manifest;
 use super::{
-    CopyOptions, DiskSnapshot, SnapshotFile, WorkerWorkspace, WorkspaceDiagnostic, WorkspaceError,
-    WorkspaceManifest,
+    CopyOptions, DiskSnapshot, SnapshotFile, WorkerRoot, WorkerWorkspace, WorkspaceDiagnostic,
+    WorkspaceError, WorkspaceManifest,
 };
 
 #[derive(Debug)]
@@ -327,6 +327,14 @@ impl WorkspacePlan {
     }
 
     fn materialize_worker(&self, worker: u32) -> Result<WorkerWorkspace, WorkspaceError> {
+        self.materialize_worker_with_root_opener(worker, WorkerRoot::open)
+    }
+
+    fn materialize_worker_with_root_opener(
+        &self,
+        worker: u32,
+        open_root: impl FnOnce(Utf8PathBuf) -> Result<WorkerRoot, WorkspaceError>,
+    ) -> Result<WorkerWorkspace, WorkspaceError> {
         self.verify_originals_for_materialization()?;
         let temp = tempfile::Builder::new()
             .prefix("hoimin-worker-")
@@ -336,8 +344,9 @@ impl WorkspacePlan {
         fs::create_dir(&root_path).map_err(|error| {
             WorkspaceError::io("create worker root", &self.original_root, error)
         })?;
-        let root =
+        let root_path =
             Utf8PathBuf::from_path_buf(root_path).map_err(|_| WorkspaceError::NonUtf8Path)?;
+        let root = open_root(root_path.clone())?;
         let mut charged = 0_u64;
 
         let result = (|| {
@@ -361,7 +370,7 @@ impl WorkspacePlan {
                         message: "shared snapshot is missing a manifest entry".to_owned(),
                     }
                 })?;
-                let destination = root.join(&entry.path);
+                let destination = root_path.join(&entry.path);
                 if let Some(parent) = destination.parent() {
                     fs::create_dir_all(parent).map_err(|error| {
                         WorkspaceError::io("create worker directory", parent, error)
@@ -381,22 +390,18 @@ impl WorkspacePlan {
             return Err(error);
         }
 
-        finish_materialization(
-            &self.allowance,
+        Ok(WorkerWorkspace::from_materialized(
+            temp,
+            root,
+            self.original_root.clone(),
+            self.options.clone(),
+            self.manifest.clone(),
+            Arc::clone(&self.snapshot),
+            Arc::clone(&self.allowance),
+            Arc::clone(&self.state),
+            worker,
             charged,
-            WorkerWorkspace::from_materialized(
-                temp,
-                root,
-                self.original_root.clone(),
-                self.options.clone(),
-                self.manifest.clone(),
-                Arc::clone(&self.snapshot),
-                Arc::clone(&self.allowance),
-                Arc::clone(&self.state),
-                worker,
-                charged,
-            ),
-        )
+        ))
     }
 
     fn verify_originals_for_materialization(&self) -> Result<(), WorkspaceError> {
@@ -426,17 +431,6 @@ impl WorkspacePlan {
         self.allowance.release(charged);
         result
     }
-}
-
-fn finish_materialization<T>(
-    allowance: &CopyAllowance,
-    charged: u64,
-    result: Result<T, WorkspaceError>,
-) -> Result<T, WorkspaceError> {
-    if result.is_err() {
-        allowance.release(charged);
-    }
-    result
 }
 
 fn create_disk_snapshot(
@@ -511,35 +505,6 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn failed_worker_finalization_releases_its_copy_charge() {
-        let allowance = CopyAllowance {
-            granted: AtomicU64::new(8),
-            charged: AtomicU64::new(0),
-        };
-        allowance.charge(5).unwrap();
-        let expected = WorkspaceError::NonUtf8Path;
-
-        let result = finish_materialization::<()>(&allowance, 5, Err(expected.clone()));
-
-        assert_eq!(result, Err(expected));
-        assert_eq!(allowance.charged(), 0);
-    }
-
-    #[test]
-    fn successful_worker_finalization_transfers_its_copy_charge() {
-        let allowance = CopyAllowance {
-            granted: AtomicU64::new(8),
-            charged: AtomicU64::new(0),
-        };
-        allowance.charge(5).unwrap();
-
-        let result = finish_materialization(&allowance, 5, Ok("worker"));
-
-        assert_eq!(result, Ok("worker"));
-        assert_eq!(allowance.charged(), 5);
-    }
-
     #[cfg(windows)]
     #[test]
     fn disk_snapshot_rejects_paths_that_alias_on_its_filesystem() {
@@ -578,6 +543,41 @@ mod tests {
             grant.create_worker(EffectId(99), worker).unwrap(),
             reservation,
         )
+    }
+
+    #[test]
+    fn worker_root_is_opened_before_copy_allowance_is_charged() {
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("target.py"), b"copied bytes").unwrap();
+        let source_root = Utf8Path::from_path(source.path()).unwrap();
+        let plan =
+            WorkspacePlan::preflight(source_root, EffectId(7), 1, CopyOptions::default()).unwrap();
+        let completed = plan.completed();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: completed.aggregate_logical_bytes,
+            processes: 1,
+        });
+        let (request, _) = create_request(&mut ledger, &completed, 0);
+        plan.accept_grant(&request).unwrap();
+        let opened_path = Arc::new(Mutex::new(None));
+        let captured_path = Arc::clone(&opened_path);
+
+        let error = plan
+            .materialize_worker_with_root_opener(0, move |path| {
+                *captured_path.lock().unwrap() = Some(path.clone());
+                Err(WorkspaceError::io(
+                    "injected worker root open",
+                    path,
+                    "failure",
+                ))
+            })
+            .unwrap_err();
+
+        assert!(matches!(error, WorkspaceError::Io { .. }));
+        assert_eq!(plan.observed_copy_bytes(), 0);
+        let opened_path = opened_path.lock().unwrap().take().unwrap();
+        assert!(!opened_path.exists());
     }
 
     #[test]
