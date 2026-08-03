@@ -297,6 +297,51 @@ fn cleanup_strategy(cgroup_kill_succeeded: bool, live_root_owned: bool) -> Clean
 }
 
 #[cfg(any(target_os = "linux", test))]
+fn begin_cgroup_member_cleanup<KernelGroupKill, ProcessGroupKill, NumericPidKill>(
+    live_root_pid: Option<i32>,
+    kernel_group_kill: KernelGroupKill,
+    process_group_kill: ProcessGroupKill,
+    numeric_pid_kill: NumericPidKill,
+) -> Result<CleanupStrategy, ResourceError>
+where
+    KernelGroupKill: FnOnce() -> bool,
+    ProcessGroupKill: FnOnce(i32) -> Result<(), ResourceError>,
+    NumericPidKill: FnOnce() -> Result<(), ResourceError>,
+{
+    let strategy = cleanup_strategy(kernel_group_kill(), live_root_pid.is_some());
+    if strategy == CleanupStrategy::VerifiedLiveGroupThenMembershipPidLoop {
+        process_group_kill(live_root_pid.expect("strategy requires a live pid"))?;
+    }
+    if strategy != CleanupStrategy::KernelRecursiveKill {
+        numeric_pid_kill()?;
+    }
+    Ok(strategy)
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn finish_cgroup_member_cleanup<NumericPidKill, CgroupTreeEmpty, WaitForCleanup>(
+    strategy: CleanupStrategy,
+    mut numeric_pid_kill: NumericPidKill,
+    mut cgroup_tree_empty: CgroupTreeEmpty,
+    mut wait_for_cleanup: WaitForCleanup,
+) -> Result<(), ResourceError>
+where
+    NumericPidKill: FnMut() -> Result<(), ResourceError>,
+    CgroupTreeEmpty: FnMut() -> Result<bool, ResourceError>,
+    WaitForCleanup: FnMut() -> Result<(), ResourceError>,
+{
+    loop {
+        if cgroup_tree_empty()? {
+            return Ok(());
+        }
+        if strategy != CleanupStrategy::KernelRecursiveKill {
+            numeric_pid_kill()?;
+        }
+        wait_for_cleanup()?;
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
 fn run_cleanup_after_accounting<F>(
     accounting: Option<ResourceError>,
     cleanup: F,
@@ -384,10 +429,10 @@ mod platform {
     use uuid::Uuid;
 
     use super::{
-        CgroupCapabilities, CgroupEventCounters, CleanupStrategy, INTERNAL_LAUNCHER_ARG,
-        cleanup_strategy, find_unified_mounts, normalized_memory_limit,
-        parse_cgroup_event_counters, path_from_bytes, remove_cgroup_dir, resolve_unified_cgroup,
-        run_cleanup_after_accounting, violations_since, wrap_launcher_argv,
+        CgroupCapabilities, CgroupEventCounters, INTERNAL_LAUNCHER_ARG,
+        begin_cgroup_member_cleanup, find_unified_mounts, finish_cgroup_member_cleanup,
+        normalized_memory_limit, parse_cgroup_event_counters, path_from_bytes, remove_cgroup_dir,
+        resolve_unified_cgroup, run_cleanup_after_accounting, violations_since, wrap_launcher_argv,
     };
     use crate::resource::{ProcessSupervisor, ResourceError};
 
@@ -1330,32 +1375,28 @@ mod platform {
             Ok(true) => {}
             Err(error) => return Err(cleanup_error(path, error)),
         }
-        let strategy = cleanup_strategy(
-            fs::write(path.join("cgroup.kill"), b"1").is_ok(),
-            live_root_pid.is_some(),
-        );
-        if strategy == CleanupStrategy::VerifiedLiveGroupThenMembershipPidLoop {
-            kill_verified_live_group(path, live_root_pid.expect("strategy requires a live pid"))?;
-        }
-        if strategy != CleanupStrategy::KernelRecursiveKill {
-            kill_all_listed_pids(path)?;
-        }
+        let strategy = begin_cgroup_member_cleanup(
+            live_root_pid,
+            || fs::write(path.join("cgroup.kill"), b"1").is_ok(),
+            |pid| kill_verified_live_group(path, pid),
+            || kill_all_listed_pids(path),
+        )?;
         let deadline = Instant::now() + CONTROL_WAIT;
-        loop {
-            if cgroup_tree_empty(path)? {
-                break;
-            }
-            if strategy != CleanupStrategy::KernelRecursiveKill {
-                kill_all_listed_pids(path)?;
-            }
-            if Instant::now() >= deadline {
-                return Err(cleanup_error(
-                    path,
-                    io::Error::new(io::ErrorKind::TimedOut, "cgroup remained populated"),
-                ));
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
+        finish_cgroup_member_cleanup(
+            strategy,
+            || kill_all_listed_pids(path),
+            || cgroup_tree_empty(path),
+            || {
+                if Instant::now() >= deadline {
+                    return Err(cleanup_error(
+                        path,
+                        io::Error::new(io::ErrorKind::TimedOut, "cgroup remained populated"),
+                    ));
+                }
+                std::thread::sleep(Duration::from_millis(10));
+                Ok(())
+            },
+        )?;
         let mut tree = cgroup_tree(path)?;
         tree.sort_by_key(|candidate| std::cmp::Reverse(candidate.components().count()));
         for cgroup in tree {
@@ -1561,13 +1602,56 @@ fn path_from_bytes(bytes: Vec<u8>) -> Result<PathBuf, ResourceError> {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
     use std::ffi::OsString;
 
     use super::{
-        CgroupEventCounters, CleanupStrategy, ResourceError, cleanup_strategy, find_unified_mount,
-        find_unified_mounts, normalized_memory_limit, remove_cgroup_dir, resolve_unified_cgroup,
+        CgroupEventCounters, CleanupStrategy, ResourceError, begin_cgroup_member_cleanup,
+        cleanup_strategy, find_unified_mount, find_unified_mounts, finish_cgroup_member_cleanup,
+        normalized_memory_limit, remove_cgroup_dir, resolve_unified_cgroup,
         run_cleanup_after_accounting, violations_since, wrap_launcher_argv,
     };
+
+    #[derive(Default)]
+    struct CleanupSignalRecorder {
+        numeric_pid_calls: Cell<usize>,
+        process_group_calls: Cell<usize>,
+    }
+
+    impl CleanupSignalRecorder {
+        fn signal_numeric_pids(&self) {
+            self.numeric_pid_calls.set(self.numeric_pid_calls.get() + 1);
+        }
+
+        fn signal_process_group(&self, _pid: i32) {
+            self.process_group_calls
+                .set(self.process_group_calls.get() + 1);
+        }
+
+        fn numeric_pid_calls(&self) -> usize {
+            self.numeric_pid_calls.get()
+        }
+
+        fn process_group_calls(&self) -> usize {
+            self.process_group_calls.get()
+        }
+    }
+
+    #[derive(Default)]
+    struct KernelGroupKillRecorder {
+        kill_calls: Cell<usize>,
+    }
+
+    impl KernelGroupKillRecorder {
+        fn kill(&self) -> bool {
+            self.kill_calls.set(self.kill_calls.get() + 1);
+            true
+        }
+
+        fn kill_calls(&self) -> usize {
+            self.kill_calls.get()
+        }
+    }
 
     #[test]
     fn memory_limit_normalization_rounds_down_to_the_host_page_size() {
@@ -1689,10 +1773,45 @@ mod tests {
 
     #[test]
     fn successful_kernel_kill_never_signals_a_numeric_pid_or_group() {
-        assert_eq!(
-            cleanup_strategy(true, true),
-            CleanupStrategy::KernelRecursiveKill
-        );
+        let signals = CleanupSignalRecorder::default();
+        let kernel_group = KernelGroupKillRecorder::default();
+        let emptiness_checks = Cell::new(0);
+
+        let strategy = begin_cgroup_member_cleanup(
+            None,
+            || kernel_group.kill(),
+            |pid| {
+                signals.signal_process_group(pid);
+                Ok(())
+            },
+            || {
+                signals.signal_numeric_pids();
+                Ok(())
+            },
+        )
+        .unwrap();
+        finish_cgroup_member_cleanup(
+            strategy,
+            || {
+                signals.signal_numeric_pids();
+                Ok(())
+            },
+            || {
+                let check = emptiness_checks.get();
+                emptiness_checks.set(check + 1);
+                Ok(check > 0)
+            },
+            || Ok(()),
+        )
+        .unwrap();
+
+        assert_eq!(signals.numeric_pid_calls(), 0);
+        assert_eq!(signals.process_group_calls(), 0);
+        assert_eq!(kernel_group.kill_calls(), 1);
+    }
+
+    #[test]
+    fn failed_kernel_kill_uses_only_verified_fallbacks() {
         assert_eq!(
             cleanup_strategy(false, false),
             CleanupStrategy::VerifiedMembershipPidLoop
