@@ -47,6 +47,27 @@ const CELLS: [(HeldLock, ContendedOperation); 10] = [
 ];
 ```
 
+## Issue #161 audit-row traceability
+
+All seven audit rows map to the actual integration test
+`session_operations_complete_under_contention_matrix` (selectable with the
+`contention_matrix` test filter). The test executes the real `SessionHandler` methods against a
+second real `rusqlite::Connection`; no row is claimed through source-text inspection or a test
+double.
+
+| #161 audit row | Precise matrix evidence in `session_operations_complete_under_contention_matrix` |
+|---|---|
+| **“`BEGIN IMMEDIATE` held across `begin`, `persist`, `lookup`, `finish`, and `load` yields bounded success/failure after coordinated release”** | All five `(HeldLock::BeginImmediate, ContendedOperation::{Begin, Persist, Lookup, Finish, Load})` cells. The blocker-established channel precedes dispatch; release is sent within one second; every outcome is bounded to six seconds. Begin/persist/finish must still be pending before release, and all five then require their operation-specific exact success type. |
+| **“Held read transaction across `begin` has a coordinated bounded outcome”** | `(HeldLock::ReadTransaction, ContendedOperation::Begin)`, with the retained read snapshot established before dispatch and exact `SessionStarted { id, run_id }` equality within the common bound. |
+| **“Held read transaction across `persist` has a coordinated bounded outcome”** | `(HeldLock::ReadTransaction, ContendedOperation::Persist)`, with a valid seeded run and exact `ResultPersisted { id, worker: 0, run_id, mutant_id }` equality within the common bound. |
+| **“Held read transaction across `lookup` has a coordinated bounded outcome”** | `(HeldLock::ReadTransaction, ContendedOperation::Lookup)`, with a seeded killed result and exact `StoredResultLoaded` equality within the common bound. |
+| **“Held read transaction across `finish` has a coordinated bounded outcome”** | `(HeldLock::ReadTransaction, ContendedOperation::Finish)`, with a valid seeded run and exact `SessionFinished { id, run_id, complete: true }` equality within the common bound. |
+| **“Held read transaction across `load` has a coordinated bounded outcome”** | `(HeldLock::ReadTransaction, ContendedOperation::Load)`, with a seeded resumable run and exact `SessionLoaded`/`SessionResumeRef` equality within the common bound. |
+| **“Every contended operation completes within the busy timeout or returns its intended typed diagnostic, never raw `DatabaseBusy`”** | All ten `CELLS`. The common six-second receiver bound is measured from dispatch, every `EffectFailed` (therefore any raw `DatabaseBusy`/`DatabaseLocked` mapping), panic, disconnect, timeout, or success-variant mismatch fails with its `(lock, operation)` label, and the visited set must equal `CELLS`. |
+
+Parent closure must link each of these seven rows to this test and its corresponding cell/assertion;
+the existence of the matrix alone is not a substitute for row-level traceability.
+
 ## Task 1: Prove the completeness guard RED
 
 **File:** `crates/hoimin-cli/tests/session_handler.rs`
