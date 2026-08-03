@@ -2,6 +2,10 @@ use std::{
     num::NonZeroUsize,
     path::{Path, PathBuf},
     process::Output,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 
@@ -161,6 +165,61 @@ async fn real_run_timeout_reaps_the_supervised_process_tree() {
         !descendant_alive,
         "timed-out verifier descendant {descendant_pid} survived"
     );
+}
+
+#[tokio::test]
+async fn timed_out_pipe_reader_is_aborted_and_joined() {
+    struct DropFlag(Arc<AtomicBool>);
+
+    impl Drop for DropFlag {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    let dropped = Arc::new(AtomicBool::new(false));
+    let task_flag = Arc::clone(&dropped);
+    let reader = tokio::spawn(async move {
+        let _drop_flag = DropFlag(task_flag);
+        std::future::pending::<()>().await;
+        Ok(Vec::new())
+    });
+
+    let error = join_reader_with_timeout(reader, "fixture", Duration::from_millis(10))
+        .await
+        .unwrap_err();
+
+    assert!(error.contains("timed out draining real CLI fixture"));
+    assert!(
+        dropped.load(Ordering::SeqCst),
+        "reader task must be joined after abort"
+    );
+}
+
+#[test]
+fn timeout_diagnostic_retains_cleanup_and_both_reader_failures() {
+    let cleanup = CleanupOutcome {
+        status: None,
+        diagnostics: vec!["signal failed".to_owned(), "reap failed".to_owned()],
+    };
+
+    let diagnostic = cleanup_diagnostic(
+        "fixture timed out",
+        cleanup,
+        Err("stdout join failed".to_owned()),
+        Err("stderr join failed".to_owned()),
+    );
+
+    for expected in [
+        "fixture timed out",
+        "cleanup status=unreaped",
+        "signal failed",
+        "reap failed",
+        "stdout join failed",
+        "stderr join failed",
+    ] {
+        assert!(diagnostic.contains(expected), "{diagnostic}");
+    }
 }
 
 #[test]
@@ -1282,23 +1341,41 @@ async fn bounded_output(
     let stdout = tokio::spawn(read_all(stdout));
     let stderr = tokio::spawn(read_all(stderr));
 
-    let status = if let Ok(result) = tokio::time::timeout(timeout, child.wait()).await {
-        result.map_err(|error| error.to_string())?
-    } else {
-        let status = cleanup_timed_out_child(&mut child).await?;
-        let stdout = join_reader(stdout, "stdout").await?;
-        let stderr = join_reader(stderr, "stderr").await?;
-        return Err(format!(
-            "real CLI command timed out; cleanup status={status}; stdout={}; stderr={}",
-            String::from_utf8_lossy(&stdout),
-            String::from_utf8_lossy(&stderr)
-        ));
+    let status = match tokio::time::timeout(timeout, child.wait()).await {
+        Ok(Ok(status)) => status,
+        Ok(Err(error)) => {
+            let cleanup = cleanup_timed_out_child(&mut child).await;
+            let stdout = join_reader(stdout, "stdout").await;
+            let stderr = join_reader(stderr, "stderr").await;
+            return Err(cleanup_diagnostic(
+                &format!("wait for real CLI child failed: {error}"),
+                cleanup,
+                stdout,
+                stderr,
+            ));
+        }
+        Err(_) => {
+            let cleanup = cleanup_timed_out_child(&mut child).await;
+            let stdout = join_reader(stdout, "stdout").await;
+            let stderr = join_reader(stderr, "stderr").await;
+            return Err(cleanup_diagnostic(
+                "real CLI command timed out",
+                cleanup,
+                stdout,
+                stderr,
+            ));
+        }
     };
-    Ok(Output {
-        status,
-        stdout: join_reader(stdout, "stdout").await?,
-        stderr: join_reader(stderr, "stderr").await?,
-    })
+    let stdout = join_reader(stdout, "stdout").await;
+    let stderr = join_reader(stderr, "stderr").await;
+    match (stdout, stderr) {
+        (Ok(stdout), Ok(stderr)) => Ok(Output {
+            status,
+            stdout,
+            stderr,
+        }),
+        (stdout, stderr) => Err(reader_diagnostic(stdout, stderr)),
+    }
 }
 
 async fn read_all<R: tokio::io::AsyncRead + Unpin>(mut reader: R) -> std::io::Result<Vec<u8>> {
@@ -1308,47 +1385,91 @@ async fn read_all<R: tokio::io::AsyncRead + Unpin>(mut reader: R) -> std::io::Re
 }
 
 async fn join_reader(
-    mut reader: tokio::task::JoinHandle<std::io::Result<Vec<u8>>>,
+    reader: tokio::task::JoinHandle<std::io::Result<Vec<u8>>>,
     name: &str,
 ) -> Result<Vec<u8>, String> {
-    if let Ok(result) = tokio::time::timeout(Duration::from_secs(5), &mut reader).await {
+    join_reader_with_timeout(reader, name, Duration::from_secs(5)).await
+}
+
+async fn join_reader_with_timeout(
+    mut reader: tokio::task::JoinHandle<std::io::Result<Vec<u8>>>,
+    name: &str,
+    timeout: Duration,
+) -> Result<Vec<u8>, String> {
+    if let Ok(result) = tokio::time::timeout(timeout, &mut reader).await {
         result
             .map_err(|error| format!("join real CLI {name} reader: {error}"))?
             .map_err(|error| format!("read real CLI {name}: {error}"))
     } else {
         reader.abort();
-        Err(format!("timed out draining real CLI {name}"))
+        let join_error = match tokio::time::timeout(Duration::from_secs(1), &mut reader).await {
+            Ok(Err(error)) if error.is_cancelled() => None,
+            Ok(Ok(Ok(_))) => Some("reader completed after its abort request".to_owned()),
+            Ok(Ok(Err(error))) => Some(format!("reader failed after abort: {error}")),
+            Ok(Err(error)) => Some(format!("join reader after abort: {error}")),
+            Err(_) => Some("timed out joining reader after abort".to_owned()),
+        };
+        let mut message = format!(
+            "timed out draining real CLI {name}; reader aborted and bounded join attempted"
+        );
+        if let Some(error) = join_error {
+            message.push_str("; ");
+            message.push_str(&error);
+        }
+        Err(message)
+    }
+}
+
+#[derive(Default)]
+struct CleanupOutcome {
+    status: Option<std::process::ExitStatus>,
+    diagnostics: Vec<String>,
+}
+
+impl CleanupOutcome {
+    fn record(&mut self, result: Result<(), String>) {
+        if let Err(error) = result {
+            self.diagnostics.push(error);
+        }
     }
 }
 
 #[cfg(unix)]
-async fn cleanup_timed_out_child(
-    child: &mut tokio::process::Child,
-) -> Result<std::process::ExitStatus, String> {
-    if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
-        return Ok(status);
+async fn cleanup_timed_out_child(child: &mut tokio::process::Child) -> CleanupOutcome {
+    let mut outcome = CleanupOutcome::default();
+    if observe_child_exit(child, &mut outcome, "before first SIGINT") {
+        return outcome;
     }
-    send_sigint_to_test_child(child)?;
-    if let Ok(result) = tokio::time::timeout(Duration::from_secs(5), child.wait()).await {
-        return result.map_err(|error| error.to_string());
-    }
-
-    if child
-        .try_wait()
-        .map_err(|error| error.to_string())?
-        .is_none()
+    let signal = send_sigint_to_test_child(child);
+    outcome.record(signal);
+    if wait_for_child_exit(
+        child,
+        Duration::from_secs(5),
+        "after first SIGINT",
+        &mut outcome,
+    )
+    .await
     {
-        send_sigint_to_test_child(child)?;
-    }
-    if let Ok(result) = tokio::time::timeout(Duration::from_secs(1), child.wait()).await {
-        return result.map_err(|error| error.to_string());
+        return outcome;
     }
 
-    child.start_kill().map_err(|error| error.to_string())?;
-    tokio::time::timeout(Duration::from_secs(5), child.wait())
-        .await
-        .map_err(|_| "timed out force-reaping real CLI child".to_owned())?
-        .map_err(|error| error.to_string())
+    if !observe_child_exit(child, &mut outcome, "before second SIGINT") {
+        let signal = send_sigint_to_test_child(child);
+        outcome.record(signal);
+    }
+    if wait_for_child_exit(
+        child,
+        Duration::from_secs(1),
+        "after second SIGINT",
+        &mut outcome,
+    )
+    .await
+    {
+        return outcome;
+    }
+
+    force_kill_and_reap(child, &mut outcome).await;
+    outcome
 }
 
 #[cfg(unix)]
@@ -1368,40 +1489,138 @@ fn send_sigint_to_test_child(child: &tokio::process::Child) -> Result<(), String
 }
 
 #[cfg(windows)]
-async fn cleanup_timed_out_child(
-    child: &mut tokio::process::Child,
-) -> Result<std::process::ExitStatus, String> {
-    if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
-        return Ok(status);
+async fn cleanup_timed_out_child(child: &mut tokio::process::Child) -> CleanupOutcome {
+    let mut outcome = CleanupOutcome::default();
+    if observe_child_exit(child, &mut outcome, "before taskkill") {
+        return outcome;
     }
-    let pid = child
-        .id()
-        .ok_or_else(|| "real CLI child exited before process-tree cleanup".to_owned())?;
-    let mut taskkill = tokio::process::Command::new("taskkill");
-    taskkill
-        .args(["/PID", &pid.to_string(), "/T", "/F"])
-        .kill_on_drop(true);
-    let taskkill = tokio::time::timeout(Duration::from_secs(5), taskkill.output())
+    let mut taskkill_succeeded = false;
+    if let Some(pid) = child.id() {
+        let pid = pid.to_string();
+        let mut taskkill = tokio::process::Command::new("taskkill");
+        taskkill.args(["/PID", &pid, "/T", "/F"]).kill_on_drop(true);
+        match tokio::time::timeout(Duration::from_secs(5), taskkill.output()).await {
+            Ok(Ok(output)) if output.status.success() => taskkill_succeeded = true,
+            Ok(Ok(output)) => outcome.diagnostics.push(format!(
+                "taskkill real CLI process tree failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )),
+            Ok(Err(error)) => outcome
+                .diagnostics
+                .push(format!("start taskkill for real CLI process tree: {error}")),
+            Err(_) => outcome
+                .diagnostics
+                .push("timed out terminating real CLI Windows process tree".to_owned()),
+        }
+    } else {
+        outcome
+            .diagnostics
+            .push("real CLI child exited before process-tree cleanup".to_owned());
+    }
+    if taskkill_succeeded
+        && wait_for_child_exit(
+            child,
+            Duration::from_secs(5),
+            "after taskkill",
+            &mut outcome,
+        )
         .await
-        .map_err(|_| "timed out terminating real CLI Windows process tree".to_owned())?
-        .map_err(|error| format!("start taskkill for real CLI process tree: {error}"))?;
-    if !taskkill.status.success()
-        && child
-            .try_wait()
-            .map_err(|error| error.to_string())?
-            .is_none()
     {
-        child.start_kill().map_err(|error| {
-            format!(
-                "taskkill failed ({}); direct fallback failed: {error}",
-                String::from_utf8_lossy(&taskkill.stderr)
-            )
-        })?;
+        return outcome;
     }
-    tokio::time::timeout(Duration::from_secs(5), child.wait())
-        .await
-        .map_err(|_| "timed out reaping real CLI Windows child".to_owned())?
-        .map_err(|error| error.to_string())
+
+    force_kill_and_reap(child, &mut outcome).await;
+    outcome
+}
+
+fn observe_child_exit(
+    child: &mut tokio::process::Child,
+    outcome: &mut CleanupOutcome,
+    context: &str,
+) -> bool {
+    match child.try_wait() {
+        Ok(Some(status)) => {
+            outcome.status = Some(status);
+            true
+        }
+        Ok(None) => false,
+        Err(error) => {
+            outcome
+                .diagnostics
+                .push(format!("inspect real CLI child {context}: {error}"));
+            false
+        }
+    }
+}
+
+async fn wait_for_child_exit(
+    child: &mut tokio::process::Child,
+    timeout: Duration,
+    context: &str,
+    outcome: &mut CleanupOutcome,
+) -> bool {
+    match tokio::time::timeout(timeout, child.wait()).await {
+        Ok(Ok(status)) => {
+            outcome.status = Some(status);
+            true
+        }
+        Ok(Err(error)) => {
+            outcome
+                .diagnostics
+                .push(format!("wait for real CLI child {context}: {error}"));
+            false
+        }
+        Err(_) => {
+            outcome
+                .diagnostics
+                .push(format!("timed out waiting for real CLI child {context}"));
+            false
+        }
+    }
+}
+
+async fn force_kill_and_reap(child: &mut tokio::process::Child, outcome: &mut CleanupOutcome) {
+    if !observe_child_exit(child, outcome, "before final kill") {
+        let kill = child
+            .start_kill()
+            .map_err(|error| format!("force-kill real CLI child: {error}"));
+        outcome.record(kill);
+    }
+    if outcome.status.is_none() {
+        wait_for_child_exit(child, Duration::from_secs(5), "after final kill", outcome).await;
+    }
+}
+
+fn cleanup_diagnostic(
+    reason: &str,
+    cleanup: CleanupOutcome,
+    stdout: Result<Vec<u8>, String>,
+    stderr: Result<Vec<u8>, String>,
+) -> String {
+    let mut diagnostics = vec![format!(
+        "{reason}; cleanup status={}",
+        cleanup
+            .status
+            .map_or_else(|| "unreaped".to_owned(), |status| status.to_string())
+    )];
+    diagnostics.extend(cleanup.diagnostics);
+    match stdout {
+        Ok(stdout) => diagnostics.push(format!("stdout={}", String::from_utf8_lossy(&stdout))),
+        Err(error) => diagnostics.push(error),
+    }
+    match stderr {
+        Ok(stderr) => diagnostics.push(format!("stderr={}", String::from_utf8_lossy(&stderr))),
+        Err(error) => diagnostics.push(error),
+    }
+    diagnostics.join("; ")
+}
+
+fn reader_diagnostic(stdout: Result<Vec<u8>, String>, stderr: Result<Vec<u8>, String>) -> String {
+    [stdout.err(), stderr.err()]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 #[cfg(unix)]
