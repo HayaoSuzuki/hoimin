@@ -118,6 +118,88 @@ async fn invalid_syntax_warns_and_prevents_a_complete_zero_candidate_run() {
 }
 
 #[tokio::test]
+async fn real_binary_json_report_and_diagnostic_use_separate_streams() {
+    let project = tempfile::tempdir().unwrap();
+    let fixture = fixture_root();
+    std::fs::copy(
+        fixture.join("pyproject.toml"),
+        project.path().join("pyproject.toml"),
+    )
+    .unwrap();
+    let source = project.path().join("src");
+    std::fs::create_dir(&source).unwrap();
+    std::fs::write(source.join("__init__.py"), "").unwrap();
+    std::fs::write(source.join("calc.py"), "def broken(:\n").unwrap();
+
+    let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+        .arg("run")
+        .arg("--root")
+        .arg(project.path())
+        .arg("--source")
+        .arg("src")
+        .arg("--file")
+        .arg("src/calc.py")
+        .arg("--format")
+        .arg("json")
+        .arg("--allow-best-effort-memory")
+        .arg("--")
+        .arg(python_executable())
+        .arg("-c")
+        .arg("print('baseline succeeds')")
+        .output()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        output.status.code(),
+        Some(4),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report_bytes = output
+        .stdout
+        .strip_suffix(b"\n")
+        .expect("stdout report must end in one newline");
+    assert!(
+        !report_bytes.ends_with(b"\n"),
+        "stdout report must end in exactly one newline"
+    );
+    let reports = serde_json::Deserializer::from_slice(&output.stdout)
+        .into_iter::<serde_json::Value>()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(reports.len(), 1, "stdout must contain exactly one report");
+    assert_eq!(reports[0]["summary"]["complete"], false);
+    assert!(
+        !String::from_utf8_lossy(&output.stdout).contains("analyzer.invalid_syntax"),
+        "diagnostic leaked to stdout"
+    );
+
+    let diagnostics = output
+        .stderr
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(serde_json::from_slice::<serde_json::Value>)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert!(
+        diagnostics
+            .iter()
+            .any(|record| record["code"] == "analyzer.invalid_syntax"),
+        "missing analyzer diagnostic in stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        diagnostics
+            .iter()
+            .all(|record| record.get("summary").is_none()),
+        "report leaked to stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test]
 async fn explicit_candidate_run_rejects_a_missing_candidate() {
     let project = tempfile::tempdir().unwrap();
     write_parallel_project(project.path());
