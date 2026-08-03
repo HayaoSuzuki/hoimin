@@ -21,6 +21,7 @@ from tools.focused_mutation_support.runner import CommandTimedOut
 from tools.focused_mutation import (
     Dependencies,
     Options,
+    SubprocessProbe,
     _candidate_package,
     _parser,
     main,
@@ -750,7 +751,25 @@ class FocusedMutationReportingTests(unittest.TestCase):
             ["git", "rev-parse", "--show-toplevel"],
         )
         self.assertFalse(run.call_args.kwargs["shell"])
+        self.assertEqual(run.call_args.kwargs["encoding"], "utf-8")
+        self.assertEqual(run.call_args.kwargs["errors"], "surrogateescape")
         self.assertEqual(workflow.call_args.kwargs["budget"].started, 100.0)
+
+    def test_git_probe_uses_utf8_independently_of_the_windows_locale(self) -> None:
+        repository = Path("C:/日本語のリポジトリ")
+        result = subprocess.CompletedProcess(
+            ["git"], 0, stdout="日本語.py\n", stderr=""
+        )
+        with mock.patch(
+            "tools.focused_mutation.subprocess.run", return_value=result
+        ) as run:
+            output = SubprocessProbe(repository).text(
+                ["git", "status", "--porcelain=v1", "-z"], 12.0
+            )
+
+        self.assertEqual(output, "日本語.py\n")
+        self.assertEqual(run.call_args.kwargs["encoding"], "utf-8")
+        self.assertEqual(run.call_args.kwargs["errors"], "surrogateescape")
 
     def test_initial_repository_validation_timeout_exits_two(self) -> None:
         with (
