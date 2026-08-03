@@ -381,17 +381,21 @@ impl WorkspacePlan {
             return Err(error);
         }
 
-        WorkerWorkspace::from_materialized(
-            temp,
-            root,
-            self.original_root.clone(),
-            self.options.clone(),
-            self.manifest.clone(),
-            Arc::clone(&self.snapshot),
-            Arc::clone(&self.allowance),
-            Arc::clone(&self.state),
-            worker,
+        finish_materialization(
+            &self.allowance,
             charged,
+            WorkerWorkspace::from_materialized(
+                temp,
+                root,
+                self.original_root.clone(),
+                self.options.clone(),
+                self.manifest.clone(),
+                Arc::clone(&self.snapshot),
+                Arc::clone(&self.allowance),
+                Arc::clone(&self.state),
+                worker,
+                charged,
+            ),
         )
     }
 
@@ -422,6 +426,17 @@ impl WorkspacePlan {
         self.allowance.release(charged);
         result
     }
+}
+
+fn finish_materialization<T>(
+    allowance: &CopyAllowance,
+    charged: u64,
+    result: Result<T, WorkspaceError>,
+) -> Result<T, WorkspaceError> {
+    if result.is_err() {
+        allowance.release(charged);
+    }
+    result
 }
 
 fn create_disk_snapshot(
@@ -495,6 +510,35 @@ mod tests {
     use crate::workspace::ManifestEntry;
 
     use super::*;
+
+    #[test]
+    fn failed_worker_finalization_releases_its_copy_charge() {
+        let allowance = CopyAllowance {
+            granted: AtomicU64::new(8),
+            charged: AtomicU64::new(0),
+        };
+        allowance.charge(5).unwrap();
+        let expected = WorkspaceError::NonUtf8Path;
+
+        let result = finish_materialization::<()>(&allowance, 5, Err(expected.clone()));
+
+        assert_eq!(result, Err(expected));
+        assert_eq!(allowance.charged(), 0);
+    }
+
+    #[test]
+    fn successful_worker_finalization_transfers_its_copy_charge() {
+        let allowance = CopyAllowance {
+            granted: AtomicU64::new(8),
+            charged: AtomicU64::new(0),
+        };
+        allowance.charge(5).unwrap();
+
+        let result = finish_materialization(&allowance, 5, Ok("worker"));
+
+        assert_eq!(result, Ok("worker"));
+        assert_eq!(allowance.charged(), 5);
+    }
 
     #[cfg(windows)]
     #[test]
