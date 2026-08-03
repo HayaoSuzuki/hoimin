@@ -395,12 +395,144 @@ fn is_python(path: &Utf8Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::fmt::Write as _;
 
     use camino::Utf8PathBuf;
+    use hoimin_core::LineRange;
     use proptest::prelude::*;
 
-    use super::{decode_git_quoted, parse_binary_numstat};
+    use super::{decode_git_quoted, parse_binary_numstat, parse_diff};
+
+    #[derive(Clone, Debug)]
+    struct GeneratedHunk {
+        old_start: u32,
+        new_start: u32,
+        extra_lines: Vec<(bool, String)>,
+    }
+
+    impl GeneratedHunk {
+        fn old_len(&self) -> u32 {
+            let generated = self.extra_lines.iter().filter(|(added, _)| !added).count();
+            1 + u32::try_from(generated).expect("the generator emits at most five extra lines")
+        }
+
+        fn new_len(&self) -> u32 {
+            let generated = self.extra_lines.iter().filter(|(added, _)| *added).count();
+            3 + u32::try_from(generated).expect("the generator emits at most five extra lines")
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    struct GeneratedDiffSection {
+        destination: Utf8PathBuf,
+        hunks: Vec<GeneratedHunk>,
+    }
+
+    fn generated_diff_sections() -> impl Strategy<Value = Vec<GeneratedDiffSection>> {
+        let ordinary_line = prop::string::string_regex("[ -~]{0,24}").unwrap();
+        let hunk = (
+            1_u32..10_000,
+            1_u32..10_000,
+            prop::collection::vec((any::<bool>(), ordinary_line), 0..6),
+        )
+            .prop_map(|(old_start, new_start, extra_lines)| GeneratedHunk {
+                old_start,
+                new_start,
+                extra_lines,
+            });
+
+        prop::collection::vec(prop::collection::vec(hunk, 2..6), 1..5).prop_map(|sections| {
+            sections
+                .into_iter()
+                .enumerate()
+                .map(|(index, hunks)| GeneratedDiffSection {
+                    destination: Utf8PathBuf::from(format!("generated/case-{index}.py")),
+                    hunks,
+                })
+                .collect()
+        })
+    }
+
+    fn render_unified0_diff(sections: &[GeneratedDiffSection]) -> String {
+        let mut rendered = String::new();
+        for section in sections {
+            let path = section.destination.as_str();
+            let _ = writeln!(rendered, "diff --git a/{path} b/{path}");
+            let _ = writeln!(rendered, "--- a/{path}");
+            let _ = writeln!(rendered, "+++ b/{path}");
+            for hunk in &section.hunks {
+                let _ = writeln!(
+                    rendered,
+                    "@@ -{},{} +{},{} @@",
+                    hunk.old_start,
+                    hunk.old_len(),
+                    hunk.new_start,
+                    hunk.new_len()
+                );
+                // These source lines become patch lines that resemble every structural
+                // header which previously confused the parser.
+                rendered.push_str("+++ b/evil.py\n");
+                rendered.push_str("--- a/evil.py\n");
+                rendered.push_str("+@@ -1 +1 @@\n");
+                rendered.push_str("+Binary files a/x.py and b/y.py differ\n");
+                for (added, line) in &hunk.extra_lines {
+                    rendered.push(if *added { '+' } else { '-' });
+                    rendered.push_str(line);
+                    rendered.push('\n');
+                }
+            }
+        }
+        rendered
+    }
+
+    fn expected_ranges(sections: &[GeneratedDiffSection]) -> BTreeMap<Utf8PathBuf, Vec<LineRange>> {
+        sections
+            .iter()
+            .map(|section| {
+                let ranges = section
+                    .hunks
+                    .iter()
+                    .map(|hunk| LineRange {
+                        start: hunk.new_start,
+                        end: hunk.new_start + hunk.new_len() - 1,
+                    })
+                    .collect();
+                (section.destination.clone(), ranges)
+            })
+            .collect()
+    }
+
+    fn arbitrary_representable_utf8_git_path() -> impl Strategy<Value = String> {
+        prop::collection::vec(
+            any::<char>().prop_filter("Git paths cannot contain NUL", |ch| *ch != '\0'),
+            0..24,
+        )
+        .prop_map(|prefix| {
+            let mut path = prefix.into_iter().collect::<String>();
+            path.push_str("/space tab\tquote\"slash\\snowman-雪.py");
+            path
+        })
+    }
+
+    fn git_c_quote(path: &str) -> String {
+        let mut quoted = String::from("\"");
+        for byte in path.bytes() {
+            match byte {
+                b'\\' => quoted.push_str("\\\\"),
+                b'"' => quoted.push_str("\\\""),
+                b'\t' => quoted.push_str("\\t"),
+                b'\n' => quoted.push_str("\\n"),
+                b'\r' => quoted.push_str("\\r"),
+                0x20..=0x7e => quoted.push(char::from(byte)),
+                _ => {
+                    let _ = write!(quoted, "\\{byte:03o}");
+                }
+            }
+        }
+        quoted.push('"');
+        quoted
+    }
 
     #[test]
     fn quoted_path_accepts_standard_control_escapes() {
@@ -431,6 +563,28 @@ mod tests {
     }
 
     proptest! {
+        #[test]
+        fn generated_hostile_zero_context_diffs_match_ranges(
+            sections in generated_diff_sections(),
+        ) {
+            let rendered = render_unified0_diff(&sections);
+            let expected = expected_ranges(&sections);
+            let mut changed = BTreeMap::new();
+            let mut excluded = BTreeSet::new();
+
+            parse_diff(rendered.as_bytes(), &mut changed, &mut excluded)?;
+
+            prop_assert_eq!(changed, expected);
+            prop_assert!(excluded.is_empty());
+        }
+
+        #[test]
+        fn representable_utf8_git_c_quote_round_trips(
+            path in arbitrary_representable_utf8_git_path(),
+        ) {
+            prop_assert_eq!(decode_git_quoted(&git_c_quote(&path))?, path);
+        }
+
         #[test]
         fn quoted_path_decoding_is_total(path in any::<String>()) {
             let quoted = format!("\"{path}\"");
