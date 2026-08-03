@@ -24,6 +24,15 @@ pub struct WorkspaceManifest {
 }
 
 impl WorkspaceManifest {
+    #[cfg(all(test, windows))]
+    pub(crate) fn from_entries_for_test(entries: Vec<ManifestEntry>) -> Self {
+        let logical_bytes = entries.iter().map(|entry| entry.size).sum();
+        Self {
+            entries,
+            logical_bytes,
+        }
+    }
+
     #[must_use]
     pub fn entries(&self) -> &[ManifestEntry] {
         &self.entries

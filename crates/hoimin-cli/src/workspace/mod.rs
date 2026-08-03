@@ -125,6 +125,8 @@ pub enum WorkspaceError {
     WorkerMissing { worker: u32 },
     #[error("workspace path is not a normalized root-relative path: {path}")]
     InvalidPath { path: Utf8PathBuf },
+    #[error("workspace snapshot path collides on the destination filesystem: {path}")]
+    SnapshotPathCollision { path: Utf8PathBuf },
     #[error("workspace tree depth exceeds limit {limit}: {path}")]
     TreeDepthExceeded { path: Utf8PathBuf, limit: usize },
     #[error("workspace plan state was poisoned")]
@@ -178,6 +180,7 @@ impl WorkspaceError {
             | Self::MutationOriginalMismatch { .. } => "workspace.mutation.invalid",
             Self::InvalidGlob(_) => "workspace.glob.invalid",
             Self::InvalidPath { .. } => "workspace.path.invalid",
+            Self::SnapshotPathCollision { .. } => "workspace.path.collision",
             Self::TreeDepthExceeded { .. } => "workspace.path.depth",
             _ => "workspace.io",
         }
