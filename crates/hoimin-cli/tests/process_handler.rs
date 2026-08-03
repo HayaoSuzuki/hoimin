@@ -359,6 +359,136 @@ mod cgroup_v2 {
     }
 
     #[tokio::test]
+    async fn abnormal_runtime_root_is_classified_and_cleaned_within_six_seconds() {
+        let output = tempfile::tempdir().unwrap();
+        let output_dir = Utf8Path::from_path(output.path()).unwrap();
+        let Some(handler) = hard_handler(output_dir, 512 * 1024 * 1024, 16) else {
+            return;
+        };
+        let ready_file = output_dir.join("aborting-root.ready");
+        let code = "import os,pathlib,signal,sys; ready=pathlib.Path(sys.argv[1]); pending=ready.with_suffix('.pending'); pending.write_text(str(os.getpid())); os.replace(pending,ready); os.kill(os.getpid(),signal.SIGABRT)";
+        let started = Instant::now();
+
+        let (result, close) = tokio::time::timeout(Duration::from_secs(6), async {
+            let result = handler
+                .handle(RunProcess {
+                    id: EffectId(208),
+                    worker: None,
+                    run_id: None,
+                    mutant_id: None,
+                    argv: vec![
+                        python_executable(),
+                        utf8_arg("-c"),
+                        utf8_arg(code),
+                        native_arg(ready_file.as_std_path().as_os_str()),
+                    ],
+                    cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
+                    limits: limits(Duration::from_secs(5), 64),
+                })
+                .await;
+            let close = handler.close();
+            (result, close)
+        })
+        .await
+        .expect("abnormal root handling and cgroup cleanup exceeded six seconds");
+
+        assert!(started.elapsed() < Duration::from_secs(6));
+        assert!(
+            ready_file.exists(),
+            "runtime target never published readiness"
+        );
+        assert_eq!(
+            result.unwrap().termination,
+            ProcessTermination::Exit(128 + libc::SIGABRT)
+        );
+        close.unwrap();
+    }
+
+    #[tokio::test]
+    async fn exited_root_is_observed_before_its_descendant_is_cleaned() {
+        let output = tempfile::tempdir().unwrap();
+        let output_dir = Utf8Path::from_path(output.path()).unwrap();
+        let capabilities = probe_linux_cgroup_with_launcher(
+            &hard_run_limits(512 * 1024 * 1024, 16),
+            OsString::from(env!("CARGO_BIN_EXE_hoimin")),
+        );
+        let backend = match capabilities {
+            CgroupCapabilities::Available(backend) => backend,
+            CgroupCapabilities::Unavailable(reason) => {
+                eprintln!("SKIP: Linux cgroup v2 hard-limit capability unavailable: {reason}");
+                return;
+            }
+            CgroupCapabilities::CleanupPending(pending) => {
+                panic!(
+                    "Linux cgroup probe cleanup remained pending: {}",
+                    pending.reason()
+                )
+            }
+        };
+        let run_path = backend.run_cgroup_path_for_tests();
+        let handler = ProcessHandler::new(ResourceBackend::LinuxHard(backend), output_dir.into());
+        let root_pid_file = output_dir.join("exiting-root.pid");
+        let descendant_pid_file = output_dir.join("persistent-descendant.pid");
+        let release_file = output_dir.join("release-root");
+        let root_guard = FixtureChildGuard::new(root_pid_file.clone());
+        let descendant_guard = FixtureChildGuard::new(descendant_pid_file.clone());
+        let code = "import os,pathlib,subprocess,sys,time; root=pathlib.Path(sys.argv[1]); descendant=pathlib.Path(sys.argv[2]); release=pathlib.Path(sys.argv[3]); child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)'],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True); pending=descendant.with_suffix('.pending'); pending.write_text(str(child.pid)); os.replace(pending,descendant); pending=root.with_suffix('.pending'); pending.write_text(str(os.getpid())); os.replace(pending,root);\nwhile not release.exists(): time.sleep(0.005)";
+        let started = Instant::now();
+
+        tokio::time::timeout(Duration::from_secs(6), async {
+            let handle = handler.handle(RunProcess {
+                id: EffectId(209),
+                worker: None,
+                run_id: None,
+                mutant_id: None,
+                argv: vec![
+                    python_executable(),
+                    utf8_arg("-c"),
+                    utf8_arg(code),
+                    native_arg(root_pid_file.as_std_path().as_os_str()),
+                    native_arg(descendant_pid_file.as_std_path().as_os_str()),
+                    native_arg(release_file.as_std_path().as_os_str()),
+                ],
+                cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
+                limits: limits(Duration::from_secs(5), 64),
+            });
+            tokio::pin!(handle);
+
+            let (root_pid, descendant_pid) = loop {
+                if let (Some(root_pid), Some(descendant_pid)) =
+                    (root_guard.pid(), descendant_guard.pid())
+                {
+                    break (root_pid, descendant_pid);
+                }
+                tokio::select! {
+                    result = &mut handle => panic!("root completed before publishing fixture PIDs: {result:?}"),
+                    () = tokio::time::sleep(Duration::from_millis(5)) => {}
+                }
+            };
+            fs::write(&release_file, b"exit").unwrap();
+
+            assert!(
+                wait_until_process_is_zombie(root_pid).await,
+                "runtime root did not reach an observed exited state"
+            );
+            assert!(
+                process_exists(descendant_pid),
+                "descendant was not alive after the root exit was observed"
+            );
+
+            let result = (&mut handle).await;
+            assert_eq!(result.unwrap().termination, ProcessTermination::Exit(0));
+            assert!(wait_until_process_stops(descendant_pid).await);
+            handler.close().unwrap();
+            assert!(!process_exists(descendant_pid));
+            assert!(!run_path.exists());
+        })
+        .await
+        .expect("root-before-descendant handling and cgroup cleanup exceeded six seconds");
+        assert!(started.elapsed() < Duration::from_secs(6));
+    }
+
+    #[tokio::test]
     async fn run_cgroup_classifies_concurrent_aggregate_memory_and_process_limits() {
         let memory_output = tempfile::tempdir().unwrap();
         let Some(memory_handler) = hard_handler(
@@ -498,6 +628,25 @@ async fn wait_until_process_stops(pid: u32) -> bool {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     !process_exists(pid)
+}
+
+#[cfg(target_os = "linux")]
+async fn wait_until_process_is_zombie(pid: u32) -> bool {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    while tokio::time::Instant::now() < deadline {
+        if fs::read_to_string(format!("/proc/{pid}/stat"))
+            .ok()
+            .and_then(|stat| {
+                stat.rsplit_once(") ")
+                    .map(|(_, status)| status.starts_with('Z'))
+            })
+            .unwrap_or(false)
+        {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    false
 }
 
 mod portable {
