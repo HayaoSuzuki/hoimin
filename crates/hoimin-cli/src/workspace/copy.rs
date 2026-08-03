@@ -491,6 +491,9 @@ mod tests {
 
     use hoimin_core::{BudgetLedger, RunBudgets, reserve_workspace_copy};
 
+    #[cfg(windows)]
+    use crate::workspace::ManifestEntry;
+
     use super::*;
 
     #[cfg(windows)]
