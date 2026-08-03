@@ -1,15 +1,421 @@
+use std::collections::HashSet;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 
 use hoimin_cli::session::SessionHandler;
 use hoimin_core::{
-    BeginSession, ByteSpan, EffectFailure, EffectId, FinishSession, LoadSession,
+    BeginSession, ByteSpan, EffectFailed, EffectFailure, EffectId, FinishSession, LoadSession,
     LookupStoredResult, MutantResult, MutationCandidate, MutationStatus, OutputSpoolRef,
-    PersistResult, ProcessTermination, ResourceMode, ResumeDecision, RunFingerprint, resume_policy,
+    PersistResult, ProcessTermination, ResourceMode, ResultPersisted, ResumeDecision,
+    RunFingerprint, SessionFinished, SessionLoaded, SessionResumeRef, SessionStarted, StoredResult,
+    StoredResultLoaded, resume_policy,
 };
 use rusqlite::{Connection, OpenFlags};
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum ContendedOperation {
+    Begin,
+    Persist,
+    Lookup,
+    Finish,
+    Load,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum HeldLock {
+    BeginImmediate,
+    ReadTransaction,
+}
+
+const CELLS: [(HeldLock, ContendedOperation); 10] = [
+    (HeldLock::BeginImmediate, ContendedOperation::Begin),
+    (HeldLock::BeginImmediate, ContendedOperation::Persist),
+    (HeldLock::BeginImmediate, ContendedOperation::Lookup),
+    (HeldLock::BeginImmediate, ContendedOperation::Finish),
+    (HeldLock::BeginImmediate, ContendedOperation::Load),
+    (HeldLock::ReadTransaction, ContendedOperation::Begin),
+    (HeldLock::ReadTransaction, ContendedOperation::Persist),
+    (HeldLock::ReadTransaction, ContendedOperation::Lookup),
+    (HeldLock::ReadTransaction, ContendedOperation::Finish),
+    (HeldLock::ReadTransaction, ContendedOperation::Load),
+];
+
+#[derive(Debug)]
+enum ContendedOutcome {
+    Begin(Result<SessionStarted, EffectFailed>),
+    Persist(Result<ResultPersisted, EffectFailed>),
+    Lookup(Result<StoredResultLoaded, EffectFailed>),
+    Finish(Result<SessionFinished, EffectFailed>),
+    Load(Result<SessionLoaded, EffectFailed>),
+}
+
+struct Blocker {
+    established: Receiver<Result<(), String>>,
+    release: Sender<()>,
+    released: Receiver<Result<(), String>>,
+    thread: thread::JoinHandle<()>,
+}
+
+struct OperationTask {
+    dispatched: Receiver<()>,
+    outcome: Receiver<ContendedOutcome>,
+    thread: thread::JoinHandle<()>,
+}
+
+#[test]
+fn session_operations_complete_under_contention_matrix() {
+    let mut visited = HashSet::new();
+    let mut failures = Vec::new();
+
+    for (index, cell) in CELLS.into_iter().enumerate() {
+        visited.insert(cell);
+        if let Err(error) = run_contention_cell(index, cell) {
+            failures.push(format!("{cell:?}: {error}"));
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "session contention matrix failures:\n{}",
+        failures.join("\n")
+    );
+    assert_eq!(visited.len(), CELLS.len(), "not every matrix cell ran");
+    assert_eq!(
+        visited,
+        CELLS.into_iter().collect(),
+        "visited matrix cells differ from CELLS"
+    );
+}
+
+fn run_contention_cell(
+    index: usize,
+    (lock, operation): (HeldLock, ContendedOperation),
+) -> Result<(), String> {
+    const READY_TIMEOUT: Duration = Duration::from_secs(1);
+    const PRE_RELEASE_WINDOW: Duration = Duration::from_millis(250);
+    const COMPLETION_TIMEOUT: Duration = Duration::from_secs(6);
+
+    let temp = tempfile::tempdir().map_err(|error| error.to_string())?;
+    let path = temp.path().join("sessions.sqlite3");
+    let mut handler = SessionHandler::open(&path).map_err(|error| error.to_string())?;
+    let seed_id = 100 + index as u64 * 10;
+    let operation_id = EffectId(seed_id + 9);
+    let run_id = format!("contended-run-{index}");
+    let mutant_id = format!("contended-mutant-{index}");
+
+    seed_contention_cell(&mut handler, operation, seed_id, &run_id, &mutant_id)?;
+
+    let blocker = await_blocker_establishment(spawn_blocker(path.clone(), lock))?;
+
+    let OperationTask {
+        dispatched: dispatched_rx,
+        outcome: outcome_rx,
+        thread: operation_thread,
+    } = spawn_contended_operation(handler, operation, operation_id, &run_id, &mutant_id);
+
+    let dispatch_started = Instant::now();
+    if let Err(error) = dispatched_rx.recv_timeout(READY_TIMEOUT) {
+        drop(dispatched_rx);
+        let release = blocker.release.send(());
+        let released = blocker.released.recv_timeout(READY_TIMEOUT);
+        let operation_cleanup = join_finished_thread(operation_thread, "operation");
+        let blocker_cleanup = join_finished_thread(blocker.thread, "blocker");
+        return Err(format!(
+            "operation dispatch signal failed: {error}; \
+             release={release:?}; released={released:?}; \
+             operation_cleanup={operation_cleanup:?}; blocker_cleanup={blocker_cleanup:?}"
+        ));
+    }
+
+    let must_still_be_pending = lock == HeldLock::BeginImmediate
+        && matches!(
+            operation,
+            ContendedOperation::Begin | ContendedOperation::Persist | ContendedOperation::Finish
+        );
+    let mut pre_release_failure = None;
+    let mut outcome = match outcome_rx.recv_timeout(PRE_RELEASE_WINDOW) {
+        Ok(outcome) if must_still_be_pending => {
+            pre_release_failure = Some(format!(
+                "operation was not pending before BEGIN IMMEDIATE release: {outcome:?}"
+            ));
+            Some(outcome)
+        }
+        Ok(outcome) => Some(outcome),
+        Err(RecvTimeoutError::Timeout) => None,
+        Err(RecvTimeoutError::Disconnected) => {
+            pre_release_failure = Some("operation channel disconnected before release".to_owned());
+            None
+        }
+    };
+
+    let release_elapsed = dispatch_started.elapsed();
+    let release_deadline_failure = (release_elapsed > READY_TIMEOUT).then(|| {
+        format!("blocker was held {release_elapsed:?} after dispatch, exceeding 1 second")
+    });
+    let release_failure = blocker
+        .release
+        .send(())
+        .err()
+        .map(|error| format!("blocker release signal failed: {error}"));
+    let release_observation_failure = match blocker.released.recv_timeout(READY_TIMEOUT) {
+        Ok(Ok(())) => None,
+        Ok(Err(error)) => Some(error),
+        Err(error) => Some(format!("blocker released signal failed: {error}")),
+    };
+
+    let mut completion_failure = None;
+    if outcome.is_none() {
+        let remaining = COMPLETION_TIMEOUT.saturating_sub(dispatch_started.elapsed());
+        match outcome_rx.recv_timeout(remaining) {
+            Ok(received) => outcome = Some(received),
+            Err(error) => {
+                completion_failure = Some(format!(
+                    "operation did not complete within 6 seconds: {error}"
+                ));
+                if let Ok(received) = outcome_rx.recv_timeout(READY_TIMEOUT) {
+                    outcome = Some(received);
+                }
+            }
+        }
+    }
+
+    let operation_join_failure = join_finished_thread(operation_thread, "operation").err();
+    let blocker_join_failure = join_finished_thread(blocker.thread, "blocker").err();
+
+    if let Some(error) = pre_release_failure
+        .or(release_deadline_failure)
+        .or(release_failure)
+        .or(release_observation_failure)
+        .or(completion_failure)
+        .or(operation_join_failure)
+        .or(blocker_join_failure)
+    {
+        return Err(error);
+    }
+    assert_exact_outcome(
+        outcome.expect("outcome was populated above"),
+        operation,
+        operation_id,
+        &run_id,
+        &mutant_id,
+    )
+}
+
+fn await_blocker_establishment(blocker: Blocker) -> Result<Blocker, String> {
+    match blocker.established.recv_timeout(Duration::from_secs(1)) {
+        Ok(Ok(())) => Ok(blocker),
+        Ok(Err(error)) => cleanup_failed_blocker(blocker, error),
+        Err(error) => cleanup_failed_blocker(
+            blocker,
+            format!("blocker establishment signal failed: {error}"),
+        ),
+    }
+}
+
+fn seed_contention_cell(
+    handler: &mut SessionHandler,
+    operation: ContendedOperation,
+    seed_id: u64,
+    run_id: &str,
+    mutant_id: &str,
+) -> Result<(), String> {
+    match operation {
+        ContendedOperation::Begin => Ok(()),
+        ContendedOperation::Persist | ContendedOperation::Finish | ContendedOperation::Load => {
+            handler
+                .begin(begin_request(seed_id, run_id))
+                .map(|_| ())
+                .map_err(|error| format!("seed run failed: {error:?}"))
+        }
+        ContendedOperation::Lookup => {
+            handler
+                .begin(begin_request(seed_id, run_id))
+                .map_err(|error| format!("seed run failed: {error:?}"))?;
+            handler
+                .persist(&persist_request(seed_id + 1, run_id, mutant_id))
+                .map(|_| ())
+                .map_err(|error| format!("seed result failed: {error:?}"))
+        }
+    }
+}
+
+fn spawn_contended_operation(
+    mut handler: SessionHandler,
+    operation: ContendedOperation,
+    id: EffectId,
+    run_id: &str,
+    mutant_id: &str,
+) -> OperationTask {
+    let (dispatched_tx, dispatched) = mpsc::sync_channel(0);
+    let (outcome_tx, outcome) = mpsc::sync_channel(1);
+    let run_id = run_id.to_owned();
+    let mutant_id = mutant_id.to_owned();
+    let thread = thread::spawn(move || {
+        if dispatched_tx.send(()).is_err() {
+            return;
+        }
+        let actual = match operation {
+            ContendedOperation::Begin => {
+                ContendedOutcome::Begin(handler.begin(begin_request(id.0, &run_id)))
+            }
+            ContendedOperation::Persist => ContendedOutcome::Persist(
+                handler.persist(&persist_request(id.0, &run_id, &mutant_id)),
+            ),
+            ContendedOperation::Lookup => {
+                ContendedOutcome::Lookup(handler.lookup(&lookup_request(id.0, &run_id, &mutant_id)))
+            }
+            ContendedOperation::Finish => {
+                ContendedOutcome::Finish(handler.finish(finish_request(id.0, &run_id)))
+            }
+            ContendedOperation::Load => ContendedOutcome::Load(handler.load(&LoadSession {
+                id,
+                fingerprint: RunFingerprint::from_bytes([1; 32]),
+            })),
+        };
+        let _ = outcome_tx.send(actual);
+    });
+    OperationTask {
+        dispatched,
+        outcome,
+        thread,
+    }
+}
+
+fn cleanup_failed_blocker<T>(blocker: Blocker, error: String) -> Result<T, String> {
+    drop(blocker.release);
+    let released = blocker.released.recv_timeout(Duration::from_secs(3));
+    match join_finished_thread(blocker.thread, "blocker") {
+        Ok(()) => Err(error),
+        Err(cleanup) => Err(format!("{error}; {cleanup}; released={released:?}")),
+    }
+}
+
+fn join_finished_thread(thread: thread::JoinHandle<()>, name: &str) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while !thread.is_finished() && Instant::now() < deadline {
+        thread::yield_now();
+    }
+    if !thread.is_finished() {
+        return Err(format!("{name} thread remained live after bounded cleanup"));
+    }
+    match thread.join() {
+        Ok(()) => Ok(()),
+        Err(panic) => Err(format!("{name} panicked: {panic:?}")),
+    }
+}
+
+fn spawn_blocker(path: PathBuf, lock: HeldLock) -> Blocker {
+    let (established_tx, established) = mpsc::sync_channel(1);
+    let (release, release_rx) = mpsc::channel();
+    let (released_tx, released) = mpsc::sync_channel(1);
+    let thread = thread::spawn(move || {
+        let connection = match Connection::open(path) {
+            Ok(connection) => connection,
+            Err(error) => {
+                let _ = established_tx.send(Err(format!("open blocker failed: {error}")));
+                return;
+            }
+        };
+        let begin = match lock {
+            HeldLock::BeginImmediate => connection.execute_batch("BEGIN IMMEDIATE"),
+            HeldLock::ReadTransaction => {
+                connection.execute_batch("BEGIN; SELECT count(*) FROM runs;")
+            }
+        };
+        if let Err(error) = begin {
+            let _ = established_tx.send(Err(format!("establish {lock:?} failed: {error}")));
+            return;
+        }
+        if established_tx.send(Ok(())).is_err() {
+            let _ = connection.execute_batch("ROLLBACK");
+            return;
+        }
+
+        let release_result = match release_rx.recv_timeout(Duration::from_secs(2)) {
+            Ok(()) => connection
+                .execute_batch("ROLLBACK")
+                .map_err(|error| format!("release {lock:?} failed: {error}")),
+            Err(error) => {
+                let rollback = connection.execute_batch("ROLLBACK");
+                Err(format!(
+                    "release signal for {lock:?} failed: {error}; rollback={rollback:?}"
+                ))
+            }
+        };
+        let _ = released_tx.send(release_result);
+    });
+
+    Blocker {
+        established,
+        release,
+        released,
+        thread,
+    }
+}
+
+fn assert_exact_outcome(
+    actual: ContendedOutcome,
+    operation: ContendedOperation,
+    id: EffectId,
+    run_id: &str,
+    mutant_id: &str,
+) -> Result<(), String> {
+    let expected_mismatch = match (operation, actual) {
+        (ContendedOperation::Begin, ContendedOutcome::Begin(Ok(actual))) => {
+            let expected = SessionStarted {
+                id,
+                run_id: run_id.to_owned(),
+            };
+            (actual != expected).then(|| format!("expected {expected:?}, got {actual:?}"))
+        }
+        (ContendedOperation::Persist, ContendedOutcome::Persist(Ok(actual))) => {
+            let expected = ResultPersisted {
+                id,
+                worker: 0,
+                run_id: run_id.to_owned(),
+                mutant_id: mutant_id.to_owned(),
+            };
+            (actual != expected).then(|| format!("expected {expected:?}, got {actual:?}"))
+        }
+        (ContendedOperation::Lookup, ContendedOutcome::Lookup(Ok(actual))) => {
+            let expected = StoredResultLoaded {
+                id,
+                worker: 0,
+                result: Some(StoredResult {
+                    mutant_id: mutant_id.to_owned(),
+                    status: MutationStatus::Killed,
+                }),
+            };
+            (actual != expected).then(|| format!("expected {expected:?}, got {actual:?}"))
+        }
+        (ContendedOperation::Finish, ContendedOutcome::Finish(Ok(actual))) => {
+            let expected = SessionFinished {
+                id,
+                run_id: run_id.to_owned(),
+                complete: true,
+            };
+            (actual != expected).then(|| format!("expected {expected:?}, got {actual:?}"))
+        }
+        (ContendedOperation::Load, ContendedOutcome::Load(Ok(actual))) => {
+            let expected = SessionLoaded {
+                id,
+                resume: Some(SessionResumeRef {
+                    run_id: run_id.to_owned(),
+                }),
+            };
+            (actual != expected).then(|| format!("expected {expected:?}, got {actual:?}"))
+        }
+        (_, unexpected) => Some(format!("unexpected typed outcome: {unexpected:?}")),
+    };
+    match expected_mismatch {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
 
 #[test]
 fn migrates_schema_enables_wal_and_echoes_typed_completion_events() {
