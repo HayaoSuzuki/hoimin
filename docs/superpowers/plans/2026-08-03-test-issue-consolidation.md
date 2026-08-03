@@ -121,7 +121,8 @@ For evidence-only closure, comment with both test links and close #155. Otherwis
 
 - [ ] **Step 1: Write the Unix first-signal test**
 
-Add a `#[cfg(unix)]` test whose terminal assertions are:
+Add a `#[cfg(unix)]` test that spawns the real binary in JSON mode, waits for
+the existing readiness files, sends SIGINT, and whose terminal assertions are:
 
 ```rust
 assert_eq!(status.code(), Some(130));
@@ -141,7 +142,10 @@ Expected: FAIL if the existing fixture cannot produce final JSON after the first
 
 - [ ] **Step 3: Reuse the existing process fixture without adding a production test API**
 
-Factor only test helpers needed to send one or two signals. Keep `second_sigint_forces_130_while_session_finish_is_blocked` intact.
+Factor only test helpers needed to prepare the same project and send one or
+two signals. The first-signal fixture uses readiness files rather than JSONL
+stdout so its final stdout remains one parseable JSON report. Keep
+`second_sigint_forces_130_while_session_finish_is_blocked` intact.
 
 - [ ] **Step 4: Verify both real-signal paths**
 
@@ -354,6 +358,10 @@ prop_assert_eq!(parse_diff(rendered.as_bytes())?, expected_changes);
 proptest!(|(quoted in arbitrary_quoted_git_path())| {
     let result = std::panic::catch_unwind(|| decode_git_quoted(&quoted));
     prop_assert!(result.is_ok());
+});
+
+proptest!(|(path in arbitrary_git_path_bytes())| {
+    prop_assert_eq!(decode_git_quoted(&git_c_quote(&path))?, path);
 });
 ```
 
