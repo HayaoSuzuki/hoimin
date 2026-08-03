@@ -527,6 +527,26 @@ mod portable {
     }
 
     #[tokio::test]
+    async fn truncated_output_retains_the_child_process_tail() {
+        let output = tempfile::tempdir().unwrap();
+        let handler = portable_handler(Utf8Path::from_path(output.path()).unwrap());
+        let request = run_python(
+            101,
+            "import sys; sys.stdout.buffer.write(b'HEAD-' + b'x' * 2000 + b'-TAIL'); sys.stdout.flush()",
+            limits(Duration::from_secs(5), 128),
+        );
+
+        let event = handler.handle(request).await.unwrap();
+        let retained = fs::read(handler.spool_path(&event.output).unwrap()).unwrap();
+
+        assert_eq!(retained.len(), 128);
+        assert!(retained.starts_with(b"\n[... hoimin output truncated ...]\n"));
+        assert!(retained.ends_with(b"-TAIL"));
+        assert_eq!(event.output.retained, 128);
+        assert_eq!(event.output.observed, 2010);
+    }
+
+    #[tokio::test]
     async fn drains_stdout_and_stderr_under_combined_cap() {
         let output = tempfile::tempdir().unwrap();
         let handler = portable_handler(Utf8Path::from_path(output.path()).unwrap());
