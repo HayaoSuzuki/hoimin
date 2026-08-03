@@ -107,7 +107,8 @@ Assert the second process and the eventual first-process cancellation exactly:
 
 ```rust
 assert_eq!(second.exit_code, 2);
-assert!(second.stdout.is_empty(), "{}", second.stdout);
+let second_document: serde_json::Value = serde_json::from_str(&second.stdout)?;
+assert_eq!(second_document["summary"]["complete"], false);
 assert!(second.stderr.contains("session.resume.active"), "{}", second.stderr);
 assert!(second.stderr.contains("active in another process"), "{}", second.stderr);
 send_sigint(first.id());

@@ -851,6 +851,106 @@ async fn fresh_session_and_sessionless_results_preserve_the_same_termination() {
     );
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn concurrent_real_cli_runs_refuse_live_session_ownership() {
+    let project = tempfile::tempdir().unwrap();
+    let coordinator = tempfile::tempdir().unwrap();
+    write_parallel_project(project.path());
+    let active = coordinator.path().join("active");
+    std::fs::create_dir(&active).unwrap();
+    let readiness = coordinator.path().join("ready");
+    let readiness_temp = coordinator.path().join("ready.tmp");
+    let duplicate_execution = coordinator.path().join("duplicate-execution");
+    let session = coordinator.path().join("session.sqlite3");
+    let original = "return a + b + c + d + e";
+    let mutation_command = format!(
+        "from pathlib import Path; import os,time; active=Path({:?},str(os.getpid())); active.write_text('running'); ready=Path({:?}); ready_temp=Path({:?}); duplicate=Path({:?})\ntry:\n    if ready.exists(): duplicate.write_text(str(os.getpid()))\n    else:\n        ready_temp.write_text(str(os.getpid()))\n        ready_temp.replace(ready)\n        while True: time.sleep(60)\nfinally:\n    active.unlink(missing_ok=True)",
+        active.to_string_lossy(),
+        readiness.to_string_lossy(),
+        readiness_temp.to_string_lossy(),
+        duplicate_execution.to_string_lossy(),
+    );
+    let command = format!(
+        "from pathlib import Path; source=Path('src/calc.py').read_text(); exec({mutation_command:?}) if {original:?} not in source else exec('from src.calc import total; assert total(1,2,3,4,5) == 15')",
+    );
+    let first_args = real_cli_session_args(project.path(), &session, false, &command);
+    let mut first = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+        .args(&first_args)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+
+    let outcome: Result<_, String> = async {
+        let incomplete_runs = wait_for_live_session_readiness(
+            &readiness,
+            &session,
+            &mut first,
+            Duration::from_secs(15),
+        )
+        .await?;
+        let second_args = real_cli_session_args(project.path(), &session, true, &command);
+        let output = tokio::time::timeout(
+            Duration::from_secs(15),
+            tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+                .args(&second_args)
+                .kill_on_drop(true)
+                .output(),
+        )
+        .await
+        .map_err(|_| "resuming hoimin process did not exit".to_owned())?
+        .map_err(|error| error.to_string())?;
+        let second = RealCliOutput {
+            exit_code: output
+                .status
+                .code()
+                .ok_or_else(|| "resuming hoimin process exited by signal".to_owned())?,
+            stdout: String::from_utf8(output.stdout).map_err(|error| error.to_string())?,
+            stderr: String::from_utf8(output.stderr).map_err(|error| error.to_string())?,
+        };
+        send_sigint(first.id())?;
+        let first_status = tokio::time::timeout(Duration::from_secs(15), first.wait())
+            .await
+            .map_err(|_| "first hoimin process did not exit after SIGINT".to_owned())?
+            .map_err(|error| error.to_string())?;
+        Ok((incomplete_runs, second, first_status))
+    }
+    .await;
+
+    let child_cleanup = reap_test_child(&mut first).await;
+    let process_cleanup = kill_fixture_processes(&active, &readiness).await;
+    if let Err(error) = child_cleanup.and(process_cleanup) {
+        panic!("test teardown failed: {error}; outcome={outcome:?}");
+    }
+    let (incomplete_runs, second, first_status) = outcome.unwrap_or_else(|error| {
+        panic!("session ownership scenario failed after successful teardown: {error}")
+    });
+
+    assert_eq!(incomplete_runs, 1);
+    assert_eq!(second.exit_code, 2);
+    let second_document: serde_json::Value =
+        serde_json::from_str(&second.stdout).expect("refused process must emit a JSON report");
+    assert_eq!(second_document["summary"]["complete"], false);
+    assert!(
+        second.stderr.contains("session.resume.active"),
+        "{}",
+        second.stderr
+    );
+    assert!(
+        second.stderr.contains("active in another process"),
+        "{}",
+        second.stderr
+    );
+    assert_eq!(first_status.code(), Some(130));
+    assert!(
+        !duplicate_execution.exists(),
+        "refused process must not execute the mutation command"
+    );
+    assert_live_session_database_integrity(&session);
+}
+
 #[tokio::test]
 async fn fingerprint_include_change_starts_a_distinct_session_run() {
     let project = tempfile::tempdir().unwrap();
@@ -1500,6 +1600,14 @@ struct FixtureRun {
     document: serde_json::Value,
 }
 
+#[cfg(unix)]
+#[derive(Debug)]
+struct RealCliOutput {
+    exit_code: i32,
+    stdout: String,
+    stderr: String,
+}
+
 #[derive(Clone, Default)]
 struct SharedBuffer(Arc<Mutex<Vec<u8>>>);
 
@@ -1777,6 +1885,84 @@ fn write_parallel_project(root: &Path) {
         "def total(a, b, c, d, e):\n    return a + b + c + d + e\n",
     )
     .unwrap();
+}
+
+#[cfg(unix)]
+fn real_cli_session_args(
+    root: &Path,
+    session: &Path,
+    resume: bool,
+    command: &str,
+) -> Vec<OsString> {
+    let mut args = vec![
+        OsString::from("run"),
+        OsString::from("--root"),
+        root.as_os_str().to_owned(),
+        OsString::from("--source"),
+        OsString::from("src"),
+        OsString::from("--file"),
+        OsString::from("src/calc.py"),
+        OsString::from("--jobs"),
+        OsString::from("1"),
+        OsString::from("--session"),
+        session.as_os_str().to_owned(),
+    ];
+    if resume {
+        args.push(OsString::from("--resume"));
+    }
+    args.extend([
+        OsString::from("--max-mutants"),
+        OsString::from("1"),
+        OsString::from("--format"),
+        OsString::from("json"),
+        OsString::from("--allow-best-effort-memory"),
+        OsString::from("--"),
+        python_executable().into_os_string(),
+        OsString::from("-c"),
+        OsString::from(command),
+    ]);
+    args
+}
+
+#[cfg(unix)]
+fn assert_live_session_database_integrity(session: &Path) {
+    let connection = rusqlite::Connection::open(session).unwrap();
+    let integrity: String = connection
+        .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(integrity, "ok");
+    {
+        let mut statement = connection.prepare("PRAGMA foreign_key_check").unwrap();
+        let mut rows = statement.query([]).unwrap();
+        assert!(rows.next().unwrap().is_none());
+    }
+    let run_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM runs", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(run_count, 1);
+    let run_id: String = connection
+        .query_row("SELECT run_id FROM runs", [], |row| row.get(0))
+        .unwrap();
+    let (result_count, distinct_mutants): (i64, i64) = connection
+        .query_row(
+            "SELECT COUNT(*), COUNT(DISTINCT mutant_id) FROM results WHERE run_id=?1",
+            [&run_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(result_count, distinct_mutants);
+    let invalid_candidate_joins: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM results r
+             WHERE r.run_id=?1 AND (
+                 SELECT COUNT(*) FROM candidates c
+                 WHERE c.run_id=r.run_id AND c.mutant_id=r.mutant_id
+             ) != 1",
+            [&run_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(invalid_candidate_joins, 0);
 }
 
 fn focused_profile_project() -> tempfile::TempDir {
@@ -2273,6 +2459,61 @@ async fn try_wait_for_descendant_process(
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
+}
+
+#[cfg(unix)]
+async fn wait_for_live_session_readiness(
+    marker: &Path,
+    session: &Path,
+    child: &mut tokio::process::Child,
+    timeout: Duration,
+) -> Result<i64, String> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
+            return Err(format!(
+                "first hoimin process exited before readiness: {status}"
+            ));
+        }
+        if marker.exists() {
+            let connection = rusqlite::Connection::open_with_flags(
+                session,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            )
+            .map_err(|error| error.to_string())?;
+            let (runs, incomplete): (i64, i64) = connection
+                .query_row(
+                    "SELECT COUNT(*), COALESCE(SUM(complete=0), 0) FROM runs",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .map_err(|error| error.to_string())?;
+            if runs != 1 || incomplete != 1 {
+                return Err(format!(
+                    "readiness observed with runs={runs}, incomplete={incomplete}"
+                ));
+            }
+            return Ok(incomplete);
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err("first hoimin process did not publish readiness".to_owned());
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+#[cfg(unix)]
+fn send_sigint(pid: Option<u32>) -> Result<(), String> {
+    let pid = pid.ok_or_else(|| "hoimin exited before SIGINT".to_owned())?;
+    let pid = i32::try_from(pid).map_err(|error| error.to_string())?;
+    // SAFETY: `pid` belongs to the live child spawned by this test.
+    if unsafe { libc::kill(pid, libc::SIGINT) } != 0 {
+        return Err(format!(
+            "SIGINT failed: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
