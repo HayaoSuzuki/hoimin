@@ -1,6 +1,12 @@
 use std::{
     num::NonZeroUsize,
     path::{Path, PathBuf},
+    process::Output,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
 };
 
 use camino::Utf8PathBuf;
@@ -13,6 +19,7 @@ use hoimin_core::{
     ResourceMode,
 };
 use serde_json::{Value, json};
+use tokio::io::AsyncReadExt;
 
 fn original_schema_v2_report() -> PathBuf {
     repo_root().join("crates/hoimin-cli/tests/fixtures/reports/schema-v2-original.json")
@@ -23,6 +30,196 @@ fn input_accepts_the_oldest_schema_v2_normalized_config() {
     let report = original_schema_v2_report();
 
     assert!(matches!(read_report(&report), Ok(InputReport::Usable(_))));
+}
+
+#[tokio::test]
+async fn real_run_reports_expose_exact_regression_through_progress() {
+    let project = tempfile::tempdir().unwrap();
+    let source = project.path().join("src");
+    std::fs::create_dir(&source).unwrap();
+    std::fs::write(
+        project.path().join("pyproject.toml"),
+        "[project]\nname = \"hoimin-progress-fixture\"\nversion = \"0.0.0\"\nrequires-python = \">=3.12\"\n",
+    )
+    .unwrap();
+    std::fs::write(source.join("__init__.py"), "").unwrap();
+    std::fs::write(
+        source.join("calc.py"),
+        "def add(left: int, right: int) -> int:\n    return left + right\n",
+    )
+    .unwrap();
+
+    let before_output = run_real_binary(
+        project.path(),
+        "from src.calc import add; assert add(2, 3) == 5",
+        Duration::from_secs(30),
+    )
+    .await;
+    assert_eq!(
+        before_output.status.code(),
+        Some(0),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&before_output.stdout),
+        String::from_utf8_lossy(&before_output.stderr)
+    );
+    let before_report: Value = serde_json::from_slice(&before_output.stdout).unwrap();
+    let before_mutants = before_report["mutants"].as_array().unwrap();
+    assert_eq!(before_mutants.len(), 1);
+    assert_eq!(before_mutants[0]["status"], "killed");
+
+    let after_output = run_real_binary(
+        project.path(),
+        "from src.calc import add; add(2, 3)",
+        Duration::from_secs(30),
+    )
+    .await;
+    assert_eq!(
+        after_output.status.code(),
+        Some(1),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&after_output.stdout),
+        String::from_utf8_lossy(&after_output.stderr)
+    );
+    let after_report: Value = serde_json::from_slice(&after_output.stdout).unwrap();
+    let after_mutants = after_report["mutants"].as_array().unwrap();
+    assert_eq!(after_mutants.len(), 1);
+    assert_eq!(after_mutants[0]["status"], "survived");
+    assert_eq!(
+        before_mutants[0]["candidate"]["id"],
+        after_mutants[0]["candidate"]["id"]
+    );
+
+    let before = project.path().join("before.json");
+    let after = project.path().join("after.json");
+    std::fs::write(&before, &before_output.stdout).unwrap();
+    std::fs::write(&after, &after_output.stdout).unwrap();
+
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
+    command
+        .args(["progress", "--format", "json"])
+        .arg(&before)
+        .arg(&after);
+    let output = bounded_output(&mut command, Duration::from_secs(30))
+        .await
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let progress: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(progress["latest"]["state"], "regressing");
+    assert_eq!(progress["comparisons"][0]["common"], 1);
+    assert_eq!(progress["comparisons"][0]["added"], 0);
+    assert_eq!(progress["comparisons"][0]["removed"], 0);
+    assert_eq!(progress["comparisons"][0]["improvements"], 0);
+    assert_eq!(progress["comparisons"][0]["regressions"], 1);
+    assert_eq!(progress["comparisons"][0]["previous_score"], 1.0);
+    assert_eq!(progress["comparisons"][0]["current_score"], 0.0);
+    assert_eq!(progress["comparisons"][0]["score_delta"], -1.0);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn real_run_timeout_reaps_the_supervised_process_tree() {
+    let project = tempfile::tempdir().unwrap();
+    let source = project.path().join("src");
+    std::fs::create_dir(&source).unwrap();
+    std::fs::write(
+        project.path().join("pyproject.toml"),
+        "[project]\nname = \"hoimin-progress-timeout-fixture\"\nversion = \"0.0.0\"\nrequires-python = \">=3.12\"\n",
+    )
+    .unwrap();
+    std::fs::write(source.join("__init__.py"), "").unwrap();
+    std::fs::write(
+        source.join("calc.py"),
+        "def add(left: int, right: int) -> int:\n    return left + right\n",
+    )
+    .unwrap();
+    let marker = project.path().join("process-tree");
+    let mutation_command = format!(
+        "import os,subprocess,sys,time; child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(10)']); Path({:?}).write_text(f'{{os.getpid()}} {{child.pid}}'); time.sleep(10)",
+        marker.to_string_lossy()
+    );
+    let test_command = format!(
+        "from pathlib import Path; source=Path('src/calc.py').read_text(); exec('from src.calc import add; assert add(2, 3) == 5') if 'return left + right' in source else exec({mutation_command:?})"
+    );
+    let mut command = real_binary_command(project.path(), &test_command);
+
+    let result = bounded_output(&mut command, Duration::from_secs(3)).await;
+    assert!(result.is_err(), "fixture must exercise timeout cleanup");
+    let (root_pid, descendant_pid) = wait_for_process_tree_marker(&marker).await;
+    let root_alive = unix_process_is_alive(root_pid);
+    let descendant_alive = unix_process_is_alive(descendant_pid);
+
+    force_kill_unix_process(root_pid);
+    force_kill_unix_process(descendant_pid);
+    wait_for_unix_process_to_stop(root_pid).await;
+    wait_for_unix_process_to_stop(descendant_pid).await;
+
+    assert!(
+        !root_alive,
+        "timed-out verifier process {root_pid} survived"
+    );
+    assert!(
+        !descendant_alive,
+        "timed-out verifier descendant {descendant_pid} survived"
+    );
+}
+
+#[tokio::test]
+async fn timed_out_pipe_reader_is_aborted_and_joined() {
+    struct DropFlag(Arc<AtomicBool>);
+
+    impl Drop for DropFlag {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    let dropped = Arc::new(AtomicBool::new(false));
+    let task_flag = Arc::clone(&dropped);
+    let reader = tokio::spawn(async move {
+        let _drop_flag = DropFlag(task_flag);
+        std::future::pending::<()>().await;
+        Ok(Vec::new())
+    });
+
+    let error = join_reader_with_timeout(reader, "fixture", Duration::from_millis(10))
+        .await
+        .unwrap_err();
+
+    assert!(error.contains("timed out draining real CLI fixture"));
+    assert!(
+        dropped.load(Ordering::SeqCst),
+        "reader task must be joined after abort"
+    );
+}
+
+#[test]
+fn timeout_diagnostic_retains_cleanup_and_both_reader_failures() {
+    let cleanup = CleanupOutcome {
+        status: None,
+        diagnostics: vec!["signal failed".to_owned(), "reap failed".to_owned()],
+    };
+
+    let diagnostic = cleanup_diagnostic(
+        "fixture timed out",
+        cleanup,
+        Err("stdout join failed".to_owned()),
+        Err("stderr join failed".to_owned()),
+    );
+
+    for expected in [
+        "fixture timed out",
+        "cleanup status=unreaped",
+        "signal failed",
+        "reap failed",
+        "stdout join failed",
+        "stderr join failed",
+    ] {
+        assert!(diagnostic.contains(expected), "{diagnostic}");
+    }
 }
 
 #[test]
@@ -1093,6 +1290,393 @@ async fn run_progress(reports: &[PathBuf], format: &str) -> (i32, Vec<u8>, Vec<u
     let mut stderr = Vec::new();
     let code = hoimin_cli::run_with_io(argv, &mut stdout, &mut stderr).await;
     (code, stdout, stderr)
+}
+
+async fn run_real_binary(project: &Path, test_command: &str, timeout: Duration) -> Output {
+    let mut command = real_binary_command(project, test_command);
+    bounded_output(&mut command, timeout).await.unwrap()
+}
+
+fn real_binary_command(project: &Path, test_command: &str) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
+    command
+        .arg("run")
+        .arg("--root")
+        .arg(project)
+        .arg("--source")
+        .arg("src")
+        .arg("--file")
+        .arg("src/calc.py")
+        .arg("--format")
+        .arg("json")
+        .arg("--operators")
+        .arg("binary_add_sub")
+        .arg("--max-mutants")
+        .arg("1")
+        .arg("--allow-best-effort-memory")
+        .arg("--")
+        .arg(python_executable())
+        .arg("-c")
+        .arg(test_command);
+    command
+}
+
+async fn bounded_output(
+    command: &mut tokio::process::Command,
+    timeout: Duration,
+) -> Result<Output, String> {
+    command
+        .kill_on_drop(true)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = command.spawn().map_err(|error| error.to_string())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "real CLI stdout was not piped".to_owned())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "real CLI stderr was not piped".to_owned())?;
+    let stdout = tokio::spawn(read_all(stdout));
+    let stderr = tokio::spawn(read_all(stderr));
+
+    let status = match tokio::time::timeout(timeout, child.wait()).await {
+        Ok(Ok(status)) => status,
+        Ok(Err(error)) => {
+            let cleanup = cleanup_timed_out_child(&mut child).await;
+            let stdout = join_reader(stdout, "stdout").await;
+            let stderr = join_reader(stderr, "stderr").await;
+            return Err(cleanup_diagnostic(
+                &format!("wait for real CLI child failed: {error}"),
+                cleanup,
+                stdout,
+                stderr,
+            ));
+        }
+        Err(_) => {
+            let cleanup = cleanup_timed_out_child(&mut child).await;
+            let stdout = join_reader(stdout, "stdout").await;
+            let stderr = join_reader(stderr, "stderr").await;
+            return Err(cleanup_diagnostic(
+                "real CLI command timed out",
+                cleanup,
+                stdout,
+                stderr,
+            ));
+        }
+    };
+    let stdout = join_reader(stdout, "stdout").await;
+    let stderr = join_reader(stderr, "stderr").await;
+    match (stdout, stderr) {
+        (Ok(stdout), Ok(stderr)) => Ok(Output {
+            status,
+            stdout,
+            stderr,
+        }),
+        (stdout, stderr) => Err(reader_diagnostic(stdout, stderr)),
+    }
+}
+
+async fn read_all<R: tokio::io::AsyncRead + Unpin>(mut reader: R) -> std::io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    reader.read_to_end(&mut bytes).await?;
+    Ok(bytes)
+}
+
+async fn join_reader(
+    reader: tokio::task::JoinHandle<std::io::Result<Vec<u8>>>,
+    name: &str,
+) -> Result<Vec<u8>, String> {
+    join_reader_with_timeout(reader, name, Duration::from_secs(5)).await
+}
+
+async fn join_reader_with_timeout(
+    mut reader: tokio::task::JoinHandle<std::io::Result<Vec<u8>>>,
+    name: &str,
+    timeout: Duration,
+) -> Result<Vec<u8>, String> {
+    if let Ok(result) = tokio::time::timeout(timeout, &mut reader).await {
+        result
+            .map_err(|error| format!("join real CLI {name} reader: {error}"))?
+            .map_err(|error| format!("read real CLI {name}: {error}"))
+    } else {
+        reader.abort();
+        let join_error = match tokio::time::timeout(Duration::from_secs(1), &mut reader).await {
+            Ok(Err(error)) if error.is_cancelled() => None,
+            Ok(Ok(Ok(_))) => Some("reader completed after its abort request".to_owned()),
+            Ok(Ok(Err(error))) => Some(format!("reader failed after abort: {error}")),
+            Ok(Err(error)) => Some(format!("join reader after abort: {error}")),
+            Err(_) => Some("timed out joining reader after abort".to_owned()),
+        };
+        let mut message = format!(
+            "timed out draining real CLI {name}; reader aborted and bounded join attempted"
+        );
+        if let Some(error) = join_error {
+            message.push_str("; ");
+            message.push_str(&error);
+        }
+        Err(message)
+    }
+}
+
+#[derive(Default)]
+struct CleanupOutcome {
+    status: Option<std::process::ExitStatus>,
+    diagnostics: Vec<String>,
+}
+
+impl CleanupOutcome {
+    fn record(&mut self, result: Result<(), String>) {
+        if let Err(error) = result {
+            self.diagnostics.push(error);
+        }
+    }
+}
+
+#[cfg(unix)]
+async fn cleanup_timed_out_child(child: &mut tokio::process::Child) -> CleanupOutcome {
+    let mut outcome = CleanupOutcome::default();
+    if observe_child_exit(child, &mut outcome, "before first SIGINT") {
+        return outcome;
+    }
+    let signal = send_sigint_to_test_child(child);
+    outcome.record(signal);
+    if wait_for_child_exit(
+        child,
+        Duration::from_secs(5),
+        "after first SIGINT",
+        &mut outcome,
+    )
+    .await
+    {
+        return outcome;
+    }
+
+    if !observe_child_exit(child, &mut outcome, "before second SIGINT") {
+        let signal = send_sigint_to_test_child(child);
+        outcome.record(signal);
+    }
+    if wait_for_child_exit(
+        child,
+        Duration::from_secs(1),
+        "after second SIGINT",
+        &mut outcome,
+    )
+    .await
+    {
+        return outcome;
+    }
+
+    force_kill_and_reap(child, &mut outcome).await;
+    outcome
+}
+
+#[cfg(unix)]
+fn send_sigint_to_test_child(child: &tokio::process::Child) -> Result<(), String> {
+    let pid = child
+        .id()
+        .ok_or_else(|| "real CLI child exited before SIGINT".to_owned())?;
+    let pid = i32::try_from(pid).map_err(|error| error.to_string())?;
+    // SAFETY: the positive PID belongs to the retained child spawned by this test.
+    if unsafe { libc::kill(pid, libc::SIGINT) } != 0 {
+        return Err(format!(
+            "SIGINT real CLI child: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+async fn cleanup_timed_out_child(child: &mut tokio::process::Child) -> CleanupOutcome {
+    let mut outcome = CleanupOutcome::default();
+    if observe_child_exit(child, &mut outcome, "before taskkill") {
+        return outcome;
+    }
+    let mut taskkill_succeeded = false;
+    if let Some(pid) = child.id() {
+        let pid = pid.to_string();
+        let mut taskkill = tokio::process::Command::new("taskkill");
+        taskkill.args(["/PID", &pid, "/T", "/F"]).kill_on_drop(true);
+        match tokio::time::timeout(Duration::from_secs(5), taskkill.output()).await {
+            Ok(Ok(output)) if output.status.success() => taskkill_succeeded = true,
+            Ok(Ok(output)) => outcome.diagnostics.push(format!(
+                "taskkill real CLI process tree failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )),
+            Ok(Err(error)) => outcome
+                .diagnostics
+                .push(format!("start taskkill for real CLI process tree: {error}")),
+            Err(_) => outcome
+                .diagnostics
+                .push("timed out terminating real CLI Windows process tree".to_owned()),
+        }
+    } else {
+        outcome
+            .diagnostics
+            .push("real CLI child exited before process-tree cleanup".to_owned());
+    }
+    if taskkill_succeeded
+        && wait_for_child_exit(
+            child,
+            Duration::from_secs(5),
+            "after taskkill",
+            &mut outcome,
+        )
+        .await
+    {
+        return outcome;
+    }
+
+    force_kill_and_reap(child, &mut outcome).await;
+    outcome
+}
+
+fn observe_child_exit(
+    child: &mut tokio::process::Child,
+    outcome: &mut CleanupOutcome,
+    context: &str,
+) -> bool {
+    match child.try_wait() {
+        Ok(Some(status)) => {
+            outcome.status = Some(status);
+            true
+        }
+        Ok(None) => false,
+        Err(error) => {
+            outcome
+                .diagnostics
+                .push(format!("inspect real CLI child {context}: {error}"));
+            false
+        }
+    }
+}
+
+async fn wait_for_child_exit(
+    child: &mut tokio::process::Child,
+    timeout: Duration,
+    context: &str,
+    outcome: &mut CleanupOutcome,
+) -> bool {
+    match tokio::time::timeout(timeout, child.wait()).await {
+        Ok(Ok(status)) => {
+            outcome.status = Some(status);
+            true
+        }
+        Ok(Err(error)) => {
+            outcome
+                .diagnostics
+                .push(format!("wait for real CLI child {context}: {error}"));
+            false
+        }
+        Err(_) => {
+            outcome
+                .diagnostics
+                .push(format!("timed out waiting for real CLI child {context}"));
+            false
+        }
+    }
+}
+
+async fn force_kill_and_reap(child: &mut tokio::process::Child, outcome: &mut CleanupOutcome) {
+    if !observe_child_exit(child, outcome, "before final kill") {
+        let kill = child
+            .start_kill()
+            .map_err(|error| format!("force-kill real CLI child: {error}"));
+        outcome.record(kill);
+    }
+    if outcome.status.is_none() {
+        wait_for_child_exit(child, Duration::from_secs(5), "after final kill", outcome).await;
+    }
+}
+
+fn cleanup_diagnostic(
+    reason: &str,
+    cleanup: CleanupOutcome,
+    stdout: Result<Vec<u8>, String>,
+    stderr: Result<Vec<u8>, String>,
+) -> String {
+    let mut diagnostics = vec![format!(
+        "{reason}; cleanup status={}",
+        cleanup
+            .status
+            .map_or_else(|| "unreaped".to_owned(), |status| status.to_string())
+    )];
+    diagnostics.extend(cleanup.diagnostics);
+    match stdout {
+        Ok(stdout) => diagnostics.push(format!("stdout={}", String::from_utf8_lossy(&stdout))),
+        Err(error) => diagnostics.push(error),
+    }
+    match stderr {
+        Ok(stderr) => diagnostics.push(format!("stderr={}", String::from_utf8_lossy(&stderr))),
+        Err(error) => diagnostics.push(error),
+    }
+    diagnostics.join("; ")
+}
+
+fn reader_diagnostic(stdout: Result<Vec<u8>, String>, stderr: Result<Vec<u8>, String>) -> String {
+    [stdout.err(), stderr.err()]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+#[cfg(unix)]
+async fn wait_for_process_tree_marker(marker: &Path) -> (i32, i32) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        if let Ok(pids) = std::fs::read_to_string(marker) {
+            let mut pids = pids
+                .split_whitespace()
+                .map(|pid| pid.parse::<i32>().unwrap());
+            return (pids.next().unwrap(), pids.next().unwrap());
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "timed-out run did not publish its process tree marker"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+#[cfg(unix)]
+fn unix_process_is_alive(pid: i32) -> bool {
+    // SAFETY: signal 0 only probes a positive PID written by this test fixture.
+    unsafe { libc::kill(pid, 0) == 0 }
+}
+
+#[cfg(unix)]
+fn force_kill_unix_process(pid: i32) {
+    if unix_process_is_alive(pid) {
+        // SAFETY: the PID belongs to this test's timed-out fixture process tree.
+        unsafe {
+            libc::kill(pid, libc::SIGKILL);
+        }
+    }
+}
+
+#[cfg(unix)]
+async fn wait_for_unix_process_to_stop(pid: i32) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    while unix_process_is_alive(pid) && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+fn python_executable() -> PathBuf {
+    let executable = if cfg!(windows) {
+        repo_root().join(".venv/Scripts/python.exe")
+    } else {
+        repo_root().join(".venv/bin/python")
+    };
+    assert!(
+        executable.is_file(),
+        "missing controlled test Python interpreter: {}",
+        executable.display()
+    );
+    executable
 }
 
 fn repo_root() -> PathBuf {
