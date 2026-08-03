@@ -457,6 +457,21 @@ fn create_disk_snapshot(
                 WorkspaceError::io("create shared snapshot directory", parent, error)
             })?;
         }
+        match fs::symlink_metadata(&destination) {
+            Ok(_) => {
+                return Err(WorkspaceError::SnapshotPathCollision {
+                    path: entry.path.clone(),
+                });
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(WorkspaceError::io(
+                    "inspect shared snapshot destination",
+                    &entry.path,
+                    error,
+                ));
+            }
+        }
         fs::write(&destination, bytes)
             .map_err(|error| WorkspaceError::io("write shared snapshot", &entry.path, error))?;
         files.insert(entry.path.clone(), SnapshotFile::new(permissions));
@@ -476,7 +491,37 @@ mod tests {
 
     use hoimin_core::{BudgetLedger, RunBudgets, reserve_workspace_copy};
 
+    #[cfg(windows)]
+    use crate::workspace::ManifestEntry;
+
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn disk_snapshot_rejects_paths_that_alias_on_its_filesystem() {
+        let source = tempfile::tempdir().unwrap();
+        let source_root = Utf8PathBuf::from_path_buf(source.path().to_owned()).unwrap();
+        let bytes = b"same source bytes";
+        fs::write(source.path().join("TARGET.py"), bytes).unwrap();
+        let entry = |path: &str| ManifestEntry {
+            path: Utf8PathBuf::from(path),
+            size: u64::try_from(bytes.len()).unwrap(),
+            modified: None,
+            blake3: blake3::hash(bytes),
+        };
+        let manifest =
+            WorkspaceManifest::from_entries_for_test(vec![entry("TARGET.py"), entry("target.py")]);
+
+        let error = create_disk_snapshot(&source_root, &manifest).unwrap_err();
+
+        assert_eq!(
+            error,
+            WorkspaceError::SnapshotPathCollision {
+                path: Utf8PathBuf::from("target.py"),
+            }
+        );
+        assert_eq!(error.code(), "workspace.path.collision");
+    }
 
     fn create_request(
         ledger: &mut BudgetLedger,
