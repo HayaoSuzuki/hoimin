@@ -33,4 +33,3 @@ Both mutations were reverted. The focused final command is:
 ```console
 PROPTEST_CASES=256 cargo test -p hoimin-cli target::git
 ```
-
