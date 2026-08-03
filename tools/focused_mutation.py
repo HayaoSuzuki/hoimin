@@ -75,6 +75,8 @@ class SubprocessProbe:
             check=True,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="surrogateescape",
             shell=False,
             timeout=timeout,
         ).stdout
@@ -387,6 +389,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 check=True,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="surrogateescape",
                 shell=False,
                 timeout=budget.discovery_timeout(time.monotonic()),
             ).stdout.strip()
