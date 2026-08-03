@@ -6,6 +6,24 @@ use hoimin_cli::cli::{
 use hoimin_core::{MutationOperator, MutationProfile};
 
 #[test]
+fn real_binary_help_and_version_use_stdout() {
+    for argument in ["--help", "--version"] {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+            .arg(argument)
+            .output()
+            .unwrap();
+
+        assert!(output.status.success(), "argument: {argument}");
+        assert!(!output.stdout.is_empty(), "argument: {argument}");
+        assert!(
+            output.stderr.is_empty(),
+            "argument: {argument}, stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
 fn run_resolves_metrics_path_from_invocation_directory() {
     let invocation_dir = std::env::current_dir().unwrap();
     let config = hoimin_cli::cli::parse_config_from([
