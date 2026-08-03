@@ -751,8 +751,11 @@ class FocusedMutationReportingTests(unittest.TestCase):
             ["git", "rev-parse", "--show-toplevel"],
         )
         self.assertFalse(run.call_args.kwargs["shell"])
+        self.assertTrue(run.call_args.kwargs["text"])
         self.assertEqual(run.call_args.kwargs["encoding"], "utf-8")
         self.assertEqual(run.call_args.kwargs["errors"], "surrogateescape")
+        self.assertTrue(run.call_args.kwargs["text"])
+        self.assertFalse(run.call_args.kwargs["shell"])
         self.assertEqual(workflow.call_args.kwargs["budget"].started, 100.0)
 
     def test_git_probe_uses_utf8_independently_of_the_windows_locale(self) -> None:
