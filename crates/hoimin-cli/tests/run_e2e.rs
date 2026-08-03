@@ -118,6 +118,34 @@ async fn invalid_syntax_warns_and_prevents_a_complete_zero_candidate_run() {
 }
 
 #[tokio::test]
+async fn changed_selection_real_run_uses_only_the_edited_function() {
+    let project = tempfile::tempdir().unwrap();
+    let _base_revision = write_changed_git_project(project.path());
+
+    let run = run_project_options(
+        project.path(),
+        1,
+        "pass",
+        &["--changed", "--operators", "binary_add_sub"],
+    )
+    .await;
+
+    assert_eq!(run.exit_code, 1, "stderr={}", run.stderr);
+    let mutants = run.document["mutants"].as_array().unwrap();
+    assert_eq!(mutants.len(), 1);
+    let expected = BTreeSet::from([(
+        "src/calc.py",
+        2_u64,
+        13_u64,
+        "binary_add_sub",
+        "+",
+        "-",
+        "changed",
+    )]);
+    assert_eq!(json_candidate_tuples(mutants), expected);
+}
+
+#[tokio::test]
 async fn real_binary_json_report_and_diagnostic_use_separate_streams() {
     let project = tempfile::tempdir().unwrap();
     let fixture = fixture_root();
@@ -1732,6 +1760,26 @@ struct FixtureRun {
     document: serde_json::Value,
 }
 
+fn json_candidate_tuples(
+    mutants: &[serde_json::Value],
+) -> BTreeSet<(&str, u64, u64, &str, &str, &str, &str)> {
+    mutants
+        .iter()
+        .map(|mutant| {
+            let candidate = &mutant["candidate"];
+            (
+                candidate["path"].as_str().unwrap(),
+                candidate["line"].as_u64().unwrap(),
+                candidate["column"].as_u64().unwrap(),
+                candidate["operator"].as_str().unwrap(),
+                candidate["original"].as_str().unwrap(),
+                candidate["replacement"].as_str().unwrap(),
+                candidate["symbol"].as_str().unwrap(),
+            )
+        })
+        .collect()
+}
+
 #[cfg(unix)]
 #[derive(Debug)]
 struct RealCliOutput {
@@ -2017,6 +2065,45 @@ fn write_parallel_project(root: &Path) {
         "def total(a, b, c, d, e):\n    return a + b + c + d + e\n",
     )
     .unwrap();
+}
+
+fn write_changed_git_project(root: &Path) -> String {
+    let source = root.join("src");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(
+        source.join("calc.py"),
+        "def changed(a, b):\n    return a + b\n\ndef untouched(a, b):\n    return a + b\n",
+    )
+    .unwrap();
+    run_git(root, &["init", "--quiet"]);
+    run_git(root, &["config", "user.name", "Hoimin Test"]);
+    run_git(
+        root,
+        &["config", "user.email", "hoimin-test@example.invalid"],
+    );
+    run_git(root, &["add", "src/calc.py"]);
+    run_git(root, &["commit", "--quiet", "-m", "fixture base"]);
+    let base_revision = run_git(root, &["rev-parse", "HEAD"]);
+    std::fs::write(
+        source.join("calc.py"),
+        "def changed(a, b):\n    return a + b  # changed\n\ndef untouched(a, b):\n    return a + b\n",
+    )
+    .unwrap();
+    base_revision
+}
+
+fn run_git(root: &Path, arguments: &[&str]) -> String {
+    let output = std::process::Command::new("git")
+        .args(arguments)
+        .current_dir(root)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git {arguments:?} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).unwrap().trim().to_owned()
 }
 
 #[cfg(unix)]

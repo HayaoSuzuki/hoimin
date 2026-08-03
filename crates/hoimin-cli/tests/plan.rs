@@ -6,8 +6,8 @@ use hoimin_cli::{
     analyzer::discover_targets,
     cli::{OutputFormat, ParsedCommand, TopSelectionPolicy, VerifySelection, parse_from},
     plan::{
-        PlanManifest, ResolvedVerifySelection, VerifySelectionScope, create, prepare_verify,
-        prepare_verify_selection,
+        PlanManifest, RankedPlanCandidate, ResolvedVerifySelection, VerifySelectionScope, create,
+        prepare_verify, prepare_verify_selection,
     },
     shell,
     target::TargetHandler,
@@ -126,6 +126,77 @@ async fn plan_candidates_match_shared_discovery_for_normalized_selectors() {
         assert_eq!(actual, expected, "options={options:?}");
         assert!(!marker.exists());
     }
+}
+
+#[tokio::test]
+async fn changed_selection_plan_matches_the_real_run_candidate_and_id() {
+    let (project, base_revision) = Project::new_changed_git();
+    let marker = project.path.join("test-command-ran");
+    let expected = BTreeSet::from([(
+        "src/calc.py",
+        2_u64,
+        13_u64,
+        "binary_add_sub",
+        "+",
+        "-",
+        "changed",
+    )]);
+
+    let mut run_args = plan_args(
+        &project,
+        ["--changed", "--operators", "binary_add_sub"],
+        &marker,
+    );
+    run_args[1] = OsString::from("run");
+    *run_args.last_mut().unwrap() = OsString::from("pass");
+    let mut run_stdout = Vec::new();
+    let mut run_stderr = Vec::new();
+    let run_code = hoimin_cli::run_with_io(run_args, &mut run_stdout, &mut run_stderr).await;
+    assert_eq!(
+        run_code,
+        1,
+        "stderr={}",
+        String::from_utf8_lossy(&run_stderr)
+    );
+    let run_report: serde_json::Value = serde_json::from_slice(&run_stdout).unwrap();
+    let run_mutants = run_report["mutants"].as_array().unwrap();
+    assert_eq!(run_mutants.len(), 1);
+    assert_eq!(json_candidate_tuples(run_mutants), expected);
+
+    let plan_args = plan_args(
+        &project,
+        [
+            "--changed",
+            "--diff-base",
+            base_revision.as_str(),
+            "--operators",
+            "binary_add_sub",
+        ],
+        &marker,
+    );
+    let mut plan_stdout = Vec::new();
+    let mut plan_stderr = Vec::new();
+    let plan_code = hoimin_cli::run_with_io(plan_args, &mut plan_stdout, &mut plan_stderr).await;
+    assert_eq!(
+        plan_code,
+        0,
+        "stderr={}",
+        String::from_utf8_lossy(&plan_stderr)
+    );
+    let manifest: PlanManifest = serde_json::from_slice(&plan_stdout).unwrap();
+    assert_eq!(manifest.candidates.len(), 1);
+    assert_eq!(candidate_tuples(&manifest.candidates), expected);
+
+    let run_ids = run_mutants
+        .iter()
+        .map(|mutant| mutant["candidate"]["id"].as_str().unwrap())
+        .collect::<BTreeSet<_>>();
+    let plan_ids = manifest
+        .candidates
+        .iter()
+        .map(|candidate| candidate.id.as_str())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(run_ids, plan_ids);
 }
 
 #[tokio::test]
@@ -1277,6 +1348,45 @@ fn assert_error_code(error: impl std::fmt::Display, code: &str) {
     );
 }
 
+fn json_candidate_tuples(
+    mutants: &[serde_json::Value],
+) -> BTreeSet<(&str, u64, u64, &str, &str, &str, &str)> {
+    mutants
+        .iter()
+        .map(|mutant| {
+            let candidate = &mutant["candidate"];
+            (
+                candidate["path"].as_str().unwrap(),
+                candidate["line"].as_u64().unwrap(),
+                candidate["column"].as_u64().unwrap(),
+                candidate["operator"].as_str().unwrap(),
+                candidate["original"].as_str().unwrap(),
+                candidate["replacement"].as_str().unwrap(),
+                candidate["symbol"].as_str().unwrap(),
+            )
+        })
+        .collect()
+}
+
+fn candidate_tuples(
+    candidates: &[RankedPlanCandidate],
+) -> BTreeSet<(&str, u64, u64, &str, &str, &str, &str)> {
+    candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.path.as_str(),
+                u64::from(candidate.line),
+                u64::from(candidate.column),
+                candidate.operator.as_str(),
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.symbol.as_deref().unwrap(),
+            )
+        })
+        .collect()
+}
+
 async fn write_plan_manifest(
     project: &Project,
     options: &[&str],
@@ -1426,6 +1536,41 @@ impl Project {
             path,
         }
     }
+
+    fn new_changed_git() -> (Self, String) {
+        let project = Self::new_with_source(
+            "def changed(a, b):\n    return a + b\n\ndef untouched(a, b):\n    return a + b\n",
+        );
+        run_git(&project.path, &["init", "--quiet"]);
+        run_git(&project.path, &["config", "user.name", "Hoimin Test"]);
+        run_git(
+            &project.path,
+            &["config", "user.email", "hoimin-test@example.invalid"],
+        );
+        run_git(&project.path, &["add", "src/calc.py"]);
+        run_git(&project.path, &["commit", "--quiet", "-m", "fixture base"]);
+        let base_revision = run_git(&project.path, &["rev-parse", "HEAD"]);
+        std::fs::write(
+            project.path.join("src/calc.py"),
+            "def changed(a, b):\n    return a + b  # changed\n\ndef untouched(a, b):\n    return a + b\n",
+        )
+        .unwrap();
+        (project, base_revision)
+    }
+}
+
+fn run_git(root: &Path, arguments: &[&str]) -> String {
+    let output = std::process::Command::new("git")
+        .args(arguments)
+        .current_dir(root)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git {arguments:?} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).unwrap().trim().to_owned()
 }
 
 fn python_executable() -> PathBuf {
