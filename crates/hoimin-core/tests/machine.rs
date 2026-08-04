@@ -3883,6 +3883,7 @@ proptest! {
     ) {
         let mut actions = vec![ScheduleAction::Complete(0); complete_steps];
         actions.push(ScheduleAction::Cancel);
+        // pins: issue #111
         ScheduleHarness::new(
             candidate_count,
             3,
@@ -3898,6 +3899,7 @@ proptest! {
         jobs in 1usize..4,
         actions in prop::collection::vec(schedule_action_strategy(), 0..17),
     ) {
+        // pins: issue #112
         ScheduleHarness::new(0, jobs, ScheduleFilter::Ordered, false, vec![0])
             .finish(&actions);
     }
@@ -3920,6 +3922,7 @@ proptest! {
             harness.apply(ScheduleAction::Complete(0));
         }
         assert!(harness.pending.iter().any(|effect| matches!(effect, RunEffect::PersistResult(_))));
+        // pins: issue #113
         harness.finish(&[ScheduleAction::Cancel]);
     }
 }
