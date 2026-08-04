@@ -103,6 +103,24 @@ fn golden_session_schema_eras_migrate_without_semantic_loss() {
 }
 
 #[test]
+#[should_panic(expected = "golden session table cardinalities differ")]
+fn golden_session_corpus_rejects_extra_legacy_rows() {
+    let source = repo_root().join("crates/hoimin-cli/tests/golden/sessions/schema-v1.sqlite3");
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("session.sqlite3");
+    std::fs::copy(source, &path).unwrap();
+    let connection = Connection::open(path).unwrap();
+    connection
+        .execute(
+            "INSERT INTO fingerprints(digest,schema_version) VALUES (?1,4)",
+            [[2_u8; 32].as_slice()],
+        )
+        .unwrap();
+
+    assert_golden_session_rows(&connection, 1);
+}
+
+#[test]
 fn current_session_golden_matches_semantic_regeneration() {
     let checked_path =
         repo_root().join("crates/hoimin-cli/tests/golden/sessions/schema-v3.sqlite3");
@@ -124,62 +142,36 @@ fn current_session_golden_matches_semantic_regeneration() {
 }
 
 fn assert_golden_session_rows(connection: &Connection, original_version: i64) {
-    let expected = all_optional_session_rows(original_version);
-    let common = connection
+    assert_eq!(
+        table_counts(connection),
+        [
+            ("fingerprints".to_owned(), 1),
+            ("runs".to_owned(), 1),
+            ("candidates".to_owned(), 1),
+            ("results".to_owned(), 1),
+            ("diagnostics".to_owned(), 1),
+        ],
+        "golden session table cardinalities differ"
+    );
+    let run_counts = connection
         .query_row(
-            "SELECT c.symbol,r.output_token,r.output_retained,r.output_observed,d.level,d.code,d.message
-             FROM candidates c
-             JOIN results r USING(run_id,mutant_id)
-             JOIN diagnostics d USING(run_id,mutant_id)
-             WHERE c.run_id='golden-run' AND c.mutant_id='golden-mutant'",
+            "SELECT count(*),
+                    sum(CASE WHEN finished=0 AND complete=0 THEN 1 ELSE 0 END)
+             FROM runs",
             [],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, i64>(3)?,
-                    row.get::<_, String>(4)?,
-                    row.get::<_, String>(5)?,
-                    row.get::<_, String>(6)?,
-                ))
-            },
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
         )
         .unwrap();
     assert_eq!(
-        common,
-        (
-            expected.symbol.to_owned(),
-            expected.output_token.to_owned(),
-            expected.output_retained,
-            expected.output_observed,
-            expected.diagnostic_level.to_owned(),
-            expected.diagnostic_code.to_owned(),
-            expected.diagnostic_message.to_owned(),
-        )
+        run_counts,
+        (1, 1),
+        "golden session must contain exactly one incomplete run"
     );
-    if user_version(connection) == 3 {
-        let termination = connection
-            .query_row(
-                "SELECT termination_kind,termination_exit_code FROM results
-                 WHERE run_id='golden-run' AND mutant_id='golden-mutant'",
-                [],
-                |row| {
-                    Ok((
-                        row.get::<_, Option<String>>(0)?,
-                        row.get::<_, Option<i64>>(1)?,
-                    ))
-                },
-            )
-            .unwrap();
-        assert_eq!(
-            termination,
-            expected.termination.map_or((None, None), |(kind, code)| (
-                Some(kind.to_owned()),
-                Some(code)
-            ))
-        );
-    }
+    assert_eq!(
+        logical_rows(connection),
+        expected_logical_rows(original_version),
+        "golden session logical rows differ"
+    );
 }
 
 fn golden_persist_request() -> PersistResult {
@@ -233,6 +225,11 @@ fn schema_sql(connection: &Connection) -> Vec<(String, String, String, String)> 
 }
 
 fn logical_rows(connection: &Connection) -> Vec<(String, Vec<Value>)> {
+    let result_query = if user_version(connection) >= 3 {
+        "SELECT run_id,mutant_id,status,elapsed_secs,elapsed_nanos,resource_mode,output_token,output_retained,output_observed,termination_kind,termination_exit_code FROM results ORDER BY run_id,mutant_id"
+    } else {
+        "SELECT run_id,mutant_id,status,elapsed_secs,elapsed_nanos,resource_mode,output_token,output_retained,output_observed FROM results ORDER BY run_id,mutant_id"
+    };
     let queries = [
         (
             "fingerprints",
@@ -246,10 +243,7 @@ fn logical_rows(connection: &Connection) -> Vec<(String, Vec<Value>)> {
             "candidates",
             "SELECT run_id,mutant_id,sequence,path,span_start,span_length,original,replacement,operator,line,column_number,symbol,file_hash FROM candidates ORDER BY run_id,mutant_id",
         ),
-        (
-            "results",
-            "SELECT run_id,mutant_id,status,elapsed_secs,elapsed_nanos,resource_mode,output_token,output_retained,output_observed,termination_kind,termination_exit_code FROM results ORDER BY run_id,mutant_id",
-        ),
+        ("results", result_query),
         (
             "diagnostics",
             "SELECT run_id,mutant_id,level,code,message FROM diagnostics ORDER BY run_id,mutant_id,level,code,message",
@@ -267,10 +261,101 @@ fn logical_rows(connection: &Connection) -> Vec<(String, Vec<Value>)> {
             })
             .unwrap();
         for row in rows {
-            result.push((table.to_owned(), row.unwrap()));
+            let mut row = row.unwrap();
+            if table == "results" && row.len() == 9 {
+                row.extend([Value::Null, Value::Null]);
+            }
+            result.push((table.to_owned(), row));
         }
     }
     result
+}
+
+fn table_counts(connection: &Connection) -> [(String, i64); 5] {
+    [
+        "fingerprints",
+        "runs",
+        "candidates",
+        "results",
+        "diagnostics",
+    ]
+    .map(|table| {
+        let count = connection
+            .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        (table.to_owned(), count)
+    })
+}
+
+fn expected_logical_rows(original_version: i64) -> Vec<(String, Vec<Value>)> {
+    let rows = all_optional_session_rows(original_version);
+    let fingerprint = "01".repeat(32);
+    let (termination_kind, termination_code) = rows
+        .termination
+        .map_or((Value::Null, Value::Null), |(kind, code)| {
+            (Value::Text(kind.to_owned()), Value::Integer(code))
+        });
+    vec![
+        (
+            "fingerprints".to_owned(),
+            vec![Value::Text(fingerprint.clone()), Value::Integer(4)],
+        ),
+        (
+            "runs".to_owned(),
+            vec![
+                Value::Text("golden-run".to_owned()),
+                Value::Text(fingerprint),
+                Value::Integer(0),
+                Value::Integer(0),
+            ],
+        ),
+        (
+            "candidates".to_owned(),
+            vec![
+                Value::Text("golden-run".to_owned()),
+                Value::Text("golden-mutant".to_owned()),
+                Value::Integer(0),
+                Value::Text("src/example.py".to_owned()),
+                Value::Integer(0),
+                Value::Integer(1),
+                Value::Text("+".to_owned()),
+                Value::Text("-".to_owned()),
+                Value::Text("binary".to_owned()),
+                Value::Integer(1),
+                Value::Integer(0),
+                Value::Text(rows.symbol.to_owned()),
+                Value::Text("hash".to_owned()),
+            ],
+        ),
+        (
+            "results".to_owned(),
+            vec![
+                Value::Text("golden-run".to_owned()),
+                Value::Text("golden-mutant".to_owned()),
+                Value::Text("killed".to_owned()),
+                Value::Integer(0),
+                Value::Integer(5_000_000),
+                Value::Text("hard".to_owned()),
+                Value::Text(rows.output_token.to_owned()),
+                Value::Integer(rows.output_retained),
+                Value::Integer(rows.output_observed),
+                termination_kind,
+                termination_code,
+            ],
+        ),
+        (
+            "diagnostics".to_owned(),
+            vec![
+                Value::Text("golden-run".to_owned()),
+                Value::Text("golden-mutant".to_owned()),
+                Value::Text(rows.diagnostic_level.to_owned()),
+                Value::Text(rows.diagnostic_code.to_owned()),
+                Value::Text(rows.diagnostic_message.to_owned()),
+            ],
+        ),
+    ]
 }
 
 #[derive(Debug)]
