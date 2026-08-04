@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 275406ad14788f6a21f349d3e65192a476a249d46dcd9d54d8cde7fb76c45351 # shrinks to candidate_count = 2, jobs = 1, filter = 0, session = true, completion_classes = [0], actions = [Complete(0), Complete(0), Complete(0), Complete(0), Complete(0), Complete(0), Complete(0), Complete(229140324807964), Complete(15503841062738586891), Complete(13770036823942580241), Complete(1000486212526310040), Complete(520662334938909644), Complete(4600237524895969886), Complete(14061541800522465006), Complete(7816821753705481992), Complete(8539912180599075052), Complete(14507902247507628769), Complete(5561426051027418691), Complete(10007692972462992768), Fail(13253932099139115336)]

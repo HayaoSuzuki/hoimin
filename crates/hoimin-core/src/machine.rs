@@ -1124,6 +1124,8 @@ impl RunState {
             }
         } else if !self.flags.scheduling.candidate_exhausted {
             self.read_next_candidate(worker)
+        } else if let Some(failed) = self.pending_failure.take() {
+            self.diagnostic_effect(&failed)
         } else {
             self.phase = RunPhase::Finalize;
             self.finalize_effects()
@@ -1730,8 +1732,13 @@ pub fn transition(
         RunEvent::EffectFailed(failed) => {
             state.flags.outcome.infrastructure_error = true;
             state.flags.scheduling.stop_requested = true;
+            let was_mutating = state.phase == RunPhase::Mutants;
             state.retire_pending();
-            if !state.flags.report.report_started {
+            if was_mutating {
+                state.flags.scheduling.candidate_exhausted = true;
+                state.pending_failure = Some(failed);
+                state.begin_stopped_mutant_drain()?
+            } else if !state.flags.report.report_started {
                 if state.run_started_output_id == Some(failed.id) {
                     state.run_started_output_id = None;
                     state.cleanup_effects()?

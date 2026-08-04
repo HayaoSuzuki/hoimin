@@ -6,13 +6,14 @@ use hoimin_core::{
     CleanupFinished, CommandArg, EffectFailed, EffectId, MachineError, MutationApplied,
     MutationCandidate, MutationProfile, MutationStatus, MutationSummary, OriginalsVerified,
     OutputConfig, OutputEmitted, OutputEvent, PreflightCompleted, ProcessFinished,
-    ProcessTermination, RawRunConfig, RawRunLimits, RemainingBudgetObserved, ReservationId,
-    ResourceMode, ResultPersisted, RunConfig, RunEffect, RunEvent, RunFingerprint, RunPhase,
-    RunState, SessionFinished, SessionLoaded, SessionResumeRef, SessionStarted, StartRequested,
-    StoredResult, StoredResultLoaded, TargetSlice, TargetsResolved, VerificationSelection,
-    VerificationSelectionMode, VerificationSelectionPolicy, VerificationSelectionScope,
-    WorkerCreated, WorkerReset, transition,
+    ProcessTermination, RawRunConfig, RawRunLimits, RemainingBudgetObserved, ReportSequence,
+    ReservationId, ResourceMode, ResultPersisted, RunConfig, RunEffect, RunEvent, RunFingerprint,
+    RunPhase, RunState, SessionFinished, SessionLoaded, SessionResumeRef, SessionStarted,
+    StartRequested, StoredResult, StoredResultLoaded, TargetSlice, TargetsResolved,
+    VerificationSelection, VerificationSelectionMode, VerificationSelectionPolicy,
+    VerificationSelectionScope, WorkerCreated, WorkerReset, transition,
 };
+use proptest::prelude::*;
 
 #[test]
 fn baseline_success_requests_analysis_without_performing_io() {
@@ -2666,7 +2667,7 @@ fn session_completion_for_another_mutant_is_rejected() {
 }
 
 #[test]
-fn session_save_failure_is_fatal_and_does_not_schedule_reset_or_next_mutant() {
+fn session_save_failure_reports_the_classified_result_without_scheduling_another_mutant() {
     let (state, effects) = waiting_for_session_candidate(false);
     let read_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::ReadCandidate(_))
@@ -2727,7 +2728,13 @@ fn session_save_failure_is_fatal_and_does_not_schedule_reset_or_next_mutant() {
     .unwrap();
 
     assert_eq!(next.exit_code(), 2);
-    assert_eq!(next.summary().killed, 0);
+    assert_eq!(next.summary().killed, 1);
+    assert!(effects.iter().any(|effect| matches!(
+        effect,
+        RunEffect::EmitOutput(value)
+            if matches!(&value.event, OutputEvent::MutantFinished(result)
+                if result.status == MutationStatus::Killed)
+    )));
     assert!(!effects.iter().any(|effect| matches!(
         effect,
         RunEffect::ResetWorker(_) | RunEffect::ReadCandidate(_) | RunEffect::RunMutant(_)
@@ -3296,6 +3303,499 @@ fn completion_ledger_stays_bounded_across_ten_thousand_mutants() {
     .unwrap();
     assert_eq!(state.completion_ledger_entries(), 0);
     assert_eq!(state.summary().killed, 10_000);
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ScheduleAction {
+    Complete(usize),
+    Cancel,
+    Deadline,
+    Fail(usize),
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ScheduleFilter {
+    All,
+    Explicit,
+    Ordered,
+}
+
+#[derive(Debug)]
+struct ScheduleHarness {
+    state: RunState,
+    pending: Vec<RunEffect>,
+    candidates: Vec<MutationCandidate>,
+    completion_classes: Vec<u8>,
+    next_candidate: usize,
+    effect_ids: BTreeSet<EffectId>,
+    output_events: Vec<(EffectId, OutputEvent)>,
+    ledger: BTreeMap<String, MutationStatus>,
+    stop_requested: bool,
+    jobs: usize,
+    session: bool,
+}
+
+impl ScheduleHarness {
+    fn new(
+        candidate_count: usize,
+        jobs: usize,
+        filter: ScheduleFilter,
+        session: bool,
+        completion_classes: Vec<u8>,
+    ) -> Self {
+        let candidates: Vec<_> = (1..=candidate_count)
+            .map(|sequence| fixture_candidate(u64::try_from(sequence).unwrap()))
+            .collect();
+        let mut raw = fixture_raw_config();
+        raw.limits.jobs = jobs;
+        if session {
+            raw.session = Some(hoimin_core::SessionConfig {
+                path: "session.sqlite3".into(),
+            });
+        }
+        let config = RunConfig::try_from(raw).unwrap();
+        let candidate_ids: Vec<_> = candidates
+            .iter()
+            .rev()
+            .map(|candidate| candidate.id.clone())
+            .collect();
+        let state = match filter {
+            _ if session => RunState::with_fingerprint(
+                "schedule-run",
+                config,
+                RunFingerprint::from_bytes([7; 32]),
+            ),
+            ScheduleFilter::All => RunState::new("schedule-run", config),
+            ScheduleFilter::Explicit => RunState::with_candidate_filter(
+                "schedule-run",
+                config,
+                candidate_ids.iter().cloned().collect(),
+            ),
+            ScheduleFilter::Ordered => {
+                RunState::with_ordered_candidate_filter("schedule-run", config, candidate_ids)
+            }
+        };
+        let (state, effects) = transition(state, RunEvent::StartRequested(StartRequested)).unwrap();
+        let mut harness = Self {
+            state,
+            pending: Vec::new(),
+            candidates,
+            completion_classes,
+            next_candidate: 0,
+            effect_ids: BTreeSet::new(),
+            output_events: Vec::new(),
+            ledger: BTreeMap::new(),
+            stop_requested: false,
+            jobs,
+            session,
+        };
+        harness.register(effects);
+        harness
+    }
+
+    fn register(&mut self, effects: Vec<RunEffect>) {
+        for effect in effects {
+            assert!(
+                self.effect_ids.insert(effect.id()),
+                "effect id {:?} was allocated more than once",
+                effect.id()
+            );
+            if let RunEffect::EmitOutput(output) = &effect {
+                if self.stop_requested
+                    && let OutputEvent::MutantStarted(started) = &output.event
+                {
+                    self.ledger
+                        .entry(started.mutant_id.clone())
+                        .or_insert(MutationStatus::NotRun);
+                }
+                self.output_events.push((output.id, output.event.clone()));
+            }
+            self.pending.push(effect);
+        }
+    }
+
+    fn apply(&mut self, action: ScheduleAction) {
+        if self.state.phase() == RunPhase::Finished {
+            return;
+        }
+        match action {
+            ScheduleAction::Complete(index) => self.complete(index),
+            ScheduleAction::Cancel => self.stop(RunEvent::CancellationRequested),
+            ScheduleAction::Deadline => self.stop(RunEvent::DeadlineReached),
+            ScheduleAction::Fail(index) => self.fail(index),
+        }
+    }
+
+    fn complete(&mut self, index: usize) {
+        assert!(
+            !self.pending.is_empty(),
+            "unfinished machine has no pending effect"
+        );
+        let index = index % self.pending.len();
+        let effect = self.pending.remove(index);
+        let event = self.completion_for(&effect);
+        let (state, effects) = transition(self.state.clone(), event).unwrap();
+        self.state = state;
+        self.register(effects);
+    }
+
+    fn stop(&mut self, event: RunEvent) {
+        if self.stop_requested {
+            self.complete(0);
+            return;
+        }
+        self.stop_requested = true;
+        for (_, event) in &self.output_events {
+            if let OutputEvent::MutantStarted(started) = event {
+                self.ledger
+                    .entry(started.mutant_id.clone())
+                    .or_insert(MutationStatus::NotRun);
+            }
+        }
+        let (state, effects) = transition(self.state.clone(), event).unwrap();
+        self.state = state;
+        self.pending
+            .retain(|effect| self.state.is_effect_pending(effect.id()));
+        self.register(effects);
+    }
+
+    fn fail(&mut self, index: usize) {
+        if self.stop_requested {
+            self.complete(index);
+            return;
+        }
+        assert!(
+            !self.pending.is_empty(),
+            "unfinished machine has no pending effect"
+        );
+        let fail_candidates: Vec<_> = self
+            .pending
+            .iter()
+            .filter(|effect| !matches!(effect, RunEffect::EmitOutput(_)))
+            .collect();
+        if fail_candidates.is_empty() {
+            self.complete(index);
+            return;
+        }
+        let effect = fail_candidates[index % fail_candidates.len()];
+        let failed = EffectFailed::other(effect.id(), "schedule.effect", "generated failure");
+        self.stop_requested = true;
+        for (_, event) in &self.output_events {
+            if let OutputEvent::MutantStarted(started) = event {
+                self.ledger
+                    .entry(started.mutant_id.clone())
+                    .or_insert(MutationStatus::NotRun);
+            }
+        }
+        let (state, effects) =
+            transition(self.state.clone(), RunEvent::EffectFailed(failed)).unwrap();
+        self.state = state;
+        self.pending
+            .retain(|effect| self.state.is_effect_pending(effect.id()));
+        self.register(effects);
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the exhaustive public effect-to-completion adapter is kept together for auditability"
+    )]
+    fn completion_for(&mut self, effect: &RunEffect) -> RunEvent {
+        match effect {
+            RunEffect::ResolveTargets(resolve) => RunEvent::TargetsResolved(TargetsResolved {
+                id: resolve.id,
+                targets: vec![TargetSlice {
+                    path: "src/calc.py".into(),
+                    lines: Vec::new(),
+                    symbols: Vec::new(),
+                }],
+            }),
+            RunEffect::Preflight(preflight) => RunEvent::PreflightCompleted(PreflightCompleted {
+                id: preflight.id,
+                per_worker_logical_bytes: 10,
+                requested_workers: u32::try_from(self.jobs).unwrap(),
+                aggregate_logical_bytes: 10 * u64::try_from(self.jobs).unwrap(),
+                fingerprint: self.session.then_some(RunFingerprint::from_bytes([7; 32])),
+            }),
+            RunEffect::CreateWorker(create) => RunEvent::WorkerCreated(WorkerCreated {
+                id: create.id(),
+                worker: create.worker(),
+                reservation_id: create.reservation_id(),
+            }),
+            RunEffect::RunBaseline(process) => RunEvent::BaselineFinished(
+                schedule_process_finished(process, ProcessTermination::Exit(0)),
+            ),
+            RunEffect::ObserveRemainingBudget(observe) => {
+                RunEvent::RemainingBudgetObserved(RemainingBudgetObserved {
+                    id: observe.id,
+                    remaining: Duration::from_secs(86_400),
+                })
+            }
+            RunEffect::AnalyzeFile(analyze) => RunEvent::AnalysisFinished(AnalysisFinished {
+                id: analyze.id,
+                spool: Some(CandidateSpoolRef {
+                    token: "generated-candidates".to_owned(),
+                    records: u64::try_from(self.candidates.len()).unwrap(),
+                }),
+                truncated: false,
+                diagnostics: Vec::new(),
+            }),
+            RunEffect::ReadCandidate(read) => {
+                let candidate = self.candidates.get(self.next_candidate).cloned();
+                if candidate.is_some() {
+                    self.next_candidate += 1;
+                }
+                RunEvent::CandidateLoaded(CandidateLoaded {
+                    id: read.id,
+                    worker: read.worker,
+                    candidate,
+                    next_offset: u64::try_from(self.next_candidate).unwrap(),
+                })
+            }
+            RunEffect::ApplyMutation(apply) => RunEvent::MutationApplied(MutationApplied {
+                id: apply.id,
+                worker: apply.worker,
+            }),
+            RunEffect::RunMutant(process) => {
+                let mutant_id = process.mutant_id.as_ref().unwrap();
+                let sequence = mutant_id
+                    .strip_prefix('m')
+                    .unwrap()
+                    .parse::<usize>()
+                    .unwrap();
+                let class =
+                    self.completion_classes[(sequence - 1) % self.completion_classes.len()] % 6;
+                let (status, termination) = match class {
+                    0 => (MutationStatus::Killed, ProcessTermination::Exit(1)),
+                    1 => (MutationStatus::Survived, ProcessTermination::Exit(0)),
+                    2 => (MutationStatus::Timeout, ProcessTermination::Timeout),
+                    3 => (MutationStatus::OutOfMemory, ProcessTermination::OutOfMemory),
+                    4 => (
+                        MutationStatus::ProcessLimit,
+                        ProcessTermination::ProcessLimit,
+                    ),
+                    _ => (MutationStatus::NotRun, ProcessTermination::Cancelled),
+                };
+                self.ledger.insert(mutant_id.clone(), status);
+                RunEvent::MutantFinished(schedule_process_finished(process, termination))
+            }
+            RunEffect::ResetWorker(reset) => RunEvent::WorkerReset(WorkerReset {
+                id: reset.id,
+                worker: reset.worker,
+            }),
+            RunEffect::VerifyOriginals(verify) => RunEvent::OriginalsVerified(OriginalsVerified {
+                id: verify.id,
+                checkpoint: verify.checkpoint,
+            }),
+            RunEffect::LoadSession(load) => RunEvent::SessionLoaded(SessionLoaded {
+                id: load.id,
+                resume: None,
+            }),
+            RunEffect::LookupStoredResult(lookup) => {
+                RunEvent::StoredResultLoaded(StoredResultLoaded {
+                    id: lookup.id,
+                    worker: lookup.worker,
+                    result: None,
+                })
+            }
+            RunEffect::BeginSession(begin) => RunEvent::SessionStarted(SessionStarted {
+                id: begin.id,
+                run_id: begin.run_id.clone(),
+            }),
+            RunEffect::PersistResult(persist) => RunEvent::ResultPersisted(ResultPersisted {
+                id: persist.id,
+                worker: persist.worker,
+                run_id: persist.result.run_id.clone(),
+                mutant_id: persist.result.candidate.id.clone(),
+            }),
+            RunEffect::FinishSession(finish) => RunEvent::SessionFinished(SessionFinished {
+                id: finish.id,
+                run_id: finish.run_id.clone(),
+                complete: finish.complete,
+            }),
+            RunEffect::EmitOutput(output) => {
+                RunEvent::OutputEmitted(OutputEmitted { id: output.id })
+            }
+            RunEffect::Cleanup(cleanup) => RunEvent::CleanupFinished(CleanupFinished {
+                id: cleanup.id,
+                released_reservations: cleanup.reservations.clone(),
+            }),
+        }
+    }
+
+    fn finish(mut self, actions: &[ScheduleAction]) {
+        for action in actions.iter().take(64).copied() {
+            self.apply(action);
+        }
+        for _ in 0..1_024 {
+            if self.state.phase() == RunPhase::Finished {
+                break;
+            }
+            self.complete(0);
+        }
+        assert_eq!(self.state.phase(), RunPhase::Finished);
+
+        let output_events: Vec<_> = self
+            .output_events
+            .iter()
+            .filter(|(id, _)| !self.state.is_effect_retired(*id))
+            .map(|(_, event)| event)
+            .collect();
+        let summaries: Vec<_> = output_events
+            .iter()
+            .filter_map(|event| match event {
+                OutputEvent::RunFinished(summary) => Some(summary),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            summaries.len(),
+            1,
+            "RunFinished must be emitted exactly once"
+        );
+        let mut started = BTreeMap::new();
+        let mut finished = BTreeMap::new();
+        for event in &output_events {
+            match event {
+                OutputEvent::MutantStarted(value) => {
+                    *started.entry(value.mutant_id.clone()).or_insert(0_u64) += 1;
+                }
+                OutputEvent::MutantFinished(value) => {
+                    *finished.entry(value.candidate.id.clone()).or_insert(0_u64) += 1;
+                    assert_eq!(
+                        self.ledger.get(&value.candidate.id),
+                        Some(&value.status),
+                        "generated completion ledger disagrees for {}",
+                        value.candidate.id
+                    );
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(started, finished);
+        assert!(started.values().all(|count| *count == 1));
+
+        let mut expected = MutationSummary::default();
+        for status in self.ledger.values().copied() {
+            match status {
+                MutationStatus::Killed => expected.killed += 1,
+                MutationStatus::Survived => expected.survived += 1,
+                MutationStatus::Timeout => expected.timeout += 1,
+                MutationStatus::OutOfMemory => expected.out_of_memory += 1,
+                MutationStatus::ProcessLimit => expected.process_limit += 1,
+                MutationStatus::Error => expected.error += 1,
+                MutationStatus::NotRun => expected.not_run += 1,
+            }
+        }
+        let actual = &summaries[0].counts;
+        assert_eq!(actual.killed, expected.killed);
+        assert_eq!(actual.survived, expected.survived);
+        assert_eq!(actual.timeout, expected.timeout);
+        assert_eq!(actual.out_of_memory, expected.out_of_memory);
+        assert_eq!(actual.process_limit, expected.process_limit);
+        assert_eq!(actual.error, expected.error);
+        assert_eq!(actual.not_run, expected.not_run);
+
+        let mut sequence = ReportSequence::new();
+        for event in output_events {
+            sequence.observe(event).unwrap();
+        }
+    }
+}
+
+fn schedule_process_finished(
+    process: &hoimin_core::RunProcess,
+    termination: ProcessTermination,
+) -> ProcessFinished {
+    ProcessFinished {
+        id: process.id,
+        worker: process.worker,
+        termination,
+        output: hoimin_core::OutputSpoolRef {
+            token: "generated-output".to_owned(),
+            retained: 0,
+            observed: 0,
+        },
+        elapsed: Duration::from_millis(5),
+        resource_mode: ResourceMode::Hard,
+    }
+}
+
+fn schedule_action_strategy() -> impl Strategy<Value = ScheduleAction> {
+    prop_oneof![
+        8 => any::<usize>().prop_map(ScheduleAction::Complete),
+        1 => Just(ScheduleAction::Cancel),
+        1 => Just(ScheduleAction::Deadline),
+        1 => any::<usize>().prop_map(ScheduleAction::Fail),
+    ]
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(128))]
+
+    #[test]
+    fn adversarial_schedule_preserves_terminal_report_invariants(
+        candidate_count in 0usize..7,
+        jobs in 1usize..4,
+        filter in 0u8..3,
+        session in any::<bool>(),
+        completion_classes in prop::collection::vec(0u8..6, 1..7),
+        actions in prop::collection::vec(schedule_action_strategy(), 0..65),
+    ) {
+        let filter = match filter {
+            0 => ScheduleFilter::All,
+            1 => ScheduleFilter::Explicit,
+            _ => ScheduleFilter::Ordered,
+        };
+        ScheduleHarness::new(candidate_count, jobs, filter, session, completion_classes)
+            .finish(&actions);
+    }
+
+    #[test]
+    fn adversarial_schedule_regression_111_ordered_cancellation(
+        candidate_count in 2usize..7,
+        complete_steps in 7usize..15,
+    ) {
+        let mut actions = vec![ScheduleAction::Complete(0); complete_steps];
+        actions.push(ScheduleAction::Cancel);
+        ScheduleHarness::new(
+            candidate_count,
+            3,
+            ScheduleFilter::Ordered,
+            false,
+            vec![0, 1, 2, 3, 4, 5],
+        )
+        .finish(&actions);
+    }
+
+    #[test]
+    fn adversarial_schedule_regression_112_empty_ordered_spool(
+        jobs in 1usize..4,
+        actions in prop::collection::vec(schedule_action_strategy(), 0..17),
+    ) {
+        ScheduleHarness::new(0, jobs, ScheduleFilter::Ordered, false, vec![0])
+            .finish(&actions);
+    }
+
+    #[test]
+    fn adversarial_schedule_regression_113_persistence_interruption(
+        completion_class in 0u8..6,
+    ) {
+        let mut harness = ScheduleHarness::new(
+            1,
+            1,
+            ScheduleFilter::All,
+            true,
+            vec![completion_class],
+        );
+        for _ in 0..32 {
+            if harness.pending.iter().any(|effect| matches!(effect, RunEffect::PersistResult(_))) {
+                break;
+            }
+            harness.apply(ScheduleAction::Complete(0));
+        }
+        assert!(harness.pending.iter().any(|effect| matches!(effect, RunEffect::PersistResult(_))));
+        harness.finish(&[ScheduleAction::Cancel]);
+    }
 }
 
 fn start_state() -> (RunState, Vec<RunEffect>) {
