@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc d7ad3a66921c260a5f59b3784e5c1dd9b2edce1793dce2e30fdcd365e3931cb4 # shrinks to targets = [TargetSlice { path: "src/a-0.py", lines: [LineRange { start: 42, end: 46 }, LineRange { start: 46, end: 46 }], symbols: [] }]
