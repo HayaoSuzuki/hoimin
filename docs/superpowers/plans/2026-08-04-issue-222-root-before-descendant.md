@@ -34,11 +34,11 @@
 
 - [ ] **Step 1: Name the break the regression catches**
 
-Record beside the test implementation that removing `terminate_job(self.root_job.raw(), ...)` from `WindowsSupervisor::terminate` must leave the published descendant active and the run Job Object nonempty after `ProcessHandler::handle` returns. The assertion values are independently derived: root wait is `WAIT_OBJECT_0`, descendant pre-cleanup wait is `WAIT_TIMEOUT`, result is literal `ProcessTermination::Exit(0)`, and accounting is literal zero.
+Record beside the test implementation that discarding the assigned `root_job` without terminating it or closing its kill-on-close handle must leave the published descendant active and the run Job Object nonempty after `ProcessHandler::handle` returns. The assertion values are independently derived: root wait is `WAIT_OBJECT_0`, descendant pre-cleanup wait is `WAIT_TIMEOUT`, result is literal `ProcessTermination::Exit(0)`, and accounting is literal zero.
 
 - [ ] **Step 2: Add owned real-process-handle helpers**
 
-Import `WAIT_OBJECT_0`, `WAIT_TIMEOUT`, `OpenProcess`, `WaitForSingleObject`, `PROCESS_QUERY_LIMITED_INFORMATION`, and `SYNCHRONIZE`. Add this test-only shape inside `resource::windows::tests`:
+Import `WAIT_OBJECT_0`, `WAIT_TIMEOUT`, `OpenProcess`, `WaitForSingleObject`, `PROCESS_QUERY_LIMITED_INFORMATION`, and `PROCESS_SYNCHRONIZE`. Add this test-only shape inside `resource::windows::tests`:
 
 ```rust
 struct FixtureProcessHandle(OwnedHandle);
@@ -47,7 +47,7 @@ impl FixtureProcessHandle {
     fn open(pid: u32) -> Self {
         let handle = unsafe {
             OpenProcess(
-                PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE,
+                PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
                 0,
                 pid,
             )
@@ -111,19 +111,26 @@ Wrap spawn, observation, handler completion, cleanup convergence, and close in `
 
 - [ ] **Step 4: Verify RED with the named cleanup regression**
 
-After the test is written, temporarily replace only this production statement in `WindowsSupervisor::terminate`:
+After the test is written, temporarily replace this production statement in `WindowsSupervisor::terminate`:
 
 ```rust
 terminate_job(self.root_job.raw(), "terminate nested root process job")?;
 ```
 
-with a no-op success so the nested assigned descendant survives `handle`. Run:
+with the following fault, which discards the assigned Job Object without exercising explicit termination or kill-on-close:
+
+```rust
+let assigned_job = std::mem::replace(&mut self.root_job, create_job()?);
+std::mem::forget(assigned_job);
+```
+
+Run:
 
 ```console
 cargo test -p hoimin-cli resource::windows::tests::exited_root_is_observed_before_assigned_descendant_cleanup -- --exact --nocapture
 ```
 
-Expected: FAIL within six seconds because the descendant handle remains active or the production run Job Object remains nonempty. Restore the exact production statement immediately after recording the failure.
+Expected: FAIL within six seconds because the descendant handle remains active or the production run Job Object remains nonempty. Restore the exact production statement immediately after recording the failure. Omitting only `TerminateJobObject` is insufficient for RED because the still-owned nested job is configured kill-on-close and supplies equivalent cleanup when the supervisor drops.
 
 - [ ] **Step 5: Verify GREEN against unmodified production cleanup**
 

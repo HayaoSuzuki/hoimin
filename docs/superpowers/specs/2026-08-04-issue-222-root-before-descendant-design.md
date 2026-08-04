@@ -57,7 +57,7 @@ The pinned handler future owns the production supervisor and nested kill-on-clos
 
 ## TDD and Mutation Evidence
 
-The behavioral break named by this test is: normal root completion stops terminating the nested assigned process tree before `handle` returns. The red phase will run the new test against a temporary local mutation that omits nested Job Object termination; the descendant-active or Job Object accounting assertion must fail within the six-second bound. Restoring the production call must make the same test pass.
+The behavioral break named by this test is: normal root completion discards the assigned nested Job Object without either terminating it or closing its kill-on-close handle. The red phase will run the new test against a temporary local mutation that replaces and forgets the assigned Job Object before termination; the descendant-active or Job Object accounting assertion must fail within the six-second bound. Restoring the production ownership and termination path must make the same test pass. Merely omitting `TerminateJobObject` is not this break because dropping the still-owned kill-on-close handle provides the same externally visible cleanup.
 
 Only a `#[cfg(test)]` module and documentation are changed. No production Rust expression is added or modified, so Rust mutation testing of changed production code is not applicable. The deliberate red-phase production mutation supplies direct evidence that the new test detects the cleanup regression it names.
 
