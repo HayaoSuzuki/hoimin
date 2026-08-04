@@ -14,7 +14,7 @@
         "lines": [],
         "symbols": [],
         "changed": false,
-        "diff_base": null,
+        "diff_base": "golden-base",
         "includes": [],
         "excludes": []
       },
@@ -32,8 +32,8 @@
         "max_processes": 64
       },
       "test_argv": [{ "Unix": [112, 121, 116, 104, 111, 110] }],
-      "output": { "format": "json" },
-      "session": null,
+      "output": { "format": "json", "metrics": "metrics.json" },
+      "session": { "path": "session.sqlite3" },
       "allow_best_effort_memory": true,
       "resume": false
     },
@@ -65,7 +65,7 @@
       "operator": "integer_literal",
       "line": 1,
       "column": 0,
-      "symbol": null,
+      "symbol": "calculate",
       "file_hash": "fixture-hash"
     },
     "status": "killed",

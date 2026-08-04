@@ -24,7 +24,7 @@ use serde_json::{Value, json};
 use tokio::io::AsyncReadExt;
 
 fn original_schema_v2_report() -> PathBuf {
-    repo_root().join("crates/hoimin-cli/tests/fixtures/reports/schema-v2-original.json")
+    repo_root().join("crates/hoimin-cli/tests/golden/reports/schema-v2-original.json")
 }
 
 #[test]
@@ -32,6 +32,18 @@ fn input_accepts_the_oldest_schema_v2_normalized_config() {
     let report = original_schema_v2_report();
 
     assert!(matches!(read_report(&report), Ok(InputReport::Usable(_))));
+}
+
+#[test]
+fn golden_schema_v2_report_eras_are_usable() {
+    let root = repo_root().join("crates/hoimin-cli/tests/golden/reports");
+
+    for name in ["schema-v2-original.json", "schema-v2-current.json"] {
+        assert!(
+            matches!(read_report(&root.join(name)), Ok(InputReport::Usable(_))),
+            "golden report must remain a usable schema-v2 input: {name}"
+        );
+    }
 }
 
 #[tokio::test]
