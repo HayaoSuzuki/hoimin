@@ -5,7 +5,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use std::{collections::BTreeSet, str};
 
-#[cfg(unix)]
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader};
 
 use hoimin_core::{
@@ -1508,15 +1507,13 @@ async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_in
     );
 }
 
-#[cfg(unix)]
-#[tokio::test]
-async fn first_sigint_finishes_a_parseable_incomplete_session() {
+async fn first_interrupt_scenario() {
     let project = tempfile::tempdir().unwrap();
     let coordinator = tempfile::tempdir().unwrap();
     write_parallel_project(project.path());
     let session = coordinator.path().join("session.sqlite3");
     let (mut child, active, descendant_ready) =
-        spawn_sigint_fixture(project.path(), coordinator.path(), &session, "json");
+        spawn_interrupt_fixture(project.path(), coordinator.path(), &session, "json");
     let mut stdout_reader = BufReader::new(child.stdout.take().unwrap());
     let mut descendant = None;
     let outcome: Result<_, String> = async {
@@ -1531,10 +1528,10 @@ async fn first_sigint_finishes_a_parseable_incomplete_session() {
         )
         .await?;
 
-        send_sigint(child.id())?;
+        send_fixture_interrupt(child.id()).await?;
         let status = tokio::time::timeout(Duration::from_secs(15), child.wait())
             .await
-            .map_err(|_| "hoimin did not finish after first SIGINT".to_owned())?
+            .map_err(|_| "hoimin did not finish after first interrupt".to_owned())?
             .map_err(|error| error.to_string())?;
         let mut stdout = String::new();
         stdout_reader
@@ -1556,7 +1553,7 @@ async fn first_sigint_finishes_a_parseable_incomplete_session() {
         panic!("test teardown failed: {error}; outcome={outcome:?}");
     }
     let (status, stdout, descendant_stopped) = outcome.unwrap_or_else(|error| {
-        panic!("first-SIGINT scenario failed after successful teardown: {error}")
+        panic!("first-interrupt scenario failed after successful teardown: {error}")
     });
 
     assert_eq!(status.code(), Some(130));
@@ -1566,19 +1563,29 @@ async fn first_sigint_finishes_a_parseable_incomplete_session() {
     assert_eq!(session_complete(&session), 0);
     assert!(
         descendant_stopped,
-        "first SIGINT did not reap the ready descendant"
+        "first interrupt did not reap the ready descendant"
     );
 }
 
 #[cfg(unix)]
 #[tokio::test]
-async fn second_sigint_forces_130_while_session_finish_is_blocked() {
+async fn first_sigint_finishes_a_parseable_incomplete_session() {
+    first_interrupt_scenario().await;
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn first_ctrl_c_event_finishes_a_parseable_incomplete_session() {
+    first_interrupt_scenario().await;
+}
+
+async fn second_interrupt_scenario() {
     let project = tempfile::tempdir().unwrap();
     let coordinator = tempfile::tempdir().unwrap();
     write_parallel_project(project.path());
     let session = coordinator.path().join("session.sqlite3");
     let (mut child, active, descendant_ready) =
-        spawn_second_sigint_fixture(project.path(), coordinator.path(), &session);
+        spawn_second_interrupt_fixture(project.path(), coordinator.path(), &session);
     let mut stdout = BufReader::new(child.stdout.take().unwrap());
     let mut descendant = None;
     let outcome: Result<_, String> = async {
@@ -1591,25 +1598,25 @@ async fn second_sigint_forces_130_while_session_finish_is_blocked() {
 
         let pid = child
             .id()
-            .ok_or_else(|| "hoimin exited before first SIGINT".to_owned())?;
-        send_sigint(Some(pid))?;
+            .ok_or_else(|| "hoimin exited before first interrupt".to_owned())?;
+        send_fixture_interrupt(Some(pid)).await?;
         let descendant_process = descendant.as_ref().expect("assigned above");
         if !descendant_process
             .wait_until_stops(Duration::from_secs(5))
             .await
         {
             return Err(format!(
-                "first SIGINT did not reap descendant {}",
+                "first interrupt did not reap descendant {}",
                 descendant_process.pid()
             ));
         }
 
         let forced_at = Instant::now();
         // The retained SQLite lock keeps the live child blocked in session finalization.
-        send_sigint(Some(pid))?;
+        send_fixture_interrupt(Some(pid)).await?;
         let status = tokio::time::timeout(Duration::from_secs(1), child.wait())
             .await
-            .map_err(|_| "second SIGINT must bypass blocked FinishSession".to_owned())?
+            .map_err(|_| "second interrupt must bypass blocked FinishSession".to_owned())?
             .map_err(|error| error.to_string())?;
         let forced_elapsed = forced_at.elapsed();
         stdout
@@ -1626,7 +1633,7 @@ async fn second_sigint_forces_130_while_session_finish_is_blocked() {
         panic!("test teardown failed: {error}; outcome={outcome:?}");
     }
     let (status, forced_elapsed, lock, stdout_lines) = outcome.unwrap_or_else(|error| {
-        panic!("second-SIGINT scenario failed after successful teardown: {error}")
+        panic!("second-interrupt scenario failed after successful teardown: {error}")
     });
 
     assert_eq!(status.code(), Some(130));
@@ -1640,6 +1647,18 @@ async fn second_sigint_forces_130_while_session_finish_is_blocked() {
         !events.iter().any(|event| event["kind"] == "run_finished"),
         "FinishSession was blocked, so run_finished must not be emitted: {stdout_lines}"
     );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn second_sigint_forces_130_while_session_finish_is_blocked() {
+    second_interrupt_scenario().await;
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn second_ctrl_c_event_forces_130_while_session_finish_is_blocked() {
+    second_interrupt_scenario().await;
 }
 
 #[tokio::test]
@@ -2540,12 +2559,16 @@ impl DescendantProcess {
     #[cfg(windows)]
     fn open(pid: u32) -> Option<Self> {
         use windows_sys::Win32::System::Threading::{
-            OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+            OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
         };
 
         // SAFETY: the fixture PID came from the child process and the handle is owned on success.
         unsafe {
-            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            let handle = OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE,
+                0,
+                pid,
+            );
             (!handle.is_null()).then_some(Self { pid, handle })
         }
     }
@@ -2608,7 +2631,7 @@ async fn wait_for_descendant_process(marker: &Path, timeout: Duration) -> Descen
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 async fn wait_for_jsonl_kind<R: AsyncBufRead + Unpin>(
     reader: &mut R,
     kind: &str,
@@ -2637,17 +2660,17 @@ async fn wait_for_jsonl_kind<R: AsyncBufRead + Unpin>(
     .map_err(|_| format!("timed out waiting for JSONL kind {kind}"))?
 }
 
-#[cfg(unix)]
-fn spawn_second_sigint_fixture(
+#[cfg(any(unix, windows))]
+fn spawn_second_interrupt_fixture(
     project: &Path,
     coordinator: &Path,
     session: &Path,
 ) -> (tokio::process::Child, PathBuf, PathBuf) {
-    spawn_sigint_fixture(project, coordinator, session, "jsonl")
+    spawn_interrupt_fixture(project, coordinator, session, "jsonl")
 }
 
-#[cfg(unix)]
-fn spawn_sigint_fixture(
+#[cfg(any(unix, windows))]
+fn spawn_interrupt_fixture(
     project: &Path,
     coordinator: &Path,
     session: &Path,
@@ -2669,7 +2692,8 @@ fn spawn_sigint_fixture(
     let test_command = format!(
         "from pathlib import Path; source=Path('src/calc.py').read_text(); exec({mutant_command:?}) if {original:?} not in source else exec('from src.calc import total; assert total(1,2,3,4,5) == 15')",
     );
-    let child = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
+    command
         .arg("run")
         .arg("--root")
         .arg(project)
@@ -2690,13 +2714,21 @@ fn spawn_sigint_fixture(
         .arg(test_command)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .unwrap();
+        .kill_on_drop(true);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        use windows_sys::Win32::System::Threading::{CREATE_NEW_CONSOLE, CREATE_NEW_PROCESS_GROUP};
+
+        command
+            .as_std_mut()
+            .creation_flags(CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP);
+    }
+    let child = command.spawn().unwrap();
     (child, active, descendant_ready)
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn session_complete(session: &Path) -> i64 {
     rusqlite::Connection::open(session)
         .unwrap()
@@ -2704,7 +2736,7 @@ fn session_complete(session: &Path) -> i64 {
         .unwrap()
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 async fn begin_immediate_with_retry(
     path: &Path,
     timeout: Duration,
@@ -2731,7 +2763,7 @@ async fn begin_immediate_with_retry(
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 async fn try_wait_for_descendant_process(
     marker: &Path,
     timeout: Duration,
@@ -2752,7 +2784,7 @@ async fn try_wait_for_descendant_process(
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 async fn wait_for_live_session_readiness(
     marker: &Path,
     session: &Path,
@@ -2808,6 +2840,83 @@ fn send_sigint(pid: Option<u32>) -> Result<(), String> {
 }
 
 #[cfg(unix)]
+async fn send_fixture_interrupt(pid: Option<u32>) -> Result<(), String> {
+    send_sigint(pid)
+}
+
+#[cfg(windows)]
+const CONSOLE_CTRL_TARGET_PID: &str = "HOIMIN_TEST_CONSOLE_CTRL_TARGET_PID";
+
+#[cfg(windows)]
+#[test]
+#[ignore = "subprocess helper for Windows console-control delivery"]
+fn console_ctrl_sender_helper() {
+    use windows_sys::Win32::System::Console::{
+        AttachConsole, CTRL_C_EVENT, FreeConsole, GenerateConsoleCtrlEvent, SetConsoleCtrlHandler,
+    };
+
+    let pid = std::env::var(CONSOLE_CTRL_TARGET_PID)
+        .expect("missing console-control target PID")
+        .parse::<u32>()
+        .expect("invalid console-control target PID");
+    // SAFETY: this isolated helper attaches only to the dedicated console
+    // created for the test child and detaches before returning.
+    unsafe {
+        // The helper inherits the Cargo test process's console when one is
+        // present. A Windows process must detach before attaching elsewhere.
+        let _ = FreeConsole();
+
+        assert_ne!(
+            AttachConsole(pid),
+            0,
+            "AttachConsole({pid}) failed: {}",
+            std::io::Error::last_os_error()
+        );
+        assert_ne!(
+            SetConsoleCtrlHandler(None, 1),
+            0,
+            "SetConsoleCtrlHandler(ignore) failed: {}",
+            std::io::Error::last_os_error()
+        );
+        let generated = GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0);
+        let generated_error = std::io::Error::last_os_error();
+        let detached = FreeConsole();
+        let detached_error = std::io::Error::last_os_error();
+        assert_ne!(
+            generated, 0,
+            "GenerateConsoleCtrlEvent failed: {generated_error}"
+        );
+        assert_ne!(detached, 0, "FreeConsole failed: {detached_error}");
+    }
+}
+
+#[cfg(windows)]
+async fn send_fixture_interrupt(pid: Option<u32>) -> Result<(), String> {
+    let pid = pid.ok_or_else(|| "hoimin exited before console interrupt".to_owned())?;
+    let output =
+        tokio::process::Command::new(std::env::current_exe().map_err(|error| error.to_string())?)
+            .arg("--ignored")
+            .arg("--exact")
+            .arg("console_ctrl_sender_helper")
+            .env(CONSOLE_CTRL_TARGET_PID, pid.to_string())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .output()
+            .await
+            .map_err(|error| format!("spawn console-control sender: {error}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    Err(format!(
+        "console-control sender failed with {}: stdout={:?} stderr={:?}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    ))
+}
+
+#[cfg(any(unix, windows))]
 async fn reap_test_child(child: &mut tokio::process::Child) -> Result<(), String> {
     if child
         .try_wait()
@@ -2824,7 +2933,7 @@ async fn reap_test_child(child: &mut tokio::process::Child) -> Result<(), String
     Ok(())
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 async fn kill_fixture_processes(active: &Path, descendant_marker: &Path) -> Result<(), String> {
     let mut pids = BTreeSet::new();
     if let Ok(entries) = std::fs::read_dir(active) {
@@ -2851,15 +2960,23 @@ async fn kill_fixture_processes(active: &Path, descendant_marker: &Path) -> Resu
         if !process.is_alive() {
             continue;
         }
+        #[cfg(unix)]
         // SAFETY: the PID was written by this test's live fixture process tree.
-        if unsafe { libc::kill(process.pid, libc::SIGKILL) } != 0 {
+        let termination_failed = unsafe { libc::kill(process.pid, libc::SIGKILL) } != 0;
+        #[cfg(windows)]
+        // SAFETY: the retained handle belongs to this test fixture and was
+        // opened with PROCESS_TERMINATE.
+        let termination_failed =
+            unsafe { windows_sys::Win32::System::Threading::TerminateProcess(process.handle, 1) }
+                == 0;
+        if termination_failed {
             return Err(format!(
-                "failed to kill fixture process {pid}: {}",
+                "failed to terminate fixture process {pid}: {}",
                 std::io::Error::last_os_error()
             ));
         }
         if !process.wait_until_stops(Duration::from_secs(5)).await {
-            return Err(format!("fixture process {pid} survived SIGKILL"));
+            return Err(format!("fixture process {pid} survived termination"));
         }
     }
     Ok(())
