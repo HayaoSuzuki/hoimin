@@ -300,3 +300,238 @@ impl Write for CountingWriter {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use camino::Utf8PathBuf;
+    use hoimin_core::ByteSpan;
+    use proptest::prelude::*;
+
+    #[derive(Clone, Debug)]
+    struct CandidateSeed {
+        path_segment: String,
+        original: String,
+        replacement: String,
+        symbol: Option<String>,
+        operator: &'static str,
+        span_start: u64,
+        span_length: u64,
+        line: u32,
+        column: u32,
+    }
+
+    struct FinishedSpool(CandidateSpoolRef);
+
+    impl Drop for FinishedSpool {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0.token);
+        }
+    }
+
+    fn unicode_text(length: std::ops::RangeInclusive<usize>) -> impl Strategy<Value = String> {
+        prop::collection::vec(
+            prop::sample::select(vec![
+                'a', 'Z', '0', 'é', '雪', '中', '🧪', 'λ', '"', '\\', '\n', '\t',
+            ]),
+            length,
+        )
+        .prop_map(|characters| characters.into_iter().collect())
+    }
+
+    fn path_segment() -> impl Strategy<Value = String> {
+        prop::collection::vec(
+            prop::sample::select(vec!['a', 'Z', '0', 'é', '雪', '中', '🧪', 'λ', '_', '-']),
+            1..=12,
+        )
+        .prop_map(|characters| characters.into_iter().collect())
+    }
+
+    fn candidate_seed() -> impl Strategy<Value = CandidateSeed> {
+        (
+            path_segment(),
+            unicode_text(1..=20),
+            unicode_text(1..=20),
+            prop::option::of(unicode_text(1..=16)),
+            prop::sample::select(vec![
+                "binary_add_sub",
+                "compare_eq_ne",
+                "type_nullable_remove",
+            ]),
+            0_u64..4_096,
+            0_u64..128,
+            1_u32..1_024,
+            0_u32..256,
+        )
+            .prop_map(
+                |(
+                    path_segment,
+                    original,
+                    replacement,
+                    symbol,
+                    operator,
+                    span_start,
+                    span_length,
+                    line,
+                    column,
+                )| CandidateSeed {
+                    path_segment,
+                    original,
+                    replacement: format!("替{replacement}"),
+                    symbol,
+                    operator,
+                    span_start,
+                    span_length,
+                    line,
+                    column,
+                },
+            )
+    }
+
+    fn ordered_candidates() -> impl Strategy<Value = Vec<MutationCandidate>> {
+        prop::collection::vec(candidate_seed(), 1..=16).prop_map(|seeds| {
+            seeds
+                .into_iter()
+                .enumerate()
+                .map(|(index, seed)| {
+                    let sequence = u64::try_from(index + 1).expect("fixture length fits u64");
+                    MutationCandidate {
+                        id: format!("候補-{sequence}-🧪"),
+                        sequence,
+                        path: Utf8PathBuf::from(format!("src/{}-{sequence}.py", seed.path_segment)),
+                        span: ByteSpan {
+                            start: seed.span_start,
+                            length: seed.span_length,
+                        },
+                        original: seed.original,
+                        replacement: seed.replacement,
+                        operator: seed.operator.to_owned(),
+                        line: seed.line,
+                        column: seed.column,
+                        symbol: seed.symbol,
+                        file_hash: format!("{sequence:064x}"),
+                    }
+                })
+                .collect()
+        })
+    }
+
+    fn finish_candidates(candidates: &[MutationCandidate]) -> FinishedSpool {
+        let mut store = CandidateStore::new(
+            u64::try_from(candidates.len()).expect("property vector length fits u64"),
+        )
+        .unwrap();
+        for candidate in candidates {
+            store.push(candidate).unwrap();
+        }
+        FinishedSpool(store.finish().unwrap())
+    }
+
+    fn replay_from(reference: &CandidateSpoolRef, mut offset: u64) -> Vec<MutationCandidate> {
+        let mut replayed = Vec::new();
+        while let Some((candidate, next_offset)) =
+            CandidateStore::replay_one(reference, offset).unwrap()
+        {
+            replayed.push(candidate);
+            offset = next_offset;
+        }
+        replayed
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(128))]
+
+        #[test]
+        fn ordered_unicode_candidates_round_trip_from_every_record_offset(
+            candidates in ordered_candidates()
+        ) {
+            let spool = finish_candidates(&candidates);
+            let mut offset = 0;
+            let mut replayed = Vec::new();
+            let mut observed_offsets = Vec::new();
+
+            while let Some((candidate, next_offset)) =
+                CandidateStore::replay_one(&spool.0, offset).unwrap()
+            {
+                replayed.push(candidate);
+                offset = next_offset;
+                if replayed.len() < candidates.len() {
+                    observed_offsets.push((replayed.len(), next_offset));
+                }
+            }
+
+            prop_assert_eq!(&replayed, &candidates);
+            prop_assert_eq!(CandidateStore::replay_one(&spool.0, offset).unwrap(), None);
+            for (index, observed_offset) in observed_offsets {
+                prop_assert_eq!(
+                    replay_from(&spool.0, observed_offset),
+                    candidates[index..].to_vec()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn serialized_payload_boundaries_include_the_newline_exactly_once() {
+        for payload_length in [MAX_SPOOL_RECORD_BYTES - 2, MAX_SPOOL_RECORD_BYTES - 1] {
+            let candidate = candidate_with_payload_len(payload_length);
+            assert_eq!(serialized_len(&candidate), payload_length);
+            let mut store = CandidateStore::new(1).unwrap();
+
+            store.push(&candidate).unwrap();
+            let spool = FinishedSpool(store.finish().unwrap());
+
+            assert_eq!(
+                std::fs::metadata(&spool.0.token).unwrap().len(),
+                payload_length + 1
+            );
+        }
+
+        let exact_limit = candidate_with_payload_len(MAX_SPOOL_RECORD_BYTES);
+        assert_eq!(serialized_len(&exact_limit), MAX_SPOOL_RECORD_BYTES);
+        let mut store = CandidateStore::new(1).unwrap();
+        assert!(matches!(
+            store.push(&exact_limit),
+            Err(StoreError::RecordTooLarge {
+                limit: MAX_SPOOL_RECORD_BYTES
+            })
+        ));
+        assert_eq!(store.count(), 0);
+        assert_eq!(store.records_written, 0);
+        assert_eq!(store.file.as_file().metadata().unwrap().len(), 0);
+    }
+
+    fn candidate_with_payload_len(target: u64) -> MutationCandidate {
+        let mut candidate = MutationCandidate {
+            id: "boundary".to_owned(),
+            sequence: 1,
+            path: "src/boundary.py".into(),
+            span: hoimin_core::ByteSpan {
+                start: 0,
+                length: 1,
+            },
+            original: String::new(),
+            replacement: "-".to_owned(),
+            operator: "binary_add_sub".to_owned(),
+            line: 1,
+            column: 0,
+            symbol: Some("boundary".to_owned()),
+            file_hash: "0".repeat(64),
+        };
+        let base = serialized_len(&candidate);
+        assert!(target >= base, "target must fit the fixed record fields");
+        let padding = usize::try_from(target - base).expect("spool limit fits usize");
+        assert!(
+            padding <= usize::try_from(MAX_SPOOL_RECORD_BYTES).unwrap(),
+            "padding remains bounded by the production record limit"
+        );
+        candidate.original = "x".repeat(padding);
+        assert_eq!(serialized_len(&candidate), target);
+        candidate
+    }
+
+    fn serialized_len(candidate: &MutationCandidate) -> u64 {
+        u64::try_from(serde_json::to_vec(candidate).unwrap().len())
+            .expect("serialized boundary fixture length fits u64")
+    }
+}
