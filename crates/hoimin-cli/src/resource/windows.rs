@@ -634,6 +634,7 @@ fn terminate_job(job: HANDLE, operation: &'static str) -> Result<(), ResourceErr
 #[cfg(test)]
 mod tests {
     use std::ffi::OsStr;
+    use std::fs;
     use std::os::windows::ffi::OsStrExt;
     use std::sync::Arc;
     use std::sync::atomic::Ordering;
@@ -645,10 +646,15 @@ mod tests {
         RunLimits, RunProcess,
     };
     use uuid::Uuid;
+    use windows_sys::Win32::Foundation::{WAIT_OBJECT_0, WAIT_TIMEOUT};
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, WaitForSingleObject,
+    };
 
     use super::{
-        ActiveRoot, AttachFault, MEMORY_VIOLATION, RootSignal, RunState, WindowsBackend,
-        active_process_count, detach_root_generation, forget_root_generation, record_notification,
+        ActiveRoot, AttachFault, MEMORY_VIOLATION, OwnedHandle, RootSignal, RunState,
+        WindowsBackend, active_process_count, detach_root_generation, forget_root_generation,
+        record_notification,
     };
     use crate::process::ProcessHandler;
     use crate::resource::ResourceBackend;
@@ -796,6 +802,151 @@ mod tests {
             .iter()
             .map(|pid| u32::try_from(*pid).unwrap())
             .collect()
+    }
+
+    struct FixtureProcessHandle(OwnedHandle);
+
+    impl FixtureProcessHandle {
+        fn open(pid: u32) -> Self {
+            // SAFETY: the PID was atomically published by a live fixture, and the owned handle is
+            // validated below before use.
+            let handle = unsafe {
+                OpenProcess(
+                    PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
+                    0,
+                    pid,
+                )
+            };
+            Self(OwnedHandle::new(handle, "open published fixture process").unwrap())
+        }
+
+        fn wait_result(&self) -> u32 {
+            // SAFETY: the handle remains owned by this fixture wrapper for the duration of the wait.
+            unsafe { WaitForSingleObject(self.0.raw(), 0) }
+        }
+
+        fn is_active(&self) -> bool {
+            match self.wait_result() {
+                WAIT_TIMEOUT => true,
+                WAIT_OBJECT_0 => false,
+                result => panic!("unexpected fixture process wait result: {result}"),
+            }
+        }
+
+        async fn wait_until_exits(&self) -> bool {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+            loop {
+                match self.wait_result() {
+                    WAIT_OBJECT_0 => return true,
+                    WAIT_TIMEOUT if tokio::time::Instant::now() < deadline => {
+                        tokio::time::sleep(Duration::from_millis(5)).await;
+                    }
+                    WAIT_TIMEOUT => return false,
+                    result => panic!("unexpected fixture process wait result: {result}"),
+                }
+            }
+        }
+    }
+
+    fn published_process_identities(path: &Utf8Path) -> Option<(u32, u32)> {
+        let contents = fs::read_to_string(path).ok()?;
+        let mut identities = contents.split_ascii_whitespace();
+        let root = identities.next()?.parse().ok()?;
+        let descendant = identities.next()?.parse().ok()?;
+        identities.next().is_none().then_some((root, descendant))
+    }
+
+    async fn wait_until_job_is_empty(backend: &WindowsBackend) -> bool {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            let active = active_process_count(backend.inner.job.raw()).unwrap();
+            if active == 0 {
+                return true;
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return false;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn exited_root_is_observed_before_assigned_descendant_cleanup() {
+        let temporary = tempfile::tempdir().unwrap();
+        let output_dir = Utf8Path::from_path(temporary.path()).unwrap();
+        let identities = output_dir.join("root-and-descendant.txt");
+        let release = output_dir.join("release-root");
+        let backend = WindowsBackend::new(&run_limits()).unwrap();
+        let handler = ProcessHandler::new(
+            ResourceBackend::Windows(backend.clone()),
+            output_dir.to_owned(),
+        );
+        let code = "import os,pathlib,subprocess,sys,time; identities=pathlib.Path(sys.argv[1]); release=pathlib.Path(sys.argv[2]); child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)'],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); pending=identities.with_suffix('.pending'); pending.write_text(f'{os.getpid()} {child.pid}',encoding='utf-8'); os.replace(pending,identities);\nwhile not release.exists(): time.sleep(0.005)";
+        let request = RunProcess {
+            id: EffectId(251),
+            worker: None,
+            run_id: None,
+            mutant_id: None,
+            argv: vec![
+                python(),
+                arg("-c"),
+                arg(code),
+                arg(identities.as_std_path()),
+                arg(release.as_std_path()),
+            ],
+            cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
+            limits: ProcessLimits {
+                timeout: Duration::from_secs(5),
+                max_output_bytes: 64,
+                max_memory_bytes: 256 * 1024 * 1024,
+                max_processes: 8,
+            },
+        };
+        let started = Instant::now();
+
+        tokio::time::timeout(Duration::from_secs(6), async {
+            let handle = handler.handle(request);
+            tokio::pin!(handle);
+            let (root_pid, descendant_pid) = loop {
+                if let Some(identities) = published_process_identities(&identities) {
+                    break identities;
+                }
+                tokio::select! {
+                    result = &mut handle => {
+                        panic!("root completed before publishing fixture identities: {result:?}");
+                    }
+                    () = tokio::time::sleep(Duration::from_millis(5)) => {}
+                }
+            };
+            let root = FixtureProcessHandle::open(root_pid);
+            let descendant = FixtureProcessHandle::open(descendant_pid);
+            fs::write(&release, b"exit").unwrap();
+
+            assert!(
+                root.wait_until_exits().await,
+                "runtime root process handle did not signal after coordinated exit"
+            );
+            assert!(
+                descendant.is_active(),
+                "assigned descendant was not active when the root handle signaled"
+            );
+
+            let result = (&mut handle).await.unwrap();
+            assert_eq!(result.termination, hoimin_core::ProcessTermination::Exit(0));
+            assert!(
+                descendant.wait_until_exits().await,
+                "assigned descendant remained active after normal root cleanup"
+            );
+            assert!(
+                wait_until_job_is_empty(&backend).await,
+                "production run Job Object retained an active assigned process"
+            );
+            handler.close().unwrap();
+            assert_eq!(active_process_count(backend.inner.job.raw()).unwrap(), 0);
+        })
+        .await
+        .expect("root-before-descendant handling and Job Object cleanup exceeded six seconds");
+        assert!(started.elapsed() < Duration::from_secs(6));
     }
 
     #[tokio::test]
