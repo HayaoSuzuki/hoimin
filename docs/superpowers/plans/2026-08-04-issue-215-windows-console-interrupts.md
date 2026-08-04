@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Use the real `CARGO_BIN_EXE_hoimin` and `GenerateConsoleCtrlEvent(CTRL_C_EVENT, ...)` boundary.
-- Put the Windows child in a dedicated console/process group.
+- Put the Windows child in a dedicated console.
 - Add no production fault-injection API, environment behavior, or Unix emulation.
 - Synchronize through atomic readiness markers, SQLite state, JSONL events, and durable process handles.
 - First event: exit 130, parseable JSON, `complete:false`, session `complete=0`, descendant reaped.
@@ -83,11 +83,11 @@ The parent invokes the current test executable with `--ignored --exact console_c
 
 - [ ] **Step 3: Start hoimin in the dedicated Windows console**
 
-On Windows, use `std::os::windows::process::CommandExt::creation_flags` with `CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP` before spawning the real binary. Unix supplies no creation flags.
+On Windows, use `std::os::windows::process::CommandExt::creation_flags` with `CREATE_NEW_CONSOLE` before spawning the real binary. Do not also request `CREATE_NEW_PROCESS_GROUP`: Windows ignores that flag when `CREATE_NEW_CONSOLE` is present, and group-zero `CTRL_C_EVENT` delivery is isolated by the dedicated console itself. Unix supplies no creation flags.
 
 - [ ] **Step 4: Generalize cleanup without weakening handle identity**
 
-Compile session/readiness helpers on Unix and Windows. Open Windows descendant handles with `PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE`; use `TerminateProcess` only during teardown and wait on the retained handle.
+Compile session/readiness helpers on Unix and Windows. Make both Python fixture processes ignore `SIGINT` before publishing readiness or sleeping. Open Windows handles for both the active mutant and its descendant with `PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE`, retain them through the scenario, and use `TerminateProcess` only on those retained handles during teardown. Never reopen a raw Windows PID during cleanup; preserve the existing Unix PID-based cleanup.
 
 - [ ] **Step 5: Verify GREEN for both rows**
 
@@ -139,4 +139,3 @@ Expected: clean baseline, no timeout/error, and no surviving behavioral mutant f
 git add crates/hoimin-cli/Cargo.toml crates/hoimin-cli/tests/run_e2e.rs docs/superpowers/specs/2026-08-04-issue-215-windows-console-interrupts-design.md docs/superpowers/plans/2026-08-04-issue-215-windows-console-interrupts.md
 git commit -m "test: exercise Windows console interrupts"
 ```
-

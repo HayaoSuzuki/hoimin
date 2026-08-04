@@ -18,7 +18,7 @@ The baseline workspace run on this host completed 175 library tests and failed o
 
 ## Architecture
 
-The existing Unix scenario bodies become platform-neutral private async helpers. Thin platform-named tests keep the current Unix names and add Windows names. The real hoimin fixture remains the same except that Windows supplies `CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP` when spawning it.
+The existing Unix scenario bodies become platform-neutral private async helpers. Thin platform-named tests keep the current Unix names and add Windows names. The real hoimin fixture remains the same except that Windows supplies `CREATE_NEW_CONSOLE` when spawning it. `CREATE_NEW_PROCESS_GROUP` is not combined with it because Windows ignores that flag when a new console is requested.
 
 The Windows sender launches the current integration-test executable with `--ignored --exact console_ctrl_sender_helper` and passes the hoimin PID through an environment variable. The helper calls `AttachConsole(pid)`, `SetConsoleCtrlHandler(None, TRUE)`, `GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0)`, and `FreeConsole()`. Group ID zero is required for `CTRL_C_EVENT`; the dedicated console limits recipients to the fixture tree and sender helper. The parent waits for the helper's successful exit before observing hoimin.
 
@@ -28,7 +28,7 @@ The second waits for `mutant_started`, retains a SQLite `BEGIN IMMEDIATE` lock, 
 
 ## Error handling and cleanup
 
-Every console API failure includes the API name and `last_os_error`. The sender helper always attempts `FreeConsole` after successful attachment. Scenario cleanup reaps the hoimin child and terminates fixture PIDs recorded before a failure. Windows process handles request query and terminate rights so cleanup does not rely on recycled raw PIDs after opening the handle.
+Every console API failure includes the API name and `last_os_error`. The sender helper always attempts `FreeConsole` after successful attachment. Both Python fixture processes ignore `SIGINT` before publishing readiness, so their observed termination proves hoimin's Job cleanup rather than direct console-event handling. Once readiness publishes the active-mutant and descendant PIDs, Windows opens process handles with query and terminate rights and retains them through teardown. Windows teardown terminates only those retained handles and never reopens recorded PIDs; Unix retains its existing PID-based `SIGKILL` cleanup.
 
 All readiness is file-, SQLite-, stdout-, or process-handle-based. Fixed sleeps are short polling intervals, never proof that a phase occurred.
 
@@ -42,4 +42,3 @@ No production module, public interface, CLI option, schema, or runtime behavior 
 ## Verification
 
 On Windows, run both exact new tests and the complete `run_e2e` target. Run formatting, Clippy, and the workspace suite while recording the unrelated symlink-privilege baseline if it remains. Run focused cargo-mutants against `crates/hoimin-cli/src/interrupt.rs`; the new E2E tests must kill behavioral mutants reachable through real first/second interrupt handling, or each non-executed outcome must be explained from the tool report.
-

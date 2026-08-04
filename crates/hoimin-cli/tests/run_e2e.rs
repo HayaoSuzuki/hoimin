@@ -1515,10 +1515,11 @@ async fn first_interrupt_scenario() {
     let (mut child, active, descendant_ready) =
         spawn_interrupt_fixture(project.path(), coordinator.path(), &session, "json");
     let mut stdout_reader = BufReader::new(child.stdout.take().unwrap());
-    let mut descendant = None;
+    let mut fixture_processes = None;
     let outcome: Result<_, String> = async {
-        descendant = Some(
-            try_wait_for_descendant_process(&descendant_ready, Duration::from_secs(15)).await?,
+        fixture_processes = Some(
+            try_wait_for_fixture_processes(&active, &descendant_ready, Duration::from_secs(15))
+                .await?,
         );
         wait_for_live_session_readiness(
             &descendant_ready,
@@ -1538,9 +1539,10 @@ async fn first_interrupt_scenario() {
             .read_to_string(&mut stdout)
             .await
             .map_err(|error| error.to_string())?;
-        let descendant_stopped = descendant
+        let descendant_stopped = fixture_processes
             .as_ref()
             .expect("assigned above")
+            .descendant
             .wait_until_stops(Duration::from_secs(5))
             .await;
         Ok((status, stdout, descendant_stopped))
@@ -1548,7 +1550,10 @@ async fn first_interrupt_scenario() {
     .await;
 
     let child_cleanup = reap_test_child(&mut child).await;
+    #[cfg(unix)]
     let process_cleanup = kill_fixture_processes(&active, &descendant_ready).await;
+    #[cfg(windows)]
+    let process_cleanup = kill_fixture_processes(fixture_processes.as_ref()).await;
     if let Err(error) = child_cleanup.and(process_cleanup) {
         panic!("test teardown failed: {error}; outcome={outcome:?}");
     }
@@ -1587,12 +1592,13 @@ async fn second_interrupt_scenario() {
     let (mut child, active, descendant_ready) =
         spawn_second_interrupt_fixture(project.path(), coordinator.path(), &session);
     let mut stdout = BufReader::new(child.stdout.take().unwrap());
-    let mut descendant = None;
+    let mut fixture_processes = None;
     let outcome: Result<_, String> = async {
         let mut stdout_lines =
             wait_for_jsonl_kind(&mut stdout, "mutant_started", Duration::from_secs(15)).await?;
-        descendant = Some(
-            try_wait_for_descendant_process(&descendant_ready, Duration::from_secs(15)).await?,
+        fixture_processes = Some(
+            try_wait_for_fixture_processes(&active, &descendant_ready, Duration::from_secs(15))
+                .await?,
         );
         let lock = begin_immediate_with_retry(&session, Duration::from_secs(5)).await?;
 
@@ -1600,7 +1606,10 @@ async fn second_interrupt_scenario() {
             .id()
             .ok_or_else(|| "hoimin exited before first interrupt".to_owned())?;
         send_fixture_interrupt(Some(pid)).await?;
-        let descendant_process = descendant.as_ref().expect("assigned above");
+        let descendant_process = &fixture_processes
+            .as_ref()
+            .expect("assigned above")
+            .descendant;
         if !descendant_process
             .wait_until_stops(Duration::from_secs(5))
             .await
@@ -1628,7 +1637,10 @@ async fn second_interrupt_scenario() {
     .await;
 
     let child_cleanup = reap_test_child(&mut child).await;
+    #[cfg(unix)]
     let process_cleanup = kill_fixture_processes(&active, &descendant_ready).await;
+    #[cfg(windows)]
+    let process_cleanup = kill_fixture_processes(fixture_processes.as_ref()).await;
     if let Err(error) = child_cleanup.and(process_cleanup) {
         panic!("test teardown failed: {error}; outcome={outcome:?}");
     }
@@ -2526,19 +2538,19 @@ fn repo_root() -> PathBuf {
 }
 
 #[cfg(unix)]
-struct DescendantProcess {
+struct FixtureProcess {
     // `libc::kill` accepts a signed Unix process ID. Validate the marker value
     // once when opening it and retain that native representation thereafter.
     pid: i32,
 }
 
 #[cfg(windows)]
-struct DescendantProcess {
+struct FixtureProcess {
     pid: u32,
     handle: windows_sys::Win32::Foundation::HANDLE,
 }
 
-impl DescendantProcess {
+impl FixtureProcess {
     fn pid(&self) -> u32 {
         #[cfg(unix)]
         {
@@ -2599,10 +2611,26 @@ impl DescendantProcess {
         }
         !self.is_alive()
     }
+
+    #[cfg(windows)]
+    fn terminate(&self) -> Result<(), String> {
+        use windows_sys::Win32::System::Threading::TerminateProcess;
+
+        // SAFETY: this retained handle belongs to the observed test fixture
+        // process and was opened with PROCESS_TERMINATE.
+        if unsafe { TerminateProcess(self.handle, 1) } == 0 {
+            return Err(format!(
+                "failed to terminate fixture process {}: {}",
+                self.pid,
+                std::io::Error::last_os_error()
+            ));
+        }
+        Ok(())
+    }
 }
 
 #[cfg(windows)]
-impl Drop for DescendantProcess {
+impl Drop for FixtureProcess {
     fn drop(&mut self) {
         use windows_sys::Win32::Foundation::CloseHandle;
 
@@ -2613,13 +2641,13 @@ impl Drop for DescendantProcess {
     }
 }
 
-async fn wait_for_descendant_process(marker: &Path, timeout: Duration) -> DescendantProcess {
+async fn wait_for_descendant_process(marker: &Path, timeout: Duration) -> FixtureProcess {
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
         if let Some(pid) = std::fs::read_to_string(marker)
             .ok()
             .and_then(|value| value.trim().parse().ok())
-            && let Some(process) = DescendantProcess::open(pid)
+            && let Some(process) = FixtureProcess::open(pid)
         {
             return process;
         }
@@ -2680,13 +2708,15 @@ fn spawn_interrupt_fixture(
     std::fs::create_dir(&active).unwrap();
     let descendant_ready = coordinator.join("descendant-ready");
     let descendant_ready_temp = coordinator.join("descendant-ready.tmp");
-    let descendant_command = "import time; time.sleep(20)";
-    let mutant_command = format!(
-        "from pathlib import Path; import os,subprocess,sys,time; Path({:?},str(os.getpid())).write_text('running'); time.sleep(0.5); child=subprocess.Popen([sys.executable,'-c',{:?}]); ready_temp=Path({:?}); ready_temp.write_text(str(child.pid)); ready_temp.replace({:?}); time.sleep(20)",
-        active.to_string_lossy(),
-        descendant_command,
+    let descendant_command = format!(
+        "from pathlib import Path; import os,signal,time; signal.signal(signal.SIGINT, signal.SIG_IGN); ready_temp=Path({:?}); ready_temp.write_text(str(os.getpid())); ready_temp.replace({:?}); time.sleep(20)",
         descendant_ready_temp.to_string_lossy(),
         descendant_ready.to_string_lossy(),
+    );
+    let mutant_command = format!(
+        "from pathlib import Path; import os,signal,subprocess,sys,time; signal.signal(signal.SIGINT, signal.SIG_IGN); Path({:?},str(os.getpid())).write_text('running'); time.sleep(0.5); subprocess.Popen([sys.executable,'-c',{:?}]); time.sleep(20)",
+        active.to_string_lossy(),
+        descendant_command,
     );
     let original = "return a + b + c + d + e";
     let test_command = format!(
@@ -2718,11 +2748,9 @@ fn spawn_interrupt_fixture(
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        use windows_sys::Win32::System::Threading::{CREATE_NEW_CONSOLE, CREATE_NEW_PROCESS_GROUP};
+        use windows_sys::Win32::System::Threading::CREATE_NEW_CONSOLE;
 
-        command
-            .as_std_mut()
-            .creation_flags(CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP);
+        command.as_std_mut().creation_flags(CREATE_NEW_CONSOLE);
     }
     let child = command.spawn().unwrap();
     (child, active, descendant_ready)
@@ -2764,21 +2792,62 @@ async fn begin_immediate_with_retry(
 }
 
 #[cfg(any(unix, windows))]
-async fn try_wait_for_descendant_process(
-    marker: &Path,
+struct FixtureProcesses {
+    #[cfg(windows)]
+    active_mutant: FixtureProcess,
+    descendant: FixtureProcess,
+}
+
+#[cfg(windows)]
+fn try_open_active_fixture_process(active: &Path) -> Option<FixtureProcess> {
+    std::fs::read_dir(active)
+        .ok()?
+        .filter_map(Result::ok)
+        .filter_map(|entry| entry.file_name().to_str()?.parse::<u32>().ok())
+        .find_map(FixtureProcess::open)
+}
+
+#[cfg(any(unix, windows))]
+async fn try_wait_for_fixture_processes(
+    active: &Path,
+    descendant_marker: &Path,
     timeout: Duration,
-) -> Result<DescendantProcess, String> {
+) -> Result<FixtureProcesses, String> {
     let deadline = tokio::time::Instant::now() + timeout;
+    #[cfg(unix)]
+    let _ = active;
+    #[cfg(windows)]
+    let mut active_mutant = None;
+    let mut descendant = None;
     loop {
-        if let Some(pid) = std::fs::read_to_string(marker)
-            .ok()
-            .and_then(|value| value.trim().parse().ok())
-            && let Some(process) = DescendantProcess::open(pid)
-        {
-            return Ok(process);
+        #[cfg(windows)]
+        if active_mutant.is_none() {
+            active_mutant = try_open_active_fixture_process(active);
+        }
+        if descendant.is_none() {
+            descendant = std::fs::read_to_string(descendant_marker)
+                .ok()
+                .and_then(|value| value.trim().parse().ok())
+                .and_then(FixtureProcess::open);
+        }
+        #[cfg(unix)]
+        if let Some(descendant) = descendant {
+            return Ok(FixtureProcesses { descendant });
+        }
+        #[cfg(windows)]
+        if let Some(active_process) = active_mutant.take() {
+            if let Some(descendant_process) = descendant.take() {
+                return Ok(FixtureProcesses {
+                    active_mutant: active_process,
+                    descendant: descendant_process,
+                });
+            }
+            active_mutant = Some(active_process);
         }
         if tokio::time::Instant::now() >= deadline {
-            return Err("descendant-ready marker did not yield an open process".to_owned());
+            return Err(
+                "fixture readiness did not yield active-mutant and descendant processes".to_owned(),
+            );
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
@@ -2893,18 +2962,20 @@ fn console_ctrl_sender_helper() {
 #[cfg(windows)]
 async fn send_fixture_interrupt(pid: Option<u32>) -> Result<(), String> {
     let pid = pid.ok_or_else(|| "hoimin exited before console interrupt".to_owned())?;
-    let output =
-        tokio::process::Command::new(std::env::current_exe().map_err(|error| error.to_string())?)
-            .arg("--ignored")
-            .arg("--exact")
-            .arg("console_ctrl_sender_helper")
-            .env(CONSOLE_CTRL_TARGET_PID, pid.to_string())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true)
-            .output()
-            .await
-            .map_err(|error| format!("spawn console-control sender: {error}"))?;
+    let mut command =
+        tokio::process::Command::new(std::env::current_exe().map_err(|error| error.to_string())?);
+    command
+        .arg("--ignored")
+        .arg("--exact")
+        .arg("console_ctrl_sender_helper")
+        .env(CONSOLE_CTRL_TARGET_PID, pid.to_string())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    let output = tokio::time::timeout(Duration::from_secs(5), command.output())
+        .await
+        .map_err(|_| "console-control sender timed out".to_owned())?
+        .map_err(|error| format!("spawn console-control sender: {error}"))?;
     if output.status.success() {
         return Ok(());
     }
@@ -2933,7 +3004,7 @@ async fn reap_test_child(child: &mut tokio::process::Child) -> Result<(), String
     Ok(())
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 async fn kill_fixture_processes(active: &Path, descendant_marker: &Path) -> Result<(), String> {
     let mut pids = BTreeSet::new();
     if let Ok(entries) = std::fs::read_dir(active) {
@@ -2954,21 +3025,14 @@ async fn kill_fixture_processes(active: &Path, descendant_marker: &Path) -> Resu
         pids.insert(pid);
     }
     for pid in pids {
-        let Some(process) = DescendantProcess::open(pid) else {
+        let Some(process) = FixtureProcess::open(pid) else {
             continue;
         };
         if !process.is_alive() {
             continue;
         }
-        #[cfg(unix)]
         // SAFETY: the PID was written by this test's live fixture process tree.
         let termination_failed = unsafe { libc::kill(process.pid, libc::SIGKILL) } != 0;
-        #[cfg(windows)]
-        // SAFETY: the retained handle belongs to this test fixture and was
-        // opened with PROCESS_TERMINATE.
-        let termination_failed =
-            unsafe { windows_sys::Win32::System::Threading::TerminateProcess(process.handle, 1) }
-                == 0;
         if termination_failed {
             return Err(format!(
                 "failed to terminate fixture process {pid}: {}",
@@ -2977,6 +3041,26 @@ async fn kill_fixture_processes(active: &Path, descendant_marker: &Path) -> Resu
         }
         if !process.wait_until_stops(Duration::from_secs(5)).await {
             return Err(format!("fixture process {pid} survived termination"));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+async fn kill_fixture_processes(processes: Option<&FixtureProcesses>) -> Result<(), String> {
+    let Some(processes) = processes else {
+        return Ok(());
+    };
+    for process in [&processes.active_mutant, &processes.descendant] {
+        if !process.is_alive() {
+            continue;
+        }
+        process.terminate()?;
+        if !process.wait_until_stops(Duration::from_secs(5)).await {
+            return Err(format!(
+                "fixture process {} survived termination",
+                process.pid()
+            ));
         }
     }
     Ok(())
