@@ -156,6 +156,7 @@ fn encode_sources(sources: &[SourceHash]) -> Vec<u8> {
         })
         .collect::<Vec<_>>();
     values.sort();
+    values.dedup();
     let mut out = Encoder::new();
     out.count(values.len());
     for value in values {
@@ -202,6 +203,7 @@ fn encode_targets(targets: &[TargetSlice]) -> Vec<u8> {
         })
         .collect::<Vec<_>>();
     values.sort();
+    values.dedup();
     let mut out = Encoder::new();
     out.count(values.len());
     for value in values {
