@@ -2909,8 +2909,8 @@ fn send_sigint(pid: Option<u32>) -> Result<(), String> {
 }
 
 #[cfg(unix)]
-async fn send_fixture_interrupt(pid: Option<u32>) -> Result<(), String> {
-    send_sigint(pid)
+fn send_fixture_interrupt(pid: Option<u32>) -> std::future::Ready<Result<(), String>> {
+    std::future::ready(send_sigint(pid))
 }
 
 #[cfg(windows)]
