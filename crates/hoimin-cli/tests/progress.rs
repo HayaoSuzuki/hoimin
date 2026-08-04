@@ -1,4 +1,5 @@
 use std::{
+    collections::{BTreeMap, BTreeSet},
     num::NonZeroUsize,
     path::{Path, PathBuf},
     process::Output,
@@ -11,13 +12,14 @@ use std::{
 
 use camino::Utf8PathBuf;
 use hoimin_cli::progress::{
-    InputReport, ProgressError, ProgressState, UnusableReason, UsableReport, compare_reports,
-    read_report,
+    Comparison, InputReport, ProgressError, ProgressState, UnusableReason, UsableReport,
+    compare_reports, read_report,
 };
 use hoimin_core::{
     ByteSpan, MutantFinished, MutationCandidate, MutationStatus, REPORT_SCHEMA_VERSION,
     ResourceMode,
 };
+use proptest::prelude::*;
 use serde_json::{Value, json};
 use tokio::io::AsyncReadExt;
 
@@ -835,6 +837,65 @@ fn compare_a_usable_unusable_usable_history_has_no_cross_gap_comparison() {
     assert_eq!(result.latest, ProgressState::Indeterminate);
 }
 
+proptest! {
+    #[test]
+    fn compare_property_self_comparison_is_stable(generated in generated_comparison_reports()) {
+        let comparison = compare_pair(&generated.before, &generated.before);
+        let expected = comparison_oracle(&generated.before, &generated.before);
+
+        prop_assert_eq!(&comparison, &expected);
+        prop_assert_eq!(comparison.added, 0);
+        prop_assert_eq!(comparison.removed, 0);
+        prop_assert_eq!(comparison.improvements, 0);
+        prop_assert_eq!(comparison.regressions, 0);
+        prop_assert_eq!(
+            comparison.score_delta,
+            if generated.before.is_empty() { None } else { Some(0.0) }
+        );
+        prop_assert_eq!(
+            comparison.state,
+            if generated.before.is_empty() {
+                ProgressState::Indeterminate
+            } else {
+                ProgressState::Stalled
+            }
+        );
+    }
+
+    #[test]
+    fn compare_property_reversal_is_antisymmetric_and_order_independent(
+        generated in generated_comparison_reports(),
+    ) {
+        let forward = compare_pair(&generated.before, &generated.after);
+        let reverse = compare_pair(&generated.after, &generated.before);
+        let expected = comparison_oracle(&generated.before, &generated.after);
+
+        prop_assert_eq!(&forward, &expected);
+        prop_assert_eq!(forward.improvements, reverse.regressions);
+        prop_assert_eq!(forward.regressions, reverse.improvements);
+        prop_assert_eq!(forward.added, reverse.removed);
+        prop_assert_eq!(forward.removed, reverse.added);
+        prop_assert_eq!(forward.score_delta, reverse.score_delta.map(|delta| -delta));
+
+        let permuted = compare_pair(&generated.permuted_before, &generated.permuted_after);
+        prop_assert_eq!(permuted, forward);
+    }
+
+    #[test]
+    fn compare_property_killed_to_survived_uses_id_despite_duplicate_content(
+        (before, after) in duplicate_content_regression_reports(),
+    ) {
+        let comparison = compare_pair(&before, &after);
+        let expected = comparison_oracle(&before, &after);
+
+        prop_assert_eq!(&comparison, &expected);
+        prop_assert_eq!(comparison.common, before.len());
+        prop_assert_eq!(comparison.ambiguous, 0);
+        prop_assert_eq!(comparison.regressions, 1);
+        prop_assert_eq!(comparison.state, ProgressState::Regressing);
+    }
+}
+
 #[tokio::test]
 async fn output_json_exposes_agent_decision_fields() {
     let fixture = tempfile::tempdir().unwrap();
@@ -1199,6 +1260,255 @@ async fn progress_json_document_matches_its_schema() {
     let mut invalid = document;
     invalid["inputs"][0]["usable"] = json!(false);
     assert_schema_invalid(&schema, &invalid);
+}
+
+#[derive(Debug)]
+struct GeneratedComparisonReports {
+    before: Vec<MutantFinished>,
+    after: Vec<MutantFinished>,
+    permuted_before: Vec<MutantFinished>,
+    permuted_after: Vec<MutantFinished>,
+}
+
+fn mutation_status() -> impl Strategy<Value = MutationStatus> {
+    prop_oneof![
+        Just(MutationStatus::Killed),
+        Just(MutationStatus::Survived),
+        Just(MutationStatus::Timeout),
+        Just(MutationStatus::OutOfMemory),
+        Just(MutationStatus::ProcessLimit),
+        Just(MutationStatus::Error),
+        Just(MutationStatus::NotRun),
+    ]
+}
+
+fn conclusive_status() -> impl Strategy<Value = MutationStatus> {
+    prop_oneof![Just(MutationStatus::Killed), Just(MutationStatus::Survived),]
+}
+
+fn generated_comparison_reports() -> impl Strategy<Value = GeneratedComparisonReports> {
+    (0usize..=12)
+        .prop_flat_map(|len| {
+            (
+                proptest::collection::vec(
+                    (
+                        mutation_status(),
+                        mutation_status(),
+                        0u8..4,
+                        any::<u64>(),
+                        any::<u64>(),
+                    ),
+                    len,
+                ),
+                conclusive_status(),
+                conclusive_status(),
+                any::<bool>(),
+            )
+        })
+        .prop_map(
+            |(mut rows, forced_before, forced_after, different_id_sets)| {
+                if let Some(first) = rows.first_mut() {
+                    first.0 = forced_before;
+                    first.1 = forced_after;
+                }
+                if rows.len() >= 2 && !different_id_sets {
+                    rows[1].2 = rows[0].2;
+                }
+
+                let before = generated_mutants(&rows, different_id_sets, |row| row.0);
+                let mut after = generated_mutants(&rows, different_id_sets, |row| row.1);
+                if different_id_sets && !after.is_empty() {
+                    let added = after.last_mut().unwrap();
+                    "generated-added".clone_into(&mut added.candidate.id);
+                    added.candidate.original = format!("shared-content-{}", rows.len());
+                }
+                let permuted_before = permute_generated_mutants(&before, &rows, |row| row.3);
+                let permuted_after = permute_generated_mutants(&after, &rows, |row| row.4);
+                GeneratedComparisonReports {
+                    before,
+                    after,
+                    permuted_before,
+                    permuted_after,
+                }
+            },
+        )
+}
+
+fn duplicate_content_regression_reports()
+-> impl Strategy<Value = (Vec<MutantFinished>, Vec<MutantFinished>)> {
+    proptest::collection::vec((mutation_status(), 0u8..4), 1..=11).prop_map(|remaining| {
+        let mut before = vec![generated_mutant(0, 0, MutationStatus::Killed)];
+        let mut after = vec![generated_mutant(0, 0, MutationStatus::Survived)];
+        for (offset, (status, content)) in remaining.into_iter().enumerate() {
+            let index = offset + 1;
+            let content = if index == 1 { 0 } else { content };
+            before.push(generated_mutant(index, usize::from(content), status));
+            after.push(generated_mutant(index, usize::from(content), status));
+        }
+        (before, after)
+    })
+}
+
+fn generated_mutants<F>(
+    rows: &[(MutationStatus, MutationStatus, u8, u64, u64)],
+    unique_content: bool,
+    status: F,
+) -> Vec<MutantFinished>
+where
+    F: Fn(&(MutationStatus, MutationStatus, u8, u64, u64)) -> MutationStatus,
+{
+    rows.iter()
+        .enumerate()
+        .map(|(index, row)| {
+            let content = if unique_content {
+                index
+            } else {
+                usize::from(row.2)
+            };
+            generated_mutant(index, content, status(row))
+        })
+        .collect()
+}
+
+fn generated_mutant(index: usize, content: usize, status: MutationStatus) -> MutantFinished {
+    mutant_with_id(
+        &format!("generated-{index}"),
+        &format!("shared-content-{content}"),
+        status,
+    )
+}
+
+fn permute_generated_mutants<F>(
+    mutants: &[MutantFinished],
+    rows: &[(MutationStatus, MutationStatus, u8, u64, u64)],
+    rank: F,
+) -> Vec<MutantFinished>
+where
+    F: Fn(&(MutationStatus, MutationStatus, u8, u64, u64)) -> u64,
+{
+    let mut ranked = mutants
+        .iter()
+        .cloned()
+        .zip(rows.iter())
+        .enumerate()
+        .map(|(index, (mutant, row))| (rank(row), index, mutant))
+        .collect::<Vec<_>>();
+    ranked.sort_by_key(|(rank, index, _)| (*rank, *index));
+    ranked.into_iter().map(|(_, _, mutant)| mutant).collect()
+}
+
+fn compare_pair(before: &[MutantFinished], after: &[MutantFinished]) -> Comparison {
+    compare_reports(
+        &[usable(before.to_vec()), usable(after.to_vec())],
+        nz(usize::MAX),
+    )
+    .comparisons
+    .into_iter()
+    .next()
+    .expect("two usable reports always produce one comparison")
+}
+
+fn comparison_oracle(before: &[MutantFinished], after: &[MutantFinished]) -> Comparison {
+    let before_by_id = before
+        .iter()
+        .map(|mutant| (mutant.candidate.id.as_str(), mutant.status))
+        .collect::<BTreeMap<_, _>>();
+    let after_by_id = after
+        .iter()
+        .map(|mutant| (mutant.candidate.id.as_str(), mutant.status))
+        .collect::<BTreeMap<_, _>>();
+    let unique_ids = before_by_id.len() == before.len() && after_by_id.len() == after.len();
+    let matching_ids = unique_ids && before_by_id.keys().eq(after_by_id.keys());
+
+    let mut common = 0;
+    let inconclusive = before_by_id
+        .iter()
+        .chain(&after_by_id)
+        .filter_map(|(id, status)| (!oracle_is_conclusive(*status)).then_some(*id))
+        .collect::<BTreeSet<_>>()
+        .len();
+    let mut improvements = 0;
+    let mut regressions = 0;
+    let mut carried_survivors = 0;
+    let mut previous_killed = 0;
+    let mut previous_survived = 0;
+    let mut current_killed = 0;
+    let mut current_survived = 0;
+    for (id, previous) in &before_by_id {
+        let Some(current) = after_by_id.get(id) else {
+            continue;
+        };
+        common += 1;
+        if !oracle_is_conclusive(*previous) || !oracle_is_conclusive(*current) {
+            continue;
+        }
+        match previous {
+            MutationStatus::Killed => previous_killed += 1,
+            MutationStatus::Survived => previous_survived += 1,
+            _ => unreachable!(),
+        }
+        match current {
+            MutationStatus::Killed => current_killed += 1,
+            MutationStatus::Survived => current_survived += 1,
+            _ => unreachable!(),
+        }
+        match (previous, current) {
+            (MutationStatus::Survived, MutationStatus::Killed) => improvements += 1,
+            (MutationStatus::Killed, MutationStatus::Survived) => regressions += 1,
+            (MutationStatus::Survived, MutationStatus::Survived) => carried_survivors += 1,
+            (MutationStatus::Killed, MutationStatus::Killed) => {}
+            _ => unreachable!(),
+        }
+    }
+
+    let comparable = previous_killed + previous_survived;
+    let previous_score = oracle_score(previous_killed, previous_survived);
+    let current_score = oracle_score(current_killed, current_survived);
+    let state = if !matching_ids || comparable == 0 {
+        ProgressState::Indeterminate
+    } else if regressions > 0 {
+        ProgressState::Regressing
+    } else if improvements > 0 {
+        ProgressState::Improving
+    } else {
+        ProgressState::Stalled
+    };
+
+    Comparison {
+        common,
+        added: after_by_id
+            .keys()
+            .filter(|id| !before_by_id.contains_key(*id))
+            .count(),
+        removed: before_by_id
+            .keys()
+            .filter(|id| !after_by_id.contains_key(*id))
+            .count(),
+        ambiguous: 0,
+        inconclusive,
+        improvements,
+        regressions,
+        carried_survivors,
+        previous_score,
+        current_score,
+        score_delta: previous_score
+            .zip(current_score)
+            .map(|(previous, current)| current - previous),
+        state,
+    }
+}
+
+fn oracle_is_conclusive(status: MutationStatus) -> bool {
+    matches!(status, MutationStatus::Killed | MutationStatus::Survived)
+}
+
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "the independent oracle must model the public f64 score"
+)]
+fn oracle_score(killed: usize, survived: usize) -> Option<f64> {
+    let total = killed + survived;
+    (total > 0).then(|| killed as f64 / total as f64)
 }
 
 fn nz(value: usize) -> NonZeroUsize {
