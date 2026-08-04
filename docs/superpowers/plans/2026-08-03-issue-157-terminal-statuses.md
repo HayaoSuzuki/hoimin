@@ -35,11 +35,12 @@ list (`total_count: 0`). Consequently no reachable repository workflow can
 currently produce the required delegated cgroup-v2 evidence. A skipped job is
 not coverage, and #157 must remain open.
 
-The following narrowly scoped follow-ups should be created and linked from
-#157. They are kept as proposals in this task because issue creation is handled
-after implementation review.
+The two hard-backend rows are tracked independently by narrowly scoped
+follow-ups [#228](https://github.com/tokyogas-tech/hoimin/issues/228) and
+[#229](https://github.com/tokyogas-tech/hoimin/issues/229). They are linked
+from #157, which remains open pending their delegated-runner evidence.
 
-## Proposed OOM follow-up
+## OOM follow-up: #228
 
 Title:
 
@@ -76,7 +77,7 @@ Acceptance criteria:
   issue or parent #157.
 ```
 
-## Proposed process-limit follow-up
+## Process-limit follow-up: #229
 
 Title:
 
@@ -115,10 +116,9 @@ Acceptance criteria:
 
 ## Closure invariant
 
-#157 remains open until both proposed follow-ups exist, are linked from #157,
-and each has the required passing hard-backend CI link. Merging the portable
-timeout and survivor coverage alone does not satisfy or close the two hard-limit
-rows.
+#157 remains open until both follow-ups have the required passing hard-backend
+CI link. Merging the portable timeout and survivor coverage alone does not
+satisfy or close the two hard-limit rows.
 
 ## Verification
 
