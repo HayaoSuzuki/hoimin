@@ -128,4 +128,35 @@ mod tests {
         assert!(error.contains("fixture"), "{error}");
         assert!(forced_rx.try_recv().is_err());
     }
+
+    #[tokio::test]
+    async fn dropping_monitor_aborts_its_owned_producer_task() {
+        struct NotifyOnDrop(Option<tokio::sync::oneshot::Sender<()>>);
+
+        impl Drop for NotifyOnDrop {
+            fn drop(&mut self) {
+                if let Some(tx) = self.0.take() {
+                    let _ = tx.send(());
+                }
+            }
+        }
+
+        let (_signal_tx, signal_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (producer_dropped_tx, producer_dropped_rx) = tokio::sync::oneshot::channel();
+        let (producer_ready_tx, producer_ready_rx) = tokio::sync::oneshot::channel();
+        let producer = tokio::spawn(async move {
+            let _notify = NotifyOnDrop(Some(producer_dropped_tx));
+            let _ = producer_ready_tx.send(());
+            std::future::pending::<()>().await;
+        });
+        let monitor = super::spawn_monitor(signal_rx, |_| {}, Some(producer));
+
+        producer_ready_rx.await.expect("producer must start");
+        drop(monitor);
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), producer_dropped_rx)
+            .await
+            .expect("dropping the monitor must abort its producer task")
+            .expect("producer drop notification sender must remain live");
+    }
 }
