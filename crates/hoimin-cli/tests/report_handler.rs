@@ -4,10 +4,10 @@ use std::sync::{Arc, Mutex};
 
 use hoimin_cli::report::ReportHandler;
 use hoimin_core::{
-    BaselineFinished, ByteSpan, Diagnostic, EffectFailure, EffectId, EmitOutput, MutantFinished,
-    MutantStarted, MutationCandidate, MutationStatus, MutationSummary, OutputEvent, OutputFormat,
-    OutputSpoolRef, ProcessTermination, REPORT_SCHEMA_VERSION, ReportSequence, ResourceMode,
-    RunStarted, RunSummary, VerificationSelection, VerificationSelectionMode,
+    BaselineFinished, ByteSpan, CommandArg, Diagnostic, EffectFailure, EffectId, EmitOutput,
+    MutantFinished, MutantStarted, MutationCandidate, MutationStatus, MutationSummary, OutputEvent,
+    OutputFormat, OutputSpoolRef, ProcessTermination, REPORT_SCHEMA_VERSION, ReportSequence,
+    ResourceMode, RunStarted, RunSummary, VerificationSelection, VerificationSelectionMode,
     VerificationSelectionPolicy, VerificationSelectionScope,
 };
 use serde::{Deserialize, Serialize};
@@ -117,6 +117,10 @@ fn all_optional_report_events(current: bool) -> Vec<OutputEvent> {
     .unwrap();
     config.root = ".".into();
     config.selection.root = ".".into();
+    config.test_argv = ["python", "-m", "pytest"]
+        .into_iter()
+        .map(|argument| CommandArg::Unix(argument.as_bytes().to_vec()))
+        .collect();
     config.output.metrics = Some("metrics.json".into());
     config.session.as_mut().unwrap().path = "session.sqlite3".into();
     let verification_selection = current.then(documented_verification_selection);
