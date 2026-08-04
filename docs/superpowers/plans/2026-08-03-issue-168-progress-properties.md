@@ -21,13 +21,13 @@ The test oracle independently joins `BTreeMap<candidate_id, status>` values. It 
 
 ## TDD evidence
 
-After adding the properties, two temporary production mutations demonstrated that they detect the intended breaks:
+After adding the properties, three temporary production mutations demonstrated that they detect the intended breaks:
 
 1. Replacing matching-set candidate-ID indexing with content-key indexing made all three properties fail, including the duplicate-content regression (`common: 1` instead of `2`, and the regression was lost).
 2. Counting `Killed -> Survived` as an improvement made the reversal property and duplicate-content regression fail (`improvements: 1`, `regressions: 0`).
 3. Counting an after-only candidate as removed made the reversal/oracle property fail (`added: 0`, `removed: 2` instead of one each).
 
-Both mutations and the generated proptest regression files were removed before GREEN verification.
+All three mutations and the generated proptest regression files were removed before GREEN verification.
 
 ## Verification
 
