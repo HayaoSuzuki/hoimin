@@ -237,40 +237,119 @@ fn omits_candidates_for_unselected_operators() {
     assert!(output.candidates.is_empty());
 }
 
-#[test]
-fn skips_mutable_fstring_literal_content() {
-    let source = "label = f\"{start}-{end}\"\npath = f\"{left}/{right}\"\nflag = f\"True\"\nrelation = f\"in\"\n";
+const MUTABLE_OPERATOR_TOKENS: &[&str] = &[
+    "==", "!=", "<", "<=", ">", ">=", "in", "not in", "is", "is not", "and", "or", "+=", "-=", "*",
+    "/", "//", "%", "break", "continue", "True", "False", "+", "-", "not",
+];
 
-    assert!(analyze(source).candidates.is_empty());
+const NESTED_QUOTE_PAIRS: &[(&str, &str, &str)] = &[
+    (
+        "single-quoted",
+        "label = 'plain \"double\" text'\n",
+        "label = 'mutable + \"double\" text'\n",
+    ),
+    (
+        "double-quoted",
+        "label = \"plain 'single' text\"\n",
+        "label = \"mutable == 'single' text\"\n",
+    ),
+    (
+        "triple-single-quoted",
+        "label = '''plain \"double\" and 'single' text'''\n",
+        "label = '''mutable True + \"double\" and 'single' text'''\n",
+    ),
+    (
+        "triple-double-quoted",
+        "label = \"\"\"plain 'single' and \"double\" text\"\"\"\n",
+        "label = \"\"\"mutable False - 'single' and \"double\" text\"\"\"\n",
+    ),
+];
+
+fn assert_only_trailing_expression_changes(literal_line: &str) {
+    let source = format!("{literal_line}result = left + right\n");
+    let output = analyze(&source);
+    assert!(output.diagnostics.is_empty());
+    assert_eq!(output.candidates.len(), 1);
+    let candidate = &output.candidates[0];
+    assert_eq!(candidate.original, "+");
+    assert_eq!(candidate.replacement, "-");
+    let start = usize::try_from(candidate.span.start).unwrap();
+    let end = start + usize::try_from(candidate.span.length).unwrap();
+    assert_eq!(&source[..start], format!("{literal_line}result = left "));
+    assert_eq!(&source[end..], " right\n");
+    let mut mutated = source.clone();
+    mutated.replace_range(start..end, &candidate.replacement);
+    assert_eq!(mutated, format!("{literal_line}result = left - right\n"));
 }
 
 #[test]
-fn skips_mutable_tstring_literal_content() {
-    let source = "label = t\"{start}-{end}\"\nflag = t\"True\"\n";
-
-    assert!(analyze(source).candidates.is_empty());
-}
-
-#[test]
-fn retains_mutable_fstring_interpolation_expressions() {
-    let source = "value = f\"literal-{left + right}-{enabled is not None}\"\n";
-    let output = analyze(source);
-    let observed: Vec<_> = output
-        .candidates
-        .iter()
-        .map(|candidate| {
-            (
-                candidate.original.as_str(),
-                candidate.replacement.as_str(),
-                candidate.operator.as_str(),
-            )
-        })
-        .collect();
-
-    assert_eq!(
-        observed,
-        vec![("+", "-", "binary_add_sub"), ("is not", "is", "identity"),]
+fn ordinary_string_literals_ignore_every_mutable_operator_token() {
+    assert!(
+        analyze("label = 'ordinary operator-free text'\n")
+            .candidates
+            .is_empty()
     );
+    for token in MUTABLE_OPERATOR_TOKENS {
+        let source = format!("label = {token:?}\n");
+        assert!(
+            analyze(&source).candidates.is_empty(),
+            "ordinary string content {token:?} produced a candidate"
+        );
+        assert_only_trailing_expression_changes(&source);
+    }
+}
+
+#[test]
+fn nested_quote_pairs_preserve_every_surrounding_string_byte() {
+    for (name, benign, adversarial) in NESTED_QUOTE_PAIRS {
+        for source in [benign, adversarial] {
+            assert!(
+                analyze(source).candidates.is_empty(),
+                "nested quote fixture {name} produced a literal-content candidate"
+            );
+            assert_only_trailing_expression_changes(source);
+        }
+    }
+}
+
+#[test]
+fn interpolated_string_pairs_skip_literals_and_retain_expressions() {
+    for (flavor, literal, expression) in [
+        (
+            "f-string",
+            "value = f\"literal == + True {plain}\"\n",
+            "value = f\"literal == + True {left + right} {enabled is not None}\"\n",
+        ),
+        (
+            "t-string",
+            "value = t\"literal == + True {plain}\"\n",
+            "value = t\"literal == + True {left + right} {enabled is not None}\"\n",
+        ),
+    ] {
+        assert!(
+            analyze(literal).candidates.is_empty(),
+            "{flavor} literal content produced a candidate"
+        );
+        let observed = analyze(expression)
+            .candidates
+            .into_iter()
+            .map(|candidate| {
+                (
+                    candidate.original,
+                    candidate.replacement,
+                    candidate.operator,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            observed,
+            [
+                ("+".to_owned(), "-".to_owned(), "binary_add_sub".to_owned()),
+                ("is not".to_owned(), "is".to_owned(), "identity".to_owned()),
+            ],
+            "{flavor} interpolation expressions were not analyzed exactly"
+        );
+    }
 }
 
 #[test]
