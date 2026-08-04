@@ -3329,10 +3329,21 @@ struct ScheduleHarness {
     next_candidate: usize,
     effect_ids: BTreeSet<EffectId>,
     output_events: Vec<(EffectId, OutputEvent)>,
+    failed_output_ids: BTreeSet<EffectId>,
+    scheduled_candidates: BTreeSet<String>,
     ledger: BTreeMap<String, MutationStatus>,
     stop_requested: bool,
     jobs: usize,
     session: bool,
+    effect_trace: Vec<ScheduleTrace>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ScheduleTrace {
+    FailureDiagnostic,
+    Cleanup,
+    RunFinished,
+    Other,
 }
 
 impl ScheduleHarness {
@@ -3360,11 +3371,6 @@ impl ScheduleHarness {
             .map(|candidate| candidate.id.clone())
             .collect();
         let state = match filter {
-            _ if session => RunState::with_fingerprint(
-                "schedule-run",
-                config,
-                RunFingerprint::from_bytes([7; 32]),
-            ),
             ScheduleFilter::All => RunState::new("schedule-run", config),
             ScheduleFilter::Explicit => RunState::with_candidate_filter(
                 "schedule-run",
@@ -3384,10 +3390,13 @@ impl ScheduleHarness {
             next_candidate: 0,
             effect_ids: BTreeSet::new(),
             output_events: Vec::new(),
+            failed_output_ids: BTreeSet::new(),
+            scheduled_candidates: BTreeSet::new(),
             ledger: BTreeMap::new(),
             stop_requested: false,
             jobs,
             session,
+            effect_trace: Vec::new(),
         };
         harness.register(effects);
         harness
@@ -3410,6 +3419,21 @@ impl ScheduleHarness {
                 }
                 self.output_events.push((output.id, output.event.clone()));
             }
+            self.effect_trace.push(match &effect {
+                RunEffect::EmitOutput(output)
+                    if matches!(&output.event, OutputEvent::Diagnostic(value)
+                        if value.code == "schedule.effect") =>
+                {
+                    ScheduleTrace::FailureDiagnostic
+                }
+                RunEffect::Cleanup(_) => ScheduleTrace::Cleanup,
+                RunEffect::EmitOutput(output)
+                    if matches!(&output.event, OutputEvent::RunFinished(_)) =>
+                {
+                    ScheduleTrace::RunFinished
+                }
+                _ => ScheduleTrace::Other,
+            });
             self.pending.push(effect);
         }
     }
@@ -3445,13 +3469,7 @@ impl ScheduleHarness {
             return;
         }
         self.stop_requested = true;
-        for (_, event) in &self.output_events {
-            if let OutputEvent::MutantStarted(started) = event {
-                self.ledger
-                    .entry(started.mutant_id.clone())
-                    .or_insert(MutationStatus::NotRun);
-            }
-        }
+        self.classify_uncompleted_as_not_run();
         let (state, effects) = transition(self.state.clone(), event).unwrap();
         self.state = state;
         self.pending
@@ -3460,10 +3478,6 @@ impl ScheduleHarness {
     }
 
     fn fail(&mut self, index: usize) {
-        if self.stop_requested {
-            self.complete(index);
-            return;
-        }
         assert!(
             !self.pending.is_empty(),
             "unfinished machine has no pending effect"
@@ -3471,28 +3485,92 @@ impl ScheduleHarness {
         let fail_candidates: Vec<_> = self
             .pending
             .iter()
-            .filter(|effect| !matches!(effect, RunEffect::EmitOutput(_)))
+            .filter(|effect| match effect {
+                RunEffect::EmitOutput(output) => matches!(
+                    &output.event,
+                    OutputEvent::MutantStarted(_) | OutputEvent::MutantFinished(_)
+                ),
+                _ => true,
+            })
             .collect();
         if fail_candidates.is_empty() {
             self.complete(index);
             return;
         }
         let effect = fail_candidates[index % fail_candidates.len()];
+        if matches!(effect, RunEffect::EmitOutput(_)) {
+            self.failed_output_ids.insert(effect.id());
+        }
         let failed = EffectFailed::other(effect.id(), "schedule.effect", "generated failure");
         self.stop_requested = true;
-        for (_, event) in &self.output_events {
-            if let OutputEvent::MutantStarted(started) = event {
-                self.ledger
-                    .entry(started.mutant_id.clone())
-                    .or_insert(MutationStatus::NotRun);
-            }
-        }
+        self.classify_uncompleted_as_not_run();
         let (state, effects) =
             transition(self.state.clone(), RunEvent::EffectFailed(failed)).unwrap();
         self.state = state;
         self.pending
             .retain(|effect| self.state.is_effect_pending(effect.id()));
         self.register(effects);
+    }
+
+    fn classify_uncompleted_as_not_run(&mut self) {
+        for mutant_id in &self.scheduled_candidates {
+            self.ledger
+                .entry(mutant_id.clone())
+                .or_insert(MutationStatus::NotRun);
+        }
+    }
+
+    fn complete_until(&mut self, predicate: impl Fn(&RunEffect) -> bool) {
+        for _ in 0..128 {
+            if self.pending.iter().any(&predicate) {
+                return;
+            }
+            self.complete(0);
+        }
+        panic!("target effect was not produced within the completion cap");
+    }
+
+    fn fail_where(&mut self, predicate: impl Fn(&RunEffect) -> bool) {
+        let eligible: Vec<_> = self
+            .pending
+            .iter()
+            .filter(|effect| match effect {
+                RunEffect::EmitOutput(output) => matches!(
+                    &output.event,
+                    OutputEvent::MutantStarted(_) | OutputEvent::MutantFinished(_)
+                ),
+                _ => true,
+            })
+            .collect();
+        let index = eligible
+            .iter()
+            .position(|effect| predicate(effect))
+            .expect("target effect must be pending and failure-eligible");
+        self.fail(index);
+    }
+
+    fn assert_failure_diagnostic_precedes_cleanup_and_terminal(&self) {
+        let diagnostics: Vec<_> = self
+            .effect_trace
+            .iter()
+            .enumerate()
+            .filter_map(|(index, trace)| {
+                (*trace == ScheduleTrace::FailureDiagnostic).then_some(index)
+            })
+            .collect();
+        assert_eq!(diagnostics.len(), 1);
+        let cleanup = self
+            .effect_trace
+            .iter()
+            .position(|trace| *trace == ScheduleTrace::Cleanup)
+            .expect("failure path must clean up");
+        let terminal = self
+            .effect_trace
+            .iter()
+            .position(|trace| *trace == ScheduleTrace::RunFinished)
+            .expect("failure path must emit a terminal report");
+        assert!(diagnostics[0] < cleanup);
+        assert!(cleanup < terminal);
     }
 
     #[allow(
@@ -3543,6 +3621,9 @@ impl ScheduleHarness {
                 let candidate = self.candidates.get(self.next_candidate).cloned();
                 if candidate.is_some() {
                     self.next_candidate += 1;
+                }
+                if let Some(candidate) = &candidate {
+                    self.scheduled_candidates.insert(candidate.id.clone());
                 }
                 RunEvent::CandidateLoaded(CandidateLoaded {
                     id: read.id,
@@ -3622,7 +3703,7 @@ impl ScheduleHarness {
         }
     }
 
-    fn finish(mut self, actions: &[ScheduleAction]) {
+    fn finish(mut self, actions: &[ScheduleAction]) -> Self {
         for action in actions.iter().take(64).copied() {
             self.apply(action);
         }
@@ -3637,7 +3718,9 @@ impl ScheduleHarness {
         let output_events: Vec<_> = self
             .output_events
             .iter()
-            .filter(|(id, _)| !self.state.is_effect_retired(*id))
+            .filter(|(id, _)| {
+                !self.state.is_effect_retired(*id) && !self.failed_output_ids.contains(id)
+            })
             .map(|(_, event)| event)
             .collect();
         let summaries: Vec<_> = output_events
@@ -3672,6 +3755,10 @@ impl ScheduleHarness {
             }
         }
         assert_eq!(started, finished);
+        assert_eq!(
+            started.keys().cloned().collect::<BTreeSet<_>>(),
+            self.scheduled_candidates
+        );
         assert!(started.values().all(|count| *count == 1));
 
         let mut expected = MutationSummary::default();
@@ -3699,6 +3786,7 @@ impl ScheduleHarness {
         for event in output_events {
             sequence.observe(event).unwrap();
         }
+        self
     }
 }
 
@@ -3781,9 +3869,9 @@ proptest! {
         completion_class in 0u8..6,
     ) {
         let mut harness = ScheduleHarness::new(
+            3,
             1,
-            1,
-            ScheduleFilter::All,
+            ScheduleFilter::Ordered,
             true,
             vec![completion_class],
         );
@@ -3796,6 +3884,66 @@ proptest! {
         assert!(harness.pending.iter().any(|effect| matches!(effect, RunEffect::PersistResult(_))));
         harness.finish(&[ScheduleAction::Cancel]);
     }
+}
+
+#[test]
+fn adversarial_schedule_retries_failed_real_mutant_started_output() {
+    let mut harness = ScheduleHarness::new(1, 1, ScheduleFilter::All, false, vec![0]);
+    harness.complete_until(|effect| {
+        matches!(effect, RunEffect::EmitOutput(output)
+            if matches!(&output.event, OutputEvent::MutantStarted(_)))
+    });
+    harness.fail_where(|effect| {
+        matches!(effect, RunEffect::EmitOutput(output)
+            if matches!(&output.event, OutputEvent::MutantStarted(_)))
+    });
+    harness
+        .finish(&[])
+        .assert_failure_diagnostic_precedes_cleanup_and_terminal();
+}
+
+#[test]
+fn adversarial_schedule_retries_failed_real_mutant_finished_output() {
+    let mut harness = ScheduleHarness::new(1, 1, ScheduleFilter::All, false, vec![0]);
+    harness.complete_until(|effect| {
+        matches!(effect, RunEffect::EmitOutput(output)
+            if matches!(&output.event, OutputEvent::MutantFinished(_)))
+    });
+    harness.fail_where(|effect| {
+        matches!(effect, RunEffect::EmitOutput(output)
+            if matches!(&output.event, OutputEvent::MutantFinished(_)))
+    });
+    harness
+        .finish(&[])
+        .assert_failure_diagnostic_precedes_cleanup_and_terminal();
+}
+
+#[test]
+fn adversarial_schedule_retries_failed_synthetic_mutant_started_output() {
+    let mut harness = ScheduleHarness::new(1, 1, ScheduleFilter::All, false, vec![0]);
+    harness.complete_until(|effect| matches!(effect, RunEffect::ApplyMutation(_)));
+    harness.stop(RunEvent::CancellationRequested);
+    harness.fail_where(|effect| {
+        matches!(effect, RunEffect::EmitOutput(output)
+            if matches!(&output.event, OutputEvent::MutantStarted(_)))
+    });
+    harness
+        .finish(&[])
+        .assert_failure_diagnostic_precedes_cleanup_and_terminal();
+}
+
+#[test]
+fn adversarial_schedule_retries_failed_synthetic_mutant_finished_output() {
+    let mut harness = ScheduleHarness::new(1, 1, ScheduleFilter::All, false, vec![0]);
+    harness.complete_until(|effect| matches!(effect, RunEffect::RunMutant(_)));
+    harness.stop(RunEvent::CancellationRequested);
+    harness.fail_where(|effect| {
+        matches!(effect, RunEffect::EmitOutput(output)
+            if matches!(&output.event, OutputEvent::MutantFinished(_)))
+    });
+    harness
+        .finish(&[])
+        .assert_failure_diagnostic_precedes_cleanup_and_terminal();
 }
 
 fn start_state() -> (RunState, Vec<RunEffect>) {

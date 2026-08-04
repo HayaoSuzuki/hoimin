@@ -1026,7 +1026,7 @@ impl RunState {
     }
 
     fn begin_stopped_mutant_drain(&mut self) -> Result<Vec<RunEffect>, MachineError> {
-        let mut stopped = Vec::new();
+        let mut stopped: Vec<_> = self.stopped_candidates.drain(..).collect();
         let mut stopped_results_to_record = Vec::new();
         for worker in self.workers.values() {
             let candidate = worker.candidate.clone();
