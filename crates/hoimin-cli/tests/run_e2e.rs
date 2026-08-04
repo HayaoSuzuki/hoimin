@@ -1304,7 +1304,7 @@ fn readme_documents_agent_plan_workflow() {
 }
 
 #[tokio::test]
-async fn sqlite_save_failure_is_fatal_and_leaves_no_partial_result() {
+async fn sqlite_save_failure_reports_the_classification_but_leaves_no_partial_database_result() {
     let directory = tempfile::tempdir().unwrap();
     let database = directory.path().join("session.sqlite3");
     let first = run_fixture_with_session(
@@ -1333,14 +1333,20 @@ async fn sqlite_save_failure_is_fatal_and_leaves_no_partial_result() {
     )
     .await;
     assert_eq!(failed.exit_code, 2);
-    assert_eq!(failed.document["summary"]["counts"]["killed"], 0);
-    assert!(failed.document["mutants"].as_array().unwrap().is_empty());
+    assert_eq!(failed.document["summary"]["counts"]["killed"], 1);
+    let mutants = failed.document["mutants"].as_array().unwrap();
+    assert_eq!(mutants.len(), 1);
+    assert_eq!(mutants[0]["status"], "killed");
     assert!(failed.stderr.contains("session"), "{}", failed.stderr);
     let connection = rusqlite::Connection::open(&database).unwrap();
     let results: i64 = connection
         .query_row("SELECT COUNT(*) FROM results", [], |row| row.get(0))
         .unwrap();
     assert_eq!(results, 0);
+    let candidates: i64 = connection
+        .query_row("SELECT COUNT(*) FROM candidates", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(candidates, 0);
 }
 
 #[tokio::test]
@@ -1704,10 +1710,22 @@ async fn failed_mutant_started_output_prevents_process_start() {
     let mut stdout = RejectMutantStarted::default();
     let mut stderr = Vec::new();
 
-    let exit = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let exit = tokio::time::timeout(
+        Duration::from_secs(5),
+        hoimin_cli::run_with_io(args, &mut stdout, &mut stderr),
+    )
+    .await
+    .expect("report output failure must terminate without retrying the failed sink");
 
     assert_eq!(exit, 2);
     assert_eq!(std::fs::read_to_string(counter).unwrap(), "1");
+    assert!(
+        !stdout
+            .accepted
+            .windows(b"run_finished".len())
+            .any(|window| window == b"run_finished"),
+        "an irrecoverable report stream must not receive a terminal retry"
+    );
 }
 
 #[tokio::test]

@@ -5,12 +5,12 @@ use thiserror::Error;
 use crate::{
     AnalysisDiagnostic, AnalysisFinished, AnalyzeFile, ApplyMutation,
     BaselineFinished as BaselineOutput, BeginSession, BudgetLedger, CandidateSpoolRef, Cleanup,
-    Diagnostic, EffectFailed, EffectId, EmitOutput, ExitPolicy, FinishSession, IntegrityCheckpoint,
-    LoadSession, LookupStoredResult, MutantFinished as MutantOutput, MutantResult, MutantStarted,
-    MutantTimeout, MutationCandidate, MutationStatus, MutationSummary, ObserveRemainingBudget,
-    OutputEvent, PersistResult, Preflight, ProcessFinished, ProcessLimits, ProcessTermination,
-    ReadCandidate, ReservationId, ResetWorker, ResolveTargets, ResumeDecision, RunBudgets,
-    RunConfig, RunEffect, RunEvent, RunFingerprint, RunProcess, RunStarted, RunSummary,
+    Diagnostic, EffectFailed, EffectFailure, EffectId, EmitOutput, ExitPolicy, FinishSession,
+    IntegrityCheckpoint, LoadSession, LookupStoredResult, MutantFinished as MutantOutput,
+    MutantResult, MutantStarted, MutantTimeout, MutationCandidate, MutationStatus, MutationSummary,
+    ObserveRemainingBudget, OutputEvent, PersistResult, Preflight, ProcessFinished, ProcessLimits,
+    ProcessTermination, ReadCandidate, ReservationId, ResetWorker, ResolveTargets, ResumeDecision,
+    RunBudgets, RunConfig, RunEffect, RunEvent, RunFingerprint, RunProcess, RunStarted, RunSummary,
     TargetSlice, VerificationSelection, VerificationSelectionMode, VerifyOriginals,
     WorkspaceCopyGrant, auto_mutant_timeout, classify_mutant, contract_ensure, exit_code_for,
     project_top_budget, release_workspace_copy, reserve_workspace_copy,
@@ -136,7 +136,14 @@ struct OutcomeFlags {
 struct ReportFlags {
     interrupted: bool,
     report_started: bool,
+    delivery: ReportDelivery,
     stop_after_run_started: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ReportDelivery {
+    Writable,
+    Failed,
 }
 
 #[derive(Clone, Debug)]
@@ -239,6 +246,7 @@ impl RunState {
                 report: ReportFlags {
                     interrupted: false,
                     report_started: false,
+                    delivery: ReportDelivery::Writable,
                     stop_after_run_started: false,
                 },
                 cleanup: CleanupFlags {
@@ -1026,7 +1034,7 @@ impl RunState {
     }
 
     fn begin_stopped_mutant_drain(&mut self) -> Result<Vec<RunEffect>, MachineError> {
-        let mut stopped = Vec::new();
+        let mut stopped: Vec<_> = self.stopped_candidates.drain(..).collect();
         let mut stopped_results_to_record = Vec::new();
         for worker in self.workers.values() {
             let candidate = worker.candidate.clone();
@@ -1124,6 +1132,8 @@ impl RunState {
             }
         } else if !self.flags.scheduling.candidate_exhausted {
             self.read_next_candidate(worker)
+        } else if let Some(failed) = self.pending_failure.take() {
+            self.diagnostic_effect(&failed)
         } else {
             self.phase = RunPhase::Finalize;
             self.finalize_effects()
@@ -1143,6 +1153,10 @@ impl RunState {
 
     fn final_report_effects(&mut self) -> Result<Vec<RunEffect>, MachineError> {
         self.phase = RunPhase::Finalize;
+        if self.flags.report.delivery == ReportDelivery::Failed {
+            self.phase = RunPhase::Finished;
+            return Ok(Vec::new());
+        }
         let id = self.allocate_id()?;
         self.run_finished_output_id = Some(id);
         Ok(vec![RunEffect::EmitOutput(EmitOutput {
@@ -1719,6 +1733,9 @@ pub fn transition(
         RunEvent::EffectFailed(failed) if state.diagnostic_output_id == Some(failed.id) => {
             state.flags.outcome.infrastructure_error = true;
             state.flags.scheduling.stop_requested = true;
+            if is_report_failure(&failed.failure) {
+                state.flags.report.delivery = ReportDelivery::Failed;
+            }
             state.retire_pending();
             state.diagnostic_output_id = None;
             if state.flags.cleanup.cleanup_done {
@@ -1730,8 +1747,17 @@ pub fn transition(
         RunEvent::EffectFailed(failed) => {
             state.flags.outcome.infrastructure_error = true;
             state.flags.scheduling.stop_requested = true;
+            let was_mutating = state.phase == RunPhase::Mutants;
+            let output_delivery_failed = is_report_failure(&failed.failure);
+            if output_delivery_failed {
+                state.flags.report.delivery = ReportDelivery::Failed;
+            }
             state.retire_pending();
-            if !state.flags.report.report_started {
+            if was_mutating && !output_delivery_failed {
+                state.flags.scheduling.candidate_exhausted = true;
+                state.pending_failure = Some(failed);
+                state.begin_stopped_mutant_drain()?
+            } else if !state.flags.report.report_started {
                 if state.run_started_output_id == Some(failed.id) {
                     state.run_started_output_id = None;
                     state.cleanup_effects()?
@@ -1888,6 +1914,15 @@ fn effect_worker(effect: &RunEffect) -> Option<u32> {
         RunEffect::PersistResult(value) => Some(value.worker),
         _ => None,
     }
+}
+
+fn is_report_failure(failure: &EffectFailure) -> bool {
+    matches!(
+        failure,
+        EffectFailure::ReportIo { .. }
+            | EffectFailure::ReportSerialization { .. }
+            | EffectFailure::ReportState { .. }
+    )
 }
 
 fn completion(event: &RunEvent) -> Option<(EffectId, CompletionKind)> {
