@@ -900,6 +900,7 @@ proptest! {
         let comparison = compare_pair(&before, &after);
         let expected = comparison_oracle(&before, &after);
 
+        // pins: issue #102
         prop_assert_eq!(&comparison, &expected);
         prop_assert_eq!(comparison.common, before.len());
         prop_assert_eq!(comparison.ambiguous, 0);

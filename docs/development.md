@@ -54,6 +54,17 @@ cargo +nightly-2026-07-27 test --workspace -- \
 The nightly job supplements rather than replaces the stable Ubuntu, Windows,
 and macOS test jobs.
 
+## Test provenance comments
+
+Use `// pins: issue #NNN` only when an assertion intentionally preserves a
+surprising policy or a former defect whose expected result is not self-evident.
+Do not annotate ordinary exact assertions.
+
+Place the comment immediately before the assertion or operation whose outcome
+needs that context. Prefer the concrete former-defect issue over an umbrella or
+property-testing issue. Do not annotate generators, fixture constructors, or
+routine schema values, and do not backfill unrelated tests mechanically.
+
 ## Verify delegated cgroup v2 CI
 
 CI runs `linux-cgroup-v2-hard` only for a push to `main` when the repository

@@ -574,6 +574,7 @@ mod tests {
 
             parse_diff(rendered.as_bytes(), &mut changed, &mut excluded)?;
 
+            // pins: issue #101
             prop_assert_eq!(changed, expected);
             prop_assert!(excluded.is_empty());
         }
