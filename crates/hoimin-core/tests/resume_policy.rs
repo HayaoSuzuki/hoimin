@@ -214,6 +214,16 @@ fn edited_pair(
             });
         }
     }
+    after
+        .sources
+        .sort_by(|left, right| left.path.cmp(&right.path));
+    after
+        .targets
+        .sort_by(|left, right| left.path.cmp(&right.path));
+    after.operators.sort();
+    after
+        .fingerprint_inputs
+        .sort_by(|left, right| left.path.cmp(&right.path));
     (before, after)
 }
 
@@ -502,14 +512,16 @@ fn unicode_component() -> impl Strategy<Value = String> {
 
 fn arbitrary_sources() -> impl Strategy<Value = Vec<SourceHash>> {
     prop::collection::vec((unicode_component(), any::<[u8; 32]>()), 1..=5).prop_map(|values| {
-        values
+        let mut sources = values
             .into_iter()
             .enumerate()
             .map(|(index, (component, hash))| SourceHash {
                 path: format!("src/{component}-{index}.py").into(),
                 hash,
             })
-            .collect()
+            .collect::<Vec<_>>();
+        sources.sort_by(|left, right| left.path.cmp(&right.path));
+        sources
     })
 }
 
@@ -517,25 +529,26 @@ fn arbitrary_targets() -> impl Strategy<Value = Vec<TargetSlice>> {
     prop::collection::vec(
         (
             unicode_component(),
-            prop::collection::vec((1_u32..100, 0_u32..10), 0..=4),
+            prop::collection::vec((1_u32..10, 0_u32..10), 0..=4),
             prop::collection::vec(unicode_component(), 0..=4),
         ),
         1..=5,
     )
     .prop_map(|values| {
-        values
+        let mut targets = values
             .into_iter()
             .enumerate()
-            .map(|(index, (component, ranges, symbols))| {
-                let mut lines = ranges
+            .map(|(index, (component, gaps_and_widths, symbols))| {
+                let mut previous_end = 0;
+                let lines = gaps_and_widths
                     .into_iter()
-                    .map(|(start, width)| LineRange {
-                        start,
-                        end: start + width,
+                    .map(|(gap, width)| {
+                        let start = previous_end + gap;
+                        let end = start + width;
+                        previous_end = end;
+                        LineRange { start, end }
                     })
                     .collect::<Vec<_>>();
-                lines.sort_by_key(|line| (line.start, line.end));
-                lines.dedup();
                 let symbols = symbols
                     .into_iter()
                     .collect::<BTreeSet<_>>()
@@ -547,7 +560,9 @@ fn arbitrary_targets() -> impl Strategy<Value = Vec<TargetSlice>> {
                     symbols,
                 }
             })
-            .collect()
+            .collect::<Vec<_>>();
+        targets.sort_by(|left, right| left.path.cmp(&right.path));
+        targets
     })
 }
 
@@ -572,14 +587,16 @@ fn arbitrary_operators() -> impl Strategy<Value = Vec<String>> {
 
 fn arbitrary_fingerprint_inputs() -> impl Strategy<Value = Vec<FingerprintInputFile>> {
     prop::collection::vec((unicode_component(), any::<[u8; 32]>()), 1..=5).prop_map(|values| {
-        values
+        let mut inputs = values
             .into_iter()
             .enumerate()
             .map(|(index, (component, hash))| FingerprintInputFile {
                 path: format!("config/{component}-{index}.toml").into(),
                 hash: hex_hash(hash),
             })
-            .collect()
+            .collect::<Vec<_>>();
+        inputs.sort_by(|left, right| left.path.cmp(&right.path));
+        inputs
     })
 }
 
@@ -684,14 +701,35 @@ fn arbitrary_fingerprint_input() -> impl Strategy<Value = FingerprintInput> {
         )
 }
 
+fn targets_are_independently_normalized(targets: &[TargetSlice]) -> bool {
+    targets.windows(2).all(|pair| pair[0].path < pair[1].path)
+        && targets.iter().all(|target| {
+            target
+                .lines
+                .iter()
+                .all(|range| range.start > 0 && range.start <= range.end)
+                && target
+                    .lines
+                    .windows(2)
+                    .all(|pair| pair[0].end < pair[1].start)
+                && target.symbols.windows(2).all(|pair| pair[0] < pair[1])
+        })
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(128))]
+
+    #[test]
+    fn generated_targets_are_independently_normalized(targets in arbitrary_targets()) {
+        prop_assert!(targets_are_independently_normalized(&targets));
+    }
 
     #[test]
     fn fingerprint_is_invariant_under_set_permutations_and_duplicates(
         input in arbitrary_fingerprint_input(),
         seeds in any::<[u64; 4]>(),
     ) {
+        prop_assert!(targets_are_independently_normalized(&input.targets));
         let variant = permuted_and_duplicated(&input, seeds);
         prop_assert_eq!(canonical_model(&input), canonical_model(&variant));
         prop_assert_eq!(fingerprint(&input), fingerprint(&variant));
@@ -712,6 +750,7 @@ proptest! {
             FingerprintEdit::FingerprintInput,
         ]),
     ) {
+        prop_assert!(targets_are_independently_normalized(&input.targets));
         let (before, after) = edited_pair(&input, edit);
         let before_model = canonical_model(&before);
         let after_model = canonical_model(&after);

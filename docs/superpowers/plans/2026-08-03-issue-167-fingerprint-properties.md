@@ -24,6 +24,11 @@ Generated valid inputs cover Unix byte and Windows UTF-16-unit argv flavors, Uni
 32-byte source hashes, normalized targets, known operators, fingerprint-input paths and hashes,
 all safety limits, resource mode, and mutation profile.
 
+Target construction is independent of production normalization: paths are made unique and sorted,
+and each line range starts after the preceding range ends. An explicit test-side predicate checks
+strict path ordering, positive valid disjoint ranges, and sorted unique symbols before the
+fingerprint properties run.
+
 The invariance property inserts a duplicate into each of the four top-level set-like collections,
 applies independent deterministic Fisher–Yates permutations, proves the independent model is
 unchanged, and then requires the production fingerprints to match.
