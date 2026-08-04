@@ -3,13 +3,13 @@ use std::time::Duration;
 
 use hoimin_core::{
     AnalysisDiagnostic, AnalysisFinished, ByteSpan, CandidateLoaded, CandidateSpoolRef,
-    CleanupFinished, CommandArg, EffectFailed, EffectId, MachineError, MutationApplied,
-    MutationCandidate, MutationProfile, MutationStatus, MutationSummary, OriginalsVerified,
-    OutputConfig, OutputEmitted, OutputEvent, PreflightCompleted, ProcessFinished,
-    ProcessTermination, RawRunConfig, RawRunLimits, RemainingBudgetObserved, ReportSequence,
-    ReservationId, ResourceMode, ResultPersisted, RunConfig, RunEffect, RunEvent, RunFingerprint,
-    RunPhase, RunState, SessionFinished, SessionLoaded, SessionResumeRef, SessionStarted,
-    StartRequested, StoredResult, StoredResultLoaded, TargetSlice, TargetsResolved,
+    CleanupFinished, CommandArg, EffectFailed, EffectFailure, EffectId, MachineError,
+    MutationApplied, MutationCandidate, MutationProfile, MutationStatus, MutationSummary,
+    OriginalsVerified, OutputConfig, OutputEmitted, OutputEvent, PreflightCompleted,
+    ProcessFinished, ProcessTermination, RawRunConfig, RawRunLimits, RemainingBudgetObserved,
+    ReportSequence, ReservationId, ResourceMode, ResultPersisted, RunConfig, RunEffect, RunEvent,
+    RunFingerprint, RunPhase, RunState, SessionFinished, SessionLoaded, SessionResumeRef,
+    SessionStarted, StartRequested, StoredResult, StoredResultLoaded, TargetSlice, TargetsResolved,
     VerificationSelection, VerificationSelectionMode, VerificationSelectionPolicy,
     VerificationSelectionScope, WorkerCreated, WorkerReset, transition,
 };
@@ -2621,14 +2621,33 @@ fn reused_result_is_counted_only_after_finished_output_succeeds() {
         &effects,
         |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, hoimin_core::OutputEvent::MutantFinished(_))),
     ));
-    let (failed, _) = transition(
+    let (failed, produced) = transition(
         state,
-        RunEvent::EffectFailed(EffectFailed::other(finished_id, "report.write", "fixture")),
+        RunEvent::EffectFailed(EffectFailed {
+            id: finished_id,
+            failure: EffectFailure::ReportIo {
+                operation: "write mutant_finished".to_owned(),
+                message: "fixture".to_owned(),
+            },
+        }),
     )
     .unwrap();
 
     assert_eq!(failed.summary().killed, 0);
     assert_eq!(failed.exit_code(), 2);
+    assert!(!produced.iter().any(|effect| matches!(
+        effect,
+        RunEffect::EmitOutput(value)
+            if matches!(&value.event, OutputEvent::MutantStarted(_) | OutputEvent::MutantFinished(_))
+    )));
+    assert_eq!(
+        produced
+            .iter()
+            .filter(|effect| matches!(effect, RunEffect::EmitOutput(value)
+                if matches!(&value.event, OutputEvent::Diagnostic(_))))
+            .count(),
+        1
+    );
 }
 
 #[test]
@@ -2790,7 +2809,13 @@ fn mutant_process_is_only_scheduled_after_started_output_succeeds() {
 
     let (_next, produced) = transition(
         state,
-        RunEvent::EffectFailed(EffectFailed::other(output_id, "report.write", "fixture")),
+        RunEvent::EffectFailed(EffectFailed {
+            id: output_id,
+            failure: EffectFailure::ReportIo {
+                operation: "write mutant_started".to_owned(),
+                message: "fixture".to_owned(),
+            },
+        }),
     )
     .unwrap();
 
@@ -2798,6 +2823,19 @@ fn mutant_process_is_only_scheduled_after_started_output_succeeds() {
         !produced
             .iter()
             .any(|effect| matches!(effect, RunEffect::RunMutant(_)))
+    );
+    assert!(!produced.iter().any(|effect| matches!(
+        effect,
+        RunEffect::EmitOutput(value)
+            if matches!(&value.event, OutputEvent::MutantStarted(_) | OutputEvent::MutantFinished(_))
+    )));
+    assert_eq!(
+        produced
+            .iter()
+            .filter(|effect| matches!(effect, RunEffect::EmitOutput(value)
+                if matches!(&value.event, OutputEvent::Diagnostic(_))))
+            .count(),
+        1
     );
 }
 

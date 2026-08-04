@@ -24,7 +24,14 @@ The generator varies:
 It excludes only diagnostics and terminal/report outputs: a failed terminal output is not
 an emitted `RunFinished` and therefore cannot satisfy the property's emitted-stream
 premise. Failed lifecycle outputs are independently tracked and omitted from the accepted
-output stream; their replacement outputs must still form exactly one pair.
+output stream; their replacement outputs must still form exactly one pair. The generated
+failure is an executor/effect failure (`EffectFailure::Other`), not a failed report sink.
+
+Production `EffectFailure::ReportIo`, `ReportSerialization`, and `ReportState` have a
+different terminal policy. A report sink may be partially written or permanently broken,
+so the machine never retries the failed lifecycle output and marks the report stream
+irrecoverable. It attempts at most one diagnostic, performs cleanup and an incomplete
+session close, then reaches `Finished` without attempting `RunFinished` on that sink.
 
 ## Independent oracles
 
@@ -94,6 +101,12 @@ major oracle:
 
 All intentional mutations were reverted. Source-parallel seeds for both genuine
 production failures are retained.
+
+The full CLI suite additionally distinguishes current-run reporting from durable resume
+state. A failed `PersistResult` remains in generated #164 coverage and its already
+classified result is drained into the current report, while the SQLite transaction remains
+atomic with zero result and candidate rows. This is intentionally different from a report
+sink failure, which suppresses later output as described above.
 
 ## Verification
 
