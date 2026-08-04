@@ -6,10 +6,11 @@ use hoimin_cli::report::ReportHandler;
 use hoimin_core::{
     BaselineFinished, ByteSpan, Diagnostic, EffectFailure, EffectId, EmitOutput, MutantFinished,
     MutantStarted, MutationCandidate, MutationStatus, MutationSummary, OutputEvent, OutputFormat,
-    OutputSpoolRef, ProcessTermination, REPORT_SCHEMA_VERSION, ResourceMode, RunStarted,
-    RunSummary, VerificationSelection, VerificationSelectionMode, VerificationSelectionPolicy,
-    VerificationSelectionScope,
+    OutputSpoolRef, ProcessTermination, REPORT_SCHEMA_VERSION, ReportSequence, ResourceMode,
+    RunStarted, RunSummary, VerificationSelection, VerificationSelectionMode,
+    VerificationSelectionPolicy, VerificationSelectionScope,
 };
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default)]
 struct SharedWriter(Arc<Mutex<WriterState>>);
@@ -26,9 +27,262 @@ fn original_schema_v2_report_fixture_matches_the_published_schema() {
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
     let report =
-        read_schema(&root.join("crates/hoimin-cli/tests/fixtures/reports/schema-v2-original.json"));
+        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v2-original.json"));
 
     assert_schema_valid(&result_schema, &report, &event_schema);
+    assert_report_optionals(&report, false);
+}
+
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+struct GoldenReportDocument {
+    schema_version: u32,
+    run: OutputEvent,
+    baseline: OutputEvent,
+    mutants: Vec<OutputEvent>,
+    summary: OutputEvent,
+}
+
+#[test]
+fn current_report_golden_matches_typed_semantic_regeneration() {
+    let root = repo_root().join("crates/hoimin-cli/tests/golden/reports/schema-v2-current.json");
+    let checked: GoldenReportDocument =
+        serde_json::from_slice(&std::fs::read(&root).unwrap()).unwrap();
+    let regenerated: GoldenReportDocument =
+        serde_json::from_slice(&render_json_report(&all_optional_report_events(true))).unwrap();
+
+    assert_eq!(checked, regenerated);
+    assert_eq!(checked.schema_version, REPORT_SCHEMA_VERSION);
+    assert_report_optionals(&serde_json::to_value(&checked).unwrap(), true);
+}
+
+#[test]
+fn report_event_goldens_are_typed_complete_sequences() {
+    let root = repo_root().join("crates/hoimin-cli/tests/golden/events");
+    for (name, current) in [
+        ("schema-v2-original.jsonl", false),
+        ("schema-v2-current.jsonl", true),
+    ] {
+        let text = std::fs::read_to_string(root.join(name)).unwrap();
+        let checked = text
+            .lines()
+            .map(|line| serde_json::from_str::<OutputEvent>(line).unwrap())
+            .collect::<Vec<_>>();
+        let mut sequence = ReportSequence::new();
+        for event in &checked {
+            sequence.observe(event).unwrap();
+        }
+        assert_eq!(checked, all_optional_report_events(current));
+        assert_event_optionals(&checked, current);
+    }
+}
+
+#[test]
+fn current_event_golden_matches_typed_semantic_regeneration() {
+    let path = repo_root().join("crates/hoimin-cli/tests/golden/events/schema-v2-current.jsonl");
+    let checked = std::fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<OutputEvent>(line).unwrap())
+        .collect::<Vec<_>>();
+
+    assert_eq!(checked, all_optional_report_events(true));
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "The complete compatibility constructor keeps every serialized optional visible together."
+)]
+fn all_optional_report_events(current: bool) -> Vec<OutputEvent> {
+    let mut config = hoimin_cli::cli::parse_config_from([
+        "hoimin",
+        "run",
+        "--root",
+        ".",
+        "--source",
+        "src",
+        "--changed",
+        "--diff-base",
+        "golden-base",
+        "--metrics",
+        "metrics.json",
+        "--session",
+        "session.sqlite3",
+        "--operators",
+        "binary_add_sub",
+        "--",
+        "python",
+        "-m",
+        "pytest",
+    ])
+    .unwrap();
+    config.root = ".".into();
+    config.selection.root = ".".into();
+    config.output.metrics = Some("metrics.json".into());
+    config.session.as_mut().unwrap().path = "session.sqlite3".into();
+    let verification_selection = current.then(documented_verification_selection);
+    let run_id = if current {
+        "schema-v2-current"
+    } else {
+        "schema-v2-original"
+    };
+    let mut started = RunStarted::minimal(run_id, 1);
+    started.normalized_config = Some(config);
+    "golden-os".clone_into(&mut started.versions.os);
+    "golden-hoimin".clone_into(&mut started.versions.hoimin);
+    "golden-control".clone_into(&mut started.resource_control.mechanism);
+    started
+        .verification_selection
+        .clone_from(&verification_selection);
+    let candidate = MutationCandidate {
+        id: "golden-mutant".to_owned(),
+        sequence: 0,
+        path: "src/example.py".into(),
+        span: ByteSpan {
+            start: 4,
+            length: 1,
+        },
+        original: "+".to_owned(),
+        replacement: "-".to_owned(),
+        operator: "binary_add_sub".to_owned(),
+        line: 2,
+        column: 17,
+        symbol: Some("calculate".to_owned()),
+        file_hash: "golden-file-hash".to_owned(),
+    };
+    vec![
+        OutputEvent::RunStarted(started),
+        OutputEvent::BaselineFinished(BaselineFinished {
+            schema_version: REPORT_SCHEMA_VERSION,
+            sequence: 2,
+            run_id: run_id.to_owned(),
+            termination: ProcessTermination::Exit(0),
+            elapsed_ms: 11,
+            resource_mode: ResourceMode::Hard,
+            output: OutputSpoolRef {
+                token: "golden-baseline-output".to_owned(),
+                retained: 21,
+                observed: 34,
+            },
+        }),
+        OutputEvent::MutantStarted(MutantStarted::new(run_id, 3, "golden-mutant", 0)),
+        OutputEvent::MutantFinished(MutantFinished {
+            schema_version: REPORT_SCHEMA_VERSION,
+            sequence: 4,
+            run_id: run_id.to_owned(),
+            candidate,
+            status: MutationStatus::Killed,
+            termination: Some(ProcessTermination::Exit(7)),
+            elapsed_ms: 13,
+            resource_mode: ResourceMode::Hard,
+            output: Some(OutputSpoolRef {
+                token: "golden-mutant-output".to_owned(),
+                retained: 55,
+                observed: 89,
+            }),
+        }),
+        OutputEvent::Diagnostic(Diagnostic::new(
+            run_id,
+            5,
+            "warning",
+            "golden.warning",
+            "golden diagnostic",
+        )),
+        OutputEvent::RunFinished(RunSummary {
+            schema_version: REPORT_SCHEMA_VERSION,
+            sequence: 6,
+            run_id: run_id.to_owned(),
+            counts: MutationSummary {
+                killed: 1,
+                score: Some(1.0),
+                ..MutationSummary::default()
+            },
+            complete: true,
+            exit_code: 0,
+            verification_selection,
+        }),
+    ]
+}
+
+fn render_json_report(events: &[OutputEvent]) -> Vec<u8> {
+    let spool = tempfile::tempdir().unwrap();
+    let stdout = SharedWriter::default();
+    let mut handler =
+        ReportHandler::new(OutputFormat::Json, stdout.clone(), io::sink(), spool.path()).unwrap();
+    for (index, event) in events.iter().cloned().enumerate() {
+        emit(
+            &mut handler,
+            u64::try_from(index).expect("fixture event count fits u64"),
+            event,
+        );
+    }
+    stdout.0.lock().unwrap().bytes.clone()
+}
+
+fn assert_report_optionals(document: &serde_json::Value, current: bool) {
+    for pointer in [
+        "/run/normalized_config",
+        "/run/normalized_config/selection/diff_base",
+        "/run/normalized_config/output/metrics",
+        "/run/normalized_config/session",
+        "/mutants/0/candidate/symbol",
+        "/mutants/0/termination",
+        "/mutants/0/output",
+        "/summary/counts/score",
+    ] {
+        assert!(
+            document
+                .pointer(pointer)
+                .is_some_and(|value| !value.is_null()),
+            "missing populated report optional {pointer}"
+        );
+    }
+    assert_eq!(
+        document
+            .pointer("/run/verification_selection")
+            .is_some_and(|value| !value.is_null()),
+        current
+    );
+    assert_eq!(
+        document
+            .pointer("/summary/verification_selection")
+            .is_some_and(|value| !value.is_null()),
+        current
+    );
+}
+
+fn assert_event_optionals(events: &[OutputEvent], current: bool) {
+    let OutputEvent::RunStarted(started) = &events[0] else {
+        panic!("golden sequence must begin with run_started");
+    };
+    let config = started.normalized_config.as_ref().unwrap();
+    assert_eq!(config.selection.diff_base.as_deref(), Some("golden-base"));
+    assert_eq!(
+        config
+            .output
+            .metrics
+            .as_deref()
+            .map(camino::Utf8Path::as_str),
+        Some("metrics.json")
+    );
+    assert_eq!(
+        config.session.as_ref().map(|session| session.path.as_str()),
+        Some("session.sqlite3")
+    );
+    assert_eq!(started.verification_selection.is_some(), current);
+    let OutputEvent::MutantFinished(finished) = &events[3] else {
+        panic!("fourth golden event must finish the mutant");
+    };
+    assert_eq!(finished.candidate.symbol.as_deref(), Some("calculate"));
+    assert_eq!(finished.termination, Some(ProcessTermination::Exit(7)));
+    assert_eq!(
+        finished.output.as_ref().unwrap().token,
+        "golden-mutant-output"
+    );
+    let OutputEvent::RunFinished(summary) = &events[5] else {
+        panic!("golden sequence must end with run_finished");
+    };
+    assert_eq!(summary.counts.score, Some(1.0));
+    assert_eq!(summary.verification_selection.is_some(), current);
 }
 
 impl Write for SharedWriter {
