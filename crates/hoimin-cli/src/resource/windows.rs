@@ -718,7 +718,7 @@ mod tests {
                 fixture_python(),
                 arg("-c"),
                 arg(
-                    "import ctypes,ctypes.wintypes as w,os,pathlib,sys,time; ready=pathlib.Path(sys.argv[1]); release=pathlib.Path(sys.argv[2]); pending=ready.with_suffix('.pending'); pending.write_text(str(os.getpid())); os.replace(pending,ready);\nwhile not release.exists(): time.sleep(0.005)\nkernel32=ctypes.WinDLL('kernel32',use_last_error=True); kernel32.RaiseFailFastException.argtypes=(ctypes.c_void_p,ctypes.c_void_p,w.DWORD); kernel32.RaiseFailFastException.restype=None; kernel32.RaiseFailFastException(None,None,0)",
+                    "import ctypes,ctypes.wintypes as w,os,pathlib,sys,time; ready=pathlib.Path(sys.argv[1]); release=pathlib.Path(sys.argv[2]); pending=ready.with_suffix('.pending'); pending.write_text(str(os.getpid())); os.replace(pending,ready);\nwhile not release.exists(): time.sleep(0.005)\nkernel32=ctypes.WinDLL('kernel32',use_last_error=True); kernel32.GetCurrentProcess.argtypes=(); kernel32.GetCurrentProcess.restype=w.HANDLE; kernel32.TerminateProcess.argtypes=(w.HANDLE,w.UINT); kernel32.TerminateProcess.restype=w.BOOL; STATUS_ACCESS_VIOLATION=0xC0000005; kernel32.TerminateProcess(kernel32.GetCurrentProcess(),STATUS_ACCESS_VIOLATION)",
                 ),
                 arg(ready.as_std_path()),
                 arg(release.as_std_path()),
@@ -842,7 +842,7 @@ mod tests {
             assert!(handle_started.elapsed() < Duration::from_secs(6));
             assert_eq!(
                 abnormal.termination,
-                ProcessTermination::Exit(-1_073_740_286)
+                ProcessTermination::Exit(-1_073_741_819)
             );
             wait_for_job_process_count(&backend, 1).await;
 

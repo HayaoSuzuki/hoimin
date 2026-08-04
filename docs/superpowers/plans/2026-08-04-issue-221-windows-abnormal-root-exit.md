@@ -13,7 +13,7 @@
 - Start the real roots through `ProcessHandler` and the production `WindowsBackend`.
 - Bypass the Windows virtualenv launcher so the atomically published PID belongs to the assigned abnormal root.
 - Atomically publish abnormal-root readiness with a pending file followed by `os.replace`, then verify that PID in the Job Object process list before releasing the crash.
-- Expect `ProcessTermination::Exit(-1_073_740_286)`, the signed Windows representation of `STATUS_FAIL_FAST_EXCEPTION` (`0xC0000602`), and never `ProcessTermination::Timeout`.
+- Expect `ProcessTermination::Exit(-1_073_741_819)`, the signed Windows representation of `STATUS_ACCESS_VIOLATION` (`0xC0000005`), and never `ProcessTermination::Timeout`.
 - Bound the complete fixture flow and the individual abnormal `handle` and `close` operations to six seconds.
 - Verify the real Job Object has one assigned sibling before close and zero assigned processes after close.
 - Do not call `record_notification`, mutate `RunState`, signal a numeric PID, or expose a production test hook.
@@ -152,7 +152,7 @@ async fn abnormal_runtime_root_crosses_real_job_notification_and_cleans_up_withi
         std::fs::write(&abnormal_release, b"abort").unwrap();
         let abnormal = abnormal.await.unwrap().unwrap();
         assert!(handle_started.elapsed() < Duration::from_secs(6));
-        assert_eq!(abnormal.termination, ProcessTermination::Exit(-1_073_740_286));
+        assert_eq!(abnormal.termination, ProcessTermination::Exit(-1_073_741_819));
         wait_for_job_process_count(&backend, 1).await;
 
         let close_started = Instant::now();
@@ -222,8 +222,11 @@ fn fixture_python() -> CommandArg {
 
 The sibling runs native `ping.exe` long enough to prevent
 `ACTIVE_PROCESS_ZERO`. The abnormal base interpreter writes its actual PID
-through `pending` plus `os.replace`, waits for a release file, configures
-the exact `kernel32` ctypes signature, and calls `RaiseFailFastException`.
+through `pending` plus `os.replace`, waits for a release file, configures the
+exact `kernel32` ctypes signatures, and calls `TerminateProcess` on
+`GetCurrentProcess` with `STATUS_ACCESS_VIOLATION`. That status is in
+Microsoft's documented list for `JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS`, and
+direct termination does not invoke Windows Error Reporting or a JIT debugger.
 
 ```rust
 fn sleeping_fixture(id: u64) -> RunProcess {
@@ -248,7 +251,7 @@ fn abnormal_fixture(id: u64, ready: &Utf8Path, release: &Utf8Path) -> RunProcess
             fixture_python(),
             arg("-c"),
             arg(
-                "import ctypes,ctypes.wintypes as w,os,pathlib,sys,time; ready=pathlib.Path(sys.argv[1]); release=pathlib.Path(sys.argv[2]); pending=ready.with_suffix('.pending'); pending.write_text(str(os.getpid())); os.replace(pending,ready);\nwhile not release.exists(): time.sleep(0.005)\nkernel32=ctypes.WinDLL('kernel32',use_last_error=True); kernel32.RaiseFailFastException.argtypes=(ctypes.c_void_p,ctypes.c_void_p,w.DWORD); kernel32.RaiseFailFastException.restype=None; kernel32.RaiseFailFastException(None,None,0)",
+                "import ctypes,ctypes.wintypes as w,os,pathlib,sys,time; ready=pathlib.Path(sys.argv[1]); release=pathlib.Path(sys.argv[2]); pending=ready.with_suffix('.pending'); pending.write_text(str(os.getpid())); os.replace(pending,ready);\nwhile not release.exists(): time.sleep(0.005)\nkernel32=ctypes.WinDLL('kernel32',use_last_error=True); kernel32.GetCurrentProcess.argtypes=(); kernel32.GetCurrentProcess.restype=w.HANDLE; kernel32.TerminateProcess.argtypes=(w.HANDLE,w.UINT); kernel32.TerminateProcess.restype=w.BOOL; STATUS_ACCESS_VIOLATION=0xC0000005; kernel32.TerminateProcess(kernel32.GetCurrentProcess(),STATUS_ACCESS_VIOLATION)",
             ),
             arg(ready.as_std_path()),
             arg(release.as_std_path()),
@@ -262,7 +265,7 @@ fn abnormal_fixture(id: u64, ready: &Utf8Path, release: &Utf8Path) -> RunProcess
 - [ ] **Step 3: Run the focused test to verify GREEN**
 
 Run the exact Task 1 command. Expected: one test passes, the abnormal
-termination is `Exit(-1_073_740_286)`, and Job Object accounting reaches zero.
+termination is `Exit(-1_073_741_819)`, and Job Object accounting reaches zero.
 
 - [ ] **Step 4: Format and rerun the focused test**
 
@@ -274,6 +277,24 @@ cargo test -p hoimin-cli --lib resource::windows::tests::abnormal_runtime_root_c
 ```
 
 Expected: formatting succeeds and the focused test still passes.
+
+- [ ] **Step 5: Prove the abnormal-notification dependency with a semantic RED**
+
+Temporarily remove only `JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS` from the
+production `record_notification` match. Leave
+`JOB_OBJECT_MSG_EXIT_PROCESS` and
+`JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO` unchanged, then run the focused command
+from Step 3. Restore the production match exactly and rerun the same command.
+
+Observed on 2026-08-04:
+
+- RED: zero passed and one failed. The fixture reached classification, which
+  returned `EffectFailed` with code `process.resource.classify` and message
+  `root exit notification timed out`.
+- GREEN after restoring the branch: one passed, zero failed, and 177 filtered
+  out.
+- The final diff against the pre-review implementation contains no production
+  notification-match change.
 
 ### Task 3: Verify scope and quality
 

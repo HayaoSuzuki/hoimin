@@ -26,9 +26,10 @@ The test starts a long-lived native `ping.exe` sibling through the same
 the root under test from the virtual environment's base Python interpreter,
 bypassing the Windows virtualenv launcher so the readiness-publishing runtime
 is the assigned root. That root atomically publishes its real PID, waits for a
-release file, and raises an unhandled fail-fast exception through
-`RaiseFailFastException`. The test confirms the published PID appears in the
-real Job Object process list before releasing it.
+release file, and calls
+`TerminateProcess(GetCurrentProcess(), STATUS_ACCESS_VIOLATION)`. The test
+confirms the published PID appears in the real Job Object process list before
+releasing it.
 
 Because the sibling remains assigned, the run Job Object cannot emit a valid
 `ACTIVE_PROCESS_ZERO` fallback while the abnormal root is classified. A
@@ -56,9 +57,12 @@ publish readiness atomically.
 
 After the test observes that exact PID in the Job Object process list, it
 creates the release file. The root then initializes the required `kernel32`
-signature and raises `STATUS_FAIL_FAST_EXCEPTION` (`0xC0000602`). The
-expected Rust termination is the independently derived signed value
-`ProcessTermination::Exit(-1_073_740_286)`.
+signatures and calls `TerminateProcess` on its current-process pseudo handle
+with `STATUS_ACCESS_VIOLATION` (`0xC0000005`). Microsoft documents that status
+in the exit-code list that produces `JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS`.
+Direct termination also avoids invoking Windows Error Reporting or a JIT
+debugger for an unhandled exception. The expected Rust termination is the
+independently derived signed value `ProcessTermination::Exit(-1_073_741_819)`.
 
 ## Bounds and Cleanup
 
@@ -73,12 +77,26 @@ A test guard closes the handler if an assertion unwinds after the sibling has
 started. Production `KILL_ON_JOB_CLOSE` ownership remains the cleanup
 mechanism; the test never signals a numeric PID.
 
-## Verification
+## Counterfactual Verification
 
-The focused Windows test must first be observed RED before fixture helpers are
-implemented, then GREEN after the minimal fixture implementation. Final
-verification runs the focused test, all `hoimin-cli` tests, the workspace test
-suite, formatting, Clippy with warnings denied, and diff checks.
+The corrected fixture was verified against a branch-specific production
+counterfactual. Only
+`JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS` was temporarily removed from the
+notification match; `JOB_OBJECT_MSG_EXIT_PROCESS` and
+`JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO` remained unchanged. Running
+
+```console
+cargo test -p hoimin-cli --lib resource::windows::tests::abnormal_runtime_root_crosses_real_job_notification_and_cleans_up_within_six_seconds -- --exact --nocapture
+```
+
+produced RED: zero passed and one failed with
+`process.resource.classify` reporting `root exit notification timed out`.
+After restoring the abnormal-exit arm exactly, the same command produced
+GREEN: one passed, zero failed, and 177 filtered out. The final production
+notification match is unchanged.
+
+Final verification runs the focused test, Windows resource tests, formatting,
+Clippy with warnings denied, and diff checks.
 
 This change is expected to touch only Windows test code and documentation. If
 the final diff contains no changed Rust production source, Rust production
