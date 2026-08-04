@@ -118,6 +118,41 @@ async fn invalid_syntax_warns_and_prevents_a_complete_zero_candidate_run() {
 }
 
 #[tokio::test]
+async fn mutation_timeout_propagates_to_the_final_report_and_exit_policy() {
+    let project = tempfile::tempdir().unwrap();
+    let source = project.path().join("src");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("__init__.py"), "").unwrap();
+    std::fs::write(
+        source.join("calc.py"),
+        "def total(left, right):\n    return left + right\n",
+    )
+    .unwrap();
+    let original = "return left + right";
+    let command = format!(
+        "from pathlib import Path; import time; source=Path('src/calc.py').read_text(); time.sleep(3) if {original:?} not in source else exec('from src.calc import total; assert total(1,2) == 3')",
+    );
+
+    let run = run_project_options(
+        project.path(),
+        1,
+        &command,
+        &["--operators", "binary_add_sub", "--mutant-timeout", "1s"],
+    )
+    .await;
+
+    assert_eq!(
+        run.exit_code, 4,
+        "stderr={} stdout={}",
+        run.stderr, run.stdout
+    );
+    assert_eq!(run.statuses, ["timeout"]);
+    assert_eq!(run.document["summary"]["counts"]["timeout"], 1);
+    assert_eq!(run.document["mutants"][0]["termination"], "Timeout");
+    assert_eq!(run.document["summary"]["complete"], false);
+}
+
+#[tokio::test]
 async fn changed_selection_real_run_uses_only_the_edited_function() {
     let project = tempfile::tempdir().unwrap();
     let _base_revision = write_changed_git_project(project.path());
@@ -283,6 +318,7 @@ async fn ty_kills_a_nullable_contract_mutant() {
 async fn ty_reports_a_surviving_nullable_contract_mutant() {
     let run = run_type_checker(&ty_executable(), "survived").await;
 
+    assert_eq!(run.exit_code, 1);
     assert_eq!(run.statuses, ["survived"]);
 }
 
