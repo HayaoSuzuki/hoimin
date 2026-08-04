@@ -635,18 +635,20 @@ fn terminate_job(job: HANDLE, operation: &'static str) -> Result<(), ResourceErr
 mod tests {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
+    use std::sync::Arc;
     use std::sync::atomic::Ordering;
     use std::time::{Duration, Instant};
 
     use camino::{Utf8Path, Utf8PathBuf};
     use hoimin_core::{
-        CommandArg, EffectFailure, EffectId, ProcessLimits, RawRunLimits, RunLimits, RunProcess,
+        CommandArg, EffectFailure, EffectId, ProcessLimits, ProcessTermination, RawRunLimits,
+        RunLimits, RunProcess,
     };
     use uuid::Uuid;
 
     use super::{
         ActiveRoot, AttachFault, MEMORY_VIOLATION, RootSignal, RunState, WindowsBackend,
-        detach_root_generation, forget_root_generation, record_notification,
+        active_process_count, detach_root_generation, forget_root_generation, record_notification,
     };
     use crate::process::ProcessHandler;
     use crate::resource::ResourceBackend;
@@ -667,6 +669,195 @@ mod tests {
 
     fn run_limits() -> RunLimits {
         RunLimits::try_from(&RawRunLimits::default()).unwrap()
+    }
+
+    fn fixture_limits() -> ProcessLimits {
+        ProcessLimits {
+            timeout: Duration::from_secs(30),
+            max_output_bytes: 64,
+            max_memory_bytes: 256 * 1024 * 1024,
+            max_processes: 8,
+        }
+    }
+
+    fn fixture_python() -> CommandArg {
+        let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let configuration = std::fs::read_to_string(workspace.join(".venv/pyvenv.cfg")).unwrap();
+        let home = configuration
+            .lines()
+            .find_map(|line| line.strip_prefix("home = "))
+            .expect("virtual environment records its base interpreter");
+        let executable = std::path::Path::new(home).join("python.exe");
+        assert!(
+            executable.is_file(),
+            "base fixture interpreter does not exist: {}",
+            executable.display()
+        );
+        arg(executable)
+    }
+
+    fn sleeping_fixture(id: u64) -> RunProcess {
+        RunProcess {
+            id: EffectId(id),
+            worker: None,
+            run_id: None,
+            mutant_id: None,
+            argv: vec![arg("ping.exe"), arg("-n"), arg("30"), arg("127.0.0.1")],
+            cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
+            limits: fixture_limits(),
+        }
+    }
+
+    fn abnormal_fixture(id: u64, ready: &Utf8Path, release: &Utf8Path) -> RunProcess {
+        RunProcess {
+            id: EffectId(id),
+            worker: None,
+            run_id: None,
+            mutant_id: None,
+            argv: vec![
+                fixture_python(),
+                arg("-c"),
+                arg(
+                    "import ctypes,ctypes.wintypes as w,os,pathlib,sys,time; ready=pathlib.Path(sys.argv[1]); release=pathlib.Path(sys.argv[2]); pending=ready.with_suffix('.pending'); pending.write_text(str(os.getpid())); os.replace(pending,ready);\nwhile not release.exists(): time.sleep(0.005)\nkernel32=ctypes.WinDLL('kernel32',use_last_error=True); kernel32.RaiseFailFastException.argtypes=(ctypes.c_void_p,ctypes.c_void_p,w.DWORD); kernel32.RaiseFailFastException.restype=None; kernel32.RaiseFailFastException(None,None,0)",
+                ),
+                arg(ready.as_std_path()),
+                arg(release.as_std_path()),
+            ],
+            cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
+            limits: fixture_limits(),
+        }
+    }
+
+    struct HandlerCloseGuard(Arc<ProcessHandler>);
+
+    impl Drop for HandlerCloseGuard {
+        fn drop(&mut self) {
+            let _ = self.0.close();
+        }
+    }
+
+    async fn wait_for_ready_pid(path: &Utf8Path) -> u32 {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            if let Some(pid) = std::fs::read_to_string(path)
+                .ok()
+                .and_then(|value| value.trim().parse::<u32>().ok())
+                .filter(|pid| *pid != 0)
+            {
+                return pid;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "fixture did not atomically publish readiness at {path}"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    async fn wait_for_job_process_count(backend: &WindowsBackend, expected: u32) {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            let active = active_process_count(backend.inner.job.raw()).unwrap();
+            if active == expected {
+                return;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "run Job Object has {active} assigned process(es), expected {expected}"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    fn job_process_ids(backend: &WindowsBackend) -> Vec<u32> {
+        #[repr(C)]
+        struct ProcessIds {
+            assigned: u32,
+            count: u32,
+            values: [usize; 16],
+        }
+        let mut ids = ProcessIds {
+            assigned: 0,
+            count: 0,
+            values: [0; 16],
+        };
+        // SAFETY: the output buffer is live and large enough for the fixed fixture limit.
+        let ok = unsafe {
+            windows_sys::Win32::System::JobObjects::QueryInformationJobObject(
+                backend.inner.job.raw(),
+                windows_sys::Win32::System::JobObjects::JobObjectBasicProcessIdList,
+                (&raw mut ids).cast(),
+                u32::try_from(std::mem::size_of::<ProcessIds>()).unwrap(),
+                std::ptr::null_mut(),
+            )
+        };
+        assert_ne!(ok, 0, "query fixture Job Object process IDs");
+        ids.values[..usize::try_from(ids.count).unwrap()]
+            .iter()
+            .map(|pid| u32::try_from(*pid).unwrap())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn abnormal_runtime_root_crosses_real_job_notification_and_cleans_up_within_six_seconds()
+    {
+        let temporary = tempfile::tempdir().unwrap();
+        let output_dir = Utf8Path::from_path(temporary.path()).unwrap();
+        let abnormal_ready = output_dir.join("abnormal-root.ready");
+        let abnormal_release = output_dir.join("release-abnormal-root");
+        let backend = WindowsBackend::new(&run_limits()).unwrap();
+        let handler = Arc::new(ProcessHandler::new(
+            ResourceBackend::Windows(backend.clone()),
+            output_dir.to_owned(),
+        ));
+        let _cleanup = HandlerCloseGuard(Arc::clone(&handler));
+        let started = Instant::now();
+
+        tokio::time::timeout(Duration::from_secs(6), async {
+            let sibling_handler = Arc::clone(&handler);
+            let sibling =
+                tokio::spawn(async move { sibling_handler.handle(sleeping_fixture(260)).await });
+            wait_for_job_process_count(&backend, 1).await;
+
+            let handle_started = Instant::now();
+            let abnormal_handler = Arc::clone(&handler);
+            let fixture_ready = abnormal_ready.clone();
+            let fixture_release = abnormal_release.clone();
+            let abnormal = tokio::spawn(async move {
+                abnormal_handler
+                    .handle(abnormal_fixture(261, &fixture_ready, &fixture_release))
+                    .await
+            });
+            let abnormal_pid = wait_for_ready_pid(&abnormal_ready).await;
+            wait_for_job_process_count(&backend, 2).await;
+            assert!(
+                job_process_ids(&backend).contains(&abnormal_pid),
+                "published runtime PID is not the root assigned to the production Job Object"
+            );
+            std::fs::write(&abnormal_release, b"abort").unwrap();
+            let abnormal = abnormal
+                .await
+                .expect("abnormal fixture task panicked")
+                .unwrap();
+            assert!(handle_started.elapsed() < Duration::from_secs(6));
+            assert_eq!(
+                abnormal.termination,
+                ProcessTermination::Exit(-1_073_740_286)
+            );
+            wait_for_job_process_count(&backend, 1).await;
+
+            let close_started = Instant::now();
+            handler.close().unwrap();
+            assert!(close_started.elapsed() < Duration::from_secs(6));
+            sibling
+                .await
+                .expect("sibling fixture task panicked")
+                .expect("sibling handle did not complete after close");
+            wait_for_job_process_count(&backend, 0).await;
+        })
+        .await
+        .expect("abnormal Job Object fixture exceeded six seconds");
+        assert!(started.elapsed() < Duration::from_secs(6));
     }
 
     #[tokio::test]

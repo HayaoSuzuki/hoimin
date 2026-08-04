@@ -21,10 +21,15 @@ lets it retain a clone of the production `WindowsBackend` and query the real
 Job Object's `ActiveProcesses` count without adding a public test hook to the
 production API.
 
-The test starts a long-lived sibling through the same `ProcessHandler` and
-waits for the sibling to atomically publish its real PID. It then starts the
-root under test. That root atomically publishes its own real PID and calls
-`TerminateProcess` on itself with Windows fail-fast status `0xC0000409`.
+The test starts a long-lived native `ping.exe` sibling through the same
+`ProcessHandler` and observes one assigned Job Object process. It then starts
+the root under test from the virtual environment's base Python interpreter,
+bypassing the Windows virtualenv launcher so the readiness-publishing runtime
+is the assigned root. That root atomically publishes its real PID, waits for a
+release file, and raises an unhandled fail-fast exception through
+`RaiseFailFastException`. The test confirms the published PID appears in the
+real Job Object process list before releasing it.
+
 Because the sibling remains assigned, the run Job Object cannot emit a valid
 `ACTIVE_PROCESS_ZERO` fallback while the abnormal root is classified. A
 successful result therefore depends on consuming the real PID-specific
@@ -42,16 +47,18 @@ Alternatives rejected:
 
 ## Fixture and Data Flow
 
-Both fixture modes use the configured Python interpreter and receive a
-readiness path as a native Windows argument. Each writes its actual PID to a
-neighboring `.pending` file and uses `os.replace` to publish the requested
-readiness path atomically.
+The sibling is the native Windows `ping.exe`, configured to remain alive
+longer than the six-second test window without spawning descendants. The
+abnormal fixture resolves the base interpreter from `.venv/pyvenv.cfg`,
+receives readiness and release paths as native Windows arguments, writes its
+actual PID to a neighboring `.pending` file, and uses `os.replace` to
+publish readiness atomically.
 
-The sibling sleeps long enough that it cannot finish during the six-second
-test window. The abnormal root initializes the required `kernel32` signatures,
-publishes readiness, and terminates itself with `0xC0000409`. The expected Rust
-termination is the independently derived signed value
-`ProcessTermination::Exit(-1_073_740_791)`.
+After the test observes that exact PID in the Job Object process list, it
+creates the release file. The root then initializes the required `kernel32`
+signature and raises `STATUS_FAIL_FAST_EXCEPTION` (`0xC0000602`). The
+expected Rust termination is the independently derived signed value
+`ProcessTermination::Exit(-1_073_740_286)`.
 
 ## Bounds and Cleanup
 
