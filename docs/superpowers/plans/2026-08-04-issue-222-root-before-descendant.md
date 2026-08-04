@@ -1,6 +1,6 @@
 # Issue #222 Windows Root-Before-Descendant Test Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Completed steps are marked with checkbox (`- [x]`) syntax.
 
 **Goal:** Add deterministic Windows regression coverage proving that a real root can exit before its assigned descendant and that production `ProcessHandler` cleanup remains bounded and empties the Job Object.
 
@@ -32,11 +32,11 @@
 - Consumes: `ProcessHandler::handle(RunProcess)`, `ProcessHandler::close()`, `WindowsBackend::new(&RunLimits)`, private `active_process_count(HANDLE)`, private `OwnedHandle`, Win32 `OpenProcess` and `WaitForSingleObject`.
 - Produces: test-only `FixtureProcessHandle::{open,is_active,wait_until_exits}`, `published_process_identities`, `wait_until_job_is_empty`, and `exited_root_is_observed_before_assigned_descendant_cleanup`.
 
-- [ ] **Step 1: Name the break the regression catches**
+- [x] **Step 1: Name the break the regression catches**
 
 Record beside the test implementation that discarding the assigned `root_job` without terminating it or closing its kill-on-close handle must leave the published descendant active and the run Job Object nonempty after `ProcessHandler::handle` returns. The assertion values are independently derived: root wait is `WAIT_OBJECT_0`, descendant pre-cleanup wait is `WAIT_TIMEOUT`, result is literal `ProcessTermination::Exit(0)`, and accounting is literal zero.
 
-- [ ] **Step 2: Add owned real-process-handle helpers**
+- [x] **Step 2: Add owned real-process-handle helpers**
 
 Import `WAIT_OBJECT_0`, `WAIT_TIMEOUT`, `OpenProcess`, `WaitForSingleObject`, `PROCESS_QUERY_LIMITED_INFORMATION`, and `PROCESS_SYNCHRONIZE`. Add this test-only shape inside `resource::windows::tests`:
 
@@ -81,7 +81,7 @@ impl FixtureProcessHandle {
 
 Add a parser that returns `Some((root_pid, descendant_pid))` only for exactly two valid `u32` tokens in the atomically renamed identity file. Add a bounded condition poll that returns true only when `active_process_count(backend.inner.job.raw())` reaches zero.
 
-- [ ] **Step 3: Write the regression test without polling the handler across the observation boundary**
+- [x] **Step 3: Write the regression test without polling the handler across the observation boundary**
 
 Create a `RunProcess` whose Python source performs these exact operations:
 
@@ -109,7 +109,7 @@ handler.close().unwrap();
 
 Wrap spawn, observation, handler completion, cleanup convergence, and close in `tokio::time::timeout(Duration::from_secs(6), ...)`, then assert the wall-clock elapsed time is below six seconds. Do not access `RunState` or `record_notification`.
 
-- [ ] **Step 4: Verify RED with the named cleanup regression**
+- [x] **Step 4: Verify RED with the named cleanup regression**
 
 After the test is written, temporarily replace this production statement in `WindowsSupervisor::terminate`:
 
@@ -130,13 +130,13 @@ Run:
 cargo test -p hoimin-cli resource::windows::tests::exited_root_is_observed_before_assigned_descendant_cleanup -- --exact --nocapture
 ```
 
-Expected: FAIL within six seconds because the descendant handle remains active or the production run Job Object remains nonempty. Restore the exact production statement immediately after recording the failure. Omitting only `TerminateJobObject` is insufficient for RED because the still-owned nested job is configured kill-on-close and supplies equivalent cleanup when the supervisor drops.
+Recorded result: exit `1`; the test failed in 2.62 seconds with `assigned descendant remained active after normal root cleanup`. The exact production statement was restored immediately afterward. An earlier trial that omitted only `TerminateJobObject` passed because the still-owned nested job is configured kill-on-close and supplies equivalent cleanup when the supervisor drops; it did not represent complete loss of cleanup ownership.
 
-- [ ] **Step 5: Verify GREEN against unmodified production cleanup**
+- [x] **Step 5: Verify GREEN against unmodified production cleanup**
 
 Run the same focused command again.
 
-Expected: PASS; the root handle is observed signaled while the descendant handle is active, the handler returns `Exit(0)`, the descendant becomes signaled, Job Object accounting reaches zero, and close succeeds under the outer bound.
+Recorded result after restoring production cleanup: exit `0`; one focused test passed in 0.25 seconds. The post-commit rerun also exited `0`, with one test passed in 0.43 seconds. The root handle was observed signaled while the descendant handle remained active, the handler returned `Exit(0)`, the descendant became signaled, Job Object accounting reached zero, and close succeeded under the outer bound.
 
 ### Task 2: Verify scope and repository quality gates
 
@@ -149,25 +149,30 @@ Expected: PASS; the root handle is observed signaled while the descendant handle
 - Consumes: Cargo workspace configuration and the repository's Rust mutation policy.
 - Produces: fresh focused/full test, formatting, lint, diff, and mutation-applicability evidence.
 
-- [ ] **Step 1: Format and rerun the focused Windows regression**
+- [x] **Step 1: Format and rerun the focused Windows regression**
 
 ```console
 cargo fmt --all -- --check
 cargo test -p hoimin-cli resource::windows::tests::exited_root_is_observed_before_assigned_descendant_cleanup -- --exact --nocapture
 ```
 
-Expected: both commands exit zero.
+Recorded result: both commands exited `0`; the post-commit focused test passed once in 0.43 seconds.
 
-- [ ] **Step 2: Run the full relevant Rust tests**
+- [x] **Step 2: Run the full relevant Rust tests**
 
 ```console
 cargo test -p hoimin-cli
 cargo test --workspace
 ```
 
-Expected: all tests pass, including the Windows-only resource test and integration suite.
+Recorded results:
 
-- [ ] **Step 3: Run lint and source checks**
+- Unfiltered `cargo test -p hoimin-cli` reached 176 passed and 1 ignored library tests, then failed only `workspace::root::tests::rejects_non_normal_and_linked_parent_components` with Windows error 1314 because the host lacks symlink-creation privilege. An outside-sandbox retry produced the same privilege failure.
+- After creating the worktree's locked `.venv`, `cargo test -p hoimin-cli -- --skip workspace::root::tests::rejects_non_normal_and_linked_parent_components` exited `0` across the package targets.
+- The initial parallel workspace run exposed existing PID-publication timing flakes. `cargo test --workspace -- --skip workspace::root::tests::rejects_non_normal_and_linked_parent_components --test-threads=1` then exited `0` in 130.7 seconds.
+- The privilege-dependent exclusion is unrelated to issue #222; the new Windows Job Object test passed in every package and workspace run.
+
+- [x] **Step 3: Run lint and source checks**
 
 ```console
 cargo clippy --workspace --all-targets --all-features -- -D warnings
@@ -175,18 +180,18 @@ git diff --check
 rg -n "RunState|record_notification" crates/hoimin-cli/src/resource/windows.rs
 ```
 
-Expected: clippy and diff checks exit zero. The text search may find older direct-state unit tests but must not find either symbol inside the new real-handle regression.
+Recorded result: clippy and diff checks exited `0`. A source-range check over the new regression found neither `RunState` nor `record_notification`; matches elsewhere belong to pre-existing direct-state unit tests.
 
-- [ ] **Step 4: Record Rust mutation non-applicability with evidence**
+- [x] **Step 4: Record Rust mutation non-applicability with evidence**
 
 ```console
 git diff --unified=0 origin/main -- crates/hoimin-cli/src/resource/windows.rs
 git diff --numstat origin/main -- crates/hoimin-cli/src/resource/windows.rs
 ```
 
-Inspect every changed hunk. Expected: all Rust additions are inside the existing `#[cfg(test)] mod tests`; no production Rust expression changed. Therefore `cargo mutants --workspace` has no changed production target for this issue and is not applicable. Preserve the RED run from Task 1 as mutation-style evidence that omission of nested Job Object termination is detected.
+Recorded result: every Rust hunk is inside the existing `#[cfg(test)] mod tests`; no production Rust expression changed. Therefore `cargo mutants --workspace` has no changed production target for this issue and is not applicable. The deliberate discarded-Job-Object fault and its 2.62-second RED failure provide mutation-style evidence that the new test detects complete loss of nested cleanup ownership.
 
-- [ ] **Step 5: Review and commit the implementation**
+- [x] **Step 5: Review and commit the implementation**
 
 ```console
 git status --short
@@ -197,4 +202,4 @@ git add crates/hoimin-cli/src/resource/windows.rs docs/superpowers/plans/2026-08
 git commit -m "test(windows): cover root-before-descendant cleanup"
 ```
 
-Expected: the final commit contains only the plan and Windows test changes; the earlier design commit remains in branch history. Do not push, open a pull request, merge, or remove the worktree.
+Recorded result: implementation commit `5c734b19fcf1fac981a8f39dc53d1c06a475c010` contains the Windows test. The earlier design and plan commits remain in branch history, and this execution record is a documentation-only review follow-up. Nothing was pushed, merged, or removed.

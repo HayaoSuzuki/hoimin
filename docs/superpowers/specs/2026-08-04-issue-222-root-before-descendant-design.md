@@ -57,9 +57,19 @@ The pinned handler future owns the production supervisor and nested kill-on-clos
 
 ## TDD and Mutation Evidence
 
-The behavioral break named by this test is: normal root completion discards the assigned nested Job Object without either terminating it or closing its kill-on-close handle. The red phase will run the new test against a temporary local mutation that replaces and forgets the assigned Job Object before termination; the descendant-active or Job Object accounting assertion must fail within the six-second bound. Restoring the production ownership and termination path must make the same test pass. Merely omitting `TerminateJobObject` is not this break because dropping the still-owned kill-on-close handle provides the same externally visible cleanup.
+The behavioral break named by this test is: normal root completion discards the assigned nested Job Object without either terminating it or closing its kill-on-close handle. For the RED run, the temporary local fault replaced `root_job` with a new empty Job Object and forgot the assigned handle before termination. The focused command exited `1` after 2.62 seconds with `assigned descendant remained active after normal root cleanup`. Restoring the production ownership and termination path made the identical command pass in 0.25 seconds; the post-commit rerun passed in 0.43 seconds. An earlier trial that merely omitted `TerminateJobObject` passed because dropping the still-owned kill-on-close handle provides the same externally visible cleanup.
 
 Only a `#[cfg(test)]` module and documentation are changed. No production Rust expression is added or modified, so Rust mutation testing of changed production code is not applicable. The deliberate red-phase production mutation supplies direct evidence that the new test detects the cleanup regression it names.
+
+## Verification Record
+
+- `cargo fmt --all -- --check` exited `0`.
+- The post-commit focused Windows regression exited `0`, with one test passed in 0.43 seconds.
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings` exited `0`.
+- `cargo test -p hoimin-cli -- --skip workspace::root::tests::rejects_non_normal_and_linked_parent_components` exited `0` across the package targets.
+- `cargo test --workspace -- --skip workspace::root::tests::rejects_non_normal_and_linked_parent_components --test-threads=1` exited `0` in 130.7 seconds.
+- The unfiltered package run cannot pass on this host because the pre-existing symlink test receives Windows error 1314: the client lacks the required privilege. The same test failed outside the restricted sandbox. Parallel process-fixture runs also exposed pre-existing PID-publication timing flakes, while the serialized workspace run passed.
+- `git diff --check` exited `0`, and the new regression contains neither direct `RunState` mutation nor a `record_notification` call.
 
 ## Scope
 
