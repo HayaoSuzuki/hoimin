@@ -746,6 +746,58 @@ mod tests {
     }
 
     #[test]
+    fn failed_snapshot_copy_rolls_back_only_the_slot_and_keeps_the_bound_reservation() {
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("target.py"), b"original\n").unwrap();
+        let source_root = Utf8Path::from_path(source.path()).unwrap();
+        let plan =
+            WorkspacePlan::preflight(source_root, EffectId(14), 1, CopyOptions::default()).unwrap();
+        let completed = plan.completed();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: 2 * completed.aggregate_logical_bytes,
+            processes: 1,
+        });
+        let winner = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+        let foreign = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+        let winner_request = winner.create_worker(EffectId(15), 0).unwrap();
+        let foreign_request = foreign.create_worker(EffectId(16), 0).unwrap();
+        let snapshot_path = plan.snapshot.root.join("target.py");
+        fs::remove_file(&snapshot_path).unwrap();
+
+        let failed = plan.create_worker(&winner_request).unwrap_err();
+
+        let WorkspaceError::Io {
+            operation, path, ..
+        } = failed
+        else {
+            panic!("expected snapshot-read failure, got {failed:?}");
+        };
+        assert_eq!(operation, "read shared snapshot");
+        assert_eq!(path, Utf8Path::new("target.py"));
+        assert_eq!(plan.materialized_workers(), 0);
+        assert_eq!(plan.observed_copy_bytes(), 0);
+        assert_eq!(plan.reservation_id(), Some(winner.reservation_id()));
+
+        assert_eq!(
+            plan.create_worker(&foreign_request).unwrap_err(),
+            WorkspaceError::ReservationMismatch {
+                expected: winner.reservation_id(),
+                received: foreign.reservation_id(),
+            }
+        );
+
+        fs::write(snapshot_path, b"original\n").unwrap();
+        let worker = plan.create_worker(&winner_request).unwrap();
+        assert_eq!(plan.materialized_workers(), 1);
+        assert_eq!(
+            plan.observed_copy_bytes(),
+            completed.per_worker_logical_bytes
+        );
+        assert_eq!(worker.read("target.py").unwrap(), b"original\n");
+    }
+
+    #[test]
     fn initial_grant_is_published_before_another_worker_can_materialize() {
         let source = tempfile::tempdir().unwrap();
         fs::write(source.path().join("target.py"), b"copied bytes").unwrap();
