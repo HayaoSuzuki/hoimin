@@ -5,14 +5,12 @@ use hoimin_core::MutationCandidate;
 use super::{WorkerWorkspace, WorkspaceError};
 
 impl WorkerWorkspace {
-    /// Applies a candidate only when the original workspace and target bytes still match.
+    /// Applies a candidate only when the worker target still matches its preflight manifest.
     ///
     /// # Errors
     ///
-    /// Returns an error when the original workspace changed, the target is invalid, or the
-    /// mutated file cannot be written.
+    /// Returns an error when the worker target is invalid or the mutated file cannot be written.
     pub fn apply_mutation(&mut self, candidate: &MutationCandidate) -> Result<(), WorkspaceError> {
-        self.verify_originals()?;
         let expected = self.manifest.entry(&candidate.path).ok_or_else(|| {
             WorkspaceError::MutationTargetMissing {
                 path: candidate.path.clone(),
@@ -82,13 +80,14 @@ mod tests {
     use std::sync::mpsc::sync_channel;
     use std::sync::{Arc, Mutex};
     use std::thread;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use camino::{Utf8Path, Utf8PathBuf};
     use hoimin_core::{
         BudgetLedger, ByteSpan, EffectId, MutationCandidate, RunBudgets, reserve_workspace_copy,
     };
 
+    use super::super::manifest::{build_metrics, reset_build_metrics};
     use super::super::root::{WorkspaceRaceHook, install_workspace_race_hook};
     use super::super::{CopyOptions, WorkerWorkspace, WorkspacePlan};
 
@@ -132,9 +131,20 @@ mod tests {
     }
 
     fn worker_and_candidate() -> (tempfile::TempDir, WorkerWorkspace, MutationCandidate) {
+        worker_and_candidate_with_padding(0)
+    }
+
+    fn worker_and_candidate_with_padding(
+        padding_bytes: usize,
+    ) -> (tempfile::TempDir, WorkerWorkspace, MutationCandidate) {
         let project = tempfile::tempdir().unwrap();
         fs::create_dir(project.path().join("swap")).unwrap();
         fs::write(project.path().join("swap/target.py"), b"original\n").unwrap();
+        fs::write(
+            project.path().join("swap/padding.bin"),
+            vec![b'x'; padding_bytes],
+        )
+        .unwrap();
         let root = Utf8Path::from_path(project.path()).unwrap();
         let plan = WorkspacePlan::preflight(root, EffectId(1), 1, CopyOptions::default()).unwrap();
         let mut ledger = BudgetLedger::new(RunBudgets {
@@ -170,6 +180,39 @@ mod tests {
             file_hash: hash,
         };
         (project, worker, candidate)
+    }
+
+    #[test]
+    fn mutation_and_reset_do_not_rebuild_the_original_manifest() {
+        let (_project, mut worker, candidate) = worker_and_candidate();
+        reset_build_metrics();
+
+        worker.apply_mutation(&candidate).unwrap();
+        worker.reset().unwrap();
+
+        assert_eq!(build_metrics(), (0, 0));
+    }
+
+    #[test]
+    #[ignore = "manual before/after performance evidence"]
+    fn benchmark_original_manifest_work_per_mutant_cycle() {
+        const CYCLES: u64 = 10;
+        const PADDING_BYTES: usize = 8 * 1024 * 1024;
+        let (_project, mut worker, candidate) = worker_and_candidate_with_padding(PADDING_BYTES);
+        reset_build_metrics();
+        let started = Instant::now();
+
+        for _ in 0..CYCLES {
+            worker.apply_mutation(&candidate).unwrap();
+            worker.reset().unwrap();
+        }
+
+        let (builds, bytes) = build_metrics();
+        eprintln!(
+            "cycles={CYCLES} fixture_bytes={} manifest_builds={builds} manifest_bytes={bytes} elapsed_ms={}",
+            PADDING_BYTES + b"original\n".len(),
+            started.elapsed().as_millis()
+        );
     }
 
     #[test]

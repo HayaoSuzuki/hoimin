@@ -1,3 +1,5 @@
+#[cfg(test)]
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -8,6 +10,21 @@ use ignore::overrides::OverrideBuilder;
 use ignore::{DirEntry, WalkBuilder};
 
 use super::{CopyOptions, WorkspaceDiagnostic, WorkspaceError};
+
+#[cfg(test)]
+thread_local! {
+    static BUILD_METRICS: Cell<(u64, u64)> = const { Cell::new((0, 0)) };
+}
+
+#[cfg(test)]
+pub(crate) fn reset_build_metrics() {
+    BUILD_METRICS.with(|metrics| metrics.set((0, 0)));
+}
+
+#[cfg(test)]
+pub(crate) fn build_metrics() -> (u64, u64) {
+    BUILD_METRICS.with(Cell::get)
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ManifestEntry {
@@ -89,6 +106,11 @@ pub fn build_manifest(
     root: &Utf8Path,
     options: &CopyOptions,
 ) -> Result<(WorkspaceManifest, Vec<WorkspaceDiagnostic>), WorkspaceError> {
+    #[cfg(test)]
+    BUILD_METRICS.with(|metrics| {
+        let (builds, bytes) = metrics.get();
+        metrics.set((builds + 1, bytes));
+    });
     let metadata =
         fs::metadata(root).map_err(|error| WorkspaceError::io("read root", root, error))?;
     if !metadata.is_dir() {
@@ -196,6 +218,11 @@ fn collect(
         }
         let bytes = fs::read(entry.path())
             .map_err(|error| WorkspaceError::io("read manifest file", &path, error))?;
+        #[cfg(test)]
+        BUILD_METRICS.with(|metrics| {
+            let (builds, total_bytes) = metrics.get();
+            metrics.set((builds, total_bytes + bytes.len() as u64));
+        });
         let metadata = entry
             .metadata()
             .map_err(|error| WorkspaceError::io("read manifest metadata", &path, error))?;

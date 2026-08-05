@@ -2,37 +2,16 @@ use std::collections::BTreeSet;
 
 use camino::Utf8Path;
 
-use super::manifest::build_manifest;
 use super::root::WorkerEntryKind;
 use super::{WorkerWorkspace, WorkspaceError};
 
 impl WorkerWorkspace {
-    /// Confirms that the original workspace still matches this worker's manifest.
+    /// Restores the worker filesystem from its private preflight snapshot.
     ///
     /// # Errors
     ///
-    /// Returns an error if the source cannot be scanned or its contents changed.
-    pub fn verify_originals(&self) -> Result<(), WorkspaceError> {
-        let (current, _) = build_manifest(&self.original_root, &self.options)?;
-        if self.manifest.content_matches(&current) {
-            Ok(())
-        } else {
-            Err(WorkspaceError::OriginalChanged {
-                path: self
-                    .manifest
-                    .first_content_difference(&current)
-                    .unwrap_or_default(),
-            })
-        }
-    }
-
-    /// Restores the worker filesystem from its original snapshot.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the original workspace changed or restoration cannot complete.
+    /// Returns an error if restoration cannot complete.
     pub fn reset(&mut self) -> Result<(), WorkspaceError> {
-        self.verify_originals()?;
         self.reset_from_snapshot().map_err(|error| {
             if matches!(
                 error,

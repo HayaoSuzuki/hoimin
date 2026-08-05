@@ -393,8 +393,6 @@ impl WorkspacePlan {
         Ok(WorkerWorkspace::from_materialized(
             temp,
             root,
-            self.original_root.clone(),
-            self.options.clone(),
             self.manifest.clone(),
             Arc::clone(&self.snapshot),
             Arc::clone(&self.allowance),
