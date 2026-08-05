@@ -131,4 +131,3 @@ git commit -m "docs: report issue 129 performance results"
 - [ ] **Step 5: Review, publish, and merge**
 
 Review the complete diff against issue #129 and this design. Fix important findings, rerun affected verification, push `perf/issue-129-line-offsets`, open a PR containing `Closes #129`, monitor all required checks, and squash-merge only after they pass.
-

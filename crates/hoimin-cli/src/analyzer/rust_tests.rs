@@ -13,9 +13,17 @@ fn analyze(source: &str) -> super::AnalyzerOutput {
 #[test]
 #[ignore = "benchmark harness; run explicitly in release mode"]
 fn benchmark_candidate_line_positions() {
-    let source: String = (0..7_680)
-        .map(|index| format!("result_{index:05} = left_{index:05} + right_{index:05}\n"))
-        .collect();
+    use std::fmt::Write as _;
+
+    let mut source = String::with_capacity(307_200);
+    for index in 0..7_680 {
+        writeln!(
+            source,
+            "result_{index:05} = left_{index:05} + right_{index:05}"
+        )
+        .expect("writing to String cannot fail");
+    }
+    assert_eq!(source.len(), 307_200);
 
     let started = std::time::Instant::now();
     let output = analyze(&source);

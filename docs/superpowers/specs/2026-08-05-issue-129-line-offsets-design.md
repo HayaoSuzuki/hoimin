@@ -43,4 +43,3 @@ This assumes monotonically increasing offsets and is fragile when candidate prod
 ## Verification
 
 Add focused tests for ASCII, multiline, CRLF, and multi-byte Unicode positions. Add a candidate-level regression containing both token and annotation candidates so both consumers preserve positions. Add an ignored release benchmark before the production change, measure the same candidate-heavy fixture on the baseline harness commit and optimized commit, and report five-run medians without enforcing timing in CI.
-
