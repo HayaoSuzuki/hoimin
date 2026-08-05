@@ -1213,12 +1213,58 @@ fn human_format_writes_progress_to_stdout_and_diagnostics_to_stderr() {
             .unwrap();
     }
     assert!(stdout.text().contains("run started: run-1"));
-    assert!(stdout.text().contains("mutant finished: m0 killed"));
-    assert!(stdout.text().contains("run finished: exit 0"));
+    assert!(stdout.text().contains("baseline finished: exit (0)"));
+    assert!(
+        stdout
+            .text()
+            .contains("mutant finished: src/example.py:1:0 binary \"+\" -> \"-\" killed")
+    );
+    assert!(stdout.text().contains("run summary:"));
+    assert!(stdout.text().contains("killed: 1"));
+    assert!(stdout.text().contains("survived: 0"));
+    assert!(stdout.text().contains("timeout: 0"));
+    assert!(stdout.text().contains("out_of_memory: 0"));
+    assert!(stdout.text().contains("process_limit: 0"));
+    assert!(stdout.text().contains("error: 0"));
+    assert!(stdout.text().contains("not_run: 0"));
+    assert!(stdout.text().contains("score: 1.00"));
+    assert!(stdout.text().contains("complete: true"));
+    assert!(stdout.text().contains("exit: 0"));
     assert!(!stdout.text().contains("diagnostic text"));
     assert!(stderr.text().contains("warning x: diagnostic text"));
     assert_eq!(stdout.flushes(), 5);
     assert_eq!(stderr.flushes(), 1);
+}
+
+#[test]
+fn human_format_renders_none_score_for_runs_without_decidable_mutants() {
+    let stdout = SharedWriter::default();
+    let mut handler = ReportHandler::new(
+        OutputFormat::Human,
+        stdout.clone(),
+        io::sink(),
+        std::env::temp_dir(),
+    )
+    .unwrap();
+
+    handler
+        .handle(EmitOutput {
+            id: EffectId(1),
+            event: OutputEvent::RunFinished(RunSummary {
+                schema_version: REPORT_SCHEMA_VERSION,
+                sequence: 1,
+                run_id: "run-1".to_owned(),
+                counts: MutationSummary::default(),
+                complete: false,
+                exit_code: 4,
+                verification_selection: None,
+            }),
+        })
+        .unwrap();
+
+    assert!(stdout.text().contains("score: none"));
+    assert!(stdout.text().contains("complete: false"));
+    assert!(stdout.text().contains("exit: 4"));
 }
 
 #[test]
