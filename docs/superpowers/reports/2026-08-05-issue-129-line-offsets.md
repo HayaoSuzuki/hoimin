@@ -80,7 +80,7 @@ was removed after testing; no tracked source or test file was changed for setup.
 | `cargo fmt --all -- --check` | Passed (exit 0). |
 | `cargo test --workspace` | Passed (exit 0; all workspace tests, including 46/46 `run_e2e`, passed). |
 | `cargo test --workspace --all-features` | Passed (exit 0; all workspace tests, including 46/46 `run_e2e`, passed). |
-| `cargo clippy -p hoimin-cli --all-targets --all-features -- -D warnings` | Passed (exit 0). The fixture now uses `String::with_capacity` and `writeln!` before timing, while asserting its exact 307,200-byte size. |
+| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | Passed (exit 0). The fixture now uses `String::with_capacity` and `writeln!` before timing, while asserting its exact 307,200-byte size. |
 | `git diff --check origin/main...HEAD` | Passed (exit 0) after removing only the reported terminal blank lines from the Issue 129 plan and design. |
 
 The earlier recovery attempt observed two transient macOS signal E2E failures
