@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use camino::Utf8Path;
+use camino::Utf8PathBuf;
 
 use super::root::WorkerEntryKind;
 use super::{WorkerWorkspace, WorkspaceError};
@@ -29,6 +29,7 @@ impl WorkerWorkspace {
 
     fn reset_from_snapshot(&self) -> Result<(), WorkspaceError> {
         let existing = self.root.entries()?;
+        let required_directories = required_directories(self.snapshot.files.keys());
         let existing_files = existing
             .iter()
             .filter(|entry| entry.kind == WorkerEntryKind::File)
@@ -44,7 +45,7 @@ impl WorkerWorkspace {
                     if entry
                         .logical_path
                         .as_ref()
-                        .is_none_or(|path| !required_directory(path, self.snapshot.files.keys()))
+                        .is_none_or(|path| !required_directories.contains(path))
                     {
                         remove()?;
                     }
@@ -65,30 +66,39 @@ impl WorkerWorkspace {
         }
 
         for (path, snapshot) in &self.snapshot.files {
-            let bytes = self.snapshot.read(path)?;
             if existing_files.contains(path)
-                && self
-                    .root
-                    .snapshot_matches(path, &bytes, snapshot.permission_fingerprint)?
+                && self.root.snapshot_hash_matches(
+                    path,
+                    snapshot.blake3,
+                    snapshot.permission_fingerprint,
+                )?
             {
                 continue;
             }
+            let bytes = self.snapshot.read(path)?;
             self.root
                 .restore(path, &bytes, snapshot.permissions.clone())?;
         }
 
-        let matches = self.matches_snapshot()?;
-        hoimin_core::contract_ensure!("workspace.reset.post", matches, self.root.path().as_str(),);
-        if matches {
-            Ok(())
-        } else {
-            Err(WorkspaceError::WorkspaceRestore {
-                path: self.root.path().to_owned(),
-                message: "post-reset manifest comparison failed".to_owned(),
-            })
+        #[cfg(feature = "contracts")]
+        {
+            let matches = self.matches_snapshot()?;
+            hoimin_core::contract_ensure!(
+                "workspace.reset.post",
+                matches,
+                self.root.path().as_str(),
+            );
+            if !matches {
+                return Err(WorkspaceError::WorkspaceRestore {
+                    path: self.root.path().to_owned(),
+                    message: "post-reset manifest comparison failed".to_owned(),
+                });
+            }
         }
+        Ok(())
     }
 
+    #[cfg(any(test, feature = "contracts"))]
     fn matches_snapshot(&self) -> Result<bool, WorkspaceError> {
         let entries = self.root.entries()?;
         if entries.iter().any(|entry| entry.logical_path.is_none()) {
@@ -116,11 +126,21 @@ impl WorkerWorkspace {
     }
 }
 
-fn required_directory<'a>(
-    path: &Utf8Path,
-    mut snapshot_paths: impl Iterator<Item = &'a camino::Utf8PathBuf>,
-) -> bool {
-    snapshot_paths.any(|file| file.starts_with(path) && file != path)
+fn required_directories<'a>(
+    snapshot_paths: impl Iterator<Item = &'a Utf8PathBuf>,
+) -> BTreeSet<Utf8PathBuf> {
+    let mut directories = BTreeSet::new();
+    for file in snapshot_paths {
+        let mut parent = file.parent();
+        while let Some(path) = parent {
+            if path.as_str().is_empty() {
+                break;
+            }
+            directories.insert(path.to_owned());
+            parent = path.parent();
+        }
+    }
+    directories
 }
 
 #[cfg(test)]
@@ -235,14 +255,19 @@ mod tests {
 
         worker.reset().unwrap();
 
-        assert_eq!(
-            current_reset_io_metrics(),
-            ResetIoMetrics {
-                tree_walks: 1,
-                worker_bytes: (PADDING_BYTES + b"original\n".len()) as u64,
-                snapshot_bytes: b"original\n".len() as u64,
-            }
-        );
+        #[cfg(not(feature = "contracts"))]
+        let expected = ResetIoMetrics {
+            tree_walks: 1,
+            worker_bytes: (PADDING_BYTES + b"original\n".len()) as u64,
+            snapshot_bytes: b"original\n".len() as u64,
+        };
+        #[cfg(feature = "contracts")]
+        let expected = ResetIoMetrics {
+            tree_walks: 2,
+            worker_bytes: (2 * (PADDING_BYTES + b"original\n".len())) as u64,
+            snapshot_bytes: (PADDING_BYTES + 2 * b"original\n".len()) as u64,
+        };
+        assert_eq!(current_reset_io_metrics(), expected);
     }
 
     #[test]

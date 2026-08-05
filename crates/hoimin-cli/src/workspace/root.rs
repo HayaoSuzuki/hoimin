@@ -835,6 +835,15 @@ impl WorkerRoot {
         expected: &[u8],
         expected_permissions: super::PermissionFingerprint,
     ) -> Result<bool, WorkspaceError> {
+        self.snapshot_hash_matches(path, blake3::hash(expected), expected_permissions)
+    }
+
+    pub(crate) fn snapshot_hash_matches(
+        &self,
+        path: &Utf8Path,
+        expected_hash: blake3::Hash,
+        expected_permissions: super::PermissionFingerprint,
+    ) -> Result<bool, WorkspaceError> {
         let (parent, name) = self.open_parent(path, false)?;
         let metadata = match cap_primitives::fs::stat(&parent, Path::new(&name), FollowSymlinks::No)
         {
@@ -852,7 +861,7 @@ impl WorkerRoot {
             let (bytes, permissions) = windows::snapshot(&parent, &name, path)?;
             #[cfg(test)]
             super::record_reset_worker_bytes(bytes.len());
-            Ok(bytes == expected
+            Ok(blake3::hash(&bytes) == expected_hash
                 && super::permission_fingerprint(&permissions) == expected_permissions)
         }
         #[cfg(unix)]
@@ -875,7 +884,7 @@ impl WorkerRoot {
                 .map_err(|error| WorkspaceError::io("verify restored file", path, error))?;
             #[cfg(test)]
             super::record_reset_worker_bytes(bytes.len());
-            Ok(bytes == expected
+            Ok(blake3::hash(&bytes) == expected_hash
                 && super::permission_fingerprint(&file_metadata.permissions())
                     == expected_permissions)
         }
