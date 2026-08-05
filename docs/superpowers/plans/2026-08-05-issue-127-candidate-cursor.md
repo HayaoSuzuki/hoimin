@@ -18,6 +18,10 @@
 
 ---
 
+## Execution Correction
+
+Tasks 1 and 2 below are executed as one TDD cycle. The standalone `candidate_cursor_starts_at_first_record` constant test is not added because it would test a declaration rather than consumer-visible behavior. RED instead changes the real state-machine test to require an initial `ReadCandidate` cursor of `{ offset: 0, expected_sequence: 1 }` and an accepted completion cursor of `{ offset: 17, expected_sequence: 2 }`. GREEN then introduces `CandidateCursor` and propagates it through effects, events, `RunState`, and the transitional shell bridge. The combined focused and core-library suites must pass before the single `refactor(core): propagate candidate replay cursor` commit.
+
 ### Task 1: Define the candidate cursor value type
 
 **Files:**

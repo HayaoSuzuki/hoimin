@@ -153,18 +153,21 @@ impl BlockingEffect {
 }
 
 fn replay_candidate(request: &hoimin_core::ReadCandidate) -> RunEvent {
-    match CandidateStore::replay_one(&request.spool, request.offset) {
+    match CandidateStore::replay_one(&request.spool, request.cursor.offset) {
         Ok(Some((candidate, next_offset))) => RunEvent::CandidateLoaded(CandidateLoaded {
             id: request.id,
             worker: request.worker,
+            next_cursor: hoimin_core::CandidateCursor {
+                offset: next_offset,
+                expected_sequence: candidate.sequence.saturating_add(1),
+            },
             candidate: Some(candidate),
-            next_offset,
         }),
         Ok(None) => RunEvent::CandidateLoaded(CandidateLoaded {
             id: request.id,
             worker: request.worker,
             candidate: None,
-            next_offset: request.offset,
+            next_cursor: request.cursor,
         }),
         Err(error) => RunEvent::EffectFailed(EffectFailed::other(
             request.id,
@@ -1943,7 +1946,7 @@ mod tests {
                 token: "spool.jsonl".into(),
                 records: 1,
             },
-            offset: 0,
+            cursor: hoimin_core::CandidateCursor::START,
         });
         let effects = [
             RunEffect::CreateWorker(create),

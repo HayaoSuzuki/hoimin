@@ -2,16 +2,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use hoimin_core::{
-    AnalysisDiagnostic, AnalysisFinished, ByteSpan, CandidateLoaded, CandidateSpoolRef,
-    CleanupFinished, CommandArg, EffectFailed, EffectFailure, EffectId, MachineError,
-    MutationApplied, MutationCandidate, MutationProfile, MutationStatus, MutationSummary,
-    OriginalsVerified, OutputConfig, OutputEmitted, OutputEvent, PreflightCompleted,
-    ProcessFinished, ProcessTermination, RawRunConfig, RawRunLimits, RemainingBudgetObserved,
-    ReportSequence, ReservationId, ResourceMode, ResultPersisted, RunConfig, RunEffect, RunEvent,
-    RunFingerprint, RunPhase, RunState, SessionFinished, SessionLoaded, SessionResumeRef,
-    SessionStarted, StartRequested, StoredResult, StoredResultLoaded, TargetSlice, TargetsResolved,
-    VerificationSelection, VerificationSelectionMode, VerificationSelectionPolicy,
-    VerificationSelectionScope, WorkerCreated, WorkerReset, transition,
+    AnalysisDiagnostic, AnalysisFinished, ByteSpan, CandidateCursor, CandidateLoaded,
+    CandidateSpoolRef, CleanupFinished, CommandArg, EffectFailed, EffectFailure, EffectId,
+    MachineError, MutationApplied, MutationCandidate, MutationProfile, MutationStatus,
+    MutationSummary, OriginalsVerified, OutputConfig, OutputEmitted, OutputEvent,
+    PreflightCompleted, ProcessFinished, ProcessTermination, RawRunConfig, RawRunLimits,
+    ReadCandidate, RemainingBudgetObserved, ReportSequence, ReservationId, ResourceMode,
+    ResultPersisted, RunConfig, RunEffect, RunEvent, RunFingerprint, RunPhase, RunState,
+    SessionFinished, SessionLoaded, SessionResumeRef, SessionStarted, StartRequested, StoredResult,
+    StoredResultLoaded, TargetSlice, TargetsResolved, VerificationSelection,
+    VerificationSelectionMode, VerificationSelectionPolicy, VerificationSelectionScope,
+    WorkerCreated, WorkerReset, transition,
 };
 use proptest::prelude::*;
 
@@ -487,7 +488,7 @@ fn retired_late_completion_is_distinct_from_a_true_duplicate() {
         id: read_id,
         worker: 0,
         candidate: Some(fixture_candidate(1)),
-        next_offset: 1,
+        next_cursor: candidate_cursor(1),
     };
     let (state, effects) = transition(state, RunEvent::CandidateLoaded(completed.clone())).unwrap();
     let duplicate = transition(state.clone(), RunEvent::CandidateLoaded(completed)).unwrap_err();
@@ -653,7 +654,7 @@ fn cancellation_flushes_active_and_remaining_candidates_as_not_run() {
             id: read_id,
             worker: 0,
             candidate: Some(fixture_candidate(1)),
-            next_offset: 10,
+            next_cursor: candidate_cursor(10),
         }),
     )
     .unwrap();
@@ -670,7 +671,7 @@ fn cancellation_flushes_active_and_remaining_candidates_as_not_run() {
                     id: read_id,
                     worker: 0,
                     candidate: Some(fixture_candidate(sequence)),
-                    next_offset: sequence * 10,
+                    next_cursor: candidate_cursor(sequence * 10),
                 }),
             )
             .unwrap();
@@ -704,7 +705,7 @@ fn cancellation_flushes_active_and_remaining_candidates_as_not_run() {
             id: read_id,
             worker: 0,
             candidate: None,
-            next_offset: 30,
+            next_cursor: candidate_cursor(30),
         }),
     )
     .unwrap();
@@ -720,6 +721,11 @@ fn cancellation_flushes_active_and_remaining_candidates_as_not_run() {
 #[test]
 fn one_active_candidate_is_applied_classified_and_reported() {
     let (state, effects) = waiting_for_candidate();
+    assert!(matches!(
+        find_effect(&effects, |effect| matches!(effect, RunEffect::ReadCandidate(_))),
+        RunEffect::ReadCandidate(ReadCandidate { cursor, .. })
+            if *cursor == CandidateCursor { offset: 0, expected_sequence: 1 }
+    ));
     let read_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::ReadCandidate(_))
     }));
@@ -730,7 +736,10 @@ fn one_active_candidate_is_applied_classified_and_reported() {
             id: read_id,
             worker: 0,
             candidate: Some(candidate.clone()),
-            next_offset: 17,
+            next_cursor: CandidateCursor {
+                offset: 17,
+                expected_sequence: 2,
+            },
         }),
     )
     .unwrap();
@@ -800,7 +809,7 @@ fn candidate_filter_skips_unrequested_candidates() {
             id: first_read,
             worker: 0,
             candidate: Some(first),
-            next_offset: 10,
+            next_cursor: candidate_cursor(10),
         }),
     )
     .unwrap();
@@ -824,7 +833,7 @@ fn candidate_filter_skips_unrequested_candidates() {
             id: second_read,
             worker: 0,
             candidate: Some(second.clone()),
-            next_offset: 20,
+            next_cursor: candidate_cursor(20),
         }),
     )
     .unwrap();
@@ -896,7 +905,7 @@ fn candidate_filter_skips_unrequested_candidates() {
             id: final_read,
             worker: 0,
             candidate: None,
-            next_offset: 20,
+            next_cursor: candidate_cursor(20),
         }),
     )
     .unwrap();
@@ -987,7 +996,7 @@ fn ordered_candidate_filter_rejects_missing_after_partial_match() {
             id: read.id,
             worker: read.worker,
             candidate: Some(first),
-            next_offset: 10,
+            next_cursor: candidate_cursor(10),
         }),
     )
     .unwrap();
@@ -1003,7 +1012,7 @@ fn ordered_candidate_filter_rejects_missing_after_partial_match() {
             id: eof.id,
             worker: eof.worker,
             candidate: None,
-            next_offset: 10,
+            next_cursor: candidate_cursor(10),
         }),
     )
     .unwrap_err();
@@ -1072,7 +1081,7 @@ fn explicit_candidate_filter_rejects_missing_selected_candidate() {
             id: read_id,
             worker: 0,
             candidate: Some(first),
-            next_offset: 10,
+            next_cursor: candidate_cursor(10),
         }),
     )
     .unwrap();
@@ -1086,7 +1095,7 @@ fn explicit_candidate_filter_rejects_missing_selected_candidate() {
             id: eof_id,
             worker: 0,
             candidate: None,
-            next_offset: 10,
+            next_cursor: candidate_cursor(10),
         }),
     )
     .unwrap_err();
@@ -1125,7 +1134,7 @@ fn explicit_candidate_filter_rejects_missing_after_partial_match() {
             id: read_id,
             worker: 0,
             candidate: Some(first.clone()),
-            next_offset: 10,
+            next_cursor: candidate_cursor(10),
         }),
     )
     .unwrap();
@@ -1142,7 +1151,7 @@ fn explicit_candidate_filter_rejects_missing_after_partial_match() {
             id: eof_id,
             worker: 0,
             candidate: None,
-            next_offset: 10,
+            next_cursor: candidate_cursor(10),
         }),
     )
     .unwrap_err();
@@ -1183,7 +1192,7 @@ fn ordered_candidate_filter_defers_and_preserves_requested_order() {
                 id: read_id,
                 worker: 0,
                 candidate: Some(candidate),
-                next_offset: offset,
+                next_cursor: candidate_cursor(offset),
             }),
         )
         .unwrap();
@@ -1204,7 +1213,7 @@ fn ordered_candidate_filter_defers_and_preserves_requested_order() {
             id: read_id,
             worker: 0,
             candidate: None,
-            next_offset: 30,
+            next_cursor: candidate_cursor(30),
         }),
     )
     .unwrap();
@@ -1263,7 +1272,7 @@ fn ordered_candidate_cancellation_drains_remaining_candidates_in_requested_order
                 id: read_id,
                 worker: 0,
                 candidate: Some(candidate),
-                next_offset: offset,
+                next_cursor: candidate_cursor(offset),
             }),
         )
         .unwrap();
@@ -1277,7 +1286,7 @@ fn ordered_candidate_cancellation_drains_remaining_candidates_in_requested_order
             id: read_id,
             worker: 0,
             candidate: None,
-            next_offset: 30,
+            next_cursor: candidate_cursor(30),
         }),
     )
     .unwrap();
@@ -1361,7 +1370,7 @@ fn assert_ordered_mid_collection_stop(stop: RunEvent, expected_exit_code: i32) {
                 id: read.id,
                 worker: read.worker,
                 candidate: Some(candidate),
-                next_offset: offset,
+                next_cursor: candidate_cursor(offset),
             }),
         )
         .unwrap();
@@ -1387,7 +1396,7 @@ fn assert_ordered_mid_collection_stop(stop: RunEvent, expected_exit_code: i32) {
             id: in_flight_read.id,
             worker: in_flight_read.worker,
             candidate: Some(fourth.clone()),
-            next_offset: 40,
+            next_cursor: candidate_cursor(40),
         }),
     )
     .unwrap_err();
@@ -1505,7 +1514,7 @@ fn ordered_candidate_filter_stably_deduplicates_requested_ids() {
                 id: read_id,
                 worker: 0,
                 candidate: Some(candidate),
-                next_offset: offset,
+                next_cursor: candidate_cursor(offset),
             }),
         )
         .unwrap();
@@ -1520,7 +1529,7 @@ fn ordered_candidate_filter_stably_deduplicates_requested_ids() {
             id: read_id,
             worker: 0,
             candidate: None,
-            next_offset: 20,
+            next_cursor: candidate_cursor(20),
         }),
     )
     .unwrap();
@@ -1591,7 +1600,7 @@ fn four_jobs_fill_four_independent_worker_chains_in_every_completion_order() {
                 id: read_id,
                 worker,
                 candidate: Some(fixture_candidate(sequence)),
-                next_offset: sequence,
+                next_cursor: candidate_cursor(sequence),
             }),
         )
         .unwrap();
@@ -2049,7 +2058,7 @@ fn session_result_is_persisted_before_finished_output_and_reset() {
             id: read_id,
             worker: 0,
             candidate: Some(fixture_candidate(1)),
-            next_offset: 1,
+            next_cursor: candidate_cursor(1),
         }),
     )
     .unwrap();
@@ -2160,7 +2169,7 @@ fn cancellation_during_mutant_execution_still_reports_not_run() {
             id: read_id,
             worker: 0,
             candidate: Some(candidate.clone()),
-            next_offset: 1,
+            next_cursor: candidate_cursor(1),
         }),
     )
     .unwrap();
@@ -2219,7 +2228,7 @@ fn assert_persisting_stop_preserves_result(stop: RunEvent, expected_exit_code: i
             id: read_id,
             worker: 0,
             candidate: Some(candidate.clone()),
-            next_offset: 1,
+            next_cursor: candidate_cursor(1),
         }),
     )
     .unwrap();
@@ -2312,7 +2321,7 @@ fn assert_persisting_stop_preserves_result(stop: RunEvent, expected_exit_code: i
             id: read.id,
             worker: read.worker,
             candidate: None,
-            next_offset: 1,
+            next_cursor: candidate_cursor(1),
         }),
     )
     .unwrap();
@@ -2396,7 +2405,7 @@ fn timeout_marks_the_session_and_final_report_incomplete() {
             id: read_id,
             worker: 0,
             candidate: Some(candidate.clone()),
-            next_offset: 1,
+            next_cursor: candidate_cursor(1),
         }),
     )
     .unwrap();
@@ -2474,7 +2483,7 @@ fn timeout_marks_the_session_and_final_report_incomplete() {
             id: read_id,
             worker: 0,
             candidate: None,
-            next_offset: 1,
+            next_cursor: candidate_cursor(1),
         }),
     )
     .unwrap();
@@ -2547,7 +2556,7 @@ fn resumed_determinate_result_is_reused_without_mutant_execution() {
             id: read_id,
             worker: 0,
             candidate: Some(candidate.clone()),
-            next_offset: 1,
+            next_cursor: candidate_cursor(1),
         }),
     )
     .unwrap();
@@ -2597,7 +2606,7 @@ fn reused_result_is_counted_only_after_finished_output_succeeds() {
             id: read_id,
             worker: 0,
             candidate: Some(candidate.clone()),
-            next_offset: 1,
+            next_cursor: candidate_cursor(1),
         }),
     )
     .unwrap();
@@ -2662,7 +2671,7 @@ fn session_completion_for_another_mutant_is_rejected() {
             id: read_id,
             worker: 0,
             candidate: Some(fixture_candidate(1)),
-            next_offset: 1,
+            next_cursor: candidate_cursor(1),
         }),
     )
     .unwrap();
@@ -2697,7 +2706,7 @@ fn session_save_failure_reports_the_classified_result_without_scheduling_another
             id: read_id,
             worker: 0,
             candidate: Some(fixture_candidate(1)),
-            next_offset: 1,
+            next_cursor: candidate_cursor(1),
         }),
     )
     .unwrap();
@@ -2772,7 +2781,7 @@ fn mutant_process_is_only_scheduled_after_started_output_succeeds() {
             id: read_id,
             worker: 0,
             candidate: Some(fixture_candidate(1)),
-            next_offset: 1,
+            next_cursor: candidate_cursor(1),
         }),
     )
     .unwrap();
@@ -3094,7 +3103,7 @@ fn every_process_termination_is_classified_by_the_machine() {
                 id: read_id,
                 worker: 0,
                 candidate: Some(fixture_candidate(1)),
-                next_offset: 1,
+                next_cursor: candidate_cursor(1),
             }),
         )
         .unwrap();
@@ -3161,7 +3170,7 @@ fn max_mutants_reports_remaining_candidates_as_not_run_in_stable_order() {
             id: read_id,
             worker: 0,
             candidate: Some(fixture_candidate(1)),
-            next_offset: 10,
+            next_cursor: candidate_cursor(10),
         }),
     )
     .unwrap();
@@ -3213,7 +3222,7 @@ fn max_mutants_reports_remaining_candidates_as_not_run_in_stable_order() {
             id: read_id,
             worker: 0,
             candidate: Some(fixture_candidate(2)),
-            next_offset: 20,
+            next_cursor: candidate_cursor(20),
         }),
     )
     .unwrap();
@@ -3275,7 +3284,7 @@ fn completion_ledger_stays_bounded_across_ten_thousand_mutants() {
                 id: read_id,
                 worker: 0,
                 candidate: Some(fixture_candidate(sequence)),
-                next_offset: sequence,
+                next_cursor: candidate_cursor(sequence),
             }),
         )
         .unwrap();
@@ -3335,7 +3344,7 @@ fn completion_ledger_stays_bounded_across_ten_thousand_mutants() {
             id: read_id,
             worker: 0,
             candidate: None,
-            next_offset: 10_000,
+            next_cursor: candidate_cursor(10_000),
         }),
     )
     .unwrap();
@@ -3667,7 +3676,7 @@ impl ScheduleHarness {
                     id: read.id,
                     worker: read.worker,
                     candidate,
-                    next_offset: u64::try_from(self.next_candidate).unwrap(),
+                    next_cursor: candidate_cursor(u64::try_from(self.next_candidate).unwrap()),
                 })
             }
             RunEffect::ApplyMutation(apply) => RunEvent::MutationApplied(MutationApplied {
@@ -4505,7 +4514,7 @@ fn waiting_for_reset(termination: ProcessTermination) -> (RunState, Vec<RunEffec
             id: read_id,
             worker: 0,
             candidate: Some(fixture_candidate(1)),
-            next_offset: 1,
+            next_cursor: candidate_cursor(1),
         }),
     )
     .unwrap();
@@ -4595,6 +4604,13 @@ fn fixture_candidate(sequence: u64) -> MutationCandidate {
         column: 1,
         symbol: None,
         file_hash: "hash".to_owned(),
+    }
+}
+
+fn candidate_cursor(offset: u64) -> CandidateCursor {
+    CandidateCursor {
+        offset,
+        expected_sequence: 1,
     }
 }
 
