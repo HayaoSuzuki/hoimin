@@ -470,12 +470,29 @@ pub enum ConfigError {
     ResumeRequiresSession,
     #[error("at least one test argv element is required")]
     MissingTestArgv,
-    #[error("invalid zero or overflowing limit: {0}")]
+    #[error("invalid zero or overflowing limit: {}", limit_flag(.0))]
     InvalidLimit(&'static str),
     #[error("--jobs {jobs} exceeds the supported maximum {maximum}")]
     JobsExceedsMaximum { jobs: usize, maximum: usize },
     #[error("--jobs {jobs} exceeds --max-processes {max_processes}")]
     JobsExceedsProcesses { jobs: usize, max_processes: usize },
+}
+
+fn limit_flag(name: &str) -> &str {
+    match name {
+        "jobs" => "--jobs",
+        "max_mutants" => "--max-mutants",
+        "max_candidates" => "--max-candidates",
+        "analyzer_timeout" => "--analyzer-timeout",
+        "baseline_timeout" => "--baseline-timeout",
+        "mutant_timeout" => "--mutant-timeout",
+        "total_timeout" => "--total-timeout",
+        "max_memory" => "--max-memory",
+        "max_output" => "--max-output",
+        "max_copy_size" => "--max-copy-size",
+        "max_processes" => "--max-processes",
+        other => other,
+    }
 }
 
 impl TryFrom<&RawRunLimits> for RunLimits {

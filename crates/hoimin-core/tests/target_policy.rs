@@ -111,6 +111,18 @@ fn rejects_zero_or_overflow_limit() {
 }
 
 #[test]
+fn invalid_limit_messages_use_cli_flag_spellings() {
+    for (internal, flag) in [
+        ("jobs", "--jobs"),
+        ("baseline_timeout", "--baseline-timeout"),
+        ("max_memory", "--max-memory"),
+    ] {
+        let message = ConfigError::InvalidLimit(internal).to_string();
+        assert!(message.contains(flag), "{message} does not mention {flag}");
+    }
+}
+
+#[test]
 fn rejects_jobs_before_any_jobs_sized_allocation_is_possible() {
     let mut raw = raw_config();
     raw.limits.jobs = MAX_JOBS + 1;
