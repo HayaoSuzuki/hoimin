@@ -111,6 +111,18 @@ fn remaining_budget_observed(
     }
 }
 
+async fn run_blocking_io<T>(
+    id: EffectId,
+    operation: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, EffectFailed>
+where
+    T: Send + 'static,
+{
+    tokio::task::spawn_blocking(operation)
+        .await
+        .map_err(|error| EffectFailed::other(id, "shell.blocking_io", error.to_string()))
+}
+
 pub struct ShellContext<Stdout, Stderr> {
     workspace: WorkspaceHandler,
     analyzer: AnalyzerHandler,
@@ -1554,6 +1566,40 @@ mod tests {
         assert_eq!(observed.remaining, Duration::from_secs(281));
         assert_eq!(expired.id, id);
         assert_eq!(expired.remaining, Duration::ZERO);
+    }
+
+    #[tokio::test]
+    async fn blocking_io_keeps_the_async_runtime_responsive() {
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
+        let operation = tokio::spawn(run_blocking_io(EffectId(17), move || {
+            entered_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+            42_u8
+        }));
+
+        entered_rx.await.unwrap();
+        tokio::time::timeout(Duration::from_millis(100), async {
+            tokio::task::yield_now().await;
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        })
+        .await
+        .unwrap();
+        release_tx.send(()).unwrap();
+
+        assert_eq!(operation.await.unwrap().unwrap(), 42);
+    }
+
+    #[tokio::test]
+    async fn blocking_io_join_failure_preserves_effect_identity() {
+        let id = EffectId(23);
+
+        let error = run_blocking_io(id, || -> () { panic!("controlled blocking panic") })
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.id, id);
+        assert_eq!(error.failure.code(), "shell.blocking_io");
     }
 
     #[tokio::test]
