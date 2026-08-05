@@ -1,8 +1,8 @@
 use std::io::{self, Write};
 
 use hoimin_core::{
-    MutationStatus, OutputEvent, VerificationSelectionMode, VerificationSelectionPolicy,
-    VerificationSelectionScope,
+    MutationStatus, OutputEvent, ProcessTermination, RunSummary, VerificationSelectionMode,
+    VerificationSelectionPolicy, VerificationSelectionScope,
 };
 
 pub(super) fn write_event(writer: &mut impl Write, event: &OutputEvent) -> io::Result<()> {
@@ -59,22 +59,31 @@ pub(super) fn write_event(writer: &mut impl Write, event: &OutputEvent) -> io::R
             None => writeln!(writer, "run started: {}", value.run_id)?,
         },
         OutputEvent::BaselineFinished(value) => {
-            writeln!(writer, "baseline finished: {:?}", value.termination)?;
+            writeln!(
+                writer,
+                "baseline finished: {}",
+                termination_name(value.termination)
+            )?;
         }
         OutputEvent::MutantStarted(value) => {
             writeln!(writer, "mutant started: {}", value.mutant_id)?;
         }
         OutputEvent::MutantFinished(value) => writeln!(
             writer,
-            "mutant finished: {} {}",
-            value.candidate.id,
+            "mutant finished: {}:{}:{} {} {:?} -> {:?} {}",
+            value.candidate.path,
+            value.candidate.line,
+            value.candidate.column,
+            value.candidate.operator,
+            value.candidate.original,
+            value.candidate.replacement,
             status_name(value.status)
         )?,
         OutputEvent::Diagnostic(value) => {
             writeln!(writer, "{} {}: {}", value.level, value.code, value.message)?;
         }
         OutputEvent::RunFinished(value) => {
-            writeln!(writer, "run finished: exit {}", value.exit_code)?;
+            write_summary(writer, value)?;
         }
     }
     writer.flush()
@@ -90,4 +99,32 @@ fn status_name(status: MutationStatus) -> &'static str {
         MutationStatus::Error => "error",
         MutationStatus::NotRun => "not_run",
     }
+}
+
+fn termination_name(termination: ProcessTermination) -> String {
+    match termination {
+        ProcessTermination::Exit(code) => format!("exit ({code})"),
+        ProcessTermination::Timeout => "timeout".to_owned(),
+        ProcessTermination::OutOfMemory => "out_of_memory".to_owned(),
+        ProcessTermination::ProcessLimit => "process_limit".to_owned(),
+        ProcessTermination::Cancelled => "cancelled".to_owned(),
+    }
+}
+
+fn write_summary(writer: &mut impl Write, summary: &RunSummary) -> io::Result<()> {
+    let counts = &summary.counts;
+    writeln!(writer, "run summary:")?;
+    writeln!(writer, "  killed: {}", counts.killed)?;
+    writeln!(writer, "  survived: {}", counts.survived)?;
+    writeln!(writer, "  timeout: {}", counts.timeout)?;
+    writeln!(writer, "  out_of_memory: {}", counts.out_of_memory)?;
+    writeln!(writer, "  process_limit: {}", counts.process_limit)?;
+    writeln!(writer, "  error: {}", counts.error)?;
+    writeln!(writer, "  not_run: {}", counts.not_run)?;
+    match counts.score {
+        Some(score) => writeln!(writer, "  score: {score:.2}")?,
+        None => writeln!(writer, "  score: none")?,
+    }
+    writeln!(writer, "  complete: {}", summary.complete)?;
+    writeln!(writer, "  exit: {}", summary.exit_code)
 }
