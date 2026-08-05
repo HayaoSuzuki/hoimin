@@ -1550,15 +1550,15 @@ async fn first_interrupt_scenario() {
     .await;
 
     let child_cleanup = reap_test_child(&mut child).await;
+    #[cfg(unix)]
+    let process_cleanup = kill_fixture_processes(&active, &descendant_ready).await;
+    #[cfg(windows)]
+    let process_cleanup = kill_fixture_processes(fixture_processes.as_ref()).await;
     let stdout = stdout_task
         .await
         .expect("stdout drain task must not panic")
         .map_err(|error| error.to_string())
         .and_then(|bytes| String::from_utf8(bytes).map_err(|error| error.to_string()));
-    #[cfg(unix)]
-    let process_cleanup = kill_fixture_processes(&active, &descendant_ready).await;
-    #[cfg(windows)]
-    let process_cleanup = kill_fixture_processes(fixture_processes.as_ref()).await;
     if let Err(error) = child_cleanup.and(process_cleanup) {
         panic!("test teardown failed: {error}; outcome={outcome:?}");
     }
@@ -1667,15 +1667,15 @@ async fn second_interrupt_scenario() {
     .await;
 
     let child_cleanup = reap_test_child(&mut child).await;
+    #[cfg(unix)]
+    let process_cleanup = kill_fixture_processes(&active, &descendant_ready).await;
+    #[cfg(windows)]
+    let process_cleanup = kill_fixture_processes(fixture_processes.as_ref()).await;
     let stdout = stdout_task
         .await
         .expect("stdout drain task must not panic")
         .map_err(|error| error.to_string())
         .and_then(|bytes| String::from_utf8(bytes).map_err(|error| error.to_string()));
-    #[cfg(unix)]
-    let process_cleanup = kill_fixture_processes(&active, &descendant_ready).await;
-    #[cfg(windows)]
-    let process_cleanup = kill_fixture_processes(fixture_processes.as_ref()).await;
     if let Err(error) = child_cleanup.and(process_cleanup) {
         panic!("test teardown failed: {error}; outcome={outcome:?}");
     }
