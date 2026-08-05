@@ -130,13 +130,16 @@ mod tests {
     use std::sync::mpsc::sync_channel;
     use std::sync::{Arc, Mutex};
     use std::thread;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use camino::Utf8Path;
     use hoimin_core::{BudgetLedger, EffectId, RunBudgets, reserve_workspace_copy};
 
     use super::super::root::{WorkspaceRaceHook, install_workspace_race_hook};
-    use super::super::{CopyOptions, WorkerWorkspace, WorkspaceError, WorkspacePlan};
+    use super::super::{
+        CopyOptions, ResetIoMetrics, WorkerWorkspace, WorkspaceError, WorkspacePlan,
+        current_reset_io_metrics, reset_io_metrics,
+    };
 
     #[cfg(unix)]
     type TestPermissionFingerprint = u32;
@@ -187,9 +190,26 @@ mod tests {
         WorkerWorkspace,
         TestPermissionFingerprint,
     ) {
+        changed_worker_with_padding(0)
+    }
+
+    fn changed_worker_with_padding(
+        padding_bytes: usize,
+    ) -> (
+        tempfile::TempDir,
+        WorkerWorkspace,
+        TestPermissionFingerprint,
+    ) {
         let project = tempfile::tempdir().unwrap();
         fs::create_dir(project.path().join("swap")).unwrap();
         fs::write(project.path().join("swap/target.py"), b"original\n").unwrap();
+        if padding_bytes > 0 {
+            fs::write(
+                project.path().join("swap/padding.bin"),
+                vec![b'x'; padding_bytes],
+            )
+            .unwrap();
+        }
         let root = Utf8Path::from_path(project.path()).unwrap();
         let plan = WorkspacePlan::preflight(root, EffectId(1), 1, CopyOptions::default()).unwrap();
         let mut ledger = BudgetLedger::new(RunBudgets {
@@ -202,10 +222,55 @@ mod tests {
             .create_worker(&reservation.create_worker(EffectId(2), 0).unwrap())
             .unwrap();
         let snapshot_permissions = permission_fingerprint(&worker.root().join("swap/target.py"));
-        worker
-            .write("swap/target.py", b"changed contents\n")
-            .unwrap();
+        worker.write("swap/target.py", b"mutated!\n").unwrap();
         (project, worker, snapshot_permissions)
+    }
+
+    #[test]
+    fn reset_reads_worker_once_and_snapshot_only_for_dirty_files() {
+        const PADDING_BYTES: usize = 1024 * 1024;
+        let (_project, mut worker, _snapshot_permissions) =
+            changed_worker_with_padding(PADDING_BYTES);
+        reset_io_metrics();
+
+        worker.reset().unwrap();
+
+        assert_eq!(
+            current_reset_io_metrics(),
+            ResetIoMetrics {
+                tree_walks: 1,
+                worker_bytes: (PADDING_BYTES + b"original\n".len()) as u64,
+                snapshot_bytes: b"original\n".len() as u64,
+            }
+        );
+    }
+
+    #[test]
+    #[ignore = "manual before/after performance evidence"]
+    fn benchmark_workspace_reset_io() {
+        const CYCLES: u64 = 10;
+        const PADDING_BYTES: usize = 8 * 1024 * 1024;
+        let (_project, mut worker, _snapshot_permissions) =
+            changed_worker_with_padding(PADDING_BYTES);
+        reset_io_metrics();
+        let started = Instant::now();
+
+        for cycle in 0..CYCLES {
+            if cycle > 0 {
+                worker.write("swap/target.py", b"mutated!\n").unwrap();
+            }
+            worker.reset().unwrap();
+        }
+
+        let metrics = current_reset_io_metrics();
+        eprintln!(
+            "cycles={CYCLES} fixture_bytes={} tree_walks={} worker_bytes={} snapshot_bytes={} elapsed_ms={}",
+            PADDING_BYTES + b"original\n".len(),
+            metrics.tree_walks,
+            metrics.worker_bytes,
+            metrics.snapshot_bytes,
+            started.elapsed().as_millis()
+        );
     }
 
     #[test]

@@ -477,6 +477,8 @@ impl WorkerRoot {
     }
 
     pub(crate) fn entries(&self) -> Result<Vec<WorkerEntry>, WorkspaceError> {
+        #[cfg(test)]
+        super::record_reset_tree_walk();
         let mut entries = Vec::new();
         Self::collect_entries(self.handle(), self.path(), &mut entries)?;
         entries.sort_by(|left, right| {
@@ -848,6 +850,8 @@ impl WorkerRoot {
         #[cfg(windows)]
         {
             let (bytes, permissions) = windows::snapshot(&parent, &name, path)?;
+            #[cfg(test)]
+            super::record_reset_worker_bytes(bytes.len());
             Ok(bytes == expected
                 && super::permission_fingerprint(&permissions) == expected_permissions)
         }
@@ -869,6 +873,8 @@ impl WorkerRoot {
             let mut bytes = Vec::new();
             file.read_to_end(&mut bytes)
                 .map_err(|error| WorkspaceError::io("verify restored file", path, error))?;
+            #[cfg(test)]
+            super::record_reset_worker_bytes(bytes.len());
             Ok(bytes == expected
                 && super::permission_fingerprint(&file_metadata.permissions())
                     == expected_permissions)
