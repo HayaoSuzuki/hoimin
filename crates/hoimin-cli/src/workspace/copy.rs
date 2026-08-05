@@ -13,7 +13,7 @@ use super::{
     WorkspaceError, WorkspaceManifest,
 };
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct WorkspacePlan {
     preflight_id: EffectId,
     original_root: Utf8PathBuf,
