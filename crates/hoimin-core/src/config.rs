@@ -131,6 +131,18 @@ impl MutationOperator {
 pub struct MutationOperatorSelection(BTreeSet<MutationOperator>);
 
 impl MutationOperatorSelection {
+    /// Returns canonical operator IDs and selector-family names accepted by the CLI.
+    #[must_use]
+    pub fn valid_names() -> Vec<&'static str> {
+        let mut names: Vec<_> = MutationOperator::all()
+            .into_iter()
+            .map(MutationOperator::as_str)
+            .collect();
+        names.extend(["type_nullable", "type_collections", "type_iterables"]);
+        names.sort_unstable();
+        names
+    }
+
     #[must_use]
     pub fn all_legacy() -> Self {
         Self(
@@ -425,6 +437,10 @@ impl PlanConfig {
     }
 }
 
+fn valid_operator_names() -> String {
+    MutationOperatorSelection::valid_names().join(", ")
+}
+
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct FingerprintInputFile {
     pub path: Utf8PathBuf,
@@ -433,7 +449,10 @@ pub struct FingerprintInputFile {
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ConfigError {
-    #[error("unknown mutation operator: {value}")]
+    #[error(
+        "unknown mutation operator: {value}; valid operators/selectors: {valid}",
+        valid = valid_operator_names()
+    )]
     UnknownMutationOperator { value: String },
     #[error(
         "mutation operator selection is empty after applying --operators and --exclude-operators"
