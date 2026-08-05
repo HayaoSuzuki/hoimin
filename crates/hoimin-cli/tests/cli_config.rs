@@ -2,7 +2,8 @@ use std::fs;
 use std::num::NonZeroUsize;
 
 use hoimin_cli::cli::{
-    ParsedCommand, ProgressOutputFormat, TopSelectionPolicy, VerifySelection, parse_from,
+    ParsedCommand, ProgressOutputFormat, TopSelectionPolicy, VerifySelection, parse_config_from,
+    parse_from,
 };
 use hoimin_core::{MutationOperator, MutationProfile};
 
@@ -409,6 +410,46 @@ fn binary_byte_units_preserve_their_1024_multiplier() {
     .unwrap();
 
     assert_eq!(config.limits.max_memory.get(), 2 * 1024 * 1024);
+}
+
+#[test]
+fn invalid_memory_value_lists_case_sensitive_byte_suffixes() {
+    let error = parse_config_from([
+        "hoimin",
+        "run",
+        "--file",
+        "src/calc.py",
+        "--max-memory",
+        "2gb",
+        "--",
+        "python",
+    ])
+    .unwrap_err()
+    .to_string();
+
+    for suffix in ["B", "KB", "MB", "GB", "KiB", "MiB", "GiB"] {
+        assert!(error.contains(suffix), "missing {suffix} in {error}");
+    }
+}
+
+#[test]
+fn invalid_duration_value_shows_duration_example() {
+    let error = parse_config_from([
+        "hoimin",
+        "run",
+        "--file",
+        "src/calc.py",
+        "--total-timeout",
+        "nonsense",
+        "--",
+        "python",
+    ])
+    .unwrap_err()
+    .to_string();
+
+    assert!(error.contains("--total-timeout"), "{error}");
+    assert!(error.contains("90s"), "{error}");
+    assert!(error.contains("5m"), "{error}");
 }
 
 #[test]

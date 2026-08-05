@@ -387,9 +387,18 @@ impl fmt::Display for CliError {
             Self::MissingTestArgv => {
                 formatter.write_str("at least one test argv element is required after `--`")
             }
-            Self::InvalidValue { name, value } => {
-                write!(formatter, "invalid {name}: {value}")
-            }
+            Self::InvalidValue { name, value } => match *name {
+                "--max-memory" | "--max-output" | "--max-copy-size" => write!(
+                    formatter,
+                    "invalid {name}: {value}; expected bytes with one of: B, KB, MB, GB, KiB, MiB, GiB"
+                ),
+                "--analyzer-timeout" | "--baseline-timeout" | "--mutant-timeout"
+                | "--total-timeout" => write!(
+                    formatter,
+                    "invalid {name}: {value}; expected a duration such as 90s or 5m"
+                ),
+                _ => write!(formatter, "invalid {name}: {value}"),
+            },
             Self::NonUtf8Value(name) => write!(formatter, "{name} must be valid UTF-8"),
             Self::Config(error) => error.fmt(formatter),
         }
