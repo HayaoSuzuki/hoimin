@@ -986,23 +986,33 @@ impl WorkspaceHandler {
         &mut self,
         completion: WorkspaceTaskCompletion,
     ) -> Result<RunEvent, EffectFailed> {
-        if let Some((worker, workspace)) = completion.active
-            && self.workers.insert(worker, *workspace).is_some()
-        {
-            return Err(EffectFailed::other(
-                completion.id,
-                "shell.blocking_io",
-                format!("blocking completion returned duplicate active worker {worker}"),
-            ));
+        if let Some((worker, workspace)) = completion.active {
+            match self.workers.entry(worker) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(*workspace);
+                }
+                std::collections::btree_map::Entry::Occupied(_) => {
+                    return Err(EffectFailed::other(
+                        completion.id,
+                        "shell.blocking_io",
+                        format!("blocking completion returned duplicate active worker {worker}"),
+                    ));
+                }
+            }
         }
-        if let Some((worker, workspace)) = completion.pending
-            && self.pending_cleanup.insert(worker, *workspace).is_some()
-        {
-            return Err(EffectFailed::other(
-                completion.id,
-                "shell.blocking_io",
-                format!("blocking completion returned duplicate pending worker {worker}"),
-            ));
+        if let Some((worker, workspace)) = completion.pending {
+            match self.pending_cleanup.entry(worker) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(*workspace);
+                }
+                std::collections::btree_map::Entry::Occupied(_) => {
+                    return Err(EffectFailed::other(
+                        completion.id,
+                        "shell.blocking_io",
+                        format!("blocking completion returned duplicate pending worker {worker}"),
+                    ));
+                }
+            }
         }
         Ok(completion.event)
     }
@@ -1490,5 +1500,33 @@ mod task_tests {
         );
         assert_eq!(handler.worker_count(), 1);
         assert_eq!(handler.pending_cleanup_count(), 0);
+    }
+
+    #[test]
+    fn duplicate_workspace_task_completion_preserves_the_registered_worker() {
+        let (_project, mut handler) = prepared_handler();
+        let candidate = candidate(&handler);
+        let task = handler
+            .prepare_apply_task(ApplyMutation {
+                id: EffectId(3),
+                worker: 0,
+                candidate,
+            })
+            .unwrap();
+        let completion = task.execute();
+        let (_other_project, mut other) = prepared_handler();
+        let registered = other.workers.remove(&0).unwrap();
+        let registered_root = registered.root().to_owned();
+        handler.workers.insert(0, registered);
+
+        let error = handler.accept_task_completion(completion).unwrap_err();
+
+        assert!(
+            error
+                .failure
+                .message()
+                .contains("duplicate active worker 0")
+        );
+        assert_eq!(handler.worker(0).unwrap().root(), registered_root);
     }
 }
