@@ -63,21 +63,12 @@ impl MaterializationIoMetrics {
         self.original_hash_bytes.fetch_add(bytes, Ordering::Relaxed);
     }
 
-    fn record_original_read(&self, bytes: usize) {
-        self.original_bytes
-            .fetch_add(u64::try_from(bytes).unwrap(), Ordering::Relaxed);
-    }
-
-    fn record_original_hash(&self, bytes: usize) {
-        self.original_hash_bytes
-            .fetch_add(u64::try_from(bytes).unwrap(), Ordering::Relaxed);
-    }
-
     fn record_snapshot_read(&self, bytes: usize) {
         self.snapshot_bytes
             .fetch_add(u64::try_from(bytes).unwrap(), Ordering::Relaxed);
     }
 
+    #[cfg(feature = "contracts")]
     fn record_snapshot_hash(&self, bytes: usize) {
         self.snapshot_hash_bytes
             .fetch_add(u64::try_from(bytes).unwrap(), Ordering::Relaxed);
@@ -430,7 +421,6 @@ impl WorkspacePlan {
         worker: u32,
         open_root: impl FnOnce(Utf8PathBuf) -> Result<WorkerRoot, WorkspaceError>,
     ) -> Result<WorkerWorkspace, WorkspaceError> {
-        self.verify_originals_for_materialization()?;
         let temp = tempfile::Builder::new()
             .prefix("hoimin-worker-")
             .tempdir()
@@ -446,6 +436,12 @@ impl WorkspacePlan {
 
         let result = (|| {
             for entry in self.manifest.entries() {
+                let snapshot = self.snapshot.files.get(&entry.path).ok_or_else(|| {
+                    WorkspaceError::WorkspaceRestore {
+                        path: entry.path.clone(),
+                        message: "shared snapshot is missing a manifest entry".to_owned(),
+                    }
+                })?;
                 let bytes = self.snapshot.read(&entry.path)?;
                 #[cfg(test)]
                 self.materialization_metrics
@@ -456,21 +452,19 @@ impl WorkspacePlan {
                 charged = charged
                     .checked_add(amount)
                     .ok_or(WorkspaceError::CopySizeOverflow)?;
-                #[cfg(test)]
-                self.materialization_metrics
-                    .record_snapshot_hash(bytes.len());
-                if amount != entry.size || blake3::hash(&bytes) != entry.blake3 {
-                    return Err(WorkspaceError::WorkspaceRestore {
-                        path: entry.path.clone(),
-                        message: "shared snapshot does not match its manifest".to_owned(),
-                    });
-                }
-                let snapshot = self.snapshot.files.get(&entry.path).ok_or_else(|| {
-                    WorkspaceError::WorkspaceRestore {
-                        path: entry.path.clone(),
-                        message: "shared snapshot is missing a manifest entry".to_owned(),
+
+                #[cfg(feature = "contracts")]
+                {
+                    #[cfg(test)]
+                    self.materialization_metrics
+                        .record_snapshot_hash(bytes.len());
+                    if amount != entry.size || blake3::hash(&bytes) != entry.blake3 {
+                        return Err(WorkspaceError::WorkspaceRestore {
+                            path: entry.path.clone(),
+                            message: "shared snapshot does not match its manifest".to_owned(),
+                        });
                     }
-                })?;
+                }
                 let destination = root_path.join(&entry.path);
                 if let Some(parent) = destination.parent() {
                     fs::create_dir_all(parent).map_err(|error| {
@@ -483,7 +477,7 @@ impl WorkspacePlan {
                     |error| WorkspaceError::io("copy worker permissions", &entry.path, error),
                 )?;
             }
-            self.verify_originals()
+            Ok(())
         })();
 
         if let Err(error) = result {
@@ -501,40 +495,6 @@ impl WorkspacePlan {
             worker,
             charged,
         ))
-    }
-
-    fn verify_originals_for_materialization(&self) -> Result<(), WorkspaceError> {
-        let mut charged = 0_u64;
-        let result = (|| {
-            for entry in self.manifest.entries() {
-                let source = self.original_root.join(&entry.path);
-                let bytes = fs::read(&source)
-                    .map_err(|error| WorkspaceError::io("read original", &entry.path, error))?;
-                #[cfg(test)]
-                self.materialization_metrics
-                    .record_original_read(bytes.len());
-                let amount =
-                    u64::try_from(bytes.len()).map_err(|_| WorkspaceError::CopySizeOverflow)?;
-                self.allowance.charge(amount)?;
-                charged = charged
-                    .checked_add(amount)
-                    .ok_or(WorkspaceError::CopySizeOverflow)?;
-                #[cfg(test)]
-                self.materialization_metrics
-                    .record_original_hash(bytes.len());
-                if amount != entry.size || blake3::hash(&bytes) != entry.blake3 {
-                    return Err(WorkspaceError::OriginalChanged {
-                        path: entry.path.clone(),
-                    });
-                }
-                fs::metadata(&source).map_err(|error| {
-                    WorkspaceError::io("read original metadata", &entry.path, error)
-                })?;
-            }
-            self.verify_originals()
-        })();
-        self.allowance.release(charged);
-        result
     }
 }
 
@@ -657,14 +617,19 @@ mod tests {
             .unwrap();
         plan.verify_originals().unwrap();
 
+        let expected_snapshot_hash_bytes = if cfg!(feature = "contracts") {
+            2 * fixture_bytes
+        } else {
+            0
+        };
         assert_eq!(
             plan.materialization_io_snapshot(),
             MaterializationIoSnapshot {
-                original_manifest_builds: 5,
-                original_bytes: 7 * fixture_bytes,
-                original_hash_bytes: 7 * fixture_bytes,
+                original_manifest_builds: 1,
+                original_bytes: fixture_bytes,
+                original_hash_bytes: fixture_bytes,
                 snapshot_bytes: 2 * fixture_bytes,
-                snapshot_hash_bytes: 2 * fixture_bytes,
+                snapshot_hash_bytes: expected_snapshot_hash_bytes,
             }
         );
         assert_eq!(plan.observed_copy_bytes(), 2 * fixture_bytes);
