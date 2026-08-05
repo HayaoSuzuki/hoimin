@@ -8,6 +8,10 @@ ROOT = Path(__file__).resolve().parents[1]
 class FocusedMutationDocumentationTests(unittest.TestCase):
     def test_development_guide_documents_bounded_workflow(self) -> None:
         text = (ROOT / "docs" / "development.md").read_text(encoding="utf-8")
+        self.assertNotIn(
+            "uv run hoimin run --root . --file crates/hoimin-cli/src/analyzer/mod.rs",
+            text,
+        )
         for required in (
             "tools/focused_mutation.py",
             "--budget 30m",
