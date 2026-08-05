@@ -112,6 +112,11 @@ enum BlockingEffect {
         id: EffectId,
         operation: Box<dyn FnOnce() -> RunEvent + Send>,
     },
+    #[cfg(test)]
+    TestCompletion {
+        id: EffectId,
+        operation: Box<dyn FnOnce() -> BlockingEffectCompletion + Send>,
+    },
 }
 
 enum BlockingEffectCompletion {
@@ -126,6 +131,8 @@ impl BlockingEffect {
             Self::Candidate(request) => request.id,
             #[cfg(test)]
             Self::TestOperation { id, .. } => *id,
+            #[cfg(test)]
+            Self::TestCompletion { id, .. } => *id,
         }
     }
 
@@ -133,34 +140,37 @@ impl BlockingEffect {
         match self {
             Self::Workspace(task) => BlockingEffectCompletion::Workspace(Box::new(task.execute())),
             Self::Candidate(request) => {
-                let event = match CandidateStore::replay_one(&request.spool, request.offset) {
-                    Ok(Some((candidate, next_offset))) => {
-                        RunEvent::CandidateLoaded(CandidateLoaded {
-                            id: request.id,
-                            worker: request.worker,
-                            candidate: Some(candidate),
-                            next_offset,
-                        })
-                    }
-                    Ok(None) => RunEvent::CandidateLoaded(CandidateLoaded {
-                        id: request.id,
-                        worker: request.worker,
-                        candidate: None,
-                        next_offset: request.offset,
-                    }),
-                    Err(error) => RunEvent::EffectFailed(EffectFailed::other(
-                        request.id,
-                        "candidate.replay",
-                        error.to_string(),
-                    )),
-                };
-                BlockingEffectCompletion::Candidate(Box::new(event))
+                BlockingEffectCompletion::Candidate(Box::new(replay_candidate(&request)))
             }
             #[cfg(test)]
             Self::TestOperation { operation, .. } => {
                 BlockingEffectCompletion::Candidate(Box::new(operation()))
             }
+            #[cfg(test)]
+            Self::TestCompletion { operation, .. } => operation(),
         }
+    }
+}
+
+fn replay_candidate(request: &hoimin_core::ReadCandidate) -> RunEvent {
+    match CandidateStore::replay_one(&request.spool, request.offset) {
+        Ok(Some((candidate, next_offset))) => RunEvent::CandidateLoaded(CandidateLoaded {
+            id: request.id,
+            worker: request.worker,
+            candidate: Some(candidate),
+            next_offset,
+        }),
+        Ok(None) => RunEvent::CandidateLoaded(CandidateLoaded {
+            id: request.id,
+            worker: request.worker,
+            candidate: None,
+            next_offset: request.offset,
+        }),
+        Err(error) => RunEvent::EffectFailed(EffectFailed::other(
+            request.id,
+            "candidate.replay",
+            error.to_string(),
+        )),
     }
 }
 
@@ -231,7 +241,7 @@ where
     event
 }
 
-async fn execute_blocking_effect<Stdout, Stderr>(
+fn execute_direct_io_effect<Stdout, Stderr>(
     context: &mut ShellContext<Stdout, Stderr>,
     effect: RunEffect,
 ) -> RunEvent
@@ -239,15 +249,45 @@ where
     Stdout: Write,
     Stderr: Write,
 {
-    let task = match prepare_blocking_effect(context, effect) {
-        Ok(task) => task,
-        Err(error) => return RunEvent::EffectFailed(error),
+    let result = match effect {
+        RunEffect::CreateWorker(request) => context
+            .workspace
+            .handle_create_worker(request)
+            .map(RunEvent::WorkerCreated),
+        RunEffect::ReadCandidate(request) => {
+            return accept_blocking_completion(
+                context,
+                BlockingEffectCompletion::Candidate(Box::new(replay_candidate(&request))),
+            );
+        }
+        RunEffect::ApplyMutation(request) => {
+            let candidate = request.candidate.clone();
+            context
+                .active_candidates
+                .insert(request.worker, candidate.clone());
+            context
+                .workspace
+                .handle_apply_mutation(request, &candidate)
+                .map(RunEvent::MutationApplied)
+        }
+        RunEffect::ResetWorker(request) => {
+            let worker = request.worker;
+            let result = context
+                .workspace
+                .handle_reset_worker(request)
+                .map(RunEvent::WorkerReset);
+            if result.is_ok() {
+                context.active_candidates.remove(&worker);
+            }
+            result
+        }
+        RunEffect::VerifyOriginals(request) => context
+            .workspace
+            .handle_verify_originals(request)
+            .map(RunEvent::OriginalsVerified),
+        _ => unreachable!("non-blocking effect passed to direct I/O execution"),
     };
-    let id = task.id();
-    match run_blocking_io(id, move || task.execute()).await {
-        Ok(completion) => accept_blocking_completion(context, completion),
-        Err(error) => RunEvent::EffectFailed(error),
-    }
+    result.unwrap_or_else(RunEvent::EffectFailed)
 }
 
 fn remaining_budget_observed(
@@ -461,7 +501,7 @@ where
     Stderr: Write,
 {
     if is_blocking_io_effect(&effect) {
-        return execute_blocking_effect(context, effect).await;
+        return execute_direct_io_effect(context, effect);
     }
     let id = effect.id();
     let result: Result<RunEvent, EffectFailed> = match effect {
@@ -1728,7 +1768,11 @@ mod tests {
     use std::ffi::OsString;
     use std::time::Duration;
 
-    use hoimin_core::{CommandArg, ObserveRemainingBudget};
+    use hoimin_core::{
+        ApplyMutation, BudgetLedger, ByteSpan, CommandArg, CreateWorker, IntegrityCheckpoint,
+        MutationCandidate, ObserveRemainingBudget, Preflight, ResetWorker, RunBudgets,
+        VerifyOriginals, reserve_workspace_copy,
+    };
 
     use crate::metrics::write_metrics;
     use crate::resource::PortableBackend;
@@ -1764,6 +1808,74 @@ mod tests {
                 max_processes: 1,
             },
         })
+    }
+
+    async fn context_with_worker() -> (
+        tempfile::TempDir,
+        ShellContext<Vec<u8>, Vec<u8>>,
+        MutationCandidate,
+        CreateWorker,
+    ) {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::create_dir(project.path().join("pkg")).unwrap();
+        std::fs::write(project.path().join("pkg/a.py"), b"original\n").unwrap();
+        let config = crate::cli::parse_config_from([
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("pkg/a.py"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+            OsString::from("unused-test-command"),
+        ])
+        .unwrap();
+        let mut context = ShellContext::new(&config, Vec::new(), Vec::new())
+            .await
+            .unwrap();
+        let completed = context
+            .workspace
+            .handle_preflight(Preflight { id: EffectId(1) })
+            .unwrap();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: completed.aggregate_logical_bytes,
+            processes: 1,
+        });
+        let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+        context
+            .workspace
+            .handle_create_worker(grant.create_worker(EffectId(2), 0).unwrap())
+            .unwrap();
+        let hash = context
+            .workspace
+            .worker(0)
+            .unwrap()
+            .manifest()
+            .entry(Utf8Path::new("pkg/a.py"))
+            .unwrap()
+            .blake3
+            .to_hex()
+            .to_string();
+        let candidate = MutationCandidate {
+            id: "candidate".into(),
+            sequence: 1,
+            path: "pkg/a.py".into(),
+            span: ByteSpan {
+                start: 0,
+                length: 8,
+            },
+            original: "original".into(),
+            replacement: "mutated!".into(),
+            operator: "test".into(),
+            line: 1,
+            column: 0,
+            symbol: None,
+            file_hash: hash,
+        };
+        let retry = grant.create_worker(EffectId(5), 0).unwrap();
+        (project, context, candidate, retry)
     }
 
     #[test]
@@ -1821,8 +1933,9 @@ mod tests {
         assert_eq!(expired.remaining, Duration::ZERO);
     }
 
-    #[test]
-    fn blocking_effect_classification_separates_filesystem_and_process_work() {
+    #[tokio::test]
+    async fn blocking_effect_classification_covers_every_filesystem_variant() {
+        let (_project, _context, candidate, create) = context_with_worker().await;
         let read = RunEffect::ReadCandidate(hoimin_core::ReadCandidate {
             id: EffectId(31),
             worker: 0,
@@ -1832,9 +1945,117 @@ mod tests {
             },
             offset: 0,
         });
+        let effects = [
+            RunEffect::CreateWorker(create),
+            read,
+            RunEffect::ApplyMutation(ApplyMutation {
+                id: EffectId(32),
+                worker: 0,
+                candidate,
+            }),
+            RunEffect::ResetWorker(ResetWorker {
+                id: EffectId(33),
+                worker: 0,
+            }),
+            RunEffect::VerifyOriginals(VerifyOriginals {
+                id: EffectId(34),
+                checkpoint: IntegrityCheckpoint::PreFinalReport,
+            }),
+        ];
 
-        assert!(is_blocking_io_effect(&read));
+        assert!(effects.iter().all(is_blocking_io_effect));
         assert!(!is_blocking_io_effect(&process_effect(0)));
+    }
+
+    #[tokio::test]
+    async fn direct_workspace_effect_completes_before_returning_worker_access() {
+        let (_project, mut context, candidate, _retry) = context_with_worker().await;
+
+        let event = execute_direct_io_effect(
+            &mut context,
+            RunEffect::ApplyMutation(ApplyMutation {
+                id: EffectId(3),
+                worker: 0,
+                candidate,
+            }),
+        );
+
+        assert!(matches!(event, RunEvent::MutationApplied(_)));
+        assert_eq!(
+            context
+                .workspace
+                .worker(0)
+                .unwrap()
+                .read("pkg/a.py")
+                .unwrap(),
+            b"mutated!\n"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn shutdown_drain_accepts_owned_workspace_state_without_process_metrics() {
+        let (_project, mut context, candidate, _retry) = context_with_worker().await;
+        let effect = RunEffect::ApplyMutation(ApplyMutation {
+            id: EffectId(51),
+            worker: 0,
+            candidate,
+        });
+        let task = prepare_blocking_effect(&mut context, effect).unwrap();
+        assert!(context.workspace.worker(0).is_none());
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
+        let task = BlockingEffect::TestCompletion {
+            id: EffectId(51),
+            operation: Box::new(move || {
+                entered_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+                BlockingEffectCompletion::Workspace(Box::new(match task {
+                    BlockingEffect::Workspace(task) => task.execute(),
+                    _ => unreachable!("prepared apply task was not a workspace task"),
+                }))
+            }),
+        };
+        let (sender, mut receiver) = mpsc::channel(1);
+        let mut io_tasks = JoinSet::new();
+        spawn_blocking_effect(task, sender, &mut io_tasks);
+        entered_rx.await.unwrap();
+        let mut process_tasks = JoinSet::new();
+        let mut in_flight = 1;
+        let mut metrics = Some(MetricsCollector::new("run-1"));
+        let mut warnings = Vec::new();
+
+        let mut drain = Box::pin(drain_processes(
+            &mut process_tasks,
+            &mut io_tasks,
+            &mut receiver,
+            &mut in_flight,
+            &mut metrics,
+            &mut warnings,
+            |completion| {
+                let event = accept_blocking_completion(&mut context, completion);
+                assert!(matches!(event, RunEvent::MutationApplied(_)));
+            },
+        ));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), &mut drain)
+                .await
+                .is_err()
+        );
+        release_tx.send(()).unwrap();
+        drain.await.unwrap();
+
+        assert_eq!(in_flight, 0);
+        assert!(warnings.is_empty());
+        assert_eq!(
+            context
+                .workspace
+                .worker(0)
+                .unwrap()
+                .read("pkg/a.py")
+                .unwrap(),
+            b"mutated!\n"
+        );
+        assert!(metrics.unwrap().finish(0, 0).unwrap().workers.is_empty());
     }
 
     #[tokio::test]
@@ -1938,6 +2159,8 @@ mod tests {
         let (completion_tx, mut completion_rx) = tokio::sync::mpsc::channel(OPERATIONS);
         let mut tasks = JoinSet::new();
         let concurrent_started = std::time::Instant::now();
+        let mut io_in_flight = 0_usize;
+        let mut max_io_in_flight = 0_usize;
         for sequence in 0..OPERATIONS {
             spawn_blocking_effect(
                 BlockingEffect::TestOperation {
@@ -1950,18 +2173,22 @@ mod tests {
                 completion_tx.clone(),
                 &mut tasks,
             );
+            io_in_flight += 1;
+            max_io_in_flight = max_io_in_flight.max(io_in_flight);
         }
         drop(completion_tx);
         for _ in 0..OPERATIONS {
             completion_rx.recv().await.unwrap();
+            io_in_flight -= 1;
         }
         while let Some(result) = tasks.join_next().await {
             result.unwrap();
         }
         let concurrent_millis = concurrent_started.elapsed().as_millis();
+        assert_eq!(io_in_flight, 0);
 
         println!(
-            "operations={OPERATIONS} operation_ms={OPERATION_MILLIS} serial_ms={serial_millis} concurrent_ms={concurrent_millis} max_io_in_flight={OPERATIONS}"
+            "operations={OPERATIONS} operation_ms={OPERATION_MILLIS} serial_ms={serial_millis} concurrent_ms={concurrent_millis} max_io_in_flight={max_io_in_flight}"
         );
     }
 

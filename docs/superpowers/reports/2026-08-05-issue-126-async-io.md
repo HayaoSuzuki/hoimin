@@ -6,6 +6,8 @@
 
 The run state machine, workspace maps, active-candidate map, transition ordering, and process metrics remain owned by the main async task.
 
+The public direct-effect helper retains synchronous borrowed-context execution. This avoids transferring a worker across an await point where cancellation could detach the blocking task and lose the returned state; production run-loop dispatch uses the owned concurrent path.
+
 ## Design
 
 Two simpler designs were rejected:
@@ -24,6 +26,8 @@ Candidate replay is naturally owned by its spool reference and offset. Its resul
 - Apply success or failure returns the worker to the active map.
 - Reset success returns the restored worker; reset failure retains the existing discard behavior, including pending cleanup when discard cleanup also fails.
 - Create-worker rollback remains in `WorkspacePlan::create_worker`.
+- Initial reservation binding and allowance publication occur under the same plan-state lock, preventing a concurrent creator from charging against an unpublished allowance.
+- A cleaned pending worker is dropped before replacement materialization so its plan worker slot is released first.
 - Blocking-task join failures retain the original effect ID under `shell.blocking_io`.
 - Process tasks and I/O tasks use separate `JoinSet`s, so process-concurrency telemetry is unchanged.
 - Cancellation and fatal failures drain both task sets and accept returned workspace state before final workspace cleanup.
@@ -37,6 +41,8 @@ The overlap test schedules two controlled blocking effects. Each reports that it
 
 A separate test holds a blocking operation while a Tokio timer and yield complete, proving that filesystem work is not running on the async executor thread. A controlled blocking panic verifies typed join-failure identity.
 
+Shutdown coverage holds a real owned apply task at the blocking boundary, confirms drain remains pending, then releases it and verifies that the worker returns with its mutation while process metrics remain empty.
+
 Existing E2E coverage also exercises jobs=4 worker isolation, the cross-process barrier, bounded completion queues, Ctrl+C, total timeout, sessions, candidate replay, mutation/reset, metrics, and final cleanup through the new dispatch path.
 
 ## Benchmark
@@ -49,16 +55,21 @@ cargo test --release -p hoimin-cli benchmark_blocking_io_dispatch -- --ignored -
 
 Each run compares four fixed 50 ms blocking operations awaited serially with the same four operations scheduled through the production blocking-I/O task and completion-channel path. Timing is supporting scheduler evidence; the channel-controlled overlap test is the regression gate.
 
-| Run | Serial | Concurrent | Maximum I/O in flight |
+| Run | Serial | Concurrent | Observed maximum I/O in flight |
 |---:|---:|---:|---:|
-| 1 | 215 ms | 55 ms | 4 |
-| 2 | 216 ms | 55 ms | 4 |
-| 3 | 213 ms | 55 ms | 4 |
-| 4 | 219 ms | 54 ms | 4 |
-| 5 | 213 ms | 55 ms | 4 |
-| Median | 215 ms | 55 ms | 4 |
+| 1 | 215 ms | 55 ms | — |
+| 2 | 216 ms | 55 ms | — |
+| 3 | 213 ms | 55 ms | — |
+| 4 | 219 ms | 54 ms | — |
+| 5 | 213 ms | 55 ms | — |
+| Post-review validation | 214 ms | 55 ms | 4 |
+| Median of the five recorded runs | 215 ms | 55 ms | — |
 
-The median scheduler workload fell by 74.4%, a 3.91x speedup. The small excess over the theoretical 200/50 ms reflects timer and task scheduling overhead.
+The median scheduler workload fell by 74.4%, a 3.91x speedup. The first five timing runs predated the live-counter correction, so their maximum-I/O cells are deliberately left blank. The post-review validation measures the maximum from the benchmark's live I/O counter rather than inferring it from the scheduled operation count. The small excess over the theoretical 200/50 ms reflects timer and task scheduling overhead.
+
+## Review Corrections
+
+Independent review found and the final implementation corrects three ownership races: initial allowance publication after unlocking plan state, delayed drop of a cleaned pending worker before replacement, and direct-effect cancellation after worker extraction. Deterministic regressions cover the first two; direct calls now have no await boundary after worker access begins. Classification covers all five filesystem variants, and the shutdown test exercises real workspace completion acceptance.
 
 ## Scope Boundary
 
@@ -71,7 +82,7 @@ Executed on 2026-08-05:
 ```console
 cargo fmt --check
 cargo test --workspace
-cargo test --workspace --all-features
+cargo test --workspace --all-features -- --test-threads=1
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 git diff --check origin/main...HEAD
 ```

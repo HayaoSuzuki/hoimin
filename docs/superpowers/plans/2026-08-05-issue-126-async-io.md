@@ -123,7 +123,7 @@ git commit -m "refactor(workspace): transfer workers through I/O tasks"
 
 **Interfaces:**
 - Consumes: `RunEffect::{CreateWorker, ReadCandidate, ApplyMutation, ResetWorker, VerifyOriginals}`.
-- Produces: `BlockingEffect`, `BlockingEffectCompletion`, `prepare_blocking_effect`, `execute_blocking_effect`, and `accept_blocking_completion`.
+- Produces: `BlockingEffect`, `BlockingEffectCompletion`, `prepare_blocking_effect`, `execute_direct_io_effect`, and `accept_blocking_completion`.
 
 - [ ] **Step 1: Write RED classification and state-acceptance tests**
 
@@ -143,9 +143,9 @@ Create an owned enum whose workspace variants contain `WorkspaceTask` and whose 
 
 Accept workspace state first. Then update `active_candidates` for `CandidateLoaded`, remove it only for successful `WorkerReset`, and preserve the existing apply insertion timing.
 
-- [ ] **Step 5: Route direct `execute_effect` calls through `run_blocking_io`**
+- [ ] **Step 5: Keep direct `execute_effect` calls cancellation-safe**
 
-Replace the five synchronous match arms with the shared preparation, awaited blocking execution, and acceptance path. Existing callers retain one-event semantics while no blocking filesystem call runs on the async worker thread.
+Keep the five direct-call match arms synchronous against the borrowed context, with candidate-map updates matching production acceptance. Do not remove a worker and then await a detached blocking task: callers may drop the direct-effect future. The production run loop uses the owned blocking path; existing direct callers retain one-event and worker-ownership semantics.
 
 - [ ] **Step 6: Run GREEN and shell tests**
 
@@ -167,7 +167,7 @@ git commit -m "refactor(shell): own blocking filesystem effects"
 
 **Interfaces:**
 - Consumes: prepared `BlockingEffect`, the existing completion channel, and cancellation/deadline branches.
-- Produces: a separate `JoinSet<()>` for I/O tasks, `spawn_blocking_effect`, typed completion origin, and shutdown draining for both task sets.
+- Produces: a separate `JoinSet<()>` for I/O tasks, `spawn_blocking_effect`, independent process/I/O completion markers, and shutdown draining for both task sets.
 
 - [ ] **Step 1: Write a failing overlap regression**
 
@@ -179,15 +179,15 @@ Run: `cargo test -p hoimin-cli shell::tests::blocking_io_effects_overlap --lib -
 
 Expected: FAIL because the production scheduler still awaits non-process effects serially.
 
-- [ ] **Step 3: Add explicit completion origin**
+- [x] **Step 3: Track process and I/O completion origins independently**
 
-Replace the boolean-only task marker with an internal origin that distinguishes serial, process, and blocking-I/O completions. Keep process metrics conditional on the process origin and process metadata.
+Add independent internal process-task and I/O-task markers. A serial completion sets neither marker, a process completion sets only the process marker, and a blocking-I/O completion sets only the I/O marker. Keep process metrics conditional on the process marker and process metadata.
 
 - [ ] **Step 4: Schedule ready blocking effects without awaiting**
 
 Prepare each recognized effect on the main task, spawn its owned synchronous execution through `spawn_blocking`, send its completion to the bounded channel, increment total in-flight and I/O-in-flight counts, and continue dispatching ready effects.
 
-- [ ] **Step 5: Accept and join by origin**
+- [x] **Step 5: Accept and join by task marker**
 
 For I/O completions, restore workspace/candidate state, decrement I/O and total counts, and join one I/O wrapper task before transition. For process completions, preserve the current metrics and process `JoinSet` behavior.
 

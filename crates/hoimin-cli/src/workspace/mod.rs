@@ -734,6 +734,7 @@ impl WorkspaceTask {
                             pending: pending.map(|workspace| (worker, workspace)),
                         };
                     }
+                    drop(pending.take());
                 }
                 match plan.create_worker(&request) {
                     Ok(workspace) => WorkspaceTaskCompletion {
@@ -1415,7 +1416,11 @@ mod task_tests {
 
     use super::{CopyOptions, WorkspaceHandler};
 
-    fn prepared_handler() -> (tempfile::TempDir, WorkspaceHandler) {
+    fn prepared_handler() -> (
+        tempfile::TempDir,
+        WorkspaceHandler,
+        hoimin_core::CreateWorker,
+    ) {
         let project = tempfile::tempdir().unwrap();
         std::fs::create_dir(project.path().join("pkg")).unwrap();
         std::fs::write(project.path().join("pkg/a.py"), b"original\n").unwrap();
@@ -1433,7 +1438,8 @@ mod task_tests {
         handler
             .handle_create_worker(grant.create_worker(EffectId(2), 0).unwrap())
             .unwrap();
-        (project, handler)
+        let retry = grant.create_worker(EffectId(5), 0).unwrap();
+        (project, handler, retry)
     }
 
     fn candidate(handler: &WorkspaceHandler) -> MutationCandidate {
@@ -1464,7 +1470,7 @@ mod task_tests {
 
     #[test]
     fn workspace_task_round_trips_worker_ownership_for_apply_and_reset() {
-        let (_project, mut handler) = prepared_handler();
+        let (_project, mut handler, _retry) = prepared_handler();
         let candidate = candidate(&handler);
         let apply = handler
             .prepare_apply_task(ApplyMutation {
@@ -1504,7 +1510,7 @@ mod task_tests {
 
     #[test]
     fn duplicate_workspace_task_completion_preserves_the_registered_worker() {
-        let (_project, mut handler) = prepared_handler();
+        let (_project, mut handler, _retry) = prepared_handler();
         let candidate = candidate(&handler);
         let task = handler
             .prepare_apply_task(ApplyMutation {
@@ -1514,7 +1520,7 @@ mod task_tests {
             })
             .unwrap();
         let completion = task.execute();
-        let (_other_project, mut other) = prepared_handler();
+        let (_other_project, mut other, _other_retry) = prepared_handler();
         let registered = other.workers.remove(&0).unwrap();
         let registered_root = registered.root().to_owned();
         handler.workers.insert(0, registered);
@@ -1528,5 +1534,22 @@ mod task_tests {
                 .contains("duplicate active worker 0")
         );
         assert_eq!(handler.worker(0).unwrap().root(), registered_root);
+    }
+
+    #[test]
+    fn create_task_drops_a_cleaned_pending_worker_before_replacement() {
+        let (_project, mut handler, retry) = prepared_handler();
+        let pending = handler.workers.remove(&0).unwrap();
+        let old_root = pending.root().to_owned();
+        handler.pending_cleanup.insert(0, pending);
+        let task = handler.prepare_create_task(retry).unwrap();
+
+        let event = handler.accept_task_completion(task.execute()).unwrap();
+
+        assert!(matches!(event, RunEvent::WorkerCreated(_)));
+        assert_eq!(handler.worker_count(), 1);
+        assert_eq!(handler.pending_cleanup_count(), 0);
+        assert_ne!(handler.worker(0).unwrap().root(), old_root);
+        assert!(!old_root.exists());
     }
 }
