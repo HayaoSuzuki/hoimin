@@ -20,6 +20,8 @@ use hoimin_core::{
     ResetWorker, RunEvent, VerifyOriginals, WorkerCreated, WorkerReset,
 };
 
+#[cfg(test)]
+pub(crate) use copy::MaterializationPause;
 use copy::ValidatedPreflightError;
 pub use copy::WorkspacePlan;
 pub use manifest::{ManifestEntry, WorkspaceManifest};
@@ -658,6 +660,8 @@ pub struct WorkspaceHandler {
     plan: Option<Arc<WorkspacePlan>>,
     workers: BTreeMap<u32, WorkerWorkspace>,
     pending_cleanup: BTreeMap<u32, WorkerWorkspace>,
+    #[cfg(test)]
+    materialization_pause: Option<MaterializationPause>,
 }
 
 pub(crate) enum WorkspaceTask {
@@ -856,7 +860,14 @@ impl WorkspaceHandler {
             plan: None,
             workers: BTreeMap::new(),
             pending_cleanup: BTreeMap::new(),
+            #[cfg(test)]
+            materialization_pause: None,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_materialization_pause(&mut self, pause: MaterializationPause) {
+        self.materialization_pause = Some(pause);
     }
 
     /// # Errors
@@ -877,6 +888,8 @@ impl WorkspaceHandler {
             self.options.clone(),
         )
         .map(|plan| {
+            #[cfg(test)]
+            let plan = plan.with_materialization_pause(self.materialization_pause.clone());
             let completed = plan.completed();
             self.plan = Some(Arc::new(plan));
             completed
@@ -902,6 +915,8 @@ impl WorkspaceHandler {
             validate,
         ) {
             Ok(plan) => {
+                #[cfg(test)]
+                let plan = plan.with_materialization_pause(self.materialization_pause.clone());
                 let completed = plan.completed();
                 self.plan = Some(Arc::new(plan));
                 Ok(completed)

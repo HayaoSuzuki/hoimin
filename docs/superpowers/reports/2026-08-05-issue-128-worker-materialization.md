@@ -22,7 +22,7 @@ Both revisions used the identical committed benchmark harness and command:
 cargo test --release -p hoimin-cli benchmark_worker_materialization_io -- --ignored --nocapture
 ```
 
-The fixture has an 8 MiB `padding.bin` file plus the 9-byte `target.py` (`fixture_bytes=8,388,617`). It materializes eight workers, then runs one final original verification. The timer starts after preflight and covers only worker creation plus that final verification. Each revision was measured five times under the same host conditions; elapsed time is supporting evidence, not a CI threshold.
+The fixture has an 8 MiB `padding.bin` file plus the 9-byte `target.py` (`fixture_bytes=8,388,617`). The committed benchmark materializes eight workers sequentially, then runs one final original verification; production shell dispatch materializes workers concurrently. The timer starts after preflight and covers only worker creation plus that final verification. The deterministic work counts are the primary evidence because they are independent of scheduling, while the sequential elapsed measurements are supporting evidence rather than a CI threshold. Each revision was measured five times under the same host conditions.
 
 The baseline is the Task 2 harness commit `7d50e71`; the optimized revision is `156b735`. Because the instrumentation and benchmark were committed before the production optimization, both revisions use the same fixture, counters, loop, and timer.
 

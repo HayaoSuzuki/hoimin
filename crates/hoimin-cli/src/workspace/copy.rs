@@ -5,6 +5,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 #[cfg(test)]
+use std::sync::Barrier;
+#[cfg(test)]
 use std::sync::mpsc::{Receiver, SyncSender};
 
 use camino::{Utf8Path, Utf8PathBuf};
@@ -32,6 +34,8 @@ pub struct WorkspacePlan {
     materialization_metrics: Arc<MaterializationIoMetrics>,
     #[cfg(test)]
     initial_grant_hook: Option<Arc<InitialGrantHook>>,
+    #[cfg(test)]
+    materialization_pause: Option<MaterializationPause>,
 }
 
 #[cfg(test)]
@@ -90,6 +94,50 @@ impl MaterializationIoMetrics {
 struct InitialGrantHook {
     entered: SyncSender<()>,
     release: Mutex<Receiver<()>>,
+}
+
+#[cfg(test)]
+#[derive(Clone)]
+pub(crate) struct MaterializationPause {
+    worker: u32,
+    entered: Arc<Barrier>,
+    release: Arc<Barrier>,
+}
+
+#[cfg(test)]
+impl std::fmt::Debug for MaterializationPause {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("MaterializationPause")
+            .field("worker", &self.worker)
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+impl MaterializationPause {
+    pub(crate) fn new(worker: u32) -> Self {
+        Self {
+            worker,
+            entered: Arc::new(Barrier::new(2)),
+            release: Arc::new(Barrier::new(2)),
+        }
+    }
+
+    pub(crate) fn wait_until_entered(&self) {
+        self.entered.wait();
+    }
+
+    pub(crate) fn release(&self) {
+        self.release.wait();
+    }
+
+    fn pause(&self, worker: u32) {
+        if self.worker == worker {
+            self.wait_until_entered();
+            self.release();
+        }
+    }
 }
 
 pub(crate) enum ValidatedPreflightError<E> {
@@ -277,7 +325,18 @@ impl WorkspacePlan {
             materialization_metrics: Arc::new(MaterializationIoMetrics::default()),
             #[cfg(test)]
             initial_grant_hook: None,
+            #[cfg(test)]
+            materialization_pause: None,
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_materialization_pause(
+        mut self,
+        pause: Option<MaterializationPause>,
+    ) -> Self {
+        self.materialization_pause = pause;
+        self
     }
 
     #[must_use]
@@ -432,6 +491,10 @@ impl WorkspacePlan {
         let root_path =
             Utf8PathBuf::from_path_buf(root_path).map_err(|_| WorkspaceError::NonUtf8Path)?;
         let root = open_root(root_path.clone())?;
+        #[cfg(test)]
+        if let Some(pause) = &self.materialization_pause {
+            pause.pause(worker);
+        }
         let mut charged = 0_u64;
 
         let result = (|| {
