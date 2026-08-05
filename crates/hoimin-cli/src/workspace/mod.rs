@@ -15,9 +15,9 @@ use std::sync::{Arc, Mutex};
 
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{
-    ApplyMutation, Cleanup, CleanupFinished, CreateWorker, EffectFailed, EffectFailure,
+    ApplyMutation, Cleanup, CleanupFinished, CreateWorker, EffectFailed, EffectFailure, EffectId,
     MutationApplied, MutationCandidate, OriginalsVerified, Preflight, PreflightCompleted,
-    ResetWorker, VerifyOriginals, WorkerCreated, WorkerReset,
+    ResetWorker, RunEvent, VerifyOriginals, WorkerCreated, WorkerReset,
 };
 
 use copy::ValidatedPreflightError;
@@ -655,9 +655,189 @@ pub struct WorkspaceHandler {
     source_roots: Vec<Utf8PathBuf>,
     requested_workers: u32,
     options: CopyOptions,
-    plan: Option<WorkspacePlan>,
+    plan: Option<Arc<WorkspacePlan>>,
     workers: BTreeMap<u32, WorkerWorkspace>,
     pending_cleanup: BTreeMap<u32, WorkerWorkspace>,
+}
+
+pub(crate) enum WorkspaceTask {
+    Create {
+        request: CreateWorker,
+        plan: Arc<WorkspacePlan>,
+        pending: Option<Box<WorkerWorkspace>>,
+    },
+    Apply {
+        request: Box<ApplyMutation>,
+        workspace: Box<WorkerWorkspace>,
+    },
+    Reset {
+        request: ResetWorker,
+        workspace: Box<WorkerWorkspace>,
+    },
+    Verify {
+        request: VerifyOriginals,
+        plan: Arc<WorkspacePlan>,
+    },
+}
+
+pub(crate) struct WorkspaceTaskCompletion {
+    id: EffectId,
+    event: RunEvent,
+    active: Option<(u32, Box<WorkerWorkspace>)>,
+    pending: Option<(u32, Box<WorkerWorkspace>)>,
+}
+
+impl WorkspaceTaskCompletion {
+    pub(crate) fn event(&self) -> &RunEvent {
+        &self.event
+    }
+}
+
+impl WorkspaceTask {
+    #[must_use]
+    pub(crate) fn id(&self) -> EffectId {
+        match self {
+            Self::Create { request, .. } => request.id(),
+            Self::Apply { request, .. } => request.id,
+            Self::Reset { request, .. } => request.id,
+            Self::Verify { request, .. } => request.id,
+        }
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the owned task boundary keeps every workspace state return path explicit"
+    )]
+    pub(crate) fn execute(self) -> WorkspaceTaskCompletion {
+        match self {
+            Self::Create {
+                request,
+                plan,
+                mut pending,
+            } => {
+                let id = request.id();
+                let worker = request.worker();
+                if let Some(workspace) = pending.as_mut() {
+                    if let Err(error) = plan.validate_grant(&request) {
+                        return WorkspaceTaskCompletion {
+                            id,
+                            event: RunEvent::EffectFailed(effect_failed(id, error)),
+                            active: None,
+                            pending: pending.map(|workspace| (worker, workspace)),
+                        };
+                    }
+                    if let Err(error) = workspace.try_cleanup() {
+                        return WorkspaceTaskCompletion {
+                            id,
+                            event: RunEvent::EffectFailed(effect_failed(id, error)),
+                            active: None,
+                            pending: pending.map(|workspace| (worker, workspace)),
+                        };
+                    }
+                    drop(pending.take());
+                }
+                match plan.create_worker(&request) {
+                    Ok(workspace) => WorkspaceTaskCompletion {
+                        id,
+                        event: RunEvent::WorkerCreated(WorkerCreated {
+                            id,
+                            worker,
+                            reservation_id: request.reservation_id(),
+                        }),
+                        active: Some((worker, Box::new(workspace))),
+                        pending: None,
+                    },
+                    Err(error) => WorkspaceTaskCompletion {
+                        id,
+                        event: RunEvent::EffectFailed(effect_failed(id, error)),
+                        active: None,
+                        pending: None,
+                    },
+                }
+            }
+            Self::Apply {
+                request,
+                mut workspace,
+            } => {
+                let id = request.id;
+                let worker = request.worker;
+                let event = match workspace.apply_mutation(&request.candidate) {
+                    Ok(()) => RunEvent::MutationApplied(MutationApplied { id, worker }),
+                    Err(error) => RunEvent::EffectFailed(effect_failed(id, error)),
+                };
+                WorkspaceTaskCompletion {
+                    id,
+                    event,
+                    active: Some((worker, workspace)),
+                    pending: None,
+                }
+            }
+            Self::Reset {
+                request,
+                mut workspace,
+            } => {
+                let id = request.id;
+                let worker = request.worker;
+                match workspace.reset() {
+                    Ok(()) => WorkspaceTaskCompletion {
+                        id,
+                        event: RunEvent::WorkerReset(WorkerReset { id, worker }),
+                        active: Some((worker, workspace)),
+                        pending: None,
+                    },
+                    Err(error) => {
+                        let discarded_root = workspace.root().to_owned();
+                        match workspace.try_cleanup() {
+                            Ok(()) => WorkspaceTaskCompletion {
+                                id,
+                                event: RunEvent::EffectFailed(effect_failed(id, error)),
+                                active: None,
+                                pending: None,
+                            },
+                            Err(cleanup_error) => {
+                                let reported_error =
+                                    if matches!(error, WorkspaceError::TreeDepthExceeded { .. }) {
+                                        error
+                                    } else {
+                                        WorkspaceError::WorkspaceRestore {
+                                            path: discarded_root,
+                                            message: format!(
+                                                "{error}; discard cleanup failed: {cleanup_error}"
+                                            ),
+                                        }
+                                    };
+                                WorkspaceTaskCompletion {
+                                    id,
+                                    event: RunEvent::EffectFailed(effect_failed(
+                                        id,
+                                        reported_error,
+                                    )),
+                                    active: None,
+                                    pending: Some((worker, workspace)),
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Self::Verify { request, plan } => {
+                let id = request.id;
+                let event = match plan.verify_originals() {
+                    Ok(()) => RunEvent::OriginalsVerified(OriginalsVerified {
+                        id,
+                        checkpoint: request.checkpoint,
+                    }),
+                    Err(error) => RunEvent::EffectFailed(effect_failed(id, error)),
+                };
+                WorkspaceTaskCompletion {
+                    id,
+                    event,
+                    active: None,
+                    pending: None,
+                }
+            }
+        }
+    }
 }
 
 impl WorkspaceHandler {
@@ -698,7 +878,7 @@ impl WorkspaceHandler {
         )
         .map(|plan| {
             let completed = plan.completed();
-            self.plan = Some(plan);
+            self.plan = Some(Arc::new(plan));
             completed
         })
         .map_err(|error| effect_failed(id, error))
@@ -723,12 +903,119 @@ impl WorkspaceHandler {
         ) {
             Ok(plan) => {
                 let completed = plan.completed();
-                self.plan = Some(plan);
+                self.plan = Some(Arc::new(plan));
                 Ok(completed)
             }
             Err(ValidatedPreflightError::Workspace(error)) => Err(effect_failed(id, error)),
             Err(ValidatedPreflightError::Validation(error)) => Err(error),
         }
+    }
+
+    pub(crate) fn prepare_create_task(
+        &mut self,
+        request: CreateWorker,
+    ) -> Result<WorkspaceTask, EffectFailed> {
+        let id = request.id();
+        let worker = request.worker();
+        if self.workers.contains_key(&worker) {
+            return Err(effect_failed(
+                id,
+                WorkspaceError::WorkerAlreadyExists { worker },
+            ));
+        }
+        let plan = self
+            .plan
+            .clone()
+            .ok_or(WorkspaceError::WorkerMissing { worker })
+            .map_err(|error| effect_failed(id, error))?;
+        let pending = self.pending_cleanup.remove(&worker).map(Box::new);
+        Ok(WorkspaceTask::Create {
+            request,
+            plan,
+            pending,
+        })
+    }
+
+    pub(crate) fn prepare_apply_task(
+        &mut self,
+        request: ApplyMutation,
+    ) -> Result<WorkspaceTask, EffectFailed> {
+        let id = request.id;
+        let worker = request.worker;
+        let workspace = self
+            .workers
+            .remove(&worker)
+            .ok_or(WorkspaceError::WorkerMissing { worker })
+            .map_err(|error| effect_failed(id, error))?;
+        Ok(WorkspaceTask::Apply {
+            request: Box::new(request),
+            workspace: Box::new(workspace),
+        })
+    }
+
+    pub(crate) fn prepare_reset_task(
+        &mut self,
+        request: ResetWorker,
+    ) -> Result<WorkspaceTask, EffectFailed> {
+        let id = request.id;
+        let worker = request.worker;
+        let workspace = self
+            .workers
+            .remove(&worker)
+            .ok_or(WorkspaceError::WorkerMissing { worker })
+            .map_err(|error| effect_failed(id, error))?;
+        Ok(WorkspaceTask::Reset {
+            request,
+            workspace: Box::new(workspace),
+        })
+    }
+
+    pub(crate) fn prepare_verify_task(
+        &self,
+        request: VerifyOriginals,
+    ) -> Result<WorkspaceTask, EffectFailed> {
+        let id = request.id;
+        let plan = self
+            .plan
+            .clone()
+            .ok_or(WorkspaceError::WorkerMissing { worker: 0 })
+            .map_err(|error| effect_failed(id, error))?;
+        Ok(WorkspaceTask::Verify { request, plan })
+    }
+
+    pub(crate) fn accept_task_completion(
+        &mut self,
+        completion: WorkspaceTaskCompletion,
+    ) -> Result<RunEvent, EffectFailed> {
+        if let Some((worker, workspace)) = completion.active {
+            match self.workers.entry(worker) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(*workspace);
+                }
+                std::collections::btree_map::Entry::Occupied(_) => {
+                    return Err(EffectFailed::other(
+                        completion.id,
+                        "shell.blocking_io",
+                        format!("blocking completion returned duplicate active worker {worker}"),
+                    ));
+                }
+            }
+        }
+        if let Some((worker, workspace)) = completion.pending {
+            match self.pending_cleanup.entry(worker) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(*workspace);
+                }
+                std::collections::btree_map::Entry::Occupied(_) => {
+                    return Err(EffectFailed::other(
+                        completion.id,
+                        "shell.blocking_io",
+                        format!("blocking completion returned duplicate pending worker {worker}"),
+                    ));
+                }
+            }
+        }
+        Ok(completion.event)
     }
 
     /// # Errors
@@ -852,7 +1139,7 @@ impl WorkspaceHandler {
     /// # Errors
     /// Returns `EffectFailed` for invalid reservations or worker cleanup failures.
     pub fn handle_cleanup(&mut self, request: Cleanup) -> Result<CleanupFinished, EffectFailed> {
-        if let Some(bound) = self.plan.as_ref().and_then(WorkspacePlan::reservation_id) {
+        if let Some(bound) = self.plan.as_ref().and_then(|plan| plan.reservation_id()) {
             match request.reservations.as_slice() {
                 [received] if *received != bound => {
                     return Err(effect_failed(
@@ -908,7 +1195,7 @@ impl WorkspaceHandler {
         self.plan
             .as_ref()
             .ok_or(WorkspaceError::WorkerMissing { worker: 0 })
-            .and_then(WorkspacePlan::verify_originals)
+            .and_then(|plan| plan.verify_originals())
             .map(|()| OriginalsVerified {
                 id,
                 checkpoint: request.checkpoint,
@@ -962,17 +1249,19 @@ impl WorkspaceHandler {
         Ok(())
     }
 
+    #[must_use]
     pub fn observed_copy_bytes(&self) -> u64 {
         self.plan
             .as_ref()
-            .map(WorkspacePlan::observed_copy_bytes)
+            .map(|plan| plan.observed_copy_bytes())
             .unwrap_or_default()
     }
 
+    #[must_use]
     pub fn materialized_worker_slots(&self) -> usize {
         self.plan
             .as_ref()
-            .map(WorkspacePlan::materialized_workers)
+            .map(|plan| plan.materialized_workers())
             .unwrap_or_default()
     }
 
@@ -1115,4 +1404,152 @@ fn effect_failed(id: hoimin_core::EffectId, error: WorkspaceError) -> EffectFail
         },
     };
     EffectFailed { id, failure }
+}
+
+#[cfg(test)]
+mod task_tests {
+    use camino::Utf8Path;
+    use hoimin_core::{
+        ApplyMutation, BudgetLedger, ByteSpan, EffectId, MutationCandidate, Preflight, ResetWorker,
+        RunBudgets, RunEvent, reserve_workspace_copy,
+    };
+
+    use super::{CopyOptions, WorkspaceHandler};
+
+    fn prepared_handler() -> (
+        tempfile::TempDir,
+        WorkspaceHandler,
+        hoimin_core::CreateWorker,
+    ) {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::create_dir(project.path().join("pkg")).unwrap();
+        std::fs::write(project.path().join("pkg/a.py"), b"original\n").unwrap();
+        let root = Utf8Path::from_path(project.path()).unwrap().to_owned();
+        let mut handler = WorkspaceHandler::new(root, Vec::new(), 1, CopyOptions::default());
+        let completed = handler
+            .handle_preflight(Preflight { id: EffectId(1) })
+            .unwrap();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: completed.aggregate_logical_bytes,
+            processes: 1,
+        });
+        let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+        handler
+            .handle_create_worker(grant.create_worker(EffectId(2), 0).unwrap())
+            .unwrap();
+        let retry = grant.create_worker(EffectId(5), 0).unwrap();
+        (project, handler, retry)
+    }
+
+    fn candidate(handler: &WorkspaceHandler) -> MutationCandidate {
+        let worker = handler.worker(0).unwrap();
+        MutationCandidate {
+            id: "candidate".into(),
+            sequence: 1,
+            path: "pkg/a.py".into(),
+            span: ByteSpan {
+                start: 0,
+                length: 8,
+            },
+            original: "original".into(),
+            replacement: "mutated!".into(),
+            operator: "test".into(),
+            line: 1,
+            column: 0,
+            symbol: None,
+            file_hash: worker
+                .manifest()
+                .entry(Utf8Path::new("pkg/a.py"))
+                .unwrap()
+                .blake3
+                .to_hex()
+                .to_string(),
+        }
+    }
+
+    #[test]
+    fn workspace_task_round_trips_worker_ownership_for_apply_and_reset() {
+        let (_project, mut handler, _retry) = prepared_handler();
+        let candidate = candidate(&handler);
+        let apply = handler
+            .prepare_apply_task(ApplyMutation {
+                id: EffectId(3),
+                worker: 0,
+                candidate: candidate.clone(),
+            })
+            .unwrap();
+        assert!(handler.worker(0).is_none());
+
+        let event = handler.accept_task_completion(apply.execute()).unwrap();
+
+        assert!(matches!(event, RunEvent::MutationApplied(_)));
+        assert_eq!(
+            handler.worker(0).unwrap().read("pkg/a.py").unwrap(),
+            b"mutated!\n"
+        );
+
+        let reset = handler
+            .prepare_reset_task(ResetWorker {
+                id: EffectId(4),
+                worker: 0,
+            })
+            .unwrap();
+        assert!(handler.worker(0).is_none());
+
+        let event = handler.accept_task_completion(reset.execute()).unwrap();
+
+        assert!(matches!(event, RunEvent::WorkerReset(_)));
+        assert_eq!(
+            handler.worker(0).unwrap().read("pkg/a.py").unwrap(),
+            b"original\n"
+        );
+        assert_eq!(handler.worker_count(), 1);
+        assert_eq!(handler.pending_cleanup_count(), 0);
+    }
+
+    #[test]
+    fn duplicate_workspace_task_completion_preserves_the_registered_worker() {
+        let (_project, mut handler, _retry) = prepared_handler();
+        let candidate = candidate(&handler);
+        let task = handler
+            .prepare_apply_task(ApplyMutation {
+                id: EffectId(3),
+                worker: 0,
+                candidate,
+            })
+            .unwrap();
+        let completion = task.execute();
+        let (_other_project, mut other, _other_retry) = prepared_handler();
+        let registered = other.workers.remove(&0).unwrap();
+        let registered_root = registered.root().to_owned();
+        handler.workers.insert(0, registered);
+
+        let error = handler.accept_task_completion(completion).unwrap_err();
+
+        assert!(
+            error
+                .failure
+                .message()
+                .contains("duplicate active worker 0")
+        );
+        assert_eq!(handler.worker(0).unwrap().root(), registered_root);
+    }
+
+    #[test]
+    fn create_task_drops_a_cleaned_pending_worker_before_replacement() {
+        let (_project, mut handler, retry) = prepared_handler();
+        let pending = handler.workers.remove(&0).unwrap();
+        let old_root = pending.root().to_owned();
+        handler.pending_cleanup.insert(0, pending);
+        let task = handler.prepare_create_task(retry).unwrap();
+
+        let event = handler.accept_task_completion(task.execute()).unwrap();
+
+        assert!(matches!(event, RunEvent::WorkerCreated(_)));
+        assert_eq!(handler.worker_count(), 1);
+        assert_eq!(handler.pending_cleanup_count(), 0);
+        assert_ne!(handler.worker(0).unwrap().root(), old_root);
+        assert!(!old_root.exists());
+    }
 }

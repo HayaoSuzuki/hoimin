@@ -4,6 +4,9 @@ use std::fs;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+#[cfg(test)]
+use std::sync::mpsc::{Receiver, SyncSender};
+
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{CreateWorker, EffectId, PreflightCompleted, ReservationId};
 
@@ -13,7 +16,7 @@ use super::{
     WorkspaceError, WorkspaceManifest,
 };
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct WorkspacePlan {
     preflight_id: EffectId,
     original_root: Utf8PathBuf,
@@ -25,6 +28,15 @@ pub struct WorkspacePlan {
     diagnostics: Vec<WorkspaceDiagnostic>,
     allowance: Arc<CopyAllowance>,
     state: Arc<Mutex<PlanState>>,
+    #[cfg(test)]
+    initial_grant_hook: Option<Arc<InitialGrantHook>>,
+}
+
+#[cfg(test)]
+#[derive(Debug)]
+struct InitialGrantHook {
+    entered: SyncSender<()>,
+    release: Mutex<Receiver<()>>,
 }
 
 pub(crate) enum ValidatedPreflightError<E> {
@@ -208,6 +220,8 @@ impl WorkspacePlan {
                 charged: AtomicU64::new(0),
             }),
             state: Arc::new(Mutex::new(PlanState::default())),
+            #[cfg(test)]
+            initial_grant_hook: None,
         })
     }
 
@@ -319,10 +333,19 @@ impl WorkspacePlan {
             self.requested_workers,
             self.aggregate_bytes,
         )?;
-        drop(state);
+        #[cfg(test)]
+        if newly_bound && let Some(hook) = &self.initial_grant_hook {
+            hook.entered.send(()).expect("grant hook receiver");
+            hook.release
+                .lock()
+                .expect("grant hook lock")
+                .recv()
+                .expect("grant hook release");
+        }
         if newly_bound {
             self.allowance.set_grant(request.granted_allowance());
         }
+        drop(state);
         Ok(())
     }
 
@@ -494,7 +517,9 @@ fn create_disk_snapshot(
 #[cfg(test)]
 mod tests {
     use std::sync::Barrier;
+    use std::sync::mpsc;
     use std::thread;
+    use std::time::Duration;
 
     use hoimin_core::{BudgetLedger, RunBudgets, reserve_workspace_copy};
 
@@ -576,6 +601,61 @@ mod tests {
         assert_eq!(plan.observed_copy_bytes(), 0);
         let opened_path = opened_path.lock().unwrap().take().unwrap();
         assert!(!opened_path.exists());
+    }
+
+    #[test]
+    fn initial_grant_is_published_before_another_worker_can_materialize() {
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("target.py"), b"copied bytes").unwrap();
+        let source_root = Utf8Path::from_path(source.path()).unwrap();
+        let mut plan =
+            WorkspacePlan::preflight(source_root, EffectId(7), 2, CopyOptions::default()).unwrap();
+        let completed = plan.completed();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: completed.aggregate_logical_bytes,
+            processes: 1,
+        });
+        let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+        let first = grant.create_worker(EffectId(8), 0).unwrap();
+        let second = grant.create_worker(EffectId(9), 1).unwrap();
+        let (entered_tx, entered_rx) = mpsc::sync_channel(0);
+        let (release_tx, release_rx) = mpsc::sync_channel(0);
+        plan.initial_grant_hook = Some(Arc::new(InitialGrantHook {
+            entered: entered_tx,
+            release: Mutex::new(release_rx),
+        }));
+        let plan = Arc::new(plan);
+        let (result_tx, result_rx) = mpsc::channel();
+
+        let first_plan = Arc::clone(&plan);
+        let first_result = result_tx.clone();
+        let first_thread = thread::spawn(move || {
+            first_result.send(first_plan.create_worker(&first)).unwrap();
+        });
+        entered_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+
+        let second_plan = Arc::clone(&plan);
+        let second_thread = thread::spawn(move || {
+            result_tx.send(second_plan.create_worker(&second)).unwrap();
+        });
+        assert!(result_rx.recv_timeout(Duration::from_millis(50)).is_err());
+
+        release_tx.send(()).unwrap();
+        let workers = [
+            result_rx.recv_timeout(Duration::from_secs(1)).unwrap(),
+            result_rx.recv_timeout(Duration::from_secs(1)).unwrap(),
+        ];
+        first_thread.join().unwrap();
+        second_thread.join().unwrap();
+
+        assert!(workers.iter().all(Result::is_ok));
+        assert_eq!(plan.materialized_workers(), 2);
+        assert_eq!(
+            plan.observed_copy_bytes(),
+            completed.aggregate_logical_bytes
+        );
+        drop(workers);
     }
 
     #[test]
