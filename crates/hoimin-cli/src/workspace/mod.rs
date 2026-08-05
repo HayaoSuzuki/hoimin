@@ -311,8 +311,6 @@ fn make_cleanup_entry_accessible(
 pub struct WorkerWorkspace {
     temp: tempfile::TempDir,
     root: WorkerRoot,
-    original_root: Utf8PathBuf,
-    options: CopyOptions,
     manifest: WorkspaceManifest,
     snapshot: Arc<DiskSnapshot>,
     allowance: Arc<copy::CopyAllowance>,
@@ -323,12 +321,9 @@ pub struct WorkerWorkspace {
 }
 
 impl WorkerWorkspace {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn from_materialized(
         temp: tempfile::TempDir,
         root: WorkerRoot,
-        original_root: Utf8PathBuf,
-        options: CopyOptions,
         manifest: WorkspaceManifest,
         snapshot: Arc<DiskSnapshot>,
         allowance: Arc<copy::CopyAllowance>,
@@ -339,8 +334,6 @@ impl WorkerWorkspace {
         Self {
             temp,
             root,
-            original_root,
-            options,
             manifest,
             snapshot,
             allowance,

@@ -5,14 +5,12 @@ use hoimin_core::MutationCandidate;
 use super::{WorkerWorkspace, WorkspaceError};
 
 impl WorkerWorkspace {
-    /// Applies a candidate only when the original workspace and target bytes still match.
+    /// Applies a candidate only when the worker target still matches its preflight manifest.
     ///
     /// # Errors
     ///
-    /// Returns an error when the original workspace changed, the target is invalid, or the
-    /// mutated file cannot be written.
+    /// Returns an error when the worker target is invalid or the mutated file cannot be written.
     pub fn apply_mutation(&mut self, candidate: &MutationCandidate) -> Result<(), WorkspaceError> {
-        self.verify_originals()?;
         let expected = self.manifest.entry(&candidate.path).ok_or_else(|| {
             WorkspaceError::MutationTargetMissing {
                 path: candidate.path.clone(),
