@@ -1,9 +1,43 @@
+use std::fs;
 use std::num::NonZeroUsize;
 
 use hoimin_cli::cli::{
     ParsedCommand, ProgressOutputFormat, TopSelectionPolicy, VerifySelection, parse_from,
 };
 use hoimin_core::{MutationOperator, MutationProfile};
+
+#[test]
+fn readme_documents_all_mutation_operator_ids_and_selector_families() {
+    let readme =
+        fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../README.md")).unwrap();
+    for name in [
+        "compare_eq_ne",
+        "compare_order",
+        "membership",
+        "identity",
+        "boolean_and_or",
+        "binary_add_sub",
+        "augmented_add_sub",
+        "binary_mul_div",
+        "binary_floor_mod",
+        "unary_sign",
+        "remove_not",
+        "boolean_literal",
+        "break_continue",
+        "type_nullable_remove",
+        "type_nullable_add",
+        "type_list_sequence",
+        "type_set_abstract_set",
+        "type_dict_mapping",
+        "type_iterable_iterator",
+        "type_sequence_iterable",
+        "type_nullable",
+        "type_collections",
+        "type_iterables",
+    ] {
+        assert!(readme.contains(name), "README is missing {name}");
+    }
+}
 
 #[test]
 fn real_binary_help_and_version_use_stdout() {

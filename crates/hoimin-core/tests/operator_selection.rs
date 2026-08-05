@@ -1,4 +1,17 @@
-use hoimin_core::{CommandArg, ConfigError, MutationOperator, PlanConfig, RawRunConfig, RunConfig};
+use hoimin_core::{
+    CommandArg, ConfigError, MutationOperator, MutationOperatorSelection, PlanConfig, RawRunConfig,
+    RunConfig,
+};
+
+#[test]
+fn unknown_operator_error_lists_valid_operators_and_selectors() {
+    let error = MutationOperatorSelection::parse_selector("not_a_real_operator").unwrap_err();
+    let message = error.to_string();
+
+    for valid in ["compare_eq_ne", "type_nullable", "type_dict_mapping"] {
+        assert!(message.contains(valid), "missing {valid} in {message}");
+    }
+}
 
 #[test]
 fn raw_operator_includes_and_excludes_cannot_normalize_to_empty() {

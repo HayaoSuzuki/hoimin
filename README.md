@@ -166,6 +166,15 @@ The default runtime operator set is:
 
 Without `--operators`, a run selects all 13 runtime operators and does not mutate type annotations. Supplying `--operators` (comma-separated) selects an explicit operator set instead; `--exclude-operators` then removes individual operators or selector families from that set.
 
+The canonical runtime operator IDs are `compare_eq_ne`, `compare_order`, `membership`, `identity`,
+`boolean_and_or`, `binary_add_sub`, `augmented_add_sub`, `binary_mul_div`, `binary_floor_mod`,
+`unary_sign`, `remove_not`, `boolean_literal`, and `break_continue`. The type operator IDs are
+`type_nullable_remove`, `type_nullable_add`, `type_list_sequence`, `type_set_abstract_set`,
+`type_dict_mapping`, `type_iterable_iterator`, and `type_sequence_iterable`. Selector families are
+`type_nullable`, `type_collections`, and `type_iterables`. When loading persisted plan
+configurations, the historical `type_mapping` name remains accepted as an alias for
+`type_dict_mapping`.
+
 For example, run a type checker against nullable and collection annotation mutations:
 
 ```console
