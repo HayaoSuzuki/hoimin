@@ -411,31 +411,36 @@ fn typed_failure_keeps_io_category_and_original_effect_id() {
 }
 
 #[test]
-fn reset_failure_discards_worker_and_allows_recreate_under_same_reservation() {
+fn reset_keeps_worker_and_explicit_checkpoint_detects_original_change() {
     let project = tempfile::tempdir().unwrap();
     let root = Utf8Path::from_path(project.path()).unwrap();
     write(root, "pkg/a.py", b"original\n");
     let mut handler = handler(root, 1);
     let (_ledger, grant) = preflight_and_grant(&mut handler, 9);
-    let create = grant.create_worker(EffectId(121), 0).unwrap();
-    handler.handle_create_worker(create.clone()).unwrap();
+    handler
+        .handle_create_worker(grant.create_worker(EffectId(121), 0).unwrap())
+        .unwrap();
     write(root, "pkg/a.py", b"changed!\n");
 
-    let failed = handler
+    handler
         .handle_reset_worker(ResetWorker {
             id: EffectId(122),
             worker: 0,
         })
-        .unwrap_err();
+        .unwrap();
 
+    assert!(handler.worker(0).is_some());
+    let failed = handler
+        .handle_verify_originals(VerifyOriginals {
+            id: EffectId(123),
+            checkpoint: IntegrityCheckpoint::PreFinalReport,
+        })
+        .unwrap_err();
+    assert_eq!(failed.id, EffectId(123));
     assert!(matches!(
         failed.failure,
         EffectFailure::OriginalChanged { .. }
     ));
-    assert!(handler.worker(0).is_none());
-    write(root, "pkg/a.py", b"original\n");
-    handler.handle_create_worker(create).unwrap();
-    assert!(handler.worker(0).is_some());
 }
 
 #[test]

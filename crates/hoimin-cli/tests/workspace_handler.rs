@@ -770,16 +770,18 @@ fn dropping_a_worker_removes_read_only_files() {
 }
 
 #[test]
-fn detects_original_change() {
+fn reset_restores_the_private_snapshot_after_original_change() {
     let project = FixtureProject::new();
     let mut worker = create_worker(project.root());
     fs::write(project.root().join("pkg/a.py"), b"changed outside\n").unwrap();
+    worker.write("pkg/a.py", b"mutated\n").unwrap();
 
+    worker.reset().unwrap();
+
+    assert_eq!(worker.read("pkg/a.py").unwrap(), b"original\n");
     assert_eq!(
-        worker.reset().unwrap_err(),
-        WorkspaceError::OriginalChanged {
-            path: Utf8PathBuf::from("pkg/a.py")
-        }
+        fs::read(project.root().join("pkg/a.py")).unwrap(),
+        b"changed outside\n"
     );
 }
 
