@@ -24,7 +24,9 @@ use crate::resource::PortableBackend;
 use crate::resource::ResourceBackend;
 use crate::session::SessionDispatcher;
 use crate::target::TargetHandler;
-use crate::workspace::{CopyOptions, WorkspaceHandler, WorkspaceManifest};
+use crate::workspace::{
+    CopyOptions, WorkspaceHandler, WorkspaceManifest, WorkspaceTask, WorkspaceTaskCompletion,
+};
 
 #[derive(Clone, Debug)]
 pub struct RunControl {
@@ -98,6 +100,144 @@ struct ShellCompletion {
     event: RunEvent,
     process_task: bool,
     process: Option<(u32, bool)>,
+}
+
+enum BlockingEffect {
+    Workspace(WorkspaceTask),
+    Candidate(hoimin_core::ReadCandidate),
+}
+
+enum BlockingEffectCompletion {
+    Workspace(WorkspaceTaskCompletion),
+    Candidate(RunEvent),
+}
+
+impl BlockingEffect {
+    fn id(&self) -> EffectId {
+        match self {
+            Self::Workspace(task) => task.id(),
+            Self::Candidate(request) => request.id,
+        }
+    }
+
+    fn execute(self) -> BlockingEffectCompletion {
+        match self {
+            Self::Workspace(task) => BlockingEffectCompletion::Workspace(task.execute()),
+            Self::Candidate(request) => {
+                let event = match CandidateStore::replay_one(&request.spool, request.offset) {
+                    Ok(Some((candidate, next_offset))) => {
+                        RunEvent::CandidateLoaded(CandidateLoaded {
+                            id: request.id,
+                            worker: request.worker,
+                            candidate: Some(candidate),
+                            next_offset,
+                        })
+                    }
+                    Ok(None) => RunEvent::CandidateLoaded(CandidateLoaded {
+                        id: request.id,
+                        worker: request.worker,
+                        candidate: None,
+                        next_offset: request.offset,
+                    }),
+                    Err(error) => RunEvent::EffectFailed(EffectFailed::other(
+                        request.id,
+                        "candidate.replay",
+                        error.to_string(),
+                    )),
+                };
+                BlockingEffectCompletion::Candidate(event)
+            }
+        }
+    }
+}
+
+fn is_blocking_io_effect(effect: &RunEffect) -> bool {
+    matches!(
+        effect,
+        RunEffect::CreateWorker(_)
+            | RunEffect::ReadCandidate(_)
+            | RunEffect::ApplyMutation(_)
+            | RunEffect::ResetWorker(_)
+            | RunEffect::VerifyOriginals(_)
+    )
+}
+
+fn prepare_blocking_effect<Stdout, Stderr>(
+    context: &mut ShellContext<Stdout, Stderr>,
+    effect: RunEffect,
+) -> Result<BlockingEffect, RunEvent>
+where
+    Stdout: Write,
+    Stderr: Write,
+{
+    let task = match effect {
+        RunEffect::CreateWorker(request) => context.workspace.prepare_create_task(request),
+        RunEffect::ReadCandidate(request) => return Ok(BlockingEffect::Candidate(request)),
+        RunEffect::ApplyMutation(request) => {
+            let candidate = request.candidate.clone();
+            context
+                .active_candidates
+                .insert(request.worker, candidate.clone());
+            context.workspace.prepare_apply_task(request, candidate)
+        }
+        RunEffect::ResetWorker(request) => context.workspace.prepare_reset_task(request),
+        RunEffect::VerifyOriginals(request) => context.workspace.prepare_verify_task(request),
+        _ => unreachable!("non-blocking effect passed to blocking preparation"),
+    };
+    task.map(BlockingEffect::Workspace)
+        .map_err(RunEvent::EffectFailed)
+}
+
+fn accept_blocking_completion<Stdout, Stderr>(
+    context: &mut ShellContext<Stdout, Stderr>,
+    completion: BlockingEffectCompletion,
+) -> RunEvent
+where
+    Stdout: Write,
+    Stderr: Write,
+{
+    let event = match completion {
+        BlockingEffectCompletion::Workspace(completion) => context
+            .workspace
+            .accept_task_completion(completion)
+            .unwrap_or_else(RunEvent::EffectFailed),
+        BlockingEffectCompletion::Candidate(event) => event,
+    };
+    match &event {
+        RunEvent::CandidateLoaded(value) => {
+            if let Some(candidate) = &value.candidate {
+                context
+                    .active_candidates
+                    .insert(value.worker, candidate.clone());
+            } else {
+                context.active_candidates.remove(&value.worker);
+            }
+        }
+        RunEvent::WorkerReset(value) => {
+            context.active_candidates.remove(&value.worker);
+        }
+        _ => {}
+    }
+    event
+}
+
+async fn execute_blocking_effect<Stdout, Stderr>(
+    context: &mut ShellContext<Stdout, Stderr>,
+    effect: RunEffect,
+) -> RunEvent
+where
+    Stdout: Write,
+    Stderr: Write,
+{
+    let task = match prepare_blocking_effect(context, effect) {
+        Ok(task) => task,
+        Err(event) => return event,
+    };
+    let id = task.id();
+    match run_blocking_io(id, move || task.execute()).await {
+        Ok(completion) => accept_blocking_completion(context, completion),
+        Err(error) => RunEvent::EffectFailed(error),
+    }
 }
 
 fn remaining_budget_observed(
@@ -310,6 +450,9 @@ where
     Stdout: Write,
     Stderr: Write,
 {
+    if is_blocking_io_effect(&effect) {
+        return execute_blocking_effect(context, effect).await;
+    }
     let id = effect.id();
     let result: Result<RunEvent, EffectFailed> = match effect {
         RunEffect::ResolveTargets(request) => match TargetHandler::handle(request).await {
@@ -1566,6 +1709,22 @@ mod tests {
         assert_eq!(observed.remaining, Duration::from_secs(281));
         assert_eq!(expired.id, id);
         assert_eq!(expired.remaining, Duration::ZERO);
+    }
+
+    #[test]
+    fn blocking_effect_classification_separates_filesystem_and_process_work() {
+        let read = RunEffect::ReadCandidate(hoimin_core::ReadCandidate {
+            id: EffectId(31),
+            worker: 0,
+            spool: hoimin_core::CandidateSpoolRef {
+                token: "spool.jsonl".into(),
+                records: 1,
+            },
+            offset: 0,
+        });
+
+        assert!(is_blocking_io_effect(&read));
+        assert!(!is_blocking_io_effect(&process_effect(0)));
     }
 
     #[tokio::test]
