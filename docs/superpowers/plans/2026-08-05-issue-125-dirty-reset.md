@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Reduce each worker reset from two tree walks and four workspace-sized reads to one tree walk, one worker-content pass, and snapshot reads only for files that require restoration.
+**Goal:** Reduce each worker reset from two tree walks and four workspace-sized reads to one tree walk and one exact content pass over both the worker and snapshot.
 
-**Architecture:** Build the expected directory set once, classify the worker tree in one capability-relative traversal, and compare each surviving regular file's BLAKE3 hash and permissions with immutable snapshot metadata. Restore missing or mismatched files from the private disk snapshot; keep the expensive complete postcondition only in test/contracts builds, where invariant verification is explicitly requested.
+**Architecture:** Build the expected directory set once, classify the worker tree in one capability-relative traversal, and read each immutable snapshot file and corresponding worker file exactly once for byte and permission comparison. Restore missing or mismatched files from the bytes already read; keep the expensive complete postcondition only in contracts builds, where invariant verification is explicitly requested.
 
-**Tech Stack:** Rust 2024, BLAKE3, capability-relative filesystem APIs, Cargo workspace tests, existing `contracts` feature.
+**Tech Stack:** Rust 2024, capability-relative filesystem APIs, Cargo workspace tests, existing `contracts` feature.
 
 ## Global Constraints
 
@@ -40,14 +40,14 @@ Create a worker containing a 1 MiB unchanged padding file and a 9-byte target, m
 ```rust
 assert_eq!(metrics.tree_walks, 1);
 assert_eq!(metrics.worker_bytes, 1_048_585);
-assert_eq!(metrics.snapshot_bytes, 9);
+assert_eq!(metrics.snapshot_bytes, 1_048_585);
 ```
 
-The production change that makes this test pass is removal of the second walk/read pass and avoidance of snapshot reads for unchanged files.
+The production change that makes this test pass is removal of the second walk/read pass. Exact byte comparison deliberately reads both sides once so arbitrary same-size writes remain detectable without hash collisions or timestamp assumptions.
 
 - [ ] **Step 3: Run the regression to establish RED**
 
-Run: `cargo test -p hoimin-cli reset_reads_worker_once_and_snapshot_only_for_dirty_files -- --nocapture`
+Run: `cargo test -p hoimin-cli reset_reads_each_snapshot_and_worker_file_once -- --nocapture`
 
 Expected baseline failure: two tree walks, twice the worker bytes, and twice the complete snapshot bytes.
 
@@ -62,31 +62,31 @@ git add crates/hoimin-cli/src/workspace/mod.rs crates/hoimin-cli/src/workspace/r
 git commit -m "test(perf): expose repeated workspace reset reads"
 ```
 
-### Task 2: Store immutable content hashes with snapshot metadata
+### Task 2: Evaluate and reject the snapshot-hash variant
 
 **Files:**
 - Modify: `crates/hoimin-cli/src/workspace/mod.rs`
 - Modify: `crates/hoimin-cli/src/workspace/copy.rs`
 
 **Interfaces:**
-- Consumes: `ManifestEntry::blake3` while `create_disk_snapshot` validates and copies each source file.
-- Produces: `SnapshotFile::new(permissions, blake3)` and a private `blake3: blake3::Hash` field used by reset without reading snapshot contents.
+- Consumes: the existing validated manifest BLAKE3 hash and worker-content hashing during reset.
+- Produces: benchmark evidence deciding whether retained hashes improve the complete reset path.
 
-- [ ] **Step 1: Extend `SnapshotFile` with its validated BLAKE3 hash**
+- [ ] **Step 1: Prototype retained snapshot hashes**
 
-Pass `entry.blake3` into `SnapshotFile::new` only after the copied bytes have already matched the manifest hash.
+Pass `entry.blake3` into `SnapshotFile::new` only after copied bytes have matched the manifest, then compare it with a hash of each worker file during reset.
 
-- [ ] **Step 2: Run snapshot and copy tests**
+- [ ] **Step 2: Benchmark the prototype against the unchanged baseline**
 
-Run: `cargo test -p hoimin-cli workspace::copy --lib`
+Run the same 8 MiB fixture and ten reset cycles in release mode, five times per revision.
 
-Expected: PASS with no public API changes.
+Observed: the hash prototype reduced snapshot reads but regressed the median from 38 ms to 46 ms. Reject it in favor of one exact byte-comparison pass, which measured 22 ms.
 
-- [ ] **Step 3: Commit snapshot metadata**
+- [ ] **Step 3: Remove the rejected hash metadata before integration**
 
 ```bash
 git add crates/hoimin-cli/src/workspace/mod.rs crates/hoimin-cli/src/workspace/copy.rs
-git commit -m "refactor(workspace): retain snapshot content hashes"
+git commit -m "perf(workspace): compare reset contents once"
 ```
 
 ### Task 3: Implement single-pass reset classification and restoration
@@ -96,12 +96,12 @@ git commit -m "refactor(workspace): retain snapshot content hashes"
 - Modify: `crates/hoimin-cli/src/workspace/reset.rs`
 
 **Interfaces:**
-- Consumes: `SnapshotFile::blake3`, permission fingerprint, `WorkerRoot::entries`, and capability-relative file opening.
-- Produces: `WorkerRoot::snapshot_hash_matches(path, expected_hash, expected_permissions) -> Result<bool, WorkspaceError>` and a one-pass `reset_from_snapshot`.
+- Consumes: snapshot bytes, permission fingerprint, `WorkerRoot::entries`, and capability-relative file opening.
+- Produces: one-pass `reset_from_snapshot` using existing exact `WorkerRoot::snapshot_matches` comparison.
 
-- [ ] **Step 1: Add capability-relative hash and permission comparison**
+- [ ] **Step 1: Reuse capability-relative exact content and permission comparison**
 
-Open a regular worker file without following links, read it once, account for the bytes in test metrics, and compare `blake3::hash(&bytes)` plus the permission fingerprint to the snapshot metadata. Preserve Windows reparse handling and Unix `O_NONBLOCK` behavior from `snapshot_matches`.
+Open a regular worker file without following links, read it once, account for the bytes in test metrics, and compare the bytes plus permission fingerprint to the snapshot. Preserve Windows reparse handling and Unix `O_NONBLOCK` behavior from `snapshot_matches`.
 
 - [ ] **Step 2: Precompute required directories**
 
@@ -111,21 +111,21 @@ Build a `BTreeSet<Utf8PathBuf>` containing every non-empty parent of every snaps
 
 In reverse depth order, remove every link/reparse entry, file absent from the snapshot, and directory absent from the required-directory set. Retain a set of existing regular snapshot paths for the restoration loop.
 
-- [ ] **Step 4: Read snapshots only for missing or mismatched files**
+- [ ] **Step 4: Read each snapshot once and reuse its bytes for restoration**
 
-Call `snapshot_hash_matches` first. If it returns true, retain the existing file object. Otherwise read that one snapshot and restore its bytes and permissions.
+Read each snapshot file once. If `snapshot_matches` returns true, retain the existing file object; otherwise restore directly from the already-read bytes and saved permissions.
 
 - [ ] **Step 5: Gate the complete postcondition behind test/contracts builds**
 
-Compile `matches_snapshot` under `#[cfg(any(test, feature = "contracts"))]`, but invoke it automatically only under `#[cfg(feature = "contracts")]`. Return success directly after checked restoration in normal builds.
+Compile `matches_snapshot` under `#[cfg(any(test, feature = "contracts"))]`, but invoke it automatically only under `#[cfg(feature = "contracts")]`. Return success directly after checked restoration in normal builds. Contracts intentionally perform a second complete verification pass.
 
 - [ ] **Step 6: Run GREEN and focused reset coverage**
 
-Run: `cargo test -p hoimin-cli reset_reads_worker_once_and_snapshot_only_for_dirty_files -- --nocapture`
+Run: `cargo test -p hoimin-cli reset_reads_each_snapshot_and_worker_file_once -- --nocapture`
 
 Run: `cargo test -p hoimin-cli --test workspace_handler && cargo test -p hoimin-cli --test workspace_recovery && cargo test -p hoimin-cli workspace::reset --lib`
 
-Expected: all PASS; the metrics test reports one walk, one worker pass, and only dirty snapshot bytes.
+Expected: all PASS; the metrics test reports one walk, one worker pass, and one snapshot pass.
 
 - [ ] **Step 7: Commit the implementation**
 

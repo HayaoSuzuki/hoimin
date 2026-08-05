@@ -66,16 +66,14 @@ impl WorkerWorkspace {
         }
 
         for (path, snapshot) in &self.snapshot.files {
+            let bytes = self.snapshot.read(path)?;
             if existing_files.contains(path)
-                && self.root.snapshot_hash_matches(
-                    path,
-                    snapshot.blake3,
-                    snapshot.permission_fingerprint,
-                )?
+                && self
+                    .root
+                    .snapshot_matches(path, &bytes, snapshot.permission_fingerprint)?
             {
                 continue;
             }
-            let bytes = self.snapshot.read(path)?;
             self.root
                 .restore(path, &bytes, snapshot.permissions.clone())?;
         }
@@ -247,7 +245,7 @@ mod tests {
     }
 
     #[test]
-    fn reset_reads_worker_once_and_snapshot_only_for_dirty_files() {
+    fn reset_reads_each_snapshot_and_worker_file_once() {
         const PADDING_BYTES: usize = 1024 * 1024;
         let (_project, mut worker, _snapshot_permissions) =
             changed_worker_with_padding(PADDING_BYTES);
@@ -255,19 +253,26 @@ mod tests {
 
         worker.reset().unwrap();
 
+        let fixture_bytes = (PADDING_BYTES + b"original\n".len()) as u64;
+        let metrics = current_reset_io_metrics();
         #[cfg(not(feature = "contracts"))]
-        let expected = ResetIoMetrics {
-            tree_walks: 1,
-            worker_bytes: (PADDING_BYTES + b"original\n".len()) as u64,
-            snapshot_bytes: b"original\n".len() as u64,
-        };
+        assert_eq!(
+            metrics,
+            ResetIoMetrics {
+                tree_walks: 1,
+                worker_bytes: fixture_bytes,
+                snapshot_bytes: fixture_bytes,
+            }
+        );
         #[cfg(feature = "contracts")]
-        let expected = ResetIoMetrics {
-            tree_walks: 2,
-            worker_bytes: (2 * (PADDING_BYTES + b"original\n".len())) as u64,
-            snapshot_bytes: (PADDING_BYTES + 2 * b"original\n".len()) as u64,
-        };
-        assert_eq!(current_reset_io_metrics(), expected);
+        assert_eq!(
+            metrics,
+            ResetIoMetrics {
+                tree_walks: 2,
+                worker_bytes: 2 * fixture_bytes,
+                snapshot_bytes: 2 * fixture_bytes,
+            }
+        );
     }
 
     #[test]
