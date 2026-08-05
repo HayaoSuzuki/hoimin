@@ -248,9 +248,14 @@ fn read_one_bounded(
             actual: candidate.sequence,
         });
     }
+    let next_cursor = advance_cursor(cursor, read as u64)?;
+    Ok(Some((candidate, next_cursor)))
+}
+
+fn advance_cursor(cursor: CandidateCursor, read: u64) -> Result<CandidateCursor, StoreError> {
     let next_offset = cursor
         .offset
-        .checked_add(read as u64)
+        .checked_add(read)
         .ok_or(StoreError::InvalidOffset {
             offset: cursor.offset,
         })?;
@@ -262,13 +267,10 @@ fn read_one_bounded(
                 expected: cursor.expected_sequence,
                 actual: cursor.expected_sequence,
             })?;
-    Ok(Some((
-        candidate,
-        CandidateCursor {
-            offset: next_offset,
-            expected_sequence: next_sequence,
-        },
-    )))
+    Ok(CandidateCursor {
+        offset: next_offset,
+        expected_sequence: next_sequence,
+    })
 }
 
 fn io_error(error: &std::io::Error) -> StoreError {
@@ -488,6 +490,33 @@ mod tests {
             .unwrap();
 
         assert_eq!(replayed.sequence, 2);
+    }
+
+    #[test]
+    fn cursor_advancement_rejects_integer_overflow() {
+        assert!(matches!(
+            advance_cursor(
+                CandidateCursor {
+                    offset: u64::MAX,
+                    expected_sequence: 1,
+                },
+                1,
+            ),
+            Err(StoreError::InvalidOffset { offset: u64::MAX })
+        ));
+        assert!(matches!(
+            advance_cursor(
+                CandidateCursor {
+                    offset: 0,
+                    expected_sequence: u64::MAX,
+                },
+                1,
+            ),
+            Err(StoreError::InvalidSequence {
+                expected: u64::MAX,
+                actual: u64::MAX,
+            })
+        ));
     }
 
     #[test]

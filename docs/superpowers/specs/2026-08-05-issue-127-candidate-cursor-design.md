@@ -30,6 +30,8 @@ Introduce `CandidateCursor` in `hoimin-core` with an `offset: u64` and `expected
 
 The existing `RunState::candidate_offset` query remains available and projects the cursor's offset so callers that only observe progress do not need to change. No cursor is written into the candidate spool, and the spool's line-delimited JSON format remains unchanged.
 
+`ReadCandidate` and `CandidateLoaded` are internal orchestration payloads rather than persisted or externally supported wire formats. Their Serde field shape may change with this refactoring; no legacy field alias or migration is required.
+
 ## Validation and Error Handling
 
 Replay retains the existing one-byte record-boundary check: a nonzero cursor offset must point immediately after a newline. An offset beyond the file length remains `StoreError::InvalidOffset`.
