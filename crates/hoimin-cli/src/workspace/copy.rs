@@ -29,7 +29,69 @@ pub struct WorkspacePlan {
     allowance: Arc<CopyAllowance>,
     state: Arc<Mutex<PlanState>>,
     #[cfg(test)]
+    materialization_metrics: Arc<MaterializationIoMetrics>,
+    #[cfg(test)]
     initial_grant_hook: Option<Arc<InitialGrantHook>>,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct MaterializationIoSnapshot {
+    original_manifest_builds: u64,
+    original_bytes: u64,
+    original_hash_bytes: u64,
+    snapshot_bytes: u64,
+    snapshot_hash_bytes: u64,
+}
+
+#[cfg(test)]
+#[derive(Debug, Default)]
+struct MaterializationIoMetrics {
+    original_manifest_builds: AtomicU64,
+    original_bytes: AtomicU64,
+    original_hash_bytes: AtomicU64,
+    snapshot_bytes: AtomicU64,
+    snapshot_hash_bytes: AtomicU64,
+}
+
+#[cfg(test)]
+impl MaterializationIoMetrics {
+    fn record_original_manifest(&self, bytes: u64) {
+        self.original_manifest_builds
+            .fetch_add(1, Ordering::Relaxed);
+        self.original_bytes.fetch_add(bytes, Ordering::Relaxed);
+        self.original_hash_bytes.fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    fn record_original_read(&self, bytes: usize) {
+        self.original_bytes
+            .fetch_add(u64::try_from(bytes).unwrap(), Ordering::Relaxed);
+    }
+
+    fn record_original_hash(&self, bytes: usize) {
+        self.original_hash_bytes
+            .fetch_add(u64::try_from(bytes).unwrap(), Ordering::Relaxed);
+    }
+
+    fn record_snapshot_read(&self, bytes: usize) {
+        self.snapshot_bytes
+            .fetch_add(u64::try_from(bytes).unwrap(), Ordering::Relaxed);
+    }
+
+    fn record_snapshot_hash(&self, bytes: usize) {
+        self.snapshot_hash_bytes
+            .fetch_add(u64::try_from(bytes).unwrap(), Ordering::Relaxed);
+    }
+
+    fn snapshot(&self) -> MaterializationIoSnapshot {
+        MaterializationIoSnapshot {
+            original_manifest_builds: self.original_manifest_builds.load(Ordering::Relaxed),
+            original_bytes: self.original_bytes.load(Ordering::Relaxed),
+            original_hash_bytes: self.original_hash_bytes.load(Ordering::Relaxed),
+            snapshot_bytes: self.snapshot_bytes.load(Ordering::Relaxed),
+            snapshot_hash_bytes: self.snapshot_hash_bytes.load(Ordering::Relaxed),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -221,6 +283,8 @@ impl WorkspacePlan {
             }),
             state: Arc::new(Mutex::new(PlanState::default())),
             #[cfg(test)]
+            materialization_metrics: Arc::new(MaterializationIoMetrics::default()),
+            #[cfg(test)]
             initial_grant_hook: None,
         })
     }
@@ -264,6 +328,11 @@ impl WorkspacePlan {
             .unwrap_or_default()
     }
 
+    #[cfg(test)]
+    fn materialization_io_snapshot(&self) -> MaterializationIoSnapshot {
+        self.materialization_metrics.snapshot()
+    }
+
     #[must_use]
     pub fn reservation_id(&self) -> Option<ReservationId> {
         self.state
@@ -279,6 +348,9 @@ impl WorkspacePlan {
     /// Returns an error if the source cannot be scanned or its contents changed.
     pub fn verify_originals(&self) -> Result<(), WorkspaceError> {
         let (current, _) = build_manifest(&self.original_root, &self.options)?;
+        #[cfg(test)]
+        self.materialization_metrics
+            .record_original_manifest(current.logical_bytes());
         if self.manifest.content_matches(&current) {
             Ok(())
         } else {
@@ -375,12 +447,18 @@ impl WorkspacePlan {
         let result = (|| {
             for entry in self.manifest.entries() {
                 let bytes = self.snapshot.read(&entry.path)?;
+                #[cfg(test)]
+                self.materialization_metrics
+                    .record_snapshot_read(bytes.len());
                 let amount =
                     u64::try_from(bytes.len()).map_err(|_| WorkspaceError::CopySizeOverflow)?;
                 self.allowance.charge(amount)?;
                 charged = charged
                     .checked_add(amount)
                     .ok_or(WorkspaceError::CopySizeOverflow)?;
+                #[cfg(test)]
+                self.materialization_metrics
+                    .record_snapshot_hash(bytes.len());
                 if amount != entry.size || blake3::hash(&bytes) != entry.blake3 {
                     return Err(WorkspaceError::WorkspaceRestore {
                         path: entry.path.clone(),
@@ -432,12 +510,18 @@ impl WorkspacePlan {
                 let source = self.original_root.join(&entry.path);
                 let bytes = fs::read(&source)
                     .map_err(|error| WorkspaceError::io("read original", &entry.path, error))?;
+                #[cfg(test)]
+                self.materialization_metrics
+                    .record_original_read(bytes.len());
                 let amount =
                     u64::try_from(bytes.len()).map_err(|_| WorkspaceError::CopySizeOverflow)?;
                 self.allowance.charge(amount)?;
                 charged = charged
                     .checked_add(amount)
                     .ok_or(WorkspaceError::CopySizeOverflow)?;
+                #[cfg(test)]
+                self.materialization_metrics
+                    .record_original_hash(bytes.len());
                 if amount != entry.size || blake3::hash(&bytes) != entry.blake3 {
                     return Err(WorkspaceError::OriginalChanged {
                         path: entry.path.clone(),
@@ -519,7 +603,7 @@ mod tests {
     use std::sync::Barrier;
     use std::sync::mpsc;
     use std::thread;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use hoimin_core::{BudgetLedger, RunBudgets, reserve_workspace_copy};
 
@@ -527,6 +611,99 @@ mod tests {
     use crate::workspace::ManifestEntry;
 
     use super::*;
+
+    fn plan_with_padding(
+        workers: u32,
+        padding_bytes: usize,
+    ) -> (
+        tempfile::TempDir,
+        WorkspacePlan,
+        hoimin_core::WorkspaceCopyGrant,
+        u64,
+    ) {
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("target.py"), b"original\n").unwrap();
+        fs::write(source.path().join("padding.bin"), vec![b'x'; padding_bytes]).unwrap();
+        let source_root = Utf8Path::from_path(source.path()).unwrap();
+        let plan =
+            WorkspacePlan::preflight(source_root, EffectId(7), workers, CopyOptions::default())
+                .unwrap();
+        let completed = plan.completed();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: completed.aggregate_logical_bytes,
+            processes: 1,
+        });
+        let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+        (
+            source,
+            plan,
+            grant,
+            u64::try_from(padding_bytes + b"original\n".len()).unwrap(),
+        )
+    }
+
+    #[test]
+    fn materialization_io_counts_full_tree_work() {
+        const WORKERS: u32 = 2;
+        const PADDING_BYTES: usize = 1024 * 1024;
+        let (_source, plan, grant, fixture_bytes) = plan_with_padding(WORKERS, PADDING_BYTES);
+
+        let first = plan
+            .create_worker(&grant.create_worker(EffectId(8), 0).unwrap())
+            .unwrap();
+        let second = plan
+            .create_worker(&grant.create_worker(EffectId(9), 1).unwrap())
+            .unwrap();
+        plan.verify_originals().unwrap();
+
+        assert_eq!(
+            plan.materialization_io_snapshot(),
+            MaterializationIoSnapshot {
+                original_manifest_builds: 5,
+                original_bytes: 7 * fixture_bytes,
+                original_hash_bytes: 7 * fixture_bytes,
+                snapshot_bytes: 2 * fixture_bytes,
+                snapshot_hash_bytes: 2 * fixture_bytes,
+            }
+        );
+        assert_eq!(plan.observed_copy_bytes(), 2 * fixture_bytes);
+        drop((first, second));
+    }
+
+    #[test]
+    #[ignore = "manual before/after performance evidence"]
+    fn benchmark_worker_materialization_io() {
+        const WORKERS: u32 = 8;
+        const PADDING_BYTES: usize = 8 * 1024 * 1024;
+        let (_source, plan, grant, fixture_bytes) = plan_with_padding(WORKERS, PADDING_BYTES);
+        let started = Instant::now();
+
+        let materialized = (0..WORKERS)
+            .map(|worker| {
+                plan.create_worker(
+                    &grant
+                        .create_worker(EffectId(u64::from(worker) + 8), worker)
+                        .unwrap(),
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        plan.verify_originals().unwrap();
+
+        let metrics = plan.materialization_io_snapshot();
+        eprintln!(
+            "workers={WORKERS} fixture_bytes={fixture_bytes} original_manifest_builds={} original_bytes={} original_hash_bytes={} snapshot_bytes={} snapshot_hash_bytes={} copied_bytes={} elapsed_ms={}",
+            metrics.original_manifest_builds,
+            metrics.original_bytes,
+            metrics.original_hash_bytes,
+            metrics.snapshot_bytes,
+            metrics.snapshot_hash_bytes,
+            plan.observed_copy_bytes(),
+            started.elapsed().as_millis(),
+        );
+        drop(materialized);
+    }
 
     #[cfg(windows)]
     #[test]
