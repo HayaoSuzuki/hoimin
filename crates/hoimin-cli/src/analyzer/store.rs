@@ -2,7 +2,9 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
-use hoimin_core::{CandidateSpoolRef, ContractInvariant, MutationCandidate, contract_ensure};
+use hoimin_core::{
+    CandidateCursor, CandidateSpoolRef, ContractInvariant, MutationCandidate, contract_ensure,
+};
 use tempfile::NamedTempFile;
 use thiserror::Error;
 
@@ -148,29 +150,38 @@ impl CandidateStore {
     /// record is oversized or corrupt, or the spool ends before its declared record count.
     pub fn replay_one(
         reference: &CandidateSpoolRef,
-        offset: u64,
-    ) -> Result<Option<(MutationCandidate, u64)>, StoreError> {
+        cursor: CandidateCursor,
+    ) -> Result<Option<(MutationCandidate, CandidateCursor)>, StoreError> {
+        if cursor.expected_sequence == 0 {
+            return Err(StoreError::InvalidSequence {
+                expected: 1,
+                actual: 0,
+            });
+        }
         let mut file = OpenOptions::new()
             .read(true)
             .open(&reference.token)
             .map_err(|error| io_error(&error))?;
         let length = file.metadata().map_err(|error| io_error(&error))?.len();
-        if offset > length {
-            return Err(StoreError::InvalidOffset { offset });
+        if cursor.offset > length {
+            return Err(StoreError::InvalidOffset {
+                offset: cursor.offset,
+            });
         }
-        if offset != 0 {
-            file.seek(SeekFrom::Start(offset - 1))
+        if cursor.offset != 0 {
+            file.seek(SeekFrom::Start(cursor.offset - 1))
                 .map_err(|error| io_error(&error))?;
             let mut previous = [0_u8; 1];
             file.read_exact(&mut previous)
                 .map_err(|error| io_error(&error))?;
             if previous[0] != b'\n' {
-                return Err(StoreError::InvalidOffset { offset });
+                return Err(StoreError::InvalidOffset {
+                    offset: cursor.offset,
+                });
             }
         }
-        let expected_sequence = expected_sequence_at(&mut file, offset)?;
-        if offset == length {
-            let actual_records = expected_sequence.saturating_sub(1);
+        if cursor.offset == length {
+            let actual_records = cursor.expected_sequence - 1;
             return match actual_records.cmp(&reference.records) {
                 std::cmp::Ordering::Less => Err(StoreError::UnexpectedEof {
                     expected_records: reference.records,
@@ -183,9 +194,9 @@ impl CandidateStore {
                 }),
             };
         }
-        file.seek(SeekFrom::Start(offset))
+        file.seek(SeekFrom::Start(cursor.offset))
             .map_err(|error| io_error(&error))?;
-        read_one_bounded(file, reference, offset, expected_sequence)
+        read_one_bounded(file, reference, cursor)
     }
 }
 
@@ -198,9 +209,8 @@ impl ContractInvariant for CandidateStore {
 fn read_one_bounded(
     file: File,
     reference: &CandidateSpoolRef,
-    offset: u64,
-    expected_sequence: u64,
-) -> Result<Option<(MutationCandidate, u64)>, StoreError> {
+    cursor: CandidateCursor,
+) -> Result<Option<(MutationCandidate, CandidateCursor)>, StoreError> {
     let mut line = Vec::new();
     let mut reader = BufReader::new(file).take(MAX_SPOOL_RECORD_BYTES + 1);
     let read = reader
@@ -209,7 +219,7 @@ fn read_one_bounded(
     if read == 0 {
         return Err(StoreError::UnexpectedEof {
             expected_records: reference.records,
-            actual_records: expected_sequence.saturating_sub(1),
+            actual_records: cursor.expected_sequence - 1,
         });
     }
     if read as u64 > MAX_SPOOL_RECORD_BYTES {
@@ -220,15 +230,15 @@ fn read_one_bounded(
     if line.last() != Some(&b'\n') {
         return Err(StoreError::UnexpectedEof {
             expected_records: reference.records,
-            actual_records: expected_sequence.saturating_sub(1),
+            actual_records: cursor.expected_sequence - 1,
         });
     }
     line.pop();
     let candidate: MutationCandidate = serde_json::from_slice(&line)
         .map_err(|error| StoreError::CorruptRecord(error.to_string()))?;
-    if candidate.sequence != expected_sequence {
+    if candidate.sequence != cursor.expected_sequence {
         return Err(StoreError::InvalidSequence {
-            expected: expected_sequence,
+            expected: cursor.expected_sequence,
             actual: candidate.sequence,
         });
     }
@@ -238,44 +248,27 @@ fn read_one_bounded(
             actual: candidate.sequence,
         });
     }
-    let next = offset
+    let next_offset = cursor
+        .offset
         .checked_add(read as u64)
-        .ok_or(StoreError::InvalidOffset { offset })?;
-    Ok(Some((candidate, next)))
-}
-
-fn expected_sequence_at(file: &mut File, offset: u64) -> Result<u64, StoreError> {
-    if offset == 0 {
-        return Ok(1);
-    }
-    let window_length = offset.min(MAX_SPOOL_RECORD_BYTES + 1);
-    let window_start = offset - window_length;
-    file.seek(SeekFrom::Start(window_start))
-        .map_err(|error| io_error(&error))?;
-    let mut window = vec![0_u8; window_length as usize];
-    file.read_exact(&mut window)
-        .map_err(|error| io_error(&error))?;
-    let previous_body = window
-        .strip_suffix(b"\n")
-        .ok_or(StoreError::InvalidOffset { offset })?;
-    let record_start = previous_body
-        .iter()
-        .rposition(|byte| *byte == b'\n')
-        .map_or(0, |index| index + 1);
-    if window_start != 0 && record_start == 0 {
-        return Err(StoreError::RecordTooLarge {
-            limit: MAX_SPOOL_RECORD_BYTES,
-        });
-    }
-    let previous: MutationCandidate = serde_json::from_slice(&previous_body[record_start..])
-        .map_err(|error| StoreError::CorruptRecord(error.to_string()))?;
-    previous
-        .sequence
-        .checked_add(1)
-        .ok_or(StoreError::InvalidSequence {
-            expected: previous.sequence,
-            actual: previous.sequence,
-        })
+        .ok_or(StoreError::InvalidOffset {
+            offset: cursor.offset,
+        })?;
+    let next_sequence =
+        cursor
+            .expected_sequence
+            .checked_add(1)
+            .ok_or(StoreError::InvalidSequence {
+                expected: cursor.expected_sequence,
+                actual: cursor.expected_sequence,
+            })?;
+    Ok(Some((
+        candidate,
+        CandidateCursor {
+            offset: next_offset,
+            expected_sequence: next_sequence,
+        },
+    )))
 }
 
 fn io_error(error: &std::io::Error) -> StoreError {
@@ -305,7 +298,7 @@ impl Write for CountingWriter {
 mod tests {
     use super::*;
     use camino::Utf8PathBuf;
-    use hoimin_core::ByteSpan;
+    use hoimin_core::{ByteSpan, CandidateCursor};
     use proptest::prelude::*;
 
     #[derive(Clone, Debug)]
@@ -427,13 +420,16 @@ mod tests {
         FinishedSpool(store.finish().unwrap())
     }
 
-    fn replay_from(reference: &CandidateSpoolRef, mut offset: u64) -> Vec<MutationCandidate> {
+    fn replay_from(
+        reference: &CandidateSpoolRef,
+        mut cursor: CandidateCursor,
+    ) -> Vec<MutationCandidate> {
         let mut replayed = Vec::new();
-        while let Some((candidate, next_offset)) =
-            CandidateStore::replay_one(reference, offset).unwrap()
+        while let Some((candidate, next_cursor)) =
+            CandidateStore::replay_one(reference, cursor).unwrap()
         {
             replayed.push(candidate);
-            offset = next_offset;
+            cursor = next_cursor;
         }
         replayed
     }
@@ -446,29 +442,52 @@ mod tests {
             candidates in ordered_candidates()
         ) {
             let spool = finish_candidates(&candidates);
-            let mut offset = 0;
+            let mut cursor = CandidateCursor::START;
             let mut replayed = Vec::new();
-            let mut observed_offsets = Vec::new();
+            let mut observed_cursors = Vec::new();
 
-            while let Some((candidate, next_offset)) =
-                CandidateStore::replay_one(&spool.0, offset).unwrap()
+            while let Some((candidate, next_cursor)) =
+                CandidateStore::replay_one(&spool.0, cursor).unwrap()
             {
                 replayed.push(candidate);
-                offset = next_offset;
+                cursor = next_cursor;
                 if replayed.len() < candidates.len() {
-                    observed_offsets.push((replayed.len(), next_offset));
+                    observed_cursors.push((replayed.len(), next_cursor));
                 }
             }
 
             prop_assert_eq!(&replayed, &candidates);
-            prop_assert_eq!(CandidateStore::replay_one(&spool.0, offset).unwrap(), None);
-            for (index, observed_offset) in observed_offsets {
+            prop_assert_eq!(CandidateStore::replay_one(&spool.0, cursor).unwrap(), None);
+            for (index, observed_cursor) in observed_cursors {
                 prop_assert_eq!(
-                    replay_from(&spool.0, observed_offset),
+                    replay_from(&spool.0, observed_cursor),
                     candidates[index..].to_vec()
                 );
             }
         }
+    }
+
+    #[test]
+    fn replay_does_not_parse_the_previous_record() {
+        let mut first = candidate_with_payload_len(512);
+        first.id = "first".to_owned();
+        let mut second = candidate_with_payload_len(512);
+        second.id = "second".to_owned();
+        second.sequence = 2;
+        let spool = finish_candidates(&[first, second]);
+
+        let (_, second_cursor) = CandidateStore::replay_one(&spool.0, CandidateCursor::START)
+            .unwrap()
+            .unwrap();
+        let mut bytes = std::fs::read(&spool.0.token).unwrap();
+        bytes[..usize::try_from(second_cursor.offset - 1).unwrap()].fill(b'!');
+        std::fs::write(&spool.0.token, bytes).unwrap();
+
+        let (replayed, _) = CandidateStore::replay_one(&spool.0, second_cursor)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(replayed.sequence, 2);
     }
 
     #[test]
