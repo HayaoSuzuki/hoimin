@@ -53,7 +53,7 @@ This is limited to Issue #128 worker materialization. It does not optimize prefl
 
 ## Verification
 
-Executed fresh on 2026-08-05 against the final implementation through `5f17507`:
+The implementation matrix was executed fresh on 2026-08-05 against `5f17507`, before this documentation was committed:
 
 ```console
 cargo fmt --check
@@ -62,9 +62,16 @@ cargo test -p hoimin-cli materialization -- --nocapture
 cargo test --workspace
 cargo test --workspace --all-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
+```
+
+Every implementation-matrix command exited 0. The focused core suite passed 66 tests. The focused materialization command passed the deterministic I/O test and the handler-level post-materialization original-change test; its manual benchmark remained ignored. The normal workspace run passed 752 tests with 6 ignored, and the all-features workspace run passed 743 tests with 6 ignored. Clippy completed with warnings denied. These cargo tests were not rerun after the documentation commit.
+
+The complete committed branch was then checked separately:
+
+```console
 git diff --check origin/main...HEAD
 ```
 
-Every command exited 0. The focused core suite passed 66 tests. The focused materialization command passed the deterministic I/O test and the handler-level post-materialization original-change test; its manual benchmark remained ignored. The normal workspace run passed 752 tests with 6 ignored, and the all-features workspace run passed 743 tests with 6 ignored. Clippy completed with warnings denied, and the branch diff check reported no whitespace errors.
+This command exited 0 with no output after the original documentation commit at `2a26762`. It was also rerun after the subsequent provenance correction; that current-HEAD command and commit are recorded in the Task 4 execution report.
 
 The worktree-local `.venv` symlink used by tests remained untracked and was not committed.
