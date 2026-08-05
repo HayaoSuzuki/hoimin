@@ -493,10 +493,13 @@ where
                 Err(error) => Err(error),
             }
         }
-        RunEffect::CreateWorker(request) => context
-            .workspace
-            .handle_create_worker(request)
-            .map(RunEvent::WorkerCreated),
+        RunEffect::CreateWorker(_)
+        | RunEffect::ReadCandidate(_)
+        | RunEffect::ApplyMutation(_)
+        | RunEffect::ResetWorker(_)
+        | RunEffect::VerifyOriginals(_) => {
+            unreachable!("blocking effect bypassed owned dispatch")
+        }
         RunEffect::RunBaseline(request) => {
             match worker_process_request(context, id, request, cancellation.clone(), None) {
                 Ok(request) => context
@@ -517,45 +520,6 @@ where
             )
             .await
             .map(RunEvent::AnalysisFinished),
-        RunEffect::ReadCandidate(request) => {
-            match CandidateStore::replay_one(&request.spool, request.offset) {
-                Ok(Some((candidate, next_offset))) => {
-                    context
-                        .active_candidates
-                        .insert(request.worker, candidate.clone());
-                    Ok(RunEvent::CandidateLoaded(CandidateLoaded {
-                        id: request.id,
-                        worker: request.worker,
-                        candidate: Some(candidate),
-                        next_offset,
-                    }))
-                }
-                Ok(None) => {
-                    context.active_candidates.remove(&request.worker);
-                    Ok(RunEvent::CandidateLoaded(CandidateLoaded {
-                        id: request.id,
-                        worker: request.worker,
-                        candidate: None,
-                        next_offset: request.offset,
-                    }))
-                }
-                Err(error) => Err(EffectFailed::other(
-                    id,
-                    "candidate.replay",
-                    error.to_string(),
-                )),
-            }
-        }
-        RunEffect::ApplyMutation(request) => {
-            let candidate = request.candidate.clone();
-            context
-                .active_candidates
-                .insert(request.worker, candidate.clone());
-            context
-                .workspace
-                .handle_apply_mutation(request, &candidate)
-                .map(RunEvent::MutationApplied)
-        }
         RunEffect::RunMutant(request) => {
             match worker_process_request(context, id, request, cancellation.clone(), None) {
                 Ok(request) => context
@@ -566,21 +530,6 @@ where
                 Err(error) => Err(error),
             }
         }
-        RunEffect::ResetWorker(request) => {
-            let worker = request.worker;
-            let result = context
-                .workspace
-                .handle_reset_worker(request)
-                .map(RunEvent::WorkerReset);
-            if result.is_ok() {
-                context.active_candidates.remove(&worker);
-            }
-            result
-        }
-        RunEffect::VerifyOriginals(request) => context
-            .workspace
-            .handle_verify_originals(request)
-            .map(RunEvent::OriginalsVerified),
         RunEffect::ObserveRemainingBudget(_) => Err(EffectFailed::other(
             id,
             "shell.budget.scheduler",
@@ -1969,6 +1918,51 @@ mod tests {
         while let Some(result) = tasks.join_next().await {
             result.unwrap();
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore = "manual blocking-I/O scheduler performance evidence"]
+    async fn benchmark_blocking_io_dispatch() {
+        const OPERATIONS: usize = 4;
+        const OPERATION_MILLIS: u64 = 50;
+        let serial_started = std::time::Instant::now();
+        for sequence in 0..OPERATIONS {
+            run_blocking_io(EffectId(u64::try_from(sequence).unwrap() + 1), || {
+                std::thread::sleep(Duration::from_millis(OPERATION_MILLIS));
+            })
+            .await
+            .unwrap();
+        }
+        let serial_millis = serial_started.elapsed().as_millis();
+
+        let (completion_tx, mut completion_rx) = tokio::sync::mpsc::channel(OPERATIONS);
+        let mut tasks = JoinSet::new();
+        let concurrent_started = std::time::Instant::now();
+        for sequence in 0..OPERATIONS {
+            spawn_blocking_effect(
+                BlockingEffect::TestOperation {
+                    id: EffectId(u64::try_from(sequence).unwrap() + 1),
+                    operation: Box::new(|| {
+                        std::thread::sleep(Duration::from_millis(OPERATION_MILLIS));
+                        RunEvent::CancellationRequested
+                    }),
+                },
+                completion_tx.clone(),
+                &mut tasks,
+            );
+        }
+        drop(completion_tx);
+        for _ in 0..OPERATIONS {
+            completion_rx.recv().await.unwrap();
+        }
+        while let Some(result) = tasks.join_next().await {
+            result.unwrap();
+        }
+        let concurrent_millis = concurrent_started.elapsed().as_millis();
+
+        println!(
+            "operations={OPERATIONS} operation_ms={OPERATION_MILLIS} serial_ms={serial_millis} concurrent_ms={concurrent_millis} max_io_in_flight={OPERATIONS}"
+        );
     }
 
     #[tokio::test]
