@@ -5,9 +5,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 #[cfg(test)]
-use std::sync::Barrier;
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, SyncSender, channel};
 #[cfg(test)]
-use std::sync::mpsc::{Receiver, SyncSender};
+use std::time::Duration;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{CreateWorker, EffectId, PreflightCompleted, ReservationId};
@@ -100,8 +100,19 @@ struct InitialGrantHook {
 #[derive(Clone)]
 pub(crate) struct MaterializationPause {
     worker: u32,
-    entered: Arc<Barrier>,
-    release: Arc<Barrier>,
+    entered: Sender<()>,
+    release: Arc<Mutex<Receiver<()>>>,
+}
+
+#[cfg(test)]
+pub(crate) struct MaterializationPauseController {
+    entered: Receiver<()>,
+    release: Option<Sender<()>>,
+}
+
+#[cfg(test)]
+pub(crate) struct MaterializationRelease {
+    release: Option<Sender<()>>,
 }
 
 #[cfg(test)]
@@ -116,26 +127,56 @@ impl std::fmt::Debug for MaterializationPause {
 
 #[cfg(test)]
 impl MaterializationPause {
-    pub(crate) fn new(worker: u32) -> Self {
-        Self {
-            worker,
-            entered: Arc::new(Barrier::new(2)),
-            release: Arc::new(Barrier::new(2)),
-        }
-    }
-
-    pub(crate) fn wait_until_entered(&self) {
-        self.entered.wait();
-    }
-
-    pub(crate) fn release(&self) {
-        self.release.wait();
+    pub(crate) fn new(worker: u32) -> (Self, MaterializationPauseController) {
+        let (entered, entered_receiver) = channel();
+        let (release, release_receiver) = channel();
+        (
+            Self {
+                worker,
+                entered,
+                release: Arc::new(Mutex::new(release_receiver)),
+            },
+            MaterializationPauseController {
+                entered: entered_receiver,
+                release: Some(release),
+            },
+        )
     }
 
     fn pause(&self, worker: u32) {
-        if self.worker == worker {
-            self.wait_until_entered();
-            self.release();
+        if self.worker != worker || self.entered.send(()).is_err() {
+            return;
+        }
+        let release = self
+            .release
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _ = release.recv();
+    }
+}
+
+#[cfg(test)]
+impl MaterializationPauseController {
+    pub(crate) fn wait_until_entered(&self, timeout: Duration) -> Result<(), RecvTimeoutError> {
+        self.entered.recv_timeout(timeout)
+    }
+
+    pub(crate) fn release_guard(&mut self) -> MaterializationRelease {
+        MaterializationRelease {
+            release: Some(
+                self.release
+                    .take()
+                    .expect("materialization release guard already created"),
+            ),
+        }
+    }
+}
+
+#[cfg(test)]
+impl Drop for MaterializationRelease {
+    fn drop(&mut self) {
+        if let Some(release) = self.release.take() {
+            let _ = release.send(());
         }
     }
 }
@@ -913,6 +954,36 @@ mod tests {
             completed.aggregate_logical_bytes
         );
         drop(workers);
+    }
+
+    #[test]
+    fn dropping_materialization_pause_controller_releases_waiting_worker() {
+        let (pause, controller) = MaterializationPause::new(0);
+        let (completed_tx, completed_rx) = mpsc::sync_channel(0);
+        let worker = thread::spawn(move || {
+            pause.pause(0);
+            completed_tx.send(()).unwrap();
+        });
+        controller
+            .wait_until_entered(Duration::from_secs(1))
+            .expect("worker did not reach the materialization pause");
+
+        drop(controller);
+
+        completed_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("dropping the controller must release the worker");
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn materialization_pause_entry_wait_is_bounded() {
+        let (_pause, controller) = MaterializationPause::new(0);
+
+        assert_eq!(
+            controller.wait_until_entered(Duration::ZERO),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        );
     }
 
     #[test]

@@ -24,11 +24,11 @@ use crate::resource::PortableBackend;
 use crate::resource::ResourceBackend;
 use crate::session::SessionDispatcher;
 use crate::target::TargetHandler;
-#[cfg(test)]
-use crate::workspace::MaterializationPause;
 use crate::workspace::{
     CopyOptions, WorkspaceHandler, WorkspaceManifest, WorkspaceTask, WorkspaceTaskCompletion,
 };
+#[cfg(test)]
+use crate::workspace::{MaterializationPause, MaterializationPauseController};
 
 #[derive(Clone, Debug)]
 pub struct RunControl {
@@ -52,11 +52,11 @@ impl RunControl {
     }
 
     #[cfg(test)]
-    fn with_materialization_pause(worker: u32) -> (Self, MaterializationPause) {
-        let pause = MaterializationPause::new(worker);
+    fn with_materialization_pause(worker: u32) -> (Self, MaterializationPauseController) {
+        let (pause, controller) = MaterializationPause::new(worker);
         let mut control = Self::new();
-        control.materialization_pause = Some(pause.clone());
-        (control, pause)
+        control.materialization_pause = Some(pause);
+        (control, controller)
     }
 
     pub fn cancel(&self) {
@@ -2182,12 +2182,16 @@ mod tests {
             OsString::from("unused-test-command"),
         ])
         .unwrap();
-        let (control, pause) = RunControl::with_materialization_pause(0);
+        let (control, mut pause_controller) = RunControl::with_materialization_pause(0);
         let observed_control = control.clone();
         let mutation = tokio::task::spawn_blocking(move || {
-            pause.wait_until_entered();
-            std::fs::write(original, b"changed during materialization\n").unwrap();
-            pause.release();
+            pause_controller
+                .wait_until_entered(Duration::from_secs(5))
+                .expect("worker 0 did not enter materialization before the bounded wait expired");
+            let release = pause_controller.release_guard();
+            let mutation = std::fs::write(original, b"changed during materialization\n");
+            drop(release);
+            mutation.expect("change original during active worker materialization");
         });
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();

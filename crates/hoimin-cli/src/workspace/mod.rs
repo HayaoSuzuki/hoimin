@@ -20,10 +20,10 @@ use hoimin_core::{
     ResetWorker, RunEvent, VerifyOriginals, WorkerCreated, WorkerReset,
 };
 
-#[cfg(test)]
-pub(crate) use copy::MaterializationPause;
 use copy::ValidatedPreflightError;
 pub use copy::WorkspacePlan;
+#[cfg(test)]
+pub(crate) use copy::{MaterializationPause, MaterializationPauseController};
 pub use manifest::{ManifestEntry, WorkspaceManifest};
 use root::WorkerRoot;
 
