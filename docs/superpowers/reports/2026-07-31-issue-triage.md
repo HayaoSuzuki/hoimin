@@ -2,11 +2,15 @@
 
 ## Scope
 
-This report evaluates the 75 open issues in
+This report originally evaluated the 75 open issues in
 [`tokyogas-tech/hoimin`](https://github.com/tokyogas-tech/hoimin/issues) as of
 2026-07-31. Issues #96 through #168 were filed as one large investigation
 batch; #64 and #79 were already open and were included because they affect the
 same prioritization decision.
+
+The current issue state below was rechecked on 2026-08-05. “Resolved” means the
+GitHub issue is closed; it is a queue-status update, not a second audit of the
+implementation.
 
 The goal is to distinguish actionable product bugs from performance work,
 test gaps, documentation, and feature requests, then put correctness bugs
@@ -54,6 +58,30 @@ adjustment, but their underlying concerns remain credible.
 There is no P0 incident in the current repository state. P0 should be reserved
 for active compromise, current data corruption, or an ongoing irreversible
 release. Issue #79 becomes release-blocking before any `v*` tag is pushed.
+
+## Resolved vs outstanding issues (2026-08-05)
+
+The original 75-issue triage set now contains 65 closed issues and 10 open
+issues.
+
+### Resolved (65)
+
+| Group | Issues |
+| --- | --- |
+| P1 and release safety | #79, #96–#98, #101–#102, #109, #111–#114, #116, #119, #121, #140–#146, #149–#151 |
+| P2 bugs | #99–#100, #103–#108, #110, #117–#118, #120, #122–#123, #130–#133, #147–#148, #152 |
+| Performance | #124–#129 |
+| Test issues | #153–#156, #158–#161, #163–#168 |
+
+### Outstanding (10)
+
+| Group | Issues | Current disposition |
+| --- | --- | --- |
+| P3 release/refactoring/docs/features | #64, #115, #134–#139 | Keep in the lower-priority queue; decide and implement separately from the completed correctness/performance work. |
+| Test follow-up | #157, #162 | Keep open for the remaining end-to-end and fault-injection coverage. |
+
+Issues outside this report’s original 75-issue set are not included in these
+counts.
 
 ## P1: Fix First
 
