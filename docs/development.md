@@ -87,11 +87,9 @@ job queued until a matching runner becomes available and fails it after 24
 hours. Check the repository or organization Actions runner page for runner
 status and labels; do not replace the job with a hosted or best-effort runner.
 
-After changing the Rust analyzer or its tests, run mutation analysis with:
-
-```console
-uv run hoimin run --root . --file crates/hoimin-cli/src/analyzer/mod.rs --max-candidates 1000 --max-mutants 1000 --jobs 1 --total-timeout 10m --allow-best-effort-memory --format json -- cargo test --workspace
-```
+After changing the Rust analyzer or its tests, use the bounded workflow below
+to collect focused evidence. For the required complete Rust inventory, run
+`cargo mutants --workspace` as described in the Rust mutation testing section.
 
 ## Focused 30-minute Rust mutation workflow
 
