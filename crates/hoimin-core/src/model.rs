@@ -109,6 +109,7 @@ pub enum ProcessTermination {
 #[serde(rename_all = "snake_case")]
 pub enum IntegrityCheckpoint {
     PreAnalysis,
+    PostMaterialization,
     Periodic,
     PreFinalReport,
     Cleanup,

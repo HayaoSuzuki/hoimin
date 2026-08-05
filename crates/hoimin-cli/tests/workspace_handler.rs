@@ -15,8 +15,8 @@ use hoimin_cli::workspace::{
     WorkspacePlan, build_command_environment,
 };
 use hoimin_core::{
-    ApplyMutation, BudgetLedger, ByteSpan, EffectId, MutationCandidate, Preflight, RunBudgets,
-    reserve_workspace_copy,
+    ApplyMutation, BudgetLedger, ByteSpan, EffectId, IntegrityCheckpoint, MutationCandidate,
+    Preflight, RunBudgets, VerifyOriginals, reserve_workspace_copy,
 };
 use tempfile::TempDir;
 
@@ -731,7 +731,7 @@ fn dropping_a_worker_releases_its_copy_charge_and_worker_slot() {
 }
 
 #[test]
-fn stops_worker_creation_when_observed_bytes_exceed_grant() {
+fn original_growth_does_not_change_snapshot_copy_charge() {
     let project = FixtureProject::new();
     let per_worker = b"original\n".len() as u64 + b"second\n".len() as u64;
     let plan = preflight_plan(project.root(), 1, CopyOptions::default());
@@ -742,12 +742,13 @@ fn stops_worker_creation_when_observed_bytes_exceed_grant() {
     )
     .unwrap();
 
-    assert!(matches!(
-        plan.create_worker(&grant.create_worker(EffectId(930), 0).unwrap())
-            .unwrap_err(),
-        WorkspaceError::CopyAllowanceExceeded { .. }
-    ));
-    assert_eq!(plan.materialized_workers(), 0);
+    let worker = plan
+        .create_worker(&grant.create_worker(EffectId(930), 0).unwrap())
+        .unwrap();
+
+    assert_eq!(worker.read("pkg/a.py").unwrap(), b"original\n");
+    assert_eq!(plan.observed_copy_bytes(), per_worker);
+    assert_eq!(plan.materialized_workers(), 1);
 }
 
 #[test]
@@ -1006,6 +1007,46 @@ fn effect_handlers_preserve_original_ids_for_success_and_failure() {
             .id,
         EffectId(99)
     );
+}
+
+#[test]
+fn post_materialization_verification_rejects_changed_original() {
+    const WORKERS: u32 = 2;
+    let project = FixtureProject::new();
+    let mut handler = WorkspaceHandler::new(
+        project.root().to_owned(),
+        Vec::new(),
+        WORKERS,
+        CopyOptions::default(),
+    );
+    let completed = handler
+        .handle_preflight(Preflight { id: EffectId(30) })
+        .unwrap();
+    let mut ledger = BudgetLedger::new(RunBudgets {
+        memory: 1,
+        copy: completed.aggregate_logical_bytes,
+        processes: 1,
+    });
+    let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+    for worker in 0..WORKERS {
+        handler
+            .handle_create_worker(
+                grant
+                    .create_worker(EffectId(u64::from(worker) + 31), worker)
+                    .unwrap(),
+            )
+            .unwrap();
+    }
+    fs::write(project.root().join("pkg/a.py"), b"modified\n").unwrap();
+
+    let error = handler
+        .handle_verify_originals(VerifyOriginals {
+            id: EffectId(40),
+            checkpoint: IntegrityCheckpoint::PostMaterialization,
+        })
+        .unwrap_err();
+
+    assert_eq!(error.failure.code(), "workspace.original.changed");
 }
 
 #[test]

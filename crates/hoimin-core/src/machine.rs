@@ -22,6 +22,7 @@ pub enum RunPhase {
     Validate,
     Preflight,
     Copy,
+    MaterializationVerification,
     Baseline,
     BudgetCheck,
     Analyze,
@@ -624,6 +625,32 @@ impl RunState {
         }
         self.phase = RunPhase::Copy;
         Ok(effects)
+    }
+
+    fn materialization_verification_effects(&mut self) -> Result<Vec<RunEffect>, MachineError> {
+        let id = self.allocate_id()?;
+        Ok(vec![RunEffect::VerifyOriginals(VerifyOriginals {
+            id,
+            checkpoint: IntegrityCheckpoint::PostMaterialization,
+        })])
+    }
+
+    fn baseline_effects(&mut self) -> Result<Vec<RunEffect>, MachineError> {
+        let id = self.allocate_id()?;
+        Ok(vec![RunEffect::RunBaseline(RunProcess {
+            id,
+            worker: Some(0),
+            run_id: Some(self.run_id.clone()),
+            mutant_id: None,
+            argv: self.config.test_argv.clone(),
+            cwd: self.config.root.clone(),
+            limits: ProcessLimits {
+                timeout: self.config.limits.baseline_timeout.get(),
+                max_output_bytes: self.config.limits.max_output.get(),
+                max_memory_bytes: self.config.limits.max_memory.get(),
+                max_processes: self.max_processes()?,
+            },
+        })])
     }
 
     fn begin_session_effects(&mut self) -> Result<Vec<RunEffect>, MachineError> {
@@ -1369,25 +1396,18 @@ pub fn transition(
             state.created_workers.insert(value.worker);
             state.workers.entry(value.worker).or_default();
             if state.created_workers.len() == state.config.limits.jobs.get() {
-                state.phase = RunPhase::Baseline;
-                let id = state.allocate_id()?;
-                vec![RunEffect::RunBaseline(RunProcess {
-                    id,
-                    worker: Some(0),
-                    run_id: Some(state.run_id.clone()),
-                    mutant_id: None,
-                    argv: state.config.test_argv.clone(),
-                    cwd: state.config.root.clone(),
-                    limits: ProcessLimits {
-                        timeout: state.config.limits.baseline_timeout.get(),
-                        max_output_bytes: state.config.limits.max_output.get(),
-                        max_memory_bytes: state.config.limits.max_memory.get(),
-                        max_processes: state.max_processes()?,
-                    },
-                })]
+                state.phase = RunPhase::MaterializationVerification;
+                state.materialization_verification_effects()?
             } else {
                 Vec::new()
             }
+        }
+        RunEvent::OriginalsVerified(value)
+            if state.phase == RunPhase::MaterializationVerification
+                && value.checkpoint == IntegrityCheckpoint::PostMaterialization =>
+        {
+            state.phase = RunPhase::Baseline;
+            state.baseline_effects()?
         }
         RunEvent::BaselineFinished(value) if state.phase == RunPhase::Baseline => {
             if completed_worker != value.worker {
@@ -1822,7 +1842,11 @@ pub fn transition(
         "machine.worker.invariant",
         (!matches!(
             state.phase,
-            RunPhase::Baseline | RunPhase::BudgetCheck | RunPhase::Analyze | RunPhase::Mutants
+            RunPhase::MaterializationVerification
+                | RunPhase::Baseline
+                | RunPhase::BudgetCheck
+                | RunPhase::Analyze
+                | RunPhase::Mutants
         ) || state.copy_grant.is_some())
             && state.worker_invariant(),
         (

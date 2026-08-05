@@ -200,59 +200,6 @@ fn shell_distinguishes_allowance_and_reservation_mismatches_from_core_capabiliti
 }
 
 #[test]
-fn failed_initial_copy_rolls_back_only_the_slot_and_keeps_the_bound_reservation() {
-    let project = tempfile::tempdir().unwrap();
-    let root = Utf8Path::from_path(project.path()).unwrap();
-    write(root, "pkg/a.py", b"original\n");
-    let mut handler = handler(root, 1);
-    let completed = handler
-        .handle_preflight(Preflight { id: EffectId(14) })
-        .unwrap();
-    let mut ledger = BudgetLedger::new(RunBudgets {
-        memory: 1,
-        copy: 18,
-        processes: 1,
-    });
-    let winner = reserve_workspace_copy(&mut ledger, &completed).unwrap();
-    let foreign = reserve_workspace_copy(&mut ledger, &completed).unwrap();
-    fs::remove_file(root.join("pkg/a.py")).unwrap();
-
-    let failed = handler
-        .handle_create_worker(winner.create_worker(EffectId(15), 0).unwrap())
-        .unwrap_err();
-
-    assert!(matches!(failed.failure, EffectFailure::Io { .. }));
-    assert_eq!(handler.worker_count(), 0);
-    assert_eq!(handler.materialized_worker_slots(), 0);
-    assert_eq!(handler.observed_copy_bytes(), 0);
-
-    let rejected = handler
-        .handle_create_worker(foreign.create_worker(EffectId(16), 0).unwrap())
-        .unwrap_err();
-    assert!(matches!(
-        rejected.failure,
-        EffectFailure::InvalidWorkspaceGrant {
-            expected,
-            received,
-        } if expected == winner.reservation_id() && received == foreign.reservation_id()
-    ));
-
-    write(root, "pkg/a.py", b"original\n");
-    handler
-        .handle_create_worker(winner.create_worker(EffectId(17), 0).unwrap())
-        .unwrap();
-    assert_eq!(handler.materialized_worker_slots(), 1);
-    assert_eq!(handler.observed_copy_bytes(), 9);
-
-    let cleaned = handler
-        .handle_cleanup(winner.cleanup(EffectId(18)))
-        .unwrap();
-    assert_eq!(cleaned.released_reservations, vec![winner.reservation_id()]);
-    release_workspace_copy(&mut ledger, &cleaned).unwrap();
-    assert_eq!(ledger.reserved(hoimin_core::BudgetKind::Copy), 9);
-}
-
-#[test]
 fn shell_reports_a_core_capability_worker_outside_its_plan_range() {
     let one_worker = tempfile::tempdir().unwrap();
     let two_workers = tempfile::tempdir().unwrap();

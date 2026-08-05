@@ -59,6 +59,7 @@ fn run_effect_deserialization_preserves_messages_but_rejects_worker_capabilities
 fn original_integrity_checkpoints_have_typed_effect_and_completion_events() {
     for (sequence, checkpoint) in [
         IntegrityCheckpoint::PreAnalysis,
+        IntegrityCheckpoint::PostMaterialization,
         IntegrityCheckpoint::Periodic,
         IntegrityCheckpoint::PreFinalReport,
         IntegrityCheckpoint::Cleanup,

@@ -27,12 +27,16 @@ use crate::target::TargetHandler;
 use crate::workspace::{
     CopyOptions, WorkspaceHandler, WorkspaceManifest, WorkspaceTask, WorkspaceTaskCompletion,
 };
+#[cfg(test)]
+use crate::workspace::{MaterializationPause, MaterializationPauseController};
 
 #[derive(Clone, Debug)]
 pub struct RunControl {
     request: ProcessStartGate,
     max_process_tasks: Arc<AtomicUsize>,
     max_completion_in_flight: Arc<AtomicUsize>,
+    #[cfg(test)]
+    materialization_pause: Option<MaterializationPause>,
 }
 
 impl RunControl {
@@ -42,7 +46,17 @@ impl RunControl {
             request: ProcessStartGate::new(),
             max_process_tasks: Arc::new(AtomicUsize::new(0)),
             max_completion_in_flight: Arc::new(AtomicUsize::new(0)),
+            #[cfg(test)]
+            materialization_pause: None,
         }
+    }
+
+    #[cfg(test)]
+    fn with_materialization_pause(worker: u32) -> (Self, MaterializationPauseController) {
+        let (pause, controller) = MaterializationPause::new(worker);
+        let mut control = Self::new();
+        control.materialization_pause = Some(pause);
+        (control, controller)
     }
 
     pub fn cancel(&self) {
@@ -910,6 +924,10 @@ where
 {
     let metrics_path = config.output.metrics.clone();
     let mut context = ShellContext::new(&config, stdout, stderr).await?;
+    #[cfg(test)]
+    if let Some(pause) = control.materialization_pause.clone() {
+        context.workspace.set_materialization_pause(pause);
+    }
     if let Some(fingerprint_copy_inputs) = fingerprint_copy_inputs {
         context.fingerprint_copy_inputs = fingerprint_copy_inputs;
     }
@@ -1577,13 +1595,17 @@ fn observe_accepted_transition(
             metrics.finish_stage("preflight")?;
         }
         if previous != next {
-            if let Some(stage) = phase_stage(previous)
-                && !(previous == RunPhase::Cleaning && cleanup_finished)
-            {
-                metrics.finish_stage(stage)?;
-            }
-            if let Some(stage) = phase_stage(next) {
-                metrics.begin_stage(stage)?;
+            let previous_stage = phase_stage(previous);
+            let next_stage = phase_stage(next);
+            if previous_stage != next_stage {
+                if let Some(stage) = previous_stage
+                    && !(previous == RunPhase::Cleaning && cleanup_finished)
+                {
+                    metrics.finish_stage(stage)?;
+                }
+                if let Some(stage) = next_stage {
+                    metrics.begin_stage(stage)?;
+                }
             }
         }
         if cleanup_finished {
@@ -1595,7 +1617,7 @@ fn observe_accepted_transition(
 
 fn phase_stage(phase: RunPhase) -> Option<&'static str> {
     match phase {
-        RunPhase::Copy => Some("copy"),
+        RunPhase::Copy | RunPhase::MaterializationVerification => Some("copy"),
         RunPhase::Baseline => Some("baseline"),
         RunPhase::Analyze => Some("analysis"),
         RunPhase::Mutants => Some("mutants"),
@@ -2142,6 +2164,54 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn original_change_during_materialization_fails_post_materialization_before_baseline() {
+        let project = tempfile::tempdir().unwrap();
+        let original = project.path().join("target.py");
+        std::fs::write(&original, b"original\n").unwrap();
+        let config = crate::cli::parse_config_from([
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--jobs"),
+            OsString::from("2"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+            OsString::from("unused-test-command"),
+        ])
+        .unwrap();
+        let (control, mut pause_controller) = RunControl::with_materialization_pause(0);
+        let observed_control = control.clone();
+        let mutation = tokio::task::spawn_blocking(move || {
+            pause_controller
+                .wait_until_entered(Duration::from_secs(5))
+                .expect("worker 0 did not enter materialization before the bounded wait expired");
+            let release = pause_controller.release_guard();
+            let mutation = std::fs::write(original, b"changed during materialization\n");
+            drop(release);
+            mutation.expect("change original during active worker materialization");
+        });
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let exit = run_loop_with_control(config, &mut stdout, &mut stderr, control)
+            .await
+            .unwrap();
+        mutation.await.unwrap();
+
+        assert_ne!(exit, 0);
+        let stderr = String::from_utf8(stderr).unwrap();
+        assert!(stderr.contains("workspace.original.changed"), "{stderr}");
+        assert_eq!(
+            observed_control.max_process_tasks(),
+            0,
+            "the baseline must not be dispatched after post-materialization verification fails"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ignore = "manual blocking-I/O scheduler performance evidence"]
     async fn benchmark_blocking_io_dispatch() {
         const OPERATIONS: usize = 4;
@@ -2504,6 +2574,31 @@ mod tests {
                 .sum::<u64>(),
             0
         );
+    }
+
+    #[test]
+    fn materialization_verification_keeps_copy_metrics_stage_open() {
+        let mut collector = MetricsCollector::new("run-1");
+        collector.begin_stage("copy").unwrap();
+        let mut metrics = Some(collector);
+        let mut warnings = Vec::new();
+
+        observe_accepted_transition(
+            &mut metrics,
+            &mut warnings,
+            RunPhase::Copy,
+            RunPhase::MaterializationVerification,
+            false,
+            false,
+            false,
+        );
+
+        assert!(warnings.is_empty());
+        metrics
+            .as_mut()
+            .unwrap()
+            .finish_stage("copy")
+            .expect("post-materialization verification remains part of the copy stage");
     }
 
     #[test]

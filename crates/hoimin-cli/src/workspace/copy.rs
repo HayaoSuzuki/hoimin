@@ -5,7 +5,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 #[cfg(test)]
-use std::sync::mpsc::{Receiver, SyncSender};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, SyncSender, channel};
+#[cfg(test)]
+use std::time::Duration;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{CreateWorker, EffectId, PreflightCompleted, ReservationId};
@@ -29,7 +31,62 @@ pub struct WorkspacePlan {
     allowance: Arc<CopyAllowance>,
     state: Arc<Mutex<PlanState>>,
     #[cfg(test)]
+    materialization_metrics: Arc<MaterializationIoMetrics>,
+    #[cfg(test)]
     initial_grant_hook: Option<Arc<InitialGrantHook>>,
+    #[cfg(test)]
+    materialization_pause: Option<MaterializationPause>,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct MaterializationIoSnapshot {
+    original_manifest_builds: u64,
+    original_bytes: u64,
+    original_hash_bytes: u64,
+    snapshot_bytes: u64,
+    snapshot_hash_bytes: u64,
+}
+
+#[cfg(test)]
+#[derive(Debug, Default)]
+struct MaterializationIoMetrics {
+    original_manifest_builds: AtomicU64,
+    original_bytes: AtomicU64,
+    original_hash_bytes: AtomicU64,
+    snapshot_bytes: AtomicU64,
+    snapshot_hash_bytes: AtomicU64,
+}
+
+#[cfg(test)]
+impl MaterializationIoMetrics {
+    fn record_original_manifest(&self, bytes: u64) {
+        self.original_manifest_builds
+            .fetch_add(1, Ordering::Relaxed);
+        self.original_bytes.fetch_add(bytes, Ordering::Relaxed);
+        self.original_hash_bytes.fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    fn record_snapshot_read(&self, bytes: usize) {
+        self.snapshot_bytes
+            .fetch_add(u64::try_from(bytes).unwrap(), Ordering::Relaxed);
+    }
+
+    #[cfg(feature = "contracts")]
+    fn record_snapshot_hash(&self, bytes: usize) {
+        self.snapshot_hash_bytes
+            .fetch_add(u64::try_from(bytes).unwrap(), Ordering::Relaxed);
+    }
+
+    fn snapshot(&self) -> MaterializationIoSnapshot {
+        MaterializationIoSnapshot {
+            original_manifest_builds: self.original_manifest_builds.load(Ordering::Relaxed),
+            original_bytes: self.original_bytes.load(Ordering::Relaxed),
+            original_hash_bytes: self.original_hash_bytes.load(Ordering::Relaxed),
+            snapshot_bytes: self.snapshot_bytes.load(Ordering::Relaxed),
+            snapshot_hash_bytes: self.snapshot_hash_bytes.load(Ordering::Relaxed),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -37,6 +94,91 @@ pub struct WorkspacePlan {
 struct InitialGrantHook {
     entered: SyncSender<()>,
     release: Mutex<Receiver<()>>,
+}
+
+#[cfg(test)]
+#[derive(Clone)]
+pub(crate) struct MaterializationPause {
+    worker: u32,
+    entered: Sender<()>,
+    release: Arc<Mutex<Receiver<()>>>,
+}
+
+#[cfg(test)]
+pub(crate) struct MaterializationPauseController {
+    entered: Receiver<()>,
+    release: Option<Sender<()>>,
+}
+
+#[cfg(test)]
+pub(crate) struct MaterializationRelease {
+    release: Option<Sender<()>>,
+}
+
+#[cfg(test)]
+impl std::fmt::Debug for MaterializationPause {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("MaterializationPause")
+            .field("worker", &self.worker)
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+impl MaterializationPause {
+    pub(crate) fn new(worker: u32) -> (Self, MaterializationPauseController) {
+        let (entered, entered_receiver) = channel();
+        let (release, release_receiver) = channel();
+        (
+            Self {
+                worker,
+                entered,
+                release: Arc::new(Mutex::new(release_receiver)),
+            },
+            MaterializationPauseController {
+                entered: entered_receiver,
+                release: Some(release),
+            },
+        )
+    }
+
+    fn pause(&self, worker: u32) {
+        if self.worker != worker || self.entered.send(()).is_err() {
+            return;
+        }
+        let release = self
+            .release
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _ = release.recv();
+    }
+}
+
+#[cfg(test)]
+impl MaterializationPauseController {
+    pub(crate) fn wait_until_entered(&self, timeout: Duration) -> Result<(), RecvTimeoutError> {
+        self.entered.recv_timeout(timeout)
+    }
+
+    pub(crate) fn release_guard(&mut self) -> MaterializationRelease {
+        MaterializationRelease {
+            release: Some(
+                self.release
+                    .take()
+                    .expect("materialization release guard already created"),
+            ),
+        }
+    }
+}
+
+#[cfg(test)]
+impl Drop for MaterializationRelease {
+    fn drop(&mut self) {
+        if let Some(release) = self.release.take() {
+            let _ = release.send(());
+        }
+    }
 }
 
 pub(crate) enum ValidatedPreflightError<E> {
@@ -221,8 +363,21 @@ impl WorkspacePlan {
             }),
             state: Arc::new(Mutex::new(PlanState::default())),
             #[cfg(test)]
+            materialization_metrics: Arc::new(MaterializationIoMetrics::default()),
+            #[cfg(test)]
             initial_grant_hook: None,
+            #[cfg(test)]
+            materialization_pause: None,
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_materialization_pause(
+        mut self,
+        pause: Option<MaterializationPause>,
+    ) -> Self {
+        self.materialization_pause = pause;
+        self
     }
 
     #[must_use]
@@ -264,6 +419,11 @@ impl WorkspacePlan {
             .unwrap_or_default()
     }
 
+    #[cfg(test)]
+    fn materialization_io_snapshot(&self) -> MaterializationIoSnapshot {
+        self.materialization_metrics.snapshot()
+    }
+
     #[must_use]
     pub fn reservation_id(&self) -> Option<ReservationId> {
         self.state
@@ -279,6 +439,9 @@ impl WorkspacePlan {
     /// Returns an error if the source cannot be scanned or its contents changed.
     pub fn verify_originals(&self) -> Result<(), WorkspaceError> {
         let (current, _) = build_manifest(&self.original_root, &self.options)?;
+        #[cfg(test)]
+        self.materialization_metrics
+            .record_original_manifest(current.logical_bytes());
         if self.manifest.content_matches(&current) {
             Ok(())
         } else {
@@ -358,7 +521,6 @@ impl WorkspacePlan {
         worker: u32,
         open_root: impl FnOnce(Utf8PathBuf) -> Result<WorkerRoot, WorkspaceError>,
     ) -> Result<WorkerWorkspace, WorkspaceError> {
-        self.verify_originals_for_materialization()?;
         let temp = tempfile::Builder::new()
             .prefix("hoimin-worker-")
             .tempdir()
@@ -370,29 +532,43 @@ impl WorkspacePlan {
         let root_path =
             Utf8PathBuf::from_path_buf(root_path).map_err(|_| WorkspaceError::NonUtf8Path)?;
         let root = open_root(root_path.clone())?;
+        #[cfg(test)]
+        if let Some(pause) = &self.materialization_pause {
+            pause.pause(worker);
+        }
         let mut charged = 0_u64;
 
         let result = (|| {
             for entry in self.manifest.entries() {
-                let bytes = self.snapshot.read(&entry.path)?;
-                let amount =
-                    u64::try_from(bytes.len()).map_err(|_| WorkspaceError::CopySizeOverflow)?;
-                self.allowance.charge(amount)?;
-                charged = charged
-                    .checked_add(amount)
-                    .ok_or(WorkspaceError::CopySizeOverflow)?;
-                if amount != entry.size || blake3::hash(&bytes) != entry.blake3 {
-                    return Err(WorkspaceError::WorkspaceRestore {
-                        path: entry.path.clone(),
-                        message: "shared snapshot does not match its manifest".to_owned(),
-                    });
-                }
                 let snapshot = self.snapshot.files.get(&entry.path).ok_or_else(|| {
                     WorkspaceError::WorkspaceRestore {
                         path: entry.path.clone(),
                         message: "shared snapshot is missing a manifest entry".to_owned(),
                     }
                 })?;
+                let bytes = self.snapshot.read(&entry.path)?;
+                #[cfg(test)]
+                self.materialization_metrics
+                    .record_snapshot_read(bytes.len());
+                let amount =
+                    u64::try_from(bytes.len()).map_err(|_| WorkspaceError::CopySizeOverflow)?;
+                self.allowance.charge(amount)?;
+                charged = charged
+                    .checked_add(amount)
+                    .ok_or(WorkspaceError::CopySizeOverflow)?;
+
+                #[cfg(feature = "contracts")]
+                {
+                    #[cfg(test)]
+                    self.materialization_metrics
+                        .record_snapshot_hash(bytes.len());
+                    if amount != entry.size || blake3::hash(&bytes) != entry.blake3 {
+                        return Err(WorkspaceError::WorkspaceRestore {
+                            path: entry.path.clone(),
+                            message: "shared snapshot does not match its manifest".to_owned(),
+                        });
+                    }
+                }
                 let destination = root_path.join(&entry.path);
                 if let Some(parent) = destination.parent() {
                     fs::create_dir_all(parent).map_err(|error| {
@@ -405,7 +581,7 @@ impl WorkspacePlan {
                     |error| WorkspaceError::io("copy worker permissions", &entry.path, error),
                 )?;
             }
-            self.verify_originals()
+            Ok(())
         })();
 
         if let Err(error) = result {
@@ -423,34 +599,6 @@ impl WorkspacePlan {
             worker,
             charged,
         ))
-    }
-
-    fn verify_originals_for_materialization(&self) -> Result<(), WorkspaceError> {
-        let mut charged = 0_u64;
-        let result = (|| {
-            for entry in self.manifest.entries() {
-                let source = self.original_root.join(&entry.path);
-                let bytes = fs::read(&source)
-                    .map_err(|error| WorkspaceError::io("read original", &entry.path, error))?;
-                let amount =
-                    u64::try_from(bytes.len()).map_err(|_| WorkspaceError::CopySizeOverflow)?;
-                self.allowance.charge(amount)?;
-                charged = charged
-                    .checked_add(amount)
-                    .ok_or(WorkspaceError::CopySizeOverflow)?;
-                if amount != entry.size || blake3::hash(&bytes) != entry.blake3 {
-                    return Err(WorkspaceError::OriginalChanged {
-                        path: entry.path.clone(),
-                    });
-                }
-                fs::metadata(&source).map_err(|error| {
-                    WorkspaceError::io("read original metadata", &entry.path, error)
-                })?;
-            }
-            self.verify_originals()
-        })();
-        self.allowance.release(charged);
-        result
     }
 }
 
@@ -519,7 +667,7 @@ mod tests {
     use std::sync::Barrier;
     use std::sync::mpsc;
     use std::thread;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use hoimin_core::{BudgetLedger, RunBudgets, reserve_workspace_copy};
 
@@ -527,6 +675,104 @@ mod tests {
     use crate::workspace::ManifestEntry;
 
     use super::*;
+
+    fn plan_with_padding(
+        workers: u32,
+        padding_bytes: usize,
+    ) -> (
+        tempfile::TempDir,
+        WorkspacePlan,
+        hoimin_core::WorkspaceCopyGrant,
+        u64,
+    ) {
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("target.py"), b"original\n").unwrap();
+        fs::write(source.path().join("padding.bin"), vec![b'x'; padding_bytes]).unwrap();
+        let source_root = Utf8Path::from_path(source.path()).unwrap();
+        let plan =
+            WorkspacePlan::preflight(source_root, EffectId(7), workers, CopyOptions::default())
+                .unwrap();
+        let completed = plan.completed();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: completed.aggregate_logical_bytes,
+            processes: 1,
+        });
+        let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+        (
+            source,
+            plan,
+            grant,
+            u64::try_from(padding_bytes + b"original\n".len()).unwrap(),
+        )
+    }
+
+    #[test]
+    fn materialization_io_counts_full_tree_work() {
+        const WORKERS: u32 = 2;
+        const PADDING_BYTES: usize = 1024 * 1024;
+        let (_source, plan, grant, fixture_bytes) = plan_with_padding(WORKERS, PADDING_BYTES);
+
+        let first = plan
+            .create_worker(&grant.create_worker(EffectId(8), 0).unwrap())
+            .unwrap();
+        let second = plan
+            .create_worker(&grant.create_worker(EffectId(9), 1).unwrap())
+            .unwrap();
+        plan.verify_originals().unwrap();
+
+        let expected_snapshot_hash_bytes = if cfg!(feature = "contracts") {
+            2 * fixture_bytes
+        } else {
+            0
+        };
+        assert_eq!(
+            plan.materialization_io_snapshot(),
+            MaterializationIoSnapshot {
+                original_manifest_builds: 1,
+                original_bytes: fixture_bytes,
+                original_hash_bytes: fixture_bytes,
+                snapshot_bytes: 2 * fixture_bytes,
+                snapshot_hash_bytes: expected_snapshot_hash_bytes,
+            }
+        );
+        assert_eq!(plan.observed_copy_bytes(), 2 * fixture_bytes);
+        drop((first, second));
+    }
+
+    #[test]
+    #[ignore = "manual before/after performance evidence"]
+    fn benchmark_worker_materialization_io() {
+        const WORKERS: u32 = 8;
+        const PADDING_BYTES: usize = 8 * 1024 * 1024;
+        let (_source, plan, grant, fixture_bytes) = plan_with_padding(WORKERS, PADDING_BYTES);
+        let started = Instant::now();
+
+        let materialized = (0..WORKERS)
+            .map(|worker| {
+                plan.create_worker(
+                    &grant
+                        .create_worker(EffectId(u64::from(worker) + 8), worker)
+                        .unwrap(),
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        plan.verify_originals().unwrap();
+
+        let metrics = plan.materialization_io_snapshot();
+        eprintln!(
+            "workers={WORKERS} fixture_bytes={fixture_bytes} original_manifest_builds={} original_bytes={} original_hash_bytes={} snapshot_bytes={} snapshot_hash_bytes={} copied_bytes={} elapsed_ms={}",
+            metrics.original_manifest_builds,
+            metrics.original_bytes,
+            metrics.original_hash_bytes,
+            metrics.snapshot_bytes,
+            metrics.snapshot_hash_bytes,
+            plan.observed_copy_bytes(),
+            started.elapsed().as_millis(),
+        );
+        drop(materialized);
+    }
 
     #[cfg(windows)]
     #[test]
@@ -604,6 +850,58 @@ mod tests {
     }
 
     #[test]
+    fn failed_snapshot_copy_rolls_back_only_the_slot_and_keeps_the_bound_reservation() {
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("target.py"), b"original\n").unwrap();
+        let source_root = Utf8Path::from_path(source.path()).unwrap();
+        let plan =
+            WorkspacePlan::preflight(source_root, EffectId(14), 1, CopyOptions::default()).unwrap();
+        let completed = plan.completed();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: 2 * completed.aggregate_logical_bytes,
+            processes: 1,
+        });
+        let winner = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+        let foreign = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+        let winner_request = winner.create_worker(EffectId(15), 0).unwrap();
+        let foreign_request = foreign.create_worker(EffectId(16), 0).unwrap();
+        let snapshot_path = plan.snapshot.root.join("target.py");
+        fs::remove_file(&snapshot_path).unwrap();
+
+        let failed = plan.create_worker(&winner_request).unwrap_err();
+
+        let WorkspaceError::Io {
+            operation, path, ..
+        } = failed
+        else {
+            panic!("expected snapshot-read failure, got {failed:?}");
+        };
+        assert_eq!(operation, "read shared snapshot");
+        assert_eq!(path, Utf8Path::new("target.py"));
+        assert_eq!(plan.materialized_workers(), 0);
+        assert_eq!(plan.observed_copy_bytes(), 0);
+        assert_eq!(plan.reservation_id(), Some(winner.reservation_id()));
+
+        assert_eq!(
+            plan.create_worker(&foreign_request).unwrap_err(),
+            WorkspaceError::ReservationMismatch {
+                expected: winner.reservation_id(),
+                received: foreign.reservation_id(),
+            }
+        );
+
+        fs::write(snapshot_path, b"original\n").unwrap();
+        let worker = plan.create_worker(&winner_request).unwrap();
+        assert_eq!(plan.materialized_workers(), 1);
+        assert_eq!(
+            plan.observed_copy_bytes(),
+            completed.per_worker_logical_bytes
+        );
+        assert_eq!(worker.read("target.py").unwrap(), b"original\n");
+    }
+
+    #[test]
     fn initial_grant_is_published_before_another_worker_can_materialize() {
         let source = tempfile::tempdir().unwrap();
         fs::write(source.path().join("target.py"), b"copied bytes").unwrap();
@@ -656,6 +954,36 @@ mod tests {
             completed.aggregate_logical_bytes
         );
         drop(workers);
+    }
+
+    #[test]
+    fn dropping_materialization_pause_controller_releases_waiting_worker() {
+        let (pause, controller) = MaterializationPause::new(0);
+        let (completed_tx, completed_rx) = mpsc::sync_channel(0);
+        let worker = thread::spawn(move || {
+            pause.pause(0);
+            completed_tx.send(()).unwrap();
+        });
+        controller
+            .wait_until_entered(Duration::from_secs(1))
+            .expect("worker did not reach the materialization pause");
+
+        drop(controller);
+
+        completed_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("dropping the controller must release the worker");
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn materialization_pause_entry_wait_is_bounded() {
+        let (_pause, controller) = MaterializationPause::new(0);
+
+        assert_eq!(
+            controller.wait_until_entered(Duration::ZERO),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        );
     }
 
     #[test]

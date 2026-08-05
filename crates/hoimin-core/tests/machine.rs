@@ -4,8 +4,8 @@ use std::time::Duration;
 use hoimin_core::{
     AnalysisDiagnostic, AnalysisFinished, ByteSpan, CandidateCursor, CandidateLoaded,
     CandidateSpoolRef, CleanupFinished, CommandArg, EffectFailed, EffectFailure, EffectId,
-    MachineError, MutationApplied, MutationCandidate, MutationProfile, MutationStatus,
-    MutationSummary, OriginalsVerified, OutputConfig, OutputEmitted, OutputEvent,
+    IntegrityCheckpoint, MachineError, MutationApplied, MutationCandidate, MutationProfile,
+    MutationStatus, MutationSummary, OriginalsVerified, OutputConfig, OutputEmitted, OutputEvent,
     PreflightCompleted, ProcessFinished, ProcessTermination, RawRunConfig, RawRunLimits,
     ReadCandidate, RemainingBudgetObserved, ReportSequence, ReservationId, ResourceMode,
     ResultPersisted, RunConfig, RunEffect, RunEvent, RunFingerprint, RunPhase, RunState,
@@ -15,6 +15,52 @@ use hoimin_core::{
     WorkerCreated, WorkerReset, transition,
 };
 use proptest::prelude::*;
+
+#[test]
+fn all_workers_are_verified_once_before_baseline() {
+    let mut raw = fixture_raw_config();
+    raw.limits.jobs = 2;
+    let (state, effects) =
+        waiting_for_materialization_verification_with(RunConfig::try_from(raw).unwrap());
+
+    assert_eq!(state.phase(), RunPhase::MaterializationVerification);
+    let [RunEffect::VerifyOriginals(verify)] = effects.as_slice() else {
+        panic!("expected one original verification, got {effects:?}");
+    };
+    assert_eq!(verify.checkpoint, IntegrityCheckpoint::PostMaterialization);
+    let verify_id = verify.id;
+
+    let (state, effects) = transition(
+        state,
+        RunEvent::OriginalsVerified(OriginalsVerified {
+            id: verify_id,
+            checkpoint: IntegrityCheckpoint::PostMaterialization,
+        }),
+    )
+    .unwrap();
+
+    assert_eq!(state.phase(), RunPhase::Baseline);
+    assert!(matches!(effects.as_slice(), [RunEffect::RunBaseline(_)]));
+}
+
+#[test]
+fn materialization_verification_rejects_a_mismatched_checkpoint() {
+    let (state, effects) = waiting_for_materialization_verification_with(fixture_config());
+    let [RunEffect::VerifyOriginals(verify)] = effects.as_slice() else {
+        panic!("expected one original verification, got {effects:?}");
+    };
+    let verify_id = verify.id;
+
+    let result = transition(
+        state,
+        RunEvent::OriginalsVerified(OriginalsVerified {
+            id: verify_id,
+            checkpoint: IntegrityCheckpoint::PreFinalReport,
+        }),
+    );
+
+    assert!(result.is_err());
+}
 
 #[test]
 fn baseline_success_requests_analysis_without_performing_io() {
@@ -63,6 +109,7 @@ fn baseline_success_requests_analysis_without_performing_io() {
         }),
     )
     .unwrap();
+    let (state, effects) = complete_materialization_verification(state, &effects);
     let baseline_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunBaseline(_))
     }));
@@ -2945,6 +2992,7 @@ fn multiple_target_files_are_analyzed_in_order_before_candidate_replay() {
         }),
     )
     .unwrap();
+    let (state, effects) = complete_materialization_verification(state, &effects);
     let baseline_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunBaseline(_))
     }));
@@ -3059,6 +3107,7 @@ fn filtered_analysis_advances_across_nonfinal_targets_before_receiving_a_spool()
         }),
     )
     .unwrap();
+    let (state, effects) = complete_materialization_verification(state, &effects);
     let baseline_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunBaseline(_))
     }));
@@ -4096,7 +4145,7 @@ fn waiting_for_baseline_from(initial_state: RunState) -> (RunState, Vec<RunEffec
         }),
     )
     .unwrap();
-    (state, effects)
+    complete_materialization_verification(state, &effects)
 }
 
 fn waiting_for_top_budget_observation() -> (RunState, Vec<RunEffect>) {
@@ -4146,6 +4195,11 @@ fn waiting_for_analysis_with(config: RunConfig) -> (RunState, Vec<RunEffect>) {
 }
 
 fn waiting_for_baseline_with(config: RunConfig) -> (RunState, Vec<RunEffect>) {
+    let (state, effects) = waiting_for_materialization_verification_with(config);
+    complete_materialization_verification(state, &effects)
+}
+
+fn waiting_for_materialization_verification_with(config: RunConfig) -> (RunState, Vec<RunEffect>) {
     let session_enabled = config.session.is_some();
     let resume = config.resume;
     let jobs = u32::try_from(config.limits.jobs.get()).unwrap();
@@ -4248,6 +4302,25 @@ fn complete_run_started(state: RunState, effects: &[RunEffect]) -> (RunState, Ve
     transition(
         state,
         RunEvent::OutputEmitted(OutputEmitted { id: output_id }),
+    )
+    .unwrap()
+}
+
+fn complete_materialization_verification(
+    state: RunState,
+    effects: &[RunEffect],
+) -> (RunState, Vec<RunEffect>) {
+    let RunEffect::VerifyOriginals(verify) = find_effect(effects, |effect| {
+        matches!(effect, RunEffect::VerifyOriginals(_))
+    }) else {
+        unreachable!()
+    };
+    transition(
+        state,
+        RunEvent::OriginalsVerified(OriginalsVerified {
+            id: verify.id,
+            checkpoint: verify.checkpoint,
+        }),
     )
     .unwrap()
 }
@@ -4470,6 +4543,7 @@ fn waiting_for_selected_analysis(
         )
         .unwrap();
     }
+    let (state, effects) = complete_materialization_verification(state, &effects);
     let baseline_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunBaseline(_))
     }));
