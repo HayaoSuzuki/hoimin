@@ -11,6 +11,26 @@ fn analyze(source: &str) -> super::AnalyzerOutput {
 }
 
 #[test]
+#[ignore = "benchmark harness; run explicitly in release mode"]
+fn benchmark_candidate_line_positions() {
+    let source: String = (0..7_680)
+        .map(|index| format!("result_{index:05} = left_{index:05} + right_{index:05}\n"))
+        .collect();
+
+    let started = std::time::Instant::now();
+    let output = analyze(&source);
+    let elapsed = started.elapsed();
+    let candidates = std::hint::black_box(output).candidates.len();
+
+    assert_eq!(candidates, 7_680);
+    println!(
+        "source_bytes={} candidates={candidates} elapsed_ms={}",
+        source.len(),
+        elapsed.as_secs_f64() * 1_000.0
+    );
+}
+
+#[test]
 fn large_source_analysis_observes_cancellation_during_token_traversal() {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
