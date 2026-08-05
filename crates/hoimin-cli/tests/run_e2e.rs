@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use std::{collections::BTreeSet, str};
 
-use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 
 use hoimin_core::{
     VerificationSelection, VerificationSelectionMode, VerificationSelectionPolicy,
@@ -1514,7 +1514,12 @@ async fn first_interrupt_scenario() {
     let session = coordinator.path().join("session.sqlite3");
     let (mut child, active, descendant_ready) =
         spawn_interrupt_fixture(project.path(), coordinator.path(), &session, "json");
-    let mut stdout_reader = BufReader::new(child.stdout.take().unwrap());
+    // Drain stdout while the child is running; a complete JSON report can exceed the pipe buffer.
+    let mut stdout_reader = child.stdout.take().unwrap();
+    let stdout_task = tokio::spawn(async move {
+        let mut stdout = Vec::new();
+        stdout_reader.read_to_end(&mut stdout).await.map(|_| stdout)
+    });
     let mut fixture_processes = None;
     let outcome: Result<_, String> = async {
         fixture_processes = Some(
@@ -1534,22 +1539,22 @@ async fn first_interrupt_scenario() {
             .await
             .map_err(|_| "hoimin did not finish after first interrupt".to_owned())?
             .map_err(|error| error.to_string())?;
-        let mut stdout = String::new();
-        stdout_reader
-            .read_to_string(&mut stdout)
-            .await
-            .map_err(|error| error.to_string())?;
         let descendant_stopped = fixture_processes
             .as_ref()
             .expect("assigned above")
             .descendant
             .wait_until_stops(Duration::from_secs(5))
             .await;
-        Ok((status, stdout, descendant_stopped))
+        Ok((status, descendant_stopped))
     }
     .await;
 
     let child_cleanup = reap_test_child(&mut child).await;
+    let stdout = stdout_task
+        .await
+        .expect("stdout drain task must not panic")
+        .map_err(|error| error.to_string())
+        .and_then(|bytes| String::from_utf8(bytes).map_err(|error| error.to_string()));
     #[cfg(unix)]
     let process_cleanup = kill_fixture_processes(&active, &descendant_ready).await;
     #[cfg(windows)]
@@ -1557,9 +1562,10 @@ async fn first_interrupt_scenario() {
     if let Err(error) = child_cleanup.and(process_cleanup) {
         panic!("test teardown failed: {error}; outcome={outcome:?}");
     }
-    let (status, stdout, descendant_stopped) = outcome.unwrap_or_else(|error| {
+    let (status, descendant_stopped) = outcome.unwrap_or_else(|error| {
         panic!("first-interrupt scenario failed after successful teardown: {error}")
     });
+    let stdout = stdout.unwrap_or_else(|error| panic!("cancelled stdout was not UTF-8: {error}"));
 
     assert_eq!(status.code(), Some(130));
     let report: serde_json::Value = serde_json::from_str(&stdout)
@@ -1591,11 +1597,39 @@ async fn second_interrupt_scenario() {
     let session = coordinator.path().join("session.sqlite3");
     let (mut child, active, descendant_ready) =
         spawn_second_interrupt_fixture(project.path(), coordinator.path(), &session);
-    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    // Keep draining after the readiness event so a blocked report write cannot mask the signal.
+    let stdout_pipe = child.stdout.take().unwrap();
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let stdout_task = tokio::spawn(async move {
+        let mut reader = BufReader::new(stdout_pipe);
+        let mut stdout = Vec::new();
+        let mut started_tx = Some(started_tx);
+        loop {
+            let mut line = Vec::new();
+            let bytes = reader.read_until(b'\n', &mut line).await?;
+            if bytes == 0 {
+                if let Some(started_tx) = started_tx.take() {
+                    let _ = started_tx.send(Err("stdout closed before mutant_started".to_owned()));
+                }
+                break;
+            }
+            let is_started = serde_json::from_slice::<serde_json::Value>(&line)
+                .ok()
+                .is_some_and(|event| event["kind"] == "mutant_started");
+            if is_started && started_tx.is_some() {
+                let started_tx = started_tx.take().expect("sender checked above");
+                let _ = started_tx.send(Ok(()));
+            }
+            stdout.extend_from_slice(&line);
+        }
+        Ok::<_, std::io::Error>(stdout)
+    });
     let mut fixture_processes = None;
     let outcome: Result<_, String> = async {
-        let mut stdout_lines =
-            wait_for_jsonl_kind(&mut stdout, "mutant_started", Duration::from_secs(15)).await?;
+        tokio::time::timeout(Duration::from_secs(15), started_rx)
+            .await
+            .map_err(|_| "timed out waiting for JSONL kind mutant_started".to_owned())?
+            .map_err(|_| "stdout drain task stopped before mutant_started".to_owned())??;
         fixture_processes = Some(
             try_wait_for_fixture_processes(&active, &descendant_ready, Duration::from_secs(15))
                 .await?,
@@ -1628,15 +1662,16 @@ async fn second_interrupt_scenario() {
             .map_err(|_| "second interrupt must bypass blocked FinishSession".to_owned())?
             .map_err(|error| error.to_string())?;
         let forced_elapsed = forced_at.elapsed();
-        stdout
-            .read_to_string(&mut stdout_lines)
-            .await
-            .map_err(|error| error.to_string())?;
-        Ok((status, forced_elapsed, lock, stdout_lines))
+        Ok((status, forced_elapsed, lock))
     }
     .await;
 
     let child_cleanup = reap_test_child(&mut child).await;
+    let stdout = stdout_task
+        .await
+        .expect("stdout drain task must not panic")
+        .map_err(|error| error.to_string())
+        .and_then(|bytes| String::from_utf8(bytes).map_err(|error| error.to_string()));
     #[cfg(unix)]
     let process_cleanup = kill_fixture_processes(&active, &descendant_ready).await;
     #[cfg(windows)]
@@ -1644,9 +1679,10 @@ async fn second_interrupt_scenario() {
     if let Err(error) = child_cleanup.and(process_cleanup) {
         panic!("test teardown failed: {error}; outcome={outcome:?}");
     }
-    let (status, forced_elapsed, lock, stdout_lines) = outcome.unwrap_or_else(|error| {
+    let (status, forced_elapsed, lock) = outcome.unwrap_or_else(|error| {
         panic!("second-interrupt scenario failed after successful teardown: {error}")
     });
+    let stdout_lines = stdout.unwrap_or_else(|error| panic!("stdout was not UTF-8: {error}"));
 
     assert_eq!(status.code(), Some(130));
     assert!(forced_elapsed < Duration::from_secs(1));
@@ -2657,35 +2693,6 @@ async fn wait_for_descendant_process(marker: &Path, timeout: Duration) -> Fixtur
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-}
-
-#[cfg(any(unix, windows))]
-async fn wait_for_jsonl_kind<R: AsyncBufRead + Unpin>(
-    reader: &mut R,
-    kind: &str,
-    timeout: Duration,
-) -> Result<String, String> {
-    tokio::time::timeout(timeout, async {
-        let mut accepted = String::new();
-        loop {
-            let mut line = String::new();
-            let bytes = reader
-                .read_line(&mut line)
-                .await
-                .map_err(|error| error.to_string())?;
-            if bytes == 0 {
-                return Err(format!("stdout closed before {kind}: {accepted}"));
-            }
-            let event: serde_json::Value = serde_json::from_str(line.trim_end())
-                .map_err(|error| format!("invalid JSONL ({error}): {line:?}"))?;
-            accepted.push_str(&line);
-            if event["kind"] == kind {
-                return Ok(accepted);
-            }
-        }
-    })
-    .await
-    .map_err(|_| format!("timed out waiting for JSONL kind {kind}"))?
 }
 
 #[cfg(any(unix, windows))]
