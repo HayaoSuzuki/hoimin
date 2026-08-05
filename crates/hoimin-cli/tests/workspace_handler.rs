@@ -237,6 +237,17 @@ fn reset_restores_changed_and_deleted_files_and_removes_new_files() {
     );
 }
 
+#[test]
+fn reset_restores_same_size_arbitrary_worker_change() {
+    let project = FixtureProject::new();
+    let mut worker = create_worker(project.root());
+    fs::write(worker.root().join("pkg/b.py"), b"xxxxxx\n").unwrap();
+
+    worker.reset().unwrap();
+
+    assert_eq!(worker.read("pkg/b.py").unwrap(), b"second\n");
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn reset_removes_a_non_utf8_file_and_restores_manifest_content() {

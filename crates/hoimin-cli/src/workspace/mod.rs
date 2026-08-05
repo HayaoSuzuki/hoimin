@@ -4,6 +4,8 @@ mod mutation;
 mod reset;
 mod root;
 
+#[cfg(test)]
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::fmt;
@@ -193,6 +195,60 @@ pub(crate) struct SnapshotFile {
     permission_fingerprint: PermissionFingerprint,
 }
 
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct ResetIoMetrics {
+    pub(crate) tree_walks: u64,
+    pub(crate) snapshot_bytes: u64,
+    pub(crate) worker_bytes: u64,
+}
+
+#[cfg(test)]
+thread_local! {
+    static RESET_IO_METRICS: Cell<ResetIoMetrics> = const { Cell::new(ResetIoMetrics {
+        tree_walks: 0,
+        snapshot_bytes: 0,
+        worker_bytes: 0,
+    }) };
+}
+
+#[cfg(test)]
+pub(crate) fn reset_io_metrics() {
+    RESET_IO_METRICS.with(|metrics| metrics.set(ResetIoMetrics::default()));
+}
+
+#[cfg(test)]
+pub(crate) fn current_reset_io_metrics() -> ResetIoMetrics {
+    RESET_IO_METRICS.with(Cell::get)
+}
+
+#[cfg(test)]
+pub(crate) fn record_reset_tree_walk() {
+    RESET_IO_METRICS.with(|metrics| {
+        let mut current = metrics.get();
+        current.tree_walks += 1;
+        metrics.set(current);
+    });
+}
+
+#[cfg(test)]
+pub(crate) fn record_reset_snapshot_bytes(bytes: usize) {
+    RESET_IO_METRICS.with(|metrics| {
+        let mut current = metrics.get();
+        current.snapshot_bytes += bytes as u64;
+        metrics.set(current);
+    });
+}
+
+#[cfg(test)]
+pub(crate) fn record_reset_worker_bytes(bytes: usize) {
+    RESET_IO_METRICS.with(|metrics| {
+        let mut current = metrics.get();
+        current.worker_bytes += bytes as u64;
+        metrics.set(current);
+    });
+}
+
 impl SnapshotFile {
     fn new(permissions: fs::Permissions) -> Self {
         Self {
@@ -211,8 +267,11 @@ pub(crate) struct DiskSnapshot {
 
 impl DiskSnapshot {
     fn read(&self, path: &Utf8Path) -> Result<Vec<u8>, WorkspaceError> {
-        fs::read(self.root.join(path))
-            .map_err(|error| WorkspaceError::io("read shared snapshot", path, error))
+        let bytes = fs::read(self.root.join(path))
+            .map_err(|error| WorkspaceError::io("read shared snapshot", path, error))?;
+        #[cfg(test)]
+        record_reset_snapshot_bytes(bytes.len());
+        Ok(bytes)
     }
 }
 

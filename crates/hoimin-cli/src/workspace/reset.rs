@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use camino::Utf8Path;
+use camino::Utf8PathBuf;
 
 use super::root::WorkerEntryKind;
 use super::{WorkerWorkspace, WorkspaceError};
@@ -29,6 +29,7 @@ impl WorkerWorkspace {
 
     fn reset_from_snapshot(&self) -> Result<(), WorkspaceError> {
         let existing = self.root.entries()?;
+        let required_directories = required_directories(self.snapshot.files.keys());
         let existing_files = existing
             .iter()
             .filter(|entry| entry.kind == WorkerEntryKind::File)
@@ -44,7 +45,7 @@ impl WorkerWorkspace {
                     if entry
                         .logical_path
                         .as_ref()
-                        .is_none_or(|path| !required_directory(path, self.snapshot.files.keys()))
+                        .is_none_or(|path| !required_directories.contains(path))
                     {
                         remove()?;
                     }
@@ -77,18 +78,25 @@ impl WorkerWorkspace {
                 .restore(path, &bytes, snapshot.permissions.clone())?;
         }
 
-        let matches = self.matches_snapshot()?;
-        hoimin_core::contract_ensure!("workspace.reset.post", matches, self.root.path().as_str(),);
-        if matches {
-            Ok(())
-        } else {
-            Err(WorkspaceError::WorkspaceRestore {
-                path: self.root.path().to_owned(),
-                message: "post-reset manifest comparison failed".to_owned(),
-            })
+        #[cfg(feature = "contracts")]
+        {
+            let matches = self.matches_snapshot()?;
+            hoimin_core::contract_ensure!(
+                "workspace.reset.post",
+                matches,
+                self.root.path().as_str(),
+            );
+            if !matches {
+                return Err(WorkspaceError::WorkspaceRestore {
+                    path: self.root.path().to_owned(),
+                    message: "post-reset manifest comparison failed".to_owned(),
+                });
+            }
         }
+        Ok(())
     }
 
+    #[cfg(any(test, feature = "contracts"))]
     fn matches_snapshot(&self) -> Result<bool, WorkspaceError> {
         let entries = self.root.entries()?;
         if entries.iter().any(|entry| entry.logical_path.is_none()) {
@@ -116,11 +124,21 @@ impl WorkerWorkspace {
     }
 }
 
-fn required_directory<'a>(
-    path: &Utf8Path,
-    mut snapshot_paths: impl Iterator<Item = &'a camino::Utf8PathBuf>,
-) -> bool {
-    snapshot_paths.any(|file| file.starts_with(path) && file != path)
+fn required_directories<'a>(
+    snapshot_paths: impl Iterator<Item = &'a Utf8PathBuf>,
+) -> BTreeSet<Utf8PathBuf> {
+    let mut directories = BTreeSet::new();
+    for file in snapshot_paths {
+        let mut parent = file.parent();
+        while let Some(path) = parent {
+            if path.as_str().is_empty() {
+                break;
+            }
+            directories.insert(path.to_owned());
+            parent = path.parent();
+        }
+    }
+    directories
 }
 
 #[cfg(test)]
@@ -130,13 +148,16 @@ mod tests {
     use std::sync::mpsc::sync_channel;
     use std::sync::{Arc, Mutex};
     use std::thread;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use camino::Utf8Path;
     use hoimin_core::{BudgetLedger, EffectId, RunBudgets, reserve_workspace_copy};
 
     use super::super::root::{WorkspaceRaceHook, install_workspace_race_hook};
-    use super::super::{CopyOptions, WorkerWorkspace, WorkspaceError, WorkspacePlan};
+    use super::super::{
+        CopyOptions, ResetIoMetrics, WorkerWorkspace, WorkspaceError, WorkspacePlan,
+        current_reset_io_metrics, reset_io_metrics,
+    };
 
     #[cfg(unix)]
     type TestPermissionFingerprint = u32;
@@ -187,9 +208,26 @@ mod tests {
         WorkerWorkspace,
         TestPermissionFingerprint,
     ) {
+        changed_worker_with_padding(0)
+    }
+
+    fn changed_worker_with_padding(
+        padding_bytes: usize,
+    ) -> (
+        tempfile::TempDir,
+        WorkerWorkspace,
+        TestPermissionFingerprint,
+    ) {
         let project = tempfile::tempdir().unwrap();
         fs::create_dir(project.path().join("swap")).unwrap();
         fs::write(project.path().join("swap/target.py"), b"original\n").unwrap();
+        if padding_bytes > 0 {
+            fs::write(
+                project.path().join("swap/padding.bin"),
+                vec![b'x'; padding_bytes],
+            )
+            .unwrap();
+        }
         let root = Utf8Path::from_path(project.path()).unwrap();
         let plan = WorkspacePlan::preflight(root, EffectId(1), 1, CopyOptions::default()).unwrap();
         let mut ledger = BudgetLedger::new(RunBudgets {
@@ -202,10 +240,67 @@ mod tests {
             .create_worker(&reservation.create_worker(EffectId(2), 0).unwrap())
             .unwrap();
         let snapshot_permissions = permission_fingerprint(&worker.root().join("swap/target.py"));
-        worker
-            .write("swap/target.py", b"changed contents\n")
-            .unwrap();
+        worker.write("swap/target.py", b"mutated!\n").unwrap();
         (project, worker, snapshot_permissions)
+    }
+
+    #[test]
+    fn reset_reads_each_snapshot_and_worker_file_once() {
+        const PADDING_BYTES: usize = 1024 * 1024;
+        let (_project, mut worker, _snapshot_permissions) =
+            changed_worker_with_padding(PADDING_BYTES);
+        reset_io_metrics();
+
+        worker.reset().unwrap();
+
+        let fixture_bytes = (PADDING_BYTES + b"original\n".len()) as u64;
+        let metrics = current_reset_io_metrics();
+        #[cfg(not(feature = "contracts"))]
+        assert_eq!(
+            metrics,
+            ResetIoMetrics {
+                tree_walks: 1,
+                worker_bytes: fixture_bytes,
+                snapshot_bytes: fixture_bytes,
+            }
+        );
+        #[cfg(feature = "contracts")]
+        assert_eq!(
+            metrics,
+            ResetIoMetrics {
+                tree_walks: 2,
+                worker_bytes: 2 * fixture_bytes,
+                snapshot_bytes: 2 * fixture_bytes,
+            }
+        );
+    }
+
+    #[test]
+    #[ignore = "manual before/after performance evidence"]
+    fn benchmark_workspace_reset_io() {
+        const CYCLES: u64 = 10;
+        const PADDING_BYTES: usize = 8 * 1024 * 1024;
+        let (_project, mut worker, _snapshot_permissions) =
+            changed_worker_with_padding(PADDING_BYTES);
+        reset_io_metrics();
+        let started = Instant::now();
+
+        for cycle in 0..CYCLES {
+            if cycle > 0 {
+                worker.write("swap/target.py", b"mutated!\n").unwrap();
+            }
+            worker.reset().unwrap();
+        }
+
+        let metrics = current_reset_io_metrics();
+        eprintln!(
+            "cycles={CYCLES} fixture_bytes={} tree_walks={} worker_bytes={} snapshot_bytes={} elapsed_ms={}",
+            PADDING_BYTES + b"original\n".len(),
+            metrics.tree_walks,
+            metrics.worker_bytes,
+            metrics.snapshot_bytes,
+            started.elapsed().as_millis()
+        );
     }
 
     #[test]
