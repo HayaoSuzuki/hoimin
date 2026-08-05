@@ -89,6 +89,7 @@ mod tests {
         BudgetLedger, ByteSpan, EffectId, MutationCandidate, RunBudgets, reserve_workspace_copy,
     };
 
+    use super::super::manifest::{build_metrics, reset_build_metrics};
     use super::super::root::{WorkspaceRaceHook, install_workspace_race_hook};
     use super::super::{CopyOptions, WorkerWorkspace, WorkspacePlan};
 
@@ -170,6 +171,17 @@ mod tests {
             file_hash: hash,
         };
         (project, worker, candidate)
+    }
+
+    #[test]
+    fn mutation_and_reset_do_not_rebuild_the_original_manifest() {
+        let (_project, mut worker, candidate) = worker_and_candidate();
+        reset_build_metrics();
+
+        worker.apply_mutation(&candidate).unwrap();
+        worker.reset().unwrap();
+
+        assert_eq!(build_metrics(), (0, 0));
     }
 
     #[test]
