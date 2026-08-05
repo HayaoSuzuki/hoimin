@@ -836,6 +836,10 @@ impl RunState {
                 worker_state.phase = WorkerPhase::Idle;
                 if self.flags.scheduling.stop_requested {
                     effects.extend(self.synthetic_started_output(worker, MutationStatus::NotRun)?);
+                } else if self.scheduled_mutants >= self.config.limits.max_mutants.get() as u64 {
+                    self.flags.scheduling.mutant_limit_reached = true;
+                    self.flags.outcome.incomplete = true;
+                    effects.extend(self.synthetic_started_output(worker, MutationStatus::NotRun)?);
                 } else {
                     self.scheduled_mutants += 1;
                     effects.extend(self.candidate_effects(worker)?);

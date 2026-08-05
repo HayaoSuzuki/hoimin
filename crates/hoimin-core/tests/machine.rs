@@ -3444,6 +3444,7 @@ struct ScheduleHarness {
     jobs: usize,
     session: bool,
     effect_trace: Vec<ScheduleTrace>,
+    apply_mutation_count: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -3462,11 +3463,32 @@ impl ScheduleHarness {
         session: bool,
         completion_classes: Vec<u8>,
     ) -> Self {
+        Self::new_with_max_mutants(
+            candidate_count,
+            jobs,
+            filter,
+            session,
+            completion_classes,
+            None,
+        )
+    }
+
+    fn new_with_max_mutants(
+        candidate_count: usize,
+        jobs: usize,
+        filter: ScheduleFilter,
+        session: bool,
+        completion_classes: Vec<u8>,
+        max_mutants: Option<usize>,
+    ) -> Self {
         let candidates: Vec<_> = (1..=candidate_count)
             .map(|sequence| fixture_candidate(u64::try_from(sequence).unwrap()))
             .collect();
         let mut raw = fixture_raw_config();
         raw.limits.jobs = jobs;
+        if let Some(max_mutants) = max_mutants {
+            raw.limits.max_mutants = max_mutants;
+        }
         if session {
             raw.session = Some(hoimin_core::SessionConfig {
                 path: "session.sqlite3".into(),
@@ -3505,6 +3527,7 @@ impl ScheduleHarness {
             jobs,
             session,
             effect_trace: Vec::new(),
+            apply_mutation_count: 0,
         };
         harness.register(effects);
         harness
@@ -3525,7 +3548,14 @@ impl ScheduleHarness {
                         .entry(started.mutant_id.clone())
                         .or_insert(MutationStatus::NotRun);
                 }
+                if let OutputEvent::MutantFinished(finished) = &output.event {
+                    self.ledger
+                        .insert(finished.candidate.id.clone(), finished.status);
+                }
                 self.output_events.push((output.id, output.event.clone()));
+            }
+            if matches!(effect, RunEffect::ApplyMutation(_)) {
+                self.apply_mutation_count += 1;
             }
             self.effect_trace.push(match &effect {
                 RunEffect::EmitOutput(output)
@@ -3995,6 +4025,45 @@ proptest! {
         // pins: issue #113
         harness.finish(&[ScheduleAction::Cancel]);
     }
+}
+
+#[test]
+fn ordered_scheduling_stops_real_mutants_at_max_mutants() {
+    let harness = ScheduleHarness::new_with_max_mutants(
+        3,
+        1,
+        ScheduleFilter::Ordered,
+        false,
+        vec![0],
+        Some(1),
+    )
+    .finish(&[]);
+
+    assert_eq!(harness.apply_mutation_count, 1);
+    assert_eq!(harness.ledger.get("m3"), Some(&MutationStatus::Killed));
+    assert_eq!(harness.ledger.get("m2"), Some(&MutationStatus::NotRun));
+    assert_eq!(harness.ledger.get("m1"), Some(&MutationStatus::NotRun));
+    assert_eq!(harness.state.summary().killed, 1);
+    assert_eq!(harness.state.summary().not_run, 2);
+    assert_eq!(harness.state.exit_code(), 4);
+}
+
+#[test]
+fn ordered_scheduling_at_exact_max_mutants_is_complete() {
+    let harness = ScheduleHarness::new_with_max_mutants(
+        1,
+        1,
+        ScheduleFilter::Ordered,
+        false,
+        vec![0],
+        Some(1),
+    )
+    .finish(&[]);
+
+    assert_eq!(harness.apply_mutation_count, 1);
+    assert_eq!(harness.ledger.get("m1"), Some(&MutationStatus::Killed));
+    assert_eq!(harness.state.summary().not_run, 0);
+    assert_eq!(harness.state.exit_code(), 0);
 }
 
 #[test]
