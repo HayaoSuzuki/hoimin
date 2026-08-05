@@ -33,6 +33,14 @@ do not pass `--format` to `plan`.
 but are not selected production sources. It does not copy files into workers. Add `--include`
 only when normal worker-copy policy would otherwise omit a required file.
 
+On macOS, `--max-memory` is accepted for plan compatibility but is not enforced. CPU-time limits
+and process-group cleanup remain available. When this best-effort memory policy is acceptable,
+include `--allow-best-effort-memory` in the plan:
+
+```console
+hoimin plan --root . --source <dir> --allow-best-effort-memory -- python -m pytest -q
+```
+
 ## Select and verify candidates
 
 Read `candidates[].id` from `PLAN.json`; choose one ID and pass that exact ID to `verify`:

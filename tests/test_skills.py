@@ -67,6 +67,14 @@ SKILLS = {
 
 
 class SkillContractTests(unittest.TestCase):
+    def test_macos_memory_policy_is_documented(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("--max-memory", readme)
+        self.assertIn("not enforced", readme)
+        for root in (ROOT / ".agents", ROOT / ".claude"):
+            skill = root / "skills" / "hoimin-mutation-testing" / "SKILL.md"
+            self.assertIn("--allow-best-effort-memory", skill.read_text(encoding="utf-8"))
+
     def test_skill_mirrors_and_required_workflows(self) -> None:
         for name, contract in SKILLS.items():
             codex = ROOT / ".agents" / "skills" / name / "SKILL.md"
