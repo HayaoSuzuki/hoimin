@@ -1,4 +1,4 @@
-use super::{AnalyzeRequest, analyze_source, analyze_source_cancellable};
+use super::{AnalyzeRequest, LineIndex, analyze_source, analyze_source_cancellable};
 use crate::analyzer::AnalyzerDiagnosticCode;
 use camino::Utf8Path;
 use hoimin_core::{
@@ -28,6 +28,45 @@ fn benchmark_candidate_line_positions() {
         source.len(),
         elapsed.as_secs_f64() * 1_000.0
     );
+}
+
+#[test]
+fn line_index_reports_one_based_lines_and_unicode_scalar_columns() {
+    let source = "alpha\nβeta\r\n終 = left == right\n";
+    let line_index = LineIndex::new(source);
+
+    for (offset, expected) in [
+        (0, (1, 0)),
+        (6, (2, 0)),
+        (8, (2, 1)),
+        (11, (2, 4)),
+        (24, (3, 9)),
+    ] {
+        assert_eq!(
+            line_index.line_and_column(source, offset),
+            expected,
+            "position at byte offset {offset}",
+        );
+    }
+}
+
+#[test]
+fn line_index_positions_token_and_type_annotation_candidates() {
+    let source = "from typing import Optional\nπ = left == right\n値: Optional[int]\n";
+    let output = analyze_types(source);
+    let positions: Vec<_> = output
+        .candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.line,
+                candidate.column,
+            )
+        })
+        .collect();
+
+    assert_eq!(positions, vec![("==", 2, 9), ("Optional[int]", 3, 3)]);
 }
 
 #[test]

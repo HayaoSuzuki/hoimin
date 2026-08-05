@@ -57,6 +57,7 @@ pub(crate) fn analyze_source_cancellable(
     if cancelled() {
         return Err(AnalysisCancelled);
     }
+    let line_index = LineIndex::new(source);
     let mut candidates = Vec::new();
     let tokens: Vec<_> = parsed.tokens().iter().collect();
     for (index, token) in tokens.iter().enumerate() {
@@ -120,7 +121,7 @@ pub(crate) fn analyze_source_cancellable(
             continue;
         };
         let original = source[start..span_end].to_owned();
-        let (line, column) = line_and_column(source, start);
+        let (line, column) = line_index.line_and_column(source, start);
         let symbol = facts.scope_at(start);
         let operator = MutationOperator::from_name(operator)
             .expect("token mutation operator must be configured");
@@ -146,6 +147,7 @@ pub(crate) fn analyze_source_cancellable(
     candidates.extend(type_annotation_candidates(
         parsed.syntax(),
         source,
+        &line_index,
         &facts.imports,
         request,
     ));
@@ -248,17 +250,32 @@ fn replacement(text: &str, unary: bool) -> Option<(&'static str, &'static str)> 
     Some(result)
 }
 
-#[allow(
-    clippy::cast_possible_truncation,
-    reason = "Ruff TextSize offsets cap parsed source at u32::MAX bytes, and code-point counts cannot exceed byte counts."
-)]
-fn line_and_column(source: &str, offset: usize) -> (u32, u32) {
-    let prefix = &source[..offset];
-    let line = prefix.bytes().filter(|byte| *byte == b'\n').count() as u32 + 1;
-    let column = prefix
-        .rsplit_once('\n')
-        .map_or(prefix.chars().count(), |(_, tail)| tail.chars().count()) as u32;
-    (line, column)
+struct LineIndex {
+    starts: Vec<usize>,
+}
+
+impl LineIndex {
+    fn new(source: &str) -> Self {
+        let mut starts = vec![0];
+        for (index, byte) in source.bytes().enumerate() {
+            if byte == b'\n' {
+                starts.push(index + 1);
+            }
+        }
+        Self { starts }
+    }
+
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "Ruff TextSize offsets cap parsed source at u32::MAX bytes, and code-point counts cannot exceed byte counts."
+    )]
+    fn line_and_column(&self, source: &str, offset: usize) -> (u32, u32) {
+        let line_index = self.starts.partition_point(|start| *start <= offset) - 1;
+        let line_start = self.starts[line_index];
+        let line = line_index as u32 + 1;
+        let column = source[line_start..offset].chars().count() as u32;
+        (line, column)
+    }
 }
 
 fn selected(request: &AnalyzeRequest<'_>, line: u32, symbol: Option<&str>) -> bool {
@@ -695,6 +712,7 @@ impl<'ast> Visitor<'ast> for AnnotationCollector<'ast> {
 fn type_annotation_candidates(
     module: &ModModule,
     source: &str,
+    line_index: &LineIndex,
     imports: &KnownImports,
     request: &AnalyzeRequest<'_>,
 ) -> Vec<AnalyzerCandidate> {
@@ -707,7 +725,7 @@ fn type_annotation_candidates(
                     let range = annotation.range();
                     let start = usize::from(range.start());
                     let end = usize::from(range.end());
-                    let (line, column) = line_and_column(source, start);
+                    let (line, column) = line_index.line_and_column(source, start);
                     selected(request, line, symbol.as_deref()).then(|| AnalyzerCandidate {
                         path: request.path.to_owned(),
                         span: ByteSpan {
