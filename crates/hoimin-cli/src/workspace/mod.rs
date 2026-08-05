@@ -321,6 +321,7 @@ pub struct WorkerWorkspace {
 }
 
 impl WorkerWorkspace {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn from_materialized(
         temp: tempfile::TempDir,
         root: WorkerRoot,

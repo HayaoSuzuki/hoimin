@@ -66,7 +66,7 @@ fn mutation_and_reset_do_not_rebuild_the_original_manifest() {
 
 - [ ] **Step 3: Run the test to establish the baseline failure**
 
-Run: `cargo test -p hoimin-cli mutation_and_reset_do_not_rebuild_the_original_manifest -- --exact --nocapture`
+Run: `cargo test -p hoimin-cli mutation_and_reset_do_not_rebuild_the_original_manifest -- --nocapture`
 
 Expected: FAIL, reporting two manifest builds and twice the selected original bytes.
 
@@ -97,7 +97,7 @@ Document that `apply_mutation` rejects a worker target that differs from the pre
 
 - [ ] **Step 3: Run the performance regression test**
 
-Run: `cargo test -p hoimin-cli mutation_and_reset_do_not_rebuild_the_original_manifest -- --exact --nocapture`
+Run: `cargo test -p hoimin-cli mutation_and_reset_do_not_rebuild_the_original_manifest -- --nocapture`
 
 Expected: PASS with `(0, 0)` manifest work.
 
@@ -181,7 +181,7 @@ git commit -m "docs: report issue 124 performance results"
 
 ```bash
 git push -u origin perf/issue-124-original-verification
-gh pr create --base main --head perf/issue-124-original-verification --title "perf(workspace): avoid original scans per mutant" --body-file <prepared-body>
+gh pr create --base main --head perf/issue-124-original-verification --title "perf(workspace): avoid original scans per mutant" --body-file /private/tmp/hoimin-issue-124-pr-body.md
 gh pr checks <pr-number> --watch
 gh pr merge <pr-number> --squash --delete-branch
 ```
