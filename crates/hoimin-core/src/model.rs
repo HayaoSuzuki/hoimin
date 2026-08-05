@@ -62,6 +62,19 @@ pub enum CommandArg {
     Windows(Vec<u16>),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CandidateCursor {
+    pub offset: u64,
+    pub expected_sequence: u64,
+}
+
+impl CandidateCursor {
+    pub const START: Self = Self {
+        offset: 0,
+        expected_sequence: 1,
+    };
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CandidateSpoolRef {
     pub token: String,

@@ -4,8 +4,8 @@ use hoimin_cli::analyzer::{
     CandidateStore, ProtocolError, StoreError, discover_targets,
 };
 use hoimin_core::{
-    AnalyzeFile, ByteSpan, EffectId, MutationCandidate, MutationOperatorSelection, MutationProfile,
-    TargetSlice,
+    AnalyzeFile, ByteSpan, CandidateCursor, EffectId, MutationCandidate, MutationOperatorSelection,
+    MutationProfile, TargetSlice,
 };
 use std::fs;
 
@@ -147,10 +147,10 @@ async fn replay_runtime_candidates(
     }
     let spool = spool.expect("the final target returns the candidate spool");
     let mut candidates = Vec::new();
-    let mut offset = 0;
-    while let Some((candidate, next_offset)) = CandidateStore::replay_one(&spool, offset).unwrap() {
+    let mut cursor = CandidateCursor::START;
+    while let Some((candidate, next_cursor)) = CandidateStore::replay_one(&spool, cursor).unwrap() {
         candidates.push(candidate);
-        offset = next_offset;
+        cursor = next_cursor;
     }
     candidates
 }
@@ -309,13 +309,15 @@ fn replays_in_stable_offset_order() {
     store.push(&candidate(1)).unwrap();
     store.push(&candidate(2)).unwrap();
     let reference = store.finish().unwrap();
-    let (first, second_offset) = CandidateStore::replay_one(&reference, 0).unwrap().unwrap();
-    let (second, end_offset) = CandidateStore::replay_one(&reference, second_offset)
+    let (first, second_cursor) = CandidateStore::replay_one(&reference, CandidateCursor::START)
+        .unwrap()
+        .unwrap();
+    let (second, end_cursor) = CandidateStore::replay_one(&reference, second_cursor)
         .unwrap()
         .unwrap();
     assert_eq!((first, second), (candidate(1), candidate(2)));
     assert_eq!(
-        CandidateStore::replay_one(&reference, end_offset).unwrap(),
+        CandidateStore::replay_one(&reference, end_cursor).unwrap(),
         None
     );
 }
@@ -534,7 +536,9 @@ fn replay_rejects_duplicate_or_reversed_sequence() {
     let lines = spool_lines(&reference);
 
     fs::write(&reference.token, format!("{}\n{}\n", lines[0], lines[0])).unwrap();
-    let (_, next) = CandidateStore::replay_one(&reference, 0).unwrap().unwrap();
+    let (_, next) = CandidateStore::replay_one(&reference, CandidateCursor::START)
+        .unwrap()
+        .unwrap();
     assert!(matches!(
         CandidateStore::replay_one(&reference, next),
         Err(StoreError::InvalidSequence {
@@ -545,10 +549,99 @@ fn replay_rejects_duplicate_or_reversed_sequence() {
 
     fs::write(&reference.token, format!("{}\n{}\n", lines[1], lines[0])).unwrap();
     assert!(matches!(
-        CandidateStore::replay_one(&reference, 0),
+        CandidateStore::replay_one(&reference, CandidateCursor::START),
         Err(StoreError::InvalidSequence {
             expected: 1,
             actual: 2
+        })
+    ));
+}
+
+#[test]
+fn replay_rejects_zero_expected_sequence() {
+    let mut store = CandidateStore::new(1).unwrap();
+    store.push(&candidate(1)).unwrap();
+    let reference = store.finish().unwrap();
+
+    assert!(matches!(
+        CandidateStore::replay_one(
+            &reference,
+            CandidateCursor {
+                offset: 0,
+                expected_sequence: 0,
+            },
+        ),
+        Err(StoreError::InvalidSequence {
+            expected: 1,
+            actual: 0,
+        })
+    ));
+}
+
+#[test]
+fn replay_rejects_offsets_outside_record_boundaries() {
+    let mut store = CandidateStore::new(1).unwrap();
+    store.push(&candidate(1)).unwrap();
+    let reference = store.finish().unwrap();
+    let length = fs::metadata(&reference.token).unwrap().len();
+
+    for offset in [1, length + 1] {
+        assert!(matches!(
+            CandidateStore::replay_one(
+                &reference,
+                CandidateCursor {
+                    offset,
+                    expected_sequence: 1,
+                },
+            ),
+            Err(StoreError::InvalidOffset { offset: actual }) if actual == offset
+        ));
+    }
+}
+
+#[test]
+fn replay_rejects_a_cursor_sequence_mismatched_at_a_valid_boundary() {
+    let mut store = CandidateStore::new(2).unwrap();
+    store.push(&candidate(1)).unwrap();
+    store.push(&candidate(2)).unwrap();
+    let reference = store.finish().unwrap();
+    let (_, second_cursor) = CandidateStore::replay_one(&reference, CandidateCursor::START)
+        .unwrap()
+        .unwrap();
+
+    assert!(matches!(
+        CandidateStore::replay_one(
+            &reference,
+            CandidateCursor {
+                expected_sequence: 1,
+                ..second_cursor
+            },
+        ),
+        Err(StoreError::InvalidSequence {
+            expected: 1,
+            actual: 2,
+        })
+    ));
+}
+
+#[test]
+fn replay_rejects_an_eof_cursor_past_the_declared_record_count() {
+    let mut store = CandidateStore::new(1).unwrap();
+    store.push(&candidate(1)).unwrap();
+    let reference = store.finish().unwrap();
+    let length = fs::metadata(&reference.token).unwrap().len();
+
+    assert!(matches!(
+        CandidateStore::replay_one(
+            &reference,
+            CandidateCursor {
+                offset: length,
+                expected_sequence: 3,
+            },
+        ),
+        Err(StoreError::InvalidSequence {
+            expected: 1,
+            actual: 2,
         })
     ));
 }
@@ -563,7 +656,9 @@ fn replay_rejects_sequence_gap() {
     let third = serde_json::to_string(&candidate(3)).unwrap();
     fs::write(&reference.token, format!("{first}\n{third}\n")).unwrap();
 
-    let (_, next) = CandidateStore::replay_one(&reference, 0).unwrap().unwrap();
+    let (_, next) = CandidateStore::replay_one(&reference, CandidateCursor::START)
+        .unwrap()
+        .unwrap();
     assert!(matches!(
         CandidateStore::replay_one(&reference, next),
         Err(StoreError::InvalidSequence {
@@ -582,7 +677,9 @@ fn replay_rejects_early_eof_before_reference_record_count() {
     let first = spool_lines(&reference).remove(0);
     fs::write(&reference.token, format!("{first}\n")).unwrap();
 
-    let (_, end) = CandidateStore::replay_one(&reference, 0).unwrap().unwrap();
+    let (_, end) = CandidateStore::replay_one(&reference, CandidateCursor::START)
+        .unwrap()
+        .unwrap();
     assert!(matches!(
         CandidateStore::replay_one(&reference, end),
         Err(StoreError::UnexpectedEof {
@@ -601,7 +698,9 @@ fn replay_rejects_truncated_record() {
     let lines = spool_lines(&reference);
     fs::write(&reference.token, format!("{}\n{{", lines[0])).unwrap();
 
-    let (_, next) = CandidateStore::replay_one(&reference, 0).unwrap().unwrap();
+    let (_, next) = CandidateStore::replay_one(&reference, CandidateCursor::START)
+        .unwrap()
+        .unwrap();
     assert!(matches!(
         CandidateStore::replay_one(&reference, next),
         Err(StoreError::UnexpectedEof {
@@ -640,7 +739,9 @@ async fn concrete_handler_does_not_spawn_python_for_analysis() {
         .await
         .unwrap();
     let spool = finished.spool.unwrap();
-    let (first_candidate, _) = CandidateStore::replay_one(&spool, 0).unwrap().unwrap();
+    let (first_candidate, _) = CandidateStore::replay_one(&spool, CandidateCursor::START)
+        .unwrap()
+        .unwrap();
 
     assert_eq!(spool.records, 1);
     assert_eq!(first_candidate.original, "==");
@@ -722,12 +823,14 @@ async fn concrete_handler_truncates_at_candidate_limit() {
         finished.diagnostics[0].message
     );
     let spool = finished.spool.unwrap();
-    let (candidate, offset) = CandidateStore::replay_one(&spool, 0).unwrap().unwrap();
+    let (candidate, cursor) = CandidateStore::replay_one(&spool, CandidateCursor::START)
+        .unwrap()
+        .unwrap();
 
     assert!(finished.truncated);
     assert_eq!(spool.records, 1);
     assert_eq!(candidate.sequence, 1);
-    assert_eq!(CandidateStore::replay_one(&spool, offset).unwrap(), None);
+    assert_eq!(CandidateStore::replay_one(&spool, cursor).unwrap(), None);
 }
 
 #[tokio::test]
@@ -788,8 +891,11 @@ async fn concrete_handler_spools_multiple_requests_on_final_target() {
         .await
         .unwrap();
     let spool = second.spool.unwrap();
-    let (first_candidate, second_offset) = CandidateStore::replay_one(&spool, 0).unwrap().unwrap();
-    let (second_candidate, end_offset) = CandidateStore::replay_one(&spool, second_offset)
+    let (first_candidate, second_cursor) =
+        CandidateStore::replay_one(&spool, CandidateCursor::START)
+            .unwrap()
+            .unwrap();
+    let (second_candidate, end_cursor) = CandidateStore::replay_one(&spool, second_cursor)
         .unwrap()
         .unwrap();
 
@@ -804,7 +910,7 @@ async fn concrete_handler_spools_multiple_requests_on_final_target() {
         (2, "src/second.py")
     );
     assert_eq!(
-        CandidateStore::replay_one(&spool, end_offset).unwrap(),
+        CandidateStore::replay_one(&spool, end_cursor).unwrap(),
         None
     );
 }

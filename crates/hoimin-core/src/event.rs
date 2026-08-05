@@ -5,9 +5,9 @@ use camino::Utf8PathBuf;
 use std::time::Duration;
 
 use crate::{
-    CandidateSpoolRef, EffectId, IntegrityCheckpoint, MutationCandidate, OutputSpoolRef,
-    ProcessTermination, ReservationId, ResourceMode, RunFingerprint, SessionResumeRef,
-    StoredResult, TargetSlice,
+    CandidateCursor, CandidateSpoolRef, EffectId, IntegrityCheckpoint, MutationCandidate,
+    OutputSpoolRef, ProcessTermination, ReservationId, ResourceMode, RunFingerprint,
+    SessionResumeRef, StoredResult, TargetSlice,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -52,7 +52,7 @@ pub struct CandidateLoaded {
     pub id: EffectId,
     pub worker: u32,
     pub candidate: Option<MutationCandidate>,
-    pub next_offset: u64,
+    pub next_cursor: CandidateCursor,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

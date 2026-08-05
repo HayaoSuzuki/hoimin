@@ -3,8 +3,9 @@ use serde::{Deserialize, Serialize};
 use camino::Utf8PathBuf;
 
 use crate::{
-    CandidateSpoolRef, CommandArg, IntegrityCheckpoint, MutantResult, MutationCandidate,
-    OutputEvent, ProcessLimits, ReservationId, RunFingerprint, Selection, TargetSlice,
+    CandidateCursor, CandidateSpoolRef, CommandArg, IntegrityCheckpoint, MutantResult,
+    MutationCandidate, OutputEvent, ProcessLimits, ReservationId, RunFingerprint, Selection,
+    TargetSlice,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -36,7 +37,7 @@ pub struct ReadCandidate {
     pub id: EffectId,
     pub worker: u32,
     pub spool: CandidateSpoolRef,
-    pub offset: u64,
+    pub cursor: CandidateCursor,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

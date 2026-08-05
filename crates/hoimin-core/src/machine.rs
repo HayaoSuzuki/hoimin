@@ -4,16 +4,17 @@ use thiserror::Error;
 
 use crate::{
     AnalysisDiagnostic, AnalysisFinished, AnalyzeFile, ApplyMutation,
-    BaselineFinished as BaselineOutput, BeginSession, BudgetLedger, CandidateSpoolRef, Cleanup,
-    Diagnostic, EffectFailed, EffectFailure, EffectId, EmitOutput, ExitPolicy, FinishSession,
-    IntegrityCheckpoint, LoadSession, LookupStoredResult, MutantFinished as MutantOutput,
-    MutantResult, MutantStarted, MutantTimeout, MutationCandidate, MutationStatus, MutationSummary,
-    ObserveRemainingBudget, OutputEvent, PersistResult, Preflight, ProcessFinished, ProcessLimits,
-    ProcessTermination, ReadCandidate, ReservationId, ResetWorker, ResolveTargets, ResumeDecision,
-    RunBudgets, RunConfig, RunEffect, RunEvent, RunFingerprint, RunProcess, RunStarted, RunSummary,
-    TargetSlice, VerificationSelection, VerificationSelectionMode, VerifyOriginals,
-    WorkspaceCopyGrant, auto_mutant_timeout, classify_mutant, contract_ensure, exit_code_for,
-    project_top_budget, release_workspace_copy, reserve_workspace_copy,
+    BaselineFinished as BaselineOutput, BeginSession, BudgetLedger, CandidateCursor,
+    CandidateSpoolRef, Cleanup, Diagnostic, EffectFailed, EffectFailure, EffectId, EmitOutput,
+    ExitPolicy, FinishSession, IntegrityCheckpoint, LoadSession, LookupStoredResult,
+    MutantFinished as MutantOutput, MutantResult, MutantStarted, MutantTimeout, MutationCandidate,
+    MutationStatus, MutationSummary, ObserveRemainingBudget, OutputEvent, PersistResult, Preflight,
+    ProcessFinished, ProcessLimits, ProcessTermination, ReadCandidate, ReservationId, ResetWorker,
+    ResolveTargets, ResumeDecision, RunBudgets, RunConfig, RunEffect, RunEvent, RunFingerprint,
+    RunProcess, RunStarted, RunSummary, TargetSlice, VerificationSelection,
+    VerificationSelectionMode, VerifyOriginals, WorkspaceCopyGrant, auto_mutant_timeout,
+    classify_mutant, contract_ensure, exit_code_for, project_top_budget, release_workspace_copy,
+    reserve_workspace_copy,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -174,7 +175,7 @@ pub struct RunState {
     budgets: BudgetLedger,
     copy_grant: Option<WorkspaceCopyGrant>,
     candidate_spool: Option<CandidateSpoolRef>,
-    candidate_offset: u64,
+    candidate_cursor: CandidateCursor,
     workers: BTreeMap<u32, WorkerState>,
     output_actions: BTreeMap<EffectId, OutputAction>,
     created_workers: BTreeSet<u32>,
@@ -218,7 +219,7 @@ impl RunState {
             budgets: BudgetLedger::new(budgets),
             copy_grant: None,
             candidate_spool: None,
-            candidate_offset: 0,
+            candidate_cursor: CandidateCursor::START,
             workers: BTreeMap::new(),
             output_actions: BTreeMap::new(),
             created_workers: BTreeSet::new(),
@@ -345,7 +346,7 @@ impl RunState {
 
     #[must_use]
     pub fn candidate_offset(&self) -> u64 {
-        self.candidate_offset
+        self.candidate_cursor.offset
     }
 
     #[must_use]
@@ -703,7 +704,7 @@ impl RunState {
             id,
             worker,
             spool,
-            offset: self.candidate_offset,
+            cursor: self.candidate_cursor,
         })])
     }
 
@@ -1481,7 +1482,7 @@ pub fn transition(
                 return Err(MachineError::UnknownWorker(value.worker));
             }
             let worker = value.worker;
-            state.candidate_offset = value.next_offset;
+            state.candidate_cursor = value.next_cursor;
             if state
                 .ordered_candidates
                 .as_ref()
