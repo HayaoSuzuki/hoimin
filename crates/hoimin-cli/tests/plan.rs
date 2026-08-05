@@ -321,7 +321,7 @@ fn invalid_normalized_config_cases() -> Vec<InvalidManifestCase> {
                 value["normalized_config"]["limits"]["total_timeout"] =
                     serde_json::json!({"secs": 0, "nanos": 0});
             },
-            "invalid zero or overflowing limit: total_timeout",
+            "invalid zero or overflowing limit: --total-timeout",
         ),
         (
             "missing selector",
@@ -379,7 +379,7 @@ fn invalid_normalized_config_cases() -> Vec<InvalidManifestCase> {
                 value["normalized_config"]["limits"]["baseline_timeout"] =
                     serde_json::json!({"secs": u64::MAX, "nanos": 0});
             },
-            "invalid zero or overflowing limit: baseline_timeout",
+            "invalid zero or overflowing limit: --baseline-timeout",
         ),
     ];
     #[cfg(target_pointer_width = "64")]
@@ -391,7 +391,7 @@ fn invalid_normalized_config_cases() -> Vec<InvalidManifestCase> {
                 value["normalized_config"]["limits"]["max_processes"] =
                     serde_json::json!(u64::from(u32::MAX) + 1);
             },
-            "invalid zero or overflowing limit: max_processes",
+            "invalid zero or overflowing limit: --max-processes",
         ));
         cases
     };
