@@ -193,6 +193,7 @@ impl WorkspaceError {
 pub(crate) struct SnapshotFile {
     permissions: fs::Permissions,
     permission_fingerprint: PermissionFingerprint,
+    blake3: blake3::Hash,
 }
 
 #[cfg(test)]
@@ -250,10 +251,11 @@ pub(crate) fn record_reset_worker_bytes(bytes: usize) {
 }
 
 impl SnapshotFile {
-    fn new(permissions: fs::Permissions) -> Self {
+    fn new(permissions: fs::Permissions, blake3: blake3::Hash) -> Self {
         Self {
             permission_fingerprint: permission_fingerprint(&permissions),
             permissions,
+            blake3,
         }
     }
 }

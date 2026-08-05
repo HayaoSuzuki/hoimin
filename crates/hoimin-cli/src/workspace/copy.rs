@@ -481,7 +481,10 @@ fn create_disk_snapshot(
         }
         fs::write(&destination, bytes)
             .map_err(|error| WorkspaceError::io("write shared snapshot", &entry.path, error))?;
-        files.insert(entry.path.clone(), SnapshotFile::new(permissions));
+        files.insert(
+            entry.path.clone(),
+            SnapshotFile::new(permissions, entry.blake3),
+        );
     }
 
     Ok(DiskSnapshot {
