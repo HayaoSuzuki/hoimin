@@ -99,17 +99,24 @@ impl Default for RunControl {
 struct ShellCompletion {
     event: RunEvent,
     process_task: bool,
+    io_task: bool,
     process: Option<(u32, bool)>,
+    blocking: Option<Box<BlockingEffectCompletion>>,
 }
 
 enum BlockingEffect {
-    Workspace(WorkspaceTask),
+    Workspace(Box<WorkspaceTask>),
     Candidate(hoimin_core::ReadCandidate),
+    #[cfg(test)]
+    TestOperation {
+        id: EffectId,
+        operation: Box<dyn FnOnce() -> RunEvent + Send>,
+    },
 }
 
 enum BlockingEffectCompletion {
-    Workspace(WorkspaceTaskCompletion),
-    Candidate(RunEvent),
+    Workspace(Box<WorkspaceTaskCompletion>),
+    Candidate(Box<RunEvent>),
 }
 
 impl BlockingEffect {
@@ -117,12 +124,14 @@ impl BlockingEffect {
         match self {
             Self::Workspace(task) => task.id(),
             Self::Candidate(request) => request.id,
+            #[cfg(test)]
+            Self::TestOperation { id, .. } => *id,
         }
     }
 
     fn execute(self) -> BlockingEffectCompletion {
         match self {
-            Self::Workspace(task) => BlockingEffectCompletion::Workspace(task.execute()),
+            Self::Workspace(task) => BlockingEffectCompletion::Workspace(Box::new(task.execute())),
             Self::Candidate(request) => {
                 let event = match CandidateStore::replay_one(&request.spool, request.offset) {
                     Ok(Some((candidate, next_offset))) => {
@@ -145,7 +154,11 @@ impl BlockingEffect {
                         error.to_string(),
                     )),
                 };
-                BlockingEffectCompletion::Candidate(event)
+                BlockingEffectCompletion::Candidate(Box::new(event))
+            }
+            #[cfg(test)]
+            Self::TestOperation { operation, .. } => {
+                BlockingEffectCompletion::Candidate(Box::new(operation()))
             }
         }
     }
@@ -165,7 +178,7 @@ fn is_blocking_io_effect(effect: &RunEffect) -> bool {
 fn prepare_blocking_effect<Stdout, Stderr>(
     context: &mut ShellContext<Stdout, Stderr>,
     effect: RunEffect,
-) -> Result<BlockingEffect, RunEvent>
+) -> Result<BlockingEffect, EffectFailed>
 where
     Stdout: Write,
     Stderr: Write,
@@ -175,17 +188,14 @@ where
         RunEffect::ReadCandidate(request) => return Ok(BlockingEffect::Candidate(request)),
         RunEffect::ApplyMutation(request) => {
             let candidate = request.candidate.clone();
-            context
-                .active_candidates
-                .insert(request.worker, candidate.clone());
-            context.workspace.prepare_apply_task(request, candidate)
+            context.active_candidates.insert(request.worker, candidate);
+            context.workspace.prepare_apply_task(request)
         }
         RunEffect::ResetWorker(request) => context.workspace.prepare_reset_task(request),
         RunEffect::VerifyOriginals(request) => context.workspace.prepare_verify_task(request),
         _ => unreachable!("non-blocking effect passed to blocking preparation"),
     };
-    task.map(BlockingEffect::Workspace)
-        .map_err(RunEvent::EffectFailed)
+    task.map(Box::new).map(BlockingEffect::Workspace)
 }
 
 fn accept_blocking_completion<Stdout, Stderr>(
@@ -199,9 +209,9 @@ where
     let event = match completion {
         BlockingEffectCompletion::Workspace(completion) => context
             .workspace
-            .accept_task_completion(completion)
+            .accept_task_completion(*completion)
             .unwrap_or_else(RunEvent::EffectFailed),
-        BlockingEffectCompletion::Candidate(event) => event,
+        BlockingEffectCompletion::Candidate(event) => *event,
     };
     match &event {
         RunEvent::CandidateLoaded(value) => {
@@ -231,7 +241,7 @@ where
 {
     let task = match prepare_blocking_effect(context, effect) {
         Ok(task) => task,
-        Err(event) => return event,
+        Err(error) => return RunEvent::EffectFailed(error),
     };
     let id = task.id();
     match run_blocking_io(id, move || task.execute()).await {
@@ -955,7 +965,9 @@ where
         let cancellation = ProcessCancellation::new();
         let (completion_tx, mut completion_rx) = mpsc::channel(channel_capacity);
         let mut process_tasks = JoinSet::new();
+        let mut io_tasks = JoinSet::new();
         let mut in_flight = 0_usize;
+        let mut io_in_flight = 0_usize;
         let mut stop_signalled = false;
         let mut interrupts = crate::interrupt::InterruptMonitor::spawn();
 
@@ -1027,7 +1039,9 @@ where
                                 serial_completion = Some(ShellCompletion {
                                     event: RunEvent::EffectFailed(error),
                                     process_task: false,
+                                    io_task: false,
                                     process: None,
+                                    blocking: None,
                                 });
                             }
                         }
@@ -1078,7 +1092,9 @@ where
                                 serial_completion = Some(ShellCompletion {
                                     event: RunEvent::EffectFailed(error),
                                     process_task: false,
+                                    io_task: false,
                                     process: None,
+                                    blocking: None,
                                 });
                             }
                         }
@@ -1087,6 +1103,26 @@ where
                             debug_assert!(process_tasks.len() <= max_jobs);
                             in_flight += 1;
                             control.observe_completion_in_flight(in_flight);
+                        }
+                    }
+                    effect if is_blocking_io_effect(&effect) => {
+                        match prepare_blocking_effect(&mut context, effect) {
+                            Ok(task) => {
+                                spawn_blocking_effect(task, completion_tx.clone(), &mut io_tasks);
+                                in_flight += 1;
+                                io_in_flight += 1;
+                                debug_assert!(io_in_flight <= max_jobs);
+                                control.observe_completion_in_flight(in_flight);
+                            }
+                            Err(error) => {
+                                serial_completion = Some(ShellCompletion {
+                                    event: RunEvent::EffectFailed(error),
+                                    process_task: false,
+                                    io_task: false,
+                                    process: None,
+                                    blocking: None,
+                                });
+                            }
                         }
                     }
                     // Wall-clock observation is scheduler-owned so it reads the same absolute
@@ -1099,7 +1135,9 @@ where
                                 tokio::time::Instant::now(),
                             )),
                             process_task: false,
+                            io_task: false,
                             process: None,
+                            blocking: None,
                         });
                     }
                     effect => {
@@ -1155,7 +1193,9 @@ where
                             serial_completion = Some(ShellCompletion {
                                 event,
                                 process_task: false,
+                                io_task: false,
                                 process: None,
+                                blocking: None,
                             });
                         }
                     }
@@ -1169,10 +1209,14 @@ where
                 cancellation.cancel();
                 let drain_failure = drain_processes(
                     &mut process_tasks,
+                    &mut io_tasks,
                     &mut completion_rx,
                     &mut in_flight,
                     &mut metrics,
                     &mut metrics_warnings,
+                    |completion| {
+                        let _ = accept_blocking_completion(&mut context, completion);
+                    },
                 )
                 .await
                 .err();
@@ -1193,7 +1237,9 @@ where
                 ShellCompletion {
                     event,
                     process_task: false,
+                    io_task: false,
                     process: None,
+                    blocking: None,
                 }
             } else if let Some(completion) = ready_process_completion {
                 completion
@@ -1211,7 +1257,9 @@ where
                         ShellCompletion {
                             event: RunEvent::CancellationRequested,
                             process_task: false,
+                            io_task: false,
                             process: None,
+                            blocking: None,
                         }
                     }
                     () = tokio::time::sleep_until(deadline) => {
@@ -1220,7 +1268,9 @@ where
                         ShellCompletion {
                             event: RunEvent::DeadlineReached,
                             process_task: false,
+                            io_task: false,
                             process: None,
+                            blocking: None,
                         }
                     }
                     signal = interrupts.first() => {
@@ -1230,14 +1280,18 @@ where
                             Ok(event) => ShellCompletion {
                                 event,
                                 process_task: false,
+                                io_task: false,
                                 process: None,
+                                blocking: None,
                             },
                             Err(error) => {
                                 signal_failure = Some(error);
                                 ShellCompletion {
                                     event: RunEvent::CancellationRequested,
                                     process_task: false,
+                                    io_task: false,
                                     process: None,
+                                    blocking: None,
                                 }
                             }
                         }
@@ -1251,20 +1305,29 @@ where
                 cancellation.cancel();
                 let drain_failure = drain_processes(
                     &mut process_tasks,
+                    &mut io_tasks,
                     &mut completion_rx,
                     &mut in_flight,
                     &mut metrics,
                     &mut metrics_warnings,
+                    |completion| {
+                        let _ = accept_blocking_completion(&mut context, completion);
+                    },
                 )
                 .await
                 .err();
                 return Err(combine_shutdown_errors(error, drain_failure));
             }
             let ShellCompletion {
-                event,
+                mut event,
                 process_task: process_completion,
+                io_task: io_completion,
                 process,
+                blocking,
             } = completion;
+            if let Some(blocking) = blocking {
+                event = accept_blocking_completion(&mut context, *blocking);
+            }
             let previous_phase = state.phase();
             let accepted_mutant = matches!(&event, RunEvent::MutantFinished(_));
             let targets_resolved = matches!(&event, RunEvent::TargetsResolved(_));
@@ -1281,8 +1344,11 @@ where
                 RunEvent::DeadlineReached | RunEvent::CancellationRequested
             );
             let failed = matches!(event, RunEvent::EffectFailed(_));
-            if !external_stop && process_completion {
+            if !external_stop && (process_completion || io_completion) {
                 in_flight = in_flight.saturating_sub(1);
+            }
+            if !external_stop && io_completion {
+                io_in_flight = io_in_flight.saturating_sub(1);
             }
             if failed {
                 cancellation.cancel();
@@ -1296,10 +1362,14 @@ where
                     cancellation.cancel();
                     let drain_failure = drain_processes(
                         &mut process_tasks,
+                        &mut io_tasks,
                         &mut completion_rx,
                         &mut in_flight,
                         &mut metrics,
                         &mut metrics_warnings,
+                        |completion| {
+                            let _ = accept_blocking_completion(&mut context, completion);
+                        },
                     )
                     .await
                     .err();
@@ -1336,10 +1406,14 @@ where
                 discard_queued_effects(&mut effects, &mut metrics, &mut metrics_warnings);
                 drain_processes(
                     &mut process_tasks,
+                    &mut io_tasks,
                     &mut completion_rx,
                     &mut in_flight,
                     &mut metrics,
                     &mut metrics_warnings,
+                    |completion| {
+                        let _ = accept_blocking_completion(&mut context, completion);
+                    },
                 )
                 .await?;
             } else if process_completion {
@@ -1352,14 +1426,41 @@ where
                     cancellation.cancel();
                     let drain_failure = drain_processes(
                         &mut process_tasks,
+                        &mut io_tasks,
                         &mut completion_rx,
                         &mut in_flight,
                         &mut metrics,
                         &mut metrics_warnings,
+                        |completion| {
+                            let _ = accept_blocking_completion(&mut context, completion);
+                        },
                     )
                     .await
                     .err();
                     return Err(combine_shutdown_errors(process_failure, drain_failure));
+                }
+            } else if io_completion {
+                let io_failure = match io_tasks.join_next().await {
+                    Some(Ok(())) => None,
+                    Some(Err(error)) => Some(format!("blocking I/O task failed: {error}")),
+                    None => Some("blocking I/O completion had no task".to_owned()),
+                };
+                if let Some(io_failure) = io_failure {
+                    cancellation.cancel();
+                    let drain_failure = drain_processes(
+                        &mut process_tasks,
+                        &mut io_tasks,
+                        &mut completion_rx,
+                        &mut in_flight,
+                        &mut metrics,
+                        &mut metrics_warnings,
+                        |completion| {
+                            let _ = accept_blocking_completion(&mut context, completion);
+                        },
+                    )
+                    .await
+                    .err();
+                    return Err(combine_shutdown_errors(io_failure, drain_failure));
                 }
             }
             record_ready_processes(&produced, &mut metrics, &mut metrics_warnings);
@@ -1549,25 +1650,82 @@ fn spawn_process(
             .send(ShellCompletion {
                 event,
                 process_task: true,
+                io_task: false,
                 process: Some((worker, !baseline)),
+                blocking: None,
+            })
+            .await;
+    });
+}
+
+fn spawn_blocking_effect(
+    task: BlockingEffect,
+    sender: mpsc::Sender<ShellCompletion>,
+    tasks: &mut JoinSet<()>,
+) {
+    tasks.spawn(async move {
+        let id = task.id();
+        let (event, blocking) = match run_blocking_io(id, move || task.execute()).await {
+            Ok(completion) => {
+                let event = match &completion {
+                    BlockingEffectCompletion::Workspace(completion) => completion.event().clone(),
+                    BlockingEffectCompletion::Candidate(event) => event.as_ref().clone(),
+                };
+                (event, Some(Box::new(completion)))
+            }
+            Err(error) => (RunEvent::EffectFailed(error), None),
+        };
+        let _ = sender
+            .send(ShellCompletion {
+                event,
+                process_task: false,
+                io_task: true,
+                process: None,
+                blocking,
             })
             .await;
     });
 }
 
 async fn drain_processes(
-    tasks: &mut JoinSet<()>,
+    process_tasks: &mut JoinSet<()>,
+    io_tasks: &mut JoinSet<()>,
     receiver: &mut mpsc::Receiver<ShellCompletion>,
     in_flight: &mut usize,
     metrics: &mut Option<MetricsCollector>,
     metrics_warnings: &mut Vec<(&'static str, String)>,
+    mut accept_blocking: impl FnMut(BlockingEffectCompletion),
 ) -> Result<(), String> {
     let mut first_failure = None;
-    while let Some(result) = tasks.join_next().await {
-        if let Err(error) = result
-            && first_failure.is_none()
-        {
-            first_failure = Some(format!("process task failed while stopping: {error}"));
+    while !process_tasks.is_empty() || !io_tasks.is_empty() {
+        tokio::select! {
+            result = process_tasks.join_next(), if !process_tasks.is_empty() => {
+                if let Some(Err(error)) = result
+                    && first_failure.is_none()
+                {
+                    first_failure = Some(format!("process task failed while stopping: {error}"));
+                }
+            }
+            result = io_tasks.join_next(), if !io_tasks.is_empty() => {
+                if let Some(Err(error)) = result
+                    && first_failure.is_none()
+                {
+                    first_failure = Some(format!("blocking I/O task failed while stopping: {error}"));
+                }
+            }
+            completion = receiver.recv(), if *in_flight > 0 => {
+                if let Some(completion) = completion {
+                    if let Some((worker, true)) = completion.process {
+                        record_metrics(metrics, metrics_warnings, |metrics| {
+                            metrics.process_finished(worker, false)
+                        });
+                    }
+                    if let Some(blocking) = completion.blocking {
+                        accept_blocking(*blocking);
+                    }
+                    *in_flight = in_flight.saturating_sub(1);
+                }
+            }
         }
     }
     while let Ok(completion) = receiver.try_recv() {
@@ -1575,6 +1733,9 @@ async fn drain_processes(
             record_metrics(metrics, metrics_warnings, |metrics| {
                 metrics.process_finished(worker, false)
             });
+        }
+        if let Some(blocking) = completion.blocking {
+            accept_blocking(*blocking);
         }
         *in_flight = in_flight.saturating_sub(1);
     }
@@ -1759,6 +1920,55 @@ mod tests {
 
         assert_eq!(error.id, id);
         assert_eq!(error.failure.code(), "shell.blocking_io");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn blocking_io_effects_overlap_before_either_completes() {
+        let (entered_tx, entered_rx) = std::sync::mpsc::sync_channel(2);
+        let (release_first_tx, release_first_rx) = std::sync::mpsc::sync_channel(0);
+        let (release_second_tx, release_second_rx) = std::sync::mpsc::sync_channel(0);
+        let (completion_tx, mut completion_rx) = tokio::sync::mpsc::channel(2);
+        let mut tasks = JoinSet::new();
+        let first_entered = entered_tx.clone();
+        spawn_blocking_effect(
+            BlockingEffect::TestOperation {
+                id: EffectId(41),
+                operation: Box::new(move || {
+                    first_entered.send(1).unwrap();
+                    release_first_rx.recv().unwrap();
+                    RunEvent::CancellationRequested
+                }),
+            },
+            completion_tx.clone(),
+            &mut tasks,
+        );
+        spawn_blocking_effect(
+            BlockingEffect::TestOperation {
+                id: EffectId(42),
+                operation: Box::new(move || {
+                    entered_tx.send(2).unwrap();
+                    release_second_rx.recv().unwrap();
+                    RunEvent::CancellationRequested
+                }),
+            },
+            completion_tx,
+            &mut tasks,
+        );
+
+        let mut entered = [
+            entered_rx.recv_timeout(Duration::from_secs(1)).unwrap(),
+            entered_rx.recv_timeout(Duration::from_secs(1)).unwrap(),
+        ];
+        entered.sort_unstable();
+        assert_eq!(entered, [1, 2]);
+        release_first_tx.send(()).unwrap();
+        release_second_tx.send(()).unwrap();
+
+        assert!(completion_rx.recv().await.unwrap().io_task);
+        assert!(completion_rx.recv().await.unwrap().io_task);
+        while let Some(result) = tasks.join_next().await {
+            result.unwrap();
+        }
     }
 
     #[tokio::test]
@@ -2030,7 +2240,9 @@ mod tests {
                     "failed",
                 )),
                 process_task: true,
+                io_task: false,
                 process: Some((0, true)),
+                blocking: None,
             })
             .await
             .unwrap();
@@ -2038,19 +2250,24 @@ mod tests {
             .send(ShellCompletion {
                 event: RunEvent::CancellationRequested,
                 process_task: true,
+                io_task: false,
                 process: Some((1, true)),
+                blocking: None,
             })
             .await
             .unwrap();
         drop(sender);
         let mut in_flight = 2;
+        let mut io_tasks = JoinSet::new();
 
         drain_processes(
             &mut tasks,
+            &mut io_tasks,
             &mut receiver,
             &mut in_flight,
             &mut metrics,
             &mut warnings,
+            drop,
         )
         .await
         .unwrap();

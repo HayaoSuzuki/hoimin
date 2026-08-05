@@ -664,16 +664,15 @@ pub(crate) enum WorkspaceTask {
     Create {
         request: CreateWorker,
         plan: Arc<WorkspacePlan>,
-        pending: Option<WorkerWorkspace>,
+        pending: Option<Box<WorkerWorkspace>>,
     },
     Apply {
-        request: ApplyMutation,
-        candidate: MutationCandidate,
-        workspace: WorkerWorkspace,
+        request: Box<ApplyMutation>,
+        workspace: Box<WorkerWorkspace>,
     },
     Reset {
         request: ResetWorker,
-        workspace: WorkerWorkspace,
+        workspace: Box<WorkerWorkspace>,
     },
     Verify {
         request: VerifyOriginals,
@@ -684,8 +683,14 @@ pub(crate) enum WorkspaceTask {
 pub(crate) struct WorkspaceTaskCompletion {
     id: EffectId,
     event: RunEvent,
-    active: Option<(u32, WorkerWorkspace)>,
-    pending: Option<(u32, WorkerWorkspace)>,
+    active: Option<(u32, Box<WorkerWorkspace>)>,
+    pending: Option<(u32, Box<WorkerWorkspace>)>,
+}
+
+impl WorkspaceTaskCompletion {
+    pub(crate) fn event(&self) -> &RunEvent {
+        &self.event
+    }
 }
 
 impl WorkspaceTask {
@@ -699,6 +704,10 @@ impl WorkspaceTask {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the owned task boundary keeps every workspace state return path explicit"
+    )]
     pub(crate) fn execute(self) -> WorkspaceTaskCompletion {
         match self {
             Self::Create {
@@ -734,7 +743,7 @@ impl WorkspaceTask {
                             worker,
                             reservation_id: request.reservation_id(),
                         }),
-                        active: Some((worker, workspace)),
+                        active: Some((worker, Box::new(workspace))),
                         pending: None,
                     },
                     Err(error) => WorkspaceTaskCompletion {
@@ -747,12 +756,11 @@ impl WorkspaceTask {
             }
             Self::Apply {
                 request,
-                candidate,
                 mut workspace,
             } => {
                 let id = request.id;
                 let worker = request.worker;
-                let event = match workspace.apply_mutation(&candidate) {
+                let event = match workspace.apply_mutation(&request.candidate) {
                     Ok(()) => RunEvent::MutationApplied(MutationApplied { id, worker }),
                     Err(error) => RunEvent::EffectFailed(effect_failed(id, error)),
                 };
@@ -916,11 +924,10 @@ impl WorkspaceHandler {
         }
         let plan = self
             .plan
-            .as_ref()
-            .cloned()
+            .clone()
             .ok_or(WorkspaceError::WorkerMissing { worker })
             .map_err(|error| effect_failed(id, error))?;
-        let pending = self.pending_cleanup.remove(&worker);
+        let pending = self.pending_cleanup.remove(&worker).map(Box::new);
         Ok(WorkspaceTask::Create {
             request,
             plan,
@@ -931,7 +938,6 @@ impl WorkspaceHandler {
     pub(crate) fn prepare_apply_task(
         &mut self,
         request: ApplyMutation,
-        candidate: MutationCandidate,
     ) -> Result<WorkspaceTask, EffectFailed> {
         let id = request.id;
         let worker = request.worker;
@@ -941,9 +947,8 @@ impl WorkspaceHandler {
             .ok_or(WorkspaceError::WorkerMissing { worker })
             .map_err(|error| effect_failed(id, error))?;
         Ok(WorkspaceTask::Apply {
-            request,
-            candidate,
-            workspace,
+            request: Box::new(request),
+            workspace: Box::new(workspace),
         })
     }
 
@@ -958,7 +963,10 @@ impl WorkspaceHandler {
             .remove(&worker)
             .ok_or(WorkspaceError::WorkerMissing { worker })
             .map_err(|error| effect_failed(id, error))?;
-        Ok(WorkspaceTask::Reset { request, workspace })
+        Ok(WorkspaceTask::Reset {
+            request,
+            workspace: Box::new(workspace),
+        })
     }
 
     pub(crate) fn prepare_verify_task(
@@ -968,8 +976,7 @@ impl WorkspaceHandler {
         let id = request.id;
         let plan = self
             .plan
-            .as_ref()
-            .cloned()
+            .clone()
             .ok_or(WorkspaceError::WorkerMissing { worker: 0 })
             .map_err(|error| effect_failed(id, error))?;
         Ok(WorkspaceTask::Verify { request, plan })
@@ -979,23 +986,23 @@ impl WorkspaceHandler {
         &mut self,
         completion: WorkspaceTaskCompletion,
     ) -> Result<RunEvent, EffectFailed> {
-        if let Some((worker, workspace)) = completion.active {
-            if self.workers.insert(worker, workspace).is_some() {
-                return Err(EffectFailed::other(
-                    completion.id,
-                    "shell.blocking_io",
-                    format!("blocking completion returned duplicate active worker {worker}"),
-                ));
-            }
+        if let Some((worker, workspace)) = completion.active
+            && self.workers.insert(worker, *workspace).is_some()
+        {
+            return Err(EffectFailed::other(
+                completion.id,
+                "shell.blocking_io",
+                format!("blocking completion returned duplicate active worker {worker}"),
+            ));
         }
-        if let Some((worker, workspace)) = completion.pending {
-            if self.pending_cleanup.insert(worker, workspace).is_some() {
-                return Err(EffectFailed::other(
-                    completion.id,
-                    "shell.blocking_io",
-                    format!("blocking completion returned duplicate pending worker {worker}"),
-                ));
-            }
+        if let Some((worker, workspace)) = completion.pending
+            && self.pending_cleanup.insert(worker, *workspace).is_some()
+        {
+            return Err(EffectFailed::other(
+                completion.id,
+                "shell.blocking_io",
+                format!("blocking completion returned duplicate pending worker {worker}"),
+            ));
         }
         Ok(completion.event)
     }
@@ -1231,6 +1238,7 @@ impl WorkspaceHandler {
         Ok(())
     }
 
+    #[must_use]
     pub fn observed_copy_bytes(&self) -> u64 {
         self.plan
             .as_ref()
@@ -1238,6 +1246,7 @@ impl WorkspaceHandler {
             .unwrap_or_default()
     }
 
+    #[must_use]
     pub fn materialized_worker_slots(&self) -> usize {
         self.plan
             .as_ref()
@@ -1448,14 +1457,11 @@ mod task_tests {
         let (_project, mut handler) = prepared_handler();
         let candidate = candidate(&handler);
         let apply = handler
-            .prepare_apply_task(
-                ApplyMutation {
-                    id: EffectId(3),
-                    worker: 0,
-                    candidate: candidate.clone(),
-                },
-                candidate,
-            )
+            .prepare_apply_task(ApplyMutation {
+                id: EffectId(3),
+                worker: 0,
+                candidate: candidate.clone(),
+            })
             .unwrap();
         assert!(handler.worker(0).is_none());
 
