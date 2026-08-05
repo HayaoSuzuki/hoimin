@@ -33,11 +33,13 @@ No mtime/size shortcut was introduced, so same-size changes and timestamp resolu
 
 ## Benchmark
 
-Command, run from both the baseline commit `e0dda4c` and the optimized worktree in a release build:
+Command, run from both the baseline implementation at `e0dda4c` and the optimized worktree in a release build:
 
 ```console
 cargo test --release -p hoimin-cli benchmark_original_manifest_work_per_mutant_cycle -- --ignored --nocapture
 ```
+
+For the baseline run, the test-only benchmark harness added later in `d246d81` was applied as an uncommitted patch on a temporary detached worktree at `e0dda4c`; none of the production changes from later commits were present. This gives both revisions the identical fixture, loop, counters, and timer. The temporary worktree was removed after measurement.
 
 Fixture and workload:
 
