@@ -4,7 +4,8 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 use camino::Utf8PathBuf;
-use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
+use clap::{ArgGroup, Args, CommandFactory, Parser, Subcommand, ValueEnum};
+use clap_complete::Shell;
 use hoimin_core::{
     CommandArg, ConfigError, LineRange, LineSelection, MutationProfile, OutputConfig, RawRunConfig,
     RawRunLimits, RunConfig, SessionConfig, SymbolSelection,
@@ -36,6 +37,15 @@ enum Command {
     Verify(RawVerifyArgs),
     /// Compare chronologically ordered mutation run reports.
     Progress(RawProgressArgs),
+    /// Generate shell completion scripts.
+    Completions(CompletionsArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct CompletionsArgs {
+    /// Shell to generate completions for.
+    #[arg(value_enum)]
+    pub shell: Shell,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -361,6 +371,7 @@ pub enum ParsedCommand {
     Plan(PlanArgs),
     Verify(VerifyArgs),
     Progress(ProgressArgs),
+    Completions(CompletionsArgs),
 }
 
 #[derive(Debug)]
@@ -473,8 +484,13 @@ impl TryFrom<Command> for ParsedCommand {
                 patience: raw.patience,
                 format: raw.format,
             })),
+            Command::Completions(args) => Ok(Self::Completions(args)),
         }
     }
+}
+
+pub fn write_completions(shell: Shell, writer: &mut impl std::io::Write) {
+    clap_complete::generate(shell, &mut RootCli::command(), "hoimin", writer);
 }
 
 fn run_args_from_mutation(

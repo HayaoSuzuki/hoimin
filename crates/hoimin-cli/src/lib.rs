@@ -61,6 +61,10 @@ where
                 2
             }
         },
+        Ok(cli::ParsedCommand::Completions(args)) => {
+            cli::write_completions(args.shell, stdout);
+            0
+        }
         Ok(cli::ParsedCommand::Plan(args)) => match args.into_run_config() {
             Ok(config) => match plan::create(config).await {
                 Ok(output) => match serde_json::to_writer(&mut *stdout, &output.manifest) {

@@ -59,6 +59,17 @@ fn real_binary_help_and_version_use_stdout() {
 }
 
 #[test]
+fn completions_accept_supported_shells() {
+    for shell in ["bash", "zsh", "fish", "powershell"] {
+        assert!(matches!(
+            parse_from(["hoimin", "completions", shell]).unwrap(),
+            ParsedCommand::Completions(_)
+        ));
+    }
+    assert!(parse_from(["hoimin", "completions", "unsupported"]).is_err());
+}
+
+#[test]
 fn run_resolves_metrics_path_from_invocation_directory() {
     let invocation_dir = std::env::current_dir().unwrap();
     let config = hoimin_cli::cli::parse_config_from([

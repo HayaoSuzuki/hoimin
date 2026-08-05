@@ -47,6 +47,23 @@ async fn successful_clap_displays_use_stdout() {
 }
 
 #[tokio::test]
+async fn completions_command_writes_shell_script_to_stdout() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    let exit =
+        hoimin_cli::run_with_io(["hoimin", "completions", "bash"], &mut stdout, &mut stderr).await;
+
+    assert_eq!(exit, 0);
+    assert!(stderr.is_empty(), "{stderr:?}");
+    let stdout = String::from_utf8(stdout).unwrap();
+    assert!(
+        stdout.contains("_hoimin"),
+        "missing hoimin completion function"
+    );
+}
+
+#[tokio::test]
 async fn invalid_clap_arguments_remain_on_stderr() {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
