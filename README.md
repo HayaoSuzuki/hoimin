@@ -152,28 +152,36 @@ These controls reduce accidental resource exhaustion. hoimin executes user-selec
 
 ## Mutation operators
 
-The default runtime operator set is:
+Without `--operators`, a run selects all 30 runtime operators. `--operators`
+(comma-separated) selects an explicit set; `--exclude-operators` then removes
+individual IDs or selector families. Type-annotation `type_*` operators remain
+opt-in.
 
-- equality (`==` ↔ `!=`) and ordered comparisons (`<`, `<=`, `>`, `>=`);
-- membership (`in` ↔ `not in`) and identity (`is` ↔ `is not`);
-- boolean `and` ↔ `or`;
-- binary and augmented `+` ↔ `-`;
-- `*` ↔ `/` and `//` ↔ `%`;
-- unary `+` ↔ `-`;
-- removal of unary `not`;
-- `True` ↔ `False`;
-- `break` ↔ `continue`.
+| Group | Runtime IDs | Mutations |
+| --- | --- | --- |
+| Existing expression/control flow | `compare_eq_ne`, `compare_order`, `membership`, `identity`, `boolean_and_or`, `binary_add_sub`, `augmented_add_sub`, `binary_mul_div`, `binary_floor_mod`, `unary_sign`, `remove_not`, `boolean_literal`, `break_continue` | comparisons, membership/identity, arithmetic, boolean/literal, and control-flow mutations |
+| Collection calls and literals | `collection_any_all`, `collection_list_tuple`, `collection_set_frozenset`, `collection_append_insert` | `any(x)` ↔ `all(x)`; `list`/`tuple` and `set`/`frozenset` calls; load-context list/tuple literals; `seq.append(x)` ↔ `seq.insert(0, x)` |
+| Same-contract methods | `collection_min_max`, `collection_set_add_discard`, `collection_set_remove_discard`, `collection_string_starts_ends`, `collection_string_split_rsplit` | `min(...)` ↔ `max(...)`; `add`/`discard`, `remove`/`discard`, `startswith`/`endswith`, and `split`/`rsplit` |
+| Structural calls | `structure_append_extend`, `structure_mapping_get_subscript`, `structure_sort_reverse`, `structure_sorted_reversed` | `append(x)` ↔ `extend([x])`; `mapping.get(k)` ↔ `mapping[k]`; `sort()` ↔ `reverse()`; `sorted(x)` ↔ `reversed(x)` |
+| Bitwise operators | `bitwise_and_or`, `bitwise_shift` | `&` ↔ `\|`; `<<` ↔ `>>` |
+| Boundary operators | `structure_index_neighbor`, `structure_slice_neighbor` | adjacent plain-decimal index and slice-bound values |
 
-Without `--operators`, a run selects all 13 runtime operators and does not mutate type annotations. Supplying `--operators` (comma-separated) selects an explicit operator set instead; `--exclude-operators` then removes individual operators or selector families from that set.
-
-The canonical runtime operator IDs are `compare_eq_ne`, `compare_order`, `membership`, `identity`,
-`boolean_and_or`, `binary_add_sub`, `augmented_add_sub`, `binary_mul_div`, `binary_floor_mod`,
-`unary_sign`, `remove_not`, `boolean_literal`, and `break_continue`. The type operator IDs are
-`type_nullable_remove`, `type_nullable_add`, `type_list_sequence`, `type_set_abstract_set`,
-`type_dict_mapping`, `type_iterable_iterator`, and `type_sequence_iterable`. Selector families are
-`type_nullable`, `type_collections`, and `type_iterables`. When loading persisted plan
-configurations, the historical `type_mapping` name remains accepted as an alias for
+The runtime selector families are `collection_ops`, `structure_ops`, and
+`bitwise_ops`; for example,
+`--exclude-operators collection_ops` removes the collection family while
+leaving the other selected IDs enabled. The type selector families are
+`type_nullable`, `type_collections`, and `type_iterables`. The type operator
+IDs are `type_nullable_remove`, `type_nullable_add`, `type_list_sequence`,
+`type_set_abstract_set`, `type_dict_mapping`, `type_iterable_iterator`, and
+`type_sequence_iterable`. When loading persisted plan configurations, the
+historical `type_mapping` name remains accepted as an alias for
 `type_dict_mapping`.
+
+The collection/structural operators are deliberately syntax-directed. They do
+not include an `append`/`pop` mutation, comprehensions, assignment or delete
+targets, or wrapping set literals in `frozenset(...)`. Unsupported keyword or
+starred call forms, arbitrary index expressions, and zero-step slice mutations
+are also excluded. See the development guide for the exact accepted shapes.
 
 For example, run a type checker against nullable and collection annotation mutations:
 
@@ -181,7 +189,9 @@ For example, run a type checker against nullable and collection annotation mutat
 hoimin run --root . --source src --operators type_nullable,type_collections --format json -- uv run ty check
 ```
 
-The type selector families are `type_nullable`, `type_collections`, and `type_iterables`; individual IDs are `type_nullable_remove`, `type_nullable_add`, `type_list_sequence`, `type_set_abstract_set`, `type_dict_mapping`, `type_iterable_iterator`, and `type_sequence_iterable`. For example, append `--exclude-operators type_nullable_add` to retain nullable-removal mutations only. As with every command after `--`, `uv`, `run`, `ty`, and `check` are direct argv elements on both Windows and Unix.
+For example, append `--exclude-operators type_nullable_add` to retain
+nullable-removal mutations only. As with every command after `--`, `uv`, `run`,
+`ty`, and `check` are direct argv elements on both Windows and Unix.
 
 A type checker that exits nonzero for a mutated annotation kills that mutant.
 

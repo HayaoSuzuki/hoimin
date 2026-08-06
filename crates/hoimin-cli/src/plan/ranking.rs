@@ -202,6 +202,7 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::TypeMapping
         | MutationOperator::TypeIterableIterator
         | MutationOperator::TypeSequenceIterable => RankingReasonCode::TypeAnnotation,
+        _ => return None,
     })
 }
 

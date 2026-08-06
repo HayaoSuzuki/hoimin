@@ -54,6 +54,56 @@ cargo +nightly-2026-07-27 test --workspace -- \
 The nightly job supplements rather than replaces the stable Ubuntu, Windows,
 and macOS test jobs.
 
+## Extending collection and structural mutations
+
+The Rust analyzer keeps token-local mutations in its token scanner and adds an
+AST candidate pass for calls, literals, subscripts, and slices. Both passes
+emit the same candidate form and use the shared selection, profile filtering,
+deduplication, source ordering, and candidate-limit pipeline. Keep new
+structural rewrites to one contiguous AST span; build the replacement from the
+original source text so nested expressions, comments, and spelling are
+preserved.
+
+Bare builtin calls (`any`, `all`, `list`, `tuple`, `set`, `frozenset`, `min`,
+`max`, `sorted`, and `reversed`) are suppressed if the matching name is bound
+anywhere in the file. Bindings include imports, assignments, definitions, and
+parameters. This deliberately conservative rule avoids mutating a shadowed
+callable; qualified builtin calls are not candidates. Method mutations are
+syntax-directed and do not infer receiver types.
+
+The supported structural shapes are exact: `append(value)` ↔
+`extend([value])` only when the inverse list literal has one non-starred
+element; `mapping.get(key)` ↔ `mapping[key]` only for a simple name or
+attribute receiver, one positional key, and load context; `sort()` ↔
+`reverse()` only with no arguments; and `sorted(value)` ↔ `reversed(value)`
+only with one positional argument and no keywords. Calls with unsupported
+keywords, star arguments, defaults, trailing commas where a rewrite would be
+ambiguous, complex mapping receivers, or target contexts are skipped.
+
+Boundary mutations likewise use only load-context subscripts. An index must be
+a plain decimal integer literal: emit `+1`, and also `-1` when positive.
+For a slice, plain decimal start, stop, and step literals may move to adjacent
+valid values, except a step mutation to zero. Negative, empty, non-decimal, and
+expression bounds are excluded. Comprehensions, assignment/delete targets,
+the `append`/`pop` pair, and set literals wrapped as `frozenset(...)` are not
+supported transformations.
+
+Tests should use `apply_candidate_and_reparse` to replace the candidate's one
+span in its source and verify `ruff_python_parser::parse_module` accepts the
+result. Keep exact candidate/replacement assertions alongside this
+parse-preservation check.
+
+Run focused analyzer tests while changing these rules:
+
+```console
+cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::shadowed_collection_builtins_are_not_mutated_as_calls -- --exact
+cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::collection_calls_and_literals_emit_exact_parseable_candidates -- --exact
+cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::structure_calls_emit_exact_parseable_candidates -- --exact
+cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::structure_index_neighbor_mutates_decimal_load_indices_only -- --exact
+cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::structure_slice_neighbor_mutates_decimal_bounds_without_zero_steps -- --exact
+cargo test -p hoimin-cli --lib analyzer::rust::rust_tests
+```
+
 ## Test provenance comments
 
 Use `// pins: issue #NNN` only when an assertion intentionally preserves a

@@ -5,7 +5,40 @@ use hoimin_cli::cli::{
     ParsedCommand, ProgressOutputFormat, TopSelectionPolicy, VerifySelection, parse_config_from,
     parse_from,
 };
-use hoimin_core::{MutationOperator, MutationProfile};
+use hoimin_core::{MutationOperator, MutationOperatorSelection, MutationProfile};
+
+const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 30] = [
+    "compare_eq_ne",
+    "compare_order",
+    "membership",
+    "identity",
+    "boolean_and_or",
+    "binary_add_sub",
+    "augmented_add_sub",
+    "binary_mul_div",
+    "binary_floor_mod",
+    "unary_sign",
+    "remove_not",
+    "boolean_literal",
+    "break_continue",
+    "collection_any_all",
+    "collection_list_tuple",
+    "collection_set_frozenset",
+    "collection_append_insert",
+    "collection_min_max",
+    "collection_set_add_discard",
+    "collection_set_remove_discard",
+    "collection_string_starts_ends",
+    "collection_string_split_rsplit",
+    "bitwise_and_or",
+    "bitwise_shift",
+    "structure_append_extend",
+    "structure_mapping_get_subscript",
+    "structure_sort_reverse",
+    "structure_sorted_reversed",
+    "structure_index_neighbor",
+    "structure_slice_neighbor",
+];
 
 #[test]
 fn readme_documents_all_mutation_operator_ids_and_selector_families() {
@@ -25,6 +58,23 @@ fn readme_documents_all_mutation_operator_ids_and_selector_families() {
         "remove_not",
         "boolean_literal",
         "break_continue",
+        "collection_any_all",
+        "collection_list_tuple",
+        "collection_set_frozenset",
+        "collection_append_insert",
+        "collection_min_max",
+        "collection_set_add_discard",
+        "collection_set_remove_discard",
+        "collection_string_starts_ends",
+        "collection_string_split_rsplit",
+        "bitwise_and_or",
+        "bitwise_shift",
+        "structure_append_extend",
+        "structure_mapping_get_subscript",
+        "structure_sort_reverse",
+        "structure_sorted_reversed",
+        "structure_index_neighbor",
+        "structure_slice_neighbor",
         "type_nullable_remove",
         "type_nullable_add",
         "type_list_sequence",
@@ -37,6 +87,18 @@ fn readme_documents_all_mutation_operator_ids_and_selector_families() {
         "type_iterables",
     ] {
         assert!(readme.contains(name), "README is missing {name}");
+    }
+    for expected in [
+        "all 30 runtime operators",
+        "collection_ops",
+        "structure_ops",
+        "bitwise_ops",
+        "--exclude-operators collection_ops",
+        "`append`/`pop`",
+        "comprehensions",
+        "set literals",
+    ] {
+        assert!(readme.contains(expected), "README is missing {expected}");
     }
 }
 
@@ -55,6 +117,25 @@ fn real_binary_help_and_version_use_stdout() {
             "argument: {argument}, stderr: {}",
             String::from_utf8_lossy(&output.stderr)
         );
+    }
+}
+
+#[test]
+fn run_help_lists_all_mutation_operator_ids_and_selectors() {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+        .args(["run", "--help"])
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stderr.is_empty(), "stderr: {:?}", output.stderr);
+    let help = String::from_utf8(output.stdout).unwrap();
+    for name in MutationOperatorSelection::valid_names() {
+        assert!(help.contains(name), "missing {name} from:\n{help}");
     }
 }
 
@@ -759,7 +840,7 @@ fn selector_rejects_non_utf8_wide_units() {
     ));
 }
 #[test]
-fn operator_flags_expand_groups_and_preserve_legacy_default() {
+fn operator_flags_expand_groups_and_preserve_runtime_default() {
     let default =
         hoimin_cli::cli::parse_config_from(["hoimin", "run", "--file", "x.py", "--", "check"])
             .unwrap();
@@ -768,13 +849,24 @@ fn operator_flags_expand_groups_and_preserve_legacy_default() {
             .operators
             .contains(MutationOperator::TypeNullableRemove)
     );
+    assert!(
+        default
+            .operators
+            .contains(MutationOperator::CollectionAnyAll)
+    );
+    assert!(default.operators.contains(MutationOperator::BitwiseShift));
+    assert!(
+        default
+            .operators
+            .contains(MutationOperator::StructureSliceNeighbor)
+    );
     let selected = hoimin_cli::cli::parse_config_from([
         "hoimin",
         "run",
         "--file",
         "x.py",
         "--operators",
-        "type_nullable,type_collections",
+        "type_nullable,type_collections,collection_ops,structure_ops,bitwise_ops",
         "--exclude-operators",
         "type_dict_mapping",
         "--",
@@ -792,6 +884,140 @@ fn operator_flags_expand_groups_and_preserve_legacy_default() {
             .contains(MutationOperator::TypeListSequence)
     );
     assert!(!selected.operators.contains(MutationOperator::TypeMapping));
+    assert!(
+        selected
+            .operators
+            .contains(MutationOperator::CollectionStringSplitRsplit)
+    );
+    assert!(
+        selected
+            .operators
+            .contains(MutationOperator::StructureMappingGetSubscript)
+    );
+    assert!(selected.operators.contains(MutationOperator::BitwiseAndOr));
+}
+
+#[test]
+fn collection_operator_flags_expand_families_and_preserve_runtime_default() {
+    let default =
+        hoimin_cli::cli::parse_config_from(["hoimin", "run", "--file", "x.py", "--", "check"])
+            .unwrap();
+    assert_eq!(
+        default.operators.names(),
+        RUNTIME_DEFAULT_OPERATOR_IDS.map(str::to_owned)
+    );
+    assert!(
+        !default
+            .operators
+            .contains(MutationOperator::TypeNullableRemove)
+    );
+
+    for (selector, expected) in [
+        (
+            "collection_ops",
+            &[
+                "collection_any_all",
+                "collection_list_tuple",
+                "collection_set_frozenset",
+                "collection_append_insert",
+                "collection_min_max",
+                "collection_set_add_discard",
+                "collection_set_remove_discard",
+                "collection_string_starts_ends",
+                "collection_string_split_rsplit",
+            ][..],
+        ),
+        (
+            "structure_ops",
+            &[
+                "structure_append_extend",
+                "structure_mapping_get_subscript",
+                "structure_sort_reverse",
+                "structure_sorted_reversed",
+                "structure_index_neighbor",
+                "structure_slice_neighbor",
+            ][..],
+        ),
+        ("bitwise_ops", &["bitwise_and_or", "bitwise_shift"][..]),
+    ] {
+        let selected = hoimin_cli::cli::parse_config_from([
+            "hoimin",
+            "run",
+            "--file",
+            "x.py",
+            "--operators",
+            selector,
+            "--",
+            "check",
+        ])
+        .unwrap();
+        assert_eq!(
+            selected.operators.names(),
+            expected
+                .iter()
+                .map(|name| (*name).to_owned())
+                .collect::<Vec<_>>(),
+            "selector: {selector}"
+        );
+    }
+
+    let without_structure = hoimin_cli::cli::parse_config_from([
+        "hoimin",
+        "run",
+        "--file",
+        "x.py",
+        "--exclude-operators",
+        "structure_ops",
+        "--",
+        "check",
+    ])
+    .unwrap();
+    assert_eq!(
+        without_structure.operators.names(),
+        RUNTIME_DEFAULT_OPERATOR_IDS
+            .into_iter()
+            .filter(|name| !name.starts_with("structure_"))
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn collection_operator_validation_lists_every_new_canonical_id() {
+    let error = hoimin_cli::cli::parse_config_from([
+        "hoimin",
+        "run",
+        "--file",
+        "x.py",
+        "--operators",
+        "unknown_operator",
+        "--",
+        "check",
+    ])
+    .unwrap_err()
+    .to_string();
+
+    for name in [
+        "collection_any_all",
+        "collection_list_tuple",
+        "collection_set_frozenset",
+        "collection_append_insert",
+        "collection_min_max",
+        "collection_set_add_discard",
+        "collection_set_remove_discard",
+        "collection_string_starts_ends",
+        "collection_string_split_rsplit",
+        "structure_append_extend",
+        "structure_mapping_get_subscript",
+        "structure_sort_reverse",
+        "structure_sorted_reversed",
+        "structure_index_neighbor",
+        "structure_slice_neighbor",
+        "bitwise_and_or",
+        "bitwise_shift",
+    ] {
+        assert!(error.contains(name), "missing {name} from {error}");
+    }
 }
 
 #[test]

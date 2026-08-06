@@ -1,4 +1,5 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::ops::Range;
 
 use camino::Utf8Path;
 use hoimin_core::{
@@ -6,9 +7,12 @@ use hoimin_core::{
 };
 use ruff_python_ast::token::TokenKind;
 use ruff_python_ast::visitor::Visitor;
-use ruff_python_ast::{CmpOp, Expr, ModModule, Operator, Stmt, UnaryOp, visitor};
+use ruff_python_ast::{
+    CmpOp, Expr, ExprCall, ExprContext, ExprList, ExprSlice, ExprSubscript, ExprTuple, ModModule,
+    Number, Operator, Pattern, Stmt, UnaryOp, visitor,
+};
 use ruff_python_parser::parse_module;
-use ruff_text_size::Ranged;
+use ruff_text_size::{Ranged, TextRange};
 
 use super::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
@@ -74,6 +78,9 @@ pub(crate) fn analyze_source_cancellable(
         let start = usize::from(range.start());
         let end = usize::from(range.end());
         let text = &source[start..end];
+        if facts.contains_annotation_span(range) && matches!(text, "&" | "|" | "<<" | ">>") {
+            continue;
+        }
         let previous = index.checked_sub(1).and_then(|i| tokens.get(i));
         let next = tokens.get(index + 1);
         let (span_end, replacement, operator) = if text == "not"
@@ -120,27 +127,32 @@ pub(crate) fn analyze_source_cancellable(
         } else {
             continue;
         };
-        let original = source[start..span_end].to_owned();
-        let (line, column) = line_index.line_and_column(source, start);
         let symbol = facts.scope_at(start);
         let operator = MutationOperator::from_name(operator)
             .expect("token mutation operator must be configured");
-        if selected(request, line, symbol.as_deref()) && request.operators.contains(operator) {
-            candidates.push(AnalyzerCandidate {
-                path: request.path.to_owned(),
-                span: ByteSpan {
-                    start: start as u64,
-                    length: (span_end - start) as u64,
-                },
-                original,
-                replacement,
-                operator: operator.as_str().to_owned(),
-                line,
-                column,
-                symbol,
-            });
+        if let Some(candidate) = make_candidate(
+            request,
+            source,
+            &line_index,
+            start..span_end,
+            replacement,
+            operator,
+            symbol,
+        ) {
+            candidates.push(candidate);
         }
     }
+    if cancelled() {
+        return Err(AnalysisCancelled);
+    }
+    candidates.extend(ast_candidates(
+        parsed.syntax(),
+        source,
+        &line_index,
+        &facts,
+        request,
+        &cancelled,
+    )?);
     if cancelled() {
         return Err(AnalysisCancelled);
     }
@@ -205,6 +217,37 @@ pub(crate) fn analyze_source_cancellable(
     })
 }
 
+fn make_candidate(
+    request: &AnalyzeRequest<'_>,
+    source: &str,
+    line_index: &LineIndex,
+    range: Range<usize>,
+    replacement: String,
+    operator: MutationOperator,
+    symbol: Option<String>,
+) -> Option<AnalyzerCandidate> {
+    if range.start >= range.end || range.end > source.len() {
+        return None;
+    }
+    let original = source.get(range.clone())?.to_owned();
+    let start = u64::try_from(range.start).ok()?;
+    let length = u64::try_from(range.len()).ok()?;
+    let (line, column) = line_index.line_and_column(source, range.start);
+    if !selected(request, line, symbol.as_deref()) || !request.operators.contains(operator) {
+        return None;
+    }
+    Some(AnalyzerCandidate {
+        path: request.path.to_owned(),
+        span: ByteSpan { start, length },
+        original,
+        replacement,
+        operator: operator.as_str().to_owned(),
+        line,
+        column,
+        symbol,
+    })
+}
+
 fn invalid_syntax(path: &Utf8Path) -> AnalyzerOutput {
     AnalyzerOutput {
         candidates: Vec::new(),
@@ -237,6 +280,10 @@ fn replacement(text: &str, unary: bool) -> Option<(&'static str, &'static str)> 
         "/" => ("*", "binary_mul_div"),
         "//" => ("%", "binary_floor_mod"),
         "%" => ("//", "binary_floor_mod"),
+        "&" => ("|", "bitwise_and_or"),
+        "|" => ("&", "bitwise_and_or"),
+        "<<" => (">>", "bitwise_shift"),
+        ">>" => ("<<", "bitwise_shift"),
         "break" => ("continue", "break_continue"),
         "continue" => ("break", "break_continue"),
         "True" => ("False", "boolean_literal"),
@@ -309,9 +356,11 @@ fn module_name(path: &Utf8Path) -> String {
 #[derive(Default)]
 struct AstFacts<'tokens> {
     imports: KnownImports,
+    bound_builtin_names: HashSet<String>,
     unary_sign_starts: HashSet<usize>,
     not_operands: Vec<(usize, usize, usize)>,
     arid_ranges: Vec<(usize, usize)>,
+    annotation_ranges: Vec<(usize, usize)>,
     scopes: Vec<ScopeRange>,
     qualname: Vec<String>,
     tokens: Option<&'tokens ruff_python_ast::token::Tokens>,
@@ -362,6 +411,19 @@ impl<'tokens> AstFacts<'tokens> {
             .any(|(range_start, range_end)| *range_start <= start && end <= *range_end)
     }
 
+    fn record_annotation_range(&mut self, range: TextRange) {
+        self.annotation_ranges
+            .push((usize::from(range.start()), usize::from(range.end())));
+    }
+
+    fn contains_annotation_span(&self, range: TextRange) -> bool {
+        let start = usize::from(range.start());
+        let end = usize::from(range.end());
+        self.annotation_ranges
+            .iter()
+            .any(|(range_start, range_end)| *range_start <= start && end <= *range_end)
+    }
+
     fn not_operand_range(&self, start: usize) -> Option<(usize, usize)> {
         self.not_operands
             .iter()
@@ -372,6 +434,53 @@ impl<'tokens> AstFacts<'tokens> {
 
     fn is_unary_sign(&self, start: usize) -> bool {
         self.unary_sign_starts.contains(&start)
+    }
+
+    fn is_builtin_bound(&self, name: &str) -> bool {
+        self.bound_builtin_names.contains(name)
+    }
+
+    fn record_builtin_name(&mut self, name: &str) {
+        if MUTABLE_BUILTINS.contains(&name) {
+            self.bound_builtin_names.insert(name.to_owned());
+        }
+    }
+
+    fn record_builtin_target(&mut self, expression: &Expr) {
+        match expression {
+            Expr::Name(name) => self.record_builtin_name(name.id.as_str()),
+            Expr::List(list) => {
+                for element in &list.elts {
+                    self.record_builtin_target(element);
+                }
+            }
+            Expr::Tuple(tuple) => {
+                for element in &tuple.elts {
+                    self.record_builtin_target(element);
+                }
+            }
+            Expr::Starred(starred) => self.record_builtin_target(starred.value.as_ref()),
+            _ => {}
+        }
+    }
+
+    fn record_import_alias(&mut self, alias: &ruff_python_ast::Alias, from_import: bool) {
+        let local = alias.asname.as_ref().map_or_else(
+            || {
+                if from_import {
+                    alias.name.as_str()
+                } else {
+                    alias.name.as_str().split('.').next().unwrap_or_default()
+                }
+            },
+            ruff_python_ast::Identifier::as_str,
+        );
+        if local == "*" {
+            self.bound_builtin_names
+                .extend(MUTABLE_BUILTINS.iter().map(|name| (*name).to_owned()));
+        } else {
+            self.record_builtin_name(local);
+        }
     }
 
     fn scope_at(&self, offset: usize) -> Option<String> {
@@ -403,10 +512,61 @@ impl<'tokens> AstFacts<'tokens> {
         visitor::walk_stmt(self, statement);
         self.qualname.pop();
     }
+
+    fn record_function_annotation_ranges(&mut self, definition: &ruff_python_ast::StmtFunctionDef) {
+        for parameter in &definition.parameters {
+            if let Some(annotation) = parameter.annotation() {
+                self.record_annotation_range(annotation.range());
+            }
+        }
+        if let Some(annotation) = definition.returns.as_deref() {
+            self.record_annotation_range(annotation.range());
+        }
+    }
 }
 
 impl<'ast> Visitor<'ast> for AstFacts<'_> {
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
+        match statement {
+            Stmt::Import(import) => {
+                for alias in &import.names {
+                    self.record_import_alias(alias, false);
+                }
+            }
+            Stmt::ImportFrom(import) => {
+                for alias in &import.names {
+                    self.record_import_alias(alias, true);
+                }
+            }
+            Stmt::Assign(assign) => {
+                for target in &assign.targets {
+                    self.record_builtin_target(target);
+                }
+            }
+            Stmt::AugAssign(assign) => self.record_builtin_target(assign.target.as_ref()),
+            Stmt::AnnAssign(assign) => {
+                self.record_builtin_target(assign.target.as_ref());
+                self.record_annotation_range(assign.annotation.range());
+            }
+            Stmt::For(statement_for) => self.record_builtin_target(statement_for.target.as_ref()),
+            Stmt::With(statement_with) => {
+                for item in &statement_with.items {
+                    if let Some(target) = &item.optional_vars {
+                        self.record_builtin_target(target);
+                    }
+                }
+            }
+            Stmt::FunctionDef(definition) => {
+                self.record_builtin_name(definition.name.as_str());
+                self.record_function_annotation_ranges(definition);
+            }
+            Stmt::ClassDef(definition) => self.record_builtin_name(definition.name.as_str()),
+            Stmt::TypeAlias(alias) => {
+                self.record_builtin_target(alias.name.as_ref());
+                self.record_annotation_range(alias.value.range());
+            }
+            _ => {}
+        }
         match statement {
             Stmt::FunctionDef(definition) => {
                 for parameter in definition.parameters.iter_non_variadic_params() {
@@ -443,6 +603,9 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
     }
 
     fn visit_expr(&mut self, expression: &'ast Expr) {
+        if let Expr::Named(named) = expression {
+            self.record_builtin_target(named.target.as_ref());
+        }
         if let Expr::Call(call) = expression
             && matches!(call.func.as_ref(), Expr::Name(name) if name.id.as_str() == "print")
         {
@@ -472,6 +635,627 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
         }
         visitor::walk_expr(self, expression);
     }
+
+    fn visit_pattern(&mut self, pattern: &'ast Pattern) {
+        match pattern {
+            Pattern::MatchMapping(mapping) => {
+                if let Some(rest) = &mapping.rest {
+                    self.record_builtin_name(rest.as_str());
+                }
+            }
+            Pattern::MatchStar(star) => {
+                if let Some(name) = &star.name {
+                    self.record_builtin_name(name.as_str());
+                }
+            }
+            Pattern::MatchAs(as_pattern) => {
+                if let Some(name) = &as_pattern.name {
+                    self.record_builtin_name(name.as_str());
+                }
+            }
+            _ => {}
+        }
+        visitor::walk_pattern(self, pattern);
+    }
+
+    fn visit_parameter(&mut self, parameter: &'ast ruff_python_ast::Parameter) {
+        self.record_builtin_name(parameter.name().as_str());
+        visitor::walk_parameter(self, parameter);
+    }
+
+    fn visit_except_handler(&mut self, except_handler: &'ast ruff_python_ast::ExceptHandler) {
+        let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
+        if let Some(name) = &handler.name {
+            self.record_builtin_name(name.as_str());
+        }
+        visitor::walk_except_handler(self, except_handler);
+    }
+
+    fn visit_comprehension(&mut self, comprehension: &'ast ruff_python_ast::Comprehension) {
+        self.record_builtin_target(&comprehension.target);
+        visitor::walk_comprehension(self, comprehension);
+    }
+}
+
+const MUTABLE_BUILTINS: &[&str] = &[
+    "any",
+    "all",
+    "list",
+    "tuple",
+    "set",
+    "frozenset",
+    "min",
+    "max",
+    "sorted",
+    "reversed",
+];
+
+struct AstCandidateCollector<'a, F> {
+    source: &'a str,
+    line_index: &'a LineIndex,
+    facts: &'a AstFacts<'a>,
+    request: &'a AnalyzeRequest<'a>,
+    cancelled: &'a F,
+    cancelled_observed: bool,
+    candidates: Vec<AnalyzerCandidate>,
+}
+
+impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
+    fn collect(
+        module: &'a ModModule,
+        source: &'a str,
+        line_index: &'a LineIndex,
+        facts: &'a AstFacts<'a>,
+        request: &'a AnalyzeRequest<'a>,
+        cancelled: &'a F,
+    ) -> Result<Vec<AnalyzerCandidate>, AnalysisCancelled> {
+        let mut collector = Self {
+            source,
+            line_index,
+            facts,
+            request,
+            cancelled,
+            cancelled_observed: false,
+            candidates: Vec::new(),
+        };
+        for statement in &module.body {
+            collector.visit_stmt(statement);
+            if collector.cancelled_observed {
+                return Err(AnalysisCancelled);
+            }
+        }
+        Ok(collector.candidates)
+    }
+
+    fn check_cancelled(&mut self) -> bool {
+        if !self.cancelled_observed && (self.cancelled)() {
+            self.cancelled_observed = true;
+        }
+        self.cancelled_observed
+    }
+
+    fn add_candidate(&mut self, range: TextRange, replacement: String, operator: MutationOperator) {
+        let range = byte_range(range);
+        let symbol = self.facts.scope_at(range.start);
+        if let Some(candidate) = make_candidate(
+            self.request,
+            self.source,
+            self.line_index,
+            range,
+            replacement,
+            operator,
+            symbol,
+        ) {
+            self.candidates.push(candidate);
+        }
+    }
+
+    fn collect_call(&mut self, call: &ExprCall) {
+        if let Expr::Name(name) = call.func.as_ref() {
+            self.collect_builtin_call(call, name.id.as_str(), name.range());
+        }
+        if let Expr::Attribute(attribute) = call.func.as_ref() {
+            self.collect_method_call(call, attribute.attr.as_str(), attribute.attr.range());
+        }
+    }
+
+    fn collect_builtin_call(&mut self, call: &ExprCall, name: &str, range: TextRange) {
+        if self.facts.is_builtin_bound(name) {
+            return;
+        }
+        let (replacement, operator) = match name {
+            "any" | "all" if has_exact_positional_arguments(call, 1) => (
+                if name == "any" { "all" } else { "any" },
+                MutationOperator::CollectionAnyAll,
+            ),
+            "list" | "tuple" if has_at_most_one_positional_argument(call) => (
+                if name == "list" { "tuple" } else { "list" },
+                MutationOperator::CollectionListTuple,
+            ),
+            "set" | "frozenset" if has_at_most_one_positional_argument(call) => (
+                if name == "set" { "frozenset" } else { "set" },
+                MutationOperator::CollectionSetFrozenset,
+            ),
+            "min" | "max" if has_supported_same_contract_arguments(call) => (
+                if name == "min" { "max" } else { "min" },
+                MutationOperator::CollectionMinMax,
+            ),
+            "sorted" | "reversed"
+                if has_exact_positional_arguments(call, 1)
+                    && !self.facts.contains_annotation_span(call.range()) =>
+            {
+                (
+                    if name == "sorted" {
+                        "reversed"
+                    } else {
+                        "sorted"
+                    },
+                    MutationOperator::StructureSortedReversed,
+                )
+            }
+            _ => return,
+        };
+        self.add_candidate(range, replacement.to_owned(), operator);
+    }
+
+    fn collect_method_call(&mut self, call: &ExprCall, name: &str, range: TextRange) {
+        if !self.facts.contains_annotation_span(call.range()) {
+            self.collect_structural_method_call(call, name);
+        }
+        let same_contract = has_supported_same_contract_arguments(call);
+        let exact_one = has_exact_positional_arguments(call, 1);
+        match name {
+            "append" if has_supported_append_insert_arguments(call) => {
+                if let Some(replacement) = append_to_insert_replacement(self.source, call) {
+                    self.add_candidate(
+                        call.range(),
+                        replacement,
+                        MutationOperator::CollectionAppendInsert,
+                    );
+                }
+            }
+            "insert"
+                if has_exact_positional_arguments(call, 2)
+                    && is_zero_literal(&call.arguments.args[0]) =>
+            {
+                if let Some(replacement) = insert_to_append_replacement(self.source, call) {
+                    self.add_candidate(
+                        call.range(),
+                        replacement,
+                        MutationOperator::CollectionAppendInsert,
+                    );
+                }
+            }
+            "add" if exact_one => self.add_candidate(
+                range,
+                "discard".to_owned(),
+                MutationOperator::CollectionSetAddDiscard,
+            ),
+            "discard" if exact_one => {
+                self.add_candidate(
+                    range,
+                    "add".to_owned(),
+                    MutationOperator::CollectionSetAddDiscard,
+                );
+                self.add_candidate(
+                    range,
+                    "remove".to_owned(),
+                    MutationOperator::CollectionSetRemoveDiscard,
+                );
+            }
+            "remove" if exact_one => self.add_candidate(
+                range,
+                "discard".to_owned(),
+                MutationOperator::CollectionSetRemoveDiscard,
+            ),
+            "startswith" | "endswith" if same_contract => self.add_candidate(
+                range,
+                if name == "startswith" {
+                    "endswith"
+                } else {
+                    "startswith"
+                }
+                .to_owned(),
+                MutationOperator::CollectionStringStartsEnds,
+            ),
+            "split" | "rsplit" if same_contract => self.add_candidate(
+                range,
+                if name == "split" { "rsplit" } else { "split" }.to_owned(),
+                MutationOperator::CollectionStringSplitRsplit,
+            ),
+            _ => {}
+        }
+    }
+
+    fn collect_structural_method_call(&mut self, call: &ExprCall, name: &str) {
+        let exact_one = has_exact_positional_arguments(call, 1);
+        match name {
+            "append" if has_supported_append_insert_arguments(call) => {
+                if let Some(replacement) = append_to_extend_replacement(self.source, call) {
+                    self.add_candidate(
+                        call.range(),
+                        replacement,
+                        MutationOperator::StructureAppendExtend,
+                    );
+                }
+            }
+            "extend" if exact_one => {
+                if let Some(replacement) = extend_to_append_replacement(self.source, call) {
+                    self.add_candidate(
+                        call.range(),
+                        replacement,
+                        MutationOperator::StructureAppendExtend,
+                    );
+                }
+            }
+            "get"
+                if exact_one
+                    && !self.has_trailing_argument_comma(call)
+                    && is_supported_mapping_key(&call.arguments.args[0])
+                    && matches!(call.func.as_ref(), Expr::Attribute(attribute) if is_simple_receiver(attribute.value.as_ref())) =>
+            {
+                if let Some(replacement) = mapping_get_to_subscript_replacement(self.source, call) {
+                    self.add_candidate(
+                        call.range(),
+                        replacement,
+                        MutationOperator::StructureMappingGetSubscript,
+                    );
+                }
+            }
+            "sort" | "reverse" if has_exact_positional_arguments(call, 0) => {
+                if let Some(replacement) = renamed_method_call_replacement(
+                    self.source,
+                    call,
+                    if name == "sort" { "reverse" } else { "sort" },
+                ) {
+                    self.add_candidate(
+                        call.range(),
+                        replacement,
+                        MutationOperator::StructureSortReverse,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn collect_subscript(&mut self, subscript: &ExprSubscript) {
+        if self.facts.contains_annotation_span(subscript.range())
+            || subscript.ctx != ExprContext::Load
+        {
+            return;
+        }
+        match subscript.slice.as_ref() {
+            Expr::Slice(slice) => self.collect_slice_neighbors(slice),
+            expression => self.collect_index_neighbors(expression),
+        }
+        if !is_simple_receiver(subscript.value.as_ref())
+            || !is_supported_mapping_key(subscript.slice.as_ref())
+        {
+            return;
+        }
+        if let Some(replacement) = subscript_to_mapping_get_replacement(self.source, subscript) {
+            self.add_candidate(
+                subscript.range(),
+                replacement,
+                MutationOperator::StructureMappingGetSubscript,
+            );
+        }
+    }
+
+    fn collect_index_neighbors(&mut self, expression: &Expr) {
+        for replacement in decimal_literal_neighbors(self.source, expression, false) {
+            self.add_candidate(
+                expression.range(),
+                replacement,
+                MutationOperator::StructureIndexNeighbor,
+            );
+        }
+    }
+
+    fn collect_slice_neighbors(&mut self, slice: &ExprSlice) {
+        for (bound, step) in [
+            (slice.lower.as_deref(), false),
+            (slice.upper.as_deref(), false),
+            (slice.step.as_deref(), true),
+        ] {
+            let Some(bound) = bound else {
+                continue;
+            };
+            for replacement in decimal_literal_neighbors(self.source, bound, step) {
+                self.add_candidate(
+                    bound.range(),
+                    replacement,
+                    MutationOperator::StructureSliceNeighbor,
+                );
+            }
+        }
+    }
+
+    fn has_trailing_argument_comma(&self, call: &ExprCall) -> bool {
+        let inner_range = call.arguments.inner_range();
+        self.facts
+            .tokens
+            .expect("parser tokens are set")
+            .iter()
+            .rfind(|token| {
+                let range = token.range();
+                inner_range.start() <= range.start()
+                    && range.end() <= inner_range.end()
+                    && !token.kind().is_trivia()
+            })
+            .is_some_and(|token| token.kind() == TokenKind::Comma)
+    }
+
+    fn collect_list_literal(&mut self, list: &ExprList) {
+        if list.ctx != ExprContext::Load || self.facts.contains_annotation_span(list.range()) {
+            return;
+        }
+        if let Some(replacement) = list_to_tuple_replacement(
+            self.source,
+            list,
+            self.facts.tokens.expect("parser tokens are set"),
+        ) {
+            self.add_candidate(
+                list.range(),
+                replacement,
+                MutationOperator::CollectionListTuple,
+            );
+        }
+    }
+
+    fn collect_tuple_literal(&mut self, tuple: &ExprTuple) {
+        if tuple.ctx != ExprContext::Load || self.facts.contains_annotation_span(tuple.range()) {
+            return;
+        }
+        if let Some(replacement) = tuple_to_list_replacement(self.source, tuple) {
+            self.add_candidate(
+                tuple.range(),
+                replacement,
+                MutationOperator::CollectionListTuple,
+            );
+        }
+    }
+}
+
+impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'_, F> {
+    fn visit_stmt(&mut self, statement: &'ast Stmt) {
+        if !self.check_cancelled() {
+            visitor::walk_stmt(self, statement);
+        }
+    }
+
+    fn visit_expr(&mut self, expression: &'ast Expr) {
+        if !self.check_cancelled() && !self.facts.contains_annotation_span(expression.range()) {
+            match expression {
+                Expr::Call(call) => self.collect_call(call),
+                Expr::Subscript(subscript) => self.collect_subscript(subscript),
+                Expr::List(list) => self.collect_list_literal(list),
+                Expr::Tuple(tuple) => self.collect_tuple_literal(tuple),
+                _ => {}
+            }
+            visitor::walk_expr(self, expression);
+        }
+    }
+}
+
+fn ast_candidates<'a, F: Fn() -> bool>(
+    module: &'a ModModule,
+    source: &'a str,
+    line_index: &'a LineIndex,
+    facts: &'a AstFacts<'a>,
+    request: &'a AnalyzeRequest<'a>,
+    cancelled: &'a F,
+) -> Result<Vec<AnalyzerCandidate>, AnalysisCancelled> {
+    AstCandidateCollector::collect(module, source, line_index, facts, request, cancelled)
+}
+
+fn byte_range(range: TextRange) -> Range<usize> {
+    usize::from(range.start())..usize::from(range.end())
+}
+
+fn source_text(source: &str, range: TextRange) -> Option<&str> {
+    source.get(byte_range(range))
+}
+
+fn has_exact_positional_arguments(call: &ExprCall, count: usize) -> bool {
+    call.arguments.args.len() == count
+        && call.arguments.keywords.is_empty()
+        && !call.arguments.args.iter().any(Expr::is_starred_expr)
+}
+
+fn has_supported_append_insert_arguments(call: &ExprCall) -> bool {
+    has_exact_positional_arguments(call, 1)
+        && !matches!(call.arguments.args.first(), Some(Expr::Generator(_)))
+}
+
+fn has_at_most_one_positional_argument(call: &ExprCall) -> bool {
+    call.arguments.args.len() <= 1
+        && call.arguments.keywords.is_empty()
+        && !call.arguments.args.iter().any(Expr::is_starred_expr)
+}
+
+fn has_supported_same_contract_arguments(call: &ExprCall) -> bool {
+    !call.arguments.args.iter().any(Expr::is_starred_expr)
+        && call
+            .arguments
+            .keywords
+            .iter()
+            .all(|keyword| keyword.arg.is_some())
+}
+
+fn is_zero_literal(expression: &Expr) -> bool {
+    matches!(expression, Expr::NumberLiteral(number) if matches!(&number.value, Number::Int(value) if value.as_usize() == Some(0)))
+}
+
+fn decimal_literal_neighbors(source: &str, expression: &Expr, excludes_zero: bool) -> Vec<String> {
+    let Some(value) = decimal_literal_value(source, expression) else {
+        return Vec::new();
+    };
+    let mut replacements = Vec::with_capacity(2);
+    if let Some(next) = value.checked_add(1) {
+        replacements.push(next.to_string());
+    }
+    if let Some(previous) = value
+        .checked_sub(1)
+        .filter(|previous| !excludes_zero || *previous != 0)
+    {
+        replacements.push(previous.to_string());
+    }
+    replacements
+}
+
+fn decimal_literal_value(source: &str, expression: &Expr) -> Option<u64> {
+    if !matches!(expression, Expr::NumberLiteral(_)) {
+        return None;
+    }
+    let literal = source_text(source, expression.range())?;
+    if literal.is_empty() || !literal.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    literal.parse().ok()
+}
+
+fn append_to_insert_replacement(source: &str, call: &ExprCall) -> Option<String> {
+    let Expr::Attribute(attribute) = call.func.as_ref() else {
+        return None;
+    };
+    let function_start = usize::from(call.func.range().start());
+    let attribute_start = usize::from(attribute.attr.range().start());
+    let prefix = source.get(function_start..attribute_start)?;
+    let arguments = source_text(source, call.arguments.inner_range())?;
+    Some(format!("{prefix}insert(0, {arguments})"))
+}
+
+fn insert_to_append_replacement(source: &str, call: &ExprCall) -> Option<String> {
+    let Expr::Attribute(attribute) = call.func.as_ref() else {
+        return None;
+    };
+    let function_start = usize::from(call.func.range().start());
+    let attribute_start = usize::from(attribute.attr.range().start());
+    let prefix = source.get(function_start..attribute_start)?;
+    let expression = call.arguments.args.get(1)?;
+    if matches!(expression, Expr::Yield(_) | Expr::YieldFrom(_)) {
+        return None;
+    }
+    let argument = source_text(source, expression.range())?;
+    Some(format!("{prefix}append({argument})"))
+}
+
+fn append_to_extend_replacement(source: &str, call: &ExprCall) -> Option<String> {
+    let prefix = method_call_prefix(source, call)?;
+    let argument = source_text(source, call.arguments.inner_range())?;
+    Some(format!("{prefix}extend([{argument}])"))
+}
+
+fn extend_to_append_replacement(source: &str, call: &ExprCall) -> Option<String> {
+    let Expr::List(list) = call.arguments.args.first()? else {
+        return None;
+    };
+    if list.ctx != ExprContext::Load || list.elts.len() != 1 || list.elts[0].is_starred_expr() {
+        return None;
+    }
+    let prefix = method_call_prefix(source, call)?;
+    let literal = source_text(source, list.range())?;
+    let contents = literal.strip_prefix('[')?.strip_suffix(']')?;
+    Some(format!("{prefix}append({contents})"))
+}
+
+fn mapping_get_to_subscript_replacement(source: &str, call: &ExprCall) -> Option<String> {
+    let Expr::Attribute(attribute) = call.func.as_ref() else {
+        return None;
+    };
+    let receiver = source_text(source, attribute.value.range())?;
+    let key = source_text(source, call.arguments.inner_range())?;
+    Some(format!("{receiver}[{key}]"))
+}
+
+fn subscript_to_mapping_get_replacement(source: &str, subscript: &ExprSubscript) -> Option<String> {
+    let receiver = source_text(source, subscript.value.range())?;
+    let receiver_end = usize::from(subscript.value.range().end());
+    let subscript_end = usize::from(subscript.range().end());
+    let indexed = source.get(receiver_end..subscript_end)?;
+    let opening_bracket = indexed.find('[')?;
+    let key = indexed.get(opening_bracket + 1..)?.strip_suffix(']')?;
+    Some(format!("{receiver}.get({key})"))
+}
+
+fn renamed_method_call_replacement(
+    source: &str,
+    call: &ExprCall,
+    replacement: &str,
+) -> Option<String> {
+    let Expr::Attribute(attribute) = call.func.as_ref() else {
+        return None;
+    };
+    let function_start = usize::from(call.func.range().start());
+    let attribute_start = usize::from(attribute.attr.range().start());
+    let attribute_end = usize::from(attribute.attr.range().end());
+    let call_end = usize::from(call.range().end());
+    let prefix = source.get(function_start..attribute_start)?;
+    let suffix = source.get(attribute_end..call_end)?;
+    Some(format!("{prefix}{replacement}{suffix}"))
+}
+
+fn method_call_prefix<'a>(source: &'a str, call: &ExprCall) -> Option<&'a str> {
+    let Expr::Attribute(attribute) = call.func.as_ref() else {
+        return None;
+    };
+    let function_start = usize::from(call.func.range().start());
+    let attribute_start = usize::from(attribute.attr.range().start());
+    source.get(function_start..attribute_start)
+}
+
+fn is_simple_receiver(expression: &Expr) -> bool {
+    matches!(expression, Expr::Name(_) | Expr::Attribute(_))
+}
+
+fn is_supported_mapping_key(expression: &Expr) -> bool {
+    !matches!(
+        expression,
+        Expr::Generator(_) | Expr::Slice(_) | Expr::Starred(_)
+    ) && !matches!(expression, Expr::Tuple(tuple) if !tuple.parenthesized)
+}
+
+fn list_to_tuple_replacement(
+    source: &str,
+    list: &ExprList,
+    tokens: &ruff_python_ast::token::Tokens,
+) -> Option<String> {
+    let range = list.range();
+    let literal = source_text(source, range)?;
+    let contents = literal.strip_prefix('[')?.strip_suffix(']')?;
+    if list.elts.len() != 1 {
+        return Some(format!("({contents})"));
+    }
+    let element_end = usize::from(list.elts[0].range().end());
+    let content_end = usize::from(range.end()).checked_sub(1)?;
+    if has_comma_after_element(tokens, element_end, content_end) {
+        return Some(format!("({contents})"));
+    }
+    Some(format!("({contents},)"))
+}
+
+fn has_comma_after_element(
+    tokens: &ruff_python_ast::token::Tokens,
+    element_end: usize,
+    content_end: usize,
+) -> bool {
+    tokens.iter().any(|token| {
+        let range = token.range();
+        usize::from(range.start()) >= element_end
+            && usize::from(range.end()) <= content_end
+            && token.kind() == TokenKind::Comma
+    })
+}
+
+fn tuple_to_list_replacement(source: &str, tuple: &ExprTuple) -> Option<String> {
+    let literal = source_text(source, tuple.range())?;
+    let contents = literal
+        .strip_prefix('(')
+        .and_then(|literal| literal.strip_suffix(')'))
+        .unwrap_or(literal);
+    Some(format!("[{contents}]"))
 }
 
 fn is_main_guard(expression: &Expr) -> bool {
@@ -725,27 +1509,16 @@ fn type_annotation_candidates(
                     let range = annotation.range();
                     let start = usize::from(range.start());
                     let end = usize::from(range.end());
-                    let (line, column) = line_index.line_and_column(source, start);
-                    selected(request, line, symbol.as_deref()).then(|| AnalyzerCandidate {
-                        path: request.path.to_owned(),
-                        span: ByteSpan {
-                            start: start as u64,
-                            length: (end - start) as u64,
-                        },
-                        original: source[start..end].to_owned(),
+                    make_candidate(
+                        request,
+                        source,
+                        line_index,
+                        start..end,
                         replacement,
-                        operator: operator.as_str().to_owned(),
-                        line,
-                        column,
-                        symbol: symbol.clone(),
-                    })
+                        operator,
+                        symbol.clone(),
+                    )
                 })
-        })
-        .filter(|candidate| {
-            request.operators.contains(
-                MutationOperator::from_name(&candidate.operator)
-                    .expect("type mutation operator is configured"),
-            )
         })
         .collect()
 }

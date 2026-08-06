@@ -5,9 +5,695 @@ use hoimin_core::{
     ByteSpan, LineRange, MutationOperator, MutationOperatorSelection, MutationProfile,
 };
 use proptest::prelude::*;
+use ruff_python_parser::parse_module;
 
 fn analyze(source: &str) -> super::AnalyzerOutput {
     analyze_with(Utf8Path::new("pkg/sample.py"), &[], &[], 10_000, source)
+}
+
+fn apply_candidate_and_reparse(source: &str, candidate: &super::AnalyzerCandidate) -> String {
+    let start = usize::try_from(candidate.span.start).expect("candidate start fits usize");
+    let length = usize::try_from(candidate.span.length).expect("candidate length fits usize");
+    let end = start
+        .checked_add(length)
+        .expect("candidate end does not overflow");
+    let mut mutated = source.to_owned();
+    mutated.replace_range(start..end, &candidate.replacement);
+    assert!(
+        parse_module(&mutated).is_ok(),
+        "candidate {} produced invalid Python: {mutated}",
+        candidate.operator
+    );
+    mutated
+}
+
+#[test]
+fn clean_collection_builtin_calls_remain_eligible_for_ast_collection() {
+    let source = "result = any(items)\n";
+    let parsed = parse_module(source).expect("clean builtin call parses");
+    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens());
+
+    assert!(!facts.is_builtin_bound("any"));
+}
+
+#[test]
+fn comprehension_targets_bind_collection_builtins() {
+    let source = "result = [list(item) for list in factories]\n";
+    let parsed = parse_module(source).expect("comprehension fixture parses");
+    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens());
+
+    assert!(facts.is_builtin_bound("list"));
+}
+
+#[test]
+fn annotated_augmented_and_lambda_bindings_are_conservative() {
+    let source = "tuple: object = custom_tuple\nmax += value\nmapper = lambda *, sorted, **reversed: (sorted, reversed)\n";
+    let parsed = parse_module(source).expect("binding fixture parses");
+    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens());
+
+    for name in ["tuple", "max", "sorted", "reversed"] {
+        assert!(facts.is_builtin_bound(name), "expected {name} to be bound");
+    }
+}
+
+#[test]
+fn annotations_do_not_emit_default_bitwise_mutations() {
+    let output = analyze("value: Left | None\nresult = left & right\n");
+
+    assert_eq!(
+        output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "bitwise_and_or")
+            .map(|candidate| candidate.original.as_str())
+            .collect::<Vec<_>>(),
+        vec!["&"]
+    );
+}
+
+#[test]
+fn type_alias_and_match_capture_bindings_shadow_collection_builtins() {
+    for source in [
+        "type list = int\nresult = list(items)\n",
+        "match value:\n    case list:\n        pass\nresult = list(items)\n",
+    ] {
+        let output = analyze(source);
+        assert!(
+            output
+                .candidates
+                .iter()
+                .all(|candidate| candidate.operator != "collection_list_tuple"),
+            "unexpected list candidate for {source:?}: {:#?}",
+            output.candidates
+        );
+    }
+}
+
+#[test]
+fn structural_candidates_reject_bare_generators_and_preserve_commented_literals() {
+    let source = concat!(
+        "items.append(value for value in values)\n",
+        "mapping.get(value for value in values)\n",
+        "items.insert(0, (yield value))\n",
+        "items.insert(0, (yield from values))\n",
+        "items = [item, # keep this comment\n]\n",
+        "other = [item # keep this comment\n,]\n",
+        "yielding_value = [(yield value)]\n",
+        "yielding = [(yield from values)]\n",
+        "named = [item := value]\n",
+    );
+    let output = analyze(source);
+
+    assert!(
+        output.candidates.iter().all(|candidate| {
+            !matches!(
+                candidate.operator.as_str(),
+                "collection_append_insert" | "structure_mapping_get_subscript"
+            )
+        }),
+        "unexpected candidates: {:#?}",
+        output.candidates
+    );
+    for candidate in output.candidates.iter().filter(|candidate| {
+        candidate.operator.starts_with("collection_")
+            || candidate.operator.starts_with("structure_")
+    }) {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
+fn annotations_and_star_imports_suppress_collection_candidates() {
+    let annotation_output = analyze(
+        "from typing import Callable\nhandler: Callable[[Left, Right], Result]\nvalue: tuple[Left, Right]\n",
+    );
+    assert!(
+        annotation_output
+            .candidates
+            .iter()
+            .all(|candidate| candidate.operator != "collection_list_tuple")
+    );
+
+    let star_import_output =
+        analyze("from helpers import *\nresult = list(items)\nvalue = tuple(items)\n");
+    assert!(
+        star_import_output
+            .candidates
+            .iter()
+            .all(|candidate| candidate.operator != "collection_list_tuple")
+    );
+}
+
+#[test]
+fn shadowed_collection_builtins_are_not_mutated_as_calls() {
+    let source = "any = custom_any\nfrom helpers import all\ndef list(tuple):\n    min = custom_min\n    for max in items:\n        pass\n    with resource as sorted:\n        pass\n    try:\n        pass\n    except Error as reversed:\n        pass\n    if (frozenset := custom_frozenset):\n        return list(items), tuple(items), set(items), frozenset(items), min(items), max(items), sorted(items), reversed(items)\nclass set:\n    pass\n";
+    let parsed = parse_module(source).expect("shadowing fixture parses");
+    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens());
+    for name in [
+        "any",
+        "all",
+        "list",
+        "tuple",
+        "set",
+        "frozenset",
+        "min",
+        "max",
+        "sorted",
+        "reversed",
+    ] {
+        assert!(facts.is_builtin_bound(name), "expected {name} to be bound");
+    }
+
+    let output = analyze(source);
+    assert!(
+        output.candidates.iter().all(|candidate| {
+            !matches!(
+                candidate.original.as_str(),
+                "any"
+                    | "all"
+                    | "list"
+                    | "tuple"
+                    | "set"
+                    | "frozenset"
+                    | "min"
+                    | "max"
+                    | "sorted"
+                    | "reversed"
+            )
+        }),
+        "shadowed builtins must not emit name-replacement candidates: {:#?}",
+        output.candidates
+    );
+}
+
+#[test]
+fn collection_calls_and_literals_emit_exact_parseable_candidates() {
+    let source = concat!(
+        "any_result = any(items)\n",
+        "all_result = all(items)\n",
+        "list_result = list(values)\n",
+        "tuple_result = tuple(values)\n",
+        "empty_list_call = list()\n",
+        "empty_tuple_call = tuple()\n",
+        "set_result = set(values)\n",
+        "frozen_result = frozenset(values)\n",
+        "minimum = min(first, second, key=rank)\n",
+        "maximum = max(values, default=fallback)\n",
+        "items.append(value)\n",
+        "items.insert(0, value)\n",
+        "members.add(value)\n",
+        "members.discard(value)\n",
+        "members.remove(value)\n",
+        "text.startswith(prefix)\n",
+        "text.endswith(suffix, start, stop)\n",
+        "text.split(separator, maxsplit=limit)\n",
+        "text.rsplit()\n",
+        "many = [first, *rest, last,]\n",
+        "one = [item]\n",
+        "empty_list = []\n",
+        "tuple_many = (first, *rest, last,)\n",
+        "tuple_one = (item,)\n",
+        "empty_tuple = ()\n",
+        "bare_tuple = first, *rest,\n",
+    );
+    let output = analyze(source);
+    let collection_candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator.starts_with("collection_"))
+        .collect();
+    let actual: Vec<_> = collection_candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        actual,
+        vec![
+            ("any", "all", "collection_any_all"),
+            ("all", "any", "collection_any_all"),
+            ("list", "tuple", "collection_list_tuple"),
+            ("tuple", "list", "collection_list_tuple"),
+            ("list", "tuple", "collection_list_tuple"),
+            ("tuple", "list", "collection_list_tuple"),
+            ("set", "frozenset", "collection_set_frozenset"),
+            ("frozenset", "set", "collection_set_frozenset"),
+            ("min", "max", "collection_min_max"),
+            ("max", "min", "collection_min_max"),
+            (
+                "items.append(value)",
+                "items.insert(0, value)",
+                "collection_append_insert",
+            ),
+            (
+                "items.insert(0, value)",
+                "items.append(value)",
+                "collection_append_insert",
+            ),
+            ("add", "discard", "collection_set_add_discard"),
+            ("discard", "add", "collection_set_add_discard"),
+            ("discard", "remove", "collection_set_remove_discard"),
+            ("remove", "discard", "collection_set_remove_discard"),
+            ("startswith", "endswith", "collection_string_starts_ends"),
+            ("endswith", "startswith", "collection_string_starts_ends"),
+            ("split", "rsplit", "collection_string_split_rsplit"),
+            ("rsplit", "split", "collection_string_split_rsplit"),
+            (
+                "[first, *rest, last,]",
+                "(first, *rest, last,)",
+                "collection_list_tuple",
+            ),
+            ("[item]", "(item,)", "collection_list_tuple"),
+            ("[]", "()", "collection_list_tuple"),
+            (
+                "(first, *rest, last,)",
+                "[first, *rest, last,]",
+                "collection_list_tuple",
+            ),
+            ("(item,)", "[item,]", "collection_list_tuple"),
+            ("()", "[]", "collection_list_tuple"),
+            ("first, *rest,", "[first, *rest,]", "collection_list_tuple",),
+        ]
+    );
+
+    for candidate in collection_candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
+fn collection_excludes_unsupported_call_and_literal_shapes() {
+    let source = concat!(
+        "list_comp = [item for item in items]\n",
+        "set_comp = {item for item in items}\n",
+        "left, right = values\n",
+        "any()\n",
+        "any(first, second)\n",
+        "list(iterable=items)\n",
+        "tuple(*items)\n",
+        "set(iterable=items)\n",
+        "frozenset(*items)\n",
+        "items.insert(1, value)\n",
+        "items.insert(index, value)\n",
+        "items.sort(reverse=True)\n",
+        "members.add(*values)\n",
+        "members.discard(**options)\n",
+        "members.remove(value, extra)\n",
+        "text.startswith(*parts)\n",
+        "text.endswith(**options)\n",
+        "text.split(*parts)\n",
+        "text.rsplit(**options)\n",
+        "set_literal = {first, second}\n",
+    );
+    let output = analyze(source);
+
+    assert!(
+        output
+            .candidates
+            .iter()
+            .all(|candidate| !candidate.operator.starts_with("collection_")),
+        "unexpected collection candidates: {:#?}",
+        output.candidates
+    );
+}
+
+#[test]
+fn structure_calls_emit_exact_parseable_candidates() {
+    let source = concat!(
+        "appended = items.append(value)\n",
+        "extended = items.extend([value])\n",
+        "got = mapping.get(key)\n",
+        "subscripted = mapping[key]\n",
+        "sorted_items = items.sort()\n",
+        "reversed_items = items.reverse()\n",
+        "ordered = sorted(items)\n",
+        "flipped = reversed(items)\n",
+    );
+    let output = analyze(source);
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator.starts_with("structure_"))
+        .collect();
+    let actual: Vec<_> = candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        actual,
+        vec![
+            (
+                "items.append(value)",
+                "items.extend([value])",
+                "structure_append_extend",
+            ),
+            (
+                "items.extend([value])",
+                "items.append(value)",
+                "structure_append_extend",
+            ),
+            (
+                "mapping.get(key)",
+                "mapping[key]",
+                "structure_mapping_get_subscript",
+            ),
+            (
+                "mapping[key]",
+                "mapping.get(key)",
+                "structure_mapping_get_subscript",
+            ),
+            ("items.sort()", "items.reverse()", "structure_sort_reverse",),
+            ("items.reverse()", "items.sort()", "structure_sort_reverse",),
+            ("sorted", "reversed", "structure_sorted_reversed"),
+            ("reversed", "sorted", "structure_sorted_reversed"),
+        ]
+    );
+
+    for candidate in candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
+fn structure_replacements_preserve_nested_sources_and_reparse() {
+    let source = concat!(
+        "appended = items().append(\n",
+        "    \"value\"  # retained\n",
+        ")\n",
+        "extended = items().extend([\n",
+        "    \"value\"  # retained\n",
+        "])\n",
+        "combined = container.mapping.get((make_key(\"field\"))) + 1  # retained\n",
+        "subscripted = container.mapping[(make_key(\"field\"))]\n",
+        "sorted_result = sorted(produce_items())\n",
+        "reversed_result = reversed(produce_items())\n",
+    );
+    let output = analyze(source);
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator.starts_with("structure_"))
+        .collect();
+    let actual: Vec<_> = candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        actual,
+        vec![
+            (
+                "items().append(\n    \"value\"  # retained\n)",
+                "items().extend([\n    \"value\"  # retained\n])",
+                "structure_append_extend",
+            ),
+            (
+                "items().extend([\n    \"value\"  # retained\n])",
+                "items().append(\n    \"value\"  # retained\n)",
+                "structure_append_extend",
+            ),
+            (
+                "container.mapping.get((make_key(\"field\")))",
+                "container.mapping[(make_key(\"field\"))]",
+                "structure_mapping_get_subscript",
+            ),
+            (
+                "container.mapping[(make_key(\"field\"))]",
+                "container.mapping.get((make_key(\"field\")))",
+                "structure_mapping_get_subscript",
+            ),
+            ("sorted", "reversed", "structure_sorted_reversed"),
+            ("reversed", "sorted", "structure_sorted_reversed"),
+        ]
+    );
+
+    for candidate in candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
+fn structure_candidates_skip_type_annotation_expressions() {
+    let source = concat!(
+        "value: mapping[key]\n",
+        "fallback: mapping.get(key)\n",
+        "def annotated(parameter: mapping[key]) -> mapping.get(key):\n",
+        "    pass\n",
+        "result = mapping[key]\n",
+    );
+    let output = analyze(source);
+
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator.starts_with("structure_"))
+        .collect();
+    assert_eq!(
+        candidates
+            .iter()
+            .map(|candidate| candidate.original.as_str())
+            .collect::<Vec<_>>(),
+        vec!["mapping[key]"],
+    );
+    for candidate in candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
+fn structure_excludes_unsupported_shapes_and_receivers() {
+    let source = concat!(
+        "items.append(*values)\n",
+        "items.append(value=value)\n",
+        "items.extend(values)\n",
+        "items.extend([first, second])\n",
+        "items.extend([*values])\n",
+        "items.extend([value], extra)\n",
+        "items.extend(values=[value])\n",
+        "mapping.get(key, fallback)\n",
+        "mapping.get(key,)\n",
+        "mapping.get(key,  # trailing comma\n",
+        ")\n",
+        "mapping.get(key=key)\n",
+        "mapping.get(*keys)\n",
+        "mapping.get(**options)\n",
+        "factory().get(key)\n",
+        "factory()[key]\n",
+        "mapping[first, second]\n",
+        "mapping[*keys]\n",
+        "mapping[key:stop]\n",
+        "mapping[key] = value\n",
+        "del mapping[key]\n",
+        "items.sort(key=rank)\n",
+        "items.sort(reverse=True)\n",
+        "items.reverse(*values)\n",
+        "items.reverse(values=values)\n",
+        "sorted(items, key=rank)\n",
+        "sorted(iterable=items)\n",
+        "reversed(items, extra)\n",
+        "reversed(iterable=items)\n",
+        "sorted(*items)\n",
+    );
+    let output = analyze(source);
+
+    assert!(
+        output
+            .candidates
+            .iter()
+            .all(|candidate| !candidate.operator.starts_with("structure_")),
+        "unexpected structural candidates: {:#?}",
+        output.candidates
+    );
+}
+
+#[test]
+fn bitwise_and_or() {
+    let source = "and_result = left & right\nor_result = left | right\n";
+    let output = analyze(source);
+    let actual: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "bitwise_and_or")
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        actual,
+        vec![("&", "|", "bitwise_and_or"), ("|", "&", "bitwise_and_or"),]
+    );
+}
+
+#[test]
+fn bitwise_shift() {
+    let source = "left_result = value << amount\nright_result = value >> amount\n";
+    let output = analyze(source);
+    let actual: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "bitwise_shift")
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        actual,
+        vec![("<<", ">>", "bitwise_shift"), (">>", "<<", "bitwise_shift"),]
+    );
+}
+
+#[test]
+fn structure_index_neighbor_mutates_decimal_load_indices_only() {
+    let source = concat!(
+        "zero = items[0]\n",
+        "one = items[1]\n",
+        "largest = items[18446744073709551615]\n",
+        "negative = items[-1]\n",
+        "expression = items[index + 1]\n",
+        "hexadecimal = items[0x10]\n",
+        "underscored = items[1_000]\n",
+        "annotation: items[1]\n",
+        "assigned[1] = value\n",
+        "del deleted[1]\n",
+    );
+    let output = analyze(source);
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "structure_index_neighbor")
+        .collect();
+    let actual: Vec<_> = candidates
+        .iter()
+        .map(|candidate| (candidate.original.as_str(), candidate.replacement.as_str()))
+        .collect();
+
+    assert_eq!(
+        actual,
+        vec![
+            ("0", "1"),
+            ("1", "2"),
+            ("1", "0"),
+            ("18446744073709551615", "18446744073709551614"),
+        ]
+    );
+    for candidate in candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
+fn structure_slice_neighbor_mutates_decimal_bounds_without_zero_steps() {
+    let source = concat!(
+        "all_bounds = items[1:3:1]\n",
+        "empty_start_and_step = items[:3:]\n",
+        "empty_bounds = items[:]\n",
+        "expression = items[start:stop:step]\n",
+        "negative = items[-1:-3:-1]\n",
+        "hexadecimal = items[0x10:0x20:0x1]\n",
+        "underscored = items[1_000:2_000:3_000]\n",
+        "annotation: items[1:3:1]\n",
+        "assigned[1:3:1] = values\n",
+        "del deleted[1:3:1]\n",
+    );
+    let output = analyze(source);
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "structure_slice_neighbor")
+        .collect();
+    let actual: Vec<_> = candidates
+        .iter()
+        .map(|candidate| (candidate.original.as_str(), candidate.replacement.as_str()))
+        .collect();
+
+    assert_eq!(
+        actual,
+        vec![
+            ("1", "2"),
+            ("1", "0"),
+            ("3", "4"),
+            ("3", "2"),
+            ("1", "2"),
+            ("3", "4"),
+            ("3", "2"),
+        ]
+    );
+    for candidate in candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
+fn collection_literals_and_inner_token_candidates_remain_individually_parseable() {
+    let source = "value = [a == b]\n";
+    let output = analyze(source);
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        candidates,
+        vec![
+            ("[a == b]", "(a == b,)", "collection_list_tuple"),
+            ("==", "!=", "compare_eq_ne"),
+        ]
+    );
+    for candidate in &output.candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
+fn candidate_replacements_reparse_as_python() {
+    let source = "result = left == right\n";
+    let output = analyze(source);
+    let candidate = output
+        .candidates
+        .iter()
+        .find(|candidate| candidate.operator == "compare_eq_ne")
+        .expect("comparison candidate");
+
+    assert_eq!(
+        apply_candidate_and_reparse(source, candidate),
+        "result = left != right\n"
+    );
 }
 
 #[test]
@@ -306,7 +992,7 @@ fn omits_candidates_for_unselected_operators() {
 
 const MUTABLE_OPERATOR_TOKENS: &[&str] = &[
     "==", "!=", "<", "<=", ">", ">=", "in", "not in", "is", "is not", "and", "or", "+=", "-=", "*",
-    "/", "//", "%", "break", "continue", "True", "False", "+", "-", "not",
+    "/", "//", "%", "&", "|", "<<", ">>", "break", "continue", "True", "False", "+", "-", "not",
 ];
 
 const NESTED_QUOTE_PAIRS: &[(&str, &str, &str)] = &[
@@ -682,15 +1368,15 @@ proptest! {
     #[test]
     fn arbitrary_python_input_has_ordered_in_bounds_candidates(source in ".{0,4096}") {
         let output = analyze(&source);
-        let mut previous_end = 0;
+        let mut previous_start = 0;
         for candidate in output.candidates {
             let start = usize::try_from(candidate.span.start).expect("span start fits usize");
             let length = usize::try_from(candidate.span.length).expect("span length fits usize");
             let end = start.checked_add(length).expect("candidate span does not overflow");
-            prop_assert!(previous_end <= start);
+            prop_assert!(previous_start <= start);
             prop_assert!(end <= source.len());
             prop_assert_eq!(&source[start..end], candidate.original);
-            previous_end = end;
+            previous_start = start;
         }
     }
 }
@@ -722,6 +1408,11 @@ fn emits_the_mvp_operator_replacements_in_source_order() {
             ("*", "/", "binary_mul_div"),
             ("//", "%", "binary_floor_mod"),
             ("%", "//", "binary_floor_mod"),
+            (
+                "not flag, +a, -b, True, False",
+                "[not flag, +a, -b, True, False]",
+                "collection_list_tuple"
+            ),
             ("not flag", "flag", "remove_not"),
             ("+", "-", "unary_sign"),
             ("-", "+", "unary_sign"),

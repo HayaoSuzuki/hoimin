@@ -197,6 +197,78 @@ async fn changed_selection_real_run_uses_only_the_edited_function() {
 }
 
 #[tokio::test]
+async fn collection_default_run_reports_canonical_ids_with_stable_spans() {
+    let project = tempfile::tempdir().unwrap();
+    write_collection_operator_project(project.path());
+    let command = "from src.calc import bitwise, collection, structure; assert collection() == (1, 2); assert structure([]) == [3]; assert bitwise(3, 1) == 1";
+
+    let first = run_project_options(project.path(), 1, command, &["--max-mutants", "100"]).await;
+    let second = run_project_options(project.path(), 1, command, &["--max-mutants", "100"]).await;
+
+    assert_eq!(
+        first.document["summary"]["complete"], true,
+        "{}",
+        first.stderr
+    );
+    assert_eq!(
+        second.document["summary"]["complete"], true,
+        "{}",
+        second.stderr
+    );
+
+    for (operator, start, length) in [
+        ("collection_list_tuple", 29, 6),
+        ("structure_append_extend", 64, 16),
+        ("bitwise_and_or", 142, 1),
+    ] {
+        let first_candidate = report_candidate_at(&first.document, operator, start, length);
+        let first_id = first_candidate["id"].as_str().unwrap();
+        assert!(!first_id.is_empty(), "operator: {operator}");
+
+        let second_candidate = report_candidate_at(&second.document, operator, start, length);
+        assert_eq!(second_candidate["id"].as_str(), Some(first_id));
+        assert_eq!(second_candidate["span"], first_candidate["span"]);
+    }
+}
+
+#[tokio::test]
+async fn focused_collection_and_structure_candidates_remain_eligible_outside_arid_spans() {
+    let project = tempfile::tempdir().unwrap();
+    write_collection_operator_project(project.path());
+    let command = "from src.calc import collection, structure; assert collection() == (1, 2); assert structure([]) == [3]";
+
+    let run = run_project_options(
+        project.path(),
+        1,
+        command,
+        &["--profile", "focused", "--max-mutants", "100"],
+    )
+    .await;
+
+    assert_eq!(run.document["summary"]["complete"], true);
+    let candidates = run.document["mutants"].as_array().unwrap();
+    let operators_and_lines = candidates
+        .iter()
+        .map(|mutant| {
+            let candidate = &mutant["candidate"];
+            (
+                candidate["operator"].as_str().unwrap(),
+                candidate["line"].as_u64().unwrap(),
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        operators_and_lines,
+        BTreeSet::from([
+            ("bitwise_and_or", 9),
+            ("collection_append_insert", 5),
+            ("collection_list_tuple", 2),
+            ("structure_append_extend", 5),
+        ])
+    );
+}
+
+#[tokio::test]
 async fn real_binary_json_report_and_diagnostic_use_separate_streams() {
     let project = tempfile::tempdir().unwrap();
     let fixture = fixture_root();
@@ -1918,6 +1990,37 @@ fn json_candidate_tuples(
         .collect()
 }
 
+fn report_candidate_at<'a>(
+    document: &'a serde_json::Value,
+    operator: &str,
+    start: u64,
+    length: u64,
+) -> &'a serde_json::Value {
+    let mutants = document["mutants"].as_array().unwrap();
+    assert_eq!(
+        mutants
+            .iter()
+            .filter(|mutant| {
+                let candidate = &mutant["candidate"];
+                candidate["operator"] == operator
+                    && candidate["span"]["start"] == start
+                    && candidate["span"]["length"] == length
+            })
+            .count(),
+        1,
+        "expected exactly one {operator} candidate at {start}+{length} in {document}"
+    );
+    &mutants
+        .iter()
+        .find(|mutant| {
+            let candidate = &mutant["candidate"];
+            candidate["operator"] == operator
+                && candidate["span"]["start"] == start
+                && candidate["span"]["length"] == length
+        })
+        .unwrap()["candidate"]
+}
+
 #[cfg(unix)]
 #[derive(Debug)]
 struct RealCliOutput {
@@ -2201,6 +2304,17 @@ fn write_parallel_project(root: &Path) {
     std::fs::write(
         source.join("calc.py"),
         "def total(a, b, c, d, e):\n    return a + b + c + d + e\n",
+    )
+    .unwrap();
+}
+
+fn write_collection_operator_project(root: &Path) {
+    let source = root.join("src");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("__init__.py"), "").unwrap();
+    std::fs::write(
+        source.join("calc.py"),
+        "def collection():\n    return (1, 2)\n\ndef structure(values):\n    values.append(3)\n    return values\n\ndef bitwise(left, right):\n    return left & right\n\nif __name__ == \"__main__\":\n    hidden = (4, 5)\n",
     )
     .unwrap();
 }
