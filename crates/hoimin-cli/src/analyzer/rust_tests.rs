@@ -94,7 +94,10 @@ fn structural_candidates_reject_bare_generators_and_preserve_commented_literals(
     let source = concat!(
         "items.append(value for value in values)\n",
         "mapping.get(value for value in values)\n",
+        "items.insert(0, (yield value))\n",
+        "items.insert(0, (yield from values))\n",
         "items = [item, # keep this comment\n]\n",
+        "other = [item # keep this comment\n,]\n",
     );
     let output = analyze(source);
 

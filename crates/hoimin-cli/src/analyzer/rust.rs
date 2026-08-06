@@ -991,7 +991,11 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         if list.ctx != ExprContext::Load || self.facts.contains_annotation_span(list.range()) {
             return;
         }
-        if let Some(replacement) = list_to_tuple_replacement(self.source, list) {
+        if let Some(replacement) = list_to_tuple_replacement(
+            self.source,
+            list,
+            self.facts.tokens.expect("parser tokens are set"),
+        ) {
             self.add_candidate(
                 list.range(),
                 replacement,
@@ -1130,7 +1134,11 @@ fn insert_to_append_replacement(source: &str, call: &ExprCall) -> Option<String>
     let function_start = usize::from(call.func.range().start());
     let attribute_start = usize::from(attribute.attr.range().start());
     let prefix = source.get(function_start..attribute_start)?;
-    let argument = source_text(source, call.arguments.args.get(1)?.range())?;
+    let expression = call.arguments.args.get(1)?;
+    if matches!(expression, Expr::Yield(_) | Expr::YieldFrom(_)) {
+        return None;
+    }
+    let argument = source_text(source, expression.range())?;
     Some(format!("{prefix}append({argument})"))
 }
 
@@ -1209,7 +1217,11 @@ fn is_supported_mapping_key(expression: &Expr) -> bool {
     ) && !matches!(expression, Expr::Tuple(tuple) if !tuple.parenthesized)
 }
 
-fn list_to_tuple_replacement(source: &str, list: &ExprList) -> Option<String> {
+fn list_to_tuple_replacement(
+    source: &str,
+    list: &ExprList,
+    tokens: &ruff_python_ast::token::Tokens,
+) -> Option<String> {
     let range = list.range();
     let literal = source_text(source, range)?;
     let contents = literal.strip_prefix('[')?.strip_suffix(']')?;
@@ -1219,8 +1231,7 @@ fn list_to_tuple_replacement(source: &str, list: &ExprList) -> Option<String> {
     let content_start = usize::from(range.start()) + 1;
     let element_end = usize::from(list.elts[0].range().end());
     let content_end = usize::from(range.end()).checked_sub(1)?;
-    let after_element = source.get(element_end..content_end)?;
-    if after_element.trim_start().starts_with(',') {
+    if has_comma_after_element(tokens, element_end, content_end) {
         return Some(format!("({contents})"));
     }
     let comma_at = element_end.checked_sub(content_start)?;
@@ -1229,6 +1240,19 @@ fn list_to_tuple_replacement(source: &str, list: &ExprList) -> Option<String> {
         before = contents.get(..comma_at)?,
         after = contents.get(comma_at..)?
     ))
+}
+
+fn has_comma_after_element(
+    tokens: &ruff_python_ast::token::Tokens,
+    element_end: usize,
+    content_end: usize,
+) -> bool {
+    tokens.iter().any(|token| {
+        let range = token.range();
+        usize::from(range.start()) >= element_end
+            && usize::from(range.end()) <= content_end
+            && token.kind() == TokenKind::Comma
+    })
 }
 
 fn tuple_to_list_replacement(source: &str, tuple: &ExprTuple) -> Option<String> {
