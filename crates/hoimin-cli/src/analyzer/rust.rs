@@ -357,6 +357,7 @@ fn module_name(path: &Utf8Path) -> String {
 struct AstFacts<'tokens> {
     imports: KnownImports,
     bound_builtin_names: HashSet<String>,
+    bound_exception_names: HashSet<String>,
     unary_sign_starts: HashSet<usize>,
     not_operands: Vec<(usize, usize, usize)>,
     arid_ranges: Vec<(usize, usize)>,
@@ -440,9 +441,20 @@ impl<'tokens> AstFacts<'tokens> {
         self.bound_builtin_names.contains(name)
     }
 
+    fn is_exception_bound(&self, name: &str) -> bool {
+        self.bound_exception_names.contains(name)
+    }
+
     fn record_builtin_name(&mut self, name: &str) {
         if MUTABLE_BUILTINS.contains(&name) {
             self.bound_builtin_names.insert(name.to_owned());
+        }
+        self.record_exception_name(name);
+    }
+
+    fn record_exception_name(&mut self, name: &str) {
+        if EXCEPTION_NAMES.contains(&name) {
+            self.bound_exception_names.insert(name.to_owned());
         }
     }
 
@@ -478,6 +490,8 @@ impl<'tokens> AstFacts<'tokens> {
         if local == "*" {
             self.bound_builtin_names
                 .extend(MUTABLE_BUILTINS.iter().map(|name| (*name).to_owned()));
+            self.bound_exception_names
+                .extend(EXCEPTION_NAMES.iter().map(|name| (*name).to_owned()));
         } else {
             self.record_builtin_name(local);
         }
@@ -688,6 +702,27 @@ const MUTABLE_BUILTINS: &[&str] = &[
     "max",
     "sorted",
     "reversed",
+];
+
+const EXCEPTION_NAMES: &[&str] = &[
+    "ValueError",
+    "TypeError",
+    "KeyError",
+    "IndexError",
+    "AttributeError",
+    "FileNotFoundError",
+    "PermissionError",
+    "ConnectionError",
+    "TimeoutError",
+    "ImportError",
+    "ModuleNotFoundError",
+    "ZeroDivisionError",
+    "OverflowError",
+    "Exception",
+    "BaseException",
+    "SystemExit",
+    "KeyboardInterrupt",
+    "GeneratorExit",
 ];
 
 struct AstCandidateCollector<'a, F> {

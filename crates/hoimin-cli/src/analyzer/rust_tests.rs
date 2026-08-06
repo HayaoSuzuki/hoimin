@@ -57,6 +57,33 @@ fn annotated_augmented_and_lambda_bindings_are_conservative() {
 }
 
 #[test]
+fn exception_bindings_are_conservative() {
+    let clean = parse_module("try:\n    work()\nexcept ValueError:\n    pass\n")
+        .expect("clean exception fixture parses");
+    let clean_facts = super::AstFacts::from_module(clean.syntax(), clean.tokens());
+    assert!(!clean_facts.is_exception_bound("ValueError"));
+
+    for (source, name) in [
+        ("ValueError = Custom\n", "ValueError"),
+        ("def handle(TypeError):\n    pass\n", "TypeError"),
+        ("from helpers import KeyError\n", "KeyError"),
+        ("from helpers import *\n", "IndexError"),
+        (
+            "match value:\n    case PermissionError:\n        pass\n",
+            "PermissionError",
+        ),
+        (
+            "try:\n    work()\nexcept OSError as FileNotFoundError:\n    pass\n",
+            "FileNotFoundError",
+        ),
+    ] {
+        let parsed = parse_module(source).expect("exception binding fixture parses");
+        let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens());
+        assert!(facts.is_exception_bound(name), "expected {name} bound in {source:?}");
+    }
+}
+
+#[test]
 fn annotations_do_not_emit_default_bitwise_mutations() {
     let output = analyze("value: Left | None\nresult = left & right\n");
 
