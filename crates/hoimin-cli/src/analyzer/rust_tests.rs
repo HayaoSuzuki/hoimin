@@ -183,10 +183,15 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse() {
     let source = concat!(
         "try:\n    work()\n",
         "except:\n    pass\n",
+        "try:\n    work()\n",
         "except Exception:\n    pass\n",
+        "try:\n    work()\n",
         "except BaseException:\n    pass\n",
+        "try:\n    work()\n",
         "except (ValueError,):\n    pass\n",
+        "try:\n    work()\n",
         "except (ValueError, TypeError,):\n    pass\n",
+        "try:\n    work()\n",
         "except (ValueError, # keep this comment\n",
         "        TypeError,):\n    pass\n",
     );
@@ -290,6 +295,95 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse() {
         .iter()
         .all(|candidate| !candidate.operator.starts_with("exception_"))
     );
+
+    let shadowed = concat!(
+        "TypeError = CustomError\n",
+        "Exception = CustomException\n",
+        "BaseException = CustomBaseException\n",
+        "try:\n    work()\n",
+        "except ValueError:\n    pass\n",
+        "try:\n    work()\n",
+        "except:\n    pass\n",
+        "try:\n    work()\n",
+        "except Exception:\n    pass\n",
+        "try:\n    work()\n",
+        "except (ValueError,):\n    pass\n",
+    );
+    let shadowed_output = analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/sample.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            profile: MutationProfile::Full,
+            max_candidates: 10_000,
+        },
+        shadowed,
+    );
+    assert!(
+        shadowed_output
+            .candidates
+            .iter()
+            .all(|candidate| !candidate.operator.starts_with("exception_")),
+        "unexpected shadowed exception candidates: {:#?}",
+        shadowed_output.candidates
+    );
+
+    let handler_position = concat!(
+        "try:\n    work()\n",
+        "except Exception as error:\n    pass\n",
+        "try:\n    work()\n",
+        "except Exception:\n    pass\n",
+        "except TypeError:\n    pass\n",
+        "try:\n    work()\n",
+        "except TypeError:\n    pass\n",
+        "except Exception:\n    pass\n",
+    );
+    let positioned_output = analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/sample.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            profile: MutationProfile::Full,
+            max_candidates: 10_000,
+        },
+        handler_position,
+    );
+    assert_eq!(
+        positioned_output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "exception_exception_to_bare")
+            .count(),
+        1
+    );
+
+    for termination in ["SystemExit", "KeyboardInterrupt", "GeneratorExit"] {
+        let source = format!("try:\n    work()\nexcept ({termination}, ValueError):\n    pass\n");
+        let output = analyze_source(
+            &AnalyzeRequest {
+                path: Utf8Path::new("pkg/sample.py"),
+                lines: &[],
+                symbols: &[],
+                operators: &operators,
+                profile: MutationProfile::Full,
+                max_candidates: 10_000,
+            },
+            &source,
+        );
+        for candidate in output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "exception_tuple_remove_member")
+        {
+            let mutated = apply_candidate_and_reparse(&source, candidate);
+            assert!(
+                !mutated.contains(&format!("except ({termination}")),
+                "tuple removal generated an individual termination handler: {mutated}"
+            );
+        }
+    }
 }
 
 #[test]

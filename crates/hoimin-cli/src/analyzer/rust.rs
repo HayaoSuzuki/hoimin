@@ -767,6 +767,7 @@ struct AstCandidateCollector<'a, F> {
     request: &'a AnalyzeRequest<'a>,
     cancelled: &'a F,
     cancelled_observed: bool,
+    exception_handler_finality: Vec<bool>,
     candidates: Vec<AnalyzerCandidate>,
 }
 
@@ -786,6 +787,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             request,
             cancelled,
             cancelled_observed: false,
+            exception_handler_finality: Vec::new(),
             candidates: Vec::new(),
         };
         for statement in &module.body {
@@ -1097,11 +1099,13 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             return;
         }
         for replacement in exception_pair_replacements(name.id.as_str()) {
-            self.add_candidate(
-                name.range(),
-                (*replacement).to_owned(),
-                MutationOperator::ExceptionTypePair,
-            );
+            if !self.facts.is_exception_bound(replacement) {
+                self.add_candidate(
+                    name.range(),
+                    (*replacement).to_owned(),
+                    MutationOperator::ExceptionTypePair,
+                );
+            }
         }
     }
 
@@ -1115,6 +1119,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 .request
                 .operators
                 .contains(MutationOperator::ExceptionBareToException)
+                && !self.facts.is_exception_bound("Exception")
             {
                 self.add_candidate(
                     identifier::except(except_handler, self.source),
@@ -1134,6 +1139,12 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                     return;
                 }
                 if name.id.as_str() == "Exception"
+                    && handler.name.is_none()
+                    && self
+                        .exception_handler_finality
+                        .last()
+                        .copied()
+                        .unwrap_or(false)
                     && self
                         .request
                         .operators
@@ -1146,6 +1157,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                     );
                 }
                 if let Some(replacement) = base_exception_boundary_replacement(name.id.as_str())
+                    && !self.facts.is_exception_bound(replacement)
                     && self
                         .request
                         .operators
@@ -1177,6 +1189,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             for name in &names {
                 for replacement in exception_pair_replacements(name) {
                     if !names.iter().any(|member| member == replacement)
+                        && !self.facts.is_exception_bound(replacement)
                         && missing.insert(*replacement)
                         && let Some(tuple_replacement) =
                             tuple_add_replacement(self.source, tuple, tokens, replacement)
@@ -1197,6 +1210,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 .contains(MutationOperator::ExceptionTupleRemoveMember)
         {
             for index in 0..names.len() {
+                if names.len() == 2 && is_termination_exception(names[1 - index]) {
+                    continue;
+                }
                 if let Some(tuple_replacement) =
                     tuple_remove_replacement(self.source, tuple, tokens, index)
                 {
@@ -1214,9 +1230,11 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
 impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'_, F> {
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
         if !self.check_cancelled() {
-            if let Stmt::Try(try_statement) = statement
-                && try_statement.is_star
-            {
+            let Stmt::Try(try_statement) = statement else {
+                visitor::walk_stmt(self, statement);
+                return;
+            };
+            if try_statement.is_star {
                 self.visit_body(&try_statement.body);
                 for except_handler in &try_statement.handlers {
                     let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
@@ -1229,7 +1247,18 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'_, F> {
                 self.visit_body(&try_statement.finalbody);
                 return;
             }
-            visitor::walk_stmt(self, statement);
+            self.visit_body(&try_statement.body);
+            for (index, except_handler) in try_statement.handlers.iter().enumerate() {
+                if self.check_cancelled() {
+                    return;
+                }
+                self.exception_handler_finality
+                    .push(index + 1 == try_statement.handlers.len());
+                self.visit_except_handler(except_handler);
+                self.exception_handler_finality.pop();
+            }
+            self.visit_body(&try_statement.orelse);
+            self.visit_body(&try_statement.finalbody);
         }
     }
 
@@ -1481,6 +1510,10 @@ fn base_exception_boundary_replacement(name: &str) -> Option<&'static str> {
         "BaseException" => Some("Exception"),
         _ => None,
     }
+}
+
+fn is_termination_exception(name: &str) -> bool {
+    matches!(name, "SystemExit" | "KeyboardInterrupt" | "GeneratorExit")
 }
 
 fn supported_exception_tuple_names<'a>(
