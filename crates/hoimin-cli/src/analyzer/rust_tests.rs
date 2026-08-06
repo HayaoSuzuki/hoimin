@@ -98,6 +98,9 @@ fn structural_candidates_reject_bare_generators_and_preserve_commented_literals(
         "items.insert(0, (yield from values))\n",
         "items = [item, # keep this comment\n]\n",
         "other = [item # keep this comment\n,]\n",
+        "yielding_value = [(yield value)]\n",
+        "yielding = [(yield from values)]\n",
+        "named = [item := value]\n",
     );
     let output = analyze(source);
 

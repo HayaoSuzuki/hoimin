@@ -1228,18 +1228,12 @@ fn list_to_tuple_replacement(
     if list.elts.len() != 1 {
         return Some(format!("({contents})"));
     }
-    let content_start = usize::from(range.start()) + 1;
     let element_end = usize::from(list.elts[0].range().end());
     let content_end = usize::from(range.end()).checked_sub(1)?;
     if has_comma_after_element(tokens, element_end, content_end) {
         return Some(format!("({contents})"));
     }
-    let comma_at = element_end.checked_sub(content_start)?;
-    Some(format!(
-        "({before},{after})",
-        before = contents.get(..comma_at)?,
-        after = contents.get(comma_at..)?
-    ))
+    Some(format!("({contents},)"))
 }
 
 fn has_comma_after_element(
