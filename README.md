@@ -152,7 +152,7 @@ These controls reduce accidental resource exhaustion. hoimin executes user-selec
 
 ## Mutation operators
 
-Without `--operators`, a run selects all 30 runtime operators. `--operators`
+Without `--operators`, a run selects all 31 runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
 individual IDs or selector families. Type-annotation `type_*` operators remain
 opt-in.
@@ -165,9 +165,10 @@ opt-in.
 | Structural calls | `structure_append_extend`, `structure_mapping_get_subscript`, `structure_sort_reverse`, `structure_sorted_reversed` | `append(x)` ↔ `extend([x])`; `mapping.get(k)` ↔ `mapping[k]`; `sort()` ↔ `reverse()`; `sorted(x)` ↔ `reversed(x)` |
 | Bitwise operators | `bitwise_and_or`, `bitwise_shift` | `&` ↔ `\|`; `<<` ↔ `>>` |
 | Boundary operators | `structure_index_neighbor`, `structure_slice_neighbor` | adjacent plain-decimal index and slice-bound values |
+| Exception handlers | `exception_type_pair` | curated `except` type pairs such as `ValueError` ↔ `TypeError` |
 
 The runtime selector families are `collection_ops`, `structure_ops`, and
-`bitwise_ops`; for example,
+`bitwise_ops`, and `exception_ops`; for example,
 `--exclude-operators collection_ops` removes the collection family while
 leaving the other selected IDs enabled. The type selector families are
 `type_nullable`, `type_collections`, and `type_iterables`. The type operator
@@ -176,6 +177,18 @@ IDs are `type_nullable_remove`, `type_nullable_add`, `type_list_sequence`,
 `type_sequence_iterable`. When loading persisted plan configurations, the
 historical `type_mapping` name remains accepted as an alias for
 `type_dict_mapping`.
+
+The exception selector `exception_risky` is opt-in only. It exposes
+`exception_bare_to_exception`, `exception_exception_to_bare`,
+`exception_base_boundary`, `exception_tuple_add_pair`, and
+`exception_tuple_remove_member`. These mutations can broaden or narrow a
+handler and the BaseException boundary can catch `SystemExit`,
+`KeyboardInterrupt`, or `GeneratorExit`; none is enabled by default. Safe
+exception pairs are limited to `ValueError`/`TypeError`, `KeyError`/`IndexError`,
+`AttributeError`/`KeyError`, `FileNotFoundError`/`PermissionError`,
+`ConnectionError`/`TimeoutError`, `ImportError`/`ModuleNotFoundError`, and
+`ZeroDivisionError`/`OverflowError`. Qualified or dynamic handlers, `except*`,
+and unsupported tuple members are skipped.
 
 The collection/structural operators are deliberately syntax-directed. They do
 not include an `append`/`pop` mutation, comprehensions, assignment or delete

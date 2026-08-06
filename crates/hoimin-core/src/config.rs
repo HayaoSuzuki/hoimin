@@ -76,6 +76,12 @@ pub enum MutationOperator {
     StructureSortedReversed,
     StructureIndexNeighbor,
     StructureSliceNeighbor,
+    ExceptionTypePair,
+    ExceptionBareToException,
+    ExceptionExceptionToBare,
+    ExceptionBaseBoundary,
+    ExceptionTupleAddPair,
+    ExceptionTupleRemoveMember,
     TypeNullableRemove,
     TypeNullableAdd,
     TypeListSequence,
@@ -126,6 +132,12 @@ impl MutationOperator {
             Self::StructureSortedReversed => "structure_sorted_reversed",
             Self::StructureIndexNeighbor => "structure_index_neighbor",
             Self::StructureSliceNeighbor => "structure_slice_neighbor",
+            Self::ExceptionTypePair => "exception_type_pair",
+            Self::ExceptionBareToException => "exception_bare_to_exception",
+            Self::ExceptionExceptionToBare => "exception_exception_to_bare",
+            Self::ExceptionBaseBoundary => "exception_base_boundary",
+            Self::ExceptionTupleAddPair => "exception_tuple_add_pair",
+            Self::ExceptionTupleRemoveMember => "exception_tuple_remove_member",
             Self::TypeNullableRemove => "type_nullable_remove",
             Self::TypeNullableAdd => "type_nullable_add",
             Self::TypeListSequence => "type_list_sequence",
@@ -135,7 +147,7 @@ impl MutationOperator {
             Self::TypeSequenceIterable => "type_sequence_iterable",
         }
     }
-    fn all() -> [Self; 37] {
+    fn all() -> [Self; 43] {
         [
             Self::CompareEqNe,
             Self::CompareOrder,
@@ -167,6 +179,12 @@ impl MutationOperator {
             Self::StructureSortedReversed,
             Self::StructureIndexNeighbor,
             Self::StructureSliceNeighbor,
+            Self::ExceptionTypePair,
+            Self::ExceptionBareToException,
+            Self::ExceptionExceptionToBare,
+            Self::ExceptionBaseBoundary,
+            Self::ExceptionTupleAddPair,
+            Self::ExceptionTupleRemoveMember,
             Self::TypeNullableRemove,
             Self::TypeNullableAdd,
             Self::TypeListSequence,
@@ -196,6 +214,8 @@ impl MutationOperatorSelection {
             "collection_ops",
             "structure_ops",
             "bitwise_ops",
+            "exception_ops",
+            "exception_risky",
         ]);
         names.sort_unstable();
         names
@@ -235,6 +255,7 @@ impl MutationOperatorSelection {
                 MutationOperator::StructureSortedReversed,
                 MutationOperator::StructureIndexNeighbor,
                 MutationOperator::StructureSliceNeighbor,
+                MutationOperator::ExceptionTypePair,
             ]
             .into_iter()
             .collect(),
@@ -282,6 +303,14 @@ impl MutationOperatorSelection {
             "bitwise_ops" => Ok(vec![
                 MutationOperator::BitwiseAndOr,
                 MutationOperator::BitwiseShift,
+            ]),
+            "exception_ops" => Ok(vec![MutationOperator::ExceptionTypePair]),
+            "exception_risky" => Ok(vec![
+                MutationOperator::ExceptionBareToException,
+                MutationOperator::ExceptionExceptionToBare,
+                MutationOperator::ExceptionBaseBoundary,
+                MutationOperator::ExceptionTupleAddPair,
+                MutationOperator::ExceptionTupleRemoveMember,
             ]),
             value => MutationOperator::from_name(value).map_or_else(
                 || {
