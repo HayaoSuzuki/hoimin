@@ -232,6 +232,32 @@ async fn collection_default_run_reports_canonical_ids_with_stable_spans() {
 }
 
 #[tokio::test]
+async fn exception_default_run_reports_canonical_json_candidate() {
+    let project = tempfile::tempdir().unwrap();
+    write_exception_operator_project(project.path());
+    let run = run_project_options(
+        project.path(),
+        1,
+        "from src.calc import classify; assert classify() == 'ok'",
+        &["--operators", "exception_ops"],
+    )
+    .await;
+
+    assert_eq!(run.document["summary"]["complete"], true, "{}", run.stderr);
+    let candidates: Vec<_> = run.document["mutants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|mutant| mutant["candidate"]["operator"] == "exception_type_pair")
+        .collect();
+    assert_eq!(candidates.len(), 1);
+    let candidate = &candidates[0]["candidate"];
+    assert_eq!(candidate["original"], "ValueError");
+    assert_eq!(candidate["replacement"], "TypeError");
+    assert_eq!(candidate["span"]["length"], 10);
+}
+
+#[tokio::test]
 async fn focused_collection_and_structure_candidates_remain_eligible_outside_arid_spans() {
     let project = tempfile::tempdir().unwrap();
     write_collection_operator_project(project.path());
@@ -2315,6 +2341,17 @@ fn write_collection_operator_project(root: &Path) {
     std::fs::write(
         source.join("calc.py"),
         "def collection():\n    return (1, 2)\n\ndef structure(values):\n    values.append(3)\n    return values\n\ndef bitwise(left, right):\n    return left & right\n\nif __name__ == \"__main__\":\n    hidden = (4, 5)\n",
+    )
+    .unwrap();
+}
+
+fn write_exception_operator_project(root: &Path) {
+    let source = root.join("src");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("__init__.py"), "").unwrap();
+    std::fs::write(
+        source.join("calc.py"),
+        "def classify():\n    try:\n        raise ValueError\n    except ValueError:\n        return 'ok'\n",
     )
     .unwrap();
 }

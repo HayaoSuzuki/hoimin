@@ -104,6 +104,42 @@ cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::structure_slice_neigh
 cargo test -p hoimin-cli --lib analyzer::rust::rust_tests
 ```
 
+## Extending Python exception mutations
+
+Python exception candidates are collected by the Rust analyzer's
+`ExceptHandler` AST pass and then use the shared selection, profile, source
+ordering, deduplication, and candidate-limit pipeline. The default
+`exception_type_pair` operator replaces only simple, unqualified handler names
+with a curated counterpart: `ValueError`/`TypeError`, `KeyError` with
+`IndexError` and `AttributeError`, `FileNotFoundError`/`PermissionError`,
+`ConnectionError`/`TimeoutError`, `ImportError`/`ModuleNotFoundError`, and
+`ZeroDivisionError`/`OverflowError`.
+
+Exception names are suppressed when the file may bind the name through an
+assignment, import, parameter, comprehension, match capture, or `except ... as`
+target. This file-wide shadowing policy is intentionally conservative and does
+not attempt scope-sensitive inference. Qualified and dynamic handler types,
+`except*`, and tuple members outside the curated built-in name set are skipped.
+
+The five structural operators in `exception_risky` are explicit-only:
+bare-handler insertion/removal, the `Exception`/`BaseException` boundary, and
+curated tuple add/remove rewrites. Tuple candidates use parser token ranges and
+the original source text so commas, comments, trailing commas, and line endings
+remain intact and every replacement can be reparsed. The BaseException boundary
+can change handling of `SystemExit`, `KeyboardInterrupt`, and `GeneratorExit`,
+so it must not be added to the default selection. Exception mutation currently
+covers `except` clauses; `raise` expressions are a separate future extension.
+
+When changing these rules, keep exact candidate and replacement assertions next
+to `apply_candidate_and_reparse` checks. Run the focused tests before the full
+analyzer module:
+
+```console
+cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::exception_type_pair_candidates_are_curated_and_syntax_directed -- --exact
+cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::exception_risky_candidates_require_explicit_selection_and_reparse -- --exact
+cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::exception_bindings_are_conservative -- --exact
+```
+
 ## Test provenance comments
 
 Use `// pins: issue #NNN` only when an assertion intentionally preserves a

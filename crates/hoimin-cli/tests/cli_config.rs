@@ -7,7 +7,7 @@ use hoimin_cli::cli::{
 };
 use hoimin_core::{MutationOperator, MutationOperatorSelection, MutationProfile};
 
-const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 30] = [
+const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 31] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -38,6 +38,7 @@ const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 30] = [
     "structure_sorted_reversed",
     "structure_index_neighbor",
     "structure_slice_neighbor",
+    "exception_type_pair",
 ];
 
 #[test]
@@ -75,6 +76,12 @@ fn readme_documents_all_mutation_operator_ids_and_selector_families() {
         "structure_sorted_reversed",
         "structure_index_neighbor",
         "structure_slice_neighbor",
+        "exception_type_pair",
+        "exception_bare_to_exception",
+        "exception_exception_to_bare",
+        "exception_base_boundary",
+        "exception_tuple_add_pair",
+        "exception_tuple_remove_member",
         "type_nullable_remove",
         "type_nullable_add",
         "type_list_sequence",
@@ -89,16 +96,45 @@ fn readme_documents_all_mutation_operator_ids_and_selector_families() {
         assert!(readme.contains(name), "README is missing {name}");
     }
     for expected in [
-        "all 30 runtime operators",
+        "all 31 runtime operators",
         "collection_ops",
         "structure_ops",
         "bitwise_ops",
+        "exception_ops",
+        "exception_risky",
+        "exception_type_pair",
+        "BaseException",
+        "except*",
         "--exclude-operators collection_ops",
         "`append`/`pop`",
         "comprehensions",
         "set literals",
     ] {
         assert!(readme.contains(expected), "README is missing {expected}");
+    }
+}
+
+#[test]
+fn development_docs_explain_exception_mutation_policy() {
+    let development = fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/development.md"
+    ))
+    .unwrap();
+    for expected in [
+        "Extending Python exception mutations",
+        "ExceptHandler",
+        "exception_type_pair",
+        "exception_risky",
+        "BaseException",
+        "except*",
+        "shadowing",
+        "apply_candidate_and_reparse",
+    ] {
+        assert!(
+            development.contains(expected),
+            "development docs missing {expected}"
+        );
     }
 }
 
@@ -858,6 +894,16 @@ fn operator_flags_expand_groups_and_preserve_runtime_default() {
     assert!(
         default
             .operators
+            .contains(MutationOperator::ExceptionTypePair)
+    );
+    assert!(
+        !default
+            .operators
+            .contains(MutationOperator::ExceptionBaseBoundary)
+    );
+    assert!(
+        default
+            .operators
             .contains(MutationOperator::StructureSliceNeighbor)
     );
     let selected = hoimin_cli::cli::parse_config_from([
@@ -895,6 +941,39 @@ fn operator_flags_expand_groups_and_preserve_runtime_default() {
             .contains(MutationOperator::StructureMappingGetSubscript)
     );
     assert!(selected.operators.contains(MutationOperator::BitwiseAndOr));
+}
+
+#[test]
+fn exception_operator_flags_keep_risky_mutations_explicit() {
+    let selected = hoimin_cli::cli::parse_config_from([
+        "hoimin",
+        "run",
+        "--file",
+        "x.py",
+        "--operators",
+        "exception_risky",
+        "--",
+        "check",
+    ])
+    .unwrap();
+
+    assert!(
+        !selected
+            .operators
+            .contains(MutationOperator::ExceptionTypePair)
+    );
+    for operator in [
+        MutationOperator::ExceptionBareToException,
+        MutationOperator::ExceptionExceptionToBare,
+        MutationOperator::ExceptionBaseBoundary,
+        MutationOperator::ExceptionTupleAddPair,
+        MutationOperator::ExceptionTupleRemoveMember,
+    ] {
+        assert!(
+            selected.operators.contains(operator),
+            "missing {operator:?}"
+        );
+    }
 }
 
 #[test]

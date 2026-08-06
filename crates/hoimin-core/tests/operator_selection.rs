@@ -35,6 +35,7 @@ fn default_runtime_selection_contains_collection_structure_and_bitwise_operators
         MutationOperator::StructureSortedReversed,
         MutationOperator::StructureIndexNeighbor,
         MutationOperator::StructureSliceNeighbor,
+        MutationOperator::ExceptionTypePair,
     ] {
         assert!(selected.contains(operator), "missing {operator:?}");
     }
@@ -51,6 +52,18 @@ fn default_runtime_selection_contains_collection_structure_and_bitwise_operators
         assert!(
             !selected.contains(type_operator),
             "included {type_operator:?}"
+        );
+    }
+    for risky_operator in [
+        MutationOperator::ExceptionBareToException,
+        MutationOperator::ExceptionExceptionToBare,
+        MutationOperator::ExceptionBaseBoundary,
+        MutationOperator::ExceptionTupleAddPair,
+        MutationOperator::ExceptionTupleRemoveMember,
+    ] {
+        assert!(
+            !selected.contains(risky_operator),
+            "included {risky_operator:?}"
         );
     }
 }
@@ -77,9 +90,17 @@ fn collection_structure_and_bitwise_operator_ids_are_valid_names() {
         "structure_sorted_reversed",
         "structure_index_neighbor",
         "structure_slice_neighbor",
+        "exception_type_pair",
+        "exception_bare_to_exception",
+        "exception_exception_to_bare",
+        "exception_base_boundary",
+        "exception_tuple_add_pair",
+        "exception_tuple_remove_member",
         "collection_ops",
         "structure_ops",
         "bitwise_ops",
+        "exception_ops",
+        "exception_risky",
     ] {
         assert!(valid_names.contains(&name), "missing {name}");
     }
@@ -119,6 +140,24 @@ fn collection_structure_and_bitwise_selector_families_expand_exactly() {
         vec![
             MutationOperator::BitwiseAndOr,
             MutationOperator::BitwiseShift
+        ]
+    );
+}
+
+#[test]
+fn exception_selector_families_expand_safe_and_risky_operators() {
+    assert_eq!(
+        MutationOperatorSelection::parse_selector("exception_ops").unwrap(),
+        vec![MutationOperator::ExceptionTypePair]
+    );
+    assert_eq!(
+        MutationOperatorSelection::parse_selector("exception_risky").unwrap(),
+        vec![
+            MutationOperator::ExceptionBareToException,
+            MutationOperator::ExceptionExceptionToBare,
+            MutationOperator::ExceptionBaseBoundary,
+            MutationOperator::ExceptionTupleAddPair,
+            MutationOperator::ExceptionTupleRemoveMember,
         ]
     );
 }

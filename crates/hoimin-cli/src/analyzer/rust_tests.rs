@@ -57,6 +57,336 @@ fn annotated_augmented_and_lambda_bindings_are_conservative() {
 }
 
 #[test]
+fn exception_bindings_are_conservative() {
+    let clean = parse_module("try:\n    work()\nexcept ValueError:\n    pass\n")
+        .expect("clean exception fixture parses");
+    let clean_facts = super::AstFacts::from_module(clean.syntax(), clean.tokens());
+    assert!(!clean_facts.is_exception_bound("ValueError"));
+
+    for (source, name) in [
+        ("ValueError = Custom\n", "ValueError"),
+        ("def handle(TypeError):\n    pass\n", "TypeError"),
+        ("from helpers import KeyError\n", "KeyError"),
+        ("from helpers import *\n", "IndexError"),
+        (
+            "match value:\n    case PermissionError:\n        pass\n",
+            "PermissionError",
+        ),
+        (
+            "try:\n    work()\nexcept OSError as FileNotFoundError:\n    pass\n",
+            "FileNotFoundError",
+        ),
+    ] {
+        let parsed = parse_module(source).expect("exception binding fixture parses");
+        let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens());
+        assert!(
+            facts.is_exception_bound(name),
+            "expected {name} bound in {source:?}"
+        );
+    }
+}
+
+#[test]
+fn exception_type_pair_candidates_are_curated_and_syntax_directed() {
+    let source = concat!(
+        "try:\n    work()\n",
+        "except ValueError:\n    pass\n",
+        "except TypeError:\n    pass\n",
+        "except KeyError:\n    pass\n",
+        "except IndexError:\n    pass\n",
+        "except AttributeError:\n    pass\n",
+        "except FileNotFoundError:\n    pass\n",
+        "except PermissionError:\n    pass\n",
+        "except ConnectionError:\n    pass\n",
+        "except TimeoutError:\n    pass\n",
+        "except ImportError:\n    pass\n",
+        "except ModuleNotFoundError:\n    pass\n",
+        "except ZeroDivisionError:\n    pass\n",
+        "except OverflowError:\n    pass\n",
+    );
+    let output = analyze(source);
+    let actual: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "exception_type_pair")
+        .map(|candidate| (candidate.original.as_str(), candidate.replacement.as_str()))
+        .collect();
+    assert_eq!(
+        actual,
+        vec![
+            ("ValueError", "TypeError"),
+            ("TypeError", "ValueError"),
+            ("KeyError", "IndexError"),
+            ("KeyError", "AttributeError"),
+            ("IndexError", "KeyError"),
+            ("AttributeError", "KeyError"),
+            ("FileNotFoundError", "PermissionError"),
+            ("PermissionError", "FileNotFoundError"),
+            ("ConnectionError", "TimeoutError"),
+            ("TimeoutError", "ConnectionError"),
+            ("ImportError", "ModuleNotFoundError"),
+            ("ModuleNotFoundError", "ImportError"),
+            ("ZeroDivisionError", "OverflowError"),
+            ("OverflowError", "ZeroDivisionError"),
+        ]
+    );
+    for candidate in output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "exception_type_pair")
+    {
+        apply_candidate_and_reparse(source, candidate);
+    }
+
+    let unsupported = concat!(
+        "try:\n    work()\n",
+        "except (ValueError, TypeError):\n    pass\n",
+        "except module.Error:\n    pass\n",
+        "except make_error():\n    pass\n",
+    );
+    assert!(
+        analyze(unsupported)
+            .candidates
+            .iter()
+            .all(|candidate| candidate.operator != "exception_type_pair")
+    );
+
+    let starred = "try:\n    work()\nexcept* ValueError:\n    pass\n";
+    assert!(parse_module(starred).is_ok(), "except* fixture parses");
+    assert!(
+        analyze(starred)
+            .candidates
+            .iter()
+            .all(|candidate| candidate.operator != "exception_type_pair")
+    );
+
+    let nested = concat!(
+        "try:\n    work()\n",
+        "except* ValueError:\n",
+        "    try:\n        work()\n",
+        "    except TypeError:\n        pass\n",
+    );
+    assert!(
+        analyze(nested)
+            .candidates
+            .iter()
+            .any(|candidate| candidate.original == "TypeError")
+    );
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the fixture covers every explicit risky exception operator and parseability"
+)]
+fn exception_risky_candidates_require_explicit_selection_and_reparse() {
+    let source = concat!(
+        "try:\n    work()\n",
+        "except:\n    pass\n",
+        "try:\n    work()\n",
+        "except Exception:\n    pass\n",
+        "try:\n    work()\n",
+        "except BaseException:\n    pass\n",
+        "try:\n    work()\n",
+        "except (ValueError,):\n    pass\n",
+        "try:\n    work()\n",
+        "except (ValueError, TypeError,):\n    pass\n",
+        "try:\n    work()\n",
+        "except (ValueError, # keep this comment\n",
+        "        TypeError,):\n    pass\n",
+    );
+    let default_output = analyze(source);
+    assert!(default_output.candidates.iter().all(|candidate| {
+        !matches!(
+            candidate.operator.as_str(),
+            "exception_bare_to_exception"
+                | "exception_exception_to_bare"
+                | "exception_base_boundary"
+                | "exception_tuple_add_pair"
+                | "exception_tuple_remove_member"
+        )
+    }));
+
+    let mut operators = MutationOperatorSelection::default();
+    for operator in [
+        MutationOperator::ExceptionBareToException,
+        MutationOperator::ExceptionExceptionToBare,
+        MutationOperator::ExceptionBaseBoundary,
+        MutationOperator::ExceptionTupleAddPair,
+        MutationOperator::ExceptionTupleRemoveMember,
+    ] {
+        operators.include(operator);
+    }
+    let output = analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/sample.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            profile: MutationProfile::Full,
+            max_candidates: 10_000,
+        },
+        source,
+    );
+    assert!(output.candidates.iter().any(|candidate| {
+        candidate.operator == "exception_bare_to_exception"
+            && candidate.original == "except"
+            && candidate.replacement == "except Exception"
+    }));
+    assert!(output.candidates.iter().any(|candidate| {
+        candidate.operator == "exception_exception_to_bare"
+            && candidate.original == "Exception"
+            && candidate.replacement.is_empty()
+    }));
+    assert!(output.candidates.iter().any(|candidate| {
+        candidate.operator == "exception_base_boundary"
+            && candidate.original == "Exception"
+            && candidate.replacement == "BaseException"
+    }));
+    assert!(output.candidates.iter().any(|candidate| {
+        candidate.operator == "exception_base_boundary"
+            && candidate.original == "BaseException"
+            && candidate.replacement == "Exception"
+    }));
+    assert!(output.candidates.iter().any(|candidate| {
+        candidate.operator == "exception_tuple_add_pair"
+            && candidate.original == "(ValueError,)"
+            && candidate.replacement == "(ValueError, TypeError)"
+    }));
+    assert!(output.candidates.iter().any(|candidate| {
+        candidate.operator == "exception_tuple_remove_member"
+            && candidate.original == "(ValueError, TypeError,)"
+    }));
+    assert!(output.candidates.iter().any(|candidate| {
+        candidate.operator == "exception_tuple_remove_member"
+            && candidate.original.contains("# keep this comment")
+    }));
+    for candidate in &output.candidates {
+        if candidate.operator.starts_with("exception_") {
+            let mutated = apply_candidate_and_reparse(source, candidate);
+            if candidate.original.contains("# keep this comment") {
+                assert!(mutated.contains("# keep this comment"));
+            }
+        }
+    }
+
+    let unsupported = concat!(
+        "ValueError = Custom\n",
+        "try:\n    work()\n",
+        "except ValueError:\n    pass\n",
+        "except module.Error:\n    pass\n",
+        "except make_error():\n    pass\n",
+        "except (ValueError, module.Error):\n    pass\n",
+        "except* BaseException:\n    pass\n",
+    );
+    assert!(
+        analyze_source(
+            &AnalyzeRequest {
+                path: Utf8Path::new("pkg/sample.py"),
+                lines: &[],
+                symbols: &[],
+                operators: &operators,
+                profile: MutationProfile::Full,
+                max_candidates: 10_000,
+            },
+            unsupported,
+        )
+        .candidates
+        .iter()
+        .all(|candidate| !candidate.operator.starts_with("exception_"))
+    );
+
+    let shadowed = concat!(
+        "TypeError = CustomError\n",
+        "Exception = CustomException\n",
+        "BaseException = CustomBaseException\n",
+        "try:\n    work()\n",
+        "except ValueError:\n    pass\n",
+        "try:\n    work()\n",
+        "except:\n    pass\n",
+        "try:\n    work()\n",
+        "except Exception:\n    pass\n",
+        "try:\n    work()\n",
+        "except (ValueError,):\n    pass\n",
+    );
+    let shadowed_output = analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/sample.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            profile: MutationProfile::Full,
+            max_candidates: 10_000,
+        },
+        shadowed,
+    );
+    assert!(
+        shadowed_output
+            .candidates
+            .iter()
+            .all(|candidate| !candidate.operator.starts_with("exception_")),
+        "unexpected shadowed exception candidates: {:#?}",
+        shadowed_output.candidates
+    );
+
+    let handler_position = concat!(
+        "try:\n    work()\n",
+        "except Exception as error:\n    pass\n",
+        "try:\n    work()\n",
+        "except Exception:\n    pass\n",
+        "except TypeError:\n    pass\n",
+        "try:\n    work()\n",
+        "except TypeError:\n    pass\n",
+        "except Exception:\n    pass\n",
+    );
+    let positioned_output = analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/sample.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            profile: MutationProfile::Full,
+            max_candidates: 10_000,
+        },
+        handler_position,
+    );
+    assert_eq!(
+        positioned_output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "exception_exception_to_bare")
+            .count(),
+        1
+    );
+
+    for termination in ["SystemExit", "KeyboardInterrupt", "GeneratorExit"] {
+        let source = format!("try:\n    work()\nexcept ({termination}, ValueError):\n    pass\n");
+        let output = analyze_source(
+            &AnalyzeRequest {
+                path: Utf8Path::new("pkg/sample.py"),
+                lines: &[],
+                symbols: &[],
+                operators: &operators,
+                profile: MutationProfile::Full,
+                max_candidates: 10_000,
+            },
+            &source,
+        );
+        for candidate in output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "exception_tuple_remove_member")
+        {
+            let mutated = apply_candidate_and_reparse(&source, candidate);
+            assert!(
+                !mutated.contains(&format!("except ({termination}")),
+                "tuple removal generated an individual termination handler: {mutated}"
+            );
+        }
+    }
+}
+
+#[test]
 fn annotations_do_not_emit_default_bitwise_mutations() {
     let output = analyze("value: Left | None\nresult = left & right\n");
 

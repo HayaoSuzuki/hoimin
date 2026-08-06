@@ -5,6 +5,7 @@ use camino::Utf8Path;
 use hoimin_core::{
     ByteSpan, LineRange, MutationOperator, MutationOperatorSelection, MutationProfile,
 };
+use ruff_python_ast::identifier;
 use ruff_python_ast::token::TokenKind;
 use ruff_python_ast::visitor::Visitor;
 use ruff_python_ast::{
@@ -357,6 +358,7 @@ fn module_name(path: &Utf8Path) -> String {
 struct AstFacts<'tokens> {
     imports: KnownImports,
     bound_builtin_names: HashSet<String>,
+    bound_exception_names: HashSet<String>,
     unary_sign_starts: HashSet<usize>,
     not_operands: Vec<(usize, usize, usize)>,
     arid_ranges: Vec<(usize, usize)>,
@@ -440,9 +442,20 @@ impl<'tokens> AstFacts<'tokens> {
         self.bound_builtin_names.contains(name)
     }
 
+    fn is_exception_bound(&self, name: &str) -> bool {
+        self.bound_exception_names.contains(name)
+    }
+
     fn record_builtin_name(&mut self, name: &str) {
         if MUTABLE_BUILTINS.contains(&name) {
             self.bound_builtin_names.insert(name.to_owned());
+        }
+        self.record_exception_name(name);
+    }
+
+    fn record_exception_name(&mut self, name: &str) {
+        if EXCEPTION_NAMES.contains(&name) {
+            self.bound_exception_names.insert(name.to_owned());
         }
     }
 
@@ -478,6 +491,8 @@ impl<'tokens> AstFacts<'tokens> {
         if local == "*" {
             self.bound_builtin_names
                 .extend(MUTABLE_BUILTINS.iter().map(|name| (*name).to_owned()));
+            self.bound_exception_names
+                .extend(EXCEPTION_NAMES.iter().map(|name| (*name).to_owned()));
         } else {
             self.record_builtin_name(local);
         }
@@ -690,6 +705,61 @@ const MUTABLE_BUILTINS: &[&str] = &[
     "reversed",
 ];
 
+const EXCEPTION_NAMES: &[&str] = &[
+    "ValueError",
+    "TypeError",
+    "KeyError",
+    "IndexError",
+    "AttributeError",
+    "FileNotFoundError",
+    "PermissionError",
+    "ConnectionError",
+    "TimeoutError",
+    "ImportError",
+    "ModuleNotFoundError",
+    "ZeroDivisionError",
+    "OverflowError",
+    "Exception",
+    "BaseException",
+    "SystemExit",
+    "KeyboardInterrupt",
+    "GeneratorExit",
+];
+
+const NO_EXCEPTION_REPLACEMENTS: &[&str] = &[];
+const VALUE_TYPE_REPLACEMENTS: &[&str] = &["TypeError"];
+const TYPE_VALUE_REPLACEMENTS: &[&str] = &["ValueError"];
+const KEY_REPLACEMENTS: &[&str] = &["IndexError", "AttributeError"];
+const INDEX_REPLACEMENTS: &[&str] = &["KeyError"];
+const ATTRIBUTE_REPLACEMENTS: &[&str] = &["KeyError"];
+const FILE_NOT_FOUND_REPLACEMENTS: &[&str] = &["PermissionError"];
+const PERMISSION_REPLACEMENTS: &[&str] = &["FileNotFoundError"];
+const CONNECTION_REPLACEMENTS: &[&str] = &["TimeoutError"];
+const TIMEOUT_REPLACEMENTS: &[&str] = &["ConnectionError"];
+const IMPORT_REPLACEMENTS: &[&str] = &["ModuleNotFoundError"];
+const MODULE_NOT_FOUND_REPLACEMENTS: &[&str] = &["ImportError"];
+const ZERO_DIVISION_REPLACEMENTS: &[&str] = &["OverflowError"];
+const OVERFLOW_REPLACEMENTS: &[&str] = &["ZeroDivisionError"];
+
+fn exception_pair_replacements(name: &str) -> &'static [&'static str] {
+    match name {
+        "ValueError" => VALUE_TYPE_REPLACEMENTS,
+        "TypeError" => TYPE_VALUE_REPLACEMENTS,
+        "KeyError" => KEY_REPLACEMENTS,
+        "IndexError" => INDEX_REPLACEMENTS,
+        "AttributeError" => ATTRIBUTE_REPLACEMENTS,
+        "FileNotFoundError" => FILE_NOT_FOUND_REPLACEMENTS,
+        "PermissionError" => PERMISSION_REPLACEMENTS,
+        "ConnectionError" => CONNECTION_REPLACEMENTS,
+        "TimeoutError" => TIMEOUT_REPLACEMENTS,
+        "ImportError" => IMPORT_REPLACEMENTS,
+        "ModuleNotFoundError" => MODULE_NOT_FOUND_REPLACEMENTS,
+        "ZeroDivisionError" => ZERO_DIVISION_REPLACEMENTS,
+        "OverflowError" => OVERFLOW_REPLACEMENTS,
+        _ => NO_EXCEPTION_REPLACEMENTS,
+    }
+}
+
 struct AstCandidateCollector<'a, F> {
     source: &'a str,
     line_index: &'a LineIndex,
@@ -697,6 +767,7 @@ struct AstCandidateCollector<'a, F> {
     request: &'a AnalyzeRequest<'a>,
     cancelled: &'a F,
     cancelled_observed: bool,
+    exception_handler_finality: Vec<bool>,
     candidates: Vec<AnalyzerCandidate>,
 }
 
@@ -716,6 +787,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             request,
             cancelled,
             cancelled_observed: false,
+            exception_handler_finality: Vec::new(),
             candidates: Vec::new(),
         };
         for statement in &module.body {
@@ -1016,12 +1088,186 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             );
         }
     }
+
+    fn collect_exception_handler(&mut self, except_handler: &ruff_python_ast::ExceptHandler) {
+        let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
+        self.collect_risky_exception_handler(except_handler, handler);
+        let Some(Expr::Name(name)) = handler.type_.as_deref() else {
+            return;
+        };
+        if self.facts.is_exception_bound(name.id.as_str()) {
+            return;
+        }
+        for replacement in exception_pair_replacements(name.id.as_str()) {
+            if !self.facts.is_exception_bound(replacement) {
+                self.add_candidate(
+                    name.range(),
+                    (*replacement).to_owned(),
+                    MutationOperator::ExceptionTypePair,
+                );
+            }
+        }
+    }
+
+    fn collect_risky_exception_handler(
+        &mut self,
+        except_handler: &ruff_python_ast::ExceptHandler,
+        handler: &ruff_python_ast::ExceptHandlerExceptHandler,
+    ) {
+        if handler.type_.is_none() {
+            if self
+                .request
+                .operators
+                .contains(MutationOperator::ExceptionBareToException)
+                && !self.facts.is_exception_bound("Exception")
+            {
+                self.add_candidate(
+                    identifier::except(except_handler, self.source),
+                    "except Exception".to_owned(),
+                    MutationOperator::ExceptionBareToException,
+                );
+            }
+            return;
+        }
+
+        let Some(type_) = handler.type_.as_deref() else {
+            return;
+        };
+        match type_ {
+            Expr::Name(name) => {
+                if self.facts.is_exception_bound(name.id.as_str()) {
+                    return;
+                }
+                if name.id.as_str() == "Exception"
+                    && handler.name.is_none()
+                    && self
+                        .exception_handler_finality
+                        .last()
+                        .copied()
+                        .unwrap_or(false)
+                    && self
+                        .request
+                        .operators
+                        .contains(MutationOperator::ExceptionExceptionToBare)
+                {
+                    self.add_candidate(
+                        name.range(),
+                        String::new(),
+                        MutationOperator::ExceptionExceptionToBare,
+                    );
+                }
+                if let Some(replacement) = base_exception_boundary_replacement(name.id.as_str())
+                    && !self.facts.is_exception_bound(replacement)
+                    && self
+                        .request
+                        .operators
+                        .contains(MutationOperator::ExceptionBaseBoundary)
+                {
+                    self.add_candidate(
+                        name.range(),
+                        replacement.to_owned(),
+                        MutationOperator::ExceptionBaseBoundary,
+                    );
+                }
+            }
+            Expr::Tuple(tuple) => self.collect_tuple_exception_handler(tuple),
+            _ => {}
+        }
+    }
+
+    fn collect_tuple_exception_handler(&mut self, tuple: &ExprTuple) {
+        let Some(names) = supported_exception_tuple_names(tuple, self.facts) else {
+            return;
+        };
+        let tokens = self.facts.tokens.expect("parser tokens are set");
+        if self
+            .request
+            .operators
+            .contains(MutationOperator::ExceptionTupleAddPair)
+        {
+            let mut missing = HashSet::new();
+            for name in &names {
+                for replacement in exception_pair_replacements(name) {
+                    if !names.iter().any(|member| member == replacement)
+                        && !self.facts.is_exception_bound(replacement)
+                        && missing.insert(*replacement)
+                        && let Some(tuple_replacement) =
+                            tuple_add_replacement(self.source, tuple, tokens, replacement)
+                    {
+                        self.add_candidate(
+                            tuple.range(),
+                            tuple_replacement,
+                            MutationOperator::ExceptionTupleAddPair,
+                        );
+                    }
+                }
+            }
+        }
+        if names.len() >= 2
+            && self
+                .request
+                .operators
+                .contains(MutationOperator::ExceptionTupleRemoveMember)
+        {
+            for index in 0..names.len() {
+                if names.len() == 2 && is_termination_exception(names[1 - index]) {
+                    continue;
+                }
+                if let Some(tuple_replacement) =
+                    tuple_remove_replacement(self.source, tuple, tokens, index)
+                {
+                    self.add_candidate(
+                        tuple.range(),
+                        tuple_replacement,
+                        MutationOperator::ExceptionTupleRemoveMember,
+                    );
+                }
+            }
+        }
+    }
 }
 
 impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'_, F> {
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
         if !self.check_cancelled() {
-            visitor::walk_stmt(self, statement);
+            let Stmt::Try(try_statement) = statement else {
+                visitor::walk_stmt(self, statement);
+                return;
+            };
+            if try_statement.is_star {
+                self.visit_body(&try_statement.body);
+                for except_handler in &try_statement.handlers {
+                    let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
+                    if let Some(type_) = &handler.type_ {
+                        self.visit_expr(type_);
+                    }
+                    self.visit_body(&handler.body);
+                }
+                self.visit_body(&try_statement.orelse);
+                self.visit_body(&try_statement.finalbody);
+                return;
+            }
+            self.visit_body(&try_statement.body);
+            for (index, except_handler) in try_statement.handlers.iter().enumerate() {
+                if self.check_cancelled() {
+                    return;
+                }
+                self.exception_handler_finality
+                    .push(index + 1 == try_statement.handlers.len());
+                self.visit_except_handler(except_handler);
+                self.exception_handler_finality.pop();
+            }
+            self.visit_body(&try_statement.orelse);
+            self.visit_body(&try_statement.finalbody);
+        }
+    }
+
+    fn visit_except_handler(&mut self, except_handler: &'ast ruff_python_ast::ExceptHandler) {
+        if !self.check_cancelled() {
+            self.collect_exception_handler(except_handler);
+        }
+        if !self.check_cancelled() {
+            visitor::walk_except_handler(self, except_handler);
         }
     }
 
@@ -1256,6 +1502,114 @@ fn tuple_to_list_replacement(source: &str, tuple: &ExprTuple) -> Option<String> 
         .and_then(|literal| literal.strip_suffix(')'))
         .unwrap_or(literal);
     Some(format!("[{contents}]"))
+}
+
+fn base_exception_boundary_replacement(name: &str) -> Option<&'static str> {
+    match name {
+        "Exception" => Some("BaseException"),
+        "BaseException" => Some("Exception"),
+        _ => None,
+    }
+}
+
+fn is_termination_exception(name: &str) -> bool {
+    matches!(name, "SystemExit" | "KeyboardInterrupt" | "GeneratorExit")
+}
+
+fn supported_exception_tuple_names<'a>(
+    tuple: &'a ExprTuple,
+    facts: &AstFacts<'_>,
+) -> Option<Vec<&'a str>> {
+    if !tuple.parenthesized || tuple.elts.is_empty() {
+        return None;
+    }
+    tuple
+        .elts
+        .iter()
+        .map(|element| {
+            let Expr::Name(name) = element else {
+                return None;
+            };
+            let name = name.id.as_str();
+            (EXCEPTION_NAMES.contains(&name) && !facts.is_exception_bound(name)).then_some(name)
+        })
+        .collect()
+}
+
+fn tuple_add_replacement(
+    source: &str,
+    tuple: &ExprTuple,
+    tokens: &ruff_python_ast::token::Tokens,
+    name: &str,
+) -> Option<String> {
+    let literal = source_text(source, tuple.range())?;
+    if !literal.starts_with('(') || !literal.ends_with(')') {
+        return None;
+    }
+    let close_start = usize::from(tuple.range().end()).checked_sub(1)?;
+    let has_trailing_comma = tokens
+        .iter()
+        .filter(|token| {
+            let range = token.range();
+            usize::from(range.start()) >= usize::from(tuple.range().start())
+                && usize::from(range.end()) <= close_start
+                && !token.kind().is_trivia()
+        })
+        .last()
+        .is_some_and(|token| token.kind() == TokenKind::Comma);
+    let insertion = if has_trailing_comma {
+        format!(" {name}")
+    } else {
+        format!(", {name}")
+    };
+    let insertion_offset = literal.len().checked_sub(1)?;
+    let mut replacement = literal.to_owned();
+    replacement.insert_str(insertion_offset, &insertion);
+    Some(replacement)
+}
+
+fn tuple_remove_replacement(
+    source: &str,
+    tuple: &ExprTuple,
+    tokens: &ruff_python_ast::token::Tokens,
+    index: usize,
+) -> Option<String> {
+    let literal = source_text(source, tuple.range())?;
+    let tuple_start = usize::from(tuple.range().start());
+    let tuple_end = usize::from(tuple.range().end());
+    let element = tuple.elts.get(index)?;
+    let element_range = element.range();
+    let element_start = usize::from(element_range.start());
+    let element_end = usize::from(element_range.end());
+    let commas: Vec<_> = tokens
+        .iter()
+        .filter_map(|token| {
+            let range = token.range();
+            (token.kind() == TokenKind::Comma
+                && usize::from(range.start()) >= tuple_start
+                && usize::from(range.end()) <= tuple_end)
+                .then_some(range)
+        })
+        .collect();
+    let comma = if let Some(comma) = commas
+        .iter()
+        .find(|range| usize::from(range.start()) >= element_end)
+    {
+        *comma
+    } else {
+        *commas
+            .iter()
+            .rfind(|range| usize::from(range.end()) <= element_start)?
+    };
+    let mut removal_ranges = [element_range, comma];
+    removal_ranges.sort_by_key(|range| (*range).start());
+    let mut replacement = literal.to_owned();
+    for range in removal_ranges.into_iter().rev() {
+        let start = usize::from(range.start()).checked_sub(tuple_start)?;
+        let end = usize::from(range.end()).checked_sub(tuple_start)?;
+        replacement.replace_range(start..end, "");
+    }
+    Some(replacement)
 }
 
 fn is_main_guard(expression: &Expr) -> bool {
