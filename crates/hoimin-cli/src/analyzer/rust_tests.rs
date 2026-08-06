@@ -5,9 +5,100 @@ use hoimin_core::{
     ByteSpan, LineRange, MutationOperator, MutationOperatorSelection, MutationProfile,
 };
 use proptest::prelude::*;
+use ruff_python_parser::parse_module;
 
 fn analyze(source: &str) -> super::AnalyzerOutput {
     analyze_with(Utf8Path::new("pkg/sample.py"), &[], &[], 10_000, source)
+}
+
+fn apply_candidate_and_reparse(source: &str, candidate: &super::AnalyzerCandidate) -> String {
+    let start = usize::try_from(candidate.span.start).expect("candidate start fits usize");
+    let length = usize::try_from(candidate.span.length).expect("candidate length fits usize");
+    let end = start
+        .checked_add(length)
+        .expect("candidate end does not overflow");
+    let mut mutated = source.to_owned();
+    mutated.replace_range(start..end, &candidate.replacement);
+    assert!(
+        parse_module(&mutated).is_ok(),
+        "candidate {} produced invalid Python: {mutated}",
+        candidate.operator
+    );
+    mutated
+}
+
+#[test]
+fn clean_collection_builtin_calls_remain_eligible_for_ast_collection() {
+    let source = "result = any(items)\n";
+    let parsed = parse_module(source).expect("clean builtin call parses");
+    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens());
+
+    assert!(!facts.is_builtin_bound("any"));
+}
+
+#[test]
+fn comprehension_targets_bind_collection_builtins() {
+    let source = "result = [list(item) for list in factories]\n";
+    let parsed = parse_module(source).expect("comprehension fixture parses");
+    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens());
+
+    assert!(facts.is_builtin_bound("list"));
+}
+
+#[test]
+fn annotated_augmented_and_lambda_bindings_are_conservative() {
+    let source = "tuple: object = custom_tuple\nmax += value\nmapper = lambda *, sorted, **reversed: (sorted, reversed)\n";
+    let parsed = parse_module(source).expect("binding fixture parses");
+    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens());
+
+    for name in ["tuple", "max", "sorted", "reversed"] {
+        assert!(facts.is_builtin_bound(name), "expected {name} to be bound");
+    }
+}
+
+#[test]
+fn shadowed_collection_builtins_are_not_mutated() {
+    let source = "any = custom_any\nfrom helpers import all\ndef list(tuple):\n    min = custom_min\n    for max in items:\n        pass\n    with resource as sorted:\n        pass\n    try:\n        pass\n    except Error as reversed:\n        pass\n    if (frozenset := custom_frozenset):\n        return list(items), tuple(items), set(items), frozenset(items), min(items), max(items), sorted(items), reversed(items)\nclass set:\n    pass\n";
+    let parsed = parse_module(source).expect("shadowing fixture parses");
+    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens());
+    for name in [
+        "any",
+        "all",
+        "list",
+        "tuple",
+        "set",
+        "frozenset",
+        "min",
+        "max",
+        "sorted",
+        "reversed",
+    ] {
+        assert!(facts.is_builtin_bound(name), "expected {name} to be bound");
+    }
+
+    let output = analyze(source);
+    assert!(
+        output
+            .candidates
+            .iter()
+            .all(|candidate| !candidate.operator.starts_with("collection_"))
+    );
+}
+
+#[test]
+fn candidate_replacements_reparse_as_python() {
+    let source = "result = left == right\n";
+    let output = analyze(source);
+    let candidate = output
+        .candidates
+        .iter()
+        .find(|candidate| candidate.operator == "compare_eq_ne")
+        .expect("comparison candidate");
+
+    assert_eq!(
+        apply_candidate_and_reparse(source, candidate),
+        "result = left != right\n"
+    );
 }
 
 #[test]
