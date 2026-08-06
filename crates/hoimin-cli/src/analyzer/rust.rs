@@ -8,8 +8,8 @@ use hoimin_core::{
 use ruff_python_ast::token::TokenKind;
 use ruff_python_ast::visitor::Visitor;
 use ruff_python_ast::{
-    CmpOp, Expr, ExprCall, ExprContext, ExprList, ExprSubscript, ExprTuple, ModModule, Number,
-    Operator, Stmt, UnaryOp, visitor,
+    CmpOp, Expr, ExprCall, ExprContext, ExprList, ExprSlice, ExprSubscript, ExprTuple, ModModule,
+    Number, Operator, Stmt, UnaryOp, visitor,
 };
 use ruff_python_parser::parse_module;
 use ruff_text_size::{Ranged, TextRange};
@@ -277,6 +277,10 @@ fn replacement(text: &str, unary: bool) -> Option<(&'static str, &'static str)> 
         "/" => ("*", "binary_mul_div"),
         "//" => ("%", "binary_floor_mod"),
         "%" => ("//", "binary_floor_mod"),
+        "&" => ("|", "bitwise_and_or"),
+        "|" => ("&", "bitwise_and_or"),
+        "<<" => (">>", "bitwise_shift"),
+        ">>" => ("<<", "bitwise_shift"),
         "break" => ("continue", "break_continue"),
         "continue" => ("break", "break_continue"),
         "True" => ("False", "boolean_literal"),
@@ -879,7 +883,14 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     fn collect_subscript(&mut self, subscript: &ExprSubscript) {
         if self.facts.contains_annotation_span(subscript.range())
             || subscript.ctx != ExprContext::Load
-            || !is_simple_receiver(subscript.value.as_ref())
+        {
+            return;
+        }
+        match subscript.slice.as_ref() {
+            Expr::Slice(slice) => self.collect_slice_neighbors(slice),
+            expression => self.collect_index_neighbors(expression),
+        }
+        if !is_simple_receiver(subscript.value.as_ref())
             || !is_supported_mapping_key(subscript.slice.as_ref())
         {
             return;
@@ -890,6 +901,35 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 replacement,
                 MutationOperator::StructureMappingGetSubscript,
             );
+        }
+    }
+
+    fn collect_index_neighbors(&mut self, expression: &Expr) {
+        for replacement in decimal_literal_neighbors(self.source, expression, false) {
+            self.add_candidate(
+                expression.range(),
+                replacement,
+                MutationOperator::StructureIndexNeighbor,
+            );
+        }
+    }
+
+    fn collect_slice_neighbors(&mut self, slice: &ExprSlice) {
+        for (bound, step) in [
+            (slice.lower.as_deref(), false),
+            (slice.upper.as_deref(), false),
+            (slice.step.as_deref(), true),
+        ] {
+            let Some(bound) = bound else {
+                continue;
+            };
+            for replacement in decimal_literal_neighbors(self.source, bound, step) {
+                self.add_candidate(
+                    bound.range(),
+                    replacement,
+                    MutationOperator::StructureSliceNeighbor,
+                );
+            }
         }
     }
 
@@ -999,6 +1039,34 @@ fn has_supported_same_contract_arguments(call: &ExprCall) -> bool {
 
 fn is_zero_literal(expression: &Expr) -> bool {
     matches!(expression, Expr::NumberLiteral(number) if matches!(&number.value, Number::Int(value) if value.as_usize() == Some(0)))
+}
+
+fn decimal_literal_neighbors(source: &str, expression: &Expr, excludes_zero: bool) -> Vec<String> {
+    let Some(value) = decimal_literal_value(source, expression) else {
+        return Vec::new();
+    };
+    let mut replacements = Vec::with_capacity(2);
+    if let Some(next) = value.checked_add(1) {
+        replacements.push(next.to_string());
+    }
+    if let Some(previous) = value
+        .checked_sub(1)
+        .filter(|previous| !excludes_zero || *previous != 0)
+    {
+        replacements.push(previous.to_string());
+    }
+    replacements
+}
+
+fn decimal_literal_value(source: &str, expression: &Expr) -> Option<u64> {
+    if !matches!(expression, Expr::NumberLiteral(_)) {
+        return None;
+    }
+    let literal = source_text(source, expression.range())?;
+    if literal.is_empty() || !literal.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    literal.parse().ok()
 }
 
 fn append_to_insert_replacement(source: &str, call: &ExprCall) -> Option<String> {

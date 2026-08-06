@@ -438,6 +438,133 @@ fn structure_excludes_unsupported_shapes_and_receivers() {
 }
 
 #[test]
+fn bitwise_and_or() {
+    let source = "and_result = left & right\nor_result = left | right\n";
+    let output = analyze(source);
+    let actual: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "bitwise_and_or")
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        actual,
+        vec![("&", "|", "bitwise_and_or"), ("|", "&", "bitwise_and_or"),]
+    );
+}
+
+#[test]
+fn bitwise_shift() {
+    let source = "left_result = value << amount\nright_result = value >> amount\n";
+    let output = analyze(source);
+    let actual: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "bitwise_shift")
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        actual,
+        vec![("<<", ">>", "bitwise_shift"), (">>", "<<", "bitwise_shift"),]
+    );
+}
+
+#[test]
+fn structure_index_neighbor_mutates_decimal_load_indices_only() {
+    let source = concat!(
+        "zero = items[0]\n",
+        "one = items[1]\n",
+        "largest = items[18446744073709551615]\n",
+        "negative = items[-1]\n",
+        "expression = items[index + 1]\n",
+        "hexadecimal = items[0x10]\n",
+        "underscored = items[1_000]\n",
+        "annotation: items[1]\n",
+        "assigned[1] = value\n",
+        "del deleted[1]\n",
+    );
+    let output = analyze(source);
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "structure_index_neighbor")
+        .collect();
+    let actual: Vec<_> = candidates
+        .iter()
+        .map(|candidate| (candidate.original.as_str(), candidate.replacement.as_str()))
+        .collect();
+
+    assert_eq!(
+        actual,
+        vec![
+            ("0", "1"),
+            ("1", "2"),
+            ("1", "0"),
+            ("18446744073709551615", "18446744073709551614"),
+        ]
+    );
+    for candidate in candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
+fn structure_slice_neighbor_mutates_decimal_bounds_without_zero_steps() {
+    let source = concat!(
+        "all_bounds = items[1:3:1]\n",
+        "empty_start_and_step = items[:3:]\n",
+        "empty_bounds = items[:]\n",
+        "expression = items[start:stop:step]\n",
+        "negative = items[-1:-3:-1]\n",
+        "hexadecimal = items[0x10:0x20:0x1]\n",
+        "underscored = items[1_000:2_000:3_000]\n",
+        "annotation: items[1:3:1]\n",
+        "assigned[1:3:1] = values\n",
+        "del deleted[1:3:1]\n",
+    );
+    let output = analyze(source);
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "structure_slice_neighbor")
+        .collect();
+    let actual: Vec<_> = candidates
+        .iter()
+        .map(|candidate| (candidate.original.as_str(), candidate.replacement.as_str()))
+        .collect();
+
+    assert_eq!(
+        actual,
+        vec![
+            ("1", "2"),
+            ("1", "0"),
+            ("3", "4"),
+            ("3", "2"),
+            ("1", "2"),
+            ("3", "4"),
+            ("3", "2"),
+        ]
+    );
+    for candidate in candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
 fn collection_literals_and_inner_token_candidates_remain_individually_parseable() {
     let source = "value = [a == b]\n";
     let output = analyze(source);
@@ -777,7 +904,7 @@ fn omits_candidates_for_unselected_operators() {
 
 const MUTABLE_OPERATOR_TOKENS: &[&str] = &[
     "==", "!=", "<", "<=", ">", ">=", "in", "not in", "is", "is not", "and", "or", "+=", "-=", "*",
-    "/", "//", "%", "break", "continue", "True", "False", "+", "-", "not",
+    "/", "//", "%", "&", "|", "<<", ">>", "break", "continue", "True", "False", "+", "-", "not",
 ];
 
 const NESTED_QUOTE_PAIRS: &[(&str, &str, &str)] = &[
