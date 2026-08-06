@@ -759,7 +759,7 @@ fn selector_rejects_non_utf8_wide_units() {
     ));
 }
 #[test]
-fn operator_flags_expand_groups_and_preserve_legacy_default() {
+fn operator_flags_expand_groups_and_preserve_runtime_default() {
     let default =
         hoimin_cli::cli::parse_config_from(["hoimin", "run", "--file", "x.py", "--", "check"])
             .unwrap();
@@ -768,13 +768,24 @@ fn operator_flags_expand_groups_and_preserve_legacy_default() {
             .operators
             .contains(MutationOperator::TypeNullableRemove)
     );
+    assert!(
+        default
+            .operators
+            .contains(MutationOperator::CollectionAnyAll)
+    );
+    assert!(default.operators.contains(MutationOperator::BitwiseShift));
+    assert!(
+        default
+            .operators
+            .contains(MutationOperator::StructureSliceNeighbor)
+    );
     let selected = hoimin_cli::cli::parse_config_from([
         "hoimin",
         "run",
         "--file",
         "x.py",
         "--operators",
-        "type_nullable,type_collections",
+        "type_nullable,type_collections,collection_ops,structure_ops,bitwise_ops",
         "--exclude-operators",
         "type_dict_mapping",
         "--",
@@ -792,6 +803,17 @@ fn operator_flags_expand_groups_and_preserve_legacy_default() {
             .contains(MutationOperator::TypeListSequence)
     );
     assert!(!selected.operators.contains(MutationOperator::TypeMapping));
+    assert!(
+        selected
+            .operators
+            .contains(MutationOperator::CollectionStringSplitRsplit)
+    );
+    assert!(
+        selected
+            .operators
+            .contains(MutationOperator::StructureMappingGetSubscript)
+    );
+    assert!(selected.operators.contains(MutationOperator::BitwiseAndOr));
 }
 
 #[test]
