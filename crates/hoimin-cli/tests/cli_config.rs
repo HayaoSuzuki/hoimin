@@ -867,8 +867,16 @@ fn operator_flags_expand_groups_and_preserve_runtime_default() {
             .contains(MutationOperator::CollectionAnyAll)
     );
     assert!(default.operators.contains(MutationOperator::BitwiseShift));
-    assert!(default.operators.contains(MutationOperator::ExceptionTypePair));
-    assert!(!default.operators.contains(MutationOperator::ExceptionBaseBoundary));
+    assert!(
+        default
+            .operators
+            .contains(MutationOperator::ExceptionTypePair)
+    );
+    assert!(
+        !default
+            .operators
+            .contains(MutationOperator::ExceptionBaseBoundary)
+    );
     assert!(
         default
             .operators
@@ -925,7 +933,11 @@ fn exception_operator_flags_keep_risky_mutations_explicit() {
     ])
     .unwrap();
 
-    assert!(!selected.operators.contains(MutationOperator::ExceptionTypePair));
+    assert!(
+        !selected
+            .operators
+            .contains(MutationOperator::ExceptionTypePair)
+    );
     for operator in [
         MutationOperator::ExceptionBareToException,
         MutationOperator::ExceptionExceptionToBare,
@@ -933,7 +945,10 @@ fn exception_operator_flags_keep_risky_mutations_explicit() {
         MutationOperator::ExceptionTupleAddPair,
         MutationOperator::ExceptionTupleRemoveMember,
     ] {
-        assert!(selected.operators.contains(operator), "missing {operator:?}");
+        assert!(
+            selected.operators.contains(operator),
+            "missing {operator:?}"
+        );
     }
 }
 

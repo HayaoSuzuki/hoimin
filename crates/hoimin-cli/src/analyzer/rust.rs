@@ -725,6 +725,40 @@ const EXCEPTION_NAMES: &[&str] = &[
     "GeneratorExit",
 ];
 
+const NO_EXCEPTION_REPLACEMENTS: &[&str] = &[];
+const VALUE_TYPE_REPLACEMENTS: &[&str] = &["TypeError"];
+const TYPE_VALUE_REPLACEMENTS: &[&str] = &["ValueError"];
+const KEY_REPLACEMENTS: &[&str] = &["IndexError", "AttributeError"];
+const INDEX_REPLACEMENTS: &[&str] = &["KeyError"];
+const ATTRIBUTE_REPLACEMENTS: &[&str] = &["KeyError"];
+const FILE_NOT_FOUND_REPLACEMENTS: &[&str] = &["PermissionError"];
+const PERMISSION_REPLACEMENTS: &[&str] = &["FileNotFoundError"];
+const CONNECTION_REPLACEMENTS: &[&str] = &["TimeoutError"];
+const TIMEOUT_REPLACEMENTS: &[&str] = &["ConnectionError"];
+const IMPORT_REPLACEMENTS: &[&str] = &["ModuleNotFoundError"];
+const MODULE_NOT_FOUND_REPLACEMENTS: &[&str] = &["ImportError"];
+const ZERO_DIVISION_REPLACEMENTS: &[&str] = &["OverflowError"];
+const OVERFLOW_REPLACEMENTS: &[&str] = &["ZeroDivisionError"];
+
+fn exception_pair_replacements(name: &str) -> &'static [&'static str] {
+    match name {
+        "ValueError" => VALUE_TYPE_REPLACEMENTS,
+        "TypeError" => TYPE_VALUE_REPLACEMENTS,
+        "KeyError" => KEY_REPLACEMENTS,
+        "IndexError" => INDEX_REPLACEMENTS,
+        "AttributeError" => ATTRIBUTE_REPLACEMENTS,
+        "FileNotFoundError" => FILE_NOT_FOUND_REPLACEMENTS,
+        "PermissionError" => PERMISSION_REPLACEMENTS,
+        "ConnectionError" => CONNECTION_REPLACEMENTS,
+        "TimeoutError" => TIMEOUT_REPLACEMENTS,
+        "ImportError" => IMPORT_REPLACEMENTS,
+        "ModuleNotFoundError" => MODULE_NOT_FOUND_REPLACEMENTS,
+        "ZeroDivisionError" => ZERO_DIVISION_REPLACEMENTS,
+        "OverflowError" => OVERFLOW_REPLACEMENTS,
+        _ => NO_EXCEPTION_REPLACEMENTS,
+    }
+}
+
 struct AstCandidateCollector<'a, F> {
     source: &'a str,
     line_index: &'a LineIndex,
@@ -1051,12 +1085,53 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             );
         }
     }
+
+    fn collect_exception_handler(&mut self, except_handler: &ruff_python_ast::ExceptHandler) {
+        let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
+        let Some(Expr::Name(name)) = handler.type_.as_deref() else {
+            return;
+        };
+        if self.facts.is_exception_bound(name.id.as_str()) {
+            return;
+        }
+        for replacement in exception_pair_replacements(name.id.as_str()) {
+            self.add_candidate(
+                name.range(),
+                (*replacement).to_owned(),
+                MutationOperator::ExceptionTypePair,
+            );
+        }
+    }
 }
 
 impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'_, F> {
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
         if !self.check_cancelled() {
+            if let Stmt::Try(try_statement) = statement {
+                if try_statement.is_star {
+                    self.visit_body(&try_statement.body);
+                    for except_handler in &try_statement.handlers {
+                        let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
+                        if let Some(type_) = &handler.type_ {
+                            self.visit_expr(type_);
+                        }
+                        self.visit_body(&handler.body);
+                    }
+                    self.visit_body(&try_statement.orelse);
+                    self.visit_body(&try_statement.finalbody);
+                    return;
+                }
+            }
             visitor::walk_stmt(self, statement);
+        }
+    }
+
+    fn visit_except_handler(&mut self, except_handler: &'ast ruff_python_ast::ExceptHandler) {
+        if !self.check_cancelled() {
+            self.collect_exception_handler(except_handler);
+        }
+        if !self.check_cancelled() {
+            visitor::walk_except_handler(self, except_handler);
         }
     }
 

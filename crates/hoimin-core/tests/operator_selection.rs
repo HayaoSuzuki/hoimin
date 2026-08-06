@@ -61,7 +61,10 @@ fn default_runtime_selection_contains_collection_structure_and_bitwise_operators
         MutationOperator::ExceptionTupleAddPair,
         MutationOperator::ExceptionTupleRemoveMember,
     ] {
-        assert!(!selected.contains(risky_operator), "included {risky_operator:?}");
+        assert!(
+            !selected.contains(risky_operator),
+            "included {risky_operator:?}"
+        );
     }
 }
 

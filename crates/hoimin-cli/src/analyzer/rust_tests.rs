@@ -79,8 +79,99 @@ fn exception_bindings_are_conservative() {
     ] {
         let parsed = parse_module(source).expect("exception binding fixture parses");
         let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens());
-        assert!(facts.is_exception_bound(name), "expected {name} bound in {source:?}");
+        assert!(
+            facts.is_exception_bound(name),
+            "expected {name} bound in {source:?}"
+        );
     }
+}
+
+#[test]
+fn exception_type_pair_candidates_are_curated_and_syntax_directed() {
+    let source = concat!(
+        "try:\n    work()\n",
+        "except ValueError:\n    pass\n",
+        "except TypeError:\n    pass\n",
+        "except KeyError:\n    pass\n",
+        "except IndexError:\n    pass\n",
+        "except AttributeError:\n    pass\n",
+        "except FileNotFoundError:\n    pass\n",
+        "except PermissionError:\n    pass\n",
+        "except ConnectionError:\n    pass\n",
+        "except TimeoutError:\n    pass\n",
+        "except ImportError:\n    pass\n",
+        "except ModuleNotFoundError:\n    pass\n",
+        "except ZeroDivisionError:\n    pass\n",
+        "except OverflowError:\n    pass\n",
+    );
+    let output = analyze(source);
+    let actual: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "exception_type_pair")
+        .map(|candidate| (candidate.original.as_str(), candidate.replacement.as_str()))
+        .collect();
+    assert_eq!(
+        actual,
+        vec![
+            ("ValueError", "TypeError"),
+            ("TypeError", "ValueError"),
+            ("KeyError", "IndexError"),
+            ("KeyError", "AttributeError"),
+            ("IndexError", "KeyError"),
+            ("AttributeError", "KeyError"),
+            ("FileNotFoundError", "PermissionError"),
+            ("PermissionError", "FileNotFoundError"),
+            ("ConnectionError", "TimeoutError"),
+            ("TimeoutError", "ConnectionError"),
+            ("ImportError", "ModuleNotFoundError"),
+            ("ModuleNotFoundError", "ImportError"),
+            ("ZeroDivisionError", "OverflowError"),
+            ("OverflowError", "ZeroDivisionError"),
+        ]
+    );
+    for candidate in output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "exception_type_pair")
+    {
+        apply_candidate_and_reparse(source, candidate);
+    }
+
+    let unsupported = concat!(
+        "try:\n    work()\n",
+        "except (ValueError, TypeError):\n    pass\n",
+        "except module.Error:\n    pass\n",
+        "except make_error():\n    pass\n",
+    );
+    assert!(
+        analyze(unsupported)
+            .candidates
+            .iter()
+            .all(|candidate| candidate.operator != "exception_type_pair")
+    );
+
+    let starred = "try:\n    work()\nexcept* ValueError:\n    pass\n";
+    assert!(parse_module(starred).is_ok(), "except* fixture parses");
+    assert!(
+        analyze(starred)
+            .candidates
+            .iter()
+            .all(|candidate| candidate.operator != "exception_type_pair")
+    );
+
+    let nested = concat!(
+        "try:\n    work()\n",
+        "except* ValueError:\n",
+        "    try:\n        work()\n",
+        "    except TypeError:\n        pass\n",
+    );
+    assert!(
+        analyze(nested)
+            .candidates
+            .iter()
+            .any(|candidate| candidate.original == "TypeError")
+    );
 }
 
 #[test]
