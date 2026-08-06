@@ -4,11 +4,11 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 use camino::Utf8PathBuf;
-use clap::{ArgGroup, Args, CommandFactory, Parser, Subcommand, ValueEnum};
+use clap::{ArgGroup, Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use clap_complete::Shell;
 use hoimin_core::{
-    CommandArg, ConfigError, LineRange, LineSelection, MutationProfile, OutputConfig, RawRunConfig,
-    RawRunLimits, RunConfig, SessionConfig, SymbolSelection,
+    CommandArg, ConfigError, LineRange, LineSelection, MutationOperatorSelection, MutationProfile,
+    OutputConfig, RawRunConfig, RawRunLimits, RunConfig, SessionConfig, SymbolSelection,
 };
 
 #[derive(Debug, Parser)]
@@ -493,6 +493,20 @@ pub fn write_completions(shell: Shell, writer: &mut impl std::io::Write) {
     clap_complete::generate(shell, &mut RootCli::command(), "hoimin", writer);
 }
 
+fn root_command() -> clap::Command {
+    RootCli::command().mut_subcommand("run", |command| command.after_help(operator_help()))
+}
+
+fn operator_help() -> String {
+    let names = MutationOperatorSelection::valid_names();
+    let rows = names
+        .chunks(4)
+        .map(|row| row.join(", "))
+        .collect::<Vec<_>>()
+        .join("\n  ");
+    format!("Mutation operator IDs and selector families:\n  {rows}")
+}
+
 fn run_args_from_mutation(
     raw: RawMutationArgs,
     test_argv: Vec<OsString>,
@@ -558,7 +572,8 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
-    let root = RootCli::try_parse_from(args)?;
+    let matches = root_command().try_get_matches_from(args)?;
+    let root = RootCli::from_arg_matches(&matches)?;
     ParsedCommand::try_from(root.command)
 }
 
