@@ -769,9 +769,11 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_method_call(&mut self, call: &ExprCall, name: &str, range: TextRange) {
+        if !self.facts.contains_annotation_span(call.range()) {
+            self.collect_structural_method_call(call, name);
+        }
         let same_contract = has_supported_same_contract_arguments(call);
         let exact_one = has_exact_positional_arguments(call, 1);
-        let structural_allowed = !self.facts.contains_annotation_span(call.range());
         match name {
             "append" if exact_one => {
                 if let Some(replacement) = append_to_insert_replacement(self.source, call) {
@@ -779,15 +781,6 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                         call.range(),
                         replacement,
                         MutationOperator::CollectionAppendInsert,
-                    );
-                }
-                if structural_allowed
-                    && let Some(replacement) = append_to_extend_replacement(self.source, call)
-                {
-                    self.add_candidate(
-                        call.range(),
-                        replacement,
-                        MutationOperator::StructureAppendExtend,
                     );
                 }
             }
@@ -800,42 +793,6 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                         call.range(),
                         replacement,
                         MutationOperator::CollectionAppendInsert,
-                    );
-                }
-            }
-            "extend" if exact_one && structural_allowed => {
-                if let Some(replacement) = extend_to_append_replacement(self.source, call) {
-                    self.add_candidate(
-                        call.range(),
-                        replacement,
-                        MutationOperator::StructureAppendExtend,
-                    );
-                }
-            }
-            "get"
-                if exact_one
-                    && structural_allowed
-                    && !self.has_trailing_argument_comma(call)
-                    && matches!(call.func.as_ref(), Expr::Attribute(attribute) if is_simple_receiver(attribute.value.as_ref())) =>
-            {
-                if let Some(replacement) = mapping_get_to_subscript_replacement(self.source, call) {
-                    self.add_candidate(
-                        call.range(),
-                        replacement,
-                        MutationOperator::StructureMappingGetSubscript,
-                    );
-                }
-            }
-            "sort" | "reverse" if has_exact_positional_arguments(call, 0) && structural_allowed => {
-                if let Some(replacement) = renamed_method_call_replacement(
-                    self.source,
-                    call,
-                    if name == "sort" { "reverse" } else { "sort" },
-                ) {
-                    self.add_candidate(
-                        call.range(),
-                        replacement,
-                        MutationOperator::StructureSortReverse,
                     );
                 }
             }
@@ -876,6 +833,57 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 if name == "split" { "rsplit" } else { "split" }.to_owned(),
                 MutationOperator::CollectionStringSplitRsplit,
             ),
+            _ => {}
+        }
+    }
+
+    fn collect_structural_method_call(&mut self, call: &ExprCall, name: &str) {
+        let exact_one = has_exact_positional_arguments(call, 1);
+        match name {
+            "append" if exact_one => {
+                if let Some(replacement) = append_to_extend_replacement(self.source, call) {
+                    self.add_candidate(
+                        call.range(),
+                        replacement,
+                        MutationOperator::StructureAppendExtend,
+                    );
+                }
+            }
+            "extend" if exact_one => {
+                if let Some(replacement) = extend_to_append_replacement(self.source, call) {
+                    self.add_candidate(
+                        call.range(),
+                        replacement,
+                        MutationOperator::StructureAppendExtend,
+                    );
+                }
+            }
+            "get"
+                if exact_one
+                    && !self.has_trailing_argument_comma(call)
+                    && matches!(call.func.as_ref(), Expr::Attribute(attribute) if is_simple_receiver(attribute.value.as_ref())) =>
+            {
+                if let Some(replacement) = mapping_get_to_subscript_replacement(self.source, call) {
+                    self.add_candidate(
+                        call.range(),
+                        replacement,
+                        MutationOperator::StructureMappingGetSubscript,
+                    );
+                }
+            }
+            "sort" | "reverse" if has_exact_positional_arguments(call, 0) => {
+                if let Some(replacement) = renamed_method_call_replacement(
+                    self.source,
+                    call,
+                    if name == "sort" { "reverse" } else { "sort" },
+                ) {
+                    self.add_candidate(
+                        call.range(),
+                        replacement,
+                        MutationOperator::StructureSortReverse,
+                    );
+                }
+            }
             _ => {}
         }
     }
@@ -939,13 +947,12 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             .tokens
             .expect("parser tokens are set")
             .iter()
-            .filter(|token| {
+            .rfind(|token| {
                 let range = token.range();
                 inner_range.start() <= range.start()
                     && range.end() <= inner_range.end()
                     && !token.kind().is_trivia()
             })
-            .last()
             .is_some_and(|token| token.kind() == TokenKind::Comma)
     }
 
