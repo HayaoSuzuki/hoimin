@@ -9,7 +9,7 @@ use ruff_python_ast::token::TokenKind;
 use ruff_python_ast::visitor::Visitor;
 use ruff_python_ast::{
     CmpOp, Expr, ExprCall, ExprContext, ExprList, ExprSlice, ExprSubscript, ExprTuple, ModModule,
-    Number, Operator, Stmt, UnaryOp, visitor,
+    Number, Operator, Pattern, Stmt, UnaryOp, visitor,
 };
 use ruff_python_parser::parse_module;
 use ruff_text_size::{Ranged, TextRange};
@@ -78,6 +78,9 @@ pub(crate) fn analyze_source_cancellable(
         let start = usize::from(range.start());
         let end = usize::from(range.end());
         let text = &source[start..end];
+        if facts.contains_annotation_span(range) && matches!(text, "&" | "|" | "<<" | ">>") {
+            continue;
+        }
         let previous = index.checked_sub(1).and_then(|i| tokens.get(i));
         let next = tokens.get(index + 1);
         let (span_end, replacement, operator) = if text == "not"
@@ -553,7 +556,10 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
                 self.record_function_annotation_ranges(definition);
             }
             Stmt::ClassDef(definition) => self.record_builtin_name(definition.name.as_str()),
-            Stmt::TypeAlias(alias) => self.record_annotation_range(alias.value.range()),
+            Stmt::TypeAlias(alias) => {
+                self.record_builtin_target(alias.name.as_ref());
+                self.record_annotation_range(alias.value.range());
+            }
             _ => {}
         }
         match statement {
@@ -623,6 +629,28 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
             }
         }
         visitor::walk_expr(self, expression);
+    }
+
+    fn visit_pattern(&mut self, pattern: &'ast Pattern) {
+        match pattern {
+            Pattern::MatchMapping(mapping) => {
+                if let Some(rest) = &mapping.rest {
+                    self.record_builtin_name(rest.as_str());
+                }
+            }
+            Pattern::MatchStar(star) => {
+                if let Some(name) = &star.name {
+                    self.record_builtin_name(name.as_str());
+                }
+            }
+            Pattern::MatchAs(as_pattern) => {
+                if let Some(name) = &as_pattern.name {
+                    self.record_builtin_name(name.as_str());
+                }
+            }
+            _ => {}
+        }
+        visitor::walk_pattern(self, pattern);
     }
 
     fn visit_parameter(&mut self, parameter: &'ast ruff_python_ast::Parameter) {
@@ -703,9 +731,6 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
 
     fn add_candidate(&mut self, range: TextRange, replacement: String, operator: MutationOperator) {
         let range = byte_range(range);
-        if !replacement_reparses(self.source, range.clone(), &replacement) {
-            return;
-        }
         let symbol = self.facts.scope_at(range.start);
         if let Some(candidate) = make_candidate(
             self.request,
@@ -1195,15 +1220,6 @@ fn tuple_to_list_replacement(source: &str, tuple: &ExprTuple) -> Option<String> 
         .and_then(|literal| literal.strip_suffix(')'))
         .unwrap_or(literal);
     Some(format!("[{contents}]"))
-}
-
-fn replacement_reparses(source: &str, range: Range<usize>, replacement: &str) -> bool {
-    if range.start >= range.end || range.end > source.len() {
-        return false;
-    }
-    let mut mutated = source.to_owned();
-    mutated.replace_range(range, replacement);
-    parse_module(&mutated).is_ok()
 }
 
 fn is_main_guard(expression: &Expr) -> bool {

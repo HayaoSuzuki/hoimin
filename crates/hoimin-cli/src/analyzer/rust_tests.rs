@@ -57,6 +57,39 @@ fn annotated_augmented_and_lambda_bindings_are_conservative() {
 }
 
 #[test]
+fn annotations_do_not_emit_default_bitwise_mutations() {
+    let output = analyze("value: Left | None\nresult = left & right\n");
+
+    assert_eq!(
+        output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "bitwise_and_or")
+            .map(|candidate| candidate.original.as_str())
+            .collect::<Vec<_>>(),
+        vec!["&"]
+    );
+}
+
+#[test]
+fn type_alias_and_match_capture_bindings_shadow_collection_builtins() {
+    for source in [
+        "type list = int\nresult = list(items)\n",
+        "match value:\n    case list:\n        pass\nresult = list(items)\n",
+    ] {
+        let output = analyze(source);
+        assert!(
+            output
+                .candidates
+                .iter()
+                .all(|candidate| candidate.operator != "collection_list_tuple"),
+            "unexpected list candidate for {source:?}: {:#?}",
+            output.candidates
+        );
+    }
+}
+
+#[test]
 fn shadowed_collection_builtins_are_not_mutated_as_calls() {
     let source = "any = custom_any\nfrom helpers import all\ndef list(tuple):\n    min = custom_min\n    for max in items:\n        pass\n    with resource as sorted:\n        pass\n    try:\n        pass\n    except Error as reversed:\n        pass\n    if (frozenset := custom_frozenset):\n        return list(items), tuple(items), set(items), frozenset(items), min(items), max(items), sorted(items), reversed(items)\nclass set:\n    pass\n";
     let parsed = parse_module(source).expect("shadowing fixture parses");
