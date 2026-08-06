@@ -475,7 +475,12 @@ impl<'tokens> AstFacts<'tokens> {
             },
             ruff_python_ast::Identifier::as_str,
         );
-        self.record_builtin_name(local);
+        if local == "*" {
+            self.bound_builtin_names
+                .extend(MUTABLE_BUILTINS.iter().map(|name| (*name).to_owned()));
+        } else {
+            self.record_builtin_name(local);
+        }
     }
 
     fn scope_at(&self, offset: usize) -> Option<String> {
@@ -800,7 +805,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         let same_contract = has_supported_same_contract_arguments(call);
         let exact_one = has_exact_positional_arguments(call, 1);
         match name {
-            "append" if exact_one => {
+            "append" if has_supported_append_insert_arguments(call) => {
                 if let Some(replacement) = append_to_insert_replacement(self.source, call) {
                     self.add_candidate(
                         call.range(),
@@ -865,7 +870,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     fn collect_structural_method_call(&mut self, call: &ExprCall, name: &str) {
         let exact_one = has_exact_positional_arguments(call, 1);
         match name {
-            "append" if exact_one => {
+            "append" if has_supported_append_insert_arguments(call) => {
                 if let Some(replacement) = append_to_extend_replacement(self.source, call) {
                     self.add_candidate(
                         call.range(),
@@ -886,6 +891,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             "get"
                 if exact_one
                     && !self.has_trailing_argument_comma(call)
+                    && is_supported_mapping_key(&call.arguments.args[0])
                     && matches!(call.func.as_ref(), Expr::Attribute(attribute) if is_simple_receiver(attribute.value.as_ref())) =>
             {
                 if let Some(replacement) = mapping_get_to_subscript_replacement(self.source, call) {
@@ -982,7 +988,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_list_literal(&mut self, list: &ExprList) {
-        if list.ctx != ExprContext::Load {
+        if list.ctx != ExprContext::Load || self.facts.contains_annotation_span(list.range()) {
             return;
         }
         if let Some(replacement) = list_to_tuple_replacement(self.source, list) {
@@ -995,7 +1001,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_tuple_literal(&mut self, tuple: &ExprTuple) {
-        if tuple.ctx != ExprContext::Load {
+        if tuple.ctx != ExprContext::Load || self.facts.contains_annotation_span(tuple.range()) {
             return;
         }
         if let Some(replacement) = tuple_to_list_replacement(self.source, tuple) {
@@ -1016,7 +1022,7 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'_, F> {
     }
 
     fn visit_expr(&mut self, expression: &'ast Expr) {
-        if !self.check_cancelled() {
+        if !self.check_cancelled() && !self.facts.contains_annotation_span(expression.range()) {
             match expression {
                 Expr::Call(call) => self.collect_call(call),
                 Expr::Subscript(subscript) => self.collect_subscript(subscript),
@@ -1052,6 +1058,11 @@ fn has_exact_positional_arguments(call: &ExprCall, count: usize) -> bool {
     call.arguments.args.len() == count
         && call.arguments.keywords.is_empty()
         && !call.arguments.args.iter().any(Expr::is_starred_expr)
+}
+
+fn has_supported_append_insert_arguments(call: &ExprCall) -> bool {
+    has_exact_positional_arguments(call, 1)
+        && !matches!(call.arguments.args.first(), Some(Expr::Generator(_)))
 }
 
 fn has_at_most_one_positional_argument(call: &ExprCall) -> bool {
@@ -1192,19 +1203,26 @@ fn is_simple_receiver(expression: &Expr) -> bool {
 }
 
 fn is_supported_mapping_key(expression: &Expr) -> bool {
-    !matches!(expression, Expr::Slice(_) | Expr::Starred(_))
-        && !matches!(expression, Expr::Tuple(tuple) if !tuple.parenthesized)
+    !matches!(
+        expression,
+        Expr::Generator(_) | Expr::Slice(_) | Expr::Starred(_)
+    ) && !matches!(expression, Expr::Tuple(tuple) if !tuple.parenthesized)
 }
 
 fn list_to_tuple_replacement(source: &str, list: &ExprList) -> Option<String> {
     let range = list.range();
     let literal = source_text(source, range)?;
     let contents = literal.strip_prefix('[')?.strip_suffix(']')?;
-    if list.elts.len() != 1 || contents.trim_end().ends_with(',') {
+    if list.elts.len() != 1 {
         return Some(format!("({contents})"));
     }
     let content_start = usize::from(range.start()) + 1;
     let element_end = usize::from(list.elts[0].range().end());
+    let content_end = usize::from(range.end()).checked_sub(1)?;
+    let after_element = source.get(element_end..content_end)?;
+    if after_element.trim_start().starts_with(',') {
+        return Some(format!("({contents})"));
+    }
     let comma_at = element_end.checked_sub(content_start)?;
     Some(format!(
         "({before},{after})",

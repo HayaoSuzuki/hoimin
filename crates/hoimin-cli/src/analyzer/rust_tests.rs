@@ -90,6 +90,55 @@ fn type_alias_and_match_capture_bindings_shadow_collection_builtins() {
 }
 
 #[test]
+fn structural_candidates_reject_bare_generators_and_preserve_commented_literals() {
+    let source = concat!(
+        "items.append(value for value in values)\n",
+        "mapping.get(value for value in values)\n",
+        "items = [item, # keep this comment\n]\n",
+    );
+    let output = analyze(source);
+
+    assert!(
+        output.candidates.iter().all(|candidate| {
+            !matches!(
+                candidate.operator.as_str(),
+                "collection_append_insert" | "structure_mapping_get_subscript"
+            )
+        }),
+        "unexpected candidates: {:#?}",
+        output.candidates
+    );
+    for candidate in output.candidates.iter().filter(|candidate| {
+        candidate.operator.starts_with("collection_")
+            || candidate.operator.starts_with("structure_")
+    }) {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
+fn annotations_and_star_imports_suppress_collection_candidates() {
+    let annotation_output = analyze(
+        "from typing import Callable\nhandler: Callable[[Left, Right], Result]\nvalue: tuple[Left, Right]\n",
+    );
+    assert!(
+        annotation_output
+            .candidates
+            .iter()
+            .all(|candidate| candidate.operator != "collection_list_tuple")
+    );
+
+    let star_import_output =
+        analyze("from helpers import *\nresult = list(items)\nvalue = tuple(items)\n");
+    assert!(
+        star_import_output
+            .candidates
+            .iter()
+            .all(|candidate| candidate.operator != "collection_list_tuple")
+    );
+}
+
+#[test]
 fn shadowed_collection_builtins_are_not_mutated_as_calls() {
     let source = "any = custom_any\nfrom helpers import all\ndef list(tuple):\n    min = custom_min\n    for max in items:\n        pass\n    with resource as sorted:\n        pass\n    try:\n        pass\n    except Error as reversed:\n        pass\n    if (frozenset := custom_frozenset):\n        return list(items), tuple(items), set(items), frozenset(items), min(items), max(items), sorted(items), reversed(items)\nclass set:\n    pass\n";
     let parsed = parse_module(source).expect("shadowing fixture parses");
