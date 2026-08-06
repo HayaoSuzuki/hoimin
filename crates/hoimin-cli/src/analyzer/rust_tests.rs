@@ -227,6 +227,34 @@ fn collection_excludes_unsupported_call_and_literal_shapes() {
 }
 
 #[test]
+fn collection_literals_and_inner_token_candidates_remain_individually_parseable() {
+    let source = "value = [a == b]\n";
+    let output = analyze(source);
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        candidates,
+        vec![
+            ("[a == b]", "(a == b,)", "collection_list_tuple"),
+            ("==", "!=", "compare_eq_ne"),
+        ]
+    );
+    for candidate in &output.candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
 fn candidate_replacements_reparse_as_python() {
     let source = "result = left == right\n";
     let output = analyze(source);
@@ -914,15 +942,15 @@ proptest! {
     #[test]
     fn arbitrary_python_input_has_ordered_in_bounds_candidates(source in ".{0,4096}") {
         let output = analyze(&source);
-        let mut previous_end = 0;
+        let mut previous_start = 0;
         for candidate in output.candidates {
             let start = usize::try_from(candidate.span.start).expect("span start fits usize");
             let length = usize::try_from(candidate.span.length).expect("span length fits usize");
             let end = start.checked_add(length).expect("candidate span does not overflow");
-            prop_assert!(previous_end <= start);
+            prop_assert!(previous_start <= start);
             prop_assert!(end <= source.len());
             prop_assert_eq!(&source[start..end], candidate.original);
-            previous_end = end;
+            previous_start = start;
         }
     }
 }
