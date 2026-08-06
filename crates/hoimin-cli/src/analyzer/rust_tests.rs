@@ -175,6 +175,120 @@ fn exception_type_pair_candidates_are_curated_and_syntax_directed() {
 }
 
 #[test]
+fn exception_risky_candidates_require_explicit_selection_and_reparse() {
+    let source = concat!(
+        "try:\n    work()\n",
+        "except:\n    pass\n",
+        "except Exception:\n    pass\n",
+        "except BaseException:\n    pass\n",
+        "except (ValueError,):\n    pass\n",
+        "except (ValueError, TypeError,):\n    pass\n",
+        "except (ValueError, # keep this comment\n",
+        "        TypeError,):\n    pass\n",
+    );
+    let default_output = analyze(source);
+    assert!(default_output.candidates.iter().all(|candidate| {
+        !matches!(
+            candidate.operator.as_str(),
+            "exception_bare_to_exception"
+                | "exception_exception_to_bare"
+                | "exception_base_boundary"
+                | "exception_tuple_add_pair"
+                | "exception_tuple_remove_member"
+        )
+    }));
+
+    let mut operators = MutationOperatorSelection::default();
+    for operator in [
+        MutationOperator::ExceptionBareToException,
+        MutationOperator::ExceptionExceptionToBare,
+        MutationOperator::ExceptionBaseBoundary,
+        MutationOperator::ExceptionTupleAddPair,
+        MutationOperator::ExceptionTupleRemoveMember,
+    ] {
+        operators.include(operator);
+    }
+    let output = analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/sample.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            profile: MutationProfile::Full,
+            max_candidates: 10_000,
+        },
+        source,
+    );
+    assert!(output.candidates.iter().any(|candidate| {
+        candidate.operator == "exception_bare_to_exception"
+            && candidate.original == "except"
+            && candidate.replacement == "except Exception"
+    }));
+    assert!(output.candidates.iter().any(|candidate| {
+        candidate.operator == "exception_exception_to_bare"
+            && candidate.original == "Exception"
+            && candidate.replacement.is_empty()
+    }));
+    assert!(output.candidates.iter().any(|candidate| {
+        candidate.operator == "exception_base_boundary"
+            && candidate.original == "Exception"
+            && candidate.replacement == "BaseException"
+    }));
+    assert!(output.candidates.iter().any(|candidate| {
+        candidate.operator == "exception_base_boundary"
+            && candidate.original == "BaseException"
+            && candidate.replacement == "Exception"
+    }));
+    assert!(output.candidates.iter().any(|candidate| {
+        candidate.operator == "exception_tuple_add_pair"
+            && candidate.original == "(ValueError,)"
+            && candidate.replacement == "(ValueError, TypeError)"
+    }));
+    assert!(output.candidates.iter().any(|candidate| {
+        candidate.operator == "exception_tuple_remove_member"
+            && candidate.original == "(ValueError, TypeError,)"
+    }));
+    assert!(output.candidates.iter().any(|candidate| {
+        candidate.operator == "exception_tuple_remove_member"
+            && candidate.original.contains("# keep this comment")
+    }));
+    for candidate in &output.candidates {
+        if candidate.operator.starts_with("exception_") {
+            let mutated = apply_candidate_and_reparse(source, candidate);
+            if candidate.original.contains("# keep this comment") {
+                assert!(mutated.contains("# keep this comment"));
+            }
+        }
+    }
+
+    let unsupported = concat!(
+        "ValueError = Custom\n",
+        "try:\n    work()\n",
+        "except ValueError:\n    pass\n",
+        "except module.Error:\n    pass\n",
+        "except make_error():\n    pass\n",
+        "except (ValueError, module.Error):\n    pass\n",
+        "except* BaseException:\n    pass\n",
+    );
+    assert!(
+        analyze_source(
+            &AnalyzeRequest {
+                path: Utf8Path::new("pkg/sample.py"),
+                lines: &[],
+                symbols: &[],
+                operators: &operators,
+                profile: MutationProfile::Full,
+                max_candidates: 10_000,
+            },
+            unsupported,
+        )
+        .candidates
+        .iter()
+        .all(|candidate| !candidate.operator.starts_with("exception_"))
+    );
+}
+
+#[test]
 fn annotations_do_not_emit_default_bitwise_mutations() {
     let output = analyze("value: Left | None\nresult = left & right\n");
 
