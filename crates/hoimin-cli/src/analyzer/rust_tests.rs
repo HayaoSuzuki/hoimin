@@ -81,7 +81,16 @@ fn shadowed_collection_builtins_are_not_mutated_as_calls() {
         output.candidates.iter().all(|candidate| {
             !matches!(
                 candidate.original.as_str(),
-                "any" | "all" | "list" | "tuple" | "set" | "frozenset" | "min" | "max"
+                "any"
+                    | "all"
+                    | "list"
+                    | "tuple"
+                    | "set"
+                    | "frozenset"
+                    | "min"
+                    | "max"
+                    | "sorted"
+                    | "reversed"
             )
         }),
         "shadowed builtins must not emit name-replacement candidates: {:#?}",
@@ -222,6 +231,208 @@ fn collection_excludes_unsupported_call_and_literal_shapes() {
             .iter()
             .all(|candidate| !candidate.operator.starts_with("collection_")),
         "unexpected collection candidates: {:#?}",
+        output.candidates
+    );
+}
+
+#[test]
+fn structure_calls_emit_exact_parseable_candidates() {
+    let source = concat!(
+        "appended = items.append(value)\n",
+        "extended = items.extend([value])\n",
+        "got = mapping.get(key)\n",
+        "subscripted = mapping[key]\n",
+        "sorted_items = items.sort()\n",
+        "reversed_items = items.reverse()\n",
+        "ordered = sorted(items)\n",
+        "flipped = reversed(items)\n",
+    );
+    let output = analyze(source);
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator.starts_with("structure_"))
+        .collect();
+    let actual: Vec<_> = candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        actual,
+        vec![
+            (
+                "items.append(value)",
+                "items.extend([value])",
+                "structure_append_extend",
+            ),
+            (
+                "items.extend([value])",
+                "items.append(value)",
+                "structure_append_extend",
+            ),
+            (
+                "mapping.get(key)",
+                "mapping[key]",
+                "structure_mapping_get_subscript",
+            ),
+            (
+                "mapping[key]",
+                "mapping.get(key)",
+                "structure_mapping_get_subscript",
+            ),
+            ("items.sort()", "items.reverse()", "structure_sort_reverse",),
+            ("items.reverse()", "items.sort()", "structure_sort_reverse",),
+            ("sorted", "reversed", "structure_sorted_reversed"),
+            ("reversed", "sorted", "structure_sorted_reversed"),
+        ]
+    );
+
+    for candidate in candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
+fn structure_replacements_preserve_nested_sources_and_reparse() {
+    let source = concat!(
+        "appended = items().append(\n",
+        "    \"value\"  # retained\n",
+        ")\n",
+        "extended = items().extend([\n",
+        "    \"value\"  # retained\n",
+        "])\n",
+        "combined = container.mapping.get((make_key(\"field\"))) + 1  # retained\n",
+        "subscripted = container.mapping[(make_key(\"field\"))]\n",
+        "sorted_result = sorted(produce_items())\n",
+        "reversed_result = reversed(produce_items())\n",
+    );
+    let output = analyze(source);
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator.starts_with("structure_"))
+        .collect();
+    let actual: Vec<_> = candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        actual,
+        vec![
+            (
+                "items().append(\n    \"value\"  # retained\n)",
+                "items().extend([\n    \"value\"  # retained\n])",
+                "structure_append_extend",
+            ),
+            (
+                "items().extend([\n    \"value\"  # retained\n])",
+                "items().append(\n    \"value\"  # retained\n)",
+                "structure_append_extend",
+            ),
+            (
+                "container.mapping.get((make_key(\"field\")))",
+                "container.mapping[(make_key(\"field\"))]",
+                "structure_mapping_get_subscript",
+            ),
+            (
+                "container.mapping[(make_key(\"field\"))]",
+                "container.mapping.get((make_key(\"field\")))",
+                "structure_mapping_get_subscript",
+            ),
+            ("sorted", "reversed", "structure_sorted_reversed"),
+            ("reversed", "sorted", "structure_sorted_reversed"),
+        ]
+    );
+
+    for candidate in candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
+fn structure_candidates_skip_type_annotation_expressions() {
+    let source = concat!(
+        "value: mapping[key]\n",
+        "fallback: mapping.get(key)\n",
+        "def annotated(parameter: mapping[key]) -> mapping.get(key):\n",
+        "    pass\n",
+        "result = mapping[key]\n",
+    );
+    let output = analyze(source);
+
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator.starts_with("structure_"))
+        .collect();
+    assert_eq!(
+        candidates
+            .iter()
+            .map(|candidate| candidate.original.as_str())
+            .collect::<Vec<_>>(),
+        vec!["mapping[key]"],
+    );
+    for candidate in candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
+fn structure_excludes_unsupported_shapes_and_receivers() {
+    let source = concat!(
+        "items.append(*values)\n",
+        "items.append(value=value)\n",
+        "items.extend(values)\n",
+        "items.extend([first, second])\n",
+        "items.extend([*values])\n",
+        "items.extend([value], extra)\n",
+        "items.extend(values=[value])\n",
+        "mapping.get(key, fallback)\n",
+        "mapping.get(key,)\n",
+        "mapping.get(key,  # trailing comma\n",
+        ")\n",
+        "mapping.get(key=key)\n",
+        "mapping.get(*keys)\n",
+        "mapping.get(**options)\n",
+        "factory().get(key)\n",
+        "factory()[key]\n",
+        "mapping[first, second]\n",
+        "mapping[*keys]\n",
+        "mapping[key:stop]\n",
+        "mapping[key] = value\n",
+        "del mapping[key]\n",
+        "items.sort(key=rank)\n",
+        "items.sort(reverse=True)\n",
+        "items.reverse(*values)\n",
+        "items.reverse(values=values)\n",
+        "sorted(items, key=rank)\n",
+        "sorted(iterable=items)\n",
+        "reversed(items, extra)\n",
+        "reversed(iterable=items)\n",
+        "sorted(*items)\n",
+    );
+    let output = analyze(source);
+
+    assert!(
+        output
+            .candidates
+            .iter()
+            .all(|candidate| !candidate.operator.starts_with("structure_")),
+        "unexpected structural candidates: {:#?}",
         output.candidates
     );
 }

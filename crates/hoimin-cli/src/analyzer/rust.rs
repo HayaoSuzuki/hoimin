@@ -8,8 +8,8 @@ use hoimin_core::{
 use ruff_python_ast::token::TokenKind;
 use ruff_python_ast::visitor::Visitor;
 use ruff_python_ast::{
-    CmpOp, Expr, ExprCall, ExprContext, ExprList, ExprTuple, ModModule, Number, Operator, Stmt,
-    UnaryOp, visitor,
+    CmpOp, Expr, ExprCall, ExprContext, ExprList, ExprSubscript, ExprTuple, ModModule, Number,
+    Operator, Stmt, UnaryOp, visitor,
 };
 use ruff_python_parser::parse_module;
 use ruff_text_size::{Ranged, TextRange};
@@ -353,6 +353,7 @@ struct AstFacts<'tokens> {
     unary_sign_starts: HashSet<usize>,
     not_operands: Vec<(usize, usize, usize)>,
     arid_ranges: Vec<(usize, usize)>,
+    annotation_ranges: Vec<(usize, usize)>,
     scopes: Vec<ScopeRange>,
     qualname: Vec<String>,
     tokens: Option<&'tokens ruff_python_ast::token::Tokens>,
@@ -399,6 +400,19 @@ impl<'tokens> AstFacts<'tokens> {
 
     fn contains_arid_span(&self, start: usize, end: usize) -> bool {
         self.arid_ranges
+            .iter()
+            .any(|(range_start, range_end)| *range_start <= start && end <= *range_end)
+    }
+
+    fn record_annotation_range(&mut self, range: TextRange) {
+        self.annotation_ranges
+            .push((usize::from(range.start()), usize::from(range.end())));
+    }
+
+    fn contains_annotation_span(&self, range: TextRange) -> bool {
+        let start = usize::from(range.start());
+        let end = usize::from(range.end());
+        self.annotation_ranges
             .iter()
             .any(|(range_start, range_end)| *range_start <= start && end <= *range_end)
     }
@@ -486,6 +500,17 @@ impl<'tokens> AstFacts<'tokens> {
         visitor::walk_stmt(self, statement);
         self.qualname.pop();
     }
+
+    fn record_function_annotation_ranges(&mut self, definition: &ruff_python_ast::StmtFunctionDef) {
+        for parameter in &definition.parameters {
+            if let Some(annotation) = parameter.annotation() {
+                self.record_annotation_range(annotation.range());
+            }
+        }
+        if let Some(annotation) = definition.returns.as_deref() {
+            self.record_annotation_range(annotation.range());
+        }
+    }
 }
 
 impl<'ast> Visitor<'ast> for AstFacts<'_> {
@@ -507,7 +532,10 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
                 }
             }
             Stmt::AugAssign(assign) => self.record_builtin_target(assign.target.as_ref()),
-            Stmt::AnnAssign(assign) => self.record_builtin_target(assign.target.as_ref()),
+            Stmt::AnnAssign(assign) => {
+                self.record_builtin_target(assign.target.as_ref());
+                self.record_annotation_range(assign.annotation.range());
+            }
             Stmt::For(statement_for) => self.record_builtin_target(statement_for.target.as_ref()),
             Stmt::With(statement_with) => {
                 for item in &statement_with.items {
@@ -516,8 +544,12 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
                     }
                 }
             }
-            Stmt::FunctionDef(definition) => self.record_builtin_name(definition.name.as_str()),
+            Stmt::FunctionDef(definition) => {
+                self.record_builtin_name(definition.name.as_str());
+                self.record_function_annotation_ranges(definition);
+            }
             Stmt::ClassDef(definition) => self.record_builtin_name(definition.name.as_str()),
+            Stmt::TypeAlias(alias) => self.record_annotation_range(alias.value.range()),
             _ => {}
         }
         match statement {
@@ -714,6 +746,19 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 if name == "min" { "max" } else { "min" },
                 MutationOperator::CollectionMinMax,
             ),
+            "sorted" | "reversed"
+                if has_exact_positional_arguments(call, 1)
+                    && !self.facts.contains_annotation_span(call.range()) =>
+            {
+                (
+                    if name == "sorted" {
+                        "reversed"
+                    } else {
+                        "sorted"
+                    },
+                    MutationOperator::StructureSortedReversed,
+                )
+            }
             _ => return,
         };
         self.add_candidate(range, replacement.to_owned(), operator);
@@ -722,6 +767,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     fn collect_method_call(&mut self, call: &ExprCall, name: &str, range: TextRange) {
         let same_contract = has_supported_same_contract_arguments(call);
         let exact_one = has_exact_positional_arguments(call, 1);
+        let structural_allowed = !self.facts.contains_annotation_span(call.range());
         match name {
             "append" if exact_one => {
                 if let Some(replacement) = append_to_insert_replacement(self.source, call) {
@@ -729,6 +775,15 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                         call.range(),
                         replacement,
                         MutationOperator::CollectionAppendInsert,
+                    );
+                }
+                if structural_allowed
+                    && let Some(replacement) = append_to_extend_replacement(self.source, call)
+                {
+                    self.add_candidate(
+                        call.range(),
+                        replacement,
+                        MutationOperator::StructureAppendExtend,
                     );
                 }
             }
@@ -741,6 +796,42 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                         call.range(),
                         replacement,
                         MutationOperator::CollectionAppendInsert,
+                    );
+                }
+            }
+            "extend" if exact_one && structural_allowed => {
+                if let Some(replacement) = extend_to_append_replacement(self.source, call) {
+                    self.add_candidate(
+                        call.range(),
+                        replacement,
+                        MutationOperator::StructureAppendExtend,
+                    );
+                }
+            }
+            "get"
+                if exact_one
+                    && structural_allowed
+                    && !self.has_trailing_argument_comma(call)
+                    && matches!(call.func.as_ref(), Expr::Attribute(attribute) if is_simple_receiver(attribute.value.as_ref())) =>
+            {
+                if let Some(replacement) = mapping_get_to_subscript_replacement(self.source, call) {
+                    self.add_candidate(
+                        call.range(),
+                        replacement,
+                        MutationOperator::StructureMappingGetSubscript,
+                    );
+                }
+            }
+            "sort" | "reverse" if has_exact_positional_arguments(call, 0) && structural_allowed => {
+                if let Some(replacement) = renamed_method_call_replacement(
+                    self.source,
+                    call,
+                    if name == "sort" { "reverse" } else { "sort" },
+                ) {
+                    self.add_candidate(
+                        call.range(),
+                        replacement,
+                        MutationOperator::StructureSortReverse,
                     );
                 }
             }
@@ -785,6 +876,39 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         }
     }
 
+    fn collect_subscript(&mut self, subscript: &ExprSubscript) {
+        if self.facts.contains_annotation_span(subscript.range())
+            || subscript.ctx != ExprContext::Load
+            || !is_simple_receiver(subscript.value.as_ref())
+            || !is_supported_mapping_key(subscript.slice.as_ref())
+        {
+            return;
+        }
+        if let Some(replacement) = subscript_to_mapping_get_replacement(self.source, subscript) {
+            self.add_candidate(
+                subscript.range(),
+                replacement,
+                MutationOperator::StructureMappingGetSubscript,
+            );
+        }
+    }
+
+    fn has_trailing_argument_comma(&self, call: &ExprCall) -> bool {
+        let inner_range = call.arguments.inner_range();
+        self.facts
+            .tokens
+            .expect("parser tokens are set")
+            .iter()
+            .filter(|token| {
+                let range = token.range();
+                inner_range.start() <= range.start()
+                    && range.end() <= inner_range.end()
+                    && !token.kind().is_trivia()
+            })
+            .last()
+            .is_some_and(|token| token.kind() == TokenKind::Comma)
+    }
+
     fn collect_list_literal(&mut self, list: &ExprList) {
         if list.ctx != ExprContext::Load {
             return;
@@ -823,6 +947,7 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'_, F> {
         if !self.check_cancelled() {
             match expression {
                 Expr::Call(call) => self.collect_call(call),
+                Expr::Subscript(subscript) => self.collect_subscript(subscript),
                 Expr::List(list) => self.collect_list_literal(list),
                 Expr::Tuple(tuple) => self.collect_tuple_literal(tuple),
                 _ => {}
@@ -896,6 +1021,79 @@ fn insert_to_append_replacement(source: &str, call: &ExprCall) -> Option<String>
     let prefix = source.get(function_start..attribute_start)?;
     let argument = source_text(source, call.arguments.args.get(1)?.range())?;
     Some(format!("{prefix}append({argument})"))
+}
+
+fn append_to_extend_replacement(source: &str, call: &ExprCall) -> Option<String> {
+    let prefix = method_call_prefix(source, call)?;
+    let argument = source_text(source, call.arguments.inner_range())?;
+    Some(format!("{prefix}extend([{argument}])"))
+}
+
+fn extend_to_append_replacement(source: &str, call: &ExprCall) -> Option<String> {
+    let Expr::List(list) = call.arguments.args.first()? else {
+        return None;
+    };
+    if list.ctx != ExprContext::Load || list.elts.len() != 1 || list.elts[0].is_starred_expr() {
+        return None;
+    }
+    let prefix = method_call_prefix(source, call)?;
+    let literal = source_text(source, list.range())?;
+    let contents = literal.strip_prefix('[')?.strip_suffix(']')?;
+    Some(format!("{prefix}append({contents})"))
+}
+
+fn mapping_get_to_subscript_replacement(source: &str, call: &ExprCall) -> Option<String> {
+    let Expr::Attribute(attribute) = call.func.as_ref() else {
+        return None;
+    };
+    let receiver = source_text(source, attribute.value.range())?;
+    let key = source_text(source, call.arguments.inner_range())?;
+    Some(format!("{receiver}[{key}]"))
+}
+
+fn subscript_to_mapping_get_replacement(source: &str, subscript: &ExprSubscript) -> Option<String> {
+    let receiver = source_text(source, subscript.value.range())?;
+    let receiver_end = usize::from(subscript.value.range().end());
+    let subscript_end = usize::from(subscript.range().end());
+    let indexed = source.get(receiver_end..subscript_end)?;
+    let opening_bracket = indexed.find('[')?;
+    let key = indexed.get(opening_bracket + 1..)?.strip_suffix(']')?;
+    Some(format!("{receiver}.get({key})"))
+}
+
+fn renamed_method_call_replacement(
+    source: &str,
+    call: &ExprCall,
+    replacement: &str,
+) -> Option<String> {
+    let Expr::Attribute(attribute) = call.func.as_ref() else {
+        return None;
+    };
+    let function_start = usize::from(call.func.range().start());
+    let attribute_start = usize::from(attribute.attr.range().start());
+    let attribute_end = usize::from(attribute.attr.range().end());
+    let call_end = usize::from(call.range().end());
+    let prefix = source.get(function_start..attribute_start)?;
+    let suffix = source.get(attribute_end..call_end)?;
+    Some(format!("{prefix}{replacement}{suffix}"))
+}
+
+fn method_call_prefix<'a>(source: &'a str, call: &ExprCall) -> Option<&'a str> {
+    let Expr::Attribute(attribute) = call.func.as_ref() else {
+        return None;
+    };
+    let function_start = usize::from(call.func.range().start());
+    let attribute_start = usize::from(attribute.attr.range().start());
+    source.get(function_start..attribute_start)
+}
+
+fn is_simple_receiver(expression: &Expr) -> bool {
+    matches!(expression, Expr::Name(_) | Expr::Attribute(_))
+}
+
+fn is_supported_mapping_key(expression: &Expr) -> bool {
+    !matches!(expression, Expr::Slice(_) | Expr::Starred(_))
+        && !matches!(expression, Expr::Tuple(tuple) if !tuple.parenthesized)
 }
 
 fn list_to_tuple_replacement(source: &str, list: &ExprList) -> Option<String> {
