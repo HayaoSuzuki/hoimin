@@ -175,6 +175,10 @@ fn exception_type_pair_candidates_are_curated_and_syntax_directed() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the fixture covers every explicit risky exception operator and parseability"
+)]
 fn exception_risky_candidates_require_explicit_selection_and_reparse() {
     let source = concat!(
         "try:\n    work()\n",

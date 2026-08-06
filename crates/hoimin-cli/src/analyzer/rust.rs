@@ -1214,20 +1214,20 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
 impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'_, F> {
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
         if !self.check_cancelled() {
-            if let Stmt::Try(try_statement) = statement {
-                if try_statement.is_star {
-                    self.visit_body(&try_statement.body);
-                    for except_handler in &try_statement.handlers {
-                        let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
-                        if let Some(type_) = &handler.type_ {
-                            self.visit_expr(type_);
-                        }
-                        self.visit_body(&handler.body);
+            if let Stmt::Try(try_statement) = statement
+                && try_statement.is_star
+            {
+                self.visit_body(&try_statement.body);
+                for except_handler in &try_statement.handlers {
+                    let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
+                    if let Some(type_) = &handler.type_ {
+                        self.visit_expr(type_);
                     }
-                    self.visit_body(&try_statement.orelse);
-                    self.visit_body(&try_statement.finalbody);
-                    return;
+                    self.visit_body(&handler.body);
                 }
+                self.visit_body(&try_statement.orelse);
+                self.visit_body(&try_statement.finalbody);
+                return;
             }
             visitor::walk_stmt(self, statement);
         }
@@ -1569,7 +1569,7 @@ fn tuple_remove_replacement(
             .rfind(|range| usize::from(range.end()) <= element_start)?
     };
     let mut removal_ranges = [element_range, comma];
-    removal_ranges.sort_by_key(|range| range.start());
+    removal_ranges.sort_by_key(|range| (*range).start());
     let mut replacement = literal.to_owned();
     for range in removal_ranges.into_iter().rev() {
         let start = usize::from(range.start()).checked_sub(tuple_start)?;
