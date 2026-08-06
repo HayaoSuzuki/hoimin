@@ -7,9 +7,12 @@ use hoimin_core::{
 };
 use ruff_python_ast::token::TokenKind;
 use ruff_python_ast::visitor::Visitor;
-use ruff_python_ast::{CmpOp, Expr, ModModule, Operator, Stmt, UnaryOp, visitor};
+use ruff_python_ast::{
+    CmpOp, Expr, ExprCall, ExprContext, ExprList, ExprTuple, ModModule, Number, Operator, Stmt,
+    UnaryOp, visitor,
+};
 use ruff_python_parser::parse_module;
-use ruff_text_size::Ranged;
+use ruff_text_size::{Ranged, TextRange};
 
 use super::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
@@ -619,19 +622,32 @@ const MUTABLE_BUILTINS: &[&str] = &[
 ];
 
 struct AstCandidateCollector<'a, F> {
+    source: &'a str,
+    line_index: &'a LineIndex,
+    facts: &'a AstFacts<'a>,
+    request: &'a AnalyzeRequest<'a>,
     cancelled: &'a F,
     cancelled_observed: bool,
+    candidates: Vec<AnalyzerCandidate>,
 }
 
 impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     fn collect(
-        module: &ModModule,
-        _facts: &AstFacts<'_>,
+        module: &'a ModModule,
+        source: &'a str,
+        line_index: &'a LineIndex,
+        facts: &'a AstFacts<'a>,
+        request: &'a AnalyzeRequest<'a>,
         cancelled: &'a F,
-    ) -> Result<(), AnalysisCancelled> {
+    ) -> Result<Vec<AnalyzerCandidate>, AnalysisCancelled> {
         let mut collector = Self {
+            source,
+            line_index,
+            facts,
+            request,
             cancelled,
             cancelled_observed: false,
+            candidates: Vec::new(),
         };
         for statement in &module.body {
             collector.visit_stmt(statement);
@@ -639,7 +655,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 return Err(AnalysisCancelled);
             }
         }
-        Ok(())
+        Ok(collector.candidates)
     }
 
     fn check_cancelled(&mut self) -> bool {
@@ -647,6 +663,152 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             self.cancelled_observed = true;
         }
         self.cancelled_observed
+    }
+
+    fn add_candidate(&mut self, range: TextRange, replacement: String, operator: MutationOperator) {
+        let range = byte_range(range);
+        if !replacement_reparses(self.source, range.clone(), &replacement) {
+            return;
+        }
+        let symbol = self.facts.scope_at(range.start);
+        if let Some(candidate) = make_candidate(
+            self.request,
+            self.source,
+            self.line_index,
+            range,
+            replacement,
+            operator,
+            symbol,
+        ) {
+            self.candidates.push(candidate);
+        }
+    }
+
+    fn collect_call(&mut self, call: &ExprCall) {
+        if let Expr::Name(name) = call.func.as_ref() {
+            self.collect_builtin_call(call, name.id.as_str(), name.range());
+        }
+        if let Expr::Attribute(attribute) = call.func.as_ref() {
+            self.collect_method_call(call, attribute.attr.as_str(), attribute.attr.range());
+        }
+    }
+
+    fn collect_builtin_call(&mut self, call: &ExprCall, name: &str, range: TextRange) {
+        if self.facts.is_builtin_bound(name) {
+            return;
+        }
+        let (replacement, operator) = match name {
+            "any" | "all" if has_exact_positional_arguments(call, 1) => (
+                if name == "any" { "all" } else { "any" },
+                MutationOperator::CollectionAnyAll,
+            ),
+            "list" | "tuple" if has_at_most_one_positional_argument(call) => (
+                if name == "list" { "tuple" } else { "list" },
+                MutationOperator::CollectionListTuple,
+            ),
+            "set" | "frozenset" if has_at_most_one_positional_argument(call) => (
+                if name == "set" { "frozenset" } else { "set" },
+                MutationOperator::CollectionSetFrozenset,
+            ),
+            "min" | "max" if has_supported_same_contract_arguments(call) => (
+                if name == "min" { "max" } else { "min" },
+                MutationOperator::CollectionMinMax,
+            ),
+            _ => return,
+        };
+        self.add_candidate(range, replacement.to_owned(), operator);
+    }
+
+    fn collect_method_call(&mut self, call: &ExprCall, name: &str, range: TextRange) {
+        let same_contract = has_supported_same_contract_arguments(call);
+        let exact_one = has_exact_positional_arguments(call, 1);
+        match name {
+            "append" if exact_one => {
+                if let Some(replacement) = append_to_insert_replacement(self.source, call) {
+                    self.add_candidate(
+                        call.range(),
+                        replacement,
+                        MutationOperator::CollectionAppendInsert,
+                    );
+                }
+            }
+            "insert"
+                if has_exact_positional_arguments(call, 2)
+                    && is_zero_literal(&call.arguments.args[0]) =>
+            {
+                if let Some(replacement) = insert_to_append_replacement(self.source, call) {
+                    self.add_candidate(
+                        call.range(),
+                        replacement,
+                        MutationOperator::CollectionAppendInsert,
+                    );
+                }
+            }
+            "add" if exact_one => self.add_candidate(
+                range,
+                "discard".to_owned(),
+                MutationOperator::CollectionSetAddDiscard,
+            ),
+            "discard" if exact_one => {
+                self.add_candidate(
+                    range,
+                    "add".to_owned(),
+                    MutationOperator::CollectionSetAddDiscard,
+                );
+                self.add_candidate(
+                    range,
+                    "remove".to_owned(),
+                    MutationOperator::CollectionSetRemoveDiscard,
+                );
+            }
+            "remove" if exact_one => self.add_candidate(
+                range,
+                "discard".to_owned(),
+                MutationOperator::CollectionSetRemoveDiscard,
+            ),
+            "startswith" | "endswith" if same_contract => self.add_candidate(
+                range,
+                if name == "startswith" {
+                    "endswith"
+                } else {
+                    "startswith"
+                }
+                .to_owned(),
+                MutationOperator::CollectionStringStartsEnds,
+            ),
+            "split" | "rsplit" if same_contract => self.add_candidate(
+                range,
+                if name == "split" { "rsplit" } else { "split" }.to_owned(),
+                MutationOperator::CollectionStringSplitRsplit,
+            ),
+            _ => {}
+        }
+    }
+
+    fn collect_list_literal(&mut self, list: &ExprList) {
+        if list.ctx != ExprContext::Load {
+            return;
+        }
+        if let Some(replacement) = list_to_tuple_replacement(self.source, list) {
+            self.add_candidate(
+                list.range(),
+                replacement,
+                MutationOperator::CollectionListTuple,
+            );
+        }
+    }
+
+    fn collect_tuple_literal(&mut self, tuple: &ExprTuple) {
+        if tuple.ctx != ExprContext::Load {
+            return;
+        }
+        if let Some(replacement) = tuple_to_list_replacement(self.source, tuple) {
+            self.add_candidate(
+                tuple.range(),
+                replacement,
+                MutationOperator::CollectionListTuple,
+            );
+        }
     }
 }
 
@@ -659,21 +821,116 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'_, F> {
 
     fn visit_expr(&mut self, expression: &'ast Expr) {
         if !self.check_cancelled() {
+            match expression {
+                Expr::Call(call) => self.collect_call(call),
+                Expr::List(list) => self.collect_list_literal(list),
+                Expr::Tuple(tuple) => self.collect_tuple_literal(tuple),
+                _ => {}
+            }
             visitor::walk_expr(self, expression);
         }
     }
 }
 
-fn ast_candidates<F: Fn() -> bool>(
-    module: &ModModule,
-    _source: &str,
-    _line_index: &LineIndex,
-    facts: &AstFacts<'_>,
-    _request: &AnalyzeRequest<'_>,
-    cancelled: &F,
+fn ast_candidates<'a, F: Fn() -> bool>(
+    module: &'a ModModule,
+    source: &'a str,
+    line_index: &'a LineIndex,
+    facts: &'a AstFacts<'a>,
+    request: &'a AnalyzeRequest<'a>,
+    cancelled: &'a F,
 ) -> Result<Vec<AnalyzerCandidate>, AnalysisCancelled> {
-    AstCandidateCollector::collect(module, facts, cancelled)?;
-    Ok(Vec::new())
+    AstCandidateCollector::collect(module, source, line_index, facts, request, cancelled)
+}
+
+fn byte_range(range: TextRange) -> Range<usize> {
+    usize::from(range.start())..usize::from(range.end())
+}
+
+fn source_text(source: &str, range: TextRange) -> Option<&str> {
+    source.get(byte_range(range))
+}
+
+fn has_exact_positional_arguments(call: &ExprCall, count: usize) -> bool {
+    call.arguments.args.len() == count
+        && call.arguments.keywords.is_empty()
+        && !call.arguments.args.iter().any(Expr::is_starred_expr)
+}
+
+fn has_at_most_one_positional_argument(call: &ExprCall) -> bool {
+    call.arguments.args.len() <= 1
+        && call.arguments.keywords.is_empty()
+        && !call.arguments.args.iter().any(Expr::is_starred_expr)
+}
+
+fn has_supported_same_contract_arguments(call: &ExprCall) -> bool {
+    !call.arguments.args.iter().any(Expr::is_starred_expr)
+        && call
+            .arguments
+            .keywords
+            .iter()
+            .all(|keyword| keyword.arg.is_some())
+}
+
+fn is_zero_literal(expression: &Expr) -> bool {
+    matches!(expression, Expr::NumberLiteral(number) if matches!(&number.value, Number::Int(value) if value.as_usize() == Some(0)))
+}
+
+fn append_to_insert_replacement(source: &str, call: &ExprCall) -> Option<String> {
+    let Expr::Attribute(attribute) = call.func.as_ref() else {
+        return None;
+    };
+    let function_start = usize::from(call.func.range().start());
+    let attribute_start = usize::from(attribute.attr.range().start());
+    let prefix = source.get(function_start..attribute_start)?;
+    let arguments = source_text(source, call.arguments.inner_range())?;
+    Some(format!("{prefix}insert(0, {arguments})"))
+}
+
+fn insert_to_append_replacement(source: &str, call: &ExprCall) -> Option<String> {
+    let Expr::Attribute(attribute) = call.func.as_ref() else {
+        return None;
+    };
+    let function_start = usize::from(call.func.range().start());
+    let attribute_start = usize::from(attribute.attr.range().start());
+    let prefix = source.get(function_start..attribute_start)?;
+    let argument = source_text(source, call.arguments.args.get(1)?.range())?;
+    Some(format!("{prefix}append({argument})"))
+}
+
+fn list_to_tuple_replacement(source: &str, list: &ExprList) -> Option<String> {
+    let range = list.range();
+    let literal = source_text(source, range)?;
+    let contents = literal.strip_prefix('[')?.strip_suffix(']')?;
+    if list.elts.len() != 1 || contents.trim_end().ends_with(',') {
+        return Some(format!("({contents})"));
+    }
+    let content_start = usize::from(range.start()) + 1;
+    let element_end = usize::from(list.elts[0].range().end());
+    let comma_at = element_end.checked_sub(content_start)?;
+    Some(format!(
+        "({before},{after})",
+        before = contents.get(..comma_at)?,
+        after = contents.get(comma_at..)?
+    ))
+}
+
+fn tuple_to_list_replacement(source: &str, tuple: &ExprTuple) -> Option<String> {
+    let literal = source_text(source, tuple.range())?;
+    let contents = literal
+        .strip_prefix('(')
+        .and_then(|literal| literal.strip_suffix(')'))
+        .unwrap_or(literal);
+    Some(format!("[{contents}]"))
+}
+
+fn replacement_reparses(source: &str, range: Range<usize>, replacement: &str) -> bool {
+    if range.start >= range.end || range.end > source.len() {
+        return false;
+    }
+    let mut mutated = source.to_owned();
+    mutated.replace_range(range, replacement);
+    parse_module(&mutated).is_ok()
 }
 
 fn is_main_guard(expression: &Expr) -> bool {

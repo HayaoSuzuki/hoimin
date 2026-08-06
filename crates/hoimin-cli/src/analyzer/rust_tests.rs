@@ -57,7 +57,7 @@ fn annotated_augmented_and_lambda_bindings_are_conservative() {
 }
 
 #[test]
-fn shadowed_collection_builtins_are_not_mutated() {
+fn shadowed_collection_builtins_are_not_mutated_as_calls() {
     let source = "any = custom_any\nfrom helpers import all\ndef list(tuple):\n    min = custom_min\n    for max in items:\n        pass\n    with resource as sorted:\n        pass\n    try:\n        pass\n    except Error as reversed:\n        pass\n    if (frozenset := custom_frozenset):\n        return list(items), tuple(items), set(items), frozenset(items), min(items), max(items), sorted(items), reversed(items)\nclass set:\n    pass\n";
     let parsed = parse_module(source).expect("shadowing fixture parses");
     let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens());
@@ -78,10 +78,151 @@ fn shadowed_collection_builtins_are_not_mutated() {
 
     let output = analyze(source);
     assert!(
+        output.candidates.iter().all(|candidate| {
+            !matches!(
+                candidate.original.as_str(),
+                "any" | "all" | "list" | "tuple" | "set" | "frozenset" | "min" | "max"
+            )
+        }),
+        "shadowed builtins must not emit name-replacement candidates: {:#?}",
+        output.candidates
+    );
+}
+
+#[test]
+fn collection_calls_and_literals_emit_exact_parseable_candidates() {
+    let source = concat!(
+        "any_result = any(items)\n",
+        "all_result = all(items)\n",
+        "list_result = list(values)\n",
+        "tuple_result = tuple(values)\n",
+        "empty_list_call = list()\n",
+        "empty_tuple_call = tuple()\n",
+        "set_result = set(values)\n",
+        "frozen_result = frozenset(values)\n",
+        "minimum = min(first, second, key=rank)\n",
+        "maximum = max(values, default=fallback)\n",
+        "items.append(value)\n",
+        "items.insert(0, value)\n",
+        "members.add(value)\n",
+        "members.discard(value)\n",
+        "members.remove(value)\n",
+        "text.startswith(prefix)\n",
+        "text.endswith(suffix, start, stop)\n",
+        "text.split(separator, maxsplit=limit)\n",
+        "text.rsplit()\n",
+        "many = [first, *rest, last,]\n",
+        "one = [item]\n",
+        "empty_list = []\n",
+        "tuple_many = (first, *rest, last,)\n",
+        "tuple_one = (item,)\n",
+        "empty_tuple = ()\n",
+        "bare_tuple = first, *rest,\n",
+    );
+    let output = analyze(source);
+    let collection_candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator.starts_with("collection_"))
+        .collect();
+    let actual: Vec<_> = collection_candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        actual,
+        vec![
+            ("any", "all", "collection_any_all"),
+            ("all", "any", "collection_any_all"),
+            ("list", "tuple", "collection_list_tuple"),
+            ("tuple", "list", "collection_list_tuple"),
+            ("list", "tuple", "collection_list_tuple"),
+            ("tuple", "list", "collection_list_tuple"),
+            ("set", "frozenset", "collection_set_frozenset"),
+            ("frozenset", "set", "collection_set_frozenset"),
+            ("min", "max", "collection_min_max"),
+            ("max", "min", "collection_min_max"),
+            (
+                "items.append(value)",
+                "items.insert(0, value)",
+                "collection_append_insert",
+            ),
+            (
+                "items.insert(0, value)",
+                "items.append(value)",
+                "collection_append_insert",
+            ),
+            ("add", "discard", "collection_set_add_discard"),
+            ("discard", "add", "collection_set_add_discard"),
+            ("discard", "remove", "collection_set_remove_discard"),
+            ("remove", "discard", "collection_set_remove_discard"),
+            ("startswith", "endswith", "collection_string_starts_ends"),
+            ("endswith", "startswith", "collection_string_starts_ends"),
+            ("split", "rsplit", "collection_string_split_rsplit"),
+            ("rsplit", "split", "collection_string_split_rsplit"),
+            (
+                "[first, *rest, last,]",
+                "(first, *rest, last,)",
+                "collection_list_tuple",
+            ),
+            ("[item]", "(item,)", "collection_list_tuple"),
+            ("[]", "()", "collection_list_tuple"),
+            (
+                "(first, *rest, last,)",
+                "[first, *rest, last,]",
+                "collection_list_tuple",
+            ),
+            ("(item,)", "[item,]", "collection_list_tuple"),
+            ("()", "[]", "collection_list_tuple"),
+            ("first, *rest,", "[first, *rest,]", "collection_list_tuple",),
+        ]
+    );
+
+    for candidate in collection_candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
+fn collection_excludes_unsupported_call_and_literal_shapes() {
+    let source = concat!(
+        "list_comp = [item for item in items]\n",
+        "set_comp = {item for item in items}\n",
+        "left, right = values\n",
+        "any()\n",
+        "any(first, second)\n",
+        "list(iterable=items)\n",
+        "tuple(*items)\n",
+        "set(iterable=items)\n",
+        "frozenset(*items)\n",
+        "items.insert(1, value)\n",
+        "items.insert(index, value)\n",
+        "items.sort(reverse=True)\n",
+        "members.add(*values)\n",
+        "members.discard(**options)\n",
+        "members.remove(value, extra)\n",
+        "text.startswith(*parts)\n",
+        "text.endswith(**options)\n",
+        "text.split(*parts)\n",
+        "text.rsplit(**options)\n",
+        "set_literal = {first, second}\n",
+    );
+    let output = analyze(source);
+
+    assert!(
         output
             .candidates
             .iter()
-            .all(|candidate| !candidate.operator.starts_with("collection_"))
+            .all(|candidate| !candidate.operator.starts_with("collection_")),
+        "unexpected collection candidates: {:#?}",
+        output.candidates
     );
 }
 
@@ -813,6 +954,11 @@ fn emits_the_mvp_operator_replacements_in_source_order() {
             ("*", "/", "binary_mul_div"),
             ("//", "%", "binary_floor_mod"),
             ("%", "//", "binary_floor_mod"),
+            (
+                "not flag, +a, -b, True, False",
+                "[not flag, +a, -b, True, False]",
+                "collection_list_tuple"
+            ),
             ("not flag", "flag", "remove_not"),
             ("+", "-", "unary_sign"),
             ("-", "+", "unary_sign"),
