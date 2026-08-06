@@ -115,6 +115,30 @@ fn readme_documents_all_mutation_operator_ids_and_selector_families() {
 }
 
 #[test]
+fn development_docs_explain_exception_mutation_policy() {
+    let development = fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/development.md"
+    ))
+    .unwrap();
+    for expected in [
+        "Extending Python exception mutations",
+        "ExceptHandler",
+        "exception_type_pair",
+        "exception_risky",
+        "BaseException",
+        "except*",
+        "shadowing",
+        "apply_candidate_and_reparse",
+    ] {
+        assert!(
+            development.contains(expected),
+            "development docs missing {expected}"
+        );
+    }
+}
+
+#[test]
 fn real_binary_help_and_version_use_stdout() {
     for argument in ["--help", "--version"] {
         let output = std::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))

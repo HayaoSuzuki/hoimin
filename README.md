@@ -178,7 +178,8 @@ IDs are `type_nullable_remove`, `type_nullable_add`, `type_list_sequence`,
 historical `type_mapping` name remains accepted as an alias for
 `type_dict_mapping`.
 
-The exception selector `exception_risky` is opt-in only. It exposes
+The exception selector `exception_risky` is opt-in only; enable it with
+`--operators exception_risky` (or select individual IDs). It exposes
 `exception_bare_to_exception`, `exception_exception_to_bare`,
 `exception_base_boundary`, `exception_tuple_add_pair`, and
 `exception_tuple_remove_member`. These mutations can broaden or narrow a
@@ -188,7 +189,8 @@ exception pairs are limited to `ValueError`/`TypeError`, `KeyError`/`IndexError`
 `AttributeError`/`KeyError`, `FileNotFoundError`/`PermissionError`,
 `ConnectionError`/`TimeoutError`, `ImportError`/`ModuleNotFoundError`, and
 `ZeroDivisionError`/`OverflowError`. Qualified or dynamic handlers, `except*`,
-and unsupported tuple members are skipped.
+and unsupported tuple members are skipped. Exception mutation currently targets
+`except` clauses; `raise` expressions are not changed.
 
 The collection/structural operators are deliberately syntax-directed. They do
 not include an `append`/`pop` mutation, comprehensions, assignment or delete
