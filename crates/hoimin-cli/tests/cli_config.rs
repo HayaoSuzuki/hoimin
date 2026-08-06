@@ -58,6 +58,23 @@ fn readme_documents_all_mutation_operator_ids_and_selector_families() {
         "remove_not",
         "boolean_literal",
         "break_continue",
+        "collection_any_all",
+        "collection_list_tuple",
+        "collection_set_frozenset",
+        "collection_append_insert",
+        "collection_min_max",
+        "collection_set_add_discard",
+        "collection_set_remove_discard",
+        "collection_string_starts_ends",
+        "collection_string_split_rsplit",
+        "bitwise_and_or",
+        "bitwise_shift",
+        "structure_append_extend",
+        "structure_mapping_get_subscript",
+        "structure_sort_reverse",
+        "structure_sorted_reversed",
+        "structure_index_neighbor",
+        "structure_slice_neighbor",
         "type_nullable_remove",
         "type_nullable_add",
         "type_list_sequence",
@@ -70,6 +87,18 @@ fn readme_documents_all_mutation_operator_ids_and_selector_families() {
         "type_iterables",
     ] {
         assert!(readme.contains(name), "README is missing {name}");
+    }
+    for expected in [
+        "all 30 runtime operators",
+        "collection_ops",
+        "structure_ops",
+        "bitwise_ops",
+        "--exclude-operators collection_ops",
+        "`append`/`pop`",
+        "comprehensions",
+        "set literals",
+    ] {
+        assert!(readme.contains(expected), "README is missing {expected}");
     }
 }
 
