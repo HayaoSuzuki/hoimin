@@ -151,6 +151,35 @@ cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::exception_risky_candi
 cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::exception_bindings_are_conservative -- --exact
 ```
 
+## Extending plan ranking
+
+Plan manifests use schema version 2 and ranking rule version 3. The schema
+version describes the manifest's serialized shape; the ranking rule version
+describes the category and scoring semantics used to order its candidates.
+Change the ranking rule version whenever those semantics change, even when the
+manifest schema itself does not.
+
+Every canonical mutation operator is exhaustively assigned to exactly one
+fixed-score category:
+
+- `high_value_control` (100): comparisons, membership and identity tests,
+  boolean operations, `not`, boolean literals, and `break`/`continue`.
+- `exception_handling` (90): safe and risky exception-handler mutations.
+- `behavioral` (80): collection and structural behavior mutations.
+- `arithmetic` (70): arithmetic, unary-sign, and bitwise mutations.
+- `type_annotation` (50): type-annotation mutations.
+
+Keep the `MutationOperator` match exhaustive instead of adding a fallback arm.
+This makes a new operator fail compilation until its ranking category has been
+chosen. Unknown external operator strings remain invalid and do not acquire a
+generic category.
+
+`plan::create` validates its completed manifest with the same header validator
+used by `verify` before returning it. Preserve this output-boundary invariant:
+generated plans must satisfy schema, source-record, ranking, candidate-ID, and
+normalized-path checks rather than deferring an internal inconsistency until a
+later verification command.
+
 ## Test provenance comments
 
 Use `// pins: issue #NNN` only when an assertion intentionally preserves a
