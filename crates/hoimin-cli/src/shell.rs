@@ -248,6 +248,12 @@ struct ShellCompletion {
 enum BlockingEffect {
     Workspace(Box<WorkspaceTask>),
     Candidate(hoimin_core::ReadCandidate),
+    Cleanup {
+        id: EffectId,
+        process: Arc<ProcessHandler>,
+        workspace: Box<WorkspaceHandler>,
+        request: hoimin_core::Cleanup,
+    },
     #[cfg(test)]
     TestOperation {
         id: EffectId,
@@ -263,6 +269,11 @@ enum BlockingEffect {
 enum BlockingEffectCompletion {
     Workspace(Box<WorkspaceTaskCompletion>),
     Candidate(Box<RunEvent>),
+    Cleanup {
+        id: EffectId,
+        workspace: Box<WorkspaceHandler>,
+        event: Box<RunEvent>,
+    },
 }
 
 impl BlockingEffect {
@@ -270,6 +281,7 @@ impl BlockingEffect {
         match self {
             Self::Workspace(task) => task.id(),
             Self::Candidate(request) => request.id,
+            Self::Cleanup { id, .. } => *id,
             #[cfg(test)]
             Self::TestOperation { id, .. } => *id,
             #[cfg(test)]
@@ -282,6 +294,28 @@ impl BlockingEffect {
             Self::Workspace(task) => BlockingEffectCompletion::Workspace(Box::new(task.execute())),
             Self::Candidate(request) => {
                 BlockingEffectCompletion::Candidate(Box::new(replay_candidate(&request)))
+            }
+            Self::Cleanup {
+                id,
+                process,
+                mut workspace,
+                request,
+            } => {
+                let event = match process.close() {
+                    Ok(()) => workspace
+                        .handle_cleanup(request)
+                        .map_or_else(RunEvent::EffectFailed, RunEvent::CleanupFinished),
+                    Err(error) => RunEvent::EffectFailed(EffectFailed::other(
+                        id,
+                        "process.resource.close",
+                        error.to_string(),
+                    )),
+                };
+                BlockingEffectCompletion::Cleanup {
+                    id,
+                    workspace,
+                    event: Box::new(event),
+                }
             }
             #[cfg(test)]
             Self::TestOperation { operation, .. } => {
@@ -323,6 +357,7 @@ fn is_blocking_io_effect(effect: &RunEffect) -> bool {
             | RunEffect::ApplyMutation(_)
             | RunEffect::ResetWorker(_)
             | RunEffect::VerifyOriginals(_)
+            | RunEffect::Cleanup(_)
     )
 }
 
@@ -335,15 +370,31 @@ where
     Stderr: Write,
 {
     let task = match effect {
-        RunEffect::CreateWorker(request) => context.workspace.prepare_create_task(request),
+        RunEffect::CreateWorker(request) => context.workspace_mut().prepare_create_task(request),
         RunEffect::ReadCandidate(request) => return Ok(BlockingEffect::Candidate(request)),
         RunEffect::ApplyMutation(request) => {
             let candidate = request.candidate.clone();
             context.active_candidates.insert(request.worker, candidate);
-            context.workspace.prepare_apply_task(request)
+            context.workspace_mut().prepare_apply_task(request)
         }
-        RunEffect::ResetWorker(request) => context.workspace.prepare_reset_task(request),
-        RunEffect::VerifyOriginals(request) => context.workspace.prepare_verify_task(request),
+        RunEffect::ResetWorker(request) => context.workspace_mut().prepare_reset_task(request),
+        RunEffect::VerifyOriginals(request) => context.workspace().prepare_verify_task(request),
+        RunEffect::Cleanup(request) => {
+            let id = request.id;
+            let workspace = context.workspace.take().ok_or_else(|| {
+                EffectFailed::other(
+                    id,
+                    "shell.blocking_io",
+                    "workspace ownership is unavailable for cleanup",
+                )
+            })?;
+            return Ok(BlockingEffect::Cleanup {
+                id,
+                process: Arc::clone(&context.process),
+                workspace: Box::new(workspace),
+                request,
+            });
+        }
         _ => unreachable!("non-blocking effect passed to blocking preparation"),
     };
     task.map(Box::new).map(BlockingEffect::Workspace)
@@ -359,10 +410,25 @@ where
 {
     let event = match completion {
         BlockingEffectCompletion::Workspace(completion) => context
-            .workspace
+            .workspace_mut()
             .accept_task_completion(*completion)
             .unwrap_or_else(RunEvent::EffectFailed),
         BlockingEffectCompletion::Candidate(event) => *event,
+        BlockingEffectCompletion::Cleanup {
+            id,
+            workspace,
+            event,
+        } => {
+            if context.workspace.is_some() {
+                return RunEvent::EffectFailed(EffectFailed::other(
+                    id,
+                    "shell.blocking_io",
+                    "cleanup returned duplicate workspace ownership",
+                ));
+            }
+            context.workspace = Some(*workspace);
+            *event
+        }
     };
     match &event {
         RunEvent::CandidateLoaded(value) => {
@@ -382,6 +448,7 @@ where
     event
 }
 
+#[cfg(test)]
 fn execute_direct_io_effect<Stdout, Stderr>(
     context: &mut ShellContext<Stdout, Stderr>,
     effect: RunEffect,
@@ -392,7 +459,7 @@ where
 {
     let result = match effect {
         RunEffect::CreateWorker(request) => context
-            .workspace
+            .workspace_mut()
             .handle_create_worker(request)
             .map(RunEvent::WorkerCreated),
         RunEffect::ReadCandidate(request) => {
@@ -407,14 +474,14 @@ where
                 .active_candidates
                 .insert(request.worker, candidate.clone());
             context
-                .workspace
+                .workspace_mut()
                 .handle_apply_mutation(request, &candidate)
                 .map(RunEvent::MutationApplied)
         }
         RunEffect::ResetWorker(request) => {
             let worker = request.worker;
             let result = context
-                .workspace
+                .workspace_mut()
                 .handle_reset_worker(request)
                 .map(RunEvent::WorkerReset);
             if result.is_ok() {
@@ -423,7 +490,7 @@ where
             result
         }
         RunEffect::VerifyOriginals(request) => context
-            .workspace
+            .workspace()
             .handle_verify_originals(request)
             .map(RunEvent::OriginalsVerified),
         _ => unreachable!("non-blocking effect passed to direct I/O execution"),
@@ -454,8 +521,34 @@ where
         .map_err(|error| EffectFailed::other(id, "shell.blocking_io", error.to_string()))
 }
 
+#[derive(Debug)]
+enum OwnedBlockingError {
+    Join(String),
+    Expired(String),
+}
+
+async fn run_owned_blocking_until<T>(
+    budget: &ShutdownBudget,
+    operation: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, OwnedBlockingError>
+where
+    T: Send + 'static,
+{
+    let mut task = tokio::task::spawn_blocking(operation);
+    match budget.wait(&mut task).await {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(error)) => Err(OwnedBlockingError::Join(format!(
+            "blocking I/O task failed: {error}"
+        ))),
+        Err(_) => {
+            task.abort();
+            Err(OwnedBlockingError::Expired(budget.expiry_error(0, 1)))
+        }
+    }
+}
+
 pub struct ShellContext<Stdout, Stderr> {
-    workspace: WorkspaceHandler,
+    workspace: Option<WorkspaceHandler>,
     analyzer: AnalyzerHandler,
     process: Arc<ProcessHandler>,
     report: ReportHandler<Stdout, Stderr>,
@@ -522,7 +615,7 @@ where
         )
         .map_err(|error| error.to_string())?;
         Ok(Self {
-            workspace,
+            workspace: Some(workspace),
             analyzer,
             process,
             report,
@@ -538,6 +631,18 @@ where
                 hoimin: env!("CARGO_PKG_VERSION").to_owned(),
             },
         })
+    }
+
+    fn workspace(&self) -> &WorkspaceHandler {
+        self.workspace
+            .as_ref()
+            .expect("workspace ownership is available outside an owned blocking operation")
+    }
+
+    fn workspace_mut(&mut self) -> &mut WorkspaceHandler {
+        self.workspace
+            .as_mut()
+            .expect("workspace ownership is available outside an owned blocking operation")
     }
 }
 
@@ -625,6 +730,18 @@ where
     Stdout: Write,
     Stderr: Write,
 {
+    if is_blocking_io_effect(&effect) {
+        return match prepare_blocking_effect(context, effect) {
+            Ok(task) => {
+                let id = task.id();
+                match run_blocking_io(id, move || task.execute()).await {
+                    Ok(completion) => accept_blocking_completion(context, completion),
+                    Err(error) => RunEvent::EffectFailed(error),
+                }
+            }
+            Err(error) => RunEvent::EffectFailed(error),
+        };
+    }
     execute_effect_with_cancellation(context, effect, ProcessCancellation::new()).await
 }
 
@@ -641,9 +758,7 @@ where
     Stdout: Write,
     Stderr: Write,
 {
-    if is_blocking_io_effect(&effect) {
-        return execute_direct_io_effect(context, effect);
-    }
+    debug_assert!(!is_blocking_io_effect(&effect));
     let id = effect.id();
     let result: Result<RunEvent, EffectFailed> = match effect {
         RunEffect::ResolveTargets(request) => match TargetHandler::handle(request).await {
@@ -658,6 +773,8 @@ where
             let copied_at_start = &context.fingerprint_copy_inputs;
             match context
                 .workspace
+                .as_mut()
+                .expect("workspace ownership is available during preflight")
                 .handle_preflight_validated(request, |root, manifest| {
                     recheck_fingerprint_inputs(config, root, manifest, copied_at_start, id)
                 }) {
@@ -722,17 +839,7 @@ where
             }
             context.report.handle(request).map(RunEvent::OutputEmitted)
         }
-        RunEffect::Cleanup(request) => match context.process.close() {
-            Ok(()) => context
-                .workspace
-                .handle_cleanup(request)
-                .map(RunEvent::CleanupFinished),
-            Err(error) => Err(EffectFailed::other(
-                id,
-                "process.resource.close",
-                error.to_string(),
-            )),
-        },
+        RunEffect::Cleanup(_) => unreachable!("cleanup bypassed owned blocking dispatch"),
         RunEffect::LoadSession(request) => match session(context, id).await {
             Ok(handler) => handler.load(request).await.map(RunEvent::SessionLoaded),
             Err(error) => Err(error),
@@ -780,6 +887,8 @@ fn worker_process_request<Stdout, Stderr>(
     let inherited = std::env::vars_os().collect();
     let mut environment = context
         .workspace
+        .as_ref()
+        .expect("workspace ownership is available during process dispatch")
         .command_environment(worker, &inherited)
         .map_err(|error| EffectFailed::other(id, "shell.worker.environment", error.to_string()))?;
     set_worker_metadata(
@@ -1053,7 +1162,7 @@ where
     let mut context = ShellContext::new(&config, stdout, stderr).await?;
     #[cfg(test)]
     if let Some(pause) = control.materialization_pause.clone() {
-        context.workspace.set_materialization_pause(pause);
+        context.workspace_mut().set_materialization_pause(pause);
     }
     if let Some(fingerprint_copy_inputs) = fingerprint_copy_inputs {
         context.fingerprint_copy_inputs = fingerprint_copy_inputs;
@@ -1068,6 +1177,7 @@ where
     let mut executed = 0_u64;
     let initial_run_id = Uuid::new_v4().to_string();
     let mut diagnostic_run_id = initial_run_id.clone();
+    let mut shutdown_budget = None;
     let run_result = async {
         let mut state = Box::new(match candidate_selection {
             CandidateSelection::Explicit(candidate_ids, verification_selection) => {
@@ -1104,7 +1214,6 @@ where
         let mut in_flight = 0_usize;
         let mut io_in_flight = 0_usize;
         let mut stop_signalled = false;
-        let mut shutdown_budget = None;
         let mut interrupts = crate::interrupt::InterruptMonitor::spawn();
 
         while state.phase() != RunPhase::Finished {
@@ -1868,8 +1977,20 @@ where
         Ok((state.exit_code(), state.run_id().to_owned()))
     }
     .await;
-    let close_result = context.process.close().map_err(|error| error.to_string());
-    let workspace_close = context.workspace.close().map_err(|error| error.to_string());
+    let shutdown_already_expired = run_result
+        .as_ref()
+        .is_err_and(|error| error.contains("shutdown grace expired"));
+    let close = close_context_resources(
+        &mut context,
+        shutdown_budget.as_ref(),
+        shutdown_already_expired,
+    )
+    .await;
+    let run_result = match (run_result, close.expiry) {
+        (Ok(_), Some(expiry)) => Err(expiry),
+        (Err(primary), Some(expiry)) => Err(combine_shutdown_errors(primary, Some(expiry))),
+        (result, None) => result,
+    };
     if let Some(path) = metrics_path {
         finalize_metrics(
             path.as_std_path(),
@@ -1885,8 +2006,8 @@ where
     }
     combine_close_results(
         run_result.map(|(exit_code, _)| exit_code),
-        workspace_close,
-        close_result,
+        close.workspace,
+        close.process,
     )
 }
 
@@ -2069,7 +2190,8 @@ fn spawn_blocking_effect(
             Ok(completion) => {
                 let event = match &completion {
                     BlockingEffectCompletion::Workspace(completion) => completion.event().clone(),
-                    BlockingEffectCompletion::Candidate(event) => event.as_ref().clone(),
+                    BlockingEffectCompletion::Candidate(event)
+                    | BlockingEffectCompletion::Cleanup { event, .. } => event.as_ref().clone(),
                 };
                 (event, Some(Box::new(completion)))
             }
@@ -2103,7 +2225,8 @@ async fn shutdown_expiry_error(
 ) -> String {
     let process_task_count = process_tasks.len();
     let io_task_count = io_tasks.len();
-    drain_processes(
+    let expiry = budget.expiry_error(process_task_count, io_task_count);
+    let drain_failure = drain_processes(
         process_tasks,
         io_tasks,
         receiver,
@@ -2114,8 +2237,13 @@ async fn shutdown_expiry_error(
         accept_blocking,
     )
     .await
-    .err()
-    .unwrap_or_else(|| budget.expiry_error(process_task_count, io_task_count))
+    .err();
+    match drain_failure {
+        Some(error) if !error.contains("shutdown grace expired") => {
+            combine_shutdown_errors(expiry, Some(error))
+        }
+        Some(_) | None => expiry,
+    }
 }
 
 #[expect(
@@ -2218,6 +2346,98 @@ fn combine_shutdown_errors(primary: String, drain_failure: Option<String>) -> St
     }
 }
 
+struct ResourceCloseCompletion {
+    workspace: WorkspaceHandler,
+    workspace_result: Result<(), String>,
+    process_result: Result<(), String>,
+}
+
+struct ResourceCloseResults {
+    workspace: Result<(), String>,
+    process: Result<(), String>,
+    expiry: Option<String>,
+}
+
+async fn close_context_resources<Stdout, Stderr>(
+    context: &mut ShellContext<Stdout, Stderr>,
+    budget: Option<&ShutdownBudget>,
+    shutdown_already_expired: bool,
+) -> ResourceCloseResults
+where
+    Stdout: Write,
+    Stderr: Write,
+{
+    if shutdown_already_expired {
+        return ResourceCloseResults {
+            workspace: Ok(()),
+            process: Ok(()),
+            expiry: None,
+        };
+    }
+    if let Some(budget) = budget
+        && tokio::time::Instant::now() >= budget.deadline()
+    {
+        return ResourceCloseResults {
+            workspace: Ok(()),
+            process: Ok(()),
+            expiry: Some(budget.expiry_error(0, 0)),
+        };
+    }
+    let Some(workspace) = context.workspace.take() else {
+        return ResourceCloseResults {
+            workspace: Err("workspace ownership is unavailable during final cleanup".to_owned()),
+            process: Ok(()),
+            expiry: None,
+        };
+    };
+    let process = Arc::clone(&context.process);
+    let operation = move || {
+        let process_result = process.close().map_err(|error| error.to_string());
+        let mut workspace = workspace;
+        let workspace_result = workspace.close().map_err(|error| error.to_string());
+        ResourceCloseCompletion {
+            workspace,
+            workspace_result,
+            process_result,
+        }
+    };
+    let completion = match budget {
+        Some(budget) => match run_owned_blocking_until(budget, operation).await {
+            Ok(completion) => completion,
+            Err(OwnedBlockingError::Expired(expiry)) => {
+                return ResourceCloseResults {
+                    workspace: Ok(()),
+                    process: Ok(()),
+                    expiry: Some(expiry),
+                };
+            }
+            Err(OwnedBlockingError::Join(error)) => {
+                return ResourceCloseResults {
+                    workspace: Err(error),
+                    process: Ok(()),
+                    expiry: None,
+                };
+            }
+        },
+        None => match tokio::task::spawn_blocking(operation).await {
+            Ok(completion) => completion,
+            Err(error) => {
+                return ResourceCloseResults {
+                    workspace: Err(format!("blocking I/O task failed: {error}")),
+                    process: Ok(()),
+                    expiry: None,
+                };
+            }
+        },
+    };
+    context.workspace = Some(completion.workspace);
+    ResourceCloseResults {
+        workspace: completion.workspace_result,
+        process: completion.process_result,
+        expiry: None,
+    }
+}
+
 fn combine_close_results(
     run: Result<i32, String>,
     workspace: Result<(), String>,
@@ -2245,9 +2465,9 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use hoimin_core::{
-        ApplyMutation, BudgetLedger, ByteSpan, CommandArg, CreateWorker, IntegrityCheckpoint,
-        MutationCandidate, ObserveRemainingBudget, Preflight, ResetWorker, RunBudgets,
-        VerifyOriginals, reserve_workspace_copy,
+        ApplyMutation, BudgetLedger, ByteSpan, Cleanup, CommandArg, CreateWorker,
+        IntegrityCheckpoint, MutationCandidate, ObserveRemainingBudget, Preflight, ResetWorker,
+        RunBudgets, VerifyOriginals, reserve_workspace_copy,
     };
 
     use crate::metrics::write_metrics;
@@ -2311,7 +2531,7 @@ mod tests {
             .await
             .unwrap();
         let completed = context
-            .workspace
+            .workspace_mut()
             .handle_preflight(Preflight { id: EffectId(1) })
             .unwrap();
         let mut ledger = BudgetLedger::new(RunBudgets {
@@ -2321,11 +2541,11 @@ mod tests {
         });
         let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
         context
-            .workspace
+            .workspace_mut()
             .handle_create_worker(grant.create_worker(EffectId(2), 0).unwrap())
             .unwrap();
         let hash = context
-            .workspace
+            .workspace()
             .worker(0)
             .unwrap()
             .manifest()
@@ -2471,10 +2691,131 @@ mod tests {
                 id: EffectId(34),
                 checkpoint: IntegrityCheckpoint::PreFinalReport,
             }),
+            RunEffect::Cleanup(Cleanup {
+                id: EffectId(35),
+                reservations: Vec::new(),
+            }),
         ];
 
         assert!(effects.iter().all(is_blocking_io_effect));
         assert!(!is_blocking_io_effect(&process_effect(0)));
+    }
+
+    #[tokio::test]
+    async fn owned_cleanup_restores_workspace_only_when_completion_is_accepted() {
+        let (_project, mut context, _candidate, create) = context_with_worker().await;
+        let task = prepare_blocking_effect(
+            &mut context,
+            RunEffect::Cleanup(Cleanup {
+                id: EffectId(36),
+                reservations: vec![create.reservation_id()],
+            }),
+        )
+        .unwrap();
+        assert!(context.workspace.is_none());
+
+        let completion = task.execute();
+        assert!(context.workspace.is_none());
+        let event = accept_blocking_completion(&mut context, completion);
+
+        assert!(matches!(event, RunEvent::CleanupFinished(_)));
+        assert_eq!(context.workspace().worker_count(), 0);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn shutdown_budget_preempts_an_owned_blocking_close() {
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
+        let budget = ShutdownBudget::after_observation_with_grace(
+            ShutdownCause::Cancellation,
+            tokio::time::Instant::now(),
+            Duration::from_millis(20),
+        );
+
+        let close = tokio::spawn(async move {
+            run_owned_blocking_until(&budget, move || {
+                entered_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+                17_u8
+            })
+            .await
+        });
+        entered_rx.await.unwrap();
+        let error = close.await.unwrap().unwrap_err();
+        release_tx.send(()).unwrap();
+
+        let OwnedBlockingError::Expired(error) = error else {
+            panic!("blocking close returned a join failure instead of expiry")
+        };
+        assert!(error.starts_with("cancellation: shutdown grace expired"));
+        assert!(error.contains("blocking I/O tasks: 1"));
+    }
+
+    #[tokio::test]
+    async fn final_close_is_not_started_after_the_shared_deadline() {
+        let config = crate::cli::parse_config_from([
+            "hoimin",
+            "run",
+            "--root",
+            ".",
+            "--source",
+            ".",
+            "--allow-best-effort-memory",
+            "--",
+            "unused-test-command",
+        ])
+        .unwrap();
+        let mut context = ShellContext::new(&config, Vec::new(), Vec::new())
+            .await
+            .unwrap();
+        let budget = ShutdownBudget::for_total_timeout_with_grace(
+            tokio::time::Instant::now() - Duration::from_secs(1),
+            Duration::ZERO,
+        );
+
+        let close = close_context_resources(&mut context, Some(&budget), false).await;
+
+        assert!(
+            close
+                .expiry
+                .is_some_and(|error| error.starts_with("total timeout: shutdown grace expired"))
+        );
+        assert!(
+            context.workspace.is_some(),
+            "expired finalization must not transfer ownership into a new blocking close"
+        );
+    }
+
+    #[tokio::test]
+    async fn shutdown_expiry_keeps_cause_before_an_immediate_join_failure() {
+        let mut process_tasks = JoinSet::new();
+        process_tasks.spawn(async { panic!("controlled process join failure") });
+        tokio::task::yield_now().await;
+        let mut io_tasks = JoinSet::new();
+        let (_sender, mut receiver) = mpsc::channel(1);
+        let mut in_flight = 0;
+        let mut metrics = None;
+        let mut warnings = Vec::new();
+        let budget = ShutdownBudget::after_observation_with_grace(
+            ShutdownCause::TotalTimeout,
+            tokio::time::Instant::now(),
+            Duration::from_secs(1),
+        );
+
+        let error = shutdown_expiry_error(
+            &mut process_tasks,
+            &mut io_tasks,
+            &mut receiver,
+            &mut in_flight,
+            &budget,
+            &mut metrics,
+            &mut warnings,
+            drop,
+        )
+        .await;
+
+        assert!(error.starts_with("total timeout: shutdown grace expired"));
+        assert!(error.contains("process task failed while stopping"));
     }
 
     #[tokio::test]
@@ -2493,7 +2834,7 @@ mod tests {
         assert!(matches!(event, RunEvent::MutationApplied(_)));
         assert_eq!(
             context
-                .workspace
+                .workspace()
                 .worker(0)
                 .unwrap()
                 .read("pkg/a.py")
@@ -2511,7 +2852,7 @@ mod tests {
             candidate,
         });
         let task = prepare_blocking_effect(&mut context, effect).unwrap();
-        assert!(context.workspace.worker(0).is_none());
+        assert!(context.workspace().worker(0).is_none());
         let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
         let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
         let task = BlockingEffect::TestCompletion {
@@ -2564,7 +2905,7 @@ mod tests {
         assert!(warnings.is_empty());
         assert_eq!(
             context
-                .workspace
+                .workspace()
                 .worker(0)
                 .unwrap()
                 .read("pkg/a.py")
@@ -2623,7 +2964,7 @@ mod tests {
             }),
         )
         .unwrap();
-        assert!(context.workspace.worker(0).is_none());
+        assert!(context.workspace().worker(0).is_none());
         let blocking = task.execute();
 
         let mut metrics = Some(MetricsCollector::new("run-1"));
@@ -2684,7 +3025,7 @@ mod tests {
         assert!(warnings.is_empty());
         assert_eq!(
             context
-                .workspace
+                .workspace()
                 .worker(0)
                 .unwrap()
                 .read("pkg/a.py")
@@ -3073,7 +3414,7 @@ mod tests {
 
         std::fs::write(&input, "version = 'B'\n").unwrap();
         let error = context
-            .workspace
+            .workspace_mut()
             .handle_preflight_validated(hoimin_core::Preflight { id }, |root, manifest| {
                 std::fs::write(&input, "version = 'A'\n").unwrap();
                 let result =
@@ -3121,7 +3462,7 @@ mod tests {
 
         std::fs::remove_file(&input).unwrap();
         let error = context
-            .workspace
+            .workspace_mut()
             .handle_preflight_validated(hoimin_core::Preflight { id }, |root, manifest| {
                 std::fs::write(&input, "version = 'A'\n").unwrap();
                 let result =
@@ -3166,7 +3507,7 @@ mod tests {
 
         std::fs::write(&added, "added = true\n").unwrap();
         let error = context
-            .workspace
+            .workspace_mut()
             .handle_preflight_validated(hoimin_core::Preflight { id }, |root, manifest| {
                 std::fs::remove_file(&added).unwrap();
                 let result =
@@ -3215,7 +3556,7 @@ mod tests {
         let copied_at_start = context.fingerprint_copy_inputs.clone();
 
         let completed = context
-            .workspace
+            .workspace_mut()
             .handle_preflight_validated(hoimin_core::Preflight { id }, |root, manifest| {
                 recheck_fingerprint_inputs(&config, root, manifest, &copied_at_start, id)
             })

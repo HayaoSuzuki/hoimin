@@ -1580,7 +1580,9 @@ async fn total_timeout_exits_after_grace_when_session_finish_is_locked() {
     });
     let mut fixture_processes = None;
     let outcome: Result<_, String> = async {
-        tokio::time::timeout(Duration::from_secs(5), mutant_started_rx)
+        // Allow readiness observation to outlive the child's five-second run deadline;
+        // the absolute elapsed assertion below still enforces deadline + grace.
+        tokio::time::timeout(Duration::from_secs(7), mutant_started_rx)
             .await
             .map_err(|_| "timed out waiting for JSONL kind mutant_started".to_owned())?
             .map_err(|_| "stdout drain task stopped before mutant_started".to_owned())??;
