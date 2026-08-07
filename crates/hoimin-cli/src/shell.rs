@@ -1825,6 +1825,7 @@ where
             );
             let deadline_stop = matches!(event, RunEvent::DeadlineReached);
             let failed = matches!(event, RunEvent::EffectFailed(_));
+            let failed_primary = failed_event_primary(&event);
             if !external_stop && (process_completion || io_completion) {
                 in_flight = in_flight.saturating_sub(1);
             }
@@ -1920,7 +1921,7 @@ where
                 };
                 let drain_budget =
                     establish_shutdown_budget(&mut shutdown_budget, candidate_budget);
-                drain_processes(
+                let drain_result = drain_processes(
                     &mut process_tasks,
                     &mut io_tasks,
                     &mut completion_rx,
@@ -1933,7 +1934,8 @@ where
                         let _ = accept_blocking_completion(&mut context, completion);
                     },
                 )
-                .await?;
+                .await;
+                finish_failed_event_drain(failed_primary, drain_result)?;
                 io_in_flight = 0;
             } else if process_completion {
                 let process_failure = match process_tasks.join_next().await {
@@ -2033,40 +2035,40 @@ where
         (result, None) => result,
     };
     if let Some(path) = metrics_path {
-        if let Some(budget) = shutdown_budget.as_ref()
-            && !shutdown_expiry_reported
-        {
-            let finalized = finalize_metrics_with_shutdown(
-                path.as_std_path().to_owned(),
-                metrics,
-                run_result.as_ref().err().cloned(),
-                discovered,
-                executed,
-                metrics_warnings,
-                budget,
-                Box::new(|| {}),
-            )
-            .await;
-            metrics_warnings = finalized.warnings;
-            if let Some(expiry) = finalized.expiry {
-                run_result = match run_result {
-                    Ok(_) => Err(expiry),
-                    Err(primary) => Err(combine_shutdown_errors(primary, Some(expiry))),
-                };
+        match (shutdown_budget.as_ref(), shutdown_expiry_reported) {
+            (Some(budget), false) => {
+                let finalized = finalize_metrics_with_shutdown(
+                    path.as_std_path().to_owned(),
+                    metrics,
+                    run_result.as_ref().err().cloned(),
+                    discovered,
+                    executed,
+                    metrics_warnings,
+                    budget,
+                    Box::new(|| {}),
+                )
+                .await;
+                metrics_warnings = finalized.warnings;
+                if let Some(expiry) = finalized.expiry {
+                    run_result = match run_result {
+                        Ok(_) => Err(expiry),
+                        Err(primary) => Err(combine_shutdown_errors(primary, Some(expiry))),
+                    };
+                }
             }
-        } else {
-            debug_assert!(
-                !shutdown_expiry_reported || run_result.is_err(),
-                "reported shutdown expiry must carry a run failure"
-            );
-            finalize_metrics(
+            (Some(_), true) => skip_expired_metrics_finalization(
+                metrics,
+                run_result.as_ref().err().map(String::as_str),
+                &mut metrics_warnings,
+            ),
+            (None, _) => finalize_metrics(
                 path.as_std_path(),
                 metrics,
                 run_result.as_ref().err().map(String::as_str),
                 discovered,
                 executed,
                 &mut metrics_warnings,
-            );
+            ),
         }
         for (code, message) in metrics_warnings {
             emit_metrics_warning(&mut context, &diagnostic_run_id, code, message);
@@ -2419,6 +2421,30 @@ fn combine_shutdown_errors(primary: String, drain_failure: Option<String>) -> St
     }
 }
 
+fn failed_event_primary(event: &RunEvent) -> Option<String> {
+    let RunEvent::EffectFailed(failed) = event else {
+        return None;
+    };
+    Some(format!(
+        "effect failed ({}): {}",
+        failed.failure.code(),
+        failed.failure.message()
+    ))
+}
+
+fn finish_failed_event_drain(
+    failed_primary: Option<String>,
+    drain_result: Result<(), String>,
+) -> Result<(), String> {
+    match (failed_primary, drain_result) {
+        (_, Ok(())) => Ok(()),
+        (Some(primary), Err(drain_failure)) => {
+            Err(combine_shutdown_errors(primary, Some(drain_failure)))
+        }
+        (None, Err(drain_failure)) => Err(drain_failure),
+    }
+}
+
 struct ResourceCloseCompletion {
     workspace: WorkspaceHandler,
     workspace_result: Result<(), String>,
@@ -2593,6 +2619,19 @@ where
 struct MetricsFinalizeResults {
     warnings: Vec<(&'static str, String)>,
     expiry: Option<String>,
+}
+
+fn skip_expired_metrics_finalization(
+    collector: Option<MetricsCollector>,
+    run_failure: Option<&str>,
+    warnings: &mut Vec<(&'static str, String)>,
+) {
+    drop(collector);
+    let failure = run_failure.unwrap_or("shutdown grace expired");
+    warnings.push((
+        "metrics.incomplete",
+        format!("metrics output was not written because the run failed: {failure}"),
+    ));
 }
 
 #[expect(
@@ -3083,6 +3122,21 @@ mod tests {
         );
     }
 
+    #[test]
+    fn expired_shutdown_skips_metrics_with_an_incomplete_warning() {
+        let mut warnings = vec![("metrics.state", "preserved warning".to_owned())];
+
+        skip_expired_metrics_finalization(
+            Some(MetricsCollector::new("run-1")),
+            Some("primary failure"),
+            &mut warnings,
+        );
+
+        assert_eq!(warnings[0].1, "preserved warning");
+        assert_eq!(warnings[1].0, "metrics.incomplete");
+        assert!(warnings[1].1.contains("primary failure"));
+    }
+
     #[tokio::test]
     async fn shutdown_expiry_keeps_cause_before_an_immediate_join_failure() {
         let mut process_tasks = JoinSet::new();
@@ -3115,6 +3169,47 @@ mod tests {
 
         assert!(error.starts_with("total timeout: shutdown grace expired"));
         assert!(error.contains("process task failed while stopping"));
+    }
+
+    #[tokio::test]
+    async fn failed_event_drain_expiry_keeps_effect_code_and_message() {
+        let event = RunEvent::EffectFailed(EffectFailed::other(
+            EffectId(91),
+            "controlled.effect.code",
+            "controlled effect message",
+        ));
+        let primary = failed_event_primary(&event);
+        let mut process_tasks = JoinSet::new();
+        process_tasks.spawn(std::future::pending::<()>());
+        let mut io_tasks = JoinSet::new();
+        let (_sender, mut receiver) = mpsc::channel(1);
+        let mut in_flight = 1;
+        let mut expiry_reported = false;
+        let mut metrics = None;
+        let mut warnings = Vec::new();
+        let budget = ShutdownBudget::after_observation_with_grace(
+            ShutdownCause::Failure,
+            tokio::time::Instant::now(),
+            Duration::from_millis(10),
+        );
+
+        let drain = drain_processes(
+            &mut process_tasks,
+            &mut io_tasks,
+            &mut receiver,
+            &mut in_flight,
+            &budget,
+            &mut expiry_reported,
+            &mut metrics,
+            &mut warnings,
+            drop,
+        )
+        .await;
+        let error = finish_failed_event_drain(primary, drain).unwrap_err();
+
+        assert!(error.contains("controlled.effect.code"), "{error}");
+        assert!(error.contains("controlled effect message"), "{error}");
+        assert!(error.contains("shutdown grace expired"), "{error}");
     }
 
     #[tokio::test]
