@@ -128,6 +128,24 @@ fn establish_event_shutdown_budget(
     Some(establish_shutdown_budget(active, candidate))
 }
 
+fn ensure_outer_failure_budget(
+    active: &mut Option<ShutdownBudget>,
+    run_failed: bool,
+    observed_at: tokio::time::Instant,
+    grace: Duration,
+) {
+    if run_failed && active.is_none() {
+        establish_shutdown_budget(
+            active,
+            ShutdownBudget::after_observation_with_grace(
+                ShutdownCause::Failure,
+                observed_at,
+                grace,
+            ),
+        );
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct RunControl {
     request: ProcessStartGate,
@@ -529,14 +547,20 @@ enum OwnedBlockingError {
 
 async fn run_owned_blocking_until<T>(
     budget: &ShutdownBudget,
+    before_start: OwnedStartHook,
     operation: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T, OwnedBlockingError>
 where
     T: Send + 'static,
 {
-    let mut task = tokio::task::spawn_blocking(operation);
+    let deadline = budget.deadline();
+    let mut task = tokio::task::spawn_blocking(move || {
+        before_start();
+        (tokio::time::Instant::now() < deadline).then(operation)
+    });
     match budget.wait(&mut task).await {
-        Ok(Ok(value)) => Ok(value),
+        Ok(Ok(Some(value))) => Ok(value),
+        Ok(Ok(None)) => Err(OwnedBlockingError::Expired(budget.expiry_error(0, 0))),
         Ok(Err(error)) => Err(OwnedBlockingError::Join(format!(
             "blocking I/O task failed: {error}"
         ))),
@@ -1178,6 +1202,7 @@ where
     let initial_run_id = Uuid::new_v4().to_string();
     let mut diagnostic_run_id = initial_run_id.clone();
     let mut shutdown_budget = None;
+    let mut shutdown_expiry_reported = false;
     let run_result = async {
         let mut state = Box::new(match candidate_selection {
             CandidateSelection::Explicit(candidate_ids, verification_selection) => {
@@ -1427,6 +1452,7 @@ where
                                     &mut completion_rx,
                                     &mut in_flight,
                                     &budget,
+                                    &mut shutdown_expiry_reported,
                                     &mut metrics,
                                     &mut metrics_warnings,
                                     |completion| {
@@ -1543,6 +1569,7 @@ where
                                             &mut completion_rx,
                                             &mut in_flight,
                                             &budget,
+                                            &mut shutdown_expiry_reported,
                                             &mut metrics,
                                             &mut metrics_warnings,
                                             |completion| {
@@ -1602,6 +1629,7 @@ where
                     &mut completion_rx,
                     &mut in_flight,
                     &drain_budget,
+                    &mut shutdown_expiry_reported,
                     &mut metrics,
                     &mut metrics_warnings,
                     |completion| {
@@ -1646,6 +1674,7 @@ where
                             &mut completion_rx,
                             &mut in_flight,
                             &budget,
+                            &mut shutdown_expiry_reported,
                             &mut metrics,
                             &mut metrics_warnings,
                             |completion| {
@@ -1758,6 +1787,7 @@ where
                     &mut completion_rx,
                     &mut in_flight,
                     &drain_budget,
+                    &mut shutdown_expiry_reported,
                     &mut metrics,
                     &mut metrics_warnings,
                     |completion| {
@@ -1834,6 +1864,7 @@ where
                         &mut completion_rx,
                         &mut in_flight,
                         &drain_budget,
+                        &mut shutdown_expiry_reported,
                         &mut metrics,
                         &mut metrics_warnings,
                         |completion| {
@@ -1895,6 +1926,7 @@ where
                     &mut completion_rx,
                     &mut in_flight,
                     &drain_budget,
+                    &mut shutdown_expiry_reported,
                     &mut metrics,
                     &mut metrics_warnings,
                     |completion| {
@@ -1925,6 +1957,7 @@ where
                         &mut completion_rx,
                         &mut in_flight,
                         &drain_budget,
+                        &mut shutdown_expiry_reported,
                         &mut metrics,
                         &mut metrics_warnings,
                         |completion| {
@@ -1957,6 +1990,7 @@ where
                         &mut completion_rx,
                         &mut in_flight,
                         &drain_budget,
+                        &mut shutdown_expiry_reported,
                         &mut metrics,
                         &mut metrics_warnings,
                         |completion| {
@@ -1977,29 +2011,63 @@ where
         Ok((state.exit_code(), state.run_id().to_owned()))
     }
     .await;
-    let shutdown_already_expired = run_result
-        .as_ref()
-        .is_err_and(|error| error.contains("shutdown grace expired"));
+    ensure_outer_failure_budget(
+        &mut shutdown_budget,
+        run_result.is_err(),
+        tokio::time::Instant::now(),
+        shutdown_grace,
+    );
     let close = close_context_resources(
         &mut context,
         shutdown_budget.as_ref(),
-        shutdown_already_expired,
+        shutdown_expiry_reported,
+        Box::new(|| {}),
     )
     .await;
-    let run_result = match (run_result, close.expiry) {
+    if close.expiry.is_some() {
+        shutdown_expiry_reported = true;
+    }
+    let mut run_result = match (run_result, close.expiry) {
         (Ok(_), Some(expiry)) => Err(expiry),
         (Err(primary), Some(expiry)) => Err(combine_shutdown_errors(primary, Some(expiry))),
         (result, None) => result,
     };
     if let Some(path) = metrics_path {
-        finalize_metrics(
-            path.as_std_path(),
-            metrics,
-            run_result.as_ref().err().map(String::as_str),
-            discovered,
-            executed,
-            &mut metrics_warnings,
-        );
+        if let Some(budget) = shutdown_budget.as_ref()
+            && !shutdown_expiry_reported
+        {
+            let finalized = finalize_metrics_with_shutdown(
+                path.as_std_path().to_owned(),
+                metrics,
+                run_result.as_ref().err().cloned(),
+                discovered,
+                executed,
+                metrics_warnings,
+                budget,
+                Box::new(|| {}),
+            )
+            .await;
+            metrics_warnings = finalized.warnings;
+            if let Some(expiry) = finalized.expiry {
+                run_result = match run_result {
+                    Ok(_) => Err(expiry),
+                    Err(primary) => Err(combine_shutdown_errors(primary, Some(expiry))),
+                };
+            }
+        } else {
+            debug_assert!(
+                !shutdown_expiry_reported || run_result.is_err(),
+                "reported shutdown expiry must carry a run failure"
+            );
+            finalize_metrics(
+                path.as_std_path(),
+                metrics,
+                run_result.as_ref().err().map(String::as_str),
+                discovered,
+                executed,
+                &mut metrics_warnings,
+            );
+        }
         for (code, message) in metrics_warnings {
             emit_metrics_warning(&mut context, &diagnostic_run_id, code, message);
         }
@@ -2219,10 +2287,12 @@ async fn shutdown_expiry_error(
     receiver: &mut mpsc::Receiver<ShellCompletion>,
     in_flight: &mut usize,
     budget: &ShutdownBudget,
+    shutdown_expiry_reported: &mut bool,
     metrics: &mut Option<MetricsCollector>,
     metrics_warnings: &mut Vec<(&'static str, String)>,
     accept_blocking: impl FnMut(BlockingEffectCompletion),
 ) -> String {
+    *shutdown_expiry_reported = true;
     let process_task_count = process_tasks.len();
     let io_task_count = io_tasks.len();
     let expiry = budget.expiry_error(process_task_count, io_task_count);
@@ -2232,6 +2302,7 @@ async fn shutdown_expiry_error(
         receiver,
         in_flight,
         budget,
+        shutdown_expiry_reported,
         metrics,
         metrics_warnings,
         accept_blocking,
@@ -2256,6 +2327,7 @@ async fn drain_processes(
     receiver: &mut mpsc::Receiver<ShellCompletion>,
     in_flight: &mut usize,
     budget: &ShutdownBudget,
+    shutdown_expiry_reported: &mut bool,
     metrics: &mut Option<MetricsCollector>,
     metrics_warnings: &mut Vec<(&'static str, String)>,
     mut accept_blocking: impl FnMut(BlockingEffectCompletion),
@@ -2309,6 +2381,7 @@ async fn drain_processes(
     }
 
     if drain_result.is_err() {
+        *shutdown_expiry_reported = true;
         process_tasks.abort_all();
         io_tasks.abort_all();
     }
@@ -2358,16 +2431,48 @@ struct ResourceCloseResults {
     expiry: Option<String>,
 }
 
+enum ResourceCloseTaskResult {
+    Completed(Box<ResourceCloseCompletion>),
+    ExpiredBeforeStart,
+    OwnershipAbandoned,
+}
+
+type OwnedStartHook = Box<dyn FnOnce() + Send + 'static>;
+
+fn abandon_context_resources<Stdout, Stderr>(context: &mut ShellContext<Stdout, Stderr>) {
+    if let Some(workspace) = context.workspace.take() {
+        std::mem::forget(workspace);
+    }
+    std::mem::forget(Arc::clone(&context.process));
+}
+
+fn abandon_workspace_slot(slot: &std::sync::Mutex<Option<WorkspaceHandler>>) {
+    let workspace = match slot.lock() {
+        Ok(mut slot) => slot.take(),
+        Err(poisoned) => poisoned.into_inner().take(),
+    };
+    if let Some(workspace) = workspace {
+        std::mem::forget(workspace);
+    }
+}
+
+#[expect(
+    clippy::too_many_lines,
+    clippy::single_match_else,
+    reason = "the close boundary keeps ownership transfer, expiry abandonment, and normal close results together"
+)]
 async fn close_context_resources<Stdout, Stderr>(
     context: &mut ShellContext<Stdout, Stderr>,
     budget: Option<&ShutdownBudget>,
     shutdown_already_expired: bool,
+    before_start: OwnedStartHook,
 ) -> ResourceCloseResults
 where
     Stdout: Write,
     Stderr: Write,
 {
     if shutdown_already_expired {
+        abandon_context_resources(context);
         return ResourceCloseResults {
             workspace: Ok(()),
             process: Ok(()),
@@ -2377,10 +2482,12 @@ where
     if let Some(budget) = budget
         && tokio::time::Instant::now() >= budget.deadline()
     {
+        let expiry = budget.expiry_error(0, 0);
+        abandon_context_resources(context);
         return ResourceCloseResults {
             workspace: Ok(()),
             process: Ok(()),
-            expiry: Some(budget.expiry_error(0, 0)),
+            expiry: Some(expiry),
         };
     }
     let Some(workspace) = context.workspace.take() else {
@@ -2391,50 +2498,146 @@ where
         };
     };
     let process = Arc::clone(&context.process);
-    let operation = move || {
-        let process_result = process.close().map_err(|error| error.to_string());
-        let mut workspace = workspace;
-        let workspace_result = workspace.close().map_err(|error| error.to_string());
-        ResourceCloseCompletion {
-            workspace,
-            workspace_result,
-            process_result,
-        }
-    };
     let completion = match budget {
-        Some(budget) => match run_owned_blocking_until(budget, operation).await {
-            Ok(completion) => completion,
-            Err(OwnedBlockingError::Expired(expiry)) => {
-                return ResourceCloseResults {
-                    workspace: Ok(()),
-                    process: Ok(()),
-                    expiry: Some(expiry),
+        Some(budget) => {
+            let slot = Arc::new(std::sync::Mutex::new(Some(workspace)));
+            let task_slot = Arc::clone(&slot);
+            let deadline = budget.deadline();
+            let mut task = tokio::task::spawn_blocking(move || {
+                before_start();
+                if tokio::time::Instant::now() >= deadline {
+                    return ResourceCloseTaskResult::ExpiredBeforeStart;
+                }
+                let workspace = match task_slot.lock() {
+                    Ok(mut slot) => slot.take(),
+                    Err(poisoned) => poisoned.into_inner().take(),
                 };
-            }
-            Err(OwnedBlockingError::Join(error)) => {
-                return ResourceCloseResults {
-                    workspace: Err(error),
-                    process: Ok(()),
-                    expiry: None,
+                let Some(mut workspace) = workspace else {
+                    return ResourceCloseTaskResult::OwnershipAbandoned;
                 };
+                let process_result = process.close().map_err(|error| error.to_string());
+                let workspace_result = workspace.close().map_err(|error| error.to_string());
+                ResourceCloseTaskResult::Completed(Box::new(ResourceCloseCompletion {
+                    workspace,
+                    workspace_result,
+                    process_result,
+                }))
+            });
+            match budget.wait(&mut task).await {
+                Ok(Ok(ResourceCloseTaskResult::Completed(completion))) => *completion,
+                Ok(Ok(
+                    ResourceCloseTaskResult::ExpiredBeforeStart
+                    | ResourceCloseTaskResult::OwnershipAbandoned,
+                )) => {
+                    abandon_workspace_slot(&slot);
+                    std::mem::forget(Arc::clone(&context.process));
+                    return ResourceCloseResults {
+                        workspace: Ok(()),
+                        process: Ok(()),
+                        expiry: Some(budget.expiry_error(0, 0)),
+                    };
+                }
+                Ok(Err(error)) => {
+                    abandon_workspace_slot(&slot);
+                    std::mem::forget(Arc::clone(&context.process));
+                    return ResourceCloseResults {
+                        workspace: Err(format!("blocking I/O task failed: {error}")),
+                        process: Ok(()),
+                        expiry: None,
+                    };
+                }
+                Err(_) => {
+                    task.abort();
+                    abandon_workspace_slot(&slot);
+                    std::mem::forget(Arc::clone(&context.process));
+                    return ResourceCloseResults {
+                        workspace: Ok(()),
+                        process: Ok(()),
+                        expiry: Some(budget.expiry_error(0, 1)),
+                    };
+                }
             }
-        },
-        None => match tokio::task::spawn_blocking(operation).await {
-            Ok(completion) => completion,
-            Err(error) => {
-                return ResourceCloseResults {
-                    workspace: Err(format!("blocking I/O task failed: {error}")),
-                    process: Ok(()),
-                    expiry: None,
-                };
+        }
+        None => {
+            let operation = move || {
+                before_start();
+                let process_result = process.close().map_err(|error| error.to_string());
+                let mut workspace = workspace;
+                let workspace_result = workspace.close().map_err(|error| error.to_string());
+                ResourceCloseCompletion {
+                    workspace,
+                    workspace_result,
+                    process_result,
+                }
+            };
+            match tokio::task::spawn_blocking(operation).await {
+                Ok(completion) => completion,
+                Err(error) => {
+                    return ResourceCloseResults {
+                        workspace: Err(format!("blocking I/O task failed: {error}")),
+                        process: Ok(()),
+                        expiry: None,
+                    };
+                }
             }
-        },
+        }
     };
     context.workspace = Some(completion.workspace);
     ResourceCloseResults {
         workspace: completion.workspace_result,
         process: completion.process_result,
         expiry: None,
+    }
+}
+
+struct MetricsFinalizeResults {
+    warnings: Vec<(&'static str, String)>,
+    expiry: Option<String>,
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "metrics finalization carries the existing run summary and the shared shutdown deadline"
+)]
+async fn finalize_metrics_with_shutdown(
+    path: std::path::PathBuf,
+    collector: Option<MetricsCollector>,
+    run_failure: Option<String>,
+    discovered: u64,
+    executed: u64,
+    mut warnings: Vec<(&'static str, String)>,
+    budget: &ShutdownBudget,
+    before_start: OwnedStartHook,
+) -> MetricsFinalizeResults {
+    let preserved_warnings = warnings.clone();
+    let operation = move || {
+        finalize_metrics(
+            &path,
+            collector,
+            run_failure.as_deref(),
+            discovered,
+            executed,
+            &mut warnings,
+        );
+        warnings
+    };
+    match run_owned_blocking_until(budget, before_start, operation).await {
+        Ok(warnings) => MetricsFinalizeResults {
+            warnings,
+            expiry: None,
+        },
+        Err(OwnedBlockingError::Expired(expiry)) => MetricsFinalizeResults {
+            warnings: preserved_warnings,
+            expiry: Some(expiry),
+        },
+        Err(OwnedBlockingError::Join(error)) => {
+            let mut warnings = preserved_warnings;
+            warnings.push(("metrics.write", error));
+            MetricsFinalizeResults {
+                warnings,
+                expiry: None,
+            }
+        }
     }
 }
 
@@ -2642,6 +2845,18 @@ mod tests {
     }
 
     #[test]
+    fn outer_failure_establishes_a_failure_budget_when_the_loop_has_none() {
+        let now = tokio::time::Instant::now();
+        let mut active = None;
+
+        ensure_outer_failure_budget(&mut active, true, now, Duration::from_millis(70));
+
+        let budget = active.unwrap();
+        assert_eq!(budget.cause(), ShutdownCause::Failure);
+        assert_eq!(budget.deadline(), now + Duration::from_millis(70));
+    }
+
+    #[test]
     fn remaining_budget_observes_live_deadline_and_preserves_effect_id() {
         let now = tokio::time::Instant::now();
         let id = EffectId(17);
@@ -2733,7 +2948,7 @@ mod tests {
         );
 
         let close = tokio::spawn(async move {
-            run_owned_blocking_until(&budget, move || {
+            run_owned_blocking_until(&budget, Box::new(|| {}), move || {
                 entered_tx.send(()).unwrap();
                 release_rx.recv().unwrap();
                 17_u8
@@ -2773,7 +2988,8 @@ mod tests {
             Duration::ZERO,
         );
 
-        let close = close_context_resources(&mut context, Some(&budget), false).await;
+        let close =
+            close_context_resources(&mut context, Some(&budget), false, Box::new(|| {})).await;
 
         assert!(
             close
@@ -2781,8 +2997,89 @@ mod tests {
                 .is_some_and(|error| error.starts_with("total timeout: shutdown grace expired"))
         );
         assert!(
-            context.workspace.is_some(),
-            "expired finalization must not transfer ownership into a new blocking close"
+            context.workspace.is_none(),
+            "expired finalization must abandon ownership without running Drop cleanup"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn final_close_rechecks_deadline_on_the_blocking_thread_before_taking_workspace() {
+        let (project, mut context, _candidate, _create) = context_with_worker().await;
+        let worker_root = context.workspace().worker(0).unwrap().root().to_owned();
+        let budget = ShutdownBudget::after_observation_with_grace(
+            ShutdownCause::Cancellation,
+            tokio::time::Instant::now(),
+            Duration::from_millis(40),
+        );
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
+
+        let close = tokio::spawn(async move {
+            let result = close_context_resources(
+                &mut context,
+                Some(&budget),
+                false,
+                Box::new(move || {
+                    entered_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                }),
+            )
+            .await;
+            (project, context, result)
+        });
+        entered_rx.await.unwrap();
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        let (_project, context, close) = close.await.unwrap();
+        release_tx.send(()).unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        assert!(close.expiry.is_some());
+        assert!(context.workspace.is_none());
+        assert!(
+            worker_root.exists(),
+            "workspace close or Drop cleanup ran after the shared deadline"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn metrics_write_rechecks_shutdown_deadline_on_the_blocking_thread() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("metrics.json");
+        let budget = ShutdownBudget::after_observation_with_grace(
+            ShutdownCause::Cancellation,
+            tokio::time::Instant::now(),
+            Duration::from_millis(40),
+        );
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
+        let task_path = path.clone();
+
+        let finalize = tokio::spawn(async move {
+            finalize_metrics_with_shutdown(
+                task_path,
+                Some(MetricsCollector::new("run-1")),
+                None,
+                0,
+                0,
+                Vec::new(),
+                &budget,
+                Box::new(move || {
+                    entered_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                }),
+            )
+            .await
+        });
+        entered_rx.await.unwrap();
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        let result = finalize.await.unwrap();
+        release_tx.send(()).unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        assert!(result.expiry.is_some());
+        assert!(
+            !path.exists(),
+            "metrics write started after shutdown expiry"
         );
     }
 
@@ -2796,6 +3093,7 @@ mod tests {
         let mut in_flight = 0;
         let mut metrics = None;
         let mut warnings = Vec::new();
+        let mut expiry_reported = false;
         let budget = ShutdownBudget::after_observation_with_grace(
             ShutdownCause::TotalTimeout,
             tokio::time::Instant::now(),
@@ -2808,6 +3106,7 @@ mod tests {
             &mut receiver,
             &mut in_flight,
             &budget,
+            &mut expiry_reported,
             &mut metrics,
             &mut warnings,
             drop,
@@ -2874,6 +3173,7 @@ mod tests {
         let mut in_flight = 1;
         let mut metrics = Some(MetricsCollector::new("run-1"));
         let mut warnings = Vec::new();
+        let mut expiry_reported = false;
         let budget = ShutdownBudget::after_observation_with_grace(
             ShutdownCause::Cancellation,
             tokio::time::Instant::now(),
@@ -2886,6 +3186,7 @@ mod tests {
             &mut receiver,
             &mut in_flight,
             &budget,
+            &mut expiry_reported,
             &mut metrics,
             &mut warnings,
             |completion| {
@@ -2925,6 +3226,7 @@ mod tests {
         let mut in_flight = 2;
         let mut metrics = None;
         let mut warnings = Vec::new();
+        let mut expiry_reported = false;
         let budget = ShutdownBudget::after_observation_with_grace(
             ShutdownCause::Cancellation,
             tokio::time::Instant::now(),
@@ -2937,6 +3239,7 @@ mod tests {
             &mut receiver,
             &mut in_flight,
             &budget,
+            &mut expiry_reported,
             &mut metrics,
             &mut warnings,
             drop,
@@ -2999,6 +3302,7 @@ mod tests {
         let mut io_tasks = JoinSet::new();
         io_tasks.spawn(std::future::pending::<()>());
         let mut in_flight = 2;
+        let mut expiry_reported = false;
         let budget = ShutdownBudget::for_total_timeout_with_grace(
             tokio::time::Instant::now() - Duration::from_secs(1),
             Duration::ZERO,
@@ -3010,6 +3314,7 @@ mod tests {
             &mut receiver,
             &mut in_flight,
             &budget,
+            &mut expiry_reported,
             &mut metrics,
             &mut warnings,
             |completion| {
@@ -3671,6 +3976,7 @@ mod tests {
         drop(sender);
         let mut in_flight = 2;
         let mut io_tasks = JoinSet::new();
+        let mut expiry_reported = false;
         let budget = ShutdownBudget::after_observation_with_grace(
             ShutdownCause::Failure,
             tokio::time::Instant::now(),
@@ -3683,6 +3989,7 @@ mod tests {
             &mut receiver,
             &mut in_flight,
             &budget,
+            &mut expiry_reported,
             &mut metrics,
             &mut warnings,
             drop,
