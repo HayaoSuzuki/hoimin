@@ -290,6 +290,16 @@ Exit codes are:
 
 Higher-priority conditions win in this order: cancellation, infrastructure error, baseline failure, incomplete result, survivor.
 
+`--total-timeout` stops normal work at its configured deadline. Scheduler,
+process, blocking-I/O, and internal-finalization waits then receive at most a
+fixed additional two seconds for orderly shutdown. A timeout whose cleanup
+completes inside that grace remains an incomplete run with exit code `4`. If
+cleanup cannot finish before the shutdown grace expires, the run is an
+infrastructure failure with exit code `2`; stderr identifies both the original
+timeout and the expired shutdown grace. This bound assumes synchronous report
+output makes progress: a blocked caller-provided `Write` cannot be forcibly
+cancelled and can delay return or diagnostics.
+
 ## Sessions and resume
 
 No database is created by default. `--session PATH` stores a run in SQLite and commits each mutant result independently. `--resume` requires `--session` and looks up the newest compatible incomplete run. Compatibility includes source and configuration fingerprints, test argv, safety limits, and the operator set. Profile selection is part of session compatibility, so a focused run never resumes results from a full run and vice versa. Completed `killed` and `survived` results can be reused; `timeout`, `out_of_memory`, `process_limit`, `error`, and `not_run` are run again. An incompatible or already complete run is not silently mixed with new results.
