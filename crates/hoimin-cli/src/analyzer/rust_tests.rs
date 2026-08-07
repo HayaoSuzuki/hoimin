@@ -1701,6 +1701,8 @@ fn grammar_tokens_do_not_emit_expression_operator_mutations() {
         "member = item in items\n",
         "product = left * right\n",
         "union = left | right\n",
+        "nested_membership = [item for item in items] == values\n",
+        "nested_unpacking = call(*args) * value\n",
     );
     let output = analyze(source);
     assert!(!output.candidates.iter().any(|candidate| {
@@ -1715,6 +1717,32 @@ fn grammar_tokens_do_not_emit_expression_operator_mutations() {
             .candidates
             .iter()
             .any(|candidate| candidate.line == 9 && candidate.operator == "membership")
+    );
+    assert!(
+        output
+            .candidates
+            .iter()
+            .any(|candidate| candidate.line == 10 && candidate.operator == "binary_mul_div")
+    );
+    assert!(
+        output
+            .candidates
+            .iter()
+            .any(|candidate| candidate.line == 11 && candidate.operator == "bitwise_and_or")
+    );
+    assert!(
+        !output
+            .candidates
+            .iter()
+            .any(|candidate| candidate.line == 12 && candidate.operator == "membership")
+    );
+    assert_eq!(
+        output
+            .candidates
+            .iter()
+            .filter(|candidate| { candidate.line == 13 && candidate.operator == "binary_mul_div" })
+            .count(),
+        1
     );
 }
 

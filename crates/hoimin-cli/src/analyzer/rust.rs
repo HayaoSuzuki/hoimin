@@ -592,7 +592,10 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
             }
             Stmt::AugAssign(assign) => {
                 self.record_builtin_target(assign.target.as_ref());
-                self.record_operator_tokens(assign.range(), &["+=", "-="]);
+                self.record_operator_tokens(
+                    TextRange::new(assign.target.range().end(), assign.value.range().start()),
+                    &["+=", "-="],
+                );
             }
             Stmt::AnnAssign(assign) => {
                 self.record_builtin_target(assign.target.as_ref());
@@ -668,19 +671,34 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
             self.record_arid_range(call.range());
         }
         match expression {
-            Expr::Compare(compare) => self.record_operator_tokens(
-                compare.range(),
-                &["==", "!=", "<", "<=", ">", ">=", "in", "not", "is"],
-            ),
+            Expr::Compare(compare) => {
+                let mut preceding_range = compare.left.range();
+                for comparator in &compare.comparators {
+                    let comparator_range = comparator.range();
+                    self.record_operator_tokens(
+                        TextRange::new(preceding_range.end(), comparator_range.start()),
+                        &["==", "!=", "<", "<=", ">", ">=", "in", "not", "is"],
+                    );
+                    preceding_range = comparator_range;
+                }
+            }
             Expr::BoolOp(boolean) => {
-                self.record_operator_tokens(boolean.range(), &["and", "or"]);
+                for values in boolean.values.windows(2) {
+                    self.record_operator_tokens(
+                        TextRange::new(values[0].range().end(), values[1].range().start()),
+                        &["and", "or"],
+                    );
+                }
             }
             Expr::BinOp(binary) => self.record_operator_tokens(
-                binary.range(),
+                TextRange::new(binary.left.range().end(), binary.right.range().start()),
                 &["+", "-", "*", "/", "//", "%", "&", "|", "<<", ">>"],
             ),
             Expr::UnaryOp(unary) => {
-                self.record_operator_tokens(unary.range(), &["not", "+", "-"]);
+                self.record_operator_tokens(
+                    TextRange::new(unary.range().start(), unary.operand.range().start()),
+                    &["not", "+", "-"],
+                );
                 let start = usize::from(unary.range().start());
                 match unary.op {
                     UnaryOp::Not => {
