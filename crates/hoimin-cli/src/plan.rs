@@ -165,6 +165,7 @@ pub async fn create(config: RunConfig) -> Result<PlanOutput, PlanError> {
         truncated,
         diagnostics,
     };
+    validate_header(&manifest)?;
     Ok(PlanOutput {
         manifest,
         exit_code: if truncated { 4 } else { 0 },
