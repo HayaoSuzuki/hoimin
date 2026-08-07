@@ -68,10 +68,13 @@ must use the same deadline.
 At grace expiry, accept already-buffered completions before aborting Tokio task
 wrappers so returned workspace ownership is recovered when possible. Do not
 claim cleanup, session completion, or `run_finished` unless its completion was
-accepted before expiry. Tokio cannot cancel an already-running
-`spawn_blocking` operation: aborting its wrapper detaches that operation. The
-CLI exits after reporting the infrastructure failure, while a library caller
-may observe the detached operation finish later. This deadline cannot preempt
+accepted before expiry. Resource ownership still held by the shell is moved to
+a detached blocking cleanup rather than leaked; that cleanup may finish after
+the run future returns and is never reported as accepted. Tokio cannot cancel
+an already-running `spawn_blocking` operation: aborting its wrapper detaches
+that operation. The CLI exits after reporting the infrastructure failure,
+while a library caller may observe the detached operation finish later. This
+deadline cannot preempt
 an arbitrary synchronous `Write`: report output and its flush run inline, so a
 blocked caller-provided writer can delay the run future and even the expiry
 diagnostic. The bounded-return invariant therefore assumes synchronous output
