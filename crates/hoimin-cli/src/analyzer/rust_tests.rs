@@ -1026,6 +1026,110 @@ fn candidate_replacements_reparse_as_python() {
     );
 }
 
+const TOKEN_OPERATOR_NAMES: &[&str] = &[
+    "augmented_add_sub",
+    "binary_add_sub",
+    "binary_floor_mod",
+    "binary_mul_div",
+    "bitwise_and_or",
+    "bitwise_shift",
+    "boolean_and_or",
+    "boolean_literal",
+    "break_continue",
+    "compare_eq_ne",
+    "compare_order",
+    "identity",
+    "membership",
+    "remove_not",
+    "unary_sign",
+];
+
+#[test]
+fn token_operator_candidates_cover_supported_ast_roles_and_reparse() {
+    let source = concat!(
+        "equal = left == right\n",
+        "unequal = left != right\n",
+        "ordered = first < second <= third > fourth >= fifth\n",
+        "member = item in items\n",
+        "not_member = item not in items\n",
+        "same = left is right\n",
+        "not_same = left is not right\n",
+        "both = left and right\n",
+        "either = left or right\n",
+        "sum_value = left + right - extra\n",
+        "positive = +value\n",
+        "negative = -value\n",
+        "product = left * right / divisor\n",
+        "remainder = left // right % divisor\n",
+        "bits = left & right | extra\n",
+        "shifted = left << right >> extra\n",
+        "value += increment\n",
+        "value -= decrement\n",
+        "inverted = not value\n",
+        "truth = True\n",
+        "falsity = False\n",
+        "while active:\n    break\n",
+        "while pending:\n    continue\n",
+    );
+    let output = analyze(source);
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| TOKEN_OPERATOR_NAMES.contains(&candidate.operator.as_str()))
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        candidates,
+        vec![
+            ("==", "!=", "compare_eq_ne"),
+            ("!=", "==", "compare_eq_ne"),
+            ("<", "<=", "compare_order"),
+            ("<=", "<", "compare_order"),
+            (">", ">=", "compare_order"),
+            (">=", ">", "compare_order"),
+            ("in", "not in", "membership"),
+            ("not in", "in", "membership"),
+            ("is", "is not", "identity"),
+            ("is not", "is", "identity"),
+            ("and", "or", "boolean_and_or"),
+            ("or", "and", "boolean_and_or"),
+            ("+", "-", "binary_add_sub"),
+            ("-", "+", "binary_add_sub"),
+            ("+", "-", "unary_sign"),
+            ("-", "+", "unary_sign"),
+            ("*", "/", "binary_mul_div"),
+            ("/", "*", "binary_mul_div"),
+            ("//", "%", "binary_floor_mod"),
+            ("%", "//", "binary_floor_mod"),
+            ("&", "|", "bitwise_and_or"),
+            ("|", "&", "bitwise_and_or"),
+            ("<<", ">>", "bitwise_shift"),
+            (">>", "<<", "bitwise_shift"),
+            ("+=", "-=", "augmented_add_sub"),
+            ("-=", "+=", "augmented_add_sub"),
+            ("not value", "value", "remove_not"),
+            ("True", "False", "boolean_literal"),
+            ("False", "True", "boolean_literal"),
+            ("break", "continue", "break_continue"),
+            ("continue", "break", "break_continue"),
+        ]
+    );
+    for candidate in output
+        .candidates
+        .iter()
+        .filter(|candidate| TOKEN_OPERATOR_NAMES.contains(&candidate.operator.as_str()))
+    {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
 #[test]
 #[ignore = "benchmark harness; run explicitly in release mode"]
 fn benchmark_candidate_line_positions() {
