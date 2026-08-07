@@ -165,9 +165,15 @@ pub async fn create(config: RunConfig) -> Result<PlanOutput, PlanError> {
         truncated,
         diagnostics,
     };
+    plan_output(manifest)
+}
+
+fn plan_output(manifest: PlanManifest) -> Result<PlanOutput, PlanError> {
+    let exit_code = if manifest.truncated { 4 } else { 0 };
+    validate_header(&manifest)?;
     Ok(PlanOutput {
         manifest,
-        exit_code: if truncated { 4 } else { 0 },
+        exit_code,
     })
 }
 
@@ -652,5 +658,71 @@ fn plan_diagnostic(diagnostic: &AnalyzerDiagnostic) -> PlanDiagnostic {
         line: diagnostic.line,
         column: diagnostic.column,
         message: diagnostic.message.clone().unwrap_or_default(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use camino::Utf8PathBuf;
+    use hoimin_core::{ByteSpan, CommandArg, MutationCandidate, RawRunConfig, RunConfig};
+
+    use super::{
+        PLAN_SCHEMA_VERSION, PlanError, PlanManifest, RANKING_RULE_VERSION, RankedPlanCandidate,
+        plan_output,
+    };
+
+    fn manifest() -> PlanManifest {
+        let normalized_config = RunConfig::try_from(RawRunConfig {
+            files: vec![Utf8PathBuf::from("src/calc.py")],
+            test_argv: vec![CommandArg::Unix(b"test".to_vec())],
+            ..RawRunConfig::default()
+        })
+        .expect("test config is valid")
+        .into_plan_config();
+        PlanManifest {
+            schema_version: PLAN_SCHEMA_VERSION,
+            kind: "plan".to_owned(),
+            ranking_rule_version: RANKING_RULE_VERSION,
+            normalized_config,
+            sources: Vec::new(),
+            fingerprint_inputs: Vec::new(),
+            candidates: Vec::new(),
+            truncated: true,
+            diagnostics: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn plan_output_validates_ranking_and_preserves_truncated_exit_code() {
+        let output = plan_output(manifest()).expect("empty candidate ranking is valid");
+        assert_eq!(output.exit_code, 4);
+
+        let mut malformed = output.manifest;
+        malformed.candidates.push(RankedPlanCandidate {
+            candidate: MutationCandidate {
+                id: format!("m1_{}", "0".repeat(64)),
+                sequence: 1,
+                path: Utf8PathBuf::from("src/calc.py"),
+                span: ByteSpan {
+                    start: 0,
+                    length: 1,
+                },
+                original: "x".to_owned(),
+                replacement: "y".to_owned(),
+                operator: "binary_add_sub".to_owned(),
+                line: 1,
+                column: 0,
+                symbol: None,
+                file_hash: "0".repeat(64),
+            },
+            rank: 1,
+            score: 0,
+            ranking_reasons: Vec::new(),
+        });
+
+        let error = plan_output(malformed).expect_err("missing operator reason must be rejected");
+        assert!(
+            matches!(error, PlanError::ManifestInvalid(message) if message == "candidate ranking must contain exactly one operator reason, got 0")
+        );
     }
 }

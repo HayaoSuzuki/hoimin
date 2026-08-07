@@ -62,7 +62,7 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
     assert_eq!(stdout.matches('\n').count(), 1);
     let manifest: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(manifest["schema_version"], 2);
-    assert_eq!(manifest["ranking_rule_version"], 2);
+    assert_eq!(manifest["ranking_rule_version"], 3);
     assert_eq!(manifest["kind"], "plan");
     assert!(
         manifest["sources"]
@@ -98,6 +98,55 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
     assert!(!workspace_marker.exists());
     assert!(!session_path.exists());
     assert!(stderr.is_empty());
+}
+
+#[tokio::test]
+async fn plans_for_new_operator_families_pass_verify() {
+    for (selector, source) in [
+        (
+            "collection_ops",
+            "def selected(items):\n    return any(items)\n",
+        ),
+        (
+            "structure_ops",
+            "def selected(items, value):\n    items.append(value)\n",
+        ),
+        (
+            "bitwise_ops",
+            "def selected(left, right):\n    return left | right\n",
+        ),
+        (
+            "exception_ops",
+            "def selected():\n    try:\n        return 1\n    except ValueError:\n        return 0\n",
+        ),
+    ] {
+        let project = Project::new_with_source(source);
+        let (path, manifest, marker) = write_plan_manifest(
+            &project,
+            &["--file", "src/calc.py", "--operators", selector],
+        )
+        .await;
+        let candidate_id = manifest
+            .candidates
+            .first()
+            .unwrap_or_else(|| panic!("{selector} did not produce a candidate"))
+            .id
+            .clone();
+
+        let verified = prepare_verify(
+            &path,
+            std::slice::from_ref(&candidate_id),
+            OutputFormat::Json,
+        )
+        .await
+        .unwrap_or_else(|error| panic!("{selector} plan failed verification: {error}"));
+
+        assert_eq!(
+            verified.selection,
+            ResolvedVerifySelection::ExplicitCandidates(BTreeSet::from([candidate_id]))
+        );
+        assert!(!marker.exists());
+    }
 }
 
 #[tokio::test]

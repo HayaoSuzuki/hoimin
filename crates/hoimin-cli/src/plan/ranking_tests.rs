@@ -1,5 +1,10 @@
+use std::collections::BTreeSet;
+
 use camino::Utf8PathBuf;
-use hoimin_core::{ByteSpan, LineRange, LineSelection, MutationCandidate, Selection, TargetSlice};
+use hoimin_core::{
+    ByteSpan, LineRange, LineSelection, MutationCandidate, MutationOperator,
+    MutationOperatorSelection, Selection, TargetSlice,
+};
 
 use super::ranking::{
     RankedPlanCandidate, RankingReason, RankingReasonCode, rank_candidates, validate_ranking,
@@ -152,25 +157,110 @@ fn ranking_compares_explicit_line_paths_with_windows_case_rules() {
     );
 }
 
+const HIGH_VALUE_CONTROL_OPERATORS: &[&str] = &[
+    "compare_eq_ne",
+    "compare_order",
+    "membership",
+    "identity",
+    "boolean_and_or",
+    "remove_not",
+    "boolean_literal",
+    "break_continue",
+];
+const EXCEPTION_HANDLING_OPERATORS: &[&str] = &[
+    "exception_type_pair",
+    "exception_bare_to_exception",
+    "exception_exception_to_bare",
+    "exception_base_boundary",
+    "exception_tuple_add_pair",
+    "exception_tuple_remove_member",
+];
+const BEHAVIORAL_OPERATORS: &[&str] = &[
+    "collection_any_all",
+    "collection_list_tuple",
+    "collection_set_frozenset",
+    "collection_append_insert",
+    "collection_min_max",
+    "collection_set_add_discard",
+    "collection_set_remove_discard",
+    "collection_string_starts_ends",
+    "collection_string_split_rsplit",
+    "structure_append_extend",
+    "structure_mapping_get_subscript",
+    "structure_sort_reverse",
+    "structure_sorted_reversed",
+    "structure_index_neighbor",
+    "structure_slice_neighbor",
+];
+const ARITHMETIC_OPERATORS: &[&str] = &[
+    "binary_add_sub",
+    "augmented_add_sub",
+    "binary_mul_div",
+    "binary_floor_mod",
+    "unary_sign",
+    "bitwise_and_or",
+    "bitwise_shift",
+];
+const TYPE_ANNOTATION_OPERATORS: &[&str] = &[
+    "type_nullable_remove",
+    "type_nullable_add",
+    "type_list_sequence",
+    "type_set_abstract_set",
+    "type_dict_mapping",
+    "type_iterable_iterator",
+    "type_sequence_iterable",
+];
+
 #[test]
 fn ranking_assigns_every_operator_to_its_fixed_category() {
-    for (operator, expected) in [
+    let categories = [
         (
-            "boolean_and_or",
+            HIGH_VALUE_CONTROL_OPERATORS,
             reason(RankingReasonCode::HighValueControl, 100),
         ),
-        ("binary_add_sub", reason(RankingReasonCode::Arithmetic, 70)),
         (
-            "type_nullable_remove",
+            EXCEPTION_HANDLING_OPERATORS,
+            reason(RankingReasonCode::ExceptionHandling, 90),
+        ),
+        (
+            BEHAVIORAL_OPERATORS,
+            reason(RankingReasonCode::Behavioral, 80),
+        ),
+        (
+            ARITHMETIC_OPERATORS,
+            reason(RankingReasonCode::Arithmetic, 70),
+        ),
+        (
+            TYPE_ANNOTATION_OPERATORS,
             reason(RankingReasonCode::TypeAnnotation, 50),
         ),
-    ] {
-        let ranked = rank_candidates(
-            &Selection::default(),
-            &[],
-            vec![candidate("candidate", "src/calc.py", 1, 0, operator, None)],
-        );
-        assert_eq!(ranked[0].ranking_reasons, [expected], "{operator}");
+    ];
+    let tested = categories
+        .iter()
+        .flat_map(|(operators, _)| operators.iter())
+        .map(|name| MutationOperator::from_name(name).expect("canonical operator name"))
+        .collect::<BTreeSet<_>>();
+    let canonical = MutationOperatorSelection::valid_names()
+        .into_iter()
+        .filter_map(MutationOperator::from_name)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(tested.len(), 43);
+    assert_eq!(tested, canonical);
+
+    for (operators, expected) in categories {
+        for operator in operators {
+            let ranked = rank_candidates(
+                &Selection::default(),
+                &[],
+                vec![candidate("candidate", "src/calc.py", 1, 0, operator, None)],
+            );
+            assert_eq!(
+                ranked[0].ranking_reasons.as_slice(),
+                std::slice::from_ref(&expected),
+                "{operator}"
+            );
+            validate_ranking(&ranked).unwrap_or_else(|error| panic!("{operator}: {error}"));
+        }
     }
 }
 
