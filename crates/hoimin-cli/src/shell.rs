@@ -58,14 +58,6 @@ struct ShutdownBudget {
 }
 
 impl ShutdownBudget {
-    fn for_total_timeout(run_deadline: tokio::time::Instant) -> Self {
-        Self::for_total_timeout_with_grace(run_deadline, SHUTDOWN_GRACE)
-    }
-
-    fn after_observation(cause: ShutdownCause, observed_at: tokio::time::Instant) -> Self {
-        Self::after_observation_with_grace(cause, observed_at, SHUTDOWN_GRACE)
-    }
-
     fn for_total_timeout_with_grace(run_deadline: tokio::time::Instant, grace: Duration) -> Self {
         Self {
             cause: ShutdownCause::TotalTimeout,
@@ -112,6 +104,30 @@ fn establish_shutdown_budget(
     *active.get_or_insert(candidate)
 }
 
+fn establish_event_shutdown_budget(
+    active: &mut Option<ShutdownBudget>,
+    event: &RunEvent,
+    run_deadline: tokio::time::Instant,
+    observed_at: tokio::time::Instant,
+    grace: Duration,
+) -> Option<ShutdownBudget> {
+    let candidate = match event {
+        RunEvent::DeadlineReached => {
+            ShutdownBudget::for_total_timeout_with_grace(run_deadline, grace)
+        }
+        RunEvent::CancellationRequested => ShutdownBudget::after_observation_with_grace(
+            ShutdownCause::Cancellation,
+            observed_at,
+            grace,
+        ),
+        RunEvent::EffectFailed(_) => {
+            ShutdownBudget::after_observation_with_grace(ShutdownCause::Failure, observed_at, grace)
+        }
+        _ => return None,
+    };
+    Some(establish_shutdown_budget(active, candidate))
+}
+
 #[derive(Clone, Debug)]
 pub struct RunControl {
     request: ProcessStartGate,
@@ -119,6 +135,8 @@ pub struct RunControl {
     max_completion_in_flight: Arc<AtomicUsize>,
     #[cfg(test)]
     materialization_pause: Option<MaterializationPause>,
+    #[cfg(test)]
+    shutdown_grace: Duration,
 }
 
 impl RunControl {
@@ -130,6 +148,8 @@ impl RunControl {
             max_completion_in_flight: Arc::new(AtomicUsize::new(0)),
             #[cfg(test)]
             materialization_pause: None,
+            #[cfg(test)]
+            shutdown_grace: SHUTDOWN_GRACE,
         }
     }
 
@@ -139,6 +159,31 @@ impl RunControl {
         let mut control = Self::new();
         control.materialization_pause = Some(pause);
         (control, controller)
+    }
+
+    #[cfg(test)]
+    fn with_materialization_pause_and_shutdown_grace(
+        worker: u32,
+        shutdown_grace: Duration,
+    ) -> (Self, MaterializationPauseController) {
+        let (mut control, controller) = Self::with_materialization_pause(worker);
+        control.shutdown_grace = shutdown_grace;
+        (control, controller)
+    }
+
+    #[allow(
+        clippy::unused_self,
+        reason = "test builds read the per-run override; production always returns the fixed grace"
+    )]
+    fn shutdown_grace(&self) -> Duration {
+        #[cfg(test)]
+        {
+            self.shutdown_grace
+        }
+        #[cfg(not(test))]
+        {
+            SHUTDOWN_GRACE
+        }
     }
 
     pub fn cancel(&self) {
@@ -1014,6 +1059,7 @@ where
         context.fingerprint_copy_inputs = fingerprint_copy_inputs;
     }
     let deadline = tokio::time::Instant::now() + config.limits.total_timeout.get();
+    let shutdown_grace = control.shutdown_grace();
     let max_jobs = config.limits.jobs.get();
     let channel_capacity = config.limits.jobs.get().saturating_add(1);
     let mut metrics = None;
@@ -1083,11 +1129,19 @@ where
                     cancel_queued_effect(&effect, &mut metrics, &mut metrics_warnings);
                     cancellation.cancel();
                     stop_signalled = true;
-                    priority_event = Some(if control.is_cancelled() {
+                    let event = if control.is_cancelled() {
                         RunEvent::CancellationRequested
                     } else {
                         RunEvent::DeadlineReached
-                    });
+                    };
+                    establish_event_shutdown_budget(
+                        &mut shutdown_budget,
+                        &event,
+                        deadline,
+                        tokio::time::Instant::now(),
+                        shutdown_grace,
+                    );
+                    priority_event = Some(event);
                     break;
                 }
                 if !state.is_effect_pending(effect.id()) {
@@ -1112,7 +1166,15 @@ where
                                 let Some(dispatch) = control.begin_dispatch() else {
                                     cancellation.cancel();
                                     stop_signalled = true;
-                                    priority_event = Some(RunEvent::CancellationRequested);
+                                    let event = RunEvent::CancellationRequested;
+                                    establish_event_shutdown_budget(
+                                        &mut shutdown_budget,
+                                        &event,
+                                        deadline,
+                                        tokio::time::Instant::now(),
+                                        shutdown_grace,
+                                    );
+                                    priority_event = Some(event);
                                     break;
                                 };
                                 spawn_process(
@@ -1164,7 +1226,15 @@ where
                                 ) else {
                                     cancellation.cancel();
                                     stop_signalled = true;
-                                    priority_event = Some(RunEvent::CancellationRequested);
+                                    let event = RunEvent::CancellationRequested;
+                                    establish_event_shutdown_budget(
+                                        &mut shutdown_budget,
+                                        &event,
+                                        deadline,
+                                        tokio::time::Instant::now(),
+                                        shutdown_grace,
+                                    );
+                                    priority_event = Some(event);
                                     break;
                                 };
                                 spawn_process(
@@ -1233,44 +1303,156 @@ where
                     effect => {
                         let stopping = stop_signalled;
                         let event = if stopping {
-                            execute_effect_with_cancellation(
-                                &mut context,
-                                effect,
-                                cancellation.clone(),
-                            )
-                            .await
-                        } else {
+                            let budget = shutdown_budget
+                                .ok_or_else(|| "stopping run has no shutdown budget".to_owned())?;
                             let mut execution = Box::pin(execute_effect_with_cancellation(
                                 &mut context,
                                 effect,
                                 cancellation.clone(),
                             ));
-                            tokio::select! {
+                            let Ok(event) = budget.wait(&mut execution).await else {
+                                drop(execution);
+                                let error = shutdown_expiry_error(
+                                    &mut process_tasks,
+                                    &mut io_tasks,
+                                    &mut completion_rx,
+                                    &mut in_flight,
+                                    &budget,
+                                    &mut metrics,
+                                    &mut metrics_warnings,
+                                    |completion| {
+                                        let _ =
+                                            accept_blocking_completion(&mut context, completion);
+                                    },
+                                )
+                                .await;
+                                return Err(error);
+                            };
+                            event
+                        } else {
+                            enum SerialSelection {
+                                Completed(RunEvent),
+                                Stopped {
+                                    event: RunEvent,
+                                    budget: ShutdownBudget,
+                                    signal_failure: Option<String>,
+                                },
+                            }
+                            let mut execution = Box::pin(execute_effect_with_cancellation(
+                                &mut context,
+                                effect,
+                                cancellation.clone(),
+                            ));
+                            let selection = tokio::select! {
                                 biased;
-                                event = &mut execution => event,
+                                event = &mut execution => SerialSelection::Completed(event),
                                 () = control.cancelled() => {
                                     cancellation.cancel();
-                                    let _ = execution.await;
                                     stop_signalled = true;
-                                    RunEvent::CancellationRequested
+                                    let event = RunEvent::CancellationRequested;
+                                    let budget = establish_event_shutdown_budget(
+                                        &mut shutdown_budget,
+                                        &event,
+                                        deadline,
+                                        tokio::time::Instant::now(),
+                                        shutdown_grace,
+                                    )
+                                    .expect("cancellation establishes a shutdown budget");
+                                    SerialSelection::Stopped {
+                                        event,
+                                        budget,
+                                        signal_failure: None,
+                                    }
                                 }
                                 () = tokio::time::sleep_until(deadline) => {
                                     cancellation.cancel();
-                                    let _ = execution.await;
                                     stop_signalled = true;
-                                    RunEvent::DeadlineReached
+                                    let event = RunEvent::DeadlineReached;
+                                    let budget = establish_event_shutdown_budget(
+                                        &mut shutdown_budget,
+                                        &event,
+                                        deadline,
+                                        tokio::time::Instant::now(),
+                                        shutdown_grace,
+                                    )
+                                    .expect("deadline establishes a shutdown budget");
+                                    SerialSelection::Stopped {
+                                        event,
+                                        budget,
+                                        signal_failure: None,
+                                    }
                                 }
                                 signal = interrupts.first() => {
                                     cancellation.cancel();
-                                    let _ = execution.await;
                                     stop_signalled = true;
                                     match first_interrupt_event(signal) {
-                                        Ok(event) => event,
+                                        Ok(event) => {
+                                            let budget = establish_event_shutdown_budget(
+                                                &mut shutdown_budget,
+                                                &event,
+                                                deadline,
+                                                tokio::time::Instant::now(),
+                                                shutdown_grace,
+                                            )
+                                            .expect("interrupt establishes a shutdown budget");
+                                            SerialSelection::Stopped {
+                                                event,
+                                                budget,
+                                                signal_failure: None,
+                                            }
+                                        }
                                         Err(error) => {
-                                            signal_failure = Some(error);
-                                            RunEvent::CancellationRequested
+                                            let budget = establish_shutdown_budget(
+                                                &mut shutdown_budget,
+                                                ShutdownBudget::after_observation_with_grace(
+                                                    ShutdownCause::Failure,
+                                                    tokio::time::Instant::now(),
+                                                    shutdown_grace,
+                                                ),
+                                            );
+                                            SerialSelection::Stopped {
+                                                event: RunEvent::CancellationRequested,
+                                                budget,
+                                                signal_failure: Some(error),
+                                            }
                                         }
                                     }
+                                }
+                            };
+                            match selection {
+                                SerialSelection::Completed(event) => event,
+                                SerialSelection::Stopped {
+                                    event,
+                                    budget,
+                                    signal_failure: pending_signal_failure,
+                                } => {
+                                    if budget.wait(&mut execution).await.is_err() {
+                                        drop(execution);
+                                        let expiry_error = shutdown_expiry_error(
+                                            &mut process_tasks,
+                                            &mut io_tasks,
+                                            &mut completion_rx,
+                                            &mut in_flight,
+                                            &budget,
+                                            &mut metrics,
+                                            &mut metrics_warnings,
+                                            |completion| {
+                                                let _ = accept_blocking_completion(
+                                                    &mut context,
+                                                    completion,
+                                                );
+                                            },
+                                        )
+                                        .await;
+                                        return Err(match pending_signal_failure {
+                                            Some(primary) => {
+                                                combine_shutdown_errors(primary, Some(expiry_error))
+                                            }
+                                            None => expiry_error,
+                                        });
+                                    }
+                                    signal_failure = pending_signal_failure;
+                                    event
                                 }
                             }
                         };
@@ -1299,9 +1481,10 @@ where
                 cancellation.cancel();
                 let drain_budget = establish_shutdown_budget(
                     &mut shutdown_budget,
-                    ShutdownBudget::after_observation(
+                    ShutdownBudget::after_observation_with_grace(
                         ShutdownCause::Failure,
                         tokio::time::Instant::now(),
+                        shutdown_grace,
                     ),
                 );
                 let drain_failure = drain_processes(
@@ -1342,18 +1525,44 @@ where
             } else if let Some(completion) = ready_process_completion {
                 completion
             } else if stop_signalled {
-                completion_rx
-                    .recv()
-                    .await
-                    .ok_or_else(|| "completion channel closed".to_owned())?
+                let budget = shutdown_budget
+                    .ok_or_else(|| "stopping run has no shutdown budget".to_owned())?;
+                match budget.wait(completion_rx.recv()).await {
+                    Ok(Some(completion)) => completion,
+                    Ok(None) => return Err("completion channel closed".to_owned()),
+                    Err(_) => {
+                        let error = shutdown_expiry_error(
+                            &mut process_tasks,
+                            &mut io_tasks,
+                            &mut completion_rx,
+                            &mut in_flight,
+                            &budget,
+                            &mut metrics,
+                            &mut metrics_warnings,
+                            |completion| {
+                                let _ = accept_blocking_completion(&mut context, completion);
+                            },
+                        )
+                        .await;
+                        return Err(error);
+                    }
+                }
             } else {
                 tokio::select! {
                     biased;
                     () = control.cancelled() => {
                         cancellation.cancel();
                         stop_signalled = true;
+                        let event = RunEvent::CancellationRequested;
+                        establish_event_shutdown_budget(
+                            &mut shutdown_budget,
+                            &event,
+                            deadline,
+                            tokio::time::Instant::now(),
+                            shutdown_grace,
+                        );
                         ShellCompletion {
-                            event: RunEvent::CancellationRequested,
+                            event,
                             process_task: false,
                             io_task: false,
                             process: None,
@@ -1363,8 +1572,16 @@ where
                     () = tokio::time::sleep_until(deadline) => {
                         cancellation.cancel();
                         stop_signalled = true;
+                        let event = RunEvent::DeadlineReached;
+                        establish_event_shutdown_budget(
+                            &mut shutdown_budget,
+                            &event,
+                            deadline,
+                            tokio::time::Instant::now(),
+                            shutdown_grace,
+                        );
                         ShellCompletion {
-                            event: RunEvent::DeadlineReached,
+                            event,
                             process_task: false,
                             io_task: false,
                             process: None,
@@ -1375,15 +1592,32 @@ where
                         cancellation.cancel();
                         stop_signalled = true;
                         match first_interrupt_event(signal) {
-                            Ok(event) => ShellCompletion {
-                                event,
-                                process_task: false,
-                                io_task: false,
-                                process: None,
-                                blocking: None,
+                            Ok(event) => {
+                                establish_event_shutdown_budget(
+                                    &mut shutdown_budget,
+                                    &event,
+                                    deadline,
+                                    tokio::time::Instant::now(),
+                                    shutdown_grace,
+                                );
+                                ShellCompletion {
+                                    event,
+                                    process_task: false,
+                                    io_task: false,
+                                    process: None,
+                                    blocking: None,
+                                }
                             },
                             Err(error) => {
                                 signal_failure = Some(error);
+                                establish_shutdown_budget(
+                                    &mut shutdown_budget,
+                                    ShutdownBudget::after_observation_with_grace(
+                                        ShutdownCause::Failure,
+                                        tokio::time::Instant::now(),
+                                        shutdown_grace,
+                                    ),
+                                );
                                 ShellCompletion {
                                     event: RunEvent::CancellationRequested,
                                     process_task: false,
@@ -1403,9 +1637,10 @@ where
                 cancellation.cancel();
                 let drain_budget = establish_shutdown_budget(
                     &mut shutdown_budget,
-                    ShutdownBudget::after_observation(
+                    ShutdownBudget::after_observation_with_grace(
                         ShutdownCause::Failure,
                         tokio::time::Instant::now(),
+                        shutdown_grace,
                     ),
                 );
                 let drain_failure = drain_processes(
@@ -1457,6 +1692,15 @@ where
             if !external_stop && io_completion {
                 io_in_flight = io_in_flight.saturating_sub(1);
             }
+            if external_stop || failed {
+                establish_event_shutdown_budget(
+                    &mut shutdown_budget,
+                    &event,
+                    deadline,
+                    tokio::time::Instant::now(),
+                    shutdown_grace,
+                );
+            }
             if failed {
                 cancellation.cancel();
                 stop_signalled = true;
@@ -1469,9 +1713,10 @@ where
                     cancellation.cancel();
                     let drain_budget = establish_shutdown_budget(
                         &mut shutdown_budget,
-                        ShutdownBudget::after_observation(
+                        ShutdownBudget::after_observation_with_grace(
                             ShutdownCause::Failure,
                             tokio::time::Instant::now(),
+                            shutdown_grace,
                         ),
                     );
                     let drain_failure = drain_processes(
@@ -1520,14 +1765,18 @@ where
             if external_stop || failed {
                 discard_queued_effects(&mut effects, &mut metrics, &mut metrics_warnings);
                 let candidate_budget = if deadline_stop {
-                    ShutdownBudget::for_total_timeout(deadline)
+                    ShutdownBudget::for_total_timeout_with_grace(deadline, shutdown_grace)
                 } else {
                     let cause = if external_stop {
                         ShutdownCause::Cancellation
                     } else {
                         ShutdownCause::Failure
                     };
-                    ShutdownBudget::after_observation(cause, tokio::time::Instant::now())
+                    ShutdownBudget::after_observation_with_grace(
+                        cause,
+                        tokio::time::Instant::now(),
+                        shutdown_grace,
+                    )
                 };
                 let drain_budget =
                     establish_shutdown_budget(&mut shutdown_budget, candidate_budget);
@@ -1544,6 +1793,7 @@ where
                     },
                 )
                 .await?;
+                io_in_flight = 0;
             } else if process_completion {
                 let process_failure = match process_tasks.join_next().await {
                     Some(Ok(())) => None,
@@ -1554,9 +1804,10 @@ where
                     cancellation.cancel();
                     let drain_budget = establish_shutdown_budget(
                         &mut shutdown_budget,
-                        ShutdownBudget::after_observation(
+                        ShutdownBudget::after_observation_with_grace(
                             ShutdownCause::Failure,
                             tokio::time::Instant::now(),
+                            shutdown_grace,
                         ),
                     );
                     let drain_failure = drain_processes(
@@ -1585,9 +1836,10 @@ where
                     cancellation.cancel();
                     let drain_budget = establish_shutdown_budget(
                         &mut shutdown_budget,
-                        ShutdownBudget::after_observation(
+                        ShutdownBudget::after_observation_with_grace(
                             ShutdownCause::Failure,
                             tokio::time::Instant::now(),
+                            shutdown_grace,
                         ),
                     );
                     let drain_failure = drain_processes(
@@ -1837,6 +2089,37 @@ fn spawn_blocking_effect(
 
 #[expect(
     clippy::too_many_arguments,
+    reason = "grace expiry must drain both task sets and preserve buffered ownership accounting"
+)]
+async fn shutdown_expiry_error(
+    process_tasks: &mut JoinSet<()>,
+    io_tasks: &mut JoinSet<()>,
+    receiver: &mut mpsc::Receiver<ShellCompletion>,
+    in_flight: &mut usize,
+    budget: &ShutdownBudget,
+    metrics: &mut Option<MetricsCollector>,
+    metrics_warnings: &mut Vec<(&'static str, String)>,
+    accept_blocking: impl FnMut(BlockingEffectCompletion),
+) -> String {
+    let process_task_count = process_tasks.len();
+    let io_task_count = io_tasks.len();
+    drain_processes(
+        process_tasks,
+        io_tasks,
+        receiver,
+        in_flight,
+        budget,
+        metrics,
+        metrics_warnings,
+        accept_blocking,
+    )
+    .await
+    .err()
+    .unwrap_or_else(|| budget.expiry_error(process_task_count, io_task_count))
+}
+
+#[expect(
+    clippy::too_many_arguments,
     reason = "shutdown draining needs both task sets, ownership returns, and accounting under one deadline"
 )]
 async fn drain_processes(
@@ -1959,7 +2242,7 @@ fn combine_close_results(
 mod tests {
     use super::*;
     use std::ffi::OsString;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use hoimin_core::{
         ApplyMutation, BudgetLedger, ByteSpan, CommandArg, CreateWorker, IntegrityCheckpoint,
@@ -2540,6 +2823,172 @@ mod tests {
             0,
             "the baseline must not be dispatched after post-materialization verification fails"
         );
+    }
+
+    fn paused_materialization_config(
+        project: &tempfile::TempDir,
+        total_timeout: &str,
+    ) -> RunConfig {
+        std::fs::write(project.path().join("target.py"), b"value = 1\n").unwrap();
+        crate::cli::parse_config_from([
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--total-timeout"),
+            OsString::from(total_timeout),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+            OsString::from("unused-test-command"),
+        ])
+        .unwrap()
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn total_timeout_bounds_paused_materialization_at_first_shutdown_deadline() {
+        let project = tempfile::tempdir().unwrap();
+        let config = paused_materialization_config(&project, "200ms");
+        let (control, mut pause_controller) =
+            RunControl::with_materialization_pause_and_shutdown_grace(0, Duration::from_millis(80));
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
+        let controller = tokio::task::spawn_blocking(move || {
+            pause_controller
+                .wait_until_entered(Duration::from_secs(2))
+                .expect("worker 0 did not enter materialization");
+            let release = pause_controller.release_guard();
+            let _ = entered_tx.send(());
+            let _ = release_rx.recv();
+            drop(release);
+        });
+        let mut run = Box::pin(run_loop_with_control(
+            config,
+            Vec::new(),
+            Vec::new(),
+            control,
+        ));
+        tokio::select! {
+            result = &mut run => panic!("run finished before materialization paused: {result:?}"),
+            result = entered_rx => result.expect("pause controller stopped before entry"),
+        }
+        let observed_at = Instant::now();
+
+        let result = tokio::time::timeout(Duration::from_millis(500), &mut run).await;
+        release_tx.send(()).unwrap();
+        controller.await.unwrap();
+        let Ok(result) = result else {
+            let _ = tokio::time::timeout(Duration::from_secs(3), &mut run).await;
+            panic!("paused materialization outlived the first shutdown deadline");
+        };
+        let error = result.unwrap_err();
+
+        assert!(observed_at.elapsed() < Duration::from_millis(500));
+        assert!(
+            error.contains("total timeout: shutdown grace expired"),
+            "{error}"
+        );
+        assert!(error.contains("blocking I/O tasks: 1"), "{error}");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn repeated_cancellation_does_not_extend_paused_materialization_shutdown() {
+        let project = tempfile::tempdir().unwrap();
+        let config = paused_materialization_config(&project, "5s");
+        let (control, mut pause_controller) =
+            RunControl::with_materialization_pause_and_shutdown_grace(
+                0,
+                Duration::from_millis(250),
+            );
+        let cancelling = control.clone();
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
+        let controller = tokio::task::spawn_blocking(move || {
+            pause_controller
+                .wait_until_entered(Duration::from_secs(2))
+                .expect("worker 0 did not enter materialization");
+            let release = pause_controller.release_guard();
+            let _ = entered_tx.send(());
+            let _ = release_rx.recv();
+            drop(release);
+        });
+        let mut run = Box::pin(run_loop_with_control(
+            config,
+            Vec::new(),
+            Vec::new(),
+            control,
+        ));
+        tokio::select! {
+            result = &mut run => panic!("run finished before materialization paused: {result:?}"),
+            result = entered_rx => result.expect("pause controller stopped before entry"),
+        }
+        let first_cancelled_at = Instant::now();
+        cancelling.cancel();
+        tokio::select! {
+            result = &mut run => panic!("run finished before the second cancellation: {result:?}"),
+            () = tokio::time::sleep(Duration::from_millis(150)) => {}
+        }
+        cancelling.cancel();
+
+        let result = tokio::time::timeout(Duration::from_millis(180), &mut run).await;
+        release_tx.send(()).unwrap();
+        controller.await.unwrap();
+        let Ok(result) = result else {
+            let _ = tokio::time::timeout(Duration::from_secs(3), &mut run).await;
+            panic!("a later cancellation extended the first shutdown deadline");
+        };
+        let error = result.unwrap_err();
+
+        assert!(first_cancelled_at.elapsed() < Duration::from_millis(330));
+        assert!(
+            error.contains("cancellation: shutdown grace expired"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cancellation_released_inside_grace_finishes_orderly() {
+        let project = tempfile::tempdir().unwrap();
+        let config = paused_materialization_config(&project, "5s");
+        let (control, mut pause_controller) =
+            RunControl::with_materialization_pause_and_shutdown_grace(
+                0,
+                Duration::from_millis(300),
+            );
+        let cancelling = control.clone();
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
+        let controller = tokio::task::spawn_blocking(move || {
+            pause_controller
+                .wait_until_entered(Duration::from_secs(2))
+                .expect("worker 0 did not enter materialization");
+            let release = pause_controller.release_guard();
+            let _ = entered_tx.send(());
+            let _ = release_rx.recv();
+            drop(release);
+        });
+        let mut run = Box::pin(run_loop_with_control(
+            config,
+            Vec::new(),
+            Vec::new(),
+            control,
+        ));
+        tokio::select! {
+            result = &mut run => panic!("run finished before materialization paused: {result:?}"),
+            result = entered_rx => result.expect("pause controller stopped before entry"),
+        }
+        cancelling.cancel();
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        release_tx.send(()).unwrap();
+        controller.await.unwrap();
+
+        let exit = tokio::time::timeout(Duration::from_secs(2), &mut run)
+            .await
+            .expect("released cancellation must finish inside grace")
+            .unwrap();
+
+        assert_eq!(exit, 130);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
