@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::future::Future;
 use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{
@@ -29,6 +31,86 @@ use crate::workspace::{
 };
 #[cfg(test)]
 use crate::workspace::{MaterializationPause, MaterializationPauseController};
+
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ShutdownCause {
+    TotalTimeout,
+    Cancellation,
+    Failure,
+}
+
+impl ShutdownCause {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::TotalTimeout => "total timeout",
+            Self::Cancellation => "cancellation",
+            Self::Failure => "failure",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ShutdownBudget {
+    cause: ShutdownCause,
+    deadline: tokio::time::Instant,
+}
+
+impl ShutdownBudget {
+    fn for_total_timeout(run_deadline: tokio::time::Instant) -> Self {
+        Self::for_total_timeout_with_grace(run_deadline, SHUTDOWN_GRACE)
+    }
+
+    fn after_observation(cause: ShutdownCause, observed_at: tokio::time::Instant) -> Self {
+        Self::after_observation_with_grace(cause, observed_at, SHUTDOWN_GRACE)
+    }
+
+    fn for_total_timeout_with_grace(run_deadline: tokio::time::Instant, grace: Duration) -> Self {
+        Self {
+            cause: ShutdownCause::TotalTimeout,
+            deadline: run_deadline + grace,
+        }
+    }
+
+    fn after_observation_with_grace(
+        cause: ShutdownCause,
+        observed_at: tokio::time::Instant,
+        grace: Duration,
+    ) -> Self {
+        Self {
+            cause,
+            deadline: observed_at + grace,
+        }
+    }
+
+    const fn cause(self) -> ShutdownCause {
+        self.cause
+    }
+
+    const fn deadline(self) -> tokio::time::Instant {
+        self.deadline
+    }
+
+    async fn wait<F: Future>(&self, future: F) -> Result<F::Output, tokio::time::error::Elapsed> {
+        tokio::time::timeout_at(self.deadline(), future).await
+    }
+
+    fn expiry_error(self, process_tasks: usize, io_tasks: usize) -> String {
+        format!(
+            "{}: shutdown grace expired after {}s (process tasks: {process_tasks}, blocking I/O tasks: {io_tasks})",
+            self.cause().label(),
+            SHUTDOWN_GRACE.as_secs(),
+        )
+    }
+}
+
+fn establish_shutdown_budget(
+    active: &mut Option<ShutdownBudget>,
+    candidate: ShutdownBudget,
+) -> ShutdownBudget {
+    *active.get_or_insert(candidate)
+}
 
 #[derive(Clone, Debug)]
 pub struct RunControl {
@@ -976,6 +1058,7 @@ where
         let mut in_flight = 0_usize;
         let mut io_in_flight = 0_usize;
         let mut stop_signalled = false;
+        let mut shutdown_budget = None;
         let mut interrupts = crate::interrupt::InterruptMonitor::spawn();
 
         while state.phase() != RunPhase::Finished {
@@ -1214,11 +1297,19 @@ where
 
             if let Some(error) = signal_failure.take() {
                 cancellation.cancel();
+                let drain_budget = establish_shutdown_budget(
+                    &mut shutdown_budget,
+                    ShutdownBudget::after_observation(
+                        ShutdownCause::Failure,
+                        tokio::time::Instant::now(),
+                    ),
+                );
                 let drain_failure = drain_processes(
                     &mut process_tasks,
                     &mut io_tasks,
                     &mut completion_rx,
                     &mut in_flight,
+                    &drain_budget,
                     &mut metrics,
                     &mut metrics_warnings,
                     |completion| {
@@ -1310,11 +1401,19 @@ where
             };
             if let Some(error) = signal_failure.take() {
                 cancellation.cancel();
+                let drain_budget = establish_shutdown_budget(
+                    &mut shutdown_budget,
+                    ShutdownBudget::after_observation(
+                        ShutdownCause::Failure,
+                        tokio::time::Instant::now(),
+                    ),
+                );
                 let drain_failure = drain_processes(
                     &mut process_tasks,
                     &mut io_tasks,
                     &mut completion_rx,
                     &mut in_flight,
+                    &drain_budget,
                     &mut metrics,
                     &mut metrics_warnings,
                     |completion| {
@@ -1350,6 +1449,7 @@ where
                 event,
                 RunEvent::DeadlineReached | RunEvent::CancellationRequested
             );
+            let deadline_stop = matches!(event, RunEvent::DeadlineReached);
             let failed = matches!(event, RunEvent::EffectFailed(_));
             if !external_stop && (process_completion || io_completion) {
                 in_flight = in_flight.saturating_sub(1);
@@ -1367,11 +1467,19 @@ where
                 Ok(value) => value,
                 Err(error) => {
                     cancellation.cancel();
+                    let drain_budget = establish_shutdown_budget(
+                        &mut shutdown_budget,
+                        ShutdownBudget::after_observation(
+                            ShutdownCause::Failure,
+                            tokio::time::Instant::now(),
+                        ),
+                    );
                     let drain_failure = drain_processes(
                         &mut process_tasks,
                         &mut io_tasks,
                         &mut completion_rx,
                         &mut in_flight,
+                        &drain_budget,
                         &mut metrics,
                         &mut metrics_warnings,
                         |completion| {
@@ -1411,11 +1519,24 @@ where
 
             if external_stop || failed {
                 discard_queued_effects(&mut effects, &mut metrics, &mut metrics_warnings);
+                let candidate_budget = if deadline_stop {
+                    ShutdownBudget::for_total_timeout(deadline)
+                } else {
+                    let cause = if external_stop {
+                        ShutdownCause::Cancellation
+                    } else {
+                        ShutdownCause::Failure
+                    };
+                    ShutdownBudget::after_observation(cause, tokio::time::Instant::now())
+                };
+                let drain_budget =
+                    establish_shutdown_budget(&mut shutdown_budget, candidate_budget);
                 drain_processes(
                     &mut process_tasks,
                     &mut io_tasks,
                     &mut completion_rx,
                     &mut in_flight,
+                    &drain_budget,
                     &mut metrics,
                     &mut metrics_warnings,
                     |completion| {
@@ -1431,11 +1552,19 @@ where
                 };
                 if let Some(process_failure) = process_failure {
                     cancellation.cancel();
+                    let drain_budget = establish_shutdown_budget(
+                        &mut shutdown_budget,
+                        ShutdownBudget::after_observation(
+                            ShutdownCause::Failure,
+                            tokio::time::Instant::now(),
+                        ),
+                    );
                     let drain_failure = drain_processes(
                         &mut process_tasks,
                         &mut io_tasks,
                         &mut completion_rx,
                         &mut in_flight,
+                        &drain_budget,
                         &mut metrics,
                         &mut metrics_warnings,
                         |completion| {
@@ -1454,11 +1583,19 @@ where
                 };
                 if let Some(io_failure) = io_failure {
                     cancellation.cancel();
+                    let drain_budget = establish_shutdown_budget(
+                        &mut shutdown_budget,
+                        ShutdownBudget::after_observation(
+                            ShutdownCause::Failure,
+                            tokio::time::Instant::now(),
+                        ),
+                    );
                     let drain_failure = drain_processes(
                         &mut process_tasks,
                         &mut io_tasks,
                         &mut completion_rx,
                         &mut in_flight,
+                        &drain_budget,
                         &mut metrics,
                         &mut metrics_warnings,
                         |completion| {
@@ -1698,63 +1835,97 @@ fn spawn_blocking_effect(
     });
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "shutdown draining needs both task sets, ownership returns, and accounting under one deadline"
+)]
 async fn drain_processes(
     process_tasks: &mut JoinSet<()>,
     io_tasks: &mut JoinSet<()>,
     receiver: &mut mpsc::Receiver<ShellCompletion>,
     in_flight: &mut usize,
+    budget: &ShutdownBudget,
     metrics: &mut Option<MetricsCollector>,
     metrics_warnings: &mut Vec<(&'static str, String)>,
     mut accept_blocking: impl FnMut(BlockingEffectCompletion),
 ) -> Result<(), String> {
-    let mut first_failure = None;
-    while !process_tasks.is_empty() || !io_tasks.is_empty() {
-        tokio::select! {
-            result = process_tasks.join_next(), if !process_tasks.is_empty() => {
-                if let Some(Err(error)) = result
-                    && first_failure.is_none()
-                {
-                    first_failure = Some(format!("process task failed while stopping: {error}"));
-                }
-            }
-            result = io_tasks.join_next(), if !io_tasks.is_empty() => {
-                if let Some(Err(error)) = result
-                    && first_failure.is_none()
-                {
-                    first_failure = Some(format!("blocking I/O task failed while stopping: {error}"));
-                }
-            }
-            completion = receiver.recv(), if *in_flight > 0 => {
-                if let Some(completion) = completion {
-                    if let Some((worker, true)) = completion.process {
-                        record_metrics(metrics, metrics_warnings, |metrics| {
-                            metrics.process_finished(worker, false)
-                        });
+    let drain_result = budget
+        .wait(async {
+            let mut first_failure = None;
+            while !process_tasks.is_empty() || !io_tasks.is_empty() {
+                tokio::select! {
+                    result = process_tasks.join_next(), if !process_tasks.is_empty() => {
+                        if let Some(Err(error)) = result
+                            && first_failure.is_none()
+                        {
+                            first_failure = Some(format!("process task failed while stopping: {error}"));
+                        }
                     }
-                    if let Some(blocking) = completion.blocking {
-                        accept_blocking(*blocking);
+                    result = io_tasks.join_next(), if !io_tasks.is_empty() => {
+                        if let Some(Err(error)) = result
+                            && first_failure.is_none()
+                        {
+                            first_failure = Some(format!("blocking I/O task failed while stopping: {error}"));
+                        }
                     }
-                    *in_flight = in_flight.saturating_sub(1);
+                    completion = receiver.recv(), if *in_flight > 0 => {
+                        if let Some(completion) = completion {
+                            accept_drained_completion(
+                                completion,
+                                in_flight,
+                                metrics,
+                                metrics_warnings,
+                                &mut accept_blocking,
+                            );
+                        }
+                    }
                 }
             }
-        }
-    }
+            first_failure
+        })
+        .await;
+
+    let process_task_count = process_tasks.len();
+    let io_task_count = io_tasks.len();
     while let Ok(completion) = receiver.try_recv() {
-        if let Some((worker, true)) = completion.process {
-            record_metrics(metrics, metrics_warnings, |metrics| {
-                metrics.process_finished(worker, false)
-            });
-        }
-        if let Some(blocking) = completion.blocking {
-            accept_blocking(*blocking);
-        }
-        *in_flight = in_flight.saturating_sub(1);
+        accept_drained_completion(
+            completion,
+            in_flight,
+            metrics,
+            metrics_warnings,
+            &mut accept_blocking,
+        );
+    }
+
+    if drain_result.is_err() {
+        process_tasks.abort_all();
+        io_tasks.abort_all();
     }
     *in_flight = 0;
-    match first_failure {
-        Some(error) => Err(error),
-        None => Ok(()),
+
+    match drain_result {
+        Ok(Some(error)) => Err(error),
+        Ok(None) => Ok(()),
+        Err(_) => Err(budget.expiry_error(process_task_count, io_task_count)),
     }
+}
+
+fn accept_drained_completion(
+    completion: ShellCompletion,
+    in_flight: &mut usize,
+    metrics: &mut Option<MetricsCollector>,
+    metrics_warnings: &mut Vec<(&'static str, String)>,
+    accept_blocking: &mut impl FnMut(BlockingEffectCompletion),
+) {
+    if let Some((worker, true)) = completion.process {
+        record_metrics(metrics, metrics_warnings, |metrics| {
+            metrics.process_finished(worker, false)
+        });
+    }
+    if let Some(blocking) = completion.blocking {
+        accept_blocking(*blocking);
+    }
+    *in_flight = in_flight.saturating_sub(1);
 }
 
 fn combine_shutdown_errors(primary: String, drain_failure: Option<String>) -> String {
@@ -1934,6 +2105,40 @@ mod tests {
     }
 
     #[test]
+    fn shutdown_budget_total_timeout_deadline_is_anchored_to_run_deadline() {
+        let now = tokio::time::Instant::now();
+        let run_deadline = now - Duration::from_secs(1);
+        let grace = Duration::from_millis(25);
+
+        let budget = ShutdownBudget::for_total_timeout_with_grace(run_deadline, grace);
+
+        assert_eq!(budget.deadline(), run_deadline + grace);
+        assert!(budget.deadline() < now);
+    }
+
+    #[test]
+    fn shutdown_budget_first_activation_cannot_be_extended() {
+        let now = tokio::time::Instant::now();
+        let first = ShutdownBudget::after_observation_with_grace(
+            ShutdownCause::Cancellation,
+            now,
+            Duration::from_millis(10),
+        );
+        let later = ShutdownBudget::after_observation_with_grace(
+            ShutdownCause::Failure,
+            now + Duration::from_secs(1),
+            Duration::from_secs(5),
+        );
+        let mut active = None;
+
+        let first_deadline = establish_shutdown_budget(&mut active, first).deadline();
+        let retained = establish_shutdown_budget(&mut active, later);
+
+        assert_eq!(retained.cause(), ShutdownCause::Cancellation);
+        assert_eq!(retained.deadline(), first_deadline);
+    }
+
+    #[test]
     fn remaining_budget_observes_live_deadline_and_preserves_effect_id() {
         let now = tokio::time::Instant::now();
         let id = EffectId(17);
@@ -2045,12 +2250,18 @@ mod tests {
         let mut in_flight = 1;
         let mut metrics = Some(MetricsCollector::new("run-1"));
         let mut warnings = Vec::new();
+        let budget = ShutdownBudget::after_observation_with_grace(
+            ShutdownCause::Cancellation,
+            tokio::time::Instant::now(),
+            Duration::from_secs(5),
+        );
 
         let mut drain = Box::pin(drain_processes(
             &mut process_tasks,
             &mut io_tasks,
             &mut receiver,
             &mut in_flight,
+            &budget,
             &mut metrics,
             &mut warnings,
             |completion| {
@@ -2078,6 +2289,126 @@ mod tests {
             b"mutated!\n"
         );
         assert!(metrics.unwrap().finish(0, 0).unwrap().workers.is_empty());
+    }
+
+    #[tokio::test]
+    async fn shutdown_drain_expiry_reports_process_and_blocking_task_counts() {
+        let mut process_tasks = JoinSet::new();
+        process_tasks.spawn(std::future::pending::<()>());
+        let mut io_tasks = JoinSet::new();
+        io_tasks.spawn(std::future::pending::<()>());
+        let (_sender, mut receiver) = mpsc::channel(1);
+        let mut in_flight = 2;
+        let mut metrics = None;
+        let mut warnings = Vec::new();
+        let budget = ShutdownBudget::after_observation_with_grace(
+            ShutdownCause::Cancellation,
+            tokio::time::Instant::now(),
+            Duration::from_millis(10),
+        );
+
+        let error = drain_processes(
+            &mut process_tasks,
+            &mut io_tasks,
+            &mut receiver,
+            &mut in_flight,
+            &budget,
+            &mut metrics,
+            &mut warnings,
+            drop,
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            "cancellation: shutdown grace expired after 2s (process tasks: 1, blocking I/O tasks: 1)"
+        );
+        assert_eq!(in_flight, 0);
+        assert!(warnings.is_empty());
+    }
+
+    #[tokio::test]
+    async fn shutdown_drain_expiry_accepts_buffered_workspace_and_process_metrics() {
+        let (_project, mut context, candidate, _retry) = context_with_worker().await;
+        let task = prepare_blocking_effect(
+            &mut context,
+            RunEffect::ApplyMutation(ApplyMutation {
+                id: EffectId(61),
+                worker: 0,
+                candidate,
+            }),
+        )
+        .unwrap();
+        assert!(context.workspace.worker(0).is_none());
+        let blocking = task.execute();
+
+        let mut metrics = Some(MetricsCollector::new("run-1"));
+        metrics.as_mut().unwrap().queued(7).unwrap();
+        metrics.as_mut().unwrap().process_started(7).unwrap();
+        let mut warnings = Vec::new();
+        let (sender, mut receiver) = mpsc::channel(2);
+        sender
+            .send(ShellCompletion {
+                event: RunEvent::CancellationRequested,
+                process_task: true,
+                io_task: false,
+                process: Some((7, true)),
+                blocking: None,
+            })
+            .await
+            .unwrap();
+        sender
+            .send(ShellCompletion {
+                event: RunEvent::CancellationRequested,
+                process_task: false,
+                io_task: true,
+                process: None,
+                blocking: Some(Box::new(blocking)),
+            })
+            .await
+            .unwrap();
+        drop(sender);
+
+        let mut process_tasks = JoinSet::new();
+        process_tasks.spawn(std::future::pending::<()>());
+        let mut io_tasks = JoinSet::new();
+        io_tasks.spawn(std::future::pending::<()>());
+        let mut in_flight = 2;
+        let budget = ShutdownBudget::for_total_timeout_with_grace(
+            tokio::time::Instant::now() - Duration::from_secs(1),
+            Duration::ZERO,
+        );
+
+        let error = drain_processes(
+            &mut process_tasks,
+            &mut io_tasks,
+            &mut receiver,
+            &mut in_flight,
+            &budget,
+            &mut metrics,
+            &mut warnings,
+            |completion| {
+                let event = accept_blocking_completion(&mut context, completion);
+                assert!(matches!(event, RunEvent::MutationApplied(_)));
+            },
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error.starts_with("total timeout: shutdown grace expired after 2s"));
+        assert_eq!(in_flight, 0);
+        assert!(warnings.is_empty());
+        assert_eq!(
+            context
+                .workspace
+                .worker(0)
+                .unwrap()
+                .read("pkg/a.py")
+                .unwrap(),
+            b"mutated!\n"
+        );
+        assert!(metrics.unwrap().finish(1, 0).unwrap().workers.is_empty());
     }
 
     #[tokio::test]
@@ -2550,12 +2881,18 @@ mod tests {
         drop(sender);
         let mut in_flight = 2;
         let mut io_tasks = JoinSet::new();
+        let budget = ShutdownBudget::after_observation_with_grace(
+            ShutdownCause::Failure,
+            tokio::time::Instant::now(),
+            Duration::from_secs(5),
+        );
 
         drain_processes(
             &mut tasks,
             &mut io_tasks,
             &mut receiver,
             &mut in_flight,
+            &budget,
             &mut metrics,
             &mut warnings,
             drop,
