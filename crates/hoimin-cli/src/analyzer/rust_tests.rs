@@ -1131,6 +1131,45 @@ fn token_operator_candidates_cover_supported_ast_roles_and_reparse() {
 }
 
 #[test]
+fn composite_comparisons_preserve_multiline_trivia_and_reparse() {
+    for (source, operator, span, original, replacement, mutated) in [
+        (
+            "result = (\n    item not  # comment\n    in items\n)\n",
+            "membership",
+            ByteSpan {
+                start: 20,
+                length: 21,
+            },
+            "not  # comment\n    in",
+            "  # comment\n    in",
+            "result = (\n    item   # comment\n    in items\n)\n",
+        ),
+        (
+            "result = (\n    left is  # comment\n    not right\n)\n",
+            "identity",
+            ByteSpan {
+                start: 20,
+                length: 21,
+            },
+            "is  # comment\n    not",
+            "is  # comment\n    ",
+            "result = (\n    left is  # comment\n     right\n)\n",
+        ),
+    ] {
+        let candidate = analyze(source)
+            .candidates
+            .into_iter()
+            .find(|candidate| candidate.operator == operator)
+            .expect("composite comparison candidate");
+
+        assert_eq!(candidate.span, span);
+        assert_eq!(candidate.original, original);
+        assert_eq!(candidate.replacement, replacement);
+        assert_eq!(apply_candidate_and_reparse(source, &candidate), mutated);
+    }
+}
+
+#[test]
 #[ignore = "benchmark harness; run explicitly in release mode"]
 fn benchmark_candidate_line_positions() {
     use std::fmt::Write as _;

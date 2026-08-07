@@ -85,15 +85,30 @@ pub(crate) fn analyze_source_cancellable(
         if facts.contains_annotation_span(range) && matches!(text, "&" | "|" | "<<" | ">>") {
             continue;
         }
-        let previous = index.checked_sub(1).and_then(|i| tokens.get(i));
-        let next = tokens.get(index + 1);
+        let previous = tokens[..index]
+            .iter()
+            .rev()
+            .copied()
+            .find(|token| !token.kind().is_trivia());
+        let next = tokens[index + 1..]
+            .iter()
+            .copied()
+            .find(|token| !token.kind().is_trivia());
+        let trivia_before_next = tokens
+            .get(index + 1)
+            .is_some_and(|token| token.kind().is_trivia());
         let (span_end, replacement, operator) = if text == "not"
             && next.is_some_and(|next| {
                 &source[usize::from(next.range().start())..usize::from(next.range().end())] == "in"
             }) {
+            let next_end = usize::from(next.unwrap().range().end());
             (
-                usize::from(next.unwrap().range().end()),
-                "in".to_owned(),
+                next_end,
+                if trivia_before_next {
+                    source[end..next_end].to_owned()
+                } else {
+                    "in".to_owned()
+                },
                 "membership",
             )
         } else if text == "is"
@@ -101,9 +116,14 @@ pub(crate) fn analyze_source_cancellable(
                 &source[usize::from(next.range().start())..usize::from(next.range().end())] == "not"
             })
         {
+            let next = next.unwrap();
             (
-                usize::from(next.unwrap().range().end()),
-                "is".to_owned(),
+                usize::from(next.range().end()),
+                if trivia_before_next {
+                    source[start..usize::from(next.range().start())].to_owned()
+                } else {
+                    "is".to_owned()
+                },
                 "identity",
             )
         } else if text == "not"
