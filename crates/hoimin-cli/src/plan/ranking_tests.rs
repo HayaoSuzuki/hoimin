@@ -1,5 +1,10 @@
+use std::collections::BTreeSet;
+
 use camino::Utf8PathBuf;
-use hoimin_core::{ByteSpan, LineRange, LineSelection, MutationCandidate, Selection, TargetSlice};
+use hoimin_core::{
+    ByteSpan, LineRange, LineSelection, MutationCandidate, MutationOperator,
+    MutationOperatorSelection, Selection, TargetSlice,
+};
 
 use super::ranking::{
     RankedPlanCandidate, RankingReason, RankingReasonCode, rank_candidates, validate_ranking,
@@ -154,23 +159,182 @@ fn ranking_compares_explicit_line_paths_with_windows_case_rules() {
 
 #[test]
 fn ranking_assigns_every_operator_to_its_fixed_category() {
-    for (operator, expected) in [
+    let cases = [
+        (
+            "compare_eq_ne",
+            reason(RankingReasonCode::HighValueControl, 100),
+        ),
+        (
+            "compare_order",
+            reason(RankingReasonCode::HighValueControl, 100),
+        ),
+        (
+            "membership",
+            reason(RankingReasonCode::HighValueControl, 100),
+        ),
+        ("identity", reason(RankingReasonCode::HighValueControl, 100)),
         (
             "boolean_and_or",
             reason(RankingReasonCode::HighValueControl, 100),
         ),
         ("binary_add_sub", reason(RankingReasonCode::Arithmetic, 70)),
         (
+            "augmented_add_sub",
+            reason(RankingReasonCode::Arithmetic, 70),
+        ),
+        ("binary_mul_div", reason(RankingReasonCode::Arithmetic, 70)),
+        (
+            "binary_floor_mod",
+            reason(RankingReasonCode::Arithmetic, 70),
+        ),
+        ("unary_sign", reason(RankingReasonCode::Arithmetic, 70)),
+        (
+            "remove_not",
+            reason(RankingReasonCode::HighValueControl, 100),
+        ),
+        (
+            "boolean_literal",
+            reason(RankingReasonCode::HighValueControl, 100),
+        ),
+        (
+            "break_continue",
+            reason(RankingReasonCode::HighValueControl, 100),
+        ),
+        (
+            "collection_any_all",
+            reason(RankingReasonCode::Behavioral, 80),
+        ),
+        (
+            "collection_list_tuple",
+            reason(RankingReasonCode::Behavioral, 80),
+        ),
+        (
+            "collection_set_frozenset",
+            reason(RankingReasonCode::Behavioral, 80),
+        ),
+        (
+            "collection_append_insert",
+            reason(RankingReasonCode::Behavioral, 80),
+        ),
+        (
+            "collection_min_max",
+            reason(RankingReasonCode::Behavioral, 80),
+        ),
+        (
+            "collection_set_add_discard",
+            reason(RankingReasonCode::Behavioral, 80),
+        ),
+        (
+            "collection_set_remove_discard",
+            reason(RankingReasonCode::Behavioral, 80),
+        ),
+        (
+            "collection_string_starts_ends",
+            reason(RankingReasonCode::Behavioral, 80),
+        ),
+        (
+            "collection_string_split_rsplit",
+            reason(RankingReasonCode::Behavioral, 80),
+        ),
+        ("bitwise_and_or", reason(RankingReasonCode::Arithmetic, 70)),
+        ("bitwise_shift", reason(RankingReasonCode::Arithmetic, 70)),
+        (
+            "structure_append_extend",
+            reason(RankingReasonCode::Behavioral, 80),
+        ),
+        (
+            "structure_mapping_get_subscript",
+            reason(RankingReasonCode::Behavioral, 80),
+        ),
+        (
+            "structure_sort_reverse",
+            reason(RankingReasonCode::Behavioral, 80),
+        ),
+        (
+            "structure_sorted_reversed",
+            reason(RankingReasonCode::Behavioral, 80),
+        ),
+        (
+            "structure_index_neighbor",
+            reason(RankingReasonCode::Behavioral, 80),
+        ),
+        (
+            "structure_slice_neighbor",
+            reason(RankingReasonCode::Behavioral, 80),
+        ),
+        (
+            "exception_type_pair",
+            reason(RankingReasonCode::ExceptionHandling, 90),
+        ),
+        (
+            "exception_bare_to_exception",
+            reason(RankingReasonCode::ExceptionHandling, 90),
+        ),
+        (
+            "exception_exception_to_bare",
+            reason(RankingReasonCode::ExceptionHandling, 90),
+        ),
+        (
+            "exception_base_boundary",
+            reason(RankingReasonCode::ExceptionHandling, 90),
+        ),
+        (
+            "exception_tuple_add_pair",
+            reason(RankingReasonCode::ExceptionHandling, 90),
+        ),
+        (
+            "exception_tuple_remove_member",
+            reason(RankingReasonCode::ExceptionHandling, 90),
+        ),
+        (
             "type_nullable_remove",
             reason(RankingReasonCode::TypeAnnotation, 50),
         ),
-    ] {
+        (
+            "type_nullable_add",
+            reason(RankingReasonCode::TypeAnnotation, 50),
+        ),
+        (
+            "type_list_sequence",
+            reason(RankingReasonCode::TypeAnnotation, 50),
+        ),
+        (
+            "type_set_abstract_set",
+            reason(RankingReasonCode::TypeAnnotation, 50),
+        ),
+        (
+            "type_dict_mapping",
+            reason(RankingReasonCode::TypeAnnotation, 50),
+        ),
+        (
+            "type_iterable_iterator",
+            reason(RankingReasonCode::TypeAnnotation, 50),
+        ),
+        (
+            "type_sequence_iterable",
+            reason(RankingReasonCode::TypeAnnotation, 50),
+        ),
+    ];
+
+    let tested = cases
+        .iter()
+        .map(|(name, _)| MutationOperator::from_name(name).expect("canonical operator name"))
+        .collect::<BTreeSet<_>>();
+    let canonical = MutationOperatorSelection::valid_names()
+        .into_iter()
+        .filter_map(MutationOperator::from_name)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(tested.len(), 43);
+    assert_eq!(tested, canonical);
+
+    for (operator, expected) in cases {
         let ranked = rank_candidates(
             &Selection::default(),
             &[],
             vec![candidate("candidate", "src/calc.py", 1, 0, operator, None)],
         );
         assert_eq!(ranked[0].ranking_reasons, [expected], "{operator}");
+        validate_ranking(&ranked).unwrap_or_else(|error| panic!("{operator}: {error}"));
     }
 }
 

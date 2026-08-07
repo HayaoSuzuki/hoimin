@@ -7,7 +7,7 @@ use hoimin_core::{
 };
 use serde::{Deserialize, Serialize};
 
-pub(crate) const RANKING_RULE_VERSION: u32 = 2;
+pub(crate) const RANKING_RULE_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -23,6 +23,8 @@ pub enum RankingReasonCode {
     ExplicitSymbol,
     ChangedLine,
     HighValueControl,
+    ExceptionHandling,
+    Behavioral,
     Arithmetic,
     TypeAnnotation,
 }
@@ -174,6 +176,8 @@ fn fixed_score(code: RankingReasonCode) -> u32 {
         RankingReasonCode::ExplicitSymbol => 250,
         RankingReasonCode::ChangedLine => 200,
         RankingReasonCode::HighValueControl => 100,
+        RankingReasonCode::ExceptionHandling => 90,
+        RankingReasonCode::Behavioral => 80,
         RankingReasonCode::Arithmetic => 70,
         RankingReasonCode::TypeAnnotation => 50,
     }
@@ -190,11 +194,34 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::RemoveNot
         | MutationOperator::BooleanLiteral
         | MutationOperator::BreakContinue => RankingReasonCode::HighValueControl,
+        MutationOperator::ExceptionTypePair
+        | MutationOperator::ExceptionBareToException
+        | MutationOperator::ExceptionExceptionToBare
+        | MutationOperator::ExceptionBaseBoundary
+        | MutationOperator::ExceptionTupleAddPair
+        | MutationOperator::ExceptionTupleRemoveMember => RankingReasonCode::ExceptionHandling,
+        MutationOperator::CollectionAnyAll
+        | MutationOperator::CollectionListTuple
+        | MutationOperator::CollectionSetFrozenset
+        | MutationOperator::CollectionAppendInsert
+        | MutationOperator::CollectionMinMax
+        | MutationOperator::CollectionSetAddDiscard
+        | MutationOperator::CollectionSetRemoveDiscard
+        | MutationOperator::CollectionStringStartsEnds
+        | MutationOperator::CollectionStringSplitRsplit
+        | MutationOperator::StructureAppendExtend
+        | MutationOperator::StructureMappingGetSubscript
+        | MutationOperator::StructureSortReverse
+        | MutationOperator::StructureSortedReversed
+        | MutationOperator::StructureIndexNeighbor
+        | MutationOperator::StructureSliceNeighbor => RankingReasonCode::Behavioral,
         MutationOperator::BinaryAddSub
         | MutationOperator::AugmentedAddSub
         | MutationOperator::BinaryMulDiv
         | MutationOperator::BinaryFloorMod
-        | MutationOperator::UnarySign => RankingReasonCode::Arithmetic,
+        | MutationOperator::UnarySign
+        | MutationOperator::BitwiseAndOr
+        | MutationOperator::BitwiseShift => RankingReasonCode::Arithmetic,
         MutationOperator::TypeNullableRemove
         | MutationOperator::TypeNullableAdd
         | MutationOperator::TypeListSequence
@@ -202,7 +229,6 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::TypeMapping
         | MutationOperator::TypeIterableIterator
         | MutationOperator::TypeSequenceIterable => RankingReasonCode::TypeAnnotation,
-        _ => return None,
     })
 }
 
@@ -210,6 +236,8 @@ fn is_operator_reason(code: RankingReasonCode) -> bool {
     matches!(
         code,
         RankingReasonCode::HighValueControl
+            | RankingReasonCode::ExceptionHandling
+            | RankingReasonCode::Behavioral
             | RankingReasonCode::Arithmetic
             | RankingReasonCode::TypeAnnotation
     )
