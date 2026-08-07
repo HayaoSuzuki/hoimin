@@ -66,7 +66,7 @@ where
 }
 
 #[cfg(test)]
-fn spawn_test_monitor<Terminate>(
+pub(crate) fn spawn_test_monitor<Terminate>(
     raw_signals: tokio::sync::mpsc::UnboundedReceiver<Result<(), String>>,
     terminate: Terminate,
 ) -> InterruptMonitor

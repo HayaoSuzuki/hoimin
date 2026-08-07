@@ -128,22 +128,26 @@ fn establish_event_shutdown_budget(
     Some(establish_shutdown_budget(active, candidate))
 }
 
-fn ensure_outer_failure_budget(
+fn ensure_outer_finalization_budget(
     active: &mut Option<ShutdownBudget>,
     run_failed: bool,
+    run_deadline: tokio::time::Instant,
     observed_at: tokio::time::Instant,
     grace: Duration,
-) {
-    if run_failed && active.is_none() {
-        establish_shutdown_budget(
-            active,
-            ShutdownBudget::after_observation_with_grace(
-                ShutdownCause::Failure,
-                observed_at,
-                grace,
-            ),
-        );
-    }
+) -> ShutdownBudget {
+    let candidate = if run_failed {
+        ShutdownBudget::after_observation_with_grace(ShutdownCause::Failure, observed_at, grace)
+    } else {
+        ShutdownBudget::for_total_timeout_with_grace(run_deadline, grace)
+    };
+    establish_shutdown_budget(active, candidate)
+}
+
+async fn finish_with_interrupt_monitor<T>(
+    _interrupts: crate::interrupt::InterruptMonitor,
+    finalization: impl Future<Output = T>,
+) -> T {
+    finalization.await
 }
 
 #[derive(Clone, Debug)]
@@ -1203,6 +1207,7 @@ where
     let mut diagnostic_run_id = initial_run_id.clone();
     let mut shutdown_budget = None;
     let mut shutdown_expiry_reported = false;
+    let mut interrupts = crate::interrupt::InterruptMonitor::spawn();
     let run_result = async {
         let mut state = Box::new(match candidate_selection {
             CandidateSelection::Explicit(candidate_ids, verification_selection) => {
@@ -1239,7 +1244,6 @@ where
         let mut in_flight = 0_usize;
         let mut io_in_flight = 0_usize;
         let mut stop_signalled = false;
-        let mut interrupts = crate::interrupt::InterruptMonitor::spawn();
 
         while state.phase() != RunPhase::Finished {
             let mut serial_completion = None;
@@ -2013,72 +2017,71 @@ where
         Ok((state.exit_code(), state.run_id().to_owned()))
     }
     .await;
-    ensure_outer_failure_budget(
-        &mut shutdown_budget,
-        run_result.is_err(),
-        tokio::time::Instant::now(),
-        shutdown_grace,
-    );
-    let close = close_context_resources(
-        &mut context,
-        shutdown_budget.as_ref(),
-        shutdown_expiry_reported,
-        Box::new(|| {}),
-    )
-    .await;
-    if close.expiry.is_some() {
-        shutdown_expiry_reported = true;
-    }
-    let mut run_result = match (run_result, close.expiry) {
-        (Ok(_), Some(expiry)) => Err(expiry),
-        (Err(primary), Some(expiry)) => Err(combine_shutdown_errors(primary, Some(expiry))),
-        (result, None) => result,
-    };
-    if let Some(path) = metrics_path {
-        match (shutdown_budget.as_ref(), shutdown_expiry_reported) {
-            (Some(budget), false) => {
-                let finalized = finalize_metrics_with_shutdown(
-                    path.as_std_path().to_owned(),
-                    metrics,
-                    run_result.as_ref().err().cloned(),
-                    discovered,
-                    executed,
-                    metrics_warnings,
-                    budget,
-                    Box::new(|| {}),
-                )
-                .await;
-                metrics_warnings = finalized.warnings;
-                if let Some(expiry) = finalized.expiry {
-                    run_result = match run_result {
-                        Ok(_) => Err(expiry),
-                        Err(primary) => Err(combine_shutdown_errors(primary, Some(expiry))),
-                    };
+    let outer_finalization = async {
+        ensure_outer_finalization_budget(
+            &mut shutdown_budget,
+            run_result.is_err(),
+            deadline,
+            tokio::time::Instant::now(),
+            shutdown_grace,
+        );
+        let close = close_context_resources(
+            &mut context,
+            shutdown_budget
+                .as_ref()
+                .expect("outer finalization established a shutdown budget"),
+            shutdown_expiry_reported,
+            Box::new(|| {}),
+        )
+        .await;
+        if close.expiry.is_some() {
+            shutdown_expiry_reported = true;
+        }
+        let mut run_result = match (run_result, close.expiry) {
+            (Ok(_), Some(expiry)) => Err(expiry),
+            (Err(primary), Some(expiry)) => Err(combine_shutdown_errors(primary, Some(expiry))),
+            (result, None) => result,
+        };
+        if let Some(path) = metrics_path {
+            match (shutdown_budget.as_ref(), shutdown_expiry_reported) {
+                (Some(budget), false) => {
+                    let finalized = finalize_metrics_with_shutdown(
+                        path.as_std_path().to_owned(),
+                        metrics,
+                        run_result.as_ref().err().cloned(),
+                        discovered,
+                        executed,
+                        metrics_warnings,
+                        budget,
+                        Box::new(|| {}),
+                    )
+                    .await;
+                    metrics_warnings = finalized.warnings;
+                    if let Some(expiry) = finalized.expiry {
+                        run_result = match run_result {
+                            Ok(_) => Err(expiry),
+                            Err(primary) => Err(combine_shutdown_errors(primary, Some(expiry))),
+                        };
+                    }
                 }
+                (Some(_), true) => skip_expired_metrics_finalization(
+                    metrics,
+                    run_result.as_ref().err().map(String::as_str),
+                    &mut metrics_warnings,
+                ),
+                (None, _) => unreachable!("outer finalization always has a shutdown budget"),
             }
-            (Some(_), true) => skip_expired_metrics_finalization(
-                metrics,
-                run_result.as_ref().err().map(String::as_str),
-                &mut metrics_warnings,
-            ),
-            (None, _) => finalize_metrics(
-                path.as_std_path(),
-                metrics,
-                run_result.as_ref().err().map(String::as_str),
-                discovered,
-                executed,
-                &mut metrics_warnings,
-            ),
+            for (code, message) in metrics_warnings {
+                emit_metrics_warning(&mut context, &diagnostic_run_id, code, message);
+            }
         }
-        for (code, message) in metrics_warnings {
-            emit_metrics_warning(&mut context, &diagnostic_run_id, code, message);
-        }
-    }
-    combine_close_results(
-        run_result.map(|(exit_code, _)| exit_code),
-        close.workspace,
-        close.process,
-    )
+        combine_close_results(
+            run_result.map(|(exit_code, _)| exit_code),
+            close.workspace,
+            close.process,
+        )
+    };
+    finish_with_interrupt_monitor(interrupts, outer_finalization).await
 }
 
 fn track_diagnostic_run_id(diagnostic_run_id: &mut String, state: &RunState) {
@@ -2457,39 +2460,36 @@ struct ResourceCloseResults {
     expiry: Option<String>,
 }
 
-enum ResourceCloseTaskResult {
-    Completed(Box<ResourceCloseCompletion>),
-    ExpiredBeforeStart,
-    OwnershipAbandoned,
-}
-
 type OwnedStartHook = Box<dyn FnOnce() + Send + 'static>;
 
-fn abandon_context_resources<Stdout, Stderr>(context: &mut ShellContext<Stdout, Stderr>) {
-    if let Some(workspace) = context.workspace.take() {
-        std::mem::forget(workspace);
-    }
-    std::mem::forget(Arc::clone(&context.process));
+fn detach_resource_cleanup(
+    mut workspace: Option<WorkspaceHandler>,
+    process: Arc<ProcessHandler>,
+    before_start: OwnedStartHook,
+) {
+    drop(tokio::task::spawn_blocking(move || {
+        before_start();
+        let _ = process.close();
+        if let Some(workspace) = workspace.as_mut() {
+            let _ = workspace.close();
+        }
+    }));
 }
 
-fn abandon_workspace_slot(slot: &std::sync::Mutex<Option<WorkspaceHandler>>) {
-    let workspace = match slot.lock() {
-        Ok(mut slot) => slot.take(),
-        Err(poisoned) => poisoned.into_inner().take(),
-    };
-    if let Some(workspace) = workspace {
-        std::mem::forget(workspace);
-    }
+fn detach_context_resources<Stdout, Stderr>(
+    context: &mut ShellContext<Stdout, Stderr>,
+    before_start: OwnedStartHook,
+) {
+    detach_resource_cleanup(
+        context.workspace.take(),
+        Arc::clone(&context.process),
+        before_start,
+    );
 }
 
-#[expect(
-    clippy::too_many_lines,
-    clippy::single_match_else,
-    reason = "the close boundary keeps ownership transfer, expiry abandonment, and normal close results together"
-)]
 async fn close_context_resources<Stdout, Stderr>(
     context: &mut ShellContext<Stdout, Stderr>,
-    budget: Option<&ShutdownBudget>,
+    budget: &ShutdownBudget,
     shutdown_already_expired: bool,
     before_start: OwnedStartHook,
 ) -> ResourceCloseResults
@@ -2498,18 +2498,16 @@ where
     Stderr: Write,
 {
     if shutdown_already_expired {
-        abandon_context_resources(context);
+        detach_context_resources(context, before_start);
         return ResourceCloseResults {
             workspace: Ok(()),
             process: Ok(()),
             expiry: None,
         };
     }
-    if let Some(budget) = budget
-        && tokio::time::Instant::now() >= budget.deadline()
-    {
+    if tokio::time::Instant::now() >= budget.deadline() {
         let expiry = budget.expiry_error(0, 0);
-        abandon_context_resources(context);
+        detach_context_resources(context, before_start);
         return ResourceCloseResults {
             workspace: Ok(()),
             process: Ok(()),
@@ -2524,88 +2522,33 @@ where
         };
     };
     let process = Arc::clone(&context.process);
-    let completion = match budget {
-        Some(budget) => {
-            let slot = Arc::new(std::sync::Mutex::new(Some(workspace)));
-            let task_slot = Arc::clone(&slot);
-            let deadline = budget.deadline();
-            let mut task = tokio::task::spawn_blocking(move || {
-                before_start();
-                if tokio::time::Instant::now() >= deadline {
-                    return ResourceCloseTaskResult::ExpiredBeforeStart;
-                }
-                let workspace = match task_slot.lock() {
-                    Ok(mut slot) => slot.take(),
-                    Err(poisoned) => poisoned.into_inner().take(),
-                };
-                let Some(mut workspace) = workspace else {
-                    return ResourceCloseTaskResult::OwnershipAbandoned;
-                };
-                let process_result = process.close().map_err(|error| error.to_string());
-                let workspace_result = workspace.close().map_err(|error| error.to_string());
-                ResourceCloseTaskResult::Completed(Box::new(ResourceCloseCompletion {
-                    workspace,
-                    workspace_result,
-                    process_result,
-                }))
-            });
-            match budget.wait(&mut task).await {
-                Ok(Ok(ResourceCloseTaskResult::Completed(completion))) => *completion,
-                Ok(Ok(
-                    ResourceCloseTaskResult::ExpiredBeforeStart
-                    | ResourceCloseTaskResult::OwnershipAbandoned,
-                )) => {
-                    abandon_workspace_slot(&slot);
-                    std::mem::forget(Arc::clone(&context.process));
-                    return ResourceCloseResults {
-                        workspace: Ok(()),
-                        process: Ok(()),
-                        expiry: Some(budget.expiry_error(0, 0)),
-                    };
-                }
-                Ok(Err(error)) => {
-                    abandon_workspace_slot(&slot);
-                    std::mem::forget(Arc::clone(&context.process));
-                    return ResourceCloseResults {
-                        workspace: Err(format!("blocking I/O task failed: {error}")),
-                        process: Ok(()),
-                        expiry: None,
-                    };
-                }
-                Err(_) => {
-                    task.abort();
-                    abandon_workspace_slot(&slot);
-                    std::mem::forget(Arc::clone(&context.process));
-                    return ResourceCloseResults {
-                        workspace: Ok(()),
-                        process: Ok(()),
-                        expiry: Some(budget.expiry_error(0, 1)),
-                    };
-                }
-            }
+    let mut task = tokio::task::spawn_blocking(move || {
+        before_start();
+        let mut workspace = workspace;
+        let process_result = process.close().map_err(|error| error.to_string());
+        let workspace_result = workspace.close().map_err(|error| error.to_string());
+        ResourceCloseCompletion {
+            workspace,
+            workspace_result,
+            process_result,
         }
-        None => {
-            let operation = move || {
-                before_start();
-                let process_result = process.close().map_err(|error| error.to_string());
-                let mut workspace = workspace;
-                let workspace_result = workspace.close().map_err(|error| error.to_string());
-                ResourceCloseCompletion {
-                    workspace,
-                    workspace_result,
-                    process_result,
-                }
+    });
+    let completion = match budget.wait(&mut task).await {
+        Ok(Ok(completion)) => completion,
+        Ok(Err(error)) => {
+            return ResourceCloseResults {
+                workspace: Err(format!("blocking I/O task failed: {error}")),
+                process: Ok(()),
+                expiry: None,
             };
-            match tokio::task::spawn_blocking(operation).await {
-                Ok(completion) => completion,
-                Err(error) => {
-                    return ResourceCloseResults {
-                        workspace: Err(format!("blocking I/O task failed: {error}")),
-                        process: Ok(()),
-                        expiry: None,
-                    };
-                }
-            }
+        }
+        Err(_) => {
+            drop(task);
+            return ResourceCloseResults {
+                workspace: Ok(()),
+                process: Ok(()),
+                expiry: Some(budget.expiry_error(0, 1)),
+            };
         }
     };
     context.workspace = Some(completion.workspace);
@@ -2816,6 +2759,26 @@ mod tests {
         (project, context, candidate, retry)
     }
 
+    async fn wait_until_path_is_removed(path: &Utf8Path) {
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while path.exists() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("detached cleanup did not remove {path}"));
+    }
+
+    async fn wait_until_process_handler_is_released(process: &std::sync::Weak<ProcessHandler>) {
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while process.strong_count() != 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("detached cleanup retained process backend ownership");
+    }
+
     #[test]
     fn diagnostic_run_id_tracks_a_session_adopted_id() {
         let config = crate::cli::parse_config_from([
@@ -2888,7 +2851,13 @@ mod tests {
         let now = tokio::time::Instant::now();
         let mut active = None;
 
-        ensure_outer_failure_budget(&mut active, true, now, Duration::from_millis(70));
+        ensure_outer_finalization_budget(
+            &mut active,
+            true,
+            now + Duration::from_secs(10),
+            now,
+            Duration::from_millis(70),
+        );
 
         let budget = active.unwrap();
         assert_eq!(budget.cause(), ShutdownCause::Failure);
@@ -3006,30 +2975,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn final_close_is_not_started_after_the_shared_deadline() {
-        let config = crate::cli::parse_config_from([
-            "hoimin",
-            "run",
-            "--root",
-            ".",
-            "--source",
-            ".",
-            "--allow-best-effort-memory",
-            "--",
-            "unused-test-command",
-        ])
-        .unwrap();
-        let mut context = ShellContext::new(&config, Vec::new(), Vec::new())
-            .await
-            .unwrap();
+    async fn expired_final_close_detaches_cleanup_without_extending_the_wait() {
+        let (_project, mut context, _candidate, _create) = context_with_worker().await;
+        let worker_root = context.workspace().worker(0).unwrap().root().to_owned();
         let budget = ShutdownBudget::for_total_timeout_with_grace(
             tokio::time::Instant::now() - Duration::from_secs(1),
             Duration::ZERO,
         );
+        let started = Instant::now();
 
-        let close =
-            close_context_resources(&mut context, Some(&budget), false, Box::new(|| {})).await;
+        let close = close_context_resources(&mut context, &budget, false, Box::new(|| {})).await;
 
+        assert!(started.elapsed() < Duration::from_millis(200));
         assert!(
             close
                 .expiry
@@ -3037,26 +2994,35 @@ mod tests {
         );
         assert!(
             context.workspace.is_none(),
-            "expired finalization must abandon ownership without running Drop cleanup"
+            "detached cleanup owns the workspace after expiry"
         );
+        wait_until_path_is_removed(&worker_root).await;
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn final_close_rechecks_deadline_on_the_blocking_thread_before_taking_workspace() {
+    async fn successful_run_outer_close_uses_the_original_deadline_and_detaches_cleanup() {
         let (project, mut context, _candidate, _create) = context_with_worker().await;
         let worker_root = context.workspace().worker(0).unwrap().root().to_owned();
-        let budget = ShutdownBudget::after_observation_with_grace(
-            ShutdownCause::Cancellation,
+        let process = Arc::downgrade(&context.process);
+        let run_deadline = tokio::time::Instant::now() + Duration::from_millis(20);
+        let grace = Duration::from_millis(20);
+        let mut active = None;
+        let budget = ensure_outer_finalization_budget(
+            &mut active,
+            false,
+            run_deadline,
             tokio::time::Instant::now(),
-            Duration::from_millis(40),
+            grace,
         );
+        assert_eq!(budget.cause(), ShutdownCause::TotalTimeout);
+        assert_eq!(budget.deadline(), run_deadline + grace);
         let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
         let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
 
         let close = tokio::spawn(async move {
             let result = close_context_resources(
                 &mut context,
-                Some(&budget),
+                &budget,
                 false,
                 Box::new(move || {
                     entered_tx.send(()).unwrap();
@@ -3069,25 +3035,29 @@ mod tests {
         entered_rx.await.unwrap();
         tokio::time::sleep(Duration::from_millis(60)).await;
         let (_project, context, close) = close.await.unwrap();
-        release_tx.send(()).unwrap();
-        tokio::time::sleep(Duration::from_millis(10)).await;
-
         assert!(close.expiry.is_some());
         assert!(context.workspace.is_none());
-        assert!(
-            worker_root.exists(),
-            "workspace close or Drop cleanup ran after the shared deadline"
-        );
+        assert!(worker_root.exists(), "cleanup must still be paused");
+        drop(context);
+
+        release_tx.send(()).unwrap();
+        wait_until_path_is_removed(&worker_root).await;
+        wait_until_process_handler_is_released(&process).await;
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn metrics_write_rechecks_shutdown_deadline_on_the_blocking_thread() {
+    async fn successful_run_metrics_use_the_original_total_timeout_deadline() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("metrics.json");
-        let budget = ShutdownBudget::after_observation_with_grace(
-            ShutdownCause::Cancellation,
+        let run_deadline = tokio::time::Instant::now() + Duration::from_millis(20);
+        let grace = Duration::from_millis(20);
+        let mut active = None;
+        let budget = ensure_outer_finalization_budget(
+            &mut active,
+            false,
+            run_deadline,
             tokio::time::Instant::now(),
-            Duration::from_millis(40),
+            grace,
         );
         let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
         let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
@@ -3120,6 +3090,36 @@ mod tests {
             !path.exists(),
             "metrics write started after shutdown expiry"
         );
+    }
+
+    #[tokio::test]
+    async fn interrupt_monitor_remains_live_while_outer_finalization_is_pending() {
+        let (signal_tx, signal_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (forced_tx, forced_rx) = tokio::sync::oneshot::channel();
+        let monitor = crate::interrupt::spawn_test_monitor(signal_rx, move |code| {
+            let _ = forced_tx.send(code);
+        });
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let finalization = finish_with_interrupt_monitor(monitor, async move {
+            let _ = release_rx.await;
+        });
+        tokio::pin!(finalization);
+
+        tokio::select! {
+            () = &mut finalization => panic!("outer finalization was not released"),
+            () = tokio::task::yield_now() => {}
+        }
+        signal_tx.send(Ok(())).unwrap();
+        signal_tx.send(Ok(())).unwrap();
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), forced_rx)
+                .await
+                .expect("second signal must retain process-level precedence")
+                .unwrap(),
+            130
+        );
+        release_tx.send(()).unwrap();
+        finalization.await;
     }
 
     #[test]
