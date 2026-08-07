@@ -1525,6 +1525,146 @@ async fn total_timeout_cancels_and_reaps_descendants_before_cleanup() {
     assert_eq!(run.document["summary"]["complete"], false);
 }
 
+#[cfg(any(unix, windows))]
+#[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the subprocess assertion keeps lock ownership, pipe drains, and failure-safe teardown in one scope"
+)]
+async fn total_timeout_exits_after_grace_when_session_finish_is_locked() {
+    let project = tempfile::tempdir().unwrap();
+    let coordinator = tempfile::tempdir().unwrap();
+    write_parallel_project(project.path());
+    let session = coordinator.path().join("session.sqlite3");
+    let started_at = Instant::now();
+    let (mut child, active, descendant_ready) = spawn_interrupt_fixture(
+        project.path(),
+        coordinator.path(),
+        &session,
+        "jsonl",
+        &["--total-timeout", "5s"],
+    );
+    let stdout_pipe = child.stdout.take().unwrap();
+    let stderr_pipe = child.stderr.take().unwrap();
+    let (mutant_started_tx, mutant_started_rx) = tokio::sync::oneshot::channel();
+    let stdout_task = tokio::spawn(async move {
+        let mut reader = BufReader::new(stdout_pipe);
+        let mut stdout = Vec::new();
+        let mut mutant_started_tx = Some(mutant_started_tx);
+        loop {
+            let mut line = Vec::new();
+            let bytes = reader.read_until(b'\n', &mut line).await?;
+            if bytes == 0 {
+                if let Some(mutant_started_tx) = mutant_started_tx.take() {
+                    let _ = mutant_started_tx
+                        .send(Err("stdout closed before mutant_started".to_owned()));
+                }
+                break;
+            }
+            if mutant_started_tx.is_some()
+                && serde_json::from_slice::<serde_json::Value>(&line)
+                    .ok()
+                    .is_some_and(|event| event["kind"] == "mutant_started")
+            {
+                let sender = mutant_started_tx.take().expect("sender checked above");
+                let _ = sender.send(Ok(()));
+            }
+            stdout.extend_from_slice(&line);
+        }
+        Ok::<_, std::io::Error>(stdout)
+    });
+    let stderr_task = tokio::spawn(async move {
+        let mut reader = stderr_pipe;
+        let mut stderr = Vec::new();
+        reader.read_to_end(&mut stderr).await.map(|_| stderr)
+    });
+    let mut fixture_processes = None;
+    let outcome: Result<_, String> = async {
+        // Allow readiness observation to outlive the child's five-second run deadline;
+        // the absolute elapsed assertion below still enforces deadline + grace.
+        tokio::time::timeout(Duration::from_secs(7), mutant_started_rx)
+            .await
+            .map_err(|_| "timed out waiting for JSONL kind mutant_started".to_owned())?
+            .map_err(|_| "stdout drain task stopped before mutant_started".to_owned())??;
+        fixture_processes = Some(
+            try_wait_for_fixture_processes(&active, &descendant_ready, Duration::from_secs(3))
+                .await?,
+        );
+        let lock = begin_immediate_with_retry(&session, Duration::from_secs(1)).await?;
+        let lock_acquired = started_at.elapsed();
+        let status = tokio::time::timeout(Duration::from_secs(9), child.wait())
+            .await
+            .map_err(|_| "hoimin exceeded total timeout plus shutdown grace".to_owned())?
+            .map_err(|error| error.to_string())?;
+        let descendant_stopped = fixture_processes
+            .as_ref()
+            .expect("assigned above")
+            .descendant
+            .wait_until_stops(Duration::from_secs(2))
+            .await;
+        Ok((
+            status,
+            started_at.elapsed(),
+            lock_acquired,
+            lock,
+            descendant_stopped,
+        ))
+    }
+    .await;
+
+    let child_cleanup = reap_test_child(&mut child).await;
+    #[cfg(unix)]
+    let process_cleanup = kill_fixture_processes(&active, &descendant_ready).await;
+    #[cfg(windows)]
+    let process_cleanup = kill_fixture_processes(fixture_processes.as_ref()).await;
+    let stdout = stdout_task
+        .await
+        .expect("stdout drain task must not panic")
+        .map_err(|error| error.to_string());
+    let stderr = stderr_task
+        .await
+        .expect("stderr drain task must not panic")
+        .map_err(|error| error.to_string());
+    if let Err(error) = child_cleanup.and(process_cleanup) {
+        panic!("test teardown failed: {error}; outcome={outcome:?}");
+    }
+    let (status, elapsed, lock_acquired, lock, descendant_stopped) =
+        outcome.unwrap_or_else(|error| {
+            panic!("locked-session timeout scenario failed after successful teardown: {error}")
+        });
+    let stdout = String::from_utf8(
+        stdout.unwrap_or_else(|error| panic!("could not drain JSONL stdout: {error}")),
+    )
+    .unwrap();
+    let stderr = String::from_utf8(
+        stderr.unwrap_or_else(|error| panic!("could not drain timeout stderr: {error}")),
+    )
+    .unwrap();
+
+    assert_eq!(status.code(), Some(2), "stderr={stderr} stdout={stdout}");
+    assert!(
+        lock_acquired < Duration::from_secs(5),
+        "session lock was acquired after the run deadline: {lock_acquired:?}"
+    );
+    assert!(elapsed < Duration::from_secs(9), "elapsed={elapsed:?}");
+    assert!(stderr.contains("total timeout"), "{stderr}");
+    assert!(stderr.contains("shutdown grace expired"), "{stderr}");
+    let events = stdout
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert!(
+        !events.iter().any(|event| event["kind"] == "run_finished"),
+        "blocked FinishSession must not emit run_finished: {stdout}"
+    );
+    let complete: i64 = lock
+        .query_row("SELECT complete FROM runs", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(complete, 0);
+    assert!(!lock.is_autocommit());
+    assert!(descendant_stopped, "timed-out descendant outlived the run");
+}
+
 #[tokio::test]
 async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_incomplete() {
     let project = tempfile::tempdir().unwrap();
@@ -1628,7 +1768,7 @@ async fn first_interrupt_scenario() {
     write_parallel_project(project.path());
     let session = coordinator.path().join("session.sqlite3");
     let (mut child, active, descendant_ready) =
-        spawn_interrupt_fixture(project.path(), coordinator.path(), &session, "json");
+        spawn_interrupt_fixture(project.path(), coordinator.path(), &session, "json", &[]);
     // Drain stdout while the child is running; a complete JSON report can exceed the pipe buffer.
     let mut stdout_reader = child.stdout.take().unwrap();
     let stdout_task = tokio::spawn(async move {
@@ -2869,7 +3009,7 @@ fn spawn_second_interrupt_fixture(
     coordinator: &Path,
     session: &Path,
 ) -> (tokio::process::Child, PathBuf, PathBuf) {
-    spawn_interrupt_fixture(project, coordinator, session, "jsonl")
+    spawn_interrupt_fixture(project, coordinator, session, "jsonl", &[])
 }
 
 #[cfg(any(unix, windows))]
@@ -2878,6 +3018,7 @@ fn spawn_interrupt_fixture(
     coordinator: &Path,
     session: &Path,
     format: &str,
+    extra_run_args: &[&str],
 ) -> (tokio::process::Child, PathBuf, PathBuf) {
     let active = coordinator.join("active");
     std::fs::create_dir(&active).unwrap();
@@ -2913,6 +3054,7 @@ fn spawn_interrupt_fixture(
         .arg("--format")
         .arg(format)
         .arg("--allow-best-effort-memory")
+        .args(extra_run_args)
         .arg("--")
         .arg(python_executable())
         .arg("-c")
