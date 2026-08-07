@@ -31,7 +31,7 @@ fn apply_candidate_and_reparse(source: &str, candidate: &super::AnalyzerCandidat
 fn clean_collection_builtin_calls_remain_eligible_for_ast_collection() {
     let source = "result = any(items)\n";
     let parsed = parse_module(source).expect("clean builtin call parses");
-    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens());
+    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
 
     assert!(!facts.is_builtin_bound("any"));
 }
@@ -40,7 +40,7 @@ fn clean_collection_builtin_calls_remain_eligible_for_ast_collection() {
 fn comprehension_targets_bind_collection_builtins() {
     let source = "result = [list(item) for list in factories]\n";
     let parsed = parse_module(source).expect("comprehension fixture parses");
-    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens());
+    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
 
     assert!(facts.is_builtin_bound("list"));
 }
@@ -49,7 +49,7 @@ fn comprehension_targets_bind_collection_builtins() {
 fn annotated_augmented_and_lambda_bindings_are_conservative() {
     let source = "tuple: object = custom_tuple\nmax += value\nmapper = lambda *, sorted, **reversed: (sorted, reversed)\n";
     let parsed = parse_module(source).expect("binding fixture parses");
-    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens());
+    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
 
     for name in ["tuple", "max", "sorted", "reversed"] {
         assert!(facts.is_builtin_bound(name), "expected {name} to be bound");
@@ -58,9 +58,9 @@ fn annotated_augmented_and_lambda_bindings_are_conservative() {
 
 #[test]
 fn exception_bindings_are_conservative() {
-    let clean = parse_module("try:\n    work()\nexcept ValueError:\n    pass\n")
-        .expect("clean exception fixture parses");
-    let clean_facts = super::AstFacts::from_module(clean.syntax(), clean.tokens());
+    let clean_source = "try:\n    work()\nexcept ValueError:\n    pass\n";
+    let clean = parse_module(clean_source).expect("clean exception fixture parses");
+    let clean_facts = super::AstFacts::from_module(clean.syntax(), clean.tokens(), clean_source);
     assert!(!clean_facts.is_exception_bound("ValueError"));
 
     for (source, name) in [
@@ -78,7 +78,7 @@ fn exception_bindings_are_conservative() {
         ),
     ] {
         let parsed = parse_module(source).expect("exception binding fixture parses");
-        let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens());
+        let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
         assert!(
             facts.is_exception_bound(name),
             "expected {name} bound in {source:?}"
@@ -478,7 +478,7 @@ fn annotations_and_star_imports_suppress_collection_candidates() {
 fn shadowed_collection_builtins_are_not_mutated_as_calls() {
     let source = "any = custom_any\nfrom helpers import all\ndef list(tuple):\n    min = custom_min\n    for max in items:\n        pass\n    with resource as sorted:\n        pass\n    try:\n        pass\n    except Error as reversed:\n        pass\n    if (frozenset := custom_frozenset):\n        return list(items), tuple(items), set(items), frozenset(items), min(items), max(items), sorted(items), reversed(items)\nclass set:\n    pass\n";
     let parsed = parse_module(source).expect("shadowing fixture parses");
-    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens());
+    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
     for name in [
         "any",
         "all",
@@ -1026,6 +1026,149 @@ fn candidate_replacements_reparse_as_python() {
     );
 }
 
+const TOKEN_OPERATOR_NAMES: &[&str] = &[
+    "augmented_add_sub",
+    "binary_add_sub",
+    "binary_floor_mod",
+    "binary_mul_div",
+    "bitwise_and_or",
+    "bitwise_shift",
+    "boolean_and_or",
+    "boolean_literal",
+    "break_continue",
+    "compare_eq_ne",
+    "compare_order",
+    "identity",
+    "membership",
+    "remove_not",
+    "unary_sign",
+];
+
+#[test]
+fn token_operator_candidates_cover_supported_ast_roles_and_reparse() {
+    let source = concat!(
+        "equal = left == right\n",
+        "unequal = left != right\n",
+        "ordered = first < second <= third > fourth >= fifth\n",
+        "member = item in items\n",
+        "not_member = item not in items\n",
+        "same = left is right\n",
+        "not_same = left is not right\n",
+        "both = left and right\n",
+        "either = left or right\n",
+        "sum_value = left + right - extra\n",
+        "positive = +value\n",
+        "negative = -value\n",
+        "product = left * right / divisor\n",
+        "remainder = left // right % divisor\n",
+        "bits = left & right | extra\n",
+        "shifted = left << right >> extra\n",
+        "value += increment\n",
+        "value -= decrement\n",
+        "inverted = not value\n",
+        "truth = True\n",
+        "falsity = False\n",
+        "while active:\n    break\n",
+        "while pending:\n    continue\n",
+    );
+    let output = analyze(source);
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| TOKEN_OPERATOR_NAMES.contains(&candidate.operator.as_str()))
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        candidates,
+        vec![
+            ("==", "!=", "compare_eq_ne"),
+            ("!=", "==", "compare_eq_ne"),
+            ("<", "<=", "compare_order"),
+            ("<=", "<", "compare_order"),
+            (">", ">=", "compare_order"),
+            (">=", ">", "compare_order"),
+            ("in", "not in", "membership"),
+            ("not in", "in", "membership"),
+            ("is", "is not", "identity"),
+            ("is not", "is", "identity"),
+            ("and", "or", "boolean_and_or"),
+            ("or", "and", "boolean_and_or"),
+            ("+", "-", "binary_add_sub"),
+            ("-", "+", "binary_add_sub"),
+            ("+", "-", "unary_sign"),
+            ("-", "+", "unary_sign"),
+            ("*", "/", "binary_mul_div"),
+            ("/", "*", "binary_mul_div"),
+            ("//", "%", "binary_floor_mod"),
+            ("%", "//", "binary_floor_mod"),
+            ("&", "|", "bitwise_and_or"),
+            ("|", "&", "bitwise_and_or"),
+            ("<<", ">>", "bitwise_shift"),
+            (">>", "<<", "bitwise_shift"),
+            ("+=", "-=", "augmented_add_sub"),
+            ("-=", "+=", "augmented_add_sub"),
+            ("not value", "value", "remove_not"),
+            ("True", "False", "boolean_literal"),
+            ("False", "True", "boolean_literal"),
+            ("break", "continue", "break_continue"),
+            ("continue", "break", "break_continue"),
+        ]
+    );
+    for candidate in output
+        .candidates
+        .iter()
+        .filter(|candidate| TOKEN_OPERATOR_NAMES.contains(&candidate.operator.as_str()))
+    {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
+fn composite_comparisons_preserve_multiline_trivia_and_reparse() {
+    for (source, operator, span, original, replacement, mutated) in [
+        (
+            "result = (\n    item not  # comment\n    in items\n)\n",
+            "membership",
+            ByteSpan {
+                start: 20,
+                length: 21,
+            },
+            "not  # comment\n    in",
+            "  # comment\n    in",
+            "result = (\n    item   # comment\n    in items\n)\n",
+        ),
+        (
+            "result = (\n    left is  # comment\n    not right\n)\n",
+            "identity",
+            ByteSpan {
+                start: 20,
+                length: 21,
+            },
+            "is  # comment\n    not",
+            "is  # comment\n    ",
+            "result = (\n    left is  # comment\n     right\n)\n",
+        ),
+    ] {
+        let candidate = analyze(source)
+            .candidates
+            .into_iter()
+            .find(|candidate| candidate.operator == operator)
+            .expect("composite comparison candidate");
+
+        assert_eq!(candidate.span, span);
+        assert_eq!(candidate.original, original);
+        assert_eq!(candidate.replacement, replacement);
+        assert_eq!(apply_candidate_and_reparse(source, &candidate), mutated);
+    }
+}
+
 #[test]
 #[ignore = "benchmark harness; run explicitly in release mode"]
 fn benchmark_candidate_line_positions() {
@@ -1195,11 +1338,7 @@ fn focused_profile_suppresses_main_print_assert_and_defaults() {
         .collect();
     assert_eq!(
         descriptors,
-        vec![
-            (5, "binary_add_sub"),
-            (7, "binary_mul_div"),
-            (8, "binary_add_sub"),
-        ]
+        vec![(5, "binary_add_sub"), (8, "binary_add_sub"),]
     );
 }
 
@@ -1694,6 +1833,62 @@ fn type_annotations_respect_line_and_symbol_filters() {
         ]
     );
 }
+#[test]
+fn grammar_tokens_do_not_emit_expression_operator_mutations() {
+    let source = concat!(
+        "from package import *\n",
+        "for item in items:\n    pass\n",
+        "values = [item for item in items]\n",
+        "result = call(*args, **kwargs)\n",
+        "match value:\n    case left | right:\n        pass\n",
+        "member = item in items\n",
+        "product = left * right\n",
+        "union = left | right\n",
+        "nested_membership = [item for item in items] == values\n",
+        "nested_unpacking = call(*args) * value\n",
+    );
+    let output = analyze(source);
+    assert!(!output.candidates.iter().any(|candidate| {
+        candidate.line <= 8
+            && matches!(
+                candidate.operator.as_str(),
+                "membership" | "binary_mul_div" | "bitwise_and_or"
+            )
+    }));
+    assert!(
+        output
+            .candidates
+            .iter()
+            .any(|candidate| candidate.line == 9 && candidate.operator == "membership")
+    );
+    assert!(
+        output
+            .candidates
+            .iter()
+            .any(|candidate| candidate.line == 10 && candidate.operator == "binary_mul_div")
+    );
+    assert!(
+        output
+            .candidates
+            .iter()
+            .any(|candidate| candidate.line == 11 && candidate.operator == "bitwise_and_or")
+    );
+    assert!(
+        !output
+            .candidates
+            .iter()
+            .any(|candidate| candidate.line == 12 && candidate.operator == "membership")
+    );
+    assert_eq!(
+        output
+            .candidates
+            .iter()
+            .filter(|candidate| { candidate.line == 13 && candidate.operator == "binary_mul_div" })
+            .count(),
+        1
+    );
+}
+
 proptest! {
     #[test]
     fn arbitrary_python_input_has_ordered_in_bounds_candidates(source in ".{0,4096}") {

@@ -64,6 +64,16 @@ structural rewrites to one contiguous AST span; build the replacement from the
 original source text so nested expressions, comments, and spelling are
 preserved.
 
+Raw-token replacements are restricted to the AST-proven token-start allowlist
+recorded by `AstFacts`. It records only the operator spellings in the precise
+AST gaps for their supported roles, such as comparisons, boolean and binary
+expressions, unary expressions, augmented assignments, boolean literals, and
+`break`/`continue`. A token with an ambiguous grammatical role is skipped
+conservatively: matching text alone is never enough to make it a candidate.
+Annotation-span exclusions remain in effect, and this gate does not change the
+existing selection, profile filtering, deduplication, source ordering, or
+candidate-limit behavior.
+
 Bare builtin calls (`any`, `all`, `list`, `tuple`, `set`, `frozenset`, `min`,
 `max`, `sorted`, and `reversed`) are suppressed if the matching name is bound
 anywhere in the file. Bindings include imports, assignments, definitions, and
@@ -88,10 +98,11 @@ expression bounds are excluded. Comprehensions, assignment/delete targets,
 the `append`/`pop` pair, and set literals wrapped as `frozenset(...)` are not
 supported transformations.
 
-Tests should use `apply_candidate_and_reparse` to replace the candidate's one
-span in its source and verify `ruff_python_parser::parse_module` accepts the
-result. Keep exact candidate/replacement assertions alongside this
-parse-preservation check.
+Regression tests should use `apply_candidate_and_reparse` to replace the
+candidate's one span in its source and verify
+`ruff_python_parser::parse_module` accepts the result. This is a test-only
+invariant; production does not parse each candidate separately. Keep exact
+candidate/replacement assertions alongside this parse-preservation check.
 
 Run focused analyzer tests while changing these rules:
 
