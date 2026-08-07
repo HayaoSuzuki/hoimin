@@ -31,7 +31,7 @@ fn apply_candidate_and_reparse(source: &str, candidate: &super::AnalyzerCandidat
 fn clean_collection_builtin_calls_remain_eligible_for_ast_collection() {
     let source = "result = any(items)\n";
     let parsed = parse_module(source).expect("clean builtin call parses");
-    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens());
+    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
 
     assert!(!facts.is_builtin_bound("any"));
 }
@@ -40,7 +40,7 @@ fn clean_collection_builtin_calls_remain_eligible_for_ast_collection() {
 fn comprehension_targets_bind_collection_builtins() {
     let source = "result = [list(item) for list in factories]\n";
     let parsed = parse_module(source).expect("comprehension fixture parses");
-    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens());
+    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
 
     assert!(facts.is_builtin_bound("list"));
 }
@@ -49,7 +49,7 @@ fn comprehension_targets_bind_collection_builtins() {
 fn annotated_augmented_and_lambda_bindings_are_conservative() {
     let source = "tuple: object = custom_tuple\nmax += value\nmapper = lambda *, sorted, **reversed: (sorted, reversed)\n";
     let parsed = parse_module(source).expect("binding fixture parses");
-    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens());
+    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
 
     for name in ["tuple", "max", "sorted", "reversed"] {
         assert!(facts.is_builtin_bound(name), "expected {name} to be bound");
@@ -58,9 +58,9 @@ fn annotated_augmented_and_lambda_bindings_are_conservative() {
 
 #[test]
 fn exception_bindings_are_conservative() {
-    let clean = parse_module("try:\n    work()\nexcept ValueError:\n    pass\n")
-        .expect("clean exception fixture parses");
-    let clean_facts = super::AstFacts::from_module(clean.syntax(), clean.tokens());
+    let clean_source = "try:\n    work()\nexcept ValueError:\n    pass\n";
+    let clean = parse_module(clean_source).expect("clean exception fixture parses");
+    let clean_facts = super::AstFacts::from_module(clean.syntax(), clean.tokens(), clean_source);
     assert!(!clean_facts.is_exception_bound("ValueError"));
 
     for (source, name) in [
@@ -78,7 +78,7 @@ fn exception_bindings_are_conservative() {
         ),
     ] {
         let parsed = parse_module(source).expect("exception binding fixture parses");
-        let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens());
+        let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
         assert!(
             facts.is_exception_bound(name),
             "expected {name} bound in {source:?}"
@@ -478,7 +478,7 @@ fn annotations_and_star_imports_suppress_collection_candidates() {
 fn shadowed_collection_builtins_are_not_mutated_as_calls() {
     let source = "any = custom_any\nfrom helpers import all\ndef list(tuple):\n    min = custom_min\n    for max in items:\n        pass\n    with resource as sorted:\n        pass\n    try:\n        pass\n    except Error as reversed:\n        pass\n    if (frozenset := custom_frozenset):\n        return list(items), tuple(items), set(items), frozenset(items), min(items), max(items), sorted(items), reversed(items)\nclass set:\n    pass\n";
     let parsed = parse_module(source).expect("shadowing fixture parses");
-    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens());
+    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
     for name in [
         "any",
         "all",
@@ -1195,11 +1195,7 @@ fn focused_profile_suppresses_main_print_assert_and_defaults() {
         .collect();
     assert_eq!(
         descriptors,
-        vec![
-            (5, "binary_add_sub"),
-            (7, "binary_mul_div"),
-            (8, "binary_add_sub"),
-        ]
+        vec![(5, "binary_add_sub"), (8, "binary_add_sub"),]
     );
 }
 
@@ -1694,6 +1690,34 @@ fn type_annotations_respect_line_and_symbol_filters() {
         ]
     );
 }
+#[test]
+fn grammar_tokens_do_not_emit_expression_operator_mutations() {
+    let source = concat!(
+        "from package import *\n",
+        "for item in items:\n    pass\n",
+        "values = [item for item in items]\n",
+        "result = call(*args, **kwargs)\n",
+        "match value:\n    case left | right:\n        pass\n",
+        "member = item in items\n",
+        "product = left * right\n",
+        "union = left | right\n",
+    );
+    let output = analyze(source);
+    assert!(!output.candidates.iter().any(|candidate| {
+        candidate.line <= 8
+            && matches!(
+                candidate.operator.as_str(),
+                "membership" | "binary_mul_div" | "bitwise_and_or"
+            )
+    }));
+    assert!(
+        output
+            .candidates
+            .iter()
+            .any(|candidate| candidate.line == 9 && candidate.operator == "membership")
+    );
+}
+
 proptest! {
     #[test]
     fn arbitrary_python_input_has_ordered_in_bounds_candidates(source in ".{0,4096}") {

@@ -58,7 +58,7 @@ pub(crate) fn analyze_source_cancellable(
     if cancelled() {
         return Err(AnalysisCancelled);
     }
-    let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens());
+    let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
     if cancelled() {
         return Err(AnalysisCancelled);
     }
@@ -79,6 +79,9 @@ pub(crate) fn analyze_source_cancellable(
         let start = usize::from(range.start());
         let end = usize::from(range.end());
         let text = &source[start..end];
+        if !facts.is_operator_token(start) {
+            continue;
+        }
         if facts.contains_annotation_span(range) && matches!(text, "&" | "|" | "<<" | ">>") {
             continue;
         }
@@ -359,6 +362,7 @@ struct AstFacts<'tokens> {
     imports: KnownImports,
     bound_builtin_names: HashSet<String>,
     bound_exception_names: HashSet<String>,
+    operator_token_starts: HashSet<usize>,
     unary_sign_starts: HashSet<usize>,
     not_operands: Vec<(usize, usize, usize)>,
     arid_ranges: Vec<(usize, usize)>,
@@ -366,6 +370,7 @@ struct AstFacts<'tokens> {
     scopes: Vec<ScopeRange>,
     qualname: Vec<String>,
     tokens: Option<&'tokens ruff_python_ast::token::Tokens>,
+    source: &'tokens str,
 }
 struct ScopeRange {
     start: usize,
@@ -374,10 +379,15 @@ struct ScopeRange {
 }
 
 impl<'tokens> AstFacts<'tokens> {
-    fn from_module(module: &ModModule, tokens: &'tokens ruff_python_ast::token::Tokens) -> Self {
+    fn from_module(
+        module: &ModModule,
+        tokens: &'tokens ruff_python_ast::token::Tokens,
+        source: &'tokens str,
+    ) -> Self {
         let mut facts = Self {
             imports: KnownImports::from_module(module),
             tokens: Some(tokens),
+            source,
             ..Self::default()
         };
         for statement in &module.body {
@@ -436,6 +446,28 @@ impl<'tokens> AstFacts<'tokens> {
 
     fn is_unary_sign(&self, start: usize) -> bool {
         self.unary_sign_starts.contains(&start)
+    }
+
+    fn is_operator_token(&self, start: usize) -> bool {
+        self.operator_token_starts.contains(&start)
+    }
+
+    fn record_operator_tokens(&mut self, range: TextRange, spellings: &[&str]) {
+        let source = self.source;
+        let starts = self
+            .tokens
+            .expect("parser tokens are set")
+            .in_range(range)
+            .iter()
+            .filter_map(|token| {
+                let range = token.range();
+                let start = usize::from(range.start());
+                let end = usize::from(range.end());
+                let text = &source[start..end];
+                spellings.contains(&text).then_some(start)
+            })
+            .collect::<Vec<_>>();
+        self.operator_token_starts.extend(starts);
     }
 
     fn is_builtin_bound(&self, name: &str) -> bool {
@@ -558,7 +590,10 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
                     self.record_builtin_target(target);
                 }
             }
-            Stmt::AugAssign(assign) => self.record_builtin_target(assign.target.as_ref()),
+            Stmt::AugAssign(assign) => {
+                self.record_builtin_target(assign.target.as_ref());
+                self.record_operator_tokens(assign.range(), &["+=", "-="]);
+            }
             Stmt::AnnAssign(assign) => {
                 self.record_builtin_target(assign.target.as_ref());
                 self.record_annotation_range(assign.annotation.range());
@@ -579,6 +614,12 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
             Stmt::TypeAlias(alias) => {
                 self.record_builtin_target(alias.name.as_ref());
                 self.record_annotation_range(alias.value.range());
+            }
+            Stmt::Break(statement_break) => {
+                self.record_operator_tokens(statement_break.range(), &["break"]);
+            }
+            Stmt::Continue(statement_continue) => {
+                self.record_operator_tokens(statement_continue.range(), &["continue"]);
             }
             _ => {}
         }
@@ -626,27 +667,45 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
         {
             self.record_arid_range(call.range());
         }
-        if let Expr::UnaryOp(unary) = expression {
-            let start = usize::from(unary.range().start());
-            match unary.op {
-                UnaryOp::Not => {
-                    let operand_range = ruff_python_ast::token::parenthesized_range(
-                        unary.operand.as_ref().into(),
-                        unary.into(),
-                        self.tokens.expect("parser tokens are set"),
-                    )
-                    .unwrap_or_else(|| unary.operand.range());
-                    self.not_operands.push((
-                        start,
-                        usize::from(operand_range.start()),
-                        usize::from(operand_range.end()),
-                    ));
-                }
-                UnaryOp::UAdd | UnaryOp::USub => {
-                    self.unary_sign_starts.insert(start);
-                }
-                UnaryOp::Invert => {}
+        match expression {
+            Expr::Compare(compare) => self.record_operator_tokens(
+                compare.range(),
+                &["==", "!=", "<", "<=", ">", ">=", "in", "not", "is"],
+            ),
+            Expr::BoolOp(boolean) => {
+                self.record_operator_tokens(boolean.range(), &["and", "or"]);
             }
+            Expr::BinOp(binary) => self.record_operator_tokens(
+                binary.range(),
+                &["+", "-", "*", "/", "//", "%", "&", "|", "<<", ">>"],
+            ),
+            Expr::UnaryOp(unary) => {
+                self.record_operator_tokens(unary.range(), &["not", "+", "-"]);
+                let start = usize::from(unary.range().start());
+                match unary.op {
+                    UnaryOp::Not => {
+                        let operand_range = ruff_python_ast::token::parenthesized_range(
+                            unary.operand.as_ref().into(),
+                            unary.into(),
+                            self.tokens.expect("parser tokens are set"),
+                        )
+                        .unwrap_or_else(|| unary.operand.range());
+                        self.not_operands.push((
+                            start,
+                            usize::from(operand_range.start()),
+                            usize::from(operand_range.end()),
+                        ));
+                    }
+                    UnaryOp::UAdd | UnaryOp::USub => {
+                        self.unary_sign_starts.insert(start);
+                    }
+                    UnaryOp::Invert => {}
+                }
+            }
+            Expr::BooleanLiteral(boolean) => {
+                self.record_operator_tokens(boolean.range(), &["True", "False"]);
+            }
+            _ => {}
         }
         visitor::walk_expr(self, expression);
     }
