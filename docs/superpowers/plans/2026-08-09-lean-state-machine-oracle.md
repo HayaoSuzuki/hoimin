@@ -509,7 +509,7 @@ git commit -m "test: establish strict Lean correspondence cases"
 - Consumes: only ledger rows classified `confirmed bug` with a strict single-case reproduction.
 - Produces: a focused Rust regression per confirmed bug, the smallest production repair, and a strict passing retained corpus case.
 
-- [ ] **Step 1: Invoke systematic debugging for the first confirmed mismatch**
+- [x] **Step 1: Invoke systematic debugging for the first confirmed mismatch**
 
 Trace the exact event schedule through `transition`, `accept_completion`, `retire_pending`,
 `cleanup_effects`, `post_cleanup_effects`, and `final_report_effects` as applicable. Identify the
@@ -517,7 +517,7 @@ first Rust transition whose stable observation differs from Lean. Record that so
 precondition in the ledger. If there are no `confirmed bug` rows, skip Steps 2-6 and state explicitly
 in the ledger that production code was unchanged.
 
-- [ ] **Step 2: Add one focused failing Rust regression**
+- [x] **Step 2: Add one focused failing Rust regression**
 
 Derive a valid Rust test name by replacing hyphens in the exact ledger case ID with underscores and
 prefixing `lean_oracle_regression_`; for example,
@@ -527,7 +527,7 @@ the stable invariant represented by the corpus case, and add
 `// pins: lean oracle cleanup_precedes_final_output` immediately before the non-obvious
 former-defect assertion, substituting the exact ledger ID when the failing case differs.
 
-- [ ] **Step 3: Run the regression and strict single-case adapter to observe Red**
+- [x] **Step 3: Run the regression and strict single-case adapter to observe Red**
 
 Run:
 
@@ -544,14 +544,14 @@ test name before running the commands.
 
 Expected: both fail for the same semantic difference, not for setup or parsing.
 
-- [ ] **Step 4: Implement the smallest state-machine correction**
+- [x] **Step 4: Implement the smallest state-machine correction**
 
 Change only the transition guard, retirement ordering, cleanup/final scheduling guard, or typed
 validation responsible for the first divergence. Preserve effect IDs, public error codes, unrelated
 phase behavior, and the original first stop cause. Do not refactor the 2,000-line transition table
 unless the confirmed defect cannot be corrected locally.
 
-- [ ] **Step 5: Run Green and nearby state-machine coverage**
+- [x] **Step 5: Run Green and nearby state-machine coverage**
 
 Run the two commands from Step 3, followed by:
 
@@ -562,7 +562,7 @@ cargo test -p hoimin-core --test lean_oracle
 
 Expected: PASS; the retained strict corpus case now matches and all existing machine schedules pass.
 
-- [ ] **Step 6: Record resolution and commit one bug at a time**
+- [x] **Step 6: Record resolution and commit one bug at a time**
 
 Update the ledger row with the root cause, production source location, regression name, and resolved
 status. Commit only that repair:

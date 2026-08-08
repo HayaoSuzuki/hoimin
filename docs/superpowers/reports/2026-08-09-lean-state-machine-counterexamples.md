@@ -9,7 +9,7 @@
 
 | Case | Classification | Expected | Actual | Impact | Model limitation | Decision |
 | --- | --- | --- | --- | --- | --- | --- |
-| `cleanup_is_emitted_once` | confirmed bug | After `cancel` schedules one cleanup, a `deadline` received while that cleanup is pending preserves the pending cleanup and emits no effect. | The second stop retires the first cleanup and emits a second cleanup; phase and pending count remain `cleaning` and one, hiding the identity replacement unless effect emissions are compared. | The original cleanup completion becomes `machine.effect.retired`; two cleanup handlers can be dispatched for the same lifecycle obligation, and whichever old completion arrives can turn orderly early-stop cleanup into a machine failure. | The adapter collapses the required `RunStarted` acknowledgement into the semantic first stop and uses the real no-copy-grant early-stop path. It excludes filesystem execution and timing, but both cleanup effects and their effect identities come from the public `transition` API. | Keep the Lean case strict. Add a focused Rust regression for `cancel -> RunStarted ack -> Cleanup pending -> deadline`, then make repeated stop signals during `RunPhase::Cleaning` idempotent without retiring or replacing the pending cleanup. |
+| `cleanup_is_emitted_once` | confirmed bug | After `cancel` schedules one cleanup, a `deadline` received while that cleanup is pending preserves the pending cleanup and emits no effect. | The second stop retired the first cleanup and emitted a second cleanup; phase and pending count remained `cleaning` and one, hiding the identity replacement unless effect emissions were compared. | The original cleanup completion became `machine.effect.retired`; two cleanup handlers could be dispatched for the same lifecycle obligation, and whichever old completion arrived could turn orderly early-stop cleanup into a machine failure. | The adapter collapses the required `RunStarted` acknowledgement into the semantic first stop and uses the real no-copy-grant early-stop path. It excludes filesystem execution and timing, but both cleanup effects and their effect identities come from the public `transition` API. | Resolved. `transition` now treats a stop received in `RunPhase::Cleaning` with `stop_requested` already set as an idempotent no-op. `lean_oracle_regression_cleanup_is_emitted_once` retains the exact schedule and asserts that the original cleanup ID remains pending and unretired. |
 
 ## Minimal reproduction
 
@@ -22,6 +22,11 @@ Lean expects the second step's `emitted` field to be `[]`; Rust observes `["clea
 fields match. The divergence begins in `crates/hoimin-core/src/machine.rs` where both stop branches
 call `retire_pending()` before considering that `RunPhase::Cleaning` already owns a cleanup effect.
 With no copy grant, each branch then calls `cleanup_effects()` and allocates a replacement cleanup.
+
+The repair adds one guard at the public transition boundary. It deliberately requires both
+`RunPhase::Cleaning` and the existing `stop_requested` flag: a first stop that arrives during a
+normal, non-stopped cleanup is not silently discarded. Focused machine tests and the strict
+single-case adapter pass after the change.
 
 ## Reviewed matches
 

@@ -576,6 +576,34 @@ fn deadline_and_cancellation_stop_scheduling_new_mutants() {
 }
 
 #[test]
+fn lean_oracle_regression_cleanup_is_emitted_once() {
+    let (state, _) = start_state();
+    let (state, effects) = transition(state, RunEvent::CancellationRequested).unwrap();
+    let started_id = effect_id(find_effect(&effects, |effect| {
+        matches!(
+            effect,
+            RunEffect::EmitOutput(value) if matches!(&value.event, OutputEvent::RunStarted(_))
+        )
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: started_id }),
+    )
+    .unwrap();
+    let cleanup_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::Cleanup(_))
+    }));
+
+    let (state, effects) = transition(state, RunEvent::DeadlineReached).unwrap();
+
+    // pins: lean oracle cleanup_is_emitted_once
+    assert!(effects.is_empty());
+    assert_eq!(state.phase(), RunPhase::Cleaning);
+    assert!(state.is_effect_pending(cleanup_id));
+    assert!(!state.is_effect_retired(cleanup_id));
+}
+
+#[test]
 fn stop_signals_do_not_reopen_a_pending_final_report() {
     for stop in [RunEvent::DeadlineReached, RunEvent::CancellationRequested] {
         let (state, effects) = waiting_for_final_report();
