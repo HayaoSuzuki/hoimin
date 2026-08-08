@@ -998,6 +998,7 @@ struct AstCandidateCollector<'a, F> {
     cancelled: &'a F,
     cancelled_observed: bool,
     exception_handler_finality: Vec<bool>,
+    exception_type_depth: usize,
     candidates: CandidatePrefix,
 }
 
@@ -1018,6 +1019,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             cancelled,
             cancelled_observed: false,
             exception_handler_finality: Vec::new(),
+            exception_type_depth: 0,
             candidates: CandidatePrefix::new(request.max_candidates),
         };
         for statement in &module.body {
@@ -1034,6 +1036,12 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             self.cancelled_observed = true;
         }
         self.cancelled_observed
+    }
+
+    fn visit_exception_type(&mut self, expression: &'a Expr) {
+        self.exception_type_depth += 1;
+        self.visit_expr(expression);
+        self.exception_type_depth -= 1;
     }
 
     fn add_candidate(&mut self, range: TextRange, replacement: String, operator: MutationOperator) {
@@ -1291,7 +1299,10 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_list_literal(&mut self, list: &ExprList) {
-        if list.ctx != ExprContext::Load || self.facts.contains_annotation_span(list.range()) {
+        if list.ctx != ExprContext::Load
+            || self.exception_type_depth > 0
+            || self.facts.contains_annotation_span(list.range())
+        {
             return;
         }
         if let Some(replacement) = list_to_tuple_replacement(
@@ -1308,7 +1319,10 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_tuple_literal(&mut self, tuple: &ExprTuple) {
-        if tuple.ctx != ExprContext::Load || self.facts.contains_annotation_span(tuple.range()) {
+        if tuple.ctx != ExprContext::Load
+            || self.exception_type_depth > 0
+            || self.facts.contains_annotation_span(tuple.range())
+        {
             return;
         }
         if let Some(replacement) = tuple_to_list_replacement(self.source, tuple) {
@@ -1458,7 +1472,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 }
 
-impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'_, F> {
+impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
         if !self.check_cancelled() {
             let Stmt::Try(try_statement) = statement else {
@@ -1470,7 +1484,7 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'_, F> {
                 for except_handler in &try_statement.handlers {
                     let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
                     if let Some(type_) = &handler.type_ {
-                        self.visit_expr(type_);
+                        self.visit_exception_type(type_);
                     }
                     self.visit_body(&handler.body);
                 }
@@ -1498,7 +1512,11 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'_, F> {
             self.collect_exception_handler(except_handler);
         }
         if !self.check_cancelled() {
-            visitor::walk_except_handler(self, except_handler);
+            let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
+            if let Some(type_) = &handler.type_ {
+                self.visit_exception_type(type_);
+            }
+            self.visit_body(&handler.body);
         }
     }
 
