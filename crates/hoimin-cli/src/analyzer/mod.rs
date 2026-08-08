@@ -165,24 +165,39 @@ async fn discover_targets_inner(
         control,
     );
     let deadline = tokio::time::Instant::now() + analyzer_timeout;
-    let mut task = tokio::task::spawn_blocking(move || discover_targets_blocking(work));
+    let mut task = tokio::task::spawn_blocking(move || {
+        let discovery = discover_targets_blocking(work);
+        (tokio::time::Instant::now(), discovery)
+    });
     tokio::select! {
         biased;
-        result = &mut task => result.map_err(|error| {
-            EffectFailed::other(EffectId(0), "analyzer.task", error.to_string())
-        })?,
+        result = &mut task => {
+            let (finished_at, discovery) = result.map_err(|error| {
+                EffectFailed::other(EffectId(0), "analyzer.task", error.to_string())
+            })?;
+            if finished_at <= deadline {
+                discovery
+            } else {
+                cancellation.cancel();
+                Err(discovery_timeout(analyzer_timeout))
+            }
+        },
         () = tokio::time::sleep_until(deadline) => {
             cancellation.cancel();
-            Err(EffectFailed::other(
-                EffectId(0),
-                "analyzer.timeout",
-                format!(
-                    "--analyzer-timeout expired after {}",
-                    humantime::format_duration(analyzer_timeout)
-                ),
-            ))
+            Err(discovery_timeout(analyzer_timeout))
         }
     }
+}
+
+fn discovery_timeout(analyzer_timeout: Duration) -> EffectFailed {
+    EffectFailed::other(
+        EffectId(0),
+        "analyzer.timeout",
+        format!(
+            "--analyzer-timeout expired after {}",
+            humantime::format_duration(analyzer_timeout)
+        ),
+    )
 }
 
 fn discovery_work(
