@@ -585,7 +585,7 @@ mismatches in one production commit.
 - Consumes: proof names, final corpus counts/modes, adapter classifications, ledger decisions, and any production fixes.
 - Produces: a self-contained handoff and exact local commands suitable for future CI wiring.
 
-- [ ] **Step 1: Add the local oracle workflow to development documentation**
+- [x] **Step 1: Add the local oracle workflow to development documentation**
 
 Document these commands in order:
 
@@ -599,7 +599,7 @@ HOIMIN_ORACLE_CASE=cancel_after_final_pending_is_noop cargo test -p hoimin-core 
 State that Lean proves the model, the adapter checks correspondence, report cases are exploratory,
 strict cases are blocking, and CI integration is future work.
 
-- [ ] **Step 2: Write the self-contained investigation report**
+- [x] **Step 2: Write the self-contained investigation report**
 
 Include these sections:
 
@@ -613,7 +613,7 @@ Include these sections:
 - Exact reproduction and full-verification commands.
 - Future CI boundary without editing `.github/workflows`.
 
-- [ ] **Step 3: Check documentation contracts and links**
+- [x] **Step 3: Check documentation contracts and links**
 
 Run:
 
@@ -624,7 +624,7 @@ git diff --check
 
 Expected: every required boundary and command appears; no whitespace errors or broken relative paths.
 
-- [ ] **Step 4: Commit the handoff documentation**
+- [x] **Step 4: Commit the handoff documentation**
 
 ```bash
 git add docs/development.md docs/superpowers/reports/2026-08-09-lean-state-machine-oracle.md
