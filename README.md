@@ -120,6 +120,14 @@ By default, there are no include/exclude overrides or SQLite session, and `--cha
 
 Every numeric limit must be nonzero. Memory, process, copy, and total-timeout limits are run-wide and are not multiplied by `--jobs`. On Windows, Job Objects provide hard process and memory enforcement. On Linux, delegated cgroup v2 provides hard enforcement. When hard enforcement is unavailable, Unix uses best-effort process-group and rlimit controls; such a run is rejected unless `--allow-best-effort-memory` is explicit. On macOS specifically, the memory limit is not enforced, while CPU-time limits and process-group cleanup remain available. Reports identify `hard` or `best_effort` resource mode.
 
+During discovery of one source file, each token, AST, and type-annotation
+producer retains at most `max_candidates + 1` candidate records and their
+deduplication identities before the bounded merge. This limits retained
+candidates, not all analyzer memory: source text, parser tokens, AST facts,
+and small per-node replacement lists still scale with source size. Therefore
+`--max-candidates` is not a general Hoimin memory limit. `--max-memory`
+continues to govern descendant processes, not the Hoimin CLI itself.
+
 For `plan` creation and `verify` rediscovery, `--analyzer-timeout` is one
 deadline for the complete discovery phase, not a new deadline per target. A
 discovery timeout returns promptly while an already-running blocking analyzer

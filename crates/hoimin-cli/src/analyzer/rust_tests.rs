@@ -1,4 +1,7 @@
-use super::{AnalyzeRequest, LineIndex, analyze_source, analyze_source_cancellable};
+use super::{
+    AnalyzeRequest, AnalyzerCandidate, CandidatePrefix, LineIndex, analyze_source,
+    analyze_source_cancellable,
+};
 use crate::analyzer::AnalyzerDiagnosticCode;
 use camino::Utf8Path;
 use hoimin_core::{
@@ -25,6 +28,92 @@ fn apply_candidate_and_reparse(source: &str, candidate: &super::AnalyzerCandidat
         candidate.operator
     );
     mutated
+}
+
+fn prefix_candidate(start: u64, replacement: &str, operator: &str) -> AnalyzerCandidate {
+    AnalyzerCandidate {
+        path: Utf8Path::new("pkg/sample.py").to_path_buf(),
+        span: ByteSpan { start, length: 1 },
+        original: "original".to_owned(),
+        replacement: replacement.to_owned(),
+        operator: operator.to_owned(),
+        line: 1,
+        column: 0,
+        symbol: None,
+    }
+}
+
+fn candidate_starts(candidates: &[AnalyzerCandidate]) -> Vec<u64> {
+    candidates
+        .iter()
+        .map(|candidate| candidate.span.start)
+        .collect()
+}
+
+#[test]
+fn candidate_prefix_retains_the_earliest_k_plus_one_unique_candidates() {
+    let mut prefix = CandidatePrefix::new(2);
+    assert_eq!(prefix.capacity, 3);
+
+    for candidate in [
+        prefix_candidate(9, "nine", "operator"),
+        prefix_candidate(1, "one", "operator"),
+        prefix_candidate(5, "five", "operator"),
+        prefix_candidate(3, "three", "operator"),
+        prefix_candidate(1, "one", "operator"),
+    ] {
+        prefix.push(candidate);
+    }
+
+    assert_eq!(prefix.identities.len(), 3);
+    let result = prefix.finish();
+    assert_eq!(candidate_starts(&result.candidates), vec![1, 3, 5]);
+    assert!(result.overflowed);
+    assert_eq!(result.candidates.len(), 3);
+}
+
+#[test]
+fn candidate_prefix_keeps_emission_order_for_equal_sort_keys() {
+    let mut prefix = CandidatePrefix::new(2);
+    for candidate in [
+        prefix_candidate(1, "first", "operator"),
+        prefix_candidate(1, "second", "operator"),
+        prefix_candidate(1, "third", "operator"),
+    ] {
+        prefix.push(candidate);
+    }
+
+    let result = prefix.finish();
+    assert_eq!(
+        result
+            .candidates
+            .iter()
+            .map(|candidate| candidate.replacement.as_str())
+            .collect::<Vec<_>>(),
+        vec!["first", "second", "third"]
+    );
+    assert!(!result.overflowed);
+}
+
+#[test]
+fn candidate_prefix_with_zero_limit_retains_one_earliest_candidate() {
+    let mut prefix = CandidatePrefix::new(0);
+    assert_eq!(prefix.capacity, 1);
+    prefix.push(prefix_candidate(3, "three", "operator"));
+    prefix.push(prefix_candidate(3, "three", "operator"));
+    prefix.push(prefix_candidate(1, "one", "operator"));
+
+    let result = prefix.finish();
+    assert_eq!(candidate_starts(&result.candidates), vec![1]);
+    assert!(result.overflowed);
+    assert_eq!(result.candidates.len(), 1);
+}
+
+#[test]
+fn candidate_prefix_saturates_capacity_at_usize_maximum() {
+    let prefix = CandidatePrefix::new(usize::MAX);
+
+    assert_eq!(prefix.capacity, usize::MAX);
 }
 
 #[test]
@@ -1325,6 +1414,101 @@ fn analyze_with(
         },
         source,
     )
+}
+
+fn analyze_with_all_candidate_producers(
+    max_candidates: usize,
+    source: &str,
+) -> super::AnalyzerOutput {
+    let mut operators = MutationOperatorSelection::default();
+    for operator in [
+        MutationOperator::TypeNullableRemove,
+        MutationOperator::TypeNullableAdd,
+        MutationOperator::TypeListSequence,
+        MutationOperator::TypeSetAbstractSet,
+        MutationOperator::TypeMapping,
+        MutationOperator::TypeIterableIterator,
+        MutationOperator::TypeSequenceIterable,
+    ] {
+        operators.include(operator);
+    }
+    analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/high.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            profile: MutationProfile::Full,
+            max_candidates,
+        },
+        source,
+    )
+}
+
+#[test]
+fn bounded_collection_preserves_the_exact_full_output_prefix_and_retention_bounds() {
+    use std::fmt::Write;
+
+    let mut source = String::new();
+    for index in 0..100 {
+        writeln!(
+            source,
+            "def value_{index}(items: list[int]) -> list[int]:\n    return list(items[{index}] + {index})"
+        )
+        .expect("writing to a string succeeds");
+    }
+    let full = analyze_with_all_candidate_producers(10_000, &source);
+    let bounded = analyze_with_all_candidate_producers(3, &source);
+
+    assert!(full.candidates.len() > 3);
+    assert_eq!(bounded.candidates, full.candidates[..3]);
+    assert!(bounded.truncated);
+    assert_eq!(
+        bounded.diagnostics[0].code,
+        AnalyzerDiagnosticCode::CandidateLimitExceeded
+    );
+    assert!(
+        bounded
+            .retention
+            .producer_peaks
+            .iter()
+            .all(|peak| *peak > 0)
+    );
+    assert_eq!(bounded.retention.producer_peaks, [4; 3]);
+    assert_eq!(bounded.retention.merged_peak, 12);
+}
+
+#[test]
+fn bounded_collection_filters_focused_arid_candidates_before_prefix_capacity() {
+    let source = format!("{}result = 1 + 2\n", "print(True)\n".repeat(100));
+    let focused = analyze_with_profile(MutationProfile::Focused, 1, &source);
+
+    assert_eq!(focused.candidates.len(), 1);
+    assert_eq!(focused.candidates[0].line, 101);
+    assert_eq!(focused.candidates[0].operator, "binary_add_sub");
+    assert!(!focused.truncated);
+    assert!(focused.diagnostics.is_empty());
+    assert_eq!(focused.retention.producer_peaks[0], 1);
+}
+
+#[test]
+fn bounded_collection_with_zero_limit_keeps_only_an_overflow_probe() {
+    let output = analyze_with(Utf8Path::new("pkg/zero.py"), &[], &[], 0, "value = 1 + 2\n");
+
+    assert!(output.candidates.is_empty());
+    assert!(output.truncated);
+    assert_eq!(
+        output.diagnostics[0].code,
+        AnalyzerDiagnosticCode::CandidateLimitExceeded
+    );
+    assert!(
+        output
+            .retention
+            .producer_peaks
+            .iter()
+            .all(|peak| *peak <= 1)
+    );
+    assert!(output.retention.merged_peak <= 3);
 }
 
 #[test]

@@ -1,4 +1,5 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::cmp::Ordering;
+use std::collections::{BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::ops::Range;
 
 use camino::Utf8Path;
@@ -30,6 +31,118 @@ pub(crate) struct AnalyzerOutput {
     pub candidates: Vec<AnalyzerCandidate>,
     pub diagnostics: Vec<AnalyzerDiagnostic>,
     pub truncated: bool,
+    #[cfg(test)]
+    pub retention: CandidateRetentionStats,
+}
+
+#[cfg(test)]
+pub(crate) struct CandidateRetentionStats {
+    pub producer_peaks: [usize; 3],
+    pub merged_peak: usize,
+}
+
+pub(crate) struct ProducerPrefix {
+    pub(crate) candidates: Vec<AnalyzerCandidate>,
+    pub(crate) overflowed: bool,
+}
+
+type CandidateIdentity = (u64, String, String);
+
+struct RetainedCandidate {
+    candidate: AnalyzerCandidate,
+    emission_sequence: u64,
+}
+
+impl Ord for RetainedCandidate {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.candidate
+            .span
+            .start
+            .cmp(&other.candidate.span.start)
+            .then_with(|| self.candidate.operator.cmp(&other.candidate.operator))
+            .then_with(|| self.emission_sequence.cmp(&other.emission_sequence))
+    }
+}
+
+impl PartialOrd for RetainedCandidate {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for RetainedCandidate {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+
+impl Eq for RetainedCandidate {}
+
+pub(crate) struct CandidatePrefix {
+    entries: BinaryHeap<RetainedCandidate>,
+    identities: HashSet<CandidateIdentity>,
+    capacity: usize,
+    overflowed: bool,
+    next_emission_sequence: u64,
+}
+
+impl CandidatePrefix {
+    pub(crate) fn new(max_candidates: usize) -> Self {
+        Self {
+            entries: BinaryHeap::new(),
+            identities: HashSet::new(),
+            capacity: max_candidates.saturating_add(1),
+            overflowed: false,
+            next_emission_sequence: 0,
+        }
+    }
+
+    pub(crate) fn push(&mut self, candidate: AnalyzerCandidate) {
+        let identity = candidate_identity(&candidate);
+        if self.identities.contains(&identity) {
+            return;
+        }
+        let entry = RetainedCandidate {
+            candidate,
+            emission_sequence: self.next_emission_sequence,
+        };
+        self.next_emission_sequence = self.next_emission_sequence.saturating_add(1);
+
+        if self.entries.len() < self.capacity {
+            self.identities.insert(identity);
+            self.entries.push(entry);
+            return;
+        }
+
+        self.overflowed = true;
+        if self.entries.peek().is_some_and(|latest| entry < *latest) {
+            let evicted = self.entries.pop().expect("a peeked heap entry exists");
+            self.identities
+                .remove(&candidate_identity(&evicted.candidate));
+            self.identities.insert(identity);
+            self.entries.push(entry);
+        }
+    }
+
+    pub(crate) fn finish(self) -> ProducerPrefix {
+        ProducerPrefix {
+            candidates: self
+                .entries
+                .into_sorted_vec()
+                .into_iter()
+                .map(|entry| entry.candidate)
+                .collect(),
+            overflowed: self.overflowed,
+        }
+    }
+}
+
+fn candidate_identity(candidate: &AnalyzerCandidate) -> CandidateIdentity {
+    (
+        candidate.span.start,
+        candidate.replacement.clone(),
+        candidate.operator.clone(),
+    )
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -63,7 +176,7 @@ pub(crate) fn analyze_source_cancellable(
         return Err(AnalysisCancelled);
     }
     let line_index = LineIndex::new(source);
-    let mut candidates = Vec::new();
+    let mut token_candidates = CandidatePrefix::new(request.max_candidates);
     let tokens: Vec<_> = parsed.tokens().iter().collect();
     for (index, token) in tokens.iter().enumerate() {
         if cancelled() {
@@ -162,50 +275,45 @@ pub(crate) fn analyze_source_cancellable(
             replacement,
             operator,
             symbol,
-        ) {
-            candidates.push(candidate);
+        ) && retained_by_profile(&candidate, request.profile, &facts)
+        {
+            token_candidates.push(candidate);
         }
     }
     if cancelled() {
         return Err(AnalysisCancelled);
     }
-    candidates.extend(ast_candidates(
+    let token_candidates = token_candidates.finish();
+    let ast_candidates = ast_candidates(
         parsed.syntax(),
         source,
         &line_index,
         &facts,
         request,
         &cancelled,
-    )?);
+    )?;
     if cancelled() {
         return Err(AnalysisCancelled);
     }
-    candidates.extend(type_annotation_candidates(
-        parsed.syntax(),
-        source,
-        &line_index,
-        &facts.imports,
-        request,
-    ));
+    let type_annotation_candidates =
+        type_annotation_candidates(parsed.syntax(), source, &line_index, &facts, request);
     if cancelled() {
         return Err(AnalysisCancelled);
     }
-    if request.profile == MutationProfile::Focused {
-        candidates.retain(|candidate| {
-            if candidate.operator.starts_with("type_") {
-                return true;
-            }
-            let Some(end) = candidate.span.start.checked_add(candidate.span.length) else {
-                return true;
-            };
-            let (Ok(start), Ok(end)) =
-                (usize::try_from(candidate.span.start), usize::try_from(end))
-            else {
-                return true;
-            };
-            !facts.contains_arid_span(start, end)
-        });
-    }
+    let producer_overflowed = token_candidates.overflowed
+        || ast_candidates.overflowed
+        || type_annotation_candidates.overflowed;
+    #[cfg(test)]
+    let producer_peaks = [
+        token_candidates.candidates.len(),
+        ast_candidates.candidates.len(),
+        type_annotation_candidates.candidates.len(),
+    ];
+    let mut candidates = token_candidates.candidates;
+    candidates.extend(ast_candidates.candidates);
+    candidates.extend(type_annotation_candidates.candidates);
+    #[cfg(test)]
+    let merged_peak = candidates.len();
     let mut seen = BTreeSet::new();
     candidates.retain(|candidate| {
         seen.insert((
@@ -220,10 +328,8 @@ pub(crate) fn analyze_source_cancellable(
             .cmp(&right.span.start)
             .then_with(|| left.operator.cmp(&right.operator))
     });
-    let truncated = candidates.len() > request.max_candidates;
-    if truncated {
-        candidates.truncate(request.max_candidates);
-    }
+    let truncated = producer_overflowed || candidates.len() > request.max_candidates;
+    candidates.truncate(request.max_candidates);
     let diagnostics = truncated
         .then(|| AnalyzerDiagnostic {
             code: AnalyzerDiagnosticCode::CandidateLimitExceeded,
@@ -238,7 +344,29 @@ pub(crate) fn analyze_source_cancellable(
         candidates,
         diagnostics,
         truncated,
+        #[cfg(test)]
+        retention: CandidateRetentionStats {
+            producer_peaks,
+            merged_peak,
+        },
     })
+}
+
+fn retained_by_profile(
+    candidate: &AnalyzerCandidate,
+    profile: MutationProfile,
+    facts: &AstFacts<'_>,
+) -> bool {
+    if profile != MutationProfile::Focused || candidate.operator.starts_with("type_") {
+        return true;
+    }
+    let Some(end) = candidate.span.start.checked_add(candidate.span.length) else {
+        return true;
+    };
+    let (Ok(start), Ok(end)) = (usize::try_from(candidate.span.start), usize::try_from(end)) else {
+        return true;
+    };
+    !facts.contains_arid_span(start, end)
 }
 
 fn make_candidate(
@@ -283,6 +411,11 @@ fn invalid_syntax(path: &Utf8Path) -> AnalyzerOutput {
             message: None,
         }],
         truncated: false,
+        #[cfg(test)]
+        retention: CandidateRetentionStats {
+            producer_peaks: [0; 3],
+            merged_peak: 0,
+        },
     }
 }
 
@@ -865,7 +998,7 @@ struct AstCandidateCollector<'a, F> {
     cancelled: &'a F,
     cancelled_observed: bool,
     exception_handler_finality: Vec<bool>,
-    candidates: Vec<AnalyzerCandidate>,
+    candidates: CandidatePrefix,
 }
 
 impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
@@ -876,7 +1009,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         facts: &'a AstFacts<'a>,
         request: &'a AnalyzeRequest<'a>,
         cancelled: &'a F,
-    ) -> Result<Vec<AnalyzerCandidate>, AnalysisCancelled> {
+    ) -> Result<ProducerPrefix, AnalysisCancelled> {
         let mut collector = Self {
             source,
             line_index,
@@ -885,7 +1018,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             cancelled,
             cancelled_observed: false,
             exception_handler_finality: Vec::new(),
-            candidates: Vec::new(),
+            candidates: CandidatePrefix::new(request.max_candidates),
         };
         for statement in &module.body {
             collector.visit_stmt(statement);
@@ -893,7 +1026,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 return Err(AnalysisCancelled);
             }
         }
-        Ok(collector.candidates)
+        Ok(collector.candidates.finish())
     }
 
     fn check_cancelled(&mut self) -> bool {
@@ -914,7 +1047,8 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             replacement,
             operator,
             symbol,
-        ) {
+        ) && retained_by_profile(&candidate, self.request.profile, self.facts)
+        {
             self.candidates.push(candidate);
         }
     }
@@ -1389,7 +1523,7 @@ fn ast_candidates<'a, F: Fn() -> bool>(
     facts: &'a AstFacts<'a>,
     request: &'a AnalyzeRequest<'a>,
     cancelled: &'a F,
-) -> Result<Vec<AnalyzerCandidate>, AnalysisCancelled> {
+) -> Result<ProducerPrefix, AnalysisCancelled> {
     AstCandidateCollector::collect(module, source, line_index, facts, request, cancelled)
 }
 
@@ -1948,30 +2082,30 @@ fn type_annotation_candidates(
     module: &ModModule,
     source: &str,
     line_index: &LineIndex,
-    imports: &KnownImports,
+    facts: &AstFacts<'_>,
     request: &AnalyzeRequest<'_>,
-) -> Vec<AnalyzerCandidate> {
-    AnnotationCollector::collect(module)
-        .into_iter()
-        .flat_map(|(annotation, symbol)| {
-            annotation_replacements(annotation, source, imports)
-                .into_iter()
-                .filter_map(move |(replacement, operator)| {
-                    let range = annotation.range();
-                    let start = usize::from(range.start());
-                    let end = usize::from(range.end());
-                    make_candidate(
-                        request,
-                        source,
-                        line_index,
-                        start..end,
-                        replacement,
-                        operator,
-                        symbol.clone(),
-                    )
-                })
-        })
-        .collect()
+) -> ProducerPrefix {
+    let mut candidates = CandidatePrefix::new(request.max_candidates);
+    for (annotation, symbol) in AnnotationCollector::collect(module) {
+        for (replacement, operator) in annotation_replacements(annotation, source, &facts.imports) {
+            let range = annotation.range();
+            let start = usize::from(range.start());
+            let end = usize::from(range.end());
+            if let Some(candidate) = make_candidate(
+                request,
+                source,
+                line_index,
+                start..end,
+                replacement,
+                operator,
+                symbol.clone(),
+            ) && retained_by_profile(&candidate, request.profile, facts)
+            {
+                candidates.push(candidate);
+            }
+        }
+    }
+    candidates.finish()
 }
 
 fn annotation_replacements(
