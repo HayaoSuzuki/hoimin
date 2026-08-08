@@ -35,8 +35,11 @@ Add a small dependency-free namespace to the existing pinned
 reservations, released IDs, and the next-ID frontier. Events cover reserve and
 atomic cleanup release. Verdicts retain typed rejection categories.
 
-The explorer enumerates shortest traces first in stable event order. Its finite
-domain is:
+The explorer enumerates shortest traces first in stable event order. For the
+state invariant only, it retains the first shortest trace for each identical
+semantic state after checking all outgoing events; fixed broken witnesses are
+not deduplicated. The report must disclose this reduction and count reachable
+states and checked transitions. Its finite domain is:
 
 - budget kinds: memory, copy, processes;
 - limits and requested amounts: semantic representatives `0`, `1`, and `2`;
