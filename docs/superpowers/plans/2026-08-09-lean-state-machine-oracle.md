@@ -640,7 +640,7 @@ git commit -m "docs: report Lean state-machine oracle results"
 - Consumes: the completed model, corpus, adapter, ledger, optional fixes, and documentation.
 - Produces: fresh evidence that the branch is ready for handoff.
 
-- [ ] **Step 1: Verify Lean, witnesses, and corpus freshness**
+- [x] **Step 1: Verify Lean, witnesses, and corpus freshness**
 
 Run:
 
@@ -652,7 +652,7 @@ lake exe generate -- --check corpus/state-machine.jsonl
 
 Expected: PASS with no generated diff.
 
-- [ ] **Step 2: Verify strict and single-case correspondence**
+- [x] **Step 2: Verify strict and single-case correspondence**
 
 Run:
 
@@ -663,7 +663,7 @@ cargo test -p hoimin-core --test lean_oracle
 Then reproduce every ledger mismatch individually with `HOIMIN_ORACLE_CASE`. Expected: all strict
 cases pass; unresolved report-mode cases remain documented and nonblocking; no infrastructure errors.
 
-- [ ] **Step 3: Run Rust formatting and lint gates**
+- [x] **Step 3: Run Rust formatting and lint gates**
 
 Run:
 
@@ -674,7 +674,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 Expected: PASS with zero warnings.
 
-- [ ] **Step 4: Run the complete Rust test baseline**
+- [x] **Step 4: Run the complete Rust test baseline**
 
 Ensure the worktree-local untracked `.venv` symlink still points to the repository's controlled
 environment, then run:
@@ -685,7 +685,7 @@ cargo test --workspace
 
 Expected: PASS with the same intentional ignored benchmarks/fixtures as baseline and no failures.
 
-- [ ] **Step 5: Audit the branch diff and worktree isolation**
+- [x] **Step 5: Audit the branch diff and worktree isolation**
 
 Run:
 
@@ -698,7 +698,7 @@ git log --oneline --decorate origin/main..HEAD
 Expected: only scoped formal assets, Rust adapter/tests or confirmed repair, and worktree-contained
 documentation are committed. The local `.venv` symlink remains untracked and is not staged.
 
-- [ ] **Step 6: Request code review and resolve findings**
+- [x] **Step 6: Request code review and resolve findings**
 
 Use `superpowers:requesting-code-review` against the complete `origin/main...HEAD` diff. Address
 only verified findings, rerun the relevant focused gate after each change, and then rerun Steps 1-5
