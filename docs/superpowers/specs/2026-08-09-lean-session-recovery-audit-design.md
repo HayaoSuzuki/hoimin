@@ -192,4 +192,3 @@ Any strict mismatch remains as a reproducible case and is classified as a
 confirmed implementation bug, specification ambiguity, model defect, or
 infrastructure error. This audit does not silently adjust the model to match
 the implementation and does not repair production code in the same change.
-
