@@ -5,27 +5,27 @@ namespace HoiminOracle.SessionAudit
 inductive Handler
   | h0
   | h1
-  deriving Repr, DecidableEq, BEq
+  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
 
 inductive Run
   | r0
   | r1
-  deriving Repr, DecidableEq, BEq
+  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
 
 inductive Fingerprint
   | f0
   | f1
-  deriving Repr, DecidableEq, BEq
+  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
 
 inductive Mutant
   | m0
   | m1
-  deriving Repr, DecidableEq, BEq
+  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
 
 inductive Payload
   | p0
   | p1
-  deriving Repr, DecidableEq, BEq
+  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
 
 inductive Status
   | killed
@@ -35,7 +35,7 @@ inductive Status
   | processLimit
   | error
   | notRun
-  deriving Repr, DecidableEq, BEq
+  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
 
 namespace Status
 
@@ -48,7 +48,7 @@ end Status
 inductive HandlerState
   | closed
   | live
-  deriving Repr, DecidableEq, BEq
+  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
 
 structure RunRow where
   run : Run
@@ -56,7 +56,7 @@ structure RunRow where
   ordinal : Nat
   finished : Bool
   complete : Bool
-  deriving Repr, DecidableEq, BEq
+  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
 
 structure ResultRow where
   run : Run
@@ -238,10 +238,7 @@ def durable (state : State) : List RunRow × List ResultRow :=
   (state.runs, state.results)
 
 def SameExceptResult (before after : State) (replacement : ResultRow) : Prop :=
-  before.runs = after.runs ∧
-    findResult after replacement.run replacement.mutant = some replacement ∧
-    eraseResult before.results replacement.run replacement.mutant =
-      eraseResult after.results replacement.run replacement.mutant
+  after = replaceResult before replacement
 
 def pendingValid (state : State) : Bool :=
   match state.pending with
@@ -272,7 +269,7 @@ def safe (state : State) : Bool :=
   pendingValid state
 
 def Invariant (state : State) : Prop :=
-  safe state = true
+  state.nextOrdinal = state.runs.length
 
 def rejectionCode (event : Event) : Rejection → String
   | .handlerClosed => "session.handler.closed"
@@ -317,10 +314,10 @@ def observe (event : Event) (verdict : Verdict) : Observation where
   results := verdict.state.results
   owners := verdict.state.owners
 
-private def openHandler (state : State) (handler : Handler) : Verdict :=
+def openHandler (state : State) (handler : Handler) : Verdict :=
   accept (setHandler state handler .live)
 
-private def beginRun (state : State) (handler : Handler) (run : Run)
+def beginRun (state : State) (handler : Handler) (run : Run)
     (fingerprint : Fingerprint) : Verdict :=
   if !handlerLive state handler then
     reject state .handlerClosed
@@ -341,7 +338,7 @@ private def beginRun (state : State) (handler : Handler) (run : Run)
         nextOrdinal := state.nextOrdinal + 1
     } (some run)
 
-private def loadRun (state : State) (handler : Handler)
+def loadRun (state : State) (handler : Handler)
     (fingerprint : Fingerprint) : Verdict :=
   if !handlerLive state handler then
     reject state .handlerClosed
@@ -356,7 +353,7 @@ private def loadRun (state : State) (handler : Handler)
         else
           accept (addOwner state row.run handler) (some row.run)
 
-private def lookupResult (state : State) (handler : Handler) (run : Run)
+def lookupResult (state : State) (handler : Handler) (run : Run)
     (mutant : Mutant) : Verdict :=
   if !handlerLive state handler then
     reject state .handlerClosed
@@ -367,7 +364,7 @@ private def lookupResult (state : State) (handler : Handler) (run : Run)
         if row.complete then reject state .completeRun
         else accept state none (findResult state run mutant)
 
-private def persistResult (state : State) (handler : Handler) (run : Run)
+def persistResult (state : State) (handler : Handler) (run : Run)
     (mutant : Mutant) (status : Status) (payload : Payload)
     (validity : PersistValidity) : Verdict :=
   if !handlerLive state handler then
@@ -393,7 +390,7 @@ private def persistResult (state : State) (handler : Handler) (run : Run)
               | .invalidDiagnostic => reject state .invalidDiagnostic
               | .valid => accept (replaceResult state replacement) none (some replacement)
 
-private def finishRun (state : State) (handler : Handler) (run : Run)
+def finishRun (state : State) (handler : Handler) (run : Run)
     (complete : Bool) : Verdict :=
   if !handlerLive state handler then
     reject state .handlerClosed
@@ -409,11 +406,11 @@ private def finishRun (state : State) (handler : Handler) (run : Run)
           }
           accept next (some run)
 
-private def stopHandler (state : State) (handler : Handler) : Verdict :=
+def stopHandler (state : State) (handler : Handler) : Verdict :=
   let next := clearPendingFor (releaseHandler state handler) handler
   accept (setHandler next handler .closed)
 
-private def readLoadCandidate (state : State) (handler : Handler)
+def readLoadCandidate (state : State) (handler : Handler)
     (fingerprint : Fingerprint) : Verdict :=
   if !handlerLive state handler then
     reject state .handlerClosed
@@ -424,7 +421,7 @@ private def readLoadCandidate (state : State) (handler : Handler)
     | none => reject state .noCandidate
     | some row => accept { state with pending := some (.loadCandidate handler fingerprint row.run) }
 
-private def acquireLoad (state : State) (handler : Handler) : Verdict :=
+def acquireLoad (state : State) (handler : Handler) : Verdict :=
   match state.pending with
   | some (.loadCandidate pendingHandler fingerprint run) =>
       if pendingHandler != handler then
@@ -437,7 +434,7 @@ private def acquireLoad (state : State) (handler : Handler) : Verdict :=
         accept { state with pending := some (.loadLocked handler fingerprint run) }
   | _ => reject state .internalState
 
-private def recheckLoad (state : State) (handler : Handler) : Verdict :=
+def recheckLoad (state : State) (handler : Handler) : Verdict :=
   match state.pending with
   | some (.loadLocked pendingHandler fingerprint run) =>
       if pendingHandler != handler then
@@ -446,13 +443,18 @@ private def recheckLoad (state : State) (handler : Handler) : Verdict :=
         match findRun state run with
         | some row =>
             if resumeEligible row fingerprint then
-              accept (addOwner { state with pending := none } run handler) (some run)
+              if owns state run handler then
+                accept { state with pending := none } (some run)
+              else if ownerCount state run > 0 then
+                reject { state with pending := none } .active
+              else
+                accept (addOwner { state with pending := none } run handler) (some run)
             else
               accept { state with pending := none }
         | none => accept { state with pending := none }
   | _ => reject state .internalState
 
-private def startReplacement (state : State) (handler : Handler) (run : Run)
+def startReplacement (state : State) (handler : Handler) (run : Run)
     (mutant : Mutant) (status : Status) (payload : Payload) : Verdict :=
   if !handlerLive state handler || state.pending.isSome then
     reject state .internalState
@@ -466,7 +468,7 @@ private def startReplacement (state : State) (handler : Handler) (run : Run)
           accept { state with pending := some (.replacing handler old replacement) }
     | none => reject state .missingRun
 
-private def commitReplacement (state : State) (handler : Handler) : Verdict :=
+def commitReplacement (state : State) (handler : Handler) : Verdict :=
   match state.pending with
   | some (.replacing pendingHandler _ replacement) =>
       if pendingHandler != handler then
@@ -475,7 +477,7 @@ private def commitReplacement (state : State) (handler : Handler) : Verdict :=
         accept { replaceResult state replacement with pending := none } none (some replacement)
   | _ => reject state .internalState
 
-private def rollbackReplacement (state : State) (handler : Handler) : Verdict :=
+def rollbackReplacement (state : State) (handler : Handler) : Verdict :=
   match state.pending with
   | some (.replacing pendingHandler _ _) =>
       if pendingHandler != handler then reject state .internalState
