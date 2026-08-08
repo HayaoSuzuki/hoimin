@@ -117,6 +117,14 @@ Annotation-span exclusions remain in effect, and this gate does not change the
 existing selection, profile filtering, deduplication, source ordering, or
 candidate-limit behavior.
 
+For one source file, the token scanner, AST pass, and type-annotation pass
+each retain no more than `max_candidates + 1` candidate records and
+deduplication identities before their bounded merge. This is deliberately a
+candidate-retention bound, not a general Hoimin memory bound: source text,
+parser tokens, AST facts, and small per-node replacement lists remain
+proportional to source size. `--max-memory` controls descendants rather than
+the Hoimin CLI, so it does not bound these analyzer structures.
+
 Bare builtin calls (`any`, `all`, `list`, `tuple`, `set`, `frozenset`, `min`,
 `max`, `sorted`, and `reversed`) are suppressed if the matching name is bound
 anywhere in the file. Bindings include imports, assignments, definitions, and
