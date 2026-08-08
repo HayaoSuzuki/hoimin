@@ -78,22 +78,22 @@ def errorCode? (verdict : Verdict) : Option String :=
 
 end Verdict
 
-private def pendingKind? (pending : List (Nat × EffectKind)) (id : Nat) : Option EffectKind :=
+def pendingKind? (pending : List (Nat × EffectKind)) (id : Nat) : Option EffectKind :=
   match pending with
   | [] => none
   | (pendingId, kind) :: rest =>
       if pendingId = id then some kind else pendingKind? rest id
 
-private def removePending (pending : List (Nat × EffectKind)) (id : Nat) :
+def removePending (pending : List (Nat × EffectKind)) (id : Nat) :
     List (Nat × EffectKind) :=
   pending.filter fun entry => entry.1 != id
 
-private def reject (state : State) (reason : Rejection) : Verdict where
+def reject (state : State) (reason : Rejection) : Verdict where
   state := state
   emitted := []
   rejection := some reason
 
-private def acceptCompletion (state : State) (id : Nat) (kind : EffectKind) : Verdict :=
+def acceptCompletion (state : State) (id : Nat) (kind : EffectKind) : Verdict :=
   let accepted := {
     state with
       pending := removePending state.pending id
@@ -101,9 +101,20 @@ private def acceptCompletion (state : State) (id : Nat) (kind : EffectKind) : Ve
   }
   match kind with
   | .ordinary =>
-      { state := { accepted with acceptedResults := accepted.acceptedResults + 1 }
-        emitted := []
-        rejection := none }
+      match accepted.stopCause with
+      | some _ =>
+          { state := { accepted with acceptedResults := accepted.acceptedResults + 1 }
+            emitted := []
+            rejection := none }
+      | none =>
+          { state := {
+              accepted with
+                pending := [(accepted.nextId, .ordinary)]
+                acceptedResults := accepted.acceptedResults + 1
+                nextId := accepted.nextId + 1
+            }
+            emitted := [.ordinary]
+            rejection := none }
   | .cleanup =>
       { state := {
           accepted with
@@ -119,7 +130,7 @@ private def acceptCompletion (state : State) (id : Nat) (kind : EffectKind) : Ve
         emitted := []
         rejection := none }
 
-private def complete (state : State) (id : Nat) (kind : EffectKind) : Verdict :=
+def complete (state : State) (id : Nat) (kind : EffectKind) : Verdict :=
   if id ∈ state.retired then
     reject state .retired
   else if id ∈ state.completed then
@@ -131,7 +142,7 @@ private def complete (state : State) (id : Nat) (kind : EffectKind) : Verdict :=
         if expected = kind then acceptCompletion state id kind
         else reject state .wrongCompletion
 
-private def stop (state : State) (cause : StopCause) : Verdict :=
+def stop (state : State) (cause : StopCause) : Verdict :=
   match state.phase with
   | .finalPending | .finished =>
       { state := state, emitted := [], rejection := none }

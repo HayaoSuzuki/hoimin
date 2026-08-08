@@ -159,7 +159,7 @@ git commit -m "test: model Hoimin lifecycle semantics in Lean"
 - Consumes: `State`, `Event`, `Verdict`, and `step` from Task 1.
 - Produces: named theorems for review and `brokenWitnessesDetected : Bool`, which Task 3 requires before corpus generation.
 
-- [ ] **Step 1: State the invariant theorems before adding supporting lemmas**
+- [x] **Step 1: State the invariant theorems before adding supporting lemmas**
 
 Add theorem statements covering:
 
@@ -184,19 +184,19 @@ theorem no_ordinary_emission_after_stop (s : State) (e : Event)
     .ordinary ∉ (step s e).emitted
 ```
 
-- [ ] **Step 2: Run Lean to observe proof obligations**
+- [x] **Step 2: Run Lean to observe proof obligations**
 
 Run `cd formal/HoiminOracle && lake build`.
 
 Expected: FAIL on unproved theorem bodies, demonstrating the properties are active obligations.
 
-- [ ] **Step 3: Prove the invariants from the transition definition**
+- [x] **Step 3: Prove the invariants from the transition definition**
 
 Use case analysis and simplification over `step`, extracting repeated membership facts into small
 private lemmas. Do not add model behavior solely to shorten proofs. Import `Proofs` from the library
 root so `lake build` always checks every theorem.
 
-- [ ] **Step 4: Add deliberately broken-model witnesses**
+- [x] **Step 4: Add deliberately broken-model witnesses**
 
 In `Cases.lean`, define local broken variants that each remove one rule:
 
@@ -214,13 +214,13 @@ def brokenWitnessesDetected : Bool :=
 example : brokenWitnessesDetected = true := by decide
 ```
 
-- [ ] **Step 5: Rebuild and confirm proofs and witnesses pass**
+- [x] **Step 5: Rebuild and confirm proofs and witnesses pass**
 
 Run `cd formal/HoiminOracle && lake build`.
 
 Expected: PASS; all named theorems and the `brokenWitnessesDetected = true` example are checked.
 
-- [ ] **Step 6: Commit proofs and sensitivity witnesses**
+- [x] **Step 6: Commit proofs and sensitivity witnesses**
 
 ```bash
 git add formal/HoiminOracle/HoiminOracle.lean formal/HoiminOracle/HoiminOracle/Proofs.lean formal/HoiminOracle/HoiminOracle/Cases.lean
