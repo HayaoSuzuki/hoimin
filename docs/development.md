@@ -158,6 +158,13 @@ parameters. This deliberately conservative rule avoids mutating a shadowed
 callable; qualified builtin calls are not candidates. Method mutations are
 syntax-directed and do not infer receiver types.
 
+Type-annotation collection records an import-state snapshot at each annotation
+site in source order. Signature annotations use their enclosing state, while a
+function body predeclares Python-local names before its body is visited. Nested
+scopes do not leak their bindings into an enclosing scope. At control-flow
+joins, retain only imports known identically on every reachable exit; when no
+safe direct-name or module-alias spelling remains, skip the replacement.
+
 The supported structural shapes are exact: `append(value)` ↔
 `extend([value])` only when the inverse list literal has one non-starred
 element; `mapping.get(key)` ↔ `mapping[key]` only for a simple name or

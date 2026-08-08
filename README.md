@@ -193,6 +193,10 @@ IDs are `type_nullable_remove`, `type_nullable_add`, `type_list_sequence`,
 historical `type_mapping` name remains accepted as an alias for
 `type_dict_mapping`.
 
+Import-dependent type replacements are emitted only when their direct name or
+module alias remains unshadowed at the annotation site. If no safe spelling is
+available, the candidate is skipped.
+
 The exception selector `exception_risky` is opt-in only; enable it with
 `--operators exception_risky` (or select individual IDs). It exposes
 `exception_bare_to_exception`, `exception_exception_to_bare`,
