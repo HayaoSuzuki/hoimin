@@ -512,7 +512,6 @@ fn module_name(path: &Utf8Path) -> String {
 
 #[derive(Default)]
 struct AstFacts<'tokens> {
-    imports: KnownImports,
     bound_builtin_names: HashSet<String>,
     bound_exception_names: HashSet<String>,
     operator_token_starts: HashSet<usize>,
@@ -538,7 +537,6 @@ impl<'tokens> AstFacts<'tokens> {
         source: &'tokens str,
     ) -> Self {
         let mut facts = Self {
-            imports: KnownImports::from_module(module),
             tokens: Some(tokens),
             source,
             ..Self::default()
@@ -1889,7 +1887,7 @@ fn is_main_literal(expression: &Expr) -> bool {
 #[path = "rust_tests.rs"]
 mod rust_tests;
 
-#[derive(Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct KnownImports {
     direct: HashMap<String, String>,
     modules: HashMap<String, String>,
@@ -1897,60 +1895,162 @@ struct KnownImports {
 }
 
 impl KnownImports {
-    fn from_module(module: &ModModule) -> Self {
-        let mut imports = Self::default();
-        for statement in &module.body {
-            match statement {
-                Stmt::Import(import) => {
-                    for alias in &import.names {
-                        let name = alias.name.as_str();
-                        if matches!(name, "typing" | "collections.abc") {
-                            let local = alias.asname.as_ref().map_or_else(
-                                || name.split('.').next().unwrap_or(name),
-                                |asname| asname.as_str(),
-                            );
-                            let resolved = if alias.asname.is_some() { name } else { local };
-                            imports
-                                .modules
-                                .insert(local.to_owned(), resolved.to_owned());
-                        }
-                    }
+    fn intersection(states: impl IntoIterator<Item = Self>) -> Option<Self> {
+        let mut states = states.into_iter();
+        let mut intersection = states.next()?;
+        for state in states {
+            intersection
+                .direct
+                .retain(|name, resolved| state.direct.get(name) == Some(resolved));
+            intersection
+                .modules
+                .retain(|name, resolved| state.modules.get(name) == Some(resolved));
+            intersection
+                .type_vars
+                .retain(|name| state.type_vars.contains(name));
+        }
+        Some(intersection)
+    }
+
+    fn invalidate(&mut self, name: &str) {
+        self.direct.remove(name);
+        self.modules.remove(name);
+        self.type_vars.remove(name);
+    }
+
+    fn copy_name_from(&mut self, source: &Self, name: &str) {
+        self.invalidate(name);
+        if let Some(resolved) = source.direct.get(name) {
+            self.direct.insert(name.to_owned(), resolved.clone());
+        }
+        if let Some(resolved) = source.modules.get(name) {
+            self.modules.insert(name.to_owned(), resolved.clone());
+        }
+        if source.type_vars.contains(name) {
+            self.type_vars.insert(name.to_owned());
+        }
+    }
+
+    fn invalidate_target(&mut self, target: &Expr) {
+        match target {
+            Expr::Name(name) => self.invalidate(name.id.as_str()),
+            Expr::List(list) => {
+                for element in &list.elts {
+                    self.invalidate_target(element);
                 }
-                Stmt::ImportFrom(import) if import.level == 0 => {
-                    let Some(module_name) = import
-                        .module
-                        .as_ref()
-                        .map(ruff_python_ast::Identifier::as_str)
-                    else {
-                        continue;
-                    };
-                    if !matches!(module_name, "typing" | "collections.abc") {
-                        continue;
-                    }
-                    for alias in &import.names {
-                        let imported = alias.name.as_str();
-                        if is_known_type_name(imported) {
-                            let local = alias
-                                .asname
-                                .as_ref()
-                                .map_or(imported, |asname| asname.as_str());
-                            imports
-                                .direct
-                                .insert(local.to_owned(), format!("{module_name}.{imported}"));
-                        }
-                    }
+            }
+            Expr::Tuple(tuple) => {
+                for element in &tuple.elts {
+                    self.invalidate_target(element);
                 }
-                Stmt::Assign(assign) if is_type_var_call(assign.value.as_ref(), &imports) => {
-                    for target in &assign.targets {
-                        if let Expr::Name(name) = target {
-                            imports.type_vars.insert(name.id.as_str().to_owned());
-                        }
-                    }
+            }
+            Expr::Starred(starred) => self.invalidate_target(starred.value.as_ref()),
+            _ => {}
+        }
+    }
+
+    fn mark_type_vars(&mut self, target: &Expr) {
+        match target {
+            Expr::Name(name) => {
+                self.type_vars.insert(name.id.as_str().to_owned());
+            }
+            Expr::List(list) => {
+                for element in &list.elts {
+                    self.mark_type_vars(element);
                 }
-                _ => {}
+            }
+            Expr::Tuple(tuple) => {
+                for element in &tuple.elts {
+                    self.mark_type_vars(element);
+                }
+            }
+            Expr::Starred(starred) => self.mark_type_vars(starred.value.as_ref()),
+            _ => {}
+        }
+    }
+
+    fn transfer_import(&mut self, import: &ruff_python_ast::StmtImport) {
+        for alias in &import.names {
+            let name = alias.name.as_str();
+            let local = alias.asname.as_ref().map_or_else(
+                || name.split('.').next().unwrap_or(name),
+                ruff_python_ast::Identifier::as_str,
+            );
+            self.invalidate(local);
+            if matches!(name, "typing" | "collections.abc") {
+                let resolved = if alias.asname.is_some() { name } else { local };
+                self.modules.insert(local.to_owned(), resolved.to_owned());
             }
         }
-        imports
+    }
+
+    fn transfer_import_from(&mut self, import: &ruff_python_ast::StmtImportFrom) {
+        let module_name = (import.level == 0)
+            .then(|| {
+                import
+                    .module
+                    .as_ref()
+                    .map(ruff_python_ast::Identifier::as_str)
+            })
+            .flatten();
+        for alias in &import.names {
+            let imported = alias.name.as_str();
+            if imported == "*" {
+                self.direct.clear();
+                self.type_vars.clear();
+                if !matches!(module_name, Some("typing" | "collections.abc")) {
+                    self.modules.clear();
+                }
+                continue;
+            }
+            let local = alias
+                .asname
+                .as_ref()
+                .map_or(imported, ruff_python_ast::Identifier::as_str);
+            self.invalidate(local);
+            if let Some(module_name) = module_name
+                && matches!(module_name, "typing" | "collections.abc")
+                && is_known_type_name(imported)
+            {
+                self.direct
+                    .insert(local.to_owned(), format!("{module_name}.{imported}"));
+            }
+        }
+    }
+
+    fn transfer_assign(&mut self, targets: &[Expr], value: &Expr) {
+        let is_type_var = is_type_var_call(value, self);
+        for target in targets {
+            self.invalidate_target(target);
+        }
+        if is_type_var {
+            for target in targets {
+                self.mark_type_vars(target);
+            }
+        }
+    }
+
+    fn transfer_statement(&mut self, statement: &Stmt) {
+        match statement {
+            Stmt::Import(import) => self.transfer_import(import),
+            Stmt::ImportFrom(import) => self.transfer_import_from(import),
+            Stmt::Assign(assign) => self.transfer_assign(&assign.targets, assign.value.as_ref()),
+            Stmt::AnnAssign(assign) => {
+                if let Some(value) = assign.value.as_deref() {
+                    self.transfer_assign(std::slice::from_ref(assign.target.as_ref()), value);
+                }
+            }
+            Stmt::AugAssign(assign) => self.invalidate_target(assign.target.as_ref()),
+            Stmt::Delete(delete) => {
+                for target in &delete.targets {
+                    self.invalidate_target(target);
+                }
+            }
+            Stmt::TypeAlias(alias) => self.invalidate_target(alias.name.as_ref()),
+            Stmt::FunctionDef(definition) => self.invalidate(definition.name.as_str()),
+            Stmt::ClassDef(definition) => self.invalidate(definition.name.as_str()),
+            _ => {}
+        }
     }
 
     fn resolved_name(&self, expression: &Expr) -> Option<String> {
@@ -2043,20 +2143,402 @@ fn is_type_var_call(expression: &Expr, imports: &KnownImports) -> bool {
     matches!(expression, Expr::Call(call) if imports.resolved_name(call.func.as_ref()).as_deref() == Some("typing.TypeVar"))
 }
 
+fn collect_target_names(target: &Expr, names: &mut HashSet<String>) {
+    match target {
+        Expr::Name(name) => {
+            names.insert(name.id.as_str().to_owned());
+        }
+        Expr::List(list) => {
+            for element in &list.elts {
+                collect_target_names(element, names);
+            }
+        }
+        Expr::Tuple(tuple) => {
+            for element in &tuple.elts {
+                collect_target_names(element, names);
+            }
+        }
+        Expr::Starred(starred) => collect_target_names(starred.value.as_ref(), names),
+        _ => {}
+    }
+}
+
+#[derive(Default)]
+struct FunctionLocalCollector {
+    locals: HashSet<String>,
+    external: HashSet<String>,
+    unknown_wildcard: bool,
+}
+
+#[derive(Default)]
+struct ClassExternalBindings {
+    globals: HashSet<String>,
+    nonlocals: HashSet<String>,
+}
+
+impl ClassExternalBindings {
+    fn collect(statements: &[Stmt]) -> Self {
+        let mut collector = Self::default();
+        for statement in statements {
+            collector.visit_stmt(statement);
+        }
+        collector
+    }
+
+    fn copy_for_fallback(
+        &self,
+        source: &KnownImports,
+        target: &mut KnownImports,
+        parent_scope: ScopeKind,
+    ) {
+        let names = match parent_scope {
+            ScopeKind::Module => &self.globals,
+            ScopeKind::Function | ScopeKind::Class => &self.nonlocals,
+        };
+        for name in names {
+            target.copy_name_from(source, name);
+        }
+    }
+}
+
+impl<'ast> Visitor<'ast> for ClassExternalBindings {
+    fn visit_stmt(&mut self, statement: &'ast Stmt) {
+        match statement {
+            Stmt::FunctionDef(_) | Stmt::ClassDef(_) => return,
+            Stmt::Global(global) => {
+                self.globals
+                    .extend(global.names.iter().map(|name| name.as_str().to_owned()));
+            }
+            Stmt::Nonlocal(nonlocal) => {
+                self.nonlocals
+                    .extend(nonlocal.names.iter().map(|name| name.as_str().to_owned()));
+            }
+            _ => {}
+        }
+        visitor::walk_stmt(self, statement);
+    }
+}
+
+impl FunctionLocalCollector {
+    fn collect(definition: &ruff_python_ast::StmtFunctionDef) -> HashSet<String> {
+        let mut collector = Self::scan(&definition.body);
+        for parameter in &definition.parameters {
+            collector
+                .locals
+                .insert(parameter.name().as_str().to_owned());
+        }
+        collector
+            .locals
+            .retain(|name| !collector.external.contains(name));
+        collector.locals
+    }
+
+    fn scan(statements: &[Stmt]) -> Self {
+        let mut collector = Self::default();
+        for statement in statements {
+            collector.visit_stmt(statement);
+        }
+        collector
+    }
+
+    fn record_target(&mut self, target: &Expr) {
+        collect_target_names(target, &mut self.locals);
+    }
+
+    fn record_import(&mut self, import: &ruff_python_ast::StmtImport) {
+        for alias in &import.names {
+            let imported = alias.name.as_str();
+            let local = alias.asname.as_ref().map_or_else(
+                || imported.split('.').next().unwrap_or(imported),
+                ruff_python_ast::Identifier::as_str,
+            );
+            self.locals.insert(local.to_owned());
+        }
+    }
+
+    fn record_import_from(&mut self, import: &ruff_python_ast::StmtImportFrom) {
+        let supported_module = import.level == 0
+            && matches!(
+                import
+                    .module
+                    .as_ref()
+                    .map(ruff_python_ast::Identifier::as_str),
+                Some("typing" | "collections.abc")
+            );
+        for alias in &import.names {
+            if alias.name.as_str() == "*" {
+                self.unknown_wildcard |= !supported_module;
+                continue;
+            }
+            self.locals.insert(
+                alias
+                    .asname
+                    .as_ref()
+                    .map_or(alias.name.as_str(), ruff_python_ast::Identifier::as_str)
+                    .to_owned(),
+            );
+        }
+    }
+}
+
+impl<'ast> Visitor<'ast> for FunctionLocalCollector {
+    fn visit_stmt(&mut self, statement: &'ast Stmt) {
+        match statement {
+            Stmt::FunctionDef(definition) => {
+                self.locals.insert(definition.name.as_str().to_owned());
+                for decorator in &definition.decorator_list {
+                    self.visit_decorator(decorator);
+                }
+                if let Some(type_params) = &definition.type_params {
+                    self.visit_type_params(type_params);
+                }
+                self.visit_parameters(&definition.parameters);
+                if let Some(returns) = &definition.returns {
+                    self.visit_annotation(returns);
+                }
+                return;
+            }
+            Stmt::ClassDef(definition) => {
+                self.locals.insert(definition.name.as_str().to_owned());
+                for decorator in &definition.decorator_list {
+                    self.visit_decorator(decorator);
+                }
+                if let Some(type_params) = &definition.type_params {
+                    self.visit_type_params(type_params);
+                }
+                if let Some(arguments) = &definition.arguments {
+                    self.visit_arguments(arguments);
+                }
+                return;
+            }
+            Stmt::Import(import) => self.record_import(import),
+            Stmt::ImportFrom(import) => self.record_import_from(import),
+            Stmt::Assign(assign) => {
+                for target in &assign.targets {
+                    self.record_target(target);
+                }
+            }
+            Stmt::AnnAssign(assign) => self.record_target(assign.target.as_ref()),
+            Stmt::AugAssign(assign) => self.record_target(assign.target.as_ref()),
+            Stmt::Delete(delete) => {
+                for target in &delete.targets {
+                    self.record_target(target);
+                }
+            }
+            Stmt::TypeAlias(alias) => self.record_target(alias.name.as_ref()),
+            Stmt::For(statement_for) => self.record_target(statement_for.target.as_ref()),
+            Stmt::With(statement_with) => {
+                for item in &statement_with.items {
+                    if let Some(target) = &item.optional_vars {
+                        self.record_target(target);
+                    }
+                }
+            }
+            Stmt::Global(global) => {
+                self.external
+                    .extend(global.names.iter().map(|name| name.as_str().to_owned()));
+            }
+            Stmt::Nonlocal(nonlocal) => {
+                self.external
+                    .extend(nonlocal.names.iter().map(|name| name.as_str().to_owned()));
+            }
+            _ => {}
+        }
+        visitor::walk_stmt(self, statement);
+    }
+
+    fn visit_expr(&mut self, expression: &'ast Expr) {
+        match expression {
+            Expr::Lambda(lambda) => {
+                if let Some(parameters) = &lambda.parameters {
+                    for default in parameters
+                        .iter_non_variadic_params()
+                        .filter_map(ruff_python_ast::ParameterWithDefault::default)
+                    {
+                        self.visit_expr(default);
+                    }
+                }
+                return;
+            }
+            Expr::Named(named) => self.record_target(named.target.as_ref()),
+            _ => {}
+        }
+        visitor::walk_expr(self, expression);
+    }
+
+    fn visit_pattern(&mut self, pattern: &'ast Pattern) {
+        match pattern {
+            Pattern::MatchMapping(mapping) => {
+                if let Some(rest) = &mapping.rest {
+                    self.locals.insert(rest.as_str().to_owned());
+                }
+            }
+            Pattern::MatchStar(star) => {
+                if let Some(name) = &star.name {
+                    self.locals.insert(name.as_str().to_owned());
+                }
+            }
+            Pattern::MatchAs(as_pattern) => {
+                if let Some(name) = &as_pattern.name {
+                    self.locals.insert(name.as_str().to_owned());
+                }
+            }
+            _ => {}
+        }
+        visitor::walk_pattern(self, pattern);
+    }
+
+    fn visit_except_handler(&mut self, except_handler: &'ast ruff_python_ast::ExceptHandler) {
+        let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
+        if let Some(name) = &handler.name {
+            self.locals.insert(name.as_str().to_owned());
+        }
+        visitor::walk_except_handler(self, except_handler);
+    }
+}
+
+struct NamedBindingInvalidator<'imports> {
+    imports: &'imports mut KnownImports,
+}
+
+impl<'imports> NamedBindingInvalidator<'imports> {
+    fn visit(imports: &'imports mut KnownImports, expression: &Expr) {
+        Self { imports }.visit_expr(expression);
+    }
+
+    fn visit_statement(imports: &'imports mut KnownImports, statement: &Stmt) {
+        visitor::walk_stmt(&mut Self { imports }, statement);
+    }
+
+    fn visit_type_params(
+        imports: &'imports mut KnownImports,
+        type_params: &ruff_python_ast::TypeParams,
+    ) {
+        Visitor::visit_type_params(&mut Self { imports }, type_params);
+    }
+}
+
+impl<'ast> Visitor<'ast> for NamedBindingInvalidator<'_> {
+    fn visit_expr(&mut self, expression: &'ast Expr) {
+        match expression {
+            Expr::Lambda(lambda) => {
+                if let Some(parameters) = &lambda.parameters {
+                    for default in parameters
+                        .iter_non_variadic_params()
+                        .filter_map(ruff_python_ast::ParameterWithDefault::default)
+                    {
+                        self.visit_expr(default);
+                    }
+                }
+                return;
+            }
+            Expr::Named(named) => self.imports.invalidate_target(named.target.as_ref()),
+            _ => {}
+        }
+        visitor::walk_expr(self, expression);
+    }
+}
+
+fn invalidate_pattern_bindings(imports: &mut KnownImports, pattern: &Pattern) {
+    struct PatternBindingInvalidator<'imports> {
+        imports: &'imports mut KnownImports,
+    }
+
+    impl<'ast> Visitor<'ast> for PatternBindingInvalidator<'_> {
+        fn visit_pattern(&mut self, pattern: &'ast Pattern) {
+            match pattern {
+                Pattern::MatchMapping(mapping) => {
+                    if let Some(rest) = &mapping.rest {
+                        self.imports.invalidate(rest.as_str());
+                    }
+                }
+                Pattern::MatchStar(star) => {
+                    if let Some(name) = &star.name {
+                        self.imports.invalidate(name.as_str());
+                    }
+                }
+                Pattern::MatchAs(as_pattern) => {
+                    if let Some(name) = &as_pattern.name {
+                        self.imports.invalidate(name.as_str());
+                    }
+                }
+                _ => {}
+            }
+            visitor::walk_pattern(self, pattern);
+        }
+    }
+
+    PatternBindingInvalidator { imports }.visit_pattern(pattern);
+}
+
+#[derive(Default)]
+struct ControlFlowExits {
+    fallthrough: Option<KnownImports>,
+    breaks: Vec<KnownImports>,
+    continues: Vec<KnownImports>,
+    terminates: Vec<KnownImports>,
+}
+
+#[derive(Clone, Copy)]
+enum ExitCategory {
+    Fallthrough,
+    Break,
+    Continue,
+    Terminate,
+}
+
+#[derive(Clone, Copy)]
+enum ScopeKind {
+    Module,
+    Function,
+    Class,
+}
+
+impl ControlFlowExits {
+    fn fallthrough(imports: KnownImports) -> Self {
+        Self {
+            fallthrough: Some(imports),
+            ..Self::default()
+        }
+    }
+
+    fn merge_abrupt(&mut self, other: Self) {
+        self.breaks.extend(other.breaks);
+        self.continues.extend(other.continues);
+        self.terminates.extend(other.terminates);
+    }
+}
+
+struct AnnotationSite<'ast> {
+    annotation: &'ast Expr,
+    symbol: Option<String>,
+    imports: KnownImports,
+}
+
 struct AnnotationCollector<'ast> {
-    annotations: Vec<(&'ast Expr, Option<String>)>,
+    annotations: Vec<AnnotationSite<'ast>>,
+    imports: KnownImports,
+    class_body_fallback: Option<KnownImports>,
+    class_external_bindings: Option<ClassExternalBindings>,
+    class_parent_scope: Option<ScopeKind>,
+    scope_kind: ScopeKind,
     qualname: Vec<String>,
+    record_annotations: bool,
 }
 
 impl<'ast> AnnotationCollector<'ast> {
-    fn collect(module: &'ast ModModule) -> Vec<(&'ast Expr, Option<String>)> {
+    fn collect(module: &'ast ModModule) -> Vec<AnnotationSite<'ast>> {
         let mut collector = Self {
             annotations: Vec::new(),
+            imports: KnownImports::default(),
+            class_body_fallback: None,
+            class_external_bindings: None,
+            class_parent_scope: None,
+            scope_kind: ScopeKind::Module,
             qualname: Vec::new(),
+            record_annotations: true,
         };
-        for statement in &module.body {
-            collector.visit_stmt(statement);
-        }
+        collector.visit_suite(&module.body);
         collector.annotations
     }
 
@@ -2064,38 +2546,547 @@ impl<'ast> AnnotationCollector<'ast> {
         (!self.qualname.is_empty()).then(|| self.qualname.join("."))
     }
 
-    fn record_function_annotations(&mut self, definition: &'ast ruff_python_ast::StmtFunctionDef) {
+    fn visit_function_header(&mut self, definition: &'ast ruff_python_ast::StmtFunctionDef) {
+        for decorator in &definition.decorator_list {
+            NamedBindingInvalidator::visit(&mut self.imports, &decorator.expression);
+        }
+        if let Some(type_params) = &definition.type_params {
+            NamedBindingInvalidator::visit_type_params(&mut self.imports, type_params);
+        }
+        for default in definition
+            .parameters
+            .iter_non_variadic_params()
+            .filter_map(ruff_python_ast::ParameterWithDefault::default)
+        {
+            NamedBindingInvalidator::visit(&mut self.imports, default);
+        }
+        self.qualname.push(definition.name.as_str().to_owned());
         for parameter in &definition.parameters {
             if let Some(annotation) = parameter.annotation() {
-                self.annotations.push((annotation, self.symbol()));
+                self.record(annotation);
+                NamedBindingInvalidator::visit(&mut self.imports, annotation);
             }
         }
         if let Some(annotation) = definition.returns.as_deref() {
-            self.annotations.push((annotation, self.symbol()));
+            self.record(annotation);
+            NamedBindingInvalidator::visit(&mut self.imports, annotation);
+        }
+        self.qualname.pop();
+    }
+
+    fn visit_class_header(&mut self, definition: &'ast ruff_python_ast::StmtClassDef) {
+        for decorator in &definition.decorator_list {
+            NamedBindingInvalidator::visit(&mut self.imports, &decorator.expression);
+        }
+        if let Some(type_params) = &definition.type_params {
+            NamedBindingInvalidator::visit_type_params(&mut self.imports, type_params);
+        }
+        if let Some(arguments) = &definition.arguments {
+            for argument in &arguments.args {
+                NamedBindingInvalidator::visit(&mut self.imports, argument);
+            }
+            for keyword in &arguments.keywords {
+                NamedBindingInvalidator::visit(&mut self.imports, &keyword.value);
+            }
+        }
+    }
+
+    fn record(&mut self, annotation: &'ast Expr) {
+        if !self.record_annotations {
+            return;
+        }
+        self.annotations.push(AnnotationSite {
+            annotation,
+            symbol: self.symbol(),
+            imports: self.imports.clone(),
+        });
+    }
+
+    fn visit_suite(&mut self, statements: &'ast [Stmt]) {
+        let _ = self.visit_suite_flow(statements);
+    }
+
+    fn visit_suite_from(
+        &mut self,
+        imports: KnownImports,
+        statements: &'ast [Stmt],
+    ) -> ControlFlowExits {
+        self.imports = imports;
+        self.visit_suite_flow(statements)
+    }
+
+    fn visit_suite_flow(&mut self, statements: &'ast [Stmt]) -> ControlFlowExits {
+        let mut exits = ControlFlowExits::default();
+        let mut fallthrough = Some(self.imports.clone());
+        for statement in statements {
+            let Some(imports) = fallthrough.take() else {
+                let inherited = self.imports.clone();
+                let _ = self.visit_statement_flow(statement);
+                self.imports = inherited;
+                continue;
+            };
+            self.imports = imports;
+            let statement_exits = self.visit_statement_flow(statement);
+            fallthrough.clone_from(&statement_exits.fallthrough);
+            exits.merge_abrupt(statement_exits);
+        }
+        if let Some(imports) = &fallthrough {
+            self.imports = imports.clone();
+        }
+        exits.fallthrough = fallthrough;
+        exits
+    }
+
+    fn merge_branch(
+        branches: &mut Vec<KnownImports>,
+        exits: &mut ControlFlowExits,
+        branch: ControlFlowExits,
+    ) {
+        if let Some(imports) = branch.fallthrough.clone() {
+            branches.push(imports);
+        }
+        exits.merge_abrupt(branch);
+    }
+
+    fn visit_function_definition(
+        &mut self,
+        statement: &'ast Stmt,
+        definition: &'ast ruff_python_ast::StmtFunctionDef,
+    ) -> ControlFlowExits {
+        self.visit_function_header(definition);
+        self.imports.transfer_statement(statement);
+        let inherited = self.imports.clone();
+        if let (Some(bindings), Some(fallback), Some(parent_scope)) = (
+            &self.class_external_bindings,
+            &mut self.class_body_fallback,
+            self.class_parent_scope,
+        ) {
+            bindings.copy_for_fallback(&self.imports, fallback, parent_scope);
+        }
+        let inherited_fallback = self.class_body_fallback.clone();
+        let inherited_bindings = self.class_external_bindings.take();
+        let inherited_class_parent_scope = self.class_parent_scope.take();
+        self.imports = inherited_fallback
+            .clone()
+            .unwrap_or_else(|| inherited.clone());
+        for local in FunctionLocalCollector::collect(definition) {
+            self.imports.invalidate(&local);
+        }
+        self.class_body_fallback = None;
+        let inherited_scope = self.scope_kind;
+        self.scope_kind = ScopeKind::Function;
+        self.qualname.push(definition.name.as_str().to_owned());
+        self.visit_suite(&definition.body);
+        self.qualname.pop();
+        self.scope_kind = inherited_scope;
+        self.imports = inherited;
+        self.class_body_fallback = inherited_fallback;
+        self.class_external_bindings = inherited_bindings;
+        self.class_parent_scope = inherited_class_parent_scope;
+        ControlFlowExits::fallthrough(self.imports.clone())
+    }
+
+    fn visit_class_definition(
+        &mut self,
+        statement: &'ast Stmt,
+        definition: &'ast ruff_python_ast::StmtClassDef,
+    ) -> ControlFlowExits {
+        self.visit_class_header(definition);
+        let mut inherited = self.imports.clone();
+        let inherited_fallback = self.class_body_fallback.clone();
+        let inherited_bindings = self.class_external_bindings.take();
+        let inherited_class_parent_scope = self.class_parent_scope.take();
+        let inherited_scope = self.scope_kind;
+        let class_fallback = inherited_fallback.clone().unwrap_or_else(|| {
+            let mut fallback = inherited.clone();
+            fallback.invalidate(definition.name.as_str());
+            fallback
+        });
+        self.class_body_fallback = Some(class_fallback);
+        self.class_external_bindings = Some(ClassExternalBindings::collect(&definition.body));
+        self.class_parent_scope = Some(inherited_scope);
+        self.scope_kind = ScopeKind::Class;
+        self.qualname.push(definition.name.as_str().to_owned());
+        let body_exits = self.visit_suite_flow(&definition.body);
+        self.qualname.pop();
+        if let Some(body_imports) = &body_exits.fallthrough
+            && let Some(bindings) = &self.class_external_bindings
+        {
+            match inherited_scope {
+                ScopeKind::Module => {
+                    for name in &bindings.globals {
+                        inherited.copy_name_from(body_imports, name);
+                    }
+                }
+                ScopeKind::Function => {
+                    for name in &bindings.nonlocals {
+                        inherited.copy_name_from(body_imports, name);
+                    }
+                }
+                ScopeKind::Class => {}
+            }
+        }
+        self.imports = inherited;
+        self.class_body_fallback = inherited_fallback;
+        self.class_external_bindings = inherited_bindings;
+        self.class_parent_scope = inherited_class_parent_scope;
+        self.scope_kind = inherited_scope;
+        self.imports.transfer_statement(statement);
+        ControlFlowExits::fallthrough(self.imports.clone())
+    }
+
+    fn visit_if(&mut self, statement: &'ast ruff_python_ast::StmtIf) -> ControlFlowExits {
+        NamedBindingInvalidator::visit(&mut self.imports, statement.test.as_ref());
+        let mut remaining = Some(self.imports.clone());
+        let mut branches = Vec::new();
+        let mut exits = ControlFlowExits::default();
+        let body = self.visit_suite_from(
+            remaining.clone().expect("if test has a false path"),
+            &statement.body,
+        );
+        Self::merge_branch(&mut branches, &mut exits, body);
+        for clause in &statement.elif_else_clauses {
+            let Some(mut clause_imports) = remaining.take() else {
+                break;
+            };
+            if let Some(test) = &clause.test {
+                NamedBindingInvalidator::visit(&mut clause_imports, test);
+                remaining = Some(clause_imports.clone());
+            }
+            let clause_exits = self.visit_suite_from(clause_imports, &clause.body);
+            Self::merge_branch(&mut branches, &mut exits, clause_exits);
+            if clause.test.is_none() {
+                remaining = None;
+            }
+        }
+        if let Some(imports) = remaining {
+            branches.push(imports);
+        }
+        exits.fallthrough = KnownImports::intersection(branches);
+        exits
+    }
+
+    fn visit_loop(
+        &mut self,
+        body_imports: &KnownImports,
+        zero_iteration: KnownImports,
+        iteration_target: Option<&'ast Expr>,
+        body: &'ast [Stmt],
+        orelse: &'ast [Stmt],
+    ) -> ControlFlowExits {
+        let body_imports = self.loop_head_fixed_point(body_imports, iteration_target, body);
+        let body_exits = self.visit_suite_from(body_imports, body);
+        let mut natural = vec![zero_iteration];
+        natural.extend(body_exits.fallthrough.clone());
+        natural.extend(body_exits.continues.iter().cloned());
+        let natural =
+            KnownImports::intersection(natural).expect("a loop always has its zero-iteration path");
+        let orelse_exits = self.visit_suite_from(natural, orelse);
+        let mut after_loop = body_exits.breaks.clone();
+        after_loop.extend(orelse_exits.fallthrough.clone());
+        after_loop.extend(orelse_exits.breaks.iter().cloned());
+        after_loop.extend(orelse_exits.continues.iter().cloned());
+        let mut exits = ControlFlowExits {
+            fallthrough: KnownImports::intersection(after_loop),
+            terminates: body_exits.terminates,
+            ..ControlFlowExits::default()
+        };
+        exits.terminates.extend(orelse_exits.terminates);
+        exits
+    }
+
+    fn loop_head_fixed_point(
+        &mut self,
+        initial: &KnownImports,
+        iteration_target: Option<&'ast Expr>,
+        body: &'ast [Stmt],
+    ) -> KnownImports {
+        let mut head = initial.clone();
+        loop {
+            let record_annotations = self.record_annotations;
+            self.record_annotations = false;
+            let body_exits = self.visit_suite_from(head.clone(), body);
+            self.record_annotations = record_annotations;
+
+            let mut entries = vec![initial.clone()];
+            if let Some(mut imports) = body_exits.fallthrough {
+                if let Some(target) = iteration_target {
+                    imports.invalidate_target(target);
+                }
+                entries.push(imports);
+            }
+            for mut imports in body_exits.continues {
+                if let Some(target) = iteration_target {
+                    imports.invalidate_target(target);
+                }
+                entries.push(imports);
+            }
+            let next = KnownImports::intersection(entries)
+                .expect("a loop head always includes its initial entry");
+            if next == head {
+                return head;
+            }
+            head = next;
+        }
+    }
+
+    fn visit_for(&mut self, statement: &'ast ruff_python_ast::StmtFor) -> ControlFlowExits {
+        NamedBindingInvalidator::visit(&mut self.imports, statement.iter.as_ref());
+        let zero_iteration = self.imports.clone();
+        let mut body_imports = zero_iteration.clone();
+        body_imports.invalidate_target(statement.target.as_ref());
+        self.visit_loop(
+            &body_imports,
+            zero_iteration,
+            Some(statement.target.as_ref()),
+            &statement.body,
+            &statement.orelse,
+        )
+    }
+
+    fn visit_while(&mut self, statement: &'ast ruff_python_ast::StmtWhile) -> ControlFlowExits {
+        NamedBindingInvalidator::visit(&mut self.imports, statement.test.as_ref());
+        let zero_iteration = self.imports.clone();
+        self.visit_loop(
+            &zero_iteration,
+            zero_iteration.clone(),
+            None,
+            &statement.body,
+            &statement.orelse,
+        )
+    }
+
+    fn visit_with(&mut self, statement: &'ast ruff_python_ast::StmtWith) -> ControlFlowExits {
+        for item in &statement.items {
+            NamedBindingInvalidator::visit(&mut self.imports, &item.context_expr);
+            if let Some(target) = &item.optional_vars {
+                self.imports.invalidate_target(target);
+            }
+        }
+        self.visit_suite_flow(&statement.body)
+    }
+
+    fn visit_try(&mut self, statement: &'ast ruff_python_ast::StmtTry) -> ControlFlowExits {
+        let incoming = self.imports.clone();
+        let body_exits = self.visit_suite_from(incoming.clone(), &statement.body);
+        let normal_exits = body_exits
+            .fallthrough
+            .clone()
+            .map(|imports| self.visit_suite_from(imports, &statement.orelse));
+
+        let mut handler_imports = incoming;
+        let try_effects = FunctionLocalCollector::scan(&statement.body);
+        if try_effects.unknown_wildcard {
+            handler_imports.direct.clear();
+            handler_imports.modules.clear();
+            handler_imports.type_vars.clear();
+        }
+        for name in try_effects.locals {
+            handler_imports.invalidate(&name);
+        }
+        let mut joined = ControlFlowExits::default();
+        let mut fallthrough = Vec::new();
+        if let Some(normal) = normal_exits {
+            Self::merge_branch(&mut fallthrough, &mut joined, normal);
+        }
+        joined.breaks.extend(body_exits.breaks);
+        joined.continues.extend(body_exits.continues);
+        joined.terminates.extend(body_exits.terminates);
+        for except_handler in &statement.handlers {
+            let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
+            let mut imports = handler_imports.clone();
+            if let Some(type_) = &handler.type_ {
+                NamedBindingInvalidator::visit(&mut imports, type_.as_ref());
+            }
+            if let Some(name) = &handler.name {
+                imports.invalidate(name.as_str());
+            }
+            let mut handler_exits = self.visit_suite_from(imports, &handler.body);
+            if let Some(name) = &handler.name {
+                let invalidate = |state: &mut KnownImports| state.invalidate(name.as_str());
+                if let Some(state) = &mut handler_exits.fallthrough {
+                    invalidate(state);
+                }
+                for state in handler_exits
+                    .breaks
+                    .iter_mut()
+                    .chain(&mut handler_exits.continues)
+                    .chain(&mut handler_exits.terminates)
+                {
+                    invalidate(state);
+                }
+            }
+            Self::merge_branch(&mut fallthrough, &mut joined, handler_exits);
+        }
+        joined.fallthrough = KnownImports::intersection(fallthrough);
+        self.apply_finally(joined, &statement.finalbody)
+    }
+
+    fn apply_finally(
+        &mut self,
+        exits: ControlFlowExits,
+        finalbody: &'ast [Stmt],
+    ) -> ControlFlowExits {
+        if finalbody.is_empty() {
+            return exits;
+        }
+
+        let mut annotation_entries = Vec::new();
+        annotation_entries.extend(exits.fallthrough.iter().cloned());
+        annotation_entries.extend(exits.breaks.iter().cloned());
+        annotation_entries.extend(exits.continues.iter().cloned());
+        annotation_entries.extend(exits.terminates.iter().cloned());
+        let Some(annotation_entry) = KnownImports::intersection(annotation_entries) else {
+            let _ = self.visit_suite_from(self.imports.clone(), finalbody);
+            return ControlFlowExits::default();
+        };
+        let _ = self.visit_suite_from(annotation_entry, finalbody);
+
+        let mut result = ControlFlowExits::default();
+        let mut fallthrough = Vec::new();
+        if let Some(imports) = exits.fallthrough {
+            self.route_finally_entry(
+                imports,
+                ExitCategory::Fallthrough,
+                finalbody,
+                &mut fallthrough,
+                &mut result,
+            );
+        }
+        for (category, entries) in [
+            (ExitCategory::Break, exits.breaks),
+            (ExitCategory::Continue, exits.continues),
+            (ExitCategory::Terminate, exits.terminates),
+        ] {
+            for imports in entries {
+                self.route_finally_entry(
+                    imports,
+                    category,
+                    finalbody,
+                    &mut fallthrough,
+                    &mut result,
+                );
+            }
+        }
+        result.fallthrough = KnownImports::intersection(fallthrough);
+        result
+    }
+
+    fn route_finally_entry(
+        &mut self,
+        imports: KnownImports,
+        category: ExitCategory,
+        finalbody: &'ast [Stmt],
+        fallthrough: &mut Vec<KnownImports>,
+        result: &mut ControlFlowExits,
+    ) {
+        let record_annotations = self.record_annotations;
+        self.record_annotations = false;
+        let final_exits = self.visit_suite_from(imports, finalbody);
+        self.record_annotations = record_annotations;
+
+        if let Some(imports) = final_exits.fallthrough {
+            match category {
+                ExitCategory::Fallthrough => fallthrough.push(imports),
+                ExitCategory::Break => result.breaks.push(imports),
+                ExitCategory::Continue => result.continues.push(imports),
+                ExitCategory::Terminate => result.terminates.push(imports),
+            }
+        }
+        result.breaks.extend(final_exits.breaks);
+        result.continues.extend(final_exits.continues);
+        result.terminates.extend(final_exits.terminates);
+    }
+
+    fn visit_match(&mut self, statement: &'ast ruff_python_ast::StmtMatch) -> ControlFlowExits {
+        NamedBindingInvalidator::visit(&mut self.imports, statement.subject.as_ref());
+        let mut remaining = Some(self.imports.clone());
+        let mut fallthrough = Vec::new();
+        let mut exits = ControlFlowExits::default();
+        for case in &statement.cases {
+            let Some(mut imports) = remaining.take() else {
+                break;
+            };
+            invalidate_pattern_bindings(&mut imports, &case.pattern);
+            let mut failed = Vec::new();
+            if !case.pattern.is_irrefutable() {
+                failed.push(imports.clone());
+            }
+            if let Some(guard) = &case.guard {
+                NamedBindingInvalidator::visit(&mut imports, guard.as_ref());
+                failed.push(imports.clone());
+            }
+            let case_exits = self.visit_suite_from(imports, &case.body);
+            Self::merge_branch(&mut fallthrough, &mut exits, case_exits);
+            remaining = KnownImports::intersection(failed);
+        }
+        if let Some(imports) = remaining {
+            fallthrough.push(imports);
+        }
+        exits.fallthrough = KnownImports::intersection(fallthrough);
+        exits
+    }
+
+    fn visit_statement_flow(&mut self, statement: &'ast Stmt) -> ControlFlowExits {
+        match statement {
+            Stmt::FunctionDef(definition) => self.visit_function_definition(statement, definition),
+            Stmt::ClassDef(definition) => self.visit_class_definition(statement, definition),
+            Stmt::If(statement_if) => self.visit_if(statement_if),
+            Stmt::For(statement_for) => self.visit_for(statement_for),
+            Stmt::While(statement_while) => self.visit_while(statement_while),
+            Stmt::With(statement_with) => self.visit_with(statement_with),
+            Stmt::Try(statement_try) => self.visit_try(statement_try),
+            Stmt::Match(statement_match) => self.visit_match(statement_match),
+            Stmt::AnnAssign(assign) => {
+                if let Some(value) = assign.value.as_deref() {
+                    NamedBindingInvalidator::visit(&mut self.imports, value);
+                    NamedBindingInvalidator::visit(&mut self.imports, assign.target.as_ref());
+                    self.imports
+                        .transfer_assign(std::slice::from_ref(assign.target.as_ref()), value);
+                } else {
+                    NamedBindingInvalidator::visit(&mut self.imports, assign.target.as_ref());
+                }
+                self.record(assign.annotation.as_ref());
+                NamedBindingInvalidator::visit(&mut self.imports, assign.annotation.as_ref());
+                ControlFlowExits::fallthrough(self.imports.clone())
+            }
+            Stmt::Break(_) => {
+                visitor::walk_stmt(self, statement);
+                ControlFlowExits {
+                    breaks: vec![self.imports.clone()],
+                    ..ControlFlowExits::default()
+                }
+            }
+            Stmt::Continue(_) => {
+                visitor::walk_stmt(self, statement);
+                ControlFlowExits {
+                    continues: vec![self.imports.clone()],
+                    ..ControlFlowExits::default()
+                }
+            }
+            Stmt::Return(_) | Stmt::Raise(_) => {
+                visitor::walk_stmt(self, statement);
+                NamedBindingInvalidator::visit_statement(&mut self.imports, statement);
+                ControlFlowExits {
+                    terminates: vec![self.imports.clone()],
+                    ..ControlFlowExits::default()
+                }
+            }
+            _ => {
+                visitor::walk_stmt(self, statement);
+                NamedBindingInvalidator::visit_statement(&mut self.imports, statement);
+                self.imports.transfer_statement(statement);
+                ControlFlowExits::fallthrough(self.imports.clone())
+            }
         }
     }
 }
 
 impl<'ast> Visitor<'ast> for AnnotationCollector<'ast> {
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
-        match statement {
-            Stmt::FunctionDef(definition) => {
-                self.qualname.push(definition.name.as_str().to_owned());
-                self.record_function_annotations(definition);
-                visitor::walk_stmt(self, statement);
-                self.qualname.pop();
-            }
-            Stmt::ClassDef(definition) => {
-                self.qualname.push(definition.name.as_str().to_owned());
-                visitor::walk_stmt(self, statement);
-                self.qualname.pop();
-            }
-            Stmt::AnnAssign(assign) => {
-                self.annotations
-                    .push((assign.annotation.as_ref(), self.symbol()));
-                visitor::walk_stmt(self, statement);
-            }
-            _ => visitor::walk_stmt(self, statement),
+        let exits = self.visit_statement_flow(statement);
+        if let Some(imports) = exits.fallthrough {
+            self.imports = imports;
         }
     }
 }
@@ -2108,9 +3099,11 @@ fn type_annotation_candidates(
     request: &AnalyzeRequest<'_>,
 ) -> ProducerPrefix {
     let mut candidates = CandidatePrefix::new(request.max_candidates);
-    for (annotation, symbol) in AnnotationCollector::collect(module) {
-        for (replacement, operator) in annotation_replacements(annotation, source, &facts.imports) {
-            let range = annotation.range();
+    for site in AnnotationCollector::collect(module) {
+        for (replacement, operator) in
+            annotation_replacements(site.annotation, source, &site.imports)
+        {
+            let range = site.annotation.range();
             let start = usize::from(range.start());
             let end = usize::from(range.end());
             if let Some(candidate) = make_candidate(
@@ -2120,7 +3113,7 @@ fn type_annotation_candidates(
                 start..end,
                 replacement,
                 operator,
-                symbol.clone(),
+                site.symbol.clone(),
             ) && retained_by_profile(&candidate, request.profile, facts)
             {
                 candidates.push(candidate);

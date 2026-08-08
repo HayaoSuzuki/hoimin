@@ -30,6 +30,28 @@ fn apply_candidate_and_reparse(source: &str, candidate: &super::AnalyzerCandidat
     mutated
 }
 
+fn assert_type_list_sequence_sites(source: &str, expected: &[(u64, u64, u32, Option<&str>, &str)]) {
+    let output = analyze_types(source);
+    let actual: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "type_list_sequence")
+        .map(|candidate| {
+            (
+                candidate.span.start,
+                candidate.span.length,
+                candidate.line,
+                candidate.symbol.as_deref(),
+                candidate.replacement.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(actual, expected);
+    for candidate in &output.candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
 fn prefix_candidate(start: u64, replacement: &str, operator: &str) -> AnalyzerCandidate {
     AnalyzerCandidate {
         path: Utf8Path::new("pkg/sample.py").to_path_buf(),
@@ -2156,6 +2178,890 @@ fn type_annotations_emit_supported_candidates_in_source_order() {
             ("Sequence[str]", "Iterable[str]", "type_sequence_iterable"),
         ]
     );
+}
+
+#[test]
+fn typing_import_rebinding_linear() {
+    for (name, source, expected) in [
+        (
+            "unaliased import assignment and restoration",
+            "from typing import Sequence\nbefore: list[str]\nSequence = local_sequence\nafter: list[str]\nfrom typing import Sequence as Sequence\nrestored: list[str]\n",
+            vec![
+                (36, 9, 2, None, "Sequence[str]"),
+                (139, 9, 6, None, "Sequence[str]"),
+            ],
+        ),
+        (
+            "direct alias assignment and restoration",
+            "from typing import Sequence as Seq\nbefore: list[str]\nSeq = local_sequence\nafter: list[str]\nfrom typing import Sequence as Seq\nrestored: list[str]\n",
+            vec![(43, 9, 2, None, "Seq[str]"), (136, 9, 6, None, "Seq[str]")],
+        ),
+        (
+            "delete rebinding",
+            "from typing import Sequence\nbefore: list[str]\ndel Sequence\nafter: list[str]\n",
+            vec![(36, 9, 2, None, "Sequence[str]")],
+        ),
+        (
+            "function definition rebinding and restoration",
+            "from typing import Sequence\nbefore: list[str]\ndef Sequence():\n    pass\nafter: list[str]\nfrom typing import Sequence\nrestored: list[str]\n",
+            vec![
+                (36, 9, 2, None, "Sequence[str]"),
+                (126, 9, 7, None, "Sequence[str]"),
+            ],
+        ),
+        (
+            "class definition rebinding and restoration",
+            "from typing import Sequence\nbefore: list[str]\nclass Sequence:\n    pass\nafter: list[str]\nfrom typing import Sequence\nrestored: list[str]\n",
+            vec![
+                (36, 9, 2, None, "Sequence[str]"),
+                (126, 9, 7, None, "Sequence[str]"),
+            ],
+        ),
+    ] {
+        let output = analyze_types(source);
+        let actual: Vec<_> = output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "type_list_sequence")
+            .map(|candidate| {
+                (
+                    candidate.span.start,
+                    candidate.span.length,
+                    candidate.line,
+                    candidate.symbol.as_deref(),
+                    candidate.replacement.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(actual, expected, "{name}");
+        for candidate in &output.candidates {
+            apply_candidate_and_reparse(source, candidate);
+        }
+    }
+}
+
+#[test]
+fn typing_module_alias_rebinding_linear() {
+    for (name, source, expected) in [
+        (
+            "module alias assignment and restoration",
+            "import typing as t\nbefore: list[str]\nt = local_typing\nafter: list[str]\nimport typing as t\nrestored: list[str]\n",
+            vec![
+                (27, 9, 2, None, "t.Sequence[str]"),
+                (100, 9, 6, None, "t.Sequence[str]"),
+            ],
+        ),
+        (
+            "unsupported competing module import and restoration",
+            "import typing as t\nbefore: list[str]\nimport local as t\nafter: list[str]\nimport typing as t\nrestored: list[str]\n",
+            vec![
+                (27, 9, 2, None, "t.Sequence[str]"),
+                (101, 9, 6, None, "t.Sequence[str]"),
+            ],
+        ),
+        (
+            "unsupported wildcard import invalidates module aliases",
+            "import typing as t\nbefore: list[str]\nfrom local import *\nafter: list[str]\n",
+            vec![(27, 9, 2, None, "t.Sequence[str]")],
+        ),
+    ] {
+        let output = analyze_types(source);
+        let actual: Vec<_> = output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "type_list_sequence")
+            .map(|candidate| {
+                (
+                    candidate.span.start,
+                    candidate.span.length,
+                    candidate.line,
+                    candidate.symbol.as_deref(),
+                    candidate.replacement.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(actual, expected, "{name}");
+        for candidate in &output.candidates {
+            apply_candidate_and_reparse(source, candidate);
+        }
+    }
+}
+
+const TYPING_IMPORT_REBINDING_SCOPE_SOURCE: &str = concat!(
+    "from typing import Sequence\n",
+    "\n",
+    "def Sequence(value: Sequence[str]) -> Sequence[str]:\n",
+    "    pass\n",
+    "same_name_after: list[str]\n",
+    "from typing import Sequence\n",
+    "\n",
+    "def parameter_shadow(Sequence):\n",
+    "    hidden: list[str]\n",
+    "\n",
+    "def local_shadow():\n",
+    "    hidden_before: list[str]\n",
+    "    Sequence = local_sequence\n",
+    "    from typing import Sequence\n",
+    "    restored: list[str]\n",
+    "\n",
+    "def nested_outer():\n",
+    "    visible: list[str]\n",
+    "    def nested():\n",
+    "        hidden: list[str]\n",
+    "        Sequence = local_sequence\n",
+    "    class Nested:\n",
+    "        visible: list[str]\n",
+    "        Sequence = local_sequence\n",
+    "        hidden: list[str]\n",
+    "    visible_after: list[str]\n",
+    "\n",
+    "class Container:\n",
+    "    Sequence = local_sequence\n",
+    "    method_field: list[str]\n",
+    "    def method(self, value: list[str]):\n",
+    "        visible_body: list[str]\n",
+    "\n",
+    "def global_binding():\n",
+    "    global Sequence\n",
+    "    visible_before: list[str]\n",
+    "    Sequence = local_sequence\n",
+    "    hidden_after: list[str]\n",
+    "\n",
+    "def nonlocal_outer():\n",
+    "    from typing import Sequence\n",
+    "    def inner():\n",
+    "        nonlocal Sequence\n",
+    "        visible_before: list[str]\n",
+    "        Sequence = local_sequence\n",
+    "        hidden_after: list[str]\n",
+    "    visible_outer: list[str]\n",
+    "\n",
+    "def with_target(manager):\n",
+    "    hidden_before: list[str]\n",
+    "    with manager as Sequence:\n",
+    "        hidden_inside: list[str]\n",
+    "\n",
+    "def except_target():\n",
+    "    hidden_before: list[str]\n",
+    "    try:\n",
+    "        work()\n",
+    "    except Error as Sequence:\n",
+    "        hidden_inside: list[str]\n",
+    "\n",
+    "def pattern_target(value):\n",
+    "    hidden_before: list[str]\n",
+    "    match value:\n",
+    "        case {\"item\": Sequence}:\n",
+    "            hidden_inside: list[str]\n",
+    "\n",
+    "def named_target(value):\n",
+    "    hidden_before: list[str]\n",
+    "    if (Sequence := value):\n",
+    "        hidden_inside: list[str]\n",
+    "\n",
+    "def comprehension_target(values):\n",
+    "    visible_before: list[str]\n",
+    "    result = [item for Sequence in values for item in Sequence]\n",
+    "    visible_after: list[str]\n",
+    "\n",
+    "untouched: list[str]\n",
+);
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn typing_import_rebinding_scope() {
+    let source = TYPING_IMPORT_REBINDING_SCOPE_SOURCE;
+    let output = analyze_types(source);
+    let actual: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "type_list_sequence")
+        .map(|candidate| {
+            (
+                candidate.span.start,
+                candidate.span.length,
+                candidate.line,
+                candidate.symbol.as_deref(),
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        actual,
+        vec![
+            (49, 13, 3, Some("Sequence"), "Sequence[str]", "list[str]"),
+            (67, 13, 3, Some("Sequence"), "Sequence[str]", "list[str]"),
+            (
+                327,
+                9,
+                15,
+                Some("local_shadow"),
+                "list[str]",
+                "Sequence[str]"
+            ),
+            (
+                371,
+                9,
+                18,
+                Some("nested_outer"),
+                "list[str]",
+                "Sequence[str]"
+            ),
+            (
+                494,
+                9,
+                23,
+                Some("nested_outer.Nested"),
+                "list[str]",
+                "Sequence[str]"
+            ),
+            (
+                583,
+                9,
+                26,
+                Some("nested_outer"),
+                "list[str]",
+                "Sequence[str]"
+            ),
+            (
+                731,
+                9,
+                32,
+                Some("Container.method"),
+                "list[str]",
+                "Sequence[str]"
+            ),
+            (
+                804,
+                9,
+                36,
+                Some("global_binding"),
+                "list[str]",
+                "Sequence[str]"
+            ),
+            (
+                994,
+                9,
+                44,
+                Some("nonlocal_outer.inner"),
+                "list[str]",
+                "Sequence[str]"
+            ),
+            (
+                1089,
+                9,
+                47,
+                Some("nonlocal_outer"),
+                "list[str]",
+                "Sequence[str]"
+            ),
+            (
+                1671,
+                9,
+                73,
+                Some("comprehension_target"),
+                "list[str]",
+                "Sequence[str]"
+            ),
+            (
+                1764,
+                9,
+                75,
+                Some("comprehension_target"),
+                "list[str]",
+                "Sequence[str]"
+            ),
+            (1786, 9, 77, None, "list[str]", "Sequence[str]"),
+        ]
+    );
+    for candidate in &output.candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+
+    let alias_source = concat!(
+        "import typing as t\n",
+        "def module_alias_shadow():\n",
+        "    hidden_before: list[str]\n",
+        "    t = local_typing\n",
+        "    import typing as t\n",
+        "    restored: list[str]\n",
+        "untouched: list[str]\n",
+    );
+    let alias_output = analyze_types(alias_source);
+    let alias_actual: Vec<_> = alias_output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "type_list_sequence")
+        .map(|candidate| {
+            (
+                candidate.span.start,
+                candidate.span.length,
+                candidate.line,
+                candidate.symbol.as_deref(),
+                candidate.replacement.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        alias_actual,
+        vec![
+            (133, 9, 6, Some("module_alias_shadow"), "t.Sequence[str]"),
+            (154, 9, 7, None, "t.Sequence[str]"),
+        ]
+    );
+    for candidate in &alias_output.candidates {
+        apply_candidate_and_reparse(alias_source, candidate);
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn typing_import_rebinding_control_flow() {
+    for (name, source, expected) in [
+        (
+            "if joins optional and identical branches",
+            concat!(
+                "from typing import Sequence\n",
+                "before: list[str]\n",
+                "if condition:\n",
+                "    Sequence = local_sequence\n",
+                "after_optional: list[str]\n",
+                "Sequence = local_sequence\n",
+                "if condition:\n",
+                "    from typing import Sequence\n",
+                "else:\n",
+                "    from typing import Sequence\n",
+                "after_identical: list[str]\n",
+            ),
+            vec![
+                (36, 2, None, "Sequence[str]"),
+                (243, 11, None, "Sequence[str]"),
+            ],
+        ),
+        (
+            "returning branch is not a continuation exit",
+            concat!(
+                "from typing import Sequence\n",
+                "def reachable(flag):\n",
+                "    from typing import Sequence\n",
+                "    if flag:\n",
+                "        Sequence = local_sequence\n",
+                "        return\n",
+                "    after_return: list[str]\n",
+                "untouched: list[str]\n",
+            ),
+            vec![
+                (161, 7, Some("reachable"), "Sequence[str]"),
+                (182, 8, None, "Sequence[str]"),
+            ],
+        ),
+        (
+            "loops include their zero iteration exits",
+            concat!(
+                "Sequence = local_sequence\n",
+                "for item in items:\n",
+                "    from typing import Sequence\n",
+                "    inside_for: list[str]\n",
+                "after_for: list[str]\n",
+                "from typing import Sequence\n",
+                "while condition:\n",
+                "    Sequence = local_sequence\n",
+                "after_while: list[str]\n",
+                "from typing import Sequence\n",
+                "untouched: list[str]\n",
+            ),
+            vec![
+                (93, 4, None, "Sequence[str]"),
+                (261, 11, None, "Sequence[str]"),
+            ],
+        ),
+        (
+            "try joins normal handlers else and applies finally",
+            concat!(
+                "from typing import Sequence\n",
+                "try:\n",
+                "    Sequence = local_sequence\n",
+                "except Error:\n",
+                "    from typing import Sequence\n",
+                "after_ambiguous: list[str]\n",
+                "Sequence = local_sequence\n",
+                "try:\n",
+                "    from typing import Sequence\n",
+                "except Error:\n",
+                "    from typing import Sequence\n",
+                "else:\n",
+                "    from typing import Sequence\n",
+                "after_identical: list[str]\n",
+                "Sequence = local_sequence\n",
+                "try:\n",
+                "    Sequence = local_sequence\n",
+                "except Error:\n",
+                "    Sequence = local_sequence\n",
+                "finally:\n",
+                "    from typing import Sequence\n",
+                "after_finally: list[str]\n",
+            ),
+            vec![
+                (300, 14, None, "Sequence[str]"),
+                (471, 22, None, "Sequence[str]"),
+            ],
+        ),
+        (
+            "with and except targets bind before their suites",
+            concat!(
+                "from typing import Sequence\n",
+                "with manager as Sequence:\n",
+                "    hidden_with: list[str]\n",
+                "after_with: list[str]\n",
+                "from typing import Sequence\n",
+                "try:\n",
+                "    work()\n",
+                "except Error as Sequence:\n",
+                "    hidden_except: list[str]\n",
+                "after_except: list[str]\n",
+                "from typing import Sequence\n",
+                "untouched: list[str]\n",
+            ),
+            vec![(265, 12, None, "Sequence[str]")],
+        ),
+        (
+            "match includes unmatched flow unless irrefutable",
+            concat!(
+                "from typing import Sequence\n",
+                "match value:\n",
+                "    case {\"item\": Sequence}:\n",
+                "        hidden_case: list[str]\n",
+                "after_optional: list[str]\n",
+                "Sequence = local_sequence\n",
+                "match value:\n",
+                "    case _:\n",
+                "        from typing import Sequence\n",
+                "after_irrefutable: list[str]\n",
+                "from typing import Sequence\n",
+                "match value:\n",
+                "    case Sequence if guard:\n",
+                "        from typing import Sequence\n",
+                "after_guarded: list[str]\n",
+                "from typing import Sequence\n",
+                "untouched: list[str]\n",
+            ),
+            vec![
+                (233, 10, None, "Sequence[str]"),
+                (412, 17, None, "Sequence[str]"),
+            ],
+        ),
+        (
+            "named expression binding precedes branch suites",
+            concat!(
+                "from typing import Sequence\n",
+                "if (Sequence := local_sequence):\n",
+                "    hidden_named: list[str]\n",
+                "after_named: list[str]\n",
+                "from typing import Sequence\n",
+                "untouched: list[str]\n",
+            ),
+            vec![(151, 6, None, "Sequence[str]")],
+        ),
+    ] {
+        let output = analyze_types(source);
+        let actual: Vec<_> = output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "type_list_sequence")
+            .map(|candidate| {
+                (
+                    candidate.span.start,
+                    candidate.line,
+                    candidate.symbol.as_deref(),
+                    candidate.replacement.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(actual, expected, "{name}");
+        for candidate in &output.candidates {
+            apply_candidate_and_reparse(source, candidate);
+        }
+    }
+}
+
+#[test]
+fn typing_import_rebinding_finally_preserves_exit_categories() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "\n",
+        "def return_path(flag):\n",
+        "    from typing import Sequence\n",
+        "    try:\n",
+        "        if flag:\n",
+        "            Sequence = local_sequence\n",
+        "            return\n",
+        "    finally:\n",
+        "        in_return_finally: list[str]\n",
+        "    after_return: list[str]\n",
+        "\n",
+        "def raise_path(flag):\n",
+        "    from typing import Sequence\n",
+        "    try:\n",
+        "        if flag:\n",
+        "            Sequence = local_sequence\n",
+        "            raise Error\n",
+        "    finally:\n",
+        "        in_raise_finally: list[str]\n",
+        "    after_raise: list[str]\n",
+        "\n",
+        "def break_path(flag, items):\n",
+        "    from typing import Sequence\n",
+        "    for item in items:\n",
+        "        try:\n",
+        "            if flag:\n",
+        "                Sequence = local_sequence\n",
+        "                break\n",
+        "        finally:\n",
+        "            in_break_finally: list[str]\n",
+        "        after_break: list[str]\n",
+        "    after_break_loop: list[str]\n",
+        "\n",
+        "def continue_path(flag, items):\n",
+        "    from typing import Sequence\n",
+        "    for item in items:\n",
+        "        try:\n",
+        "            if flag:\n",
+        "                Sequence = local_sequence\n",
+        "                continue\n",
+        "        finally:\n",
+        "            in_continue_finally: list[str]\n",
+        "    after_continue_loop: list[str]\n",
+        "\n",
+        "untouched: list[str]\n",
+    );
+    assert_type_list_sequence_sites(
+        source,
+        &[
+            (235, 9, 11, Some("return_path"), "Sequence[str]"),
+            (454, 9, 21, Some("raise_path"), "Sequence[str]"),
+            (725, 9, 32, Some("break_path"), "Sequence[str]"),
+            (1063, 9, 46, None, "Sequence[str]"),
+        ],
+    );
+}
+
+#[test]
+fn typing_import_rebinding_match_propagates_failed_case_bindings() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "match value:\n",
+        "    case 0 if (Sequence := local_sequence):\n",
+        "        pass\n",
+        "    case _:\n",
+        "        after_guard_failure: list[str]\n",
+        "after_guard_match: list[str]\n",
+        "from typing import Sequence\n",
+        "match value:\n",
+        "    case [Sequence, 0]:\n",
+        "        pass\n",
+        "    case _:\n",
+        "        after_pattern_failure: list[str]\n",
+        "after_pattern_match: list[str]\n",
+        "from typing import Sequence\n",
+        "untouched: list[str]\n",
+    );
+    assert_type_list_sequence_sites(source, &[(379, 9, 16, None, "Sequence[str]")]);
+}
+
+#[test]
+fn typing_import_rebinding_loop_heads_include_back_edges() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "\n",
+        "def for_back_edge(items):\n",
+        "    from typing import Sequence\n",
+        "    for item in items:\n",
+        "        before_rebind: list[str]\n",
+        "        Sequence = local_sequence\n",
+        "    after_for: list[str]\n",
+        "\n",
+        "def while_continue(condition, flag):\n",
+        "    from typing import Sequence\n",
+        "    while condition:\n",
+        "        before_continue: list[str]\n",
+        "        if flag:\n",
+        "            Sequence = local_sequence\n",
+        "            continue\n",
+        "        break\n",
+        "    after_while: list[str]\n",
+        "\n",
+        "untouched: list[str]\n",
+    );
+    assert_type_list_sequence_sites(source, &[(457, 9, 20, None, "Sequence[str]")]);
+}
+
+#[test]
+fn typing_import_rebinding_definition_header_function_defaults() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "def default_binding(\n",
+        "    value: list[str] = (Sequence := local_sequence),\n",
+        "    other: list[str] = None,\n",
+        ") -> list[str]:\n",
+        "    pass\n",
+        "after_default: list[str]\n",
+        "from typing import Sequence\n",
+        "untouched: list[str]\n",
+    );
+    assert_type_list_sequence_sites(source, &[(220, 9, 9, None, "Sequence[str]")]);
+}
+
+#[test]
+fn typing_import_rebinding_definition_header_function_decorators() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "@(Sequence := decorator)\n",
+        "def decorated(value: list[str]) -> list[str]:\n",
+        "    pass\n",
+        "after_decorator: list[str]\n",
+        "from typing import Sequence\n",
+        "untouched: list[str]\n",
+    );
+    assert_type_list_sequence_sites(source, &[(174, 9, 7, None, "Sequence[str]")]);
+}
+
+#[test]
+fn typing_import_rebinding_definition_header_class_expressions() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "@(Sequence := decorator)\n",
+        "class Decorated:\n",
+        "    in_decorated: list[str]\n",
+        "after_decorated: list[str]\n",
+        "from typing import Sequence\n",
+        "class Based((Sequence := Base)):\n",
+        "    in_based: list[str]\n",
+        "after_based: list[str]\n",
+        "from typing import Sequence\n",
+        "class Keyword(metaclass=(Sequence := Meta)):\n",
+        "    in_keyword: list[str]\n",
+        "after_keyword: list[str]\n",
+        "from typing import Sequence\n",
+        "untouched: list[str]\n",
+    );
+    assert_type_list_sequence_sites(source, &[(396, 9, 15, None, "Sequence[str]")]);
+}
+
+#[test]
+fn typing_import_rebinding_definition_header_lambda_defaults_only() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "with_default = lambda value=(Sequence := local_sequence): value\n",
+        "after_default: list[str]\n",
+        "from typing import Sequence\n",
+        "body_only = lambda: (Sequence := local_sequence)\n",
+        "after_body: list[str]\n",
+        "untouched: list[str]\n",
+    );
+    assert_type_list_sequence_sites(
+        source,
+        &[
+            (206, 9, 6, None, "Sequence[str]"),
+            (227, 9, 7, None, "Sequence[str]"),
+        ],
+    );
+}
+
+#[test]
+fn typing_import_rebinding_annotated_assignment_execution_order() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "Sequence: list[str] = object\n",
+        "after_module_valued: list[str]\n",
+        "from typing import Sequence\n",
+        "Sequence: object\n",
+        "after_module_valueless: list[str]\n",
+        "from typing import Sequence\n",
+        "value: list[str] = (Sequence := object)\n",
+        "after_module_rhs: list[str]\n",
+        "from typing import Sequence\n",
+        "class ClassValued:\n",
+        "    Sequence: list[str] = object\n",
+        "    after_valued: list[str]\n",
+        "class ClassValueless:\n",
+        "    Sequence: object\n",
+        "    after_valueless: list[str]\n",
+        "class ClassRhs:\n",
+        "    value: list[str] = (Sequence := object)\n",
+        "    after_rhs: list[str]\n",
+        "from typing import Sequence\n",
+        "untouched: list[str]\n",
+    );
+    assert_type_list_sequence_sites(
+        source,
+        &[
+            (157, 9, 6, None, "Sequence[str]"),
+            (435, 9, 16, Some("ClassValueless"), "Sequence[str]"),
+            (569, 9, 21, None, "Sequence[str]"),
+        ],
+    );
+}
+
+#[test]
+fn typing_import_rebinding_class_external_writes_project_to_target_scope() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "class DirectWrite:\n",
+        "    global Sequence\n",
+        "    Sequence = object\n",
+        "    def method(self):\n",
+        "        hidden: list[str]\n",
+        "after_direct_write: list[str]\n",
+        "class DirectReimport:\n",
+        "    global Sequence\n",
+        "    from typing import Sequence\n",
+        "    def method(self):\n",
+        "        restored: list[str]\n",
+        "after_direct_reimport: list[str]\n",
+        "Sequence = object\n",
+        "import typing as t\n",
+        "class AliasWrite:\n",
+        "    global t\n",
+        "    t = object\n",
+        "    def method(self):\n",
+        "        hidden: list[str]\n",
+        "after_alias_write: list[str]\n",
+        "class AliasReimport:\n",
+        "    global t\n",
+        "    import typing as t\n",
+        "    def method(self):\n",
+        "        restored: list[str]\n",
+        "after_alias_reimport: list[str]\n",
+        "t = object\n",
+        "def direct_outer():\n",
+        "    from typing import Sequence\n",
+        "    class DirectWrite:\n",
+        "        nonlocal Sequence\n",
+        "        Sequence = object\n",
+        "        def method(self):\n",
+        "            hidden: list[str]\n",
+        "    after_write: list[str]\n",
+        "    class DirectReimport:\n",
+        "        nonlocal Sequence\n",
+        "        from typing import Sequence\n",
+        "        def method(self):\n",
+        "            restored: list[str]\n",
+        "    after_reimport: list[str]\n",
+        "def alias_outer():\n",
+        "    import typing as t\n",
+        "    class AliasWrite:\n",
+        "        nonlocal t\n",
+        "        t = object\n",
+        "        def method(self):\n",
+        "            hidden: list[str]\n",
+        "    after_write: list[str]\n",
+        "    class AliasReimport:\n",
+        "        nonlocal t\n",
+        "        import typing as t\n",
+        "        def method(self):\n",
+        "            restored: list[str]\n",
+        "    after_reimport: list[str]\n",
+        "from typing import Sequence\n",
+        "untouched: list[str]\n",
+    );
+    assert_type_list_sequence_sites(
+        source,
+        &[
+            (281, 9, 12, Some("DirectReimport.method"), "Sequence[str]"),
+            (314, 9, 13, None, "Sequence[str]"),
+            (581, 9, 26, Some("AliasReimport.method"), "t.Sequence[str]"),
+            (613, 9, 27, None, "t.Sequence[str]"),
+            (
+                980,
+                9,
+                41,
+                Some("direct_outer.DirectReimport.method"),
+                "Sequence[str]",
+            ),
+            (1010, 9, 42, Some("direct_outer"), "Sequence[str]"),
+            (
+                1324,
+                9,
+                55,
+                Some("alias_outer.AliasReimport.method"),
+                "t.Sequence[str]",
+            ),
+            (1354, 9, 56, Some("alias_outer"), "t.Sequence[str]"),
+            (1403, 9, 58, None, "Sequence[str]"),
+        ],
+    );
+}
+
+#[test]
+fn typing_import_rebinding_nested_class_globals_preserve_function_fallback() {
+    let source = concat!(
+        "Sequence = object\n",
+        "t = object\n",
+        "def direct_outer():\n",
+        "    from typing import Sequence\n",
+        "    class GlobalWrite:\n",
+        "        global Sequence\n",
+        "        Sequence = object\n",
+        "        def method(self):\n",
+        "            preserved: list[str]\n",
+        "    after_class: list[str]\n",
+        "def alias_outer():\n",
+        "    import typing as t\n",
+        "    class GlobalWrite:\n",
+        "        global t\n",
+        "        t = object\n",
+        "        def method(self):\n",
+        "            preserved: list[str]\n",
+        "    after_class: list[str]\n",
+        "from typing import Sequence\n",
+        "untouched: list[str]\n",
+    );
+    assert_type_list_sequence_sites(
+        source,
+        &[
+            (
+                203,
+                9,
+                9,
+                Some("direct_outer.GlobalWrite.method"),
+                "Sequence[str]",
+            ),
+            (230, 9, 10, Some("direct_outer"), "Sequence[str]"),
+            (
+                390,
+                9,
+                17,
+                Some("alias_outer.GlobalWrite.method"),
+                "t.Sequence[str]",
+            ),
+            (417, 9, 18, Some("alias_outer"), "t.Sequence[str]"),
+            (466, 9, 20, None, "Sequence[str]"),
+        ],
+    );
+}
+
+#[test]
+fn typing_import_rebinding_try_handler_includes_unknown_wildcard_effect() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "try:\n",
+        "    from unknown import *\n",
+        "    raise Error\n",
+        "except Error:\n",
+        "    hidden_direct: list[str]\n",
+        "Sequence = object\n",
+        "import typing as t\n",
+        "try:\n",
+        "    from unknown import *\n",
+        "    raise Error\n",
+        "except Error:\n",
+        "    hidden_alias: list[str]\n",
+        "t = object\n",
+        "from typing import Sequence\n",
+        "untouched: list[str]\n",
+    );
+    assert_type_list_sequence_sites(source, &[(294, 9, 16, None, "Sequence[str]")]);
 }
 
 #[test]
