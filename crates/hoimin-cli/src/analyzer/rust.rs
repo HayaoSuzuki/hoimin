@@ -1,4 +1,5 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::cmp::Ordering;
+use std::collections::{BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::ops::Range;
 
 use camino::Utf8Path;
@@ -30,6 +31,115 @@ pub(crate) struct AnalyzerOutput {
     pub candidates: Vec<AnalyzerCandidate>,
     pub diagnostics: Vec<AnalyzerDiagnostic>,
     pub truncated: bool,
+}
+
+pub(crate) struct ProducerPrefix {
+    pub(crate) candidates: Vec<AnalyzerCandidate>,
+    pub(crate) overflowed: bool,
+    pub(crate) retained_peak: usize,
+}
+
+type CandidateIdentity = (u64, String, String);
+
+struct RetainedCandidate {
+    candidate: AnalyzerCandidate,
+    emission_sequence: u64,
+}
+
+impl Ord for RetainedCandidate {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.candidate
+            .span
+            .start
+            .cmp(&other.candidate.span.start)
+            .then_with(|| self.candidate.operator.cmp(&other.candidate.operator))
+            .then_with(|| self.emission_sequence.cmp(&other.emission_sequence))
+    }
+}
+
+impl PartialOrd for RetainedCandidate {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for RetainedCandidate {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+
+impl Eq for RetainedCandidate {}
+
+pub(crate) struct CandidatePrefix {
+    entries: BinaryHeap<RetainedCandidate>,
+    identities: HashSet<CandidateIdentity>,
+    capacity: usize,
+    overflowed: bool,
+    retained_peak: usize,
+    next_emission_sequence: u64,
+}
+
+impl CandidatePrefix {
+    pub(crate) fn new(max_candidates: usize) -> Self {
+        Self {
+            entries: BinaryHeap::new(),
+            identities: HashSet::new(),
+            capacity: max_candidates.saturating_add(1),
+            overflowed: false,
+            retained_peak: 0,
+            next_emission_sequence: 0,
+        }
+    }
+
+    pub(crate) fn push(&mut self, candidate: AnalyzerCandidate) {
+        let identity = candidate_identity(&candidate);
+        if self.identities.contains(&identity) {
+            return;
+        }
+        let entry = RetainedCandidate {
+            candidate,
+            emission_sequence: self.next_emission_sequence,
+        };
+        self.next_emission_sequence = self.next_emission_sequence.saturating_add(1);
+
+        if self.entries.len() < self.capacity {
+            self.identities.insert(identity);
+            self.entries.push(entry);
+            self.retained_peak = self.retained_peak.max(self.entries.len());
+            return;
+        }
+
+        self.overflowed = true;
+        if self.entries.peek().is_some_and(|latest| entry < *latest) {
+            let evicted = self.entries.pop().expect("a peeked heap entry exists");
+            self.identities
+                .remove(&candidate_identity(&evicted.candidate));
+            self.identities.insert(identity);
+            self.entries.push(entry);
+        }
+    }
+
+    pub(crate) fn finish(self) -> ProducerPrefix {
+        ProducerPrefix {
+            candidates: self
+                .entries
+                .into_sorted_vec()
+                .into_iter()
+                .map(|entry| entry.candidate)
+                .collect(),
+            overflowed: self.overflowed,
+            retained_peak: self.retained_peak,
+        }
+    }
+}
+
+fn candidate_identity(candidate: &AnalyzerCandidate) -> CandidateIdentity {
+    (
+        candidate.span.start,
+        candidate.replacement.clone(),
+        candidate.operator.clone(),
+    )
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

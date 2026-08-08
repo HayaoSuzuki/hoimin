@@ -1,4 +1,7 @@
-use super::{AnalyzeRequest, LineIndex, analyze_source, analyze_source_cancellable};
+use super::{
+    AnalyzeRequest, AnalyzerCandidate, CandidatePrefix, LineIndex, analyze_source,
+    analyze_source_cancellable,
+};
 use crate::analyzer::AnalyzerDiagnosticCode;
 use camino::Utf8Path;
 use hoimin_core::{
@@ -25,6 +28,92 @@ fn apply_candidate_and_reparse(source: &str, candidate: &super::AnalyzerCandidat
         candidate.operator
     );
     mutated
+}
+
+fn prefix_candidate(start: u64, replacement: &str, operator: &str) -> AnalyzerCandidate {
+    AnalyzerCandidate {
+        path: Utf8Path::new("pkg/sample.py").to_path_buf(),
+        span: ByteSpan { start, length: 1 },
+        original: "original".to_owned(),
+        replacement: replacement.to_owned(),
+        operator: operator.to_owned(),
+        line: 1,
+        column: 0,
+        symbol: None,
+    }
+}
+
+fn candidate_starts(candidates: &[AnalyzerCandidate]) -> Vec<u64> {
+    candidates
+        .iter()
+        .map(|candidate| candidate.span.start)
+        .collect()
+}
+
+#[test]
+fn candidate_prefix_retains_the_earliest_k_plus_one_unique_candidates() {
+    let mut prefix = CandidatePrefix::new(2);
+    assert_eq!(prefix.capacity, 3);
+
+    for candidate in [
+        prefix_candidate(9, "nine", "operator"),
+        prefix_candidate(1, "one", "operator"),
+        prefix_candidate(5, "five", "operator"),
+        prefix_candidate(3, "three", "operator"),
+        prefix_candidate(1, "one", "operator"),
+    ] {
+        prefix.push(candidate);
+    }
+
+    assert_eq!(prefix.identities.len(), 3);
+    let result = prefix.finish();
+    assert_eq!(candidate_starts(&result.candidates), vec![1, 3, 5]);
+    assert!(result.overflowed);
+    assert_eq!(result.retained_peak, 3);
+}
+
+#[test]
+fn candidate_prefix_keeps_emission_order_for_equal_sort_keys() {
+    let mut prefix = CandidatePrefix::new(2);
+    for candidate in [
+        prefix_candidate(1, "first", "operator"),
+        prefix_candidate(1, "second", "operator"),
+        prefix_candidate(1, "third", "operator"),
+    ] {
+        prefix.push(candidate);
+    }
+
+    let result = prefix.finish();
+    assert_eq!(
+        result
+            .candidates
+            .iter()
+            .map(|candidate| candidate.replacement.as_str())
+            .collect::<Vec<_>>(),
+        vec!["first", "second", "third"]
+    );
+    assert!(!result.overflowed);
+}
+
+#[test]
+fn candidate_prefix_with_zero_limit_retains_one_earliest_candidate() {
+    let mut prefix = CandidatePrefix::new(0);
+    assert_eq!(prefix.capacity, 1);
+    prefix.push(prefix_candidate(3, "three", "operator"));
+    prefix.push(prefix_candidate(3, "three", "operator"));
+    prefix.push(prefix_candidate(1, "one", "operator"));
+
+    let result = prefix.finish();
+    assert_eq!(candidate_starts(&result.candidates), vec![1]);
+    assert!(result.overflowed);
+    assert_eq!(result.retained_peak, 1);
+}
+
+#[test]
+fn candidate_prefix_saturates_capacity_at_usize_maximum() {
+    let prefix = CandidatePrefix::new(usize::MAX);
+
+    assert_eq!(prefix.capacity, usize::MAX);
 }
 
 #[test]
