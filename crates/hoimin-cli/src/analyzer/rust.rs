@@ -1968,6 +1968,9 @@ impl KnownImports {
             if imported == "*" {
                 self.direct.clear();
                 self.type_vars.clear();
+                if !matches!(module_name, Some("typing" | "collections.abc")) {
+                    self.modules.clear();
+                }
                 continue;
             }
             let local = alias
@@ -2010,6 +2013,11 @@ impl KnownImports {
                     .unwrap_or(assign.annotation.as_ref()),
             ),
             Stmt::AugAssign(assign) => self.invalidate_target(assign.target.as_ref()),
+            Stmt::Delete(delete) => {
+                for target in &delete.targets {
+                    self.invalidate_target(target);
+                }
+            }
             Stmt::TypeAlias(alias) => self.invalidate_target(alias.name.as_ref()),
             Stmt::FunctionDef(definition) => self.invalidate(definition.name.as_str()),
             Stmt::ClassDef(definition) => self.invalidate(definition.name.as_str()),

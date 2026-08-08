@@ -2175,6 +2175,11 @@ fn typing_import_rebinding_linear() {
             vec![(43, 9, 2, None, "Seq[str]"), (136, 9, 6, None, "Seq[str]")],
         ),
         (
+            "delete rebinding",
+            "from typing import Sequence\nbefore: list[str]\ndel Sequence\nafter: list[str]\n",
+            vec![(36, 9, 2, None, "Sequence[str]")],
+        ),
+        (
             "function definition rebinding and restoration",
             "from typing import Sequence\nbefore: list[str]\ndef Sequence():\n    pass\nafter: list[str]\nfrom typing import Sequence\nrestored: list[str]\n",
             vec![
@@ -2231,6 +2236,11 @@ fn typing_module_alias_rebinding_linear() {
                 (27, 9, 2, None, "t.Sequence[str]"),
                 (101, 9, 6, None, "t.Sequence[str]"),
             ],
+        ),
+        (
+            "unsupported wildcard import invalidates module aliases",
+            "import typing as t\nbefore: list[str]\nfrom local import *\nafter: list[str]\n",
+            vec![(27, 9, 2, None, "t.Sequence[str]")],
         ),
     ] {
         let output = analyze_types(source);
