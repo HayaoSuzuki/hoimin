@@ -54,6 +54,32 @@ cargo +nightly-2026-07-27 test --workspace -- \
 The nightly job supplements rather than replaces the stable Ubuntu, Windows,
 and macOS test jobs.
 
+## Lean state-machine oracle
+
+The formal model covers effect completion, stopping, cleanup, and final-report
+lifecycle semantics. Lean proves properties of that model; it does not prove
+the Rust implementation. A Rust adapter separately drives the public
+`RunState` and `transition` API with the Lean-generated corpus to check their
+correspondence.
+
+Run the gates from the repository root in this order:
+
+```console
+(cd formal/HoiminOracle && lake build)
+(cd formal/HoiminOracle && lake exe generate -- --check corpus/state-machine.jsonl)
+cargo test -p hoimin-core --test lean_oracle
+HOIMIN_ORACLE_CASE=cleanup_is_emitted_once \
+  cargo test -p hoimin-core --test lean_oracle \
+  oracle_correspondence -- --exact --nocapture
+```
+
+The generated JSONL corpus is owned by Lean and must not be edited by hand.
+New cases begin in report mode while their model/implementation boundary is
+reviewed. Promoted strict cases are blocking; infrastructure errors always
+fail. Corpus generation, freshness, and strict correspondence are separate,
+deterministic command boundaries suitable for a future CI job. This workflow
+does not currently modify or require a CI configuration.
+
 ## Shutdown deadline invariants
 
 Once total timeout, cancellation, or a fatal failure starts shutdown, the
