@@ -492,7 +492,7 @@ fn corpus_rejects_duplicate_case_ids() {
 fn corpus_rejects_unknown_modes_scenarios_events_and_observations() {
     for (from, to, expected) in [
         (
-            "\"mode\":\"report\"",
+            "\"mode\":\"strict\"",
             "\"mode\":\"future\"",
             "unknown mode future",
         ),
