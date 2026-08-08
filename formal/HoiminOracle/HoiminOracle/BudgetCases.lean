@@ -29,6 +29,7 @@ private structure NamedEvent where
 
 private structure CaseSpec where
   id : String
+  mode : String := "strict"
   limits : Limits
   maxId : Nat := 2
   schedule : List NamedEvent
@@ -56,6 +57,7 @@ private def runSchedule : State → List NamedEvent → List OracleStep
 
 private def toOracleCase (spec : CaseSpec) : OracleCase where
   id := spec.id
+  mode := spec.mode
   limits := spec.limits
   maxId := spec.maxId
   schedule := spec.schedule.map NamedEvent.name
@@ -80,6 +82,7 @@ private def specs : List CaseSpec := [
       named "reserve:copy:1" (.reserve .copy 1)
     ] },
   { id := "last_identifier_then_exhaustion"
+    mode := "report"
     limits := limits 2 2 2
     maxId := 0
     schedule := [
@@ -133,6 +136,7 @@ private def specs : List CaseSpec := [
     limits := limits 0 0 0
     schedule := [named "reserve:memory:0" (.reserve .memory 0)] },
   { id := "cleanup_after_allocator_exhaustion"
+    mode := "report"
     limits := limits 2 2 2
     maxId := 0
     schedule := [
