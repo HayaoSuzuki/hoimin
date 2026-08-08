@@ -20,7 +20,15 @@ use ruff_python_parser::parse_module;
 fn typing_import_rebinding_inventory_is_site_aware() {
     let source = "from typing import Sequence\nbefore_direct: list[str]\nSequence = object\nafter_direct: list[str]\nimport typing as t\nbefore_alias: list[str]\nt = object\nafter_alias: list[str]\n";
     let mut operators = MutationOperatorSelection::default();
+    for name in MutationOperatorSelection::valid_names() {
+        for operator in MutationOperatorSelection::parse_selector(name)
+            .expect("a public valid operator name parses")
+        {
+            operators.exclude(operator);
+        }
+    }
     operators.include(MutationOperator::TypeListSequence);
+    assert_eq!(operators.names(), vec!["type_list_sequence"]);
 
     let output = rust::analyze_source(
         &rust::AnalyzeRequest {
