@@ -60,8 +60,40 @@ def stopSchedulingWitnessDetected : Bool :=
   decide ((step state (.stop .deadline)).emitted ≠
     (brokenStopScheduling state).emitted)
 
+def brokenRepeatedStop (state : State) : Verdict where
+  state := state
+  emitted := [.cleanup]
+  rejection := none
+
+def repeatedCleanupWitnessDetected : Bool :=
+  let state := (step pendingWitnessState (.stop .cancelled)).state
+  decide ((step state (.stop .deadline)).emitted ≠ (brokenRepeatedStop state).emitted)
+where
+  pendingWitnessState := State.withPending 1 .ordinary
+
+def brokenCleanupOrdering (state : State) : Verdict where
+  state := { state with phase := .finalPending, finalEmitted := true }
+  emitted := [.finalOutput]
+  rejection := none
+
+def cleanupOrderingWitnessDetected : Bool :=
+  let state := State.withPending 1 .ordinary
+  decide ((step state (.stop .cancelled)).emitted ≠ (brokenCleanupOrdering state).emitted)
+
+def brokenStopDropsResults (state : State) : Verdict :=
+  let verdict := step state (.stop .cancelled)
+  { verdict with state := { verdict.state with acceptedResults := 0 } }
+
+def acceptedResultWitnessDetected : Bool :=
+  let state := State.withPending 1 .ordinary
+  let accepted := (step state (.complete 1 .ordinary)).state
+  decide ((step accepted (.stop .cancelled)).state.acceptedResults ≠
+    (brokenStopDropsResults accepted).state.acceptedResults)
+
 def brokenWitnessesDetected : Bool :=
-  duplicateWitnessDetected && lateStopWitnessDetected && stopSchedulingWitnessDetected
+  duplicateWitnessDetected && lateStopWitnessDetected && stopSchedulingWitnessDetected &&
+    repeatedCleanupWitnessDetected && cleanupOrderingWitnessDetected &&
+    acceptedResultWitnessDetected
 
 example : brokenWitnessesDetected = true := by decide
 
@@ -90,6 +122,7 @@ private structure NamedEvent where
 
 private structure CaseSpec where
   id : String
+  mode : String := "report"
   scenario : String
   initial : State
   schedule : List NamedEvent
@@ -122,7 +155,7 @@ private def runSchedule : State → List NamedEvent → List OracleStep
 
 private def toOracleCase (spec : CaseSpec) : OracleCase where
   id := spec.id
-  mode := "strict"
+  mode := spec.mode
   scenario := spec.scenario
   schedule := spec.schedule.map NamedEvent.name
   expected := runSchedule spec.initial spec.schedule
@@ -140,16 +173,21 @@ private def finished : State :=
 
 private def named (name : String) (event : Event) : NamedEvent := { name, event }
 
+private def strict : String := "strict"
+
 private def specs : List CaseSpec := [
   { id := "unknown_completion_is_rejected"
+    mode := strict
     scenario := "pending_resolve"
     initial := pendingOrdinary
     schedule := [named "complete_unknown" (.complete 99 .ordinary)] },
   { id := "wrong_kind_is_transactional"
+    mode := strict
     scenario := "pending_resolve"
     initial := pendingOrdinary
     schedule := [named "complete_wrong_cleanup" (.complete 1 .cleanup)] },
   { id := "duplicate_completion_is_rejected"
+    mode := strict
     scenario := "pending_resolve"
     initial := pendingOrdinary
     schedule := [
@@ -157,6 +195,7 @@ private def specs : List CaseSpec := [
       named "complete_ordinary_again" (.complete 1 .ordinary)
     ] },
   { id := "retired_completion_after_cancel_is_rejected"
+    mode := strict
     scenario := "pending_resolve"
     initial := pendingOrdinary
     schedule := [
@@ -164,14 +203,17 @@ private def specs : List CaseSpec := [
       named "complete_retired_ordinary" (.complete 1 .ordinary)
     ] },
   { id := "deadline_stops_ordinary_scheduling"
+    mode := strict
     scenario := "pending_resolve"
     initial := pendingOrdinary
     schedule := [named "deadline" (.stop .deadline)] },
   { id := "cancel_stops_ordinary_scheduling"
+    mode := strict
     scenario := "pending_resolve"
     initial := pendingOrdinary
     schedule := [named "cancel" (.stop .cancelled)] },
   { id := "cleanup_precedes_final_output"
+    mode := strict
     scenario := "pending_resolve"
     initial := pendingOrdinary
     schedule := [
@@ -179,6 +221,7 @@ private def specs : List CaseSpec := [
       named "complete_cleanup" (.complete 2 .cleanup)
     ] },
   { id := "cleanup_is_emitted_once"
+    mode := strict
     scenario := "pending_resolve"
     initial := pendingOrdinary
     schedule := [
@@ -186,6 +229,7 @@ private def specs : List CaseSpec := [
       named "deadline" (.stop .deadline)
     ] },
   { id := "final_output_is_emitted_once"
+    mode := strict
     scenario := "pending_resolve"
     initial := pendingOrdinary
     schedule := [
@@ -194,21 +238,33 @@ private def specs : List CaseSpec := [
       named "deadline" (.stop .deadline)
     ] },
   { id := "deadline_after_final_pending_is_noop"
+    mode := strict
     scenario := "final_pending_without_copy"
     initial := finalPending
     schedule := [named "deadline" (.stop .deadline)] },
   { id := "cancel_after_final_pending_is_noop"
+    mode := strict
     scenario := "final_pending_without_copy"
     initial := finalPending
     schedule := [named "cancel" (.stop .cancelled)] },
   { id := "deadline_after_finished_is_noop"
+    mode := strict
     scenario := "finished_without_copy"
     initial := finished
     schedule := [named "deadline" (.stop .deadline)] },
   { id := "cancel_after_finished_is_noop"
+    mode := strict
     scenario := "finished_without_copy"
     initial := finished
-    schedule := [named "cancel" (.stop .cancelled)] }
+    schedule := [named "cancel" (.stop .cancelled)] },
+  { id := "accepted_result_survives_cancel"
+    mode := strict
+    scenario := "pending_resolve"
+    initial := pendingOrdinary
+    schedule := [
+      named "complete_ordinary" (.complete 1 .ordinary),
+      named "cancel" (.stop .cancelled)
+    ] }
 ]
 
 def cases : List OracleCase := specs.map toOracleCase

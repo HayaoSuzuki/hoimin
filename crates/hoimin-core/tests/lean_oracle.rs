@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Duration;
 
 use hoimin_core::{
@@ -344,14 +345,93 @@ fn run_case(case: &OracleCase) -> CaseResult {
     } else {
         CaseClass::Mismatch
     };
+    let detail = (class == CaseClass::Mismatch).then(|| observation_diff(&expected, &actual));
     CaseResult {
         id: case.id.clone(),
         mode: case.mode.clone(),
         class,
         expected,
         actual,
-        detail: None,
+        detail,
     }
+}
+
+fn observation_diff(expected: &[Observation], actual: &[Observation]) -> String {
+    let mut differences = Vec::new();
+    if expected.len() != actual.len() {
+        differences.push(format!(
+            "length: expected {}, actual {}",
+            expected.len(),
+            actual.len()
+        ));
+    }
+    for (index, (expected, actual)) in expected.iter().zip(actual).enumerate() {
+        if expected.verdict != actual.verdict {
+            differences.push(format!(
+                "step {index} verdict: expected {:?}, actual {:?}",
+                expected.verdict, actual.verdict
+            ));
+        }
+        if expected.error_code != actual.error_code {
+            differences.push(format!(
+                "step {index} error_code: expected {:?}, actual {:?}",
+                expected.error_code, actual.error_code
+            ));
+        }
+        if expected.phase != actual.phase {
+            differences.push(format!(
+                "step {index} phase: expected {:?}, actual {:?}",
+                expected.phase, actual.phase
+            ));
+        }
+        if expected.emitted != actual.emitted {
+            differences.push(format!(
+                "step {index} emitted: expected {:?}, actual {:?}",
+                expected.emitted, actual.emitted
+            ));
+        }
+        if expected.pending != actual.pending {
+            differences.push(format!(
+                "step {index} pending: expected {}, actual {}",
+                expected.pending, actual.pending
+            ));
+        }
+        if expected.accepted_results != actual.accepted_results {
+            differences.push(format!(
+                "step {index} accepted_results: expected {}, actual {}",
+                expected.accepted_results, actual.accepted_results
+            ));
+        }
+    }
+    differences.join("; ")
+}
+
+fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        (*message).to_owned()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "non-string panic payload".to_owned()
+    }
+}
+
+fn isolate_case(case: &OracleCase, execute: impl FnOnce() -> CaseResult) -> CaseResult {
+    match catch_unwind(AssertUnwindSafe(execute)) {
+        Ok(result) => result,
+        Err(payload) => CaseResult {
+            id: case.id.clone(),
+            mode: case.mode.clone(),
+            class: CaseClass::InfrastructureError,
+            expected: case.expected.iter().map(Observation::from).collect(),
+            actual: Vec::new(),
+            detail: Some(format!("case panicked: {}", panic_message(payload))),
+        },
+    }
+}
+
+fn run_case_isolated(case: &OracleCase) -> CaseResult {
+    isolate_case(case, || run_case(case))
 }
 
 fn corpus_text() -> &'static str {
@@ -464,8 +544,22 @@ fn load_corpus() -> Result<Vec<OracleCase>, String> {
 fn corpus_is_well_formed() {
     let cases = load_corpus().expect("the committed Lean corpus must parse");
 
-    assert_eq!(cases.len(), 13);
+    assert_eq!(cases.len(), 14);
     assert!(cases.iter().all(|case| !case.expected.is_empty()));
+    assert!(cases.iter().all(|case| case.mode == "strict"));
+}
+
+#[test]
+fn case_panics_are_classified_as_infrastructure_errors() {
+    let case = load_corpus().unwrap().into_iter().next().unwrap();
+
+    let result = isolate_case(&case, || panic!("deliberate oracle panic"));
+
+    assert_eq!(result.class, CaseClass::InfrastructureError);
+    assert_eq!(
+        result.detail.as_deref(),
+        Some("case panicked: deliberate oracle panic")
+    );
 }
 
 #[test]
@@ -537,7 +631,7 @@ fn oracle_correspondence() {
     let results: Vec<_> = cases
         .iter()
         .filter(|case| selected.as_ref().is_none_or(|id| id == &case.id))
-        .map(run_case)
+        .map(run_case_isolated)
         .collect();
 
     assert!(

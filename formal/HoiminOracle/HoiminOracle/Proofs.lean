@@ -98,4 +98,79 @@ theorem no_ordinary_emission_after_stop (state : State) (event : Event)
                       acceptCompletion]
               · simp [step, complete, retired, duplicate, pending, correct, reject]
 
+theorem completion_is_accepted_at_most_once (state : State) (id : Nat)
+    (accepted : (step state (.complete id .ordinary)).rejection = none) :
+    (step (step state (.complete id .ordinary)).state (.complete id .ordinary)).errorCode? =
+      some "machine.effect.duplicate" := by
+  by_cases retired : id ∈ state.retired
+  · simp [step, complete, retired, reject] at accepted
+  · by_cases duplicate : id ∈ state.completed
+    · simp [step, complete, retired, duplicate, reject] at accepted
+    · cases pending : pendingKind? state.pending id with
+      | none => simp [step, complete, retired, duplicate, pending, reject] at accepted
+      | some expected =>
+          by_cases correct : expected = .ordinary
+          · subst expected
+            cases stopCause : state.stopCause <;>
+              simp [step, complete, retired, duplicate, pending, acceptCompletion,
+                stopCause, reject, Verdict.errorCode?]
+          · simp [step, complete, retired, duplicate, pending, correct, reject] at accepted
+
+theorem repeated_stop_emits_cleanup_once (state : State) (first second : StopCause)
+    (running : state.phase = .running) (unset : state.stopCause = none) :
+    (step state (.stop first)).emitted = [.cleanup] ∧
+      (step (step state (.stop first)).state (.stop second)).emitted = [] := by
+  simp [step, stop, running, unset]
+
+theorem final_output_follows_cleanup_completion (state : State) (event : Event)
+    (emitted : .finalOutput ∈ (step state event).emitted) :
+    ∃ id, event = .complete id .cleanup := by
+  cases event with
+  | stop cause =>
+      cases phase : state.phase <;> cases stopCause : state.stopCause <;>
+        simp [step, stop, phase, stopCause] at emitted
+  | complete id kind =>
+      by_cases retired : id ∈ state.retired
+      · simp [step, complete, retired, reject] at emitted
+      · by_cases duplicate : id ∈ state.completed
+        · simp [step, complete, retired, duplicate, reject] at emitted
+        · cases pending : pendingKind? state.pending id with
+          | none => simp [step, complete, retired, duplicate, pending, reject] at emitted
+          | some expected =>
+              by_cases correct : expected = kind
+              · cases kind with
+                | ordinary =>
+                    cases stopCause : state.stopCause <;>
+                      simp [step, complete, retired, duplicate, pending, correct,
+                        acceptCompletion, stopCause] at emitted
+                | cleanup => exact ⟨id, rfl⟩
+                | finalOutput =>
+                    simp [step, complete, retired, duplicate, pending, correct,
+                      acceptCompletion] at emitted
+              · simp [step, complete, retired, duplicate, pending, correct, reject] at emitted
+
+theorem stop_preserves_accepted_results (state : State) (cause : StopCause) :
+    (step state (.stop cause)).state.acceptedResults = state.acceptedResults := by
+  cases phase : state.phase <;> cases stopCause : state.stopCause <;>
+    simp [step, stop, phase, stopCause]
+
+theorem lifecycle_emits_cleanup_then_final :
+    let state := State.withPending 1 .ordinary
+    let stopped := step state (.stop .cancelled)
+    let cleaned := step stopped.state (.complete 2 .cleanup)
+    stopped.emitted ++ cleaned.emitted = [.cleanup, .finalOutput] := by decide
+
+theorem lifecycle_final_output_is_emitted_once :
+    let state := State.withPending 1 .ordinary
+    let stopped := step state (.stop .cancelled)
+    let cleaned := step stopped.state (.complete 2 .cleanup)
+    let duplicate := step cleaned.state (.complete 2 .cleanup)
+    cleaned.emitted = [.finalOutput] ∧ duplicate.emitted = [] := by decide
+
+theorem accepted_result_survives_stop_interleaving :
+    let state := State.withPending 1 .ordinary
+    let accepted := step state (.complete 1 .ordinary)
+    let stopped := step accepted.state (.stop .cancelled)
+    accepted.state.acceptedResults = 1 ∧ stopped.state.acceptedResults = 1 := by decide
+
 end HoiminOracle

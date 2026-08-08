@@ -2,12 +2,12 @@
 
 ## Result
 
-A Lean-generated 13-case corpus found one previously uncovered state-machine bug. When an early
+A Lean-generated 14-case corpus found one previously uncovered state-machine bug. When an early
 cancellation had already scheduled cleanup and a deadline arrived while that cleanup was pending,
 Hoimin retired the original cleanup effect and emitted a replacement. The repair makes a repeated
 stop during stopped cleanup idempotent, retaining the original pending cleanup and its effect ID.
 
-After the repair, all 13 strict correspondence cases match, all focused state-machine tests pass,
+After the repair, all 14 strict correspondence cases match, all focused state-machine tests pass,
 and there are no unresolved mismatches or infrastructure errors.
 
 ## Scope and durable claim
@@ -34,9 +34,22 @@ a late stop rewriting the selected outcome.
 - `late_stop_preserves_final`: stopping is an exact no-op while final output is pending or after the
   run is finished.
 - `no_ordinary_emission_after_stop`: a state that has observed a stop emits no ordinary work.
+- `completion_is_accepted_at_most_once`: reapplying an accepted ordinary completion is rejected as
+  a duplicate.
+- `repeated_stop_emits_cleanup_once`: two stop requests emit cleanup only for the first request.
+- `final_output_follows_cleanup_completion`: final output can only be emitted by an accepted cleanup
+  completion.
+- `stop_preserves_accepted_results`: every stop transition preserves the accepted-result count.
+- `lifecycle_emits_cleanup_then_final`: the representative stopped lifecycle emits cleanup before
+  final output.
+- `lifecycle_final_output_is_emitted_once`: replaying the cleanup completion cannot emit final output
+  twice.
+- `accepted_result_survives_stop_interleaving`: an accepted ordinary result remains counted after a
+  following cancellation.
 
-Three deliberately broken variants accept a duplicate, overwrite a late final stop, or schedule
-ordinary work after stop. Fixed witnesses must distinguish all three before corpus generation is
+Six deliberately broken variants cover duplicate acceptance, late-final overwrite, post-stop
+ordinary scheduling, repeated cleanup emission, cleanup/final ordering reversal, and dropping an
+accepted result during stop. Fixed witnesses must distinguish all six before corpus generation is
 allowed. `lake build` checks the theorems and witnesses.
 
 These proofs apply to the Lean model only. They do not establish implementation correspondence.
@@ -67,7 +80,8 @@ not reveal that the original effect identity had been retired and replaced.
 
 The other cases covered unknown, wrong-kind, duplicate, and retired completion rejection; normal
 ordinary chaining; stopping ordinary scheduling; cleanup-before-final ordering; final-output
-uniqueness; and stop idempotence during pending final output and after completion.
+uniqueness; accepted-result retention across completion/cancellation; and stop idempotence during
+pending final output and after completion.
 
 ## Root cause and repair
 
@@ -98,6 +112,8 @@ expected/actual comparison, impact, limitation, and decision.
   execution.
 - A rejected Rust transition consumes its state and returns only `MachineError`; the adapter uses
   the stable pre-event public observation because no mutated rejected state can escape the API.
+- Each case runs behind an unwind boundary; a panic is reported as an infrastructure error rather
+  than being confused with a semantic mismatch. Mismatches list each differing observation field.
 - No claim is made about OS process control, database transactions, or asynchronous shell timing.
 
 There are no unresolved specification or ownership decisions and no infrastructure failures in the
