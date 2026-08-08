@@ -44,7 +44,6 @@ pub(crate) struct CandidateRetentionStats {
 pub(crate) struct ProducerPrefix {
     pub(crate) candidates: Vec<AnalyzerCandidate>,
     pub(crate) overflowed: bool,
-    pub(crate) retained_peak: usize,
 }
 
 type CandidateIdentity = (u64, String, String);
@@ -84,7 +83,6 @@ pub(crate) struct CandidatePrefix {
     identities: HashSet<CandidateIdentity>,
     capacity: usize,
     overflowed: bool,
-    retained_peak: usize,
     next_emission_sequence: u64,
 }
 
@@ -95,7 +93,6 @@ impl CandidatePrefix {
             identities: HashSet::new(),
             capacity: max_candidates.saturating_add(1),
             overflowed: false,
-            retained_peak: 0,
             next_emission_sequence: 0,
         }
     }
@@ -114,7 +111,6 @@ impl CandidatePrefix {
         if self.entries.len() < self.capacity {
             self.identities.insert(identity);
             self.entries.push(entry);
-            self.retained_peak = self.retained_peak.max(self.entries.len());
             return;
         }
 
@@ -137,7 +133,6 @@ impl CandidatePrefix {
                 .map(|entry| entry.candidate)
                 .collect(),
             overflowed: self.overflowed,
-            retained_peak: self.retained_peak,
         }
     }
 }
@@ -310,9 +305,9 @@ pub(crate) fn analyze_source_cancellable(
         || type_annotation_candidates.overflowed;
     #[cfg(test)]
     let producer_peaks = [
-        token_candidates.retained_peak,
-        ast_candidates.retained_peak,
-        type_annotation_candidates.retained_peak,
+        token_candidates.candidates.len(),
+        ast_candidates.candidates.len(),
+        type_annotation_candidates.candidates.len(),
     ];
     let mut candidates = token_candidates.candidates;
     candidates.extend(ast_candidates.candidates);

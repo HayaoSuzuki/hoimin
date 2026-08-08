@@ -69,7 +69,7 @@ fn candidate_prefix_retains_the_earliest_k_plus_one_unique_candidates() {
     let result = prefix.finish();
     assert_eq!(candidate_starts(&result.candidates), vec![1, 3, 5]);
     assert!(result.overflowed);
-    assert_eq!(result.retained_peak, 3);
+    assert_eq!(result.candidates.len(), 3);
 }
 
 #[test]
@@ -106,7 +106,7 @@ fn candidate_prefix_with_zero_limit_retains_one_earliest_candidate() {
     let result = prefix.finish();
     assert_eq!(candidate_starts(&result.candidates), vec![1]);
     assert!(result.overflowed);
-    assert_eq!(result.retained_peak, 1);
+    assert_eq!(result.candidates.len(), 1);
 }
 
 #[test]
@@ -1474,14 +1474,8 @@ fn bounded_collection_preserves_the_exact_full_output_prefix_and_retention_bound
             .iter()
             .all(|peak| *peak > 0)
     );
-    assert!(
-        bounded
-            .retention
-            .producer_peaks
-            .iter()
-            .all(|peak| *peak <= 4)
-    );
-    assert!(bounded.retention.merged_peak <= 12);
+    assert_eq!(bounded.retention.producer_peaks, [4; 3]);
+    assert_eq!(bounded.retention.merged_peak, 12);
 }
 
 #[test]
