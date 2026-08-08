@@ -176,8 +176,161 @@ fn exception_bindings_are_conservative() {
 }
 
 #[test]
+fn exception_handler_type_tuples_do_not_emit_collection_candidates() {
+    let source = concat!(
+        "before_list = [before]\n",
+        "before_tuple = (before,)\n",
+        "try:\n    work()\n",
+        "except (ValueError, TypeError):\n",
+        "    handler_list = [handler]\n",
+        "    handler_tuple = (handler,)\n",
+        "    try:\n        work()\n",
+        "    except ((KeyError, IndexError)):\n",
+        "        nested_list = [nested]\n",
+        "        nested_tuple = (nested,)\n",
+        "try:\n    work()\n",
+        "except* (ValueError, TypeError):\n",
+        "    starred_list = [starred]\n",
+        "    starred_tuple = (starred,)\n",
+        "after_list = [after]\n",
+        "after_tuple = (after,)\n",
+    );
+    let output = analyze(source);
+    let collection_candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "collection_list_tuple")
+        .collect();
+
+    assert!(collection_candidates.iter().all(|candidate| {
+        !matches!(
+            candidate.original.as_str(),
+            "(ValueError, TypeError)" | "(KeyError, IndexError)"
+        )
+    }));
+
+    let actual: Vec<_> = collection_candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.span,
+            )
+        })
+        .collect();
+    let expected: Vec<_> = [
+        ("[before]", "(before,)"),
+        ("(before,)", "[before,]"),
+        ("[handler]", "(handler,)"),
+        ("(handler,)", "[handler,]"),
+        ("[nested]", "(nested,)"),
+        ("(nested,)", "[nested,]"),
+        ("[starred]", "(starred,)"),
+        ("(starred,)", "[starred,]"),
+        ("[after]", "(after,)"),
+        ("(after,)", "[after,]"),
+    ]
+    .into_iter()
+    .map(|(original, replacement)| {
+        (
+            original,
+            replacement,
+            ByteSpan {
+                start: source
+                    .find(original)
+                    .expect("literal fixture contains the expected source span")
+                    as u64,
+                length: original.len() as u64,
+            },
+        )
+    })
+    .collect();
+    assert_eq!(actual, expected);
+
+    for candidate in collection_candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
+fn exception_handler_type_builtin_calls_are_excluded_for_ordinary_and_starred_handlers() {
+    for (source, expected) in [
+        (
+            "try:\n    work()\nexcept tuple((ValueError, TypeError)):\n    handler = tuple((1, 2))\n",
+            vec![
+                (
+                    "tuple",
+                    "list",
+                    ByteSpan {
+                        start: 69,
+                        length: 5,
+                    },
+                ),
+                (
+                    "(1, 2)",
+                    "[1, 2]",
+                    ByteSpan {
+                        start: 75,
+                        length: 6,
+                    },
+                ),
+            ],
+        ),
+        (
+            "try:\n    work()\nexcept* tuple((ValueError, TypeError)):\n    handler = tuple((1, 2))\n",
+            vec![
+                (
+                    "tuple",
+                    "list",
+                    ByteSpan {
+                        start: 70,
+                        length: 5,
+                    },
+                ),
+                (
+                    "(1, 2)",
+                    "[1, 2]",
+                    ByteSpan {
+                        start: 76,
+                        length: 6,
+                    },
+                ),
+            ],
+        ),
+    ] {
+        let output = analyze(source);
+        let collection_candidates: Vec<_> = output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "collection_list_tuple")
+            .collect();
+        let actual: Vec<_> = collection_candidates
+            .iter()
+            .map(|candidate| {
+                (
+                    candidate.original.as_str(),
+                    candidate.replacement.as_str(),
+                    candidate.span,
+                )
+            })
+            .collect();
+
+        assert_eq!(actual, expected, "source: {source:?}");
+        for candidate in collection_candidates {
+            apply_candidate_and_reparse(source, candidate);
+        }
+    }
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the fixture records every curated safe exception replacement and exact span"
+)]
 fn exception_type_pair_candidates_are_curated_and_syntax_directed() {
     let source = concat!(
+        "before_list = [before]\n",
         "try:\n    work()\n",
         "except ValueError:\n    pass\n",
         "except TypeError:\n    pass\n",
@@ -192,31 +345,136 @@ fn exception_type_pair_candidates_are_curated_and_syntax_directed() {
         "except ModuleNotFoundError:\n    pass\n",
         "except ZeroDivisionError:\n    pass\n",
         "except OverflowError:\n    pass\n",
+        "after_tuple = (after,)\n",
     );
     let output = analyze(source);
     let actual: Vec<_> = output
         .candidates
         .iter()
         .filter(|candidate| candidate.operator == "exception_type_pair")
-        .map(|candidate| (candidate.original.as_str(), candidate.replacement.as_str()))
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.span,
+            )
+        })
         .collect();
     assert_eq!(
         actual,
         vec![
-            ("ValueError", "TypeError"),
-            ("TypeError", "ValueError"),
-            ("KeyError", "IndexError"),
-            ("KeyError", "AttributeError"),
-            ("IndexError", "KeyError"),
-            ("AttributeError", "KeyError"),
-            ("FileNotFoundError", "PermissionError"),
-            ("PermissionError", "FileNotFoundError"),
-            ("ConnectionError", "TimeoutError"),
-            ("TimeoutError", "ConnectionError"),
-            ("ImportError", "ModuleNotFoundError"),
-            ("ModuleNotFoundError", "ImportError"),
-            ("ZeroDivisionError", "OverflowError"),
-            ("OverflowError", "ZeroDivisionError"),
+            (
+                "ValueError",
+                "TypeError",
+                ByteSpan {
+                    start: 46,
+                    length: 10,
+                },
+            ),
+            (
+                "TypeError",
+                "ValueError",
+                ByteSpan {
+                    start: 74,
+                    length: 9,
+                },
+            ),
+            (
+                "KeyError",
+                "IndexError",
+                ByteSpan {
+                    start: 101,
+                    length: 8,
+                },
+            ),
+            (
+                "KeyError",
+                "AttributeError",
+                ByteSpan {
+                    start: 101,
+                    length: 8,
+                },
+            ),
+            (
+                "IndexError",
+                "KeyError",
+                ByteSpan {
+                    start: 127,
+                    length: 10,
+                },
+            ),
+            (
+                "AttributeError",
+                "KeyError",
+                ByteSpan {
+                    start: 155,
+                    length: 14,
+                },
+            ),
+            (
+                "FileNotFoundError",
+                "PermissionError",
+                ByteSpan {
+                    start: 187,
+                    length: 17,
+                },
+            ),
+            (
+                "PermissionError",
+                "FileNotFoundError",
+                ByteSpan {
+                    start: 222,
+                    length: 15,
+                },
+            ),
+            (
+                "ConnectionError",
+                "TimeoutError",
+                ByteSpan {
+                    start: 255,
+                    length: 15,
+                },
+            ),
+            (
+                "TimeoutError",
+                "ConnectionError",
+                ByteSpan {
+                    start: 288,
+                    length: 12,
+                },
+            ),
+            (
+                "ImportError",
+                "ModuleNotFoundError",
+                ByteSpan {
+                    start: 318,
+                    length: 11,
+                },
+            ),
+            (
+                "ModuleNotFoundError",
+                "ImportError",
+                ByteSpan {
+                    start: 347,
+                    length: 19,
+                },
+            ),
+            (
+                "ZeroDivisionError",
+                "OverflowError",
+                ByteSpan {
+                    start: 384,
+                    length: 17,
+                },
+            ),
+            (
+                "OverflowError",
+                "ZeroDivisionError",
+                ByteSpan {
+                    start: 419,
+                    length: 13,
+                },
+            ),
         ]
     );
     for candidate in output
@@ -270,6 +528,7 @@ fn exception_type_pair_candidates_are_curated_and_syntax_directed() {
 )]
 fn exception_risky_candidates_require_explicit_selection_and_reparse() {
     let source = concat!(
+        "before_list = [before]\n",
         "try:\n    work()\n",
         "except:\n    pass\n",
         "try:\n    work()\n",
@@ -283,6 +542,7 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse() {
         "try:\n    work()\n",
         "except (ValueError, # keep this comment\n",
         "        TypeError,):\n    pass\n",
+        "after_tuple = (after,)\n",
     );
     let default_output = analyze(source);
     assert!(default_output.candidates.iter().all(|candidate| {
@@ -316,6 +576,105 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse() {
             max_candidates: 10_000,
         },
         source,
+    );
+    let risky_candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator.starts_with("exception_"))
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+                candidate.span,
+            )
+        })
+        .collect();
+    assert_eq!(
+        risky_candidates,
+        vec![
+            (
+                "except",
+                "except Exception",
+                "exception_bare_to_exception",
+                ByteSpan {
+                    start: 39,
+                    length: 6,
+                },
+            ),
+            (
+                "Exception",
+                "BaseException",
+                "exception_base_boundary",
+                ByteSpan {
+                    start: 79,
+                    length: 9,
+                },
+            ),
+            (
+                "Exception",
+                "",
+                "exception_exception_to_bare",
+                ByteSpan {
+                    start: 79,
+                    length: 9,
+                },
+            ),
+            (
+                "BaseException",
+                "Exception",
+                "exception_base_boundary",
+                ByteSpan {
+                    start: 122,
+                    length: 13,
+                },
+            ),
+            (
+                "(ValueError,)",
+                "(ValueError, TypeError)",
+                "exception_tuple_add_pair",
+                ByteSpan {
+                    start: 169,
+                    length: 13,
+                },
+            ),
+            (
+                "(ValueError, TypeError,)",
+                "( TypeError,)",
+                "exception_tuple_remove_member",
+                ByteSpan {
+                    start: 216,
+                    length: 24,
+                },
+            ),
+            (
+                "(ValueError, TypeError,)",
+                "(ValueError, )",
+                "exception_tuple_remove_member",
+                ByteSpan {
+                    start: 216,
+                    length: 24,
+                },
+            ),
+            (
+                "(ValueError, # keep this comment\n        TypeError,)",
+                "( # keep this comment\n        TypeError,)",
+                "exception_tuple_remove_member",
+                ByteSpan {
+                    start: 274,
+                    length: 52,
+                },
+            ),
+            (
+                "(ValueError, # keep this comment\n        TypeError,)",
+                "(ValueError, # keep this comment\n        )",
+                "exception_tuple_remove_member",
+                ByteSpan {
+                    start: 274,
+                    length: 52,
+                },
+            ),
+        ]
     );
     assert!(output.candidates.iter().any(|candidate| {
         candidate.operator == "exception_bare_to_exception"

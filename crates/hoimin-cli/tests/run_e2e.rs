@@ -258,6 +258,46 @@ async fn exception_default_run_reports_canonical_json_candidate() {
 }
 
 #[tokio::test]
+async fn exception_handler_type_collection_candidates_are_excluded() {
+    let project = tempfile::tempdir().unwrap();
+    write_exception_handler_collection_project(project.path());
+    let run = run_project_options(
+        project.path(),
+        1,
+        "from src.calc import classify; assert list(classify()) == [1, 2]",
+        &["--operators", "collection_list_tuple"],
+    )
+    .await;
+
+    assert_eq!(
+        run.exit_code, 1,
+        "stderr={} stdout={}",
+        run.stderr, run.stdout
+    );
+    assert_eq!(run.document["summary"]["complete"], true, "{}", run.stderr);
+    let candidates: Vec<_> = run.document["mutants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|mutant| &mutant["candidate"])
+        .collect();
+    assert_eq!(candidates.len(), 1, "{}", run.stdout);
+    assert_eq!(candidates[0]["operator"], "collection_list_tuple");
+    assert_eq!(candidates[0]["original"], "(1, 2)");
+    assert_eq!(candidates[0]["replacement"], "[1, 2]");
+    assert!(
+        candidates.iter().all(|candidate| !matches!(
+            candidate["original"].as_str(),
+            Some("tuple" | "(ValueError, TypeError)")
+        )),
+        "{}",
+        run.stdout
+    );
+    assert_eq!(run.statuses, ["survived"]);
+    assert_eq!(run.document["summary"]["counts"]["survived"], 1);
+}
+
+#[tokio::test]
 async fn focused_collection_and_structure_candidates_remain_eligible_outside_arid_spans() {
     let project = tempfile::tempdir().unwrap();
     write_collection_operator_project(project.path());
@@ -2492,6 +2532,17 @@ fn write_exception_operator_project(root: &Path) {
     std::fs::write(
         source.join("calc.py"),
         "def classify():\n    try:\n        raise ValueError\n    except ValueError:\n        return 'ok'\n",
+    )
+    .unwrap();
+}
+
+fn write_exception_handler_collection_project(root: &Path) {
+    let source = root.join("src");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("__init__.py"), "").unwrap();
+    std::fs::write(
+        source.join("calc.py"),
+        "def classify():\n    try:\n        raise ValueError\n    except tuple((ValueError, TypeError)):\n        return (1, 2)\n",
     )
     .unwrap();
 }
