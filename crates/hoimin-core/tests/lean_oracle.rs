@@ -64,6 +64,7 @@ impl From<&OracleStep> for Observation {
 #[derive(Debug)]
 struct CaseResult {
     id: String,
+    mode: String,
     class: CaseClass,
     expected: Vec<Observation>,
     actual: Vec<Observation>,
@@ -313,6 +314,7 @@ fn run_case(case: &OracleCase) -> CaseResult {
         Err(error) => {
             return CaseResult {
                 id: case.id.clone(),
+                mode: case.mode.clone(),
                 class: CaseClass::InfrastructureError,
                 expected: case.expected.iter().map(Observation::from).collect(),
                 actual: Vec::new(),
@@ -328,6 +330,7 @@ fn run_case(case: &OracleCase) -> CaseResult {
             Err(error) => {
                 return CaseResult {
                     id: case.id.clone(),
+                    mode: case.mode.clone(),
                     class: CaseClass::InfrastructureError,
                     expected,
                     actual,
@@ -343,6 +346,7 @@ fn run_case(case: &OracleCase) -> CaseResult {
     };
     CaseResult {
         id: case.id.clone(),
+        mode: case.mode.clone(),
         class,
         expected,
         actual,
@@ -552,5 +556,11 @@ fn oracle_correspondence() {
             .iter()
             .all(|result| result.class != CaseClass::InfrastructureError),
         "{results:#?}"
+    );
+    assert!(
+        results
+            .iter()
+            .all(|result| result.mode != "strict" || result.class == CaseClass::Match),
+        "strict Lean oracle mismatch: {results:#?}"
     );
 }

@@ -440,7 +440,7 @@ git commit -m "test: compare Rust machine with Lean oracle"
 - Consumes: complete report-mode adapter output and single-case reproduction from Task 4.
 - Produces: a reviewed counterexample ledger and a strict corpus containing every established matching case.
 
-- [ ] **Step 1: Capture complete report-mode evidence**
+- [x] **Step 1: Capture complete report-mode evidence**
 
 Run:
 
@@ -460,7 +460,7 @@ HOIMIN_ORACLE_CASE="$ORACLE_CASE_ID" \
 Replace the example value with the exact non-match ID, then record the smallest schedule, Lean
 expectation, Rust observation, differing fields, source locations, impact, and model limitation.
 
-- [ ] **Step 2: Classify every non-match without changing either implementation**
+- [x] **Step 2: Classify every non-match without changing either implementation**
 
 Create the counterexample ledger with this exact header:
 
@@ -473,7 +473,7 @@ Use only `confirmed bug`, `specification ambiguity`, `model defect`, or `infrast
 Correct a model defect only when the abstraction contradicts the approved design or real public
 contract; never change Lean merely because Rust differs.
 
-- [ ] **Step 3: Promote reviewed matches to strict mode in Lean**
+- [x] **Step 3: Promote reviewed matches to strict mode in Lean**
 
 Change the `mode` field from `report` to `strict` in the Lean case definitions for every case whose
 claim is established by the approved design and existing public tests. Regenerate, never edit, the
@@ -485,13 +485,13 @@ lake exe generate -- --output corpus/state-machine.jsonl
 lake exe generate -- --check corpus/state-machine.jsonl
 ```
 
-- [ ] **Step 4: Make strict mismatches blocking**
+- [x] **Step 4: Make strict mismatches blocking**
 
 Update `oracle_correspondence` so `CaseClass::Mismatch` fails only for corpus cases whose Lean-owned
 mode is `strict`; report cases continue to print a nonblocking mismatch. Run the adapter and expect
 all established matching cases to pass while confirmed bugs fail by case ID.
 
-- [ ] **Step 5: Commit the reviewed baseline and ledger**
+- [x] **Step 5: Commit the reviewed baseline and ledger**
 
 ```bash
 git add formal/HoiminOracle/HoiminOracle/Cases.lean formal/HoiminOracle/corpus/state-machine.jsonl crates/hoimin-core/tests/lean_oracle.rs docs/superpowers/reports/2026-08-09-lean-state-machine-counterexamples.md

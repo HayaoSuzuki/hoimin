@@ -122,7 +122,7 @@ private def runSchedule : State → List NamedEvent → List OracleStep
 
 private def toOracleCase (spec : CaseSpec) : OracleCase where
   id := spec.id
-  mode := "report"
+  mode := "strict"
   scenario := spec.scenario
   schedule := spec.schedule.map NamedEvent.name
   expected := runSchedule spec.initial spec.schedule
