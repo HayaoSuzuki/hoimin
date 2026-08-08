@@ -2159,6 +2159,103 @@ fn type_annotations_emit_supported_candidates_in_source_order() {
 }
 
 #[test]
+fn typing_import_rebinding_linear() {
+    for (name, source, expected) in [
+        (
+            "unaliased import assignment and restoration",
+            "from typing import Sequence\nbefore: list[str]\nSequence = local_sequence\nafter: list[str]\nfrom typing import Sequence as Sequence\nrestored: list[str]\n",
+            vec![
+                (36, 9, 2, None, "Sequence[str]"),
+                (139, 9, 6, None, "Sequence[str]"),
+            ],
+        ),
+        (
+            "direct alias assignment and restoration",
+            "from typing import Sequence as Seq\nbefore: list[str]\nSeq = local_sequence\nafter: list[str]\nfrom typing import Sequence as Seq\nrestored: list[str]\n",
+            vec![(43, 9, 2, None, "Seq[str]"), (136, 9, 6, None, "Seq[str]")],
+        ),
+        (
+            "function definition rebinding and restoration",
+            "from typing import Sequence\nbefore: list[str]\ndef Sequence():\n    pass\nafter: list[str]\nfrom typing import Sequence\nrestored: list[str]\n",
+            vec![
+                (36, 9, 2, None, "Sequence[str]"),
+                (126, 9, 7, None, "Sequence[str]"),
+            ],
+        ),
+        (
+            "class definition rebinding and restoration",
+            "from typing import Sequence\nbefore: list[str]\nclass Sequence:\n    pass\nafter: list[str]\nfrom typing import Sequence\nrestored: list[str]\n",
+            vec![
+                (36, 9, 2, None, "Sequence[str]"),
+                (126, 9, 7, None, "Sequence[str]"),
+            ],
+        ),
+    ] {
+        let output = analyze_types(source);
+        let actual: Vec<_> = output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "type_list_sequence")
+            .map(|candidate| {
+                (
+                    candidate.span.start,
+                    candidate.span.length,
+                    candidate.line,
+                    candidate.symbol.as_deref(),
+                    candidate.replacement.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(actual, expected, "{name}");
+        for candidate in &output.candidates {
+            apply_candidate_and_reparse(source, candidate);
+        }
+    }
+}
+
+#[test]
+fn typing_module_alias_rebinding_linear() {
+    for (name, source, expected) in [
+        (
+            "module alias assignment and restoration",
+            "import typing as t\nbefore: list[str]\nt = local_typing\nafter: list[str]\nimport typing as t\nrestored: list[str]\n",
+            vec![
+                (27, 9, 2, None, "t.Sequence[str]"),
+                (100, 9, 6, None, "t.Sequence[str]"),
+            ],
+        ),
+        (
+            "unsupported competing module import and restoration",
+            "import typing as t\nbefore: list[str]\nimport local as t\nafter: list[str]\nimport typing as t\nrestored: list[str]\n",
+            vec![
+                (27, 9, 2, None, "t.Sequence[str]"),
+                (101, 9, 6, None, "t.Sequence[str]"),
+            ],
+        ),
+    ] {
+        let output = analyze_types(source);
+        let actual: Vec<_> = output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "type_list_sequence")
+            .map(|candidate| {
+                (
+                    candidate.span.start,
+                    candidate.span.length,
+                    candidate.line,
+                    candidate.symbol.as_deref(),
+                    candidate.replacement.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(actual, expected, "{name}");
+        for candidate in &output.candidates {
+            apply_candidate_and_reparse(source, candidate);
+        }
+    }
+}
+
+#[test]
 fn type_annotations_ignore_quoted_and_unrecognized_forms() {
     let source = "from typing import Annotated, Any, Callable, Optional, TypeVar\nfrom local import Optional as LocalOptional\n\nT = TypeVar('T')\nclass Sequence: pass\nquoted: 'Optional[int]'\nannotated: Annotated[list[str], 'meta']\nany_value: Any\ncallback: Callable[[str], int]\ngeneric: T\nuser_sequence: Sequence[str]\nlocal_optional: LocalOptional[int]\n";
     let output = analyze_types(source);

@@ -512,7 +512,6 @@ fn module_name(path: &Utf8Path) -> String {
 
 #[derive(Default)]
 struct AstFacts<'tokens> {
-    imports: KnownImports,
     bound_builtin_names: HashSet<String>,
     bound_exception_names: HashSet<String>,
     operator_token_starts: HashSet<usize>,
@@ -538,7 +537,6 @@ impl<'tokens> AstFacts<'tokens> {
         source: &'tokens str,
     ) -> Self {
         let mut facts = Self {
-            imports: KnownImports::from_module(module),
             tokens: Some(tokens),
             source,
             ..Self::default()
@@ -1889,7 +1887,7 @@ fn is_main_literal(expression: &Expr) -> bool {
 #[path = "rust_tests.rs"]
 mod rust_tests;
 
-#[derive(Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct KnownImports {
     direct: HashMap<String, String>,
     modules: HashMap<String, String>,
@@ -1897,60 +1895,126 @@ struct KnownImports {
 }
 
 impl KnownImports {
-    fn from_module(module: &ModModule) -> Self {
-        let mut imports = Self::default();
-        for statement in &module.body {
-            match statement {
-                Stmt::Import(import) => {
-                    for alias in &import.names {
-                        let name = alias.name.as_str();
-                        if matches!(name, "typing" | "collections.abc") {
-                            let local = alias.asname.as_ref().map_or_else(
-                                || name.split('.').next().unwrap_or(name),
-                                |asname| asname.as_str(),
-                            );
-                            let resolved = if alias.asname.is_some() { name } else { local };
-                            imports
-                                .modules
-                                .insert(local.to_owned(), resolved.to_owned());
-                        }
-                    }
+    fn invalidate(&mut self, name: &str) {
+        self.direct.remove(name);
+        self.modules.remove(name);
+        self.type_vars.remove(name);
+    }
+
+    fn invalidate_target(&mut self, target: &Expr) {
+        match target {
+            Expr::Name(name) => self.invalidate(name.id.as_str()),
+            Expr::List(list) => {
+                for element in &list.elts {
+                    self.invalidate_target(element);
                 }
-                Stmt::ImportFrom(import) if import.level == 0 => {
-                    let Some(module_name) = import
-                        .module
-                        .as_ref()
-                        .map(ruff_python_ast::Identifier::as_str)
-                    else {
-                        continue;
-                    };
-                    if !matches!(module_name, "typing" | "collections.abc") {
-                        continue;
-                    }
-                    for alias in &import.names {
-                        let imported = alias.name.as_str();
-                        if is_known_type_name(imported) {
-                            let local = alias
-                                .asname
-                                .as_ref()
-                                .map_or(imported, |asname| asname.as_str());
-                            imports
-                                .direct
-                                .insert(local.to_owned(), format!("{module_name}.{imported}"));
-                        }
-                    }
+            }
+            Expr::Tuple(tuple) => {
+                for element in &tuple.elts {
+                    self.invalidate_target(element);
                 }
-                Stmt::Assign(assign) if is_type_var_call(assign.value.as_ref(), &imports) => {
-                    for target in &assign.targets {
-                        if let Expr::Name(name) = target {
-                            imports.type_vars.insert(name.id.as_str().to_owned());
-                        }
-                    }
+            }
+            Expr::Starred(starred) => self.invalidate_target(starred.value.as_ref()),
+            _ => {}
+        }
+    }
+
+    fn mark_type_vars(&mut self, target: &Expr) {
+        match target {
+            Expr::Name(name) => {
+                self.type_vars.insert(name.id.as_str().to_owned());
+            }
+            Expr::List(list) => {
+                for element in &list.elts {
+                    self.mark_type_vars(element);
                 }
-                _ => {}
+            }
+            Expr::Tuple(tuple) => {
+                for element in &tuple.elts {
+                    self.mark_type_vars(element);
+                }
+            }
+            Expr::Starred(starred) => self.mark_type_vars(starred.value.as_ref()),
+            _ => {}
+        }
+    }
+
+    fn transfer_import(&mut self, import: &ruff_python_ast::StmtImport) {
+        for alias in &import.names {
+            let name = alias.name.as_str();
+            let local = alias.asname.as_ref().map_or_else(
+                || name.split('.').next().unwrap_or(name),
+                ruff_python_ast::Identifier::as_str,
+            );
+            self.invalidate(local);
+            if matches!(name, "typing" | "collections.abc") {
+                let resolved = if alias.asname.is_some() { name } else { local };
+                self.modules.insert(local.to_owned(), resolved.to_owned());
             }
         }
-        imports
+    }
+
+    fn transfer_import_from(&mut self, import: &ruff_python_ast::StmtImportFrom) {
+        let module_name = (import.level == 0)
+            .then(|| {
+                import
+                    .module
+                    .as_ref()
+                    .map(ruff_python_ast::Identifier::as_str)
+            })
+            .flatten();
+        for alias in &import.names {
+            let imported = alias.name.as_str();
+            if imported == "*" {
+                self.direct.clear();
+                self.type_vars.clear();
+                continue;
+            }
+            let local = alias
+                .asname
+                .as_ref()
+                .map_or(imported, ruff_python_ast::Identifier::as_str);
+            self.invalidate(local);
+            if let Some(module_name) = module_name
+                && matches!(module_name, "typing" | "collections.abc")
+                && is_known_type_name(imported)
+            {
+                self.direct
+                    .insert(local.to_owned(), format!("{module_name}.{imported}"));
+            }
+        }
+    }
+
+    fn transfer_assign(&mut self, targets: &[Expr], value: &Expr) {
+        let is_type_var = is_type_var_call(value, self);
+        for target in targets {
+            self.invalidate_target(target);
+        }
+        if is_type_var {
+            for target in targets {
+                self.mark_type_vars(target);
+            }
+        }
+    }
+
+    fn transfer_statement(&mut self, statement: &Stmt) {
+        match statement {
+            Stmt::Import(import) => self.transfer_import(import),
+            Stmt::ImportFrom(import) => self.transfer_import_from(import),
+            Stmt::Assign(assign) => self.transfer_assign(&assign.targets, assign.value.as_ref()),
+            Stmt::AnnAssign(assign) => self.transfer_assign(
+                std::slice::from_ref(assign.target.as_ref()),
+                assign
+                    .value
+                    .as_deref()
+                    .unwrap_or(assign.annotation.as_ref()),
+            ),
+            Stmt::AugAssign(assign) => self.invalidate_target(assign.target.as_ref()),
+            Stmt::TypeAlias(alias) => self.invalidate_target(alias.name.as_ref()),
+            Stmt::FunctionDef(definition) => self.invalidate(definition.name.as_str()),
+            Stmt::ClassDef(definition) => self.invalidate(definition.name.as_str()),
+            _ => {}
+        }
     }
 
     fn resolved_name(&self, expression: &Expr) -> Option<String> {
@@ -2043,15 +2107,23 @@ fn is_type_var_call(expression: &Expr, imports: &KnownImports) -> bool {
     matches!(expression, Expr::Call(call) if imports.resolved_name(call.func.as_ref()).as_deref() == Some("typing.TypeVar"))
 }
 
+struct AnnotationSite<'ast> {
+    annotation: &'ast Expr,
+    symbol: Option<String>,
+    imports: KnownImports,
+}
+
 struct AnnotationCollector<'ast> {
-    annotations: Vec<(&'ast Expr, Option<String>)>,
+    annotations: Vec<AnnotationSite<'ast>>,
+    imports: KnownImports,
     qualname: Vec<String>,
 }
 
 impl<'ast> AnnotationCollector<'ast> {
-    fn collect(module: &'ast ModModule) -> Vec<(&'ast Expr, Option<String>)> {
+    fn collect(module: &'ast ModModule) -> Vec<AnnotationSite<'ast>> {
         let mut collector = Self {
             annotations: Vec::new(),
+            imports: KnownImports::default(),
             qualname: Vec::new(),
         };
         for statement in &module.body {
@@ -2067,11 +2139,25 @@ impl<'ast> AnnotationCollector<'ast> {
     fn record_function_annotations(&mut self, definition: &'ast ruff_python_ast::StmtFunctionDef) {
         for parameter in &definition.parameters {
             if let Some(annotation) = parameter.annotation() {
-                self.annotations.push((annotation, self.symbol()));
+                self.record(annotation);
             }
         }
         if let Some(annotation) = definition.returns.as_deref() {
-            self.annotations.push((annotation, self.symbol()));
+            self.record(annotation);
+        }
+    }
+
+    fn record(&mut self, annotation: &'ast Expr) {
+        self.annotations.push(AnnotationSite {
+            annotation,
+            symbol: self.symbol(),
+            imports: self.imports.clone(),
+        });
+    }
+
+    fn visit_suite(&mut self, statements: &'ast [Stmt]) {
+        for statement in statements {
+            self.visit_stmt(statement);
         }
     }
 }
@@ -2082,20 +2168,31 @@ impl<'ast> Visitor<'ast> for AnnotationCollector<'ast> {
             Stmt::FunctionDef(definition) => {
                 self.qualname.push(definition.name.as_str().to_owned());
                 self.record_function_annotations(definition);
-                visitor::walk_stmt(self, statement);
                 self.qualname.pop();
+                self.imports.transfer_statement(statement);
+                let inherited = self.imports.clone();
+                self.qualname.push(definition.name.as_str().to_owned());
+                self.visit_suite(&definition.body);
+                self.qualname.pop();
+                self.imports = inherited;
             }
             Stmt::ClassDef(definition) => {
+                let inherited = self.imports.clone();
                 self.qualname.push(definition.name.as_str().to_owned());
-                visitor::walk_stmt(self, statement);
+                self.visit_suite(&definition.body);
                 self.qualname.pop();
+                self.imports = inherited;
+                self.imports.transfer_statement(statement);
             }
             Stmt::AnnAssign(assign) => {
-                self.annotations
-                    .push((assign.annotation.as_ref(), self.symbol()));
+                self.record(assign.annotation.as_ref());
                 visitor::walk_stmt(self, statement);
+                self.imports.transfer_statement(statement);
             }
-            _ => visitor::walk_stmt(self, statement),
+            _ => {
+                visitor::walk_stmt(self, statement);
+                self.imports.transfer_statement(statement);
+            }
         }
     }
 }
@@ -2108,9 +2205,11 @@ fn type_annotation_candidates(
     request: &AnalyzeRequest<'_>,
 ) -> ProducerPrefix {
     let mut candidates = CandidatePrefix::new(request.max_candidates);
-    for (annotation, symbol) in AnnotationCollector::collect(module) {
-        for (replacement, operator) in annotation_replacements(annotation, source, &facts.imports) {
-            let range = annotation.range();
+    for site in AnnotationCollector::collect(module) {
+        for (replacement, operator) in
+            annotation_replacements(site.annotation, source, &site.imports)
+        {
+            let range = site.annotation.range();
             let start = usize::from(range.start());
             let end = usize::from(range.end());
             if let Some(candidate) = make_candidate(
@@ -2120,7 +2219,7 @@ fn type_annotation_candidates(
                 start..end,
                 replacement,
                 operator,
-                symbol.clone(),
+                site.symbol.clone(),
             ) && retained_by_profile(&candidate, request.profile, facts)
             {
                 candidates.push(candidate);
