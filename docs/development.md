@@ -80,6 +80,23 @@ blocked caller-provided writer can delay the run future and even the expiry
 diagnostic. The bounded-return invariant therefore assumes synchronous output
 writes make progress.
 
+## Analyzer timeout invariants
+
+The normalized `--analyzer-timeout` bounds each runtime file analysis. Plan
+creation and verification rediscovery instead apply one absolute deadline to
+the complete discovery phase; the deadline is not restarted for each target.
+Both plan entry points report the same `plan.discovery: analyzer.timeout`
+diagnostic and exit 2. Plan creation produces no manifest, and verification
+does not start the test command.
+
+Discovery runs as an owned blocking task with cooperative cancellation. When
+the deadline expires, the async caller returns promptly and detaches an analyzer
+that is already running; the detached task observes cancellation, stops, and
+releases every resource it owns. Tokio cannot preempt synchronous work already
+executing in that task. In particular, a source read blocked inside a system
+call must return before cancellation can be observed and the detached task can
+finish.
+
 ## Extending collection and structural mutations
 
 The Rust analyzer keeps token-local mutations in its token scanner and adds an
