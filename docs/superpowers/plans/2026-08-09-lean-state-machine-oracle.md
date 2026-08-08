@@ -238,7 +238,7 @@ git commit -m "test: prove lifecycle oracle invariants"
 - Consumes: `cases : List OracleCase` and `brokenWitnessesDetected` from Tasks 1-2.
 - Produces: `lake exe generate -- --output corpus/state-machine.jsonl` and `lake exe generate -- --check corpus/state-machine.jsonl`; the JSONL schema consumed by Task 4.
 
-- [ ] **Step 1: Define the corpus schema as Lean structures**
+- [x] **Step 1: Define the corpus schema as Lean structures**
 
 Define JSON-serializable values with stable string encodings:
 
@@ -278,7 +278,7 @@ formatter. Populate at least these report-mode cases:
 - `deadline_after_finished_is_noop`;
 - `cancel_after_finished_is_noop`.
 
-- [ ] **Step 2: Add the generator with an intentionally failing freshness check**
+- [x] **Step 2: Add the generator with an intentionally failing freshness check**
 
 Implement `Main.lean` to reject generation unless `brokenWitnessesDetected` is true, render one
 compact JSON object plus newline per case, and support:
@@ -292,7 +292,7 @@ Run `cd formal/HoiminOracle && lake exe generate -- --check corpus/state-machine
 
 Expected: FAIL because the committed corpus does not exist.
 
-- [ ] **Step 3: Generate the corpus only from Lean**
+- [x] **Step 3: Generate the corpus only from Lean**
 
 Run:
 
@@ -305,7 +305,7 @@ lake exe generate -- --check corpus/state-machine.jsonl
 The generator creates the parent directory when it is absent. Expected: both generation and
 freshness check succeed; a second generation produces no diff.
 
-- [ ] **Step 4: Inspect semantic coverage and deterministic bytes**
+- [x] **Step 4: Inspect semantic coverage and deterministic bytes**
 
 Run:
 
@@ -318,7 +318,7 @@ cmp corpus/state-machine.jsonl /tmp/hoimin-state-machine-oracle.jsonl
 
 Expected: 13 lines and `cmp` exit 0. Do not hand-edit either file.
 
-- [ ] **Step 5: Commit generator and generated expectations**
+- [x] **Step 5: Commit generator and generated expectations**
 
 ```bash
 git add formal/HoiminOracle/Main.lean formal/HoiminOracle/HoiminOracle/Cases.lean formal/HoiminOracle/corpus/state-machine.jsonl
