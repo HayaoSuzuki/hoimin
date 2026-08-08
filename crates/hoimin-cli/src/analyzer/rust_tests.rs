@@ -30,6 +30,28 @@ fn apply_candidate_and_reparse(source: &str, candidate: &super::AnalyzerCandidat
     mutated
 }
 
+fn assert_type_list_sequence_sites(source: &str, expected: &[(u64, u64, u32, Option<&str>, &str)]) {
+    let output = analyze_types(source);
+    let actual: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "type_list_sequence")
+        .map(|candidate| {
+            (
+                candidate.span.start,
+                candidate.span.length,
+                candidate.line,
+                candidate.symbol.as_deref(),
+                candidate.replacement.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(actual, expected);
+    for candidate in &output.candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
 fn prefix_candidate(start: u64, replacement: &str, operator: &str) -> AnalyzerCandidate {
     AnalyzerCandidate {
         path: Utf8Path::new("pkg/sample.py").to_path_buf(),
@@ -2661,6 +2683,189 @@ fn typing_import_rebinding_control_flow() {
             apply_candidate_and_reparse(source, candidate);
         }
     }
+}
+
+#[test]
+fn typing_import_rebinding_finally_preserves_exit_categories() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "\n",
+        "def return_path(flag):\n",
+        "    from typing import Sequence\n",
+        "    try:\n",
+        "        if flag:\n",
+        "            Sequence = local_sequence\n",
+        "            return\n",
+        "    finally:\n",
+        "        in_return_finally: list[str]\n",
+        "    after_return: list[str]\n",
+        "\n",
+        "def raise_path(flag):\n",
+        "    from typing import Sequence\n",
+        "    try:\n",
+        "        if flag:\n",
+        "            Sequence = local_sequence\n",
+        "            raise Error\n",
+        "    finally:\n",
+        "        in_raise_finally: list[str]\n",
+        "    after_raise: list[str]\n",
+        "\n",
+        "def break_path(flag, items):\n",
+        "    from typing import Sequence\n",
+        "    for item in items:\n",
+        "        try:\n",
+        "            if flag:\n",
+        "                Sequence = local_sequence\n",
+        "                break\n",
+        "        finally:\n",
+        "            in_break_finally: list[str]\n",
+        "        after_break: list[str]\n",
+        "    after_break_loop: list[str]\n",
+        "\n",
+        "def continue_path(flag, items):\n",
+        "    from typing import Sequence\n",
+        "    for item in items:\n",
+        "        try:\n",
+        "            if flag:\n",
+        "                Sequence = local_sequence\n",
+        "                continue\n",
+        "        finally:\n",
+        "            in_continue_finally: list[str]\n",
+        "    after_continue_loop: list[str]\n",
+        "\n",
+        "untouched: list[str]\n",
+    );
+    assert_type_list_sequence_sites(
+        source,
+        &[
+            (235, 9, 11, Some("return_path"), "Sequence[str]"),
+            (454, 9, 21, Some("raise_path"), "Sequence[str]"),
+            (725, 9, 32, Some("break_path"), "Sequence[str]"),
+            (1063, 9, 46, None, "Sequence[str]"),
+        ],
+    );
+}
+
+#[test]
+fn typing_import_rebinding_match_propagates_failed_case_bindings() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "match value:\n",
+        "    case 0 if (Sequence := local_sequence):\n",
+        "        pass\n",
+        "    case _:\n",
+        "        after_guard_failure: list[str]\n",
+        "after_guard_match: list[str]\n",
+        "from typing import Sequence\n",
+        "match value:\n",
+        "    case [Sequence, 0]:\n",
+        "        pass\n",
+        "    case _:\n",
+        "        after_pattern_failure: list[str]\n",
+        "after_pattern_match: list[str]\n",
+        "from typing import Sequence\n",
+        "untouched: list[str]\n",
+    );
+    assert_type_list_sequence_sites(source, &[(379, 9, 16, None, "Sequence[str]")]);
+}
+
+#[test]
+fn typing_import_rebinding_loop_heads_include_back_edges() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "\n",
+        "def for_back_edge(items):\n",
+        "    from typing import Sequence\n",
+        "    for item in items:\n",
+        "        before_rebind: list[str]\n",
+        "        Sequence = local_sequence\n",
+        "    after_for: list[str]\n",
+        "\n",
+        "def while_continue(condition, flag):\n",
+        "    from typing import Sequence\n",
+        "    while condition:\n",
+        "        before_continue: list[str]\n",
+        "        if flag:\n",
+        "            Sequence = local_sequence\n",
+        "            continue\n",
+        "        break\n",
+        "    after_while: list[str]\n",
+        "\n",
+        "untouched: list[str]\n",
+    );
+    assert_type_list_sequence_sites(source, &[(457, 9, 20, None, "Sequence[str]")]);
+}
+
+#[test]
+fn typing_import_rebinding_definition_header_function_defaults() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "def default_binding(\n",
+        "    value: list[str] = (Sequence := local_sequence),\n",
+        "    other: list[str] = None,\n",
+        ") -> list[str]:\n",
+        "    pass\n",
+        "after_default: list[str]\n",
+        "from typing import Sequence\n",
+        "untouched: list[str]\n",
+    );
+    assert_type_list_sequence_sites(source, &[(220, 9, 9, None, "Sequence[str]")]);
+}
+
+#[test]
+fn typing_import_rebinding_definition_header_function_decorators() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "@(Sequence := decorator)\n",
+        "def decorated(value: list[str]) -> list[str]:\n",
+        "    pass\n",
+        "after_decorator: list[str]\n",
+        "from typing import Sequence\n",
+        "untouched: list[str]\n",
+    );
+    assert_type_list_sequence_sites(source, &[(174, 9, 7, None, "Sequence[str]")]);
+}
+
+#[test]
+fn typing_import_rebinding_definition_header_class_expressions() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "@(Sequence := decorator)\n",
+        "class Decorated:\n",
+        "    in_decorated: list[str]\n",
+        "after_decorated: list[str]\n",
+        "from typing import Sequence\n",
+        "class Based((Sequence := Base)):\n",
+        "    in_based: list[str]\n",
+        "after_based: list[str]\n",
+        "from typing import Sequence\n",
+        "class Keyword(metaclass=(Sequence := Meta)):\n",
+        "    in_keyword: list[str]\n",
+        "after_keyword: list[str]\n",
+        "from typing import Sequence\n",
+        "untouched: list[str]\n",
+    );
+    assert_type_list_sequence_sites(source, &[(396, 9, 15, None, "Sequence[str]")]);
+}
+
+#[test]
+fn typing_import_rebinding_definition_header_lambda_defaults_only() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "with_default = lambda value=(Sequence := local_sequence): value\n",
+        "after_default: list[str]\n",
+        "from typing import Sequence\n",
+        "body_only = lambda: (Sequence := local_sequence)\n",
+        "after_body: list[str]\n",
+        "untouched: list[str]\n",
+    );
+    assert_type_list_sequence_sites(
+        source,
+        &[
+            (206, 9, 6, None, "Sequence[str]"),
+            (227, 9, 7, None, "Sequence[str]"),
+        ],
+    );
 }
 
 #[test]

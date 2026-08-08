@@ -2278,7 +2278,17 @@ impl<'ast> Visitor<'ast> for FunctionLocalCollector {
 
     fn visit_expr(&mut self, expression: &'ast Expr) {
         match expression {
-            Expr::Lambda(_) => return,
+            Expr::Lambda(lambda) => {
+                if let Some(parameters) = &lambda.parameters {
+                    for default in parameters
+                        .iter_non_variadic_params()
+                        .filter_map(ruff_python_ast::ParameterWithDefault::default)
+                    {
+                        self.visit_expr(default);
+                    }
+                }
+                return;
+            }
             Expr::Named(named) => self.record_target(named.target.as_ref()),
             _ => {}
         }
@@ -2328,12 +2338,29 @@ impl<'imports> NamedBindingInvalidator<'imports> {
     fn visit_statement(imports: &'imports mut KnownImports, statement: &Stmt) {
         visitor::walk_stmt(&mut Self { imports }, statement);
     }
+
+    fn visit_type_params(
+        imports: &'imports mut KnownImports,
+        type_params: &ruff_python_ast::TypeParams,
+    ) {
+        Visitor::visit_type_params(&mut Self { imports }, type_params);
+    }
 }
 
 impl<'ast> Visitor<'ast> for NamedBindingInvalidator<'_> {
     fn visit_expr(&mut self, expression: &'ast Expr) {
         match expression {
-            Expr::Lambda(_) => return,
+            Expr::Lambda(lambda) => {
+                if let Some(parameters) = &lambda.parameters {
+                    for default in parameters
+                        .iter_non_variadic_params()
+                        .filter_map(ruff_python_ast::ParameterWithDefault::default)
+                    {
+                        self.visit_expr(default);
+                    }
+                }
+                return;
+            }
             Expr::Named(named) => self.imports.invalidate_target(named.target.as_ref()),
             _ => {}
         }
@@ -2381,6 +2408,14 @@ struct ControlFlowExits {
     terminates: Vec<KnownImports>,
 }
 
+#[derive(Clone, Copy)]
+enum ExitCategory {
+    Fallthrough,
+    Break,
+    Continue,
+    Terminate,
+}
+
 impl ControlFlowExits {
     fn fallthrough(imports: KnownImports) -> Self {
         Self {
@@ -2407,6 +2442,7 @@ struct AnnotationCollector<'ast> {
     imports: KnownImports,
     class_body_fallback: Option<KnownImports>,
     qualname: Vec<String>,
+    record_annotations: bool,
 }
 
 impl<'ast> AnnotationCollector<'ast> {
@@ -2416,6 +2452,7 @@ impl<'ast> AnnotationCollector<'ast> {
             imports: KnownImports::default(),
             class_body_fallback: None,
             qualname: Vec::new(),
+            record_annotations: true,
         };
         collector.visit_suite(&module.body);
         collector.annotations
@@ -2425,18 +2462,55 @@ impl<'ast> AnnotationCollector<'ast> {
         (!self.qualname.is_empty()).then(|| self.qualname.join("."))
     }
 
-    fn record_function_annotations(&mut self, definition: &'ast ruff_python_ast::StmtFunctionDef) {
+    fn visit_function_header(&mut self, definition: &'ast ruff_python_ast::StmtFunctionDef) {
+        for decorator in &definition.decorator_list {
+            NamedBindingInvalidator::visit(&mut self.imports, &decorator.expression);
+        }
+        if let Some(type_params) = &definition.type_params {
+            NamedBindingInvalidator::visit_type_params(&mut self.imports, type_params);
+        }
+        for default in definition
+            .parameters
+            .iter_non_variadic_params()
+            .filter_map(ruff_python_ast::ParameterWithDefault::default)
+        {
+            NamedBindingInvalidator::visit(&mut self.imports, default);
+        }
+        self.qualname.push(definition.name.as_str().to_owned());
         for parameter in &definition.parameters {
             if let Some(annotation) = parameter.annotation() {
                 self.record(annotation);
+                NamedBindingInvalidator::visit(&mut self.imports, annotation);
             }
         }
         if let Some(annotation) = definition.returns.as_deref() {
             self.record(annotation);
+            NamedBindingInvalidator::visit(&mut self.imports, annotation);
+        }
+        self.qualname.pop();
+    }
+
+    fn visit_class_header(&mut self, definition: &'ast ruff_python_ast::StmtClassDef) {
+        for decorator in &definition.decorator_list {
+            NamedBindingInvalidator::visit(&mut self.imports, &decorator.expression);
+        }
+        if let Some(type_params) = &definition.type_params {
+            NamedBindingInvalidator::visit_type_params(&mut self.imports, type_params);
+        }
+        if let Some(arguments) = &definition.arguments {
+            for argument in &arguments.args {
+                NamedBindingInvalidator::visit(&mut self.imports, argument);
+            }
+            for keyword in &arguments.keywords {
+                NamedBindingInvalidator::visit(&mut self.imports, &keyword.value);
+            }
         }
     }
 
     fn record(&mut self, annotation: &'ast Expr) {
+        if !self.record_annotations {
+            return;
+        }
         self.annotations.push(AnnotationSite {
             annotation,
             symbol: self.symbol(),
@@ -2495,9 +2569,7 @@ impl<'ast> AnnotationCollector<'ast> {
         statement: &'ast Stmt,
         definition: &'ast ruff_python_ast::StmtFunctionDef,
     ) -> ControlFlowExits {
-        self.qualname.push(definition.name.as_str().to_owned());
-        self.record_function_annotations(definition);
-        self.qualname.pop();
+        self.visit_function_header(definition);
         self.imports.transfer_statement(statement);
         let inherited = self.imports.clone();
         let inherited_fallback = self.class_body_fallback.clone();
@@ -2521,6 +2593,7 @@ impl<'ast> AnnotationCollector<'ast> {
         statement: &'ast Stmt,
         definition: &'ast ruff_python_ast::StmtClassDef,
     ) -> ControlFlowExits {
+        self.visit_class_header(definition);
         let inherited = self.imports.clone();
         let inherited_fallback = self.class_body_fallback.clone();
         let class_fallback = inherited_fallback.clone().unwrap_or_else(|| {
@@ -2571,11 +2644,13 @@ impl<'ast> AnnotationCollector<'ast> {
 
     fn visit_loop(
         &mut self,
-        body_imports: KnownImports,
+        body_imports: &KnownImports,
         zero_iteration: KnownImports,
+        iteration_target: Option<&'ast Expr>,
         body: &'ast [Stmt],
         orelse: &'ast [Stmt],
     ) -> ControlFlowExits {
+        let body_imports = self.loop_head_fixed_point(body_imports, iteration_target, body);
         let body_exits = self.visit_suite_from(body_imports, body);
         let mut natural = vec![zero_iteration];
         natural.extend(body_exits.fallthrough.clone());
@@ -2596,14 +2671,50 @@ impl<'ast> AnnotationCollector<'ast> {
         exits
     }
 
+    fn loop_head_fixed_point(
+        &mut self,
+        initial: &KnownImports,
+        iteration_target: Option<&'ast Expr>,
+        body: &'ast [Stmt],
+    ) -> KnownImports {
+        let mut head = initial.clone();
+        loop {
+            let record_annotations = self.record_annotations;
+            self.record_annotations = false;
+            let body_exits = self.visit_suite_from(head.clone(), body);
+            self.record_annotations = record_annotations;
+
+            let mut entries = vec![initial.clone()];
+            if let Some(mut imports) = body_exits.fallthrough {
+                if let Some(target) = iteration_target {
+                    imports.invalidate_target(target);
+                }
+                entries.push(imports);
+            }
+            for mut imports in body_exits.continues {
+                if let Some(target) = iteration_target {
+                    imports.invalidate_target(target);
+                }
+                entries.push(imports);
+            }
+            let next = KnownImports::intersection(entries)
+                .expect("a loop head always includes its initial entry");
+            if next == head {
+                return head;
+            }
+            head = next;
+        }
+    }
+
     fn visit_for(&mut self, statement: &'ast ruff_python_ast::StmtFor) -> ControlFlowExits {
         NamedBindingInvalidator::visit(&mut self.imports, statement.iter.as_ref());
         let zero_iteration = self.imports.clone();
         let mut body_imports = zero_iteration.clone();
         body_imports.invalidate_target(statement.target.as_ref());
         self.visit_loop(
-            body_imports,
+            &body_imports,
             zero_iteration,
+            Some(statement.target.as_ref()),
             &statement.body,
             &statement.orelse,
         )
@@ -2613,8 +2724,9 @@ impl<'ast> AnnotationCollector<'ast> {
         NamedBindingInvalidator::visit(&mut self.imports, statement.test.as_ref());
         let zero_iteration = self.imports.clone();
         self.visit_loop(
+            &zero_iteration,
             zero_iteration.clone(),
-            zero_iteration,
+            None,
             &statement.body,
             &statement.orelse,
         )
@@ -2688,60 +2800,98 @@ impl<'ast> AnnotationCollector<'ast> {
         if finalbody.is_empty() {
             return exits;
         }
-        let had_fallthrough = exits.fallthrough.is_some();
-        let had_break = !exits.breaks.is_empty();
-        let had_continue = !exits.continues.is_empty();
-        let had_terminate = !exits.terminates.is_empty();
-        let mut entries = Vec::new();
-        entries.extend(exits.fallthrough);
-        entries.extend(exits.breaks);
-        entries.extend(exits.continues);
-        entries.extend(exits.terminates);
-        let entry = KnownImports::intersection(entries).unwrap_or_else(|| self.imports.clone());
-        let final_exits = self.visit_suite_from(entry, finalbody);
-        let Some(final_fallthrough) = final_exits.fallthrough.clone() else {
-            return final_exits;
+
+        let mut annotation_entries = Vec::new();
+        annotation_entries.extend(exits.fallthrough.iter().cloned());
+        annotation_entries.extend(exits.breaks.iter().cloned());
+        annotation_entries.extend(exits.continues.iter().cloned());
+        annotation_entries.extend(exits.terminates.iter().cloned());
+        let Some(annotation_entry) = KnownImports::intersection(annotation_entries) else {
+            let _ = self.visit_suite_from(self.imports.clone(), finalbody);
+            return ControlFlowExits::default();
         };
-        let mut result = ControlFlowExits {
-            fallthrough: had_fallthrough.then(|| final_fallthrough.clone()),
-            breaks: had_break
-                .then(|| final_fallthrough.clone())
-                .into_iter()
-                .collect(),
-            continues: had_continue
-                .then(|| final_fallthrough.clone())
-                .into_iter()
-                .collect(),
-            terminates: had_terminate
-                .then_some(final_fallthrough)
-                .into_iter()
-                .collect(),
-        };
+        let _ = self.visit_suite_from(annotation_entry, finalbody);
+
+        let mut result = ControlFlowExits::default();
+        let mut fallthrough = Vec::new();
+        if let Some(imports) = exits.fallthrough {
+            self.route_finally_entry(
+                imports,
+                ExitCategory::Fallthrough,
+                finalbody,
+                &mut fallthrough,
+                &mut result,
+            );
+        }
+        for (category, entries) in [
+            (ExitCategory::Break, exits.breaks),
+            (ExitCategory::Continue, exits.continues),
+            (ExitCategory::Terminate, exits.terminates),
+        ] {
+            for imports in entries {
+                self.route_finally_entry(
+                    imports,
+                    category,
+                    finalbody,
+                    &mut fallthrough,
+                    &mut result,
+                );
+            }
+        }
+        result.fallthrough = KnownImports::intersection(fallthrough);
+        result
+    }
+
+    fn route_finally_entry(
+        &mut self,
+        imports: KnownImports,
+        category: ExitCategory,
+        finalbody: &'ast [Stmt],
+        fallthrough: &mut Vec<KnownImports>,
+        result: &mut ControlFlowExits,
+    ) {
+        let record_annotations = self.record_annotations;
+        self.record_annotations = false;
+        let final_exits = self.visit_suite_from(imports, finalbody);
+        self.record_annotations = record_annotations;
+
+        if let Some(imports) = final_exits.fallthrough {
+            match category {
+                ExitCategory::Fallthrough => fallthrough.push(imports),
+                ExitCategory::Break => result.breaks.push(imports),
+                ExitCategory::Continue => result.continues.push(imports),
+                ExitCategory::Terminate => result.terminates.push(imports),
+            }
+        }
         result.breaks.extend(final_exits.breaks);
         result.continues.extend(final_exits.continues);
         result.terminates.extend(final_exits.terminates);
-        result
     }
 
     fn visit_match(&mut self, statement: &'ast ruff_python_ast::StmtMatch) -> ControlFlowExits {
         NamedBindingInvalidator::visit(&mut self.imports, statement.subject.as_ref());
-        let incoming = self.imports.clone();
+        let mut remaining = Some(self.imports.clone());
         let mut fallthrough = Vec::new();
         let mut exits = ControlFlowExits::default();
-        let mut exhaustive = false;
         for case in &statement.cases {
-            let mut imports = incoming.clone();
+            let Some(mut imports) = remaining.take() else {
+                break;
+            };
             invalidate_pattern_bindings(&mut imports, &case.pattern);
+            let mut failed = Vec::new();
+            if !case.pattern.is_irrefutable() {
+                failed.push(imports.clone());
+            }
             if let Some(guard) = &case.guard {
                 NamedBindingInvalidator::visit(&mut imports, guard.as_ref());
-                fallthrough.push(imports.clone());
+                failed.push(imports.clone());
             }
             let case_exits = self.visit_suite_from(imports, &case.body);
             Self::merge_branch(&mut fallthrough, &mut exits, case_exits);
-            exhaustive |= case.guard.is_none() && case.pattern.is_irrefutable();
+            remaining = KnownImports::intersection(failed);
         }
-        if !exhaustive {
-            fallthrough.push(incoming);
+        if let Some(imports) = remaining {
+            fallthrough.push(imports);
         }
         exits.fallthrough = KnownImports::intersection(fallthrough);
         exits
