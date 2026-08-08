@@ -3664,7 +3664,6 @@ mod tests {
             result = &mut run => panic!("run finished before materialization paused: {result:?}"),
             result = entered_rx => result.expect("pause controller stopped before entry"),
         }
-        let first_cancelled_at = Instant::now();
         cancelling.cancel();
         tokio::select! {
             result = &mut run => panic!("run finished before the second cancellation: {result:?}"),
@@ -3672,6 +3671,8 @@ mod tests {
         }
         cancelling.cancel();
 
+        // About 100 ms remains on the first 250 ms grace period. A reset to the
+        // second cancellation would take another 250 ms and exceed this bound.
         let result = tokio::time::timeout(Duration::from_millis(180), &mut run).await;
         release_tx.send(()).unwrap();
         controller.await.unwrap();
@@ -3681,7 +3682,6 @@ mod tests {
         };
         let error = result.unwrap_err();
 
-        assert!(first_cancelled_at.elapsed() < Duration::from_millis(330));
         assert!(
             error.contains("cancellation: shutdown grace expired"),
             "{error}"
