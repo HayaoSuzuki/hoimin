@@ -79,4 +79,3 @@ stops and releases owned resources afterward.
 - Adding a new timeout or grace option.
 - Changing total-timeout, baseline, mutant, or process supervision semantics.
 - Expanding this issue into a redesign of runtime analyzer scheduling.
-

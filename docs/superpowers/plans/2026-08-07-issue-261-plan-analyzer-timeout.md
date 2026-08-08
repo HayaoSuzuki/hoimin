@@ -79,4 +79,3 @@ both plan entry points.
 
 The PR closes #261. Merge only after every repository CI job passes; the hard
 cgroup job may remain at its configured skip state.
-
