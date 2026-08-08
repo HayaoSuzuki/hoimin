@@ -31,6 +31,14 @@ pub(crate) struct AnalyzerOutput {
     pub candidates: Vec<AnalyzerCandidate>,
     pub diagnostics: Vec<AnalyzerDiagnostic>,
     pub truncated: bool,
+    #[cfg(test)]
+    pub retention: CandidateRetentionStats,
+}
+
+#[cfg(test)]
+pub(crate) struct CandidateRetentionStats {
+    pub producer_peaks: [usize; 3],
+    pub merged_peak: usize,
 }
 
 pub(crate) struct ProducerPrefix {
@@ -173,7 +181,7 @@ pub(crate) fn analyze_source_cancellable(
         return Err(AnalysisCancelled);
     }
     let line_index = LineIndex::new(source);
-    let mut candidates = Vec::new();
+    let mut token_candidates = CandidatePrefix::new(request.max_candidates);
     let tokens: Vec<_> = parsed.tokens().iter().collect();
     for (index, token) in tokens.iter().enumerate() {
         if cancelled() {
@@ -272,50 +280,45 @@ pub(crate) fn analyze_source_cancellable(
             replacement,
             operator,
             symbol,
-        ) {
-            candidates.push(candidate);
+        ) && retained_by_profile(&candidate, request.profile, &facts)
+        {
+            token_candidates.push(candidate);
         }
     }
     if cancelled() {
         return Err(AnalysisCancelled);
     }
-    candidates.extend(ast_candidates(
+    let token_candidates = token_candidates.finish();
+    let ast_candidates = ast_candidates(
         parsed.syntax(),
         source,
         &line_index,
         &facts,
         request,
         &cancelled,
-    )?);
+    )?;
     if cancelled() {
         return Err(AnalysisCancelled);
     }
-    candidates.extend(type_annotation_candidates(
-        parsed.syntax(),
-        source,
-        &line_index,
-        &facts.imports,
-        request,
-    ));
+    let type_annotation_candidates =
+        type_annotation_candidates(parsed.syntax(), source, &line_index, &facts, request);
     if cancelled() {
         return Err(AnalysisCancelled);
     }
-    if request.profile == MutationProfile::Focused {
-        candidates.retain(|candidate| {
-            if candidate.operator.starts_with("type_") {
-                return true;
-            }
-            let Some(end) = candidate.span.start.checked_add(candidate.span.length) else {
-                return true;
-            };
-            let (Ok(start), Ok(end)) =
-                (usize::try_from(candidate.span.start), usize::try_from(end))
-            else {
-                return true;
-            };
-            !facts.contains_arid_span(start, end)
-        });
-    }
+    let producer_overflowed = token_candidates.overflowed
+        || ast_candidates.overflowed
+        || type_annotation_candidates.overflowed;
+    #[cfg(test)]
+    let producer_peaks = [
+        token_candidates.retained_peak,
+        ast_candidates.retained_peak,
+        type_annotation_candidates.retained_peak,
+    ];
+    let mut candidates = token_candidates.candidates;
+    candidates.extend(ast_candidates.candidates);
+    candidates.extend(type_annotation_candidates.candidates);
+    #[cfg(test)]
+    let merged_peak = candidates.len();
     let mut seen = BTreeSet::new();
     candidates.retain(|candidate| {
         seen.insert((
@@ -330,10 +333,8 @@ pub(crate) fn analyze_source_cancellable(
             .cmp(&right.span.start)
             .then_with(|| left.operator.cmp(&right.operator))
     });
-    let truncated = candidates.len() > request.max_candidates;
-    if truncated {
-        candidates.truncate(request.max_candidates);
-    }
+    let truncated = producer_overflowed || candidates.len() > request.max_candidates;
+    candidates.truncate(request.max_candidates);
     let diagnostics = truncated
         .then(|| AnalyzerDiagnostic {
             code: AnalyzerDiagnosticCode::CandidateLimitExceeded,
@@ -348,7 +349,29 @@ pub(crate) fn analyze_source_cancellable(
         candidates,
         diagnostics,
         truncated,
+        #[cfg(test)]
+        retention: CandidateRetentionStats {
+            producer_peaks,
+            merged_peak,
+        },
     })
+}
+
+fn retained_by_profile(
+    candidate: &AnalyzerCandidate,
+    profile: MutationProfile,
+    facts: &AstFacts<'_>,
+) -> bool {
+    if profile != MutationProfile::Focused || candidate.operator.starts_with("type_") {
+        return true;
+    }
+    let Some(end) = candidate.span.start.checked_add(candidate.span.length) else {
+        return true;
+    };
+    let (Ok(start), Ok(end)) = (usize::try_from(candidate.span.start), usize::try_from(end)) else {
+        return true;
+    };
+    !facts.contains_arid_span(start, end)
 }
 
 fn make_candidate(
@@ -393,6 +416,11 @@ fn invalid_syntax(path: &Utf8Path) -> AnalyzerOutput {
             message: None,
         }],
         truncated: false,
+        #[cfg(test)]
+        retention: CandidateRetentionStats {
+            producer_peaks: [0; 3],
+            merged_peak: 0,
+        },
     }
 }
 
@@ -975,7 +1003,7 @@ struct AstCandidateCollector<'a, F> {
     cancelled: &'a F,
     cancelled_observed: bool,
     exception_handler_finality: Vec<bool>,
-    candidates: Vec<AnalyzerCandidate>,
+    candidates: CandidatePrefix,
 }
 
 impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
@@ -986,7 +1014,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         facts: &'a AstFacts<'a>,
         request: &'a AnalyzeRequest<'a>,
         cancelled: &'a F,
-    ) -> Result<Vec<AnalyzerCandidate>, AnalysisCancelled> {
+    ) -> Result<ProducerPrefix, AnalysisCancelled> {
         let mut collector = Self {
             source,
             line_index,
@@ -995,7 +1023,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             cancelled,
             cancelled_observed: false,
             exception_handler_finality: Vec::new(),
-            candidates: Vec::new(),
+            candidates: CandidatePrefix::new(request.max_candidates),
         };
         for statement in &module.body {
             collector.visit_stmt(statement);
@@ -1003,7 +1031,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 return Err(AnalysisCancelled);
             }
         }
-        Ok(collector.candidates)
+        Ok(collector.candidates.finish())
     }
 
     fn check_cancelled(&mut self) -> bool {
@@ -1024,7 +1052,8 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             replacement,
             operator,
             symbol,
-        ) {
+        ) && retained_by_profile(&candidate, self.request.profile, self.facts)
+        {
             self.candidates.push(candidate);
         }
     }
@@ -1499,7 +1528,7 @@ fn ast_candidates<'a, F: Fn() -> bool>(
     facts: &'a AstFacts<'a>,
     request: &'a AnalyzeRequest<'a>,
     cancelled: &'a F,
-) -> Result<Vec<AnalyzerCandidate>, AnalysisCancelled> {
+) -> Result<ProducerPrefix, AnalysisCancelled> {
     AstCandidateCollector::collect(module, source, line_index, facts, request, cancelled)
 }
 
@@ -2058,30 +2087,30 @@ fn type_annotation_candidates(
     module: &ModModule,
     source: &str,
     line_index: &LineIndex,
-    imports: &KnownImports,
+    facts: &AstFacts<'_>,
     request: &AnalyzeRequest<'_>,
-) -> Vec<AnalyzerCandidate> {
-    AnnotationCollector::collect(module)
-        .into_iter()
-        .flat_map(|(annotation, symbol)| {
-            annotation_replacements(annotation, source, imports)
-                .into_iter()
-                .filter_map(move |(replacement, operator)| {
-                    let range = annotation.range();
-                    let start = usize::from(range.start());
-                    let end = usize::from(range.end());
-                    make_candidate(
-                        request,
-                        source,
-                        line_index,
-                        start..end,
-                        replacement,
-                        operator,
-                        symbol.clone(),
-                    )
-                })
-        })
-        .collect()
+) -> ProducerPrefix {
+    let mut candidates = CandidatePrefix::new(request.max_candidates);
+    for (annotation, symbol) in AnnotationCollector::collect(module) {
+        for (replacement, operator) in annotation_replacements(annotation, source, &facts.imports) {
+            let range = annotation.range();
+            let start = usize::from(range.start());
+            let end = usize::from(range.end());
+            if let Some(candidate) = make_candidate(
+                request,
+                source,
+                line_index,
+                start..end,
+                replacement,
+                operator,
+                symbol.clone(),
+            ) && retained_by_profile(&candidate, request.profile, facts)
+            {
+                candidates.push(candidate);
+            }
+        }
+    }
+    candidates.finish()
 }
 
 fn annotation_replacements(

@@ -1416,6 +1416,107 @@ fn analyze_with(
     )
 }
 
+fn analyze_with_all_candidate_producers(
+    max_candidates: usize,
+    source: &str,
+) -> super::AnalyzerOutput {
+    let mut operators = MutationOperatorSelection::default();
+    for operator in [
+        MutationOperator::TypeNullableRemove,
+        MutationOperator::TypeNullableAdd,
+        MutationOperator::TypeListSequence,
+        MutationOperator::TypeSetAbstractSet,
+        MutationOperator::TypeMapping,
+        MutationOperator::TypeIterableIterator,
+        MutationOperator::TypeSequenceIterable,
+    ] {
+        operators.include(operator);
+    }
+    analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/high.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            profile: MutationProfile::Full,
+            max_candidates,
+        },
+        source,
+    )
+}
+
+#[test]
+fn bounded_collection_preserves_the_exact_full_output_prefix_and_retention_bounds() {
+    use std::fmt::Write;
+
+    let mut source = String::new();
+    for index in 0..100 {
+        writeln!(
+            source,
+            "def value_{index}(items: list[int]) -> list[int]:\n    return list(items[{index}] + {index})"
+        )
+        .expect("writing to a string succeeds");
+    }
+    let full = analyze_with_all_candidate_producers(10_000, &source);
+    let bounded = analyze_with_all_candidate_producers(3, &source);
+
+    assert!(full.candidates.len() > 3);
+    assert_eq!(bounded.candidates, full.candidates[..3]);
+    assert!(bounded.truncated);
+    assert_eq!(
+        bounded.diagnostics[0].code,
+        AnalyzerDiagnosticCode::CandidateLimitExceeded
+    );
+    assert!(
+        bounded
+            .retention
+            .producer_peaks
+            .iter()
+            .all(|peak| *peak > 0)
+    );
+    assert!(
+        bounded
+            .retention
+            .producer_peaks
+            .iter()
+            .all(|peak| *peak <= 4)
+    );
+    assert!(bounded.retention.merged_peak <= 12);
+}
+
+#[test]
+fn bounded_collection_filters_focused_arid_candidates_before_prefix_capacity() {
+    let source = format!("{}result = 1 + 2\n", "print(True)\n".repeat(100));
+    let focused = analyze_with_profile(MutationProfile::Focused, 1, &source);
+
+    assert_eq!(focused.candidates.len(), 1);
+    assert_eq!(focused.candidates[0].line, 101);
+    assert_eq!(focused.candidates[0].operator, "binary_add_sub");
+    assert!(!focused.truncated);
+    assert!(focused.diagnostics.is_empty());
+    assert_eq!(focused.retention.producer_peaks[0], 1);
+}
+
+#[test]
+fn bounded_collection_with_zero_limit_keeps_only_an_overflow_probe() {
+    let output = analyze_with(Utf8Path::new("pkg/zero.py"), &[], &[], 0, "value = 1 + 2\n");
+
+    assert!(output.candidates.is_empty());
+    assert!(output.truncated);
+    assert_eq!(
+        output.diagnostics[0].code,
+        AnalyzerDiagnosticCode::CandidateLimitExceeded
+    );
+    assert!(
+        output
+            .retention
+            .producer_peaks
+            .iter()
+            .all(|peak| *peak <= 1)
+    );
+    assert!(output.retention.merged_peak <= 3);
+}
+
 #[test]
 fn focused_profile_suppresses_main_print_assert_and_defaults() {
     let source = "if __name__ == \"__main__\":\n    print(1 + 2)\n    assert 3 == 3\nelse:\n    fallback = 4 + 5\n\ndef f(flag=True, *, enabled=False):\n    return flag + enabled\n";
