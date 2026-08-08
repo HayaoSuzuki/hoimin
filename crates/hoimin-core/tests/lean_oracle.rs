@@ -406,7 +406,7 @@ fn observation_diff(expected: &[Observation], actual: &[Observation]) -> String 
     differences.join("; ")
 }
 
-fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
     if let Some(message) = payload.downcast_ref::<&str>() {
         (*message).to_owned()
     } else if let Some(message) = payload.downcast_ref::<String>() {
@@ -425,7 +425,10 @@ fn isolate_case(case: &OracleCase, execute: impl FnOnce() -> CaseResult) -> Case
             class: CaseClass::InfrastructureError,
             expected: case.expected.iter().map(Observation::from).collect(),
             actual: Vec::new(),
-            detail: Some(format!("case panicked: {}", panic_message(payload))),
+            detail: Some(format!(
+                "case panicked: {}",
+                panic_message(payload.as_ref())
+            )),
         },
     }
 }
