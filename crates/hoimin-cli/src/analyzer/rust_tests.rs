@@ -2994,6 +2994,54 @@ fn typing_import_rebinding_class_external_writes_project_to_target_scope() {
 }
 
 #[test]
+fn typing_import_rebinding_nested_class_globals_preserve_function_fallback() {
+    let source = concat!(
+        "Sequence = object\n",
+        "t = object\n",
+        "def direct_outer():\n",
+        "    from typing import Sequence\n",
+        "    class GlobalWrite:\n",
+        "        global Sequence\n",
+        "        Sequence = object\n",
+        "        def method(self):\n",
+        "            preserved: list[str]\n",
+        "    after_class: list[str]\n",
+        "def alias_outer():\n",
+        "    import typing as t\n",
+        "    class GlobalWrite:\n",
+        "        global t\n",
+        "        t = object\n",
+        "        def method(self):\n",
+        "            preserved: list[str]\n",
+        "    after_class: list[str]\n",
+        "from typing import Sequence\n",
+        "untouched: list[str]\n",
+    );
+    assert_type_list_sequence_sites(
+        source,
+        &[
+            (
+                203,
+                9,
+                9,
+                Some("direct_outer.GlobalWrite.method"),
+                "Sequence[str]",
+            ),
+            (230, 9, 10, Some("direct_outer"), "Sequence[str]"),
+            (
+                390,
+                9,
+                17,
+                Some("alias_outer.GlobalWrite.method"),
+                "t.Sequence[str]",
+            ),
+            (417, 9, 18, Some("alias_outer"), "t.Sequence[str]"),
+            (466, 9, 20, None, "Sequence[str]"),
+        ],
+    );
+}
+
+#[test]
 fn typing_import_rebinding_try_handler_includes_unknown_wildcard_effect() {
     let source = concat!(
         "from typing import Sequence\n",

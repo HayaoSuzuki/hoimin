@@ -2185,8 +2185,17 @@ impl ClassExternalBindings {
         collector
     }
 
-    fn copy_all(&self, source: &KnownImports, target: &mut KnownImports) {
-        for name in self.globals.iter().chain(&self.nonlocals) {
+    fn copy_for_fallback(
+        &self,
+        source: &KnownImports,
+        target: &mut KnownImports,
+        parent_scope: ScopeKind,
+    ) {
+        let names = match parent_scope {
+            ScopeKind::Module => &self.globals,
+            ScopeKind::Function | ScopeKind::Class => &self.nonlocals,
+        };
+        for name in names {
             target.copy_name_from(source, name);
         }
     }
@@ -2511,6 +2520,7 @@ struct AnnotationCollector<'ast> {
     imports: KnownImports,
     class_body_fallback: Option<KnownImports>,
     class_external_bindings: Option<ClassExternalBindings>,
+    class_parent_scope: Option<ScopeKind>,
     scope_kind: ScopeKind,
     qualname: Vec<String>,
     record_annotations: bool,
@@ -2523,6 +2533,7 @@ impl<'ast> AnnotationCollector<'ast> {
             imports: KnownImports::default(),
             class_body_fallback: None,
             class_external_bindings: None,
+            class_parent_scope: None,
             scope_kind: ScopeKind::Module,
             qualname: Vec::new(),
             record_annotations: true,
@@ -2645,13 +2656,16 @@ impl<'ast> AnnotationCollector<'ast> {
         self.visit_function_header(definition);
         self.imports.transfer_statement(statement);
         let inherited = self.imports.clone();
-        if let (Some(bindings), Some(fallback)) =
-            (&self.class_external_bindings, &mut self.class_body_fallback)
-        {
-            bindings.copy_all(&self.imports, fallback);
+        if let (Some(bindings), Some(fallback), Some(parent_scope)) = (
+            &self.class_external_bindings,
+            &mut self.class_body_fallback,
+            self.class_parent_scope,
+        ) {
+            bindings.copy_for_fallback(&self.imports, fallback, parent_scope);
         }
         let inherited_fallback = self.class_body_fallback.clone();
         let inherited_bindings = self.class_external_bindings.take();
+        let inherited_class_parent_scope = self.class_parent_scope.take();
         self.imports = inherited_fallback
             .clone()
             .unwrap_or_else(|| inherited.clone());
@@ -2668,6 +2682,7 @@ impl<'ast> AnnotationCollector<'ast> {
         self.imports = inherited;
         self.class_body_fallback = inherited_fallback;
         self.class_external_bindings = inherited_bindings;
+        self.class_parent_scope = inherited_class_parent_scope;
         ControlFlowExits::fallthrough(self.imports.clone())
     }
 
@@ -2680,6 +2695,7 @@ impl<'ast> AnnotationCollector<'ast> {
         let mut inherited = self.imports.clone();
         let inherited_fallback = self.class_body_fallback.clone();
         let inherited_bindings = self.class_external_bindings.take();
+        let inherited_class_parent_scope = self.class_parent_scope.take();
         let inherited_scope = self.scope_kind;
         let class_fallback = inherited_fallback.clone().unwrap_or_else(|| {
             let mut fallback = inherited.clone();
@@ -2688,6 +2704,7 @@ impl<'ast> AnnotationCollector<'ast> {
         });
         self.class_body_fallback = Some(class_fallback);
         self.class_external_bindings = Some(ClassExternalBindings::collect(&definition.body));
+        self.class_parent_scope = Some(inherited_scope);
         self.scope_kind = ScopeKind::Class;
         self.qualname.push(definition.name.as_str().to_owned());
         let body_exits = self.visit_suite_flow(&definition.body);
@@ -2712,6 +2729,7 @@ impl<'ast> AnnotationCollector<'ast> {
         self.imports = inherited;
         self.class_body_fallback = inherited_fallback;
         self.class_external_bindings = inherited_bindings;
+        self.class_parent_scope = inherited_class_parent_scope;
         self.scope_kind = inherited_scope;
         self.imports.transfer_statement(statement);
         ControlFlowExits::fallthrough(self.imports.clone())
