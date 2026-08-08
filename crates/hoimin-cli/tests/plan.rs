@@ -349,6 +349,34 @@ async fn plan_analyzer_timeout_dispatch_returns_two_without_a_manifest() {
 }
 
 #[tokio::test]
+async fn plan_analyzer_timeout_outside_deadline_range_returns_two_without_panicking() {
+    let project = Project::new();
+    let marker = project.path.join("test-command-ran");
+    let args = plan_args(
+        &project,
+        [
+            "--file",
+            "src/calc.py",
+            "--analyzer-timeout",
+            "18446744073709551615s",
+        ],
+        &marker,
+    );
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty(), "invalid deadline emitted a manifest");
+    assert_eq!(
+        String::from_utf8(stderr).unwrap(),
+        "plan.discovery: analyzer.timeout: --analyzer-timeout duration 584542046090years 7months 15days 17h 5m 3s is outside the supported deadline range\n"
+    );
+    assert!(!marker.exists(), "plan launched the test command");
+}
+
+#[tokio::test]
 async fn verify_analyzer_timeout_dispatch_stops_before_the_test_command() {
     let project = Project::new();
     let (path, mut manifest, marker) = write_plan_manifest(&project, &[]).await;

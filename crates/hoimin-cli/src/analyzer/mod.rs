@@ -53,6 +53,7 @@ struct DiscoveryWork {
 pub(crate) struct DiscoveryControl {
     _owner: Arc<TempDir>,
     before_analysis: Box<dyn FnOnce() + Send>,
+    deadline_arm: Option<tokio::sync::oneshot::Sender<tokio::time::Instant>>,
 }
 
 #[cfg(test)]
@@ -64,6 +65,7 @@ impl DiscoveryControl {
         Self {
             _owner: owner,
             before_analysis: Box::new(before_analysis),
+            deadline_arm: None,
         }
     }
 }
@@ -150,10 +152,26 @@ async fn discover_targets_inner(
     profile: MutationProfile,
     max_candidates: usize,
     analyzer_timeout: Duration,
-    #[cfg(test)] control: Option<DiscoveryControl>,
+    #[cfg(test)] mut control: Option<DiscoveryControl>,
 ) -> Result<Discovery, EffectFailed> {
     let cancellation = ProcessCancellation::new();
     let task_cancellation = cancellation.clone();
+    #[cfg(test)]
+    let (initial_deadline, deadline_arm) = if let Some(control) = control.as_mut() {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        control.deadline_arm = Some(sender);
+        (None, Some(receiver))
+    } else {
+        (
+            Some(discovery_deadline(
+                tokio::time::Instant::now(),
+                analyzer_timeout,
+            )?),
+            None,
+        )
+    };
+    #[cfg(not(test))]
+    let deadline = discovery_deadline(tokio::time::Instant::now(), analyzer_timeout)?;
     let work = discovery_work(
         root,
         targets,
@@ -164,11 +182,48 @@ async fn discover_targets_inner(
         #[cfg(test)]
         control,
     );
-    let deadline = tokio::time::Instant::now() + analyzer_timeout;
     let mut task = tokio::task::spawn_blocking(move || {
         let discovery = discover_targets_blocking(work);
         (tokio::time::Instant::now(), discovery)
     });
+    #[cfg(test)]
+    let deadline = if let Some(deadline_arm) = deadline_arm {
+        let armed_at = match tokio::time::timeout(Duration::from_secs(2), deadline_arm).await {
+            Ok(Ok(armed_at)) => armed_at,
+            Ok(Err(_)) => {
+                return tokio::time::timeout(Duration::from_secs(2), &mut task)
+                    .await
+                    .map_err(|_| {
+                        EffectFailed::other(
+                            EffectId(0),
+                            "analyzer.test_control",
+                            "controlled discovery did not finish within 2s after ending before entry",
+                        )
+                    })?
+                    .map_err(|error| {
+                        EffectFailed::other(EffectId(0), "analyzer.task", error.to_string())
+                    })?
+                    .1;
+            }
+            Err(_) => {
+                cancellation.cancel();
+                return Err(EffectFailed::other(
+                    EffectId(0),
+                    "analyzer.test_control",
+                    "controlled discovery worker did not enter within 2s",
+                ));
+            }
+        };
+        match discovery_deadline(armed_at, analyzer_timeout) {
+            Ok(deadline) => deadline,
+            Err(error) => {
+                cancellation.cancel();
+                return Err(error);
+            }
+        }
+    } else {
+        initial_deadline.expect("uncontrolled discovery has an initial deadline")
+    };
     tokio::select! {
         biased;
         result = &mut task => {
@@ -187,6 +242,26 @@ async fn discover_targets_inner(
             Err(discovery_timeout(analyzer_timeout))
         }
     }
+}
+
+fn discovery_deadline(
+    started_at: tokio::time::Instant,
+    analyzer_timeout: Duration,
+) -> Result<tokio::time::Instant, EffectFailed> {
+    started_at
+        .checked_add(analyzer_timeout)
+        .ok_or_else(|| discovery_timeout_out_of_range(analyzer_timeout))
+}
+
+fn discovery_timeout_out_of_range(analyzer_timeout: Duration) -> EffectFailed {
+    EffectFailed::other(
+        EffectId(0),
+        "analyzer.timeout",
+        format!(
+            "--analyzer-timeout duration {} is outside the supported deadline range",
+            humantime::format_duration(analyzer_timeout)
+        ),
+    )
 }
 
 fn discovery_timeout(analyzer_timeout: Duration) -> EffectFailed {
@@ -251,7 +326,10 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
             EffectFailed::other(EffectId(0), "analyzer.source.utf8", error.to_string())
         })?;
         #[cfg(test)]
-        if let Some(control) = control.take() {
+        if let Some(mut control) = control.take() {
+            if let Some(deadline_arm) = control.deadline_arm.take() {
+                let _ = deadline_arm.send(tokio::time::Instant::now());
+            }
             (control.before_analysis)();
         }
         let output = rust::analyze_source_cancellable(
@@ -720,6 +798,103 @@ mod tests {
         .unwrap();
         assert_eq!(recovered, expected);
         assert!(!recovered.candidates.is_empty());
+    }
+
+    #[test]
+    fn controlled_discovery_arms_its_deadline_after_blocking_worker_entry() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .max_blocking_threads(1)
+            .enable_time()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let directory = tempfile::tempdir().unwrap();
+            std::fs::create_dir(directory.path().join("src")).unwrap();
+            std::fs::write(
+                directory.path().join("src/calc.py"),
+                "result = left == right\n",
+            )
+            .unwrap();
+            let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
+            let targets = vec![TargetSlice {
+                path: "src/calc.py".into(),
+                lines: Vec::new(),
+                symbols: Vec::new(),
+            }];
+            let (blocking_entered_tx, blocking_entered_rx) = mpsc::sync_channel(1);
+            let (blocking_release_tx, blocking_release_rx) = mpsc::sync_channel(1);
+            let blocker = tokio::task::spawn_blocking(move || {
+                blocking_entered_tx.send(()).unwrap();
+                blocking_release_rx
+                    .recv_timeout(Duration::from_secs(2))
+                    .expect("test releases the occupied blocking worker");
+            });
+            blocking_entered_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("blocking worker must be occupied before discovery starts");
+
+            let (entered_tx, entered_rx) = mpsc::sync_channel(1);
+            let (release_tx, release_rx) = mpsc::sync_channel(1);
+            let control =
+                DiscoveryControl::new(Arc::new(tempfile::tempdir().unwrap()), move || {
+                    entered_tx.send(()).expect("test waits for discovery entry");
+                    release_rx
+                        .recv_timeout(Duration::from_secs(2))
+                        .expect("test releases paused discovery");
+                });
+            let (operation_started_tx, operation_started_rx) = tokio::sync::oneshot::channel();
+            let operation = tokio::spawn(async move {
+                operation_started_tx.send(()).unwrap();
+                discover_targets_with_control(
+                    &root,
+                    &targets,
+                    &MutationOperatorSelection::default(),
+                    MutationProfile::Full,
+                    10,
+                    Duration::from_millis(20),
+                    Some(control),
+                )
+                .await
+            });
+            operation_started_rx
+                .await
+                .expect("discovery operation must start");
+            tokio::time::sleep(Duration::from_millis(60)).await;
+            let expired_while_queued = operation.is_finished();
+
+            blocking_release_tx
+                .send(())
+                .expect("occupied blocking worker still waits for release");
+            blocker.await.expect("blocking worker must not panic");
+            if expired_while_queued {
+                let _ = operation.await;
+                panic!("controlled deadline expired before the blocking worker entered");
+            }
+
+            tokio::time::timeout(Duration::from_secs(2), async {
+                loop {
+                    match entered_rx.try_recv() {
+                        Ok(()) => break,
+                        Err(mpsc::TryRecvError::Empty) => tokio::task::yield_now().await,
+                        Err(mpsc::TryRecvError::Disconnected) => {
+                            panic!("controlled discovery ended before entry")
+                        }
+                    }
+                }
+            })
+            .await
+            .expect("controlled discovery must enter after the blocking worker is released");
+            let error = tokio::time::timeout(Duration::from_millis(200), operation)
+                .await
+                .expect("entry-armed deadline must expire without awaiting release")
+                .unwrap()
+                .unwrap_err();
+            assert_eq!(error.failure.code(), "analyzer.timeout");
+            release_tx
+                .send(())
+                .expect("paused discovery still waits for release");
+        });
     }
 
     #[test]
