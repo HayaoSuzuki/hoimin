@@ -17,10 +17,11 @@ cleanup scheduling, final-output scheduling, and late-stop behavior. It excludes
 filesystem and database I/O, wall-clock timing, process supervision, candidate discovery, and full
 worker scheduling.
 
-The durable claim is that a completion is accepted at most once; rejected completions are
-transactional at the public boundary; stopping prevents new ordinary work; accepted results are
-not lost; and cleanup and final output are each emitted at most once in the required order without
-a late stop rewriting the selected outcome.
+For the modeled transitions, the proved claim is that an ordinary completion is accepted at most
+once; rejected completions are transactional; stopping prevents new ordinary work and preserves
+the model's accepted-result counter; and the representative stopped lifecycle emits cleanup then
+final output once without a late stop rewriting the selected outcome. These are one-step theorems
+and named lifecycle traces, not a universal induction over every reachable trace.
 
 ## What Lean established
 
@@ -80,8 +81,9 @@ not reveal that the original effect identity had been retired and replaced.
 
 The other cases covered unknown, wrong-kind, duplicate, and retired completion rejection; normal
 ordinary chaining; stopping ordinary scheduling; cleanup-before-final ordering; final-output
-uniqueness; accepted-result retention across completion/cancellation; and stop idempotence during
-pending final output and after completion.
+uniqueness; ordinary completion followed by cancellation; and stop idempotence during pending
+final output and after completion. The ordinary-completion case does not claim correspondence for
+the abstract accepted-result counter.
 
 ## Root cause and repair
 
@@ -112,6 +114,14 @@ expected/actual comparison, impact, limitation, and decision.
   execution.
 - A rejected Rust transition consumes its state and returns only `MachineError`; the adapter uses
   the stable pre-event public observation because no mutated rejected state can escape the API.
+- The model's `acceptedResults` field has no direct counterpart for target resolution in
+  `RunState`, so it is intentionally absent from the correspondence schema. Real result-bearing
+  stop retention is covered separately by the public-state tests
+  `cancellation_during_result_persistence_reports_the_classified_result` and
+  `deadline_during_result_persistence_reports_the_classified_result`, which assert the emitted
+  classified result and `RunState::summary()`.
+- The at-most-once and ordering proofs combine general one-step properties with named reachable
+  lifecycle traces; they do not quantify over every possible reachable trace or every effect kind.
 - Each case runs behind an unwind boundary; a panic is reported as an infrastructure error rather
   than being confused with a semantic mismatch. Mismatches list each differing observation field.
 - No claim is made about OS process control, database transactions, or asynchronous shell timing.

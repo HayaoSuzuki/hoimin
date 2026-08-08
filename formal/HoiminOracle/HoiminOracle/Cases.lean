@@ -104,7 +104,6 @@ structure OracleStep where
   phase : String
   emitted : List String
   pending : Nat
-  acceptedResults : Nat
   deriving Repr, DecidableEq
 
 structure OracleCase where
@@ -145,7 +144,6 @@ private def observe (name : String) (verdict : Verdict) : OracleStep where
   phase := phaseName verdict.state.phase
   emitted := verdict.emitted.map effectName
   pending := verdict.state.pending.length
-  acceptedResults := verdict.state.acceptedResults
 
 private def runSchedule : State → List NamedEvent → List OracleStep
   | _, [] => []
@@ -257,7 +255,7 @@ private def specs : List CaseSpec := [
     scenario := "finished_without_copy"
     initial := finished
     schedule := [named "cancel" (.stop .cancelled)] },
-  { id := "accepted_result_survives_cancel"
+  { id := "ordinary_completion_then_cancel"
     mode := strict
     scenario := "pending_resolve"
     initial := pendingOrdinary
@@ -282,8 +280,7 @@ def oracleStepJson (item : OracleStep) : Lean.Json := Lean.Json.mkObj [
   ("error_code", optionalStringJson item.errorCode),
   ("phase", .str item.phase),
   ("emitted", stringsJson item.emitted),
-  ("pending", Lean.toJson item.pending),
-  ("accepted_results", Lean.toJson item.acceptedResults)
+  ("pending", Lean.toJson item.pending)
 ]
 
 def oracleCaseJson (item : OracleCase) : Lean.Json := Lean.Json.mkObj [

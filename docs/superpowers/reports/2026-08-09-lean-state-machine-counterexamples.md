@@ -30,11 +30,12 @@ single-case adapter pass after the change.
 
 ## Reviewed matches
 
-The other twelve initial corpus cases and the added accepted-result interleaving case match the
-public Rust state machine. They cover unknown,
+The other twelve initial corpus cases and an added ordinary-completion/cancellation schedule match
+the public Rust state machine. They cover unknown,
 wrong-kind, duplicate, and retired completion rejection; ordinary-work suppression after stop;
-cleanup-before-final ordering; final-output uniqueness; accepted-result retention across
-completion/cancellation; and late-stop idempotence while final output is pending or the run is
-finished.
+cleanup-before-final ordering; final-output uniqueness; and late-stop idempotence while final
+output is pending or the run is finished. The model's abstract accepted-result counter is not a
+correspondence field; real result-bearing retention is tested directly through `RunState::summary()`
+in the machine integration suite.
 
 There were no infrastructure errors.

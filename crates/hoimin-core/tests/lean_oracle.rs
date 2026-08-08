@@ -18,7 +18,6 @@ struct OracleStep {
     phase: String,
     emitted: Vec<String>,
     pending: usize,
-    accepted_results: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,7 +45,6 @@ struct Observation {
     phase: String,
     emitted: Vec<String>,
     pending: usize,
-    accepted_results: u64,
 }
 
 impl From<&OracleStep> for Observation {
@@ -57,7 +55,6 @@ impl From<&OracleStep> for Observation {
             phase: value.phase.clone(),
             emitted: value.emitted.clone(),
             pending: value.pending,
-            accepted_results: value.accepted_results,
         }
     }
 }
@@ -76,7 +73,6 @@ struct Driver {
     state: Option<RunState>,
     outstanding: Vec<RunEffect>,
     ordinary_id: EffectId,
-    accepted_results: u64,
 }
 
 impl Driver {
@@ -109,7 +105,6 @@ impl Driver {
             state: Some(state),
             outstanding,
             ordinary_id,
-            accepted_results: 0,
         };
         match scenario {
             "pending_resolve" => {}
@@ -215,7 +210,6 @@ impl Driver {
                 phase: pre_phase,
                 emitted: Vec::new(),
                 pending: pre_pending,
-                accepted_results: self.accepted_results,
             }),
             Ok((mut state, mut emitted)) => {
                 let mut visible: Vec<_> = emitted.iter().filter_map(normalize_effect).collect();
@@ -248,16 +242,12 @@ impl Driver {
                         .retain(|effect| effect.id() != run_started_id);
                     self.outstanding.append(&mut after_started);
                 }
-                if name == "complete_ordinary" {
-                    self.accepted_results += 1;
-                }
                 let observation = Observation {
                     verdict: "accepted".to_owned(),
                     error_code: None,
                     phase: self.abstract_phase(&state),
                     emitted: visible,
                     pending: state.pending_count(),
-                    accepted_results: self.accepted_results,
                 };
                 self.state = Some(state);
                 Ok(observation)
@@ -394,12 +384,6 @@ fn observation_diff(expected: &[Observation], actual: &[Observation]) -> String 
             differences.push(format!(
                 "step {index} pending: expected {}, actual {}",
                 expected.pending, actual.pending
-            ));
-        }
-        if expected.accepted_results != actual.accepted_results {
-            differences.push(format!(
-                "step {index} accepted_results: expected {}, actual {}",
-                expected.accepted_results, actual.accepted_results
             ));
         }
     }
