@@ -334,7 +334,7 @@ git commit -m "test: generate Lean lifecycle oracle corpus"
 - Consumes: schema-1 JSONL cases from `formal/HoiminOracle/corpus/state-machine.jsonl`.
 - Produces: `run_case(case: &OracleCase) -> CaseResult`, `CaseClass::{Match, Mismatch, InfrastructureError}`, and an optional `HOIMIN_ORACLE_CASE=cancel_after_final_pending_is_noop` single-case filter.
 
-- [ ] **Step 1: Add corpus parsing and schema-validation tests**
+- [x] **Step 1: Add corpus parsing and schema-validation tests**
 
 Create `lean_oracle.rs` with Serde input structures mirroring the Lean-owned JSON shape. Add tests
 that read the committed corpus through `env!("CARGO_MANIFEST_DIR")`, reject a schema other than 1,
@@ -343,7 +343,7 @@ expected list is empty.
 
 Do not write Rust constants for expected phases, verdicts, emissions, pending counts, or errors.
 
-- [ ] **Step 2: Run parser tests to observe Red**
+- [x] **Step 2: Run parser tests to observe Red**
 
 Run:
 
@@ -353,7 +353,7 @@ cargo test -p hoimin-core --test lean_oracle corpus_is_well_formed -- --exact
 
 Expected: FAIL because the parser and scenario types are not yet implemented.
 
-- [ ] **Step 3: Implement stable observations and case classification**
+- [x] **Step 3: Implement stable observations and case classification**
 
 Define adapter-only observation types:
 
@@ -383,7 +383,7 @@ differing field rendered. Because `transition` consumes `RunState` and returns n
 the rejected-event observation uses the stable pre-event snapshot; no rejected mutation can escape
 through the public API.
 
-- [ ] **Step 4: Implement real public-state scenario drivers**
+- [x] **Step 4: Implement real public-state scenario drivers**
 
 Use only `RunState::new`, public event/effect types, effect IDs emitted by `transition`, and public
 state accessors. Implement these drivers:
@@ -398,7 +398,7 @@ The fixture `RawRunConfig` must use one job, one process, one selected source ta
 limits, JSONL output, no session, and a harmless native test command. Every state is reached by
 calling `transition`; never expose or mutate private `RunState` fields.
 
-- [ ] **Step 5: Run the full adapter in report mode**
+- [x] **Step 5: Run the full adapter in report mode**
 
 Run:
 
@@ -410,7 +410,7 @@ Expected: the test process completes and prints one `match`, `mismatch`, or `inf
 record per report-mode case. Report-mode semantic mismatches are printed and retained but do not
 yet make the test fail. Infrastructure errors always fail the test.
 
-- [ ] **Step 6: Verify single-case reproduction**
+- [x] **Step 6: Verify single-case reproduction**
 
 Run:
 
@@ -421,7 +421,7 @@ HOIMIN_ORACLE_CASE=cancel_after_final_pending_is_noop \
 
 Expected: exactly one case is executed and its complete expected/actual comparison is printed.
 
-- [ ] **Step 7: Commit the correspondence adapter**
+- [x] **Step 7: Commit the correspondence adapter**
 
 ```bash
 git add crates/hoimin-core/tests/lean_oracle.rs
