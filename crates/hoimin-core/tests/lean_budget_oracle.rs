@@ -227,12 +227,12 @@ impl Driver {
                     fingerprint: None,
                 },
             )
-            .map(|grant| grant.reservation_id())
+            .map(hoimin_core::WorkspaceCopyGrant::reservation_id)
             .map_err(workspace_reserve_code)
         } else {
             self.ledger
                 .reserve(kind, amount)
-                .map_err(reserve_error_code)
+                .map_err(|error| reserve_error_code(&error))
         };
         match result {
             Ok(real_id) => {
@@ -324,7 +324,7 @@ fn kind_name(value: BudgetKind) -> &'static str {
     }
 }
 
-fn reserve_error_code(error: ReserveError) -> String {
+fn reserve_error_code(error: &ReserveError) -> String {
     match error {
         ReserveError::LimitReached(_) => "budget.limit",
         ReserveError::ReservationIdsExhausted => "budget.reservation_id.exhausted",
@@ -334,7 +334,7 @@ fn reserve_error_code(error: ReserveError) -> String {
 
 fn workspace_reserve_code(error: WorkspaceBudgetError) -> String {
     match error {
-        WorkspaceBudgetError::Reserve(error) => reserve_error_code(error),
+        WorkspaceBudgetError::Reserve(error) => reserve_error_code(&error),
         other => format!("infrastructure.unexpected_workspace_error.{}", other.code()),
     }
 }
