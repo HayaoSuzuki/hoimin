@@ -1079,10 +1079,14 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 if name == "any" { "all" } else { "any" },
                 MutationOperator::CollectionAnyAll,
             ),
-            "list" | "tuple" if has_at_most_one_positional_argument(call) => (
-                if name == "list" { "tuple" } else { "list" },
-                MutationOperator::CollectionListTuple,
-            ),
+            "list" | "tuple"
+                if self.exception_type_depth == 0 && has_at_most_one_positional_argument(call) =>
+            {
+                (
+                    if name == "list" { "tuple" } else { "list" },
+                    MutationOperator::CollectionListTuple,
+                )
+            }
             "set" | "frozenset" if has_at_most_one_positional_argument(call) => (
                 if name == "set" { "frozenset" } else { "set" },
                 MutationOperator::CollectionSetFrozenset,

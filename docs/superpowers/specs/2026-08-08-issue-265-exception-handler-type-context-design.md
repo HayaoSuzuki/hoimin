@@ -20,8 +20,8 @@ changes only AST collection-shape candidates produced by
 
 The following remain unchanged:
 
-- ordinary list and tuple calls and literals;
-- list and tuple literals in handler bodies;
+- ordinary list and tuple calls and literals outside handler type expressions;
+- list and tuple calls and literals in handler bodies;
 - token operators found in ordinary runtime expressions;
 - `exception_type_pair` and the explicitly selected risky exception
   operators;
@@ -38,8 +38,8 @@ No dependency, CLI option, report field, plan schema, or operator ID is added.
 `AstCandidateCollector` records whether it is currently walking an exception
 handler type expression. Both ordinary and starred handlers enter this context
 before walking their type and leave it before walking the handler body. The
-list and tuple literal collectors decline `collection_list_tuple` candidates
-while the context is active.
+list/tuple builtin-call and literal collection paths decline
+`collection_list_tuple` candidates while the context is active.
 
 This is the smallest representation of the Python syntax role. It avoids a
 new global range query, preserves traversal into nested expressions, and does
@@ -102,9 +102,10 @@ retaining the existing dedicated-operator policy.
 
 ### Candidate gate
 
-`collect_list_literal` and `collect_tuple_literal` keep their existing load
-context and annotation checks and add the exception-type context check. Other
-collection and structure collectors are not changed by this issue.
+The `list | tuple` branch of `collect_builtin_call`, `collect_list_literal`, and
+`collect_tuple_literal` add the exception-type context check. The literal
+collectors also keep their existing load-context and annotation checks. Other
+collection and structure collector branches are not changed by this issue.
 
 The gate is local to candidate creation. Traversal continues so nested
 expressions and cancellation checks retain their existing behavior.
@@ -123,6 +124,15 @@ try:
     work_group()
 except* (ValueError, TypeError):
     recover_group()
+```
+
+Nested constructor calls are excluded by the same context:
+
+```python
+try:
+    work()
+except tuple((ValueError, TypeError)):
+    recover()
 ```
 
 The tuple in the body remains eligible:
@@ -146,9 +156,11 @@ Tests construct literal expected candidates and prove:
 
 - tuple handler types in `except` emit no `collection_list_tuple` candidate;
 - tuple handler types in `except*` emit no such candidate;
+- list/tuple builtin calls in `except` and `except*` type expressions emit no
+  such candidate;
 - parenthesized and nested handler types are covered;
-- ordinary list/tuple literals before, after, and inside handler bodies remain
-  eligible;
+- ordinary list/tuple calls and literals before, after, and inside handler
+  bodies remain eligible;
 - safe and risky dedicated exception candidates retain their exact spans,
   replacements, and ordering;
 - every retained replacement still reparses.
@@ -160,11 +172,11 @@ than produced by analyzer helpers.
 ### Production CLI regression
 
 A production-binary integration test uses a small project whose test command
-raises an exception and executes the tuple handler. Discovery is restricted to
-`collection_list_tuple`. The inventory must contain the nearby ordinary
-collection candidate and must not contain the handler-type range. The run then
-executes the handler path through the real CLI and produces a parseable final
-report without the invalid handler mutant.
+raises an exception and executes a handler expressed with builtin `tuple(...)`.
+Discovery is restricted to `collection_list_tuple`. The inventory must contain
+the nearby ordinary collection candidate and must not contain the handler-type
+range. The run then executes the handler path through the real CLI and produces
+a parseable final report without the invalid handler mutant.
 
 This test observes Hoimin's candidate and report behavior. It does not assert
 Python's independently documented rule merely by executing a hand-written
@@ -184,8 +196,9 @@ Before the PR is created, run:
 
 ## Documentation and Delivery
 
-README operator guidance states that generic list/tuple literal mutations do
-not apply to exception handler type positions. `docs/development.md` records
+README operator guidance states that generic list/tuple call and literal
+mutations do not apply to exception handler type positions.
+`docs/development.md` records
 the collector-context invariant for future analyzer changes.
 
 The design, implementation plan, production changes, tests, and documentation

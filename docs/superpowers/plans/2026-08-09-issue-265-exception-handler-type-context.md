@@ -11,10 +11,10 @@ ordinary collection and dedicated exception mutations.
 
 **Architecture:** `AstCandidateCollector` maintains a private, balanced
 exception-type traversal depth. Ordinary and starred exception handlers visit
-their optional type through one helper, and only the list/tuple literal
-candidate collectors consult that context. Traversal, dedicated exception
-candidate collection, handler bodies, ordering, and report behavior remain
-unchanged.
+their optional type through one helper, and the list/tuple builtin-call and
+literal candidate collectors consult that context. Traversal, dedicated
+exception candidate collection, handler bodies, ordering, and report behavior
+remain unchanged.
 
 **Tech Stack:** Rust 1.88+, Ruff Python AST visitor, existing analyzer unit
 tests, and the production CLI E2E harness.
@@ -48,7 +48,8 @@ tests, and the production CLI E2E harness.
   `AstCandidateCollector::visit_exception_type(&'ast Expr)`.
 - Changes `visit_except_handler` and the `Stmt::Try` starred-handler branch to
   use the helper for optional handler type expressions.
-- Changes `collect_list_literal` and `collect_tuple_literal` to decline
+- Changes the `list | tuple` branch of `collect_builtin_call`,
+  `collect_list_literal`, and `collect_tuple_literal` to decline
   collection-shape candidates while `exception_type_depth > 0`.
 
 - [ ] **Step 1: Write failing analyzer regressions**
@@ -59,6 +60,10 @@ tests, and the production CLI E2E harness.
   `(ValueError, TypeError)` or another handler-type tuple, while literal tuples
   and lists before, after, and in the handler body retain their exact
   replacements and source spans.
+
+  Cover builtin `list(...)` or `tuple(...)` calls in both ordinary and starred
+  handler type expressions. Assert that their callees are not candidates while
+  equivalent calls in handler bodies retain exact candidates.
 
   Extend the dedicated exception tests with adjacent collection literals and
   assert the existing safe and risky exception candidate vectors are
@@ -98,9 +103,9 @@ tests, and the production CLI E2E harness.
   `visit_expr` call for the type with the same helper without enabling
   dedicated risky exception collection there.
 
-  Add `self.exception_type_depth == 0` to the existing load-context and
-  annotation exclusions in both literal collectors. Do not change other
-  collector gates.
+  Add `self.exception_type_depth == 0` to the `list | tuple` builtin-call
+  branch and to the existing load-context and annotation exclusions in both
+  literal collectors. Do not change other collector gates.
 
 - [ ] **Step 4: Verify analyzer behavior**
 
@@ -136,8 +141,8 @@ tests, and the production CLI E2E harness.
 
 **Interfaces:**
 
-- Adds an issue-specific temporary Python project fixture with a tuple handler
-  type and an ordinary tuple in its handler body.
+- Adds an issue-specific temporary Python project fixture with a builtin
+  `tuple(...)` handler type and an ordinary tuple in its handler body.
 - Uses the existing `run_project_options` production CLI path with only
   `collection_list_tuple` selected.
 
@@ -149,7 +154,7 @@ tests, and the production CLI E2E harness.
   def classify():
       try:
           raise ValueError
-      except (ValueError, TypeError):
+      except tuple((ValueError, TypeError)):
           return (1, 2)
   ```
 
@@ -160,7 +165,7 @@ tests, and the production CLI E2E harness.
 
   Assert the final JSON report is parseable and complete, contains the exact
   ordinary body tuple candidate with original `(1, 2)` and replacement
-  `[1, 2]`, and contains no candidate whose original is
+  `[1, 2]`, and contains no candidate whose original is `tuple` or
   `(ValueError, TypeError)`. Assert the observed candidate count and outcome so
   an omitted discovery phase cannot make the test pass vacuously.
 
@@ -218,8 +223,8 @@ tests, and the production CLI E2E harness.
 - [ ] **Step 1: Update user and developer documentation**
 
   In `README.md`, state beside `collection_list_tuple` that ordinary list and
-  tuple literals remain eligible but exception handler type positions are
-  excluded because Python requires an exception class or tuple of exception
+  tuple calls and literals remain eligible but exception handler type positions
+  are excluded because Python requires an exception class or tuple of exception
   classes.
 
   In `docs/development.md`, state that `AstCandidateCollector` must enter its

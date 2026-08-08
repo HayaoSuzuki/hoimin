@@ -286,9 +286,10 @@ async fn exception_handler_type_collection_candidates_are_excluded() {
     assert_eq!(candidates[0]["original"], "(1, 2)");
     assert_eq!(candidates[0]["replacement"], "[1, 2]");
     assert!(
-        candidates
-            .iter()
-            .all(|candidate| candidate["original"] != "(ValueError, TypeError)"),
+        candidates.iter().all(|candidate| !matches!(
+            candidate["original"].as_str(),
+            Some("tuple" | "(ValueError, TypeError)")
+        )),
         "{}",
         run.stdout
     );
@@ -2541,7 +2542,7 @@ fn write_exception_handler_collection_project(root: &Path) {
     std::fs::write(source.join("__init__.py"), "").unwrap();
     std::fs::write(
         source.join("calc.py"),
-        "def classify():\n    try:\n        raise ValueError\n    except (ValueError, TypeError):\n        return (1, 2)\n",
+        "def classify():\n    try:\n        raise ValueError\n    except tuple((ValueError, TypeError)):\n        return (1, 2)\n",
     )
     .unwrap();
 }

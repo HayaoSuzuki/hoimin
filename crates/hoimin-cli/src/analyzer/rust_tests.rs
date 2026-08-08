@@ -254,6 +254,80 @@ fn exception_handler_type_tuples_do_not_emit_collection_candidates() {
 }
 
 #[test]
+fn exception_handler_type_builtin_calls_are_excluded_for_ordinary_and_starred_handlers() {
+    for (source, expected) in [
+        (
+            "try:\n    work()\nexcept tuple((ValueError, TypeError)):\n    handler = tuple((1, 2))\n",
+            vec![
+                (
+                    "tuple",
+                    "list",
+                    ByteSpan {
+                        start: 69,
+                        length: 5,
+                    },
+                ),
+                (
+                    "(1, 2)",
+                    "[1, 2]",
+                    ByteSpan {
+                        start: 75,
+                        length: 6,
+                    },
+                ),
+            ],
+        ),
+        (
+            "try:\n    work()\nexcept* tuple((ValueError, TypeError)):\n    handler = tuple((1, 2))\n",
+            vec![
+                (
+                    "tuple",
+                    "list",
+                    ByteSpan {
+                        start: 70,
+                        length: 5,
+                    },
+                ),
+                (
+                    "(1, 2)",
+                    "[1, 2]",
+                    ByteSpan {
+                        start: 76,
+                        length: 6,
+                    },
+                ),
+            ],
+        ),
+    ] {
+        let output = analyze(source);
+        let collection_candidates: Vec<_> = output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "collection_list_tuple")
+            .collect();
+        let actual: Vec<_> = collection_candidates
+            .iter()
+            .map(|candidate| {
+                (
+                    candidate.original.as_str(),
+                    candidate.replacement.as_str(),
+                    candidate.span,
+                )
+            })
+            .collect();
+
+        assert_eq!(actual, expected, "source: {source:?}");
+        for candidate in collection_candidates {
+            apply_candidate_and_reparse(source, candidate);
+        }
+    }
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the fixture records every curated safe exception replacement and exact span"
+)]
 fn exception_type_pair_candidates_are_curated_and_syntax_directed() {
     let source = concat!(
         "before_list = [before]\n",
@@ -278,25 +352,129 @@ fn exception_type_pair_candidates_are_curated_and_syntax_directed() {
         .candidates
         .iter()
         .filter(|candidate| candidate.operator == "exception_type_pair")
-        .map(|candidate| (candidate.original.as_str(), candidate.replacement.as_str()))
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.span,
+            )
+        })
         .collect();
     assert_eq!(
         actual,
         vec![
-            ("ValueError", "TypeError"),
-            ("TypeError", "ValueError"),
-            ("KeyError", "IndexError"),
-            ("KeyError", "AttributeError"),
-            ("IndexError", "KeyError"),
-            ("AttributeError", "KeyError"),
-            ("FileNotFoundError", "PermissionError"),
-            ("PermissionError", "FileNotFoundError"),
-            ("ConnectionError", "TimeoutError"),
-            ("TimeoutError", "ConnectionError"),
-            ("ImportError", "ModuleNotFoundError"),
-            ("ModuleNotFoundError", "ImportError"),
-            ("ZeroDivisionError", "OverflowError"),
-            ("OverflowError", "ZeroDivisionError"),
+            (
+                "ValueError",
+                "TypeError",
+                ByteSpan {
+                    start: 46,
+                    length: 10,
+                },
+            ),
+            (
+                "TypeError",
+                "ValueError",
+                ByteSpan {
+                    start: 74,
+                    length: 9,
+                },
+            ),
+            (
+                "KeyError",
+                "IndexError",
+                ByteSpan {
+                    start: 101,
+                    length: 8,
+                },
+            ),
+            (
+                "KeyError",
+                "AttributeError",
+                ByteSpan {
+                    start: 101,
+                    length: 8,
+                },
+            ),
+            (
+                "IndexError",
+                "KeyError",
+                ByteSpan {
+                    start: 127,
+                    length: 10,
+                },
+            ),
+            (
+                "AttributeError",
+                "KeyError",
+                ByteSpan {
+                    start: 155,
+                    length: 14,
+                },
+            ),
+            (
+                "FileNotFoundError",
+                "PermissionError",
+                ByteSpan {
+                    start: 187,
+                    length: 17,
+                },
+            ),
+            (
+                "PermissionError",
+                "FileNotFoundError",
+                ByteSpan {
+                    start: 222,
+                    length: 15,
+                },
+            ),
+            (
+                "ConnectionError",
+                "TimeoutError",
+                ByteSpan {
+                    start: 255,
+                    length: 15,
+                },
+            ),
+            (
+                "TimeoutError",
+                "ConnectionError",
+                ByteSpan {
+                    start: 288,
+                    length: 12,
+                },
+            ),
+            (
+                "ImportError",
+                "ModuleNotFoundError",
+                ByteSpan {
+                    start: 318,
+                    length: 11,
+                },
+            ),
+            (
+                "ModuleNotFoundError",
+                "ImportError",
+                ByteSpan {
+                    start: 347,
+                    length: 19,
+                },
+            ),
+            (
+                "ZeroDivisionError",
+                "OverflowError",
+                ByteSpan {
+                    start: 384,
+                    length: 17,
+                },
+            ),
+            (
+                "OverflowError",
+                "ZeroDivisionError",
+                ByteSpan {
+                    start: 419,
+                    length: 13,
+                },
+            ),
         ]
     );
     for candidate in output
@@ -408,40 +586,93 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse() {
                 candidate.original.as_str(),
                 candidate.replacement.as_str(),
                 candidate.operator.as_str(),
+                candidate.span,
             )
         })
         .collect();
     assert_eq!(
         risky_candidates,
         vec![
-            ("except", "except Exception", "exception_bare_to_exception"),
-            ("Exception", "BaseException", "exception_base_boundary"),
-            ("Exception", "", "exception_exception_to_bare"),
-            ("BaseException", "Exception", "exception_base_boundary"),
+            (
+                "except",
+                "except Exception",
+                "exception_bare_to_exception",
+                ByteSpan {
+                    start: 39,
+                    length: 6,
+                },
+            ),
+            (
+                "Exception",
+                "BaseException",
+                "exception_base_boundary",
+                ByteSpan {
+                    start: 79,
+                    length: 9,
+                },
+            ),
+            (
+                "Exception",
+                "",
+                "exception_exception_to_bare",
+                ByteSpan {
+                    start: 79,
+                    length: 9,
+                },
+            ),
+            (
+                "BaseException",
+                "Exception",
+                "exception_base_boundary",
+                ByteSpan {
+                    start: 122,
+                    length: 13,
+                },
+            ),
             (
                 "(ValueError,)",
                 "(ValueError, TypeError)",
                 "exception_tuple_add_pair",
+                ByteSpan {
+                    start: 169,
+                    length: 13,
+                },
             ),
             (
                 "(ValueError, TypeError,)",
                 "( TypeError,)",
                 "exception_tuple_remove_member",
+                ByteSpan {
+                    start: 216,
+                    length: 24,
+                },
             ),
             (
                 "(ValueError, TypeError,)",
                 "(ValueError, )",
                 "exception_tuple_remove_member",
+                ByteSpan {
+                    start: 216,
+                    length: 24,
+                },
             ),
             (
                 "(ValueError, # keep this comment\n        TypeError,)",
                 "( # keep this comment\n        TypeError,)",
                 "exception_tuple_remove_member",
+                ByteSpan {
+                    start: 274,
+                    length: 52,
+                },
             ),
             (
                 "(ValueError, # keep this comment\n        TypeError,)",
                 "(ValueError, # keep this comment\n        )",
                 "exception_tuple_remove_member",
+                ByteSpan {
+                    start: 274,
+                    length: 52,
+                },
             ),
         ]
     );

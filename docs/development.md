@@ -181,7 +181,8 @@ with a curated counterpart: `ValueError`/`TypeError`, `KeyError` with
 and `except*`, keep that context balanced, collect dedicated exception
 candidates outside the generic collection gate, and visit handler bodies
 normally. This keeps collection mutations out of type positions, where Python
-requires an exception class or a tuple of exception classes.
+requires an exception class or a tuple of exception classes, including generic
+`list`/`tuple` constructor-call and literal candidates nested in the type.
 
 Exception names are suppressed when the file may bind the name through an
 assignment, import, parameter, comprehension, match capture, or `except ... as`
