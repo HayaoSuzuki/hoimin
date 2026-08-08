@@ -1918,6 +1918,19 @@ impl KnownImports {
         self.type_vars.remove(name);
     }
 
+    fn copy_name_from(&mut self, source: &Self, name: &str) {
+        self.invalidate(name);
+        if let Some(resolved) = source.direct.get(name) {
+            self.direct.insert(name.to_owned(), resolved.clone());
+        }
+        if let Some(resolved) = source.modules.get(name) {
+            self.modules.insert(name.to_owned(), resolved.clone());
+        }
+        if source.type_vars.contains(name) {
+            self.type_vars.insert(name.to_owned());
+        }
+    }
+
     fn invalidate_target(&mut self, target: &Expr) {
         match target {
             Expr::Name(name) => self.invalidate(name.id.as_str()),
@@ -2022,13 +2035,11 @@ impl KnownImports {
             Stmt::Import(import) => self.transfer_import(import),
             Stmt::ImportFrom(import) => self.transfer_import_from(import),
             Stmt::Assign(assign) => self.transfer_assign(&assign.targets, assign.value.as_ref()),
-            Stmt::AnnAssign(assign) => self.transfer_assign(
-                std::slice::from_ref(assign.target.as_ref()),
-                assign
-                    .value
-                    .as_deref()
-                    .unwrap_or(assign.annotation.as_ref()),
-            ),
+            Stmt::AnnAssign(assign) => {
+                if let Some(value) = assign.value.as_deref() {
+                    self.transfer_assign(std::slice::from_ref(assign.target.as_ref()), value);
+                }
+            }
             Stmt::AugAssign(assign) => self.invalidate_target(assign.target.as_ref()),
             Stmt::Delete(delete) => {
                 for target in &delete.targets {
@@ -2156,6 +2167,47 @@ fn collect_target_names(target: &Expr, names: &mut HashSet<String>) {
 struct FunctionLocalCollector {
     locals: HashSet<String>,
     external: HashSet<String>,
+    unknown_wildcard: bool,
+}
+
+#[derive(Default)]
+struct ClassExternalBindings {
+    globals: HashSet<String>,
+    nonlocals: HashSet<String>,
+}
+
+impl ClassExternalBindings {
+    fn collect(statements: &[Stmt]) -> Self {
+        let mut collector = Self::default();
+        for statement in statements {
+            collector.visit_stmt(statement);
+        }
+        collector
+    }
+
+    fn copy_all(&self, source: &KnownImports, target: &mut KnownImports) {
+        for name in self.globals.iter().chain(&self.nonlocals) {
+            target.copy_name_from(source, name);
+        }
+    }
+}
+
+impl<'ast> Visitor<'ast> for ClassExternalBindings {
+    fn visit_stmt(&mut self, statement: &'ast Stmt) {
+        match statement {
+            Stmt::FunctionDef(_) | Stmt::ClassDef(_) => return,
+            Stmt::Global(global) => {
+                self.globals
+                    .extend(global.names.iter().map(|name| name.as_str().to_owned()));
+            }
+            Stmt::Nonlocal(nonlocal) => {
+                self.nonlocals
+                    .extend(nonlocal.names.iter().map(|name| name.as_str().to_owned()));
+            }
+            _ => {}
+        }
+        visitor::walk_stmt(self, statement);
+    }
 }
 
 impl FunctionLocalCollector {
@@ -2196,16 +2248,26 @@ impl FunctionLocalCollector {
     }
 
     fn record_import_from(&mut self, import: &ruff_python_ast::StmtImportFrom) {
+        let supported_module = import.level == 0
+            && matches!(
+                import
+                    .module
+                    .as_ref()
+                    .map(ruff_python_ast::Identifier::as_str),
+                Some("typing" | "collections.abc")
+            );
         for alias in &import.names {
-            if alias.name.as_str() != "*" {
-                self.locals.insert(
-                    alias
-                        .asname
-                        .as_ref()
-                        .map_or(alias.name.as_str(), ruff_python_ast::Identifier::as_str)
-                        .to_owned(),
-                );
+            if alias.name.as_str() == "*" {
+                self.unknown_wildcard |= !supported_module;
+                continue;
             }
+            self.locals.insert(
+                alias
+                    .asname
+                    .as_ref()
+                    .map_or(alias.name.as_str(), ruff_python_ast::Identifier::as_str)
+                    .to_owned(),
+            );
         }
     }
 }
@@ -2416,6 +2478,13 @@ enum ExitCategory {
     Terminate,
 }
 
+#[derive(Clone, Copy)]
+enum ScopeKind {
+    Module,
+    Function,
+    Class,
+}
+
 impl ControlFlowExits {
     fn fallthrough(imports: KnownImports) -> Self {
         Self {
@@ -2441,6 +2510,8 @@ struct AnnotationCollector<'ast> {
     annotations: Vec<AnnotationSite<'ast>>,
     imports: KnownImports,
     class_body_fallback: Option<KnownImports>,
+    class_external_bindings: Option<ClassExternalBindings>,
+    scope_kind: ScopeKind,
     qualname: Vec<String>,
     record_annotations: bool,
 }
@@ -2451,6 +2522,8 @@ impl<'ast> AnnotationCollector<'ast> {
             annotations: Vec::new(),
             imports: KnownImports::default(),
             class_body_fallback: None,
+            class_external_bindings: None,
+            scope_kind: ScopeKind::Module,
             qualname: Vec::new(),
             record_annotations: true,
         };
@@ -2572,7 +2645,13 @@ impl<'ast> AnnotationCollector<'ast> {
         self.visit_function_header(definition);
         self.imports.transfer_statement(statement);
         let inherited = self.imports.clone();
+        if let (Some(bindings), Some(fallback)) =
+            (&self.class_external_bindings, &mut self.class_body_fallback)
+        {
+            bindings.copy_all(&self.imports, fallback);
+        }
         let inherited_fallback = self.class_body_fallback.clone();
+        let inherited_bindings = self.class_external_bindings.take();
         self.imports = inherited_fallback
             .clone()
             .unwrap_or_else(|| inherited.clone());
@@ -2580,11 +2659,15 @@ impl<'ast> AnnotationCollector<'ast> {
             self.imports.invalidate(&local);
         }
         self.class_body_fallback = None;
+        let inherited_scope = self.scope_kind;
+        self.scope_kind = ScopeKind::Function;
         self.qualname.push(definition.name.as_str().to_owned());
         self.visit_suite(&definition.body);
         self.qualname.pop();
+        self.scope_kind = inherited_scope;
         self.imports = inherited;
         self.class_body_fallback = inherited_fallback;
+        self.class_external_bindings = inherited_bindings;
         ControlFlowExits::fallthrough(self.imports.clone())
     }
 
@@ -2594,19 +2677,42 @@ impl<'ast> AnnotationCollector<'ast> {
         definition: &'ast ruff_python_ast::StmtClassDef,
     ) -> ControlFlowExits {
         self.visit_class_header(definition);
-        let inherited = self.imports.clone();
+        let mut inherited = self.imports.clone();
         let inherited_fallback = self.class_body_fallback.clone();
+        let inherited_bindings = self.class_external_bindings.take();
+        let inherited_scope = self.scope_kind;
         let class_fallback = inherited_fallback.clone().unwrap_or_else(|| {
             let mut fallback = inherited.clone();
             fallback.invalidate(definition.name.as_str());
             fallback
         });
         self.class_body_fallback = Some(class_fallback);
+        self.class_external_bindings = Some(ClassExternalBindings::collect(&definition.body));
+        self.scope_kind = ScopeKind::Class;
         self.qualname.push(definition.name.as_str().to_owned());
-        self.visit_suite(&definition.body);
+        let body_exits = self.visit_suite_flow(&definition.body);
         self.qualname.pop();
+        if let Some(body_imports) = &body_exits.fallthrough
+            && let Some(bindings) = &self.class_external_bindings
+        {
+            match inherited_scope {
+                ScopeKind::Module => {
+                    for name in &bindings.globals {
+                        inherited.copy_name_from(body_imports, name);
+                    }
+                }
+                ScopeKind::Function => {
+                    for name in &bindings.nonlocals {
+                        inherited.copy_name_from(body_imports, name);
+                    }
+                }
+                ScopeKind::Class => {}
+            }
+        }
         self.imports = inherited;
         self.class_body_fallback = inherited_fallback;
+        self.class_external_bindings = inherited_bindings;
+        self.scope_kind = inherited_scope;
         self.imports.transfer_statement(statement);
         ControlFlowExits::fallthrough(self.imports.clone())
     }
@@ -2751,7 +2857,13 @@ impl<'ast> AnnotationCollector<'ast> {
             .map(|imports| self.visit_suite_from(imports, &statement.orelse));
 
         let mut handler_imports = incoming;
-        for name in FunctionLocalCollector::scan(&statement.body).locals {
+        let try_effects = FunctionLocalCollector::scan(&statement.body);
+        if try_effects.unknown_wildcard {
+            handler_imports.direct.clear();
+            handler_imports.modules.clear();
+            handler_imports.type_vars.clear();
+        }
+        for name in try_effects.locals {
             handler_imports.invalidate(&name);
         }
         let mut joined = ControlFlowExits::default();
@@ -2908,10 +3020,16 @@ impl<'ast> AnnotationCollector<'ast> {
             Stmt::Try(statement_try) => self.visit_try(statement_try),
             Stmt::Match(statement_match) => self.visit_match(statement_match),
             Stmt::AnnAssign(assign) => {
+                if let Some(value) = assign.value.as_deref() {
+                    NamedBindingInvalidator::visit(&mut self.imports, value);
+                    NamedBindingInvalidator::visit(&mut self.imports, assign.target.as_ref());
+                    self.imports
+                        .transfer_assign(std::slice::from_ref(assign.target.as_ref()), value);
+                } else {
+                    NamedBindingInvalidator::visit(&mut self.imports, assign.target.as_ref());
+                }
                 self.record(assign.annotation.as_ref());
-                visitor::walk_stmt(self, statement);
-                NamedBindingInvalidator::visit_statement(&mut self.imports, statement);
-                self.imports.transfer_statement(statement);
+                NamedBindingInvalidator::visit(&mut self.imports, assign.annotation.as_ref());
                 ControlFlowExits::fallthrough(self.imports.clone())
             }
             Stmt::Break(_) => {

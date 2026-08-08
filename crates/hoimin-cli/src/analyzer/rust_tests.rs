@@ -2869,6 +2869,154 @@ fn typing_import_rebinding_definition_header_lambda_defaults_only() {
 }
 
 #[test]
+fn typing_import_rebinding_annotated_assignment_execution_order() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "Sequence: list[str] = object\n",
+        "after_module_valued: list[str]\n",
+        "from typing import Sequence\n",
+        "Sequence: object\n",
+        "after_module_valueless: list[str]\n",
+        "from typing import Sequence\n",
+        "value: list[str] = (Sequence := object)\n",
+        "after_module_rhs: list[str]\n",
+        "from typing import Sequence\n",
+        "class ClassValued:\n",
+        "    Sequence: list[str] = object\n",
+        "    after_valued: list[str]\n",
+        "class ClassValueless:\n",
+        "    Sequence: object\n",
+        "    after_valueless: list[str]\n",
+        "class ClassRhs:\n",
+        "    value: list[str] = (Sequence := object)\n",
+        "    after_rhs: list[str]\n",
+        "from typing import Sequence\n",
+        "untouched: list[str]\n",
+    );
+    assert_type_list_sequence_sites(
+        source,
+        &[
+            (157, 9, 6, None, "Sequence[str]"),
+            (435, 9, 16, Some("ClassValueless"), "Sequence[str]"),
+            (569, 9, 21, None, "Sequence[str]"),
+        ],
+    );
+}
+
+#[test]
+fn typing_import_rebinding_class_external_writes_project_to_target_scope() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "class DirectWrite:\n",
+        "    global Sequence\n",
+        "    Sequence = object\n",
+        "    def method(self):\n",
+        "        hidden: list[str]\n",
+        "after_direct_write: list[str]\n",
+        "class DirectReimport:\n",
+        "    global Sequence\n",
+        "    from typing import Sequence\n",
+        "    def method(self):\n",
+        "        restored: list[str]\n",
+        "after_direct_reimport: list[str]\n",
+        "Sequence = object\n",
+        "import typing as t\n",
+        "class AliasWrite:\n",
+        "    global t\n",
+        "    t = object\n",
+        "    def method(self):\n",
+        "        hidden: list[str]\n",
+        "after_alias_write: list[str]\n",
+        "class AliasReimport:\n",
+        "    global t\n",
+        "    import typing as t\n",
+        "    def method(self):\n",
+        "        restored: list[str]\n",
+        "after_alias_reimport: list[str]\n",
+        "t = object\n",
+        "def direct_outer():\n",
+        "    from typing import Sequence\n",
+        "    class DirectWrite:\n",
+        "        nonlocal Sequence\n",
+        "        Sequence = object\n",
+        "        def method(self):\n",
+        "            hidden: list[str]\n",
+        "    after_write: list[str]\n",
+        "    class DirectReimport:\n",
+        "        nonlocal Sequence\n",
+        "        from typing import Sequence\n",
+        "        def method(self):\n",
+        "            restored: list[str]\n",
+        "    after_reimport: list[str]\n",
+        "def alias_outer():\n",
+        "    import typing as t\n",
+        "    class AliasWrite:\n",
+        "        nonlocal t\n",
+        "        t = object\n",
+        "        def method(self):\n",
+        "            hidden: list[str]\n",
+        "    after_write: list[str]\n",
+        "    class AliasReimport:\n",
+        "        nonlocal t\n",
+        "        import typing as t\n",
+        "        def method(self):\n",
+        "            restored: list[str]\n",
+        "    after_reimport: list[str]\n",
+        "from typing import Sequence\n",
+        "untouched: list[str]\n",
+    );
+    assert_type_list_sequence_sites(
+        source,
+        &[
+            (281, 9, 12, Some("DirectReimport.method"), "Sequence[str]"),
+            (314, 9, 13, None, "Sequence[str]"),
+            (581, 9, 26, Some("AliasReimport.method"), "t.Sequence[str]"),
+            (613, 9, 27, None, "t.Sequence[str]"),
+            (
+                980,
+                9,
+                41,
+                Some("direct_outer.DirectReimport.method"),
+                "Sequence[str]",
+            ),
+            (1010, 9, 42, Some("direct_outer"), "Sequence[str]"),
+            (
+                1324,
+                9,
+                55,
+                Some("alias_outer.AliasReimport.method"),
+                "t.Sequence[str]",
+            ),
+            (1354, 9, 56, Some("alias_outer"), "t.Sequence[str]"),
+            (1403, 9, 58, None, "Sequence[str]"),
+        ],
+    );
+}
+
+#[test]
+fn typing_import_rebinding_try_handler_includes_unknown_wildcard_effect() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "try:\n",
+        "    from unknown import *\n",
+        "    raise Error\n",
+        "except Error:\n",
+        "    hidden_direct: list[str]\n",
+        "Sequence = object\n",
+        "import typing as t\n",
+        "try:\n",
+        "    from unknown import *\n",
+        "    raise Error\n",
+        "except Error:\n",
+        "    hidden_alias: list[str]\n",
+        "t = object\n",
+        "from typing import Sequence\n",
+        "untouched: list[str]\n",
+    );
+    assert_type_list_sequence_sites(source, &[(294, 9, 16, None, "Sequence[str]")]);
+}
+
+#[test]
 fn type_annotations_ignore_quoted_and_unrecognized_forms() {
     let source = "from typing import Annotated, Any, Callable, Optional, TypeVar\nfrom local import Optional as LocalOptional\n\nT = TypeVar('T')\nclass Sequence: pass\nquoted: 'Optional[int]'\nannotated: Annotated[list[str], 'meta']\nany_value: Any\ncallback: Callable[[str], int]\ngeneric: T\nuser_sequence: Sequence[str]\nlocal_optional: LocalOptional[int]\n";
     let output = analyze_types(source);
