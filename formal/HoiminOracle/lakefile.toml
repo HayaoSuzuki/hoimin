@@ -1,0 +1,10 @@
+name = "HoiminOracle"
+version = "0.1.0"
+defaultTargets = ["HoiminOracle"]
+
+[[lean_lib]]
+name = "HoiminOracle"
+
+[[lean_exe]]
+name = "generate"
+root = "Main"

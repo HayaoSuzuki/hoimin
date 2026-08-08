@@ -52,7 +52,7 @@
 - Consumes: the durable claim and scope from `docs/superpowers/specs/2026-08-09-lean-state-machine-oracle-design.md`.
 - Produces: `HoiminOracle.Model.step : State -> Event -> Verdict`, `HoiminOracle.Cases.cases : List OracleCase`, and stable semantic names shared by later generator and adapter tasks.
 
-- [ ] **Step 1: Pin the verified Lean toolchain and declare the project targets**
+- [x] **Step 1: Pin the verified Lean toolchain and declare the project targets**
 
 Write `formal/HoiminOracle/lean-toolchain` exactly as:
 
@@ -62,7 +62,7 @@ leanprover/lean4:v4.32.2
 
 Write `formal/HoiminOracle/lakefile.toml` with a `HoiminOracle` library and a `generate` executable rooted at `Main`. The project must use Lean's bundled `Lean.Data.Json`; do not add Mathlib or network-fetched dependencies.
 
-- [ ] **Step 2: Write executable examples before the model implementation**
+- [x] **Step 2: Write executable examples before the model implementation**
 
 In `HoiminOracle/Cases.lean`, state examples for these semantic schedules, importing the not-yet-created model definitions:
 
@@ -88,7 +88,7 @@ example :
       some "machine.effect.retired" := by decide
 ```
 
-- [ ] **Step 3: Run the examples to observe Red**
+- [x] **Step 3: Run the examples to observe Red**
 
 Run:
 
@@ -99,7 +99,7 @@ lake build
 
 Expected: FAIL because `HoiminOracle.Model` and its declared types/functions do not yet exist.
 
-- [ ] **Step 4: Implement the minimal semantic model**
+- [x] **Step 4: Implement the minimal semantic model**
 
 Define small, decidable types in `Model.lean`:
 
@@ -130,7 +130,7 @@ Implement `step` with transactional rejection, first-stop retention, pending-eff
 cleanup-before-final ordering, and late-stop idempotence. Provide `errorCode?` with exact
 `machine.effect.*` strings corresponding to `MachineError::code()`.
 
-- [ ] **Step 5: Build and run all Lean examples**
+- [x] **Step 5: Build and run all Lean examples**
 
 Run:
 
@@ -141,7 +141,7 @@ lake build
 
 Expected: PASS with all four examples checked by `decide`.
 
-- [ ] **Step 6: Commit the executable model slice**
+- [x] **Step 6: Commit the executable model slice**
 
 ```bash
 git add formal/HoiminOracle/lean-toolchain formal/HoiminOracle/lakefile.toml formal/HoiminOracle/HoiminOracle.lean formal/HoiminOracle/HoiminOracle/Model.lean formal/HoiminOracle/HoiminOracle/Cases.lean
