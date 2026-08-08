@@ -5,6 +5,7 @@ mod store;
 
 use std::fmt::Write as _;
 use std::sync::Arc;
+use std::time::Duration;
 
 pub use protocol::*;
 pub use store::*;
@@ -37,6 +38,36 @@ pub struct Discovery {
     pub truncated: bool,
 }
 
+struct DiscoveryWork {
+    root: Utf8PathBuf,
+    targets: Vec<TargetSlice>,
+    operators: MutationOperatorSelection,
+    profile: MutationProfile,
+    max_candidates: usize,
+    cancellation: ProcessCancellation,
+    #[cfg(test)]
+    control: Option<DiscoveryControl>,
+}
+
+#[cfg(test)]
+pub(crate) struct DiscoveryControl {
+    _owner: Arc<TempDir>,
+    before_analysis: Box<dyn FnOnce() + Send>,
+}
+
+#[cfg(test)]
+impl DiscoveryControl {
+    pub(crate) fn new(
+        owner: Arc<TempDir>,
+        before_analysis: impl FnOnce() + Send + 'static,
+    ) -> Self {
+        Self {
+            _owner: owner,
+            before_analysis: Box::new(before_analysis),
+        }
+    }
+}
+
 /// # Errors
 ///
 /// Returns an error when a source cannot be read or decoded, or a generated candidate is invalid.
@@ -47,7 +78,151 @@ pub async fn discover_targets(
     profile: MutationProfile,
     max_candidates: usize,
 ) -> Result<Discovery, EffectFailed> {
-    let root = RootRelativeReader::open(root.to_owned()).map_err(|error| {
+    let cancellation = ProcessCancellation::new();
+    let work = discovery_work(
+        root,
+        targets,
+        operators,
+        profile,
+        max_candidates,
+        cancellation,
+        #[cfg(test)]
+        None,
+    );
+    tokio::task::spawn_blocking(move || discover_targets_blocking(work))
+        .await
+        .map_err(|error| EffectFailed::other(EffectId(0), "analyzer.task", error.to_string()))?
+}
+
+/// Discovers targets within one timeout covering the complete discovery operation.
+///
+/// # Errors
+///
+/// Returns `analyzer.timeout` when the deadline expires, or an analyzer error when discovery
+/// cannot complete successfully.
+#[allow(
+    dead_code,
+    reason = "the plan and verify call sites are wired to this boundary in the next task"
+)]
+pub(crate) async fn discover_targets_with_timeout(
+    root: &Utf8Path,
+    targets: &[TargetSlice],
+    operators: &MutationOperatorSelection,
+    profile: MutationProfile,
+    max_candidates: usize,
+    analyzer_timeout: Duration,
+) -> Result<Discovery, EffectFailed> {
+    discover_targets_inner(
+        root,
+        targets,
+        operators,
+        profile,
+        max_candidates,
+        analyzer_timeout,
+        #[cfg(test)]
+        None,
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(crate) async fn discover_targets_with_control(
+    root: &Utf8Path,
+    targets: &[TargetSlice],
+    operators: &MutationOperatorSelection,
+    profile: MutationProfile,
+    max_candidates: usize,
+    analyzer_timeout: Duration,
+    control: Option<DiscoveryControl>,
+) -> Result<Discovery, EffectFailed> {
+    discover_targets_inner(
+        root,
+        targets,
+        operators,
+        profile,
+        max_candidates,
+        analyzer_timeout,
+        control,
+    )
+    .await
+}
+
+async fn discover_targets_inner(
+    root: &Utf8Path,
+    targets: &[TargetSlice],
+    operators: &MutationOperatorSelection,
+    profile: MutationProfile,
+    max_candidates: usize,
+    analyzer_timeout: Duration,
+    #[cfg(test)] control: Option<DiscoveryControl>,
+) -> Result<Discovery, EffectFailed> {
+    let cancellation = ProcessCancellation::new();
+    let task_cancellation = cancellation.clone();
+    let work = discovery_work(
+        root,
+        targets,
+        operators,
+        profile,
+        max_candidates,
+        task_cancellation,
+        #[cfg(test)]
+        control,
+    );
+    let deadline = tokio::time::Instant::now() + analyzer_timeout;
+    let mut task = tokio::task::spawn_blocking(move || discover_targets_blocking(work));
+    tokio::select! {
+        biased;
+        result = &mut task => result.map_err(|error| {
+            EffectFailed::other(EffectId(0), "analyzer.task", error.to_string())
+        })?,
+        () = tokio::time::sleep_until(deadline) => {
+            cancellation.cancel();
+            Err(EffectFailed::other(
+                EffectId(0),
+                "analyzer.timeout",
+                format!(
+                    "--analyzer-timeout expired after {}",
+                    humantime::format_duration(analyzer_timeout)
+                ),
+            ))
+        }
+    }
+}
+
+fn discovery_work(
+    root: &Utf8Path,
+    targets: &[TargetSlice],
+    operators: &MutationOperatorSelection,
+    profile: MutationProfile,
+    max_candidates: usize,
+    cancellation: ProcessCancellation,
+    #[cfg(test)] control: Option<DiscoveryControl>,
+) -> DiscoveryWork {
+    DiscoveryWork {
+        root: root.to_owned(),
+        targets: targets.to_vec(),
+        operators: operators.clone(),
+        profile,
+        max_candidates,
+        cancellation,
+        #[cfg(test)]
+        control,
+    }
+}
+
+fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFailed> {
+    let DiscoveryWork {
+        root,
+        targets,
+        operators,
+        profile,
+        max_candidates,
+        cancellation,
+        #[cfg(test)]
+        mut control,
+    } = work;
+    ensure_discovery_active(&cancellation)?;
+    let root = RootRelativeReader::open(root.clone()).map_err(|error| {
         EffectFailed::other(EffectId(0), "analyzer.source.read", error.to_string())
     })?;
     let mut discovery = Discovery {
@@ -55,25 +230,34 @@ pub async fn discover_targets(
         diagnostics: Vec::new(),
         truncated: false,
     };
-    for target in targets {
+    for target in &targets {
+        ensure_discovery_active(&cancellation)?;
         let source = root.read(&target.path).map_err(|error| {
             EffectFailed::other(EffectId(0), "analyzer.source.read", error.to_string())
         })?;
+        ensure_discovery_active(&cancellation)?;
         let module = String::from_utf8(source.clone()).map_err(|error| {
             EffectFailed::other(EffectId(0), "analyzer.source.utf8", error.to_string())
         })?;
-        let output = rust::analyze_source(
+        #[cfg(test)]
+        if let Some(control) = control.take() {
+            (control.before_analysis)();
+        }
+        let output = rust::analyze_source_cancellable(
             &rust::AnalyzeRequest {
                 path: &target.path,
                 lines: &target.lines,
                 symbols: &target.symbols,
-                operators,
+                operators: &operators,
                 profile,
                 max_candidates: max_candidates.saturating_sub(discovery.candidates.len()),
             },
             &module,
-        );
+            || cancellation.is_cancelled(),
+        )
+        .map_err(|_| discovery_cancelled())?;
         for candidate in output.candidates {
+            ensure_discovery_active(&cancellation)?;
             let sequence = u64::try_from(discovery.candidates.len())
                 .ok()
                 .and_then(|count| count.checked_add(1))
@@ -95,6 +279,18 @@ pub async fn discover_targets(
         }
     }
     Ok(discovery)
+}
+
+fn ensure_discovery_active(cancellation: &ProcessCancellation) -> Result<(), EffectFailed> {
+    if cancellation.is_cancelled() {
+        Err(discovery_cancelled())
+    } else {
+        Ok(())
+    }
+}
+
+fn discovery_cancelled() -> EffectFailed {
+    EffectFailed::other(EffectId(0), "analyzer.cancelled", "analyzer was cancelled")
 }
 
 impl AnalyzerHandler {
@@ -408,6 +604,8 @@ fn mutation_candidate(
 mod tests {
     use super::*;
     use hoimin_core::{EffectId, MutationProfile, TargetSlice};
+    use std::sync::{Arc, mpsc};
+    use std::time::Duration;
 
     fn request(id: u64) -> AnalyzeFile {
         AnalyzeFile {
@@ -420,6 +618,97 @@ mod tests {
             final_target: true,
             max_candidates: 10,
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn discovery_timeout_returns_before_detached_analysis_releases_resources() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::create_dir(directory.path().join("src")).unwrap();
+        std::fs::write(
+            directory.path().join("src/calc.py"),
+            "result = left == right\n",
+        )
+        .unwrap();
+        let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
+        let targets = vec![TargetSlice {
+            path: "src/calc.py".into(),
+            lines: Vec::new(),
+            symbols: Vec::new(),
+        }];
+        let (entered_tx, entered_rx) = mpsc::sync_channel(1);
+        let (release_tx, release_rx) = mpsc::sync_channel(1);
+        let owned = Arc::new(tempfile::tempdir().unwrap());
+        let owned_path = owned.path().to_owned();
+        let control = DiscoveryControl::new(owned.clone(), move || {
+            entered_tx.send(()).expect("test waits for discovery entry");
+            release_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("test releases paused discovery");
+        });
+        let operators = MutationOperatorSelection::default();
+        let task_targets = targets.clone();
+        let operation = tokio::spawn(async move {
+            discover_targets_with_control(
+                &root,
+                &task_targets,
+                &operators,
+                MutationProfile::Full,
+                10,
+                Duration::from_millis(20),
+                Some(control),
+            )
+            .await
+        });
+        tokio::task::spawn_blocking(move || entered_rx.recv_timeout(Duration::from_secs(2)))
+            .await
+            .expect("entry wait task must not panic")
+            .expect("discovery must enter the test pause");
+
+        let error = tokio::time::timeout(Duration::from_millis(200), operation)
+            .await
+            .expect("timeout must not await detached discovery")
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(error.failure.code(), "analyzer.timeout");
+        assert_eq!(
+            error.failure.message(),
+            "--analyzer-timeout expired after 20ms"
+        );
+        drop(owned);
+        assert!(owned_path.exists(), "detached discovery owns its resources");
+
+        release_tx
+            .send(())
+            .expect("paused discovery still waits for release");
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while owned_path.exists() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("detached discovery must release its resources");
+
+        let recovered = discover_targets_with_timeout(
+            &Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap(),
+            &targets,
+            &MutationOperatorSelection::default(),
+            MutationProfile::Full,
+            10,
+            Duration::from_secs(1),
+        )
+        .await
+        .unwrap();
+        let expected = discover_targets(
+            &Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap(),
+            &targets,
+            &MutationOperatorSelection::default(),
+            MutationProfile::Full,
+            10,
+        )
+        .await
+        .unwrap();
+        assert_eq!(recovered, expected);
+        assert!(!recovered.candidates.is_empty());
     }
 
     #[test]
