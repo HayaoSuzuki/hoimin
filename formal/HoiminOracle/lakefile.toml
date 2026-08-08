@@ -8,3 +8,7 @@ name = "HoiminOracle"
 [[lean_exe]]
 name = "generate"
 root = "Main"
+
+[[lean_exe]]
+name = "generate_budget"
+root = "BudgetMain"
