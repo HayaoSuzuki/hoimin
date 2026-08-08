@@ -67,10 +67,11 @@ CPU load. They prove:
 
 ## Documentation
 
-Clarify that `--analyzer-timeout` applies to runtime file analysis and to the
-complete discovery phase used by `plan` and verification rediscovery. The
-timeout bounds the caller; an already-running blocking analyzer cooperatively
-stops and releases owned resources afterward.
+Clarify that `--analyzer-timeout` applies to the complete discovery phase used
+by `plan` and verification rediscovery. The timeout bounds the caller; an
+already-running blocking analyzer cooperatively stops and releases owned
+resources afterward. Runtime file-analysis scheduling remains outside this
+issue's scope.
 
 ## Non-goals
 
