@@ -82,12 +82,12 @@ writes make progress.
 
 ## Analyzer timeout invariants
 
-The normalized `--analyzer-timeout` bounds each runtime file analysis. Plan
-creation and verification rediscovery instead apply one absolute deadline to
-the complete discovery phase; the deadline is not restarted for each target.
-Both plan entry points report the same `plan.discovery: analyzer.timeout`
-diagnostic and exit 2. Plan creation produces no manifest, and verification
-does not start the test command.
+Plan creation and verification rediscovery apply the normalized
+`--analyzer-timeout` as one absolute deadline for the complete discovery phase;
+the deadline is not restarted for each target. Both plan entry points report
+the same `plan.discovery: analyzer.timeout` diagnostic and exit 2. Plan
+creation produces no manifest, and verification does not start the test
+command.
 
 Discovery runs as an owned blocking task with cooperative cancellation. When
 the deadline expires, the async caller returns promptly and detaches an analyzer
