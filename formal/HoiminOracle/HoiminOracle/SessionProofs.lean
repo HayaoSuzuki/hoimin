@@ -61,8 +61,10 @@ theorem successful_replacement_is_exact
     · simp_all [reject]
     · split at accepted
       · simp_all [reject]
-      · rw [present]
-        simp_all [SameExceptResult, accept]
+      · split at accepted
+        · simp_all [reject]
+        · rw [present]
+          simp_all [SameExceptResult, accept]
 
 private theorem filtered_owner_is_absent (owners : List (Run × Handler))
     (handler : Handler) :

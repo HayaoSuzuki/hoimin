@@ -255,17 +255,17 @@ def pendingValid (state : State) : Bool :=
 
 def safe (state : State) : Bool :=
   decide (state.handlers.map Prod.fst).Nodup &&
-    allHandlers.all fun handler => (handlerState state handler).isSome &&
+  (allHandlers.all fun handler => (handlerState state handler).isSome) &&
   decide (state.runs.map RunRow.run).Nodup &&
   decide (state.runs.map RunRow.ordinal).Nodup &&
-  state.runs.all fun row =>
-    row.ordinal < state.nextOrdinal && (!row.complete || row.finished) &&
+  (state.runs.all fun row =>
+    row.ordinal < state.nextOrdinal && (!row.complete || row.finished)) &&
   decide (state.results.map fun row => (row.run, row.mutant)).Nodup &&
-  state.results.all fun row => runExists state row.run &&
+  (state.results.all fun row => runExists state row.run) &&
   decide state.owners.Nodup &&
-  allRuns.all fun run => ownerCount state run ≤ 1 &&
-  state.owners.all fun owner =>
-    runExists state owner.1 && handlerLive state owner.2 && !runComplete state owner.1 &&
+  (allRuns.all fun run => ownerCount state run ≤ 1) &&
+  (state.owners.all fun owner =>
+    runExists state owner.1 && handlerLive state owner.2 && !runComplete state owner.1) &&
   pendingValid state
 
 def Invariant (state : State) : Prop :=
@@ -357,6 +357,8 @@ def lookupResult (state : State) (handler : Handler) (run : Run)
     (mutant : Mutant) : Verdict :=
   if !handlerLive state handler then
     reject state .handlerClosed
+  else if state.pending.isSome then
+    reject state .internalState
   else
     match findRun state run with
     | none => reject state .missingRun
@@ -369,6 +371,8 @@ def persistResult (state : State) (handler : Handler) (run : Run)
     (validity : PersistValidity) : Verdict :=
   if !handlerLive state handler then
     reject state .handlerClosed
+  else if state.pending.isSome then
+    reject state .internalState
   else
     match findRun state run with
     | none => reject state .missingRun
@@ -546,9 +550,12 @@ def brokenUniquenessStep (state : State) (event : Event) : Verdict :=
       else
         match latestCompatible state fingerprint with
         | none => accept state
-        | some row => accept {
-            state with owners := state.owners ++ [(row.run, handler)]
-          } (some row.run)
+        | some row =>
+            if owns state row.run handler then
+              step state event
+            else
+              accept { state with owners := state.owners ++ [(row.run, handler)] }
+                (some row.run)
   | _ => step state event
 
 def brokenBoundaryStep (state : State) (event : Event) : Verdict :=

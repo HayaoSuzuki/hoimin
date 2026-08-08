@@ -416,6 +416,7 @@ invalid_replacement_rolls_back
 missing_run_persist_rolls_back
 lookup_missing_and_completed_reject
 different_runs_have_independent_owners
+non_owner_incomplete_finish_releases_for_resume
 ```
 
 All cases have `mode = "strict"`. Persistence events carry both status and
@@ -455,7 +456,7 @@ def sensitivityPasses : Bool
 `--stats` prints one machine-readable line:
 
 ```text
-depth=8 alphabet=<n> states=<n> transitions=<n> corpus_cases=17
+depth=8 alphabet=<n> states=<n> transitions=<n> corpus_cases=18
 ```
 
 `--sensitivity` prints the family, violated invariant, and shortest trace for

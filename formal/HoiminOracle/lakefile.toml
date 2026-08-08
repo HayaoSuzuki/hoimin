@@ -12,3 +12,7 @@ root = "Main"
 [[lean_exe]]
 name = "generate_budget"
 root = "BudgetMain"
+
+[[lean_exe]]
+name = "generate_session"
+root = "SessionAuditMain"
