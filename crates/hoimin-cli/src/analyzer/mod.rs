@@ -100,10 +100,6 @@ pub async fn discover_targets(
 ///
 /// Returns `analyzer.timeout` when the deadline expires, or an analyzer error when discovery
 /// cannot complete successfully.
-#[allow(
-    dead_code,
-    reason = "the plan and verify call sites are wired to this boundary in the next task"
-)]
 pub(crate) async fn discover_targets_with_timeout(
     root: &Utf8Path,
     targets: &[TargetSlice],

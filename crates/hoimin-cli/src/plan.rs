@@ -11,7 +11,11 @@ use hoimin_core::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::analyzer::{AnalyzerDiagnostic, AnalyzerDiagnosticCode, discover_targets};
+#[cfg(not(test))]
+use crate::analyzer::discover_targets_with_timeout;
+use crate::analyzer::{AnalyzerDiagnostic, AnalyzerDiagnosticCode, Discovery};
+#[cfg(test)]
+use crate::analyzer::{DiscoveryControl, discover_targets_with_control};
 use crate::cli::{OutputFormat, TopSelectionPolicy, VerifySelection};
 use crate::fingerprint_inputs;
 use crate::resource::{self, ResourceError};
@@ -116,6 +120,59 @@ pub enum PlanError {
     CandidateInvalid(String),
 }
 
+#[derive(Clone, Copy)]
+enum DiscoveryCaller {
+    Create,
+    Verify,
+}
+
+fn map_discovery_error(error: &hoimin_core::EffectFailed, caller: DiscoveryCaller) -> PlanError {
+    let message = error.failure.message();
+    if error.failure.code() == "analyzer.timeout" {
+        return PlanError::Discovery(format!("analyzer.timeout: {message}"));
+    }
+    match caller {
+        DiscoveryCaller::Create => PlanError::Discovery(message),
+        DiscoveryCaller::Verify => PlanError::CandidateInvalid(message),
+    }
+}
+
+async fn discover_plan_targets(
+    root: &Utf8Path,
+    targets: &[TargetSlice],
+    operators: &hoimin_core::MutationOperatorSelection,
+    profile: hoimin_core::MutationProfile,
+    max_candidates: usize,
+    analyzer_timeout: std::time::Duration,
+    #[cfg(test)] control: Option<DiscoveryControl>,
+) -> Result<Discovery, hoimin_core::EffectFailed> {
+    #[cfg(test)]
+    {
+        discover_targets_with_control(
+            root,
+            targets,
+            operators,
+            profile,
+            max_candidates,
+            analyzer_timeout,
+            control,
+        )
+        .await
+    }
+    #[cfg(not(test))]
+    {
+        discover_targets_with_timeout(
+            root,
+            targets,
+            operators,
+            profile,
+            max_candidates,
+            analyzer_timeout,
+        )
+        .await
+    }
+}
+
 /// Creates a read-only, versioned mutation candidate plan.
 ///
 /// # Errors
@@ -123,6 +180,26 @@ pub enum PlanError {
 /// Returns an error before manifest serialization when fingerprint inputs, targets, sources, or
 /// analysis cannot be resolved successfully.
 pub async fn create(config: RunConfig) -> Result<PlanOutput, PlanError> {
+    create_inner(
+        config,
+        #[cfg(test)]
+        None,
+    )
+    .await
+}
+
+#[cfg(test)]
+async fn create_with_discovery_control(
+    config: RunConfig,
+    control: Option<DiscoveryControl>,
+) -> Result<PlanOutput, PlanError> {
+    create_inner(config, control).await
+}
+
+async fn create_inner(
+    config: RunConfig,
+    #[cfg(test)] control: Option<DiscoveryControl>,
+) -> Result<PlanOutput, PlanError> {
     resource::validate_plan_resource_policy(config.allow_best_effort_memory)?;
     let config = shell::prepare_run_config(config)
         .map_err(|error| PlanError::FingerprintInput(error.to_string()))?;
@@ -130,15 +207,18 @@ pub async fn create(config: RunConfig) -> Result<PlanOutput, PlanError> {
         .await
         .map_err(|error| PlanError::TargetResolution(error.to_string()))?;
     let sources = source_records(&config.root, &targets).await?;
-    let discovery = discover_targets(
+    let discovery = discover_plan_targets(
         &config.root,
         &targets,
         &config.operators,
         config.profile,
         config.limits.max_candidates.get(),
+        config.limits.analyzer_timeout.get(),
+        #[cfg(test)]
+        control,
     )
     .await
-    .map_err(|error| PlanError::Discovery(error.failure.message()))?;
+    .map_err(|error| map_discovery_error(&error, DiscoveryCaller::Create))?;
     if let Some(diagnostic) = discovery
         .diagnostics
         .iter()
@@ -207,7 +287,38 @@ pub async fn prepare_verify_selection(
     requested_selection: &VerifySelection,
     format: OutputFormat,
 ) -> Result<VerifiedPlan, PlanError> {
-    let manifest_path = manifest_path.as_ref();
+    prepare_verify_selection_inner(
+        manifest_path.as_ref(),
+        requested_selection,
+        format,
+        #[cfg(test)]
+        None,
+    )
+    .await
+}
+
+#[cfg(test)]
+async fn prepare_verify_with_discovery_control(
+    manifest_path: impl AsRef<Path>,
+    requested_ids: Vec<String>,
+    format: OutputFormat,
+    control: Option<DiscoveryControl>,
+) -> Result<VerifiedPlan, PlanError> {
+    prepare_verify_selection_inner(
+        manifest_path.as_ref(),
+        &VerifySelection::CandidateIds(requested_ids),
+        format,
+        control,
+    )
+    .await
+}
+
+async fn prepare_verify_selection_inner(
+    manifest_path: &Path,
+    requested_selection: &VerifySelection,
+    format: OutputFormat,
+    #[cfg(test)] control: Option<DiscoveryControl>,
+) -> Result<VerifiedPlan, PlanError> {
     let bytes = std::fs::read(manifest_path).map_err(|error| {
         PlanError::ManifestInvalid(format!("{}: {error}", manifest_path.display()))
     })?;
@@ -279,7 +390,15 @@ pub async fn prepare_verify_selection(
         .filter(|record| copy_manifest.entry(&record.path).is_some())
         .map(|record| record.path.clone())
         .collect();
-    validate_requested_candidates(&manifest, &candidate_ids, &config, &targets).await?;
+    validate_requested_candidates(
+        &manifest,
+        &candidate_ids,
+        &config,
+        &targets,
+        #[cfg(test)]
+        control,
+    )
+    .await?;
 
     Ok(VerifiedPlan {
         config,
@@ -545,6 +664,7 @@ async fn validate_requested_candidates(
     requested_ids: &BTreeSet<String>,
     config: &RunConfig,
     targets: &[TargetSlice],
+    #[cfg(test)] control: Option<DiscoveryControl>,
 ) -> Result<(), PlanError> {
     let candidates = manifest
         .candidates
@@ -586,15 +706,18 @@ async fn validate_requested_candidates(
         }
     }
 
-    let discovery = discover_targets(
+    let discovery = discover_plan_targets(
         &config.root,
         targets,
         &config.operators,
         config.profile,
         config.limits.max_candidates.get(),
+        config.limits.analyzer_timeout.get(),
+        #[cfg(test)]
+        control,
     )
     .await
-    .map_err(|error| PlanError::CandidateInvalid(error.failure.message()))?;
+    .map_err(|error| map_discovery_error(&error, DiscoveryCaller::Verify))?;
     let discovered = discovery
         .candidates
         .iter()
@@ -663,13 +786,94 @@ fn plan_diagnostic(diagnostic: &AnalyzerDiagnostic) -> PlanDiagnostic {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsString;
+    use std::sync::{Arc, mpsc};
+    use std::time::Duration;
+
     use camino::Utf8PathBuf;
-    use hoimin_core::{ByteSpan, CommandArg, MutationCandidate, RawRunConfig, RunConfig};
+    use hoimin_core::{
+        ByteSpan, CommandArg, EffectFailed, EffectId, MutationCandidate, RawRunConfig, RunConfig,
+    };
+
+    use crate::analyzer::DiscoveryControl;
+    use crate::cli::{OutputFormat, ParsedCommand, parse_from};
 
     use super::{
-        PLAN_SCHEMA_VERSION, PlanError, PlanManifest, RANKING_RULE_VERSION, RankedPlanCandidate,
-        plan_output,
+        DiscoveryCaller, PLAN_SCHEMA_VERSION, PlanError, PlanManifest, RANKING_RULE_VERSION,
+        RankedPlanCandidate, create_with_discovery_control, map_discovery_error, plan_output,
+        prepare_verify_with_discovery_control,
     };
+
+    struct Project {
+        _directory: tempfile::TempDir,
+        root: Utf8PathBuf,
+        marker: std::path::PathBuf,
+    }
+
+    impl Project {
+        fn new() -> Self {
+            let directory = tempfile::tempdir().unwrap();
+            std::fs::create_dir(directory.path().join("src")).unwrap();
+            std::fs::write(
+                directory.path().join("src/calc.py"),
+                "def calc(left, right):\n    return left + right\n",
+            )
+            .unwrap();
+            Self {
+                root: Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap(),
+                marker: directory.path().join("test-command-ran"),
+                _directory: directory,
+            }
+        }
+
+        fn config(&self, analyzer_timeout: &str) -> RunConfig {
+            let command = format!(
+                "from pathlib import Path; Path({:?}).write_text('ran')",
+                self.marker.to_string_lossy()
+            );
+            let ParsedCommand::Plan(args) = parse_from([
+                OsString::from("hoimin"),
+                OsString::from("plan"),
+                OsString::from("--root"),
+                self.root.as_os_str().to_owned(),
+                OsString::from("--file"),
+                OsString::from("src/calc.py"),
+                OsString::from("--analyzer-timeout"),
+                OsString::from(analyzer_timeout),
+                OsString::from("--allow-best-effort-memory"),
+                OsString::from("--"),
+                OsString::from("python"),
+                OsString::from("-c"),
+                OsString::from(command),
+            ])
+            .unwrap() else {
+                panic!("plan arguments parsed as another command")
+            };
+            args.into_run_config().unwrap()
+        }
+    }
+
+    fn paused_control() -> (DiscoveryControl, mpsc::Receiver<()>, mpsc::SyncSender<()>) {
+        let (entered_tx, entered_rx) = mpsc::sync_channel(1);
+        let (release_tx, release_rx) = mpsc::sync_channel(1);
+        let owner = Arc::new(tempfile::tempdir().unwrap());
+        let control = DiscoveryControl::new(owner, move || {
+            entered_tx
+                .try_send(())
+                .expect("entry channel has one empty slot");
+            release_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("test releases paused plan discovery");
+        });
+        (control, entered_rx, release_tx)
+    }
+
+    async fn wait_for_discovery_entry(entered: mpsc::Receiver<()>) {
+        tokio::task::spawn_blocking(move || entered.recv_timeout(Duration::from_secs(2)))
+            .await
+            .expect("entry wait task must not panic")
+            .expect("plan discovery must enter its controlled pause");
+    }
 
     fn manifest() -> PlanManifest {
         let normalized_config = RunConfig::try_from(RawRunConfig {
@@ -724,5 +928,124 @@ mod tests {
         assert!(
             matches!(error, PlanError::ManifestInvalid(message) if message == "candidate ranking must contain exactly one operator reason, got 0")
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn create_timeout_uses_the_common_plan_discovery_identity_without_output() {
+        let project = Project::new();
+        let (control, entered, release) = paused_control();
+        let operation = tokio::spawn(create_with_discovery_control(
+            project.config("20ms"),
+            Some(control),
+        ));
+        wait_for_discovery_entry(entered).await;
+
+        let result = tokio::time::timeout(Duration::from_millis(200), operation)
+            .await
+            .expect("plan create timeout must not await detached discovery")
+            .unwrap();
+        let mut stdout = Vec::new();
+        let error = match result {
+            Ok(output) => {
+                serde_json::to_writer(&mut stdout, &output.manifest).unwrap();
+                panic!("paused discovery unexpectedly created a plan")
+            }
+            Err(error) => error,
+        };
+        assert_eq!(
+            error.to_string(),
+            "plan.discovery: analyzer.timeout: --analyzer-timeout expired after 20ms"
+        );
+        assert!(stdout.is_empty());
+        release.send(()).unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn verify_timeout_uses_the_common_identity_before_the_test_command() {
+        let project = Project::new();
+        let mut output = super::create(project.config("1s")).await.unwrap();
+        output.manifest.normalized_config.limits.analyzer_timeout =
+            project.config("20ms").limits.analyzer_timeout;
+        let manifest_path = project.root.join("plan.json");
+        std::fs::write(
+            &manifest_path,
+            serde_json::to_vec(&output.manifest).unwrap(),
+        )
+        .unwrap();
+        let requested = vec![output.manifest.candidates[0].id.clone()];
+        let (control, entered, release) = paused_control();
+        let operation = tokio::spawn(prepare_verify_with_discovery_control(
+            manifest_path.into_std_path_buf(),
+            requested,
+            OutputFormat::Json,
+            Some(control),
+        ));
+        wait_for_discovery_entry(entered).await;
+
+        let error = tokio::time::timeout(Duration::from_millis(200), operation)
+            .await
+            .expect("verify timeout must not await detached rediscovery")
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "plan.discovery: analyzer.timeout: --analyzer-timeout expired after 20ms"
+        );
+        assert!(!project.marker.exists(), "verify launched the test command");
+        release.send(()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn successful_create_and_verify_preserve_the_normalized_analyzer_timeout() {
+        let project = Project::new();
+        let timeout = Duration::from_millis(250);
+        let output = create_with_discovery_control(
+            project.config("250ms"),
+            Some(DiscoveryControl::new(
+                Arc::new(tempfile::tempdir().unwrap()),
+                || {},
+            )),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            output
+                .manifest
+                .normalized_config
+                .limits
+                .analyzer_timeout
+                .get(),
+            timeout
+        );
+        let manifest_path = project.root.join("plan.json");
+        std::fs::write(
+            &manifest_path,
+            serde_json::to_vec(&output.manifest).unwrap(),
+        )
+        .unwrap();
+        let verified = prepare_verify_with_discovery_control(
+            manifest_path.into_std_path_buf(),
+            vec![output.manifest.candidates[0].id.clone()],
+            OutputFormat::Json,
+            Some(DiscoveryControl::new(
+                Arc::new(tempfile::tempdir().unwrap()),
+                || {},
+            )),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(verified.config.limits.analyzer_timeout.get(), timeout);
+        assert!(!project.marker.exists());
+    }
+
+    #[test]
+    fn non_timeout_discovery_errors_keep_caller_specific_mapping() {
+        let failure = EffectFailed::other(EffectId(0), "analyzer.source.read", "read failed");
+        let create = map_discovery_error(&failure, DiscoveryCaller::Create);
+        let verify = map_discovery_error(&failure, DiscoveryCaller::Verify);
+
+        assert!(matches!(create, PlanError::Discovery(message) if message == "read failed"));
+        assert!(matches!(verify, PlanError::CandidateInvalid(message) if message == "read failed"));
     }
 }
