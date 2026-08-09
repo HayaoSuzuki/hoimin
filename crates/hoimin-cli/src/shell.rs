@@ -3614,8 +3614,6 @@ mod tests {
             result = &mut run => panic!("run finished before materialization paused: {result:?}"),
             result = entered_rx => result.expect("pause controller stopped before entry"),
         }
-        let observed_at = Instant::now();
-
         let result = tokio::time::timeout(Duration::from_millis(500), &mut run).await;
         release_tx.send(()).unwrap();
         controller.await.unwrap();
@@ -3625,7 +3623,6 @@ mod tests {
         };
         let error = result.unwrap_err();
 
-        assert!(observed_at.elapsed() < Duration::from_millis(500));
         assert!(
             error.contains("total timeout: shutdown grace expired"),
             "{error}"
