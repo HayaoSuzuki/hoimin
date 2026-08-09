@@ -1,4 +1,6 @@
 mod copy;
+#[cfg(test)]
+mod lean_oracle_tests;
 mod manifest;
 mod mutation;
 mod reset;
