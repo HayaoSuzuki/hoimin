@@ -1,5 +1,6 @@
 import HoiminOracle.Cases
 import HoiminOracle.Proofs
+import HoiminOracle.ShutdownModel
 import HoiminOracle.BudgetModel
 import HoiminOracle.BudgetProofs
 import HoiminOracle.BudgetCases
