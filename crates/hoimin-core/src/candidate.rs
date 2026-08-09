@@ -83,6 +83,46 @@ pub enum CandidateValidationError {
     InvalidMutation,
 }
 
+/// Source-derived facts reused while validating candidates from one immutable file.
+#[derive(Debug)]
+pub struct CandidateValidationContext<'source> {
+    source: &'source [u8],
+    text: Result<&'source str, std::str::Utf8Error>,
+    file_hash: String,
+    line_starts: Vec<usize>,
+}
+
+impl<'source> CandidateValidationContext<'source> {
+    #[must_use]
+    pub fn new(source: &'source [u8]) -> Self {
+        let mut line_starts = Vec::with_capacity(
+            source
+                .iter()
+                .filter(|byte| **byte == b'\n')
+                .count()
+                .saturating_add(1),
+        );
+        line_starts.push(0);
+        line_starts.extend(
+            source
+                .iter()
+                .enumerate()
+                .filter_map(|(offset, byte)| (*byte == b'\n').then_some(offset + 1)),
+        );
+        Self {
+            source,
+            text: std::str::from_utf8(source),
+            file_hash: blake3::hash(source).to_hex().to_string(),
+            line_starts,
+        }
+    }
+
+    #[must_use]
+    pub fn file_hash(&self) -> &str {
+        &self.file_hash
+    }
+}
+
 #[must_use]
 pub fn stable_mutant_id(identity: &CandidateIdentity) -> MutantId {
     let mut hasher = blake3::Hasher::new();
@@ -129,15 +169,25 @@ pub fn validate_candidate(
     source: &[u8],
     candidate: &CandidateDescriptor,
 ) -> Result<MutantId, CandidateValidationError> {
+    validate_candidate_with_context(&CandidateValidationContext::new(source), candidate)
+}
+
+/// Validates a candidate using source facts shared by a batch from the same file.
+///
+/// # Errors
+///
+/// Returns [`CandidateValidationError`] when the candidate metadata, path, hash, span, source text, or reported location is invalid.
+pub fn validate_candidate_with_context(
+    context: &CandidateValidationContext<'_>,
+    candidate: &CandidateDescriptor,
+) -> Result<MutantId, CandidateValidationError> {
     if candidate.schema_version != CANDIDATE_SCHEMA_VERSION {
         return Err(CandidateValidationError::UnsupportedSchema);
     }
     if !normalized_relative_path(candidate.path.as_str()) {
         return Err(CandidateValidationError::InvalidPath);
     }
-    if candidate.file_hash.len() != 64
-        || candidate.file_hash != blake3::hash(source).to_hex().as_str()
-    {
+    if candidate.file_hash.len() != 64 || candidate.file_hash != context.file_hash {
         return Err(CandidateValidationError::FileHashMismatch);
     }
     if candidate.operator.is_empty() || candidate.original == candidate.replacement {
@@ -150,27 +200,27 @@ pub fn validate_candidate(
         .map_err(|_| CandidateValidationError::SpanOutOfBounds)?;
     let end = start
         .checked_add(length)
-        .filter(|end| *end <= source.len())
+        .filter(|end| *end <= context.source.len())
         .ok_or(CandidateValidationError::SpanOutOfBounds)?;
-    if source.get(start..end) != Some(candidate.original.as_bytes()) {
+    if context.source.get(start..end) != Some(candidate.original.as_bytes()) {
         return Err(CandidateValidationError::OriginalMismatch);
     }
 
-    let text = std::str::from_utf8(source).map_err(|_| CandidateValidationError::InvalidUtf8)?;
+    let text = context
+        .text
+        .map_err(|_| CandidateValidationError::InvalidUtf8)?;
     if !text.is_char_boundary(start) || !text.is_char_boundary(end) {
         return Err(CandidateValidationError::OriginalMismatch);
     }
-    let prefix = &text[..start];
-    let line = u32::try_from(prefix.bytes().filter(|byte| *byte == b'\n').count() + 1)
+    let line_index = context
+        .line_starts
+        .partition_point(|line_start| *line_start <= start)
+        .saturating_sub(1);
+    let line =
+        u32::try_from(line_index + 1).map_err(|_| CandidateValidationError::LocationMismatch)?;
+    let line_start = context.line_starts[line_index];
+    let column = u32::try_from(text[line_start..start].chars().count())
         .map_err(|_| CandidateValidationError::LocationMismatch)?;
-    let column = u32::try_from(
-        prefix
-            .rsplit_once('\n')
-            .map_or(prefix, |(_, tail)| tail)
-            .chars()
-            .count(),
-    )
-    .map_err(|_| CandidateValidationError::LocationMismatch)?;
     if candidate.line != line || candidate.column != column {
         return Err(CandidateValidationError::LocationMismatch);
     }

@@ -174,7 +174,7 @@ fn reusable_context_preserves_unicode_and_crlf_location_semantics() {
         schema_version: CANDIDATE_SCHEMA_VERSION,
         path: "pkg/unicode.py".into(),
         span: ByteSpan {
-            start: 13,
+            start: 12,
             length: 2,
         },
         original: "==".into(),
