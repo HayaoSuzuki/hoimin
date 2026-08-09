@@ -11,7 +11,7 @@ use ruff_python_ast::token::TokenKind;
 use ruff_python_ast::visitor::Visitor;
 use ruff_python_ast::{
     CmpOp, Expr, ExprCall, ExprContext, ExprList, ExprSlice, ExprSubscript, ExprTuple, ModModule,
-    Number, Operator, Pattern, Stmt, UnaryOp, visitor,
+    Number, Operator, Pattern, Stmt, TypeParam, TypeParams, UnaryOp, visitor,
 };
 use ruff_python_parser::parse_module;
 use ruff_text_size::{Ranged, TextRange};
@@ -510,6 +510,34 @@ fn module_name(path: &Utf8Path) -> String {
     parts.join(".")
 }
 
+fn visit_type_param_expressions<'ast>(
+    type_params: &'ast TypeParams,
+    mut visit: impl FnMut(&'ast Expr),
+) {
+    for parameter in type_params.iter() {
+        match parameter {
+            TypeParam::TypeVar(parameter) => {
+                if let Some(bound) = parameter.bound.as_deref() {
+                    visit(bound);
+                }
+                if let Some(default) = parameter.default.as_deref() {
+                    visit(default);
+                }
+            }
+            TypeParam::TypeVarTuple(parameter) => {
+                if let Some(default) = parameter.default.as_deref() {
+                    visit(default);
+                }
+            }
+            TypeParam::ParamSpec(parameter) => {
+                if let Some(default) = parameter.default.as_deref() {
+                    visit(default);
+                }
+            }
+        }
+    }
+}
+
 #[derive(Default)]
 struct AstFacts<'tokens> {
     bound_builtin_names: HashSet<String>,
@@ -721,6 +749,12 @@ impl<'tokens> AstFacts<'tokens> {
             self.record_annotation_range(annotation.range());
         }
     }
+
+    fn record_type_param_ranges(&mut self, type_params: &TypeParams) {
+        visit_type_param_expressions(type_params, |expression| {
+            self.record_annotation_range(expression.range());
+        });
+    }
 }
 
 impl<'ast> Visitor<'ast> for AstFacts<'_> {
@@ -763,10 +797,21 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
             Stmt::FunctionDef(definition) => {
                 self.record_builtin_name(definition.name.as_str());
                 self.record_function_annotation_ranges(definition);
+                if let Some(type_params) = &definition.type_params {
+                    self.record_type_param_ranges(type_params);
+                }
             }
-            Stmt::ClassDef(definition) => self.record_builtin_name(definition.name.as_str()),
+            Stmt::ClassDef(definition) => {
+                self.record_builtin_name(definition.name.as_str());
+                if let Some(type_params) = &definition.type_params {
+                    self.record_type_param_ranges(type_params);
+                }
+            }
             Stmt::TypeAlias(alias) => {
                 self.record_builtin_target(alias.name.as_ref());
+                if let Some(type_params) = &alias.type_params {
+                    self.record_type_param_ranges(type_params);
+                }
                 self.record_annotation_range(alias.value.range());
             }
             Stmt::Break(statement_break) => {
@@ -1918,6 +1963,18 @@ impl KnownImports {
         self.type_vars.remove(name);
     }
 
+    fn enter_type_params(&mut self, type_params: &TypeParams) {
+        for parameter in type_params.iter() {
+            let name = match parameter {
+                TypeParam::TypeVar(parameter) => parameter.name.as_str(),
+                TypeParam::TypeVarTuple(parameter) => parameter.name.as_str(),
+                TypeParam::ParamSpec(parameter) => parameter.name.as_str(),
+            };
+            self.invalidate(name);
+            self.type_vars.insert(name.to_owned());
+        }
+    }
+
     fn copy_name_from(&mut self, source: &Self, name: &str) {
         self.invalidate(name);
         if let Some(resolved) = source.direct.get(name) {
@@ -2409,13 +2466,6 @@ impl<'imports> NamedBindingInvalidator<'imports> {
     fn visit_statement(imports: &'imports mut KnownImports, statement: &Stmt) {
         visitor::walk_stmt(&mut Self { imports }, statement);
     }
-
-    fn visit_type_params(
-        imports: &'imports mut KnownImports,
-        type_params: &ruff_python_ast::TypeParams,
-    ) {
-        Visitor::visit_type_params(&mut Self { imports }, type_params);
-    }
 }
 
 impl<'ast> Visitor<'ast> for NamedBindingInvalidator<'_> {
@@ -2546,12 +2596,29 @@ impl<'ast> AnnotationCollector<'ast> {
         (!self.qualname.is_empty()).then(|| self.qualname.join("."))
     }
 
+    fn record_type_params(&mut self, type_params: &'ast TypeParams) {
+        visit_type_param_expressions(type_params, |expression| self.record(expression));
+    }
+
+    fn in_type_param_scope(
+        &mut self,
+        name: &str,
+        type_params: Option<&'ast TypeParams>,
+        visit: impl FnOnce(&mut Self),
+    ) {
+        let outer = self.imports.clone();
+        if let Some(type_params) = type_params {
+            self.imports.enter_type_params(type_params);
+        }
+        self.qualname.push(name.to_owned());
+        visit(self);
+        self.qualname.pop();
+        self.imports = outer;
+    }
+
     fn visit_function_header(&mut self, definition: &'ast ruff_python_ast::StmtFunctionDef) {
         for decorator in &definition.decorator_list {
             NamedBindingInvalidator::visit(&mut self.imports, &decorator.expression);
-        }
-        if let Some(type_params) = &definition.type_params {
-            NamedBindingInvalidator::visit_type_params(&mut self.imports, type_params);
         }
         for default in definition
             .parameters
@@ -2560,27 +2627,54 @@ impl<'ast> AnnotationCollector<'ast> {
         {
             NamedBindingInvalidator::visit(&mut self.imports, default);
         }
-        self.qualname.push(definition.name.as_str().to_owned());
+        self.in_type_param_scope(
+            definition.name.as_str(),
+            definition.type_params.as_deref(),
+            |collector| {
+                if let Some(type_params) = definition.type_params.as_deref() {
+                    collector.record_type_params(type_params);
+                }
+                for parameter in &definition.parameters {
+                    if let Some(annotation) = parameter.annotation() {
+                        collector.record(annotation);
+                    }
+                }
+                if let Some(annotation) = definition.returns.as_deref() {
+                    collector.record(annotation);
+                }
+            },
+        );
         for parameter in &definition.parameters {
             if let Some(annotation) = parameter.annotation() {
-                self.record(annotation);
                 NamedBindingInvalidator::visit(&mut self.imports, annotation);
             }
         }
         if let Some(annotation) = definition.returns.as_deref() {
-            self.record(annotation);
             NamedBindingInvalidator::visit(&mut self.imports, annotation);
         }
-        self.qualname.pop();
     }
 
     fn visit_class_header(&mut self, definition: &'ast ruff_python_ast::StmtClassDef) {
         for decorator in &definition.decorator_list {
             NamedBindingInvalidator::visit(&mut self.imports, &decorator.expression);
         }
-        if let Some(type_params) = &definition.type_params {
-            NamedBindingInvalidator::visit_type_params(&mut self.imports, type_params);
-        }
+        self.in_type_param_scope(
+            definition.name.as_str(),
+            definition.type_params.as_deref(),
+            |collector| {
+                if let Some(type_params) = definition.type_params.as_deref() {
+                    collector.record_type_params(type_params);
+                }
+                if let Some(arguments) = &definition.arguments {
+                    for argument in &arguments.args {
+                        NamedBindingInvalidator::visit(&mut collector.imports, argument);
+                    }
+                    for keyword in &arguments.keywords {
+                        NamedBindingInvalidator::visit(&mut collector.imports, &keyword.value);
+                    }
+                }
+            },
+        );
         if let Some(arguments) = &definition.arguments {
             for argument in &arguments.args {
                 NamedBindingInvalidator::visit(&mut self.imports, argument);
@@ -2589,6 +2683,28 @@ impl<'ast> AnnotationCollector<'ast> {
                 NamedBindingInvalidator::visit(&mut self.imports, &keyword.value);
             }
         }
+    }
+
+    fn visit_type_alias(
+        &mut self,
+        statement: &'ast Stmt,
+        alias: &'ast ruff_python_ast::StmtTypeAlias,
+    ) -> ControlFlowExits {
+        let Expr::Name(name) = alias.name.as_ref() else {
+            unreachable!("a parsed type alias name is always an identifier");
+        };
+        self.in_type_param_scope(
+            name.id.as_str(),
+            alias.type_params.as_deref(),
+            |collector| {
+                if let Some(type_params) = alias.type_params.as_deref() {
+                    collector.record_type_params(type_params);
+                }
+                collector.record(alias.value.as_ref());
+            },
+        );
+        self.imports.transfer_statement(statement);
+        ControlFlowExits::fallthrough(self.imports.clone())
     }
 
     fn record(&mut self, annotation: &'ast Expr) {
@@ -2669,6 +2785,9 @@ impl<'ast> AnnotationCollector<'ast> {
         self.imports = inherited_fallback
             .clone()
             .unwrap_or_else(|| inherited.clone());
+        if let Some(type_params) = definition.type_params.as_deref() {
+            self.imports.enter_type_params(type_params);
+        }
         for local in FunctionLocalCollector::collect(definition) {
             self.imports.invalidate(&local);
         }
@@ -2697,15 +2816,20 @@ impl<'ast> AnnotationCollector<'ast> {
         let inherited_bindings = self.class_external_bindings.take();
         let inherited_class_parent_scope = self.class_parent_scope.take();
         let inherited_scope = self.scope_kind;
-        let class_fallback = inherited_fallback.clone().unwrap_or_else(|| {
-            let mut fallback = inherited.clone();
-            fallback.invalidate(definition.name.as_str());
-            fallback
-        });
+        let mut class_scope = inherited.clone();
+        let mut class_fallback = inherited_fallback
+            .clone()
+            .unwrap_or_else(|| inherited.clone());
+        if let Some(type_params) = definition.type_params.as_deref() {
+            class_scope.enter_type_params(type_params);
+            class_fallback.enter_type_params(type_params);
+        }
+        class_fallback.invalidate(definition.name.as_str());
         self.class_body_fallback = Some(class_fallback);
         self.class_external_bindings = Some(ClassExternalBindings::collect(&definition.body));
         self.class_parent_scope = Some(inherited_scope);
         self.scope_kind = ScopeKind::Class;
+        self.imports = class_scope;
         self.qualname.push(definition.name.as_str().to_owned());
         let body_exits = self.visit_suite_flow(&definition.body);
         self.qualname.pop();
@@ -3031,6 +3155,7 @@ impl<'ast> AnnotationCollector<'ast> {
         match statement {
             Stmt::FunctionDef(definition) => self.visit_function_definition(statement, definition),
             Stmt::ClassDef(definition) => self.visit_class_definition(statement, definition),
+            Stmt::TypeAlias(alias) => self.visit_type_alias(statement, alias),
             Stmt::If(statement_if) => self.visit_if(statement_if),
             Stmt::For(statement_for) => self.visit_for(statement_for),
             Stmt::While(statement_while) => self.visit_while(statement_while),

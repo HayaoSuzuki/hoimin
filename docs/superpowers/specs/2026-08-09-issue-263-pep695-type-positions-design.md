@@ -103,6 +103,26 @@ enclosing scope. Existing conservative invalidation continues to account for
 names referenced by decorators, defaults, bases, keywords, and type-parameter
 expressions.
 
+### Type-parameter annotation scope
+
+PEP 695 gives declared type parameters a temporary annotation scope. Those
+names are visible in bounds, defaults, function annotations, class bodies, and
+type-alias values, and they shadow same-named imports from an enclosing scope.
+Decorators and ordinary function parameter defaults remain outside that scope.
+
+`AnnotationCollector` represents this with a cloned `KnownImports` overlay.
+Every declared type-parameter name invalidates an imported direct name or
+module alias and is marked as a type variable inside the overlay. This both
+preserves the existing policy that skips mutations involving type variables
+and prevents an unsafe replacement spelling such as `Sequence[int]` when
+`Sequence` is the declaration's type parameter rather than `typing.Sequence`.
+The outer import environment is restored after the generic declaration.
+
+Generic function and class bodies receive the overlay while their annotations
+are collected. A nested generic declaration adds its own parameters without
+losing the enclosing annotation scope. Type-alias bounds, defaults, and value
+use one overlay and one qualified alias symbol.
+
 ## Error Handling and Compatibility
 
 The analyzer adds no new error class. Parser rejection continues to produce the
@@ -128,6 +148,7 @@ will cover:
 - defaults for the parser-supported type-parameter variants;
 - exact original text, replacement, operator, span, line, and symbol;
 - preservation of nearby runtime candidates;
+- suppression of imported replacement spellings shadowed by a type parameter;
 - absence of runtime bitwise/arithmetic candidates inside type positions;
 - parseability of every emitted replacement;
 - candidate ordering and selectors for declaration-qualified symbols.

@@ -65,9 +65,9 @@ Use type aliases and all three Ruff type-parameter variants. Assert exact source
 fn pep_695_type_positions_emit_type_candidates() {
     let source = concat!(
         "from typing import Sequence\n",
-        "type Values[T: list[str] = list[bytes], *Ts = tuple[str], **P = dict[str, int]] = list[T]\n",
+        "type Values[T: list[str] = list[bytes], *Ts = list[float], **P = list[bool]] = list[int]\n",
         "class Outer:\n",
-        "    type Nested[U: list[int]] = list[U]\n",
+        "    type Nested[U: list[int]] = list[bytes]\n",
     );
     let output = analyze_types(source);
     let observed = output
@@ -88,9 +88,11 @@ fn pep_695_type_positions_emit_type_candidates() {
         [
             ("list[str]", "Sequence[str]", 2, Some("Values")),
             ("list[bytes]", "Sequence[bytes]", 2, Some("Values")),
-            ("list[T]", "Sequence[T]", 2, Some("Values")),
+            ("list[float]", "Sequence[float]", 2, Some("Values")),
+            ("list[bool]", "Sequence[bool]", 2, Some("Values")),
+            ("list[int]", "Sequence[int]", 2, Some("Values")),
             ("list[int]", "Sequence[int]", 4, Some("Outer.Nested")),
-            ("list[U]", "Sequence[U]", 4, Some("Outer.Nested")),
+            ("list[bytes]", "Sequence[bytes]", 4, Some("Outer.Nested")),
         ]
     );
     for candidate in &output.candidates {
@@ -102,6 +104,11 @@ fn pep_695_type_positions_emit_type_candidates() {
 If Ruff rejects a particular default combination because of Python's required
 default ordering, split it into separate declarations while retaining coverage
 for `TypeVar`, `TypeVarTuple`, and `ParamSpec` defaults.
+
+Add a separate regression where an imported `typing.Sequence` is shadowed by a
+PEP 695 type parameter named `Sequence` in a generic function, class, and type
+alias. Assert that `type_list_sequence` is absent in those annotation scopes
+but remains present immediately after them in the enclosing module.
 
 - [ ] **Step 3: Run the focused tests and capture the red result**
 
@@ -131,7 +138,7 @@ git commit -m "test: expose inconsistent PEP 695 type positions"
 
 **Interfaces:**
 - Consumes: Ruff `TypeParam`, `TypeParams`, and `Expr`; existing `AstFacts::record_annotation_range` and `AnnotationCollector::record`.
-- Produces: `visit_type_param_expressions(type_params: &TypeParams, visit: impl FnMut(&Expr))` and consistent consumer integration.
+- Produces: `visit_type_param_expressions(type_params: &TypeParams, visit: impl FnMut(&Expr))`, a `KnownImports` type-parameter overlay, and consistent consumer integration.
 
 - [ ] **Step 1: Import the Ruff type-parameter types**
 
@@ -198,23 +205,37 @@ mutation sites.
 
 - [ ] **Step 4: Collect declaration-qualified type sites**
 
-Add an `AnnotationCollector` helper that temporarily pushes the declaration
-name, records every expression with the current import snapshot, and restores
-the qualification stack:
+Add `KnownImports::enter_type_params` to invalidate any same-named imported
+spelling and mark each declared name as a type variable. Add an
+`AnnotationCollector` helper that temporarily applies this overlay, pushes the
+declaration name, records every expression with the scoped import snapshot,
+and restores both the imports and qualification stack:
 
 ```rust
-fn record_type_params(&mut self, name: &str, type_params: &'ast TypeParams) {
+fn in_type_param_scope(
+    &mut self,
+    name: &str,
+    type_params: Option<&'ast TypeParams>,
+    visit: impl FnOnce(&mut Self),
+) {
+    let outer = self.imports.clone();
+    if let Some(type_params) = type_params {
+        self.imports.enter_type_params(type_params);
+    }
     self.qualname.push(name.to_owned());
-    visit_type_param_expressions(type_params, |expression| self.record(expression));
+    visit(self);
     self.qualname.pop();
+    self.imports = outer;
 }
 ```
 
-Use it from function and class header handling before the declaration name is
-bound. For `Stmt::TypeAlias`, push the alias name, record its type parameters
-and `alias.value`, then pop the name before applying the existing binding
-transfer. Walk or invalidate the expressions in their existing source order so
-`KnownImports` remains conservative.
+Use it for function annotations, class header type positions, and type-alias
+bounds/default/value before the declaration name is bound. Apply the same type
+parameter overlay while collecting generic function and class bodies, then
+restore the enclosing import environment. Keep decorators and ordinary
+function defaults outside the overlay. Walk or invalidate permitted binding
+expressions in their existing source order so `KnownImports` remains
+conservative.
 
 - [ ] **Step 5: Run focused tests and resolve only expectation mistakes**
 
