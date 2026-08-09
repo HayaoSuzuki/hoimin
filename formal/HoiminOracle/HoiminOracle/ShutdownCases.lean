@@ -216,13 +216,11 @@ private def observationJson (item : TerminalObservation) : Lean.Json := Lean.Jso
   ("metrics", .str (componentName item.metrics)),
   ("primary_error", optionalJson causeName item.primaryError),
   ("appended_errors", stringsJson (item.appendedErrors.map causeName)),
-  ("dispatches", Lean.Json.mkObj [
-    ("cleanup", Lean.toJson item.dispatches.1),
-    ("session", Lean.toJson item.dispatches.2.1),
-    ("report", Lean.toJson item.dispatches.2.2.1),
-    ("metrics", Lean.toJson item.dispatches.2.2.2)]),
-  ("session_complete", Lean.toJson item.sessionCompleteFlag),
-  ("report_complete", Lean.toJson item.reportCompleteFlag),
+  ("dispatches", .arr #[Lean.toJson item.dispatches.1,
+    Lean.toJson item.dispatches.2.1, Lean.toJson item.dispatches.2.2.1,
+    Lean.toJson item.dispatches.2.2.2]),
+  ("session_complete_flag", Lean.toJson item.sessionCompleteFlag),
+  ("report_complete_flag", Lean.toJson item.reportCompleteFlag),
   ("returned", Lean.toJson item.returned)
 ]
 
