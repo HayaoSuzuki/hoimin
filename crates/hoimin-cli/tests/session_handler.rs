@@ -994,6 +994,43 @@ fn a_live_run_cannot_be_resumed_by_another_handler() {
 }
 
 #[test]
+fn non_owner_finish_is_rejected_without_changing_run_state() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("sessions.sqlite3");
+    let mut owner = SessionHandler::open(&path).unwrap();
+    let mut contender = SessionHandler::open(&path).unwrap();
+    let fingerprint = RunFingerprint::from_bytes([1; 32]);
+    owner.begin(begin_request(1, "owned")).unwrap();
+
+    let failed = contender
+        .finish(FinishSession {
+            id: EffectId(2),
+            run_id: "owned".to_owned(),
+            complete: false,
+        })
+        .unwrap_err();
+
+    assert_eq!(failed.id, EffectId(2));
+    assert_eq!(failed.failure.code(), "session.finish.owner");
+    let still_active = contender
+        .load(&LoadSession {
+            id: EffectId(3),
+            fingerprint,
+        })
+        .unwrap_err();
+    assert_eq!(still_active.failure.code(), "session.resume.active");
+
+    drop(owner);
+    let loaded = contender
+        .load(&LoadSession {
+            id: EffectId(4),
+            fingerprint,
+        })
+        .unwrap();
+    assert_eq!(loaded.resume.unwrap().run_id, "owned");
+}
+
+#[test]
 fn incomplete_finish_releases_run_ownership_for_resume() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("sessions.sqlite3");
@@ -1152,7 +1189,7 @@ fn ownership_child_fixture_holds_run() {
 }
 
 #[test]
-fn incomplete_finish_is_idempotent_but_completion_is_final() {
+fn successful_finish_releases_the_handlers_finish_authority() {
     let temp = tempfile::tempdir().unwrap();
     let mut handler = SessionHandler::open(temp.path().join("sessions.sqlite3")).unwrap();
     handler.begin(begin_request(1, "partial")).unwrap();
@@ -1163,38 +1200,37 @@ fn incomplete_finish_is_idempotent_but_completion_is_final() {
             complete: false,
         })
         .unwrap();
-    handler
-        .finish(FinishSession {
-            id: EffectId(3),
-            run_id: "partial".to_owned(),
-            complete: false,
-        })
-        .unwrap();
-    handler.finish(finish_request(4, "partial")).unwrap();
-    assert_eq!(
-        handler
-            .finish(finish_request(5, "partial"))
-            .unwrap_err()
-            .failure
-            .code(),
-        "session.finish.state"
-    );
-
     assert_eq!(
         handler
             .finish(FinishSession {
-                id: EffectId(6),
+                id: EffectId(3),
                 run_id: "partial".to_owned(),
                 complete: false,
             })
             .unwrap_err()
             .failure
             .code(),
-        "session.finish.state"
+        "session.finish.owner"
+    );
+    assert_eq!(
+        handler
+            .finish(finish_request(4, "partial"))
+            .unwrap_err()
+            .failure
+            .code(),
+        "session.finish.owner"
     );
 
-    handler.begin(begin_request(7, "direct")).unwrap();
-    handler.finish(finish_request(8, "direct")).unwrap();
+    handler.begin(begin_request(5, "direct")).unwrap();
+    handler.finish(finish_request(6, "direct")).unwrap();
+    assert_eq!(
+        handler
+            .finish(finish_request(7, "direct"))
+            .unwrap_err()
+            .failure
+            .code(),
+        "session.finish.owner"
+    );
 }
 
 #[test]

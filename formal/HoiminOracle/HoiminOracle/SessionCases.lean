@@ -162,7 +162,7 @@ private def specs : List CaseSpec := [
       named (.persist .h1 .r0 .m0 .killed .p0 .valid),
       named (.finish .h1 .r0 true)
     ] },
-  { id := "incomplete_finish_is_idempotent"
+  { id := "released_handler_cannot_finish_again"
     schedule := [
       open0, begin0,
       named (.finish .h0 .r0 false),
@@ -213,7 +213,7 @@ private def specs : List CaseSpec := [
       named (.load .h1 .f0),
       named (.load .h0 .f1)
     ] },
-  { id := "non_owner_incomplete_finish_releases_for_resume"
+  { id := "non_owner_incomplete_finish_is_rejected"
     schedule := [
       open0, open1, begin0,
       named (.finish .h1 .r0 false),

@@ -131,6 +131,7 @@ inductive Rejection
   | handlerClosed
   | duplicateRun
   | active
+  | notOwner
   | missingRun
   | completeRun
   | duplicateResult
@@ -275,6 +276,7 @@ def rejectionCode (event : Event) : Rejection → String
   | .handlerClosed => "session.handler.closed"
   | .duplicateRun => "session.begin"
   | .active => "session.resume.active"
+  | .notOwner => "session.finish.owner"
   | .missingRun =>
       match event with
       | .persist _ _ _ _ _ _ => "session.commit"
@@ -398,6 +400,8 @@ def finishRun (state : State) (handler : Handler) (run : Run)
     (complete : Bool) : Verdict :=
   if !handlerLive state handler then
     reject state .handlerClosed
+  else if !owns state run handler then
+    reject state .notOwner
   else
     match findRun state run with
     | none => reject state .missingRun

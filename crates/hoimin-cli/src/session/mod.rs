@@ -336,11 +336,18 @@ impl SessionHandler {
     ///
     /// # Errors
     ///
-    /// Returns [`EffectFailed`] when the run is missing, already complete, or its transaction
-    /// cannot be started, updated, or committed. Repeating an incomplete finish is idempotent;
-    /// a completed run cannot be finished again.
+    /// Returns [`EffectFailed`] when this handler does not own the run, the run is missing or
+    /// already complete, or its transaction cannot be started, updated, or committed. A
+    /// successful finish releases ownership, so later finish calls require a new load first.
     pub fn finish(&mut self, request: FinishSession) -> Result<SessionFinished, EffectFailed> {
         let id = request.id;
+        if !self.ownerships.contains_key(&request.run_id) {
+            return Err(state_failure(
+                id,
+                "session.finish.owner",
+                "handler does not own run",
+            ));
+        }
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)

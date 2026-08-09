@@ -110,6 +110,14 @@ theorem crash_releases_exactly_handler (state : State) (handler : Handler) :
   rw [stopHandler_owners]
   exact ownerRuns_after_release state handler
 
+theorem non_owner_finish_is_rejected_without_state_change
+    (state : State) (handler : Handler) (run : Run) (complete : Bool)
+    (live : handlerLive state handler = true)
+    (notOwner : owns state run handler = false) :
+    (step state (.finish handler run complete)).rejection.isSome = true ∧
+      (step state (.finish handler run complete)).state = state := by
+  simp [step, finishRun, live, notOwner, reject]
+
 private theorem ownerCount_after_release (state : State) (run : Run) :
     ownerCount (releaseRun state run) run = 0 := by
   simp only [ownerCount, releaseRun]
@@ -128,9 +136,11 @@ theorem successful_complete_has_no_owner
     · simp_all [reject]
     · split at accepted
       · simp_all [reject]
-      · simp_all [accept, replaceRun]
-        change ownerCount (releaseRun state run) run = 0
-        exact ownerCount_after_release state run
+      · split at accepted
+        · simp_all [reject]
+        · simp_all [accept, replaceRun]
+          change ownerCount (releaseRun state run) run = 0
+          exact ownerCount_after_release state run
 
 theorem step_preserves_invariant (state : State) (event : Event)
     (holds : Invariant state) : Invariant (step state event).state := by
