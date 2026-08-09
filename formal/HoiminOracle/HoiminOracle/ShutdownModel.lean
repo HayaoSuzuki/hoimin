@@ -4,15 +4,15 @@ namespace HoiminOracle.ShutdownAudit
 
 inductive StopCause
   | interrupt | forcedInterrupt | deadline | processFailure | infrastructureFailure
-  deriving Repr, DecidableEq, BEq
+  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
 
 inductive ComponentState
   | absent | pending | complete | failed | detached
-  deriving Repr, DecidableEq, BEq
+  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
 
 inductive ProcessState
   | notStarted | running | terminationRequested | exited | reaped
-  deriving Repr, DecidableEq, BEq
+  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
 
 inductive Event
   | boot | startProcess | firstInterrupt | secondInterrupt | deadlineReached
@@ -25,7 +25,7 @@ inductive Event
   | startReport | reportWritten | reportFailed
   | startMetrics | metricsWritten | metricsFailed | metricsSkipped
   | returnSuccess | returnFailure
-  deriving Repr, DecidableEq, BEq
+  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
 
 structure State where
   cause : Option StopCause := none
@@ -57,7 +57,7 @@ structure State where
   orderingViolations : Nat := 0
   forcedWaits : Nat := 0
   lostOwnership : Bool := false
-  deriving Repr, DecidableEq, BEq
+  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
 
 def State.initial : State := {}
 
@@ -192,7 +192,9 @@ def step (state : State) (event : Event) : Verdict :=
         | none => accept { state with
             cause := some .interrupt
             deadlineOrdinal := some 0
-            primaryError := some .interrupt }
+            primaryError := match state.primaryError with
+              | none => some .interrupt
+              | failure => failure }
         | some _ => accept state
     | .secondInterrupt =>
         let blocked := state.blocking == .pending
@@ -214,7 +216,9 @@ def step (state : State) (event : Event) : Verdict :=
         | none => accept { state with
             cause := some .deadline
             deadlineOrdinal := some 0
-            primaryError := some .deadline }
+            primaryError := match state.primaryError with
+              | none => some .deadline
+              | failure => failure }
         | some _ => accept state
     | .processExited =>
         if state.process == .running || state.process == .terminationRequested then
