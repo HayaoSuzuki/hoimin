@@ -16,3 +16,7 @@ root = "BudgetMain"
 [[lean_exe]]
 name = "generate_session"
 root = "SessionAuditMain"
+
+[[lean_exe]]
+name = "generate_shutdown"
+root = "ShutdownAuditMain"

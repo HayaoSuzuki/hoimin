@@ -4,15 +4,15 @@ namespace HoiminOracle.ShutdownAudit
 
 inductive StopCause
   | interrupt | forcedInterrupt | deadline | processFailure | infrastructureFailure
-  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
+  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq, Hashable
 
 inductive ComponentState
   | absent | pending | complete | failed | detached
-  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
+  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq, Hashable
 
 inductive ProcessState
   | notStarted | running | terminationRequested | exited | reaped
-  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
+  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq, Hashable
 
 inductive Event
   | boot | startProcess | firstInterrupt | secondInterrupt | deadlineReached
@@ -25,7 +25,7 @@ inductive Event
   | startReport | reportWritten | reportFailed
   | startMetrics | metricsWritten | metricsFailed | metricsSkipped
   | returnSuccess | returnFailure
-  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
+  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq, Hashable
 
 structure State where
   cause : Option StopCause := none
@@ -57,7 +57,7 @@ structure State where
   orderingViolations : Nat := 0
   forcedWaits : Nat := 0
   lostOwnership : Bool := false
-  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
+  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq, Hashable
 
 def State.initial : State := {}
 
