@@ -64,12 +64,19 @@ is never reported as an implementation mismatch.
 | Prepare, execute, and accept of apply/reset/create tasks | `internal-fixture` | Crate-private API exercised by a `#[cfg(test)]` adapter |
 | Duplicate or late completion against an independently installed generation | `internal-fixture` | Synthetic crate-local setup is needed because completions are affine Rust values |
 | Shell completion and cleanup interleavings permitted by the real core state machine | `strict` | Existing shell entry point with public configuration and controlled blocking hooks |
+| Calling `WorkspaceHandler::handle_cleanup` while a crate-private task remains externally owned | `model-only` | The shell drains owned blocking work before enqueueing stop-produced finalization/cleanup effects; the handler alone does not track external task ownership |
 | Arbitrary completion delivery not emitted by the core state machine | `model-only` | Useful for sensitivity, but not a production scheduling premise |
 | Failure between individual filesystem syscalls | `model-only` | No hook exposes every syscall boundary |
 | Corpus parse, Lean execution, temporary filesystem, or adapter panic | `infrastructure-error` | Harness failure, never a semantic mismatch |
 
 The audit report records which rows received executable correspondence. Any
 unexercised row remains an explicit limitation.
+
+The cleanup gate is therefore a shell protocol obligation, not a self-contained
+`WorkspaceHandler` check. The model retains the stronger task-empty guard so a
+future caller or scheduler reordering is detected, while direct handler/task
+composition under that impossible production schedule is classified
+`model-only` rather than forced into correspondence.
 
 ## Formal model
 
