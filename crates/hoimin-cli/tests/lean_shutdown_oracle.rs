@@ -1,13 +1,16 @@
+use std::collections::HashSet;
+#[cfg(unix)]
 use std::{
-    collections::HashSet,
     path::{Path, PathBuf},
     process::Stdio,
     time::{Duration, Instant},
 };
 
 use serde::Deserialize;
+#[cfg(unix)]
 use tokio::io::AsyncReadExt;
 
+#[cfg(unix)]
 const REVIEWED_MISMATCHES: &[&str] = &[];
 const EVENTS: &[&str] = &[
     "boot",
@@ -90,6 +93,7 @@ struct OracleCase {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(unix)]
 enum CaseClass {
     Match,
     Mismatch,
@@ -106,6 +110,7 @@ struct CliObservation {
 }
 
 #[derive(Debug)]
+#[cfg(unix)]
 struct CaseResult {
     id: String,
     class: CaseClass,
@@ -233,6 +238,7 @@ fn project_strict(case: &OracleCase) -> Result<CliObservation, String> {
     })
 }
 
+#[cfg(unix)]
 struct FixturePaths {
     _project_guard: tempfile::TempDir,
     _coordinator_guard: tempfile::TempDir,
@@ -242,6 +248,7 @@ struct FixturePaths {
     descendant_marker: PathBuf,
 }
 
+#[cfg(unix)]
 impl FixturePaths {
     fn create() -> Result<Self, String> {
         let project_guard = tempfile::tempdir().map_err(|error| error.to_string())?;
@@ -261,10 +268,12 @@ impl FixturePaths {
 }
 
 #[derive(Clone, Debug)]
+#[cfg(unix)]
 struct FixtureProcesses {
     pids: Vec<u32>,
 }
 
+#[cfg(unix)]
 fn write_parallel_project(root: &Path) -> Result<(), String> {
     let source = root.join("src");
     std::fs::create_dir_all(&source).map_err(|error| error.to_string())?;
@@ -276,6 +285,7 @@ fn write_parallel_project(root: &Path) -> Result<(), String> {
     .map_err(|error| error.to_string())
 }
 
+#[cfg(unix)]
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -284,6 +294,7 @@ fn repo_root() -> PathBuf {
         .to_owned()
 }
 
+#[cfg(unix)]
 fn python_executable() -> PathBuf {
     let executable = repo_root().join(".venv/bin/python");
     assert!(
@@ -294,6 +305,7 @@ fn python_executable() -> PathBuf {
     executable
 }
 
+#[cfg(unix)]
 fn spawn_scenario(
     case: &OracleCase,
     paths: &FixturePaths,
@@ -428,6 +440,7 @@ async fn reap_fixture_processes(processes: &FixtureProcesses) -> Result<(), Stri
     Ok(())
 }
 
+#[cfg(unix)]
 fn observe_report(bytes: &[u8]) -> Result<String, String> {
     let report: serde_json::Value = serde_json::from_slice(bytes).map_err(|error| {
         format!(
@@ -441,6 +454,7 @@ fn observe_report(bytes: &[u8]) -> Result<String, String> {
         .ok_or_else(|| "report has no boolean summary.complete".to_owned())
 }
 
+#[cfg(unix)]
 fn observe_session(path: &Path) -> Result<String, String> {
     let complete: i64 = rusqlite::Connection::open(path)
         .map_err(|error| error.to_string())?
