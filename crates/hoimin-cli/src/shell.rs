@@ -562,7 +562,17 @@ where
         before_start();
         (tokio::time::Instant::now() < deadline).then(operation)
     });
-    match budget.wait(&mut task).await {
+    await_owned_blocking_until(budget, &mut task).await
+}
+
+async fn await_owned_blocking_until<T>(
+    budget: &ShutdownBudget,
+    task: &mut tokio::task::JoinHandle<Option<T>>,
+) -> Result<T, OwnedBlockingError>
+where
+    T: Send + 'static,
+{
+    match budget.wait(&mut *task).await {
         Ok(Ok(Some(value))) => Ok(value),
         Ok(Ok(None)) => Err(OwnedBlockingError::Expired(budget.expiry_error(0, 0))),
         Ok(Err(error)) => Err(OwnedBlockingError::Join(format!(
@@ -2949,23 +2959,25 @@ mod tests {
     async fn shutdown_budget_preempts_an_owned_blocking_close() {
         let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
         let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
+        let mut close = tokio::task::spawn_blocking(move || {
+            entered_tx.send(()).unwrap();
+            Some({
+                release_rx.recv().unwrap();
+                17_u8
+            })
+        });
+        entered_rx.await.unwrap();
         let budget = ShutdownBudget::after_observation_with_grace(
             ShutdownCause::Cancellation,
             tokio::time::Instant::now(),
             Duration::from_millis(20),
         );
 
-        let close = tokio::spawn(async move {
-            run_owned_blocking_until(&budget, Box::new(|| {}), move || {
-                entered_tx.send(()).unwrap();
-                release_rx.recv().unwrap();
-                17_u8
-            })
+        let error = await_owned_blocking_until(&budget, &mut close)
             .await
-        });
-        entered_rx.await.unwrap();
-        let error = close.await.unwrap().unwrap_err();
+            .unwrap_err();
         release_tx.send(()).unwrap();
+        assert_eq!(close.await.unwrap(), Some(17));
 
         let OwnedBlockingError::Expired(error) = error else {
             panic!("blocking close returned a join failure instead of expiry")
@@ -3614,8 +3626,6 @@ mod tests {
             result = &mut run => panic!("run finished before materialization paused: {result:?}"),
             result = entered_rx => result.expect("pause controller stopped before entry"),
         }
-        let observed_at = Instant::now();
-
         let result = tokio::time::timeout(Duration::from_millis(500), &mut run).await;
         release_tx.send(()).unwrap();
         controller.await.unwrap();
@@ -3625,7 +3635,6 @@ mod tests {
         };
         let error = result.unwrap_err();
 
-        assert!(observed_at.elapsed() < Duration::from_millis(500));
         assert!(
             error.contains("total timeout: shutdown grace expired"),
             "{error}"

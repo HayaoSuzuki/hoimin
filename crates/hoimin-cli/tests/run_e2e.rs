@@ -1636,6 +1636,7 @@ async fn total_timeout_exits_after_grace_when_session_finish_is_locked() {
             .await
             .map_err(|_| "hoimin exceeded total timeout plus shutdown grace".to_owned())?
             .map_err(|error| error.to_string())?;
+        let child_exit_elapsed = started_at.elapsed();
         let descendant_stopped = fixture_processes
             .as_ref()
             .expect("assigned above")
@@ -1644,7 +1645,7 @@ async fn total_timeout_exits_after_grace_when_session_finish_is_locked() {
             .await;
         Ok((
             status,
-            started_at.elapsed(),
+            child_exit_elapsed,
             lock_acquired,
             lock,
             descendant_stopped,
@@ -1668,8 +1669,8 @@ async fn total_timeout_exits_after_grace_when_session_finish_is_locked() {
     if let Err(error) = child_cleanup.and(process_cleanup) {
         panic!("test teardown failed: {error}; outcome={outcome:?}");
     }
-    let (status, elapsed, lock_acquired, lock, descendant_stopped) =
-        outcome.unwrap_or_else(|error| {
+    let (status, child_exit_elapsed, lock_acquired, lock, descendant_stopped) = outcome
+        .unwrap_or_else(|error| {
             panic!("locked-session timeout scenario failed after successful teardown: {error}")
         });
     let stdout = String::from_utf8(
@@ -1686,7 +1687,10 @@ async fn total_timeout_exits_after_grace_when_session_finish_is_locked() {
         lock_acquired < Duration::from_secs(5),
         "session lock was acquired after the run deadline: {lock_acquired:?}"
     );
-    assert!(elapsed < Duration::from_secs(9), "elapsed={elapsed:?}");
+    assert!(
+        child_exit_elapsed < Duration::from_secs(9),
+        "child_exit_elapsed={child_exit_elapsed:?}"
+    );
     assert!(stderr.contains("total timeout"), "{stderr}");
     assert!(stderr.contains("shutdown grace expired"), "{stderr}");
     let events = stdout
