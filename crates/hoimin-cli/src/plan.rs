@@ -787,6 +787,7 @@ fn plan_diagnostic(diagnostic: &AnalyzerDiagnostic) -> PlanDiagnostic {
 #[cfg(test)]
 mod tests {
     use std::ffi::OsString;
+    use std::fmt::Write as _;
     use std::sync::{Arc, mpsc};
     use std::time::Duration;
 
@@ -894,6 +895,38 @@ mod tests {
             truncated: true,
             diagnostics: Vec::new(),
         }
+    }
+
+    #[tokio::test]
+    #[ignore = "benchmark harness; run explicitly in release mode"]
+    async fn benchmark_candidate_conversion_and_manifest() {
+        let project = Project::new();
+        let mut source = String::with_capacity(307_200);
+        for index in 0..7_680 {
+            writeln!(
+                source,
+                "result_{index:05} = left_{index:05} + right_{index:05}"
+            )
+            .expect("writing to String cannot fail");
+        }
+        assert_eq!(source.len(), 307_200);
+        std::fs::write(project.root.join("src/calc.py"), &source).unwrap();
+
+        let started = std::time::Instant::now();
+        let output = super::create(project.config("30s")).await.unwrap();
+        let manifest_json = serde_json::to_vec(&output.manifest).unwrap();
+        let elapsed = started.elapsed();
+
+        assert_eq!(output.manifest.candidates.len(), 7_680);
+        assert!(!manifest_json.is_empty());
+        std::hint::black_box(&manifest_json);
+        println!(
+            "source_bytes={} candidates={} manifest_bytes={} elapsed_ms={}",
+            source.len(),
+            output.manifest.candidates.len(),
+            manifest_json.len(),
+            elapsed.as_secs_f64() * 1_000.0,
+        );
     }
 
     #[test]
