@@ -13,8 +13,9 @@ pub use store::*;
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{
     AnalysisDiagnostic as RunAnalysisDiagnostic, AnalysisFinished, AnalyzeFile,
-    CANDIDATE_SCHEMA_VERSION, CandidateDescriptor, EffectFailed, EffectId, MutationCandidate,
-    MutationOperatorSelection, MutationProfile, TargetSlice, validate_candidate,
+    CANDIDATE_SCHEMA_VERSION, CandidateDescriptor, CandidateValidationContext, EffectFailed,
+    EffectId, MutationCandidate, MutationOperatorSelection, MutationProfile, TargetSlice,
+    validate_candidate_with_context,
 };
 
 use crate::process::ProcessCancellation;
@@ -345,6 +346,7 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
             || cancellation.is_cancelled(),
         )
         .map_err(|_| discovery_cancelled())?;
+        let validation = CandidateValidationContext::new(&source);
         for candidate in output.candidates {
             ensure_discovery_active(&cancellation)?;
             let sequence = u64::try_from(discovery.candidates.len())
@@ -359,7 +361,7 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
                 })?;
             discovery
                 .candidates
-                .push(mutation_candidate(&source, candidate, sequence)?);
+                .push(mutation_candidate(&validation, candidate, sequence)?);
         }
         discovery.diagnostics.extend(output.diagnostics);
         if output.truncated {
@@ -552,6 +554,7 @@ fn analyze_and_store(
         || cancellation.is_cancelled(),
     )
     .map_err(|_| cancelled(id))?;
+    let validation = CandidateValidationContext::new(&source);
     for candidate in output.candidates {
         if cancellation.is_cancelled() {
             return Err(cancelled(id));
@@ -559,7 +562,7 @@ fn analyze_and_store(
         let sequence = store.count().checked_add(1).ok_or_else(|| {
             EffectFailed::other(id, "analyzer.candidate", "candidate sequence overflow")
         })?;
-        let candidate = mutation_candidate(&source, candidate, sequence)?;
+        let candidate = mutation_candidate(&validation, candidate, sequence)?;
         store
             .push(&candidate)
             .map_err(|error| EffectFailed::other(id, "analyzer.store", error.to_string()))?;
@@ -655,7 +658,7 @@ fn cancelled(id: EffectId) -> EffectFailed {
 }
 
 fn mutation_candidate(
-    source: &[u8],
+    validation: &CandidateValidationContext<'_>,
     candidate: AnalyzerCandidate,
     sequence: u64,
 ) -> Result<MutationCandidate, EffectFailed> {
@@ -669,9 +672,9 @@ fn mutation_candidate(
         line: candidate.line,
         column: candidate.column,
         symbol: candidate.symbol,
-        file_hash: blake3::hash(source).to_hex().to_string(),
+        file_hash: validation.file_hash().to_owned(),
     };
-    let id = validate_candidate(source, &descriptor).map_err(|error| {
+    let id = validate_candidate_with_context(validation, &descriptor).map_err(|error| {
         EffectFailed::other(EffectId(0), "analyzer.candidate", error.to_string())
     })?;
     Ok(MutationCandidate {
@@ -761,7 +764,7 @@ mod tests {
         let context = CandidateValidationContext::new(source);
 
         let mut stale_original = analyzer_candidate();
-        stale_original.original = "!=".into();
+        stale_original.original = ">=".into();
         let error = mutation_candidate(&context, stale_original, 1).unwrap_err();
         assert_eq!(error.failure.code(), "analyzer.candidate");
         assert_eq!(
