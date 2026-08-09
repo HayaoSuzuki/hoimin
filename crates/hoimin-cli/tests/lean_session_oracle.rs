@@ -154,6 +154,7 @@ fn validate_case(case: &OracleCase) -> Result<(), String> {
                 code,
                 "session.commit"
                     | "session.duplicate_result"
+                    | "session.finish.owner"
                     | "session.finish.state"
                     | "session.lookup.complete"
                     | "session.lookup.state"
@@ -810,8 +811,6 @@ fn case_panics_are_infrastructure_errors() {
 
 #[test]
 fn oracle_correspondence() {
-    const KNOWN_MISMATCH: &str = "non_owner_incomplete_finish_releases_for_resume";
-
     let cases = parse_corpus(corpus_text()).unwrap();
     let selected = std::env::var("HOIMIN_SESSION_ORACLE_CASE").ok();
     let selected_cases = cases
@@ -824,14 +823,7 @@ fn oracle_correspondence() {
     let results = selected_cases.into_iter().map(run_case).collect::<Vec<_>>();
     let failures = results
         .iter()
-        .filter(|result| {
-            let expected_class = if result.id == KNOWN_MISMATCH {
-                CaseClass::Mismatch
-            } else {
-                CaseClass::Match
-            };
-            result.class != expected_class
-        })
+        .filter(|result| result.class != CaseClass::Match)
         .map(|result| {
             let detail = result
                 .detail
@@ -841,12 +833,4 @@ fn oracle_correspondence() {
         })
         .collect::<Vec<_>>();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-
-    if selected.as_ref().is_none_or(|id| id == KNOWN_MISMATCH) {
-        let counterexample = results
-            .iter()
-            .find(|result| result.id == KNOWN_MISMATCH)
-            .expect("known strict counterexample must remain in the corpus");
-        assert_eq!(counterexample.class, CaseClass::Mismatch);
-    }
 }

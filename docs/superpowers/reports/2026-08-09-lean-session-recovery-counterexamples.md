@@ -1,5 +1,16 @@
 # Lean Session Recovery Counterexample Ledger
 
+## Resolution: Issue #281
+
+Resolved on 2026-08-09. `SessionHandler::finish` now rejects a handler that
+does not own the run before any SQLite transaction begins. The rejected event
+returns `session.finish.owner`, preserves the incomplete run row, and leaves
+the real owner's lock intact. The strict Lean/Rust case was renamed to
+`non_owner_incomplete_finish_is_rejected` and now matches; the complete corpus
+has 18 matches and zero mismatches.
+
+The original counterexample below remains as historical evidence.
+
 ## Non-owner incomplete finish leaves the run locked
 
 claim:

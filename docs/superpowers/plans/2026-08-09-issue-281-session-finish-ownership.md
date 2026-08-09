@@ -10,7 +10,8 @@
 
 ## Global Constraints
 
-- Preserve owner complete and incomplete finish behavior.
+- Preserve complete and incomplete finish behavior while the caller owns the run.
+- Treat successful finish as releasing both the lock and that handler's authority to finish again.
 - Reject non-owner finish with `session.finish.owner` before any database write.
 - Do not broaden ownership enforcement to lookup or persistence in this issue.
 - Keep all 18 session-recovery oracle cases strict; no reviewed mismatch remains.
@@ -85,6 +86,13 @@ cargo test -p hoimin-cli --test session_handler
 
 Expected: both commands PASS.
 
+If the full integration target exposes the old incomplete-finish idempotency
+expectation, rename it to
+`successful_finish_releases_the_handlers_finish_authority` and assert that
+subsequent incomplete or complete finish calls return
+`session.finish.owner`. A reusable post-release authorization is unsafe because
+another handler may acquire the run between calls.
+
 ### Task 2: Formalize the repaired ownership contract
 
 **Interfaces:**
@@ -113,8 +121,10 @@ branch.
 
 - [ ] **Step 3: Rename and regenerate the strict case**
 
-Rename `non_owner_incomplete_finish_releases_for_resume` to
-`non_owner_incomplete_finish_is_rejected`, preserving its schedule. Generate
+Rename `incomplete_finish_is_idempotent` to
+`released_handler_cannot_finish_again`. Rename
+`non_owner_incomplete_finish_releases_for_resume` to
+`non_owner_incomplete_finish_is_rejected`, preserving both schedules. Generate
 and check the corpus:
 
 ```bash

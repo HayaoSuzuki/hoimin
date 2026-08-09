@@ -12,6 +12,31 @@ The other 17 strict corpus cases matched `SessionHandler`. Existing process
 death, contention, and replacement rollback fixtures also passed. No production
 code was changed by this audit.
 
+## Resolution: Issue #281
+
+The confirmed mismatch was repaired on 2026-08-09 by requiring the calling
+`SessionHandler` to own the run before `finish` starts its SQLite transaction.
+A rejected call now returns `session.finish.owner` without changing durable
+state or the actual owner's lock. A successful finish releases ownership, so
+that handler must load and own the run again before another finish.
+
+The Lean model now rejects non-owner finish without changing state and includes
+the theorem `non_owner_finish_is_rejected_without_state_change`. The strict
+case is now `non_owner_incomplete_finish_is_rejected`; the former idempotency
+case is `released_handler_cannot_finish_again`. The regenerated 18-case corpus
+matches the Rust public API in all 18 cases, and the Rust adapter contains no
+known-mismatch exemption.
+
+Current focused reproduction:
+
+```bash
+HOIMIN_SESSION_ORACLE_CASE=non_owner_incomplete_finish_is_rejected \
+  cargo test -p hoimin-cli --test lean_session_oracle oracle_correspondence -- --exact --nocapture
+```
+
+The remaining sections preserve the original audit result and evidence as the
+historical record that led to Issue #281.
+
 ## Claim and excluded scope
 
 The audited contract combines valid-schema SQLite state and live run ownership:

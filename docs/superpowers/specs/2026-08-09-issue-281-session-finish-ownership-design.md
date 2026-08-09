@@ -21,13 +21,17 @@ The confirmed trace is:
 run. The check happens before opening the SQLite transaction, so a rejected
 finish cannot modify durable state. The failure is an existing
 `EffectFailure::SessionDatabase` with the new stable code
-`session.finish.owner`, operation `mark run finished`, and a message that the
-handler does not own the run.
+`session.finish.owner`, operation `validate session lifecycle`, and a message
+that the handler does not own the run.
 
-An owner may continue to finish a run as complete or incomplete. A successful
-finish commits first and then removes the caller's in-memory ownership, which
-preserves the current release behavior. Existing state errors for missing or
-complete runs remain unchanged when the caller owns that run.
+An owner may finish a run as complete or incomplete. A successful finish
+commits first and then removes the caller's in-memory ownership, which
+preserves the current release behavior. Because ownership is the authorization
+to finish, a later call through that handler is rejected until it explicitly
+loads and owns the run again. This deliberately tightens the earlier
+incomplete-finish idempotency claim: retaining a reusable authorization after
+releasing the lock would let a stale handler finish a run claimed by another
+handler.
 
 ## Alternatives considered
 
@@ -46,8 +50,9 @@ complete runs remain unchanged when the caller owns that run.
 The Lean session model gains a `notOwner` rejection. `finishRun` rejects when
 `owns state run handler` is false and otherwise performs the existing durable
 finish plus ownership release. The strict corpus keeps the two-handler trace
-but renames it to describe rejection. The Rust adapter must have no reviewed
-mismatch exemption after the repair.
+but renames it to describe rejection. The former incomplete-finish idempotency
+case becomes `released_handler_cannot_finish_again`. The Rust adapter must have
+no reviewed mismatch exemption after the repair.
 
 ## Tests and acceptance
 
@@ -56,6 +61,9 @@ mismatch exemption after the repair.
 - The test verifies the owner remains active and that dropping the owner makes
   the still-incomplete run resumable, proving the rejected call did not mutate
   durable state.
+- Existing finish coverage verifies that a successful finish removes the
+  handler's authority and a later finish is rejected with
+  `session.finish.owner`.
 - The Lean model builds, its corpus is regenerated and fresh, sensitivity
   remains effective, and all 18 strict cases match Rust.
 - Session integration tests and the Rust workspace test suite pass.
