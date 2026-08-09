@@ -692,7 +692,10 @@ fn mutation_candidate(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hoimin_core::{EffectId, MutationProfile, TargetSlice};
+    use hoimin_core::{
+        CandidateIdentity, CandidateValidationContext, EffectId, MutationProfile, TargetSlice,
+        stable_mutant_id,
+    };
     use std::sync::{Arc, mpsc};
     use std::time::Duration;
 
@@ -707,6 +710,73 @@ mod tests {
             final_target: true,
             max_candidates: 10,
         }
+    }
+
+    fn analyzer_candidate() -> AnalyzerCandidate {
+        AnalyzerCandidate {
+            path: "src/calc.py".into(),
+            span: hoimin_core::ByteSpan {
+                start: 12,
+                length: 2,
+            },
+            original: "==".into(),
+            replacement: "!=".into(),
+            operator: "compare_eq_ne".into(),
+            line: 2,
+            column: 6,
+            symbol: Some("compare".into()),
+        }
+    }
+
+    #[test]
+    fn batch_conversion_preserves_strict_candidate_identity() {
+        let source = b"x = 1\nvalue == 2\n";
+        let context = CandidateValidationContext::new(source);
+
+        let converted = mutation_candidate(&context, analyzer_candidate(), 7).unwrap();
+        let identity = CandidateIdentity {
+            schema_version: CANDIDATE_SCHEMA_VERSION,
+            file_hash: blake3::hash(source).to_hex().to_string(),
+            path: "src/calc.py".into(),
+            span: hoimin_core::ByteSpan {
+                start: 12,
+                length: 2,
+            },
+            operator: "compare_eq_ne".into(),
+            replacement: "!=".into(),
+        };
+
+        assert_eq!(converted.id, stable_mutant_id(&identity).to_string());
+        assert_eq!(converted.sequence, 7);
+        assert_eq!(converted.file_hash, context.file_hash());
+        assert_eq!(converted.original, "==");
+        assert_eq!(converted.line, 2);
+        assert_eq!(converted.column, 6);
+        assert_eq!(converted.symbol.as_deref(), Some("compare"));
+    }
+
+    #[test]
+    fn batch_conversion_rejects_stale_source_metadata() {
+        let source = b"x = 1\nvalue == 2\n";
+        let context = CandidateValidationContext::new(source);
+
+        let mut stale_original = analyzer_candidate();
+        stale_original.original = "!=".into();
+        let error = mutation_candidate(&context, stale_original, 1).unwrap_err();
+        assert_eq!(error.failure.code(), "analyzer.candidate");
+        assert_eq!(
+            error.failure.message(),
+            "candidate original text does not match the source span"
+        );
+
+        let mut stale_location = analyzer_candidate();
+        stale_location.column = 5;
+        let error = mutation_candidate(&context, stale_location, 1).unwrap_err();
+        assert_eq!(error.failure.code(), "analyzer.candidate");
+        assert_eq!(
+            error.failure.message(),
+            "candidate line or column does not match its byte span"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
