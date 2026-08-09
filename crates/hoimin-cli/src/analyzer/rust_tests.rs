@@ -2140,6 +2140,102 @@ fn interpolated_string_pairs_skip_literals_and_retain_expressions() {
 }
 
 #[test]
+fn pep_695_type_positions_suppress_runtime_mutations() {
+    let source = concat!(
+        "def convert[T: Left | Right = list[str]](value: T):\n",
+        "    return left | right\n",
+        "class Box[U: Base | None = tuple[int]]:\n",
+        "    runtime = first + second\n",
+    );
+    let output = analyze(source);
+    let observed = output
+        .candidates
+        .iter()
+        .filter(|candidate| {
+            matches!(
+                candidate.operator.as_str(),
+                "bitwise_and_or" | "binary_add_sub"
+            )
+        })
+        .map(|candidate| (candidate.original.as_str(), candidate.line))
+        .collect::<Vec<_>>();
+
+    assert_eq!(observed, [("|", 2), ("+", 4)]);
+    for candidate in &output.candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
+fn pep_695_type_positions_emit_type_candidates() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "type Values[T: list[str] = list[bytes], *Ts = list[float], **P = list[bool]] = list[int]\n",
+        "class Outer:\n",
+        "    type Nested[U: list[int]] = list[bytes]\n",
+    );
+    let output = analyze_types(source);
+    let observed = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "type_list_sequence")
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.line,
+                candidate.symbol.as_deref(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        observed,
+        [
+            ("list[str]", "Sequence[str]", 2, Some("Values")),
+            ("list[bytes]", "Sequence[bytes]", 2, Some("Values")),
+            ("list[float]", "Sequence[float]", 2, Some("Values")),
+            ("list[bool]", "Sequence[bool]", 2, Some("Values")),
+            ("list[int]", "Sequence[int]", 2, Some("Values")),
+            ("list[int]", "Sequence[int]", 4, Some("Outer.Nested")),
+            ("list[bytes]", "Sequence[bytes]", 4, Some("Outer.Nested")),
+        ]
+    );
+    for candidate in &output.candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
+fn pep_695_type_parameters_shadow_imported_replacement_spellings() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "def convert[Sequence](value: list[int]) -> list[str]:\n",
+        "    local: list[float]\n",
+        "class Box[Sequence]:\n",
+        "    field: list[bytes]\n",
+        "type Alias[Sequence] = list[int]\n",
+        "safe: list[bool]\n",
+    );
+    let output = analyze_types(source);
+    let observed = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "type_list_sequence")
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.line,
+                candidate.symbol.as_deref(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(observed, [("list[bool]", "Sequence[bool]", 7, None)]);
+}
+
+#[test]
 fn type_annotations_emit_supported_candidates_in_source_order() {
     let source = "from typing import AbstractSet, Iterator, Mapping, Optional\nimport typing as t\nfrom collections.abc import Iterable, Sequence\n\nmodule_value: Optional[int]\n\nclass Model:\n    names: list[str]\n\n    def convert(self, name: str | None, age: t.Optional[int]) -> set[str]:\n        mapping: dict[str, int] = {}\n        values: Iterable[str] = []\n        ordered: Sequence[str] = []\n        return set()\n";
     let output = analyze_types(source);
