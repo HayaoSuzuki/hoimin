@@ -95,13 +95,7 @@ pub struct CandidateValidationContext<'source> {
 impl<'source> CandidateValidationContext<'source> {
     #[must_use]
     pub fn new(source: &'source [u8]) -> Self {
-        let mut line_starts = Vec::with_capacity(
-            source
-                .iter()
-                .filter(|byte| **byte == b'\n')
-                .count()
-                .saturating_add(1),
-        );
+        let mut line_starts = Vec::new();
         line_starts.push(0);
         line_starts.extend(
             source
