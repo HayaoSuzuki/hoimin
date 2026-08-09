@@ -21,6 +21,12 @@ had passed earlier in the same Windows job, and the retry failed at the second
 test instead. The analyzer-only changes in PR #285 do not participate in either
 path.
 
+PR #287 then exposed the same setup defect in
+`shutdown_budget_preempts_an_owned_blocking_close`: its 20 ms budget started
+before `spawn_blocking` acquired a thread. Under Windows runner load, the
+budget expired before the operation sent its readiness signal, so the test
+failed with `RecvError` instead of exercising an already-owned close.
+
 ## Options considered
 
 1. Measure semantic milestones. Record child-exit elapsed immediately after
@@ -56,12 +62,27 @@ teardown.
 The error class and outstanding blocking-I/O count assertions remain
 unchanged.
 
+### Already-owned blocking close
+
+Extract the existing join-handle wait and expiry classification from
+`run_owned_blocking_until` into a private `await_owned_blocking_until` helper.
+The production wrapper still creates the same task, performs the same
+pre-deadline operation guard, and delegates to exactly the same wait logic.
+
+The test creates that shaped blocking task first, observes its readiness, and
+only then constructs the 20 ms shutdown budget and calls the extracted wait.
+This makes "owned" a configured premise rather than a scheduler assumption.
+On expiry, releasing the blocking operation remains explicit so the test does
+not leak work.
+
 ## Test strategy
 
 - Run each focused test repeatedly to exercise scheduling variation.
+- Run the already-owned blocking-close test repeatedly with its deterministic
+  readiness-before-budget ordering.
 - Run the complete CLI library and `run_e2e` suites.
 - Run formatting, Clippy, and the workspace test suite.
 - Require the Windows CI job to pass before squash merge.
 
-No production code, timeout value, shutdown grace, public API, or report format
-changes.
+The private helper extraction does not change production behavior. No timeout
+value, shutdown grace, public API, or report format changes.

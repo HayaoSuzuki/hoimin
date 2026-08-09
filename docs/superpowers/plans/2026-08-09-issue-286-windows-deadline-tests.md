@@ -4,13 +4,13 @@
 
 **Goal:** Stop Windows CI from charging teardown work to shutdown deadlines while preserving every production timeout and behavioral assertion.
 
-**Architecture:** Change only the two affected test measurements. Capture the subprocess completion milestone before descendant observation in the E2E test, and use the existing Tokio timeout result as the unit test's deadline observation before controller teardown.
+**Architecture:** Measure the subprocess completion milestone before descendant observation, use the existing Tokio timeout result before controller teardown, and establish blocking-task ownership before starting the preemption test's budget. A private helper extraction reuses the unchanged production wait/classification logic for that deterministic test.
 
 **Tech Stack:** Rust 2024, Tokio, Cargo integration tests, GitHub Actions Windows runners
 
 ## Global Constraints
 
-- Do not change production code, timeout values, shutdown grace, public APIs, or report formats.
+- Do not change production behavior, timeout values, shutdown grace, public APIs, or report formats.
 - Keep descendant cleanup and pause-controller teardown assertions.
 - Preserve exit-code, diagnostic, session, and incomplete-report assertions.
 - Keep the fix in the Issue #286 worktree and squash merge its PR.
@@ -115,6 +115,56 @@ Expected: all five invocations pass while checking the 500 ms Tokio timeout.
 
 ### Task 3: Verify and deliver the isolated fix
 
+Before delivery, make the already-owned blocking-close premise deterministic.
+
+**Files:**
+- Modify: `crates/hoimin-cli/src/shell.rs:552-575`
+- Modify: `crates/hoimin-cli/src/shell.rs:2948-2975`
+
+**Interfaces:**
+- Consumes: `&ShutdownBudget` and `&mut JoinHandle<Option<T>>`
+- Produces: `await_owned_blocking_until<T> -> Result<T, OwnedBlockingError>`
+
+- [ ] **Step 1: Preserve the additional CI failure as Red evidence**
+
+Record that PR #287 run `31315274590` failed because the 20 ms budget expired
+before `spawn_blocking` entered the operation, dropping `entered_tx` and
+producing `RecvError`. The test's claimed "owned" premise was not established.
+
+- [ ] **Step 2: Extract the existing wait logic without changing it**
+
+Move the `budget.wait`, join-error, and expiry branches to:
+
+```rust
+async fn await_owned_blocking_until<T>(
+    budget: &ShutdownBudget,
+    task: &mut tokio::task::JoinHandle<Option<T>>,
+) -> Result<T, OwnedBlockingError>
+where
+    T: Send + 'static,
+```
+
+Keep `run_owned_blocking_until` responsible for spawning the operation and
+delegate its join handle to this helper.
+
+- [ ] **Step 3: Establish ownership before starting the test budget**
+
+Spawn the shaped blocking task directly, await its readiness signal, construct
+the same 20 ms cancellation budget, and call `await_owned_blocking_until`.
+Release the blocking task after expiry and retain the exact expiry diagnostics.
+
+- [ ] **Step 4: Run the focused unit test repeatedly**
+
+Run five times:
+
+```bash
+cargo test -p hoimin-cli --lib shell::tests::shutdown_budget_preempts_an_owned_blocking_close -- --exact
+```
+
+Expected: all five invocations pass with a pending blocking-I/O count of one.
+
+### Task 4: Verify and deliver the isolated fix
+
 **Files:**
 - Verify: `crates/hoimin-cli/src/shell.rs`
 - Verify: `crates/hoimin-cli/tests/run_e2e.rs`
@@ -152,8 +202,9 @@ git add crates/hoimin-cli/src/shell.rs crates/hoimin-cli/tests/run_e2e.rs
 git commit -m "test(windows): measure semantic shutdown deadlines"
 ```
 
-Expected: the commit contains only the two test corrections; design and plan
-remain as their earlier documentation commits.
+Expected: the implementation commits contain the three test corrections and
+the behavior-preserving private helper extraction; design and plan remain in
+documentation-only commits.
 
 - [ ] **Step 4: Push, open, verify, and squash merge the PR**
 
