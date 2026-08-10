@@ -1,0 +1,195 @@
+import HoiminOracle.ResultLifecycleProofs
+
+namespace HoiminOracle.ResultLifecycle
+
+structure ExpectedObservation where
+  accepted : List Result
+  durable : List Result
+  reported : List Result
+  summary : List Status
+  summaryCounts : List (Status × Nat)
+  metricsExecuted : Nat
+  metricsObserved : Bool
+  stopped : Bool
+  sessionFinished : Bool
+  sessionComplete : Bool
+  metricsFinished : Bool
+  runComplete : Bool
+  returned : Bool
+  exitCode : Nat
+  diagnostics : List Diagnostic
+  deriving Repr, DecidableEq
+
+structure OracleCase where
+  schema : Nat := 1
+  id : String
+  mode : String
+  scenario : String
+  setup : Setup
+  schedule : List String
+  expected : ExpectedObservation
+  deriving Repr, DecidableEq
+
+private structure CaseSpec where
+  id : String
+  mode : String
+  scenario : String
+  setup : Setup
+  schedule : List Event
+
+def mutantName : Mutant → String
+  | .m0 => "m0"
+  | .m1 => "m1"
+
+def statusName : Status → String
+  | .killed => "killed"
+  | .survived => "survived"
+  | .timeout => "timeout"
+  | .outOfMemory => "out_of_memory"
+  | .processLimit => "process_limit"
+  | .error => "error"
+  | .notRun => "not_run"
+
+def diagnosticName : Diagnostic → String
+  | .persistenceFailed => "persistence_failed"
+  | .reportFailed => "report_failed"
+  | .metricsFailed => "metrics_failed"
+
+def eventName : Event → String
+  | .discover mutant => s!"discover:{mutantName mutant}"
+  | .accept mutant status => s!"accept:{mutantName mutant}:{statusName status}"
+  | .persistOk mutant => s!"persist_ok:{mutantName mutant}"
+  | .persistFailed mutant => s!"persist_failed:{mutantName mutant}"
+  | .recordResult mutant => s!"record_result:{mutantName mutant}"
+  | .reportOk mutant => s!"report_ok:{mutantName mutant}"
+  | .reportFailed mutant => s!"report_failed:{mutantName mutant}"
+  | .stop => "stop"
+  | .markNotRun mutant => s!"mark_not_run:{mutantName mutant}"
+  | .finishSession complete => s!"finish_session:{complete}"
+  | .finishMetrics => "finish_metrics"
+  | .metricsFailed => "metrics_failed"
+  | .returnRun => "return_run"
+
+private def noSessionSetup : Setup where
+  session := false
+  metrics := true
+  discovered := [.m0]
+  seededDurable := []
+
+private def stopSetup : Setup where
+  session := true
+  metrics := true
+  discovered := [.m0, .m1]
+  seededDurable := []
+
+private def observe (state : State) : ExpectedObservation where
+  accepted := state.accepted
+  durable := state.durable
+  reported := state.reported
+  summary := state.summary
+  summaryCounts := [.killed, .survived, .timeout, .outOfMemory, .processLimit, .error, .notRun]
+    |>.map (fun status => (status, state.summary.count status))
+    |>.filter (fun entry => entry.2 > 0)
+  metricsExecuted := state.metricsExecuted
+  metricsObserved := !state.diagnostics.contains .metricsFailed
+  stopped := state.stopped
+  sessionFinished := state.sessionFinished
+  sessionComplete := state.sessionComplete
+  metricsFinished := state.metricsFinished
+  runComplete := state.complete
+  returned := state.returned
+  exitCode := exitCode state
+  diagnostics := state.diagnostics
+
+private def toOracleCase (spec : CaseSpec) : OracleCase where
+  id := spec.id
+  mode := spec.mode
+  scenario := spec.scenario
+  setup := spec.setup
+  schedule := spec.schedule.map eventName
+  expected := observe (run (State.initial spec.setup) spec.schedule)
+
+private def specs : List CaseSpec := [
+  { id := "sessionless_complete"
+    mode := "strict"
+    scenario := "sessionless_complete"
+    setup := noSessionSetup
+    schedule := [
+      .accept .m0 .killed,
+      .recordResult .m0,
+      .reportOk .m0,
+      .finishMetrics,
+      .returnRun
+    ] },
+  { id := "session_complete"
+    mode := "strict"
+    scenario := "session_complete"
+    setup := oneMutantSetup
+    schedule := acceptedTrace },
+  { id := "resume_reuses_determinate"
+    mode := "strict"
+    scenario := "resume_reuses_determinate"
+    setup := resumeSetup
+    schedule := [
+      .recordResult .m0,
+      .reportOk .m0,
+      .finishSession true,
+      .finishMetrics,
+      .returnRun
+    ] },
+  { id := "stop_preserves_accepted"
+    mode := "strict"
+    scenario := "stop_preserves_accepted"
+    setup := stopSetup
+    schedule := [
+      .accept .m0 .killed,
+      .persistOk .m0,
+      .recordResult .m0,
+      .reportOk .m0,
+      .stop,
+      .markNotRun .m1,
+      .finishSession false,
+      .finishMetrics,
+      .returnRun
+    ] },
+  { id := "metrics_write_failure"
+    mode := "strict"
+    scenario := "metrics_write_failure"
+    setup := oneMutantSetup
+    schedule := metricsFailureTrace },
+  { id := "session_persistence_failure"
+    mode := "strict"
+    scenario := "session_persistence_failure"
+    setup := oneMutantSetup
+    schedule := [
+      .accept .m0 .killed,
+      .persistFailed .m0,
+      .recordResult .m0,
+      .reportOk .m0,
+      .finishSession false,
+      .finishMetrics,
+      .returnRun
+    ] },
+  { id := "stop_during_persist"
+    mode := "internal-fixture"
+    scenario := "stop_during_persist"
+    setup := oneMutantSetup
+    schedule := stopDuringPersistTrace },
+  { id := "duplicate_completion"
+    mode := "model-only"
+    scenario := "duplicate_completion"
+    setup := oneMutantSetup
+    schedule := duplicateReportTrace },
+  { id := "stop_after_summary_before_report"
+    mode := "model-only"
+    scenario := "stop_after_summary_before_report"
+    setup := oneMutantSetup
+    schedule := stopAfterSummaryBeforeReportTrace }
+]
+
+def cases : List OracleCase := specs.map toOracleCase
+
+def caseStatesSafe : Bool :=
+  specs.all fun spec => safe (run (State.initial spec.setup) spec.schedule)
+
+end HoiminOracle.ResultLifecycle
