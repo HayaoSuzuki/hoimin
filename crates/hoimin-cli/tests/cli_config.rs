@@ -129,6 +129,10 @@ fn development_docs_explain_exception_mutation_policy() {
         "BaseException",
         "except*",
         "shadowing",
+        "both its source and replacement names",
+        "scope-aware resolver",
+        "class non-closure",
+        "`Unknown`",
         "apply_candidate_and_reparse",
     ] {
         assert!(

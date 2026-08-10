@@ -183,6 +183,32 @@ The Lean model exposed the destination-name defect before Rust implementation
 and forced the distinction between direct module/class source order and
 deferred function lookup through a whole-module summary.
 
+### Correspondence boundary
+
+| Premise or observation | Lean representation | Production configuration | Observation | Evidence | Mode |
+| --- | --- | --- | --- | --- | --- |
+| Three-result resolution and source/destination gating | `Knowledge`, `allowsReplacement` | Abstract frames are not a public input | Lean result only | model examples and theorems | `model-only` |
+| Function, sibling, module/class, comprehension, and directive boundaries | ordered `Frame` paths | Python source fixture through the owned analyzer | candidate tuples | Rust analyzer unit tests | `internal-fixture` |
+| Replacement safety and parseability | both knowledge inputs are `.builtin` | Python source fixture through the owned analyzer | emitted replacement and reparsed module | destination-shadow and reparse tests | `internal-fixture` |
+
+There is no claim that Lean proves the Rust AST walker. The model fixes the
+semantic policy; the owned analyzer fixtures separately exercise corresponding
+premises. No public Lean-generated corpus adapter is part of this change.
+
+### Sensitivity and evaluation placement
+
+The imported proof module contains a deliberately broken source-only
+replacement gate. Its fixed witness admits `.builtin -> .shadowed`, while the
+real gate rejects the same pair. This covers the applicable boundary/precedence
+risk and specifically detects the pre-existing destination-name defect.
+Atomicity and idempotency are not applicable because resolution is a pure,
+single-occurrence decision with no transition state or durable effect.
+
+The model and kernel-checked proofs remain cheap imported modules; they contain
+no exhaustive trace generation, corpus serialization, or `native_decide`.
+`lake build` checks the complete formal project, and the new files are scanned
+for `sorry`, `admit`, and custom `axiom` declarations.
+
 ## Testing
 
 Regression tests use literal source fixtures and expected candidate tuples.

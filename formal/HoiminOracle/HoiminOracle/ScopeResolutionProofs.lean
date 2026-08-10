@@ -38,6 +38,16 @@ theorem unrelated_sibling_does_not_change_resolution
     resolve { candidate with unrelatedSiblings := siblings } = resolve candidate := by
   rfl
 
+def brokenAllowsReplacementSourceOnly
+    (source _destination : Knowledge) : Bool :=
+  source.allows
+
+example : brokenAllowsReplacementSourceOnly .builtin .shadowed = true := by
+  decide
+
+example : allowsReplacement .builtin .shadowed = false := by
+  decide
+
 example :
     resolve {
       path := [
@@ -149,9 +159,6 @@ example :
         moduleFrame .absent .unknown
       ]
     }).allows = false := by
-  decide
-
-example : allowsReplacement .builtin .shadowed = false := by
   decide
 
 example : allowsReplacement .builtin .builtin = true := by

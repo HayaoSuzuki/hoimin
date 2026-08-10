@@ -152,10 +152,14 @@ proportional to source size. `--max-memory` controls descendants rather than
 the Hoimin CLI, so it does not bound these analyzer structures.
 
 Bare builtin calls (`any`, `all`, `list`, `tuple`, `set`, `frozenset`, `min`,
-`max`, `sorted`, and `reversed`) are suppressed if the matching name is bound
-anywhere in the file. Bindings include imports, assignments, definitions, and
-parameters. This deliberately conservative rule avoids mutating a shadowed
-callable; qualified builtin calls are not candidates. Method mutations are
+`max`, `sorted`, and `reversed`) use scope-aware shadowing checks. A pair is a
+candidate only when both its source and replacement names definitely resolve
+through Python's builtins namespace at that occurrence. The resolver follows
+whole-function local binding, module/class source order, and closure lookup.
+It also preserves class non-closure, `global`/`nonlocal`, and the comprehension
+leftmost-iterable boundary. Wildcard imports, conditional bindings, deletions,
+missing occurrence facts, and other ambiguous cases are `Unknown` and suppress
+the candidate. Qualified builtin calls are not candidates. Method mutations are
 syntax-directed and do not infer receiver types.
 
 Type-annotation collection records an import-state snapshot at each annotation
@@ -217,11 +221,15 @@ normally. This keeps collection mutations out of type positions, where Python
 requires an exception class or a tuple of exception classes, including generic
 `list`/`tuple` constructor-call and literal candidates nested in the type.
 
-Exception names are suppressed when the file may bind the name through an
-assignment, import, parameter, comprehension, match capture, or `except ... as`
-target. This file-wide shadowing policy is intentionally conservative and does
-not attempt scope-sensitive inference. Qualified and dynamic handler types,
-`except*`, and tuple members outside the curated built-in name set are skipped.
+Exception names use the same scope-aware resolver as builtin-call pairs. Both
+the handler's source name and each inserted or replacement name must definitely
+resolve through Python's builtins namespace. Assignments, imports, parameters,
+comprehension and match captures, and `except ... as` targets suppress only
+occurrences where their binding is visible; sibling scopes do not leak. Class
+targets are not closure bindings for methods. Wildcard imports and ambiguous
+control flow remain conservative `Unknown` results. Qualified and dynamic
+handler types, `except*`, and tuple members outside the curated built-in name
+set are skipped.
 
 The five structural operators in `exception_risky` are explicit-only:
 bare-handler insertion/removal, the `Exception`/`BaseException` boundary, and
@@ -239,7 +247,8 @@ analyzer module:
 ```console
 cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::exception_type_pair_candidates_are_curated_and_syntax_directed -- --exact
 cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::exception_risky_candidates_require_explicit_selection_and_reparse -- --exact
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::exception_bindings_are_conservative -- --exact
+cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::sibling_bindings_do_not_suppress_builtin_or_exception_pairs -- --exact
+cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::comprehension_exception_target_and_wildcard_boundaries_are_conservative -- --exact
 ```
 
 ## Extending plan ranking
