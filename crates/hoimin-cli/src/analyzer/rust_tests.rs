@@ -139,65 +139,6 @@ fn candidate_prefix_saturates_capacity_at_usize_maximum() {
 }
 
 #[test]
-fn clean_collection_builtin_calls_remain_eligible_for_ast_collection() {
-    let source = "result = any(items)\n";
-    let parsed = parse_module(source).expect("clean builtin call parses");
-    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
-
-    assert!(!facts.is_builtin_bound("any"));
-}
-
-#[test]
-fn comprehension_targets_bind_collection_builtins() {
-    let source = "result = [list(item) for list in factories]\n";
-    let parsed = parse_module(source).expect("comprehension fixture parses");
-    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
-
-    assert!(facts.is_builtin_bound("list"));
-}
-
-#[test]
-fn annotated_augmented_and_lambda_bindings_are_conservative() {
-    let source = "tuple: object = custom_tuple\nmax += value\nmapper = lambda *, sorted, **reversed: (sorted, reversed)\n";
-    let parsed = parse_module(source).expect("binding fixture parses");
-    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
-
-    for name in ["tuple", "max", "sorted", "reversed"] {
-        assert!(facts.is_builtin_bound(name), "expected {name} to be bound");
-    }
-}
-
-#[test]
-fn exception_bindings_are_conservative() {
-    let clean_source = "try:\n    work()\nexcept ValueError:\n    pass\n";
-    let clean = parse_module(clean_source).expect("clean exception fixture parses");
-    let clean_facts = super::AstFacts::from_module(clean.syntax(), clean.tokens(), clean_source);
-    assert!(!clean_facts.is_exception_bound("ValueError"));
-
-    for (source, name) in [
-        ("ValueError = Custom\n", "ValueError"),
-        ("def handle(TypeError):\n    pass\n", "TypeError"),
-        ("from helpers import KeyError\n", "KeyError"),
-        ("from helpers import *\n", "IndexError"),
-        (
-            "match value:\n    case PermissionError:\n        pass\n",
-            "PermissionError",
-        ),
-        (
-            "try:\n    work()\nexcept OSError as FileNotFoundError:\n    pass\n",
-            "FileNotFoundError",
-        ),
-    ] {
-        let parsed = parse_module(source).expect("exception binding fixture parses");
-        let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
-        assert!(
-            facts.is_exception_bound(name),
-            "expected {name} bound in {source:?}"
-        );
-    }
-}
-
-#[test]
 fn exception_handler_type_tuples_do_not_emit_collection_candidates() {
     let source = concat!(
         "before_list = [before]\n",
@@ -947,23 +888,6 @@ fn annotations_and_star_imports_suppress_collection_candidates() {
 #[test]
 fn shadowed_collection_builtins_are_not_mutated_as_calls() {
     let source = "any = custom_any\nfrom helpers import all\ndef list(tuple):\n    min = custom_min\n    for max in items:\n        pass\n    with resource as sorted:\n        pass\n    try:\n        pass\n    except Error as reversed:\n        pass\n    if (frozenset := custom_frozenset):\n        return list(items), tuple(items), set(items), frozenset(items), min(items), max(items), sorted(items), reversed(items)\nclass set:\n    pass\n";
-    let parsed = parse_module(source).expect("shadowing fixture parses");
-    let facts = super::AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
-    for name in [
-        "any",
-        "all",
-        "list",
-        "tuple",
-        "set",
-        "frozenset",
-        "min",
-        "max",
-        "sorted",
-        "reversed",
-    ] {
-        assert!(facts.is_builtin_bound(name), "expected {name} to be bound");
-    }
-
     let output = analyze(source);
     assert!(
         output.candidates.iter().all(|candidate| {
@@ -983,6 +907,316 @@ fn shadowed_collection_builtins_are_not_mutated_as_calls() {
         }),
         "shadowed builtins must not emit name-replacement candidates: {:#?}",
         output.candidates
+    );
+}
+
+#[test]
+fn sibling_bindings_do_not_suppress_builtin_or_exception_pairs() {
+    let source = concat!(
+        "def convert(items):\n",
+        "    return list(items)\n",
+        "def handle():\n",
+        "    try:\n",
+        "        work()\n",
+        "    except ValueError:\n",
+        "        recover()\n",
+        "def helper():\n",
+        "    list = custom_list\n",
+        "    tuple = custom_tuple\n",
+        "    TypeError = CustomTypeError\n",
+    );
+    let output = analyze(source);
+    let observed = output
+        .candidates
+        .iter()
+        .filter(|candidate| {
+            matches!(
+                candidate.operator.as_str(),
+                "collection_list_tuple" | "exception_type_pair"
+            )
+        })
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.line,
+                candidate.symbol.as_deref(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        observed,
+        [
+            ("list", "tuple", 2, Some("convert")),
+            ("ValueError", "TypeError", 6, Some("handle")),
+        ]
+    );
+}
+
+#[test]
+fn visible_source_or_destination_binding_suppresses_builtin_pairs() {
+    let source = concat!(
+        "def source_shadowed(items):\n",
+        "    result = list(items)\n",
+        "    list = custom_list\n",
+        "    return result\n",
+        "def clean(items):\n",
+        "    return list(items)\n",
+    );
+    let output = analyze(source);
+    let observed = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "collection_list_tuple")
+        .map(|candidate| (candidate.line, candidate.symbol.as_deref()))
+        .collect::<Vec<_>>();
+
+    assert_eq!(observed, [(6, Some("clean"))]);
+}
+
+#[test]
+fn shadowed_destination_suppresses_an_otherwise_builtin_source() {
+    let source = concat!(
+        "def convert(items):\n",
+        "    tuple = custom_tuple\n",
+        "    return list(items)\n",
+    );
+    let output = analyze(source);
+
+    assert!(
+        output
+            .candidates
+            .iter()
+            .all(|candidate| candidate.operator != "collection_list_tuple"),
+        "shadowed replacement destination must suppress the candidate: {:#?}",
+        output.candidates
+    );
+}
+
+#[test]
+fn module_class_closure_and_directive_resolution_is_scope_aware() {
+    let source = concat!(
+        "early = list(items)\n",
+        "list = custom_list\n",
+        "late = list(items)\n",
+        "def outer(items):\n",
+        "    max = custom_max\n",
+        "    def inner():\n",
+        "        return max(items)\n",
+        "    return inner\n",
+        "all = custom_all\n",
+        "def redirected(items):\n",
+        "    global all\n",
+        "    return all(items)\n",
+        "def enclosing(items):\n",
+        "    min = custom_min\n",
+        "    def nested():\n",
+        "        nonlocal min\n",
+        "        return min(items)\n",
+        "    return nested\n",
+    );
+    let output = analyze(source);
+    let observed = output
+        .candidates
+        .iter()
+        .filter(|candidate| {
+            matches!(
+                candidate.operator.as_str(),
+                "collection_list_tuple" | "collection_min_max" | "collection_any_all"
+            )
+        })
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.line,
+                candidate.symbol.as_deref(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(observed, [("list", "tuple", 1, None)]);
+
+    let class_source = concat!(
+        "class Box:\n",
+        "    early = tuple(items)\n",
+        "    tuple = custom_tuple\n",
+        "    late = tuple(items)\n",
+        "    def method(self, items):\n",
+        "        return tuple(items)\n",
+    );
+    let class_output = analyze(class_source);
+    let class_observed = class_output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "collection_list_tuple")
+        .map(|candidate| (candidate.line, candidate.symbol.as_deref()))
+        .collect::<Vec<_>>();
+    assert_eq!(class_observed, [(2, Some("Box")), (6, Some("Box.method"))]);
+}
+
+#[test]
+fn comprehension_exception_target_and_wildcard_boundaries_are_conservative() {
+    let source = concat!(
+        "outer = [item for item in list(items)]\n",
+        "inner = [list(item) for list in factories]\n",
+        "before = tuple(items)\n",
+        "try:\n",
+        "    work()\n",
+        "except Error as tuple:\n",
+        "    inside = tuple(items)\n",
+        "after = tuple(items)\n",
+        "def local_target(items):\n",
+        "    before = tuple(items)\n",
+        "    try:\n",
+        "        work()\n",
+        "    except Error as tuple:\n",
+        "        inside = tuple(items)\n",
+        "    after = tuple(items)\n",
+    );
+    let output = analyze(source);
+    let observed = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "collection_list_tuple")
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.line,
+                candidate.symbol.as_deref(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        observed,
+        [
+            ("list", "tuple", 1, None),
+            ("tuple", "list", 3, None),
+            ("tuple", "list", 8, None),
+        ]
+    );
+
+    let wildcard = analyze("from helpers import *\nresult = list(items)\n");
+    assert!(
+        wildcard
+            .candidates
+            .iter()
+            .all(|candidate| candidate.operator != "collection_list_tuple")
+    );
+}
+
+#[test]
+fn class_exception_targets_do_not_leak_into_methods() {
+    let source = concat!(
+        "class Box:\n",
+        "    try:\n",
+        "        work()\n",
+        "    except Error as list:\n",
+        "        def class_handler(self, items):\n",
+        "            return list(items)\n",
+    );
+    let output = analyze(source);
+    let observed = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "collection_list_tuple")
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.line,
+                candidate.symbol.as_deref(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(observed, [("list", "tuple", 6, Some("Box.class_handler"))]);
+
+    let immediate_class = analyze(concat!(
+        "try:\n",
+        "    work()\n",
+        "except Error as list:\n",
+        "    class Immediate:\n",
+        "        value = list(items)\n",
+    ));
+    assert!(
+        immediate_class
+            .candidates
+            .iter()
+            .all(|candidate| candidate.operator != "collection_list_tuple")
+    );
+}
+
+#[test]
+fn imports_are_source_ordered_and_lambda_parameters_are_scope_local() {
+    let import_source = concat!(
+        "before = list(items)\n",
+        "from helpers import list\n",
+        "after = list(items)\n",
+    );
+    let import_output = analyze(import_source);
+    let import_observed = import_output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "collection_list_tuple")
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.line,
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(import_observed, [("list", "tuple", 1)]);
+
+    let lambda_output = analyze(concat!(
+        "clean = lambda items: tuple(items)\n",
+        "shadowed = lambda tuple, items: tuple(items)\n",
+    ));
+    let lambda_observed = lambda_output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "collection_list_tuple")
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.line,
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(lambda_observed, [("tuple", "list", 1)]);
+}
+
+#[test]
+fn dynamic_binding_operations_fail_closed_after_their_possible_effect() {
+    let source = concat!(
+        "before = list(items)\n",
+        "exec(\"list = custom_list\")\n",
+        "after = list(items)\n",
+    );
+    let output = analyze(source);
+    let observed = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "collection_list_tuple")
+        .map(|candidate| (candidate.original.as_str(), candidate.line))
+        .collect::<Vec<_>>();
+
+    assert_eq!(observed, [("list", 1)]);
+
+    let dynamic_namespace = analyze(concat!(
+        "globals()[\"tuple\"] = custom_tuple\n",
+        "result = list(items)\n",
+    ));
+    assert!(
+        dynamic_namespace
+            .candidates
+            .iter()
+            .all(|candidate| candidate.operator != "collection_list_tuple")
     );
 }
 
