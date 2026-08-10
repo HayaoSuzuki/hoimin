@@ -14,3 +14,5 @@ import HoiminOracle.WorkspaceProofs
 import HoiminOracle.WorkspaceCases
 import HoiminOracle.ScopeResolutionModel
 import HoiminOracle.ScopeResolutionProofs
+import HoiminOracle.FactIndexModel
+import HoiminOracle.FactIndexProofs
