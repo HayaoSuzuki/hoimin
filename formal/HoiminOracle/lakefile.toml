@@ -36,3 +36,7 @@ root = "CandidateRankingAuditMain"
 [[lean_exe]]
 name = "generate_schema_migration"
 root = "SchemaMigrationAuditMain"
+
+[[lean_exe]]
+name = "generate_binding_flow"
+root = "BindingFlowAuditMain"
