@@ -32,7 +32,9 @@ categories, loop fixed points, or consistency with `KnownImports` joins.
 
 Parsing recovery, Ruff AST correctness, arbitrary Python runtime mutation of
 `builtins`, aliasing through dynamic objects, candidate ranking, execution of
-mutants, and presentation formats are excluded.
+mutants, presentation formats, comprehension evaluation order, loop `else`,
+detailed exception selection, match-guard evaluation, and scope write
+propagation are excluded.
 
 ## Considered approaches
 
@@ -68,7 +70,6 @@ design.
 | One path rebinds or loses an import | disagreeing path facts | generated `if`, loop, try, or match project | import-dependent candidate is absent from the manifest | CLI corpus adapter | `strict` |
 | Builtin/exception source and destination both resolve safely | two projected resolution facts | bare calls or exception names in a generated project | exact manifest candidate presence or absence | CLI corpus adapter | `strict` |
 | Whole-block function local and class non-closure rules | function/class scope frames | generated nested function and class project | manifest candidates and scope symbols | CLI corpus adapter | `strict` |
-| Comprehension leftmost iterable boundary | outer then comprehension frame | generated comprehension project | manifest sites inside and outside the implicit scope | CLI corpus adapter | `strict` |
 | Internal fallthrough/break/continue/terminate environments | categorized `Exits` | same source is constructible, but snapshots are private | test-only environment snapshots | owned unit seam | `internal-fixture` |
 | Loop-head fixed point | repeated monotone transfer until stable | same loop source is constructible, but head state is private | test-only fixed-point state | owned unit seam | `internal-fixture` |
 | Reduced names, scope depth, and structured-program bound | finite Lean domain | no production option selects the abstract bound | Lean states and counterexamples only | executable audit | `model-only` |
@@ -87,27 +88,30 @@ expected builtin, an expected supported typing import, a definite competing
 binding, absence, and uncertainty. Projection functions expose the views used
 by `KnownImports` and `NameResolutionIndex`.
 
-The common meet retains a fact only when every reachable path agrees on the
-same intended target. Disagreement becomes uncertainty. Candidate gates require
-both source and destination projections to resolve to the requested target.
+The common meet retains a fact only when every reachable path agrees on that
+name's intended target. Disagreement becomes uncertainty. Candidate gates
+require the source and destination projections to resolve independently to
+their respective targets; for `list[str]` → `Sequence[str]`, those are
+`builtin` and `typing`, not one shared target.
 
 ### Scope and statements
 
-Scopes are module, function, class, and comprehension. The model makes these
-Python rules explicit:
+The frame vocabulary contains module, function, class, and comprehension. This
+audit's fixed correspondence cases exercise module/function/class lookup and
+make these Python rules explicit:
 
 - function locals are determined for the complete block;
 - a nested ordinary function skips an intervening class namespace;
 - class-body expressions use ordered class bindings;
-- a comprehension's leftmost iterable uses its enclosing scope, while targets,
-  filters, later generators, and results use the implicit comprehension scope;
 - `global` and `nonlocal` redirect writes or make resolution uncertain when a
   unique target cannot be established.
 
-Structured statements include supported import, binding, wildcard uncertainty,
-sequence, conditional, loop, break, continue, return/raise, try/handler/else/
-finally, and match cases with irrefutability and guards. This is a semantic AST,
-not a model of Ruff parser nodes.
+Structured statements include binding, sequence, conditional, loop, break,
+continue, return/raise, finally routing, a try form with an explicit
+conservative handler entry, and matched/failed or irrefutable match forms. This
+is a deliberately small semantic AST, not a model of Ruff parser nodes. It does
+not model comprehension evaluation order, loop `else`, detailed exception
+selection, match-guard evaluation, or scope write propagation.
 
 ### Exits and fixed points
 
@@ -118,10 +122,10 @@ exit category; a falling-through final body preserves the incoming category,
 while an abrupt final body replaces it.
 
 Loops include the zero-iteration path. Their head is the descending fixed point
-of initial entry plus fallthrough and continue back-edges. Break states bypass
-loop `else`; natural exhaustion reaches it. The finite model uses a fuel bound
-only in the executable; the theorem-facing definition proves stabilization on
-the finite fact lattice rather than assuming a successful iteration count.
+of the current head met with fallthrough and continue back-edges. Break states
+contribute to the loop exit. The iterator is bounded by `Env.rank + 1`; Lean
+proves that this bound always returns a result and that every returned result is
+stable under the joined transfer.
 
 ## Theorems
 
@@ -136,8 +140,8 @@ The imported proof module will establish, with explicit premises:
   boundary;
 - a falling-through `finally` preserves each incoming exit category;
 - loop-head iteration is descending and stabilizes on the finite lattice;
-- every modeled statement preserves the conservative candidate-safety
-  invariant.
+- the rank-bounded fixed-point iterator always converges and returned results
+  are stable under the joined transfer.
 
 Theorems prove the Lean model only. Implementation correspondence is established
 separately by generated fixtures and internal tests.

@@ -126,7 +126,7 @@
   `meet_does_not_invent_knowledge`, `allowed_candidate_is_sound`,
   `unrelated_sibling_isolated`, `method_skips_class_scope`,
   `fallthrough_finally_preserves_category`, `loop_iteration_descends`,
-  `loop_iteration_stabilizes`, and `eval_preserves_safety`.
+  `loop_iteration_stabilizes`, and `iterate_to_fixed_point_returns_stable`.
 
 - [ ] **Step 1: Write the failing theorem consumer**
 
@@ -226,12 +226,10 @@
   Define Lean-owned cases for:
 
   - identical and disagreeing `if` branches;
-  - loop zero-iteration, fallthrough back-edge, continue back-edge, break, and
-    loop `else`;
+  - loop zero-iteration, fallthrough back-edge, continue back-edge, and break;
   - try normal/handler exits and falling-through/abrupt `finally`;
-  - unmatched, irrefutable, guard-failed, and pattern-binding match paths;
-  - function whole-block local, closure, class non-closure, and comprehension
-    leftmost-iterable separation;
+  - unmatched, irrefutable, and conservative guard-binding match paths;
+  - function whole-block local, closure, and class non-closure;
   - global/nonlocal uncertainty, wildcard import, and unconditional re-import;
   - builtin/exception source and destination gating.
 

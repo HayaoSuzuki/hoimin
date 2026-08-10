@@ -8,10 +8,18 @@ use serde::Deserialize;
 
 const CORPUS: &str = include_str!("../../../formal/HoiminOracle/corpus/binding-flow-joins.jsonl");
 
-const CORPUS_FIELDS: [&str; 10] = [
+const CORPUS_FIELDS: [&str; 18] = [
+    "expected_breaks",
+    "expected_continues",
+    "expected_destination_target",
+    "expected_fallthrough",
+    "expected_loop_head",
+    "expected_original",
     "expected_present",
     "expected_replacement",
+    "expected_source_target",
     "expected_symbol",
+    "expected_terminates",
     "family",
     "id",
     "mode",
@@ -31,9 +39,17 @@ struct OracleCase {
     operator: String,
     source: String,
     site_marker: String,
+    expected_original: String,
+    expected_source_target: String,
+    expected_destination_target: String,
     expected_present: bool,
     expected_replacement: Option<String>,
     expected_symbol: Option<String>,
+    expected_fallthrough: Vec<Vec<String>>,
+    expected_breaks: Vec<Vec<String>>,
+    expected_continues: Vec<Vec<String>>,
+    expected_terminates: Vec<Vec<String>>,
+    expected_loop_head: Option<Vec<String>>,
 }
 
 fn parse_corpus(input: &str) -> Result<Vec<OracleCase>, String> {
@@ -66,12 +82,163 @@ fn parse_corpus(input: &str) -> Result<Vec<OracleCase>, String> {
     Ok(cases)
 }
 
+type ScenarioContract = (&'static str, &'static str, &'static [&'static str]);
+
+fn typing_scenario_contract(id: &str) -> Option<ScenarioContract> {
+    Some(match id {
+        "typing_if_identical" => ("strict", "typing-import", &["if flag:", "else:"]),
+        "typing_if_disagrees" => (
+            "strict",
+            "typing-import",
+            &["if flag:", "Sequence = local_sequence", "else:"],
+        ),
+        "typing_loop_zero_iteration" => (
+            "internal-fixture",
+            "control-flow",
+            &["for item in items:", "Sequence = local_sequence"],
+        ),
+        "typing_loop_continue_backedge" => (
+            "internal-fixture",
+            "control-flow",
+            &["while condition:", "Sequence = local_sequence", "continue"],
+        ),
+        "typing_loop_break_exit" => (
+            "internal-fixture",
+            "control-flow",
+            &["while condition:", "Sequence = local_sequence", "break"],
+        ),
+        "typing_try_handler_join" => (
+            "strict",
+            "control-flow",
+            &["try:", "except Error:", "Sequence = local_sequence"],
+        ),
+        "typing_finally_restores" => (
+            "strict",
+            "control-flow",
+            &["try:", "finally:", "Sequence = local_sequence"],
+        ),
+        "typing_abrupt_finally" => (
+            "model-only",
+            "control-flow",
+            &["try:", "finally:", "raise Error"],
+        ),
+        "typing_match_unmatched_path" => (
+            "strict",
+            "control-flow",
+            &["match value:", "case 0:", "Sequence = local_sequence"],
+        ),
+        "typing_match_irrefutable_reimport" => (
+            "strict",
+            "control-flow",
+            &["match value:", "case _:", "from typing import Sequence"],
+        ),
+        "typing_match_guard_binding" => (
+            "internal-fixture",
+            "control-flow",
+            &["match value:", "if (Sequence := local_sequence)"],
+        ),
+        "typing_function_whole_block_local" => (
+            "strict",
+            "scope",
+            &["def local_scope():", "Sequence = local_sequence"],
+        ),
+        "typing_method_skips_class" => ("strict", "scope", &["class Box:", "def method(self):"]),
+        "typing_class_before_binding" => (
+            "strict",
+            "scope",
+            &["class Before:", "Sequence = local_sequence"],
+        ),
+        "typing_class_after_binding" => (
+            "strict",
+            "scope",
+            &["class After:", "Sequence = local_sequence"],
+        ),
+        "typing_global_unknown" => (
+            "model-only",
+            "scope",
+            &["def global_scope():", "global Sequence"],
+        ),
+        "typing_nonlocal_unknown" => (
+            "model-only",
+            "scope",
+            &["def outer():", "def inner():", "nonlocal Sequence"],
+        ),
+        "typing_wildcard_unknown" => ("strict", "typing-import", &["from helpers import *"]),
+        "typing_unconditional_reimport" => (
+            "strict",
+            "typing-import",
+            &["Sequence = local_sequence", "restored: list[str]"],
+        ),
+        _ => return None,
+    })
+}
+
+fn pair_scenario_contract(id: &str) -> Option<ScenarioContract> {
+    Some(match id {
+        "builtin_pair_clean" => ("strict", "builtin-pair", &["clean_marker = list(items)"]),
+        "builtin_source_shadowed" => (
+            "strict",
+            "builtin-pair",
+            &["list = local_list", "hidden_source = list(items)"],
+        ),
+        "builtin_destination_shadowed" => (
+            "strict",
+            "builtin-pair",
+            &["tuple = local_tuple", "hidden_destination = list(items)"],
+        ),
+        "exception_pair_clean" => ("strict", "exception-pair", &["raise ValueError"]),
+        "exception_source_shadowed" => (
+            "strict",
+            "exception-pair",
+            &["ValueError = CustomValueError", "raise ValueError"],
+        ),
+        "exception_destination_shadowed" => (
+            "strict",
+            "exception-pair",
+            &["TypeError = CustomTypeError", "raise ValueError"],
+        ),
+        _ => return None,
+    })
+}
+
+fn scenario_contract(id: &str) -> Option<ScenarioContract> {
+    typing_scenario_contract(id).or_else(|| pair_scenario_contract(id))
+}
+
+fn validate_normalized_states(item: &OracleCase) -> Result<(), String> {
+    let states = item
+        .expected_fallthrough
+        .iter()
+        .chain(&item.expected_breaks)
+        .chain(&item.expected_continues)
+        .chain(&item.expected_terminates)
+        .chain(item.expected_loop_head.iter());
+    if states
+        .flatten()
+        .any(|fact| fact != "direct:Sequence=typing.Sequence")
+    {
+        return Err(format!(
+            "{} has an unknown normalized binding fact",
+            item.id
+        ));
+    }
+    if item.expected_loop_head.is_some() && item.mode != "internal-fixture" {
+        return Err(format!(
+            "{} exposes a loop head outside an internal fixture",
+            item.id
+        ));
+    }
+    Ok(())
+}
+
 fn validate_case(item: &OracleCase) -> Result<(), String> {
     if item.schema != 1
         || item.id.is_empty()
         || item.source.is_empty()
         || item.site_marker.is_empty()
+        || item.expected_original.is_empty()
         || !item.source.contains(&item.site_marker)
+        || !item.site_marker.contains(&item.expected_original)
     {
         return Err(format!("{} has an invalid identity or marker", item.id));
     }
@@ -94,16 +261,40 @@ fn validate_case(item: &OracleCase) -> Result<(), String> {
             item.id, item.family, item.operator
         ));
     }
-    let premise_matches = match item.family.as_str() {
-        "typing-import" => item.source.contains("from typing import Sequence"),
-        "control-flow" => ["if ", "for ", "while ", "try:", "match "]
+    let Some((scenario_mode, scenario_family, required_source)) = scenario_contract(&item.id)
+    else {
+        return Err(format!(
+            "{} is not a recognized binding-flow scenario",
+            item.id
+        ));
+    };
+    if item.mode != scenario_mode
+        || item.family != scenario_family
+        || required_source
             .iter()
-            .any(|keyword| item.source.contains(keyword)),
-        "scope" => ["def ", "class ", "global ", "nonlocal "]
-            .iter()
-            .any(|keyword| item.source.contains(keyword)),
-        "builtin-pair" => item.source.contains("list"),
-        "exception-pair" => item.source.contains("ValueError"),
+            .any(|required| !item.source.contains(required))
+    {
+        return Err(format!("{} violates its typed scenario contract", item.id));
+    }
+    let premise_matches = match item.operator.as_str() {
+        "type_list_sequence" => {
+            item.expected_original == "list[str]"
+                && item.expected_source_target == "builtin"
+                && item.expected_destination_target == "typing"
+                && item.source.contains("from typing import Sequence")
+        }
+        "collection_list_tuple" => {
+            item.expected_original == "list"
+                && item.expected_source_target == "builtin"
+                && item.expected_destination_target == "builtin"
+                && item.source.contains("list")
+        }
+        "exception_type_pair" => {
+            item.expected_original == "ValueError"
+                && item.expected_source_target == "builtin"
+                && item.expected_destination_target == "builtin"
+                && item.source.contains("ValueError")
+        }
         _ => false,
     };
     if !premise_matches {
@@ -119,12 +310,13 @@ fn validate_case(item: &OracleCase) -> Result<(), String> {
             item.id
         ));
     }
-    Ok(())
+    validate_normalized_states(item)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Observation {
     present: bool,
+    original: Option<String>,
     replacement: Option<String>,
     operator: Option<String>,
     symbol: Option<String>,
@@ -134,6 +326,7 @@ impl Observation {
     fn absent() -> Self {
         Self {
             present: false,
+            original: None,
             replacement: None,
             operator: None,
             symbol: None,
@@ -144,6 +337,9 @@ impl Observation {
 fn expected_observation(item: &OracleCase) -> Observation {
     Observation {
         present: item.expected_present,
+        original: item
+            .expected_present
+            .then(|| item.expected_original.clone()),
         replacement: item.expected_replacement.clone(),
         operator: item.expected_present.then(|| item.operator.clone()),
         symbol: item.expected_symbol.clone(),
@@ -173,16 +369,27 @@ fn observe_manifest(item: &OracleCase, manifest: &PlanManifest) -> Result<Observ
         .iter()
         .filter(|candidate| {
             let candidate_start = candidate.span.start;
-            let candidate_end = candidate.span.start + candidate.span.length;
+            let Some(candidate_end) = candidate.span.start.checked_add(candidate.span.length)
+            else {
+                return false;
+            };
+            let exact_source = usize::try_from(candidate_start)
+                .ok()
+                .zip(usize::try_from(candidate_end).ok())
+                .and_then(|(start, end)| item.source.get(start..end))
+                == Some(candidate.original.as_str());
             candidate.operator == item.operator
-                && candidate_start < marker_end
-                && marker_start < candidate_end
+                && candidate.original == item.expected_original
+                && exact_source
+                && marker_start <= candidate_start
+                && candidate_end <= marker_end
         })
         .collect::<Vec<_>>();
     match matching.as_slice() {
         [] => Ok(Observation::absent()),
         [candidate] => Ok(Observation {
             present: true,
+            original: Some(candidate.original.clone()),
             replacement: Some(candidate.replacement.clone()),
             operator: Some(candidate.operator.clone()),
             symbol: candidate.symbol.clone(),
@@ -338,4 +545,22 @@ fn corpus_rejects_operator_family_and_premise_mismatches() {
     let mut inconsistent_absence: serde_json::Value = serde_json::from_str(first).unwrap();
     inconsistent_absence["expected_present"] = serde_json::json!(false);
     assert!(parse_corpus(&format!("{inconsistent_absence}\n")).is_err());
+
+    let mut wrong_source_target: serde_json::Value = serde_json::from_str(first).unwrap();
+    wrong_source_target["expected_source_target"] = serde_json::json!("typing");
+    assert!(parse_corpus(&format!("{wrong_source_target}\n")).is_err());
+
+    let mut wrong_original: serde_json::Value = serde_json::from_str(first).unwrap();
+    wrong_original["expected_original"] = serde_json::json!("list");
+    assert!(parse_corpus(&format!("{wrong_original}\n")).is_err());
+
+    let try_case = CORPUS
+        .lines()
+        .find(|line| line.contains("typing_try_handler_join"))
+        .expect("try scenario");
+    let mut wrong_scenario: serde_json::Value = serde_json::from_str(try_case).unwrap();
+    wrong_scenario["source"] =
+        serde_json::json!("from typing import Sequence\nsimple: list[str]\n");
+    wrong_scenario["site_marker"] = serde_json::json!("list[str]");
+    assert!(parse_corpus(&format!("{wrong_scenario}\n")).is_err());
 }

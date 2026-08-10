@@ -145,10 +145,10 @@ theorem meetAll_retained_on_every_path
 set_option maxHeartbeats 100000 in
 theorem allowed_candidate_is_sound
     (environment : Env)
-    (target : Target)
-    (allowed : allowsCandidate environment target = true) :
-    environment.source = .known target ∧
-      environment.destination = .known target := by
+    (sourceTarget destinationTarget : Target)
+    (allowed : allowsCandidate environment sourceTarget destinationTarget = true) :
+    environment.source = .known sourceTarget ∧
+      environment.destination = .known destinationTarget := by
   simpa [allowsCandidate] using allowed
 
 set_option maxHeartbeats 100000 in
@@ -184,6 +184,42 @@ private theorem fact_meet_rank_le_left (left right : Fact) :
   unfold Fact.meet
   split <;> simp [Fact.rank]
 
+private theorem fact_meet_strictly_descends
+    (left right : Fact)
+    (changed : left.meet right ≠ left) :
+    (left.meet right).rank < left.rank := by
+  by_cases equal : left = right
+  · subst right
+    simp [fact_meet_idem] at changed
+  · have joined : left.meet right = .unknown := by
+      simp [Fact.meet, equal]
+    rw [joined]
+    cases left <;> simp [Fact.rank, Fact.meet] at changed ⊢
+
+set_option maxHeartbeats 100000 in
+theorem env_meet_strictly_descends
+    (left right : Env)
+    (changed : left.meet right ≠ left) :
+    (left.meet right).rank < left.rank := by
+  by_cases sourceStable : left.source.meet right.source = left.source
+  · have destinationChanged :
+        left.destination.meet right.destination ≠ left.destination := by
+      intro destinationStable
+      apply changed
+      cases left
+      cases right
+      simp_all [Env.meet]
+    have destinationStrict := fact_meet_strictly_descends
+      left.destination right.destination destinationChanged
+    have sourceLe := fact_meet_rank_le_left left.source right.source
+    simp only [Env.rank, Env.meet]
+    omega
+  · have sourceStrict := fact_meet_strictly_descends
+      left.source right.source sourceStable
+    have destinationLe := fact_meet_rank_le_left left.destination right.destination
+    simp only [Env.rank, Env.meet]
+    omega
+
 set_option maxHeartbeats 100000 in
 theorem loop_iteration_descends (head backEdge : Env) :
     (loopIteration head backEdge).rank ≤ head.rank := by
@@ -203,14 +239,54 @@ theorem loop_iteration_stabilizes (head backEdge : Env) :
     _ = loopIteration head backEdge := rfl
 
 set_option maxHeartbeats 100000 in
-theorem eval_preserves_safety
+theorem iterate_to_fixed_point_returns_stable
     (fuel : Nat)
-    (statement : Stmt)
-    (initial result : Env)
-    (target : Target)
-    (_reachable : result ∈ (eval fuel statement initial).states)
-    (allowed : allowsCandidate result target = true) :
-    result.source = .known target ∧ result.destination = .known target := by
-  exact allowed_candidate_is_sound result target allowed
+    (transfer : Env → Env)
+    (start result : Env)
+    (returned : iterateToFixedPoint fuel transfer start = some result) :
+    result.meet (transfer result) = result := by
+  induction fuel generalizing start with
+  | zero =>
+      simp [iterateToFixedPoint] at returned
+  | succ fuel inductionHypothesis =>
+      simp only [iterateToFixedPoint] at returned
+      split at returned
+      next stable =>
+        have resultIsStart : result = start := by
+          exact Option.some.inj returned.symm
+        subst result
+        exact stable
+      next _ =>
+        exact inductionHypothesis _ returned
+
+set_option maxHeartbeats 100000 in
+theorem iterate_to_fixed_point_converges_within_rank
+    (fuel : Nat)
+    (transfer : Env → Env)
+    (start : Env)
+    (enoughFuel : start.rank < fuel) :
+    ∃ result, iterateToFixedPoint fuel transfer start = some result := by
+  induction fuel generalizing start with
+  | zero => omega
+  | succ fuel inductionHypothesis =>
+      simp only [iterateToFixedPoint]
+      let next := start.meet (transfer start)
+      by_cases stable : next = start
+      · simp [next, stable]
+      · have descending : next.rank < start.rank :=
+          env_meet_strictly_descends start (transfer start) stable
+        have nextHasFuel : next.rank < fuel := by omega
+        obtain ⟨result, returned⟩ :=
+          inductionHypothesis next nextHasFuel
+        simp [next, stable, returned]
+
+set_option maxHeartbeats 100000 in
+theorem iterate_to_fixed_point_converges
+    (transfer : Env → Env)
+    (start : Env) :
+    ∃ result,
+      iterateToFixedPoint (start.rank + 1) transfer start = some result := by
+  exact iterate_to_fixed_point_converges_within_rank
+    (start.rank + 1) transfer start (by omega)
 
 end HoiminOracle.BindingFlow

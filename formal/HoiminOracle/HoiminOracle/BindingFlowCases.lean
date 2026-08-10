@@ -19,8 +19,8 @@ def sourceFact (fact : Fact) : Env where
   destination := .absent
 
 def resolvedEnv (candidate : Candidate) : Env where
-  source := resolve .source candidate
-  destination := resolve .destination candidate
+  source := (resolveCandidate candidate).source
+  destination := (resolveCandidate candidate).destination
 
 structure OracleCase where
   schema : Nat := 1
@@ -33,9 +33,13 @@ structure OracleCase where
   initial : Env
   program : Stmt
   fuel : Nat := 8
+  sourceTarget : Target := .builtin
   target : Target
+  expectedPresent : Bool := false
+  original : String := "list[str]"
   replacement : String
   symbol : Option String := none
+  loopBody : Option Stmt := none
   deriving Repr, DecidableEq, BEq
 
 def caseResult (item : OracleCase) : Exits :=
@@ -44,7 +48,8 @@ def caseResult (item : OracleCase) : Exits :=
 def caseExpectedPresent (item : OracleCase) : Bool :=
   match (caseResult item).fallthrough with
   | none => false
-  | some environment => allowsCandidate environment item.target
+  | some environment =>
+      allowsCandidate environment item.sourceTarget item.target
 
 def caseExpectedReplacement (item : OracleCase) : Option String :=
   if caseExpectedPresent item then some item.replacement else none
@@ -52,7 +57,39 @@ def caseExpectedReplacement (item : OracleCase) : Option String :=
 def caseExpectedSymbol (item : OracleCase) : Option String :=
   if caseExpectedPresent item then item.symbol else none
 
-def typingInitial : Env := knownEnv .typing
+def normalizedKnownImports (environment : Env) : List String :=
+  if environment.destination = .known .typing then
+    ["direct:Sequence=typing.Sequence"]
+  else
+    []
+
+def normalizedExitStates (states : List Env) : List (List String) :=
+  states.map normalizedKnownImports
+
+def caseExpectedFallthrough (item : OracleCase) : List (List String) :=
+  normalizedExitStates (caseResult item).fallthrough.toList
+
+def caseExpectedBreaks (item : OracleCase) : List (List String) :=
+  normalizedExitStates (caseResult item).breaks
+
+def caseExpectedContinues (item : OracleCase) : List (List String) :=
+  normalizedExitStates (caseResult item).continues
+
+def caseExpectedTerminates (item : OracleCase) : List (List String) :=
+  normalizedExitStates (caseResult item).terminates
+
+def caseExpectedLoopHead (item : OracleCase) : Option (List String) :=
+  item.loopBody.bind fun body =>
+    let transfer := fun head =>
+      let bodyResult := eval (item.fuel - 1) body head
+      meetStates item.initial
+        (bodyResult.fallthrough.toList ++ bodyResult.continues)
+    (iterateToFixedPoint (item.initial.rank + 1) transfer item.initial).map
+      normalizedKnownImports
+
+def typingInitial : Env where
+  source := .known .builtin
+  destination := .known .typing
 def builtinInitial : Env := knownEnv .builtin
 
 def functionWholeCandidate : Candidate := {
@@ -111,6 +148,7 @@ def cases : List OracleCase := [
     program := .branch (.bind .destination (.known .typing))
       (.bind .destination (.known .typing))
     target := .typing
+    expectedPresent := true
     replacement := "Sequence[str]"
   },
   {
@@ -147,6 +185,7 @@ def cases : List OracleCase := [
     siteMarker := "list[str]"
     initial := typingInitial
     program := .loop (.seq (.bind .destination .shadowed) .continueNow)
+    loopBody := some (.seq (.bind .destination .shadowed) .continueNow)
     target := .typing
     replacement := "Sequence[str]"
   },
@@ -159,6 +198,7 @@ def cases : List OracleCase := [
     siteMarker := "list[str]"
     initial := typingInitial
     program := .loop (.seq (.bind .destination .shadowed) .breakNow)
+    loopBody := some (.seq (.bind .destination .shadowed) .breakNow)
     target := .typing
     replacement := "Sequence[str]"
   },
@@ -170,8 +210,9 @@ def cases : List OracleCase := [
     source := "from typing import Sequence\ntry:\n    Sequence = local_sequence\nexcept Error:\n    from typing import Sequence\nafter_try: list[str]\n"
     siteMarker := "list[str]"
     initial := typingInitial
-    program := .branch (.bind .destination .shadowed)
-      (.bind .destination (.known .typing))
+    program := .tryFlow (.bind .destination .shadowed)
+      { typingInitial with destination := .unknown }
+      (.bind .destination (.known .typing)) .skip .skip
     target := .typing
     replacement := "Sequence[str]"
   },
@@ -186,6 +227,7 @@ def cases : List OracleCase := [
     program := .tryFinally (.bind .destination .shadowed)
       (.bind .destination (.known .typing))
     target := .typing
+    expectedPresent := true
     replacement := "Sequence[str]"
   },
   {
@@ -208,7 +250,7 @@ def cases : List OracleCase := [
     source := "from typing import Sequence\nmatch value:\n    case 0:\n        Sequence = local_sequence\nafter_match: list[str]\n"
     siteMarker := "list[str]"
     initial := typingInitial
-    program := .branch (.bind .destination .shadowed) .skip
+    program := .matchFlow (.bind .destination .shadowed) .skip
     target := .typing
     replacement := "Sequence[str]"
   },
@@ -220,9 +262,11 @@ def cases : List OracleCase := [
     source := "from typing import Sequence\nSequence = local_sequence\nmatch value:\n    case _:\n        from typing import Sequence\nafter_irrefutable: list[str]\n"
     siteMarker := "list[str]"
     initial := typingInitial
-    program := .seq (.bind .destination .shadowed)
-      (.bind .destination (.known .typing))
+    program := .matchIrrefutable
+      (.seq (.bind .destination .shadowed)
+        (.bind .destination (.known .typing)))
     target := .typing
+    expectedPresent := true
     replacement := "Sequence[str]"
   },
   {
@@ -233,7 +277,8 @@ def cases : List OracleCase := [
     source := "from typing import Sequence\nmatch value:\n    case 0 if (Sequence := local_sequence):\n        pass\n    case _:\n        guarded: list[str]\n"
     siteMarker := "list[str]"
     initial := typingInitial
-    program := .bind .destination .shadowed
+    program := .matchFlow (.bind .destination .shadowed)
+      (.bind .destination .shadowed)
     target := .typing
     replacement := "Sequence[str]"
   },
@@ -245,7 +290,7 @@ def cases : List OracleCase := [
     source := "from typing import Sequence\ndef local_scope():\n    hidden: list[str]\n    Sequence = local_sequence\n"
     siteMarker := "list[str]"
     initial := resolvedEnv functionWholeCandidate
-    program := .skip
+    program := .scoped functionWholeCandidate .skip
     target := .typing
     replacement := "Sequence[str]"
     symbol := some "local_scope"
@@ -258,8 +303,9 @@ def cases : List OracleCase := [
     source := "from typing import Sequence\nclass Box:\n    Sequence = local_sequence\n    def method(self):\n        visible: list[str]\n"
     siteMarker := "list[str]"
     initial := resolvedEnv classMethodCandidate
-    program := .skip
+    program := .scoped classMethodCandidate .skip
     target := .typing
+    expectedPresent := true
     replacement := "Sequence[str]"
     symbol := some "Box.method"
   },
@@ -271,8 +317,9 @@ def cases : List OracleCase := [
     source := "from typing import Sequence\nclass Before:\n    visible: list[str]\n    Sequence = local_sequence\n"
     siteMarker := "list[str]"
     initial := resolvedEnv classDirectBeforeCandidate
-    program := .skip
+    program := .scoped classDirectBeforeCandidate .skip
     target := .typing
+    expectedPresent := true
     replacement := "Sequence[str]"
     symbol := some "Before"
   },
@@ -284,7 +331,7 @@ def cases : List OracleCase := [
     source := "from typing import Sequence\nclass After:\n    Sequence = local_sequence\n    hidden: list[str]\n"
     siteMarker := "list[str]"
     initial := resolvedEnv classDirectAfterCandidate
-    program := .skip
+    program := .scoped classDirectAfterCandidate .skip
     target := .typing
     replacement := "Sequence[str]"
     symbol := some "After"
@@ -297,7 +344,7 @@ def cases : List OracleCase := [
     source := "from typing import Sequence\ndef global_scope():\n    global Sequence\n    hidden: list[str]\n"
     siteMarker := "list[str]"
     initial := resolvedEnv globalUnknownCandidate
-    program := .skip
+    program := .scoped globalUnknownCandidate .skip
     target := .typing
     replacement := "Sequence[str]"
     symbol := some "global_scope"
@@ -310,7 +357,7 @@ def cases : List OracleCase := [
     source := "from typing import Sequence\ndef outer():\n    def inner():\n        nonlocal Sequence\n        hidden: list[str]\n"
     siteMarker := "list[str]"
     initial := resolvedEnv nonlocalUnknownCandidate
-    program := .skip
+    program := .scoped nonlocalUnknownCandidate .skip
     target := .typing
     replacement := "Sequence[str]"
     symbol := some "outer.inner"
@@ -338,6 +385,7 @@ def cases : List OracleCase := [
     program := .seq (.bind .destination .shadowed)
       (.bind .destination (.known .typing))
     target := .typing
+    expectedPresent := true
     replacement := "Sequence[str]"
   },
   {
@@ -350,6 +398,8 @@ def cases : List OracleCase := [
     initial := builtinInitial
     program := .skip
     target := .builtin
+    expectedPresent := true
+    original := "list"
     replacement := "tuple"
   },
   {
@@ -362,6 +412,7 @@ def cases : List OracleCase := [
     initial := builtinInitial
     program := .bind .source .shadowed
     target := .builtin
+    original := "list"
     replacement := "tuple"
   },
   {
@@ -374,6 +425,7 @@ def cases : List OracleCase := [
     initial := builtinInitial
     program := .bind .destination .shadowed
     target := .builtin
+    original := "list"
     replacement := "tuple"
   },
   {
@@ -386,6 +438,8 @@ def cases : List OracleCase := [
     initial := builtinInitial
     program := .skip
     target := .builtin
+    expectedPresent := true
+    original := "ValueError"
     replacement := "TypeError"
   },
   {
@@ -398,6 +452,7 @@ def cases : List OracleCase := [
     initial := builtinInitial
     program := .bind .source .shadowed
     target := .builtin
+    original := "ValueError"
     replacement := "TypeError"
   },
   {
@@ -410,13 +465,17 @@ def cases : List OracleCase := [
     initial := builtinInitial
     program := .bind .destination .shadowed
     target := .builtin
+    original := "ValueError"
     replacement := "TypeError"
   }
 ]
 
 def caseSafe (item : OracleCase) : Bool :=
   item.schema == 1 && !item.id.isEmpty && !item.source.isEmpty &&
-    !item.siteMarker.isEmpty &&
+    !item.siteMarker.isEmpty && !item.original.isEmpty &&
+    item.program.requiredFuel <= item.fuel &&
+    (!item.loopBody.isSome || (caseExpectedLoopHead item).isSome) &&
+    caseExpectedPresent item == item.expectedPresent &&
     (!caseExpectedPresent item || (caseExpectedReplacement item).isSome)
 
 def fixedCasesPass : Bool := cases.all caseSafe
@@ -467,7 +526,8 @@ def loopSensitivity : Bool :=
       { typingInitial with destination := .unknown }
 
 def destinationSensitivity : Bool :=
-  !allowsCandidate { builtinInitial with destination := .shadowed } .builtin &&
+  !allowsCandidate
+      { builtinInitial with destination := .shadowed } .builtin .builtin &&
     brokenAllowsSourceOnly
       { builtinInitial with destination := .shadowed } .builtin
 
@@ -507,7 +567,7 @@ def observeProgram (program : Stmt) : Reachable :=
   let exits := normalizeExits (eval 8 program builtinInitial)
   let allowed := match exits.fallthrough with
     | none => false
-    | some environment => allowsCandidate environment .builtin
+    | some environment => allowsCandidate environment .builtin .builtin
   { program, exits, allowed }
 
 def sameObservation (left right : Reachable) : Bool :=

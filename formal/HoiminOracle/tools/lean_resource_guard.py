@@ -13,6 +13,7 @@ from pathlib import Path
 TIMEOUT_EXIT = 124
 RSS_LIMIT_EXIT = 125
 MONITOR_ERROR_EXIT = 126
+MONITOR_EXCEPTIONS = (OSError, RuntimeError, ValueError, subprocess.SubprocessError)
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -33,9 +34,9 @@ def parse_arguments() -> argparse.Namespace:
     return arguments
 
 
-def process_tree_rss_kib(root_pid: int) -> int:
+def process_table() -> dict[int, tuple[int, int, int]]:
     completed = subprocess.run(
-        ["ps", "-axo", "pid=,ppid=,rss="],
+        ["ps", "-axo", "pid=,ppid=,pgid=,rss="],
         check=False,
         capture_output=True,
         text=True,
@@ -43,14 +44,19 @@ def process_tree_rss_kib(root_pid: int) -> int:
     if completed.returncode != 0:
         raise RuntimeError(f"ps failed with exit code {completed.returncode}")
 
-    rows: dict[int, tuple[int, int]] = {}
-    children: dict[int, list[int]] = {}
+    rows: dict[int, tuple[int, int, int]] = {}
     for line in completed.stdout.splitlines():
         fields = line.split()
-        if len(fields) != 3:
+        if len(fields) != 4:
             continue
-        pid, parent_pid, rss_kib = map(int, fields)
-        rows[pid] = (parent_pid, rss_kib)
+        pid, parent_pid, process_group_id, rss_kib = map(int, fields)
+        rows[pid] = (parent_pid, process_group_id, rss_kib)
+    return rows
+
+
+def process_tree_rss_kib(root_pid: int, rows: dict[int, tuple[int, int, int]]) -> int:
+    children: dict[int, list[int]] = {}
+    for pid, (parent_pid, _, _) in rows.items():
         children.setdefault(parent_pid, []).append(pid)
 
     pending = [root_pid]
@@ -61,7 +67,35 @@ def process_tree_rss_kib(root_pid: int) -> int:
             continue
         process_ids.add(process_id)
         pending.extend(children.get(process_id, ()))
-    return sum(rows[process_id][1] for process_id in process_ids if process_id in rows)
+    return sum(rows[process_id][2] for process_id in process_ids if process_id in rows)
+
+
+def process_group_members(
+    process_group_id: int, rows: dict[int, tuple[int, int, int]]
+) -> list[int]:
+    return [pid for pid, (_, group, _) in rows.items() if group == process_group_id]
+
+
+def process_group_exists(process_group_id: int) -> bool:
+    try:
+        os.killpg(process_group_id, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def wait_for_process_group_exit(
+    process: subprocess.Popen[bytes], timeout: float
+) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        process.poll()
+        if not process_group_exists(process.pid):
+            return True
+        time.sleep(0.025)
+    return not process_group_exists(process.pid)
 
 
 def terminate_process_group(process: subprocess.Popen[bytes]) -> None:
@@ -70,14 +104,13 @@ def terminate_process_group(process: subprocess.Popen[bytes]) -> None:
     except ProcessLookupError:
         pass
 
-    try:
-        process.wait(timeout=1.0)
-    except subprocess.TimeoutExpired:
+    if not wait_for_process_group_exit(process, 1.0):
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
-        process.wait()
+        wait_for_process_group_exit(process, 1.0)
+    process.wait()
 
 
 def write_stats(path: Path, stats: dict[str, int | str]) -> None:
@@ -96,6 +129,23 @@ def run(arguments: argparse.Namespace) -> int:
     peak_rss_kib = 0
     timeout_ms = round(arguments.timeout_seconds * 1000)
     rss_limit_kib = arguments.rss_limit_mib * 1024
+    if os.name != "posix" or not hasattr(os, "killpg"):
+        try:
+            write_stats(
+                arguments.stats,
+                {
+                    "schema": 1,
+                    "reason": "monitor_error",
+                    "exit_code": MONITOR_ERROR_EXIT,
+                    "elapsed_ms": 0,
+                    "peak_rss_kib": 0,
+                    "rss_limit_kib": rss_limit_kib,
+                    "timeout_ms": timeout_ms,
+                },
+            )
+        except OSError as error:
+            print(f"failed to write resource stats: {error}", file=sys.stderr)
+        return MONITOR_ERROR_EXIT
     reason = "monitor_error"
     public_exit_code = MONITOR_ERROR_EXIT
     process: subprocess.Popen[bytes] | None = None
@@ -106,8 +156,14 @@ def run(arguments: argparse.Namespace) -> int:
             child_exit_code = process.poll()
             elapsed_seconds = time.monotonic() - started_at
             if child_exit_code is not None:
-                reason = "child_exit"
-                public_exit_code = child_exit_code
+                rows = process_table()
+                if process_group_members(process.pid, rows):
+                    terminate_process_group(process)
+                    reason = "monitor_error"
+                    public_exit_code = MONITOR_ERROR_EXIT
+                else:
+                    reason = "child_exit"
+                    public_exit_code = child_exit_code
                 break
             if elapsed_seconds >= arguments.timeout_seconds:
                 reason = "timeout"
@@ -115,7 +171,8 @@ def run(arguments: argparse.Namespace) -> int:
                 terminate_process_group(process)
                 break
 
-            rss_kib = process_tree_rss_kib(process.pid)
+            rows = process_table()
+            rss_kib = process_tree_rss_kib(process.pid, rows)
             peak_rss_kib = max(peak_rss_kib, rss_kib)
             if rss_kib >= rss_limit_kib:
                 reason = "rss_limit"
@@ -123,7 +180,7 @@ def run(arguments: argparse.Namespace) -> int:
                 terminate_process_group(process)
                 break
             time.sleep(arguments.sample_ms / 1000)
-    except OSError, RuntimeError, subprocess.SubprocessError:
+    except MONITOR_EXCEPTIONS:
         if process is not None:
             terminate_process_group(process)
 

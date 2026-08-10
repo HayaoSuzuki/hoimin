@@ -14,6 +14,18 @@ use ruff_python_parser::parse_module;
 const BINDING_FLOW_CORPUS: &str =
     include_str!("../../../../formal/HoiminOracle/corpus/binding-flow-joins.jsonl");
 
+#[derive(serde::Deserialize)]
+struct BindingFlowCorpusCase {
+    id: String,
+    mode: String,
+    source: String,
+    expected_fallthrough: Vec<Vec<String>>,
+    expected_breaks: Vec<Vec<String>>,
+    expected_continues: Vec<Vec<String>>,
+    expected_terminates: Vec<Vec<String>>,
+    expected_loop_head: Option<Vec<String>>,
+}
+
 fn analyze(source: &str) -> super::AnalyzerOutput {
     analyze_with(Utf8Path::new("pkg/sample.py"), &[], &[], 10_000, source)
 }
@@ -3799,15 +3811,9 @@ fn typing_import_rebinding_try_handler_includes_unknown_wildcard_effect() {
 
 #[test]
 fn binding_flow_internal_corpus_projects_categorized_exit_facts() {
-    let expected = BindingFlowTestSnapshot {
-        fallthrough: vec![Vec::new()],
-        breaks: Vec::new(),
-        continues: Vec::new(),
-        terminates: Vec::new(),
-    };
     let items = BINDING_FLOW_CORPUS
         .lines()
-        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .map(|line| serde_json::from_str::<BindingFlowCorpusCase>(line).unwrap())
         .collect::<Vec<_>>();
     let expected_ids = [
         "typing_loop_zero_iteration",
@@ -3817,8 +3823,8 @@ fn binding_flow_internal_corpus_projects_categorized_exit_facts() {
     ];
     let mut actual_ids = items
         .iter()
-        .filter(|item| item["mode"] == "internal-fixture")
-        .map(|item| item["id"].as_str().unwrap())
+        .filter(|item| item.mode == "internal-fixture")
+        .map(|item| item.id.as_str())
         .collect::<Vec<_>>();
     actual_ids.sort_unstable();
     let mut expected_sorted = expected_ids;
@@ -3828,11 +3834,27 @@ fn binding_flow_internal_corpus_projects_categorized_exit_facts() {
     for id in expected_ids {
         let item = items
             .iter()
-            .find(|item| item["id"] == id)
+            .find(|item| item.id == id)
             .unwrap_or_else(|| panic!("missing internal-fixture case {id}"));
-        assert_eq!(item["mode"], "internal-fixture", "case={id}");
-        let source = item["source"].as_str().expect("literal source");
-        assert_eq!(binding_flow_test_snapshot(source), expected, "case={id}");
+        assert_eq!(item.mode, "internal-fixture", "case={id}");
+        let expected = BindingFlowTestSnapshot {
+            fallthrough: item.expected_fallthrough.clone(),
+            breaks: item.expected_breaks.clone(),
+            continues: item.expected_continues.clone(),
+            terminates: item.expected_terminates.clone(),
+        };
+        assert_eq!(
+            binding_flow_test_snapshot(&item.source),
+            expected,
+            "case={id}"
+        );
+        if let Some(expected_loop_head) = &item.expected_loop_head {
+            assert_eq!(
+                binding_flow_loop_head_snapshot(&item.source, true),
+                *expected_loop_head,
+                "loop head case={id}"
+            );
+        }
     }
 }
 

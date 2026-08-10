@@ -9,6 +9,20 @@ private def optionStringJson : Option String → Lean.Json
   | none => .null
   | some value => .str value
 
+private def targetJson : Target → Lean.Json
+  | .builtin => .str "builtin"
+  | .typing => .str "typing"
+
+private def stringsJson (values : List String) : Lean.Json :=
+  .arr (values.map Lean.Json.str).toArray
+
+private def statesJson (states : List (List String)) : Lean.Json :=
+  .arr (states.map stringsJson).toArray
+
+private def optionStringsJson : Option (List String) → Lean.Json
+  | none => .null
+  | some values => stringsJson values
+
 private def caseJson (item : OracleCase) : Lean.Json := Lean.Json.mkObj [
   ("schema", Lean.toJson item.schema),
   ("id", .str item.id),
@@ -17,9 +31,17 @@ private def caseJson (item : OracleCase) : Lean.Json := Lean.Json.mkObj [
   ("operator", .str item.operator),
   ("source", .str item.source),
   ("site_marker", .str item.siteMarker),
+  ("expected_original", .str item.original),
+  ("expected_source_target", targetJson item.sourceTarget),
+  ("expected_destination_target", targetJson item.target),
   ("expected_present", Lean.toJson (caseExpectedPresent item)),
   ("expected_replacement", optionStringJson (caseExpectedReplacement item)),
-  ("expected_symbol", optionStringJson (caseExpectedSymbol item))
+  ("expected_symbol", optionStringJson (caseExpectedSymbol item)),
+  ("expected_fallthrough", statesJson (caseExpectedFallthrough item)),
+  ("expected_breaks", statesJson (caseExpectedBreaks item)),
+  ("expected_continues", statesJson (caseExpectedContinues item)),
+  ("expected_terminates", statesJson (caseExpectedTerminates item)),
+  ("expected_loop_head", optionStringsJson (caseExpectedLoopHead item))
 ]
 
 def renderCorpus : String :=

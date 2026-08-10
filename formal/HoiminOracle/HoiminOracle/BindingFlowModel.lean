@@ -137,6 +137,10 @@ structure Candidate where
 def resolve (name : Name) (candidate : Candidate) : Fact :=
   resolveFrom name candidate.path true
 
+def resolveCandidate (candidate : Candidate) : Env where
+  source := resolve .source candidate
+  destination := resolve .destination candidate
+
 def moduleFrame (before whole : Env) : Frame where
   id := 0
   kind := .module
@@ -167,9 +171,11 @@ def comprehensionFrame (id : Nat) (whole : Env) : Frame where
   kind := .comprehension
   whole
 
-def allowsCandidate (environment : Env) (target : Target) : Bool :=
-  decide (environment.source = .known target) &&
-    decide (environment.destination = .known target)
+def allowsCandidate
+    (environment : Env)
+    (sourceTarget destinationTarget : Target) : Bool :=
+  decide (environment.source = .known sourceTarget) &&
+    decide (environment.destination = .known destinationTarget)
 
 inductive ExitCategory
   | fallthrough
@@ -261,11 +267,25 @@ inductive Stmt
   | terminateNow
   | loop (body : Stmt)
   | tryFinally (body finalizer : Stmt)
-  | scoped (kind : ScopeKind) (directive : Directive) (body : Stmt)
+  | tryFlow
+      (body : Stmt)
+      (handlerEntry : Env)
+      (handler : Stmt)
+      (orelse finalizer : Stmt)
+  | matchFlow (matched failed : Stmt)
+  | matchIrrefutable (body : Stmt)
+  | scoped (candidate : Candidate) (body : Stmt)
   deriving Repr, DecidableEq, BEq
 
 def meetStates (initial : Env) (states : List Env) : Env :=
   states.foldl Env.meet initial
+
+def iterateToFixedPoint : Nat → (Env → Env) → Env → Option Env
+  | 0, _, _ => none
+  | fuel + 1, transfer, current =>
+      let next := current.meet (transfer current)
+      if next = current then some current
+      else iterateToFixedPoint fuel transfer next
 
 def eval : Nat → Stmt → Env → Exits
   | 0, _, _ => .empty
@@ -281,15 +301,39 @@ def eval : Nat → Stmt → Env → Exits
       | .continueNow => .categoryOnly .continue environment
       | .terminateNow => .categoryOnly .terminate environment
       | .loop body =>
-          let bodyResult := eval fuel body environment
-          let backEdges := bodyResult.fallthrough.toList ++ bodyResult.continues
-          let loopHead := meetStates environment backEdges
-          {
-            fallthrough := some (meetStates loopHead bodyResult.breaks)
-            terminates := bodyResult.terminates
-          }
+          let transfer := fun head =>
+            let bodyResult := eval fuel body head
+            meetStates environment
+              (bodyResult.fallthrough.toList ++ bodyResult.continues)
+          match iterateToFixedPoint (environment.rank + 1) transfer environment with
+          | none => .empty
+          | some loopHead =>
+              let bodyResult := eval fuel body loopHead
+              {
+                fallthrough := some (meetStates loopHead bodyResult.breaks)
+                terminates := bodyResult.terminates
+              }
       | .tryFinally body finalizer =>
           routeFinally (eval fuel body environment) (eval fuel finalizer)
-      | .scoped _ _ body => eval fuel body environment
+      | .tryFlow body handlerEntry handler orelse finalizer =>
+          let normal := (eval fuel body environment).andThen (eval fuel orelse)
+          let handled := eval fuel handler handlerEntry
+          routeFinally (normal.merge handled) (eval fuel finalizer)
+      | .matchFlow matched failed =>
+          (eval fuel matched environment).merge (eval fuel failed environment)
+      | .matchIrrefutable body => eval fuel body environment
+      | .scoped candidate body => eval fuel body (resolveCandidate candidate)
+
+def Stmt.requiredFuel : Stmt → Nat
+  | .skip | .bind _ _ | .breakNow | .continueNow | .terminateNow => 1
+  | .seq first second | .branch first second |
+      .tryFinally first second | .matchFlow first second =>
+      Nat.max first.requiredFuel second.requiredFuel + 1
+  | .loop body | .matchIrrefutable body | .scoped _ body =>
+      body.requiredFuel + 1
+  | .tryFlow body _ handler orelse finalizer =>
+      Nat.max body.requiredFuel
+        (Nat.max handler.requiredFuel
+          (Nat.max orelse.requiredFuel finalizer.requiredFuel)) + 1
 
 end HoiminOracle.BindingFlow
