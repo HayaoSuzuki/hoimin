@@ -14,6 +14,8 @@ import HoiminOracle.WorkspaceProofs
 import HoiminOracle.WorkspaceCases
 import HoiminOracle.ScopeResolutionModel
 import HoiminOracle.ScopeResolutionProofs
+import HoiminOracle.BindingFlowModel
+import HoiminOracle.BindingFlowProofs
 import HoiminOracle.FactIndexModel
 import HoiminOracle.FactIndexProofs
 import HoiminOracle.ResultLifecycleModel
