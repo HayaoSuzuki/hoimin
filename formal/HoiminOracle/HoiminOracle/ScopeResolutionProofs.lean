@@ -18,6 +18,20 @@ theorem allowed_resolution_is_sound
     allowed_knowledge_is_builtin (resolve candidate) allowed
   simpa [resolved, Knowledge.admits] using admitted
 
+theorem allowed_replacement_is_sound
+    (source destination : Knowledge)
+    (sourceActual destinationActual : RuntimeBinding)
+    (sourceAdmitted : source.admits sourceActual)
+    (destinationAdmitted : destination.admits destinationActual)
+    (allowed : allowsReplacement source destination = true) :
+    sourceActual = .builtin ∧ destinationActual = .builtin := by
+  simp only [allowsReplacement, Bool.and_eq_true] at allowed
+  constructor
+  · have resolved := allowed_knowledge_is_builtin source allowed.1
+    simpa [resolved, Knowledge.admits] using sourceAdmitted
+  · have resolved := allowed_knowledge_is_builtin destination allowed.2
+    simpa [resolved, Knowledge.admits] using destinationAdmitted
+
 theorem unrelated_sibling_does_not_change_resolution
     (candidate : Candidate)
     (siblings : List Frame) :
@@ -135,6 +149,12 @@ example :
         moduleFrame .absent .unknown
       ]
     }).allows = false := by
+  decide
+
+example : allowsReplacement .builtin .shadowed = false := by
+  decide
+
+example : allowsReplacement .builtin .builtin = true := by
   decide
 
 end HoiminOracle.ScopeResolution

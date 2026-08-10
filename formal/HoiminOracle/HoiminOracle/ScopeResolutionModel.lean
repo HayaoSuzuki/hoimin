@@ -22,6 +22,9 @@ def Knowledge.allows : Knowledge → Bool
   | .builtin => true
   | .shadowed | .unknown => false
 
+def allowsReplacement (source destination : Knowledge) : Bool :=
+  source.allows && destination.allows
+
 inductive BindingFact
   | absent
   | bound
