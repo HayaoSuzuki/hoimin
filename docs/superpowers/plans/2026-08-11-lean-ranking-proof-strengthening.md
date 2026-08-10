@@ -45,7 +45,7 @@
 
 - [ ] **Step 4: Run the consumer and library build to verify GREEN**
 
-  Run the consumer and `lake build -j 1` under separate 20-second deadlines.
+  Run the consumer and `lake -Kjobs=1 build` under separate 20-second deadlines.
   Expect both to pass without warnings or resource symptoms.
 
 - [ ] **Step 5: Commit the proof and design artifacts**

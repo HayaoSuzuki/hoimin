@@ -50,10 +50,15 @@ kernel-checked proofs. With a local `maxHeartbeats 100000` limit, Lean proves:
 - `strictSelect_is_saved_prefix`: strict selection is the saved prefix projection;
 - `strictSelect_length`: strict selection length is `min limit ranked.length`;
 - `strictSelect_member_of_saved`: every strict-selected ID comes from a saved candidate;
+- `diverseSelect_member_of_saved`: every diverse-selected ID comes from a saved
+  candidate, for arbitrary manifests and limits;
 - `validation_recomputes_complete_ranking`: validation compares saved data with a
   complete deterministic reranking.
 
-Sorting correctness and diverse-selection uniqueness/tier behavior are finite
+The diverse origin theorem is compositional: `firstForPath?`, `selectRound`,
+`eraseSelected`, round-robin traversal, tier traversal, truncation, and ID
+projection each preserve membership in the saved input. Sorting correctness and
+diverse-selection uniqueness, saturated length, and tier behavior remain finite
 checks rather than unbounded theorems. The executable enumerates all 16
 subsets of a four-candidate universe, every limit from zero through two above
 the manifest length, and checks complete reranking validation, candidate-ID
@@ -101,6 +106,7 @@ Focused pre-report verification produced:
 | `lake exe generate_candidate_ranking -- --check corpus/candidate-ranking.jsonl` under alarm | pass/fresh |
 | `lake exe generate_candidate_ranking -- --stats` under alarm | universe 4, manifests 16, cases 4, all sensitivity flags true |
 | `lake exe generate_candidate_ranking -- --sensitivity` under alarm | all three broken families detected |
+| proof consumer importing and applying `diverseSelect_member_of_saved` under alarm | pass |
 | `cargo test -p hoimin-cli plan:: --lib` | 16 passed, 1 ignored benchmark |
 | `cargo test -p hoimin-cli --test plan` | 34 passed |
 | `cargo test -p hoimin-cli --test lean_candidate_ranking_oracle` | 2 passed |
@@ -123,6 +129,9 @@ local commands.
 - Public correspondence covers one deliberately dense four-candidate case;
   the other cases are independently model-checked for documented premise
   reasons.
+- Diverse output origin is now unbounded, while diverse uniqueness, saturated
+  length, and tier ordering remain complete only for the documented finite
+  four-candidate domain.
 - Candidate discovery order before a retained-plan cutoff, analyzer fact
   correctness, and execution result accounting are outside this contract.
 
