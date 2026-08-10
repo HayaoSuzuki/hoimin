@@ -41,6 +41,7 @@ structure State where
   accepted : List Result
   durable : List Result
   persistenceFailures : List Mutant
+  summarized : List Result
   reported : List Result
   summary : List Status
   metricsExecuted : Nat
@@ -60,6 +61,7 @@ def initial (setup : Setup) : State where
   accepted := []
   durable := setup.seededDurable
   persistenceFailures := []
+  summarized := []
   reported := []
   summary := []
   metricsExecuted := 0
@@ -78,6 +80,7 @@ inductive Event
   | accept (mutant : Mutant) (status : Status)
   | persistOk (mutant : Mutant)
   | persistFailed (mutant : Mutant)
+  | recordResult (mutant : Mutant)
   | reportOk (mutant : Mutant)
   | reportFailed (mutant : Mutant)
   | stop
@@ -132,27 +135,32 @@ def identitiesUnique (results : List Result) : Bool :=
 def completeCoverage (state : State) : Bool :=
   state.setup.discovered.all fun mutant => containsMutant state.reported mutant
 
+def runFailureFree (state : State) : Bool :=
+  state.diagnostics.all fun diagnostic => diagnostic == .metricsFailed
+
 def safe (state : State) : Bool :=
   identitiesUnique state.accepted &&
     identitiesUnique state.durable &&
+    identitiesUnique state.summarized &&
     identitiesUnique state.reported &&
     (state.accepted.all fun result => result.executed && result.status != .notRun) &&
     (state.durable.all fun result => resultBacked state result) &&
-    (state.reported.all fun result => reportBacked state result) &&
-    state.summary == state.reported.map Result.status &&
+    (state.summarized.all fun result => reportBacked state result) &&
+    (state.reported.all fun result => result ∈ state.summarized) &&
+    state.summary == state.summarized.map Result.status &&
     state.metricsExecuted == state.accepted.length &&
     (!state.complete || completeCoverage state) &&
     (!state.sessionComplete || state.sessionFinished) &&
     (!state.returned || state.complete ==
-      (!state.stopped && state.diagnostics.isEmpty && completeCoverage state))
+      (!state.stopped && runFailureFree state && completeCoverage state))
 
 def Invariant (state : State) : Prop :=
-  state.summary = state.reported.map Result.status ∧
+  state.summary = state.summarized.map Result.status ∧
     state.metricsExecuted = state.accepted.length
 
 def normalize (state : State) : State := {
   state with
-    summary := state.reported.map Result.status
+    summary := state.summarized.map Result.status
     metricsExecuted := state.accepted.length
 }
 
@@ -207,18 +215,25 @@ def proposal (state : State) : Event → Except Rejection State
           persistenceFailures := state.persistenceFailures ++ [mutant]
           diagnostics := state.diagnostics ++ [.persistenceFailed]
         }
-  | .reportOk mutant =>
-      if containsMutant state.reported mutant then
+  | .recordResult mutant =>
+      if containsMutant state.summarized mutant then
         .error .duplicate
       else
         match currentOrDurable? state mutant with
         | none => .error .resultMissing
         | some result =>
-            if state.setup.session && containsMutant state.accepted mutant &&
+            if state.setup.session && !state.stopped && containsMutant state.accepted mutant &&
                 !(result ∈ state.durable) && !(mutant ∈ state.persistenceFailures) then
               .error .persistenceRequired
             else
-              .ok { state with reported := state.reported ++ [result] }
+              .ok { state with summarized := state.summarized ++ [result] }
+  | .reportOk mutant =>
+      if containsMutant state.reported mutant then
+        .error .duplicate
+      else
+        match findResult state.summarized mutant with
+        | none => .error .resultMissing
+        | some result => .ok { state with reported := state.reported ++ [result] }
   | .reportFailed mutant =>
       if (currentOrDurable? state mutant).isNone then
         .error .resultMissing
@@ -229,11 +244,14 @@ def proposal (state : State) : Event → Except Rejection State
   | .markNotRun mutant =>
       if !(mutant ∈ state.setup.discovered) then
         .error .unknownMutant
-      else if containsMutant state.accepted mutant || containsMutant state.reported mutant then
+      else if containsMutant state.accepted mutant || containsMutant state.summarized mutant ||
+          containsMutant state.reported mutant then
         .error .duplicate
       else
+        let result : Result := { mutant, status := .notRun, executed := false }
         .ok { state with
-          reported := state.reported ++ [{ mutant, status := .notRun, executed := false }]
+          summarized := state.summarized ++ [result]
+          reported := state.reported ++ [result]
         }
   | .finishSession complete =>
       if !state.setup.session then
@@ -253,18 +271,24 @@ def proposal (state : State) : Event → Except Rejection State
       if !state.setup.metrics then
         .error .alreadyFinished
       else
-        .ok { state with diagnostics := state.diagnostics ++ [.metricsFailed] }
+        .ok { state with
+          metricsFinished := true
+          diagnostics := state.diagnostics ++ [.metricsFailed]
+        }
   | .returnRun =>
       if state.returned then
         .error .alreadyFinished
       else
-        let complete := !state.stopped && state.diagnostics.isEmpty && completeCoverage state
+        let complete := !state.stopped && runFailureFree state && completeCoverage state
         .ok { state with returned := true, complete }
 
 def step (state : State) (event : Event) : Verdict :=
-  match proposal state event with
-  | .ok next => acceptState next
-  | .error reason => reject state reason
+  if state.returned then
+    reject state .alreadyFinished
+  else
+    match proposal state event with
+    | .ok next => acceptState next
+    | .error reason => reject state reason
 
 def runWith (next : State → Event → Verdict) : State → List Event → State
   | state, [] => state
@@ -288,7 +312,7 @@ def brokenAtomicity (state : State) (event : Event) : Verdict :=
 def brokenUniqueness (state : State) (event : Event) : Verdict :=
   match event with
   | .reportOk mutant =>
-      match currentOrDurable? state mutant with
+      match findResult state.summarized mutant with
       | some result => acceptState { state with reported := state.reported ++ [result] }
       | none => step state event
   | _ => step state event
@@ -333,7 +357,7 @@ def eventAlphabet : List Event :=
   [.stop, .finishSession true, .finishSession false, .finishMetrics,
     .metricsFailed, .returnRun] ++
   allMutants.flatMap fun mutant =>
-    [.discover mutant, .persistOk mutant, .persistFailed mutant,
+    [.discover mutant, .persistOk mutant, .persistFailed mutant, .recordResult mutant,
       .reportOk mutant, .reportFailed mutant, .markNotRun mutant] ++
     representativeStatuses.map fun status => .accept mutant status
 

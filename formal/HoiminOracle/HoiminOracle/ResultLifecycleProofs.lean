@@ -32,14 +32,22 @@ theorem rejected_preserves_state (state : State) (event : Event)
     (rejected : (step state event).rejection.isSome = true) :
     (step state event).state = state := by
   unfold step at rejected ⊢
-  split at * <;> simp_all [acceptState, reject]
+  by_cases finished : state.returned
+  · simp [finished, reject]
+  · simp only [finished, Bool.false_eq_true, ↓reduceIte] at rejected ⊢
+    cases proposed : proposal state event with
+    | ok next => simp [proposed, acceptState] at rejected
+    | error reason => simp [reject]
 
 theorem step_preserves_invariant (state : State) (event : Event)
     (holds : Invariant state) : Invariant (step state event).state := by
-  simp only [step]
-  split
-  · exact acceptState_invariant _
-  · simpa [reject] using holds
+  unfold step
+  by_cases finished : state.returned
+  · simpa [finished, reject] using holds
+  · simp only [finished, Bool.false_eq_true, ↓reduceIte]
+    cases proposed : proposal state event with
+    | ok next => simpa [proposed] using acceptState_invariant next
+    | error reason => simpa [proposed, reject] using holds
 
 theorem runWith_preserves_invariant
     (next : State → Event → Verdict)
@@ -59,6 +67,7 @@ theorem run_preserves_invariant (setup : Setup) (trace : List Event) :
 def acceptedTrace : List Event := [
   .accept .m0 .killed,
   .persistOk .m0,
+  .recordResult .m0,
   .reportOk .m0,
   .finishSession true,
   .finishMetrics,
@@ -68,6 +77,7 @@ def acceptedTrace : List Event := [
 def persistenceFailureTrace : List Event := [
   .accept .m0 .killed,
   .persistFailed .m0,
+  .recordResult .m0,
   .reportOk .m0,
   .stop,
   .finishSession false,
@@ -83,6 +93,7 @@ def atomicityTrace : List Event := [
 def duplicateReportTrace : List Event := [
   .accept .m0 .killed,
   .persistOk .m0,
+  .recordResult .m0,
   .reportOk .m0,
   .reportOk .m0
 ]
@@ -93,10 +104,49 @@ def crossSurfaceTrace : List Event := [.accept .m0 .killed, .persistOk .m0]
 
 def notRunTrace : List Event := [.stop, .markNotRun .m0]
 
+def metricsFailureTrace : List Event := [
+  .accept .m0 .killed,
+  .persistOk .m0,
+  .recordResult .m0,
+  .reportOk .m0,
+  .finishSession true,
+  .metricsFailed,
+  .returnRun
+]
+
+def stopDuringPersistTrace : List Event := [
+  .accept .m0 .killed,
+  .stop,
+  .recordResult .m0,
+  .reportOk .m0,
+  .finishSession false,
+  .finishMetrics,
+  .returnRun
+]
+
+def stopAfterSummaryBeforeReportTrace : List Event := [
+  .accept .m0 .killed,
+  .persistOk .m0,
+  .recordResult .m0,
+  .stop,
+  .reportOk .m0,
+  .finishSession false,
+  .finishMetrics,
+  .returnRun
+]
+
 example : safe (run (State.initial auditSetup) acceptedTrace) = true := by decide
 example : safe (run (State.initial auditSetup) persistenceFailureTrace) = true := by decide
 example : safe (run (State.initial resumeSetup)
-    [.reportOk .m0, .finishSession true, .finishMetrics, .returnRun]) = true := by decide
+    [.recordResult .m0, .reportOk .m0, .finishSession true, .finishMetrics,
+      .returnRun]) = true := by decide
+example : (run (State.initial oneMutantSetup) metricsFailureTrace).complete = true := by decide
+example : findResult (run (State.initial oneMutantSetup)
+    stopDuringPersistTrace).reported .m0 =
+      some { mutant := .m0, status := .killed, executed := true } := by decide
+example :
+    let final := run (State.initial oneMutantSetup) stopAfterSummaryBeforeReportTrace
+    final.summary = [.killed] ∧ final.reported.length = 1 := by decide
 
 example : safe (runWith brokenAtomicity (State.initial auditSetup)
     atomicityTrace) = false := by decide

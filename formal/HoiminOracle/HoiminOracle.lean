@@ -18,3 +18,4 @@ import HoiminOracle.FactIndexModel
 import HoiminOracle.FactIndexProofs
 import HoiminOracle.ResultLifecycleModel
 import HoiminOracle.ResultLifecycleProofs
+import HoiminOracle.ResultLifecycleCases

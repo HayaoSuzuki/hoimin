@@ -24,3 +24,7 @@ root = "ShutdownAuditMain"
 [[lean_exe]]
 name = "generate_workspace"
 root = "WorkspaceAuditMain"
+
+[[lean_exe]]
+name = "generate_result_lifecycle"
+root = "ResultLifecycleAuditMain"
