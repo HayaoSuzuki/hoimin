@@ -12,3 +12,5 @@ import HoiminOracle.SessionCases
 import HoiminOracle.WorkspaceModel
 import HoiminOracle.WorkspaceProofs
 import HoiminOracle.WorkspaceCases
+import HoiminOracle.ScopeResolutionModel
+import HoiminOracle.ScopeResolutionProofs
