@@ -644,6 +644,8 @@ impl NameResolutionIndex {
             NameScopeKind::Function | NameScopeKind::Comprehension => {
                 if scope.locals.contains(name) {
                     NameResolution::Shadowed
+                } else if scope.wildcard {
+                    NameResolution::Unknown
                 } else {
                     self.resolve_parent(scope.parent, name, offset)
                 }
@@ -902,6 +904,28 @@ impl NameResolutionBuilder {
         }
     }
 
+    fn record_dynamic_uncertainty(&mut self, offset: usize) {
+        self.record_scope_wildcard(self.current, offset);
+        if self.current != ScopeId(0) {
+            self.record_scope_wildcard(ScopeId(0), offset);
+        }
+    }
+
+    fn record_scope_wildcard(&mut self, scope_id: ScopeId, offset: usize) {
+        let scope = &mut self.index.scopes[scope_id.0];
+        scope.wildcard = true;
+        for name in MUTABLE_BUILTINS.iter().chain(EXCEPTION_NAMES) {
+            scope.possible_bindings.insert((*name).to_owned());
+            if matches!(scope.kind, NameScopeKind::Module | NameScopeKind::Class) {
+                scope
+                    .ordered
+                    .entry((*name).to_owned())
+                    .or_default()
+                    .push((offset, BindingEffect::Unknown));
+            }
+        }
+    }
+
     fn record_occurrence(&mut self, name: &ruff_python_ast::ExprName) {
         let id = name.id.as_str();
         if name.ctx != ExprContext::Load || !tracked_resolution_name(id) {
@@ -1100,6 +1124,15 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
     }
 
     fn visit_expr(&mut self, expression: &'ast Expr) {
+        if let Expr::Call(call) = expression
+            && matches!(
+                call.func.as_ref(),
+                Expr::Name(name)
+                    if matches!(name.id.as_str(), "exec" | "globals" | "locals" | "vars")
+            )
+        {
+            self.record_dynamic_uncertainty(usize::from(call.range.end()));
+        }
         match expression {
             Expr::Name(name) => self.record_occurrence(name),
             Expr::Named(named) => {

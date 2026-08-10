@@ -160,6 +160,11 @@ Those cases return `Unknown` and suppress candidates. Dynamic mutation of the
 `builtins` module remains outside static lexical proof; the safety contract is
 that ordinary Python lexical resolution reaches the builtin name.
 
+Bare calls to `exec`, `globals`, `locals`, or `vars` introduce wildcard
+uncertainty at their possible effect point. They also taint deferred module
+lookup because the returned namespace or executed code may write a tracked
+global. Calls through aliases remain outside the static lexical model.
+
 This policy favors retained safety over maximal coverage. Later refinements can
 turn an `Unknown` into a proof without changing candidate semantics elsewhere.
 

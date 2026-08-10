@@ -132,6 +132,7 @@ fn development_docs_explain_exception_mutation_policy() {
         "both its source and replacement names",
         "scope-aware resolver",
         "class non-closure",
+        "bare `exec`",
         "`Unknown`",
         "apply_candidate_and_reparse",
     ] {

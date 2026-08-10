@@ -1192,6 +1192,35 @@ fn imports_are_source_ordered_and_lambda_parameters_are_scope_local() {
 }
 
 #[test]
+fn dynamic_binding_operations_fail_closed_after_their_possible_effect() {
+    let source = concat!(
+        "before = list(items)\n",
+        "exec(\"list = custom_list\")\n",
+        "after = list(items)\n",
+    );
+    let output = analyze(source);
+    let observed = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "collection_list_tuple")
+        .map(|candidate| (candidate.original.as_str(), candidate.line))
+        .collect::<Vec<_>>();
+
+    assert_eq!(observed, [("list", 1)]);
+
+    let dynamic_namespace = analyze(concat!(
+        "globals()[\"tuple\"] = custom_tuple\n",
+        "result = list(items)\n",
+    ));
+    assert!(
+        dynamic_namespace
+            .candidates
+            .iter()
+            .all(|candidate| candidate.operator != "collection_list_tuple")
+    );
+}
+
+#[test]
 fn collection_calls_and_literals_emit_exact_parseable_candidates() {
     let source = concat!(
         "any_result = any(items)\n",

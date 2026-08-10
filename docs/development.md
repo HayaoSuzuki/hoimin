@@ -158,9 +158,10 @@ through Python's builtins namespace at that occurrence. The resolver follows
 whole-function local binding, module/class source order, and closure lookup.
 It also preserves class non-closure, `global`/`nonlocal`, and the comprehension
 leftmost-iterable boundary. Wildcard imports, conditional bindings, deletions,
-missing occurrence facts, and other ambiguous cases are `Unknown` and suppress
-the candidate. Qualified builtin calls are not candidates. Method mutations are
-syntax-directed and do not infer receiver types.
+bare `exec`/`globals`/`locals`/`vars` calls, missing occurrence facts, and other
+ambiguous cases are `Unknown` and suppress the candidate. Qualified builtin
+calls are not candidates. Method mutations are syntax-directed and do not
+infer receiver types.
 
 Type-annotation collection records an import-state snapshot at each annotation
 site in source order. Signature annotations use their enclosing state, while a
