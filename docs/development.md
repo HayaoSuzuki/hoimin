@@ -151,6 +151,30 @@ parser tokens, AST facts, and small per-node replacement lists remain
 proportional to source size. `--max-memory` controls descendants rather than
 the Hoimin CLI, so it does not bound these analyzer structures.
 
+`AstFacts` finalizes immutable lookup indexes after its AST walk. Annotation
+and focused-profile arid containment use sorted starts with prefix-maximum end
+offsets, so overlapping ranges remain exact with `O(log n)` lookup. Unary
+`not` operands use an exact-start hash lookup with amortized `O(1)` access.
+Definition ranges are swept into disjoint innermost-scope segments and queried
+by binary search in `O(log n)`. Do not replace these with a raw-vector fallback
+or make lookup correctness depend on token/visitor call order.
+
+Property tests compare the indexes with independent linear definitions for
+overlap, nesting, gaps, equal starts, and half-open boundaries. The ignored
+adversarial benchmark covers hundreds of scopes and annotations plus thousands
+of unary `not` and focused arid facts:
+
+```console
+cargo test --release -p hoimin-cli --lib \
+  benchmark_adversarial_ast_fact_indexes -- --ignored --nocapture
+```
+
+It asserts exact candidates and logarithmic comparison ceilings through
+test-only counters. Elapsed time is printed for profiling but is deliberately
+not a test threshold. When adding a fact query, extend the semantic comparison
+and operation-count assertions rather than introducing a timing-sensitive CI
+gate.
+
 Bare builtin calls (`any`, `all`, `list`, `tuple`, `set`, `frozenset`, `min`,
 `max`, `sorted`, and `reversed`) use scope-aware shadowing checks. A pair is a
 candidate only when both its source and replacement names definitely resolve
