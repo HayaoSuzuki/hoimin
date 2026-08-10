@@ -27,6 +27,7 @@ struct Setup {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
+#[allow(clippy::struct_excessive_bools)] // Mirrors the flat, Lean-owned wire schema.
 struct ExpectedObservation {
     accepted: Vec<ResultObservation>,
     durable: Vec<ResultObservation>,
@@ -57,6 +58,7 @@ struct OracleCase {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(clippy::struct_excessive_bools)] // Keeps expected and actual projections isomorphic.
 struct ImplementationObservation {
     accepted: Vec<ResultObservation>,
     durable: Vec<ResultObservation>,
@@ -98,7 +100,7 @@ struct FixtureRun {
 }
 
 struct Fixture {
-    _temp: tempfile::TempDir,
+    temp: tempfile::TempDir,
     root: PathBuf,
     marker: PathBuf,
     metrics: PathBuf,
@@ -123,15 +125,24 @@ fn known_result(result: &ResultObservation) -> bool {
 fn known_event(event: &str) -> bool {
     let parts = event.split(':').collect::<Vec<_>>();
     match parts.as_slice() {
-        ["discover", "m0" | "m1"]
-        | [
-            "persist_ok" | "persist_failed" | "record_result" | "report_ok" | "report_failed",
-            "m0" | "m1",
-        ]
-        | ["mark_not_run", "m0" | "m1"] => true,
-        ["accept", "m0" | "m1", status] => known_status(status),
-        ["finish_session", "true" | "false"] => true,
-        ["stop" | "finish_metrics" | "metrics_failed" | "return_run"] => true,
+        ["accept", role, status] => matches!(*role, "m0" | "m1") && known_status(status),
+        [action, value] => {
+            (matches!(
+                *action,
+                "discover"
+                    | "persist_ok"
+                    | "persist_failed"
+                    | "record_result"
+                    | "report_ok"
+                    | "report_failed"
+                    | "mark_not_run"
+            ) && matches!(*value, "m0" | "m1"))
+                || (*action == "finish_session" && matches!(*value, "true" | "false"))
+        }
+        [action] => matches!(
+            *action,
+            "stop" | "finish_metrics" | "metrics_failed" | "return_run"
+        ),
         _ => false,
     }
 }
@@ -195,7 +206,7 @@ fn validate_case(case: &OracleCase) -> Result<(), String> {
         return Err(format!("case {} contains an unknown diagnostic", case.id));
     }
     if case.expected.metrics_observed
-        != !case
+        == case
             .expected
             .diagnostics
             .contains(&"metrics_failed".to_owned())
@@ -296,7 +307,7 @@ impl Fixture {
             metrics: temp.path().join("metrics.json"),
             session: temp.path().join("session.sqlite3"),
             root,
-            _temp: temp,
+            temp,
         })
     }
 
@@ -457,7 +468,7 @@ async fn execute_strict(case: &OracleCase) -> Result<ImplementationObservation, 
     if has_session {
         enable_session(&fixture)?;
     }
-    let metrics_directory = fixture._temp.path().join("metrics-target");
+    let metrics_directory = fixture.temp.path().join("metrics-target");
     let metrics_path = if case.scenario == "metrics_write_failure" {
         std::fs::create_dir(&metrics_directory)
             .map_err(|error| format!("create metrics failure target: {error}"))?;
@@ -642,9 +653,8 @@ fn observe_run(
         .as_object()
         .ok_or_else(|| "summary counts is not an object".to_owned())?
         .iter()
-        .filter_map(|(status, count)| {
-            known_status(status).then(|| (status.clone(), count.as_u64().unwrap_or(u64::MAX)))
-        })
+        .filter(|(status, _)| known_status(status))
+        .map(|(status, count)| (status.clone(), count.as_u64().unwrap_or(u64::MAX)))
         .filter(|(_, count)| *count > 0)
         .collect();
     let normalized_diagnostics = diagnostics(&run.stderr);
