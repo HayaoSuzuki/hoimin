@@ -485,6 +485,213 @@ fn exception_type_pair_candidates_are_curated_and_syntax_directed() {
 }
 
 #[test]
+fn raise_exception_type_pair_candidates_preserve_the_primary_expression() {
+    let source = concat!(
+        "def direct():\n    raise ValueError\n\n",
+        "def constructed(message, code):\n",
+        "    raise TypeError(message, code=code)\n\n",
+        "def chained(key, cause):\n",
+        "    raise KeyError(key) from cause\n",
+    );
+    let output = analyze(source);
+    let actual = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "exception_type_pair")
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.span,
+                candidate.line,
+                candidate.symbol.as_deref(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        actual,
+        [
+            (
+                "ValueError",
+                "TypeError",
+                ByteSpan {
+                    start: 24,
+                    length: 10,
+                },
+                2,
+                Some("direct"),
+            ),
+            (
+                "TypeError",
+                "ValueError",
+                ByteSpan {
+                    start: 78,
+                    length: 9,
+                },
+                5,
+                Some("constructed"),
+            ),
+            (
+                "KeyError",
+                "IndexError",
+                ByteSpan {
+                    start: 144,
+                    length: 8,
+                },
+                8,
+                Some("chained"),
+            ),
+            (
+                "KeyError",
+                "AttributeError",
+                ByteSpan {
+                    start: 144,
+                    length: 8,
+                },
+                8,
+                Some("chained"),
+            ),
+        ]
+    );
+
+    for candidate in output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "exception_type_pair")
+    {
+        let mutated = apply_candidate_and_reparse(source, candidate);
+        assert!(mutated.contains("(message, code=code)"));
+        assert!(mutated.contains("(key) from cause"));
+    }
+}
+
+#[test]
+fn raise_exception_type_pairs_skip_unsupported_and_non_primary_forms() {
+    let source = concat!(
+        "def reraised():\n    raise\n",
+        "def qualified():\n    raise errors.ValueError\n",
+        "def dynamic():\n    raise factory()\n",
+        "def subscripted():\n    raise errors[kind]()\n",
+        "def cause_only():\n    raise CustomError from ValueError\n",
+        "def termination():\n    raise SystemExit(1)\n",
+    );
+
+    assert!(
+        analyze(source)
+            .candidates
+            .iter()
+            .all(|candidate| candidate.operator != "exception_type_pair")
+    );
+}
+
+#[test]
+fn raise_exception_type_pairs_use_scope_aware_source_and_destination_resolution() {
+    let source = concat!(
+        "def clean():\n",
+        "    raise ValueError\n",
+        "def source_shadowed():\n",
+        "    ValueError = CustomValueError\n",
+        "    raise ValueError\n",
+        "def destination_shadowed():\n",
+        "    TypeError = CustomTypeError\n",
+        "    raise ValueError\n",
+        "def sibling_shadow():\n",
+        "    TypeError = CustomTypeError\n",
+        "def clean_after():\n",
+        "    raise ValueError\n",
+        "class Box:\n",
+        "    ValueError = CustomValueError\n",
+        "    def method(self):\n",
+        "        raise ValueError\n",
+        "def outer():\n",
+        "    ValueError = CustomValueError\n",
+        "    def nested():\n",
+        "        raise ValueError\n",
+    );
+    let actual = analyze(source)
+        .candidates
+        .into_iter()
+        .filter(|candidate| candidate.operator == "exception_type_pair")
+        .map(|candidate| (candidate.line, candidate.symbol))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        actual,
+        [
+            (2, Some("clean".to_owned())),
+            (12, Some("clean_after".to_owned())),
+            (16, Some("Box.method".to_owned())),
+        ]
+    );
+}
+
+#[test]
+fn raise_exception_type_pairs_keep_shared_selection_and_profile_behavior() {
+    let source = "def selected():\n    raise ValueError\n";
+    let full = analyze_with_profile(MutationProfile::Full, 10_000, source);
+    let focused = analyze_with_profile(MutationProfile::Focused, 10_000, source);
+    let summarize = |output: &super::AnalyzerOutput| {
+        output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "exception_type_pair")
+            .map(|candidate| {
+                (
+                    candidate.original.clone(),
+                    candidate.replacement.clone(),
+                    candidate.line,
+                    candidate.symbol.clone(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(summarize(&full), summarize(&focused));
+    assert_eq!(
+        summarize(&full),
+        [(
+            "ValueError".to_owned(),
+            "TypeError".to_owned(),
+            2,
+            Some("selected".to_owned()),
+        )]
+    );
+
+    let selected = analyze_with(
+        Utf8Path::new("pkg/sample.py"),
+        &[LineRange { start: 2, end: 2 }],
+        &["pkg.sample:selected".to_owned()],
+        10_000,
+        source,
+    );
+    assert_eq!(summarize(&selected), summarize(&full));
+
+    let bounded = analyze_with_profile(MutationProfile::Full, 1, "raise KeyError(key)\n");
+    assert_eq!(bounded.candidates.len(), 1);
+    assert!(bounded.truncated);
+
+    let mut operators = MutationOperatorSelection::default();
+    operators.exclude(MutationOperator::ExceptionTypePair);
+    let excluded = analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/sample.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            profile: MutationProfile::Full,
+            max_candidates: 10_000,
+        },
+        source,
+    );
+    assert!(
+        excluded
+            .candidates
+            .iter()
+            .all(|candidate| candidate.operator != "exception_type_pair")
+    );
+}
+
+#[test]
 #[expect(
     clippy::too_many_lines,
     reason = "the fixture covers every explicit risky exception operator and parseability"
