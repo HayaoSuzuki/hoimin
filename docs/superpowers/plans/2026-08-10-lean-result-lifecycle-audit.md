@@ -32,7 +32,7 @@
 
 **Interfaces:**
 - Consumes: the pinned Lean project and list-based model patterns used by `SessionModel.lean` and `ShutdownModel.lean`.
-- Produces: `ResultLifecycle.Mutant`, `Status`, `Result`, `Config`, `Event`, `Verdict`, `State`, `initial`, `step`, `run`, `Invariant`, `safe`, and deliberately broken transitions consumed by Tasks 2 and 3.
+- Produces: `ResultLifecycle.Mutant`, `Status`, `Result`, `Setup`, `Event`, `Verdict`, `State`, `initial`, `step`, `run`, `Invariant`, `safe`, and deliberately broken transitions consumed by Tasks 2 and 3.
 
 - [ ] **Step 1: Add imports that expose the missing model and proof modules**
 
@@ -62,9 +62,11 @@ structure Result where
   status : Status
   executed : Bool
 
-structure Config where
+structure Setup where
   session : Bool
   metrics : Bool
+  discovered : List Mutant
+  seededDurable : List Result
 
 inductive Event
   | discover (mutant : Mutant)
@@ -80,7 +82,8 @@ inductive Event
   | returnRun
 ```
 
-`State` stores discovered identities, accepted real results, durable results,
+`State` stores discovered identities, seeded durable results from a prior run,
+current-run accepted real results, durable results,
 persistence failures, reported results, summary statuses, metrics-executed
 count, stop/final flags, diagnostics, and duplicate/overwrite instrumentation.
 Reject invalid events without changing the state. `accept` rejects `notRun`,
@@ -97,9 +100,13 @@ def Invariant (state : State) : Prop :=
   state.accepted.Pairwise (fun left right => left.mutant != right.mutant) ∧
   state.durable.Pairwise (fun left right => left.mutant != right.mutant) ∧
   state.reported.Pairwise (fun left right => left.mutant != right.mutant) ∧
-  (∀ result ∈ state.durable, result ∈ state.accepted) ∧
-  (∀ result ∈ state.reported, result.executed = true → result ∈ state.accepted) ∧
-  state.summary = state.reported.map Result.status ∧
+  (∀ result ∈ state.durable,
+    result ∈ state.accepted ∨ result ∈ state.seededDurable) ∧
+  (∀ result ∈ state.reported,
+    result ∈ state.accepted ∨ result ∈ state.seededDurable ∨
+      result.executed = false ∧ result.status = .notRun) ∧
+  (∀ status, state.summary.count status =
+    (state.reported.map Result.status).count status) ∧
   state.metricsExecuted = state.accepted.length
 ```
 
@@ -188,12 +195,12 @@ structure OracleCase where
   id : String
   mode : String
   scenario : String
-  config : Config
+  setup : Setup
   schedule : List Event
   expected : ExpectedObservation
 ```
 
-Generate expected observations only with `observe (run step (initial config)
+Generate expected observations only with `observe (run step (initial setup)
 schedule)`. Include strict cases for sessionless completion, session completion,
 resume reuse, stop after accepted result, metrics write failure projection, and
 session persistence failure. Include model-only cases for duplicate/stale

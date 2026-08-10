@@ -113,6 +113,8 @@ Add a dependency-free result-lifecycle model to `formal/HoiminOracle` with:
 - per-mutant states for undispatched, running, accepted, persistence pending,
   persisted, report pending, reported, and stopped-not-run;
 - optional session and metrics configuration;
+- seeded durable results loaded from an earlier incomplete run, kept distinct
+  from results executed and accepted during the current run;
 - durable session rows keyed by mutant identity;
 - ordered report events carrying identity and status;
 - a summary multiset by status;
@@ -140,10 +142,11 @@ named invariant includes:
 
 - durable session rows are unique by mutant identity;
 - report events are unique by mutant identity;
-- every durable or reported result is backed by one accepted result with the
-  same status;
+- every durable or reported result is backed by either one current-run
+  accepted result or one seeded durable result with the same status;
 - each summary count equals the number of reported results of that status;
-- metrics executed never exceeds accepted real process completions;
+- metrics executed equals current-run accepted real process completions and
+  excludes seeded results reused without execution;
 - stopped-not-run results never increase executed;
 - final complete state has no accepted result left unreported;
 - an installed stop cause and accepted result status are not overwritten;
