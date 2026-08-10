@@ -18,6 +18,12 @@ use ruff_text_size::{Ranged, TextRange};
 
 use super::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
+#[path = "rust/fact_index.rs"]
+mod fact_index;
+#[cfg(test)]
+use fact_index::IndexLookupStats;
+use fact_index::{ContainmentIndex, NotOperandIndex, ScopeIndex, ScopeInterval};
+
 pub(crate) struct AnalyzeRequest<'a> {
     pub path: &'a Utf8Path,
     pub lines: &'a [LineRange],
@@ -33,12 +39,23 @@ pub(crate) struct AnalyzerOutput {
     pub truncated: bool,
     #[cfg(test)]
     pub retention: CandidateRetentionStats,
+    #[cfg(test)]
+    pub fact_lookups: FactLookupStats,
 }
 
 #[cfg(test)]
 pub(crate) struct CandidateRetentionStats {
     pub producer_peaks: [usize; 3],
     pub merged_peak: usize,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct FactLookupStats {
+    pub annotation: IndexLookupStats,
+    pub arid: IndexLookupStats,
+    pub not_operand: IndexLookupStats,
+    pub scope: IndexLookupStats,
 }
 
 pub(crate) struct ProducerPrefix {
@@ -195,7 +212,7 @@ pub(crate) fn analyze_source_cancellable(
         if !facts.is_operator_token(start) {
             continue;
         }
-        if facts.contains_annotation_span(range) && matches!(text, "&" | "|" | "<<" | ">>") {
+        if matches!(text, "&" | "|" | "<<" | ">>") && facts.contains_annotation_span(range) {
             continue;
         }
         let previous = tokens[..index]
@@ -246,7 +263,9 @@ pub(crate) fn analyze_source_cancellable(
             })
         {
             continue;
-        } else if let Some((expression_start, expression_end)) = facts.not_operand_range(start) {
+        } else if text == "not"
+            && let Some((expression_start, expression_end)) = facts.not_operand_range(start)
+        {
             (
                 expression_end,
                 source[expression_start..expression_end].to_owned(),
@@ -340,6 +359,8 @@ pub(crate) fn analyze_source_cancellable(
         })
         .into_iter()
         .collect();
+    #[cfg(test)]
+    let fact_lookups = facts.lookup_stats();
     Ok(AnalyzerOutput {
         candidates,
         diagnostics,
@@ -349,6 +370,8 @@ pub(crate) fn analyze_source_cancellable(
             producer_peaks,
             merged_peak,
         },
+        #[cfg(test)]
+        fact_lookups,
     })
 }
 
@@ -416,6 +439,8 @@ fn invalid_syntax(path: &Utf8Path) -> AnalyzerOutput {
             producer_peaks: [0; 3],
             merged_peak: 0,
         },
+        #[cfg(test)]
+        fact_lookups: FactLookupStats::default(),
     }
 }
 
@@ -1242,20 +1267,18 @@ struct AstFacts<'tokens> {
     operator_token_starts: HashSet<usize>,
     unary_sign_starts: HashSet<usize>,
     not_operands: Vec<(usize, usize, usize)>,
+    not_operand_index: NotOperandIndex,
     arid_ranges: Vec<(usize, usize)>,
+    arid_index: ContainmentIndex,
     annotation_ranges: Vec<(usize, usize)>,
+    annotation_index: ContainmentIndex,
     name_resolution: NameResolutionIndex,
-    scopes: Vec<ScopeRange>,
+    scopes: Vec<ScopeInterval>,
+    scope_index: ScopeIndex,
     qualname: Vec<String>,
     tokens: Option<&'tokens ruff_python_ast::token::Tokens>,
     source: &'tokens str,
 }
-struct ScopeRange {
-    start: usize,
-    end: usize,
-    symbol: String,
-}
-
 impl<'tokens> AstFacts<'tokens> {
     fn from_module(
         module: &ModModule,
@@ -1273,7 +1296,15 @@ impl<'tokens> AstFacts<'tokens> {
             facts.visit_stmt(statement);
         }
         facts.normalize_arid_ranges();
+        facts.finalize_indexes();
         facts
+    }
+
+    fn finalize_indexes(&mut self) {
+        self.not_operand_index = NotOperandIndex::new(std::mem::take(&mut self.not_operands));
+        self.arid_index = ContainmentIndex::new(std::mem::take(&mut self.arid_ranges));
+        self.annotation_index = ContainmentIndex::new(std::mem::take(&mut self.annotation_ranges));
+        self.scope_index = ScopeIndex::new(std::mem::take(&mut self.scopes));
     }
 
     fn record_arid_range(&mut self, range: ruff_text_size::TextRange) {
@@ -1297,9 +1328,7 @@ impl<'tokens> AstFacts<'tokens> {
     }
 
     fn contains_arid_span(&self, start: usize, end: usize) -> bool {
-        self.arid_ranges
-            .iter()
-            .any(|(range_start, range_end)| *range_start <= start && end <= *range_end)
+        self.arid_index.contains(start, end)
     }
 
     fn record_annotation_range(&mut self, range: TextRange) {
@@ -1310,17 +1339,11 @@ impl<'tokens> AstFacts<'tokens> {
     fn contains_annotation_span(&self, range: TextRange) -> bool {
         let start = usize::from(range.start());
         let end = usize::from(range.end());
-        self.annotation_ranges
-            .iter()
-            .any(|(range_start, range_end)| *range_start <= start && end <= *range_end)
+        self.annotation_index.contains(start, end)
     }
 
     fn not_operand_range(&self, start: usize) -> Option<(usize, usize)> {
-        self.not_operands
-            .iter()
-            .find_map(|(not_start, operand_start, operand_end)| {
-                (*not_start == start).then_some((*operand_start, *operand_end))
-            })
+        self.not_operand_index.operand_at(start)
     }
 
     fn is_unary_sign(&self, start: usize) -> bool {
@@ -1360,11 +1383,17 @@ impl<'tokens> AstFacts<'tokens> {
     }
 
     fn scope_at(&self, offset: usize) -> Option<String> {
-        self.scopes
-            .iter()
-            .filter(|scope| scope.start <= offset && offset < scope.end)
-            .max_by_key(|scope| scope.start)
-            .map(|scope| scope.symbol.clone())
+        self.scope_index.symbol_at(offset).map(str::to_owned)
+    }
+
+    #[cfg(test)]
+    fn lookup_stats(&self) -> FactLookupStats {
+        FactLookupStats {
+            annotation: self.annotation_index.stats(),
+            arid: self.arid_index.stats(),
+            not_operand: self.not_operand_index.stats(),
+            scope: self.scope_index.stats(),
+        }
     }
 
     fn visit_definition(
@@ -1380,11 +1409,11 @@ impl<'tokens> AstFacts<'tokens> {
             .min()
             .unwrap_or_else(|| usize::from(range.start()));
         self.qualname.push(name.to_owned());
-        self.scopes.push(ScopeRange {
+        self.scopes.push(ScopeInterval::new(
             start,
-            end: usize::from(range.end()),
-            symbol: self.qualname.join("."),
-        });
+            usize::from(range.end()),
+            self.qualname.join("."),
+        ));
         visitor::walk_stmt(self, statement);
         self.qualname.pop();
     }
