@@ -9,12 +9,14 @@ structure ExpectedObservation where
   reported : List Result
   summary : List Status
   metricsExecuted : Nat
+  metricsObserved : Bool
   stopped : Bool
   sessionFinished : Bool
   sessionComplete : Bool
   metricsFinished : Bool
   runComplete : Bool
   returned : Bool
+  exitCode : Nat
   diagnostics : List Diagnostic
   deriving Repr, DecidableEq
 
@@ -86,12 +88,20 @@ private def observe (state : State) : ExpectedObservation where
   reported := state.reported
   summary := state.summary
   metricsExecuted := state.metricsExecuted
+  metricsObserved := !state.diagnostics.contains .metricsFailed
   stopped := state.stopped
   sessionFinished := state.sessionFinished
   sessionComplete := state.sessionComplete
   metricsFinished := state.metricsFinished
   runComplete := state.complete
   returned := state.returned
+  exitCode :=
+    if state.diagnostics.any fun diagnostic => diagnostic != .metricsFailed then 2
+    else if state.stopped || state.summary.any fun status =>
+        status == .timeout || status == .outOfMemory || status == .processLimit ||
+          status == .error || status == .notRun then 4
+    else if .survived ∈ state.summary then 1
+    else 0
   diagnostics := state.diagnostics
 
 private def toOracleCase (spec : CaseSpec) : OracleCase where
@@ -135,7 +145,7 @@ private def specs : List CaseSpec := [
     scenario := "stop_preserves_accepted"
     setup := stopSetup
     schedule := [
-      .accept .m0 .timeout,
+      .accept .m0 .killed,
       .persistOk .m0,
       .recordResult .m0,
       .reportOk .m0,
@@ -220,12 +230,14 @@ private def observationJson (observation : ExpectedObservation) : Lean.Json :=
     ("reported", resultsJson observation.reported),
     ("summary", statusesJson observation.summary),
     ("metrics_executed", Lean.toJson observation.metricsExecuted),
+    ("metrics_observed", Lean.toJson observation.metricsObserved),
     ("stopped", Lean.toJson observation.stopped),
     ("session_finished", Lean.toJson observation.sessionFinished),
     ("session_complete", Lean.toJson observation.sessionComplete),
     ("metrics_finished", Lean.toJson observation.metricsFinished),
     ("run_complete", Lean.toJson observation.runComplete),
     ("returned", Lean.toJson observation.returned),
+    ("exit_code", Lean.toJson observation.exitCode),
     ("diagnostics", diagnosticsJson observation.diagnostics)
   ]
 
