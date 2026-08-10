@@ -1989,6 +1989,32 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         }
     }
 
+    fn collect_raised_exception(&mut self, statement: &ruff_python_ast::StmtRaise) {
+        let Some(primary) = statement.exc.as_deref() else {
+            return;
+        };
+        let name = match primary {
+            Expr::Name(name) => name,
+            Expr::Call(call) => match call.func.as_ref() {
+                Expr::Name(name) => name,
+                _ => return,
+            },
+            _ => return,
+        };
+        for replacement in exception_pair_replacements(name.id.as_str()) {
+            if self
+                .facts
+                .resolves_builtin_pair(name.range(), name.id.as_str(), replacement)
+            {
+                self.add_candidate(
+                    name.range(),
+                    (*replacement).to_owned(),
+                    MutationOperator::ExceptionTypePair,
+                );
+            }
+        }
+    }
+
     fn collect_exception_handler(&mut self, except_handler: &ruff_python_ast::ExceptHandler) {
         let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
         self.collect_risky_exception_handler(except_handler, handler);
@@ -2138,6 +2164,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
 impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
         if !self.check_cancelled() {
+            if let Stmt::Raise(statement_raise) = statement {
+                self.collect_raised_exception(statement_raise);
+            }
             let Stmt::Try(try_statement) = statement else {
                 visitor::walk_stmt(self, statement);
                 return;

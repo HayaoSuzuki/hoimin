@@ -250,11 +250,18 @@ async fn exception_default_run_reports_canonical_json_candidate() {
         .iter()
         .filter(|mutant| mutant["candidate"]["operator"] == "exception_type_pair")
         .collect();
-    assert_eq!(candidates.len(), 1);
-    let candidate = &candidates[0]["candidate"];
-    assert_eq!(candidate["original"], "ValueError");
-    assert_eq!(candidate["replacement"], "TypeError");
-    assert_eq!(candidate["span"]["length"], 10);
+    assert_eq!(candidates.len(), 2);
+    let spans = candidates
+        .iter()
+        .map(|mutant| {
+            let candidate = &mutant["candidate"];
+            assert_eq!(candidate["original"], "ValueError");
+            assert_eq!(candidate["replacement"], "TypeError");
+            assert_eq!(candidate["span"]["length"], 10);
+            candidate["span"]["start"].as_u64().unwrap()
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(spans.len(), 2);
 }
 
 #[tokio::test]

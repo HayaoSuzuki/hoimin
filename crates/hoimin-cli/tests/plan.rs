@@ -117,7 +117,7 @@ async fn plans_for_new_operator_families_pass_verify() {
         ),
         (
             "exception_ops",
-            "def selected():\n    try:\n        return 1\n    except ValueError:\n        return 0\n",
+            "def selected(message):\n    raise ValueError(message)\n",
         ),
     ] {
         let project = Project::new_with_source(source);
@@ -132,6 +132,12 @@ async fn plans_for_new_operator_families_pass_verify() {
             .unwrap_or_else(|| panic!("{selector} did not produce a candidate"))
             .id
             .clone();
+        if selector == "exception_ops" {
+            let candidate = &manifest.candidates[0].candidate;
+            assert_eq!(candidate.operator, "exception_type_pair");
+            assert_eq!(candidate.original, "ValueError");
+            assert_eq!(candidate.replacement, "TypeError");
+        }
 
         let verified = prepare_verify(
             &path,
