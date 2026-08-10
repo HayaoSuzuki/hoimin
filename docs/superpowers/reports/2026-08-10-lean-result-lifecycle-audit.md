@@ -1,7 +1,9 @@
 # Lean Result Lifecycle Consistency Audit
 
-Date: 2026-08-10  
-Base revision: `41495cd800a750ab89602ccbcaf83c41c4a2f048`  
+Date: 2026-08-10
+
+Base revision: `41495cd800a750ab89602ccbcaf83c41c4a2f048`
+
 Audit branch: `audit/lean-result-lifecycle`
 
 ## Outcome
