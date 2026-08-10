@@ -710,6 +710,20 @@ fn result_lifecycle_corpus_is_typed_and_complete() {
     assert!(cases.iter().any(|case| case.mode == "internal-fixture"));
 }
 
+#[test]
+fn result_lifecycle_parser_rejects_schema_drift_and_duplicate_ids() {
+    let first = corpus_text().lines().next().expect("nonempty corpus");
+    let mut unknown_field: serde_json::Value = serde_json::from_str(first).unwrap();
+    unknown_field["unexpected"] = serde_json::json!(true);
+    assert!(parse_corpus(&unknown_field.to_string()).is_err());
+
+    let mut unknown_event: serde_json::Value = serde_json::from_str(first).unwrap();
+    unknown_event["schedule"][0] = serde_json::json!("accept:m9:killed");
+    assert!(parse_corpus(&unknown_event.to_string()).is_err());
+
+    assert!(parse_corpus(&format!("{first}\n{first}\n")).is_err());
+}
+
 #[tokio::test]
 async fn result_lifecycle_oracle_correspondence() {
     let cases = parse_corpus(corpus_text()).expect("valid Lean corpus");
@@ -738,7 +752,13 @@ async fn result_lifecycle_oracle_correspondence() {
     for case in strict {
         let result = run_case(case).await;
         eprintln!("result-lifecycle {}: {:?}", result.id, result.class);
-        if result.class != CaseClass::Match {
+        let classification_consistent = match (&result.class, &result.expected, &result.actual) {
+            (CaseClass::Match, Some(expected), Some(actual)) => expected == actual,
+            (CaseClass::Mismatch, Some(expected), Some(actual)) => expected != actual,
+            (CaseClass::InfrastructureError, Some(_), None) => result.detail.is_some(),
+            _ => false,
+        };
+        if result.class != CaseClass::Match || !classification_consistent {
             eprintln!("  expected={:#?}", result.expected);
             eprintln!("  actual={:#?}", result.actual);
             eprintln!("  detail={:#?}", result.detail);
