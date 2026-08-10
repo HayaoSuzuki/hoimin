@@ -180,7 +180,7 @@ opt-in.
 | Structural calls | `structure_append_extend`, `structure_mapping_get_subscript`, `structure_sort_reverse`, `structure_sorted_reversed` | `append(x)` ↔ `extend([x])`; `mapping.get(k)` ↔ `mapping[k]`; `sort()` ↔ `reverse()`; `sorted(x)` ↔ `reversed(x)` |
 | Bitwise operators | `bitwise_and_or`, `bitwise_shift` | `&` ↔ `\|`; `<<` ↔ `>>` |
 | Boundary operators | `structure_index_neighbor`, `structure_slice_neighbor` | adjacent plain-decimal index and slice-bound values |
-| Exception handlers | `exception_type_pair` | curated `except` type pairs such as `ValueError` ↔ `TypeError` |
+| Exception types | `exception_type_pair` | curated pairs such as `ValueError` ↔ `TypeError` in simple `except` clauses and supported `raise` expressions |
 
 The runtime selector families are `collection_ops`, `structure_ops`, and
 `bitwise_ops`, and `exception_ops`; for example,
@@ -208,8 +208,11 @@ exception pairs are limited to `ValueError`/`TypeError`, `KeyError`/`IndexError`
 `AttributeError`/`KeyError`, `FileNotFoundError`/`PermissionError`,
 `ConnectionError`/`TimeoutError`, `ImportError`/`ModuleNotFoundError`, and
 `ZeroDivisionError`/`OverflowError`. Qualified or dynamic handlers, `except*`,
-and unsupported tuple members are skipped. Exception mutation currently targets
-`except` clauses; `raise` expressions are not changed.
+and unsupported tuple members are skipped. The same safe pairs apply to the
+primary name in `raise ValueError`, `raise ValueError(...)`, and
+`raise ValueError(...) from cause`. Constructor arguments and the cause are
+preserved. Bare re-raise, qualified or dynamic primary expressions, shadowed
+source or replacement names, and termination exceptions are not changed.
 
 The collection/structural operators are deliberately syntax-directed. They do
 not include an `append`/`pop` mutation, comprehensions, assignment or delete

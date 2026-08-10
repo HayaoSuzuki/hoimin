@@ -231,12 +231,14 @@ cargo test -p hoimin-cli --lib analyzer::rust::rust_tests
 ## Extending Python exception mutations
 
 Python exception candidates are collected by the Rust analyzer's
-`ExceptHandler` AST pass and then use the shared selection, profile, source
-ordering, deduplication, and candidate-limit pipeline. The default
-`exception_type_pair` operator replaces only simple, unqualified handler names
-with a curated counterpart: `ValueError`/`TypeError`, `KeyError` with
-`IndexError` and `AttributeError`, `FileNotFoundError`/`PermissionError`,
-`ConnectionError`/`TimeoutError`, `ImportError`/`ModuleNotFoundError`, and
+`ExceptHandler` AST pass and its `Stmt::Raise` statement pass, then use the
+shared selection, profile, source ordering, deduplication, and candidate-limit
+pipeline. The default `exception_type_pair` operator replaces only simple,
+unqualified handler names or the simple primary name of a supported raise
+expression with a curated counterpart: `ValueError`/`TypeError`, `KeyError`
+with `IndexError` and `AttributeError`,
+`FileNotFoundError`/`PermissionError`, `ConnectionError`/`TimeoutError`,
+`ImportError`/`ModuleNotFoundError`, and
 `ZeroDivisionError`/`OverflowError`.
 
 `AstCandidateCollector` must enter its exception-type context for both `except`
@@ -256,14 +258,22 @@ control flow remain conservative `Unknown` results. Qualified and dynamic
 handler types, `except*`, and tuple members outside the curated built-in name
 set are skipped.
 
+For a raise statement, `AstCandidateCollector::visit_stmt` inspects only
+`StmtRaise.exc`. It accepts `raise ValueError` and calls whose callee is a
+simple name, such as `raise ValueError(message)`. The replacement span is only
+that name, so arguments and `raise ValueError(...) from cause` remain intact.
+Normal AST walking then visits the primary expression and cause exactly once,
+preserving candidates from other selected operators without interpreting the
+cause as an exception type. Bare re-raise, qualified names, dynamic callees,
+shadowed source or destination names, and termination exceptions are skipped.
+
 The five structural operators in `exception_risky` are explicit-only:
 bare-handler insertion/removal, the `Exception`/`BaseException` boundary, and
 curated tuple add/remove rewrites. Tuple candidates use parser token ranges and
 the original source text so commas, comments, trailing commas, and line endings
 remain intact and every replacement can be reparsed. The BaseException boundary
 can change handling of `SystemExit`, `KeyboardInterrupt`, and `GeneratorExit`,
-so it must not be added to the default selection. Exception mutation currently
-covers `except` clauses; `raise` expressions are a separate future extension.
+so it must not be added to the default selection.
 
 When changing these rules, keep exact candidate and replacement assertions next
 to `apply_candidate_and_reparse` checks. Run the focused tests before the full
@@ -271,6 +281,8 @@ analyzer module:
 
 ```console
 cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::exception_type_pair_candidates_are_curated_and_syntax_directed -- --exact
+cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::raise_exception_type_pair_candidates_preserve_the_primary_expression -- --exact
+cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::raise_exception_type_pairs_use_scope_aware_source_and_destination_resolution -- --exact
 cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::exception_risky_candidates_require_explicit_selection_and_reparse -- --exact
 cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::sibling_bindings_do_not_suppress_builtin_or_exception_pairs -- --exact
 cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::comprehension_exception_target_and_wildcard_boundaries_are_conservative -- --exact
