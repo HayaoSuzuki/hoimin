@@ -567,6 +567,51 @@ fn raise_exception_type_pair_candidates_preserve_the_primary_expression() {
 }
 
 #[test]
+fn raise_exception_type_pair_supports_every_curated_source_in_both_shapes() {
+    for (source_name, expected_replacements) in [
+        ("ValueError", &["TypeError"][..]),
+        ("TypeError", &["ValueError"][..]),
+        ("KeyError", &["IndexError", "AttributeError"][..]),
+        ("IndexError", &["KeyError"][..]),
+        ("AttributeError", &["KeyError"][..]),
+        ("FileNotFoundError", &["PermissionError"][..]),
+        ("PermissionError", &["FileNotFoundError"][..]),
+        ("ConnectionError", &["TimeoutError"][..]),
+        ("TimeoutError", &["ConnectionError"][..]),
+        ("ImportError", &["ModuleNotFoundError"][..]),
+        ("ModuleNotFoundError", &["ImportError"][..]),
+        ("ZeroDivisionError", &["OverflowError"][..]),
+        ("OverflowError", &["ZeroDivisionError"][..]),
+    ] {
+        for source in [
+            format!("raise {source_name}\n"),
+            format!("raise {source_name}('message')\n"),
+        ] {
+            let output = analyze(&source);
+            let candidates = output
+                .candidates
+                .iter()
+                .filter(|candidate| candidate.operator == "exception_type_pair")
+                .collect::<Vec<_>>();
+            assert_eq!(
+                candidates
+                    .iter()
+                    .map(|candidate| candidate.replacement.as_str())
+                    .collect::<Vec<_>>(),
+                expected_replacements,
+                "source={source:?}",
+            );
+            for candidate in candidates {
+                assert_eq!(candidate.original, source_name);
+                assert_eq!(candidate.span.start, 6);
+                assert_eq!(candidate.span.length, source_name.len() as u64);
+                apply_candidate_and_reparse(&source, candidate);
+            }
+        }
+    }
+}
+
+#[test]
 fn raise_exception_type_pairs_skip_unsupported_and_non_primary_forms() {
     let source = concat!(
         "def reraised():\n    raise\n",
@@ -574,7 +619,9 @@ fn raise_exception_type_pairs_skip_unsupported_and_non_primary_forms() {
         "def dynamic():\n    raise factory()\n",
         "def subscripted():\n    raise errors[kind]()\n",
         "def cause_only():\n    raise CustomError from ValueError\n",
-        "def termination():\n    raise SystemExit(1)\n",
+        "def system_exit():\n    raise SystemExit(1)\n",
+        "def keyboard_interrupt():\n    raise KeyboardInterrupt\n",
+        "def generator_exit():\n    raise GeneratorExit()\n",
     );
 
     assert!(
@@ -583,6 +630,71 @@ fn raise_exception_type_pairs_skip_unsupported_and_non_primary_forms() {
             .iter()
             .all(|candidate| candidate.operator != "exception_type_pair")
     );
+}
+
+#[test]
+fn raise_exception_type_pairs_observe_extended_resolution_boundaries() {
+    let exception_lines = |source: &str| {
+        analyze(source)
+            .candidates
+            .into_iter()
+            .filter(|candidate| candidate.operator == "exception_type_pair")
+            .map(|candidate| candidate.line)
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(
+        exception_lines("raise ValueError\nValueError = CustomValueError\nraise ValueError\n"),
+        [1]
+    );
+    assert!(exception_lines("from helpers import ValueError\nraise ValueError\n").is_empty());
+    assert!(exception_lines("from helpers import TypeError\nraise ValueError\n").is_empty());
+    assert!(exception_lines("def source(ValueError):\n    raise ValueError\n").is_empty());
+    assert!(exception_lines("def destination(TypeError):\n    raise ValueError\n").is_empty());
+    assert_eq!(
+        exception_lines(concat!(
+            "def comprehension(errors):\n",
+            "    captured = [TypeError for TypeError in errors]\n",
+            "    raise ValueError\n",
+        )),
+        [3]
+    );
+    assert!(exception_lines("from helpers import *\nraise ValueError\n").is_empty());
+    assert_eq!(
+        exception_lines(concat!(
+            "raise ValueError\n",
+            "exec('ValueError = CustomValueError')\n",
+            "raise ValueError\n",
+        )),
+        [1]
+    );
+}
+
+#[test]
+fn raise_exception_type_pairs_preserve_normal_primary_and_cause_candidates() {
+    let source = concat!(
+        "def selected(items, causes):\n",
+        "    raise ValueError(any(items)) from TypeError(all(causes))\n",
+    );
+    let output = analyze(source);
+    let exception_pairs = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "exception_type_pair")
+        .map(|candidate| (candidate.original.as_str(), candidate.replacement.as_str()))
+        .collect::<Vec<_>>();
+    assert_eq!(exception_pairs, [("ValueError", "TypeError")]);
+
+    let ordinary_pairs = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "collection_any_all")
+        .map(|candidate| (candidate.original.as_str(), candidate.replacement.as_str()))
+        .collect::<Vec<_>>();
+    assert_eq!(ordinary_pairs, [("any", "all"), ("all", "any")]);
+    for candidate in &output.candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
 }
 
 #[test]
