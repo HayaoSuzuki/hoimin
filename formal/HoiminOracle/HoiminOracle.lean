@@ -24,3 +24,4 @@ import HoiminOracle.CandidateRankingProofs
 import HoiminOracle.CandidateRankingCases
 import HoiminOracle.SchemaMigrationModel
 import HoiminOracle.SchemaMigrationProofs
+import HoiminOracle.SchemaMigrationCases

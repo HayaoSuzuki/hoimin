@@ -53,7 +53,7 @@ must distinguish:
 - uniqueness/idempotency: a broken begin trusts the stale outer read, so the
   second non-idempotent migrator fails after the first commits;
 - boundary/precedence: a broken begin treats a future version as migratable and
-  overwrites it.
+  returns a generic migration failure instead of the typed future-version result.
 
 All imported proofs use `maxHeartbeats 100000`. Executable Lean commands run one at
 a time under a 20-second external deadline. A timeout or memory symptom stops the
@@ -66,4 +66,3 @@ strictly, runs only strict cases through public `SessionHandler::open`, and labe
 setup, panic, timeout, or parsing failures as infrastructure errors rather than
 semantic mismatches. Add the model, proofs, cases, executable, corpus, adapter,
 design, implementation plan, and final audit report in one isolated worktree.
-
