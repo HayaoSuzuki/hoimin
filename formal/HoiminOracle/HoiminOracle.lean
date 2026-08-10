@@ -19,3 +19,6 @@ import HoiminOracle.FactIndexProofs
 import HoiminOracle.ResultLifecycleModel
 import HoiminOracle.ResultLifecycleProofs
 import HoiminOracle.ResultLifecycleCases
+import HoiminOracle.CandidateRankingModel
+import HoiminOracle.CandidateRankingProofs
+import HoiminOracle.CandidateRankingCases
