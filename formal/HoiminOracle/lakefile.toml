@@ -28,3 +28,7 @@ root = "WorkspaceAuditMain"
 [[lean_exe]]
 name = "generate_result_lifecycle"
 root = "ResultLifecycleAuditMain"
+
+[[lean_exe]]
+name = "generate_candidate_ranking"
+root = "CandidateRankingAuditMain"
