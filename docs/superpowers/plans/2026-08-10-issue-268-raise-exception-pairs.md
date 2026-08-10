@@ -27,7 +27,6 @@
 - `crates/hoimin-cli/src/analyzer/rust_tests.rs`: exact spans, supported and excluded forms, scope safety, reparsing, and shared-pipeline behavior.
 - `crates/hoimin-cli/tests/plan.rs`: persisted plan/verify coverage for a raised-exception candidate.
 - `crates/hoimin-cli/tests/run_e2e.rs`: final JSON report coverage for both raised and handled exception candidates.
-- `crates/hoimin-cli/tests/cli_config.rs`: documentation contract assertions.
 - `README.md`: user-facing supported raise forms and exclusions.
 - `docs/development.md`: contributor traversal, resolution, and regression-test guidance.
 
@@ -159,34 +158,24 @@ git commit -m "feat(analyzer): mutate raised exception pairs"
 ### Task 2: Document the raised-exception safety contract
 
 **Files:**
-- Modify: `crates/hoimin-cli/tests/cli_config.rs`
 - Modify: `README.md`
 - Modify: `docs/development.md`
 
 **Interfaces:**
 - Consumes: supported shapes and exclusions from the approved design and Task 1.
-- Produces: user and contributor documentation guarded by string-level contract tests.
+- Produces: user and contributor documentation consistent with observable analyzer behavior.
 
-- [ ] **Step 1: Write failing documentation-contract assertions**
+- [ ] **Step 1: Record the stale documentation before editing**
 
-Extend `development_docs_explain_exception_mutation_policy` and the README catalog test to require phrases covering `raise ValueError`, constructor calls, `from cause`, primary exception name, bare re-raise, qualified/dynamic forms, and scope-aware source/destination resolution.
+Confirm README and the development guide still state that `raise` expressions
+are not changed. These are the exact stale claims the documentation edit must
+remove; do not add string-matching assertions for human prose.
 
-- [ ] **Step 2: Run the documentation tests and observe RED**
-
-Run:
-
-```console
-cargo test -p hoimin-cli --test cli_config development_docs_explain_exception_mutation_policy -- --exact
-cargo test -p hoimin-cli --test cli_config readme_documents_all_mutation_operator_ids_and_selector_families -- --exact
-```
-
-Expected: FAIL because README and development documentation still say raise expressions are not changed.
-
-- [ ] **Step 3: Update README and development documentation**
+- [ ] **Step 2: Update README and development documentation**
 
 Change the catalog row from handler-only wording to curated exception types in `except` and supported `raise` contexts. Replace the future-extension text with exact accepted forms and exclusions. In `docs/development.md`, explain that `visit_stmt` inspects only `StmtRaise.exc`, replaces the simple primary name or simple call callee, then walks `exc` and `cause` normally once.
 
-- [ ] **Step 4: Run documentation and focused analyzer tests**
+- [ ] **Step 3: Verify documentation consistency and focused behavior**
 
 Run:
 
@@ -194,17 +183,18 @@ Run:
 cargo test -p hoimin-cli --test cli_config development_docs_explain_exception_mutation_policy -- --exact
 cargo test -p hoimin-cli --test cli_config readme_documents_all_mutation_operator_ids_and_selector_families -- --exact
 cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::raise_exception_type_pair -- --nocapture
+git diff --check
 ```
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit documentation with its code-backed contract test**
+- [ ] **Step 4: Commit documentation**
 
-This commit contains a Rust test change and therefore must not use `[skip ci]`.
+This commit contains only documentation and therefore uses `[skip ci]`.
 
 ```console
-git add README.md docs/development.md crates/hoimin-cli/tests/cli_config.rs
-git commit -m "docs: describe raised exception mutations"
+git add README.md docs/development.md
+git commit -m "docs: describe raised exception mutations [skip ci]"
 ```
 
 ---
