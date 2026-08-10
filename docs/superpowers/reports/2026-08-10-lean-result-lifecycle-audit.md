@@ -21,7 +21,7 @@ implementation bug remained.
 
 ## Durable claim and boundary
 
-Within the declared two-mutant, seven-status model, every transition accepted
+Within the declared two-mutant, seven-status transition model, every transition accepted
 by `ResultLifecycle.step` preserves:
 
 - summary entries equal the ordered statuses of summarized results; and
@@ -55,6 +55,10 @@ metrics contracts already implemented in the repository:
   normal exit policy.
 - Fatal persistence/report diagnostics make a run incomplete; metrics failure
   alone does not.
+- `timeout`, `out_of_memory`, `process_limit`, and `not_run` results are
+  inconclusive and make the run incomplete; `error` additionally selects the
+  infrastructure-error exit code. Only killed/survived result sets are
+  conclusive.
 
 The audit made two previously implicit distinctions explicit:
 
@@ -77,10 +81,12 @@ The event alphabet is:
 `metricsFailed`, and `returnRun`.
 
 Invalid events are rejected without state change. Events after `returnRun` are
-also rejected. `accept notRun` is invalid; `markNotRun` applies only after stop
-and only when no accepted real result exists. In a session run, recording a
-current result requires either a matching durable row, a persistence failure,
-or stop already taking precedence.
+also rejected. Result-lifecycle mutations are rejected once either the session
+or metrics surface has been finalized; the remaining surface may still be
+finalized before return. `accept notRun` is invalid; `markNotRun` applies only after stop
+and only when no accepted or durable real result exists. In a session run,
+recording a current result requires either a matching durable row, a
+persistence failure, or stop already taking precedence.
 
 ## Kernel-checked results
 
@@ -88,30 +94,45 @@ The following theorem bodies contain no `sorry`, `admit`, or custom axioms:
 
 - `initial_invariant`
 - `acceptState_invariant`
+- `proposal_preserves_structural`
 - `rejected_preserves_state`
 - `step_preserves_invariant`
 - `runWith_preserves_invariant`
 - `run_preserves_invariant`
+- `stopped_resume_not_run_is_rejected`
 - `stopped_not_run_does_not_increment_metrics`
 - `accepted_status_is_stable`
 - `complete_report_summary_corresponds`
+- `finalized_rejects_lifecycle_mutation`
+- `incomplete_session_cannot_return_complete`
+- `session_finalization_closes_result_lifecycle`
+- `metrics_finalization_closes_result_lifecycle`
+- `returned_complete_session_is_decisive`
+- `timeout_result_is_incomplete`
+- `error_result_is_infrastructure_failure`
 
-The first six are general over the finite model's setup, state, event, or
-trace under their stated premises. The last three are checked named traces;
-they are not universal theorems about all Rust executions. Structural
-properties beyond the small inductive `Invariant` are checked by executable
-`safe` over named and bounded states.
+Nine are general over the finite model's setup, state, event, or trace under
+their stated premises. The remaining nine are checked named traces or
+fixed boundary cases; they are not universal theorems about all Rust
+executions. The transition-preservation proof uses a local 100,000-heartbeat
+limit and focused list-membership lemmas rather than unbounded tactic search.
 
 ## Bounded exploration
 
 The exhaustive executable domain uses exactly two mutant roles (`m0`, `m1`),
-seven statuses, and a stable 28-event alphabet. Breadth-first exploration
-deduplicates exact states and checks all generated successors through depth 5.
+the single `auditSetup`, four accepted-status representatives (`killed`,
+`survived`, `timeout`, `error`), and a stable 28-event alphabet. In the
+transition rules, omitted accepted statuses `outOfMemory` and `processLimit`
+have the same control behavior as these non-`notRun` representatives;
+`notRun` cannot be accepted and is exercised through `markNotRun`. Breadth-first
+exploration deduplicates exact states and checks all generated successors
+through depth 5. Sessionless and resumed setups are covered by named corpus
+traces and fixed theorems, not by this breadth-first state count.
 
 Latest result:
 
 ```text
-depth=5 alphabet=28 states=29196 transitions=175896 corpus_cases=9
+depth=5 alphabet=28 states=10708 transitions=78960 corpus_cases=9
 ```
 
 Depth 9 from the initial plan was not retained: it exceeded 90 seconds in a
@@ -121,11 +142,11 @@ corpus schedules longer than depth 5 are still evaluated directly in full.
 This is a disclosed finite reduction, not an unbounded proof.
 
 Expensive exploration, shrinking, statistics, and JSON serialization live in
-`ResultLifecycleAuditMain.lean`, outside imported proof modules. A cached
-`lake build` took 0.38 seconds; rebuilding the changed result-lifecycle modules
-during development took about 2.55 seconds. The bounded stats command took
-12.62 seconds. Corpus generation/check took approximately 12–13 seconds per
-invocation on this machine.
+`ResultLifecycleAuditMain.lean`, outside imported proof modules. Rebuilding the
+changed result-lifecycle library and executable took about 2–3 seconds in the
+final review run. The bounded stats and corpus check took about 2.0–2.5
+seconds. Each final review invocation had an external
+10- or 20-second deadline; the retained depth was not increased.
 
 ## Sensitivity witnesses
 
@@ -138,7 +159,7 @@ uniqueness:    accept:m0:killed -> persist_ok:m0 -> record_result:m0
                -> report_ok:m0 -> report_ok:m0
 boundary:      accept:m0:killed -> stop
 cross_surface: accept:m0:killed -> persist_ok:m0
-metrics:       mark_not_run:m0
+metrics:       stop -> mark_not_run:m0
 ```
 
 These mutations cover premature/partial accounting, duplicate completion,
@@ -148,7 +169,9 @@ counting `not_run` as executed.
 ## Corpus inventory and correspondence
 
 The checked-in JSONL corpus has schema 1, unique IDs, typed events/statuses,
-and Lean-derived expected observations. The Rust adapter uses
+and Lean-derived expected observations, including a Lean-rendered
+`summary_counts` object independently checked against the ordered summary.
+The Rust adapter uses
 `deny_unknown_fields`, validates the vocabulary and setup consistency, maps
 generated candidate IDs only to stable `m0`/`m1` roles, and reads statuses and
 counts directly from the implementation surfaces. It does not derive expected
@@ -166,17 +189,29 @@ statuses, counts, or completeness.
 | `duplicate_completion` | `model-only` | broken-transition sensitivity | detected boundary |
 | `stop_after_summary_before_report` | `model-only` | report acknowledgement boundary | detected boundary |
 
-Every strict observation compares accepted, durable, and reported result
-triples; nonzero summary counts; metrics execution (or corpus-owned
+Every strict observation compares independently marked accepted-completion
+identities, durable and reported result triples, nonzero summary counts,
+metrics execution (or corpus-owned
 unobservability); stop/session/metrics/run/return flags; exit code; normalized
 diagnostics; and equality of report, result, summary, baseline, metrics, and
 session run IDs.
 
-The implementation adapter invokes the public `hoimin_cli::run_with_io`
-entrypoint rather than a private machine helper. Each case uses an isolated
+The implementation adapter invokes the public `hoimin` binary as a bounded
+child process rather than a private machine helper. Each case uses an isolated
 temporary Python project, controlled repository `.venv` interpreter, external
-execution marker, independent SQLite queries, and deserialized/validated
-`RunMetrics`.
+process-completion marker, independent SQLite queries, and
+deserialized/validated `RunMetrics`. The marker records completion in a Python
+`finally` block, retains duplicate completion identities for mismatch
+detection, and does not count a process terminated during the stop fixture.
+Each CLI child has a 12-second deadline; the case wrapper catches task panics
+but has no competing timeout that can abort child cleanup. On
+Unix the child receives `SIGINT` for bounded graceful cleanup and is then
+terminated as an isolated process group if necessary; on Windows `taskkill /T`
+terminates the tree. In both cases the root is explicitly reaped. A timeout
+regression verifies that a spawned descendant does not survive cleanup.
+Report mode also prints explicit `NotExecuted` dispositions for model-only and
+internal-fixture cases; selecting either in strict mode reports its actual mode
+instead of claiming that an unknown strict case was selected.
 
 ## Independent existing evidence
 
@@ -224,6 +259,28 @@ These were audit-artifact defects, not confirmed Hoimin bugs:
 8. Metrics write failure initially projected conceptual execution count as a
    sidecar observation. The corpus now owns `metrics_observed=false` for that
    case.
+9. A resumed durable identity could initially be marked `not_run` after stop;
+   the model now rejects that two-event boundary and retains a fixed theorem.
+10. The adapter's first independent execution projection recorded process
+    start rather than accepted completion and deduplicated marker identities;
+    the fixture now records completion and preserves duplicates.
+11. Finalization initially did not close the lifecycle, so results could change
+    after a session or metrics snapshot and an incomplete session could return
+    `complete=true`; finalization is now a proved mutation barrier.
+12. Unknown or noninteger public summary counts were initially filtered or
+    converted into mismatches; they now produce infrastructure errors.
+13. The first adapter deadline killed only the CLI root; bounded platform tree
+    cleanup and explicit reaping now cover timeout descendants.
+14. Single-case selection initially accepted non-strict IDs and then emitted a
+    misleading empty-strict-set error; report and strict modes now expose the
+    corpus disposition accurately.
+15. The model initially treated timeout/OOM/process-limit/error results as
+    complete and assigned status `error` exit code 4; conclusive-result guards
+    and fixed timeout/error proofs now match production completion and exit
+    precedence.
+16. An outer case timeout could initially abort the inner process-tree cleanup;
+    per-CLI bounded execution is now the sole deadline, while the panic-catching
+    task wrapper waits for cleanup to finish.
 
 This list is material evidence that the formal audit and bounded search changed
 the quality of the specification rather than merely restating existing tests.
@@ -264,7 +321,7 @@ lake exe generate_result_lifecycle -- --sensitivity
 
 - Confirmed implementation bugs: none.
 - Specification ambiguities remaining: none within the strict projection.
-- Resolved model/adapter defects: eight, listed above.
+- Resolved model/adapter defects: sixteen, listed above.
 - Infrastructure errors in the final strict run: none.
 - Unresolved witnesses: none.
 - Production repair: not applicable; the branch intentionally remains

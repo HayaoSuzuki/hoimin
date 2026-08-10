@@ -1,8 +1,125 @@
 import HoiminOracle.ResultLifecycleCases
+import Lean.Data.Json
 
 open HoiminOracle.ResultLifecycle
 
 namespace HoiminOracle.ResultLifecycle.Executable
+
+def allMutants : List Mutant := [.m0, .m1]
+def representativeStatuses : List Status := [.killed, .survived, .timeout, .error]
+
+def eventAlphabet : List Event :=
+  [.stop, .finishSession true, .finishSession false, .finishMetrics,
+    .metricsFailed, .returnRun] ++
+  allMutants.flatMap fun mutant =>
+    [.discover mutant, .persistOk mutant, .persistFailed mutant, .recordResult mutant,
+      .reportOk mutant, .reportFailed mutant, .markNotRun mutant] ++
+    representativeStatuses.map fun status => .accept mutant status
+
+structure Reachable where
+  trace : List Event
+  state : State
+  deriving Repr, DecidableEq, BEq
+
+def containsState (items : List Reachable) (state : State) : Bool :=
+  items.any fun item => item.state == state
+
+def successors (next : State → Event → Verdict) (item : Reachable) : List Reachable :=
+  eventAlphabet.map fun event => {
+    trace := item.trace ++ [event]
+    state := (next item.state event).state
+  }
+
+def uniqueNewStates (seen candidates : List Reachable) : List Reachable :=
+  candidates.foldl (fun retained candidate =>
+    if containsState seen candidate.state || containsState retained candidate.state then
+      retained
+    else
+      retained ++ [candidate]) []
+
+def explorationLayersWith
+    (next : State → Event → Verdict) :
+    Nat → List Reachable → List Reachable → List (List Reachable)
+  | 0, _, frontier => [frontier]
+  | depth + 1, seen, frontier =>
+      let following := uniqueNewStates seen (frontier.flatMap (successors next))
+      frontier :: explorationLayersWith next depth (seen ++ following) following
+
+def reachableUpTo
+    (next : State → Event → Verdict)
+    (setup : Setup)
+    (depth : Nat) : List Reachable :=
+  let start : Reachable := { trace := [], state := State.initial setup }
+  (explorationLayersWith next depth [start] [start]).flatten
+
+def firstCounterexample?
+    (next : State → Event → Verdict)
+    (setup : Setup)
+    (depth : Nat) : Option Reachable :=
+  (reachableUpTo next setup depth).find? fun item => !(safe item.state)
+
+private def resultJson (result : Result) : Lean.Json := Lean.Json.mkObj [
+  ("mutant", .str (mutantName result.mutant)),
+  ("status", .str (statusName result.status)),
+  ("executed", Lean.toJson result.executed)
+]
+
+private def resultsJson (results : List Result) : Lean.Json :=
+  .arr (results.toArray.map resultJson)
+
+private def mutantsJson (mutants : List Mutant) : Lean.Json :=
+  .arr (mutants.toArray.map fun mutant => .str (mutantName mutant))
+
+private def statusesJson (statuses : List Status) : Lean.Json :=
+  .arr (statuses.toArray.map fun status => .str (statusName status))
+
+private def statusCountsJson (counts : List (Status × Nat)) : Lean.Json :=
+  Lean.Json.mkObj (counts.map fun entry => (statusName entry.1, Lean.toJson entry.2))
+
+private def diagnosticsJson (diagnostics : List Diagnostic) : Lean.Json :=
+  .arr (diagnostics.toArray.map fun diagnostic => .str (diagnosticName diagnostic))
+
+private def stringsJson (values : List String) : Lean.Json :=
+  .arr (values.toArray.map Lean.Json.str)
+
+private def setupJson (setup : Setup) : Lean.Json := Lean.Json.mkObj [
+  ("session", Lean.toJson setup.session),
+  ("metrics", Lean.toJson setup.metrics),
+  ("discovered", mutantsJson setup.discovered),
+  ("seeded_durable", resultsJson setup.seededDurable)
+]
+
+private def observationJson (observation : ExpectedObservation) : Lean.Json :=
+  Lean.Json.mkObj [
+    ("accepted", resultsJson observation.accepted),
+    ("durable", resultsJson observation.durable),
+    ("reported", resultsJson observation.reported),
+    ("summary", statusesJson observation.summary),
+    ("summary_counts", statusCountsJson observation.summaryCounts),
+    ("metrics_executed", Lean.toJson observation.metricsExecuted),
+    ("metrics_observed", Lean.toJson observation.metricsObserved),
+    ("stopped", Lean.toJson observation.stopped),
+    ("session_finished", Lean.toJson observation.sessionFinished),
+    ("session_complete", Lean.toJson observation.sessionComplete),
+    ("metrics_finished", Lean.toJson observation.metricsFinished),
+    ("run_complete", Lean.toJson observation.runComplete),
+    ("returned", Lean.toJson observation.returned),
+    ("exit_code", Lean.toJson observation.exitCode),
+    ("diagnostics", diagnosticsJson observation.diagnostics)
+  ]
+
+def oracleCaseJson (item : OracleCase) : Lean.Json := Lean.Json.mkObj [
+  ("schema", Lean.toJson item.schema),
+  ("id", .str item.id),
+  ("mode", .str item.mode),
+  ("scenario", .str item.scenario),
+  ("setup", setupJson item.setup),
+  ("schedule", stringsJson item.schedule),
+  ("expected", observationJson item.expected)
+]
+
+def renderCorpus : String :=
+  String.join (cases.map fun item => (oracleCaseJson item).compress ++ "\n")
 
 def auditDepth : Nat := 5
 

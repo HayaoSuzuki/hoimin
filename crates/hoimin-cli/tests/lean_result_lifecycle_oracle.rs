@@ -1,9 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::process::{Output, Stdio};
+use std::time::Duration;
 
 use rusqlite::Connection;
 use serde::Deserialize;
+use tokio::io::AsyncReadExt;
 
 const MODE_ENV: &str = "HOIMIN_RESULT_LIFECYCLE_MODE";
 const CASE_ENV: &str = "HOIMIN_RESULT_LIFECYCLE_CASE";
@@ -33,6 +36,7 @@ struct ExpectedObservation {
     durable: Vec<ResultObservation>,
     reported: Vec<ResultObservation>,
     summary: Vec<String>,
+    summary_counts: BTreeMap<String, u64>,
     metrics_executed: u64,
     metrics_observed: bool,
     stopped: bool,
@@ -60,7 +64,7 @@ struct OracleCase {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::struct_excessive_bools)] // Keeps expected and actual projections isomorphic.
 struct ImplementationObservation {
-    accepted: Vec<ResultObservation>,
+    executed: Vec<String>,
     durable: Vec<ResultObservation>,
     reported: Vec<ResultObservation>,
     summary: BTreeMap<String, u64>,
@@ -73,7 +77,6 @@ struct ImplementationObservation {
     returned: bool,
     exit_code: i32,
     diagnostics: Vec<String>,
-    run_ids_consistent: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -157,7 +160,21 @@ fn validate_case(case: &OracleCase) -> Result<(), String> {
     ) {
         return Err(format!("unknown mode {}", case.mode));
     }
-    if case.id.is_empty() || case.scenario.is_empty() || case.schedule.is_empty() {
+    if case.id.is_empty()
+        || !matches!(
+            case.scenario.as_str(),
+            "sessionless_complete"
+                | "session_complete"
+                | "resume_reuses_determinate"
+                | "stop_preserves_accepted"
+                | "metrics_write_failure"
+                | "session_persistence_failure"
+                | "stop_during_persist"
+                | "duplicate_completion"
+                | "stop_after_summary_before_report"
+        )
+        || case.schedule.is_empty()
+    {
         return Err(format!(
             "case {} has an empty identity or schedule",
             case.id
@@ -216,6 +233,12 @@ fn validate_case(case: &OracleCase) -> Result<(), String> {
             case.id
         ));
     }
+    if case.expected.summary_counts != summary_counts(&case.expected.summary) {
+        return Err(format!(
+            "case {} has inconsistent Lean summary projections",
+            case.id
+        ));
+    }
     if !case.setup.session
         && (case.expected.session_finished
             || case.expected.session_complete
@@ -255,12 +278,77 @@ fn summary_counts(statuses: &[String]) -> BTreeMap<String, u64> {
     counts
 }
 
+fn report_summary_counts(document: &serde_json::Value) -> Result<BTreeMap<String, u64>, String> {
+    let counts = document["summary"]["counts"]
+        .as_object()
+        .ok_or_else(|| "summary counts is not an object".to_owned())?;
+    for required in [
+        "killed",
+        "survived",
+        "timeout",
+        "out_of_memory",
+        "process_limit",
+        "error",
+        "not_run",
+        "inconclusive",
+        "score",
+    ] {
+        if !counts.contains_key(required) {
+            return Err(format!("summary counts is missing {required}"));
+        }
+    }
+    let mut normalized = BTreeMap::new();
+    let mut inconclusive = None;
+    for (status, count) in counts {
+        if status == "score" {
+            if !count.is_null() && !count.is_number() {
+                return Err("summary score is neither numeric nor null".to_owned());
+            }
+            continue;
+        }
+        let count = count
+            .as_u64()
+            .ok_or_else(|| format!("summary count for {status} is not a nonnegative integer"))?;
+        if status == "inconclusive" {
+            inconclusive = Some(count);
+            continue;
+        }
+        if !known_status(status) {
+            return Err(format!("summary counts contains unknown status {status}"));
+        }
+        if count > 0 {
+            normalized.insert(status.clone(), count);
+        }
+    }
+    let expected_inconclusive = [
+        "timeout",
+        "out_of_memory",
+        "process_limit",
+        "error",
+        "not_run",
+    ]
+    .into_iter()
+    .map(|status| normalized.get(status).copied().unwrap_or_default())
+    .sum();
+    if inconclusive != Some(expected_inconclusive) {
+        return Err(format!(
+            "summary inconclusive count {inconclusive:?} disagrees with derived count {expected_inconclusive}"
+        ));
+    }
+    Ok(normalized)
+}
+
 fn expected_observation(case: &OracleCase) -> ImplementationObservation {
     ImplementationObservation {
-        accepted: sorted(case.expected.accepted.clone()),
+        executed: case
+            .expected
+            .accepted
+            .iter()
+            .map(|result| result.mutant.clone())
+            .collect(),
         durable: sorted(case.expected.durable.clone()),
         reported: sorted(case.expected.reported.clone()),
-        summary: summary_counts(&case.expected.summary),
+        summary: case.expected.summary_counts.clone(),
         metrics_executed: case
             .expected
             .metrics_observed
@@ -273,7 +361,6 @@ fn expected_observation(case: &OracleCase) -> ImplementationObservation {
         returned: case.expected.returned,
         exit_code: case.expected.exit_code,
         diagnostics: case.expected.diagnostics.clone(),
-        run_ids_consistent: true,
     }
 }
 
@@ -324,13 +411,42 @@ impl Fixture {
 
     fn test_command(&self, two_mutants: bool) -> String {
         let marker = self.marker.to_string_lossy();
-        let second_probe = if two_mutants {
-            "mutated_second='return second_left - second_right' in source; marker.open('a').write('m1\\n') if mutated_second else None; time.sleep(20) if mutated_second else None; from src.calc import first,second; assert first(3,2)==5; assert second(3,2)==5"
+        let test_body = if two_mutants {
+            concat!(
+                "mutated_second = 'return second_left - second_right' in source\n",
+                "try:\n",
+                "    if mutated_second:\n",
+                "        time.sleep(20)\n",
+                "    from src.calc import first, second\n",
+                "    assert first(3, 2) == 5\n",
+                "    assert second(3, 2) == 5\n",
+                "finally:\n",
+                "    if mutated_first:\n",
+                "        marker.open('a').write('m0\\n')\n",
+                "    if mutated_second:\n",
+                "        marker.open('a').write('m1\\n')\n",
+            )
         } else {
-            "from src.calc import first; assert first(3,2)==5"
+            concat!(
+                "try:\n",
+                "    from src.calc import first\n",
+                "    assert first(3, 2) == 5\n",
+                "finally:\n",
+                "    if mutated_first:\n",
+                "        marker.open('a').write('m0\\n')\n",
+            )
         };
         format!(
-            "from pathlib import Path; import time; source=Path('src/calc.py').read_text(); marker=Path({marker:?}); mutated_first='return first_left - first_right' in source; marker.open('a').write('m0\\n') if mutated_first else None; {second_probe}"
+            concat!(
+                "from pathlib import Path\n",
+                "import time\n",
+                "source = Path('src/calc.py').read_text()\n",
+                "marker = Path({marker:?})\n",
+                "mutated_first = 'return first_left - first_right' in source\n",
+                "{test_body}",
+            ),
+            marker = marker,
+            test_body = test_body,
         )
     }
 }
@@ -370,7 +486,6 @@ async fn run_cli(
 ) -> Result<FixtureRun, String> {
     let python = python_executable()?;
     let mut args = vec![
-        OsString::from("hoimin"),
         OsString::from("run"),
         OsString::from("--root"),
         fixture.root.as_os_str().to_owned(),
@@ -411,13 +526,28 @@ async fn run_cli(
         OsString::from("-c"),
         OsString::from(fixture.test_command(two_mutants)),
     ]);
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let exit_code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-    let stdout =
-        String::from_utf8(stdout).map_err(|error| format!("stdout is not UTF-8: {error}"))?;
-    let stderr =
-        String::from_utf8(stderr).map_err(|error| format!("stderr is not UTF-8: {error}"))?;
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
+    command
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.as_std_mut().process_group(0);
+    }
+    let output = bounded_cli_output(&mut command, Duration::from_secs(12)).await?;
+    let exit_code = output.status.code().ok_or_else(|| {
+        format!(
+            "hoimin CLI terminated without an exit code: {}",
+            output.status
+        )
+    })?;
+    let stdout = String::from_utf8(output.stdout)
+        .map_err(|error| format!("stdout is not UTF-8: {error}"))?;
+    let stderr = String::from_utf8(output.stderr)
+        .map_err(|error| format!("stderr is not UTF-8: {error}"))?;
     let document = serde_json::from_str(stdout.trim()).map_err(|error| {
         format!(
             "invalid report JSON ({error}); exit={exit_code}; stdout={stdout:?}; stderr={stderr:?}"
@@ -429,6 +559,137 @@ async fn run_cli(
         stderr,
         document,
     })
+}
+
+async fn bounded_cli_output(
+    command: &mut tokio::process::Command,
+    timeout: Duration,
+) -> Result<Output, String> {
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("spawn hoimin CLI: {error}"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "hoimin CLI stdout was not piped".to_owned())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "hoimin CLI stderr was not piped".to_owned())?;
+    let stdout = tokio::spawn(read_output(stdout));
+    let stderr = tokio::spawn(read_output(stderr));
+
+    let status = match tokio::time::timeout(timeout, child.wait()).await {
+        Ok(Ok(status)) => status,
+        Ok(Err(error)) => {
+            let cleanup = cleanup_cli_process_tree(&mut child).await;
+            let stdout = join_output(stdout, "stdout").await;
+            let stderr = join_output(stderr, "stderr").await;
+            return Err(format!(
+                "wait for hoimin CLI failed: {error}; cleanup: {cleanup}; stdout: {stdout:?}; stderr: {stderr:?}"
+            ));
+        }
+        Err(_) => {
+            let cleanup = cleanup_cli_process_tree(&mut child).await;
+            let stdout = join_output(stdout, "stdout").await;
+            let stderr = join_output(stderr, "stderr").await;
+            return Err(format!(
+                "hoimin CLI timed out after {} seconds; cleanup: {cleanup}; stdout: {stdout:?}; stderr: {stderr:?}",
+                timeout.as_secs()
+            ));
+        }
+    };
+    let stdout = join_output(stdout, "stdout").await?;
+    let stderr = join_output(stderr, "stderr").await?;
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
+async fn read_output<R: tokio::io::AsyncRead + Unpin>(mut reader: R) -> std::io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    reader.read_to_end(&mut bytes).await?;
+    Ok(bytes)
+}
+
+async fn join_output(
+    mut reader: tokio::task::JoinHandle<std::io::Result<Vec<u8>>>,
+    name: &str,
+) -> Result<Vec<u8>, String> {
+    if let Ok(result) = tokio::time::timeout(Duration::from_secs(2), &mut reader).await {
+        result
+            .map_err(|error| format!("join hoimin CLI {name}: {error}"))?
+            .map_err(|error| format!("read hoimin CLI {name}: {error}"))
+    } else {
+        reader.abort();
+        Err(format!("timed out draining hoimin CLI {name}"))
+    }
+}
+
+#[cfg(unix)]
+async fn cleanup_cli_process_tree(child: &mut tokio::process::Child) -> String {
+    let Some(pid) = child.id().and_then(|pid| i32::try_from(pid).ok()) else {
+        return "child already exited".to_owned();
+    };
+    let mut diagnostics = Vec::new();
+    // SAFETY: pid identifies the retained child; SIGINT lets hoimin run its own tree cleanup.
+    if unsafe { libc::kill(pid, libc::SIGINT) } != 0 {
+        diagnostics.push(format!(
+            "SIGINT failed: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    let reaped = matches!(
+        tokio::time::timeout(Duration::from_secs(4), child.wait()).await,
+        Ok(Ok(_))
+    );
+    // SAFETY: run_cli placed the child in a process group whose id is the positive child pid.
+    if unsafe { libc::kill(-pid, libc::SIGKILL) } != 0 {
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() != Some(libc::ESRCH) {
+            diagnostics.push(format!("process-group SIGKILL failed: {error}"));
+        }
+    }
+    if !reaped
+        && !matches!(
+            tokio::time::timeout(Duration::from_secs(2), child.wait()).await,
+            Ok(Ok(_))
+        )
+    {
+        diagnostics.push("child was not reaped after process-group cleanup".to_owned());
+    }
+    if diagnostics.is_empty() {
+        "process tree terminated and root reaped".to_owned()
+    } else {
+        diagnostics.join(", ")
+    }
+}
+
+#[cfg(windows)]
+async fn cleanup_cli_process_tree(child: &mut tokio::process::Child) -> String {
+    let mut diagnostics = Vec::new();
+    if let Some(pid) = child.id() {
+        let pid = pid.to_string();
+        let mut taskkill = tokio::process::Command::new("taskkill");
+        taskkill.args(["/PID", &pid, "/T", "/F"]).kill_on_drop(true);
+        let output = tokio::time::timeout(Duration::from_secs(5), taskkill.output()).await;
+        if !matches!(output, Ok(Ok(ref value)) if value.status.success()) {
+            diagnostics.push("taskkill did not confirm process-tree termination".to_owned());
+        }
+    }
+    if !matches!(
+        tokio::time::timeout(Duration::from_secs(5), child.wait()).await,
+        Ok(Ok(_))
+    ) {
+        diagnostics.push("child was not reaped after taskkill".to_owned());
+    }
+    if diagnostics.is_empty() {
+        "process tree terminated and root reaped".to_owned()
+    } else {
+        diagnostics.join(", ")
+    }
 }
 
 fn enable_session(fixture: &Fixture) -> Result<(), String> {
@@ -461,7 +722,7 @@ fn reopen_incomplete(fixture: &Fixture, fail_persist: bool) -> Result<(), String
     Ok(())
 }
 
-async fn execute_strict(case: &OracleCase) -> Result<ImplementationObservation, String> {
+async fn execute_strict(case: &OracleCase) -> Result<(ImplementationObservation, bool), String> {
     let two_mutants = case.scenario == "stop_preserves_accepted";
     let fixture = Fixture::new(two_mutants)?;
     let has_session = case.setup.session;
@@ -500,13 +761,7 @@ async fn execute_strict(case: &OracleCase) -> Result<ImplementationObservation, 
             ));
         }
     };
-    observe_run(
-        &fixture,
-        &run,
-        has_session,
-        metrics_path,
-        case.expected.stopped,
-    )
+    observe_run(&fixture, &run, has_session, metrics_path)
 }
 
 fn report_results(
@@ -519,10 +774,14 @@ fn report_results(
     let mut roles = BTreeMap::new();
     let mut results = Vec::new();
     for (index, mutant) in mutants.iter().enumerate() {
-        let role = format!("m{index}");
-        if !matches!(role.as_str(), "m0" | "m1") {
-            return Err(format!("report has unsupported mutant role {role}"));
-        }
+        let symbol = mutant["candidate"]["symbol"]
+            .as_str()
+            .ok_or_else(|| format!("mutant at index {index} has no symbol"))?;
+        let role = match symbol {
+            "first" => "m0".to_owned(),
+            "second" => "m1".to_owned(),
+            _ => return Err(format!("report has unsupported candidate symbol {symbol}")),
+        };
         let id = mutant["candidate"]["id"]
             .as_str()
             .ok_or_else(|| format!("mutant {role} has no candidate id"))?;
@@ -530,7 +789,13 @@ fn report_results(
             .as_str()
             .filter(|status| known_status(status))
             .ok_or_else(|| format!("mutant {role} has unknown status"))?;
-        roles.insert(id.to_owned(), role.clone());
+        if roles.insert(id.to_owned(), role.clone()).is_some()
+            || results
+                .iter()
+                .any(|result: &ResultObservation| result.mutant == role)
+        {
+            return Err(format!("report repeats semantic role {role}"));
+        }
         results.push(ResultObservation {
             mutant: role.clone(),
             status: status.to_owned(),
@@ -540,10 +805,10 @@ fn report_results(
     Ok((sorted(results), roles))
 }
 
-fn marker_roles(path: &Path) -> Result<BTreeSet<String>, String> {
+fn marker_roles(path: &Path) -> Result<Vec<String>, String> {
     match std::fs::read_to_string(path) {
         Ok(text) => Ok(text.lines().map(str::to_owned).collect()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(BTreeSet::new()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
         Err(error) => Err(format!("read execution marker: {error}")),
     }
 }
@@ -605,19 +870,12 @@ fn observe_run(
     run: &FixtureRun,
     has_session: bool,
     metrics_path: &Path,
-    expected_stopped: bool,
-) -> Result<ImplementationObservation, String> {
+) -> Result<(ImplementationObservation, bool), String> {
     let executed_roles = marker_roles(&fixture.marker)?;
-    let (reported, roles) = report_results(&run.document, &executed_roles)?;
-    let accepted = sorted(
-        reported
-            .iter()
-            .filter(|result| result.executed)
-            .cloned()
-            .collect(),
-    );
+    let executed_role_set = executed_roles.iter().cloned().collect::<BTreeSet<_>>();
+    let (reported, roles) = report_results(&run.document, &executed_role_set)?;
     let (durable, session_finished, session_complete, session_run_id) = if has_session {
-        session_observation(&fixture.session, &roles, &executed_roles)?
+        session_observation(&fixture.session, &roles, &executed_role_set)?
     } else {
         (Vec::new(), false, false, None)
     };
@@ -649,51 +907,52 @@ fn observe_run(
             .as_ref()
             .is_none_or(|value| Some(value.run_id.as_str()) == report_run_id)
         && result_run_ids_match;
-    let summary = run.document["summary"]["counts"]
-        .as_object()
-        .ok_or_else(|| "summary counts is not an object".to_owned())?
-        .iter()
-        .filter(|(status, _)| known_status(status))
-        .map(|(status, count)| (status.clone(), count.as_u64().unwrap_or(u64::MAX)))
-        .filter(|(_, count)| *count > 0)
-        .collect();
+    let summary = report_summary_counts(&run.document)?;
     let normalized_diagnostics = diagnostics(&run.stderr);
-    Ok(ImplementationObservation {
-        accepted,
-        durable,
-        reported,
-        summary,
-        metrics_executed: metrics.as_ref().map(|value| value.executed),
-        stopped: expected_stopped && run.exit_code == 4,
-        session_finished,
-        session_complete,
-        metrics_finished: metrics.is_some()
-            || normalized_diagnostics.contains(&"metrics_failed".to_owned()),
-        run_complete: run.document["summary"]["complete"]
-            .as_bool()
-            .ok_or_else(|| "summary complete is not a bool".to_owned())?,
-        returned: true,
-        exit_code: run.exit_code,
-        diagnostics: normalized_diagnostics,
+    let stopped = run.exit_code == 4 && reported.iter().any(|result| result.status == "not_run");
+    Ok((
+        ImplementationObservation {
+            executed: executed_roles,
+            durable,
+            reported,
+            summary,
+            metrics_executed: metrics.as_ref().map(|value| value.executed),
+            stopped,
+            session_finished,
+            session_complete,
+            metrics_finished: metrics.is_some()
+                || normalized_diagnostics.contains(&"metrics_failed".to_owned()),
+            run_complete: run.document["summary"]["complete"]
+                .as_bool()
+                .ok_or_else(|| "summary complete is not a bool".to_owned())?,
+            returned: true,
+            exit_code: run.exit_code,
+            diagnostics: normalized_diagnostics,
+        },
         run_ids_consistent,
-    })
+    ))
 }
 
 async fn run_case(case: &OracleCase) -> CaseResult {
     let expected = expected_observation(case);
-    match execute_strict(case).await {
-        Ok(actual) => CaseResult {
+    let owned = case.clone();
+    let execution = tokio::spawn(async move { execute_strict(&owned).await })
+        .await
+        .map_err(|error| format!("case task panicked: {error}"));
+    match execution {
+        Ok(Ok((actual, run_ids_consistent))) => CaseResult {
             id: case.id.clone(),
-            class: if actual == expected {
+            class: if actual == expected && run_ids_consistent {
                 CaseClass::Match
             } else {
                 CaseClass::Mismatch
             },
             expected: Some(expected),
             actual: Some(actual),
-            detail: None,
+            detail: (!run_ids_consistent)
+                .then_some("run IDs disagree across public surfaces".to_owned()),
         },
-        Err(error) => CaseResult {
+        Ok(Err(error)) | Err(error) => CaseResult {
             id: case.id.clone(),
             class: CaseClass::InfrastructureError,
             expected: Some(expected),
@@ -734,6 +993,92 @@ fn result_lifecycle_parser_rejects_schema_drift_and_duplicate_ids() {
     assert!(parse_corpus(&format!("{first}\n{first}\n")).is_err());
 }
 
+#[test]
+fn execution_marker_preserves_duplicate_completions() {
+    let directory = tempfile::tempdir().unwrap();
+    let marker = directory.path().join("executed");
+    std::fs::write(&marker, "m0\nm0\n").unwrap();
+
+    let roles = marker_roles(&marker).unwrap();
+
+    assert_eq!(roles, ["m0".to_owned(), "m0".to_owned()]);
+}
+
+#[test]
+fn report_summary_rejects_unknown_and_noninteger_counts() {
+    let valid = serde_json::json!({"summary": {"counts": {
+        "killed": 1, "survived": 0, "timeout": 0, "out_of_memory": 0,
+        "process_limit": 0, "error": 0, "not_run": 0, "inconclusive": 0,
+        "score": 1.0
+    }}});
+    let mut unknown = valid.clone();
+    unknown["summary"]["counts"]["future_status"] = serde_json::json!(1);
+    assert_eq!(
+        report_summary_counts(&unknown).unwrap_err(),
+        "summary counts contains unknown status future_status"
+    );
+
+    let mut fractional = valid;
+    fractional["summary"]["counts"]["killed"] = serde_json::json!(1.5);
+    assert_eq!(
+        report_summary_counts(&fractional).unwrap_err(),
+        "summary count for killed is not a nonnegative integer"
+    );
+
+    let inconsistent = serde_json::json!({"summary": {"counts": {
+        "killed": 0, "survived": 0, "timeout": 1, "out_of_memory": 0,
+        "process_limit": 0, "error": 0, "not_run": 0, "inconclusive": 0,
+        "score": null
+    }}});
+    assert_eq!(
+        report_summary_counts(&inconsistent).unwrap_err(),
+        "summary inconclusive count Some(0) disagrees with derived count 1"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn bounded_cli_timeout_terminates_descendants() {
+    use std::os::unix::process::CommandExt;
+
+    let directory = tempfile::tempdir().unwrap();
+    let marker = directory.path().join("descendant.pid");
+    let mut command = tokio::process::Command::new("sh");
+    command
+        .args([
+            "-c",
+            "trap '' INT; sleep 20 & echo $! > \"$DESCENDANT_PID_MARKER\"; wait",
+        ])
+        .env("DESCENDANT_PID_MARKER", &marker)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    command.as_std_mut().process_group(0);
+
+    let error = bounded_cli_output(&mut command, Duration::from_millis(100))
+        .await
+        .unwrap_err();
+    assert!(error.contains("timed out"), "{error}");
+    let pid = std::fs::read_to_string(&marker)
+        .unwrap()
+        .trim()
+        .parse::<i32>()
+        .unwrap();
+    let stopped = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            // SAFETY: signal zero only checks the fixture descendant recorded above.
+            if unsafe { libc::kill(pid, 0) } != 0
+                && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await;
+    assert!(stopped.is_ok(), "fixture descendant {pid} survived cleanup");
+}
+
 #[tokio::test]
 async fn result_lifecycle_oracle_correspondence() {
     let cases = parse_corpus(corpus_text()).expect("valid Lean corpus");
@@ -749,14 +1094,27 @@ async fn result_lifecycle_oracle_correspondence() {
             "unknown {CASE_ENV}={id}"
         );
     }
-    let strict = cases
+    let selected_cases = cases
         .iter()
-        .filter(|case| case.mode == "strict")
         .filter(|case| selected.as_ref().is_none_or(|id| &case.id == id))
         .collect::<Vec<_>>();
+    if mode == "strict"
+        && selected.is_some()
+        && let Some(case) = selected_cases.iter().find(|case| case.mode != "strict")
+    {
+        panic!(
+            "{CASE_ENV}={} has mode {}; only strict cases are executable",
+            case.id, case.mode
+        );
+    }
+    let strict = selected_cases
+        .iter()
+        .copied()
+        .filter(|case| case.mode == "strict")
+        .collect::<Vec<_>>();
     assert!(
-        !strict.is_empty(),
-        "no strict result lifecycle cases selected"
+        mode == "report" || !strict.is_empty(),
+        "no executable strict result lifecycle cases selected"
     );
     let mut failures = Vec::new();
     for case in strict {
@@ -773,6 +1131,14 @@ async fn result_lifecycle_oracle_correspondence() {
             eprintln!("  actual={:#?}", result.actual);
             eprintln!("  detail={:#?}", result.detail);
             failures.push(result.id);
+        }
+    }
+    if mode == "report" {
+        for case in selected_cases.iter().filter(|case| case.mode != "strict") {
+            eprintln!(
+                "result-lifecycle {}: NotExecuted (mode={}, evidence={})",
+                case.id, case.mode, case.scenario
+            );
         }
     }
     if mode == "strict" {

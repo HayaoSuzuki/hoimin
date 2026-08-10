@@ -1,5 +1,4 @@
 import HoiminOracle.ResultLifecycleProofs
-import Lean.Data.Json
 
 namespace HoiminOracle.ResultLifecycle
 
@@ -8,6 +7,7 @@ structure ExpectedObservation where
   durable : List Result
   reported : List Result
   summary : List Status
+  summaryCounts : List (Status × Nat)
   metricsExecuted : Nat
   metricsObserved : Bool
   stopped : Bool
@@ -87,6 +87,9 @@ private def observe (state : State) : ExpectedObservation where
   durable := state.durable
   reported := state.reported
   summary := state.summary
+  summaryCounts := [.killed, .survived, .timeout, .outOfMemory, .processLimit, .error, .notRun]
+    |>.map (fun status => (status, state.summary.count status))
+    |>.filter (fun entry => entry.2 > 0)
   metricsExecuted := state.metricsExecuted
   metricsObserved := !state.diagnostics.contains .metricsFailed
   stopped := state.stopped
@@ -95,13 +98,7 @@ private def observe (state : State) : ExpectedObservation where
   metricsFinished := state.metricsFinished
   runComplete := state.complete
   returned := state.returned
-  exitCode :=
-    if state.diagnostics.any fun diagnostic => diagnostic != .metricsFailed then 2
-    else if state.stopped || state.summary.any fun status =>
-        status == .timeout || status == .outOfMemory || status == .processLimit ||
-          status == .error || status == .notRun then 4
-    else if .survived ∈ state.summary then 1
-    else 0
+  exitCode := exitCode state
   diagnostics := state.diagnostics
 
 private def toOracleCase (spec : CaseSpec) : OracleCase where
@@ -194,64 +191,5 @@ def cases : List OracleCase := specs.map toOracleCase
 
 def caseStatesSafe : Bool :=
   specs.all fun spec => safe (run (State.initial spec.setup) spec.schedule)
-
-private def resultJson (result : Result) : Lean.Json := Lean.Json.mkObj [
-  ("mutant", .str (mutantName result.mutant)),
-  ("status", .str (statusName result.status)),
-  ("executed", Lean.toJson result.executed)
-]
-
-private def resultsJson (results : List Result) : Lean.Json :=
-  .arr (results.toArray.map resultJson)
-
-private def mutantsJson (mutants : List Mutant) : Lean.Json :=
-  .arr (mutants.toArray.map fun mutant => .str (mutantName mutant))
-
-private def statusesJson (statuses : List Status) : Lean.Json :=
-  .arr (statuses.toArray.map fun status => .str (statusName status))
-
-private def diagnosticsJson (diagnostics : List Diagnostic) : Lean.Json :=
-  .arr (diagnostics.toArray.map fun diagnostic => .str (diagnosticName diagnostic))
-
-private def stringsJson (values : List String) : Lean.Json :=
-  .arr (values.toArray.map Lean.Json.str)
-
-private def setupJson (setup : Setup) : Lean.Json := Lean.Json.mkObj [
-  ("session", Lean.toJson setup.session),
-  ("metrics", Lean.toJson setup.metrics),
-  ("discovered", mutantsJson setup.discovered),
-  ("seeded_durable", resultsJson setup.seededDurable)
-]
-
-private def observationJson (observation : ExpectedObservation) : Lean.Json :=
-  Lean.Json.mkObj [
-    ("accepted", resultsJson observation.accepted),
-    ("durable", resultsJson observation.durable),
-    ("reported", resultsJson observation.reported),
-    ("summary", statusesJson observation.summary),
-    ("metrics_executed", Lean.toJson observation.metricsExecuted),
-    ("metrics_observed", Lean.toJson observation.metricsObserved),
-    ("stopped", Lean.toJson observation.stopped),
-    ("session_finished", Lean.toJson observation.sessionFinished),
-    ("session_complete", Lean.toJson observation.sessionComplete),
-    ("metrics_finished", Lean.toJson observation.metricsFinished),
-    ("run_complete", Lean.toJson observation.runComplete),
-    ("returned", Lean.toJson observation.returned),
-    ("exit_code", Lean.toJson observation.exitCode),
-    ("diagnostics", diagnosticsJson observation.diagnostics)
-  ]
-
-def oracleCaseJson (item : OracleCase) : Lean.Json := Lean.Json.mkObj [
-  ("schema", Lean.toJson item.schema),
-  ("id", .str item.id),
-  ("mode", .str item.mode),
-  ("scenario", .str item.scenario),
-  ("setup", setupJson item.setup),
-  ("schedule", stringsJson item.schedule),
-  ("expected", observationJson item.expected)
-]
-
-def renderCorpus : String :=
-  String.join (cases.map fun item => (oracleCaseJson item).compress ++ "\n")
 
 end HoiminOracle.ResultLifecycle

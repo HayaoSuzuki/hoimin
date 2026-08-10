@@ -91,6 +91,14 @@ inductive Event
   | returnRun
   deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
 
+namespace Event
+
+def isLifecycleMutation : Event → Bool
+  | .finishSession _ | .finishMetrics | .metricsFailed | .returnRun => false
+  | _ => true
+
+end Event
+
 inductive Rejection
   | unknownMutant
   | duplicate
@@ -100,6 +108,7 @@ inductive Rejection
   | persistenceRequired
   | sessionDisabled
   | alreadyFinished
+  | finalizationRequired
   deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
 
 structure Verdict where
@@ -138,6 +147,18 @@ def completeCoverage (state : State) : Bool :=
 def runFailureFree (state : State) : Bool :=
   state.diagnostics.all fun diagnostic => diagnostic == .metricsFailed
 
+def resultsConclusive (state : State) : Bool :=
+  state.summary.all fun status => status == .killed || status == .survived
+
+def exitCode (state : State) : Nat :=
+  if state.diagnostics.any fun diagnostic => diagnostic != .metricsFailed then 2
+  else if .error ∈ state.summary then 2
+  else if state.stopped || state.summary.any fun status =>
+      status == .timeout || status == .outOfMemory || status == .processLimit ||
+        status == .notRun then 4
+  else if .survived ∈ state.summary then 1
+  else 0
+
 def safe (state : State) : Bool :=
   identitiesUnique state.accepted &&
     identitiesUnique state.durable &&
@@ -150,12 +171,33 @@ def safe (state : State) : Bool :=
     state.summary == state.summarized.map Result.status &&
     state.metricsExecuted == state.accepted.length &&
     (!state.complete || completeCoverage state) &&
-    (!state.sessionComplete || state.sessionFinished) &&
+    (!state.sessionComplete || (state.sessionFinished && !state.stopped &&
+      runFailureFree state && completeCoverage state && resultsConclusive state)) &&
+    (!state.returned || ((!state.setup.session || state.sessionFinished) &&
+      (!state.setup.metrics || state.metricsFinished))) &&
     (!state.returned || state.complete ==
-      (!state.stopped && runFailureFree state && completeCoverage state))
+      (!state.stopped && runFailureFree state && completeCoverage state && resultsConclusive state &&
+        (!state.setup.session || state.sessionComplete)))
+
+def SetupInvariant (setup : Setup) : Prop :=
+  (setup.seededDurable.map Result.mutant).Nodup ∧
+    ∀ result ∈ setup.seededDurable, result.executed = false ∧ result.status ≠ .notRun
+
+def StructuralInvariant (state : State) : Prop :=
+  (state.accepted.map Result.mutant).Nodup ∧
+    (state.durable.map Result.mutant).Nodup ∧
+    (state.summarized.map Result.mutant).Nodup ∧
+    (state.reported.map Result.mutant).Nodup ∧
+    (∀ result ∈ state.accepted, result.executed = true ∧ result.status ≠ .notRun) ∧
+    (∀ result ∈ state.durable, resultBacked state result) ∧
+    (∀ result ∈ state.summarized, reportBacked state result) ∧
+    (∀ result ∈ state.reported, result ∈ state.summarized) ∧
+    (∀ result ∈ state.accepted,
+      ¬containsMutant state.setup.seededDurable result.mutant)
 
 def Invariant (state : State) : Prop :=
-  state.summary = state.summarized.map Result.status ∧
+  StructuralInvariant state ∧
+    state.summary = state.summarized.map Result.status ∧
     state.metricsExecuted = state.accepted.length
 
 def normalize (state : State) : State := {
@@ -187,7 +229,8 @@ def proposal (state : State) : Event → Except Rejection State
         .error .unknownMutant
       else if status == .notRun then
         .error .invalidStatus
-      else if containsMutant state.accepted mutant then
+      else if containsMutant state.accepted mutant ||
+          containsMutant state.setup.seededDurable mutant then
         .error .duplicate
       else
         .ok { state with
@@ -196,11 +239,13 @@ def proposal (state : State) : Event → Except Rejection State
   | .persistOk mutant =>
       if !state.setup.session then
         .error .sessionDisabled
+      else if containsMutant state.durable mutant then
+        .error .duplicate
       else
         match findResult state.accepted mutant with
         | none => .error .resultMissing
         | some result => .ok { state with
-            durable := upsertResult state.durable result
+            durable := state.durable ++ [result]
             persistenceFailures := state.persistenceFailures.erase mutant
           }
   | .persistFailed mutant =>
@@ -242,10 +287,12 @@ def proposal (state : State) : Event → Except Rejection State
   | .stop =>
       if state.stopped then .error .duplicate else .ok { state with stopped := true }
   | .markNotRun mutant =>
-      if !(mutant ∈ state.setup.discovered) then
+      if !state.stopped then
+        .error .stopped
+      else if !(mutant ∈ state.setup.discovered) then
         .error .unknownMutant
-      else if containsMutant state.accepted mutant || containsMutant state.summarized mutant ||
-          containsMutant state.reported mutant then
+      else if containsMutant state.accepted mutant || containsMutant state.durable mutant ||
+          containsMutant state.summarized mutant || containsMutant state.reported mutant then
         .error .duplicate
       else
         let result : Result := { mutant, status := .notRun, executed := false }
@@ -258,6 +305,9 @@ def proposal (state : State) : Event → Except Rejection State
         .error .sessionDisabled
       else if state.sessionFinished then
         .error .alreadyFinished
+      else if complete && (state.stopped || !runFailureFree state || !completeCoverage state ||
+          !resultsConclusive state) then
+        .error .finalizationRequired
       else
         .ok { state with sessionFinished := true, sessionComplete := complete }
   | .finishMetrics =>
@@ -270,6 +320,8 @@ def proposal (state : State) : Event → Except Rejection State
   | .metricsFailed =>
       if !state.setup.metrics then
         .error .alreadyFinished
+      else if state.metricsFinished then
+        .error .alreadyFinished
       else
         .ok { state with
           metricsFinished := true
@@ -278,12 +330,18 @@ def proposal (state : State) : Event → Except Rejection State
   | .returnRun =>
       if state.returned then
         .error .alreadyFinished
+      else if (state.setup.session && !state.sessionFinished) ||
+          (state.setup.metrics && !state.metricsFinished) then
+        .error .finalizationRequired
       else
-        let complete := !state.stopped && runFailureFree state && completeCoverage state
+        let complete := !state.stopped && runFailureFree state && completeCoverage state &&
+          resultsConclusive state && (!state.setup.session || state.sessionComplete)
         .ok { state with returned := true, complete }
 
 def step (state : State) (event : Event) : Verdict :=
   if state.returned then
+    reject state .alreadyFinished
+  else if (state.sessionFinished || state.metricsFinished) && event.isLifecycleMutation then
     reject state .alreadyFinished
   else
     match proposal state event with
@@ -345,62 +403,11 @@ def brokenMetrics (state : State) (event : Event) : Verdict :=
   match event with
   | .markNotRun _ =>
       let verdict := step state event
-      { verdict with state := { verdict.state with
-          metricsExecuted := verdict.state.metricsExecuted + 1
-        } }
+      if verdict.rejection.isNone then
+        { verdict with state := { verdict.state with
+            metricsExecuted := verdict.state.metricsExecuted + 1
+          } }
+      else verdict
   | _ => step state event
-
-def allMutants : List Mutant := [.m0, .m1]
-def representativeStatuses : List Status := [.killed, .survived, .timeout, .error]
-
-def eventAlphabet : List Event :=
-  [.stop, .finishSession true, .finishSession false, .finishMetrics,
-    .metricsFailed, .returnRun] ++
-  allMutants.flatMap fun mutant =>
-    [.discover mutant, .persistOk mutant, .persistFailed mutant, .recordResult mutant,
-      .reportOk mutant, .reportFailed mutant, .markNotRun mutant] ++
-    representativeStatuses.map fun status => .accept mutant status
-
-structure Reachable where
-  trace : List Event
-  state : State
-  deriving Repr, DecidableEq, BEq
-
-def containsState (items : List Reachable) (state : State) : Bool :=
-  items.any fun item => item.state == state
-
-def successors (next : State → Event → Verdict) (item : Reachable) : List Reachable :=
-  eventAlphabet.map fun event => {
-    trace := item.trace ++ [event]
-    state := (next item.state event).state
-  }
-
-def uniqueNewStates (seen candidates : List Reachable) : List Reachable :=
-  candidates.foldl (fun retained candidate =>
-    if containsState seen candidate.state || containsState retained candidate.state then
-      retained
-    else
-      retained ++ [candidate]) []
-
-def explorationLayersWith
-    (next : State → Event → Verdict) :
-    Nat → List Reachable → List Reachable → List (List Reachable)
-  | 0, _, frontier => [frontier]
-  | depth + 1, seen, frontier =>
-      let following := uniqueNewStates seen (frontier.flatMap (successors next))
-      frontier :: explorationLayersWith next depth (seen ++ following) following
-
-def reachableUpTo
-    (next : State → Event → Verdict)
-    (setup : Setup)
-    (depth : Nat) : List Reachable :=
-  let start : Reachable := { trace := [], state := State.initial setup }
-  (explorationLayersWith next depth [start] [start]).flatten
-
-def firstCounterexample?
-    (next : State → Event → Verdict)
-    (setup : Setup)
-    (depth : Nat) : Option Reachable :=
-  (reachableUpTo next setup depth).find? fun item => !(safe item.state)
 
 end HoiminOracle.ResultLifecycle
