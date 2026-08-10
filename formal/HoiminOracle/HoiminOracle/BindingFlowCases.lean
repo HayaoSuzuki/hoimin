@@ -291,7 +291,7 @@ def cases : List OracleCase := [
   },
   {
     id := "typing_global_unknown"
-    mode := "internal-fixture"
+    mode := "model-only"
     family := "scope"
     operator := "type_list_sequence"
     source := "from typing import Sequence\ndef global_scope():\n    global Sequence\n    hidden: list[str]\n"
@@ -304,7 +304,7 @@ def cases : List OracleCase := [
   },
   {
     id := "typing_nonlocal_unknown"
-    mode := "internal-fixture"
+    mode := "model-only"
     family := "scope"
     operator := "type_list_sequence"
     source := "from typing import Sequence\ndef outer():\n    def inner():\n        nonlocal Sequence\n        hidden: list[str]\n"
