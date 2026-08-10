@@ -1902,6 +1902,86 @@ fn benchmark_candidate_line_positions() {
 }
 
 #[test]
+#[ignore = "benchmark harness; run explicitly in release mode"]
+fn benchmark_adversarial_ast_fact_indexes() {
+    use std::fmt::Write as _;
+
+    const FUNCTIONS: usize = 512;
+    let mut source = String::with_capacity(FUNCTIONS * 180);
+    for index in 0..FUNCTIONS {
+        writeln!(
+            source,
+            "def scope_{index:04}(value: list[int] | tuple[int, ...] = [1, 2]):\n    assert not value\n    print(not value)\n    return (not value) and value[0] + 1"
+        )
+        .expect("writing to String cannot fail");
+    }
+
+    let started = std::time::Instant::now();
+    let output = analyze_with_profile(MutationProfile::Focused, usize::MAX, &source);
+    let elapsed = started.elapsed();
+    let stats = output.fact_lookups;
+
+    assert_eq!(stats.annotation.facts, FUNCTIONS);
+    assert_eq!(stats.arid.facts, FUNCTIONS * 3);
+    assert_eq!(stats.not_operand.facts, FUNCTIONS * 3);
+    assert_eq!(stats.scope.facts, FUNCTIONS);
+    assert_eq!(stats.not_operand.queries, FUNCTIONS * 3);
+    assert_eq!(stats.not_operand.comparisons, 0);
+    for index in [stats.annotation, stats.arid, stats.scope] {
+        let comparisons_per_query = if index.facts == 0 {
+            0
+        } else {
+            usize::BITS as usize - index.facts.leading_zeros() as usize
+        };
+        assert!(
+            index.comparisons <= index.queries * comparisons_per_query,
+            "stats={index:?}",
+        );
+    }
+    assert_eq!(output.candidates.len(), FUNCTIONS * 5);
+    assert_eq!(
+        output.candidates.first().map(|candidate| (
+            candidate.original.as_str(),
+            candidate.operator.as_str(),
+            candidate.symbol.as_deref(),
+        )),
+        Some(("not value", "remove_not", Some("scope_0000"))),
+    );
+    assert_eq!(
+        output.candidates.last().map(|candidate| (
+            candidate.original.as_str(),
+            candidate.operator.as_str(),
+            candidate.symbol.as_deref(),
+        )),
+        Some(("+", "binary_add_sub", Some("scope_0511"))),
+    );
+    println!(
+        "source_bytes={} candidates={} elapsed_ms={} stats={stats:?}",
+        source.len(),
+        output.candidates.len(),
+        elapsed.as_secs_f64() * 1_000.0,
+    );
+}
+
+#[test]
+fn irrelevant_operator_spelling_skips_annotation_index_lookup() {
+    let addition = analyze("result = left + right\n");
+    let multiplication = analyze("result = left * right\n");
+    let bitwise = analyze("result = left & right\n");
+
+    assert_eq!(
+        addition.fact_lookups.annotation.queries,
+        multiplication.fact_lookups.annotation.queries,
+    );
+    assert_eq!(
+        bitwise.fact_lookups.annotation.queries,
+        addition.fact_lookups.annotation.queries + 1,
+    );
+    assert_eq!(addition.fact_lookups.annotation.comparisons, 0);
+    assert_eq!(addition.fact_lookups.annotation.facts, 0);
+}
+
+#[test]
 fn line_index_reports_one_based_lines_and_unicode_scalar_columns() {
     let source = "alpha\nβeta\r\n終 = left == right\n";
     let line_index = LineIndex::new(source);
