@@ -12,6 +12,13 @@ private def optionStringJson : Option String → Lean.Json
 private def stringsJson (values : List String) : Lean.Json :=
   .arr (values.map Lean.Json.str).toArray
 
+private def optionLabel : Option String → String
+  | none => "none"
+  | some value => value
+
+private def factsLabel (values : List String) : String :=
+  if values.isEmpty then "none" else String.intercalate ";" values
+
 private def caseJson (item : OracleCase) : Lean.Json := Lean.Json.mkObj [
   ("schema", Lean.toJson item.schema),
   ("id", .str item.id),
@@ -89,9 +96,12 @@ private def printSensitivity : IO UInt32 := do
   IO.println s!"bind_before_type_detected={bindBeforeTypeSensitivity}"
   IO.println s!"handler_exit_cleanup_detected={handlerExitCleanupSensitivity}"
   IO.println s!"handler_join_meet_detected={handlerJoinMeetSensitivity}"
+  IO.println s!"handler_join_projection=expected:{optionLabel handlerJoinResolution},broken:{optionLabel handlerJoinBrokenResolution}"
   IO.println s!"pattern_failure_detected={patternFailureSensitivity}"
+  IO.println s!"pattern_failure_projection=expected:{optionLabel matchPartialFailureResolution},broken:{optionLabel patternFailureBrokenResolution}"
   IO.println s!"guard_failure_detected={guardFailureSensitivity}"
   IO.println s!"irrefutable_exhaustion_detected={irrefutableExhaustionSensitivity}"
+  IO.println s!"irrefutable_projection=expected:{factsLabel matchIrrefutableFacts},broken:{factsLabel irrefutableBrokenFacts}"
   return if sensitivityPasses then 0 else 2
 
 private def printCases : IO UInt32 := do

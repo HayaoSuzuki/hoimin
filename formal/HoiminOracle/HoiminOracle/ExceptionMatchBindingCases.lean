@@ -52,6 +52,15 @@ def normalizedFacts (environment : Env) : List String :=
   (if environment.destination == .known .typing then [sequenceFact] else []) ++
     (if environment.source == .known .typing then [typeAliasFact] else [])
 
+def factResolutionLabel : Fact → String
+  | .known .builtin => "definitely-builtin"
+  | .known .typing => "typing-import"
+  | .shadowed => "shadowed"
+  | .absent | .unknown => "unknown"
+
+def resolutionAtDestination (environment : Option Env) : Option String :=
+  environment.map fun value => factResolutionLabel value.destination
+
 def sequenceEnv : Env where
   source := .known .builtin
   destination := .known .typing
@@ -87,9 +96,9 @@ def handlerContinueFacts : List String :=
     (cleanupHandlerExits .destination
       (.categoryOnly .continue (bindTarget sequenceEnv .destination))).continues
 
-def handlerJoinFacts : List String :=
-  (meetOption handlerObservation.exits.fallthrough (some sequenceEnv)).map
-      normalizedFacts |>.getD []
+def handlerJoinResolution : Option String :=
+  resolutionAtDestination
+    (meetOption handlerObservation.exits.fallthrough (some sequenceEnv))
 
 def handlerPreservedFacts : List String :=
   normalizedFacts (deleteName sequenceAndTypeAliasEnv .destination)
@@ -105,8 +114,8 @@ def guardedPattern : PatternResult where
 def matchCaptureFacts : List String :=
   (advanceCase capturedPattern none).body.map normalizedFacts |>.getD []
 
-def matchPartialFailureFacts : List String :=
-  (advanceCase capturedPattern none).nextCase.map normalizedFacts |>.getD []
+def matchPartialFailureResolution : Option String :=
+  resolutionAtDestination (advanceCase capturedPattern none).nextCase
 
 def matchFalseGuardFacts : List String :=
   (advanceCase guardedPattern (some false)
@@ -116,17 +125,22 @@ def matchRefutableJoinFacts : List String :=
   (finishMatch (some sequenceEnv) [bindTarget sequenceEnv .destination]).map
       normalizedFacts |>.getD []
 
+def matchIrrefutableIncoming : Env :=
+  bindTarget sequenceEnv .destination
+
+def matchIrrefutableStep : CaseStep :=
+  advanceCase { matched := sequenceEnv, failed := none } none
+
 def matchIrrefutableFacts : List String :=
-  let step := advanceCase
-    { matched := sequenceEnv, failed := none } none
-  (finishMatch step.nextCase step.body.toList).map normalizedFacts |>.getD []
+  (finishMatch matchIrrefutableStep.nextCase matchIrrefutableStep.body.toList).map
+      normalizedFacts |>.getD []
 
 def matchPreservedFacts : List String :=
   let partiallyBound := bindTarget sequenceAndTypeAliasEnv .destination
   (finishMatch (some partiallyBound) [partiallyBound]).map normalizedFacts |>.getD []
 
 def handlerTypeSource : String :=
-  "from typing import Sequence\ntry:\n    risky()\nexcept Sequence as Sequence:\n    handler_body_marker: list[str]\n"
+  "from typing import Sequence\nclass Error(Exception):\n    pass\ndef risky():\n    raise Error()\ntry:\n    risky()\nexcept Error as Sequence:\n    handler_body_marker: list[str]\n"
 
 def handlerFallthroughSource : String :=
   "from typing import Sequence\ntry:\n    risky()\nexcept Error as Sequence:\n    pass  # handler-fallthrough-exit\nafter_fallthrough: list[str]\n"
@@ -179,6 +193,17 @@ def annotationCase (id : String) (family : Family) (source marker : String)
   expectedFacts := facts
   expectedPresent := !facts.isEmpty
 
+def resolutionCase (id : String) (family : Family) (source marker : String)
+    (resolution : Option String) : OracleCase where
+  id
+  mode := "internal-fixture"
+  family
+  observationKind := .resolution
+  source
+  marker
+  expectedResolution := resolution
+  expectedPresent := resolution == some "typing-import"
+
 def exitCase (id source marker category : String)
     (facts : List String) : OracleCase where
   id
@@ -191,27 +216,58 @@ def exitCase (id source marker category : String)
   expectedExitCategory := some category
   expectedPresent := !facts.isEmpty
 
-def publicCase (id : String) (family : Family) (source marker : String)
-    (present : Bool) : OracleCase where
+def publicCaseFromInternal (id marker : String)
+    (premise : OracleCase) : OracleCase where
   id
   mode := "strict"
-  family
+  family := premise.family
   observationKind := .publicCandidate
-  source
+  source := premise.source
   marker
-  expectedPresent := present
+  name := premise.name
+  expectedPresent := premise.expectedPresent
   operator := some "type_list_sequence"
   original := some "list[str]"
   replacement := some "Sequence[str]"
 
+def handlerBodyCase : OracleCase :=
+  annotationCase "handler_body_after_target" .handler handlerTypeSource
+    "list[str]" (normalizedFacts handlerObservation.bodyEntry)
+
+def handlerFallthroughCase : OracleCase :=
+  exitCase "handler_cleanup_fallthrough" handlerFallthroughSource
+    "# handler-fallthrough-exit" "fallthrough" handlerFallthroughFacts
+
+def handlerJoinCase : OracleCase :=
+  resolutionCase "handler_nonselected_join" .handler handlerJoinSource
+    "list[str]" handlerJoinResolution
+
+def matchCaptureCase : OracleCase :=
+  annotationCase "match_capture_body" .matchCase matchCaptureSource
+    "list[str]" matchCaptureFacts
+
+def matchPartialFailureCase : OracleCase :=
+  resolutionCase "match_partial_failure_next_case" .matchCase
+    matchPartialFailureSource "list[str]" matchPartialFailureResolution
+
+def matchFalseGuardCase : OracleCase :=
+  annotationCase "match_false_guard_next_case" .matchCase
+    matchFalseGuardSource "list[str]" matchFalseGuardFacts
+
+def matchRefutableCase : OracleCase :=
+  annotationCase "match_refutable_unmatched_join" .matchCase
+    matchRefutableSource "list[str]" matchRefutableJoinFacts
+
+def matchIrrefutableCase : OracleCase :=
+  annotationCase "match_irrefutable_exhaustion" .matchCase
+    matchIrrefutableSource "list[str]" matchIrrefutableFacts
+
 def internalCases : List OracleCase := [
   annotationCase "handler_type_before_target" .handler handlerTypeSource
-    "except Sequence as"
+    "except Error as"
     (normalizedFacts handlerObservation.typeEntry),
-  annotationCase "handler_body_after_target" .handler handlerTypeSource
-    "list[str]" (normalizedFacts handlerObservation.bodyEntry),
-  exitCase "handler_cleanup_fallthrough" handlerFallthroughSource
-    "# handler-fallthrough-exit" "fallthrough" handlerFallthroughFacts,
+  handlerBodyCase,
+  handlerFallthroughCase,
   exitCase "handler_cleanup_return" handlerReturnSource
     "# handler-return-exit" "terminate" handlerTerminateFacts,
   exitCase "handler_cleanup_raise" handlerRaiseSource
@@ -220,42 +276,46 @@ def internalCases : List OracleCase := [
     "# handler-break-exit" "break" handlerBreakFacts,
   exitCase "handler_cleanup_continue" handlerContinueSource
     "# handler-continue-exit" "continue" handlerContinueFacts,
-  annotationCase "handler_nonselected_join" .handler handlerJoinSource
-    "list[str]" handlerJoinFacts,
+  handlerJoinCase,
   annotationCase "handler_preserves_unrelated_import" .handler
     handlerPreservedSource "tuple[TypeAlias]" handlerPreservedFacts "TypeAlias",
-  annotationCase "match_capture_body" .matchCase matchCaptureSource
-    "list[str]" matchCaptureFacts,
-  annotationCase "match_partial_failure_next_case" .matchCase
-    matchPartialFailureSource "list[str]" matchPartialFailureFacts,
-  annotationCase "match_false_guard_next_case" .matchCase
-    matchFalseGuardSource "list[str]" matchFalseGuardFacts,
-  annotationCase "match_refutable_unmatched_join" .matchCase
-    matchRefutableSource "list[str]" matchRefutableJoinFacts,
-  annotationCase "match_irrefutable_exhaustion" .matchCase
-    matchIrrefutableSource "list[str]" matchIrrefutableFacts,
+  matchCaptureCase,
+  matchPartialFailureCase,
+  matchFalseGuardCase,
+  matchRefutableCase,
+  matchIrrefutableCase,
   annotationCase "match_preserves_unrelated_import" .matchCase
     matchPreservedSource "tuple[TypeAlias]" matchPreservedFacts "TypeAlias"
 ]
 
-def strictCases : List OracleCase := [
-  publicCase "handler_body_after_target_public" .handler handlerTypeSource
-    "list[str]" false,
-  publicCase "handler_cleanup_fallthrough_public" .handler
-    handlerFallthroughSource "list[str]" false,
-  publicCase "handler_nonselected_join_public" .handler handlerJoinSource
-    "list[str]" false,
-  publicCase "match_capture_body_public" .matchCase matchCaptureSource
-    "list[str]" false,
-  publicCase "match_partial_failure_next_case_public" .matchCase
-    matchPartialFailureSource "list[str]" false,
-  publicCase "match_false_guard_next_case_public" .matchCase
-    matchFalseGuardSource "list[str]" false,
-  publicCase "match_refutable_unmatched_join_public" .matchCase
-    matchRefutableSource "list[str]" false,
-  publicCase "match_irrefutable_exhaustion_public" .matchCase
-    matchIrrefutableSource "list[str]" true
+def strictPairs : List (OracleCase × OracleCase) := [
+  (handlerBodyCase,
+    publicCaseFromInternal "handler_body_after_target_public" "list[str]"
+      handlerBodyCase),
+  (handlerFallthroughCase,
+    publicCaseFromInternal "handler_cleanup_fallthrough_public" "list[str]"
+      handlerFallthroughCase),
+  (handlerJoinCase,
+    publicCaseFromInternal "handler_nonselected_join_public" "list[str]"
+      handlerJoinCase),
+  (matchCaptureCase,
+    publicCaseFromInternal "match_capture_body_public" "list[str]"
+      matchCaptureCase),
+  (matchPartialFailureCase,
+    publicCaseFromInternal "match_partial_failure_next_case_public" "list[str]"
+      matchPartialFailureCase),
+  (matchFalseGuardCase,
+    publicCaseFromInternal "match_false_guard_next_case_public" "list[str]"
+      matchFalseGuardCase),
+  (matchRefutableCase,
+    publicCaseFromInternal "match_refutable_unmatched_join_public" "list[str]"
+      matchRefutableCase),
+  (matchIrrefutableCase,
+    publicCaseFromInternal "match_irrefutable_exhaustion_public" "list[str]"
+      matchIrrefutableCase)
 ]
+
+def strictCases : List OracleCase := strictPairs.map Prod.snd
 
 def cases : List OracleCase := internalCases ++ strictCases
 
@@ -263,7 +323,7 @@ def allowedMode (mode : String) : Bool :=
   ["internal-fixture", "strict", "model-only", "infrastructure-error"].contains mode
 
 def allowedResolution (resolution : String) : Bool :=
-  ["definitely-builtin", "shadowed", "unknown"].contains resolution
+  ["definitely-builtin", "typing-import", "shadowed", "unknown"].contains resolution
 
 def allowedExitCategory (category : String) : Bool :=
   ["fallthrough", "break", "continue", "terminate"].contains category
@@ -301,7 +361,8 @@ def fieldsMatchKind (item : OracleCase) : Bool :=
         item.expectedPresent == !item.expectedFacts.isEmpty
   | .resolution =>
       item.expectedFacts.isEmpty && item.expectedResolution.any allowedResolution &&
-        item.expectedExitCategory.isNone && candidateFieldsAbsent item
+        item.expectedExitCategory.isNone && candidateFieldsAbsent item &&
+        item.expectedPresent == (item.expectedResolution == some "typing-import")
   | .exits =>
       item.expectedResolution.isNone &&
         item.expectedExitCategory.any allowedExitCategory && candidateFieldsAbsent item &&
@@ -311,6 +372,37 @@ def fieldsMatchKind (item : OracleCase) : Bool :=
         item.expectedExitCategory.isNone && item.operator.isSome &&
         item.original.isSome && item.replacement.isSome
 
+def fixedProjectionValid (item : OracleCase) : Bool :=
+  match item.id with
+  | "handler_type_before_target" =>
+      item.expectedFacts == normalizedFacts handlerObservation.typeEntry
+  | "handler_cleanup_return" | "handler_cleanup_raise" =>
+      item.expectedFacts == handlerTerminateFacts
+  | "handler_nonselected_join" =>
+      item.expectedResolution == handlerJoinResolution
+  | "match_partial_failure_next_case" =>
+      item.expectedResolution == matchPartialFailureResolution
+  | "match_false_guard_next_case" =>
+      item.expectedFacts == matchFalseGuardFacts
+  | "match_irrefutable_exhaustion" =>
+      item.expectedFacts == matchIrrefutableFacts
+  | _ => true
+
+def strictExpectationMatches (premise candidate : OracleCase) : Bool :=
+  candidate.family == premise.family && candidate.source == premise.source &&
+    candidate.name == premise.name &&
+    candidate.expectedPresent == premise.expectedPresent
+
+def strictPairValid (allCases : List OracleCase) (item : OracleCase) : Bool :=
+  match item.observationKind with
+  | .publicCandidate =>
+      match strictPairs.find? fun pair => pair.2.id == item.id with
+      | none => false
+      | some pair =>
+          item == pair.2 && allCases.contains pair.1 &&
+            strictExpectationMatches pair.1 item
+  | _ => true
+
 def OracleCase.valid (allCases : List OracleCase) (item : OracleCase) : Bool :=
   item.schema == 1 && !item.id.isEmpty && !item.source.isEmpty &&
     allowedMode item.mode && markerOccursOnce item &&
@@ -318,10 +410,12 @@ def OracleCase.valid (allCases : List OracleCase) (item : OracleCase) : Bool :=
     factsSorted item.expectedFacts && item.expectedFacts.all allowedFact &&
     item.expectedFacts.eraseDups.length == item.expectedFacts.length &&
     familyKindValid item.family item.observationKind &&
-    modeKindValid item.mode item.observationKind && fieldsMatchKind item
+    modeKindValid item.mode item.observationKind && fieldsMatchKind item &&
+    fixedProjectionValid item && strictPairValid allCases item
 
 def fixedCasesPass : Bool :=
-  cases.length == 23 && cases.all (OracleCase.valid cases)
+  cases.length == 23 && strictPairs.length == 8 &&
+    cases.all (OracleCase.valid cases)
 
 private def brokenBindBeforeType : HandlerObservation :=
   { handlerObservation with
@@ -340,30 +434,40 @@ private def brokenDiscardGuardFailure : CaseStep :=
   { body := none, nextCase := guardedPattern.failed }
 
 private def brokenRetainIrrefutableUnmatched : Option Env :=
-  some sequenceEnv
+  some matchIrrefutableIncoming
+
+def handlerJoinBrokenResolution : Option String :=
+  resolutionAtDestination brokenJoinUsesLeft
+
+def patternFailureBrokenResolution : Option String :=
+  resolutionAtDestination brokenDiscardPatternFailure.nextCase
+
+def irrefutableBrokenFacts : List String :=
+  (finishMatch brokenRetainIrrefutableUnmatched
+      matchIrrefutableStep.body.toList).map normalizedFacts |>.getD []
 
 def bindBeforeTypeSensitivity : Bool :=
-  brokenBindBeforeType.typeEntry != handlerObservation.typeEntry
+  normalizedFacts brokenBindBeforeType.typeEntry !=
+    normalizedFacts handlerObservation.typeEntry
 
 def handlerExitCleanupSensitivity : Bool :=
-  brokenCleanupLeavesTerminate !=
-    cleanupHandlerExits .destination
-      (.categoryOnly .terminate sequenceEnv)
+  factsAtFirst brokenCleanupLeavesTerminate.terminates !=
+    factsAtFirst
+      (cleanupHandlerExits .destination
+        (.categoryOnly .terminate sequenceEnv)).terminates
 
 def handlerJoinMeetSensitivity : Bool :=
-  brokenJoinUsesLeft !=
-    meetOption handlerObservation.exits.fallthrough (some sequenceEnv)
+  handlerJoinBrokenResolution != handlerJoinResolution
 
 def patternFailureSensitivity : Bool :=
-  brokenDiscardPatternFailure != advanceCase capturedPattern none
+  patternFailureBrokenResolution != matchPartialFailureResolution
 
 def guardFailureSensitivity : Bool :=
-  brokenDiscardGuardFailure !=
-    advanceCase guardedPattern (some false) (bindTarget sequenceEnv .destination)
+  (brokenDiscardGuardFailure.nextCase.map normalizedFacts |>.getD []) !=
+    matchFalseGuardFacts
 
 def irrefutableExhaustionSensitivity : Bool :=
-  brokenRetainIrrefutableUnmatched !=
-    (advanceCase { matched := sequenceEnv, failed := none } none).nextCase
+  irrefutableBrokenFacts != matchIrrefutableFacts
 
 def sensitivityPasses : Bool :=
   bindBeforeTypeSensitivity && handlerExitCleanupSensitivity &&
