@@ -46,11 +46,11 @@ def ObservationKind.label : ObservationKind → String
   | .publicCandidate => "public-candidate"
 
 def sequenceFact : String := "direct:Sequence=typing.Sequence"
-def typeAliasFact : String := "direct:TypeAlias=typing.TypeAlias"
+def mappingFact : String := "direct:Mapping=typing.Mapping"
 
 def normalizedFacts (environment : Env) : List String :=
   (if environment.destination == .known .typing then [sequenceFact] else []) ++
-    (if environment.source == .known .typing then [typeAliasFact] else [])
+    (if environment.source == .known .typing then [mappingFact] else [])
 
 def factResolutionLabel : Fact → String
   | .known .builtin => "definitely-builtin"
@@ -65,7 +65,7 @@ def sequenceEnv : Env where
   source := .known .builtin
   destination := .known .typing
 
-def sequenceAndTypeAliasEnv : Env where
+def sequenceAndMappingEnv : Env where
   source := .known .typing
   destination := .known .typing
 
@@ -106,7 +106,7 @@ def handlerJoinFacts : List String :=
   handlerJoinState.map normalizedFacts |>.getD []
 
 def handlerPreservedFacts : List String :=
-  normalizedFacts (deleteName sequenceAndTypeAliasEnv .destination)
+  normalizedFacts (deleteName sequenceAndMappingEnv .destination)
 
 def capturedPattern : PatternResult where
   matched := bindTarget sequenceEnv .destination
@@ -150,7 +150,7 @@ def matchIrrefutableFacts : List String :=
       normalizedFacts |>.getD []
 
 def matchPreservedFacts : List String :=
-  let partiallyBound := bindTarget sequenceAndTypeAliasEnv .destination
+  let partiallyBound := bindTarget sequenceAndMappingEnv .destination
   (finishMatch (some partiallyBound) [partiallyBound]).map normalizedFacts |>.getD []
 
 def handlerTypeSource : String :=
@@ -178,7 +178,7 @@ def matchPartialFailureObservableSource : String :=
   "from typing import Sequence\nmatch value:\n    case [Sequence, 0]:\n        pass\n    case _:\n        from typing import Sequence\n        pattern_failure_observed: list[str]\n"
 
 def handlerPreservedSource : String :=
-  "from typing import Sequence, TypeAlias\ntry:\n    risky()\nexcept Error as Sequence:\n    pass\npreserved_handler_import: tuple[TypeAlias]\n"
+  "from typing import Sequence, Mapping\ntry:\n    risky()\nexcept Error as Sequence:\n    pass\npreserved_handler_import: tuple[Mapping]\n"
 
 def matchCaptureSource : String :=
   "from typing import Sequence\nmatch value:\n    case [Sequence, 0]:\n        captured_body: list[str]\n    case _:\n        pass\n"
@@ -196,7 +196,7 @@ def matchIrrefutableSource : String :=
   "from typing import Sequence\nSequence = local_sequence\nmatch value:\n    case _:\n        from typing import Sequence\nafter_irrefutable_match: list[str]\n"
 
 def matchPreservedSource : String :=
-  "from typing import Sequence, TypeAlias\nmatch value:\n    case [Sequence, 0]:\n        pass\n    case _:\n        pass\npreserved_match_import: tuple[TypeAlias]\n"
+  "from typing import Sequence, Mapping\nmatch value:\n    case [Sequence, 0]:\n        pass\n    case _:\n        pass\npreserved_match_import: tuple[Mapping]\n"
 
 def annotationCase (id : String) (family : Family) (source marker : String)
     (facts : List String) (name : String := "Sequence") : OracleCase where
@@ -304,14 +304,14 @@ def internalCases : List OracleCase := [
     "# handler-continue-exit" "continue" handlerContinueFacts,
   handlerJoinObservableCase,
   annotationCase "handler_preserves_unrelated_import" .handler
-    handlerPreservedSource "tuple[TypeAlias]" handlerPreservedFacts "TypeAlias",
+    handlerPreservedSource "tuple[Mapping]" handlerPreservedFacts "Mapping",
   matchCaptureCase,
   matchPartialFailureObservableCase,
   matchFalseGuardCase,
   matchRefutableCase,
   matchIrrefutableCase,
   annotationCase "match_preserves_unrelated_import" .matchCase
-    matchPreservedSource "tuple[TypeAlias]" matchPreservedFacts "TypeAlias"
+    matchPreservedSource "tuple[Mapping]" matchPreservedFacts "Mapping"
 ]
 
 def modelCases : List OracleCase := [
@@ -360,7 +360,7 @@ def allowedExitCategory (category : String) : Bool :=
   ["fallthrough", "break", "continue", "terminate"].contains category
 
 def allowedFact (fact : String) : Bool :=
-  fact == sequenceFact || fact == typeAliasFact
+  fact == sequenceFact || fact == mappingFact
 
 def factsSorted : List String → Bool
   | [] | [_] => true
@@ -415,6 +415,9 @@ def fixedProjectionValid (item : OracleCase) : Bool :=
       item.expectedResolution == handlerJoinResolution
   | "handler_nonselected_join_observable" =>
       item.expectedFacts == handlerJoinFacts
+  | "handler_preserves_unrelated_import" =>
+      item.source == handlerPreservedSource && item.marker == "tuple[Mapping]" &&
+        item.name == "Mapping" && item.expectedFacts == handlerPreservedFacts
   | "match_partial_failure_next_case" =>
       item.expectedResolution == matchPartialFailureResolution
   | "match_partial_failure_observable" =>
@@ -423,6 +426,9 @@ def fixedProjectionValid (item : OracleCase) : Bool :=
       item.expectedFacts == matchFalseGuardObservableFacts.getD []
   | "match_irrefutable_exhaustion" =>
       item.expectedFacts == matchIrrefutableFacts
+  | "match_preserves_unrelated_import" =>
+      item.source == matchPreservedSource && item.marker == "tuple[Mapping]" &&
+        item.name == "Mapping" && item.expectedFacts == matchPreservedFacts
   | _ => true
 
 def strictExpectationMatches (premise candidate : OracleCase) : Bool :=
