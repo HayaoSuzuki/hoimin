@@ -96,9 +96,14 @@ def handlerContinueFacts : List String :=
     (cleanupHandlerExits .destination
       (.categoryOnly .continue (bindTarget sequenceEnv .destination))).continues
 
+def handlerJoinState : Option Env :=
+  meetOption (some sequenceEnv) handlerObservation.exits.fallthrough
+
 def handlerJoinResolution : Option String :=
-  resolutionAtDestination
-    (meetOption handlerObservation.exits.fallthrough (some sequenceEnv))
+  resolutionAtDestination handlerJoinState
+
+def handlerJoinFacts : List String :=
+  handlerJoinState.map normalizedFacts |>.getD []
 
 def handlerPreservedFacts : List String :=
   normalizedFacts (deleteName sequenceAndTypeAliasEnv .destination)
@@ -107,9 +112,9 @@ def capturedPattern : PatternResult where
   matched := bindTarget sequenceEnv .destination
   failed := some (bindTarget sequenceEnv .destination)
 
-def guardedPattern : PatternResult where
+def guardOnlyPattern : PatternResult where
   matched := sequenceEnv
-  failed := some sequenceEnv
+  failed := none
 
 def matchCaptureFacts : List String :=
   (advanceCase capturedPattern none).body.map normalizedFacts |>.getD []
@@ -117,9 +122,18 @@ def matchCaptureFacts : List String :=
 def matchPartialFailureResolution : Option String :=
   resolutionAtDestination (advanceCase capturedPattern none).nextCase
 
-def matchFalseGuardFacts : List String :=
-  (advanceCase guardedPattern (some false)
-      (bindTarget sequenceEnv .destination)).nextCase.map normalizedFacts |>.getD []
+def observableReimportFacts (entry : Option Env) : Option (List String) :=
+  entry.map fun _ => normalizedFacts sequenceEnv
+
+def matchPartialFailureObservableFacts : Option (List String) :=
+  observableReimportFacts (advanceCase capturedPattern none).nextCase
+
+def matchFalseGuardStep : CaseStep :=
+  advanceCase guardOnlyPattern (some false)
+    (bindTarget sequenceEnv .destination)
+
+def matchFalseGuardObservableFacts : Option (List String) :=
+  observableReimportFacts matchFalseGuardStep.nextCase
 
 def matchRefutableJoinFacts : List String :=
   (finishMatch (some sequenceEnv) [bindTarget sequenceEnv .destination]).map
@@ -160,6 +174,9 @@ def handlerContinueSource : String :=
 def handlerJoinSource : String :=
   "from typing import Sequence\ntry:\n    risky()\nexcept Error as Sequence:\n    pass\nexcept OtherError:\n    pass\nafter_nonselected: list[str]\n"
 
+def matchPartialFailureObservableSource : String :=
+  "from typing import Sequence\nmatch value:\n    case [Sequence, 0]:\n        pass\n    case _:\n        from typing import Sequence\n        pattern_failure_observed: list[str]\n"
+
 def handlerPreservedSource : String :=
   "from typing import Sequence, TypeAlias\ntry:\n    risky()\nexcept Error as Sequence:\n    pass\npreserved_handler_import: tuple[TypeAlias]\n"
 
@@ -170,7 +187,7 @@ def matchPartialFailureSource : String :=
   "from typing import Sequence\nmatch value:\n    case [Sequence, 0]:\n        pass\n    case _:\n        partial_failure_next: list[str]\n"
 
 def matchFalseGuardSource : String :=
-  "from typing import Sequence\nmatch value:\n    case 0 if ((Sequence := local_sequence) and False):\n        pass\n    case _:\n        false_guard_next: list[str]\n"
+  "from typing import Sequence\nmatch value:\n    case _ if ((Sequence := local_sequence) and False):\n        pass\n    case _:\n        from typing import Sequence\n        false_guard_observed: list[str]\n"
 
 def matchRefutableSource : String :=
   "from typing import Sequence\nmatch value:\n    case 0:\n        Sequence = local_sequence\nafter_refutable_match: list[str]\n"
@@ -193,10 +210,10 @@ def annotationCase (id : String) (family : Family) (source marker : String)
   expectedFacts := facts
   expectedPresent := !facts.isEmpty
 
-def resolutionCase (id : String) (family : Family) (source marker : String)
+def modelResolutionCase (id : String) (family : Family) (source marker : String)
     (resolution : Option String) : OracleCase where
   id
-  mode := "internal-fixture"
+  mode := "model-only"
   family
   observationKind := .resolution
   source
@@ -238,21 +255,30 @@ def handlerFallthroughCase : OracleCase :=
   exitCase "handler_cleanup_fallthrough" handlerFallthroughSource
     "# handler-fallthrough-exit" "fallthrough" handlerFallthroughFacts
 
-def handlerJoinCase : OracleCase :=
-  resolutionCase "handler_nonselected_join" .handler handlerJoinSource
+def handlerJoinModelCase : OracleCase :=
+  modelResolutionCase "handler_nonselected_join" .handler handlerJoinSource
     "list[str]" handlerJoinResolution
+
+def handlerJoinObservableCase : OracleCase :=
+  annotationCase "handler_nonselected_join_observable" .handler handlerJoinSource
+    "list[str]" handlerJoinFacts
 
 def matchCaptureCase : OracleCase :=
   annotationCase "match_capture_body" .matchCase matchCaptureSource
     "list[str]" matchCaptureFacts
 
-def matchPartialFailureCase : OracleCase :=
-  resolutionCase "match_partial_failure_next_case" .matchCase
+def matchPartialFailureModelCase : OracleCase :=
+  modelResolutionCase "match_partial_failure_next_case" .matchCase
     matchPartialFailureSource "list[str]" matchPartialFailureResolution
+
+def matchPartialFailureObservableCase : OracleCase :=
+  annotationCase "match_partial_failure_observable" .matchCase
+    matchPartialFailureObservableSource "list[str]"
+      (matchPartialFailureObservableFacts.getD [])
 
 def matchFalseGuardCase : OracleCase :=
   annotationCase "match_false_guard_next_case" .matchCase
-    matchFalseGuardSource "list[str]" matchFalseGuardFacts
+    matchFalseGuardSource "list[str]" (matchFalseGuardObservableFacts.getD [])
 
 def matchRefutableCase : OracleCase :=
   annotationCase "match_refutable_unmatched_join" .matchCase
@@ -276,16 +302,21 @@ def internalCases : List OracleCase := [
     "# handler-break-exit" "break" handlerBreakFacts,
   exitCase "handler_cleanup_continue" handlerContinueSource
     "# handler-continue-exit" "continue" handlerContinueFacts,
-  handlerJoinCase,
+  handlerJoinObservableCase,
   annotationCase "handler_preserves_unrelated_import" .handler
     handlerPreservedSource "tuple[TypeAlias]" handlerPreservedFacts "TypeAlias",
   matchCaptureCase,
-  matchPartialFailureCase,
+  matchPartialFailureObservableCase,
   matchFalseGuardCase,
   matchRefutableCase,
   matchIrrefutableCase,
   annotationCase "match_preserves_unrelated_import" .matchCase
     matchPreservedSource "tuple[TypeAlias]" matchPreservedFacts "TypeAlias"
+]
+
+def modelCases : List OracleCase := [
+  handlerJoinModelCase,
+  matchPartialFailureModelCase
 ]
 
 def strictPairs : List (OracleCase × OracleCase) := [
@@ -295,15 +326,15 @@ def strictPairs : List (OracleCase × OracleCase) := [
   (handlerFallthroughCase,
     publicCaseFromInternal "handler_cleanup_fallthrough_public" "list[str]"
       handlerFallthroughCase),
-  (handlerJoinCase,
+  (handlerJoinObservableCase,
     publicCaseFromInternal "handler_nonselected_join_public" "list[str]"
-      handlerJoinCase),
+      handlerJoinObservableCase),
   (matchCaptureCase,
     publicCaseFromInternal "match_capture_body_public" "list[str]"
       matchCaptureCase),
-  (matchPartialFailureCase,
+  (matchPartialFailureObservableCase,
     publicCaseFromInternal "match_partial_failure_next_case_public" "list[str]"
-      matchPartialFailureCase),
+      matchPartialFailureObservableCase),
   (matchFalseGuardCase,
     publicCaseFromInternal "match_false_guard_next_case_public" "list[str]"
       matchFalseGuardCase),
@@ -317,7 +348,7 @@ def strictPairs : List (OracleCase × OracleCase) := [
 
 def strictCases : List OracleCase := strictPairs.map Prod.snd
 
-def cases : List OracleCase := internalCases ++ strictCases
+def cases : List OracleCase := internalCases ++ modelCases ++ strictCases
 
 def allowedMode (mode : String) : Bool :=
   ["internal-fixture", "strict", "model-only", "infrastructure-error"].contains mode
@@ -347,7 +378,9 @@ def familyKindValid (family : Family) (kind : ObservationKind) : Bool :=
 def modeKindValid (mode : String) (kind : ObservationKind) : Bool :=
   match kind with
   | .publicCandidate => mode == "strict"
-  | _ => mode != "strict"
+  | .resolution => mode == "model-only"
+  | _ => mode == "internal-fixture" || mode == "model-only" ||
+      mode == "infrastructure-error"
 
 def candidateFieldsAbsent (item : OracleCase) : Bool :=
   item.operator.isNone && item.original.isNone && item.replacement.isNone &&
@@ -380,16 +413,21 @@ def fixedProjectionValid (item : OracleCase) : Bool :=
       item.expectedFacts == handlerTerminateFacts
   | "handler_nonselected_join" =>
       item.expectedResolution == handlerJoinResolution
+  | "handler_nonselected_join_observable" =>
+      item.expectedFacts == handlerJoinFacts
   | "match_partial_failure_next_case" =>
       item.expectedResolution == matchPartialFailureResolution
+  | "match_partial_failure_observable" =>
+      item.expectedFacts == matchPartialFailureObservableFacts.getD []
   | "match_false_guard_next_case" =>
-      item.expectedFacts == matchFalseGuardFacts
+      item.expectedFacts == matchFalseGuardObservableFacts.getD []
   | "match_irrefutable_exhaustion" =>
       item.expectedFacts == matchIrrefutableFacts
   | _ => true
 
 def strictExpectationMatches (premise candidate : OracleCase) : Bool :=
-  candidate.family == premise.family && candidate.source == premise.source &&
+  premise.mode == "internal-fixture" && candidate.mode == "strict" &&
+    candidate.family == premise.family && candidate.source == premise.source &&
     candidate.name == premise.name &&
     candidate.expectedPresent == premise.expectedPresent
 
@@ -414,7 +452,8 @@ def OracleCase.valid (allCases : List OracleCase) (item : OracleCase) : Bool :=
     fixedProjectionValid item && strictPairValid allCases item
 
 def fixedCasesPass : Bool :=
-  cases.length == 23 && strictPairs.length == 8 &&
+  cases.length == 25 && internalCases.length == 15 && modelCases.length == 2 &&
+    strictPairs.length == 8 &&
     cases.all (OracleCase.valid cases)
 
 private def brokenBindBeforeType : HandlerObservation :=
@@ -425,13 +464,13 @@ private def brokenCleanupLeavesTerminate : Exits :=
   .categoryOnly .terminate sequenceEnv
 
 private def brokenJoinUsesLeft : Option Env :=
-  handlerObservation.exits.fallthrough
+  some sequenceEnv
 
 private def brokenDiscardPatternFailure : CaseStep :=
   { body := some capturedPattern.matched, nextCase := none }
 
 private def brokenDiscardGuardFailure : CaseStep :=
-  { body := none, nextCase := guardedPattern.failed }
+  { body := none, nextCase := guardOnlyPattern.failed }
 
 private def brokenRetainIrrefutableUnmatched : Option Env :=
   some matchIrrefutableIncoming
@@ -439,8 +478,17 @@ private def brokenRetainIrrefutableUnmatched : Option Env :=
 def handlerJoinBrokenResolution : Option String :=
   resolutionAtDestination brokenJoinUsesLeft
 
+def handlerJoinBrokenFacts : List String :=
+  brokenJoinUsesLeft.map normalizedFacts |>.getD []
+
 def patternFailureBrokenResolution : Option String :=
   resolutionAtDestination brokenDiscardPatternFailure.nextCase
+
+def patternFailureBrokenObservableFacts : Option (List String) :=
+  observableReimportFacts brokenDiscardPatternFailure.nextCase
+
+def guardFailureBrokenObservableFacts : Option (List String) :=
+  observableReimportFacts brokenDiscardGuardFailure.nextCase
 
 def irrefutableBrokenFacts : List String :=
   (finishMatch brokenRetainIrrefutableUnmatched
@@ -457,14 +505,15 @@ def handlerExitCleanupSensitivity : Bool :=
         (.categoryOnly .terminate sequenceEnv)).terminates
 
 def handlerJoinMeetSensitivity : Bool :=
-  handlerJoinBrokenResolution != handlerJoinResolution
+  handlerJoinBrokenResolution != handlerJoinResolution &&
+    handlerJoinBrokenFacts != handlerJoinFacts
 
 def patternFailureSensitivity : Bool :=
-  patternFailureBrokenResolution != matchPartialFailureResolution
+  patternFailureBrokenResolution != matchPartialFailureResolution &&
+    patternFailureBrokenObservableFacts != matchPartialFailureObservableFacts
 
 def guardFailureSensitivity : Bool :=
-  (brokenDiscardGuardFailure.nextCase.map normalizedFacts |>.getD []) !=
-    matchFalseGuardFacts
+  guardFailureBrokenObservableFacts != matchFalseGuardObservableFacts
 
 def irrefutableExhaustionSensitivity : Bool :=
   irrefutableBrokenFacts != matchIrrefutableFacts

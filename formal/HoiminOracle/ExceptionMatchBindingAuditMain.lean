@@ -19,6 +19,10 @@ private def optionLabel : Option String → String
 private def factsLabel (values : List String) : String :=
   if values.isEmpty then "none" else String.intercalate ";" values
 
+private def optionalFactsLabel : Option (List String) → String
+  | none => "unreachable"
+  | some values => factsLabel values
+
 private def caseJson (item : OracleCase) : Lean.Json := Lean.Json.mkObj [
   ("schema", Lean.toJson item.schema),
   ("id", .str item.id),
@@ -87,6 +91,7 @@ private def printStats : IO UInt32 := do
       IO.println s!"handler_cases={countFamily .handler}"
       IO.println s!"match_cases={countFamily .matchCase}"
       IO.println s!"internal_fixture_cases={countMode "internal-fixture"}"
+      IO.println s!"model_only_cases={countMode "model-only"}"
       IO.println s!"strict_cases={countMode "strict"}"
       IO.println "sensitivity_families=6"
       IO.println "broken_families=bind-before-type,handler-exit-cleanup,handler-join-meet,pattern-failure,guard-failure,irrefutable-exhaustion"
@@ -97,9 +102,12 @@ private def printSensitivity : IO UInt32 := do
   IO.println s!"handler_exit_cleanup_detected={handlerExitCleanupSensitivity}"
   IO.println s!"handler_join_meet_detected={handlerJoinMeetSensitivity}"
   IO.println s!"handler_join_projection=expected:{optionLabel handlerJoinResolution},broken:{optionLabel handlerJoinBrokenResolution}"
+  IO.println s!"handler_join_observable=expected:{factsLabel handlerJoinFacts},broken:{factsLabel handlerJoinBrokenFacts}"
   IO.println s!"pattern_failure_detected={patternFailureSensitivity}"
   IO.println s!"pattern_failure_projection=expected:{optionLabel matchPartialFailureResolution},broken:{optionLabel patternFailureBrokenResolution}"
+  IO.println s!"pattern_failure_observable=expected:{optionalFactsLabel matchPartialFailureObservableFacts},broken:{optionalFactsLabel patternFailureBrokenObservableFacts}"
   IO.println s!"guard_failure_detected={guardFailureSensitivity}"
+  IO.println s!"guard_failure_observable=expected:{optionalFactsLabel matchFalseGuardObservableFacts},broken:{optionalFactsLabel guardFailureBrokenObservableFacts}"
   IO.println s!"irrefutable_exhaustion_detected={irrefutableExhaustionSensitivity}"
   IO.println s!"irrefutable_projection=expected:{factsLabel matchIrrefutableFacts},broken:{factsLabel irrefutableBrokenFacts}"
   return if sensitivityPasses then 0 else 2
