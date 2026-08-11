@@ -4875,6 +4875,54 @@ fn exception_match_binding_marker_projection_rejects_unreachable_statements() {
 }
 
 #[test]
+fn exception_match_binding_marker_projection_bounds_match_case_headers() {
+    let reachable_source = concat!(
+        "def run(value):\n",
+        "    from typing import Sequence\n",
+        "    match value:\n",
+        "        case [Sequence] if reachable_guard:  # reachable-case-header\n",
+        "            return 1\n",
+        "            dead_body: tuple[str]\n",
+        "        case _:\n",
+        "            pass\n",
+    );
+    let known_sequence = vec!["direct:Sequence=typing.Sequence".to_owned()];
+
+    assert_eq!(
+        binding_flow_marker_snapshot(reachable_source, "[Sequence]").unwrap(),
+        known_sequence
+    );
+    assert_eq!(
+        binding_flow_marker_snapshot(reachable_source, "reachable_guard").unwrap(),
+        known_sequence
+    );
+    assert_eq!(
+        binding_flow_marker_snapshot(reachable_source, "# reachable-case-header").unwrap(),
+        known_sequence
+    );
+    assert!(
+        binding_flow_marker_snapshot(reachable_source, "tuple[str]")
+            .unwrap_err()
+            .starts_with("infrastructure-error:")
+    );
+
+    let unreachable_case_source = concat!(
+        "def run(value):\n",
+        "    from typing import Sequence\n",
+        "    match value:\n",
+        "        case _:\n",
+        "            pass\n",
+        "        case 0 if unreachable_guard:\n",
+        "            pass\n",
+    );
+    assert!(
+        binding_flow_marker_snapshot(unreachable_case_source, "unreachable_guard")
+            .unwrap_err()
+            .starts_with("infrastructure-error:")
+    );
+}
+
+#[test]
 fn truncates_after_selected_candidates_and_emits_limit_diagnostic() {
     let output = analyze_with(
         Utf8Path::new("pkg/sample.py"),
