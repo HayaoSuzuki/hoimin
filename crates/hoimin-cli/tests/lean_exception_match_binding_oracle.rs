@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::process::{ExitStatus, Output, Stdio};
 use std::time::Duration;
 
 use hoimin_cli::plan::PlanManifest;
@@ -262,19 +263,32 @@ fn validate_case(item: &OracleCase) -> Result<(), String> {
         || item.source.is_empty()
         || item.marker.is_empty()
         || item.name.is_empty()
-        || item.source.match_indices(&item.marker).count() != 1
-        || !matches!(
-            item.mode.as_str(),
-            "strict" | "internal-fixture" | "model-only" | "infrastructure-error"
-        )
-        || !matches!(item.family.as_str(), "handler" | "match-case")
-        || !matches!(
-            item.observation_kind.as_str(),
-            "annotation" | "exits" | "resolution" | "public-candidate"
-        )
-        || !facts_are_normalized
     {
-        return Err(format!("{} violates the closed corpus schema", item.id));
+        return Err(format!("{} has invalid identity fields", item.id));
+    }
+    if item.source.match_indices(&item.marker).count() != 1 {
+        return Err(format!("{} marker must occur exactly once", item.id));
+    }
+    if !matches!(
+        item.mode.as_str(),
+        "strict" | "internal-fixture" | "model-only" | "infrastructure-error"
+    ) {
+        return Err(format!("{} has unknown mode {}", item.id, item.mode));
+    }
+    if !matches!(item.family.as_str(), "handler" | "match-case") {
+        return Err(format!("{} has unknown family {}", item.id, item.family));
+    }
+    if !matches!(
+        item.observation_kind.as_str(),
+        "annotation" | "exits" | "resolution" | "public-candidate"
+    ) {
+        return Err(format!(
+            "{} has unknown observation kind {}",
+            item.id, item.observation_kind
+        ));
+    }
+    if !facts_are_normalized {
+        return Err(format!("{} has invalid normalized facts", item.id));
     }
 
     let fields_match = match item.observation_kind.as_str() {
@@ -338,20 +352,104 @@ fn validate_case(item: &OracleCase) -> Result<(), String> {
     Ok(())
 }
 
-fn decode_plan_result(
+#[derive(Clone, Debug)]
+enum ProcessTermination {
+    Success,
+    Exit(i32),
+    Signal { signal: i32, core_dumped: bool },
+    Abnormal,
+}
+
+fn decode_captured_plan(
     case_id: &str,
-    code: i32,
+    termination: &ProcessTermination,
     stdout: &[u8],
     stderr: &[u8],
 ) -> Result<PlanManifest, String> {
-    if code != 0 || !stderr.is_empty() {
-        return Err(format!(
-            "infrastructure-error: {case_id} public plan exit={code}, stderr={}",
-            String::from_utf8_lossy(stderr)
-        ));
+    let stderr = String::from_utf8_lossy(stderr);
+    match termination {
+        ProcessTermination::Success if stderr.is_empty() => serde_json::from_slice(stdout)
+            .map_err(|error| format!("infrastructure-error: {case_id} malformed plan: {error}")),
+        ProcessTermination::Success => Err(format!(
+            "infrastructure-error: {case_id} public plan emitted stderr: {stderr}"
+        )),
+        ProcessTermination::Exit(code) => Err(format!(
+            "infrastructure-error: {case_id} public plan exit={code}, stderr={stderr}"
+        )),
+        ProcessTermination::Signal {
+            signal,
+            core_dumped,
+        } => Err(format!(
+            "infrastructure-error: {case_id} public plan signal={signal}, core_dumped={core_dumped}, stderr={stderr}"
+        )),
+        ProcessTermination::Abnormal => Err(format!(
+            "infrastructure-error: {case_id} public plan abnormal termination, stderr={stderr}"
+        )),
     }
-    serde_json::from_slice(stdout)
-        .map_err(|error| format!("infrastructure-error: {case_id} malformed plan: {error}"))
+}
+
+async fn run_bounded_command(
+    case_id: &str,
+    mut command: tokio::process::Command,
+    deadline: Duration,
+) -> Result<Output, String> {
+    command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    let child = command
+        .spawn()
+        .map_err(|error| format!("infrastructure-error: {case_id} spawn failed: {error}"))?;
+    tokio::time::timeout(deadline, child.wait_with_output())
+        .await
+        .map_err(|_| format!("infrastructure-error: {case_id} public plan timed out"))?
+        .map_err(|error| format!("infrastructure-error: {case_id} wait failed: {error}"))
+}
+
+fn process_termination(status: ExitStatus) -> ProcessTermination {
+    if status.success() {
+        return ProcessTermination::Success;
+    }
+    if let Some(code) = status.code() {
+        return ProcessTermination::Exit(code);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+
+        if let Some(signal) = status.signal() {
+            return ProcessTermination::Signal {
+                signal,
+                core_dumped: status.core_dumped(),
+            };
+        }
+    }
+    ProcessTermination::Abnormal
+}
+
+fn write_fixture_files(item: &OracleCase, root: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(root.join("src")).map_err(|error| {
+        format!(
+            "infrastructure-error: {} fixture create src: {error}",
+            item.id
+        )
+    })?;
+    std::fs::write(root.join("src/case.py"), &item.source).map_err(|error| {
+        format!(
+            "infrastructure-error: {} fixture write source: {error}",
+            item.id
+        )
+    })?;
+    std::fs::write(
+        root.join("pyproject.toml"),
+        "[project]\nname = \"exception-match-binding-case\"\nversion = \"0.0.0\"\n",
+    )
+    .map_err(|error| {
+        format!(
+            "infrastructure-error: {} fixture write project metadata: {error}",
+            item.id
+        )
+    })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -465,16 +563,12 @@ struct Fixture {
 }
 
 impl Fixture {
-    fn new(source: &str) -> Result<Self, String> {
-        let directory = tempfile::tempdir().map_err(|error| error.to_string())?;
+    fn new(item: &OracleCase) -> Result<Self, String> {
+        let directory = tempfile::tempdir().map_err(|error| {
+            format!("infrastructure-error: {} fixture tempdir: {error}", item.id)
+        })?;
         let root = directory.path().join("project");
-        std::fs::create_dir_all(root.join("src")).map_err(|error| error.to_string())?;
-        std::fs::write(root.join("src/case.py"), source).map_err(|error| error.to_string())?;
-        std::fs::write(
-            root.join("pyproject.toml"),
-            "[project]\nname = \"exception-match-binding-case\"\nversion = \"0.0.0\"\n",
-        )
-        .map_err(|error| error.to_string())?;
+        write_fixture_files(item, &root)?;
         Ok(Self {
             _directory: directory,
             root,
@@ -501,7 +595,6 @@ fn python_executable() -> PathBuf {
 
 fn plan_args(fixture: &Fixture, operator: &str) -> Vec<OsString> {
     vec![
-        "hoimin".into(),
         "plan".into(),
         "--root".into(),
         fixture.root.as_os_str().to_owned(),
@@ -522,20 +615,20 @@ fn plan_args(fixture: &Fixture, operator: &str) -> Vec<OsString> {
 }
 
 async fn public_plan(item: &OracleCase) -> Result<PlanManifest, String> {
-    let fixture = Fixture::new(&item.source)?;
+    let fixture = Fixture::new(item)?;
     let operator = item
         .operator
         .as_deref()
         .ok_or_else(|| format!("infrastructure-error: {} operator missing", item.id))?;
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let code = tokio::time::timeout(
-        Duration::from_secs(10),
-        hoimin_cli::run_with_io(plan_args(&fixture, operator), &mut stdout, &mut stderr),
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
+    command.args(plan_args(&fixture, operator));
+    let output = run_bounded_command(&item.id, command, Duration::from_secs(10)).await?;
+    decode_captured_plan(
+        &item.id,
+        &process_termination(output.status),
+        &output.stdout,
+        &output.stderr,
     )
-    .await
-    .map_err(|_| format!("infrastructure-error: {} public plan timed out", item.id))?;
-    decode_plan_result(&item.id, code, &stdout, &stderr)
 }
 
 #[test]
@@ -573,34 +666,58 @@ fn corpus_rejects_unknown_fields_duplicate_ids_and_ambiguous_markers() {
 
     let mut unknown: serde_json::Value = serde_json::from_str(first).unwrap();
     unknown["unexpected"] = serde_json::json!(true);
-    assert!(parse_corpus(&format!("{unknown}\n")).is_err());
+    assert_eq!(
+        parse_corpus(&format!("{unknown}\n")).unwrap_err(),
+        "line 1 has an inexact field set"
+    );
 
-    assert!(parse_corpus(&format!("{first}\n{first}\n")).is_err());
+    assert_eq!(
+        parse_corpus(&format!("{first}\n{first}\n")).unwrap_err(),
+        "duplicate case id handler_type_before_target"
+    );
 
     let mut duplicate_marker: serde_json::Value = serde_json::from_str(first).unwrap();
     let source = duplicate_marker["source"].as_str().unwrap();
     let marker = duplicate_marker["marker"].as_str().unwrap();
     duplicate_marker["source"] = serde_json::json!(format!("{source}\n# {marker}"));
-    assert!(parse_corpus(&format!("{duplicate_marker}\n")).is_err());
+    assert_eq!(
+        parse_corpus(&format!("{duplicate_marker}\n")).unwrap_err(),
+        "handler_type_before_target marker must occur exactly once"
+    );
 
     let mut substituted = CORPUS.lines().map(str::to_owned).collect::<Vec<_>>();
     let mut replacement: serde_json::Value = serde_json::from_str(&substituted[0]).unwrap();
     replacement["id"] = serde_json::json!("valid_but_unowned_case");
     substituted[0] = replacement.to_string();
-    assert!(parse_corpus(&format!("{}\n", substituted.join("\n"))).is_err());
+    assert_eq!(
+        parse_corpus(&format!("{}\n", substituted.join("\n"))).unwrap_err(),
+        "corpus does not contain the exact schema-owned case set"
+    );
 }
 
 #[test]
 fn corpus_rejects_unknown_enums_and_crossed_field_groups() {
     let first = CORPUS.lines().next().expect("first corpus row");
-    for (field, value) in [
-        ("mode", "speculative"),
-        ("family", "finally"),
-        ("observation_kind", "report"),
+    for (field, value, expected) in [
+        (
+            "mode",
+            "speculative",
+            "handler_type_before_target has unknown mode speculative",
+        ),
+        (
+            "family",
+            "finally",
+            "handler_type_before_target has unknown family finally",
+        ),
+        (
+            "observation_kind",
+            "report",
+            "handler_type_before_target has unknown observation kind report",
+        ),
     ] {
         let mut invalid: serde_json::Value = serde_json::from_str(first).unwrap();
         invalid[field] = serde_json::json!(value);
-        assert!(parse_corpus(&format!("{invalid}\n")).is_err());
+        assert_eq!(parse_corpus(&format!("{invalid}\n")).unwrap_err(), expected);
     }
 
     let strict = CORPUS
@@ -609,16 +726,115 @@ fn corpus_rejects_unknown_enums_and_crossed_field_groups() {
         .expect("strict public row");
     let mut crossed: serde_json::Value = serde_json::from_str(strict).unwrap();
     crossed["expected_resolution"] = serde_json::json!("shadowed");
-    assert!(parse_corpus(&format!("{crossed}\n")).is_err());
+    assert_eq!(
+        parse_corpus(&format!("{crossed}\n")).unwrap_err(),
+        "handler_body_after_target_public has fields incompatible with its mode and observation kind"
+    );
 }
 
 #[test]
 fn command_and_manifest_failures_are_infrastructure_errors() {
-    let nonzero = decode_plan_result("nonzero", 7, b"{}", b"analyzer failed").unwrap_err();
+    let nonzero = decode_captured_plan(
+        "nonzero",
+        &ProcessTermination::Exit(7),
+        b"{}",
+        b"analyzer failed",
+    )
+    .unwrap_err();
     assert!(nonzero.starts_with("infrastructure-error: nonzero public plan exit=7"));
 
-    let malformed = decode_plan_result("malformed", 0, b"not JSON", b"").unwrap_err();
+    let malformed =
+        decode_captured_plan("malformed", &ProcessTermination::Success, b"not JSON", b"")
+            .unwrap_err();
     assert!(malformed.starts_with("infrastructure-error: malformed malformed plan:"));
+
+    let invalid_manifest =
+        decode_captured_plan("invalid-manifest", &ProcessTermination::Success, b"{}", b"")
+            .unwrap_err();
+    assert!(invalid_manifest.starts_with("infrastructure-error: invalid-manifest malformed plan:"));
+
+    let unexpected_stderr = decode_captured_plan(
+        "stderr",
+        &ProcessTermination::Success,
+        b"{}",
+        b"unexpected diagnostic",
+    )
+    .unwrap_err();
+    assert_eq!(
+        unexpected_stderr,
+        "infrastructure-error: stderr public plan emitted stderr: unexpected diagnostic"
+    );
+}
+
+#[test]
+fn abnormal_process_outcomes_are_infrastructure_errors() {
+    for (termination, expected) in [
+        (ProcessTermination::Exit(125), "exit=125"),
+        (
+            ProcessTermination::Signal {
+                signal: 6,
+                core_dumped: true,
+            },
+            "signal=",
+        ),
+        (ProcessTermination::Abnormal, "abnormal termination"),
+    ] {
+        let error = decode_captured_plan(
+            "process-case",
+            &termination,
+            b"",
+            b"resource.rss_limit or panic-abort",
+        )
+        .unwrap_err();
+        assert!(error.starts_with("infrastructure-error: process-case"));
+        assert!(error.contains(expected));
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn spawn_timeout_and_fixture_failures_are_infrastructure_errors() {
+    let spawn_error = run_bounded_command(
+        "spawn-case",
+        tokio::process::Command::new("hoimin-command-that-does-not-exist"),
+        Duration::from_secs(1),
+    )
+    .await
+    .unwrap_err();
+    assert!(spawn_error.starts_with("infrastructure-error: spawn-case spawn failed:"));
+
+    #[cfg(unix)]
+    let sleeper = {
+        let mut command = tokio::process::Command::new("sleep");
+        command.arg("5");
+        command
+    };
+    #[cfg(windows)]
+    let sleeper = {
+        let mut command = tokio::process::Command::new("cmd");
+        command.args(["/C", "ping 127.0.0.1 -n 6 >NUL"]);
+        command
+    };
+    let timeout_error = run_bounded_command("timeout-case", sleeper, Duration::from_millis(20))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        timeout_error,
+        "infrastructure-error: timeout-case public plan timed out"
+    );
+
+    let item = parse_corpus(CORPUS)
+        .expect("valid corpus")
+        .into_iter()
+        .next()
+        .expect("fixture row");
+    let directory = tempfile::tempdir().unwrap();
+    let blocked_root = directory.path().join("blocked-project");
+    std::fs::write(&blocked_root, b"not a directory").unwrap();
+    let fixture_error = write_fixture_files(&item, &blocked_root).unwrap_err();
+    assert!(fixture_error.starts_with(&format!(
+        "infrastructure-error: {} fixture create src:",
+        item.id
+    )));
 }
 
 #[tokio::test(flavor = "current_thread")]

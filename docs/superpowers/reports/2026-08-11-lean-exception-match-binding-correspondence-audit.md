@@ -49,14 +49,21 @@ different observations. Separately derived observable fixtures cover the same
 handler-join and failed-pattern transitions without inventing test-only
 provenance.
 
-The public harness writes one source into an isolated temporary fixture project,
-executes `hoimin plan` with one analyzer job, parses `PlanManifest`, and retains
-all candidates whose byte span overlaps the unique marker. Zero or one retained
-candidate is normalized for exact comparison. More than one overlapping
-candidate is a semantic mismatch because the normalized count cannot equal the
-0/1 expectation; it is not reported as infrastructure. Nonzero command exits,
-timeouts, stderr, malformed JSON/manifests, invalid candidate spans, and missing
-or duplicate markers are infrastructure errors and make no semantic claim.
+The public harness writes one source into an isolated temporary fixture project
+and launches Cargo's built `CARGO_BIN_EXE_hoimin` as a subprocess for `plan`
+with one analyzer job and a 10-second deadline. It parses `PlanManifest` and
+retains all candidates whose byte span overlaps the unique marker. Zero or one
+retained candidate is normalized for exact comparison. More than one
+overlapping candidate is a semantic mismatch because the normalized count
+cannot equal the 0/1 expectation; it is not reported as infrastructure.
+
+Fixture temp-directory/create/write failures; binary spawn, wait, and timeout
+failures; successful exits that emit stderr; nonzero exits (including reported
+process-level RSS/resource stops); signals or core dumps such as panic-abort or
+OOM/RSS kills; unsuccessful statuses without a code or signal; malformed
+JSON/manifests; invalid candidate spans; and missing or duplicate markers are
+all `infrastructure-error` and make no semantic claim. The harness does not
+reinterpret a resource or abnormal-process outcome as a candidate mismatch.
 
 ## Formal result and model boundary
 
@@ -185,8 +192,9 @@ limits once process-tree sampling was available.
 Task 3's committed private evidence covers all 15 internal rows, both
 model-only exclusions, the four implementation-facing broken transitions, and
 unreachable/header marker bounds. Task 4's public integration test covers the
-closed schema, malformed/nonzero infrastructure classification, overlapping
-candidate semantics, and all 8 strict public rows.
+independently sensitive closed-schema gates, built-binary execution, fixture and
+process infrastructure classification, overlapping candidate semantics, and
+all 8 strict public rows.
 
 The final commands are:
 
@@ -196,7 +204,7 @@ CARGO_BUILD_JOBS=2 cargo test -p hoimin-cli --test lean_annotation_scope_oracle
 CARGO_BUILD_JOBS=2 cargo test -p hoimin-cli --test lean_binding_flow_oracle
 ```
 
-Fresh final results were 6/6 tests in the exception/match harness, 4/4 in the
+Fresh final results were 8/8 tests in the exception/match harness, 4/4 in the
 annotation-scope harness, and 4/4 in the binding-flow harness. Focused Clippy
 with `-D warnings`, `cargo fmt --all -- --check`, and the staged diff check also
 exited 0 without warnings or formatting errors.
