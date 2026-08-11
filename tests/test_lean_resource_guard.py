@@ -75,8 +75,8 @@ class LeanResourceGuardTests(unittest.TestCase):
             marker = Path(temporary_directory) / "child.pid"
             allocating_child = (
                 "import os,time; "
-                "payload=bytearray(32*1024*1024); "
-                f"open({str(marker)!r},'w').write(str(os.getpid())); time.sleep(30)"
+                f"open({str(marker)!r},'w').write(str(os.getpid())); "
+                "time.sleep(.1); payload=bytearray(64*1024*1024); time.sleep(30)"
             )
 
             completed, stats = self.run_guard(
@@ -84,7 +84,7 @@ class LeanResourceGuardTests(unittest.TestCase):
                 "-c",
                 allocating_child,
                 timeout=3,
-                rss_limit_mib=8,
+                rss_limit_mib=32,
             )
 
             self.assertEqual(completed.returncode, 125)
