@@ -261,7 +261,7 @@ Expected: exit 1 naming the missing root module.
 In `AnnotationScopeCases.lean`, define:
 
 ```lean
-inductive ObservationKind | annotation | resolution
+inductive ObservationKind | annotation | resolution | publicCandidate
 inductive Scenario
   | globalBefore | globalAfterWrite | globalRestored
   | nonlocalBefore | nonlocalAfterWrite | nonlocalRestored
@@ -282,11 +282,13 @@ structure Case where
   expectedPresent : Bool
 ```
 
-Define exactly one case per scenario. Use unique comment markers adjacent to
-the observed annotation or identifier so source matching cannot select a
-different occurrence. All private projection cases use `internal-fixture`;
-public candidate cases use `strict` only when the same marker is observable in
-the manifest.
+Define one private case per observation scenario. For the eight same-premise
+public observations, add a separate `publicCandidate` case so each record still
+has exactly one mode. Use unique markers around the observed annotation or
+identifier so source matching cannot select a different occurrence. All private
+projection cases use `internal-fixture`; public candidate cases use `strict`
+only when the same marker is observable in the manifest. The closed total is 23
+cases: 15 private and 8 public.
 
 - [ ] **Step 3: Make the fixed cases self-validating**
 
@@ -315,15 +317,18 @@ JSON helpers and emits one stable line per case.
 
 - [ ] **Step 5: Build and generate through the resource guard**
 
-Run one guarded command at a time:
+Attempt the native target once through the guard. If linking reaches exit 125,
+record that run and do not retry or raise the limit. Use the same Lean main via
+`lake env lean --run AnnotationScopeAuditMain.lean --` for all operations. Run
+one guarded command at a time:
 
 ```bash
-lake -Kjobs=1 build generate_annotation_scope
-.lake/build/bin/generate_annotation_scope --cases
-.lake/build/bin/generate_annotation_scope --sensitivity
-.lake/build/bin/generate_annotation_scope --stats
-.lake/build/bin/generate_annotation_scope --output corpus/annotation-scope-correspondence.jsonl
-.lake/build/bin/generate_annotation_scope --check corpus/annotation-scope-correspondence.jsonl
+lake -Kjobs=1 build HoiminOracle.AnnotationScopeCases
+lake env lean --run AnnotationScopeAuditMain.lean -- --cases
+lake env lean --run AnnotationScopeAuditMain.lean -- --sensitivity
+lake env lean --run AnnotationScopeAuditMain.lean -- --stats
+lake env lean --run AnnotationScopeAuditMain.lean -- --output corpus/annotation-scope-correspondence.jsonl
+lake env lean --run AnnotationScopeAuditMain.lean -- --check corpus/annotation-scope-correspondence.jsonl
 ```
 
 Wrap each command with the exact guard flags from Global Constraints and a
