@@ -1,8 +1,11 @@
 use super::{
-    AnalyzeRequest, AnalyzerCandidate, AnnotationSiteTestSnapshot, BindingFlowTestSnapshot,
-    CandidatePrefix, LineIndex, NameResolutionTestSnapshot, analyze_source,
-    analyze_source_cancellable, annotation_site_test_snapshot, binding_flow_loop_head_snapshot,
-    binding_flow_test_snapshot, name_resolution_test_snapshot,
+    AnalyzeRequest, AnalyzerCandidate, AnnotationSiteTestSnapshot, BindingFlowTestMutation,
+    BindingFlowTestSnapshot, CandidatePrefix, LineIndex, NameResolutionTestSnapshot,
+    analyze_source, analyze_source_cancellable, annotation_site_test_snapshot,
+    binding_flow_handler_exit_snapshot, binding_flow_handler_exit_snapshot_with_mutation,
+    binding_flow_loop_head_snapshot, binding_flow_marker_snapshot,
+    binding_flow_marker_snapshot_with_mutation, binding_flow_test_snapshot,
+    name_resolution_test_snapshot,
 };
 use crate::analyzer::AnalyzerDiagnosticCode;
 use camino::Utf8Path;
@@ -16,6 +19,10 @@ const BINDING_FLOW_CORPUS: &str =
     include_str!("../../../../formal/HoiminOracle/corpus/binding-flow-joins.jsonl");
 const ANNOTATION_SCOPE_CORPUS: &str =
     include_str!("../../../../formal/HoiminOracle/corpus/annotation-scope-correspondence.jsonl");
+const EXCEPTION_MATCH_BINDING_CORPUS: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../formal/HoiminOracle/corpus/exception-match-binding-correspondence.jsonl"
+));
 
 #[derive(serde::Deserialize)]
 struct BindingFlowCorpusCase {
@@ -47,6 +54,27 @@ struct AnnotationScopeCorpusCase {
     expected_original: Option<String>,
     expected_replacement: Option<String>,
     expected_present: bool,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExceptionMatchBindingCorpusCase {
+    schema: u64,
+    id: String,
+    mode: String,
+    family: String,
+    observation_kind: String,
+    source: String,
+    marker: String,
+    name: String,
+    expected_facts: Vec<String>,
+    expected_resolution: Option<String>,
+    expected_exit_category: Option<String>,
+    expected_present: bool,
+    operator: Option<String>,
+    original: Option<String>,
+    replacement: Option<String>,
+    symbol: Option<String>,
 }
 
 fn analyze(source: &str) -> super::AnalyzerOutput {
@@ -4622,6 +4650,393 @@ fn annotation_scope_private_projection_detects_wrong_site_and_scope_stage() {
         name_resolution_test_snapshot(comprehension_source, "list(values)", "list").unwrap();
     let body = name_resolution_test_snapshot(comprehension_source, "list(item)", "list").unwrap();
     assert_ne!(first.resolution, body.resolution);
+}
+
+#[test]
+fn exception_match_binding_internal_corpus() {
+    let cases = EXCEPTION_MATCH_BINDING_CORPUS
+        .lines()
+        .map(|line| serde_json::from_str::<ExceptionMatchBindingCorpusCase>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(cases.len(), 25);
+    assert_eq!(
+        cases
+            .iter()
+            .filter(|item| item.mode == "internal-fixture")
+            .count(),
+        15
+    );
+    assert_eq!(
+        cases
+            .iter()
+            .filter(|item| item.mode == "model-only")
+            .count(),
+        2
+    );
+    assert_eq!(cases.iter().filter(|item| item.mode == "strict").count(), 8);
+    let mut model_only_ids = cases
+        .iter()
+        .filter(|item| item.mode == "model-only")
+        .map(|item| item.id.as_str())
+        .collect::<Vec<_>>();
+    model_only_ids.sort_unstable();
+    assert_eq!(
+        model_only_ids,
+        [
+            "handler_nonselected_join",
+            "match_partial_failure_next_case"
+        ]
+    );
+    let cases = cases
+        .into_iter()
+        .filter(|item| item.mode == "internal-fixture")
+        .collect::<Vec<_>>();
+    assert_eq!(cases.len(), 15);
+
+    for item in cases {
+        assert_eq!(item.schema, 1, "{}", item.id);
+        assert!(matches!(item.family.as_str(), "handler" | "match-case"));
+        assert!(!item.name.is_empty(), "{}", item.id);
+        assert!(item.operator.is_none(), "{}", item.id);
+        assert!(item.original.is_none(), "{}", item.id);
+        assert!(item.replacement.is_none(), "{}", item.id);
+        assert!(item.symbol.is_none(), "{}", item.id);
+        match item.observation_kind.as_str() {
+            "annotation" => {
+                assert!(item.expected_resolution.is_none(), "{}", item.id);
+                assert!(item.expected_exit_category.is_none(), "{}", item.id);
+                let actual_facts = if item.id == "handler_type_before_target" {
+                    binding_flow_marker_snapshot(&item.source, &item.marker)
+                        .unwrap_or_else(|error| panic!("{error}; case={}", item.id))
+                } else {
+                    annotation_site_test_snapshot(&item.source, &item.marker)
+                        .unwrap_or_else(|error| panic!("{error}; case={}", item.id))
+                        .facts
+                };
+                assert_eq!(actual_facts, item.expected_facts, "{}", item.id);
+                assert_eq!(
+                    !actual_facts.is_empty(),
+                    item.expected_present,
+                    "{}",
+                    item.id
+                );
+            }
+            "exits" => {
+                assert!(item.expected_resolution.is_none(), "{}", item.id);
+                let category = match item.expected_exit_category.as_deref() {
+                    Some(category @ ("fallthrough" | "break" | "continue" | "terminate")) => {
+                        category
+                    }
+                    category => panic!("infrastructure-error: invalid exit {category:?}"),
+                };
+                let actual_facts =
+                    binding_flow_handler_exit_snapshot(&item.source, &item.marker, category)
+                        .unwrap_or_else(|error| panic!("{error}; case={}", item.id));
+                assert_eq!(actual_facts, item.expected_facts, "{}", item.id);
+                assert_eq!(
+                    !actual_facts.is_empty(),
+                    item.expected_present,
+                    "{}",
+                    item.id
+                );
+            }
+            other => panic!("infrastructure-error: unexpected private kind {other}"),
+        }
+    }
+}
+
+#[test]
+fn exception_match_binding_private_projection_detects_broken_transitions() {
+    let cases = EXCEPTION_MATCH_BINDING_CORPUS
+        .lines()
+        .map(|line| serde_json::from_str::<ExceptionMatchBindingCorpusCase>(line).unwrap())
+        .collect::<Vec<_>>();
+    let case = |id: &str| {
+        cases
+            .iter()
+            .find(|item| item.id == id)
+            .unwrap_or_else(|| panic!("missing sensitivity case {id}"))
+    };
+
+    let handler_type = case("handler_type_before_target");
+    assert_eq!(
+        binding_flow_marker_snapshot(&handler_type.source, &handler_type.marker).unwrap(),
+        handler_type.expected_facts,
+    );
+    assert_eq!(
+        binding_flow_marker_snapshot_with_mutation(
+            &handler_type.source,
+            &handler_type.marker,
+            BindingFlowTestMutation::BindHandlerTargetBeforeType,
+        )
+        .unwrap(),
+        Vec::<String>::new(),
+    );
+
+    let pattern_failure = case("match_partial_failure_observable");
+    assert_eq!(
+        binding_flow_marker_snapshot(&pattern_failure.source, &pattern_failure.marker).unwrap(),
+        pattern_failure.expected_facts,
+    );
+    assert_eq!(
+        binding_flow_marker_snapshot_with_mutation(
+            &pattern_failure.source,
+            &pattern_failure.marker,
+            BindingFlowTestMutation::UsePrePatternFailureEnvironment,
+        )
+        .unwrap(),
+        vec!["direct:Sequence=typing.Sequence"]
+    );
+
+    let false_guard = case("match_false_guard_next_case");
+    assert_eq!(
+        binding_flow_marker_snapshot(&false_guard.source, &false_guard.marker).unwrap(),
+        false_guard.expected_facts,
+    );
+    assert_eq!(
+        binding_flow_marker_snapshot_with_mutation(
+            &false_guard.source,
+            &false_guard.marker,
+            BindingFlowTestMutation::UsePreGuardFailureEnvironment,
+        )
+        .unwrap(),
+        vec!["direct:Sequence=typing.Sequence"]
+    );
+
+    let refutable = case("match_refutable_unmatched_join");
+    let correct = binding_flow_marker_snapshot(&refutable.source, &refutable.marker).unwrap();
+    let broken = binding_flow_marker_snapshot_with_mutation(
+        &refutable.source,
+        &refutable.marker,
+        BindingFlowTestMutation::DropRefutableUnmatched,
+    )
+    .unwrap();
+    assert_eq!(correct, refutable.expected_facts);
+    assert_eq!(broken, vec!["direct:Sequence=typing.Sequence"]);
+    assert_ne!(broken, correct);
+}
+
+#[test]
+fn exception_match_binding_handler_cleanup_rows_observe_post_cleanup_state() {
+    let cases = EXCEPTION_MATCH_BINDING_CORPUS
+        .lines()
+        .map(|line| serde_json::from_str::<ExceptionMatchBindingCorpusCase>(line).unwrap())
+        .filter(|item| item.observation_kind == "exits")
+        .collect::<Vec<_>>();
+    assert_eq!(cases.len(), 5);
+
+    for item in cases {
+        let category = item
+            .expected_exit_category
+            .as_deref()
+            .expect("handler cleanup category");
+        let mutation = match category {
+            "fallthrough" => BindingFlowTestMutation::OmitHandlerFallthroughCleanup,
+            "break" => BindingFlowTestMutation::OmitHandlerBreakCleanup,
+            "continue" => BindingFlowTestMutation::OmitHandlerContinueCleanup,
+            "terminate" => BindingFlowTestMutation::OmitHandlerTerminateCleanup,
+            other => panic!("unexpected handler cleanup category {other}"),
+        };
+        assert_eq!(
+            binding_flow_handler_exit_snapshot(&item.source, &item.marker, category)
+                .unwrap_or_else(|error| panic!("{}: {error}", item.id)),
+            item.expected_facts,
+            "{} must observe the categorized exit after handler cleanup",
+            item.id
+        );
+        assert_eq!(
+            binding_flow_handler_exit_snapshot_with_mutation(
+                &item.source,
+                &item.marker,
+                category,
+                mutation,
+            )
+            .unwrap_or_else(|error| panic!("{}: {error}", item.id)),
+            vec!["direct:Sequence=typing.Sequence"],
+            "{} must detect omitted {category} cleanup",
+            item.id
+        );
+    }
+}
+
+#[test]
+fn exception_match_binding_pattern_failure_mutation_preserves_reachability() {
+    let item = EXCEPTION_MATCH_BINDING_CORPUS
+        .lines()
+        .map(|line| serde_json::from_str::<ExceptionMatchBindingCorpusCase>(line).unwrap())
+        .find(|item| item.id == "match_partial_failure_observable")
+        .expect("partial-pattern failure corpus row");
+    assert_eq!(
+        binding_flow_marker_snapshot(&item.source, &item.marker).unwrap(),
+        item.expected_facts
+    );
+    assert_eq!(
+        binding_flow_marker_snapshot_with_mutation(
+            &item.source,
+            &item.marker,
+            BindingFlowTestMutation::UsePrePatternFailureEnvironment,
+        )
+        .unwrap(),
+        vec!["direct:Sequence=typing.Sequence"]
+    );
+}
+
+#[test]
+fn exception_match_binding_guard_failure_mutation_preserves_reachability() {
+    let item = EXCEPTION_MATCH_BINDING_CORPUS
+        .lines()
+        .map(|line| serde_json::from_str::<ExceptionMatchBindingCorpusCase>(line).unwrap())
+        .find(|item| item.id == "match_false_guard_next_case")
+        .expect("false-guard failure corpus row");
+    assert_eq!(
+        binding_flow_marker_snapshot(&item.source, &item.marker).unwrap(),
+        item.expected_facts
+    );
+    assert_eq!(
+        binding_flow_marker_snapshot_with_mutation(
+            &item.source,
+            &item.marker,
+            BindingFlowTestMutation::UsePreGuardFailureEnvironment,
+        )
+        .unwrap(),
+        vec!["direct:Sequence=typing.Sequence"]
+    );
+}
+
+#[test]
+fn exception_match_binding_refutable_unmatched_mutation_changes_observation() {
+    let item = EXCEPTION_MATCH_BINDING_CORPUS
+        .lines()
+        .map(|line| serde_json::from_str::<ExceptionMatchBindingCorpusCase>(line).unwrap())
+        .find(|item| item.id == "match_refutable_unmatched_join")
+        .expect("refutable-unmatched corpus row");
+    let correct = binding_flow_marker_snapshot(&item.source, &item.marker).unwrap();
+    let broken = binding_flow_marker_snapshot_with_mutation(
+        &item.source,
+        &item.marker,
+        BindingFlowTestMutation::DropRefutableUnmatched,
+    )
+    .unwrap();
+
+    assert_eq!(correct, item.expected_facts);
+    assert_ne!(
+        broken, correct,
+        "dropping the unmatched path must be observable"
+    );
+}
+
+#[test]
+fn exception_match_binding_marker_projection_rejects_unreachable_statements() {
+    let source = concat!(
+        "def run():\n",
+        "    from typing import Sequence\n",
+        "    reachable: list[str]\n",
+        "    return 1  # reachable-return\n",
+        "    unreachable: tuple[str]\n",
+    );
+    let known_sequence = vec!["direct:Sequence=typing.Sequence".to_owned()];
+
+    assert_eq!(
+        binding_flow_marker_snapshot(source, "list[str]").unwrap(),
+        known_sequence
+    );
+    assert_eq!(
+        binding_flow_marker_snapshot(source, "# reachable-return").unwrap(),
+        known_sequence
+    );
+    assert!(
+        binding_flow_marker_snapshot(source, "tuple[str]")
+            .unwrap_err()
+            .starts_with("infrastructure-error:")
+    );
+
+    let semicolon_dead = concat!(
+        "def run():\n",
+        "    from typing import Sequence\n",
+        "    return 1; dead: tuple[str]\n",
+    );
+    assert!(
+        binding_flow_marker_snapshot(semicolon_dead, "tuple[str]")
+            .unwrap_err()
+            .starts_with("infrastructure-error:")
+    );
+
+    let handler_source = concat!(
+        "def run():\n",
+        "    from typing import Sequence\n",
+        "    try:\n",
+        "        risky()\n",
+        "    except Error as Sequence:\n",
+        "        return 1\n",
+        "        handler_unreachable: tuple[str]\n",
+    );
+    assert!(
+        binding_flow_marker_snapshot(handler_source, "tuple[str]")
+            .unwrap_err()
+            .starts_with("infrastructure-error:")
+    );
+
+    let match_source = concat!(
+        "def run(value):\n",
+        "    from typing import Sequence\n",
+        "    match value:\n",
+        "        case _:\n",
+        "            return 1\n",
+        "            case_unreachable: tuple[str]\n",
+    );
+    assert!(
+        binding_flow_marker_snapshot(match_source, "tuple[str]")
+            .unwrap_err()
+            .starts_with("infrastructure-error:")
+    );
+}
+
+#[test]
+fn exception_match_binding_marker_projection_bounds_match_case_headers() {
+    let reachable_source = concat!(
+        "def run(value):\n",
+        "    from typing import Sequence\n",
+        "    match value:\n",
+        "        case [Sequence] if reachable_guard:  # reachable-case-header\n",
+        "            return 1\n",
+        "            dead_body: tuple[str]\n",
+        "        case _:\n",
+        "            pass\n",
+    );
+    let known_sequence = vec!["direct:Sequence=typing.Sequence".to_owned()];
+
+    assert_eq!(
+        binding_flow_marker_snapshot(reachable_source, "[Sequence]").unwrap(),
+        known_sequence
+    );
+    assert_eq!(
+        binding_flow_marker_snapshot(reachable_source, "reachable_guard").unwrap(),
+        known_sequence
+    );
+    assert_eq!(
+        binding_flow_marker_snapshot(reachable_source, "# reachable-case-header").unwrap(),
+        known_sequence
+    );
+    assert!(
+        binding_flow_marker_snapshot(reachable_source, "tuple[str]")
+            .unwrap_err()
+            .starts_with("infrastructure-error:")
+    );
+
+    let unreachable_case_source = concat!(
+        "def run(value):\n",
+        "    from typing import Sequence\n",
+        "    match value:\n",
+        "        case _:\n",
+        "            pass\n",
+        "        case 0 if unreachable_guard:\n",
+        "            pass\n",
+    );
+    assert!(
+        binding_flow_marker_snapshot(unreachable_case_source, "unreachable_guard")
+            .unwrap_err()
+            .starts_with("infrastructure-error:")
+    );
 }
 
 #[test]
