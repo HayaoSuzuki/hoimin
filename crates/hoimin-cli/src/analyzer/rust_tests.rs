@@ -14,6 +14,8 @@ use ruff_python_parser::parse_module;
 
 const BINDING_FLOW_CORPUS: &str =
     include_str!("../../../../formal/HoiminOracle/corpus/binding-flow-joins.jsonl");
+const ANNOTATION_SCOPE_CORPUS: &str =
+    include_str!("../../../../formal/HoiminOracle/corpus/annotation-scope-correspondence.jsonl");
 
 #[derive(serde::Deserialize)]
 struct BindingFlowCorpusCase {
@@ -25,6 +27,23 @@ struct BindingFlowCorpusCase {
     expected_continues: Vec<Vec<String>>,
     expected_terminates: Vec<Vec<String>>,
     expected_loop_head: Option<Vec<String>>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AnnotationScopeCorpusCase {
+    schema: u64,
+    id: String,
+    mode: String,
+    scenario: String,
+    observation_kind: String,
+    source: String,
+    marker: String,
+    expected_facts: Vec<String>,
+    expected_symbol: Option<String>,
+    expected_scope: Option<String>,
+    expected_resolution: Option<String>,
+    expected_present: bool,
 }
 
 fn analyze(source: &str) -> super::AnalyzerOutput {
@@ -4489,12 +4508,8 @@ fn annotation_scope_marker_projections_use_site_entry_and_comprehension_scope() 
         "def collect(values):\n",
         "    result = [list(item) for list in list(values)]\n",
     );
-    let first_iterable: NameResolutionTestSnapshot = name_resolution_test_snapshot(
-        comprehension_source,
-        "list(values)",
-        "list",
-    )
-    .unwrap();
+    let first_iterable: NameResolutionTestSnapshot =
+        name_resolution_test_snapshot(comprehension_source, "list(values)", "list").unwrap();
     let body: NameResolutionTestSnapshot =
         name_resolution_test_snapshot(comprehension_source, "list(item)", "list").unwrap();
     assert_eq!(first_iterable.resolution, "definitely-builtin");
@@ -4518,6 +4533,89 @@ fn annotation_scope_marker_projections_reject_infrastructure_setup_errors() {
             .unwrap_err()
             .starts_with("infrastructure-error:")
     );
+}
+
+#[test]
+fn annotation_scope_private_correspondence_matches_lean() {
+    let cases = ANNOTATION_SCOPE_CORPUS
+        .lines()
+        .map(|line| serde_json::from_str::<AnnotationScopeCorpusCase>(line).unwrap())
+        .filter(|item| item.mode == "internal-fixture")
+        .collect::<Vec<_>>();
+    assert_eq!(cases.len(), 15);
+    for item in cases {
+        assert_eq!(item.schema, 1, "{}", item.id);
+        assert!(!item.scenario.is_empty(), "{}", item.id);
+        match item.observation_kind.as_str() {
+            "annotation" => {
+                let snapshot = annotation_site_test_snapshot(&item.source, &item.marker)
+                    .unwrap_or_else(|error| panic!("{error}; case={}", item.id));
+                let marker_start = item.source.find(&item.marker).unwrap();
+                let marker_end = marker_start + item.marker.len();
+                assert!(snapshot.start <= marker_start, "{}", item.id);
+                assert!(marker_end <= snapshot.end, "{}", item.id);
+                assert_eq!(snapshot.facts, item.expected_facts, "{}", item.id);
+                assert_eq!(snapshot.symbol, item.expected_symbol, "{}", item.id);
+                assert_eq!(
+                    Some(snapshot.scope),
+                    item.expected_scope.as_deref(),
+                    "{}",
+                    item.id
+                );
+                assert_eq!(
+                    !snapshot.facts.is_empty(),
+                    item.expected_present,
+                    "{}",
+                    item.id
+                );
+            }
+            "resolution" => {
+                let snapshot = name_resolution_test_snapshot(&item.source, &item.marker, "list")
+                    .unwrap_or_else(|error| panic!("{error}; case={}", item.id));
+                let marker_start = item.source.find(&item.marker).unwrap();
+                let name_start = marker_start + item.marker.find("list").unwrap();
+                assert_eq!(snapshot.start, name_start, "{}", item.id);
+                assert_eq!(
+                    Some(snapshot.resolution),
+                    item.expected_resolution.as_deref(),
+                    "{}",
+                    item.id
+                );
+                assert_eq!(
+                    snapshot.resolution == "definitely-builtin",
+                    item.expected_present,
+                    "{}",
+                    item.id
+                );
+            }
+            other => panic!("infrastructure-error: unexpected private kind {other}"),
+        }
+    }
+}
+
+#[test]
+fn annotation_scope_private_projection_detects_wrong_site_and_scope_stage() {
+    let site_source = concat!(
+        "def outer():\n",
+        "    from typing import Sequence\n",
+        "    def inner():\n",
+        "        nonlocal Sequence\n",
+        "        before: list[str]\n",
+        "        Sequence = object\n",
+        "        after: tuple[str]\n",
+    );
+    let entry = annotation_site_test_snapshot(site_source, "list[str]").unwrap();
+    let suite_later = annotation_site_test_snapshot(site_source, "tuple[str]").unwrap();
+    assert_ne!(entry.facts, suite_later.facts);
+
+    let comprehension_source = concat!(
+        "def collect(values):\n",
+        "    result = [list(item) for list in list(values)]\n",
+    );
+    let first =
+        name_resolution_test_snapshot(comprehension_source, "list(values)", "list").unwrap();
+    let body = name_resolution_test_snapshot(comprehension_source, "list(item)", "list").unwrap();
+    assert_ne!(first.resolution, body.resolution);
 }
 
 #[test]
