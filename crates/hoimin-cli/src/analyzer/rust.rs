@@ -3183,7 +3183,7 @@ enum ExitCategory {
     Terminate,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ScopeKind {
     Module,
     Function,
@@ -3209,6 +3209,8 @@ struct AnnotationSite<'ast> {
     annotation: &'ast Expr,
     symbol: Option<String>,
     imports: KnownImports,
+    #[cfg(test)]
+    scope_kind: ScopeKind,
 }
 
 struct AnnotationCollector<'ast> {
@@ -3365,6 +3367,8 @@ impl<'ast> AnnotationCollector<'ast> {
             annotation,
             symbol: self.symbol(),
             imports: self.imports.clone(),
+            #[cfg(test)]
+            scope_kind: self.scope_kind,
         });
     }
 
@@ -3936,6 +3940,124 @@ fn normalize_binding_flow_states(states: &[KnownImports]) -> Vec<Vec<String>> {
         .collect::<Vec<_>>();
     normalized.sort();
     normalized
+}
+
+#[cfg(test)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct AnnotationSiteTestSnapshot {
+    pub(super) start: usize,
+    pub(super) end: usize,
+    pub(super) symbol: Option<String>,
+    pub(super) scope: &'static str,
+    pub(super) facts: Vec<String>,
+}
+
+#[cfg(test)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct NameResolutionTestSnapshot {
+    pub(super) start: usize,
+    pub(super) resolution: &'static str,
+}
+
+#[cfg(test)]
+fn unique_marker_range(source: &str, marker: &str) -> Result<Range<usize>, String> {
+    if marker.is_empty() {
+        return Err("infrastructure-error: marker must not be empty".to_owned());
+    }
+    let offsets = source
+        .match_indices(marker)
+        .map(|(offset, _)| offset)
+        .collect::<Vec<_>>();
+    let [start] = offsets.as_slice() else {
+        return Err(format!(
+            "infrastructure-error: marker occurs {} times",
+            offsets.len()
+        ));
+    };
+    Ok(*start..start + marker.len())
+}
+
+#[cfg(test)]
+fn annotation_scope_label(scope: ScopeKind) -> &'static str {
+    match scope {
+        ScopeKind::Module => "module",
+        ScopeKind::Function => "function",
+        ScopeKind::Class => "class",
+    }
+}
+
+#[cfg(test)]
+pub(super) fn annotation_site_test_snapshot(
+    source: &str,
+    marker: &str,
+) -> Result<AnnotationSiteTestSnapshot, String> {
+    let marker = unique_marker_range(source, marker)?;
+    let parsed = parse_module(source)
+        .map_err(|error| format!("infrastructure-error: source did not parse: {error}"))?;
+    let matching = AnnotationCollector::collect(parsed.syntax())
+        .into_iter()
+        .filter(|site| {
+            let range = site.annotation.range();
+            usize::from(range.start()) <= marker.start && marker.end <= usize::from(range.end())
+        })
+        .collect::<Vec<_>>();
+    let [site] = matching.as_slice() else {
+        return Err(format!(
+            "infrastructure-error: marker matched {} annotation sites",
+            matching.len()
+        ));
+    };
+    let range = site.annotation.range();
+    Ok(AnnotationSiteTestSnapshot {
+        start: range.start().into(),
+        end: range.end().into(),
+        symbol: site.symbol.clone(),
+        scope: annotation_scope_label(site.scope_kind),
+        facts: normalize_binding_flow_imports(&site.imports),
+    })
+}
+
+#[cfg(test)]
+fn name_resolution_label(resolution: NameResolution) -> &'static str {
+    match resolution {
+        NameResolution::DefinitelyBuiltin => "definitely-builtin",
+        NameResolution::Shadowed => "shadowed",
+        NameResolution::Unknown => "unknown",
+    }
+}
+
+#[cfg(test)]
+pub(super) fn name_resolution_test_snapshot(
+    source: &str,
+    marker: &str,
+    name: &str,
+) -> Result<NameResolutionTestSnapshot, String> {
+    if !tracked_resolution_name(name) {
+        return Err("infrastructure-error: name is not tracked for resolution".to_owned());
+    }
+    let marker_range = unique_marker_range(source, marker)?;
+    let marker_source = &source[marker_range.clone()];
+    let relative = marker_source
+        .match_indices(name)
+        .map(|(offset, _)| offset)
+        .collect::<Vec<_>>();
+    let [relative_start] = relative.as_slice() else {
+        return Err(format!(
+            "infrastructure-error: name occurs {} times inside marker",
+            relative.len()
+        ));
+    };
+    let start = marker_range.start + *relative_start;
+    let parsed = parse_module(source)
+        .map_err(|error| format!("infrastructure-error: source did not parse: {error}"))?;
+    let index = NameResolutionIndex::from_module(parsed.syntax());
+    if !index.occurrences.contains_key(&start) {
+        return Err("infrastructure-error: marker does not select a tracked load name".to_owned());
+    }
+    Ok(NameResolutionTestSnapshot {
+        start,
+        resolution: name_resolution_label(index.resolution(start, name)),
+    })
 }
 
 #[cfg(test)]
