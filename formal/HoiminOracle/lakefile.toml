@@ -44,3 +44,7 @@ root = "BindingFlowAuditMain"
 [[lean_exe]]
 name = "generate_annotation_scope"
 root = "AnnotationScopeAuditMain"
+
+[[lean_exe]]
+name = "generate_exception_match_binding"
+root = "ExceptionMatchBindingAuditMain"
