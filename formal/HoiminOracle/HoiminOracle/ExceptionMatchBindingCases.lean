@@ -79,22 +79,24 @@ def handlerObservation : HandlerObservation :=
   observeHandler sequenceEnv .destination Exits.fallthroughOnly
 
 def handlerFallthroughFacts : List String :=
-  factsAtFallthrough handlerObservation.exits
+  factsAtFallthrough
+    (cleanupHandlerExits .destination
+      (.categoryOnly .fallthrough sequenceEnv))
 
 def handlerTerminateFacts : List String :=
   factsAtFirst
     (cleanupHandlerExits .destination
-      (.categoryOnly .terminate (bindTarget sequenceEnv .destination))).terminates
+      (.categoryOnly .terminate sequenceEnv)).terminates
 
 def handlerBreakFacts : List String :=
   factsAtFirst
     (cleanupHandlerExits .destination
-      (.categoryOnly .break (bindTarget sequenceEnv .destination))).breaks
+      (.categoryOnly .break sequenceEnv)).breaks
 
 def handlerContinueFacts : List String :=
   factsAtFirst
     (cleanupHandlerExits .destination
-      (.categoryOnly .continue (bindTarget sequenceEnv .destination))).continues
+      (.categoryOnly .continue sequenceEnv)).continues
 
 def handlerJoinState : Option Env :=
   meetOption (some sequenceEnv) handlerObservation.exits.fallthrough
@@ -122,21 +124,27 @@ def matchCaptureFacts : List String :=
 def matchPartialFailureResolution : Option String :=
   resolutionAtDestination (advanceCase capturedPattern none).nextCase
 
-def observableReimportFacts (entry : Option Env) : Option (List String) :=
-  entry.map fun _ => normalizedFacts sequenceEnv
+def observableEntryFacts (entry : Option Env) : Option (List String) :=
+  entry.map normalizedFacts
 
 def matchPartialFailureObservableFacts : Option (List String) :=
-  observableReimportFacts (advanceCase capturedPattern none).nextCase
+  observableEntryFacts (advanceCase capturedPattern none).nextCase
 
 def matchFalseGuardStep : CaseStep :=
   advanceCase guardOnlyPattern (some false)
     (bindTarget sequenceEnv .destination)
 
 def matchFalseGuardObservableFacts : Option (List String) :=
-  observableReimportFacts matchFalseGuardStep.nextCase
+  observableEntryFacts matchFalseGuardStep.nextCase
+
+def matchRefutableIncoming : Env :=
+  bindTarget sequenceEnv .destination
+
+def matchRefutableCompleted : Env :=
+  sequenceEnv
 
 def matchRefutableJoinFacts : List String :=
-  (finishMatch (some sequenceEnv) [bindTarget sequenceEnv .destination]).map
+  (finishMatch (some matchRefutableIncoming) [matchRefutableCompleted]).map
       normalizedFacts |>.getD []
 
 def matchIrrefutableIncoming : Env :=
@@ -157,25 +165,25 @@ def handlerTypeSource : String :=
   "from typing import Sequence\nclass Error(Exception):\n    pass\ndef risky():\n    raise Error()\ntry:\n    risky()\nexcept Error as Sequence:\n    handler_body_marker: list[str]\n"
 
 def handlerFallthroughSource : String :=
-  "from typing import Sequence\ntry:\n    risky()\nexcept Error as Sequence:\n    pass  # handler-fallthrough-exit\nafter_fallthrough: list[str]\n"
+  "from typing import Sequence\ntry:\n    risky()\nexcept Error as Sequence:\n    from typing import Sequence\n    pass  # handler-fallthrough-exit\nafter_fallthrough: list[str]\n"
 
 def handlerReturnSource : String :=
-  "def run():\n    from typing import Sequence\n    try:\n        risky()\n    except Error as Sequence:\n        return 1  # handler-return-exit\n"
+  "def run():\n    from typing import Sequence\n    try:\n        risky()\n    except Error as Sequence:\n        from typing import Sequence\n        return 1  # handler-return-exit\n"
 
 def handlerRaiseSource : String :=
-  "def run():\n    from typing import Sequence\n    try:\n        risky()\n    except Error as Sequence:\n        raise Error  # handler-raise-exit\n"
+  "def run():\n    from typing import Sequence\n    try:\n        risky()\n    except Error as Sequence:\n        from typing import Sequence\n        raise Error  # handler-raise-exit\n"
 
 def handlerBreakSource : String :=
-  "from typing import Sequence\nwhile active:\n    try:\n        risky()\n    except Error as Sequence:\n        break  # handler-break-exit\n"
+  "from typing import Sequence\nwhile active:\n    try:\n        risky()\n    except Error as Sequence:\n        from typing import Sequence\n        break  # handler-break-exit\n"
 
 def handlerContinueSource : String :=
-  "from typing import Sequence\nwhile active:\n    try:\n        risky()\n    except Error as Sequence:\n        continue  # handler-continue-exit\n"
+  "from typing import Sequence\nwhile active:\n    try:\n        risky()\n    except Error as Sequence:\n        from typing import Sequence\n        continue  # handler-continue-exit\n"
 
 def handlerJoinSource : String :=
   "from typing import Sequence\ntry:\n    risky()\nexcept Error as Sequence:\n    pass\nexcept OtherError:\n    pass\nafter_nonselected: list[str]\n"
 
 def matchPartialFailureObservableSource : String :=
-  "from typing import Sequence\nmatch value:\n    case [Sequence, 0]:\n        pass\n    case _:\n        from typing import Sequence\n        pattern_failure_observed: list[str]\n"
+  "from typing import Sequence\nmatch value:\n    case [Sequence, 0]:\n        pass\n    case _:\n        pattern_failure_observed: list[str]\n        from typing import Sequence\n"
 
 def handlerPreservedSource : String :=
   "from typing import Sequence, Mapping\ntry:\n    risky()\nexcept Error as Sequence:\n    pass\npreserved_handler_import: tuple[Mapping]\n"
@@ -187,10 +195,10 @@ def matchPartialFailureSource : String :=
   "from typing import Sequence\nmatch value:\n    case [Sequence, 0]:\n        pass\n    case _:\n        partial_failure_next: list[str]\n"
 
 def matchFalseGuardSource : String :=
-  "from typing import Sequence\nmatch value:\n    case _ if ((Sequence := local_sequence) and False):\n        pass\n    case _:\n        from typing import Sequence\n        false_guard_observed: list[str]\n"
+  "from typing import Sequence\nmatch value:\n    case _ if ((Sequence := local_sequence) and False):\n        pass\n    case _:\n        false_guard_observed: list[str]\n        from typing import Sequence\n"
 
 def matchRefutableSource : String :=
-  "from typing import Sequence\nmatch value:\n    case 0:\n        Sequence = local_sequence\nafter_refutable_match: list[str]\n"
+  "from typing import Sequence\nSequence = local_sequence\nmatch value:\n    case 0:\n        from typing import Sequence\nafter_refutable_match: list[str]\n"
 
 def matchIrrefutableSource : String :=
   "from typing import Sequence\nSequence = local_sequence\nmatch value:\n    case _:\n        from typing import Sequence\nafter_irrefutable_match: list[str]\n"
@@ -405,12 +413,30 @@ def fieldsMatchKind (item : OracleCase) : Bool :=
         item.expectedExitCategory.isNone && item.operator.isSome &&
         item.original.isSome && item.replacement.isSome
 
+def fixedExitProjectionValid (item : OracleCase) (source marker category : String)
+    (facts : List String) : Bool :=
+  item.source == source && item.marker == marker &&
+    item.expectedExitCategory == some category && item.expectedFacts == facts
+
 def fixedProjectionValid (item : OracleCase) : Bool :=
   match item.id with
   | "handler_type_before_target" =>
       item.expectedFacts == normalizedFacts handlerObservation.typeEntry
-  | "handler_cleanup_return" | "handler_cleanup_raise" =>
-      item.expectedFacts == handlerTerminateFacts
+  | "handler_cleanup_fallthrough" =>
+      fixedExitProjectionValid item handlerFallthroughSource
+        "# handler-fallthrough-exit" "fallthrough" handlerFallthroughFacts
+  | "handler_cleanup_return" =>
+      fixedExitProjectionValid item handlerReturnSource
+        "# handler-return-exit" "terminate" handlerTerminateFacts
+  | "handler_cleanup_raise" =>
+      fixedExitProjectionValid item handlerRaiseSource
+        "# handler-raise-exit" "terminate" handlerTerminateFacts
+  | "handler_cleanup_break" =>
+      fixedExitProjectionValid item handlerBreakSource
+        "# handler-break-exit" "break" handlerBreakFacts
+  | "handler_cleanup_continue" =>
+      fixedExitProjectionValid item handlerContinueSource
+        "# handler-continue-exit" "continue" handlerContinueFacts
   | "handler_nonselected_join" =>
       item.expectedResolution == handlerJoinResolution
   | "handler_nonselected_join_observable" =>
@@ -421,9 +447,14 @@ def fixedProjectionValid (item : OracleCase) : Bool :=
   | "match_partial_failure_next_case" =>
       item.expectedResolution == matchPartialFailureResolution
   | "match_partial_failure_observable" =>
-      item.expectedFacts == matchPartialFailureObservableFacts.getD []
+      item.source == matchPartialFailureObservableSource && item.marker == "list[str]" &&
+        item.expectedFacts == matchPartialFailureObservableFacts.getD []
   | "match_false_guard_next_case" =>
-      item.expectedFacts == matchFalseGuardObservableFacts.getD []
+      item.source == matchFalseGuardSource && item.marker == "list[str]" &&
+        item.expectedFacts == matchFalseGuardObservableFacts.getD []
+  | "match_refutable_unmatched_join" =>
+      item.source == matchRefutableSource && item.marker == "list[str]" &&
+        item.expectedFacts == matchRefutableJoinFacts
   | "match_irrefutable_exhaustion" =>
       item.expectedFacts == matchIrrefutableFacts
   | "match_preserves_unrelated_import" =>
@@ -466,17 +497,29 @@ private def brokenBindBeforeType : HandlerObservation :=
   { handlerObservation with
       typeEntry := bindTarget sequenceEnv .destination }
 
+private def brokenCleanupLeavesFallthrough : Exits :=
+  .categoryOnly .fallthrough sequenceEnv
+
+private def brokenCleanupLeavesBreak : Exits :=
+  .categoryOnly .break sequenceEnv
+
+private def brokenCleanupLeavesContinue : Exits :=
+  .categoryOnly .continue sequenceEnv
+
 private def brokenCleanupLeavesTerminate : Exits :=
   .categoryOnly .terminate sequenceEnv
 
 private def brokenJoinUsesLeft : Option Env :=
   some sequenceEnv
 
-private def brokenDiscardPatternFailure : CaseStep :=
-  { body := some capturedPattern.matched, nextCase := none }
+private def brokenUsePrePatternFailure : CaseStep :=
+  { body := some capturedPattern.matched, nextCase := some sequenceEnv }
 
-private def brokenDiscardGuardFailure : CaseStep :=
-  { body := none, nextCase := guardOnlyPattern.failed }
+private def brokenUsePreGuardFailure : CaseStep :=
+  { body := none, nextCase := some sequenceEnv }
+
+private def brokenDiscardRefutableUnmatched : Option Env :=
+  finishMatch none [matchRefutableCompleted]
 
 private def brokenRetainIrrefutableUnmatched : Option Env :=
   some matchIrrefutableIncoming
@@ -488,13 +531,16 @@ def handlerJoinBrokenFacts : List String :=
   brokenJoinUsesLeft.map normalizedFacts |>.getD []
 
 def patternFailureBrokenResolution : Option String :=
-  resolutionAtDestination brokenDiscardPatternFailure.nextCase
+  resolutionAtDestination brokenUsePrePatternFailure.nextCase
 
 def patternFailureBrokenObservableFacts : Option (List String) :=
-  observableReimportFacts brokenDiscardPatternFailure.nextCase
+  observableEntryFacts brokenUsePrePatternFailure.nextCase
 
 def guardFailureBrokenObservableFacts : Option (List String) :=
-  observableReimportFacts brokenDiscardGuardFailure.nextCase
+  observableEntryFacts brokenUsePreGuardFailure.nextCase
+
+def refutableUnmatchedBrokenFacts : List String :=
+  brokenDiscardRefutableUnmatched.map normalizedFacts |>.getD []
 
 def irrefutableBrokenFacts : List String :=
   (finishMatch brokenRetainIrrefutableUnmatched
@@ -504,11 +550,21 @@ def bindBeforeTypeSensitivity : Bool :=
   normalizedFacts brokenBindBeforeType.typeEntry !=
     normalizedFacts handlerObservation.typeEntry
 
+def handlerFallthroughCleanupSensitivity : Bool :=
+  factsAtFallthrough brokenCleanupLeavesFallthrough != handlerFallthroughFacts
+
+def handlerBreakCleanupSensitivity : Bool :=
+  factsAtFirst brokenCleanupLeavesBreak.breaks != handlerBreakFacts
+
+def handlerContinueCleanupSensitivity : Bool :=
+  factsAtFirst brokenCleanupLeavesContinue.continues != handlerContinueFacts
+
+def handlerTerminateCleanupSensitivity : Bool :=
+  factsAtFirst brokenCleanupLeavesTerminate.terminates != handlerTerminateFacts
+
 def handlerExitCleanupSensitivity : Bool :=
-  factsAtFirst brokenCleanupLeavesTerminate.terminates !=
-    factsAtFirst
-      (cleanupHandlerExits .destination
-        (.categoryOnly .terminate sequenceEnv)).terminates
+  handlerFallthroughCleanupSensitivity && handlerBreakCleanupSensitivity &&
+    handlerContinueCleanupSensitivity && handlerTerminateCleanupSensitivity
 
 def handlerJoinMeetSensitivity : Bool :=
   handlerJoinBrokenResolution != handlerJoinResolution &&
@@ -521,12 +577,22 @@ def patternFailureSensitivity : Bool :=
 def guardFailureSensitivity : Bool :=
   guardFailureBrokenObservableFacts != matchFalseGuardObservableFacts
 
+def refutableUnmatchedSensitivity : Bool :=
+  let strict := publicCaseFromInternal
+    "match_refutable_unmatched_join_public" "list[str]" matchRefutableCase
+  matchRefutableCase.expectedFacts == matchRefutableJoinFacts &&
+    matchRefutableCase.expectedFacts != refutableUnmatchedBrokenFacts &&
+    matchRefutableCase.expectedPresent != !refutableUnmatchedBrokenFacts.isEmpty &&
+    strict.expectedPresent == matchRefutableCase.expectedPresent &&
+    strict.expectedPresent != !refutableUnmatchedBrokenFacts.isEmpty
+
 def irrefutableExhaustionSensitivity : Bool :=
   irrefutableBrokenFacts != matchIrrefutableFacts
 
 def sensitivityPasses : Bool :=
   bindBeforeTypeSensitivity && handlerExitCleanupSensitivity &&
     handlerJoinMeetSensitivity && patternFailureSensitivity &&
-    guardFailureSensitivity && irrefutableExhaustionSensitivity
+    guardFailureSensitivity && refutableUnmatchedSensitivity &&
+    irrefutableExhaustionSensitivity
 
 end HoiminOracle.ExceptionMatchBinding

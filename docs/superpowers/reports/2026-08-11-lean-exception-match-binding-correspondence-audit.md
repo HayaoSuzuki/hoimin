@@ -4,17 +4,17 @@ Date: 2026-08-12
 
 ## Result
 
-PASS for the audited surface. The Lean model's 25 fixed schema-1 cases are
-current, all 15 implementation-facing internal fixtures match the Rust
-analyzer's test-only exact-site projections, and all 8 strict public cases match
-the `hoimin plan` manifest. The public set contains 3 present and 5 absent
+PASS for the repaired audited surface. The Lean model's 25 fixed schema-1
+cases are current, all 15 implementation-facing internal fixtures match the
+Rust analyzer's test-only projections, and all 8 strict public cases match the
+`hoimin plan` manifest. The public set contains 1 present and 7 absent
 candidate expectations. No same-premise production mismatch was found, so no
-production semantic correction was made.
+production transfer rule or public analyzer API changed.
 
-This result is correspondence evidence over fixed cases. **Lean proves only the
+This result is fixed-case correspondence evidence. **Lean proves only the
 reduced model described below; it does not prove the Rust or Python
-implementation.** Rust correspondence tests separately establish agreement at
-the exercised internal and public observation sites.
+implementation.** Rust tests separately establish agreement at the exercised
+internal and public observation sites.
 
 ## Claim and audited surface
 
@@ -22,53 +22,60 @@ The durable claim is that Hoimin's known-typing-import facts obey these binding
 rules at the audited Python sites:
 
 - an exception handler's type is observed before its target is bound;
-- the target is shadowed in the handler body and deleted on fallthrough,
-  `break`, `continue`, and the shared `terminate` category used for both
-  `return` and `raise` fixtures;
+- the target is shadowed in the handler body and deleted from the actual
+  categorized handler exit after fallthrough, `break`, `continue`, or the
+  shared `terminate` category;
+- the return and raise cleanup cases remain distinct Python sources even
+  though both map to `terminate` in the reduced model and analyzer;
 - handler joins meet the selected, cleaned path with non-selected paths while
   preserving an unrelated supported `Mapping` import;
-- partial pattern failure and false-guard state reach the following case;
-- refutable unmatched state participates in the final match join, while an
-  irrefutable case removes that unmatched path; and
+- partial-pattern and false-guard writes reach the following case, where they
+  are observed before any compensating `Sequence` reimport;
+- a refutable unmatched path without the known `Sequence` fact suppresses the
+  known fact reimported by the completed path, while dropping that unmatched
+  path incorrectly retains the fact;
+- an irrefutable case removes its unmatched path; and
 - unrelated supported imports survive ordered match-case propagation.
 
-The corpus has 25 fixed, human-readable rows, 13 in the `handler` family and 12
-in `match-case`:
+Every cleanup fixture reimports `Sequence` inside its handler immediately
+before its exit. The private adapter selects the containing handler by its
+unique reached marker, executes the production collector, and reads exactly
+one state from the corpus row's `expected_exit_category` immediately after the
+existing cleanup loop. It does not reproduce cleanup logic. Category-specific
+test mutations make fallthrough, break, continue, and terminate cleanup
+omissions retain `Sequence`; the separate return and raise rows both detect
+the terminate omission.
+
+The corpus remains 25 fixed, human-readable rows: 13 `handler` and 12
+`match-case` rows.
 
 | Mode | Observation | Rows | Correspondence conclusion |
 |---|---|---:|---|
-| `internal-fixture` | 10 annotation facts and 5 exit facts | 15 | All matched the owned `#[cfg(test)]` exact-site Rust projection. |
+| `internal-fixture` | 10 annotation facts and 5 post-cleanup exit facts | 15 | All matched owned `#[cfg(test)]` production-backed projections. |
 | `model-only` | Exact `unknown` / `shadowed` resolution | 2 | Lean-only; deliberately not compared with Rust. |
-| `strict` | Public `type_list_sequence` candidates | 8 | All matched `hoimin plan` for presence, operator, original, replacement, and symbol. |
+| `strict` | Public `type_list_sequence` candidates | 8 | All matched `hoimin plan` on count, presence, operator, original, replacement, and symbol. |
 
 The two model-only cases are `handler_nonselected_join` and
 `match_partial_failure_next_case`. Rust's production `KnownImports` state does
-not expose the model's exact `unknown` versus `shadowed` distinction, so
-claiming internal or public correspondence for those labels would compare
-different observations. Separately derived observable fixtures cover the same
-handler-join and failed-pattern transitions without inventing test-only
-provenance.
+not expose the model's exact `unknown` versus `shadowed` distinction. Separate
+implementation-facing rows observe the same transitions through known-fact
+presence without inventing provenance.
 
-The public harness writes one source into an isolated temporary fixture project
-and launches Cargo's built `CARGO_BIN_EXE_hoimin` as a subprocess for `plan`
-with one analyzer job and a 10-second deadline. It parses `PlanManifest` and
-retains all candidates whose byte span overlaps the unique marker. Zero or one
-retained candidate is normalized for exact comparison. More than one
-overlapping candidate is a semantic mismatch because the normalized count
-cannot equal the 0/1 expectation; it is not reported as infrastructure.
+The public harness writes one source into an isolated fixture project and
+launches Cargo's built `CARGO_BIN_EXE_hoimin` as a subprocess for `plan`, with
+one analyzer job and a 10-second deadline. It parses `PlanManifest` and retains
+all candidates whose byte span overlaps the unique marker. More than one
+overlapping candidate is a semantic mismatch, not infrastructure failure.
 
-Fixture temp-directory/create/write failures; binary spawn, wait, and timeout
-failures; successful exits that emit stderr; nonzero exits (including reported
-process-level RSS/resource stops); signals or core dumps such as panic-abort or
-OOM/RSS kills; unsuccessful statuses without a code or signal; malformed
-JSON/manifests; invalid candidate spans; and missing or duplicate markers are
-all `infrastructure-error` and make no semantic claim. The harness does not
-reinterpret a resource or abnormal-process outcome as a candidate mismatch.
+Fixture create/write failures; spawn, wait, timeout, nonzero exit, signal,
+core dump, malformed JSON/manifest, invalid span, stderr on success, and
+missing or duplicate marker failures are `infrastructure-error` and make no
+semantic claim.
 
 ## Formal result and model boundary
 
-`ExceptionMatchBindingProofs.lean` contains 12 universally quantified theorems
-over the reduced `BindingFlow` environments and exits:
+`ExceptionMatchBindingProofs.lean` contains 12 universally quantified
+theorems over reduced `BindingFlow` environments and exits:
 
 1. handler type-before-target and body-after-target ordering (2);
 2. target cleanup for fallthrough, break, continue, and terminate (4);
@@ -76,20 +83,30 @@ over the reduced `BindingFlow` environments and exits:
 4. pattern-failure and false-guard propagation (2); and
 5. irrefutable exhaustion and inclusion of refutable unmatched state (2).
 
-Six concrete decidable witnesses distinguish deliberately broken definitions.
-The corpus executable uses the same six sensitivity families, all detected:
+Ten concrete decidable witnesses distinguish broken definitions: one
+bind-before-type witness, four exit-category cleanup witnesses, and one each
+for handler join, wrong pre-pattern state, wrong pre-guard state, discarded
+refutable unmatched state, and retained irrefutable unmatched state.
+
+The executable exposes seven stable sensitivity families, all detected:
 
 | Sensitivity family | Deliberate defect detected |
 |---|---|
-| `bind-before-type` | Bind the exception target before observing the type. |
-| `handler-exit-cleanup` | Leave the target on a terminate exit. |
-| `handler-join-meet` | Keep the left path instead of meeting both paths. |
-| `pattern-failure` | Discard the failed-pattern successor. |
-| `guard-failure` | Discard the post-guard failure contribution. |
+| `bind-before-type` | Observe the handler type only after binding its target. |
+| `handler-exit-cleanup` | Retain the target on fallthrough, break, continue, or terminate; return and raise separately exercise terminate. |
+| `handler-join-meet` | Keep the selected path instead of meeting both paths. |
+| `pattern-failure` | Keep the successor reachable but use the pre-pattern environment. |
+| `guard-failure` | Keep the successor reachable but use the pre-guard environment. |
+| `refutable-unmatched` | Drop the unmatched path, changing internal facts and the paired strict candidate expectation from absent to present. |
 | `irrefutable-exhaustion` | Retain an unmatched path after an irrefutable case. |
 
+The refutable-unmatched sensitivity is checked at the corpus boundary: correct
+internal facts are empty and the paired strict candidate is absent, while the
+literal broken projection retains `direct:Sequence=typing.Sequence` and would
+make the candidate present.
+
 This is not bounded exploration: `structured_depth=0` and
-`generated_depth_expansion=false`. The result covers only the fixed semantic
+`generated_depth_expansion=false`. The result covers the fixed semantic
 equivalence cases plus the quantified theorems in the reduced two-name fact
 lattice. Parsing, marker selection, JSON, files, process execution, and actual
 Ruff/Rust control flow are outside Lean and are covered only by executable
@@ -100,46 +117,47 @@ tests.
 The audit excludes arbitrary Python exception and pattern syntax, parser
 correctness, `except*` unless it follows an already exercised implementation
 path, runtime exception-object lifetime, exact return-versus-raise identity
-beyond the shared terminate category, arbitrary names outside the supported
-`Sequence`/`Mapping` fixtures, mutation ranking and execution, concurrency,
-performance, and generated or exhaustive case exploration.
+beyond their separate sources over the shared terminate category, arbitrary
+names outside the supported `Sequence`/`Mapping` fixtures, mutation ranking
+and execution, concurrency, performance, and generated or exhaustive case
+exploration.
 
-The audit also does not infer semantics from infrastructure failures, compare
-the two model-only resolution labels with a different Rust observation, or
-claim that passing public fixtures proves unexercised analyzer behavior.
+The audit does not infer semantics from infrastructure failures, compare the
+two model-only resolution labels with a different Rust observation, or claim
+that passing public fixtures proves unexercised analyzer behavior.
 
 ## Mismatch and correction ledger
 
-No confirmed production defect remains and production semantics did not change.
-Intermediate Reds were classified before correction:
+No confirmed production defect remains. The final review found four evidence
+defects, all repaired without changing production transfer behavior:
 
-- two exact Lean resolution labels were not represented by Rust's positive-fact
-  state; they were correctly retained as `model-only`, with separate observable
-  internal and strict witnesses;
-- `typing.TypeAlias` was not a production-supported known type, so the two
-  unrelated-name fixtures were regenerated from Lean with supported `Mapping`;
-- marker selection initially admitted unreachable or over-broad compound
-  ranges; only `#[cfg(test)]` exact-site projection code was narrowed and
-  bounded; and
-- no public candidate mismatch appeared: the final 8/8 strict cases matched on
-  the first completed public normalization run.
+- five handler rows read pre-statement state and were already shadowed; their
+  fixtures now reimport `Sequence`, and a category-selecting test-only hook
+  reads the real post-cleanup exit;
+- pattern and guard rows reimported before observation, and their mutations
+  removed reachability; observations now precede reimport and reachable broken
+  transitions use the wrong pre-pattern or pre-guard environment;
+- the refutable unmatched polarity normalized correct and broken results to
+  the same empty facts; completed and unmatched premises are reversed so
+  dropping unmatched now retains a known fact; and
+- same-line marker fallback accepted semicolon-separated dead code; fallback
+  now requires horizontal whitespace followed by a `#` comment introducer,
+  while real trailing-comment markers remain supported.
 
-These were model/fixture or observation-adapter corrections, not changes to the
-production transfer rules.
+Earlier authoring corrections remain classified as model, fixture, or adapter
+work rather than production defects: exact Lean labels stayed model-only,
+unsupported `typing.TypeAlias` fixtures became supported `Mapping` fixtures,
+and marker selection was narrowed around unreachable and compound nodes.
 
 ## Corpus ownership and freshness
 
-The JSONL is rendered by
+The JSONL is rendered only by
 `ExceptionMatchBindingAuditMain.lean -- --output`; it was not hand-edited. The
-final guarded Lean freshness check after the supported-`Mapping` correction
-returned an exact byte match. Task 4 did not rerun Lean because no formal or
-generated artifact changed.
+final guarded temporary output and freshness check both matched the committed
+corpus byte-for-byte.
 
-Fresh Task 4 checks found:
-
-- SHA-256
-  `ab9667b5153bed101ec615fa8913fba482fd986c9518dec0aee7da86c9add136`;
-- no corpus diff from commit `53458e1`;
+- SHA-256:
+  `8c4feb9e30742cbf9b74a6bd0f9bc7cd7c90dcb0751d03a0b67796eec76fea63`;
 - 25 unique IDs and 25 markers occurring exactly once in their source;
 - modes `15 internal-fixture / 2 model-only / 8 strict`;
 - families `13 handler / 12 match-case`; and
@@ -147,64 +165,65 @@ Fresh Task 4 checks found:
 
 ## Guarded Lean resource ledger
 
-All retained Lean commands ran alone with a 20-second wall deadline, 768 MiB
-(786,432 KiB) root-plus-descendant RSS limit, 250 ms sampling, and one Lake
-build job. `child_exit` means the guarded child exited normally; an exit 1 on a
-named RED consumer is expected TDD evidence, not a semantic or infrastructure
-failure.
+Every final Lean command ran alone through
+`tools/lean_resource_guard.py` with a 20-second deadline, a 768 MiB (786,432
+KiB) root-plus-descendant RSS cap, and 250 ms sampling. Lake builds used
+`-Kjobs=1`; executable cases used `lake env lean --run`. No aggregate library
+or native-link retry was attempted.
 
-### Task 1 retained proof evidence
+| Final check / inner command | Exit / reason | Elapsed ms | Peak RSS KiB |
+|---|---|---:|---:|
+| Proof build: `lake -Kjobs=1 build HoiminOracle.ExceptionMatchBindingProofs` | 0 / `child_exit` | 555 | 56,368 |
+| Cases build: `lake -Kjobs=1 build HoiminOracle.ExceptionMatchBindingCases` | 0 / `child_exit` | 285 | 2,784 |
+| Proof consumer: `lake env lean /tmp/hoimin-exception-match-proof-consumer.lean` | 0 / `child_exit` | 2,697 | 645,536 |
+| Cases: `lake env lean --run ExceptionMatchBindingAuditMain.lean -- --cases` | 0 / `child_exit` (25/25) | 556 | 613,552 |
+| Sensitivity: `lake env lean --run ExceptionMatchBindingAuditMain.lean -- --sensitivity` | 0 / `child_exit` (7/7) | 555 | 661,072 |
+| Stats: `lake env lean --run ExceptionMatchBindingAuditMain.lean -- --stats` | 0 / `child_exit` | 549 | 681,744 |
+| Temporary output: `lake env lean --run ExceptionMatchBindingAuditMain.lean -- --output /tmp/hoimin-exception-match-final-corpus.jsonl` | 0 / `child_exit` | 551 | 679,984 |
+| Freshness: `lake env lean --run ExceptionMatchBindingAuditMain.lean -- --check corpus/exception-match-binding-correspondence.jsonl` | 0 / `child_exit` | 553 | 680,112 |
 
-| Phase / inner command | Exit | Reason | Elapsed ms | Highest sampled RSS KiB |
-|---|---:|---|---:|---:|
-| Required RED: `lake env lean /tmp/hoimin-exception-match-proof-consumer.lean` | 1 | `child_exit` (module absent) | 816 | 156,480 |
-| Existing baseline: `lake -Kjobs=1 build HoiminOracle.BindingFlowProofs` | 0 | `child_exit` | 2,705 | 723,840 |
-| Focused proofs: `lake -Kjobs=1 build HoiminOracle.ExceptionMatchBindingProofs` | 0 | `child_exit` | 2,166 | 576,656 |
-| External proof consumer: `lake env lean /tmp/hoimin-exception-match-proof-consumer.lean` | 0 | `child_exit` | 555 | 657,760 |
+The highest sampled RSS was 681,744 KiB, 104,688 KiB below the fixed cap.
+`cmp` returned 0, and a final process listing found no Lean/Lake executable.
+No final command timed out, reached the RSS limit, or returned a monitor error.
 
-### Final retained Task 2 corpus evidence
+The first fix-wave guard invocation inside the filesystem sandbox returned
+exit 126 / `monitor_error` after 34 ms with no sample because process-tree
+inspection was blocked. The same command was rerun once with unchanged limits
+and monitoring permission and passed; the setup failure is not semantic or
+resource evidence.
 
-These are the final guarded records after the last generated-corpus correction,
-not superseded earlier fix-round runs.
-
-| Phase / inner command | Exit | Reason | Elapsed ms | Highest sampled RSS KiB |
-|---|---:|---|---:|---:|
-| RED drift consumer: `lake env lean --run /private/tmp/hoimin-exception-match-task2-fix-r3-drift.lean` | 1 | `child_exit` (old unsupported fixtures) | 2,703 | 630,128 |
-| Focused cases build: `lake -Kjobs=1 build HoiminOracle.ExceptionMatchBindingCases` | 0 | `child_exit` | 831 | 670,448 |
-| Drift consumer GREEN: same consumer | 0 | `child_exit` | 561 | 54,144 |
-| `lake env lean --run ExceptionMatchBindingAuditMain.lean -- --cases` | 0 | `child_exit` (25/25 valid) | 558 | 645,600 |
-| `lake env lean --run ExceptionMatchBindingAuditMain.lean -- --sensitivity` | 0 | `child_exit` (6/6 detected) | 567 | 682,960 |
-| `lake env lean --run ExceptionMatchBindingAuditMain.lean -- --stats` | 0 | `child_exit` | 548 | 659,552 |
-| `lake env lean --run ExceptionMatchBindingAuditMain.lean -- --output corpus/exception-match-binding-correspondence.jsonl` | 0 | `child_exit` | 561 | 683,360 |
-| `lake env lean --run ExceptionMatchBindingAuditMain.lean -- --check corpus/exception-match-binding-correspondence.jsonl` | 0 | `child_exit` (exact byte match) | 555 | 683,584 |
-
-One optional aggregate `lake -Kjobs=1 build HoiminOracle` attempt from Task 1
-was deliberately **not retained as verification evidence**. The guard stopped
-it with exit 125 and `reason="rss_limit"` after 312 ms at 985,296 KiB, above
-the fixed 786,432 KiB cap. It was not retried and the cap was not raised. This
-is an infrastructure/resource result, not evidence against the model or
-implementation. Initial sandbox-only guard invocations that could not run
-`ps` were likewise setup infrastructure errors and were rerun with unchanged
-limits once process-tree sampling was available.
+The superseded Task 1 first-GREEN parse failure is intentionally non-retained
+evidence here. `task-1-report.md` records its layout syntax error, 662,576 KiB
+peak, syntax-only correction, and successful rerun. It was authoring history,
+not final semantic or resource evidence. The optional aggregate `HoiminOracle`
+build that earlier exceeded the cap was not retried.
 
 ## Executable verification
 
-Task 3's committed private evidence covers all 15 internal rows, both
-model-only exclusions, the four implementation-facing broken transitions, and
-unreachable/header marker bounds. Task 4's public integration test covers the
-independently sensitive closed-schema gates, built-binary execution, fixture and
-process infrastructure classification, overlapping candidate semantics, and
-all 8 strict public rows.
+Focused private verification passed all 8 exception/match tests, including the
+five post-cleanup rows, reachable wrong-environment mutations, refutable
+unmatched omission, unreachable markers, and the semicolon-dead-code
+regression. Public verification passed 8/8 exception/match tests. Prior audit
+integrations remained green: 4/4 annotation-scope public tests, 4/4
+binding-flow public tests, and the focused control-flow and match-propagation
+unit regressions.
 
-The final commands are:
+The final workspace command `cargo test --workspace --all-features -j 2`
+exited 0 for every target, with only declared ignored tests. The worktree-only
+`.venv -> ../../.venv` setup symlink required by an existing ranking-oracle
+test was removed immediately after the run. Workspace Clippy with
+`-D warnings`, formatting, and diff checks also exited 0.
+
+Exact final commands:
 
 ```bash
+CARGO_BUILD_JOBS=2 cargo test -p hoimin-cli --lib exception_match_binding -- --nocapture
 CARGO_BUILD_JOBS=2 cargo test -p hoimin-cli --test lean_exception_match_binding_oracle
 CARGO_BUILD_JOBS=2 cargo test -p hoimin-cli --test lean_annotation_scope_oracle
 CARGO_BUILD_JOBS=2 cargo test -p hoimin-cli --test lean_binding_flow_oracle
+cargo test --workspace --all-features -j 2
+cargo clippy --workspace --all-targets --all-features -j 2 -- -D warnings
+cargo fmt --all -- --check
+git diff --check main...HEAD
+git status --short
 ```
-
-Fresh final results were 8/8 tests in the exception/match harness, 4/4 in the
-annotation-scope harness, and 4/4 in the binding-flow harness. Focused Clippy
-with `-D warnings`, `cargo fmt --all -- --check`, and the staged diff check also
-exited 0 without warnings or formatting errors.

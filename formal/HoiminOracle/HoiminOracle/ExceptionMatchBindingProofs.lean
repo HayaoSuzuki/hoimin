@@ -61,19 +61,20 @@ private def brokenBindBeforeType (incoming : Env) (target : Name)
   { observeHandler incoming target body with
       typeEntry := bindTarget incoming target }
 
-private def brokenCleanupFallthroughOnly (target : Name) (body : Exits) : Exits :=
-  { body with
-      fallthrough := body.fallthrough.map
-        (fun environment => deleteName environment target) }
+private def brokenOmitHandlerCleanup (_target : Name) (body : Exits) : Exits :=
+  body
 
 private def brokenHandlerJoin (left _right : Env) : Env := left
 
-private def brokenDiscardPatternFailure (pattern : PatternResult) : CaseStep :=
-  { body := some pattern.matched, nextCase := none }
+private def brokenUsePrePatternFailure
+    (prePattern : Env) (pattern : PatternResult) : CaseStep :=
+  { body := some pattern.matched, nextCase := some prePattern }
 
-private def brokenDiscardGuardFailure
-    (pattern : PatternResult) (_afterGuard : Env) : CaseStep :=
-  { body := none, nextCase := pattern.failed }
+private def brokenUsePreGuardFailure (preGuard : Env) : CaseStep :=
+  { body := none, nextCase := some preGuard }
+
+private def brokenDiscardRefutableUnmatched (completed : List Env) : Option Env :=
+  finishMatch none completed
 
 private def brokenRetainIrrefutableUnmatched (incoming : Env) : Option Env :=
   some incoming
@@ -88,7 +89,34 @@ example :
   decide
 
 example :
-    brokenCleanupFallthroughOnly .destination
+    brokenOmitHandlerCleanup .destination
+        (.categoryOnly .fallthrough
+          { source := .known .builtin, destination := .known .typing }) ≠
+      cleanupHandlerExits .destination
+        (.categoryOnly .fallthrough
+          { source := .known .builtin, destination := .known .typing }) := by
+  decide
+
+example :
+    brokenOmitHandlerCleanup .destination
+        (.categoryOnly .break
+          { source := .known .builtin, destination := .known .typing }) ≠
+      cleanupHandlerExits .destination
+        (.categoryOnly .break
+          { source := .known .builtin, destination := .known .typing }) := by
+  decide
+
+example :
+    brokenOmitHandlerCleanup .destination
+        (.categoryOnly .continue
+          { source := .known .builtin, destination := .known .typing }) ≠
+      cleanupHandlerExits .destination
+        (.categoryOnly .continue
+          { source := .known .builtin, destination := .known .typing }) := by
+  decide
+
+example :
+    brokenOmitHandlerCleanup .destination
         (.categoryOnly .terminate
           { source := .known .builtin, destination := .known .typing }) ≠
       cleanupHandlerExits .destination
@@ -105,33 +133,37 @@ example :
   decide
 
 example :
-    brokenDiscardPatternFailure
+    brokenUsePrePatternFailure
+        { source := .known .builtin, destination := .known .typing }
         { matched :=
             { source := .shadowed, destination := .known .typing }
           failed := some
-            { source := .known .builtin, destination := .known .typing } } ≠
+            { source := .known .builtin, destination := .shadowed } } ≠
       advanceCase
         { matched :=
             { source := .shadowed, destination := .known .typing }
           failed := some
-            { source := .known .builtin, destination := .known .typing } }
+            { source := .known .builtin, destination := .shadowed } }
         none := by
   decide
 
 example :
-    brokenDiscardGuardFailure
-        { matched :=
-            { source := .shadowed, destination := .known .typing }
-          failed := some
-            { source := .known .builtin, destination := .known .typing } }
-        { source := .shadowed, destination := .known .typing } ≠
+    brokenUsePreGuardFailure
+        { source := .known .builtin, destination := .known .typing } ≠
       advanceCase
         { matched :=
-            { source := .shadowed, destination := .known .typing }
-          failed := some
-            { source := .known .builtin, destination := .known .typing } }
+            { source := .known .builtin, destination := .known .typing }
+          failed := none }
         (some false)
-        { source := .shadowed, destination := .known .typing } := by
+        { source := .known .builtin, destination := .shadowed } := by
+  decide
+
+example :
+    brokenDiscardRefutableUnmatched
+        [{ source := .known .builtin, destination := .known .typing }] ≠
+      finishMatch
+        (some { source := .known .builtin, destination := .shadowed })
+        [{ source := .known .builtin, destination := .known .typing }] := by
   decide
 
 example :

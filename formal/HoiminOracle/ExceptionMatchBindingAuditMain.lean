@@ -93,13 +93,17 @@ private def printStats : IO UInt32 := do
       IO.println s!"internal_fixture_cases={countMode "internal-fixture"}"
       IO.println s!"model_only_cases={countMode "model-only"}"
       IO.println s!"strict_cases={countMode "strict"}"
-      IO.println "sensitivity_families=6"
-      IO.println "broken_families=bind-before-type,handler-exit-cleanup,handler-join-meet,pattern-failure,guard-failure,irrefutable-exhaustion"
+      IO.println "sensitivity_families=7"
+      IO.println "broken_families=bind-before-type,handler-exit-cleanup,handler-join-meet,pattern-failure,guard-failure,refutable-unmatched,irrefutable-exhaustion"
       return 0
 
 private def printSensitivity : IO UInt32 := do
   IO.println s!"bind_before_type_detected={bindBeforeTypeSensitivity}"
   IO.println s!"handler_exit_cleanup_detected={handlerExitCleanupSensitivity}"
+  IO.println s!"handler_fallthrough_cleanup_detected={handlerFallthroughCleanupSensitivity}"
+  IO.println s!"handler_break_cleanup_detected={handlerBreakCleanupSensitivity}"
+  IO.println s!"handler_continue_cleanup_detected={handlerContinueCleanupSensitivity}"
+  IO.println s!"handler_terminate_cleanup_detected={handlerTerminateCleanupSensitivity}"
   IO.println s!"handler_join_meet_detected={handlerJoinMeetSensitivity}"
   IO.println s!"handler_join_projection=expected:{optionLabel handlerJoinResolution},broken:{optionLabel handlerJoinBrokenResolution}"
   IO.println s!"handler_join_observable=expected:{factsLabel handlerJoinFacts},broken:{factsLabel handlerJoinBrokenFacts}"
@@ -108,6 +112,8 @@ private def printSensitivity : IO UInt32 := do
   IO.println s!"pattern_failure_observable=expected:{optionalFactsLabel matchPartialFailureObservableFacts},broken:{optionalFactsLabel patternFailureBrokenObservableFacts}"
   IO.println s!"guard_failure_detected={guardFailureSensitivity}"
   IO.println s!"guard_failure_observable=expected:{optionalFactsLabel matchFalseGuardObservableFacts},broken:{optionalFactsLabel guardFailureBrokenObservableFacts}"
+  IO.println s!"refutable_unmatched_detected={refutableUnmatchedSensitivity}"
+  IO.println s!"refutable_unmatched_observable=expected:{factsLabel matchRefutableJoinFacts},broken:{factsLabel refutableUnmatchedBrokenFacts}"
   IO.println s!"irrefutable_exhaustion_detected={irrefutableExhaustionSensitivity}"
   IO.println s!"irrefutable_projection=expected:{factsLabel matchIrrefutableFacts},broken:{factsLabel irrefutableBrokenFacts}"
   return if sensitivityPasses then 0 else 2
