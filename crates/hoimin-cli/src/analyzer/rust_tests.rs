@@ -4820,6 +4820,61 @@ fn exception_match_binding_private_projection_detects_broken_transitions() {
 }
 
 #[test]
+fn exception_match_binding_marker_projection_rejects_unreachable_statements() {
+    let source = concat!(
+        "def run():\n",
+        "    from typing import Sequence\n",
+        "    reachable: list[str]\n",
+        "    return 1  # reachable-return\n",
+        "    unreachable: tuple[str]\n",
+    );
+    let known_sequence = vec!["direct:Sequence=typing.Sequence".to_owned()];
+
+    assert_eq!(
+        binding_flow_marker_snapshot(source, "list[str]").unwrap(),
+        known_sequence
+    );
+    assert_eq!(
+        binding_flow_marker_snapshot(source, "# reachable-return").unwrap(),
+        known_sequence
+    );
+    assert!(
+        binding_flow_marker_snapshot(source, "tuple[str]")
+            .unwrap_err()
+            .starts_with("infrastructure-error:")
+    );
+
+    let handler_source = concat!(
+        "def run():\n",
+        "    from typing import Sequence\n",
+        "    try:\n",
+        "        risky()\n",
+        "    except Error as Sequence:\n",
+        "        return 1\n",
+        "        handler_unreachable: tuple[str]\n",
+    );
+    assert!(
+        binding_flow_marker_snapshot(handler_source, "tuple[str]")
+            .unwrap_err()
+            .starts_with("infrastructure-error:")
+    );
+
+    let match_source = concat!(
+        "def run(value):\n",
+        "    from typing import Sequence\n",
+        "    match value:\n",
+        "        case _:\n",
+        "            return 1\n",
+        "            case_unreachable: tuple[str]\n",
+    );
+    assert!(
+        binding_flow_marker_snapshot(match_source, "tuple[str]")
+            .unwrap_err()
+            .starts_with("infrastructure-error:")
+    );
+}
+
+#[test]
 fn truncates_after_selected_candidates_and_emits_limit_diagnostic() {
     let output = analyze_with(
         Utf8Path::new("pkg/sample.py"),

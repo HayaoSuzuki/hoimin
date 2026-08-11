@@ -3296,6 +3296,14 @@ impl<'ast> AnnotationCollector<'ast> {
         }
     }
 
+    #[cfg(test)]
+    fn capture_handler_header_entry(&mut self, range: TextRange, body: &[Stmt]) {
+        let end = body
+            .first()
+            .map_or(range.end(), |statement| statement.range().start());
+        self.capture_marker_entry(TextRange::new(range.start(), end));
+    }
+
     fn symbol(&self) -> Option<String> {
         (!self.qualname.is_empty()).then(|| self.qualname.join("."))
     }
@@ -3443,7 +3451,13 @@ impl<'ast> AnnotationCollector<'ast> {
         for statement in statements {
             let Some(imports) = fallthrough.take() else {
                 let inherited = self.imports.clone();
+                #[cfg(test)]
+                let marker_projection = self.marker_projection.take();
                 let _ = self.visit_statement_flow(statement);
+                #[cfg(test)]
+                {
+                    self.marker_projection = marker_projection;
+                }
                 self.imports = inherited;
                 continue;
             };
@@ -3758,7 +3772,7 @@ impl<'ast> AnnotationCollector<'ast> {
             #[cfg(test)]
             if self.test_mutation != Some(BindingFlowTestMutation::BindHandlerTargetBeforeType) {
                 self.imports.clone_from(&imports);
-                self.capture_marker_entry(handler.range);
+                self.capture_handler_header_entry(handler.range, &handler.body);
             }
             if let Some(type_) = &handler.type_ {
                 NamedBindingInvalidator::visit(&mut imports, type_.as_ref());
@@ -3769,7 +3783,7 @@ impl<'ast> AnnotationCollector<'ast> {
             #[cfg(test)]
             if self.test_mutation == Some(BindingFlowTestMutation::BindHandlerTargetBeforeType) {
                 self.imports.clone_from(&imports);
-                self.capture_marker_entry(handler.range);
+                self.capture_handler_header_entry(handler.range, &handler.body);
             }
             let mut handler_exits = self.visit_suite_from(imports, &handler.body);
             if let Some(name) = &handler.name {
@@ -3884,11 +3898,6 @@ impl<'ast> AnnotationCollector<'ast> {
             let Some(mut imports) = remaining.take() else {
                 break;
             };
-            #[cfg(test)]
-            {
-                self.imports.clone_from(&imports);
-                self.capture_marker_entry(case.range);
-            }
             invalidate_pattern_bindings(&mut imports, &case.pattern);
             let mut failed = Vec::new();
             #[cfg(test)]
