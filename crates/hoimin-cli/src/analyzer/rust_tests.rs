@@ -1,6 +1,7 @@
 use super::{
-    AnalyzeRequest, AnalyzerCandidate, CandidatePrefix, LineIndex, analyze_source,
-    analyze_source_cancellable,
+    AnalyzeRequest, AnalyzerCandidate, BindingFlowTestSnapshot, CandidatePrefix, LineIndex,
+    analyze_source, analyze_source_cancellable, binding_flow_loop_head_snapshot,
+    binding_flow_test_snapshot,
 };
 use crate::analyzer::AnalyzerDiagnosticCode;
 use camino::Utf8Path;
@@ -9,6 +10,21 @@ use hoimin_core::{
 };
 use proptest::prelude::*;
 use ruff_python_parser::parse_module;
+
+const BINDING_FLOW_CORPUS: &str =
+    include_str!("../../../../formal/HoiminOracle/corpus/binding-flow-joins.jsonl");
+
+#[derive(serde::Deserialize)]
+struct BindingFlowCorpusCase {
+    id: String,
+    mode: String,
+    source: String,
+    expected_fallthrough: Vec<Vec<String>>,
+    expected_breaks: Vec<Vec<String>>,
+    expected_continues: Vec<Vec<String>>,
+    expected_terminates: Vec<Vec<String>>,
+    expected_loop_head: Option<Vec<String>>,
+}
 
 fn analyze(source: &str) -> super::AnalyzerOutput {
     analyze_with(Utf8Path::new("pkg/sample.py"), &[], &[], 10_000, source)
@@ -3791,6 +3807,98 @@ fn typing_import_rebinding_try_handler_includes_unknown_wildcard_effect() {
         "untouched: list[str]\n",
     );
     assert_type_list_sequence_sites(source, &[(294, 9, 16, None, "Sequence[str]")]);
+}
+
+#[test]
+fn binding_flow_internal_corpus_projects_categorized_exit_facts() {
+    let items = BINDING_FLOW_CORPUS
+        .lines()
+        .map(|line| serde_json::from_str::<BindingFlowCorpusCase>(line).unwrap())
+        .collect::<Vec<_>>();
+    let expected_ids = [
+        "typing_loop_zero_iteration",
+        "typing_loop_continue_backedge",
+        "typing_loop_break_exit",
+        "typing_match_guard_binding",
+    ];
+    let mut actual_ids = items
+        .iter()
+        .filter(|item| item.mode == "internal-fixture")
+        .map(|item| item.id.as_str())
+        .collect::<Vec<_>>();
+    actual_ids.sort_unstable();
+    let mut expected_sorted = expected_ids;
+    expected_sorted.sort_unstable();
+    assert_eq!(actual_ids, expected_sorted);
+
+    for id in expected_ids {
+        let item = items
+            .iter()
+            .find(|item| item.id == id)
+            .unwrap_or_else(|| panic!("missing internal-fixture case {id}"));
+        assert_eq!(item.mode, "internal-fixture", "case={id}");
+        let expected = BindingFlowTestSnapshot {
+            fallthrough: item.expected_fallthrough.clone(),
+            breaks: item.expected_breaks.clone(),
+            continues: item.expected_continues.clone(),
+            terminates: item.expected_terminates.clone(),
+        };
+        assert_eq!(
+            binding_flow_test_snapshot(&item.source),
+            expected,
+            "case={id}"
+        );
+        if let Some(expected_loop_head) = &item.expected_loop_head {
+            assert_eq!(
+                binding_flow_loop_head_snapshot(&item.source, true),
+                *expected_loop_head,
+                "loop head case={id}"
+            );
+        }
+    }
+}
+
+#[test]
+fn binding_flow_continue_edge_is_observationally_required() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "while condition:\n",
+        "    Sequence = local_sequence\n",
+        "    continue\n",
+    );
+
+    let with_continue = binding_flow_loop_head_snapshot(source, true);
+    let without_continue = binding_flow_loop_head_snapshot(source, false);
+
+    assert_eq!(with_continue, Vec::<String>::new());
+    assert_eq!(
+        without_continue,
+        vec!["direct:Sequence=typing.Sequence".to_owned()]
+    );
+    assert_ne!(with_continue, without_continue);
+}
+
+#[test]
+fn binding_flow_finally_restores_the_original_exit_category() {
+    let source = concat!(
+        "from typing import Sequence\n",
+        "try:\n",
+        "    Sequence = local_sequence\n",
+        "    continue\n",
+        "finally:\n",
+        "    from typing import Sequence\n",
+    );
+    let known_sequence = vec!["direct:Sequence=typing.Sequence".to_owned()];
+
+    assert_eq!(
+        binding_flow_test_snapshot(source),
+        BindingFlowTestSnapshot {
+            fallthrough: Vec::new(),
+            breaks: Vec::new(),
+            continues: vec![known_sequence],
+            terminates: Vec::new(),
+        }
+    );
 }
 
 #[test]

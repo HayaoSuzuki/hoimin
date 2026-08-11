@@ -3224,7 +3224,13 @@ struct AnnotationCollector<'ast> {
 
 impl<'ast> AnnotationCollector<'ast> {
     fn collect(module: &'ast ModModule) -> Vec<AnnotationSite<'ast>> {
-        let mut collector = Self {
+        let mut collector = Self::empty();
+        collector.visit_suite(&module.body);
+        collector.annotations
+    }
+
+    fn empty() -> Self {
+        Self {
             annotations: Vec::new(),
             imports: KnownImports::default(),
             class_body_fallback: None,
@@ -3233,9 +3239,7 @@ impl<'ast> AnnotationCollector<'ast> {
             scope_kind: ScopeKind::Module,
             qualname: Vec::new(),
             record_annotations: true,
-        };
-        collector.visit_suite(&module.body);
-        collector.annotations
+        }
     }
 
     fn symbol(&self) -> Option<String> {
@@ -3600,6 +3604,36 @@ impl<'ast> AnnotationCollector<'ast> {
         }
     }
 
+    #[cfg(test)]
+    fn loop_head_fixed_point_without_continues(
+        &mut self,
+        initial: &KnownImports,
+        iteration_target: Option<&'ast Expr>,
+        body: &'ast [Stmt],
+    ) -> KnownImports {
+        let mut head = initial.clone();
+        loop {
+            let record_annotations = self.record_annotations;
+            self.record_annotations = false;
+            let body_exits = self.visit_suite_from(head.clone(), body);
+            self.record_annotations = record_annotations;
+
+            let mut entries = vec![initial.clone()];
+            if let Some(mut imports) = body_exits.fallthrough {
+                if let Some(target) = iteration_target {
+                    imports.invalidate_target(target);
+                }
+                entries.push(imports);
+            }
+            let next = KnownImports::intersection(entries)
+                .expect("a loop head always includes its initial entry");
+            if next == head {
+                return head;
+            }
+            head = next;
+        }
+    }
+
     fn visit_for(&mut self, statement: &'ast ruff_python_ast::StmtFor) -> ControlFlowExits {
         NamedBindingInvalidator::visit(&mut self.imports, statement.iter.as_ref());
         let zero_iteration = self.imports.clone();
@@ -3860,6 +3894,103 @@ impl<'ast> Visitor<'ast> for AnnotationCollector<'ast> {
             self.imports = imports;
         }
     }
+}
+
+#[cfg(test)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct BindingFlowTestSnapshot {
+    pub(super) fallthrough: Vec<Vec<String>>,
+    pub(super) breaks: Vec<Vec<String>>,
+    pub(super) continues: Vec<Vec<String>>,
+    pub(super) terminates: Vec<Vec<String>>,
+}
+
+#[cfg(test)]
+fn normalize_binding_flow_imports(imports: &KnownImports) -> Vec<String> {
+    let mut facts = imports
+        .direct
+        .iter()
+        .map(|(name, resolved)| format!("direct:{name}={resolved}"))
+        .chain(
+            imports
+                .modules
+                .iter()
+                .map(|(name, resolved)| format!("module:{name}={resolved}")),
+        )
+        .chain(
+            imports
+                .type_vars
+                .iter()
+                .map(|name| format!("type-var:{name}")),
+        )
+        .collect::<Vec<_>>();
+    facts.sort();
+    facts
+}
+
+#[cfg(test)]
+fn normalize_binding_flow_states(states: &[KnownImports]) -> Vec<Vec<String>> {
+    let mut normalized = states
+        .iter()
+        .map(normalize_binding_flow_imports)
+        .collect::<Vec<_>>();
+    normalized.sort();
+    normalized
+}
+
+#[cfg(test)]
+fn normalize_binding_flow_exits(exits: &ControlFlowExits) -> BindingFlowTestSnapshot {
+    BindingFlowTestSnapshot {
+        fallthrough: exits
+            .fallthrough
+            .iter()
+            .map(normalize_binding_flow_imports)
+            .collect(),
+        breaks: normalize_binding_flow_states(&exits.breaks),
+        continues: normalize_binding_flow_states(&exits.continues),
+        terminates: normalize_binding_flow_states(&exits.terminates),
+    }
+}
+
+#[cfg(test)]
+pub(super) fn binding_flow_test_snapshot(source: &str) -> BindingFlowTestSnapshot {
+    let parsed = parse_module(source).expect("binding-flow fixture must parse");
+    let mut collector = AnnotationCollector::empty();
+    collector.record_annotations = false;
+    let exits = collector.visit_suite_flow(&parsed.syntax().body);
+    normalize_binding_flow_exits(&exits)
+}
+
+#[cfg(test)]
+pub(super) fn binding_flow_loop_head_snapshot(
+    source: &str,
+    include_continues: bool,
+) -> Vec<String> {
+    let parsed = parse_module(source).expect("binding-flow loop fixture must parse");
+    let mut collector = AnnotationCollector::empty();
+    collector.record_annotations = false;
+    for statement in &parsed.syntax().body {
+        if let Stmt::While(statement_while) = statement {
+            NamedBindingInvalidator::visit(&mut collector.imports, statement_while.test.as_ref());
+            let initial = collector.imports.clone();
+            let head = if include_continues {
+                collector.loop_head_fixed_point(&initial, None, &statement_while.body)
+            } else {
+                collector.loop_head_fixed_point_without_continues(
+                    &initial,
+                    None,
+                    &statement_while.body,
+                )
+            };
+            return normalize_binding_flow_imports(&head);
+        }
+        let exits = collector.visit_statement_flow(statement);
+        let Some(imports) = exits.fallthrough else {
+            break;
+        };
+        collector.imports = imports;
+    }
+    panic!("binding-flow loop fixture has no while statement")
 }
 
 fn type_annotation_candidates(
