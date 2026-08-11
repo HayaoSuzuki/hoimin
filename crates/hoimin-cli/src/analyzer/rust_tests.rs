@@ -1,7 +1,8 @@
 use super::{
-    AnalyzeRequest, AnalyzerCandidate, BindingFlowTestSnapshot, CandidatePrefix, LineIndex,
-    analyze_source, analyze_source_cancellable, binding_flow_loop_head_snapshot,
-    binding_flow_test_snapshot,
+    AnalyzeRequest, AnalyzerCandidate, AnnotationSiteTestSnapshot, BindingFlowTestSnapshot,
+    CandidatePrefix, LineIndex, NameResolutionTestSnapshot, analyze_source,
+    analyze_source_cancellable, annotation_site_test_snapshot, binding_flow_loop_head_snapshot,
+    binding_flow_test_snapshot, name_resolution_test_snapshot,
 };
 use crate::analyzer::AnalyzerDiagnosticCode;
 use camino::Utf8Path;
@@ -4466,6 +4467,57 @@ fn reports_invalid_syntax_without_candidates() {
         AnalyzerDiagnosticCode::InvalidSyntax
     );
     assert!(!output.truncated);
+}
+
+#[test]
+fn annotation_scope_marker_projections_use_site_entry_and_comprehension_scope() {
+    let annotation_source = concat!(
+        "def outer():\n",
+        "    from typing import Sequence\n",
+        "    def inner():\n",
+        "        nonlocal Sequence\n",
+        "        before: list[str]\n",
+        "        Sequence = object\n",
+    );
+    let site: AnnotationSiteTestSnapshot =
+        annotation_site_test_snapshot(annotation_source, "list[str]").unwrap();
+    assert_eq!(site.scope, "function");
+    assert_eq!(site.symbol.as_deref(), Some("outer.inner"));
+    assert_eq!(site.facts, vec!["direct:Sequence=typing.Sequence"]);
+
+    let comprehension_source = concat!(
+        "def collect(values):\n",
+        "    result = [list(item) for list in list(values)]\n",
+    );
+    let first_iterable: NameResolutionTestSnapshot = name_resolution_test_snapshot(
+        comprehension_source,
+        "list(values)",
+        "list",
+    )
+    .unwrap();
+    let body: NameResolutionTestSnapshot =
+        name_resolution_test_snapshot(comprehension_source, "list(item)", "list").unwrap();
+    assert_eq!(first_iterable.resolution, "definitely-builtin");
+    assert_eq!(body.resolution, "shadowed");
+}
+
+#[test]
+fn annotation_scope_marker_projections_reject_infrastructure_setup_errors() {
+    assert!(
+        annotation_site_test_snapshot("def broken(:\n", "broken")
+            .unwrap_err()
+            .starts_with("infrastructure-error:")
+    );
+    assert!(
+        annotation_site_test_snapshot("first: list[str]\nsecond: list[str]\n", "list[str]")
+            .unwrap_err()
+            .starts_with("infrastructure-error:")
+    );
+    assert!(
+        name_resolution_test_snapshot("ValueError()\n", "ValueError", "Value")
+            .unwrap_err()
+            .starts_with("infrastructure-error:")
+    );
 }
 
 #[test]
