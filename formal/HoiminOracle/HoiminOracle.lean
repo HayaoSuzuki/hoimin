@@ -17,6 +17,8 @@ import HoiminOracle.ScopeResolutionProofs
 import HoiminOracle.BindingFlowModel
 import HoiminOracle.BindingFlowProofs
 import HoiminOracle.BindingFlowCases
+import HoiminOracle.ExceptionMatchBindingModel
+import HoiminOracle.ExceptionMatchBindingProofs
 import HoiminOracle.AnnotationScopeModel
 import HoiminOracle.AnnotationScopeProofs
 import HoiminOracle.FactIndexModel
