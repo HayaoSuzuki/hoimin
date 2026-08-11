@@ -1,8 +1,10 @@
 use super::{
-    AnalyzeRequest, AnalyzerCandidate, AnnotationSiteTestSnapshot, BindingFlowTestSnapshot,
-    CandidatePrefix, LineIndex, NameResolutionTestSnapshot, analyze_source,
-    analyze_source_cancellable, annotation_site_test_snapshot, binding_flow_loop_head_snapshot,
-    binding_flow_test_snapshot, name_resolution_test_snapshot,
+    AnalyzeRequest, AnalyzerCandidate, AnnotationSiteTestSnapshot, BindingFlowTestMutation,
+    BindingFlowTestSnapshot, CandidatePrefix, LineIndex, NameResolutionTestSnapshot,
+    analyze_source, analyze_source_cancellable, annotation_site_test_snapshot,
+    binding_flow_loop_head_snapshot, binding_flow_marker_snapshot,
+    binding_flow_marker_snapshot_with_mutation, binding_flow_test_snapshot,
+    name_resolution_test_snapshot,
 };
 use crate::analyzer::AnalyzerDiagnosticCode;
 use camino::Utf8Path;
@@ -16,6 +18,10 @@ const BINDING_FLOW_CORPUS: &str =
     include_str!("../../../../formal/HoiminOracle/corpus/binding-flow-joins.jsonl");
 const ANNOTATION_SCOPE_CORPUS: &str =
     include_str!("../../../../formal/HoiminOracle/corpus/annotation-scope-correspondence.jsonl");
+const EXCEPTION_MATCH_BINDING_CORPUS: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../formal/HoiminOracle/corpus/exception-match-binding-correspondence.jsonl"
+));
 
 #[derive(serde::Deserialize)]
 struct BindingFlowCorpusCase {
@@ -47,6 +53,27 @@ struct AnnotationScopeCorpusCase {
     expected_original: Option<String>,
     expected_replacement: Option<String>,
     expected_present: bool,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExceptionMatchBindingCorpusCase {
+    schema: u64,
+    id: String,
+    mode: String,
+    family: String,
+    observation_kind: String,
+    source: String,
+    marker: String,
+    name: String,
+    expected_facts: Vec<String>,
+    expected_resolution: Option<String>,
+    expected_exit_category: Option<String>,
+    expected_present: bool,
+    operator: Option<String>,
+    original: Option<String>,
+    replacement: Option<String>,
+    symbol: Option<String>,
 }
 
 fn analyze(source: &str) -> super::AnalyzerOutput {
@@ -4622,6 +4649,174 @@ fn annotation_scope_private_projection_detects_wrong_site_and_scope_stage() {
         name_resolution_test_snapshot(comprehension_source, "list(values)", "list").unwrap();
     let body = name_resolution_test_snapshot(comprehension_source, "list(item)", "list").unwrap();
     assert_ne!(first.resolution, body.resolution);
+}
+
+#[test]
+fn exception_match_binding_internal_corpus() {
+    let cases = EXCEPTION_MATCH_BINDING_CORPUS
+        .lines()
+        .map(|line| serde_json::from_str::<ExceptionMatchBindingCorpusCase>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(cases.len(), 25);
+    assert_eq!(
+        cases
+            .iter()
+            .filter(|item| item.mode == "internal-fixture")
+            .count(),
+        15
+    );
+    assert_eq!(
+        cases
+            .iter()
+            .filter(|item| item.mode == "model-only")
+            .count(),
+        2
+    );
+    assert_eq!(cases.iter().filter(|item| item.mode == "strict").count(), 8);
+    let mut model_only_ids = cases
+        .iter()
+        .filter(|item| item.mode == "model-only")
+        .map(|item| item.id.as_str())
+        .collect::<Vec<_>>();
+    model_only_ids.sort_unstable();
+    assert_eq!(
+        model_only_ids,
+        [
+            "handler_nonselected_join",
+            "match_partial_failure_next_case"
+        ]
+    );
+    let cases = cases
+        .into_iter()
+        .filter(|item| item.mode == "internal-fixture")
+        .collect::<Vec<_>>();
+    assert_eq!(cases.len(), 15);
+
+    for item in cases {
+        assert_eq!(item.schema, 1, "{}", item.id);
+        assert!(matches!(item.family.as_str(), "handler" | "match-case"));
+        assert!(!item.name.is_empty(), "{}", item.id);
+        assert!(item.operator.is_none(), "{}", item.id);
+        assert!(item.original.is_none(), "{}", item.id);
+        assert!(item.replacement.is_none(), "{}", item.id);
+        assert!(item.symbol.is_none(), "{}", item.id);
+        match item.observation_kind.as_str() {
+            "annotation" => {
+                assert!(item.expected_resolution.is_none(), "{}", item.id);
+                assert!(item.expected_exit_category.is_none(), "{}", item.id);
+                let actual_facts = if item.id == "handler_type_before_target" {
+                    binding_flow_marker_snapshot(&item.source, &item.marker)
+                        .unwrap_or_else(|error| panic!("{error}; case={}", item.id))
+                } else {
+                    annotation_site_test_snapshot(&item.source, &item.marker)
+                        .unwrap_or_else(|error| panic!("{error}; case={}", item.id))
+                        .facts
+                };
+                assert_eq!(actual_facts, item.expected_facts, "{}", item.id);
+                assert_eq!(
+                    !actual_facts.is_empty(),
+                    item.expected_present,
+                    "{}",
+                    item.id
+                );
+            }
+            "exits" => {
+                assert!(item.expected_resolution.is_none(), "{}", item.id);
+                match item.expected_exit_category.as_deref() {
+                    Some("fallthrough" | "break" | "continue" | "terminate") => {}
+                    category => panic!("infrastructure-error: invalid exit {category:?}"),
+                }
+                let actual_facts = binding_flow_marker_snapshot(&item.source, &item.marker)
+                    .unwrap_or_else(|error| panic!("{error}; case={}", item.id));
+                assert_eq!(actual_facts, item.expected_facts, "{}", item.id);
+                assert_eq!(
+                    !actual_facts.is_empty(),
+                    item.expected_present,
+                    "{}",
+                    item.id
+                );
+            }
+            other => panic!("infrastructure-error: unexpected private kind {other}"),
+        }
+    }
+}
+
+#[test]
+fn exception_match_binding_private_projection_detects_broken_transitions() {
+    let cases = EXCEPTION_MATCH_BINDING_CORPUS
+        .lines()
+        .map(|line| serde_json::from_str::<ExceptionMatchBindingCorpusCase>(line).unwrap())
+        .collect::<Vec<_>>();
+    let case = |id: &str| {
+        cases
+            .iter()
+            .find(|item| item.id == id)
+            .unwrap_or_else(|| panic!("missing sensitivity case {id}"))
+    };
+
+    let handler_type = case("handler_type_before_target");
+    assert_eq!(
+        binding_flow_marker_snapshot(&handler_type.source, &handler_type.marker).unwrap(),
+        handler_type.expected_facts,
+    );
+    assert_eq!(
+        binding_flow_marker_snapshot_with_mutation(
+            &handler_type.source,
+            &handler_type.marker,
+            BindingFlowTestMutation::BindHandlerTargetBeforeType,
+        )
+        .unwrap(),
+        Vec::<String>::new(),
+    );
+
+    let cleanup = concat!(
+        "from typing import Sequence\n",
+        "try:\n",
+        "    risky()\n",
+        "except Error as Sequence:\n",
+        "    from typing import Sequence\n",
+        "    pass\n",
+        "after_cleanup: list[str]\n",
+    );
+    assert_eq!(
+        binding_flow_marker_snapshot(cleanup, "list[str]").unwrap(),
+        Vec::<String>::new(),
+    );
+    assert_eq!(
+        binding_flow_marker_snapshot_with_mutation(
+            cleanup,
+            "list[str]",
+            BindingFlowTestMutation::OmitHandlerFallthroughCleanup,
+        )
+        .unwrap(),
+        vec!["direct:Sequence=typing.Sequence"],
+    );
+
+    let pattern_failure = case("match_partial_failure_observable");
+    assert_eq!(
+        binding_flow_marker_snapshot(&pattern_failure.source, &pattern_failure.marker).unwrap(),
+        pattern_failure.expected_facts,
+    );
+    assert!(
+        binding_flow_marker_snapshot_with_mutation(
+            &pattern_failure.source,
+            &pattern_failure.marker,
+            BindingFlowTestMutation::DropPatternFailure,
+        )
+        .is_err()
+    );
+
+    let false_guard = case("match_false_guard_next_case");
+    assert_eq!(
+        binding_flow_marker_snapshot(&false_guard.source, &false_guard.marker).unwrap(),
+        false_guard.expected_facts,
+    );
+    let without_false_guard = binding_flow_marker_snapshot_with_mutation(
+        &false_guard.source,
+        &false_guard.marker,
+        BindingFlowTestMutation::DropFalseGuard,
+    );
+    assert!(without_false_guard.is_err(), "{without_false_guard:?}");
 }
 
 #[test]

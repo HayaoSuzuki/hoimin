@@ -3222,6 +3222,26 @@ struct AnnotationCollector<'ast> {
     scope_kind: ScopeKind,
     qualname: Vec<String>,
     record_annotations: bool,
+    #[cfg(test)]
+    marker_projection: Option<BindingFlowMarkerProjection>,
+    #[cfg(test)]
+    test_mutation: Option<BindingFlowTestMutation>,
+}
+
+#[cfg(test)]
+struct BindingFlowMarkerProjection {
+    marker: Range<usize>,
+    line_start: usize,
+    entry: Option<((usize, usize), KnownImports)>,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum BindingFlowTestMutation {
+    BindHandlerTargetBeforeType,
+    OmitHandlerFallthroughCleanup,
+    DropPatternFailure,
+    DropFalseGuard,
 }
 
 impl<'ast> AnnotationCollector<'ast> {
@@ -3241,6 +3261,38 @@ impl<'ast> AnnotationCollector<'ast> {
             scope_kind: ScopeKind::Module,
             qualname: Vec::new(),
             record_annotations: true,
+            #[cfg(test)]
+            marker_projection: None,
+            #[cfg(test)]
+            test_mutation: None,
+        }
+    }
+
+    #[cfg(test)]
+    fn capture_marker_entry(&mut self, range: TextRange) {
+        let Some(projection) = &mut self.marker_projection else {
+            return;
+        };
+        let start = usize::from(range.start());
+        let end = usize::from(range.end());
+        let contains = start <= projection.marker.start && projection.marker.end <= end;
+        let precedes_on_line = projection.line_start <= start && end <= projection.marker.start;
+        if contains || precedes_on_line {
+            let rank = (
+                if contains {
+                    0
+                } else {
+                    projection.marker.start - end
+                },
+                end - start,
+            );
+            if projection
+                .entry
+                .as_ref()
+                .is_none_or(|(previous_rank, _)| rank < *previous_rank)
+            {
+                projection.entry = Some((rank, self.imports.clone()));
+            }
         }
     }
 
@@ -3703,16 +3755,33 @@ impl<'ast> AnnotationCollector<'ast> {
         for except_handler in &statement.handlers {
             let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
             let mut imports = handler_imports.clone();
+            #[cfg(test)]
+            if self.test_mutation != Some(BindingFlowTestMutation::BindHandlerTargetBeforeType) {
+                self.imports.clone_from(&imports);
+                self.capture_marker_entry(handler.range);
+            }
             if let Some(type_) = &handler.type_ {
                 NamedBindingInvalidator::visit(&mut imports, type_.as_ref());
             }
             if let Some(name) = &handler.name {
                 imports.invalidate(name.as_str());
             }
+            #[cfg(test)]
+            if self.test_mutation == Some(BindingFlowTestMutation::BindHandlerTargetBeforeType) {
+                self.imports.clone_from(&imports);
+                self.capture_marker_entry(handler.range);
+            }
             let mut handler_exits = self.visit_suite_from(imports, &handler.body);
             if let Some(name) = &handler.name {
                 let invalidate = |state: &mut KnownImports| state.invalidate(name.as_str());
-                if let Some(state) = &mut handler_exits.fallthrough {
+                #[cfg(test)]
+                let omit_fallthrough_cleanup = self.test_mutation
+                    == Some(BindingFlowTestMutation::OmitHandlerFallthroughCleanup);
+                #[cfg(not(test))]
+                let omit_fallthrough_cleanup = false;
+                if let Some(state) = &mut handler_exits.fallthrough
+                    && !omit_fallthrough_cleanup
+                {
                     invalidate(state);
                 }
                 for state in handler_exits
@@ -3815,14 +3884,31 @@ impl<'ast> AnnotationCollector<'ast> {
             let Some(mut imports) = remaining.take() else {
                 break;
             };
+            #[cfg(test)]
+            {
+                self.imports.clone_from(&imports);
+                self.capture_marker_entry(case.range);
+            }
             invalidate_pattern_bindings(&mut imports, &case.pattern);
             let mut failed = Vec::new();
-            if !case.pattern.is_irrefutable() {
+            #[cfg(test)]
+            let drop_pattern_failure =
+                self.test_mutation == Some(BindingFlowTestMutation::DropPatternFailure);
+            #[cfg(not(test))]
+            let drop_pattern_failure = false;
+            if !case.pattern.is_irrefutable() && !drop_pattern_failure {
                 failed.push(imports.clone());
             }
             if let Some(guard) = &case.guard {
                 NamedBindingInvalidator::visit(&mut imports, guard.as_ref());
-                failed.push(imports.clone());
+                #[cfg(test)]
+                let drop_false_guard =
+                    self.test_mutation == Some(BindingFlowTestMutation::DropFalseGuard);
+                #[cfg(not(test))]
+                let drop_false_guard = false;
+                if !drop_false_guard {
+                    failed.push(imports.clone());
+                }
             }
             let case_exits = self.visit_suite_from(imports, &case.body);
             Self::merge_branch(&mut fallthrough, &mut exits, case_exits);
@@ -3836,6 +3922,20 @@ impl<'ast> AnnotationCollector<'ast> {
     }
 
     fn visit_statement_flow(&mut self, statement: &'ast Stmt) -> ControlFlowExits {
+        #[cfg(test)]
+        if !matches!(
+            statement,
+            Stmt::FunctionDef(_)
+                | Stmt::ClassDef(_)
+                | Stmt::If(_)
+                | Stmt::For(_)
+                | Stmt::While(_)
+                | Stmt::With(_)
+                | Stmt::Try(_)
+                | Stmt::Match(_)
+        ) {
+            self.capture_marker_entry(statement.range());
+        }
         match statement {
             Stmt::FunctionDef(definition) => self.visit_function_definition(statement, definition),
             Stmt::ClassDef(definition) => self.visit_class_definition(statement, definition),
@@ -4081,6 +4181,51 @@ pub(super) fn binding_flow_test_snapshot(source: &str) -> BindingFlowTestSnapsho
     collector.record_annotations = false;
     let exits = collector.visit_suite_flow(&parsed.syntax().body);
     normalize_binding_flow_exits(&exits)
+}
+
+#[cfg(test)]
+pub(super) fn binding_flow_marker_snapshot(
+    source: &str,
+    marker: &str,
+) -> Result<Vec<String>, String> {
+    binding_flow_marker_snapshot_inner(source, marker, None)
+}
+
+#[cfg(test)]
+pub(super) fn binding_flow_marker_snapshot_with_mutation(
+    source: &str,
+    marker: &str,
+    mutation: BindingFlowTestMutation,
+) -> Result<Vec<String>, String> {
+    binding_flow_marker_snapshot_inner(source, marker, Some(mutation))
+}
+
+#[cfg(test)]
+fn binding_flow_marker_snapshot_inner(
+    source: &str,
+    marker: &str,
+    mutation: Option<BindingFlowTestMutation>,
+) -> Result<Vec<String>, String> {
+    let marker = unique_marker_range(source, marker)?;
+    let line_start = source[..marker.start]
+        .rfind('\n')
+        .map_or(0, |newline| newline + 1);
+    let parsed = parse_module(source)
+        .map_err(|error| format!("infrastructure-error: source did not parse: {error}"))?;
+    let mut collector = AnnotationCollector::empty();
+    collector.record_annotations = false;
+    collector.test_mutation = mutation;
+    collector.marker_projection = Some(BindingFlowMarkerProjection {
+        marker,
+        line_start,
+        entry: None,
+    });
+    let _ = collector.visit_suite_flow(&parsed.syntax().body);
+    let (_, imports) = collector
+        .marker_projection
+        .and_then(|projection| projection.entry)
+        .ok_or_else(|| "infrastructure-error: marker did not select a flow entry".to_owned())?;
+    Ok(normalize_binding_flow_imports(&imports))
 }
 
 #[cfg(test)]
