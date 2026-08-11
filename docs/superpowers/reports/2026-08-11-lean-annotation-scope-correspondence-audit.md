@@ -77,9 +77,10 @@ heartbeat setting. Non-trivial declarations retain the bounded theorem policy.
 The adapter requires the exact schema-owned case-key set and rejects unknown
 fields, duplicate IDs, unknown scenarios and modes,
 crossed scenario/observation pairs, inconsistent expected presence, missing or
-duplicate markers, malformed manifests, nonzero public exits, and duplicate
-matching candidates. Such failures are infrastructure failures rather than
-semantic verdicts.
+duplicate markers, malformed manifests, and nonzero public exits as
+infrastructure failures. Multiple marker-overlapping candidates are retained as
+an observed count and therefore fail as a semantic mismatch rather than being
+reclassified as infrastructure.
 
 ## Sensitivity
 
@@ -118,14 +119,14 @@ sampling. Samples are lower bounds rather than kernel-enforced peaks.
 
 | Command | Elapsed | Highest observed RSS | Result |
 | --- | ---: | ---: | --- |
-| focused proof build | 568 ms | 56,304 KiB | exit 0 |
-| focused cases build | 295 ms | 2,832 KiB | exit 0 |
-| theorem consumer | 2,490 ms | 614,160 KiB | exit 0 |
-| interpreter `--stats` | 568 ms | 650,080 KiB | exit 0 |
-| interpreter `--sensitivity` | 591 ms | 683,536 KiB | exit 0 |
-| interpreter `--cases` | 572 ms | 683,728 KiB | exit 0 |
-| interpreter corpus output | 582 ms | 683,072 KiB | exit 0 |
-| interpreter corpus check | 569 ms | 678,480 KiB | exit 0 |
+| focused proof build | 570 ms | 56,112 KiB | exit 0 |
+| focused cases build | 297 ms | 2,832 KiB | exit 0 |
+| theorem consumer | 2,485 ms | 599,040 KiB | exit 0 |
+| interpreter `--stats` | 573 ms | 613,520 KiB | exit 0 |
+| interpreter `--sensitivity` | 561 ms | 665,664 KiB | exit 0 |
+| interpreter `--cases` | 576 ms | 683,456 KiB | exit 0 |
+| interpreter corpus output | 581 ms | 683,520 KiB | exit 0 |
+| interpreter corpus check | 567 ms | 674,448 KiB | exit 0 |
 | abandoned full-library build | not retained | 921,072 KiB | RSS stop 125 |
 | abandoned native executable link | not retained | 800,592 KiB | RSS stop 125 |
 
