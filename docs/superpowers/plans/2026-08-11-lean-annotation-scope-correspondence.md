@@ -279,16 +279,21 @@ structure Case where
   expectedSymbol : Option String := none
   expectedScope : Option String := none
   expectedResolution : Option String := none
+  expectedOperator : Option String := none
+  expectedOriginal : Option String := none
+  expectedReplacement : Option String := none
   expectedPresent : Bool
 ```
 
-Define one private case per observation scenario. For the eight same-premise
+Define one private case per observation scenario. For the nine same-premise
 public observations, add a separate `publicCandidate` case so each record still
 has exactly one mode. Use unique markers around the observed annotation or
 identifier so source matching cannot select a different occurrence. All private
 projection cases use `internal-fixture`; public candidate cases use `strict`
-only when the same marker is observable in the manifest. The closed total is 23
-cases: 15 private and 8 public.
+only when the same marker is observable in the manifest. The closed total is 29
+cases: 20 private and 9 public. Four private cases observe the scope unaffected
+by directed function/class writes. The post-comprehension private/public pair must
+make the comprehension-leak sensitivity observable at the corpus boundary.
 
 - [ ] **Step 3: Make the fixed cases self-validating**
 

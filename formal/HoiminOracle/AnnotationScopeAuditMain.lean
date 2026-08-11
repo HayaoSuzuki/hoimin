@@ -24,6 +24,9 @@ private def caseJson (item : OracleCase) : Lean.Json := Lean.Json.mkObj [
   ("expected_symbol", optionStringJson item.expectedSymbol),
   ("expected_scope", optionStringJson item.expectedScope),
   ("expected_resolution", optionStringJson item.expectedResolution),
+  ("expected_operator", optionStringJson item.expectedOperator),
+  ("expected_original", optionStringJson item.expectedOriginal),
+  ("expected_replacement", optionStringJson item.expectedReplacement),
   ("expected_present", Lean.toJson item.expectedPresent)
 ]
 

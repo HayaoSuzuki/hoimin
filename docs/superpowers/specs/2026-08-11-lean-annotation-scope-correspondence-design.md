@@ -62,14 +62,14 @@ The crate-private projection is sufficient and easier to remove or evolve.
 
 Included behavior:
 
-- direct and aliased supported typing imports;
+- direct supported typing imports;
 - `global` writes and re-imports targeting module scope;
 - `nonlocal` writes and re-imports targeting the nearest enclosing function;
 - nested class bodies whose external directives target a module or function;
 - list, set, dictionary, and generator comprehension target isolation;
-- first iterable evaluation in the enclosing scope and subsequent generator
-  clauses in the comprehension scope, observed through the production
-  name-resolution index;
+- first iterable evaluation in the enclosing scope, result-expression target
+  shadowing, and post-comprehension target visibility, observed through the
+  production name-resolution index;
 - exact annotation byte range, symbol, normalized import facts, and scope kind;
 - exact name-occurrence byte range and resolution inside comprehension stages;
 - existing public candidate decisions for the same source fixtures.
@@ -83,6 +83,7 @@ Excluded behavior:
   Ruff;
 - mutation ranking, candidate limits, mutant execution, and report rendering;
 - increasing the existing structured-program exploration depth above 2.
+- aliased typing imports, comprehension filters, and later generator clauses;
 
 ## Correspondence worksheet
 
@@ -91,7 +92,7 @@ Excluded behavior:
 | A nested function declares `global Sequence` | frame path with a module-directed name | parsed function containing `global Sequence` | exact facts at marked annotation before and after a write/re-import | private annotation-site projection | `internal-fixture` |
 | An inner function declares `nonlocal Sequence` | frame path with nearest-function-directed name | parsed nested functions containing `nonlocal Sequence` | exact facts at marked inner and outer annotations | private annotation-site projection | `internal-fixture` |
 | A class body redirects an external write | class frame with module/global or function/nonlocal target | parsed nested class with directive | exact method and enclosing annotation facts | private annotation-site projection | `internal-fixture` |
-| A comprehension target shadows a tracked name only inside its comprehension | comprehension frame entered after the first iterable | parsed list/set/dict/generator comprehension | exact resolution at marked name occurrences in the first iterable, filters, later iterables, and result expression | private name-resolution projection | `internal-fixture` |
+| A comprehension target shadows a tracked name only inside its comprehension | comprehension frame entered after the first iterable | parsed list/set/dict/generator comprehension | exact resolution in the first iterable, result expression, and after the comprehension | private name-resolution projection | `internal-fixture` |
 | A comprehension leaves enclosing annotation imports unchanged | enter and leave comprehension without exporting local bindings | marked annotations before and after a parsed comprehension | exact annotation facts and symbol | private annotation-site projection | `internal-fixture` |
 | The same annotation produces or suppresses a mutation candidate | candidate gate over source and destination facts | isolated project passed through public `hoimin plan` | candidate identity, replacement, span, and symbol | existing public adapter | `strict` |
 | Reduced frame/name domain | finite Lean types | no public option selects the reduced domain | Lean result only | fixed cases and proofs | `model-only` |
@@ -137,8 +138,8 @@ The corpus adds fixed positive and negative pairs for:
 - nonlocal visible-before, hidden-after-write, restored-after-re-import, and
   unaffected outer/module annotations;
 - nested class global/nonlocal projection into the intended target scope;
-- each comprehension family with a shadowing target and an unrelated retained
-  builtin or exception name;
+- each comprehension family with a shadowing target, plus a post-comprehension
+  resolution observation that exposes target leakage;
 - first-iterable outer-scope visibility and comprehension-body target shadowing.
 
 No generated-depth expansion is required. Existing depth-2 statistics remain a

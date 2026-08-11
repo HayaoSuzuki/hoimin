@@ -43,6 +43,9 @@ struct AnnotationScopeCorpusCase {
     expected_symbol: Option<String>,
     expected_scope: Option<String>,
     expected_resolution: Option<String>,
+    expected_operator: Option<String>,
+    expected_original: Option<String>,
+    expected_replacement: Option<String>,
     expected_present: bool,
 }
 
@@ -4542,10 +4545,13 @@ fn annotation_scope_private_correspondence_matches_lean() {
         .map(|line| serde_json::from_str::<AnnotationScopeCorpusCase>(line).unwrap())
         .filter(|item| item.mode == "internal-fixture")
         .collect::<Vec<_>>();
-    assert_eq!(cases.len(), 15);
+    assert_eq!(cases.len(), 20);
     for item in cases {
         assert_eq!(item.schema, 1, "{}", item.id);
         assert!(!item.scenario.is_empty(), "{}", item.id);
+        assert!(item.expected_operator.is_none(), "{}", item.id);
+        assert!(item.expected_original.is_none(), "{}", item.id);
+        assert!(item.expected_replacement.is_none(), "{}", item.id);
         match item.observation_kind.as_str() {
             "annotation" => {
                 let snapshot = annotation_site_test_snapshot(&item.source, &item.marker)
