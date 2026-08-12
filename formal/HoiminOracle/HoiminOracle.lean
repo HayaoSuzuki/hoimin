@@ -35,3 +35,6 @@ import HoiminOracle.SchemaMigrationCases
 import HoiminOracle.TopBudgetProjectionModel
 import HoiminOracle.TopBudgetProjectionProofs
 import HoiminOracle.TopBudgetProjectionCases
+import HoiminOracle.ProgressDecisionModel
+import HoiminOracle.ProgressDecisionProofs
+import HoiminOracle.ProgressDecisionCases

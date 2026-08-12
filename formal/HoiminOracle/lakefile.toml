@@ -52,3 +52,7 @@ root = "ExceptionMatchBindingAuditMain"
 [[lean_exe]]
 name = "generate_top_budget_projection"
 root = "TopBudgetProjectionAuditMain"
+
+[[lean_exe]]
+name = "generate_progress_decision"
+root = "ProgressDecisionAuditMain"
