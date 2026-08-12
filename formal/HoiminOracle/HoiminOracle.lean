@@ -32,3 +32,6 @@ import HoiminOracle.CandidateRankingCases
 import HoiminOracle.SchemaMigrationModel
 import HoiminOracle.SchemaMigrationProofs
 import HoiminOracle.SchemaMigrationCases
+import HoiminOracle.TopBudgetProjectionModel
+import HoiminOracle.TopBudgetProjectionProofs
+import HoiminOracle.TopBudgetProjectionCases

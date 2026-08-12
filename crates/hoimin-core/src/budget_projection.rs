@@ -3,6 +3,8 @@ use std::time::Duration;
 
 use crate::{MutantTimeout, auto_mutant_timeout};
 
+const NANOS_PER_SECOND: u128 = 1_000_000_000;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TopBudgetProjection {
     pub selected: usize,
@@ -37,12 +39,7 @@ pub fn project_top_budget(
         MutantTimeout::Auto => auto_mutant_timeout(baseline),
         MutantTimeout::Fixed(value) => value.get(),
     };
-    let projected_capacity = match u32::try_from(waves) {
-        Ok(waves) => effective_mutant_timeout
-            .checked_mul(waves)
-            .unwrap_or(Duration::MAX),
-        Err(_) => Duration::MAX,
-    };
+    let projected_capacity = saturating_duration_mul(effective_mutant_timeout, waves);
 
     TopBudgetProjection {
         selected,
@@ -54,4 +51,17 @@ pub fn project_top_budget(
         waves,
         projected_capacity,
     }
+}
+
+fn saturating_duration_mul(duration: Duration, factor: usize) -> Duration {
+    let Some(nanos) = duration.as_nanos().checked_mul(factor as u128) else {
+        return Duration::MAX;
+    };
+    if nanos > Duration::MAX.as_nanos() {
+        return Duration::MAX;
+    }
+    let Ok(seconds) = u64::try_from(nanos / NANOS_PER_SECOND) else {
+        return Duration::MAX;
+    };
+    Duration::new(seconds, (nanos % NANOS_PER_SECOND) as u32)
 }
