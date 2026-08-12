@@ -48,3 +48,7 @@ root = "AnnotationScopeAuditMain"
 [[lean_exe]]
 name = "generate_exception_match_binding"
 root = "ExceptionMatchBindingAuditMain"
+
+[[lean_exe]]
+name = "generate_top_budget_projection"
+root = "TopBudgetProjectionAuditMain"
