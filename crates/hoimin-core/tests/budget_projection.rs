@@ -127,3 +127,24 @@ fn maximum_selected_parallel_projection_preserves_the_ceiling_wave() {
     assert_eq!(projection.projected_capacity, Duration::from_secs(4));
     assert!(projection.is_shortfall());
 }
+
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn wave_counts_above_u32_max_multiply_exactly_when_duration_fits() {
+    let selected = usize::try_from(u64::from(u32::MAX) + 1).unwrap();
+    let projection = project_top_budget(
+        selected,
+        NonZeroUsize::new(1).unwrap(),
+        Duration::from_secs(10),
+        Duration::from_nanos(1),
+        fixed_timeout(Duration::from_nanos(1)),
+        Duration::from_nanos(u64::from(u32::MAX)),
+    );
+
+    assert_eq!(projection.waves, selected);
+    assert_eq!(
+        projection.projected_capacity,
+        Duration::from_nanos(u64::from(u32::MAX) + 1),
+    );
+    assert!(projection.is_shortfall());
+}
