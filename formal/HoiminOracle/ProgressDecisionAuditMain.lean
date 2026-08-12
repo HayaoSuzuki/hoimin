@@ -64,6 +64,20 @@ private def scoreJson (killed survived : Nat) : Lean.Json :=
     ("decidable", Lean.toJson decidable)
   ]
 
+private def scoreDeltaJson
+    (previousKilled previousSurvived currentKilled currentSurvived : Nat) : Lean.Json :=
+  let previousDecidable := previousKilled + previousSurvived
+  let currentDecidable := currentKilled + currentSurvived
+  if previousDecidable = 0 || currentDecidable = 0 then .null
+  else
+    let numerator :=
+      Int.ofNat (currentKilled * previousDecidable) -
+        Int.ofNat (previousKilled * currentDecidable)
+    Lean.Json.mkObj [
+      ("numerator", Lean.toJson numerator),
+      ("denominator", Lean.toJson (previousDecidable * currentDecidable))
+    ]
+
 private def comparisonJson (comparison : PairObservation) : Lean.Json :=
   let counts := comparison.counts
   Lean.Json.mkObj [
@@ -78,6 +92,8 @@ private def comparisonJson (comparison : PairObservation) : Lean.Json :=
     ("carried_survivors", Lean.toJson counts.carriedSurvivors),
     ("previous_score", scoreJson counts.previousKilled counts.previousSurvived),
     ("current_score", scoreJson counts.currentKilled counts.currentSurvived),
+    ("score_delta", scoreDeltaJson counts.previousKilled counts.previousSurvived
+      counts.currentKilled counts.currentSurvived),
     ("state", .str (pairStateName comparison.state))
   ]
 
