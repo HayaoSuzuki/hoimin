@@ -104,10 +104,11 @@ fn duration_from_nanos(value: u128) -> Result<Duration, String> {
     if value > Duration::MAX.as_nanos() {
         return Err(format!("duration {value} exceeds Duration::MAX"));
     }
-    Ok(Duration::new(
-        (value / NANOS_PER_SECOND) as u64,
-        (value % NANOS_PER_SECOND) as u32,
-    ))
+    let seconds = u64::try_from(value / NANOS_PER_SECOND)
+        .map_err(|error| format!("duration {value} has invalid seconds: {error}"))?;
+    let nanos = u32::try_from(value % NANOS_PER_SECOND)
+        .map_err(|error| format!("duration {value} has invalid nanoseconds: {error}"))?;
+    Ok(Duration::new(seconds, nanos))
 }
 
 fn duration_field(item: &OracleCase, field: &str, value: &str) -> Result<Duration, String> {

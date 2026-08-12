@@ -60,8 +60,8 @@ fn saturating_duration_mul(duration: Duration, factor: usize) -> Duration {
     if nanos > Duration::MAX.as_nanos() {
         return Duration::MAX;
     }
-    Duration::new(
-        (nanos / NANOS_PER_SECOND) as u64,
-        (nanos % NANOS_PER_SECOND) as u32,
-    )
+    let Ok(seconds) = u64::try_from(nanos / NANOS_PER_SECOND) else {
+        return Duration::MAX;
+    };
+    Duration::new(seconds, (nanos % NANOS_PER_SECOND) as u32)
 }
