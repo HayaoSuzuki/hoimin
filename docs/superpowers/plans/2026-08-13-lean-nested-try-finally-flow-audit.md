@@ -36,6 +36,7 @@
 - Modify `formal/HoiminOracle/HoiminOracle.lean`: import the three cheap modules.
 - Modify `formal/HoiminOracle/lakefile.toml`: register `generate_nested_try_flow` without importing the executable from the library.
 - Create `crates/hoimin-cli/src/analyzer/nested_try_oracle_tests.rs`: closed corpus parser, strict public adapter, internal production-backed adapter, and single-case filtering.
+- Create `crates/hoimin-cli/tests/lean_nested_try_flow_oracle.rs`: strict public CLI correspondence in the normal integration-test crate context.
 - Modify `crates/hoimin-cli/src/analyzer/rust.rs`: test-only post-try categorized-exit projection; production transfer behavior changes only if a confirmed mismatch requires it.
 - Create `docs/superpowers/reports/2026-08-13-lean-nested-try-finally-flow-audit.md`: self-contained result, correspondence ledger, counterexamples, commands, and resource measurements.
 
@@ -398,14 +399,15 @@ git commit -m "test(lean): generate nested try flow oracle"
 
 **Files:**
 - Create: `crates/hoimin-cli/src/analyzer/nested_try_oracle_tests.rs`
+- Create: `crates/hoimin-cli/tests/lean_nested_try_flow_oracle.rs`
 - Modify: `crates/hoimin-cli/src/analyzer/rust.rs`
 - Test: `cargo test -p hoimin-cli analyzer::rust::nested_try_oracle_tests -- --nocapture`
 
 **Interfaces:**
 - Consumes: `formal/HoiminOracle/corpus/nested-try-flow.jsonl`, `AnnotationCollector::visit_try`, and `hoimin_cli::run_with_io`.
-- Produces: `binding_flow_try_exit_snapshot(source, marker) -> Result<BindingFlowTestSnapshot, String>` and four focused tests: schema closure, sensitivity of validation, internal correspondence, and strict public correspondence.
+- Produces: `binding_flow_try_exit_snapshot(source, marker) -> Result<BindingFlowTestSnapshot, String>`, three internal/schema tests, and one strict public integration test.
 
-- [ ] **Step 1: Write the adapter test first and name the break**
+- [x] **Step 1: Write the adapter test first and name the break**
 
 The production mutation this test must catch is: `visit_try` returns post-`finally` exits in the wrong category or admits a state from an unreachable statement. Create `nested_try_oracle_tests.rs`, include the corpus, define Serde structs with `#[serde(deny_unknown_fields)]`, and add:
 
@@ -423,7 +425,7 @@ fn nested_try_internal_rows_match_post_finally_production_exits() {
 
 The adapter's Rust `ExpectedExits` representation must convert directly into `BindingFlowTestSnapshot`; it must not compute transfer expectations.
 
-- [ ] **Step 2: Run RED and verify the reason**
+- [x] **Step 2: Run RED and verify the reason**
 
 ```bash
 cargo test -p hoimin-cli analyzer::rust::nested_try_oracle_tests::nested_try_internal_rows_match_post_finally_production_exits -- --exact --nocapture
@@ -431,7 +433,7 @@ cargo test -p hoimin-cli analyzer::rust::nested_try_oracle_tests::nested_try_int
 
 Expected: compile failure because `binding_flow_try_exit_snapshot` and the module registration do not exist. Fix parser or fixture typos until the only failure is the missing production-backed projection.
 
-- [ ] **Step 3: Add the narrow test-only projection to `rust.rs`**
+- [x] **Step 3: Add the narrow test-only projection to `rust.rs`**
 
 Add a `#[cfg(test)]` field to `AnnotationCollector`:
 
@@ -480,7 +482,7 @@ Register the focused test module beside `rust_tests`:
 mod nested_try_oracle_tests;
 ```
 
-- [ ] **Step 4: Verify internal GREEN**
+- [x] **Step 4: Verify internal GREEN**
 
 ```bash
 cargo test -p hoimin-cli analyzer::rust::nested_try_oracle_tests::nested_try_internal_rows_match_post_finally_production_exits -- --exact --nocapture
@@ -488,7 +490,7 @@ cargo test -p hoimin-cli analyzer::rust::nested_try_oracle_tests::nested_try_int
 
 Expected: either PASS, or a semantic expected/actual difference with a concrete case ID. A parser/setup/panic result remains infrastructure failure and must be repaired before comparison.
 
-- [ ] **Step 5: Add closed-schema and adversarial validation tests**
+- [x] **Step 5: Add closed-schema and adversarial validation tests**
 
 Add tests that reject:
 
@@ -503,21 +505,21 @@ Add tests that reject:
 
 Use literal malformed JSONL rows and assert the stable validation category, not an entire Serde error string.
 
-- [ ] **Step 6: Add strict public CLI correspondence**
+- [x] **Step 6: Add strict public CLI correspondence**
 
 For each `strict` row, write its source into an isolated temporary project, call `crate::run_with_io` with `plan --root PROJECT --file target.py --operators type_list_sequence --jobs 1 --allow-best-effort-memory -- PYTHON -c pass`, enforce a 10-second Tokio deadline, and parse the complete plan manifest. Match only candidates overlapping the unique marker and assert:
 
 ```rust
 assert_eq!(candidate.path.as_str(), "target.py");
 assert_eq!(candidate.operator, "type_list_sequence");
-assert_eq!(candidate.original, "Sequence");
-assert_eq!(candidate.replacement, "collections.abc.Sequence");
+assert_eq!(candidate.original, "Sequence[int]");
+assert_eq!(candidate.replacement, "list[int]");
 assert_eq!(candidate.symbol.as_deref(), expected_symbol);
 ```
 
 For `absent`, assert no overlapping candidate of any identity exists. Nonzero exit, stderr on success, timeout, malformed manifest, invalid span, missing marker, or duplicate marker is `infrastructure-error`, not a semantic mismatch.
 
-- [ ] **Step 7: Run the full focused adapter**
+- [x] **Step 7: Run the full focused adapter**
 
 ```bash
 cargo test -p hoimin-cli analyzer::rust::nested_try_oracle_tests -- --nocapture
@@ -525,10 +527,10 @@ cargo test -p hoimin-cli analyzer::rust::nested_try_oracle_tests -- --nocapture
 
 Expected: schema, adversarial, internal, and strict tests pass, unless Task 4 records a confirmed semantic mismatch.
 
-- [ ] **Step 8: Commit correspondence infrastructure if there is no production change yet**
+- [x] **Step 8: Commit correspondence infrastructure if there is no production change yet**
 
 ```bash
-git add crates/hoimin-cli/src/analyzer/rust.rs crates/hoimin-cli/src/analyzer/nested_try_oracle_tests.rs
+git add crates/hoimin-cli/src/analyzer/rust.rs crates/hoimin-cli/src/analyzer/nested_try_oracle_tests.rs crates/hoimin-cli/tests/lean_nested_try_flow_oracle.rs
 git commit -m "test: compare nested try flow with Lean"
 ```
 
@@ -544,7 +546,7 @@ git commit -m "test: compare nested try flow with Lean"
 - Consumes: the first failing same-premise corpus row and its complete Rust observation.
 - Produces: a counterexample record and, only for `confirmed bug`, a focused failing regression followed by the smallest production transfer correction.
 
-- [ ] **Step 1: Reproduce one failing row in isolation**
+- [x] **Step 1: Reproduce one failing row in isolation**
 
 Support `HOIMIN_NESTED_TRY_CASE` in the test adapter and run every
 implementation-facing identity separately so the output identifies the first
@@ -572,7 +574,7 @@ intermediate exit snapshot, expected value, actual value, and exact command. If
 every row matches, record “no correspondence counterexample” and skip Steps
 2–5.
 
-- [ ] **Step 2: Classify before changing code**
+- [x] **Step 2: Classify before changing code**
 
 Use exactly one classification:
 
@@ -585,7 +587,7 @@ infrastructure error: setup or observation failed
 
 For `model defect`, correct the Lean model first, regenerate the corpus, show the diff, and rerun sensitivity. For `infrastructure error`, repair only setup/observation. For `specification ambiguity`, preserve the row as `model-only` and state the owner decision needed. Do not change production Rust for these three classifications.
 
-- [ ] **Step 3: Confirm the Lean-owned row is a focused RED regression**
+- [x] **Step 3: Confirm the Lean-owned row is a focused RED regression (skipped: no implementation mismatch)**
 
 For a confirmed bug, do not duplicate the expectation in another fixture. The
 generated corpus row is the retained regression. Use the adapter filter with
@@ -601,7 +603,7 @@ HOIMIN_NESTED_TRY_CASE=falling_finally_preserves_continue \
 The filter must select exactly one row or fail as infrastructure setup; it must
 never silently fall back to all rows.
 
-- [ ] **Step 4: Apply the smallest production correction**
+- [x] **Step 4: Apply the smallest production correction (skipped: no confirmed bug)**
 
 Change only the branch in `visit_try`, `apply_finally`, or `route_finally_entry` demonstrated by the regression. Preserve these required rules:
 
@@ -614,7 +616,7 @@ handler target cleanup -> apply to every actual handler exit before finalizer ro
 
 Do not refactor unrelated collector traversal, marker projection, match handling, or loop fixed points.
 
-- [ ] **Step 5: Verify GREEN and commit the repair separately**
+- [x] **Step 5: Verify GREEN and commit the repair separately (skipped: no production repair)**
 
 ```bash
 cargo test -p hoimin-cli analyzer::rust::nested_try_oracle_tests -- --nocapture

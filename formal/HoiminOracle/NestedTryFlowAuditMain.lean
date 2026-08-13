@@ -26,7 +26,7 @@ private def factStrings (environment : Env) : List String :=
     | .known .typing => ["direct:Mapping=typing.Mapping"]
     | .known .builtin => ["direct:Mapping=builtin.Mapping"]
     | .absent | .shadowed | .unknown => []
-  source ++ destination
+  destination ++ source
 
 private def stateJson (environment : Env) : Lean.Json :=
   .arr ((factStrings environment).toArray.map Lean.toJson)

@@ -79,7 +79,7 @@ def nestedTryFlowCases : List OracleCase := [
     mode := "strict"
     family := "finally-annotation"
     source := strictFinallySource
-    marker := "# finally_annotation"
+    marker := "value: Sequence[int]"
     entryCategory := .fallthrough
     expected := .empty
     candidate := .absent },
@@ -87,7 +87,7 @@ def nestedTryFlowCases : List OracleCase := [
     mode := "strict"
     family := "post-finally"
     source := strictAfterSource
-    marker := "# after_finally"
+    marker := "value: Sequence[int]"
     entryCategory := .fallthrough
     expected := .fallthroughOnly sequenceOnly
     candidate := .present },
@@ -233,11 +233,11 @@ def fixedExpectationSafe (item : OracleCase) : Bool :=
   match item.id with
   | "finally_annotation_meets_normal_and_raise" =>
       item.mode == "strict" && item.expected == Exits.empty &&
-        item.candidate == .absent
+        item.marker == "value: Sequence[int]" && item.candidate == .absent
   | "post_finally_uses_only_fallthrough" =>
       item.mode == "strict" &&
         item.expected == Exits.fallthroughOnly sequenceOnly &&
-        item.candidate == .present
+        item.marker == "value: Sequence[int]" && item.candidate == .present
   | "falling_finally_preserves_break" =>
       item.expected == routeFinally (.categoryOnly .break mappingOnly) reimportSequence
   | "falling_finally_preserves_continue" =>

@@ -2578,6 +2578,10 @@ fn is_main_literal(expression: &Expr) -> bool {
 #[path = "rust_tests.rs"]
 mod rust_tests;
 
+#[cfg(test)]
+#[path = "nested_try_oracle_tests.rs"]
+mod nested_try_oracle_tests;
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct KnownImports {
     direct: HashMap<String, String>,
@@ -3227,6 +3231,8 @@ struct AnnotationCollector<'ast> {
     #[cfg(test)]
     handler_exit_projection: Option<BindingFlowHandlerExitProjection>,
     #[cfg(test)]
+    try_exit_projection: Option<BindingFlowTryExitProjection>,
+    #[cfg(test)]
     test_mutation: Option<BindingFlowTestMutation>,
 }
 
@@ -3247,6 +3253,14 @@ struct BindingFlowHandlerExitProjection {
     matching_handlers: usize,
     matched_handler: Option<(usize, usize)>,
     states: Vec<KnownImports>,
+}
+
+#[cfg(test)]
+struct BindingFlowTryExitProjection {
+    marker: Range<usize>,
+    matching_tries: usize,
+    matched_try: Option<(usize, usize)>,
+    exits: Option<BindingFlowTestSnapshot>,
 }
 
 #[cfg(test)]
@@ -3302,6 +3316,8 @@ impl<'ast> AnnotationCollector<'ast> {
             marker_projection: None,
             #[cfg(test)]
             handler_exit_projection: None,
+            #[cfg(test)]
+            try_exit_projection: None,
             #[cfg(test)]
             test_mutation: None,
         }
@@ -3372,6 +3388,23 @@ impl<'ast> AnnotationCollector<'ast> {
             ExitCategory::Break => projection.states.extend(exits.breaks.iter().cloned()),
             ExitCategory::Continue => projection.states.extend(exits.continues.iter().cloned()),
             ExitCategory::Terminate => projection.states.extend(exits.terminates.iter().cloned()),
+        }
+    }
+
+    #[cfg(test)]
+    fn capture_try_exit(&mut self, range: TextRange, exits: &ControlFlowExits) {
+        let Some(projection) = &mut self.try_exit_projection else {
+            return;
+        };
+        let start = usize::from(range.start());
+        let end = usize::from(range.end());
+        if start <= projection.marker.start && projection.marker.end <= end {
+            let try_key = (start, end);
+            if projection.matched_try != Some(try_key) {
+                projection.matching_tries += 1;
+                projection.matched_try = Some(try_key);
+            }
+            projection.exits = Some(normalize_binding_flow_exits(exits));
         }
     }
 
@@ -3899,7 +3932,10 @@ impl<'ast> AnnotationCollector<'ast> {
             Self::merge_branch(&mut fallthrough, &mut joined, handler_exits);
         }
         joined.fallthrough = KnownImports::intersection(fallthrough);
-        self.apply_finally(joined, &statement.finalbody)
+        let exits = self.apply_finally(joined, &statement.finalbody);
+        #[cfg(test)]
+        self.capture_try_exit(statement.range, &exits);
+        exits
     }
 
     fn apply_finally(
@@ -4300,6 +4336,37 @@ pub(super) fn binding_flow_test_snapshot(source: &str) -> BindingFlowTestSnapsho
     collector.record_annotations = false;
     let exits = collector.visit_suite_flow(&parsed.syntax().body);
     normalize_binding_flow_exits(&exits)
+}
+
+#[cfg(test)]
+pub(super) fn binding_flow_try_exit_snapshot(
+    source: &str,
+    marker: &str,
+) -> Result<BindingFlowTestSnapshot, String> {
+    let marker = unique_marker_range(source, marker)?;
+    let parsed = parse_module(source)
+        .map_err(|error| format!("infrastructure-error: source did not parse: {error}"))?;
+    let mut collector = AnnotationCollector::empty();
+    collector.record_annotations = false;
+    collector.try_exit_projection = Some(BindingFlowTryExitProjection {
+        marker,
+        matching_tries: 0,
+        matched_try: None,
+        exits: None,
+    });
+    let _ = collector.visit_suite_flow(&parsed.syntax().body);
+    let projection = collector
+        .try_exit_projection
+        .expect("try exit projection was configured");
+    if projection.matching_tries != 1 {
+        return Err(format!(
+            "infrastructure-error: marker matched {} try exits",
+            projection.matching_tries
+        ));
+    }
+    projection
+        .exits
+        .ok_or_else(|| "infrastructure-error: selected try produced no exit snapshot".to_owned())
 }
 
 #[cfg(test)]
