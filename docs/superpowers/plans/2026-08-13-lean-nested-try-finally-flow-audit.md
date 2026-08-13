@@ -49,9 +49,9 @@
 
 **Interfaces:**
 - Consumes: `HoiminOracle.BindingFlow.{Env, Name, Fact, ExitCategory, Exits, meetAll?, routeCategory, routeFinally}`.
-- Produces: `Exits.categoryStates`, `Exits.mapEnv`, `cleanupName`, `cleanupExits`, `composeTry`, `allReachableStates`, and the theorem names listed below.
+- Produces: `Exits.categoryStates`, `mapExits`, `cleanupName`, `cleanupExits`, `composeTry`, `allReachableStates`, and the theorem names listed below.
 
-- [ ] **Step 1: Write the failing theorem consumer before the model exists**
+- [x] **Step 1: Write the failing theorem consumer before the model exists**
 
 Create `/tmp/hoimin-nested-try-proof-consumer.lean` with:
 
@@ -69,7 +69,7 @@ open HoiminOracle.NestedTryFlow
 #check reachable_meet_retains_only_common_knowledge
 ```
 
-- [ ] **Step 2: Run the consumer and observe RED**
+- [x] **Step 2: Run the consumer and observe RED**
 
 Run from `formal/HoiminOracle`:
 
@@ -79,7 +79,7 @@ python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 768 --
 
 Expected: nonzero child exit because `HoiminOracle.NestedTryFlowProofs` does not exist. A guard timeout/RSS/monitor result is infrastructure failure, not the expected RED.
 
-- [ ] **Step 3: Add the smallest model API**
+- [x] **Step 3: Add the smallest model API**
 
 Create `NestedTryFlowModel.lean` with these definitions, preserving the exact signatures:
 
@@ -96,7 +96,7 @@ def Exits.categoryStates (exits : Exits) : ExitCategory → List Env
   | .continue => exits.continues
   | .terminate => exits.terminates
 
-def Exits.mapEnv (transfer : Env → Env) (exits : Exits) : Exits where
+def mapExits (transfer : Env → Env) (exits : Exits) : Exits where
   fallthrough := exits.fallthrough.map transfer
   breaks := exits.breaks.map transfer
   continues := exits.continues.map transfer
@@ -106,7 +106,7 @@ def cleanupName (name : Name) (environment : Env) : Env :=
   environment.set name .absent
 
 def cleanupExits (name : Name) (exits : Exits) : Exits :=
-  exits.mapEnv (cleanupName name)
+  mapExits (cleanupName name) exits
 
 def composeTry
     (body handler : Exits)
@@ -124,7 +124,7 @@ def allReachableStates (exits : Exits) : List Env :=
 end HoiminOracle.NestedTryFlow
 ```
 
-- [ ] **Step 4: Add the proof module with explicit premises**
+- [x] **Step 4: Add the proof module with explicit premises**
 
 Create `NestedTryFlowProofs.lean`. Prove these contracts without axioms, `sorry`, or unbounded heartbeats:
 
@@ -180,7 +180,7 @@ theorem abrupt_finally_replaces_category
 set_option maxHeartbeats 100000 in
 theorem cleanup_exits_idempotent (name : Name) (exits : Exits) :
     cleanupExits name (cleanupExits name exits) = cleanupExits name exits := by
-  cases name <;> cases exits <;> simp [cleanupExits, Exits.mapEnv, cleanupName, Env.set]
+  cases name <;> cases exits <;> simp [cleanupExits, mapExits, cleanupName, Env.set]
 
 set_option maxHeartbeats 100000 in
 theorem reachable_meet_retains_only_common_knowledge
@@ -200,7 +200,7 @@ end HoiminOracle.NestedTryFlow
 
 If a displayed `simp` proof needs decomposition, add named private lemmas for `routeMany` and `Exits.merge`; do not weaken any theorem statement.
 
-- [ ] **Step 5: Import only cheap modules from the Lean library root**
+- [x] **Step 5: Import only cheap modules from the Lean library root**
 
 Append to `HoiminOracle.lean`:
 
@@ -211,17 +211,17 @@ import HoiminOracle.NestedTryFlowProofs
 
 Do not import `NestedTryFlowAuditMain`.
 
-- [ ] **Step 6: Run focused GREEN verification serially**
+- [x] **Step 6: Run focused GREEN verification serially**
 
 ```bash
-python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 768 --sample-ms 250 --stats /tmp/hoimin-nested-try-model.json -- lake env lean HoiminOracle/NestedTryFlowModel.lean
-python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 768 --sample-ms 250 --stats /tmp/hoimin-nested-try-proofs.json -- lake env lean HoiminOracle/NestedTryFlowProofs.lean
+python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 768 --sample-ms 250 --stats /tmp/hoimin-nested-try-model-build.json -- lake -Kjobs=1 build HoiminOracle.NestedTryFlowModel
+python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 768 --sample-ms 250 --stats /tmp/hoimin-nested-try-proofs-build.json -- lake -Kjobs=1 build HoiminOracle.NestedTryFlowProofs
 python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 768 --sample-ms 250 --stats /tmp/hoimin-nested-try-consumer.json -- lake env lean /tmp/hoimin-nested-try-proof-consumer.lean
 ```
 
 Expected: three child exits 0. Record each stats JSON for the final report.
 
-- [ ] **Step 7: Commit the model and proofs**
+- [x] **Step 7: Commit the model and proofs**
 
 ```bash
 git add formal/HoiminOracle/HoiminOracle/NestedTryFlowModel.lean formal/HoiminOracle/HoiminOracle/NestedTryFlowProofs.lean formal/HoiminOracle/HoiminOracle.lean
