@@ -41,6 +41,8 @@ import HoiminOracle.ProgressDecisionCases
 import HoiminOracle.NestedTryFlowModel
 import HoiminOracle.NestedTryFlowProofs
 import HoiminOracle.NestedTryFlowCases
+import HoiminOracle.NestedMatchExitModel
+import HoiminOracle.NestedMatchExitProofs
 import HoiminOracle.ReportSequenceModel
 import HoiminOracle.ReportSequenceProofs
 import HoiminOracle.ReportSequenceCases
