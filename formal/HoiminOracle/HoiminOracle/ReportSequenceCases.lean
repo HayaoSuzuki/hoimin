@@ -114,7 +114,7 @@ def makeCase (id premise : String) (prefixEvents : List Event) (target : Event)
   let state := run initial prefixEvents
   let verdict := step state target
   { id
-    mode := "model-only"
+    mode := "strict"
     premise
     prefixEvents
     target
