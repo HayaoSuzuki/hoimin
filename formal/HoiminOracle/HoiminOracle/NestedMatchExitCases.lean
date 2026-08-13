@@ -63,9 +63,9 @@ def reimportSequence (environment : Env) : Exits :=
   .fallthroughOnly (environment.set .source (.known .typing))
 
 def handlerBreakContinueExpected : Exits :=
-  composeTry (.fallthroughOnly knownBoth)
+  composeTry (.fallthroughOnly sequenceOnly)
     (composeMatch
-      [.categoryOnly .break knownBoth, .categoryOnly .continue bothShadowed]
+      [.categoryOnly .break sequenceOnly, .categoryOnly .continue bothShadowed]
       none)
     (some .source) identityStep reimportSequence
 

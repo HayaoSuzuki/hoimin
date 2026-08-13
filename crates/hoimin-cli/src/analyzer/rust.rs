@@ -2582,6 +2582,10 @@ mod rust_tests;
 #[path = "nested_try_oracle_tests.rs"]
 mod nested_try_oracle_tests;
 
+#[cfg(test)]
+#[path = "nested_match_exit_oracle_tests.rs"]
+mod nested_match_exit_oracle_tests;
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct KnownImports {
     direct: HashMap<String, String>,
@@ -3293,6 +3297,8 @@ pub(super) enum BindingFlowTestMutation {
     UsePrePatternFailureEnvironment,
     UsePreGuardFailureEnvironment,
     DropRefutableUnmatched,
+    FlattenMatchAbruptToFallthrough,
+    OmitLoopContinueBackEdge,
 }
 
 impl<'ast> AnnotationCollector<'ast> {
@@ -3763,11 +3769,18 @@ impl<'ast> AnnotationCollector<'ast> {
                 }
                 entries.push(imports);
             }
-            for mut imports in body_exits.continues {
-                if let Some(target) = iteration_target {
-                    imports.invalidate_target(target);
+            #[cfg(test)]
+            let include_continues =
+                self.test_mutation != Some(BindingFlowTestMutation::OmitLoopContinueBackEdge);
+            #[cfg(not(test))]
+            let include_continues = true;
+            if include_continues {
+                for mut imports in body_exits.continues {
+                    if let Some(target) = iteration_target {
+                        imports.invalidate_target(target);
+                    }
+                    entries.push(imports);
                 }
-                entries.push(imports);
             }
             let next = KnownImports::intersection(entries)
                 .expect("a loop head always includes its initial entry");
@@ -4066,6 +4079,24 @@ impl<'ast> AnnotationCollector<'ast> {
                 failed.push(imports.clone());
             }
             let case_exits = self.visit_suite_from(imports, &case.body);
+            #[cfg(test)]
+            let case_exits = if self.test_mutation
+                == Some(BindingFlowTestMutation::FlattenMatchAbruptToFallthrough)
+            {
+                let mut case_exits = case_exits;
+                let mut flattened = case_exits
+                    .fallthrough
+                    .take()
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                flattened.append(&mut case_exits.breaks);
+                flattened.append(&mut case_exits.continues);
+                flattened.append(&mut case_exits.terminates);
+                case_exits.fallthrough = KnownImports::intersection(flattened);
+                case_exits
+            } else {
+                case_exits
+            };
             Self::merge_branch(&mut fallthrough, &mut exits, case_exits);
             remaining = KnownImports::intersection(failed);
         }
@@ -4343,11 +4374,30 @@ pub(super) fn binding_flow_try_exit_snapshot(
     source: &str,
     marker: &str,
 ) -> Result<BindingFlowTestSnapshot, String> {
+    binding_flow_try_exit_snapshot_inner(source, marker, None)
+}
+
+#[cfg(test)]
+pub(super) fn binding_flow_try_exit_snapshot_with_mutation(
+    source: &str,
+    marker: &str,
+    mutation: BindingFlowTestMutation,
+) -> Result<BindingFlowTestSnapshot, String> {
+    binding_flow_try_exit_snapshot_inner(source, marker, Some(mutation))
+}
+
+#[cfg(test)]
+fn binding_flow_try_exit_snapshot_inner(
+    source: &str,
+    marker: &str,
+    mutation: Option<BindingFlowTestMutation>,
+) -> Result<BindingFlowTestSnapshot, String> {
     let marker = unique_marker_range(source, marker)?;
     let parsed = parse_module(source)
         .map_err(|error| format!("infrastructure-error: source did not parse: {error}"))?;
     let mut collector = AnnotationCollector::empty();
     collector.record_annotations = false;
+    collector.test_mutation = mutation;
     collector.try_exit_projection = Some(BindingFlowTryExitProjection {
         marker,
         matching_tries: 0,
@@ -4532,6 +4582,48 @@ pub(super) fn binding_flow_loop_head_snapshot(
         collector.imports = imports;
     }
     panic!("binding-flow loop fixture has no while statement")
+}
+
+#[cfg(test)]
+pub(super) fn binding_flow_loop_head_snapshot_at_marker(
+    source: &str,
+    marker: &str,
+    mutation: Option<BindingFlowTestMutation>,
+) -> Result<Vec<String>, String> {
+    let marker = unique_marker_range(source, marker)?;
+    let line_start = source[..marker.start]
+        .rfind('\n')
+        .map_or(0, |newline| newline + 1);
+    let parsed = parse_module(source)
+        .map_err(|error| format!("infrastructure-error: source did not parse: {error}"))?;
+    let mut collector = AnnotationCollector::empty();
+    collector.record_annotations = false;
+    collector.test_mutation = mutation;
+    let mut matching = 0;
+    let mut observed = None;
+    for statement in &parsed.syntax().body {
+        if let Stmt::While(statement_while) = statement
+            && binding_flow_marker_rank(source, &marker, line_start, statement_while.range)
+                .is_some()
+        {
+            matching += 1;
+            NamedBindingInvalidator::visit(&mut collector.imports, statement_while.test.as_ref());
+            let initial = collector.imports.clone();
+            let head = collector.loop_head_fixed_point(&initial, None, &statement_while.body);
+            observed = Some(normalize_binding_flow_imports(&head));
+        }
+        let exits = collector.visit_statement_flow(statement);
+        let Some(imports) = exits.fallthrough else {
+            break;
+        };
+        collector.imports = imports;
+    }
+    if matching != 1 {
+        return Err(format!(
+            "infrastructure-error: marker matched {matching} loop heads"
+        ));
+    }
+    observed.ok_or_else(|| "infrastructure-error: selected loop produced no head".to_owned())
 }
 
 fn type_annotation_candidates(
