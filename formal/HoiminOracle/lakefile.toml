@@ -62,5 +62,9 @@ name = "generate_nested_try_flow"
 root = "NestedTryFlowAuditMain"
 
 [[lean_exe]]
+name = "generate_nested_match_exits"
+root = "NestedMatchExitAuditMain"
+
+[[lean_exe]]
 name = "generate_report_sequence"
 root = "ReportSequenceAuditMain"

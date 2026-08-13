@@ -43,6 +43,7 @@ import HoiminOracle.NestedTryFlowProofs
 import HoiminOracle.NestedTryFlowCases
 import HoiminOracle.NestedMatchExitModel
 import HoiminOracle.NestedMatchExitProofs
+import HoiminOracle.NestedMatchExitCases
 import HoiminOracle.ReportSequenceModel
 import HoiminOracle.ReportSequenceProofs
 import HoiminOracle.ReportSequenceCases
