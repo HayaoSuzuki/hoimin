@@ -241,7 +241,7 @@ git commit -m "test(lean): prove nested try exit routing"
 - Consumes: `composeTry`, `cleanupExits`, `routeFinally`, and the existing `BindingFlow.Env` fact lattice.
 - Produces: `nestedTryFlowCases : List OracleCase`, `fixedCasesPass`, `sensitivityPasses`, and executable modes `--cases`, `--sensitivity`, `--stats`, `--output PATH`, and `--check PATH`.
 
-- [ ] **Step 1: Add a failing executable invocation**
+- [x] **Step 1: Add a failing executable invocation**
 
 Run:
 
@@ -251,7 +251,7 @@ python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 768 --
 
 Expected: nonzero child exit because the executable does not exist.
 
-- [ ] **Step 2: Define the fixed corpus schema and cases**
+- [x] **Step 2: Define the fixed corpus schema and cases**
 
 Create `NestedTryFlowCases.lean` with these public types:
 
@@ -305,7 +305,7 @@ nonselected_handler_meet                           model-only
 
 The strict source for `finally_annotation_meets_normal_and_raise` must place the unique marker on `value: Sequence[int]` inside `finally`, with one reachable path shadowing `Sequence` and raising and one normal path retaining it; expected candidate is `absent`. The strict source for `post_finally_uses_only_fallthrough` must put the unique marker after the `try/finally`; the raising shadowed path cannot reach it, and expected candidate is `present`.
 
-- [ ] **Step 3: Add literal broken variants and fixed witnesses**
+- [x] **Step 3: Add literal broken variants and fixed witnesses**
 
 Implement these Boolean checks in `NestedTryFlowCases.lean`:
 
@@ -338,7 +338,7 @@ example : fixedCasesPass = true := by native_decide
 
 Each sensitivity must compare the correct result with a separately named broken definition. Fixed witnesses stay present even if later case pruning occurs.
 
-- [ ] **Step 4: Add the non-imported executable and Lake target**
+- [x] **Step 4: Add the non-imported executable and Lake target**
 
 Create `NestedTryFlowAuditMain.lean` following the repository executable pattern. `renderCorpus` must serialize every field with `Lean.Json.mkObj`, normalize all fact/state arrays deterministically, append exactly one newline per row, and never parse Rust output. `--stats` prints:
 
@@ -367,10 +367,10 @@ Append only the cheap case import to `HoiminOracle.lean`:
 import HoiminOracle.NestedTryFlowCases
 ```
 
-- [ ] **Step 5: Build and run sensitivity before generating the corpus**
+- [x] **Step 5: Build and run sensitivity before generating the corpus**
 
 ```bash
-python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 768 --sample-ms 250 --stats /tmp/hoimin-nested-try-cases-build.json -- lake env lean HoiminOracle/NestedTryFlowCases.lean
+python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 768 --sample-ms 250 --stats /tmp/hoimin-nested-try-cases-target.json -- lake -Kjobs=1 build HoiminOracle.NestedTryFlowCases
 python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 768 --sample-ms 250 --stats /tmp/hoimin-nested-try-sensitivity.json -- lake env lean --run NestedTryFlowAuditMain.lean -- --sensitivity
 python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 768 --sample-ms 250 --stats /tmp/hoimin-nested-try-cases.json -- lake env lean --run NestedTryFlowAuditMain.lean -- --cases
 python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 768 --sample-ms 250 --stats /tmp/hoimin-nested-try-stats.json -- lake env lean --run NestedTryFlowAuditMain.lean -- --stats
@@ -378,7 +378,7 @@ python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 768 --
 
 Expected: all child exits 0 and all seven sensitivity lines report `true`.
 
-- [ ] **Step 6: Generate and freshness-check the corpus**
+- [x] **Step 6: Generate and freshness-check the corpus**
 
 ```bash
 python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 768 --sample-ms 250 --stats /tmp/hoimin-nested-try-output.json -- lake env lean --run NestedTryFlowAuditMain.lean -- --output corpus/nested-try-flow.jsonl
@@ -387,7 +387,7 @@ python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 768 --
 
 Expected: generated file exists, contains ten newline-terminated JSON objects, and freshness exits 0.
 
-- [ ] **Step 7: Commit fixed cases and generated corpus**
+- [x] **Step 7: Commit fixed cases and generated corpus**
 
 ```bash
 git add formal/HoiminOracle/HoiminOracle/NestedTryFlowCases.lean formal/HoiminOracle/NestedTryFlowAuditMain.lean formal/HoiminOracle/corpus/nested-try-flow.jsonl formal/HoiminOracle/HoiminOracle.lean formal/HoiminOracle/lakefile.toml
