@@ -411,6 +411,11 @@ impl Fixture {
 
     fn test_command(&self, two_mutants: bool) -> String {
         let marker = self.marker.to_string_lossy();
+        let first_mutant_delay = if two_mutants && cfg!(unix) {
+            "if mutated_first:\n    time.sleep(2)\n"
+        } else {
+            ""
+        };
         let test_body = if two_mutants {
             concat!(
                 "mutated_second = 'return second_left - second_right' in source\n",
@@ -443,9 +448,11 @@ impl Fixture {
                 "source = Path('src/calc.py').read_text()\n",
                 "marker = Path({marker:?})\n",
                 "mutated_first = 'return first_left - first_right' in source\n",
+                "{first_mutant_delay}",
                 "{test_body}",
             ),
             marker = marker,
+            first_mutant_delay = first_mutant_delay,
             test_body = test_body,
         )
     }
@@ -477,13 +484,13 @@ fn python_executable() -> Result<PathBuf, String> {
         })
 }
 
-async fn run_cli(
+fn build_cli_command(
     fixture: &Fixture,
     two_mutants: bool,
     resume: bool,
     metrics_path: &Path,
-    total_timeout: bool,
-) -> Result<FixtureRun, String> {
+    total_timeout: Option<&str>,
+) -> Result<tokio::process::Command, String> {
     let python = python_executable()?;
     let mut args = vec![
         OsString::from("run"),
@@ -512,10 +519,10 @@ async fn run_cli(
     if resume {
         args.push(OsString::from("--resume"));
     }
-    if total_timeout {
+    if let Some(total_timeout) = total_timeout {
         args.extend([
             OsString::from("--total-timeout"),
-            OsString::from("1s"),
+            OsString::from(total_timeout),
             OsString::from("--mutant-timeout"),
             OsString::from("30s"),
         ]);
@@ -537,7 +544,28 @@ async fn run_cli(
         use std::os::unix::process::CommandExt;
         command.as_std_mut().process_group(0);
     }
+    Ok(command)
+}
+
+async fn run_cli(
+    fixture: &Fixture,
+    two_mutants: bool,
+    resume: bool,
+    metrics_path: &Path,
+    total_timeout: bool,
+) -> Result<FixtureRun, String> {
+    let mut command = build_cli_command(
+        fixture,
+        two_mutants,
+        resume,
+        metrics_path,
+        total_timeout.then_some("1s"),
+    )?;
     let output = bounded_cli_output(&mut command, Duration::from_secs(12)).await?;
+    fixture_run_from_output(output)
+}
+
+fn fixture_run_from_output(output: Output) -> Result<FixtureRun, String> {
     let exit_code = output.status.code().ok_or_else(|| {
         format!(
             "hoimin CLI terminated without an exit code: {}",
@@ -559,6 +587,89 @@ async fn run_cli(
         stderr,
         document,
     })
+}
+
+#[cfg(unix)]
+async fn wait_for_first_durable_kill(
+    child: &mut tokio::process::Child,
+    session: &Path,
+    timeout: Duration,
+) -> Result<(), String> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        if let Some(status) = child.try_wait().map_err(|error| {
+            format!("inspect hoimin CLI while waiting for durable result: {error}")
+        })? {
+            return Err(format!(
+                "hoimin CLI exited before the first durable killed result: {status}"
+            ));
+        }
+        let ready = session.is_file()
+            && Connection::open_with_flags(session, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .and_then(|connection| {
+                    connection.query_row(
+                        "SELECT COUNT(*) = 1 AND MIN(status) = 'killed' AND MAX(status) = 'killed' FROM results",
+                        [],
+                        |row| row.get::<_, bool>(0),
+                    )
+                })
+                .unwrap_or(false);
+        if ready {
+            return Ok(());
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err("timed out waiting for the first durable killed result".to_owned());
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+#[cfg(unix)]
+async fn run_cli_with_durable_timeout_premise(
+    fixture: &Fixture,
+    metrics_path: &Path,
+) -> Result<FixtureRun, String> {
+    let mut command = build_cli_command(fixture, true, false, metrics_path, Some("12s"))?;
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("spawn hoimin CLI: {error}"))?;
+    let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
+        let cleanup = cleanup_cli_process_tree(&mut child).await;
+        return Err(format!(
+            "hoimin CLI output was not piped; cleanup: {cleanup}"
+        ));
+    };
+    let stdout = tokio::spawn(read_output(stdout));
+    let stderr = tokio::spawn(read_output(stderr));
+
+    let trigger = async {
+        wait_for_first_durable_kill(&mut child, &fixture.session, Duration::from_secs(8)).await?;
+        tokio::time::timeout(Duration::from_secs(12), child.wait())
+            .await
+            .map_err(|_| "hoimin CLI did not stop after its total timeout".to_owned())?
+            .map_err(|error| format!("wait for hoimin CLI total timeout: {error}"))
+    }
+    .await;
+
+    match trigger {
+        Ok(status) => {
+            let stdout = join_output(stdout, "stdout").await?;
+            let stderr = join_output(stderr, "stderr").await?;
+            fixture_run_from_output(Output {
+                status,
+                stdout,
+                stderr,
+            })
+        }
+        Err(error) => {
+            let cleanup = cleanup_cli_process_tree(&mut child).await;
+            let stdout = join_output(stdout, "stdout").await;
+            let stderr = join_output(stderr, "stderr").await;
+            Err(format!(
+                "premise-guarded timeout failed: {error}; cleanup: {cleanup}; stdout: {stdout:?}; stderr: {stderr:?}"
+            ))
+        }
+    }
 }
 
 async fn bounded_cli_output(
@@ -751,7 +862,16 @@ async fn execute_strict(case: &OracleCase) -> Result<(ImplementationObservation,
             fixture.clear_outputs()?;
             run_cli(&fixture, false, true, &fixture.metrics, false).await?
         }
-        "stop_preserves_accepted" => run_cli(&fixture, true, false, metrics_path, true).await?,
+        "stop_preserves_accepted" => {
+            #[cfg(unix)]
+            {
+                run_cli_with_durable_timeout_premise(&fixture, metrics_path).await?
+            }
+            #[cfg(windows)]
+            {
+                run_cli(&fixture, true, false, metrics_path, true).await?
+            }
+        }
         "sessionless_complete" | "session_complete" | "metrics_write_failure" => {
             run_cli(&fixture, false, false, metrics_path, false).await?
         }
