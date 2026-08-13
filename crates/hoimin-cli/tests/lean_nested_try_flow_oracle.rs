@@ -27,11 +27,29 @@ struct OracleCase {
     entry_category: String,
     expected: serde_json::Value,
     candidate: CandidateExpectation,
+    candidate_count: usize,
+    candidate_path: Option<String>,
+    candidate_operator: Option<String>,
+    candidate_original: Option<String>,
+    candidate_replacement: Option<String>,
+    candidate_symbol: Option<String>,
 }
 
-fn strict_cases() -> Result<Vec<OracleCase>, String> {
+fn strict_source(id: &str) -> Option<&'static str> {
+    match id {
+        "finally_annotation_meets_normal_and_raise" => Some(
+            "from typing import Sequence\n\ntry:\n    if condition:\n        Sequence = object\n        raise RuntimeError\nfinally:\n    value: Sequence[int]  # finally_annotation\n",
+        ),
+        "post_finally_uses_only_fallthrough" => Some(
+            "from typing import Sequence\n\ntry:\n    if condition:\n        Sequence = object\n        raise RuntimeError\nfinally:\n    pass\n\nvalue: Sequence[int]  # after_finally\n",
+        ),
+        _ => None,
+    }
+}
+
+fn strict_cases_from(input: &str) -> Result<Vec<OracleCase>, String> {
     let mut cases = Vec::new();
-    for (index, line) in CORPUS.lines().enumerate() {
+    for (index, line) in input.lines().enumerate() {
         let item: OracleCase = serde_json::from_str(line)
             .map_err(|error| format!("line {} is invalid JSON: {error}", index + 1))?;
         if item.schema != 1
@@ -43,6 +61,12 @@ fn strict_cases() -> Result<Vec<OracleCase>, String> {
             || !item.expected.is_object()
         {
             return Err(format!("{} has an invalid public fixture", item.id));
+        }
+        if !matches!(
+            item.mode.as_str(),
+            "strict" | "internal-fixture" | "model-only"
+        ) {
+            return Err(format!("{} has an unknown mode", item.id));
         }
         if item.mode == "strict" {
             let owned = match item.id.as_str() {
@@ -61,6 +85,9 @@ fn strict_cases() -> Result<Vec<OracleCase>, String> {
             if !owned {
                 return Err(format!("{} is not an owned strict fixture", item.id));
             }
+            if strict_source(&item.id) != Some(item.source.as_str()) {
+                return Err(format!("{} has changed source premises", item.id));
+            }
             cases.push(item);
         }
     }
@@ -68,6 +95,38 @@ fn strict_cases() -> Result<Vec<OracleCase>, String> {
         return Err(format!("expected two strict rows, found {}", cases.len()));
     }
     Ok(cases)
+}
+
+fn strict_cases() -> Result<Vec<OracleCase>, String> {
+    strict_cases_from(CORPUS)
+}
+
+#[test]
+fn strict_parser_rejects_unknown_modes_and_changed_sources() {
+    let mut rows = CORPUS.lines().map(str::to_owned).collect::<Vec<_>>();
+    let mut unknown: serde_json::Value = serde_json::from_str(&rows[2]).unwrap();
+    unknown["mode"] = serde_json::json!("future-mode");
+    rows[2] = unknown.to_string();
+    assert!(
+        strict_cases_from(&rows.join("\n"))
+            .unwrap_err()
+            .contains("unknown mode")
+    );
+
+    let mut changed: serde_json::Value = serde_json::from_str(&rows[0]).unwrap();
+    changed["source"] = serde_json::json!(
+        changed["source"]
+            .as_str()
+            .unwrap()
+            .replace("raise RuntimeError", "raise ValueError")
+    );
+    rows[0] = changed.to_string();
+    rows[2] = CORPUS.lines().nth(2).unwrap().to_owned();
+    assert!(
+        strict_cases_from(&rows.join("\n"))
+            .unwrap_err()
+            .contains("changed source premises")
+    );
 }
 
 fn selected_cases(cases: Vec<OracleCase>) -> Result<Vec<OracleCase>, String> {
@@ -239,21 +298,13 @@ fn normalize_manifest(
 
 fn expected_public(item: &OracleCase) -> PublicObservation {
     match item.candidate {
-        CandidateExpectation::Absent => PublicObservation {
-            count: 0,
-            path: None,
-            operator: None,
-            original: None,
-            replacement: None,
-            symbol: None,
-        },
-        CandidateExpectation::Present => PublicObservation {
-            count: 1,
-            path: Some("target.py".to_owned()),
-            operator: Some("type_list_sequence".to_owned()),
-            original: Some("Sequence[int]".to_owned()),
-            replacement: Some("list[int]".to_owned()),
-            symbol: None,
+        CandidateExpectation::Absent | CandidateExpectation::Present => PublicObservation {
+            count: item.candidate_count,
+            path: item.candidate_path.clone(),
+            operator: item.candidate_operator.clone(),
+            original: item.candidate_original.clone(),
+            replacement: item.candidate_replacement.clone(),
+            symbol: item.candidate_symbol.clone(),
         },
         CandidateExpectation::NotObserved => {
             panic!("non-strict row cannot have a public expectation")

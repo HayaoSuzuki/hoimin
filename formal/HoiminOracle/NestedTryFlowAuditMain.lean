@@ -17,6 +17,10 @@ private def candidateName : CandidateExpectation → String
   | .present => "present"
   | .absent => "absent"
 
+private def optionStringJson : Option String → Lean.Json
+  | none => .null
+  | some value => .str value
+
 private def factStrings (environment : Env) : List String :=
   let source := match environment.source with
     | .known .typing => ["direct:Sequence=typing.Sequence"]
@@ -52,7 +56,13 @@ private def caseJson (item : OracleCase) : Lean.Json :=
     ("marker", .str item.marker),
     ("entry_category", .str (categoryName item.entryCategory)),
     ("expected", exitsJson item.expected),
-    ("candidate", .str (candidateName item.candidate))
+    ("candidate", .str (candidateName item.candidate)),
+    ("candidate_count", Lean.toJson item.candidateCount),
+    ("candidate_path", optionStringJson item.candidatePath),
+    ("candidate_operator", optionStringJson item.candidateOperator),
+    ("candidate_original", optionStringJson item.candidateOriginal),
+    ("candidate_replacement", optionStringJson item.candidateReplacement),
+    ("candidate_symbol", optionStringJson item.candidateSymbol)
   ]
 
 def renderCorpus : String :=
@@ -66,6 +76,9 @@ private def ensureAudit : IO (Except UInt32 Unit) := do
     IO.eprintln "nested try flow fixed cases violate the corpus contract"
     return .error 2
   return .ok ()
+
+example : sensitivityPasses = true := by native_decide
+example : fixedCasesPass = true := by native_decide
 
 private def writeCorpus (path : System.FilePath) : IO UInt32 := do
   match ← ensureAudit with

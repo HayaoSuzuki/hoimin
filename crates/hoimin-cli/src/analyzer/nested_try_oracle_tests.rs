@@ -35,6 +35,48 @@ struct OracleCase {
     entry_category: String,
     expected: ExpectedExits,
     candidate: CandidateExpectation,
+    candidate_count: usize,
+    candidate_path: Option<String>,
+    candidate_operator: Option<String>,
+    candidate_original: Option<String>,
+    candidate_replacement: Option<String>,
+    candidate_symbol: Option<String>,
+}
+
+fn expected_source(id: &str) -> Option<&'static str> {
+    match id {
+        "finally_annotation_meets_normal_and_raise" => Some(
+            "from typing import Sequence\n\ntry:\n    if condition:\n        Sequence = object\n        raise RuntimeError\nfinally:\n    value: Sequence[int]  # finally_annotation\n",
+        ),
+        "post_finally_uses_only_fallthrough" => Some(
+            "from typing import Sequence\n\ntry:\n    if condition:\n        Sequence = object\n        raise RuntimeError\nfinally:\n    pass\n\nvalue: Sequence[int]  # after_finally\n",
+        ),
+        "falling_finally_preserves_break" => Some(
+            "from typing import Mapping, Sequence\n\nwhile condition:\n    try:\n        Sequence = object\n        break  # break_exit\n    finally:\n        from typing import Sequence\n",
+        ),
+        "falling_finally_preserves_continue" => Some(
+            "from typing import Mapping, Sequence\n\nwhile condition:\n    try:\n        Sequence = object\n        continue  # continue_exit\n    finally:\n        from typing import Sequence\n",
+        ),
+        "falling_finally_preserves_return_terminate" => Some(
+            "def f():\n    from typing import Mapping, Sequence\n    try:\n        Sequence = object\n        return None  # return_exit\n    finally:\n        from typing import Sequence\n",
+        ),
+        "falling_finally_preserves_raise_terminate" => Some(
+            "def f():\n    from typing import Mapping, Sequence\n    try:\n        Sequence = object\n        raise RuntimeError  # raise_exit\n    finally:\n        from typing import Sequence\n",
+        ),
+        "abrupt_finally_replaces_fallthrough" => Some(
+            "from typing import Mapping, Sequence\n\ntry:\n    pass  # abrupt_fallthrough\nfinally:\n    Sequence = object\n    raise RuntimeError\n",
+        ),
+        "abrupt_finally_replaces_break" => Some(
+            "from typing import Mapping, Sequence\n\nwhile condition:\n    try:\n        break  # abrupt_break\n    finally:\n        Sequence = object\n        raise RuntimeError\n",
+        ),
+        "unreachable_post_return_excluded" => Some(
+            "def f():\n    from typing import Mapping, Sequence\n    try:\n        Sequence = object\n        return None  # unreachable_return\n        from typing import Sequence\n    finally:\n        pass\n",
+        ),
+        "nonselected_handler_meet" => Some(
+            "from typing import Mapping, Sequence\n\ntry:\n    Sequence = object\nexcept ValueError as Sequence:\n    from typing import Sequence\n    pass  # handler_meet\n",
+        ),
+        _ => None,
+    }
 }
 
 fn parse_corpus(input: &str) -> Result<Vec<OracleCase>, String> {
@@ -76,6 +118,29 @@ fn validate_case(item: &OracleCase) -> Result<(), String> {
     }
     if item.marker.is_empty() || item.source.matches(&item.marker).count() != 1 {
         return Err(format!("{} does not have one unique marker", item.id));
+    }
+    if expected_source(&item.id) != Some(item.source.as_str()) {
+        return Err(format!("{} has changed source premises", item.id));
+    }
+    let public_fields_match = match item.candidate {
+        CandidateExpectation::Present => {
+            item.candidate_count == 1
+                && item.candidate_path.is_some()
+                && item.candidate_operator.is_some()
+                && item.candidate_original.is_some()
+                && item.candidate_replacement.is_some()
+        }
+        CandidateExpectation::Absent | CandidateExpectation::NotObserved => {
+            item.candidate_count == 0
+                && item.candidate_path.is_none()
+                && item.candidate_operator.is_none()
+                && item.candidate_original.is_none()
+                && item.candidate_replacement.is_none()
+                && item.candidate_symbol.is_none()
+        }
+    };
+    if !public_fields_match {
+        return Err(format!("{} has inconsistent public observation", item.id));
     }
     let identity_matches = match item.id.as_str() {
         "finally_annotation_meets_normal_and_raise" => {
@@ -136,7 +201,7 @@ fn internal_identity(item: &OracleCase, family: &str, marker: &str, category: &s
         && item.candidate == CandidateExpectation::NotObserved
 }
 
-fn selected_cases<'a>(cases: &'a [OracleCase]) -> Result<Vec<&'a OracleCase>, String> {
+fn selected_cases(cases: &[OracleCase]) -> Result<Vec<&OracleCase>, String> {
     let Some(selected) = std::env::var_os("HOIMIN_NESTED_TRY_CASE") else {
         return Ok(cases.iter().collect());
     };
@@ -256,6 +321,19 @@ fn nested_try_corpus_rejects_inexact_and_crossed_rows() {
         parse_corpus(&format!("{crossed}\n"))
             .unwrap_err()
             .contains("inconsistent closed identity")
+    );
+
+    let mut changed_source: serde_json::Value = serde_json::from_str(first).unwrap();
+    changed_source["source"] = serde_json::json!(
+        changed_source["source"]
+            .as_str()
+            .unwrap()
+            .replace("raise RuntimeError", "raise ValueError")
+    );
+    assert!(
+        parse_corpus(&format!("{changed_source}\n"))
+            .unwrap_err()
+            .contains("changed source premises")
     );
 
     let mut duplicate_marker: serde_json::Value = serde_json::from_str(first).unwrap();

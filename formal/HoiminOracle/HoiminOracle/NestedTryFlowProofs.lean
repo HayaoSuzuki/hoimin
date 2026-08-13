@@ -73,6 +73,53 @@ theorem cleanup_exits_idempotent (name : Name) (exits : Exits) :
   simp [cleanupExits, mapExits, Function.comp_def, cleanupName_idempotent]
 
 set_option maxHeartbeats 100000 in
+theorem compose_try_routes_cleaned_exits
+    (body handler : Exits)
+    (handlerTarget : Option Name)
+    (orelse finalizer : Env → Exits) :
+    composeTry body handler handlerTarget orelse finalizer =
+      routeFinally
+        ((body.andThen orelse).merge
+          (match handlerTarget with
+          | none => handler
+          | some name => cleanupExits name handler))
+        finalizer := by
+  rfl
+
+set_option maxHeartbeats 100000 in
+theorem compose_try_outgoing_is_reachable_meet
+    (body handler : Exits)
+    (handlerTarget : Option Name)
+    (orelse finalizer : Env → Exits) :
+    composeTryOutgoing body handler handlerTarget orelse finalizer =
+      meetAll? (allReachableStates
+        (routeFinally
+          ((body.andThen orelse).merge
+            (match handlerTarget with
+            | none => handler
+            | some name => cleanupExits name handler))
+          finalizer)) := by
+  rfl
+
+set_option maxHeartbeats 100000 in
+theorem compose_try_retained_fact_is_common
+    (body handler : Exits)
+    (handlerTarget : Option Name)
+    (orelse finalizer : Env → Exits)
+    (joined : Env)
+    (name : Name)
+    (target : Target)
+    (joinedPaths :
+      composeTryOutgoing body handler handlerTarget orelse finalizer = some joined)
+    (retained : joined.get name = .known target) :
+    ∀ environment ∈ allReachableStates
+        (composeTry body handler handlerTarget orelse finalizer),
+      environment.get name = .known target := by
+  exact HoiminOracle.BindingFlow.meetAll_retained_on_every_path
+    (allReachableStates (composeTry body handler handlerTarget orelse finalizer))
+    joined name target joinedPaths retained
+
+set_option maxHeartbeats 100000 in
 theorem reachable_meet_retains_only_common_knowledge
     (exits : Exits)
     (joined : Env)

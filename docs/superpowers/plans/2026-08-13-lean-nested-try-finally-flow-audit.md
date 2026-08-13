@@ -636,7 +636,7 @@ The corpus remains generated and unchanged for a production-only correction.
 - Consumes: all proof statements, fixed witnesses, corpus modes, Rust observations, counterexample classifications, resource stats JSON, and exact commands.
 - Produces: one self-contained handoff report.
 
-- [ ] **Step 1: Re-run retained Lean checks serially with fresh stats paths**
+- [x] **Step 1: Re-run retained Lean checks serially with fresh stats paths**
 
 ```bash
 python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 768 --sample-ms 250 --stats /tmp/hoimin-nested-final-model.json -- lake env lean HoiminOracle/NestedTryFlowModel.lean
@@ -648,7 +648,7 @@ python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 768 --
 python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 768 --sample-ms 250 --stats /tmp/hoimin-nested-final-fresh.json -- lake env lean --run NestedTryFlowAuditMain.lean -- --check corpus/nested-try-flow.jsonl
 ```
 
-- [ ] **Step 2: Run focused and workspace Rust quality gates**
+- [x] **Step 2: Run focused and workspace Rust quality gates**
 
 ```bash
 cargo test -p hoimin-cli analyzer::rust::nested_try_oracle_tests -- --nocapture
@@ -661,7 +661,7 @@ git diff --check
 
 If a gate fails, use `superpowers:systematic-debugging`, establish whether the failure is new or baseline/infrastructure, and do not report completion until the relevant new failure is resolved.
 
-- [ ] **Step 3: Write the self-contained audit report**
+- [x] **Step 3: Write the self-contained audit report**
 
 The report must include:
 
@@ -692,7 +692,7 @@ owner question:
 reproduction command:
 ```
 
-- [ ] **Step 4: Commit the report and any deliberate documentation update**
+- [x] **Step 4: Commit the report and any deliberate documentation update**
 
 ```bash
 git add docs/superpowers/reports/2026-08-13-lean-nested-try-finally-flow-audit.md

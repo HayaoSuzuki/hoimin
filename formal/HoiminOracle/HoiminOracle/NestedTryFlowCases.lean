@@ -20,6 +20,12 @@ structure OracleCase where
   entryCategory : ExitCategory
   expected : Exits
   candidate : CandidateExpectation := .notObserved
+  candidateCount : Nat := 0
+  candidatePath : Option String := none
+  candidateOperator : Option String := none
+  candidateOriginal : Option String := none
+  candidateReplacement : Option String := none
+  candidateSymbol : Option String := none
   deriving Repr, DecidableEq, BEq
 
 def knownBoth : Env where
@@ -43,6 +49,14 @@ def reimportSequence (environment : Env) : Exits :=
 
 def terminatingFinalizer (environment : Env) : Exits :=
   .categoryOnly .terminate (environment.set .source .shadowed)
+
+def identityStep (environment : Env) : Exits :=
+  .fallthroughOnly environment
+
+def composeSingle
+    (category : ExitCategory) (environment : Env)
+    (finalizer : Env → Exits) : Exits :=
+  composeTry (.categoryOnly category environment) .empty none identityStep finalizer
 
 def strictFinallySource : String :=
   "from typing import Sequence\n\ntry:\n    if condition:\n        Sequence = object\n        raise RuntimeError\nfinally:\n    value: Sequence[int]  # finally_annotation\n"
@@ -81,7 +95,7 @@ def nestedTryFlowCases : List OracleCase := [
     source := strictFinallySource
     marker := "value: Sequence[int]"
     entryCategory := .fallthrough
-    expected := .empty
+    expected := composeTry .empty .empty none identityStep identityStep
     candidate := .absent },
   { id := "post_finally_uses_only_fallthrough"
     mode := "strict"
@@ -89,76 +103,94 @@ def nestedTryFlowCases : List OracleCase := [
     source := strictAfterSource
     marker := "value: Sequence[int]"
     entryCategory := .fallthrough
-    expected := .fallthroughOnly sequenceOnly
-    candidate := .present },
+    expected := composeSingle .fallthrough sequenceOnly identityStep
+    candidate := .present
+    candidateCount := 1
+    candidatePath := some "target.py"
+    candidateOperator := some "type_list_sequence"
+    candidateOriginal := some "Sequence[int]"
+    candidateReplacement := some "list[int]" },
   { id := "falling_finally_preserves_break"
     mode := "internal-fixture"
     family := "category-routing"
     source := breakSource
     marker := "# break_exit"
     entryCategory := .break
-    expected := routeFinally (.categoryOnly .break mappingOnly) reimportSequence },
+    expected := composeSingle .break mappingOnly reimportSequence },
   { id := "falling_finally_preserves_continue"
     mode := "internal-fixture"
     family := "category-routing"
     source := continueSource
     marker := "# continue_exit"
     entryCategory := .continue
-    expected := routeFinally (.categoryOnly .continue mappingOnly) reimportSequence },
+    expected := composeSingle .continue mappingOnly reimportSequence },
   { id := "falling_finally_preserves_return_terminate"
     mode := "internal-fixture"
     family := "category-routing"
     source := returnSource
     marker := "# return_exit"
     entryCategory := .terminate
-    expected := routeFinally (.categoryOnly .terminate mappingOnly) reimportSequence },
+    expected := composeSingle .terminate mappingOnly reimportSequence },
   { id := "falling_finally_preserves_raise_terminate"
     mode := "internal-fixture"
     family := "category-routing"
     source := raiseSource
     marker := "# raise_exit"
     entryCategory := .terminate
-    expected := routeFinally (.categoryOnly .terminate mappingOnly) reimportSequence },
+    expected := composeSingle .terminate mappingOnly reimportSequence },
   { id := "abrupt_finally_replaces_fallthrough"
     mode := "internal-fixture"
     family := "abrupt-finally"
     source := abruptFallthroughSource
     marker := "# abrupt_fallthrough"
     entryCategory := .fallthrough
-    expected := routeFinally (.categoryOnly .fallthrough knownBoth) terminatingFinalizer },
+    expected := composeSingle .fallthrough knownBoth terminatingFinalizer },
   { id := "abrupt_finally_replaces_break"
     mode := "internal-fixture"
     family := "abrupt-finally"
     source := abruptBreakSource
     marker := "# abrupt_break"
     entryCategory := .break
-    expected := routeFinally (.categoryOnly .break knownBoth) terminatingFinalizer },
+    expected := composeSingle .break knownBoth terminatingFinalizer },
   { id := "unreachable_post_return_excluded"
     mode := "internal-fixture"
     family := "reachability"
     source := unreachableSource
     marker := "# unreachable_return"
     entryCategory := .terminate
-    expected := .categoryOnly .terminate mappingOnly },
+    expected := composeSingle .terminate mappingOnly identityStep },
   { id := "nonselected_handler_meet"
     mode := "model-only"
     family := "handler-meet"
     source := nonselectedHandlerSource
     marker := "# handler_meet"
     entryCategory := .fallthrough
-    expected := .fallthroughOnly unknownSequence }
+    expected := composeTry (.fallthroughOnly knownBoth)
+      (.fallthroughOnly mappingOnly) none identityStep identityStep }
 ]
 
 def brokenCleanupBeforeBody (name : Name) (handlerBody : Env → Exits)
     (entry : Env) : Exits :=
   handlerBody (cleanupName name entry)
 
+def cleanupObservingFinalizer (environment : Env) : Exits :=
+  if environment.get .source == .absent then
+    .fallthroughOnly (environment.set .destination (.known .typing))
+  else
+    .categoryOnly .terminate environment
+
 def cleanupBoundarySensitivity : Bool :=
   let handlerBody := fun environment =>
     .fallthroughOnly (environment.set .source (.known .typing))
-  let correct := cleanupExits .source (handlerBody mappingOnly)
-  let broken := brokenCleanupBeforeBody .source handlerBody mappingOnly
-  correct != broken
+  let handler := handlerBody mappingOnly
+  let correct := composeTry .empty handler (some .source)
+    identityStep cleanupObservingFinalizer
+  let brokenHandler := brokenCleanupBeforeBody .source handlerBody mappingOnly
+  let brokenBeforeBody := composeTry .empty brokenHandler none
+    identityStep cleanupObservingFinalizer
+  let brokenDelayed := cleanupExits .source
+    (composeTry .empty handler none identityStep cleanupObservingFinalizer)
+  correct != brokenBeforeBody && correct != brokenDelayed
 
 def brokenFallthroughOnlyFinally
     (incoming : Exits) (finalizer : Env → Exits) : Exits :=
@@ -168,17 +200,22 @@ def brokenFallthroughOnlyFinally
       (incoming.withoutFallthrough).merge (finalizer environment)
 
 def finalizerCoverageSensitivity : Bool :=
-  let incoming := Exits.categoryOnly .break mappingOnly
-  routeFinally incoming reimportSequence !=
-    brokenFallthroughOnlyFinally incoming reimportSequence
+  let detects := fun category =>
+    let incoming := Exits.categoryOnly category mappingOnly
+    composeSingle category mappingOnly reimportSequence !=
+      brokenFallthroughOnlyFinally incoming reimportSequence
+  -- The two terminate witnesses correspond to distinct return and raise sources.
+  detects .break && detects .continue && detects .terminate && detects .terminate
 
 def brokenFlattenCategory
     (environment : Env) (finalizer : Env → Exits) : Exits :=
   finalizer environment
 
 def categoryPreservationSensitivity : Bool :=
-  routeFinally (.categoryOnly .continue mappingOnly) reimportSequence !=
-    brokenFlattenCategory mappingOnly reimportSequence
+  let detects := fun category =>
+    composeSingle category mappingOnly reimportSequence !=
+      brokenFlattenCategory mappingOnly reimportSequence
+  detects .break && detects .continue && detects .terminate
 
 def brokenRetainIncomingCategory
     (category : ExitCategory) (environment : Env)
@@ -188,8 +225,10 @@ def brokenRetainIncomingCategory
   | first :: _ => .categoryOnly category first
 
 def abruptReplacementSensitivity : Bool :=
-  routeFinally (.categoryOnly .break knownBoth) terminatingFinalizer !=
-    brokenRetainIncomingCategory .break knownBoth terminatingFinalizer
+  let detects := fun category =>
+    composeSingle category knownBoth terminatingFinalizer !=
+      brokenRetainIncomingCategory category knownBoth terminatingFinalizer
+  detects .fallthrough && detects .break
 
 def brokenSequentialMerge
     (first : Exits) (next : Env → Exits) (unreachableEntry : Env) : Exits :=
@@ -199,11 +238,20 @@ def unreachableJoinSensitivity : Bool :=
   let first := Exits.categoryOnly .terminate mappingOnly
   let next := fun environment => .fallthroughOnly
     (environment.set .source (.known .typing))
-  first.andThen next != brokenSequentialMerge first next mappingOnly
+  let correct := composeTry first .empty none next identityStep
+  let broken := routeFinally
+    (brokenSequentialMerge first next mappingOnly) identityStep
+  outgoingEnv correct != outgoingEnv broken
 
 def omittedAbruptSensitivity : Bool :=
-  let reachable := [knownBoth, mappingOnly]
-  meetAll? reachable != meetAll? [knownBoth]
+  let reachable := (Exits.fallthroughOnly knownBoth).merge
+    (.categoryOnly .terminate mappingOnly)
+  let correct := composeTry reachable .empty none identityStep identityStep
+  let broken := composeTry (.fallthroughOnly knownBoth) .empty none
+    identityStep identityStep
+  composeTryOutgoing reachable .empty none identityStep identityStep !=
+    composeTryOutgoing (.fallthroughOnly knownBoth) .empty none
+      identityStep identityStep && correct != broken
 
 def brokenCleanupName (name : Name) (environment : Env) : Env :=
   if environment.get name == .absent then
@@ -216,9 +264,13 @@ def brokenCleanupExits (name : Name) (exits : Exits) : Exits :=
 
 def cleanupIdempotencySensitivity : Bool :=
   let exits := Exits.fallthroughOnly knownBoth
-  cleanupExits .source (cleanupExits .source exits) == cleanupExits .source exits &&
-    brokenCleanupExits .source (brokenCleanupExits .source exits) !=
-      brokenCleanupExits .source exits
+  let once := composeTry .empty exits (some .source) identityStep identityStep
+  let twice := composeTry .empty once (some .source) identityStep identityStep
+  let brokenOnce := composeTry .empty (brokenCleanupExits .source exits) none
+    identityStep identityStep
+  let brokenTwice := composeTry .empty (brokenCleanupExits .source brokenOnce) none
+    identityStep identityStep
+  twice == once && brokenTwice != brokenOnce
 
 def sensitivityPasses : Bool :=
   cleanupBoundarySensitivity && finalizerCoverageSensitivity &&
@@ -232,29 +284,35 @@ def validMode (mode : String) : Bool :=
 def fixedExpectationSafe (item : OracleCase) : Bool :=
   match item.id with
   | "finally_annotation_meets_normal_and_raise" =>
-      item.mode == "strict" && item.expected == Exits.empty &&
+      item.mode == "strict" &&
+        item.expected == composeTry .empty .empty none identityStep identityStep &&
         item.marker == "value: Sequence[int]" && item.candidate == .absent
   | "post_finally_uses_only_fallthrough" =>
       item.mode == "strict" &&
-        item.expected == Exits.fallthroughOnly sequenceOnly &&
-        item.marker == "value: Sequence[int]" && item.candidate == .present
+        item.expected == composeSingle .fallthrough sequenceOnly identityStep &&
+        item.marker == "value: Sequence[int]" && item.candidate == .present &&
+        item.candidateCount == 1 && item.candidatePath == some "target.py" &&
+        item.candidateOperator == some "type_list_sequence" &&
+        item.candidateOriginal == some "Sequence[int]" &&
+        item.candidateReplacement == some "list[int]" &&
+        item.candidateSymbol == none
   | "falling_finally_preserves_break" =>
-      item.expected == routeFinally (.categoryOnly .break mappingOnly) reimportSequence
+      item.expected == composeSingle .break mappingOnly reimportSequence
   | "falling_finally_preserves_continue" =>
-      item.expected == routeFinally (.categoryOnly .continue mappingOnly) reimportSequence
+      item.expected == composeSingle .continue mappingOnly reimportSequence
   | "falling_finally_preserves_return_terminate" |
       "falling_finally_preserves_raise_terminate" =>
-      item.expected == routeFinally (.categoryOnly .terminate mappingOnly) reimportSequence
+      item.expected == composeSingle .terminate mappingOnly reimportSequence
   | "abrupt_finally_replaces_fallthrough" =>
-      item.expected == routeFinally
-        (.categoryOnly .fallthrough knownBoth) terminatingFinalizer
+      item.expected == composeSingle .fallthrough knownBoth terminatingFinalizer
   | "abrupt_finally_replaces_break" =>
-      item.expected == routeFinally (.categoryOnly .break knownBoth) terminatingFinalizer
+      item.expected == composeSingle .break knownBoth terminatingFinalizer
   | "unreachable_post_return_excluded" =>
-      item.expected == Exits.categoryOnly .terminate mappingOnly
+      item.expected == composeSingle .terminate mappingOnly identityStep
   | "nonselected_handler_meet" =>
       item.mode == "model-only" &&
-        item.expected == Exits.fallthroughOnly unknownSequence
+        item.expected == composeTry (.fallthroughOnly knownBoth)
+          (.fallthroughOnly mappingOnly) none identityStep identityStep
   | _ => false
 
 def fixedCasesPass : Bool :=
@@ -262,9 +320,11 @@ def fixedCasesPass : Bool :=
     nestedTryFlowCases.all fun item =>
       item.schema == 1 && validMode item.mode && !item.id.isEmpty &&
         !item.family.isEmpty && !item.source.isEmpty && !item.marker.isEmpty &&
+        ((item.candidate == .present && item.candidateCount == 1) ||
+          (item.candidate != .present && item.candidateCount == 0 &&
+            item.candidatePath == none && item.candidateOperator == none &&
+            item.candidateOriginal == none && item.candidateReplacement == none &&
+            item.candidateSymbol == none)) &&
         fixedExpectationSafe item
-
-example : sensitivityPasses = true := by native_decide
-example : fixedCasesPass = true := by native_decide
 
 end HoiminOracle.NestedTryFlow

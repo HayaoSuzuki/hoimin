@@ -35,4 +35,13 @@ def composeTry
 def allReachableStates (exits : Exits) : List Env :=
   exits.states
 
+def outgoingEnv (exits : Exits) : Option Env :=
+  meetAll? (allReachableStates exits)
+
+def composeTryOutgoing
+    (body handler : Exits)
+    (handlerTarget : Option Name)
+    (orelse finalizer : Env → Exits) : Option Env :=
+  outgoingEnv (composeTry body handler handlerTarget orelse finalizer)
+
 end HoiminOracle.NestedTryFlow
