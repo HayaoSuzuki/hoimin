@@ -128,6 +128,17 @@ specification ambiguity, or model defect. Therefore the reconciliation
 decision is explicit no-repair: changing `crates/hoimin-core/src/report.rs`
 would be speculative and was not done.
 
+After PR creation, the nightly shuffled workspace job exposed an unrelated
+load race in the pre-existing result-lifecycle `stop_preserves_accepted`
+fixture: its one-second total timeout could fire before the first accepted
+result. The report-sequence suite passed. The Unix fixture now uses a
+12-second total timeout but requires the first killed result to be durably
+committed within 8 seconds before semantic comparison; otherwise it cleans up
+and reports an infrastructure error. The Lean expectation and production Rust
+are unchanged. A direct SIGINT alternative was tested and rejected because it
+correctly exercises cancellation (exit 130), not total-timeout semantics
+(exit 4).
+
 Two setup incidents were classified as infrastructure errors and resolved
 without semantic conclusions:
 
@@ -170,6 +181,9 @@ Final results:
 - `cargo fmt --all -- --check`: pass;
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`: pass;
 - `cargo test --workspace --all-features --quiet`: pass (no failures);
+- recorded-seed `lean_result_lifecycle_oracle`: 6/6 pass, with
+  `stop_preserves_accepted` also passing three focused runs;
+- pinned-nightly shuffled workspace suite with the recorded seed: pass;
 - no unresolved placeholders or proof escape hatches were found;
   `git diff --check` passes.
 
@@ -194,6 +208,8 @@ cargo test -p hoimin-core --all-features --test report_policy
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features --quiet
+cargo +nightly-2026-07-27 test -p hoimin-cli --test lean_result_lifecycle_oracle -- -Z unstable-options --shuffle-seed 1786600918309127514
+cargo +nightly-2026-07-27 test --workspace -- -Z unstable-options --shuffle-seed 1786600918309127514
 rg -n "sorry|admit|axiom" formal/HoiminOracle/HoiminOracle/ReportSequence\*.lean formal/HoiminOracle/ReportSequenceAuditMain.lean
 git diff --check
 ```

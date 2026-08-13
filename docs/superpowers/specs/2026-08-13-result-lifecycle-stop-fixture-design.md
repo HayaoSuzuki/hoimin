@@ -17,28 +17,34 @@ premise.
 
 ## Decision
 
-On Unix, replace the wall-clock semantic trigger for
-`stop_preserves_accepted` with a condition-based trigger:
+On Unix, guard the wall-clock semantic trigger for
+`stop_preserves_accepted` with a condition-based premise:
 
-1. spawn the real CLI in its own process group without `--total-timeout`;
+1. spawn the real CLI in its own process group with a 12-second total timeout;
 2. poll the fixture session database until exactly one killed result is
-   durably present, while also detecting premature CLI exit;
-3. send SIGINT to the CLI root process using the repository's existing Unix
-   signal pattern;
-4. wait for bounded graceful completion, drain stdout/stderr, and feed the
+   durably present within 8 seconds, while also detecting premature CLI exit;
+3. if that premise is not established, terminate and reap the process tree and
+   report an infrastructure error instead of comparing semantics;
+4. after readiness, let the configured total timeout perform the stop, drain
+   stdout/stderr, and feed the
    unchanged public report/session/metrics observations to the Lean oracle;
 5. on every failure path, terminate and reap the process tree and include
    readiness, cleanup, stdout, and stderr details in the infrastructure error.
 
-The overall wait remains bounded; only the semantic trigger changes from
-elapsed time to the condition owned by the case. Windows retains the current
-total-timeout path because this repository has no corresponding safe console
-interrupt fixture seam, and its CI job is green.
+The overall wait remains bounded. The longer deadline supplies scheduling
+margin, while the earlier readiness guard prevents an elapsed-time failure
+from being misclassified as a semantic mismatch. Windows retains the current
+one-second total-timeout path because its CI job is green.
+
+Direct SIGINT after readiness was tested and rejected: production correctly
+classifies it as cancellation with exit code 130, whereas the Lean case owns
+total-timeout semantics with exit code 4.
 
 ## Alternatives rejected
 
-- Increasing the total timeout is smaller but preserves the race at a
-  different load threshold.
+- Increasing the total timeout without a readiness guard preserves the race at
+  a different load threshold; the selected design guards the premise before
+  allowing correspondence classification.
 - Serializing the shuffle workflow would slow unrelated tests and conceal the
   fixture defect.
 - Waiting only for the execution marker is insufficient: it proves the test
@@ -60,9 +66,9 @@ It must not alter the expected observation or weaken mismatch classification.
 
 RED is the existing strict oracle case under an intentional Unix-only delay
 before the first mutated test completes; the current one-second trigger must
-reliably produce the same empty observation seen in CI. GREEN replaces that
-trigger with durable-result readiness, after which the unchanged strict case
-must pass despite the delay.
+reliably produce the same empty observation seen in CI. GREEN requires durable
+result readiness before the longer total timeout may produce an observation;
+the unchanged strict case must pass despite the delay.
 
 Verification covers:
 

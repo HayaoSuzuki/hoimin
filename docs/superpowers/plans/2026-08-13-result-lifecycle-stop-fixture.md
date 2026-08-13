@@ -4,7 +4,7 @@
 
 **Goal:** Make `stop_preserves_accepted` stop the real CLI only after its first killed result is durably committed, eliminating the CI load race without changing production semantics.
 
-**Architecture:** Keep the existing Lean corpus and public observation path unchanged. In the Unix test adapter, replace the one-second total-timeout trigger with a bounded SQLite readiness poll followed by SIGINT; preserve the current total-timeout fixture on Windows. An intentional first-mutant delay makes the old elapsed-time trigger fail deterministically and proves the new condition-based trigger.
+**Architecture:** Keep the existing Lean corpus and public observation path unchanged. In the Unix test adapter, replace the unguarded one-second trigger with a 12-second total timeout guarded by an 8-second SQLite readiness premise; preserve the current one-second fixture on Windows. An intentional first-mutant delay makes the old elapsed-time trigger fail deterministically and proves that only a premise-complete run reaches semantic comparison.
 
 **Tech Stack:** Rust, Tokio process control, rusqlite, Unix `libc::SIGINT`, Cargo nightly shuffled tests, GitHub Actions.
 
@@ -21,14 +21,14 @@
 
 ---
 
-### Task 1: Deterministic Unix stop trigger
+### Task 1: Premise-guarded Unix timeout trigger
 
 **Files:**
 - Modify: `crates/hoimin-cli/tests/lean_result_lifecycle_oracle.rs:350-800`
 
 **Interfaces:**
 - Consumes: existing `Fixture`, `FixtureRun`, `cleanup_cli_process_tree`, `read_output`, `join_output`, and `run_cli` observation contract.
-- Produces: `build_cli_command(...) -> Result<tokio::process::Command, String>`, Unix-only `wait_for_first_durable_kill(...) -> Result<(), String>`, Unix-only `run_cli_after_first_durable(...) -> Result<FixtureRun, String>`, and the unchanged `execute_strict(...) -> Result<(ImplementationObservation, bool), String>` behavior.
+- Produces: `build_cli_command(...) -> Result<tokio::process::Command, String>`, Unix-only `wait_for_first_durable_kill(...) -> Result<(), String>`, Unix-only `run_cli_with_durable_timeout_premise(...) -> Result<FixtureRun, String>`, and the unchanged `execute_strict(...) -> Result<(ImplementationObservation, bool), String>` behavior.
 
 - [ ] **Step 1: Add an intentional delay that exposes the elapsed-time race**
 
@@ -74,7 +74,7 @@ fn build_cli_command(
     two_mutants: bool,
     resume: bool,
     metrics_path: &Path,
-    total_timeout: bool,
+    total_timeout: Option<&str>,
 ) -> Result<tokio::process::Command, String> {
     let python = python_executable()?;
     let mut args = vec![
@@ -106,10 +106,10 @@ fn build_cli_command(
     if resume {
         args.push(OsString::from("--resume"));
     }
-    if total_timeout {
+    if let Some(total_timeout) = total_timeout {
         args.extend([
             OsString::from("--total-timeout"),
-            OsString::from("1s"),
+            OsString::from(total_timeout),
             OsString::from("--mutant-timeout"),
             OsString::from("30s"),
         ]);
@@ -135,7 +135,7 @@ fn build_cli_command(
 }
 ```
 
-Make `run_cli` call `build_cli_command` and then the existing
+Make `run_cli` pass `total_timeout.then_some("1s")` to `build_cli_command` and then the existing
 `bounded_cli_output`. Run the focused non-stop case to prove extraction did
 not change the ordinary path:
 
@@ -191,23 +191,23 @@ async fn wait_for_first_durable_kill(
 }
 ```
 
-Keep the 20 ms polling interval and use a 12-second readiness bound at the
+Keep the 20 ms polling interval and use an 8-second readiness bound at the
 call site. Do not treat a missing table or transient lock as semantic failure;
 the deadline and premature-exit branch produce the bounded diagnosis.
 
-- [ ] **Step 5: Implement SIGINT execution with cleanup-complete errors**
+- [ ] **Step 5: Implement premise-guarded timeout execution with cleanup-complete errors**
 
-Add an Unix-only runner which starts the command without total timeout, takes
-and drains both output pipes, waits for readiness, then signals the retained
-root PID:
+Add an Unix-only runner which starts the command with a 12-second total
+timeout, takes and drains both output pipes, requires readiness within 8
+seconds, then lets the CLI's total-timeout path stop the run:
 
 ```rust
 #[cfg(unix)]
-async fn run_cli_after_first_durable(
+async fn run_cli_with_durable_timeout_premise(
     fixture: &Fixture,
     metrics_path: &Path,
 ) -> Result<FixtureRun, String> {
-    let mut command = build_cli_command(fixture, true, false, metrics_path, false)?;
+    let mut command = build_cli_command(fixture, true, false, metrics_path, Some("12s"))?;
     let mut child = command
         .spawn()
         .map_err(|error| format!("spawn hoimin CLI: {error}"))?;
@@ -217,17 +217,11 @@ async fn run_cli_after_first_durable(
     let stderr = tokio::spawn(read_output(stderr));
 
     let trigger = async {
-        wait_for_first_durable_kill(&mut child, &fixture.session, Duration::from_secs(12)).await?;
-        let pid = child.id().and_then(|pid| i32::try_from(pid).ok())
-            .ok_or_else(|| "hoimin CLI exited before SIGINT".to_owned())?;
-        // SAFETY: pid is the retained CLI child, isolated into its own process group.
-        if unsafe { libc::kill(pid, libc::SIGINT) } != 0 {
-            return Err(format!("SIGINT failed: {}", std::io::Error::last_os_error()));
-        }
+        wait_for_first_durable_kill(&mut child, &fixture.session, Duration::from_secs(8)).await?;
         tokio::time::timeout(Duration::from_secs(12), child.wait())
             .await
-            .map_err(|_| "hoimin CLI did not stop after SIGINT".to_owned())?
-            .map_err(|error| format!("wait for hoimin CLI after SIGINT: {error}"))
+            .map_err(|_| "hoimin CLI did not stop after its total timeout".to_owned())?
+            .map_err(|error| format!("wait for hoimin CLI total timeout: {error}"))
     }
     .await;
 
@@ -242,7 +236,7 @@ async fn run_cli_after_first_durable(
             let stdout = join_output(stdout, "stdout").await;
             let stderr = join_output(stderr, "stderr").await;
             Err(format!(
-                "condition-triggered stop failed: {error}; cleanup: {cleanup}; stdout: {stdout:?}; stderr: {stderr:?}"
+                "premise-guarded timeout failed: {error}; cleanup: {cleanup}; stdout: {stdout:?}; stderr: {stderr:?}"
             ))
         }
     }
@@ -265,7 +259,7 @@ Replace only the `stop_preserves_accepted` match arm:
 "stop_preserves_accepted" => {
     #[cfg(unix)]
     {
-        run_cli_after_first_durable(&fixture, metrics_path).await?
+        run_cli_with_durable_timeout_premise(&fixture, metrics_path).await?
     }
     #[cfg(windows)]
     {
@@ -342,8 +336,8 @@ After PR creation, the nightly shuffled workspace job exposed an unrelated
 load race in the pre-existing result-lifecycle `stop_preserves_accepted`
 fixture: its one-second total timeout could fire before the first accepted
 result. The report-sequence suite passed. The Unix fixture now waits for the
-first killed result to be durably committed before sending SIGINT; the Lean
-expectation and production Rust are unchanged.
+first killed result to be durably committed before semantic comparison; the
+Lean expectation and production Rust are unchanged.
 ```
 
 Add the recorded-seed and full shuffled workspace commands to verification.
