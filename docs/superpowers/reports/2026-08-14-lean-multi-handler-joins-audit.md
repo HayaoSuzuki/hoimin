@@ -158,3 +158,42 @@ make no semantic claim.
   ambiguity, model defect, or infrastructure error before any correction.
 - Production semantics change only after a focused same-premise failing Rust
   regression is retained.
+
+## Handler-fold theorem surface
+
+The imported model defines `HandlerStep`, `HandlerRoute`, `cleanSelected`,
+`routeHandler`, `routeHandlers`, and `finishHandlers`. The imported proof
+module establishes:
+
+1. once the remainder is `none`, every suffix handler is unreachable;
+2. a reachable step merges exactly its cleaned selected exits;
+3. target cleanup reaches the selected fallthrough, break, continue, and
+   terminate category;
+4. target cleanup preserves the other representative name;
+5. a fact retained by the outgoing reachable-state meet occurs on every
+   reachable fallthrough path;
+6. selected abrupt exits retain their category; and
+7. one final remainder produces exactly one terminate state.
+
+The first proof consumer failed as required because
+`MultipleHandlerJoinProofs.olean` did not exist. The first proof build then
+reported an authoring defect: the extension declaration
+`NestedTryFlow.Exits.categoryStates` required its fully qualified namespace,
+and the `Exits.states` append membership required three nested left injections.
+A guarded declaration probe confirmed the exact names before the minimal
+syntax/proof-shape correction. No theorem premise or model transition was
+weakened.
+
+Initial guarded measurements, retained as authoring-stage evidence:
+
+| Command | Exit / reason | Elapsed ms | Peak RSS KiB |
+|---|---|---:|---:|
+| `lake -Kjobs=1 build HoiminOracle.MultipleHandlerJoinModel` | 0 / `child_exit` | 3,219 | 668,000 |
+| `lake -Kjobs=1 build HoiminOracle.MultipleHandlerJoinProofs` | 0 / `child_exit` | 2,435 | 652,720 |
+| `lake env lean /tmp/hoimin-multiple-handler-proof-consumer.lean` | 0 / `child_exit` | 2,735 | 633,520 |
+
+All used the fixed 20-second deadline, 786,432 KiB RSS ceiling, and 250 ms
+sampling. The first sandboxed guard launch returned exit 126 / `monitor_error`
+after 34 ms because process-tree inspection was denied; the unchanged command
+was rerun with monitoring permission. This was infrastructure evidence, not a
+Lean failure.
