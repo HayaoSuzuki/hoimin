@@ -81,8 +81,12 @@ The collapse theorem covers two handlers, two names, and factwise keep,
 invalidate, or restore-to-`typing` actions. It does not claim equivalence for
 arbitrary Python expressions.
 
-The executable will own eight fixed rows and seven sensitivity families. It
-will report zero generated depth, states, transitions, and event alphabet.
+The executable owns eight fixed rows: four internal fixtures, two strict public
+rows, and two model-only exact routes. Seven broken variants detect stopping
+after the first match, dropping a sibling after raise, losing or duplicating a
+remainder, eager raise propagation, omitted target cleanup, and exclusive
+ordinary-handler collapse. The executable reports zero generated depth, states,
+transitions, and event alphabet.
 
 ## Classification ledger
 
@@ -115,6 +119,10 @@ Initial and authoring measurements:
 | Corrected proof build | 0 / `child_exit` | 563 | 654,768 |
 | Proof consumer GREEN | 0 / `child_exit` | 550 | 502,224 |
 
+Fresh Task 2 checks after import-boundary cleanup used 1,101 ms / 538,864 KiB
+for the model, 558 ms / 680,752 KiB for proofs, and 553 ms / 54,544 KiB for the
+proof consumer.
+
 The first proof attempt exposed a missing `pendingRaised = false` premise in
 the fallthrough theorem. A prior pending raise makes the final route terminate,
 so the proof now states that premise. The other corrections added finite
@@ -124,6 +132,18 @@ collapse claim changed.
 The first attempted RED ran before any baseline `.olean` existed and failed
 on the root `HoiminOracle` prefix. The audit rejected that result, built an
 existing module, and retained the specific missing-object RED shown above.
+
+Corpus authoring measurements:
+
+| Command | Exit / reason | Elapsed ms | Peak RSS KiB |
+| --- | --- | ---: | ---: |
+| Generator RED | 1 / missing `ExceptStarFlowAuditMain.lean` | 289 | 2,912 |
+| Cases build | 0 / `child_exit` | 1,636 | 694,352 |
+| Eight fixed cases | 0 / `child_exit` | 549 | 634,016 |
+| Seven sensitivity families | 0 / `child_exit` | 566 | 629,152 |
+| Statistics | 0 / `child_exit` | 2,977 | 667,456 |
+| Corpus output | 0 / `child_exit` | 572 | 686,384 |
+| Corpus freshness | 0 / `child_exit` | 571 | 683,024 |
 
 ## Verification ledger
 
