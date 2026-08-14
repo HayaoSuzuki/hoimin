@@ -76,3 +76,7 @@ root = "ReportSequenceAuditMain"
 [[lean_exe]]
 name = "generate_compound_pattern_guards"
 root = "CompoundPatternGuardAuditMain"
+
+[[lean_exe]]
+name = "generate_except_star_flow"
+root = "ExceptStarFlowAuditMain"

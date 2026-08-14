@@ -2594,6 +2594,10 @@ mod multiple_handler_join_oracle_tests;
 #[path = "compound_pattern_guard_oracle_tests.rs"]
 mod compound_pattern_guard_oracle_tests;
 
+#[cfg(test)]
+#[path = "except_star_flow_oracle_tests.rs"]
+mod except_star_flow_oracle_tests;
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct KnownImports {
     direct: HashMap<String, String>,
