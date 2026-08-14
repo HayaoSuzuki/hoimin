@@ -1998,8 +1998,15 @@ fn cleanup_reservations_match(expected: &[ReservationId], received: &[Reservatio
 
 #[cfg(test)]
 mod tests {
-    use super::cleanup_reservations_match;
-    use crate::ReservationId;
+    use std::time::Duration;
+
+    use serde::Deserialize;
+
+    use super::{RunState, cleanup_reservations_match};
+    use crate::{
+        CommandArg, ExitPolicy, MutationStatus, OutputConfig, OutputEvent, RawRunConfig,
+        RawRunLimits, ReservationId, RunConfig, RunEffect, exit_code_for, summarize,
+    };
 
     #[test]
     fn cleanup_acknowledgement_requires_exact_set_without_duplicates() {
@@ -2021,5 +2028,249 @@ mod tests {
             &[first, second],
             &[first, second, unexpected]
         ));
+    }
+
+    fn audit_config() -> RunConfig {
+        RunConfig::try_from(RawRunConfig {
+            root: ".".into(),
+            sources: vec!["src".into()],
+            test_argv: vec![CommandArg::Unix(b"python".to_vec())],
+            limits: RawRunLimits {
+                baseline_timeout: Duration::from_secs(1),
+                ..RawRunLimits::default()
+            },
+            output: OutputConfig::default(),
+            ..RawRunConfig::default()
+        })
+        .unwrap()
+    }
+
+    const MUTATION_SCORE_POLICY_CORPUS: &str =
+        include_str!("../../../formal/HoiminOracle/corpus/mutation-score-exit-policy.jsonl");
+
+    #[derive(Deserialize)]
+    struct ComposedAuditCase {
+        id: String,
+        scenario: String,
+        statuses: Vec<String>,
+        run_flags: AuditRunFlags,
+        expected_counts: AuditCounts,
+        expected_score: Option<AuditFraction>,
+        expected_policy: AuditPolicy,
+        expected_complete: bool,
+        expected_exit_code: i32,
+    }
+
+    #[derive(Deserialize)]
+    #[allow(clippy::struct_excessive_bools)]
+    struct AuditRunFlags {
+        infrastructure_error: bool,
+        baseline_failed: bool,
+        incomplete: bool,
+        interrupted: bool,
+    }
+
+    #[derive(Deserialize)]
+    #[allow(clippy::struct_excessive_bools)]
+    struct AuditPolicy {
+        infrastructure_error: bool,
+        baseline_failed: bool,
+        incomplete: bool,
+        survivors: bool,
+        interrupted: bool,
+    }
+
+    #[derive(Deserialize)]
+    struct AuditCounts {
+        killed: u64,
+        survived: u64,
+        timeout: u64,
+        out_of_memory: u64,
+        process_limit: u64,
+        error: u64,
+        not_run: u64,
+        inconclusive: u64,
+    }
+
+    #[derive(Deserialize)]
+    struct AuditFraction {
+        numerator: u64,
+        denominator: u64,
+    }
+
+    fn audit_status(name: &str) -> MutationStatus {
+        match name {
+            "killed" => MutationStatus::Killed,
+            "survived" => MutationStatus::Survived,
+            "timeout" => MutationStatus::Timeout,
+            "out_of_memory" => MutationStatus::OutOfMemory,
+            "process_limit" => MutationStatus::ProcessLimit,
+            "error" => MutationStatus::Error,
+            "not_run" => MutationStatus::NotRun,
+            _ => panic!("unexpected Lean audit status: {name}"),
+        }
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    fn audit_score(score: &AuditFraction) -> f64 {
+        assert!(score.numerator <= 1_u64 << 53);
+        assert!(score.denominator <= 1_u64 << 53);
+        score.numerator as f64 / score.denominator as f64
+    }
+
+    #[test]
+    fn lean_composed_rows_drive_run_state_and_public_run_finished() {
+        let cases = MUTATION_SCORE_POLICY_CORPUS
+            .lines()
+            .map(|line| serde_json::from_str::<ComposedAuditCase>(line).unwrap())
+            .filter(|case| case.scenario == "composed")
+            .collect::<Vec<_>>();
+        assert_eq!(cases.len(), 5);
+
+        for case in cases {
+            let statuses = case
+                .statuses
+                .iter()
+                .map(|name| audit_status(name))
+                .collect::<Vec<_>>();
+            let mut state = RunState::new("lean-policy-audit", audit_config());
+            state.summary = summarize(&statuses);
+            state.flags.outcome.infrastructure_error = case.run_flags.infrastructure_error;
+            state.flags.outcome.baseline_failed = case.run_flags.baseline_failed;
+            state.flags.outcome.incomplete = case.run_flags.incomplete;
+            state.flags.report.interrupted = case.run_flags.interrupted;
+
+            let expected_policy = ExitPolicy {
+                infrastructure_error: case.expected_policy.infrastructure_error,
+                baseline_failed: case.expected_policy.baseline_failed,
+                incomplete: case.expected_policy.incomplete,
+                survivors: case.expected_policy.survivors,
+                interrupted: case.expected_policy.interrupted,
+            };
+            assert_eq!(state.exit_policy(), expected_policy, "{}", case.id);
+            assert_eq!(state.complete(), case.expected_complete, "{}", case.id);
+            assert_eq!(state.exit_code(), case.expected_exit_code, "{}", case.id);
+
+            let effects = state.final_report_effects().unwrap();
+            let RunEffect::EmitOutput(output) = &effects[0] else {
+                panic!("expected final output effect");
+            };
+            let encoded = serde_json::to_string(&output.event).unwrap();
+            let decoded: OutputEvent = serde_json::from_str(&encoded).unwrap();
+            let OutputEvent::RunFinished(finished) = decoded else {
+                panic!("expected public RunFinished event");
+            };
+            assert_eq!(
+                finished.counts.killed, case.expected_counts.killed,
+                "{}",
+                case.id
+            );
+            assert_eq!(
+                finished.counts.survived, case.expected_counts.survived,
+                "{}",
+                case.id
+            );
+            assert_eq!(
+                finished.counts.timeout, case.expected_counts.timeout,
+                "{}",
+                case.id
+            );
+            assert_eq!(
+                finished.counts.out_of_memory, case.expected_counts.out_of_memory,
+                "{}",
+                case.id
+            );
+            assert_eq!(
+                finished.counts.process_limit, case.expected_counts.process_limit,
+                "{}",
+                case.id
+            );
+            assert_eq!(
+                finished.counts.error, case.expected_counts.error,
+                "{}",
+                case.id
+            );
+            assert_eq!(
+                finished.counts.not_run, case.expected_counts.not_run,
+                "{}",
+                case.id
+            );
+            assert_eq!(
+                finished.counts.inconclusive, case.expected_counts.inconclusive,
+                "{}",
+                case.id
+            );
+            assert_eq!(
+                finished.counts.score.map(f64::to_bits),
+                case.expected_score
+                    .as_ref()
+                    .map(audit_score)
+                    .map(f64::to_bits),
+                "{}",
+                case.id
+            );
+            assert_eq!(finished.complete, case.expected_complete, "{}", case.id);
+            assert_eq!(finished.exit_code, case.expected_exit_code, "{}", case.id);
+        }
+    }
+
+    #[test]
+    fn composed_exit_policy_matches_all_run_flag_combinations() {
+        let booleans = [false, true];
+        let status_sets = [
+            vec![],
+            vec![MutationStatus::Survived],
+            vec![MutationStatus::Error],
+            vec![MutationStatus::NotRun, MutationStatus::Survived],
+        ];
+
+        for statuses in status_sets {
+            for infrastructure_error in booleans {
+                for baseline_failed in booleans {
+                    for incomplete in booleans {
+                        for interrupted in booleans {
+                            let mut state = RunState::new("lean-policy-audit", audit_config());
+                            state.summary = summarize(&statuses);
+                            state.flags.outcome.infrastructure_error = infrastructure_error;
+                            state.flags.outcome.baseline_failed = baseline_failed;
+                            state.flags.outcome.incomplete = incomplete;
+                            state.flags.report.interrupted = interrupted;
+
+                            let summary = ExitPolicy::from_summary(&state.summary);
+                            let expected = ExitPolicy {
+                                infrastructure_error: infrastructure_error
+                                    || summary.infrastructure_error,
+                                baseline_failed,
+                                incomplete: incomplete || summary.incomplete,
+                                survivors: summary.survivors,
+                                interrupted,
+                            };
+                            assert_eq!(state.exit_policy(), expected);
+                            assert_eq!(state.exit_code(), exit_code_for(expected));
+                            assert_eq!(
+                                state.complete(),
+                                !expected.infrastructure_error
+                                    && !expected.baseline_failed
+                                    && !expected.incomplete
+                                    && !expected.interrupted
+                            );
+
+                            let effects = state.final_report_effects().unwrap();
+                            let RunEffect::EmitOutput(output) = &effects[0] else {
+                                panic!("expected final output effect");
+                            };
+                            let encoded = serde_json::to_string(&output.event).unwrap();
+                            let decoded: OutputEvent = serde_json::from_str(&encoded).unwrap();
+                            let OutputEvent::RunFinished(finished) = decoded else {
+                                panic!("expected public RunFinished event");
+                            };
+                            assert_eq!(finished.counts, state.summary);
+                            assert_eq!(finished.complete, state.complete());
+                            assert_eq!(finished.exit_code, state.exit_code());
+                        }
+                    }
+                }
+            }
+        }
     }
 }

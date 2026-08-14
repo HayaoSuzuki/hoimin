@@ -84,3 +84,7 @@ root = "ExceptStarFlowAuditMain"
 [[lean_exe]]
 name = "generate_bounded_candidate_discovery"
 root = "BoundedCandidateDiscoveryAuditMain"
+
+[[lean_exe]]
+name = "generate_mutation_score_exit_policy"
+root = "MutationScoreExitPolicyAuditMain"
