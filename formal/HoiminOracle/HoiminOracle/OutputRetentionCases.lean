@@ -75,7 +75,7 @@ def caseResult (item : OracleCase) : CaseResult :=
     position := state.position
     drainedChunks := state.drainedChunks
     bytes := if state.firstError.isSome then []
-      else finalBytes truncationMarker item.capacity state.written
+      else finalBytesFromObserved truncationMarker item.capacity state.observed state.written
     errorCode := state.firstError }
 
 def caseSafe (item : OracleCase) : Bool :=

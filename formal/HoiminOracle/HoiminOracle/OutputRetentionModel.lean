@@ -59,6 +59,13 @@ def finalBytes (marker : List ByteValue) (capacity : Nat)
     marker ++ keepNewest (capacity - marker.length) stream
   else keepNewest capacity stream
 
+def finalBytesFromObserved (marker : List ByteValue) (capacity observed : Nat)
+    (stream : List ByteValue) : List ByteValue :=
+  if observed ≤ capacity then stream
+  else if marker.length < capacity then
+    marker ++ keepNewest (capacity - marker.length) stream
+  else keepNewest capacity stream
+
 structure Observation where
   observed : Nat
   retained : Nat
@@ -78,6 +85,6 @@ def successfulObservation (marker : List ByteValue) (_maximum capacity : Nat)
   observed := state.observed
   retained := min state.observed capacity
   position := state.position
-  bytes := finalBytes marker capacity state.written
+  bytes := finalBytesFromObserved marker capacity state.observed state.written
 
 end HoiminOracle.OutputRetention

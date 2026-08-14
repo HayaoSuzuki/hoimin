@@ -22,6 +22,18 @@ theorem finalBytes_length_le (marker : List ByteValue) (capacity : Nat)
       omega
     · exact keepNewest_length_le capacity stream
 
+theorem finalBytesFromObserved_length_le (marker : List ByteValue) (capacity observed : Nat)
+    (stream : List ByteValue) (consistent : observed ≤ capacity → stream.length ≤ capacity) :
+    (finalBytesFromObserved marker capacity observed stream).length ≤ capacity := by
+  simp only [finalBytesFromObserved]
+  split
+  · exact consistent (by assumption)
+  · split
+    · simp only [List.length_append]
+      have tailBound := keepNewest_length_le (capacity - marker.length) stream
+      omega
+    · exact keepNewest_length_le capacity stream
+
 theorem saturatingAdd_assoc (maximum observed left right : Nat) :
     saturatingAdd maximum (saturatingAdd maximum observed left) right =
       saturatingAdd maximum observed (left + right) := by
@@ -118,6 +130,11 @@ theorem run_observed (maximum capacity : Nat) (state : State) (chunks : List Chu
       simp only [receive, List.flatten_cons, List.length_append]
       rw [saturatingAdd_assoc]
 
+theorem saturated_observed_matches_stream_length (maximum : Nat) (stream : List ByteValue)
+    (representable : stream.length ≤ maximum) :
+    saturatingAdd maximum 0 stream.length = stream.length := by
+  simp [saturatingAdd, Nat.min_eq_right representable]
+
 theorem advance_assoc (capacity position left right : Nat) :
     advance capacity (advance capacity position left) right =
       advance capacity position (left + right) := by
@@ -146,11 +163,24 @@ theorem run_position_of_success (maximum capacity : Nat) (state : State)
         simp
 
 theorem successful_run_refines_reference (marker : List ByteValue)
-    (maximum capacity : Nat) (chunks : List Chunk) :
+    (maximum capacity : Nat) (chunks : List Chunk)
+    (representable : chunks.flatten.length ≤ maximum) :
     successfulObservation marker maximum capacity (run maximum capacity initial chunks) =
       referenceObservation marker maximum capacity chunks.flatten := by
-  simp [successfulObservation, referenceObservation, initial,
-    run_observed, run_written_of_success, run_position_of_success, advance]
+  have observedRun : (run maximum capacity initial chunks).observed =
+      chunks.flatten.length := by
+    rw [run_observed maximum capacity initial chunks (by simp [initial])]
+    exact saturated_observed_matches_stream_length maximum chunks.flatten representable
+  have writtenRun : (run maximum capacity initial chunks).written = chunks.flatten := by
+    simpa [initial] using run_written_of_success maximum capacity initial chunks rfl
+  have positionRun : (run maximum capacity initial chunks).position =
+      advance capacity 0 chunks.flatten.length := by
+    simpa [initial, advance] using
+      run_position_of_success maximum capacity initial chunks rfl (by simp [initial, advance])
+  have saturated := saturated_observed_matches_stream_length maximum chunks.flatten representable
+  simp only [successfulObservation, referenceObservation]
+  rw [observedRun, writtenRun, positionRun, saturated]
+  rfl
 
 theorem successful_ring_refines_newest (maximum capacity : Nat) (chunks : List Chunk) :
     logicalRing capacity (run maximum capacity initial chunks) =
@@ -171,24 +201,28 @@ theorem successful_observed_saturates (maximum capacity : Nat) (chunks : List Ch
     run_observed maximum capacity initial chunks (by simp [initial])
 
 theorem chunk_partition_invariant (marker : List ByteValue) (maximum capacity : Nat)
-    {left right : List Chunk} (sameStream : left.flatten = right.flatten) :
+    {left right : List Chunk} (sameStream : left.flatten = right.flatten)
+    (representable : left.flatten.length ≤ maximum) :
     successfulObservation marker maximum capacity (run maximum capacity initial left) =
       successfulObservation marker maximum capacity (run maximum capacity initial right) := by
-  rw [successful_run_refines_reference, successful_run_refines_reference, sameStream]
+  rw [successful_run_refines_reference marker maximum capacity left representable,
+    successful_run_refines_reference marker maximum capacity right (sameStream ▸ representable),
+    sameStream]
 
 theorem successful_retained_eq_min (marker : List ByteValue) (maximum capacity : Nat)
-    (chunks : List Chunk) :
+    (chunks : List Chunk) (representable : chunks.flatten.length ≤ maximum) :
     (successfulObservation marker maximum capacity
       (run maximum capacity initial chunks)).retained =
       min (saturatingAdd maximum 0 chunks.flatten.length) capacity := by
-  rw [successful_run_refines_reference]
+  rw [successful_run_refines_reference marker maximum capacity chunks representable]
   rfl
 
 theorem successful_final_bytes_bounded (marker : List ByteValue)
-    (maximum capacity : Nat) (chunks : List Chunk) :
+    (maximum capacity : Nat) (chunks : List Chunk)
+    (representable : chunks.flatten.length ≤ maximum) :
     (successfulObservation marker maximum capacity
       (run maximum capacity initial chunks)).bytes.length ≤ capacity := by
-  rw [successful_run_refines_reference]
+  rw [successful_run_refines_reference marker maximum capacity chunks representable]
   exact finalBytes_length_le marker capacity chunks.flatten
 
 theorem marker_requires_strict_spare_capacity (marker stream : List ByteValue)

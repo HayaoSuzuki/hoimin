@@ -43,6 +43,8 @@ checks these universal claims:
 - `successful_ring_refines_newest`;
 - `successful_position_tracks_all_bytes`;
 - `successful_observed_saturates`;
+- `saturated_observed_matches_stream_length` under the explicit premise that
+  the received stream length is representable by the modeled counter;
 - `successful_retained_eq_min`;
 - `successful_final_bytes_bounded` and `finalBytes_length_le`;
 - `marker_requires_strict_spare_capacity`;
@@ -51,6 +53,10 @@ checks these universal claims:
 - `run_written_after_error`;
 - `recordError_preserves_first`;
 - `error_run_remains_error_and_drains`.
+
+The refinement and partition theorems state the representable-length premise
+explicitly. This is the production premise for an allocated Rust byte stream;
+the near-`u64::MAX` arithmetic row is not promoted to a byte-stream claim.
 
 The external consumer imports only `OutputRetentionModel` and
 `OutputRetentionProofs`. Fixed cases, enumeration, JSON generation, and broken
@@ -131,13 +137,13 @@ root-plus-descendant RSS ceiling, and 250 ms sampling.
 
 | Command | Elapsed ms | Peak RSS KiB | Exit / reason |
 | --- | ---: | ---: | --- |
-| proof module build | 551 | 56,352 | 0 / `child_exit` |
-| external proof consumer | 2,151 | 622,400 | 0 / `child_exit` |
-| sensitivity | 282 | 2,240 | 0 / `child_exit` |
-| fixed cases | 283 | 2,688 | 0 / `child_exit` |
-| corpus freshness | 279 | 2,832 | 0 / `child_exit` |
+| proof module build | 296 | 2,688 | 0 / `child_exit` |
+| external proof consumer | 559 | 2,176 | 0 / `child_exit` |
+| sensitivity, including executable rebuild | 2,758 | 743,568 | 0 / `child_exit` |
+| fixed cases | 291 | 2,240 | 0 / `child_exit` |
+| corpus freshness | 281 | 2,736 | 0 / `child_exit` |
 
-No retained command reached either limit. The largest sample remains 164,032
+No retained command reached either limit. The largest sample remains 42,864
 KiB below the RSS ceiling.
 
 ## Verification commands
