@@ -1,6 +1,9 @@
 use std::io::{Seek, SeekFrom, Write};
 
-use hoimin_core::MutationCandidate;
+use hoimin_core::{
+    CANDIDATE_SCHEMA_VERSION, CandidateDescriptor, CandidateValidationError, MutationCandidate,
+    validate_candidate,
+};
 
 use super::{WorkerWorkspace, WorkspaceError};
 
@@ -27,6 +30,30 @@ impl WorkerWorkspace {
                 path: candidate.path.clone(),
             });
         }
+        validate_candidate(&bytes, &candidate_descriptor(candidate)).map_err(
+            |error| match error {
+                CandidateValidationError::FileHashMismatch => {
+                    WorkspaceError::MutationHashMismatch {
+                        path: candidate.path.clone(),
+                    }
+                }
+                CandidateValidationError::OriginalMismatch => {
+                    WorkspaceError::MutationOriginalMismatch {
+                        path: candidate.path.clone(),
+                    }
+                }
+                CandidateValidationError::UnsupportedSchema
+                | CandidateValidationError::InvalidPath
+                | CandidateValidationError::SpanOutOfBounds
+                | CandidateValidationError::LocationMismatch
+                | CandidateValidationError::InvalidUtf8
+                | CandidateValidationError::InvalidMutation => {
+                    WorkspaceError::MutationSpanInvalid {
+                        path: candidate.path.clone(),
+                    }
+                }
+            },
+        )?;
 
         let start = usize::try_from(candidate.span.start).map_err(|_| {
             WorkspaceError::MutationSpanInvalid {
@@ -70,6 +97,21 @@ impl WorkerWorkspace {
             &candidate.path,
         );
         Ok(())
+    }
+}
+
+fn candidate_descriptor(candidate: &MutationCandidate) -> CandidateDescriptor {
+    CandidateDescriptor {
+        schema_version: CANDIDATE_SCHEMA_VERSION,
+        path: candidate.path.clone(),
+        span: candidate.span,
+        original: candidate.original.clone(),
+        replacement: candidate.replacement.clone(),
+        operator: candidate.operator.clone(),
+        line: candidate.line,
+        column: candidate.column,
+        symbol: candidate.symbol.clone(),
+        file_hash: candidate.file_hash.clone(),
     }
 }
 
@@ -225,6 +267,18 @@ mod tests {
             Err(super::WorkspaceError::MutationHashMismatch { .. })
         ));
         assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n",);
+    }
+
+    #[test]
+    fn mutation_rejects_location_mismatch_without_changing_worker_bytes() {
+        let (_project, mut worker, mut candidate) = worker_and_candidate();
+        candidate.column = 1;
+
+        assert!(matches!(
+            worker.apply_mutation(&candidate),
+            Err(super::WorkspaceError::MutationSpanInvalid { .. })
+        ));
+        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
     }
 
     #[test]
