@@ -43,14 +43,14 @@ References:
 
 ## Considered approaches
 
-### Selected: reduced subgroup frontier
+### Selected: reduced subgroup routes
 
-Represent a finite frontier of possible subgroup routes. At each handler, an
+Represent a finite set of explicit subgroup routes. At each handler, an
 unmatched route advances without running the body. A matched route runs the
 handler once, cleans its target, records exceptions raised by that body, and
-advances its remaining subgroup to the next sibling. The model joins duplicate
-environments after each step so the frontier remains small for the fixed
-two-handler domain.
+advances its remaining subgroup to the next sibling. Fixed cases enumerate
+only the representative routes needed by the two-handler domain; the model
+does not claim exhaustive runtime exception-group enumeration.
 
 Prove a separate collapse theorem for the analyzer's factwise keep, invalidate,
 and restore actions. The theorem compares the meet of all matching subsets with
@@ -129,18 +129,19 @@ The route state separates:
 - exceptions raised by handler bodies; and
 - the final unhandled remainder.
 
-`routeStarHandler` advances both selected and unselected possibilities. A
-selected handler's fallthrough continues to the next sibling with its updated
-environment. Its terminate outcome enters a delayed list while the sibling
-frontier continues. `finishStarHandlers` merges delayed raises and the final
-remainder into terminate exits. The fallthrough meet includes the normal
-try/else route and fully handled starred routes.
+`routeStarHandler` advances one route under an explicit selected or unselected
+split. The fixed cases supply the relevant alternatives. A selected handler's
+fallthrough continues to the next sibling with its updated environment. Its
+terminate outcome is recorded as delayed while the remaining subgroup
+continues. `finishStarRoute` merges a delayed raise and the final remainder
+into terminate exits. The fallthrough meet includes the normal try/else route
+and fully handled starred routes.
 
-`collapseStarSummary` maps the exact frontier to the two-name must-known
-summary used for correspondence. The collapse theorem assumes each handler
-applies one factwise action per tracked name: keep, invalidate, or restore a
-fixed known import. These actions cover the production fixtures without
-claiming equivalence for arbitrary Python expressions.
+`exactSubsetSummary` maps the four two-handler matching subsets to the two-name
+must-known summary used for correspondence. The collapse theorem assumes each
+handler applies one factwise action per tracked name: keep, invalidate, or
+restore a fixed known import. These actions cover the production fixtures
+without claiming equivalence for arbitrary Python expressions.
 
 The proof surface covers:
 

@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -133,8 +134,16 @@ fn strict_cases_from(input: &str) -> Result<Vec<OracleCase>, String> {
         }
         cases.push(item);
     }
-    if cases.len() != 2 {
-        return Err(format!("expected two strict rows, found {}", cases.len()));
+    let ids = cases
+        .iter()
+        .map(|item| item.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let expected_ids = BTreeSet::from([
+        "starred_public_candidate_absent",
+        "starred_public_candidate_present",
+    ]);
+    if cases.len() != 2 || ids != expected_ids {
+        return Err("corpus does not contain the exact owned strict case set".to_owned());
     }
     Ok(cases)
 }
@@ -176,6 +185,14 @@ fn strict_parser_rejects_modes_sources_and_spans_that_change_the_premise() {
         strict_cases_from(&span_rows.join("\n"))
             .unwrap_err()
             .contains("not an owned strict fixture")
+    );
+
+    let mut duplicate_rows = CORPUS.lines().map(str::to_owned).collect::<Vec<_>>();
+    duplicate_rows[7] = duplicate_rows[6].clone();
+    assert!(
+        strict_cases_from(&duplicate_rows.join("\n"))
+            .unwrap_err()
+            .contains("exact owned strict case set")
     );
 }
 

@@ -2,7 +2,7 @@
 
 Date: 2026-08-14
 Issue: #300, phase 5
-Status: in progress
+Status: local verification passed; CI pending
 
 ## Claim and boundary
 
@@ -104,7 +104,7 @@ transitions, and event alphabet.
 ## Resource ledger
 
 Lean commands use a 20-second deadline, 786,432 KiB root-plus-descendant RSS
-cap, 250 ms sampling, and one process at a time. Measurements will record the
+cap, 250 ms sampling, and one process at a time. Measurements record the
 inner command, exit, stop reason, elapsed milliseconds, and peak RSS KiB.
 
 Initial and authoring measurements:
@@ -145,6 +145,22 @@ Corpus authoring measurements:
 | Corpus output | 0 / `child_exit` | 572 | 686,384 |
 | Corpus freshness | 0 / `child_exit` | 571 | 683,024 |
 
+Final focused measurements used cached prerequisites where available:
+
+| Command | Exit / reason | Elapsed ms | Peak RSS KiB |
+| --- | --- | ---: | ---: |
+| Model build | 0 / `child_exit` | 545 | 56,288 |
+| Proof build | 0 / `child_exit` | 314 | 2,848 |
+| Proof consumer | 0 / `child_exit` | 2,442 | 612,384 |
+| Cases rebuild after review | 0 / `child_exit` | 2,985 | 712,736 |
+| Seven sensitivity families after review | 0 / `child_exit` | 558 | 666,416 |
+| Corpus output after review | 0 / `child_exit` | 559 | 678,656 |
+| Corpus freshness after review | 0 / `child_exit` | 569 | 686,048 |
+
+Every final command exited through `child_exit`; no timeout, RSS stop, or
+monitor error occurred. The generated corpus SHA-256 is
+`3012d7e81bf7e44d1c21949dc8b554905b2809c6c3f2b579afa39ce6b4d49d2f`.
+
 ## Verification ledger
 
 The isolated worktree baseline passed:
@@ -165,16 +181,55 @@ production semantics. The first formatting check reported one rustfmt layout
 difference in the new test module; `cargo fmt --all` applied that mechanical
 change and the next formatting check passed.
 
-The public adapter passed both tests. The present row produced one exact
-`target.py` candidate at byte 166 with length 13, operator
-`type_list_sequence`, original `Sequence[int]`, replacement `list[int]`,
-and no symbol. The absent row produced no overlapping candidate. Adjacent
-multiple-handler and nested-try public suites passed 2/2 each.
+The public adapter passed both observation tests. Its closed-parser regression
+also rejects a duplicate strict identity; that test first failed against the
+count-only check and passed after the adapter required the exact two-ID set.
+The present row produced one exact `target.py` candidate at byte 166 with
+length 13, operator `type_list_sequence`, original `Sequence[int]`, replacement
+`list[int]`, and no symbol. The absent row produced no overlapping candidate.
+Adjacent multiple-handler and nested-try public suites passed 2/2 each.
 
 The first nested-try command used the nonexistent target
 `lean_nested_try_oracle`. Cargo listed `lean_nested_try_flow_oracle`; the
 plan now uses that target, and the corrected command passed. This was a plan
 authoring defect rather than an infrastructure or semantic result.
 
-The workspace test, Clippy, final corpus freshness run, and CI results have not
-run.
+Local review also found two audit-quality defects. The design described an
+internal deduplicating frontier that the reduced model does not implement, so
+the document now describes explicit representative routes. The eager-raise
+sensitivity check asserted only a correct-state property; it now compares the
+early-finalized route directly with the route after the later sibling. The
+revised seven-family sensitivity run and corpus freshness check passed.
+
+Final local verification passed:
+
+```text
+cargo test -p hoimin-cli --lib except_star_flow_oracle_tests --no-fail-fast
+cargo test -p hoimin-cli --test lean_except_star_flow_oracle --no-fail-fast
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features -j 2 -- -D warnings
+cargo test --workspace --all-features -j 2
+git diff --check origin/main...HEAD
+git diff --check
+```
+
+Clippy completed with warnings denied. The full workspace test completed with
+no failures, and both whitespace checks passed. The final Lean output matched
+the checked-in corpus byte for byte and the independent freshness check passed.
+
+## Production decision and limitations
+
+The four internal rows and two strict rows found no same-premise mismatch.
+Rust production behavior is therefore unchanged; Rust changes are limited to
+test-module registration and the internal and public regression adapters.
+
+Lean proves the reduced two-name, two-handler model under explicit subgroup
+split premises and factwise keep, invalidate, or restore-to-`typing` actions.
+Exact exception-group trees, exception identity, runtime subclass matching,
+tracebacks, and arbitrary Python expressions remain outside the correspondence
+claim. The two exact sibling-route rows remain `model-only` because the
+production analyzer has no state that can configure or observe those runtime
+subgroups.
+
+CI results are pending and will be recorded after the pull request checks
+complete.

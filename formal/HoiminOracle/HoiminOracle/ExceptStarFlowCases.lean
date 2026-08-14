@@ -182,9 +182,13 @@ def duplicatedRemainderSensitivity : Bool :=
 def eagerRaisePropagationSensitivity : Bool :=
   let afterFirst := routeStarHandler
     { env := bothKnown, activeRemainder := true }
-    { split := { matched := true, remainder := true }, raises := true }
-  afterFirst.activeRemainder &&
-    (finishStarRoute afterFirst).terminates == [afterFirst.env]
+    { split := { matched := true, remainder := true }
+      action := { source := .keep }
+      raises := true }
+  let afterSibling := routeStarHandler afterFirst
+    { split := { matched := true, remainder := false }
+      action := { source := .invalidate } }
+  finishStarRoute afterFirst != finishStarRoute afterSibling
 
 def omittedTargetCleanupSensitivity : Bool :=
   let handler : StarHandler :=
