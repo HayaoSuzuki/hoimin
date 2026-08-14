@@ -37,5 +37,5 @@
   bounded statistics, and resource measurements.
 - [x] Run focused tests, full workspace tests, formatting, strict clippy, Lean
   build, corpus checks, and diff checks.
-- [ ] Obtain independent review with no Critical or Important findings.
+- [x] Obtain independent review with no Critical or Important findings.
 - [ ] Push, create a PR closing #310, wait for required CI, and merge.
