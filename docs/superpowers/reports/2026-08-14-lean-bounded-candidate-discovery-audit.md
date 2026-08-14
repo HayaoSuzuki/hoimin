@@ -131,14 +131,14 @@ kept the limits unchanged.
 
 | Command | Elapsed ms | Peak RSS KiB | Exit / reason |
 | --- | ---: | ---: | --- |
-| proof build, one Lake job | 288 | 3,040 | 0 / `child_exit` |
-| external proof consumer | 1,088 | 577,664 | 0 / `child_exit` |
-| sensitivity | 287 | 3,024 | 0 / `child_exit` |
-| fixed cases | 286 | 2,816 | 0 / `child_exit` |
-| corpus freshness | 287 | 3,040 | 0 / `child_exit` |
+| proof build, one Lake job | 290 | 560 | 0 / `child_exit` |
+| external proof consumer | 2,431 | 641,216 | 0 / `child_exit` |
+| sensitivity | 286 | 2,912 | 0 / `child_exit` |
+| fixed cases | 286 | 2,800 | 0 / `child_exit` |
+| corpus freshness | 287 | 2,896 | 0 / `child_exit` |
 
-No retained command reached the time or RSS limit. The 577,664 KiB consumer
-sample remains 208,768 KiB below the ceiling.
+No retained command reached the time or RSS limit. The 641,216 KiB consumer
+sample remains 145,216 KiB below the ceiling.
 
 ## Verification
 
