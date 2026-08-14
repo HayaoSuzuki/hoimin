@@ -64,4 +64,3 @@ evidence, separate from the universal proofs.
 If a same-premise mismatch appears, first retain its smallest corpus row as a
 failing Rust test. Change production Rust only after that test fails, and make
 the smallest policy correction that restores correspondence.
-
