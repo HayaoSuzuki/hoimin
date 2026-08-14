@@ -2586,6 +2586,10 @@ mod nested_try_oracle_tests;
 #[path = "nested_match_exit_oracle_tests.rs"]
 mod nested_match_exit_oracle_tests;
 
+#[cfg(test)]
+#[path = "multiple_handler_join_oracle_tests.rs"]
+mod multiple_handler_join_oracle_tests;
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct KnownImports {
     direct: HashMap<String, String>,
@@ -3299,6 +3303,10 @@ pub(super) enum BindingFlowTestMutation {
     DropRefutableUnmatched,
     FlattenMatchAbruptToFallthrough,
     OmitLoopContinueBackEdge,
+    KeepFirstHandlerOnly,
+    KeepLastHandlerOnly,
+    FlattenHandlerAbruptToFallthrough,
+    DropBodyTerminates,
 }
 
 impl<'ast> AnnotationCollector<'ast> {
@@ -3882,8 +3890,15 @@ impl<'ast> AnnotationCollector<'ast> {
         }
         joined.breaks.extend(body_exits.breaks);
         joined.continues.extend(body_exits.continues);
-        joined.terminates.extend(body_exits.terminates);
-        for except_handler in &statement.handlers {
+        #[cfg(test)]
+        let retain_body_terminates =
+            self.test_mutation != Some(BindingFlowTestMutation::DropBodyTerminates);
+        #[cfg(not(test))]
+        let retain_body_terminates = true;
+        if retain_body_terminates {
+            joined.terminates.extend(body_exits.terminates);
+        }
+        for (handler_index, except_handler) in statement.handlers.iter().enumerate() {
             let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
             let mut imports = handler_imports.clone();
             #[cfg(test)]
@@ -3941,8 +3956,37 @@ impl<'ast> AnnotationCollector<'ast> {
                 }
             }
             #[cfg(test)]
+            if self.test_mutation
+                == Some(BindingFlowTestMutation::FlattenHandlerAbruptToFallthrough)
+            {
+                let mut states = handler_exits
+                    .fallthrough
+                    .take()
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                states.append(&mut handler_exits.breaks);
+                states.append(&mut handler_exits.continues);
+                states.append(&mut handler_exits.terminates);
+                handler_exits.fallthrough = KnownImports::intersection(states);
+            }
+            #[cfg(test)]
             self.capture_handler_exit(handler.range, &handler.body, &handler_exits);
-            Self::merge_branch(&mut fallthrough, &mut joined, handler_exits);
+            #[cfg(test)]
+            let include_handler = match self.test_mutation {
+                Some(BindingFlowTestMutation::KeepFirstHandlerOnly) => handler_index == 0,
+                Some(BindingFlowTestMutation::KeepLastHandlerOnly) => {
+                    handler_index + 1 == statement.handlers.len()
+                }
+                _ => true,
+            };
+            #[cfg(not(test))]
+            let include_handler = {
+                let _ = handler_index;
+                true
+            };
+            if include_handler {
+                Self::merge_branch(&mut fallthrough, &mut joined, handler_exits);
+            }
         }
         joined.fallthrough = KnownImports::intersection(fallthrough);
         let exits = self.apply_finally(joined, &statement.finalbody);

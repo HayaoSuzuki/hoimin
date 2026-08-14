@@ -99,7 +99,7 @@ def cleanupCategoriesSource : String :=
   "def run(flag):\n    from typing import Mapping, Sequence\n    try:  # per_handler_cleanup_categories\n        work()\n    except FirstError as Sequence:\n        from typing import Sequence\n    except SecondError as Sequence:\n        from typing import Sequence\n        return flag\n"
 
 def breakContinueSource : String :=
-  "from typing import Mapping, Sequence\nwhile active:\n    try:  # different_handler_break_continue\n        work()\n    except FirstError as Sequence:\n        from typing import Sequence\n        break\n    except SecondError as Sequence:\n        from typing import Sequence\n        continue\n"
+  "from typing import Mapping, Sequence\nwhile active:\n    from typing import Sequence\n    try:  # different_handler_break_continue\n        work()\n    except FirstError as Sequence:\n        from typing import Sequence\n        break\n    except SecondError as Sequence:\n        from typing import Sequence\n        continue\n"
 
 def unhandledRemainderSource : String :=
   "def run():\n    from typing import Mapping, Sequence\n    try:  # unhandled_remainder_terminates\n        raise UnknownError\n    except FirstError:\n        pass\n    except SecondError:\n        pass\n"

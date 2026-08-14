@@ -86,6 +86,7 @@ def run(flag):
 ```python
 from typing import Mapping, Sequence
 while active:
+    from typing import Sequence
     try:  # different_handler_break_continue
         work()
     except FirstError as Sequence:
@@ -146,6 +147,57 @@ operator, original, replacement, and symbol. Fixture creation, parsing,
 marker lookup, command launch, timeout, abnormal exit, stderr on success,
 manifest decoding, and span validation failures are `infrastructure-error` and
 make no semantic claim.
+
+## Mismatch ledger
+
+The first internal correspondence run found one difference in
+`different_handler_break_continue`: Lean expected the try fallthrough to retain
+`Sequence`, while Rust retained only `Mapping`. Break, continue, and both
+target-cleanup observations already agreed.
+
+Single-case reproduction showed that the containing loop's continue back edge
+participated in the loop-head fixed point before the selected try was captured.
+The Lean row instead supplied `bothKnown` directly as the try input. This was a
+`model defect` in the correspondence premise, not a production defect: the
+fixture unintentionally included a phase-2 loop fixed-point effect that the
+phase-3 reduced model explicitly excluded.
+
+The retained fixture now reimports `Sequence` immediately before the try on
+every loop iteration. This makes the modeled known try input and the production
+input identical while leaving the break/continue handler routing under audit.
+The same case ID remains in the generated corpus. No Rust production semantic
+change was made for this correction.
+
+The first attempted regeneration still emitted the old source because
+`lean --run` consumes imported `.olean` files and does not rebuild a changed
+case module. The closed Rust source check exposed the stale object. After a
+guarded focused `MultipleHandlerJoinCases` build, regeneration and freshness
+checking used the corrected source. This was an authoring workflow defect, not
+a semantic or infrastructure result.
+
+## Internal implementation correspondence
+
+All five `internal-fixture` rows now match the complete production-backed
+snapshot:
+
+- two-handler disagreement retains only the common `Mapping` fact;
+- three-handler disagreement also preserves the unrelated `Mapping` fact;
+- each target-bearing handler is cleaned on fallthrough or terminate;
+- different handlers retain distinct break and continue categories; and
+- the one explicit unhandled body raise remains exactly one terminate state.
+
+The internal test module rejects unknown fields, duplicate IDs, unsupported
+modes and observation kinds, changed source premises, crossed families,
+non-unique markers, and inconsistent public field groups. Its mutation test
+executes the real `visit_try` transfer and detects keeping only the first
+handler, keeping only the last handler, flattening handler abrupt exits,
+dropping body terminate exits, and omitting fallthrough or terminate target
+cleanup.
+
+The only Rust implementation changes are `cfg(test)` module registration and
+four `BindingFlowTestMutation` branches inside the production transfer. Normal
+builds take the unchanged routing path. No production semantic rule or public
+analyzer API changed.
 
 ## Ownership decisions
 
