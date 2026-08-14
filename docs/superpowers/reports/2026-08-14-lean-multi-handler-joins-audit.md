@@ -3,6 +3,18 @@
 Date: 2026-08-14
 Issue: #300, phase 3
 
+## Result
+
+PASS for the audited phase-3 surface. Lean proves the ordered reachable-handler
+fold in the reduced model, all six broken families are detected, all five
+internal production-backed observations match, and both strict public CLI
+observations match. One initial difference was classified and repaired as a
+model/fixture premise defect. No confirmed production defect was found, so no
+Rust production semantic rule or public API changed.
+
+This is fixed-case implementation correspondence plus kernel-checked Lean-model
+evidence. Lean does not prove the Rust analyzer or Python semantics.
+
 ## Claim and boundary
 
 The audited claim is that ordinary `except` handlers form an ordered selection
@@ -194,10 +206,11 @@ handler, keeping only the last handler, flattening handler abrupt exits,
 dropping body terminate exits, and omitting fallthrough or terminate target
 cleanup.
 
-The only Rust implementation changes are `cfg(test)` module registration and
-four `BindingFlowTestMutation` branches inside the production transfer. Normal
-builds take the unchanged routing path. No production semantic rule or public
-analyzer API changed.
+Rust changes comprise `cfg(test)` module registration, four
+`BindingFlowTestMutation` branches around the real transfer, and a
+behavior-preserving extraction of the existing handler-entry calculation into
+`try_handler_imports`. Normal builds take the same routing, cleanup, and meet
+path. No production semantic rule or public analyzer API changed.
 
 ## Strict public correspondence
 
@@ -301,3 +314,61 @@ The first case build exposed only authoring syntax: list bang-indexing required
 an irrelevant `Inhabited HandlerStep`, so the two fixed steps were named, and
 a structure literal was aligned to Lean's layout rule. These corrections did
 not change a transition or expected observation.
+
+## Final resource ledger
+
+Every final Lean command ran alone through `tools/lean_resource_guard.py` with
+a 20-second deadline, 786,432 KiB root-plus-descendant RSS ceiling, and 250 ms
+sampling. No final command timed out, reached the RSS limit, or returned a
+monitor error.
+
+| Final command | Exit / reason | Elapsed ms | Peak RSS KiB |
+|---|---|---:|---:|
+| `lake -Kjobs=1 build HoiminOracle.MultipleHandlerJoinProofs` | 0 / `child_exit` | 585 | 56,768 |
+| `lake env lean /tmp/hoimin-multiple-handler-proof-consumer.lean` | 0 / `child_exit` | 2,749 | 622,704 |
+| `lake -Kjobs=1 build HoiminOracle.MultipleHandlerJoinCases` | 0 / `child_exit` | 315 | 288 |
+| `lake env lean --run MultipleHandlerJoinAuditMain.lean -- --sensitivity` | 0 / `child_exit` | 1,378 | 657,536 |
+| `lake env lean --run MultipleHandlerJoinAuditMain.lean -- --output /tmp/final-multiple-handler-corpus.jsonl` | 0 / `child_exit` | 1,931 | 599,696 |
+| `lake env lean --run MultipleHandlerJoinAuditMain.lean -- --check corpus/multiple-handler-joins.jsonl` | 0 / `child_exit` | 597 | 685,584 |
+| `lake env lean --run MultipleHandlerJoinAuditMain.lean -- --stats` | 0 / `child_exit` | 554 | 630,832 |
+
+The temporary corpus and checked-in corpus were byte-identical. The committed
+corpus has SHA-256
+`ad4d2d80887f1579294a7803c99dbc435e67a9b14744e51bb85b573994ef6cb4`.
+
+## Final executable verification
+
+The focused internal suite passed 4/4 tests and the strict public suite passed
+2/2. Formatting passed. Workspace Clippy passed with all targets, all features,
+and `-D warnings`. `cargo test --workspace --all-features -j 2` completed with
+zero failures across every target; only explicitly ignored benchmark tests
+were omitted.
+
+Exact final commands from `formal/HoiminOracle`, each wrapped separately by
+the fixed resource guard:
+
+```text
+lake -Kjobs=1 build HoiminOracle.MultipleHandlerJoinProofs
+lake env lean /tmp/hoimin-multiple-handler-proof-consumer.lean
+lake -Kjobs=1 build HoiminOracle.MultipleHandlerJoinCases
+lake env lean --run MultipleHandlerJoinAuditMain.lean -- --sensitivity
+lake env lean --run MultipleHandlerJoinAuditMain.lean -- --output /tmp/final-multiple-handler-corpus.jsonl
+lake env lean --run MultipleHandlerJoinAuditMain.lean -- --check corpus/multiple-handler-joins.jsonl
+lake env lean --run MultipleHandlerJoinAuditMain.lean -- --stats
+cmp /tmp/final-multiple-handler-corpus.jsonl corpus/multiple-handler-joins.jsonl
+```
+
+Exact final commands from the worktree root:
+
+```text
+cargo test -p hoimin-cli --lib multiple_handler_join_oracle_tests --no-fail-fast
+cargo test -p hoimin-cli --test lean_multiple_handler_join_oracle --no-fail-fast
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features -j 2 -- -D warnings
+cargo test --workspace --all-features -j 2
+git diff --check
+git diff main...HEAD --check
+```
+
+The temporary worktree `.venv` symlink was removed immediately after the full
+workspace test.
