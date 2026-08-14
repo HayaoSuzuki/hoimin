@@ -50,3 +50,6 @@ import HoiminOracle.MultipleHandlerJoinCases
 import HoiminOracle.ReportSequenceModel
 import HoiminOracle.ReportSequenceProofs
 import HoiminOracle.ReportSequenceCases
+import HoiminOracle.CompoundPatternGuardModel
+import HoiminOracle.CompoundPatternGuardProofs
+import HoiminOracle.CompoundPatternGuardCases
