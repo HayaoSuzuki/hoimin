@@ -23,6 +23,55 @@ const EXCEPTION_MATCH_BINDING_CORPUS: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../formal/HoiminOracle/corpus/exception-match-binding-correspondence.jsonl"
 ));
+const BOUNDED_DISCOVERY_CORPUS: &str =
+    include_str!("../../../../formal/HoiminOracle/corpus/bounded-candidate-discovery.jsonl");
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BoundedCandidateInput {
+    identity: u64,
+    order_key: u64,
+    producer: String,
+    eligible: bool,
+    emission_index: u64,
+    path: String,
+    span_start: u64,
+    span_length: u64,
+    original: String,
+    replacement: String,
+    operator: String,
+    line: u32,
+    column: u32,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BoundedDiscoveryCase {
+    schema: u64,
+    id: String,
+    mode: String,
+    scenario: String,
+    limit: u64,
+    token: Vec<BoundedCandidateInput>,
+    ast: Vec<BoundedCandidateInput>,
+    annotation: Vec<BoundedCandidateInput>,
+    targets: Vec<Vec<BoundedCandidateInput>>,
+    expected_identities: Vec<u64>,
+    expected_truncated: bool,
+    expected_sequences: Vec<u64>,
+    expected_targets_read: u64,
+    expected_spool_finished: bool,
+    expected_candidate_limit_diagnostic: bool,
+    expected_exit_code: u64,
+}
+
+fn bounded_discovery_case(id: &str) -> BoundedDiscoveryCase {
+    BOUNDED_DISCOVERY_CORPUS
+        .lines()
+        .map(|line| serde_json::from_str::<BoundedDiscoveryCase>(line).expect("valid Lean row"))
+        .find(|item| item.id == id)
+        .unwrap_or_else(|| panic!("missing Lean bounded-discovery case {id}"))
+}
 
 #[derive(serde::Deserialize)]
 struct BindingFlowCorpusCase {
@@ -203,6 +252,163 @@ fn candidate_prefix_saturates_capacity_at_usize_maximum() {
     let prefix = CandidatePrefix::new(usize::MAX);
 
     assert_eq!(prefix.capacity, usize::MAX);
+}
+
+#[test]
+fn candidate_prefix_matches_the_lean_out_of_order_duplicate_case() {
+    let item = bounded_discovery_case("out_of_order_duplicate");
+    assert_eq!(
+        (item.schema, item.mode.as_str(), item.scenario.as_str()),
+        (1, "internal-fixture", "candidate_prefix")
+    );
+    let mut prefix = CandidatePrefix::new(usize::try_from(item.limit).unwrap());
+    for input in &item.token {
+        assert!(input.eligible);
+        assert!(matches!(input.producer.as_str(), "token" | "ast"));
+        let _ = input.emission_index;
+        prefix.push(prefix_candidate(
+            input.order_key,
+            &input.identity.to_string(),
+            "operator",
+        ));
+    }
+    let result = prefix.finish();
+    let actual = result
+        .candidates
+        .iter()
+        .map(|candidate| candidate.replacement.parse::<u64>().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(actual, item.expected_identities);
+    for (actual, identity) in result.candidates.iter().zip(&item.expected_identities) {
+        let expected = item
+            .token
+            .iter()
+            .find(|candidate| candidate.identity == *identity)
+            .expect("Lean retained descriptor");
+        assert_analyzer_candidate_matches_lean(actual, expected);
+    }
+    assert_eq!(result.overflowed, item.expected_truncated);
+    assert!(item.ast.is_empty() && item.annotation.is_empty() && item.targets.is_empty());
+    assert_eq!(item.expected_sequences, vec![1, 2, 3]);
+    assert_eq!(item.expected_targets_read, 0);
+    assert!(!item.expected_spool_finished);
+}
+
+fn assert_analyzer_candidate_matches_lean(
+    actual: &AnalyzerCandidate,
+    expected: &BoundedCandidateInput,
+) {
+    assert_eq!(actual.path.as_str(), expected.path);
+    assert_eq!(actual.span.start, expected.span_start);
+    assert_eq!(actual.span.length, expected.span_length);
+    assert_eq!(actual.original, expected.original);
+    assert_eq!(actual.replacement, expected.replacement);
+    assert_eq!(actual.operator, expected.operator);
+    assert_eq!(actual.line, expected.line);
+    assert_eq!(actual.column, expected.column);
+}
+
+#[test]
+fn real_three_producer_prefix_matches_the_lean_merge_projection() {
+    let item = bounded_discovery_case("three_producer_merge");
+    let operators: MutationOperatorSelection = serde_json::from_value(serde_json::json!([
+        "compare_eq_ne",
+        "collection_list_tuple",
+        "type_list_sequence"
+    ]))
+    .unwrap();
+    let source =
+        "from typing import Sequence\na = left == right\nb = list(items)\nc: list[int] = value\n";
+    let request = |max_candidates| AnalyzeRequest {
+        path: Utf8Path::new("pkg/three.py"),
+        lines: &[],
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates,
+    };
+    let complete = analyze_source(
+        &request(item.token.len() + item.ast.len() + item.annotation.len()),
+        source,
+    );
+    let complete_expected = item
+        .token
+        .iter()
+        .chain(&item.ast)
+        .chain(&item.annotation)
+        .collect::<Vec<_>>();
+    assert_eq!(complete.candidates.len(), complete_expected.len());
+    for (actual, expected) in complete.candidates.iter().zip(&complete_expected) {
+        assert_analyzer_candidate_matches_lean(actual, expected);
+    }
+    assert!(!complete.truncated);
+
+    let bounded = analyze_source(
+        &AnalyzeRequest {
+            max_candidates: usize::try_from(item.limit).unwrap(),
+            ..request(0)
+        },
+        source,
+    );
+    let expected = item
+        .token
+        .iter()
+        .chain(&item.ast)
+        .chain(&item.annotation)
+        .filter(|candidate| item.expected_identities.contains(&candidate.identity))
+        .collect::<Vec<_>>();
+    assert_eq!(bounded.candidates.len(), expected.len());
+    for (actual, expected) in bounded.candidates.iter().zip(expected) {
+        assert_analyzer_candidate_matches_lean(actual, expected);
+    }
+    assert_eq!(bounded.truncated, item.expected_truncated);
+    assert_eq!(bounded.retention.producer_peaks, [1, 1, 1]);
+    assert_eq!(
+        bounded.diagnostics[0].code,
+        AnalyzerDiagnosticCode::CandidateLimitExceeded
+    );
+    assert!(item.expected_candidate_limit_diagnostic);
+    assert_eq!(item.expected_exit_code, 0);
+    assert_eq!(item.token.len(), 1);
+    assert_eq!(item.ast.len(), 1);
+    assert_eq!(item.annotation.len(), 1);
+}
+
+#[test]
+fn eligibility_and_zero_limit_rows_match_real_analyzer_outputs() {
+    let eligibility = bounded_discovery_case("eligibility_before_capacity");
+    let focused = analyze_with_profile(
+        MutationProfile::Focused,
+        usize::try_from(eligibility.limit).unwrap(),
+        "print(True)\nresult = 1 + 2\n",
+    );
+    assert_eq!(focused.candidates.len(), 1);
+    let expected = eligibility
+        .token
+        .iter()
+        .find(|candidate| {
+            eligibility
+                .expected_identities
+                .contains(&candidate.identity)
+        })
+        .unwrap();
+    assert_analyzer_candidate_matches_lean(&focused.candidates[0], expected);
+    assert_eq!(focused.truncated, eligibility.expected_truncated);
+
+    let zero = bounded_discovery_case("zero_limit");
+    let output = analyze_with_profile(
+        MutationProfile::Full,
+        usize::try_from(zero.limit).unwrap(),
+        "value = left == right\n",
+    );
+    assert!(output.candidates.is_empty());
+    assert_eq!(output.truncated, zero.expected_truncated);
+    assert_eq!(
+        output.diagnostics[0].code,
+        AnalyzerDiagnosticCode::CandidateLimitExceeded
+    );
+    assert!(zero.expected_candidate_limit_diagnostic);
+    assert_eq!(zero.expected_sequences, Vec::<u64>::new());
 }
 
 #[test]

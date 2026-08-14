@@ -56,3 +56,6 @@ import HoiminOracle.CompoundPatternGuardCases
 import HoiminOracle.ExceptStarFlowModel
 import HoiminOracle.ExceptStarFlowProofs
 import HoiminOracle.ExceptStarFlowCases
+import HoiminOracle.BoundedCandidateDiscoveryModel
+import HoiminOracle.BoundedCandidateDiscoveryProofs
+import HoiminOracle.BoundedCandidateDiscoveryCases

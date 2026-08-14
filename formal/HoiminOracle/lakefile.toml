@@ -80,3 +80,7 @@ root = "CompoundPatternGuardAuditMain"
 [[lean_exe]]
 name = "generate_except_star_flow"
 root = "ExceptStarFlowAuditMain"
+
+[[lean_exe]]
+name = "generate_bounded_candidate_discovery"
+root = "BoundedCandidateDiscoveryAuditMain"
