@@ -4185,7 +4185,9 @@ impl<'ast> AnnotationCollector<'ast> {
             };
             let mut failed = Vec::new();
             if !case.pattern.is_irrefutable() {
-                let mut pattern_failure = KnownImports::intersection(pattern_flow.failed);
+                let pattern_failure = KnownImports::intersection(pattern_flow.failed);
+                #[cfg(test)]
+                let mut pattern_failure = pattern_failure;
                 #[cfg(test)]
                 if self.test_mutation == Some(BindingFlowTestMutation::KeepLastOrPatternFailure)
                     && let Pattern::MatchOr(or_pattern) = &case.pattern

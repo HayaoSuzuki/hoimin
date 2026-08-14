@@ -176,6 +176,15 @@ inside Lean because no valid source produces that absent route.
 Focused post-repair checks passed: three phase-4 internal tests, eight
 exception/match binding tests, four nested-match-exit tests, and Rust formatting.
 
+The public adapter compares count, `target.py` path, byte start and length,
+operator, original, replacement, and symbol for every candidate overlapping the
+owned `list[int]` marker. With the old failure transfer restored temporarily,
+`as_failure_public_candidate` produced zero candidates instead of the one Lean
+row. After restoring `pattern_binding_flow`, all three strict rows produce one
+complete `type_list_sequence` candidate with the Lean-owned span and
+`list[int]` to `Sequence[int]` replacement. The adjacent phase-0, phase-2, and
+phase-3 public audits also pass.
+
 ## Lean model evidence
 
 The structural model keeps reachable successes and failures as separate lists.
