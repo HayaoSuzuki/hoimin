@@ -2,7 +2,7 @@
 
 Date: 2026-08-14
 Issue: #300, phase 5
-Status: local verification passed; CI pending
+Status: complete
 
 ## Claim and boundary
 
@@ -231,5 +231,8 @@ claim. The two exact sibling-route rows remain `model-only` because the
 production analyzer has no state that can configure or observe those runtime
 subgroups.
 
-CI results are pending and will be recorded after the pull request checks
-complete.
+GitHub Actions run 31788965160 passed every executed job: Quality on macOS,
+Ubuntu, and Windows; Rust on macOS, Ubuntu, and Windows; Rust 1.88 MSRV;
+randomized-order Rust; wheel smoke on all three platforms; contracts; both
+core-dependency purity jobs; and Linux best-effort. The environment-gated
+Linux cgroup-v2-hard job was skipped as configured. No CI repair was needed.
