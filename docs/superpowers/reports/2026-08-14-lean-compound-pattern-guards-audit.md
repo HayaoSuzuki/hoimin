@@ -133,6 +133,13 @@ disagreement are infrastructure errors. They support no semantic conclusion.
 
 No production comparison has run yet.
 
+The first generated corpus gave the AS, mapping, and class rows a `Mapping`
+fact even though those three sources import only `Sequence`. The shared model
+fixture had supplied the two-import environment to all compound patterns. This
+was a pre-correspondence model premise defect. The retained cases now use a
+`Sequence`-only input for those sources; OR, guard, and unrelated-name cases
+keep their two-import input.
+
 ## Lean model evidence
 
 The structural model keeps reachable successes and failures as separate lists.
@@ -146,6 +153,10 @@ mapping rest, class prefix capture, OR success and failure inclusion, two-arm
 known-fact retention, false-guard state, unrelated-name preservation, and
 unreachable outcomes. The proof consumer imported and checked all ten names.
 
+Lean owns eleven fixed corpus rows: seven `internal-fixture`, three `strict`,
+and one `model-only`. All eight broken families are detected. The generator
+reports zero generated depth, event alphabet, explored states, and transitions.
+
 ## Resource ledger
 
 Every Lean and Lake command uses a 20-second deadline, 786,432 KiB combined
@@ -158,3 +169,9 @@ transitions.
 | `lake -Kjobs=1 build HoiminOracle.CompoundPatternGuardModel` | 0 | 3,529 ms | 681,664 KiB |
 | `lake -Kjobs=1 build HoiminOracle.CompoundPatternGuardProofs` | 0 | 2,725 ms | 592,208 KiB |
 | `lake env lean /tmp/hoimin-compound-pattern-proof-consumer.lean` | 0 | 576 ms | 661,408 KiB |
+| `lake -Kjobs=1 build HoiminOracle.CompoundPatternGuardCases` | 0 | 839 ms | 692,496 KiB |
+| `lake env lean --run CompoundPatternGuardAuditMain.lean -- --sensitivity` | 0 | 817 ms | 523,328 KiB |
+| `lake env lean --run CompoundPatternGuardAuditMain.lean -- --cases` | 0 | 576 ms | 673,184 KiB |
+| `lake env lean --run CompoundPatternGuardAuditMain.lean -- --stats` | 0 | 580 ms | 684,960 KiB |
+| `lake env lean --run CompoundPatternGuardAuditMain.lean -- --output corpus/compound-pattern-guards.jsonl` | 0 | 565 ms | 620,976 KiB |
+| `lake env lean --run CompoundPatternGuardAuditMain.lean -- --check corpus/compound-pattern-guards.jsonl` | 0 | 592 ms | 674,240 KiB |
