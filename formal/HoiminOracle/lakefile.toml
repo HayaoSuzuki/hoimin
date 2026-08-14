@@ -66,5 +66,9 @@ name = "generate_nested_match_exits"
 root = "NestedMatchExitAuditMain"
 
 [[lean_exe]]
+name = "generate_multiple_handler_joins"
+root = "MultipleHandlerJoinAuditMain"
+
+[[lean_exe]]
 name = "generate_report_sequence"
 root = "ReportSequenceAuditMain"
