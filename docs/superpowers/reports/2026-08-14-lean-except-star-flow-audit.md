@@ -68,14 +68,18 @@ strict rows compare the conservative summary over unknown matching subsets.
 | Shadowed post-statement import | collapsed fallthrough meet removes fact | One syntactic starred handler shadows the name | No overlapping candidate | Public `plan` path | `strict` |
 | Exact exception-group tree | abstract remainder token | Production stores no exception value | No observation | Excluded runtime state | `model-only` |
 
-## Planned formal result
+## Formal model and proof result
 
-The imported model will define fact actions, subgroup splits, exact route
-steps, final exit categorization, and conservative collapse. The proof module
-will establish sibling continuation after a raised handler, one execution per
+The imported model defines fact actions, subgroup splits, exact route steps,
+final exit categorization, and conservative collapse. The proof module
+establishes sibling continuation after a raised handler, one execution per
 selected handler, remainder-only advancement, cleanup on fallthrough and
 delayed terminate, final remainder propagation, the reachable-state meet
 property, and the two-handler collapse theorem.
+
+The collapse theorem covers two handlers, two names, and factwise keep,
+invalidate, or restore-to-`typing` actions. It does not claim equivalence for
+arbitrary Python expressions.
 
 The executable will own eight fixed rows and seven sensitivity families. It
 will report zero generated depth, states, transitions, and event alphabet.
@@ -99,7 +103,27 @@ Lean commands use a 20-second deadline, 786,432 KiB root-plus-descendant RSS
 cap, 250 ms sampling, and one process at a time. Measurements will record the
 inner command, exit, stop reason, elapsed milliseconds, and peak RSS KiB.
 
-No retained Lean command has run for this phase.
+Initial and authoring measurements:
+
+| Command | Exit / reason | Elapsed ms | Peak RSS KiB |
+| --- | --- | ---: | ---: |
+| Existing `MultipleHandlerJoinProofs` baseline build | 0 / `child_exit` | 3,217 | 703,680 |
+| Proof consumer RED after baseline build | 1 / missing `ExceptStarFlowProofs.olean` | 281 | 2,832 |
+| Model build | 0 / `child_exit` | 1,895 | 618,592 |
+| First proof build | 1 / false fallthrough premise and proof-shape errors | 553 | 623,824 |
+| Second proof build | 1 / missing constructor unfolding | 830 | 615,952 |
+| Corrected proof build | 0 / `child_exit` | 563 | 654,768 |
+| Proof consumer GREEN | 0 / `child_exit` | 550 | 502,224 |
+
+The first proof attempt exposed a missing `pendingRaised = false` premise in
+the fallthrough theorem. A prior pending raise makes the final route terminate,
+so the proof now states that premise. The other corrections added finite
+`Target` cases and unfolded the exit constructor. No route transition or
+collapse claim changed.
+
+The first attempted RED ran before any baseline `.olean` existed and failed
+on the root `HoiminOracle` prefix. The audit rejected that result, built an
+existing module, and retained the specific missing-object RED shown above.
 
 ## Verification ledger
 

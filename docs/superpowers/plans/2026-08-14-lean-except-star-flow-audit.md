@@ -6,7 +6,7 @@
 
 **Architecture:** Lean models ordered subgroup routes and collapses them into Hoimin's two-name must-known lattice. Exact runtime split rows remain model-only because Rust does not retain exception-group identities. Internal and public adapters compare only the conservative summary that production can configure and observe.
 
-**Tech Stack:** Lean 4.24.0, Rust 1.88+, Ruff Python AST, Serde JSONL, Cargo, GitHub CLI.
+**Tech Stack:** Lean 4.32.2, Rust 1.88+, Ruff Python AST, Serde JSONL, Cargo, GitHub CLI.
 
 ## Global Constraints
 
