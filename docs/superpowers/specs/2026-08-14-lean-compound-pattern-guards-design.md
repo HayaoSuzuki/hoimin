@@ -113,11 +113,11 @@ will not reproduce pattern traversal.
 | OR success from list and mapping arms | Two arm attempts start from one environment and bind `Sequence` | `case [0, Sequence] \| {"item": Sequence}` | Case-body entry facts at a unique annotation marker | `internal-fixture` |
 | OR failure reaches the following case | Reachable failures from both arms meet before the successor | The same OR pattern followed by `case _` | Following-case entry facts | `internal-fixture` |
 | AS child fails before alias binding | Refutable child failures precede `capture Sequence` | `case [0] as Sequence`, followed by `case _` | Following-case entry facts | `internal-fixture` |
-| AS failure keeps a public candidate | The failed environment retains known `Sequence` | One following-case `Sequence[int]` annotation | Candidate count, path, byte span, operator, original, replacement, and symbol | `strict` |
+| AS failure keeps a public candidate | The failed environment retains known `Sequence` | One following-case `list[int]` annotation | Candidate count, path, byte span, operator, original, replacement, and symbol | `strict` |
 | Mapping required child fails before rest capture | Required child failure precedes `**Sequence` | `case {"tag": 0, **Sequence}`, followed by `case _` | Following-case entry facts | `internal-fixture` |
-| Mapping-rest failure keeps a public candidate | The failed environment retains known `Sequence` | One following-case `Sequence[int]` annotation | Complete overlapping candidate record | `strict` |
+| Mapping-rest failure keeps a public candidate | The failed environment retains known `Sequence` | One following-case `list[int]` annotation | Complete overlapping candidate record | `strict` |
 | Class test or early child fails before final capture | Earlier failures precede the final `Sequence` capture | `case Point(0, tail=Sequence)`, followed by `case _` | Following-case entry facts | `internal-fixture` |
-| Class failure keeps a public candidate | The failed environment retains known `Sequence` | One following-case `Sequence[int]` annotation | Complete overlapping candidate record | `strict` |
+| Class failure keeps a public candidate | The failed environment retains known `Sequence` | One following-case `list[int]` annotation | Complete overlapping candidate record | `strict` |
 | False guard combines pattern and guard writes | Pattern success binds `Mapping`; guard assignment binds `Sequence` and returns false | Compound capture plus a walrus guard, followed by `case _` | Following-case entry facts for both names | `internal-fixture` |
 | Unrelated import survives | Pattern and guard write `Sequence` only | A source also imports `Mapping` | Full fact set, including known `Mapping` | `internal-fixture` |
 | Unequal OR arm capture sets | Two abstract arms produce different successful facts | Python rejects the source before a valid production AST exists | Lean witness only | `model-only` |
