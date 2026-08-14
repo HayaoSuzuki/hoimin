@@ -25,6 +25,7 @@ struct CorpusCase {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
+#[allow(clippy::struct_excessive_bools)]
 struct RunFlags {
     infrastructure_error: bool,
     baseline_failed: bool,
@@ -34,6 +35,7 @@ struct RunFlags {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
+#[allow(clippy::struct_excessive_bools)]
 struct Policy {
     infrastructure_error: bool,
     baseline_failed: bool,
@@ -144,6 +146,14 @@ fn policy_from_rust(value: ExitPolicy) -> Policy {
     }
 }
 
+#[allow(clippy::cast_precision_loss)]
+fn strict_score_projection(score: Fraction) -> f64 {
+    const MAX_EXACT_BINARY64_INTEGER: u64 = 1 << 53;
+    assert!(score.numerator <= MAX_EXACT_BINARY64_INTEGER);
+    assert!(score.denominator <= MAX_EXACT_BINARY64_INTEGER);
+    score.numerator as f64 / score.denominator as f64
+}
+
 #[test]
 fn corpus_is_closed_typed_and_exhaustive() {
     let cases = parse_corpus(CORPUS).unwrap();
@@ -200,9 +210,7 @@ fn strict_summary_rows_match_complete_rust_observations() {
             "{}",
             case.id
         );
-        let expected_score = case
-            .expected_score
-            .map(|score| score.numerator as f64 / score.denominator as f64);
+        let expected_score = case.expected_score.map(strict_score_projection);
         assert_eq!(
             actual.score.map(f64::to_bits),
             expected_score.map(f64::to_bits),
@@ -255,14 +263,14 @@ fn corpus_rejects_unknown_fields_modes_and_statuses() {
     let first = CORPUS.lines().next().unwrap();
     let mut value: serde_json::Value = serde_json::from_str(first).unwrap();
     value["unexpected"] = serde_json::json!(true);
-    assert!(parse_corpus(&format!("{}\n", value)).is_err());
+    assert!(parse_corpus(&format!("{value}\n")).is_err());
 
     let mut crossed: serde_json::Value = serde_json::from_str(first).unwrap();
     crossed["mode"] = serde_json::json!("model-only");
-    assert!(parse_corpus(&format!("{}\n", crossed)).is_err());
+    assert!(parse_corpus(&format!("{crossed}\n")).is_err());
 
     let mut unknown_status: serde_json::Value = serde_json::from_str(first).unwrap();
     unknown_status["statuses"] = serde_json::json!(["unknown"]);
-    assert!(parse_corpus(&format!("{}\n", unknown_status)).is_err());
+    assert!(parse_corpus(&format!("{unknown_status}\n")).is_err());
     assert!(status("unknown").is_err());
 }
