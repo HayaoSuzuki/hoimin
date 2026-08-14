@@ -23,6 +23,45 @@ const EXCEPTION_MATCH_BINDING_CORPUS: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../formal/HoiminOracle/corpus/exception-match-binding-correspondence.jsonl"
 ));
+const BOUNDED_DISCOVERY_CORPUS: &str =
+    include_str!("../../../../formal/HoiminOracle/corpus/bounded-candidate-discovery.jsonl");
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BoundedCandidateInput {
+    identity: u64,
+    order_key: u64,
+    producer: String,
+    eligible: bool,
+    emission_index: u64,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BoundedDiscoveryCase {
+    schema: u64,
+    id: String,
+    mode: String,
+    scenario: String,
+    limit: u64,
+    token: Vec<BoundedCandidateInput>,
+    ast: Vec<BoundedCandidateInput>,
+    annotation: Vec<BoundedCandidateInput>,
+    targets: Vec<Vec<BoundedCandidateInput>>,
+    expected_identities: Vec<u64>,
+    expected_truncated: bool,
+    expected_sequences: Vec<u64>,
+    expected_targets_read: u64,
+    expected_spool_finished: bool,
+}
+
+fn bounded_discovery_case(id: &str) -> BoundedDiscoveryCase {
+    BOUNDED_DISCOVERY_CORPUS
+        .lines()
+        .map(|line| serde_json::from_str::<BoundedDiscoveryCase>(line).expect("valid Lean row"))
+        .find(|item| item.id == id)
+        .unwrap_or_else(|| panic!("missing Lean bounded-discovery case {id}"))
+}
 
 #[derive(serde::Deserialize)]
 struct BindingFlowCorpusCase {
@@ -203,6 +242,68 @@ fn candidate_prefix_saturates_capacity_at_usize_maximum() {
     let prefix = CandidatePrefix::new(usize::MAX);
 
     assert_eq!(prefix.capacity, usize::MAX);
+}
+
+#[test]
+fn candidate_prefix_matches_the_lean_out_of_order_duplicate_case() {
+    let item = bounded_discovery_case("out_of_order_duplicate");
+    assert_eq!(
+        (item.schema, item.mode.as_str(), item.scenario.as_str()),
+        (1, "internal-fixture", "candidate_prefix")
+    );
+    let mut prefix = CandidatePrefix::new(usize::try_from(item.limit).unwrap());
+    for input in &item.token {
+        assert!(input.eligible);
+        assert!(matches!(input.producer.as_str(), "token" | "ast"));
+        let _ = input.emission_index;
+        prefix.push(prefix_candidate(
+            input.order_key,
+            &input.identity.to_string(),
+            "operator",
+        ));
+    }
+    let result = prefix.finish();
+    let actual = result
+        .candidates
+        .iter()
+        .map(|candidate| candidate.replacement.parse::<u64>().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(actual, item.expected_identities);
+    assert_eq!(result.overflowed, item.expected_truncated);
+    assert!(item.ast.is_empty() && item.annotation.is_empty() && item.targets.is_empty());
+    assert_eq!(item.expected_sequences, vec![1, 2, 3]);
+    assert_eq!(item.expected_targets_read, 0);
+    assert!(!item.expected_spool_finished);
+}
+
+#[test]
+fn real_three_producer_prefix_matches_the_lean_merge_projection() {
+    use std::fmt::Write;
+
+    let item = bounded_discovery_case("three_producer_merge");
+    let mut source = String::new();
+    for index in 0..8 {
+        writeln!(
+            source,
+            "def value_{index}(items: list[int]) -> list[int]:\n    return list(items[{index}] + {index})"
+        )
+        .unwrap();
+    }
+    let full = analyze_with_all_candidate_producers(10_000, &source);
+    let bounded =
+        analyze_with_all_candidate_producers(usize::try_from(item.limit).unwrap(), &source);
+    assert_eq!(
+        bounded.candidates,
+        full.candidates[..item.expected_identities.len()]
+    );
+    assert_eq!(bounded.truncated, item.expected_truncated);
+    assert_eq!(
+        bounded.retention.producer_peaks,
+        [item.expected_identities.len() + 1; 3]
+    );
+    assert_eq!(item.token.len(), 1);
+    assert_eq!(item.ast.len(), 1);
+    assert_eq!(item.annotation.len(), 1);
 }
 
 #[test]
