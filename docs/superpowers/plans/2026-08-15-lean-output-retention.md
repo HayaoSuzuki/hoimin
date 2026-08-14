@@ -13,7 +13,7 @@
   finalization, and first-error absorption.
 - [x] Prove ring/reference refinement, partition invariance, bounds, position,
   saturation, and error/drain invariants.
-- [ ] Compile an external proof consumer under the audit resource guard.
+- [x] Compile an external proof consumer under the audit resource guard.
 
 ## 3. Cases, sensitivity, and corpus
 
@@ -36,7 +36,7 @@
 
 ## 5. Report and delivery
 
-- [ ] Write the audit report with exclusions, counterexample ledger, bounded
+- [x] Write the audit report with exclusions, counterexample ledger, bounded
   statistics, and resource measurements.
 - [ ] Run focused tests, full workspace tests, formatting, strict clippy, Lean
   build, corpus checks, and diff checks.
