@@ -198,24 +198,27 @@ fn candidate_span_corpus_rejects_unknown_crossed_and_ignored_fields() {
         .lines()
         .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
         .collect::<Vec<_>>();
-    let render = |rows: Vec<serde_json::Value>| {
-        rows.into_iter()
-            .map(|row| format!("{row}\n"))
-            .collect::<String>()
-    };
-
     let mut unknown = rows.clone();
     unknown[0]["future"] = serde_json::json!(true);
-    assert!(std::panic::catch_unwind(|| parse_corpus(&render(unknown))).is_err());
+    assert!(std::panic::catch_unwind(|| parse_corpus(&render_rows(unknown))).is_err());
     let mut crossed = rows.clone();
     crossed[0]["mode"] = serde_json::json!("model-only");
-    assert!(std::panic::catch_unwind(|| parse_corpus(&render(crossed))).is_err());
+    assert!(std::panic::catch_unwind(|| parse_corpus(&render_rows(crossed))).is_err());
     let mut duplicate = rows.clone();
     duplicate[0]["id"] = duplicate[1]["id"].clone();
-    assert!(std::panic::catch_unwind(|| parse_corpus(&render(duplicate))).is_err());
+    assert!(std::panic::catch_unwind(|| parse_corpus(&render_rows(duplicate))).is_err());
     let mut ignored = rows;
     ignored[11]["expected_bytes"] = serde_json::json!([1]);
-    assert!(std::panic::catch_unwind(|| parse_corpus(&render(ignored))).is_err());
+    assert!(std::panic::catch_unwind(|| parse_corpus(&render_rows(ignored))).is_err());
+}
+
+fn render_rows(rows: Vec<serde_json::Value>) -> String {
+    let mut output = String::new();
+    for row in rows {
+        output.push_str(&row.to_string());
+        output.push('\n');
+    }
+    output
 }
 
 #[test]
