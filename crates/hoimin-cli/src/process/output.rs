@@ -314,6 +314,88 @@ mod tests {
         .collect()
     }
 
+    fn validate_audit_case(case: &AuditCase) {
+        let chunk_bytes = case.chunks.iter().fold(0_u64, |total, chunk| {
+            total.saturating_add(u64::try_from(chunk.len()).unwrap())
+        });
+        assert_eq!(case.schema, 1, "{}", case.id);
+        assert_eq!(
+            case.expected_retained,
+            case.expected_observed.min(case.capacity),
+            "{}",
+            case.id
+        );
+        assert!(
+            case.capacity == 0 || case.expected_position < case.capacity,
+            "{}",
+            case.id
+        );
+        match (case.mode.as_str(), case.scenario.as_str()) {
+            ("strict" | "internal-fixture", "success") => {
+                assert_eq!(case.observed_seed, 0, "{}", case.id);
+                assert_eq!(case.arithmetic_increment, 0, "{}", case.id);
+                assert_eq!(case.error_code, None, "{}", case.id);
+                assert_eq!(case.expected_error_code, None, "{}", case.id);
+                assert_eq!(case.expected_observed, chunk_bytes, "{}", case.id);
+                assert_eq!(
+                    u64::try_from(case.expected_bytes.len()).unwrap(),
+                    case.expected_retained,
+                    "{}",
+                    case.id
+                );
+                assert_eq!(
+                    u64::try_from(case.chunks.len()).unwrap(),
+                    case.expected_drained_chunks,
+                    "{}",
+                    case.id
+                );
+            }
+            ("internal-fixture", "create_error" | "write_error") => {
+                assert!(!case.chunks.is_empty(), "{}", case.id);
+                assert_eq!(case.observed_seed, 0, "{}", case.id);
+                assert_eq!(case.arithmetic_increment, 0, "{}", case.id);
+                assert!(case.error_code.is_some(), "{}", case.id);
+                assert_eq!(case.error_code, case.expected_error_code, "{}", case.id);
+                assert_eq!(case.expected_observed, chunk_bytes, "{}", case.id);
+                assert_eq!(case.expected_position, 0, "{}", case.id);
+                assert!(case.expected_bytes.is_empty(), "{}", case.id);
+                assert_eq!(
+                    u64::try_from(case.chunks.len()).unwrap(),
+                    case.expected_drained_chunks,
+                    "{}",
+                    case.id
+                );
+            }
+            ("model-only", "arithmetic") => {
+                assert_eq!(case.capacity, 0, "{}", case.id);
+                assert!(case.chunks.is_empty(), "{}", case.id);
+                assert_eq!(case.error_code, None, "{}", case.id);
+                assert_eq!(case.observed_seed, u64::MAX - 2, "{}", case.id);
+                assert_eq!(case.arithmetic_increment, 8, "{}", case.id);
+                assert_eq!(case.expected_observed, u64::MAX, "{}", case.id);
+                assert_eq!(case.expected_retained, 0, "{}", case.id);
+                assert_eq!(case.expected_position, 0, "{}", case.id);
+                assert_eq!(case.expected_drained_chunks, 0, "{}", case.id);
+                assert!(case.expected_bytes.is_empty(), "{}", case.id);
+                assert_eq!(case.expected_error_code, None, "{}", case.id);
+            }
+            ("infrastructure-error", "harness") => {
+                assert_eq!(case.capacity, 0, "{}", case.id);
+                assert!(case.chunks.is_empty(), "{}", case.id);
+                assert_eq!(case.observed_seed, 0, "{}", case.id);
+                assert_eq!(case.arithmetic_increment, 0, "{}", case.id);
+                assert_eq!(case.error_code, None, "{}", case.id);
+                assert_eq!(case.expected_observed, 0, "{}", case.id);
+                assert_eq!(case.expected_retained, 0, "{}", case.id);
+                assert_eq!(case.expected_position, 0, "{}", case.id);
+                assert_eq!(case.expected_drained_chunks, 0, "{}", case.id);
+                assert!(case.expected_bytes.is_empty(), "{}", case.id);
+                assert_eq!(case.expected_error_code, None, "{}", case.id);
+            }
+            _ => panic!("crossed mode/scenario in {}", case.id),
+        }
+    }
+
     fn parse_audit_corpus(input: &str) -> Vec<AuditCase> {
         let cases = input
             .lines()
@@ -334,87 +416,7 @@ mod tests {
             .collect::<BTreeMap<_, _>>();
         assert_eq!(contract, expected_contract());
         assert_eq!(contract.len(), cases.len());
-        for case in &cases {
-            let chunk_bytes = case.chunks.iter().fold(0_u64, |total, chunk| {
-                total.saturating_add(u64::try_from(chunk.len()).unwrap())
-            });
-            assert_eq!(case.schema, 1, "{}", case.id);
-            assert_eq!(
-                case.expected_retained,
-                case.expected_observed.min(case.capacity),
-                "{}",
-                case.id
-            );
-            assert!(
-                case.capacity == 0 || case.expected_position < case.capacity,
-                "{}",
-                case.id
-            );
-            match (case.mode.as_str(), case.scenario.as_str()) {
-                ("strict" | "internal-fixture", "success") => {
-                    assert_eq!(case.observed_seed, 0, "{}", case.id);
-                    assert_eq!(case.arithmetic_increment, 0, "{}", case.id);
-                    assert_eq!(case.error_code, None, "{}", case.id);
-                    assert_eq!(case.expected_error_code, None, "{}", case.id);
-                    assert_eq!(case.expected_observed, chunk_bytes, "{}", case.id);
-                    assert_eq!(
-                        u64::try_from(case.expected_bytes.len()).unwrap(),
-                        case.expected_retained,
-                        "{}",
-                        case.id
-                    );
-                    assert_eq!(
-                        u64::try_from(case.chunks.len()).unwrap(),
-                        case.expected_drained_chunks,
-                        "{}",
-                        case.id
-                    );
-                }
-                ("internal-fixture", "create_error" | "write_error") => {
-                    assert!(!case.chunks.is_empty(), "{}", case.id);
-                    assert_eq!(case.observed_seed, 0, "{}", case.id);
-                    assert_eq!(case.arithmetic_increment, 0, "{}", case.id);
-                    assert!(case.error_code.is_some(), "{}", case.id);
-                    assert_eq!(case.error_code, case.expected_error_code, "{}", case.id);
-                    assert_eq!(case.expected_observed, chunk_bytes, "{}", case.id);
-                    assert_eq!(case.expected_position, 0, "{}", case.id);
-                    assert!(case.expected_bytes.is_empty(), "{}", case.id);
-                    assert_eq!(
-                        u64::try_from(case.chunks.len()).unwrap(),
-                        case.expected_drained_chunks,
-                        "{}",
-                        case.id
-                    );
-                }
-                ("model-only", "arithmetic") => {
-                    assert_eq!(case.capacity, 0, "{}", case.id);
-                    assert!(case.chunks.is_empty(), "{}", case.id);
-                    assert_eq!(case.error_code, None, "{}", case.id);
-                    assert_eq!(case.observed_seed, u64::MAX - 2, "{}", case.id);
-                    assert_eq!(case.arithmetic_increment, 8, "{}", case.id);
-                    assert_eq!(case.expected_observed, u64::MAX, "{}", case.id);
-                    assert_eq!(case.expected_retained, 0, "{}", case.id);
-                    assert_eq!(case.expected_position, 0, "{}", case.id);
-                    assert_eq!(case.expected_drained_chunks, 0, "{}", case.id);
-                    assert!(case.expected_bytes.is_empty(), "{}", case.id);
-                    assert_eq!(case.expected_error_code, None, "{}", case.id);
-                }
-                ("infrastructure-error", "harness") => {
-                    assert_eq!(case.capacity, 0, "{}", case.id);
-                    assert!(case.chunks.is_empty(), "{}", case.id);
-                    assert_eq!(case.observed_seed, 0, "{}", case.id);
-                    assert_eq!(case.arithmetic_increment, 0, "{}", case.id);
-                    assert_eq!(case.error_code, None, "{}", case.id);
-                    assert_eq!(case.expected_observed, 0, "{}", case.id);
-                    assert_eq!(case.expected_retained, 0, "{}", case.id);
-                    assert_eq!(case.expected_position, 0, "{}", case.id);
-                    assert_eq!(case.expected_drained_chunks, 0, "{}", case.id);
-                    assert!(case.expected_bytes.is_empty(), "{}", case.id);
-                    assert_eq!(case.expected_error_code, None, "{}", case.id);
-                }
-                _ => panic!("crossed mode/scenario in {}", case.id),
-            }
-        }
+        cases.iter().for_each(validate_audit_case);
         cases
     }
 
