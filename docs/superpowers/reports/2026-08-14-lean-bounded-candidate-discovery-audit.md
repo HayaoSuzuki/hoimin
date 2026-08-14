@@ -43,15 +43,24 @@ Lean 4 checks these theorems for arbitrary natural-number inputs:
 - `target_truncated_iff_global_reference_overflows`;
 - `truncation_stops_later_targets`.
 
-The generic producer theorems prove exact agreement with the unbounded global
-prefix under an explicit window-order premise, and exact truncation under that
-premise plus sound local-overflow reporting. This makes the implementation
-correspondence assumptions visible instead of treating producer concatenation
-as global order. `three_producer_window_matches_global_prefix` and
-`three_producer_local_overflow_implies_global_overflow` discharge both premises
+The generic producer theorems derive exact agreement with the unbounded global
+prefix from three explicit structural premises: merging the retained identities
+preserves global order, every globally top-ranked candidate through `k+1` is in
+a producer window, and local overflow implies global overflow. None of these
+premises assumes the desired prefix equality. This keeps the implementation
+correspondence boundary visible instead of treating producer concatenation as
+global order. `three_producer_window_is_global_identity_projection`,
+`three_producer_top_rank_is_covered`, and
+`three_producer_local_overflow_implies_global_overflow` discharge the premises
 for the concrete three-producer case used by Rust; its prefix, truncation, and
-complete `Discovery` equality follow as separate theorems. The target theorems
-state exact global prefix and truncation behavior for arbitrary target lists.
+complete `Discovery` equality follow as separate theorems.
+
+The target proofs operate on the same recursive `targetStep` execution used to
+derive `targetsRead` and `spoolFinished`; they do not substitute a separately
+computed semantic result. For arbitrary ordered target lists, that execution
+equals the prefix of the concatenated per-target references and truncates
+exactly when their total length exceeds the shared limit. Candidate identity
+deduplication remains per target, matching the production target boundary.
 
 Each producer also retains at most `k+1` and preserves its first `k`. These
 claims do not amount to a verified implementation of Rust's binary heap.

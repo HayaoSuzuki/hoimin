@@ -152,15 +152,34 @@ def publicTruncatedPlan : OracleCase where
     , fixtureCandidate 2 20 .token "src/beta.py" 13 2 "==" "!=" "compare_eq_ne" 1 13 ]
 
 set_option maxHeartbeats 100000 in
-theorem three_producer_window_matches_global_prefix :
+theorem three_producer_window_is_global_identity_projection :
     reference
       (producerWindow threeProducerMerge.token threeProducerMerge.limit ++
         producerWindow threeProducerMerge.ast threeProducerMerge.limit ++
         producerWindow threeProducerMerge.annotation threeProducerMerge.limit) =
     (reference
       (threeProducerMerge.token ++ threeProducerMerge.ast ++
-        threeProducerMerge.annotation)).take (threeProducerMerge.limit + 1) := by
+        threeProducerMerge.annotation)).filter
+      (retainedByIdentity
+        (producerWindow threeProducerMerge.token threeProducerMerge.limit ++
+          producerWindow threeProducerMerge.ast threeProducerMerge.limit ++
+          producerWindow threeProducerMerge.annotation threeProducerMerge.limit)) := by
   decide
+
+set_option maxHeartbeats 100000 in
+theorem three_producer_top_rank_is_covered (item : Candidate) :
+    item ∈
+      (reference
+        (threeProducerMerge.token ++ threeProducerMerge.ast ++
+          threeProducerMerge.annotation)).take (threeProducerMerge.limit + 1) →
+    retainedByIdentity
+      (producerWindow threeProducerMerge.token threeProducerMerge.limit ++
+        producerWindow threeProducerMerge.ast threeProducerMerge.limit ++
+        producerWindow threeProducerMerge.annotation threeProducerMerge.limit)
+      item = true := by
+  simp [threeProducerMerge, reference, productionSort, deduplicate, producerWindow,
+    retainedByIdentity, fixtureCandidate, insertCandidate, productionBefore]
+  rintro (rfl | rfl | rfl) <;> decide
 
 set_option maxHeartbeats 100000 in
 theorem three_producer_local_overflow_implies_global_overflow :
@@ -181,7 +200,8 @@ theorem three_producer_candidates_match_global_prefix :
       (threeProducerMerge.token ++ threeProducerMerge.ast ++
         threeProducerMerge.annotation)).take threeProducerMerge.limit :=
   merge_candidates_eq_unbounded_reference_prefix _ _ _ _
-    three_producer_window_matches_global_prefix
+    three_producer_window_is_global_identity_projection
+    three_producer_top_rank_is_covered
 
 set_option maxHeartbeats 100000 in
 theorem three_producer_truncation_matches_global_overflow :
@@ -192,7 +212,8 @@ theorem three_producer_truncation_matches_global_overflow :
         (threeProducerMerge.token ++ threeProducerMerge.ast ++
           threeProducerMerge.annotation)).length :=
   merge_truncated_iff_unbounded_reference_overflows _ _ _ _
-    three_producer_window_matches_global_prefix
+    three_producer_window_is_global_identity_projection
+    three_producer_top_rank_is_covered
     three_producer_local_overflow_implies_global_overflow
 
 set_option maxHeartbeats 100000 in

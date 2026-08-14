@@ -85,27 +85,27 @@ structure TargetState where
 def targetStep (state : TargetState) (items : List Candidate) (limit : Nat) : TargetState :=
   if state.truncated then state
   else
-    let remaining := limit - state.candidates.length
-    let current := bounded items remaining
-    { candidates := (state.candidates ++ current.candidates).take limit
+    let complete := state.candidates ++ reference items
+    let current := boundReference complete limit
+    { candidates := current.candidates
       truncated := current.truncated
       targetsRead := state.targetsRead + 1
       spoolFinished := current.truncated }
 
 def discoverTargetsFrom
     (initial : TargetState) (targets : List (List Candidate)) (limit : Nat) : TargetState :=
-  targets.foldl (fun state items => targetStep state items limit) initial
+  match targets with
+  | [] => initial
+  | items :: rest => discoverTargetsFrom (targetStep initial items limit) rest limit
 
 def discoverTargets (targets : List (List Candidate)) (limit : Nat) : TargetState :=
-  let execution := discoverTargetsFrom {} targets limit
-  let complete := deduplicate (targets.flatMap reference)
-  let semantic := boundReference complete limit
-  { candidates := semantic.candidates
-    truncated := semantic.truncated
-    targetsRead := execution.targetsRead
-    spoolFinished := execution.spoolFinished || !targets.isEmpty }
+  let result := discoverTargetsFrom {} targets limit
+  { result with spoolFinished := result.spoolFinished || !targets.isEmpty }
 
 def targetReference (targets : List (List Candidate)) : List Candidate :=
-  deduplicate (targets.flatMap reference)
+  targets.flatMap reference
+
+def retainedByIdentity (retained : List Candidate) (candidate : Candidate) : Bool :=
+  retained.any fun item => item.identity == candidate.identity
 
 end HoiminOracle.BoundedCandidateDiscovery
