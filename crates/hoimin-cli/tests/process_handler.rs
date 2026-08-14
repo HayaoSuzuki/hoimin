@@ -12,6 +12,23 @@ use hoimin_core::{
     CommandArg, EffectFailure, EffectId, ProcessLimits, ProcessTermination, ResourceMode,
     RunProcess,
 };
+use serde::Deserialize;
+
+const OUTPUT_RETENTION_CORPUS: &str =
+    include_str!("../../../formal/HoiminOracle/corpus/output-retention.jsonl");
+
+#[derive(Deserialize)]
+struct PublicOutputAuditCase {
+    schema: u64,
+    id: String,
+    mode: String,
+    scenario: String,
+    capacity: u64,
+    chunks: Vec<Vec<u8>>,
+    expected_observed: u64,
+    expected_retained: u64,
+    expected_bytes: Vec<u8>,
+}
 
 #[cfg(windows)]
 use hoimin_cli::resource::WindowsBackend;
@@ -651,6 +668,54 @@ async fn wait_until_process_is_zombie(pid: u32) -> bool {
 
 mod portable {
     use super::*;
+
+    #[tokio::test]
+    async fn public_process_matches_strict_lean_output_boundaries() {
+        let cases = OUTPUT_RETENTION_CORPUS
+            .lines()
+            .map(|line| serde_json::from_str::<PublicOutputAuditCase>(line).unwrap())
+            .filter(|case| case.mode == "strict" && case.scenario == "success")
+            .collect::<Vec<_>>();
+        assert_eq!(cases.len(), 7);
+
+        for (index, case) in cases.into_iter().enumerate() {
+            assert_eq!(case.schema, 1, "{}", case.id);
+            let stream = case.chunks.concat();
+            let byte_list = stream
+                .iter()
+                .map(u8::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
+            let script = format!(
+                "import sys;sys.stdout.buffer.write(bytes([{byte_list}]));sys.stdout.flush()"
+            );
+            let output = tempfile::tempdir().unwrap();
+            let handler = portable_handler(Utf8Path::from_path(output.path()).unwrap());
+            let event = handler
+                .handle(run_python(
+                    u64::try_from(index + 500).unwrap(),
+                    &script,
+                    limits(Duration::from_secs(5), case.capacity),
+                ))
+                .await
+                .unwrap();
+
+            assert_eq!(
+                event.termination,
+                ProcessTermination::Exit(0),
+                "{}",
+                case.id
+            );
+            assert_eq!(event.output.observed, case.expected_observed, "{}", case.id);
+            assert_eq!(event.output.retained, case.expected_retained, "{}", case.id);
+            assert_eq!(
+                fs::read(handler.spool_path(&event.output).unwrap()).unwrap(),
+                case.expected_bytes,
+                "{}",
+                case.id
+            );
+        }
+    }
 
     #[tokio::test]
     async fn output_is_drained_after_retention_cap() {
