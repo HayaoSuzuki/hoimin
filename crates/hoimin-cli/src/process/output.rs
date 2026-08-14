@@ -317,8 +317,8 @@ mod tests {
         .collect()
     }
 
-    fn parse_audit_corpus() -> Vec<AuditCase> {
-        let cases = OUTPUT_RETENTION_CORPUS
+    fn parse_audit_corpus(input: &str) -> Vec<AuditCase> {
+        let cases = input
             .lines()
             .enumerate()
             .map(|(index, line)| {
@@ -399,12 +399,43 @@ mod tests {
 
     #[test]
     fn lean_output_retention_corpus_is_closed_and_typed() {
-        assert_eq!(parse_audit_corpus().len(), 16);
+        assert_eq!(parse_audit_corpus(OUTPUT_RETENTION_CORPUS).len(), 16);
+    }
+
+    #[test]
+    fn lean_output_retention_corpus_rejects_contract_drift() {
+        let rows = OUTPUT_RETENTION_CORPUS
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .collect::<Vec<_>>();
+
+        let mut unknown = rows.clone();
+        unknown[0]["unexpected"] = serde_json::json!(true);
+        assert!(std::panic::catch_unwind(|| parse_audit_corpus(&render_rows(unknown))).is_err());
+
+        let mut crossed = rows.clone();
+        crossed[0]["mode"] = serde_json::json!("model-only");
+        assert!(std::panic::catch_unwind(|| parse_audit_corpus(&render_rows(crossed))).is_err());
+
+        let mut duplicate = rows.clone();
+        duplicate[0]["id"] = duplicate[1]["id"].clone();
+        assert!(std::panic::catch_unwind(|| parse_audit_corpus(&render_rows(duplicate))).is_err());
+
+        let mut unrelated = rows;
+        unrelated[0]["error_code"] = serde_json::json!(7);
+        assert!(std::panic::catch_unwind(|| parse_audit_corpus(&render_rows(unrelated))).is_err());
+    }
+
+    fn render_rows(rows: Vec<serde_json::Value>) -> String {
+        rows.into_iter()
+            .map(|row| row.to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     #[tokio::test]
     async fn lean_success_rows_match_collect_output() {
-        for case in parse_audit_corpus()
+        for case in parse_audit_corpus(OUTPUT_RETENTION_CORPUS)
             .into_iter()
             .filter(|case| case.scenario == "success")
         {
@@ -441,7 +472,7 @@ mod tests {
 
     #[test]
     fn lean_saturation_row_matches_owned_arithmetic_seam() {
-        let case = parse_audit_corpus()
+        let case = parse_audit_corpus(OUTPUT_RETENTION_CORPUS)
             .into_iter()
             .find(|case| case.scenario == "arithmetic")
             .unwrap();
@@ -483,7 +514,7 @@ mod tests {
 
     #[tokio::test]
     async fn lean_fault_rows_keep_the_first_error_and_reach_eof() {
-        for case in parse_audit_corpus()
+        for case in parse_audit_corpus(OUTPUT_RETENTION_CORPUS)
             .into_iter()
             .filter(|case| matches!(case.scenario.as_str(), "create_error" | "write_error"))
         {
