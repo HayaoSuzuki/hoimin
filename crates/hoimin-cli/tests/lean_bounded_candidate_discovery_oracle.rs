@@ -223,7 +223,8 @@ async fn ordered_target_spools_match_the_lean_terminal_cases() {
                 .expect("bounded target analysis");
             assert_eq!(
                 finished.truncated,
-                item.expected_truncated && index + 1 == requests as usize
+                item.expected_truncated
+                    && index + 1 == usize::try_from(requests).expect("fixture request count")
             );
             spool = finished.spool;
         }
@@ -236,7 +237,10 @@ async fn ordered_target_spools_match_the_lean_terminal_cases() {
         }
         assert_eq!(requests, item.expected_targets_read);
         assert_eq!(sequences, item.expected_sequences);
-        assert_eq!(spool.records as usize, item.expected_identities.len());
+        assert_eq!(
+            usize::try_from(spool.records).expect("fixture spool count"),
+            item.expected_identities.len()
+        );
         assert!(item.expected_spool_finished);
     }
 }
