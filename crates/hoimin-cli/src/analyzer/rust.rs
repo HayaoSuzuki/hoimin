@@ -3422,6 +3422,61 @@ impl<'ast> AnnotationCollector<'ast> {
         }
     }
 
+    #[cfg(test)]
+    fn mutate_multiple_handler_exits(&self, exits: &mut ControlFlowExits) {
+        if self.test_mutation != Some(BindingFlowTestMutation::FlattenHandlerAbruptToFallthrough) {
+            return;
+        }
+        let mut states = exits.fallthrough.take().into_iter().collect::<Vec<_>>();
+        states.append(&mut exits.breaks);
+        states.append(&mut exits.continues);
+        states.append(&mut exits.terminates);
+        exits.fallthrough = KnownImports::intersection(states);
+    }
+
+    #[cfg(test)]
+    fn includes_multiple_handler(&self, index: usize, count: usize) -> bool {
+        match self.test_mutation {
+            Some(BindingFlowTestMutation::KeepFirstHandlerOnly) => index == 0,
+            Some(BindingFlowTestMutation::KeepLastHandlerOnly) => index + 1 == count,
+            _ => true,
+        }
+    }
+
+    #[cfg(not(test))]
+    fn includes_multiple_handler(_index: usize, _count: usize) -> bool {
+        true
+    }
+
+    #[cfg(test)]
+    fn merge_try_body_terminates(
+        &self,
+        joined: &mut ControlFlowExits,
+        terminates: Vec<KnownImports>,
+    ) {
+        if self.test_mutation != Some(BindingFlowTestMutation::DropBodyTerminates) {
+            joined.terminates.extend(terminates);
+        }
+    }
+
+    #[cfg(not(test))]
+    fn merge_try_body_terminates(joined: &mut ControlFlowExits, terminates: Vec<KnownImports>) {
+        joined.terminates.extend(terminates);
+    }
+
+    fn try_handler_imports(mut incoming: KnownImports, body: &[Stmt]) -> KnownImports {
+        let try_effects = FunctionLocalCollector::scan(body);
+        if try_effects.unknown_wildcard {
+            incoming.direct.clear();
+            incoming.modules.clear();
+            incoming.type_vars.clear();
+        }
+        for name in try_effects.locals {
+            incoming.invalidate(&name);
+        }
+        incoming
+    }
+
     fn symbol(&self) -> Option<String> {
         (!self.qualname.is_empty()).then(|| self.qualname.join("."))
     }
@@ -3873,16 +3928,7 @@ impl<'ast> AnnotationCollector<'ast> {
             .clone()
             .map(|imports| self.visit_suite_from(imports, &statement.orelse));
 
-        let mut handler_imports = incoming;
-        let try_effects = FunctionLocalCollector::scan(&statement.body);
-        if try_effects.unknown_wildcard {
-            handler_imports.direct.clear();
-            handler_imports.modules.clear();
-            handler_imports.type_vars.clear();
-        }
-        for name in try_effects.locals {
-            handler_imports.invalidate(&name);
-        }
+        let handler_imports = Self::try_handler_imports(incoming, &statement.body);
         let mut joined = ControlFlowExits::default();
         let mut fallthrough = Vec::new();
         if let Some(normal) = normal_exits {
@@ -3891,13 +3937,9 @@ impl<'ast> AnnotationCollector<'ast> {
         joined.breaks.extend(body_exits.breaks);
         joined.continues.extend(body_exits.continues);
         #[cfg(test)]
-        let retain_body_terminates =
-            self.test_mutation != Some(BindingFlowTestMutation::DropBodyTerminates);
+        self.merge_try_body_terminates(&mut joined, body_exits.terminates);
         #[cfg(not(test))]
-        let retain_body_terminates = true;
-        if retain_body_terminates {
-            joined.terminates.extend(body_exits.terminates);
-        }
+        Self::merge_try_body_terminates(&mut joined, body_exits.terminates);
         for (handler_index, except_handler) in statement.handlers.iter().enumerate() {
             let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
             let mut imports = handler_imports.clone();
@@ -3956,34 +3998,15 @@ impl<'ast> AnnotationCollector<'ast> {
                 }
             }
             #[cfg(test)]
-            if self.test_mutation
-                == Some(BindingFlowTestMutation::FlattenHandlerAbruptToFallthrough)
-            {
-                let mut states = handler_exits
-                    .fallthrough
-                    .take()
-                    .into_iter()
-                    .collect::<Vec<_>>();
-                states.append(&mut handler_exits.breaks);
-                states.append(&mut handler_exits.continues);
-                states.append(&mut handler_exits.terminates);
-                handler_exits.fallthrough = KnownImports::intersection(states);
-            }
+            self.mutate_multiple_handler_exits(&mut handler_exits);
             #[cfg(test)]
             self.capture_handler_exit(handler.range, &handler.body, &handler_exits);
             #[cfg(test)]
-            let include_handler = match self.test_mutation {
-                Some(BindingFlowTestMutation::KeepFirstHandlerOnly) => handler_index == 0,
-                Some(BindingFlowTestMutation::KeepLastHandlerOnly) => {
-                    handler_index + 1 == statement.handlers.len()
-                }
-                _ => true,
-            };
+            let include_handler =
+                self.includes_multiple_handler(handler_index, statement.handlers.len());
             #[cfg(not(test))]
-            let include_handler = {
-                let _ = handler_index;
-                true
-            };
+            let include_handler =
+                Self::includes_multiple_handler(handler_index, statement.handlers.len());
             if include_handler {
                 Self::merge_branch(&mut fallthrough, &mut joined, handler_exits);
             }
