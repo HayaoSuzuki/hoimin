@@ -140,6 +140,42 @@ was a pre-correspondence model premise defect. The retained cases now use a
 `Sequence`-only input for those sources; OR, guard, and unrelated-name cases
 keep their two-import input.
 
+The first Rust internal correspondence run then found five same-premise
+differences:
+
+| ID | Lean expected | Rust observed before repair | Classification |
+|---|---|---|---|
+| `or_failure_meets_arms` | known `Mapping`, known `Sequence` | known `Mapping` | confirmed bug |
+| `as_child_failure_precedes_alias` | known `Sequence` | no known fact | confirmed bug |
+| `mapping_child_failure_precedes_rest` | known `Sequence` | no known fact | confirmed bug |
+| `class_early_failure_precedes_capture` | known `Sequence` | no known fact | confirmed bug |
+| `compound_preserves_mapping` | known `Mapping`, known `Sequence` | known `Mapping` | confirmed bug |
+
+`or_success_meets_arms` and `false_guard_uses_post_guard` matched on the first
+run. Every failure above came from `invalidate_pattern_bindings`, which applied
+all captures before creating the refutable failure state. The sources parsed,
+the markers selected reachable following-case entries, and the complete fact
+vectors differed only at `Sequence`; no infrastructure failure contributed to
+the result.
+
+The retained internal rows failed before the repair and pass after it. The
+repair replaces whole-pattern invalidation in `visit_match` with
+`pattern_binding_flow`. The helper follows AST order, retains prefix failures,
+applies AS and mapping-rest names after child success, starts OR arms from the
+same input, and meets reachable success and failure vectors at the case
+boundary. It changes no public API or unrelated statement transfer.
+
+Test-only mutations inside the real transfer reproduce late capture on failure,
+keeping only the last distinguishable OR failure, and unrelated-name cleanup.
+Existing phase-0 mutations continue to cover pre-pattern and pre-guard state.
+Valid Python OR successes bind the same names, so keeping the first or last
+success cannot be distinguished through known-import facts; the unequal-arm
+Lean witness remains `model-only`. The unreachable-outcome witness also remains
+inside Lean because no valid source produces that absent route.
+
+Focused post-repair checks passed: three phase-4 internal tests, eight
+exception/match binding tests, four nested-match-exit tests, and Rust formatting.
+
 ## Lean model evidence
 
 The structural model keeps reachable successes and failures as separate lists.
