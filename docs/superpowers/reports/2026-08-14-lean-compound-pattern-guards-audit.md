@@ -5,8 +5,14 @@ Issue: #300, phase 4
 
 ## Status
 
-Audit in progress. This report freezes the correspondence premises before the
-Lean model and Rust adapter are implemented.
+PASS for the phase-4 surface. Lean checks the reduced structural model, all
+eight broken families are detected, all seven internal observations match, and
+all three strict public observations match after the Rust repair. Five retained
+same-premise rows demonstrate the original production defect.
+
+Lean does not prove the Rust analyzer or Python runtime semantics. The result
+combines kernel-checked model claims with fixed-case implementation
+correspondence.
 
 ## Claim and boundary
 
@@ -131,8 +137,6 @@ disagreement are infrastructure errors. They support no semantic conclusion.
 
 ## Mismatch ledger
 
-No production comparison has run yet.
-
 The first generated corpus gave the AS, mapping, and class rows a `Mapping`
 fact even though those three sources import only `Sequence`. The shared model
 fixture had supplied the two-import environment to all compound patterns. This
@@ -164,6 +168,10 @@ repair replaces whole-pattern invalidation in `visit_match` with
 applies AS and mapping-rest names after child success, starts OR arms from the
 same input, and meets reachable success and failure vectors at the case
 boundary. It changes no public API or unrelated statement transfer.
+
+The final implementation meets each intermediate success and failure set into
+one `Option<KnownImports>`. This preserves the analyzer's reduced fact domain
+while avoiding route-vector growth under nested OR patterns.
 
 Test-only mutations inside the real transfer reproduce late capture on failure,
 keeping only the last distinguishable OR failure, and unrelated-name cleanup.
@@ -211,12 +219,34 @@ transitions.
 
 | Command | Child exit | Elapsed | Peak RSS |
 |---|---:|---:|---:|
-| `lake -Kjobs=1 build HoiminOracle.CompoundPatternGuardModel` | 0 | 3,529 ms | 681,664 KiB |
-| `lake -Kjobs=1 build HoiminOracle.CompoundPatternGuardProofs` | 0 | 2,725 ms | 592,208 KiB |
-| `lake env lean /tmp/hoimin-compound-pattern-proof-consumer.lean` | 0 | 576 ms | 661,408 KiB |
-| `lake -Kjobs=1 build HoiminOracle.CompoundPatternGuardCases` | 0 | 839 ms | 692,496 KiB |
-| `lake env lean --run CompoundPatternGuardAuditMain.lean -- --sensitivity` | 0 | 817 ms | 523,328 KiB |
-| `lake env lean --run CompoundPatternGuardAuditMain.lean -- --cases` | 0 | 576 ms | 673,184 KiB |
-| `lake env lean --run CompoundPatternGuardAuditMain.lean -- --stats` | 0 | 580 ms | 684,960 KiB |
-| `lake env lean --run CompoundPatternGuardAuditMain.lean -- --output corpus/compound-pattern-guards.jsonl` | 0 | 565 ms | 620,976 KiB |
-| `lake env lean --run CompoundPatternGuardAuditMain.lean -- --check corpus/compound-pattern-guards.jsonl` | 0 | 592 ms | 674,240 KiB |
+| `lake -Kjobs=1 build HoiminOracle.CompoundPatternGuardModel` | 0 | 573 ms | 56,464 KiB |
+| `lake -Kjobs=1 build HoiminOracle.CompoundPatternGuardProofs` | 0 | 303 ms | 2,832 KiB |
+| `lake env lean /tmp/hoimin-compound-pattern-proof-consumer.lean` | 0 | 2,787 ms | 576,928 KiB |
+| `lake -Kjobs=1 build HoiminOracle.CompoundPatternGuardCases` | 0 | 305 ms | 3,024 KiB |
+| `lake env lean --run CompoundPatternGuardAuditMain.lean -- --cases` | 0 | 553 ms | 612,656 KiB |
+| `lake env lean --run CompoundPatternGuardAuditMain.lean -- --sensitivity` | 0 | 568 ms | 681,616 KiB |
+| `lake env lean --run CompoundPatternGuardAuditMain.lean -- --output /tmp/compound-pattern-guards-final.jsonl` | 0 | 587 ms | 684,784 KiB |
+| `lake env lean --run CompoundPatternGuardAuditMain.lean -- --check corpus/compound-pattern-guards.jsonl` | 0 | 623 ms | 655,216 KiB |
+| `lake env lean --run CompoundPatternGuardAuditMain.lean -- --stats` | 0 | 576 ms | 683,616 KiB |
+
+The temporary generated corpus matched the checked-in file byte for byte.
+
+## Final verification
+
+These commands completed with exit code 0 on the final tree:
+
+```text
+cargo test -p hoimin-cli --lib compound_pattern_guard_oracle_tests --no-fail-fast
+cargo test -p hoimin-cli --test lean_compound_pattern_guard_oracle --no-fail-fast
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features -j 2 -- -D warnings
+cargo test --workspace --all-features -j 2
+git diff --check origin/main...HEAD
+```
+
+The focused internal suite passed 3 tests and the strict public suite passed 2.
+The workspace library target passed 312 tests with 8 benchmark fixtures
+ignored; every integration and doc-test target also passed. The full-diff
+review found and removed route-vector growth by meeting states at each pattern
+node. No unresolved semantic mismatch or infrastructure error remains in this
+phase.

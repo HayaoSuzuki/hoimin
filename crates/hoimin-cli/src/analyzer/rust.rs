@@ -3152,23 +3152,33 @@ impl<'ast> Visitor<'ast> for NamedBindingInvalidator<'_> {
 }
 
 struct PatternBindingFlow {
-    matched: Vec<KnownImports>,
-    failed: Vec<KnownImports>,
+    matched: Option<KnownImports>,
+    failed: Option<KnownImports>,
 }
 
 impl PatternBindingFlow {
     fn capture(mut self, name: &str) -> Self {
-        for imports in &mut self.matched {
+        if let Some(imports) = &mut self.matched {
             imports.invalidate(name);
         }
         self
     }
 }
 
+fn merge_pattern_states(
+    left: Option<KnownImports>,
+    right: Option<KnownImports>,
+) -> Option<KnownImports> {
+    match (left, right) {
+        (None, other) | (other, None) => other,
+        (Some(left), Some(right)) => KnownImports::intersection([left, right]),
+    }
+}
+
 fn refutable_pattern_test(imports: &KnownImports) -> PatternBindingFlow {
     PatternBindingFlow {
-        matched: vec![imports.clone()],
-        failed: vec![imports.clone()],
+        matched: Some(imports.clone()),
+        failed: Some(imports.clone()),
     }
 }
 
@@ -3178,14 +3188,12 @@ fn sequence_pattern_bindings<'pattern>(
 ) -> PatternBindingFlow {
     let mut flow = refutable_pattern_test(imports);
     for pattern in patterns {
-        let mut matched = Vec::new();
-        let mut failed = flow.failed;
-        for imports in flow.matched {
-            let child = pattern_binding_flow(&imports, pattern);
-            matched.extend(child.matched);
-            failed.extend(child.failed);
-        }
-        flow = PatternBindingFlow { matched, failed };
+        let Some(matched) = flow.matched.take() else {
+            break;
+        };
+        let child = pattern_binding_flow(&matched, pattern);
+        flow.matched = child.matched;
+        flow.failed = merge_pattern_states(flow.failed, child.failed);
     }
     flow
 }
@@ -3213,8 +3221,8 @@ fn pattern_binding_flow(imports: &KnownImports, pattern: &Pattern) -> PatternBin
         ),
         Pattern::MatchStar(star) => {
             let flow = PatternBindingFlow {
-                matched: vec![imports.clone()],
-                failed: Vec::new(),
+                matched: Some(imports.clone()),
+                failed: None,
             };
             match &star.name {
                 Some(name) => flow.capture(name.as_str()),
@@ -3225,8 +3233,8 @@ fn pattern_binding_flow(imports: &KnownImports, pattern: &Pattern) -> PatternBin
             let flow = match &as_pattern.pattern {
                 Some(child) => pattern_binding_flow(imports, child),
                 None => PatternBindingFlow {
-                    matched: vec![imports.clone()],
-                    failed: Vec::new(),
+                    matched: Some(imports.clone()),
+                    failed: None,
                 },
             };
             match &as_pattern.name {
@@ -3235,12 +3243,12 @@ fn pattern_binding_flow(imports: &KnownImports, pattern: &Pattern) -> PatternBin
             }
         }
         Pattern::MatchOr(or_pattern) => {
-            let mut matched = Vec::new();
-            let mut failed = Vec::new();
+            let mut matched = None;
+            let mut failed = None;
             for arm in &or_pattern.patterns {
                 let arm = pattern_binding_flow(imports, arm);
-                matched.extend(arm.matched);
-                failed.extend(arm.failed);
+                matched = merge_pattern_states(matched, arm.matched);
+                failed = merge_pattern_states(failed, arm.failed);
             }
             PatternBindingFlow { matched, failed }
         }
@@ -4180,12 +4188,12 @@ impl<'ast> AnnotationCollector<'ast> {
                 self.capture_compound_header_entry(case.range, &case.body);
             }
             let pattern_flow = pattern_binding_flow(&pre_pattern, &case.pattern);
-            let Some(mut imports) = KnownImports::intersection(pattern_flow.matched) else {
+            let Some(mut imports) = pattern_flow.matched else {
                 continue;
             };
             let mut failed = Vec::new();
             if !case.pattern.is_irrefutable() {
-                let pattern_failure = KnownImports::intersection(pattern_flow.failed);
+                let pattern_failure = pattern_flow.failed;
                 #[cfg(test)]
                 let mut pattern_failure = pattern_failure;
                 #[cfg(test)]
@@ -4193,8 +4201,7 @@ impl<'ast> AnnotationCollector<'ast> {
                     && let Pattern::MatchOr(or_pattern) = &case.pattern
                     && let Some(last) = or_pattern.patterns.last()
                 {
-                    pattern_failure =
-                        KnownImports::intersection(pattern_binding_flow(&pre_pattern, last).failed);
+                    pattern_failure = pattern_binding_flow(&pre_pattern, last).failed;
                 }
                 #[cfg(test)]
                 if self.test_mutation == Some(BindingFlowTestMutation::OverbroadPatternCleanup)
