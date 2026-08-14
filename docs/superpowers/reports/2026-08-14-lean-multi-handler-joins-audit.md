@@ -199,6 +199,23 @@ four `BindingFlowTestMutation` branches inside the production transfer. Normal
 builds take the unchanged routing path. No production semantic rule or public
 analyzer API changed.
 
+## Strict public correspondence
+
+Both `strict` rows match the public CLI:
+
+- `all_handlers_preserve_public_candidate` produces exactly one candidate at
+  `target.py`, byte start 170, length 13, with operator
+  `type_list_sequence`, original `Sequence[int]`, replacement `list[int]`, and
+  no symbol; and
+- `one_handler_shadows_public_candidate` produces no candidate overlapping the
+  unique `Sequence[int]` marker.
+
+The adapter validates source ownership, exact spans, marker uniqueness, the
+closed mode and observation enums, and the entire public record. It runs each
+fixture through `hoimin_cli::run_with_io` under a ten-second timeout. The
+existing exception/match, nested-try, and nested-match public oracle suites
+also remain green.
+
 ## Ownership decisions
 
 - Lean owns the explicit reachability and handler-fold contract.
