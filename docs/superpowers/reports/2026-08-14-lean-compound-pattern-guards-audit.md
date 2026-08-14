@@ -133,9 +133,28 @@ disagreement are infrastructure errors. They support no semantic conclusion.
 
 No production comparison has run yet.
 
+## Lean model evidence
+
+The structural model keeps reachable successes and failures as separate lists.
+Sequential composition retains prefix failures and runs the next pattern only
+from prefix successes. AS and mapping-rest captures therefore occur after their
+children. OR concatenates every arm's reachable outcomes before `meetAll?`
+summarizes them. Guard evaluation receives only the successful-pattern meet.
+
+The proof module exports ten checked results for prefix failure retention, AS,
+mapping rest, class prefix capture, OR success and failure inclusion, two-arm
+known-fact retention, false-guard state, unrelated-name preservation, and
+unreachable outcomes. The proof consumer imported and checked all ten names.
+
 ## Resource ledger
 
 Every Lean and Lake command uses a 20-second deadline, 786,432 KiB combined
 root-and-descendant RSS cap, and 250 ms samples. Lake builds use one job. The
 fixed audit reports zero generated depth, event alphabet, explored states, and
 transitions.
+
+| Command | Child exit | Elapsed | Peak RSS |
+|---|---:|---:|---:|
+| `lake -Kjobs=1 build HoiminOracle.CompoundPatternGuardModel` | 0 | 3,529 ms | 681,664 KiB |
+| `lake -Kjobs=1 build HoiminOracle.CompoundPatternGuardProofs` | 0 | 2,725 ms | 592,208 KiB |
+| `lake env lean /tmp/hoimin-compound-pattern-proof-consumer.lean` | 0 | 576 ms | 661,408 KiB |
