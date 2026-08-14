@@ -6,7 +6,7 @@ abbrev ByteValue := Nat
 abbrev Chunk := List ByteValue
 
 def keepNewest (capacity : Nat) (bytes : List ByteValue) : List ByteValue :=
-  bytes.drop (bytes.length - capacity)
+  (bytes.reverse.take capacity).reverse
 
 def advance (capacity position amount : Nat) : Nat :=
   if capacity = 0 then 0 else (position + amount) % capacity
@@ -16,7 +16,7 @@ def saturatingAdd (maximum observed amount : Nat) : Nat :=
 
 structure State where
   received : List ByteValue := []
-  written : List ByteValue := []
+  stored : List ByteValue := []
   position : Nat := 0
   observed : Nat := 0
   firstError : Option Nat := none
@@ -28,7 +28,7 @@ def initial : State := {}
 def receive (maximum capacity : Nat) (state : State) (chunk : Chunk) : State :=
   let failed := state.firstError.isSome
   { received := state.received ++ chunk
-    written := if failed then state.written else state.written ++ chunk
+    stored := if failed then state.stored else keepNewest capacity (state.stored ++ chunk)
     position := if failed then state.position else advance capacity state.position chunk.length
     observed := saturatingAdd maximum state.observed chunk.length
     firstError := state.firstError
@@ -49,8 +49,8 @@ def run (maximum capacity : Nat) : State → List Chunk → State
   | state, [] => state
   | state, chunk :: rest => run maximum capacity (receive maximum capacity state chunk) rest
 
-def logicalRing (capacity : Nat) (state : State) : List ByteValue :=
-  keepNewest capacity state.written
+def logicalRing (_capacity : Nat) (state : State) : List ByteValue :=
+  state.stored
 
 def finalBytes (marker : List ByteValue) (capacity : Nat)
     (stream : List ByteValue) : List ByteValue :=
@@ -85,6 +85,6 @@ def successfulObservation (marker : List ByteValue) (_maximum capacity : Nat)
   observed := state.observed
   retained := min state.observed capacity
   position := state.position
-  bytes := finalBytesFromObserved marker capacity state.observed state.written
+  bytes := finalBytesFromObserved marker capacity state.observed state.stored
 
 end HoiminOracle.OutputRetention

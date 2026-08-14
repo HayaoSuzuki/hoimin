@@ -29,7 +29,8 @@
   drift.
 - [x] Replay success cases through `collect_output` and compare exact bytes and
   `OutputSpoolRef` fields.
-- [x] Cover public process boundaries and recorded receive-order observations.
+- [x] Cover public process boundaries without claiming cross-pipe byte order,
+  and replay explicit receive-order observations only at the internal seam.
 - [x] Add a narrow fault seam for first-error absorption and drain-to-EOF.
 - [x] For any same-premise mismatch, add the failing regression first and make
   the smallest production repair.

@@ -59,7 +59,8 @@ that import path.
 | --- | --- | --- | --- |
 | Empty, fitting, exact, one-over, marker boundary, tiny, zero | `strict` | owned public process fixture where capacity is configurable | `OutputSpoolRef` and exact spool bytes |
 | Large chunk, wraparound, multiple wraps, alternate partitions | `internal-fixture` | crate-private `collect_output` adapter | retained/observed counts and exact file bytes |
-| Recorded stdout/stderr receive order | `strict` | public process fixture | result for that recorded order only |
+| Explicit ordered mixed-source trace | `internal-fixture` | collector receiver injection | exact result for the supplied order |
+| Actual public stdout/stderr producers | `strict` | public process fixture | combined counts only; no byte-order oracle |
 | Creation or write failure followed by later chunks | `internal-fixture` | collector fault seam | first error and EOF/drained evidence |
 | Count near `u64::MAX` | `model-only`; arithmetic seam is strict | pure Lean and owned Rust helper | saturated observed count |
 | Timeout, unreadable artifact, malformed corpus | `infrastructure-error` | harness | diagnostic only |

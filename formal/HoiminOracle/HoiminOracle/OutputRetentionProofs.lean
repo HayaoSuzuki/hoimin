@@ -4,12 +4,31 @@ namespace HoiminOracle.OutputRetention
 
 theorem keepNewest_length_le (capacity : Nat) (bytes : List ByteValue) :
     (keepNewest capacity bytes).length ≤ capacity := by
-  simp only [keepNewest, List.length_drop]
-  omega
+  simpa [keepNewest] using Nat.min_le_left capacity bytes.length
 
 theorem keepNewest_eq_self (capacity : Nat) (bytes : List ByteValue)
     (fits : bytes.length ≤ capacity) : keepNewest capacity bytes = bytes := by
-  simp [keepNewest, Nat.sub_eq_zero_of_le fits]
+  rw [keepNewest, List.take_of_length_le (by simpa using fits)]
+  simp
+
+theorem take_append_take_right (capacity : Nat) (left right : List ByteValue) :
+    (left ++ right.take capacity).take capacity = (left ++ right).take capacity := by
+  simp only [List.take_append, List.take_take]
+  rw [Nat.min_eq_left (Nat.sub_le capacity left.length)]
+
+theorem keepNewest_append_keepNewest (capacity : Nat) (left right : List ByteValue) :
+    keepNewest capacity (keepNewest capacity left ++ right) =
+      keepNewest capacity (left ++ right) := by
+  simp [keepNewest, List.reverse_append, take_append_take_right]
+
+theorem keepNewest_idempotent (capacity : Nat) (bytes : List ByteValue) :
+    keepNewest capacity (keepNewest capacity bytes) = keepNewest capacity bytes := by
+  simpa using keepNewest_append_keepNewest capacity bytes []
+
+theorem keepNewest_of_keepNewest (small large : Nat) (bytes : List ByteValue)
+    (ordered : small ≤ large) :
+    keepNewest small (keepNewest large bytes) = keepNewest small bytes := by
+  simp [keepNewest, List.take_take, Nat.min_eq_left ordered]
 
 theorem finalBytes_length_le (marker : List ByteValue) (capacity : Nat)
     (stream : List ByteValue) : (finalBytes marker capacity stream).length ≤ capacity := by
@@ -58,7 +77,7 @@ theorem receive_after_error_drains_without_writing
     (maximum capacity : Nat) (state : State) (chunk : Chunk) (code : Nat)
     (failed : state.firstError = some code) :
     let next := receive maximum capacity state chunk
-    next.firstError = some code ∧ next.written = state.written ∧
+    next.firstError = some code ∧ next.stored = state.stored ∧
       next.position = state.position ∧ next.drainedChunks = state.drainedChunks + 1 := by
   simp [receive, failed]
 
@@ -66,7 +85,7 @@ theorem receiveFailure_records_first_and_does_not_write
     (maximum : Nat) (state : State) (chunk : Chunk) (code : Nat)
     (success : state.firstError = none) :
     let next := receiveFailure maximum state chunk code
-    next.firstError = some code ∧ next.written = state.written ∧
+    next.firstError = some code ∧ next.stored = state.stored ∧
       next.position = state.position ∧ next.drainedChunks = state.drainedChunks + 1 := by
   simp [receiveFailure, recordError, success]
 
@@ -97,20 +116,27 @@ theorem run_drainedChunks (maximum capacity : Nat) (state : State) (chunks : Lis
       simp [receive]
       omega
 
-theorem run_written_of_success (maximum capacity : Nat) (state : State)
-    (chunks : List Chunk) (success : state.firstError = none) :
-    (run maximum capacity state chunks).written = state.written ++ chunks.flatten := by
+theorem run_stored_of_success (maximum capacity : Nat) (state : State)
+    (chunks : List Chunk) (success : state.firstError = none)
+    (normalized : keepNewest capacity state.stored = state.stored) :
+    (run maximum capacity state chunks).stored =
+      keepNewest capacity (state.stored ++ chunks.flatten) := by
   induction chunks generalizing state with
-  | nil => simp [run]
+  | nil => simpa [run] using normalized.symm
   | cons chunk rest induction =>
       rw [run]
       rw [induction (state := receive maximum capacity state chunk)]
-      · simp [receive, success, List.flatten]
+      · simp only [receive, success, Option.isSome_none, Bool.false_eq_true, ↓reduceIte,
+          List.flatten_cons]
+        rw [keepNewest_append_keepNewest]
+        simp [List.append_assoc]
       · exact receive_preserves_error maximum capacity state chunk |>.trans success
+      · simp only [receive, success, Option.isSome_none, Bool.false_eq_true, ↓reduceIte]
+        exact keepNewest_idempotent capacity (state.stored ++ chunk)
 
-theorem run_written_after_error (maximum capacity : Nat) (state : State)
+theorem run_stored_after_error (maximum capacity : Nat) (state : State)
     (chunks : List Chunk) (code : Nat) (failed : state.firstError = some code) :
-    (run maximum capacity state chunks).written = state.written := by
+    (run maximum capacity state chunks).stored = state.stored := by
   induction chunks generalizing state code with
   | nil => rfl
   | cons chunk rest induction =>
@@ -118,6 +144,18 @@ theorem run_written_after_error (maximum capacity : Nat) (state : State)
       rw [induction (state := receive maximum capacity state chunk) (code := code)]
       · simp [receive, failed]
       · exact receive_preserves_error maximum capacity state chunk |>.trans failed
+
+theorem receive_stored_length_le (maximum capacity : Nat) (state : State) (chunk : Chunk)
+    (bounded : state.stored.length ≤ capacity) :
+    (receive maximum capacity state chunk).stored.length ≤ capacity := by
+  by_cases failed : state.firstError.isSome
+  · simpa [receive, failed] using bounded
+  · simpa [receive, failed] using keepNewest_length_le capacity (state.stored ++ chunk)
+
+theorem successful_run_stored_length_le (maximum capacity : Nat) (chunks : List Chunk) :
+    (run maximum capacity initial chunks).stored.length ≤ capacity := by
+  rw [run_stored_of_success maximum capacity initial chunks rfl (by simp [initial, keepNewest])]
+  exact keepNewest_length_le capacity (initial.stored ++ chunks.flatten)
 
 theorem run_observed (maximum capacity : Nat) (state : State) (chunks : List Chunk)
     (bounded : state.observed ≤ maximum) :
@@ -171,21 +209,29 @@ theorem successful_run_refines_reference (marker : List ByteValue)
       chunks.flatten.length := by
     rw [run_observed maximum capacity initial chunks (by simp [initial])]
     exact saturated_observed_matches_stream_length maximum chunks.flatten representable
-  have writtenRun : (run maximum capacity initial chunks).written = chunks.flatten := by
-    simpa [initial] using run_written_of_success maximum capacity initial chunks rfl
+  have storedRun : (run maximum capacity initial chunks).stored =
+      keepNewest capacity chunks.flatten := by
+    simpa [initial] using
+      run_stored_of_success maximum capacity initial chunks rfl (by simp [initial, keepNewest])
   have positionRun : (run maximum capacity initial chunks).position =
       advance capacity 0 chunks.flatten.length := by
     simpa [initial, advance] using
       run_position_of_success maximum capacity initial chunks rfl (by simp [initial, advance])
   have saturated := saturated_observed_matches_stream_length maximum chunks.flatten representable
   simp only [successfulObservation, referenceObservation]
-  rw [observedRun, writtenRun, positionRun, saturated]
-  rfl
+  rw [observedRun, storedRun, positionRun, saturated]
+  simp only [finalBytesFromObserved, finalBytes]
+  split
+  · rw [keepNewest_eq_self capacity chunks.flatten (by assumption)]
+  · split
+    · rw [keepNewest_of_keepNewest (capacity - marker.length) capacity chunks.flatten
+          (Nat.sub_le capacity marker.length)]
+    · rw [keepNewest_idempotent]
 
 theorem successful_ring_refines_newest (maximum capacity : Nat) (chunks : List Chunk) :
-    logicalRing capacity (run maximum capacity initial chunks) =
+  logicalRing capacity (run maximum capacity initial chunks) =
       keepNewest capacity chunks.flatten := by
-  simp [logicalRing, initial, run_written_of_success]
+  simp [logicalRing, initial, run_stored_of_success, keepNewest]
 
 theorem successful_position_tracks_all_bytes (maximum capacity : Nat)
     (chunks : List Chunk) :

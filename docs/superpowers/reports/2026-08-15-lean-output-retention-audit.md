@@ -4,7 +4,7 @@
 
 Issue #311 found no same-premise mismatch in Rust's bounded process-output
 collector. Empty, fitting, exactly-full, truncated, tiny, zero-capacity,
-oversized-chunk, multi-wrap, alternate-partition, and recorded-order cases all
+oversized-chunk, multi-wrap, alternate-partition, and explicit receive-order cases all
 match the Lean oracle. Observed-byte saturation and error/drain behavior also
 match. No production policy correction was required.
 
@@ -29,18 +29,23 @@ For that sequence and capacity `k`:
 - the first I/O error remains the result.
 
 This contract does not assign a platform-independent order to independently
-scheduled stdout and stderr producers. A recorded mixed-pipe row is replayed
-only after receive order is fixed.
+scheduled stdout and stderr producers. An explicit mixed-source trace is
+replayed only at the collector seam after receive order is supplied. The public
+two-pipe fixture checks combined observed and retained counts, not byte order.
 
 ## Kernel-checked claims
 
-The model represents received and written bytes separately, along with ring
-position, saturated observation, first error, and drained chunk count. Lean
-checks these universal claims:
+The model represents received bytes separately from the bounded stored ring,
+along with ring position, saturated observation, first error, and drained chunk
+count. Every successful receive applies `keepNewest capacity` immediately;
+the state is not an unbounded history truncated only at observation. Lean checks
+these universal claims:
 
 - `successful_run_refines_reference`;
 - `chunk_partition_invariant`;
 - `successful_ring_refines_newest`;
+- `keepNewest_append_keepNewest` and `run_stored_of_success`;
+- `receive_stored_length_le` and `successful_run_stored_length_le`;
 - `successful_position_tracks_all_bytes`;
 - `successful_observed_saturates`;
 - `saturated_observed_matches_stream_length` under the explicit premise that
@@ -50,7 +55,7 @@ checks these universal claims:
 - `marker_requires_strict_spare_capacity`;
 - `receiveFailure_records_first_and_does_not_write`;
 - `receive_after_error_drains_without_writing`;
-- `run_written_after_error`;
+- `run_stored_after_error`;
 - `recordError_preserves_first`;
 - `error_run_remains_error_and_drains`.
 
@@ -77,14 +82,18 @@ The closed JSONL corpus contains 16 rows:
 The strict rows cover zero and nonzero empty output, fitting partitioned output,
 exact capacity, one byte over a tiny capacity, capacity equal to marker length,
 and one byte more than marker length. Internal rows cover a chunk larger than
-capacity, multiple wraps, equivalent partitions, and a fixed mixed-pipe receive
-order.
+capacity, multiple wraps, equivalent partitions, and an explicit mixed-source
+receive order. No strict same-premise byte-order row exists for two independent
+OS pipes because `ProcessHandler` does not expose their runtime receive trace;
+asserting one would exceed the audited premise.
 
 The Rust adapter requires the exact ID/mode/scenario mapping, unique IDs,
-schema 1, scenario-specific inputs, consistent retained counts, bounded
-positions, and exact drained counts. It rejects unknown fields, duplicate IDs,
-crossed modes, and unrelated error premises. Every byte is deserialized as
-`u8`.
+schema 1, scenario-specific inputs and outputs, consistent retained counts,
+bounded positions, and exact drained counts. Error rows close unused seed and
+arithmetic fields; arithmetic and harness rows close all irrelevant state and
+expected-output fields. It rejects unknown fields, duplicate IDs, crossed
+modes, unrelated premises, and ignored-field drift. Every byte is deserialized
+as `u8`.
 
 ## Refutation sensitivity
 
@@ -137,19 +146,20 @@ root-plus-descendant RSS ceiling, and 250 ms sampling.
 
 | Command | Elapsed ms | Peak RSS KiB | Exit / reason |
 | --- | ---: | ---: | --- |
-| proof module build | 296 | 2,688 | 0 / `child_exit` |
-| external proof consumer | 559 | 2,176 | 0 / `child_exit` |
-| sensitivity, including executable rebuild | 2,758 | 743,568 | 0 / `child_exit` |
-| fixed cases | 291 | 2,240 | 0 / `child_exit` |
-| corpus freshness | 281 | 2,736 | 0 / `child_exit` |
+| proof module direct compile | 2,701 | 628,720 | 0 / `child_exit` |
+| external proof consumer | 557 | 54,592 | 0 / `child_exit` |
+| sensitivity | 284 | 2,800 | 0 / `child_exit` |
+| fixed cases | 285 | 2,752 | 0 / `child_exit` |
+| corpus freshness | 286 | 2,304 | 0 / `child_exit` |
 
-No retained command reached either limit. The largest sample remains 42,864
+No retained command reached either limit. The largest sample remains 157,712
 KiB below the RSS ceiling.
 
 ## Verification commands
 
 ```text
 lake build
+lake env lean HoiminOracle/OutputRetentionProofs.lean
 lake env lean /tmp/hoimin-output-retention-proof-consumer.lean
 lake exe generate_output_retention -- --cases
 lake exe generate_output_retention -- --sensitivity

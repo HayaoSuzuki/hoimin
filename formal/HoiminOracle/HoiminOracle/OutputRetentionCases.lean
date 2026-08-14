@@ -32,7 +32,7 @@ def cases : List OracleCase :=
   , successCase "one_over_tiny" "strict" 4 [[1, 2, 3], [4, 5]]
   , successCase "marker_exact_boundary" "strict" 35 [List.range 36]
   , successCase "marker_plus_one" "strict" 36 [List.range 40]
-  , successCase "recorded_stdout_stderr_order" "internal-fixture" 5 [[111, 49], [101, 49], [111, 50]]
+  , successCase "recorded_receive_order" "internal-fixture" 5 [[111, 49], [101, 49], [111, 50]]
   , successCase "large_chunk" "internal-fixture" 4 [[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]]
   , successCase "multiple_wraps" "internal-fixture" 5
       [[1, 2, 3], [4, 5, 6], [7, 8, 9, 10, 11, 12]]
@@ -75,18 +75,28 @@ def caseResult (item : OracleCase) : CaseResult :=
     position := state.position
     drainedChunks := state.drainedChunks
     bytes := if state.firstError.isSome then []
-      else finalBytesFromObserved truncationMarker item.capacity state.observed state.written
+      else finalBytesFromObserved truncationMarker item.capacity state.observed state.stored
     errorCode := state.firstError }
 
 def caseSafe (item : OracleCase) : Bool :=
   item.schema == 1 &&
     match item.mode, item.scenario with
-    | "strict", "success" => item.errorCode.isNone && item.observedSeed == 0
-    | "internal-fixture", "success" => item.errorCode.isNone && item.observedSeed == 0
-    | "internal-fixture", "create_error" => item.errorCode.isSome && !item.chunks.isEmpty
-    | "internal-fixture", "write_error" => item.errorCode.isSome && !item.chunks.isEmpty
-    | "model-only", "arithmetic" => item.chunks.isEmpty && item.errorCode.isNone
-    | "infrastructure-error", "harness" => item.chunks.isEmpty && item.errorCode.isNone
+    | "strict", "success" =>
+        item.errorCode.isNone && item.observedSeed == 0 && item.arithmeticIncrement == 0
+    | "internal-fixture", "success" =>
+        item.errorCode.isNone && item.observedSeed == 0 && item.arithmeticIncrement == 0
+    | "internal-fixture", "create_error" =>
+        item.errorCode.isSome && !item.chunks.isEmpty && item.observedSeed == 0 &&
+          item.arithmeticIncrement == 0
+    | "internal-fixture", "write_error" =>
+        item.errorCode.isSome && !item.chunks.isEmpty && item.observedSeed == 0 &&
+          item.arithmeticIncrement == 0
+    | "model-only", "arithmetic" =>
+        item.capacity == 0 && item.chunks.isEmpty && item.errorCode.isNone &&
+          item.observedSeed == u64Maximum - 2 && item.arithmeticIncrement == 8
+    | "infrastructure-error", "harness" =>
+        item.capacity == 0 && item.chunks.isEmpty && item.observedSeed == 0 &&
+          item.arithmeticIncrement == 0 && item.errorCode.isNone
     | _, _ => false
 
 def brokenOldest (capacity : Nat) (stream : List ByteValue) : List ByteValue :=
@@ -116,7 +126,7 @@ def brokenMarkerWithoutTailReduction (marker : List ByteValue) (capacity : Nat)
   if stream.length ≤ capacity then stream else marker ++ keepNewest capacity stream
 
 def brokenRetainedFromWrites (capacity : Nat) (state : State) : Nat :=
-  min state.written.length capacity
+  min state.stored.length capacity
 
 def brokenWrappingAdd (maximum observed amount : Nat) : Nat :=
   (observed + amount) % (maximum + 1)
