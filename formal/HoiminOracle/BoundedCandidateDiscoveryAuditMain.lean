@@ -15,7 +15,15 @@ private def candidateJson (item : Candidate) : Lean.Json := Lean.Json.mkObj [
   ("order_key", Lean.toJson item.orderKey),
   ("producer", .str (producerName item.producer)),
   ("eligible", Lean.toJson item.eligible),
-  ("emission_index", Lean.toJson item.emissionIndex)
+  ("emission_index", Lean.toJson item.emissionIndex),
+  ("path", .str item.path),
+  ("span_start", Lean.toJson item.spanStart),
+  ("span_length", Lean.toJson item.spanLength),
+  ("original", .str item.original),
+  ("replacement", .str item.replacement),
+  ("operator", .str item.operatorKey),
+  ("line", Lean.toJson item.line),
+  ("column", Lean.toJson item.column)
 ]
 
 private def candidatesJson (items : List Candidate) : Lean.Json :=
@@ -40,7 +48,9 @@ private def caseJson (item : OracleCase) : Lean.Json :=
     ("expected_truncated", Lean.toJson expected.truncated),
     ("expected_sequences", naturalsJson expected.sequences),
     ("expected_targets_read", Lean.toJson expected.targetsRead),
-    ("expected_spool_finished", Lean.toJson expected.spoolFinished)
+    ("expected_spool_finished", Lean.toJson expected.spoolFinished),
+    ("expected_candidate_limit_diagnostic", Lean.toJson expected.candidateLimitDiagnostic),
+    ("expected_exit_code", Lean.toJson expected.exitCode)
   ]
 
 def renderCorpus : String :=
@@ -82,6 +92,7 @@ private def printSensitivity : IO UInt32 := do
   IO.println s!"eligibility_detected={eligibilitySensitivity}"
   IO.println s!"duplicate_detected={duplicateSensitivity}"
   IO.println s!"producer_overflow_detected={producerOverflowSensitivity}"
+  IO.println s!"merge_order_detected={mergeOrderSensitivity}"
   IO.println s!"global_capacity_detected={globalCapacitySensitivity}"
   IO.println s!"terminal_spool_detected={terminalSensitivity}"
   IO.println s!"public_projection_detected={publicProjectionSensitivity}"

@@ -30,9 +30,20 @@ Lean 4 checks these theorems for arbitrary natural-number inputs:
 - `bounded_length_le_limit`;
 - `bounded_truncated_iff`;
 - `bounded_zero`;
+- `producerWindow_length_le`;
+- `producerWindow_preserves_limit_prefix`;
+- `merge_candidates_eq_window_reference_take`;
+- `merge_candidates_length_le`;
+- `merge_truncated_iff_window_or_producer_overflow`;
 - `sequences_contiguous`;
 - `target_count_le_limit`;
 - `truncation_stops_later_targets`.
+
+`three_producer_merge_matches_unbounded_reference` closes the concrete
+three-producer correspondence case used by Rust. The generic theorems prove
+each producer retains at most `k+1`, preserves its first `k`, and that the merge
+uses the ordered reference of those windows with exact local-overflow
+propagation. They do not claim a verified implementation of Rust's binary heap.
 
 The model treats candidate identity, eligibility, producer, order key, and
 emission index as explicit inputs. It does not formalize Ruff parsing or the
@@ -45,7 +56,7 @@ Lean owns eight JSONL rows:
 
 | Mode | Count | Evidence |
 | --- | ---: | --- |
-| `strict` | 1 | real `hoimin plan`: one retained candidate, truncation flag, candidate-limit diagnostic, exit 4 |
+| `strict` | 1 | real two-file `hoimin plan`: complete retained descriptor, truncation flag, candidate-limit diagnostic, exit 4 |
 | `internal-fixture` | 6 | `CandidatePrefix`, three real producers, eligibility, ordered targets, terminal spool, zero limit |
 | `model-only` | 1 | `usize::MAX` natural-number boundary |
 
@@ -57,15 +68,18 @@ rows, and crossed strict/model-only modes.
 Internal observations cover:
 
 - out-of-order insertion with a duplicate identity;
-- a real source that activates token, AST, and type-annotation producers;
-- the exact full-output prefix and each producer's `k+1` retention peak;
+- a real source that activates token, AST, and type-annotation producers and
+  matches Lean-owned paths, spans, originals, replacements, operators, lines,
+  and columns;
+- the exact full-output prefix and the separate producer-window bound;
+- focused eligibility filtering and zero-limit overflow from their corpus rows;
 - two complete targets with one global sequence space;
 - a truncated non-final target that returns a finished spool and prevents the
   caller from issuing the later request.
 
 ## Refutation sensitivity
 
-The executable detected all eight broken families:
+The executable detected all nine broken families:
 
 | Broken family | Result |
 | --- | --- |
@@ -74,6 +88,7 @@ The executable detected all eight broken families:
 | capacity applies before eligibility | detected |
 | deduplication occurs after truncation | detected |
 | producer overflow disappears at merged length `k` | detected |
+| producer-order concatenation discards a globally earlier candidate | detected |
 | each target receives a fresh limit | detected |
 | discovery continues after terminal truncation | detected |
 | public incomplete projection omits its boundary | detected |
@@ -95,14 +110,14 @@ kept the limits unchanged.
 
 | Command | Elapsed ms | Peak RSS KiB | Exit / reason |
 | --- | ---: | ---: | --- |
-| proof build, one Lake job | 305 | 2,784 | 0 / `child_exit` |
-| external proof consumer | 1,929 | 591,120 | 0 / `child_exit` |
-| sensitivity | 290 | 2,800 | 0 / `child_exit` |
-| fixed cases | 293 | 2,656 | 0 / `child_exit` |
-| corpus freshness | 291 | 2,432 | 0 / `child_exit` |
+| proof build, one Lake job | 307 | 2,800 | 0 / `child_exit` |
+| external proof consumer | 590 | 54,176 | 0 / `child_exit` |
+| sensitivity | 300 | 3,072 | 0 / `child_exit` |
+| fixed cases | 562 | 50,032 | 0 / `child_exit` |
+| corpus freshness | 282 | 3,072 | 0 / `child_exit` |
 
-No retained command reached the time or RSS limit. The 591,120 KiB consumer
-sample remains 195,312 KiB below the ceiling.
+No retained command reached the time or RSS limit. The 54,176 KiB consumer
+sample remains 732,256 KiB below the ceiling.
 
 ## Verification
 

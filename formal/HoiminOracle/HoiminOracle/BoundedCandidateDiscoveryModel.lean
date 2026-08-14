@@ -14,11 +14,19 @@ structure Candidate where
   producer : Producer
   eligible : Bool := true
   emissionIndex : Nat := 0
+  path : String := "pkg/sample.py"
+  spanStart : Nat := 0
+  spanLength : Nat := 1
+  original : String := "original"
+  replacement : String := "replacement"
+  operatorKey : String := "operator"
+  line : Nat := 1
+  column : Nat := 0
   deriving Repr, DecidableEq, BEq
 
 def productionBefore (left right : Candidate) : Bool :=
   left.orderKey < right.orderKey ||
-    (left.orderKey == right.orderKey && left.emissionIndex ≤ right.emissionIndex)
+    (left.orderKey == right.orderKey && left.emissionIndex < right.emissionIndex)
 
 def insertCandidate (candidate : Candidate) : List Candidate → List Candidate
   | [] => [candidate]

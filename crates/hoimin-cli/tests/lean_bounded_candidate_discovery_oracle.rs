@@ -20,6 +20,14 @@ struct CandidateInput {
     producer: String,
     eligible: bool,
     emission_index: u64,
+    path: String,
+    span_start: u64,
+    span_length: u64,
+    original: String,
+    replacement: String,
+    operator: String,
+    line: u64,
+    column: u64,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -39,6 +47,8 @@ struct OracleCase {
     expected_sequences: Vec<u64>,
     expected_targets_read: u64,
     expected_spool_finished: bool,
+    expected_candidate_limit_diagnostic: bool,
+    expected_exit_code: u64,
 }
 
 fn parse_corpus(input: &str) -> Result<Vec<OracleCase>, String> {
@@ -112,7 +122,21 @@ fn validate_case(item: &OracleCase) -> Result<(), String> {
             candidate.order_key,
             candidate.eligible,
             candidate.emission_index,
+            candidate.span_start,
+            candidate.span_length,
+            candidate.line,
+            candidate.column,
         );
+        if candidate.path.is_empty()
+            || candidate.original.is_empty()
+            || candidate.replacement.is_empty()
+            || candidate.operator.is_empty()
+        {
+            return Err(format!(
+                "{} has an incomplete candidate descriptor",
+                item.id
+            ));
+        }
     }
     if item.scenario == "ordered_targets" {
         if item.targets.is_empty()
@@ -123,6 +147,13 @@ fn validate_case(item: &OracleCase) -> Result<(), String> {
         }
     } else if !item.targets.is_empty() || item.expected_targets_read != 0 {
         return Err(format!("{} crosses target and producer premises", item.id));
+    }
+    if item.expected_candidate_limit_diagnostic != item.expected_truncated
+        || (item.mode == "strict"
+            && (item.expected_exit_code != 4 || !item.expected_candidate_limit_diagnostic))
+        || (item.mode != "strict" && item.expected_exit_code != 0)
+    {
+        return Err(format!("{} has an invalid completion projection", item.id));
     }
     Ok(())
 }
@@ -165,11 +196,22 @@ async fn strict_public_plan_matches_the_lean_truncation_projection() {
     .await
     .expect("public plan timed out");
 
-    assert_eq!(code, 4, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert_eq!(
+        u64::try_from(code).expect("nonnegative plan exit"),
+        item.expected_exit_code,
+        "stderr={}",
+        String::from_utf8_lossy(&stderr)
+    );
     let manifest: serde_json::Value = serde_json::from_slice(&stdout).expect("plan JSON");
     let candidates = manifest["candidates"].as_array().expect("plan candidates");
     assert_eq!(candidates.len(), item.expected_identities.len());
     assert_eq!(manifest["truncated"], item.expected_truncated);
+    let expected = item
+        .token
+        .iter()
+        .find(|candidate| Some(candidate.identity) == item.expected_identities.first().copied())
+        .expect("retained public descriptor");
+    assert_public_candidate(&candidates[0], expected);
     assert_eq!(
         candidates
             .iter()
@@ -177,13 +219,26 @@ async fn strict_public_plan_matches_the_lean_truncation_projection() {
             .collect::<Vec<_>>(),
         item.expected_sequences
     );
-    assert!(
-        manifest["diagnostics"]
-            .as_array()
-            .expect("diagnostics")
-            .iter()
-            .any(|diagnostic| diagnostic["code"] == "candidate_limit")
+    let has_limit_diagnostic = manifest["diagnostics"]
+        .as_array()
+        .expect("diagnostics")
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "candidate_limit");
+    assert_eq!(
+        has_limit_diagnostic,
+        item.expected_candidate_limit_diagnostic
     );
+}
+
+fn assert_public_candidate(actual: &serde_json::Value, expected: &CandidateInput) {
+    assert_eq!(actual["path"], expected.path);
+    assert_eq!(actual["span"]["start"], expected.span_start);
+    assert_eq!(actual["span"]["length"], expected.span_length);
+    assert_eq!(actual["original"], expected.original);
+    assert_eq!(actual["replacement"], expected.replacement);
+    assert_eq!(actual["operator"], expected.operator);
+    assert_eq!(actual["line"], expected.line);
+    assert_eq!(actual["column"], expected.column);
 }
 
 #[tokio::test]
@@ -284,11 +339,10 @@ impl Fixture {
         let root = directory.path().join("project");
         let source = root.join("src");
         std::fs::create_dir_all(&source).map_err(|error| error.to_string())?;
-        std::fs::write(
-            source.join("calc.py"),
-            "first = left == right\nsecond = top == bottom\n",
-        )
-        .map_err(|error| error.to_string())?;
+        std::fs::write(source.join("alpha.py"), "first = left == right\n")
+            .map_err(|error| error.to_string())?;
+        std::fs::write(source.join("beta.py"), "second = top == bottom\n")
+            .map_err(|error| error.to_string())?;
         Ok(Self {
             _directory: directory,
             root,
@@ -322,7 +376,9 @@ fn plan_args(fixture: &Fixture, limit: u64) -> Vec<OsString> {
         "--source".into(),
         "src".into(),
         "--file".into(),
-        "src/calc.py".into(),
+        "src/alpha.py".into(),
+        "--file".into(),
+        "src/beta.py".into(),
         "--max-candidates".into(),
         limit.to_string().into(),
         "--jobs".into(),

@@ -24,6 +24,45 @@ theorem bounded_zero (items : List Candidate) :
   simp [bounded]
 
 set_option maxHeartbeats 100000 in
+theorem producerWindow_length_le (items : List Candidate) (limit : Nat) :
+    (producerWindow items limit).length ≤ limit + 1 := by
+  simp only [producerWindow, List.length_take]
+  exact Nat.min_le_left _ _
+
+set_option maxHeartbeats 100000 in
+theorem producerWindow_preserves_limit_prefix (items : List Candidate) (limit : Nat) :
+    (producerWindow items limit).take limit = (reference items).take limit := by
+  simp [producerWindow, List.take_take, Nat.min_eq_left]
+
+set_option maxHeartbeats 100000 in
+theorem merge_candidates_eq_window_reference_take
+    (token ast annotation : List Candidate) (limit : Nat) :
+    (mergeProducerWindows token ast annotation limit).candidates =
+      (reference
+        (producerWindow token limit ++ producerWindow ast limit ++
+          producerWindow annotation limit)).take limit := by
+  rfl
+
+set_option maxHeartbeats 100000 in
+theorem merge_candidates_length_le
+    (token ast annotation : List Candidate) (limit : Nat) :
+    (mergeProducerWindows token ast annotation limit).candidates.length ≤ limit := by
+  rw [merge_candidates_eq_window_reference_take]
+  exact List.length_take_le _ _
+
+set_option maxHeartbeats 100000 in
+theorem merge_truncated_iff_window_or_producer_overflow
+    (token ast annotation : List Candidate) (limit : Nat) :
+    (mergeProducerWindows token ast annotation limit).truncated = true ↔
+      limit < (reference
+        (producerWindow token limit ++ producerWindow ast limit ++
+          producerWindow annotation limit)).length ||
+      limit < (reference token).length ||
+      limit < (reference ast).length ||
+      limit < (reference annotation).length := by
+  simp [mergeProducerWindows, bounded]
+
+set_option maxHeartbeats 100000 in
 theorem sequences_contiguous (count : Nat) :
     sequences count = (List.range count).map (fun index => index + 1) := by
   rfl
