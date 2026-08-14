@@ -92,12 +92,12 @@ transitions, and event alphabet.
 
 | Case | Mode | Expected | Actual | Classification | Decision |
 | --- | --- | --- | --- | --- | --- |
-| `starred_summary_preserves_common` | `internal-fixture` | complete try exits | not run | not run | wait for same-premise execution |
-| `starred_summary_meets_disagreement` | `internal-fixture` | complete try exits | not run | not run | wait for same-premise execution |
-| `starred_target_cleanup` | `internal-fixture` | complete try exits | not run | not run | wait for same-premise execution |
-| `starred_unhandled_remainder` | `internal-fixture` | complete try exits | not run | not run | wait for same-premise execution |
-| `two_matching_siblings_exact_route` | `model-only` | exact route | no production comparison | not run | retain outside correspondence |
-| `raised_handler_allows_later_sibling` | `model-only` | exact route | no production comparison | not run | retain outside correspondence |
+| `starred_summary_preserves_common` | `internal-fixture` | complete try exits | exact match | no mismatch | retain regression |
+| `starred_summary_meets_disagreement` | `internal-fixture` | complete try exits | exact match | no mismatch | retain regression |
+| `starred_target_cleanup` | `internal-fixture` | complete try exits | exact match | no mismatch | retain regression |
+| `starred_unhandled_remainder` | `internal-fixture` | complete try exits | exact match | no mismatch | retain regression |
+| `two_matching_siblings_exact_route` | `model-only` | exact route | no production comparison | model-only boundary | retain outside correspondence |
+| `raised_handler_allows_later_sibling` | `model-only` | exact route | no production comparison | model-only boundary | retain outside correspondence |
 | `starred_public_candidate_present` | `strict` | complete candidate | not run | not run | wait for public execution |
 | `starred_public_candidate_absent` | `strict` | no overlapping candidate | not run | not run | wait for public execution |
 
@@ -154,5 +154,16 @@ cargo build --workspace
 cargo test -p hoimin-cli --lib multiple_handler_join_oracle_tests --no-fail-fast
 ```
 
-The focused oracle, public adapter, workspace test, Clippy, formatting, corpus
-freshness, and CI results have not run.
+The internal oracle passed three tests: closed schema and source ownership,
+four complete production snapshots, and three production-local mutation
+checks. The mutations detect keeping only the first handler, omitting starred
+target cleanup, and dropping the explicit body terminate path. Existing
+multiple-handler tests passed 4/4 and nested-try tests passed 3/3.
+
+No internal same-premise mismatch exists, so this phase does not change Rust
+production semantics. The first formatting check reported one rustfmt layout
+difference in the new test module; `cargo fmt --all` applied that mechanical
+change and the next formatting check passed.
+
+The public adapter, workspace test, Clippy, final corpus freshness run, and CI
+results have not run.
