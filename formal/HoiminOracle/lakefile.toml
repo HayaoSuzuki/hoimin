@@ -88,3 +88,7 @@ root = "BoundedCandidateDiscoveryAuditMain"
 [[lean_exe]]
 name = "generate_mutation_score_exit_policy"
 root = "MutationScoreExitPolicyAuditMain"
+
+[[lean_exe]]
+name = "generate_output_retention"
+root = "OutputRetentionAuditMain"

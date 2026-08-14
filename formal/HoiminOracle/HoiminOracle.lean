@@ -61,3 +61,5 @@ import HoiminOracle.BoundedCandidateDiscoveryProofs
 import HoiminOracle.BoundedCandidateDiscoveryCases
 import HoiminOracle.MutationScoreExitPolicyModel
 import HoiminOracle.MutationScoreExitPolicyProofs
+import HoiminOracle.OutputRetentionModel
+import HoiminOracle.OutputRetentionProofs
