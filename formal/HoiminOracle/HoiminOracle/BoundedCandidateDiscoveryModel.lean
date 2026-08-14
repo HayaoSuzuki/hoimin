@@ -87,6 +87,7 @@ def discoverTargetsFrom
   targets.foldl (fun state items => targetStep state items limit) initial
 
 def discoverTargets (targets : List (List Candidate)) (limit : Nat) : TargetState :=
-  discoverTargetsFrom {} targets limit
+  let result := discoverTargetsFrom {} targets limit
+  { result with spoolFinished := result.spoolFinished || !targets.isEmpty }
 
 end HoiminOracle.BoundedCandidateDiscovery
