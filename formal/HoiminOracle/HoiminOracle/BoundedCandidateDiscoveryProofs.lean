@@ -10,18 +10,18 @@ theorem bounded_candidates_eq_reference_take (items : List Candidate) (limit : N
 set_option maxHeartbeats 100000 in
 theorem bounded_length_le_limit (items : List Candidate) (limit : Nat) :
     (bounded items limit).candidates.length ≤ limit := by
-  simp only [bounded, List.length_take]
+  simp only [bounded, boundReference, List.length_take]
   exact Nat.min_le_left _ _
 
 set_option maxHeartbeats 100000 in
 theorem bounded_truncated_iff (items : List Candidate) (limit : Nat) :
     (bounded items limit).truncated = true ↔ limit < (reference items).length := by
-  simp [bounded]
+  simp [bounded, boundReference]
 
 set_option maxHeartbeats 100000 in
 theorem bounded_zero (items : List Candidate) :
     (bounded items 0).candidates = [] := by
-  simp [bounded]
+  simp [bounded, boundReference]
 
 set_option maxHeartbeats 100000 in
 theorem producerWindow_length_le (items : List Candidate) (limit : Nat) :
@@ -51,16 +51,58 @@ theorem merge_candidates_length_le
   exact List.length_take_le _ _
 
 set_option maxHeartbeats 100000 in
+theorem merge_candidates_eq_unbounded_reference_prefix
+    (token ast annotation : List Candidate) (limit : Nat)
+    (windowOrder :
+      reference
+        (producerWindow token limit ++ producerWindow ast limit ++
+          producerWindow annotation limit) =
+      (reference (token ++ ast ++ annotation)).take (limit + 1)) :
+    (mergeProducerWindows token ast annotation limit).candidates =
+      (reference (token ++ ast ++ annotation)).take limit := by
+  rw [merge_candidates_eq_window_reference_take, windowOrder]
+  simp [List.take_take, Nat.min_eq_left]
+
+set_option maxHeartbeats 100000 in
 theorem merge_truncated_iff_window_or_producer_overflow
     (token ast annotation : List Candidate) (limit : Nat) :
     (mergeProducerWindows token ast annotation limit).truncated = true ↔
       limit < (reference
         (producerWindow token limit ++ producerWindow ast limit ++
-          producerWindow annotation limit)).length ||
-      limit < (reference token).length ||
-      limit < (reference ast).length ||
+          producerWindow annotation limit)).length ∨
+      limit < (reference token).length ∨
+      limit < (reference ast).length ∨
       limit < (reference annotation).length := by
-  simp [mergeProducerWindows, bounded]
+  simp [mergeProducerWindows, bounded, boundReference, or_assoc]
+
+set_option maxHeartbeats 100000 in
+theorem merge_truncated_iff_unbounded_reference_overflows
+    (token ast annotation : List Candidate) (limit : Nat)
+    (windowOrder :
+      reference
+        (producerWindow token limit ++ producerWindow ast limit ++
+          producerWindow annotation limit) =
+      (reference (token ++ ast ++ annotation)).take (limit + 1))
+    (producerOverflowSound :
+      (limit < (reference token).length ∨
+       limit < (reference ast).length ∨
+       limit < (reference annotation).length) →
+      limit < (reference (token ++ ast ++ annotation)).length) :
+    (mergeProducerWindows token ast annotation limit).truncated = true ↔
+      limit < (reference (token ++ ast ++ annotation)).length := by
+  rw [merge_truncated_iff_window_or_producer_overflow]
+  constructor
+  · intro observed
+    rcases observed with windowOverflow | producerOverflow
+    · rw [windowOrder] at windowOverflow
+      simp only [List.length_take] at windowOverflow
+      omega
+    · exact producerOverflowSound producerOverflow
+  · intro completeOverflow
+    left
+    rw [windowOrder]
+    simp only [List.length_take]
+    omega
 
 set_option maxHeartbeats 100000 in
 theorem sequences_contiguous (count : Nat) :
@@ -86,8 +128,22 @@ private theorem discoverTargetsFrom_count_le_limit
 set_option maxHeartbeats 100000 in
 theorem target_count_le_limit (targets : List (List Candidate)) (limit : Nat) :
     (discoverTargets targets limit).candidates.length ≤ limit := by
-  apply discoverTargetsFrom_count_le_limit
-  simp
+  simp only [discoverTargets, boundReference, List.length_take]
+  exact Nat.min_le_left _ _
+
+set_option maxHeartbeats 100000 in
+theorem target_candidates_eq_global_reference_prefix
+    (targets : List (List Candidate)) (limit : Nat) :
+    (discoverTargets targets limit).candidates =
+      (targetReference targets).take limit := by
+  rfl
+
+set_option maxHeartbeats 100000 in
+theorem target_truncated_iff_global_reference_overflows
+    (targets : List (List Candidate)) (limit : Nat) :
+    (discoverTargets targets limit).truncated = true ↔
+      limit < (targetReference targets).length := by
+  simp [discoverTargets, targetReference, boundReference]
 
 set_option maxHeartbeats 100000 in
 theorem truncation_stops_later_targets

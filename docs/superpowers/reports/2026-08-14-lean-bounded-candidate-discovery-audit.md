@@ -34,16 +34,27 @@ Lean 4 checks these theorems for arbitrary natural-number inputs:
 - `producerWindow_preserves_limit_prefix`;
 - `merge_candidates_eq_window_reference_take`;
 - `merge_candidates_length_le`;
+- `merge_candidates_eq_unbounded_reference_prefix`;
 - `merge_truncated_iff_window_or_producer_overflow`;
+- `merge_truncated_iff_unbounded_reference_overflows`;
 - `sequences_contiguous`;
 - `target_count_le_limit`;
+- `target_candidates_eq_global_reference_prefix`;
+- `target_truncated_iff_global_reference_overflows`;
 - `truncation_stops_later_targets`.
 
-`three_producer_merge_matches_unbounded_reference` closes the concrete
-three-producer correspondence case used by Rust. The generic theorems prove
-each producer retains at most `k+1`, preserves its first `k`, and that the merge
-uses the ordered reference of those windows with exact local-overflow
-propagation. They do not claim a verified implementation of Rust's binary heap.
+The generic producer theorems prove exact agreement with the unbounded global
+prefix under an explicit window-order premise, and exact truncation under that
+premise plus sound local-overflow reporting. This makes the implementation
+correspondence assumptions visible instead of treating producer concatenation
+as global order. `three_producer_window_matches_global_prefix` and
+`three_producer_local_overflow_implies_global_overflow` discharge both premises
+for the concrete three-producer case used by Rust; its prefix, truncation, and
+complete `Discovery` equality follow as separate theorems. The target theorems
+state exact global prefix and truncation behavior for arbitrary target lists.
+
+Each producer also retains at most `k+1` and preserves its first `k`. These
+claims do not amount to a verified implementation of Rust's binary heap.
 
 The model treats candidate identity, eligibility, producer, order key, and
 emission index as explicit inputs. It does not formalize Ruff parsing or the
@@ -69,8 +80,9 @@ Internal observations cover:
 
 - out-of-order insertion with a duplicate identity;
 - a real source that activates token, AST, and type-annotation producers and
-  matches Lean-owned paths, spans, originals, replacements, operators, lines,
-  and columns;
+  matches the complete unbounded `k+1` window and bounded prefix using
+  Lean-owned paths, spans, originals, replacements, operators, lines, and
+  columns;
 - the exact full-output prefix and the separate producer-window bound;
 - focused eligibility filtering and zero-limit overflow from their corpus rows;
 - two complete targets with one global sequence space;
@@ -110,14 +122,14 @@ kept the limits unchanged.
 
 | Command | Elapsed ms | Peak RSS KiB | Exit / reason |
 | --- | ---: | ---: | --- |
-| proof build, one Lake job | 307 | 2,800 | 0 / `child_exit` |
-| external proof consumer | 590 | 54,176 | 0 / `child_exit` |
-| sensitivity | 300 | 3,072 | 0 / `child_exit` |
-| fixed cases | 562 | 50,032 | 0 / `child_exit` |
-| corpus freshness | 282 | 3,072 | 0 / `child_exit` |
+| proof build, one Lake job | 288 | 3,040 | 0 / `child_exit` |
+| external proof consumer | 1,088 | 577,664 | 0 / `child_exit` |
+| sensitivity | 287 | 3,024 | 0 / `child_exit` |
+| fixed cases | 286 | 2,816 | 0 / `child_exit` |
+| corpus freshness | 287 | 3,040 | 0 / `child_exit` |
 
-No retained command reached the time or RSS limit. The 54,176 KiB consumer
-sample remains 732,256 KiB below the ceiling.
+No retained command reached the time or RSS limit. The 577,664 KiB consumer
+sample remains 208,768 KiB below the ceiling.
 
 ## Verification
 

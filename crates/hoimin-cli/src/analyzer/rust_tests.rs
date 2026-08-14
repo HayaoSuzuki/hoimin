@@ -317,16 +317,38 @@ fn real_three_producer_prefix_matches_the_lean_merge_projection() {
         "type_list_sequence"
     ]))
     .unwrap();
+    let source =
+        "from typing import Sequence\na = left == right\nb = list(items)\nc: list[int] = value\n";
+    let request = |max_candidates| AnalyzeRequest {
+        path: Utf8Path::new("pkg/three.py"),
+        lines: &[],
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates,
+    };
+    let complete = analyze_source(
+        &request(item.token.len() + item.ast.len() + item.annotation.len()),
+        source,
+    );
+    let complete_expected = item
+        .token
+        .iter()
+        .chain(&item.ast)
+        .chain(&item.annotation)
+        .collect::<Vec<_>>();
+    assert_eq!(complete.candidates.len(), complete_expected.len());
+    for (actual, expected) in complete.candidates.iter().zip(&complete_expected) {
+        assert_analyzer_candidate_matches_lean(actual, expected);
+    }
+    assert!(!complete.truncated);
+
     let bounded = analyze_source(
         &AnalyzeRequest {
-            path: Utf8Path::new("pkg/three.py"),
-            lines: &[],
-            symbols: &[],
-            operators: &operators,
-            profile: MutationProfile::Full,
             max_candidates: usize::try_from(item.limit).unwrap(),
+            ..request(0)
         },
-        "from typing import Sequence\na = left == right\nb = list(items)\nc: list[int] = value\n",
+        source,
     );
     let expected = item
         .token

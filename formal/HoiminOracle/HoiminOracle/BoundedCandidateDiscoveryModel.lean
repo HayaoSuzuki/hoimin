@@ -50,10 +50,12 @@ structure Discovery where
   truncated : Bool
   deriving Repr, DecidableEq, BEq
 
-def bounded (items : List Candidate) (limit : Nat) : Discovery :=
-  let complete := reference items
+def boundReference (complete : List Candidate) (limit : Nat) : Discovery :=
   { candidates := complete.take limit
     truncated := limit < complete.length }
+
+def bounded (items : List Candidate) (limit : Nat) : Discovery :=
+  boundReference (reference items) limit
 
 def producerWindow (items : List Candidate) (limit : Nat) : List Candidate :=
   (reference items).take (limit + 1)
@@ -95,7 +97,15 @@ def discoverTargetsFrom
   targets.foldl (fun state items => targetStep state items limit) initial
 
 def discoverTargets (targets : List (List Candidate)) (limit : Nat) : TargetState :=
-  let result := discoverTargetsFrom {} targets limit
-  { result with spoolFinished := result.spoolFinished || !targets.isEmpty }
+  let execution := discoverTargetsFrom {} targets limit
+  let complete := deduplicate (targets.flatMap reference)
+  let semantic := boundReference complete limit
+  { candidates := semantic.candidates
+    truncated := semantic.truncated
+    targetsRead := execution.targetsRead
+    spoolFinished := execution.spoolFinished || !targets.isEmpty }
+
+def targetReference (targets : List (List Candidate)) : List Candidate :=
+  deduplicate (targets.flatMap reference)
 
 end HoiminOracle.BoundedCandidateDiscovery
