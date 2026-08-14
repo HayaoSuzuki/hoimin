@@ -31,8 +31,9 @@ lists, policies, and run flags:
 - `summarize_total`;
 - `inconclusive_eq_five_status_sum`;
 - `exactScore_eq_none_iff`;
-- `reduceFraction_is_reduced`;
-- `exactScore_denominator_positive` and `exactScore_is_reduced`;
+- `reduceFraction_is_reduced` and `reduceFraction_preserves_ratio`;
+- `exactScore_denominator_positive`, `exactScore_is_reduced`, and
+  `exactScore_preserves_ratio`;
 - `inconclusive_record_preserves_score`;
 - `killed_update` and `survived_update`;
 - the four named exit-precedence theorems;
@@ -56,16 +57,19 @@ The closed JSONL corpus contains 48 rows:
 | model-only exact fraction | 1 | exact ratio beyond lossless binary64 integer representation |
 
 The Rust parser rejects unknown fields, unknown statuses, zero denominators,
-and crossed mode/scenario assignments. Strict score rows compare the bit
-pattern of `(numerator as f64) / (denominator as f64)` with the public Rust
-score. Counts are small, their sum fits `u64`, and every integer is at most
-`2^53`; the audit does not claim arbitrary exact rational equality after an
-`f64` conversion.
+crossed mode/scenario assignments, and scenario-irrelevant premises. It also
+requires the exact 48-ID set and 32 distinct direct-policy assignments. Strict
+score rows compare the bit pattern of `(numerator as f64) / (denominator as
+f64)` with the public Rust score. Counts are small, their sum fits `u64`, and
+every integer is at most `2^53`; the audit does not claim arbitrary exact
+rational equality after an `f64` conversion.
 
-An owned `RunState` fixture checks four summary shapes across all 16
-run-level flag assignments. It compares the private composed policy,
-completeness, and exit code, then serializes and deserializes the actual public
-`RunFinished` event and checks its counts, `complete`, and `exit_code` fields.
+An owned `RunState` fixture directly consumes all five Lean-generated composed
+rows. It compares the private composed policy, completeness, and exit code,
+then serializes and deserializes the actual public `RunFinished` event and
+checks its counts, score, `complete`, and `exit_code` fields against the Lean
+expectations. A separate exhaustive fixture checks four summary shapes across
+all 16 run-level flag assignments as additional wiring coverage.
 
 ## Refutation sensitivity
 
@@ -79,12 +83,15 @@ The executable retains a minimized witness for each broken family:
 | survived numerator replaces killed | killed + two survived |
 | omit an incomplete class | one not-run result |
 | survivors override incomplete | survivor and incomplete flags |
+| survivors override baseline | survivor and baseline flags |
+| survivors override infrastructure | survivor and infrastructure flags |
+| survivors override interruption | survivor and interruption flags |
 | baseline overrides infrastructure | both flags |
 | infrastructure overrides interruption | both flags |
 | survivor-only run marked incomplete | survivor flag |
 | final completeness ignores composed summary | one not-run result |
 
-All ten variants are detected. The bounded Boolean policy domain has 32
+All thirteen variants are detected. The bounded Boolean policy domain has 32
 assignments; the status sensitivity alphabet has seven constructors. These
 finite checks are refutation evidence, not substitutes for the universal
 proofs.
@@ -109,13 +116,13 @@ root-plus-descendant RSS ceiling, and 250 ms sampling.
 
 | Command | Elapsed ms | Peak RSS KiB | Exit / reason |
 | --- | ---: | ---: | --- |
-| proof build, one Lake job | 293 | 2,800 | 0 / `child_exit` |
-| external proof consumer | 566 | 54,736 | 0 / `child_exit` |
-| sensitivity | 292 | 2,912 | 0 / `child_exit` |
-| fixed cases | 284 | 2,784 | 0 / `child_exit` |
-| corpus freshness | 293 | 2,336 | 0 / `child_exit` |
+| proof module build | 285 | 2,016 | 0 / `child_exit` |
+| external proof consumer | 2,433 | 657,504 | 0 / `child_exit` |
+| sensitivity | 287 | 2,800 | 0 / `child_exit` |
+| fixed cases | 286 | 2,848 | 0 / `child_exit` |
+| corpus freshness | 288 | 2,912 | 0 / `child_exit` |
 
-No retained command reached either limit. The largest sample remains 731,696
+No retained command reached either limit. The largest sample remains 128,928
 KiB below the RSS ceiling.
 
 ## Verification commands
@@ -133,4 +140,3 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 git diff --check
 ```
-

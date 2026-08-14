@@ -69,6 +69,21 @@ theorem reduceFraction_is_reduced (numerator denominator : Nat)
   simpa [reduceFraction] using Nat.coprime_div_gcd_div_gcd
     (Nat.gcd_pos_of_pos_right numerator positive)
 
+theorem reduceFraction_preserves_ratio (numerator denominator : Nat)
+    (_positive : 0 < denominator) :
+    (reduceFraction numerator denominator).numerator * denominator =
+      numerator * (reduceFraction numerator denominator).denominator := by
+  simp only [reduceFraction]
+  let divisor := Nat.gcd numerator denominator
+  calc
+    numerator / divisor * denominator =
+        numerator / divisor * (denominator / divisor * divisor) := by
+          rw [Nat.div_mul_cancel (Nat.gcd_dvd_right numerator denominator)]
+    _ = (numerator / divisor * divisor) * (denominator / divisor) := by
+          ac_rfl
+    _ = numerator * (denominator / divisor) := by
+          rw [Nat.div_mul_cancel (Nat.gcd_dvd_left numerator denominator)]
+
 theorem exactScore_denominator_positive (counts : Counts) (score : ExactFraction)
     (present : exactScore counts = some score) :
     0 < score.denominator := by
@@ -88,6 +103,17 @@ theorem exactScore_is_reduced (counts : Counts) (score : ExactFraction)
   · simp only [Option.some.injEq] at present
     subst score
     apply reduceFraction_is_reduced
+    omega
+
+theorem exactScore_preserves_ratio (counts : Counts) (score : ExactFraction)
+    (present : exactScore counts = some score) :
+    score.numerator * decidable counts = counts.killed * score.denominator := by
+  simp only [exactScore] at present
+  split at present
+  · contradiction
+  · simp only [Option.some.injEq] at present
+    subst score
+    apply reduceFraction_preserves_ratio
     omega
 
 theorem inconclusive_record_preserves_score (counts : Counts) (status : Status)

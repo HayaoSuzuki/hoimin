@@ -103,7 +103,10 @@ private def printSensitivity : IO UInt32 := do
   IO.println s!"zero_score_detected={zeroScoreSensitivity}"
   IO.println s!"wrong_numerator_detected={numeratorSensitivity}"
   IO.println s!"incomplete_class_detected={incompleteClassSensitivity}"
-  IO.println s!"survivor_precedence_detected={survivorPrecedenceSensitivity}"
+  IO.println s!"survivor_before_incomplete_detected={survivorBeforeIncompleteSensitivity}"
+  IO.println s!"survivor_before_baseline_detected={survivorBeforeBaselineSensitivity}"
+  IO.println s!"survivor_before_infrastructure_detected={survivorBeforeInfrastructureSensitivity}"
+  IO.println s!"survivor_before_interrupted_detected={survivorBeforeInterruptedSensitivity}"
   IO.println s!"baseline_precedence_detected={baselinePrecedenceSensitivity}"
   IO.println s!"interruption_precedence_detected={interruptionPrecedenceSensitivity}"
   IO.println s!"survivor_complete_detected={survivorCompleteSensitivity}"
@@ -137,4 +140,3 @@ end HoiminOracle.MutationScoreExitPolicy.Executable
 
 def main (args : List String) : IO UInt32 :=
   HoiminOracle.MutationScoreExitPolicy.Executable.main args
-

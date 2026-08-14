@@ -23,7 +23,7 @@ struct CorpusCase {
     expected_exit_code: i32,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
 #[serde(deny_unknown_fields)]
 #[allow(clippy::struct_excessive_bools)]
 struct RunFlags {
@@ -33,7 +33,7 @@ struct RunFlags {
     interrupted: bool,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
 #[serde(deny_unknown_fields)]
 #[allow(clippy::struct_excessive_bools)]
 struct Policy {
@@ -65,6 +65,12 @@ struct Fraction {
 }
 
 fn parse_corpus(input: &str) -> Result<Vec<CorpusCase>, String> {
+    let cases = parse_rows(input)?;
+    validate_corpus(&cases)?;
+    Ok(cases)
+}
+
+fn parse_rows(input: &str) -> Result<Vec<CorpusCase>, String> {
     input
         .lines()
         .enumerate()
@@ -75,6 +81,53 @@ fn parse_corpus(input: &str) -> Result<Vec<CorpusCase>, String> {
             Ok(item)
         })
         .collect()
+}
+
+fn expected_ids() -> BTreeSet<String> {
+    let mut ids = [
+        "summary_empty",
+        "summary_killed",
+        "summary_survived",
+        "summary_timeout",
+        "summary_out_of_memory",
+        "summary_process_limit",
+        "summary_error",
+        "summary_not_run",
+        "summary_all_statuses",
+        "summary_score_two_thirds",
+        "composed_summary_error",
+        "composed_run_infrastructure",
+        "composed_interrupted_error_survivor",
+        "composed_baseline_timeout_survivor",
+        "composed_survivor_complete",
+        "exact_fraction_beyond_binary64",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect::<BTreeSet<_>>();
+    for bits in 0_u8..32 {
+        ids.insert(format!("policy_{bits:05b}"));
+    }
+    ids
+}
+
+fn validate_corpus(cases: &[CorpusCase]) -> Result<(), String> {
+    let ids = cases
+        .iter()
+        .map(|case| case.id.clone())
+        .collect::<BTreeSet<_>>();
+    if ids != expected_ids() || ids.len() != cases.len() {
+        return Err("corpus IDs do not match the closed case set".to_owned());
+    }
+    let policies = cases
+        .iter()
+        .filter(|case| case.scenario == "exit_policy")
+        .map(|case| case.direct_policy)
+        .collect::<BTreeSet<_>>();
+    if policies.len() != 32 {
+        return Err("exit policy rows do not cover 32 unique assignments".to_owned());
+    }
+    Ok(())
 }
 
 fn validate_case(item: &CorpusCase) -> Result<(), String> {
@@ -99,14 +152,30 @@ fn validate_case(item: &CorpusCase) -> Result<(), String> {
     {
         return Err("zero score denominator".to_owned());
     }
-    if item.scenario == "exit_policy"
-        && (!item.statuses.is_empty()
-            || item.run_flags.infrastructure_error
-            || item.run_flags.baseline_failed
-            || item.run_flags.incomplete
-            || item.run_flags.interrupted)
-    {
-        return Err("exit policy row has unrelated premises".to_owned());
+    let default_flags = RunFlags::default();
+    let default_policy = Policy::default();
+    match item.scenario.as_str() {
+        "summary" if item.run_flags != default_flags || item.direct_policy != default_policy => {
+            return Err("summary row has unrelated premises".to_owned());
+        }
+        "exit_policy"
+            if !item.statuses.is_empty()
+                || item.run_flags != default_flags
+                || item.expected_score.is_some() =>
+        {
+            return Err("exit policy row has unrelated premises".to_owned());
+        }
+        "composed" if item.direct_policy != default_policy => {
+            return Err("composed row has unrelated premises".to_owned());
+        }
+        "exact_fraction"
+            if !item.statuses.is_empty()
+                || item.run_flags != default_flags
+                || item.direct_policy != default_policy =>
+        {
+            return Err("exact fraction row has unrelated premises".to_owned());
+        }
+        _ => {}
     }
     Ok(())
 }
@@ -160,9 +229,9 @@ fn corpus_is_closed_typed_and_exhaustive() {
     assert_eq!(cases.len(), 48);
     let ids = cases
         .iter()
-        .map(|case| case.id.as_str())
+        .map(|case| case.id.clone())
         .collect::<BTreeSet<_>>();
-    assert_eq!(ids.len(), cases.len());
+    assert_eq!(ids, expected_ids());
     assert!(cases.iter().all(|case| case.schema == 1));
     assert!(cases.iter().all(|case| matches!(
         case.mode.as_str(),
@@ -177,6 +246,15 @@ fn corpus_is_closed_typed_and_exhaustive() {
             .iter()
             .filter(|case| case.scenario == "exit_policy")
             .count(),
+        32
+    );
+    assert_eq!(
+        cases
+            .iter()
+            .filter(|case| case.scenario == "exit_policy")
+            .map(|case| case.direct_policy)
+            .collect::<BTreeSet<_>>()
+            .len(),
         32
     );
 }
@@ -263,14 +341,30 @@ fn corpus_rejects_unknown_fields_modes_and_statuses() {
     let first = CORPUS.lines().next().unwrap();
     let mut value: serde_json::Value = serde_json::from_str(first).unwrap();
     value["unexpected"] = serde_json::json!(true);
-    assert!(parse_corpus(&format!("{value}\n")).is_err());
+    assert!(parse_rows(&format!("{value}\n")).is_err());
 
     let mut crossed: serde_json::Value = serde_json::from_str(first).unwrap();
     crossed["mode"] = serde_json::json!("model-only");
-    assert!(parse_corpus(&format!("{crossed}\n")).is_err());
+    assert!(parse_rows(&format!("{crossed}\n")).is_err());
 
     let mut unknown_status: serde_json::Value = serde_json::from_str(first).unwrap();
     unknown_status["statuses"] = serde_json::json!(["unknown"]);
-    assert!(parse_corpus(&format!("{unknown_status}\n")).is_err());
+    assert!(parse_rows(&format!("{unknown_status}\n")).is_err());
     assert!(status("unknown").is_err());
+
+    let mut unrelated: serde_json::Value = serde_json::from_str(first).unwrap();
+    unrelated["run_flags"]["incomplete"] = serde_json::json!(true);
+    assert!(parse_rows(&format!("{unrelated}\n")).is_err());
+
+    let mut renamed = CORPUS
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    renamed[0]["id"] = serde_json::json!("summary_killed");
+    let renamed = renamed
+        .into_iter()
+        .map(|row| row.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(parse_corpus(&renamed).is_err());
 }

@@ -102,7 +102,28 @@ def brokenSurvivorNumerator (counts : Counts) : Option ExactFraction :=
 def brokenIncomplete (counts : Counts) : Bool :=
   counts.timeout > 0 || counts.outOfMemory > 0 || counts.processLimit > 0
 
-def brokenSurvivorsFirst (policy : ExitPolicy) : Nat :=
+def brokenSurvivorBeforeIncomplete (policy : ExitPolicy) : Nat :=
+  if policy.interrupted then 130
+  else if policy.infrastructureError then 2
+  else if policy.baselineFailed then 3
+  else if policy.survivors then 1
+  else if policy.incomplete then 4 else 0
+
+def brokenSurvivorBeforeBaseline (policy : ExitPolicy) : Nat :=
+  if policy.interrupted then 130
+  else if policy.infrastructureError then 2
+  else if policy.survivors then 1
+  else if policy.baselineFailed then 3
+  else if policy.incomplete then 4 else 0
+
+def brokenSurvivorBeforeInfrastructure (policy : ExitPolicy) : Nat :=
+  if policy.interrupted then 130
+  else if policy.survivors then 1
+  else if policy.infrastructureError then 2
+  else if policy.baselineFailed then 3
+  else if policy.incomplete then 4 else 0
+
+def brokenSurvivorBeforeInterrupted (policy : ExitPolicy) : Nat :=
   if policy.survivors then 1 else exitCode { policy with survivors := false }
 
 def brokenBaselineBeforeInfrastructure (policy : ExitPolicy) : Nat :=
@@ -138,9 +159,21 @@ def numeratorSensitivity : Bool :=
 def incompleteClassSensitivity : Bool :=
   brokenIncomplete (summarize [.notRun]) != (policyFromCounts (summarize [.notRun])).incomplete
 
-def survivorPrecedenceSensitivity : Bool :=
-  brokenSurvivorsFirst { incomplete := true, survivors := true } !=
+def survivorBeforeIncompleteSensitivity : Bool :=
+  brokenSurvivorBeforeIncomplete { incomplete := true, survivors := true } !=
     exitCode { incomplete := true, survivors := true }
+
+def survivorBeforeBaselineSensitivity : Bool :=
+  brokenSurvivorBeforeBaseline { baselineFailed := true, survivors := true } !=
+    exitCode { baselineFailed := true, survivors := true }
+
+def survivorBeforeInfrastructureSensitivity : Bool :=
+  brokenSurvivorBeforeInfrastructure { infrastructureError := true, survivors := true } !=
+    exitCode { infrastructureError := true, survivors := true }
+
+def survivorBeforeInterruptedSensitivity : Bool :=
+  brokenSurvivorBeforeInterrupted { interrupted := true, survivors := true } !=
+    exitCode { interrupted := true, survivors := true }
 
 def baselinePrecedenceSensitivity : Bool :=
   brokenBaselineBeforeInfrastructure { infrastructureError := true, baselineFailed := true } !=
@@ -159,9 +192,10 @@ def runFinishedCompleteSensitivity : Bool :=
 
 def sensitivityPasses : Bool :=
   wrongCountSensitivity && denominatorSensitivity && zeroScoreSensitivity &&
-    numeratorSensitivity && incompleteClassSensitivity && survivorPrecedenceSensitivity &&
+    numeratorSensitivity && incompleteClassSensitivity &&
+    survivorBeforeIncompleteSensitivity && survivorBeforeBaselineSensitivity &&
+    survivorBeforeInfrastructureSensitivity && survivorBeforeInterruptedSensitivity &&
     baselinePrecedenceSensitivity && interruptionPrecedenceSensitivity &&
     survivorCompleteSensitivity && runFinishedCompleteSensitivity
 
 end HoiminOracle.MutationScoreExitPolicy
-

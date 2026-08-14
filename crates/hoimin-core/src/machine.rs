@@ -2000,6 +2000,8 @@ fn cleanup_reservations_match(expected: &[ReservationId], received: &[Reservatio
 mod tests {
     use std::time::Duration;
 
+    use serde::Deserialize;
+
     use super::{RunState, cleanup_reservations_match};
     use crate::{
         CommandArg, ExitPolicy, MutationStatus, OutputConfig, OutputEvent, RawRunConfig,
@@ -2041,6 +2043,175 @@ mod tests {
             ..RawRunConfig::default()
         })
         .unwrap()
+    }
+
+    const MUTATION_SCORE_POLICY_CORPUS: &str =
+        include_str!("../../../formal/HoiminOracle/corpus/mutation-score-exit-policy.jsonl");
+
+    #[derive(Deserialize)]
+    struct ComposedAuditCase {
+        id: String,
+        scenario: String,
+        statuses: Vec<String>,
+        run_flags: AuditRunFlags,
+        expected_counts: AuditCounts,
+        expected_score: Option<AuditFraction>,
+        expected_policy: AuditPolicy,
+        expected_complete: bool,
+        expected_exit_code: i32,
+    }
+
+    #[derive(Deserialize)]
+    #[allow(clippy::struct_excessive_bools)]
+    struct AuditRunFlags {
+        infrastructure_error: bool,
+        baseline_failed: bool,
+        incomplete: bool,
+        interrupted: bool,
+    }
+
+    #[derive(Deserialize)]
+    #[allow(clippy::struct_excessive_bools)]
+    struct AuditPolicy {
+        infrastructure_error: bool,
+        baseline_failed: bool,
+        incomplete: bool,
+        survivors: bool,
+        interrupted: bool,
+    }
+
+    #[derive(Deserialize)]
+    struct AuditCounts {
+        killed: u64,
+        survived: u64,
+        timeout: u64,
+        out_of_memory: u64,
+        process_limit: u64,
+        error: u64,
+        not_run: u64,
+        inconclusive: u64,
+    }
+
+    #[derive(Deserialize)]
+    struct AuditFraction {
+        numerator: u64,
+        denominator: u64,
+    }
+
+    fn audit_status(name: &str) -> MutationStatus {
+        match name {
+            "killed" => MutationStatus::Killed,
+            "survived" => MutationStatus::Survived,
+            "timeout" => MutationStatus::Timeout,
+            "out_of_memory" => MutationStatus::OutOfMemory,
+            "process_limit" => MutationStatus::ProcessLimit,
+            "error" => MutationStatus::Error,
+            "not_run" => MutationStatus::NotRun,
+            _ => panic!("unexpected Lean audit status: {name}"),
+        }
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    fn audit_score(score: &AuditFraction) -> f64 {
+        assert!(score.numerator <= 1_u64 << 53);
+        assert!(score.denominator <= 1_u64 << 53);
+        score.numerator as f64 / score.denominator as f64
+    }
+
+    #[test]
+    fn lean_composed_rows_drive_run_state_and_public_run_finished() {
+        let cases = MUTATION_SCORE_POLICY_CORPUS
+            .lines()
+            .map(|line| serde_json::from_str::<ComposedAuditCase>(line).unwrap())
+            .filter(|case| case.scenario == "composed")
+            .collect::<Vec<_>>();
+        assert_eq!(cases.len(), 5);
+
+        for case in cases {
+            let statuses = case
+                .statuses
+                .iter()
+                .map(|name| audit_status(name))
+                .collect::<Vec<_>>();
+            let mut state = RunState::new("lean-policy-audit", audit_config());
+            state.summary = summarize(&statuses);
+            state.flags.outcome.infrastructure_error = case.run_flags.infrastructure_error;
+            state.flags.outcome.baseline_failed = case.run_flags.baseline_failed;
+            state.flags.outcome.incomplete = case.run_flags.incomplete;
+            state.flags.report.interrupted = case.run_flags.interrupted;
+
+            let expected_policy = ExitPolicy {
+                infrastructure_error: case.expected_policy.infrastructure_error,
+                baseline_failed: case.expected_policy.baseline_failed,
+                incomplete: case.expected_policy.incomplete,
+                survivors: case.expected_policy.survivors,
+                interrupted: case.expected_policy.interrupted,
+            };
+            assert_eq!(state.exit_policy(), expected_policy, "{}", case.id);
+            assert_eq!(state.complete(), case.expected_complete, "{}", case.id);
+            assert_eq!(state.exit_code(), case.expected_exit_code, "{}", case.id);
+
+            let effects = state.final_report_effects().unwrap();
+            let RunEffect::EmitOutput(output) = &effects[0] else {
+                panic!("expected final output effect");
+            };
+            let encoded = serde_json::to_string(&output.event).unwrap();
+            let decoded: OutputEvent = serde_json::from_str(&encoded).unwrap();
+            let OutputEvent::RunFinished(finished) = decoded else {
+                panic!("expected public RunFinished event");
+            };
+            assert_eq!(
+                finished.counts.killed, case.expected_counts.killed,
+                "{}",
+                case.id
+            );
+            assert_eq!(
+                finished.counts.survived, case.expected_counts.survived,
+                "{}",
+                case.id
+            );
+            assert_eq!(
+                finished.counts.timeout, case.expected_counts.timeout,
+                "{}",
+                case.id
+            );
+            assert_eq!(
+                finished.counts.out_of_memory, case.expected_counts.out_of_memory,
+                "{}",
+                case.id
+            );
+            assert_eq!(
+                finished.counts.process_limit, case.expected_counts.process_limit,
+                "{}",
+                case.id
+            );
+            assert_eq!(
+                finished.counts.error, case.expected_counts.error,
+                "{}",
+                case.id
+            );
+            assert_eq!(
+                finished.counts.not_run, case.expected_counts.not_run,
+                "{}",
+                case.id
+            );
+            assert_eq!(
+                finished.counts.inconclusive, case.expected_counts.inconclusive,
+                "{}",
+                case.id
+            );
+            assert_eq!(
+                finished.counts.score.map(f64::to_bits),
+                case.expected_score
+                    .as_ref()
+                    .map(audit_score)
+                    .map(f64::to_bits),
+                "{}",
+                case.id
+            );
+            assert_eq!(finished.complete, case.expected_complete, "{}", case.id);
+            assert_eq!(finished.exit_code, case.expected_exit_code, "{}", case.id);
+        }
     }
 
     #[test]
