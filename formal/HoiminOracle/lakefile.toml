@@ -92,3 +92,7 @@ root = "MutationScoreExitPolicyAuditMain"
 [[lean_exe]]
 name = "generate_output_retention"
 root = "OutputRetentionAuditMain"
+
+[[lean_exe]]
+name = "generate_candidate_span"
+root = "CandidateSpanAuditMain"
