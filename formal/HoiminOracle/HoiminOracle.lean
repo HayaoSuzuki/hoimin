@@ -46,6 +46,7 @@ import HoiminOracle.NestedMatchExitProofs
 import HoiminOracle.NestedMatchExitCases
 import HoiminOracle.MultipleHandlerJoinModel
 import HoiminOracle.MultipleHandlerJoinProofs
+import HoiminOracle.MultipleHandlerJoinCases
 import HoiminOracle.ReportSequenceModel
 import HoiminOracle.ReportSequenceProofs
 import HoiminOracle.ReportSequenceCases

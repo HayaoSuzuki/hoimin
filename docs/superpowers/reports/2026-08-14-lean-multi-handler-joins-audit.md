@@ -197,3 +197,38 @@ sampling. The first sandboxed guard launch returned exit 126 / `monitor_error`
 after 34 ms because process-tree inspection was denied; the unchanged command
 was rerun with monitoring permission. This was infrastructure evidence, not a
 Lean failure.
+
+## Fixed corpus and sensitivity
+
+Lean generates seven schema-1 rows: five `internal-fixture`, two `strict`, and
+zero `model-only`. There is no bounded generation: depth, event alphabet,
+explored states, and transitions are all zero. The generated corpus is
+`formal/HoiminOracle/corpus/multiple-handler-joins.jsonl`; its expectations
+were not hand edited.
+
+All six fixed sensitivity families distinguish the intended transition:
+
+| Family | Deliberate defect detected |
+|---|---|
+| `keep-first-selected` | Discard every selected result after the first handler. |
+| `keep-last-selected` | Discard every selected result before the last handler. |
+| `unreachable-selected` | Merge a later selected exit after the remainder is exhausted. |
+| `omitted-cleanup` | Keep a handler target on its selected terminate exit. |
+| `flattened-category` | Convert a selected break into fallthrough. |
+| `unhandled-remainder` | Drop or duplicate the final terminate remainder. |
+
+Initial corpus-stage guarded measurements:
+
+| Command | Exit / reason | Elapsed ms | Peak RSS KiB |
+|---|---|---:|---:|
+| `lake -Kjobs=1 build HoiminOracle.MultipleHandlerJoinCases` | 0 / `child_exit` | 2,966 | 677,248 |
+| `lake env lean --run MultipleHandlerJoinAuditMain.lean -- --sensitivity` | 0 / `child_exit` | 2,693 | 656,032 |
+| `lake env lean --run MultipleHandlerJoinAuditMain.lean -- --cases` | 0 / `child_exit` | 840 | 686,624 |
+| `lake env lean --run MultipleHandlerJoinAuditMain.lean -- --stats` | 0 / `child_exit` | 1,357 | 588,208 |
+| `lake env lean --run MultipleHandlerJoinAuditMain.lean -- --output corpus/multiple-handler-joins.jsonl` | 0 / `child_exit` | 556 | 615,264 |
+| `lake env lean --run MultipleHandlerJoinAuditMain.lean -- --check corpus/multiple-handler-joins.jsonl` | 0 / `child_exit` | 563 | 666,256 |
+
+The first case build exposed only authoring syntax: list bang-indexing required
+an irrelevant `Inhabited HandlerStep`, so the two fixed steps were named, and
+a structure literal was aligned to Lean's layout rule. These corrections did
+not change a transition or expected observation.
