@@ -98,8 +98,8 @@ transitions, and event alphabet.
 | `starred_unhandled_remainder` | `internal-fixture` | complete try exits | exact match | no mismatch | retain regression |
 | `two_matching_siblings_exact_route` | `model-only` | exact route | no production comparison | model-only boundary | retain outside correspondence |
 | `raised_handler_allows_later_sibling` | `model-only` | exact route | no production comparison | model-only boundary | retain outside correspondence |
-| `starred_public_candidate_present` | `strict` | complete candidate | not run | not run | wait for public execution |
-| `starred_public_candidate_absent` | `strict` | no overlapping candidate | not run | not run | wait for public execution |
+| `starred_public_candidate_present` | `strict` | complete candidate | exact match | no mismatch | retain regression |
+| `starred_public_candidate_absent` | `strict` | no overlapping candidate | exact match | no mismatch | retain regression |
 
 ## Resource ledger
 
@@ -165,5 +165,16 @@ production semantics. The first formatting check reported one rustfmt layout
 difference in the new test module; `cargo fmt --all` applied that mechanical
 change and the next formatting check passed.
 
-The public adapter, workspace test, Clippy, final corpus freshness run, and CI
-results have not run.
+The public adapter passed both tests. The present row produced one exact
+`target.py` candidate at byte 166 with length 13, operator
+`type_list_sequence`, original `Sequence[int]`, replacement `list[int]`,
+and no symbol. The absent row produced no overlapping candidate. Adjacent
+multiple-handler and nested-try public suites passed 2/2 each.
+
+The first nested-try command used the nonexistent target
+`lean_nested_try_oracle`. Cargo listed `lean_nested_try_flow_oracle`; the
+plan now uses that target, and the corrected command passed. This was a plan
+authoring defect rather than an infrastructure or semantic result.
+
+The workspace test, Clippy, final corpus freshness run, and CI results have not
+run.

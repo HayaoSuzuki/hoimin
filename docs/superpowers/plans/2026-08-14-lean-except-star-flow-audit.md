@@ -235,7 +235,7 @@ Run `cargo test -p hoimin-cli --test lean_except_star_flow_oracle --no-fail-fast
 ```bash
 cargo test -p hoimin-cli --test lean_except_star_flow_oracle --no-fail-fast
 cargo test -p hoimin-cli --test lean_multiple_handler_join_oracle --no-fail-fast
-cargo test -p hoimin-cli --test lean_nested_try_oracle --no-fail-fast
+cargo test -p hoimin-cli --test lean_nested_try_flow_oracle --no-fail-fast
 ```
 
 - [ ] **Step 4: Commit**
