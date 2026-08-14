@@ -2,9 +2,10 @@ import HoiminOracle.CandidateSpanProofs
 
 namespace HoiminOracle.CandidateSpan
 
-def asciiSource : List ByteValue := [120, 32, 43, 32, 121, 10]
-def multilineSource : List ByteValue := [120, 10, 32, 32, 121, 32, 43, 32, 122, 10]
-def multibyteSource : List ByteValue := [195, 169, 32, 43, 32, 120, 10]
+def asciiSource : List ByteValue := [120, 32, 61, 32, 49, 32, 43, 32, 50, 10]
+def multilineSource : List ByteValue :=
+  [120, 32, 61, 32, 48, 10, 121, 32, 61, 32, 49, 32, 43, 32, 50, 10]
+def multibyteSource : List ByteValue := [195, 169, 32, 61, 32, 49, 32, 43, 32, 50, 10]
 
 def asciiEnvironment : Environment where
   source := asciiSource
@@ -22,8 +23,8 @@ def multilineEnvironment : Environment where
 
 def multibyteEnvironment : Environment where
   source := multibyteSource
-  boundaries := [true, false, true, true, true, true, true, true]
-  scalarStarts := [true, false, true, true, true, true, true]
+  boundaries := [true, false, true, true, true, true, true, true, true, true, true, true]
+  scalarStarts := [true, false, true, true, true, true, true, true, true, true, true]
   sourceHash := "current"
   maximumOffset := 18446744073709551615
 
@@ -50,18 +51,18 @@ def makeCandidate (path : String) (start length : Nat) (original replacement : L
     operator := "binary_add_sub"
     line := line
     column := column
-    symbol := some "calc"
+    symbol := none
     sourceHash := sourceHash
     identity := placeholderIdentity }
 
 def asciiCandidate : Candidate :=
-  makeCandidate "src/ascii.py" 2 1 [43] [45] 1 2
+  makeCandidate "src/ascii.py" 6 1 [43] [45] 1 6
 
 def multilineCandidate : Candidate :=
-  makeCandidate "src/multiline.py" 6 1 [43] [45] 2 4
+  makeCandidate "src/multiline.py" 12 1 [43] [45] 2 6
 
 def multibyteCandidate : Candidate :=
-  makeCandidate "src/multibyte.py" 3 1 [43] [45] 1 2
+  makeCandidate "src/multibyte.py" 7 1 [43] [45] 1 6
 
 structure OracleCase where
   schema : Nat := 1
@@ -154,11 +155,11 @@ def caseSafe (item : OracleCase) : Bool :=
 
 def byteCharacterOffsetSensitivity : Bool :=
   sourceSlice multibyteEnvironment multibyteCandidate == [43] &&
-    sourceSlice multibyteEnvironment { multibyteCandidate with start := 2 } != [43]
+    sourceSlice multibyteEnvironment { multibyteCandidate with start := 6 } != [43]
 
 def byteColumnSensitivity : Bool :=
-  locationAt multibyteEnvironment multibyteCandidate.start == { line := 1, column := 2 } &&
-    locationAt multibyteEnvironment multibyteCandidate.start != { line := 1, column := 3 }
+  locationAt multibyteEnvironment multibyteCandidate.start == { line := 1, column := 6 } &&
+    locationAt multibyteEnvironment multibyteCandidate.start != { line := 1, column := 7 }
 
 def offByOneSensitivity : Bool :=
   sourceSlice asciiEnvironment { asciiCandidate with length := 0 } != [43] &&
@@ -173,9 +174,9 @@ def overflowBoundarySensitivity : Bool :=
     !valid multibyteEnvironment nonBoundaryCandidate
 
 def snapshotLocationSensitivity : Bool :=
-  locationAt multilineEnvironment multilineCandidate.start == { line := 2, column := 4 } &&
+  locationAt multilineEnvironment multilineCandidate.start == { line := 2, column := 6 } &&
     locationAt { multilineEnvironment with source := asciiSource }
-      multilineCandidate.start != { line := 2, column := 4 }
+      multilineCandidate.start != { line := 2, column := 6 }
 
 def transportFieldSensitivity : Bool :=
   completeTransport multilineCandidate == multilineCandidate &&
@@ -205,7 +206,7 @@ def suffixSensitivity : Bool :=
 
 def missingResetSensitivity : Bool :=
   let first := replaceBytes asciiEnvironment.source asciiCandidate
-  let second := makeCandidate "src/ascii.py" 4 1 [121] [122] 1 4
+  let second := makeCandidate "src/ascii.py" 8 1 [50] [51] 1 8
   replaceBytes first second !=
     (applyAfterReset asciiEnvironment asciiCandidate second).getD asciiEnvironment.source
 
