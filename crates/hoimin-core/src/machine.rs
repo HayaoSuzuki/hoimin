@@ -1998,8 +1998,13 @@ fn cleanup_reservations_match(expected: &[ReservationId], received: &[Reservatio
 
 #[cfg(test)]
 mod tests {
-    use super::cleanup_reservations_match;
-    use crate::ReservationId;
+    use std::time::Duration;
+
+    use super::{RunState, cleanup_reservations_match};
+    use crate::{
+        CommandArg, ExitPolicy, MutationStatus, OutputConfig, OutputEvent, RawRunConfig,
+        RawRunLimits, ReservationId, RunConfig, RunEffect, exit_code_for, summarize,
+    };
 
     #[test]
     fn cleanup_acknowledgement_requires_exact_set_without_duplicates() {
@@ -2021,5 +2026,80 @@ mod tests {
             &[first, second],
             &[first, second, unexpected]
         ));
+    }
+
+    fn audit_config() -> RunConfig {
+        RunConfig::try_from(RawRunConfig {
+            root: ".".into(),
+            sources: vec!["src".into()],
+            test_argv: vec![CommandArg::Unix(b"python".to_vec())],
+            limits: RawRunLimits {
+                baseline_timeout: Duration::from_secs(1),
+                ..RawRunLimits::default()
+            },
+            output: OutputConfig::default(),
+            ..RawRunConfig::default()
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn composed_exit_policy_matches_all_run_flag_combinations() {
+        let booleans = [false, true];
+        let status_sets = [
+            vec![],
+            vec![MutationStatus::Survived],
+            vec![MutationStatus::Error],
+            vec![MutationStatus::NotRun, MutationStatus::Survived],
+        ];
+
+        for statuses in status_sets {
+            for infrastructure_error in booleans {
+                for baseline_failed in booleans {
+                    for incomplete in booleans {
+                        for interrupted in booleans {
+                            let mut state = RunState::new("lean-policy-audit", audit_config());
+                            state.summary = summarize(&statuses);
+                            state.flags.outcome.infrastructure_error = infrastructure_error;
+                            state.flags.outcome.baseline_failed = baseline_failed;
+                            state.flags.outcome.incomplete = incomplete;
+                            state.flags.report.interrupted = interrupted;
+
+                            let summary = ExitPolicy::from_summary(&state.summary);
+                            let expected = ExitPolicy {
+                                infrastructure_error: infrastructure_error
+                                    || summary.infrastructure_error,
+                                baseline_failed,
+                                incomplete: incomplete || summary.incomplete,
+                                survivors: summary.survivors,
+                                interrupted,
+                            };
+                            assert_eq!(state.exit_policy(), expected);
+                            assert_eq!(state.exit_code(), exit_code_for(expected));
+                            assert_eq!(
+                                state.complete(),
+                                !expected.infrastructure_error
+                                    && !expected.baseline_failed
+                                    && !expected.incomplete
+                                    && !expected.interrupted
+                            );
+
+                            let effects = state.final_report_effects().unwrap();
+                            let RunEffect::EmitOutput(output) = &effects[0] else {
+                                panic!("expected final output effect");
+                            };
+                            let encoded = serde_json::to_string(&output.event).unwrap();
+                            let decoded: OutputEvent = serde_json::from_str(&encoded).unwrap();
+                            let OutputEvent::RunFinished(finished) = decoded else {
+                                panic!("expected public RunFinished event");
+                            };
+                            assert_eq!(finished.counts, state.summary);
+                            assert_eq!(finished.complete, state.complete());
+                            assert_eq!(finished.exit_code, state.exit_code());
+                        }
+                    }
+                }
+            }
+        }
     }
 }
