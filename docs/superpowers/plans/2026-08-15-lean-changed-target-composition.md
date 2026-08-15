@@ -27,7 +27,7 @@
 - [x] For each same-premise mismatch, add a failing Rust regression first and
   make the smallest production repair.
 - [x] Write the audit report and counterexample ledger.
-- [ ] Run resource-guarded Lean checks, focused and workspace Rust tests,
+- [x] Run resource-guarded Lean checks, focused and workspace Rust tests,
   formatting, strict clippy, and diff checks.
 - [ ] Obtain independent review with no Critical or Important findings.
 - [ ] Push, open a PR closing #313, wait for required CI, squash merge, and
