@@ -166,6 +166,51 @@ class DiscoveryTests(unittest.TestCase):
             ["explicit_symbol", "changed_since_base", "risk_cancellation"],
         )
 
+    def test_qualified_methods_and_free_functions_receive_symbol_priority(
+        self,
+    ) -> None:
+        snapshot = RepositorySnapshot(
+            root=Path("/repo"),
+            head="abc",
+            branch="feature",
+            dirty_paths=(),
+            base_paths=(),
+            recent_paths=(),
+        )
+        candidates = [
+            Candidate(
+                "crates/hoimin-core/src/machine.rs",
+                "<hoimin_core::machine::RunState as StateMachine>::accept_completion",
+                None,
+            ),
+            Candidate(
+                "crates/hoimin-core/src/lib.rs", "free_function", None
+            ),
+        ]
+
+        ranked = rank_candidates(
+            candidates,
+            snapshot,
+            explicit_symbols=(
+                "accept_completion",
+                "free_function",
+            ),
+        )
+
+        self.assertEqual(
+            {item.symbol for item in ranked},
+            {
+                "<hoimin_core::machine::RunState as StateMachine>::accept_completion",
+                "free_function",
+            },
+        )
+        self.assertTrue(
+            all(
+                "explicit_symbol" in [reason.code for reason in item.reasons]
+                for item in ranked
+            )
+        )
+
     def test_repository_discovery_uses_bounded_read_only_git_commands(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repository = Path(directory).resolve()

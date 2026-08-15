@@ -17,6 +17,7 @@ if __package__ in {None, ""}:
 from tools.focused_mutation_support.budget import RunBudget, parse_duration
 from tools.focused_mutation_support.discovery import (
     CommandProbe,
+    _symbol_name,
     discover_candidates,
     discover_repository,
 )
@@ -238,9 +239,14 @@ def run_workflow(
                 )
             else:
                 inventory = parse_list_json(_read_stdout(list_command))
-                wanted = {(item.path, item.symbol) for item in selected}
+                wanted = {
+                    (item.path, _symbol_name(item.symbol)) for item in selected
+                }
                 candidates = [
-                    item for item in inventory if not wanted or (item.path, item.symbol) in wanted
+                    item
+                    for item in inventory
+                    if not wanted
+                    or (item.path, _symbol_name(item.symbol)) in wanted
                 ]
                 record.candidates = rank_candidates(
                     candidates, snapshot, options.files, options.symbols

@@ -1,6 +1,6 @@
 from collections.abc import Iterable, Sequence
 
-from .discovery import RepositorySnapshot, _normalize_path
+from .discovery import RepositorySnapshot, _normalize_path, _symbol_name
 from .model import Candidate, RankingReason
 
 
@@ -54,7 +54,7 @@ def rank_candidates(
     explicit_symbols: Sequence[str] = (),
 ) -> list[Candidate]:
     explicit_path_set = {_normalize_path(path) for path in explicit_files}
-    explicit_symbol_set = {symbol.casefold() for symbol in explicit_symbols}
+    explicit_symbol_set = {_symbol_name(symbol) for symbol in explicit_symbols}
     dirty = set(snapshot.dirty_paths)
     base = set(snapshot.base_paths)
     recent = set(snapshot.recent_paths)
@@ -63,7 +63,7 @@ def rank_candidates(
     for candidate in candidates:
         candidate.path = _normalize_path(candidate.path)
         reasons: list[RankingReason] = []
-        if candidate.symbol.casefold() in explicit_symbol_set:
+        if _symbol_name(candidate.symbol) in explicit_symbol_set:
             reasons.append(_reason("explicit_symbol"))
         if candidate.path in explicit_path_set:
             reasons.append(_reason("explicit_file"))
