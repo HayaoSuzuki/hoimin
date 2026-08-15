@@ -87,6 +87,7 @@ import time
 
 root_ready = Path(sys.argv[1])
 descendant_ready = Path(sys.argv[2])
+term_received = Path(sys.argv[3])
 if "--descendant" in sys.argv:
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
     descendant_ready.write_text(str(os.getpid()), encoding="utf-8")
@@ -94,12 +95,24 @@ if "--descendant" in sys.argv:
         time.sleep(0.01)
 
 subprocess.Popen(
-    [sys.executable, __file__, str(root_ready), str(descendant_ready), "--descendant"],
+    [
+        sys.executable,
+        __file__,
+        str(root_ready),
+        str(descendant_ready),
+        str(term_received),
+        "--descendant",
+    ],
     stdin=subprocess.DEVNULL,
     stdout=sys.stdout,
     stderr=sys.stderr,
 )
 root_ready.write_text(str(os.getpid()), encoding="utf-8")
+def handle_term(_signum, _frame):
+    term_received.write_text("received", encoding="utf-8")
+    raise SystemExit(0)
+
+signal.signal(signal.SIGTERM, handle_term)
 while True:
     time.sleep(0.01)
 """
@@ -231,6 +244,24 @@ def wait_for_pid_exit(pid: int, timeout: float = 2.0) -> bool:
         try:
             os.kill(pid, 0)
         except ProcessLookupError:
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def wait_for_pid_exit_or_zombie(pid: int, timeout: float = 2.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            state = subprocess.run(
+                ["ps", "-o", "stat=", "-p", str(pid)],
+                check=False,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+        except OSError:
+            return wait_for_pid_exit(pid, timeout=0.0)
+        if not state or state.startswith("Z"):
             return True
         time.sleep(0.01)
     return False
@@ -1172,6 +1203,7 @@ class RunnerTests(unittest.TestCase):
     def test_timeout_kills_term_resistant_descendant_after_root_exits(self) -> None:
         root_ready = self.work / "term-resistant-root.ready"
         descendant_ready = self.work / "term-resistant-descendant.ready"
+        term_received = self.work / "term-resistant-root.term"
         descendant_pid: int | None = None
 
         try:
@@ -1182,6 +1214,7 @@ class RunnerTests(unittest.TestCase):
                         str(self.term_resistant_descendant_fake),
                         str(root_ready),
                         str(descendant_ready),
+                        str(term_received),
                     ],
                     cwd=self.work,
                     timeout=0.2,
@@ -1189,9 +1222,10 @@ class RunnerTests(unittest.TestCase):
                 )
             descendant_pid = read_ready_pid(descendant_ready)
             self.assertIsNotNone(descendant_pid)
+            self.assertTrue(term_received.is_file(), "root did not receive SIGTERM")
             if descendant_pid is not None:
                 self.assertTrue(
-                    wait_for_pid_exit(descendant_pid),
+                    wait_for_pid_exit_or_zombie(descendant_pid),
                     f"descendant {descendant_pid} survived",
                 )
         finally:

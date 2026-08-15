@@ -21,10 +21,22 @@ import os
 import signal
 import subprocess
 import sys
+import time
 
-signal.signal(signal.SIGTERM, signal.SIG_IGN)
-child = subprocess.Popen(sys.argv[1:])
+terminating = False
+def hold_after_term(_signum, _frame):
+    global terminating
+    terminating = True
+
+signal.signal(signal.SIGTERM, hold_after_term)
+def restore_sigterm() -> None:
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+
+child = subprocess.Popen(sys.argv[1:], preexec_fn=restore_sigterm)
 returncode = child.wait()
+if terminating:
+    while True:
+        time.sleep(1)
 if returncode < 0:
     os.kill(os.getpid(), -returncode)
 raise SystemExit(returncode)
