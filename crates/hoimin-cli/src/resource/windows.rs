@@ -54,13 +54,9 @@ impl WindowsBackend {
     ///
     /// Returns an error when configured limits cannot be represented by the Windows Job Object API
     /// or its run-wide job cannot be created.
-    pub fn new(limits: &RunLimits) -> Result<Self, ResourceError> {
-        let memory = usize::try_from(limits.max_memory.get())
-            .map_err(|_| ResourceError::InvalidLimit("max_memory"))?;
-        let processes = u32::try_from(limits.max_processes.get())
-            .map_err(|_| ResourceError::InvalidLimit("max_processes"))?;
+    pub fn new(_limits: &RunLimits) -> Result<Self, ResourceError> {
         Ok(Self {
-            inner: Arc::new(WindowsRunJob::new(memory, processes)?),
+            inner: Arc::new(WindowsRunJob::new()?),
             attach_fault: AttachFault::None,
         })
     }
@@ -97,7 +93,7 @@ impl WindowsBackend {
     pub(crate) fn prepare(
         &self,
         command: &mut Command,
-        _limits: ProcessLimits,
+        limits: ProcessLimits,
     ) -> Result<ProcessSupervisor, ResourceError> {
         {
             let mut state = self
@@ -111,9 +107,13 @@ impl WindowsBackend {
             }
         }
         super::suspended::configure(command);
+        let root_job = create_limited_root_job(limits)?;
+        let completion_port = create_completion_port()?;
+        associate_completion_port(root_job.raw(), completion_port.raw())?;
         Ok(ProcessSupervisor::Windows(WindowsSupervisor {
             run: Arc::clone(&self.inner),
-            root_job: create_kill_on_close_job()?,
+            root_job,
+            completion_port,
             root_id: Uuid::new_v4(),
             signal: Arc::new(RootSignal::default()),
             pid: None,
@@ -163,9 +163,9 @@ struct RootSignal {
 }
 
 impl WindowsRunJob {
-    fn new(memory: usize, processes: u32) -> Result<Self, ResourceError> {
+    fn new() -> Result<Self, ResourceError> {
         let job = create_job()?;
-        configure_run_job(job.raw(), memory, processes)?;
+        configure_run_job(job.raw())?;
         let completion_port = create_completion_port()?;
         associate_completion_port(job.raw(), completion_port.raw())?;
         Ok(Self {
@@ -330,13 +330,20 @@ impl WindowsRunJob {
     }
 
     fn next_notification(&self, timeout_ms: u32) -> Result<Option<(u32, u32)>, ResourceError> {
+        Self::next_notification_from(self.completion_port.raw(), timeout_ms)
+    }
+
+    fn next_notification_from(
+        port: HANDLE,
+        timeout_ms: u32,
+    ) -> Result<Option<(u32, u32)>, ResourceError> {
         let mut message = 0_u32;
         let mut key = 0_usize;
         let mut overlapped = null_mut();
         // SAFETY: all pointers reference live local storage and the completion port is owned.
         let ok = unsafe {
             GetQueuedCompletionStatus(
-                self.completion_port.raw(),
+                port,
                 &raw mut message,
                 &raw mut key,
                 &raw mut overlapped,
@@ -428,20 +435,16 @@ fn detach_root_generation(state: &mut RunState, root_id: Uuid) {
     }
 }
 
-fn mark_active(state: &mut RunState, violation: u8) {
-    for root in &state.active {
-        if let Some(signal) = root.signal.as_ref().and_then(Weak::upgrade) {
-            // Aggregate Job notifications do not identify a culprit. Mark only roots active at
-            // receipt as participants in a run-wide safety violation; future roots are unaffected.
-            signal.violations.fetch_or(violation, Ordering::AcqRel);
-        }
-    }
+fn mark_active(_state: &mut RunState, _violation: u8) {
+    // The run-wide job intentionally has no memory/process limits: its notifications cannot
+    // identify the responsible root. Limits live on each nested root job instead.
 }
 
 #[derive(Debug)]
 pub(crate) struct WindowsSupervisor {
     run: Arc<WindowsRunJob>,
     root_job: OwnedHandle,
+    completion_port: OwnedHandle,
     root_id: Uuid,
     signal: Arc<RootSignal>,
     pid: Option<u32>,
@@ -466,8 +469,59 @@ impl WindowsSupervisor {
         termination: ProcessTermination,
     ) -> Result<ProcessTermination, ResourceError> {
         self.pid.ok_or(ResourceError::MissingProcessId)?;
-        self.run
-            .classify_root(self.root_id, &self.signal, termination)
+        let termination = self
+            .run
+            .classify_root(self.root_id, &self.signal, termination)?;
+        self.classify_root_notification(termination)
+    }
+
+    fn classify_root_notification(
+        &self,
+        termination: ProcessTermination,
+    ) -> Result<ProcessTermination, ResourceError> {
+        let mut violations = self.signal.violations.load(Ordering::Acquire);
+        let deadline = Instant::now() + NOTIFICATION_BARRIER_TIMEOUT;
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(ResourceError::io(
+                    "wait for nested Job Object exit notification",
+                    io::Error::new(io::ErrorKind::TimedOut, "root exit notification timed out"),
+                ));
+            }
+            let timeout_ms = u32::try_from(remaining.as_millis().min(u128::from(u32::MAX)))
+                .expect("bounded timeout fits u32");
+            let Some((message, pid)) = WindowsRunJob::next_notification_from(
+                self.completion_port.raw(),
+                timeout_ms.max(1),
+            )?
+            else {
+                return Err(ResourceError::io(
+                    "wait for nested Job Object exit notification",
+                    io::Error::new(io::ErrorKind::TimedOut, "root exit notification timed out"),
+                ));
+            };
+            violations |= match message {
+                JOB_OBJECT_MSG_JOB_MEMORY_LIMIT => MEMORY_VIOLATION,
+                JOB_OBJECT_MSG_ACTIVE_PROCESS_LIMIT => PROCESS_VIOLATION,
+                _ => 0,
+            };
+            if pid == self.pid.expect("checked before classifying")
+                && matches!(
+                    message,
+                    JOB_OBJECT_MSG_EXIT_PROCESS | JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS
+                )
+            {
+                break;
+            }
+        }
+        if violations & MEMORY_VIOLATION != 0 {
+            Ok(ProcessTermination::OutOfMemory)
+        } else if violations & PROCESS_VIOLATION != 0 {
+            Ok(ProcessTermination::ProcessLimit)
+        } else {
+            Ok(termination)
+        }
     }
 
     pub(crate) fn terminate(&mut self) -> Result<(), ResourceError> {
@@ -526,21 +580,23 @@ fn create_job() -> Result<OwnedHandle, ResourceError> {
     )
 }
 
-fn create_kill_on_close_job() -> Result<OwnedHandle, ResourceError> {
+fn create_limited_root_job(limits: ProcessLimits) -> Result<OwnedHandle, ResourceError> {
     let job = create_job()?;
-    let mut information: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { zeroed() };
-    information.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-    set_extended_limits(job.raw(), &information, "configure nested root process job")?;
-    Ok(job)
-}
-
-fn configure_run_job(job: HANDLE, memory: usize, processes: u32) -> Result<(), ResourceError> {
     let mut information: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { zeroed() };
     information.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
         | JOB_OBJECT_LIMIT_JOB_MEMORY
         | JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
-    information.BasicLimitInformation.ActiveProcessLimit = processes;
-    information.JobMemoryLimit = memory;
+    information.BasicLimitInformation.ActiveProcessLimit = u32::try_from(limits.max_processes)
+        .map_err(|_| ResourceError::InvalidLimit("max_processes"))?;
+    information.JobMemoryLimit = usize::try_from(limits.max_memory_bytes)
+        .map_err(|_| ResourceError::InvalidLimit("max_memory"))?;
+    set_extended_limits(job.raw(), &information, "configure nested root process job")?;
+    Ok(job)
+}
+
+fn configure_run_job(job: HANDLE) -> Result<(), ResourceError> {
+    let mut information: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { zeroed() };
+    information.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
     set_extended_limits(job, &information, "configure run-wide process job")
 }
 
@@ -1161,7 +1217,7 @@ mod tests {
     }
 
     #[test]
-    fn exited_root_is_not_marked_by_a_later_aggregate_violation() {
+    fn run_wide_violation_does_not_mark_any_active_root() {
         let exited = std::sync::Arc::new(RootSignal::default());
         let active = std::sync::Arc::new(RootSignal::default());
         let exited_id = Uuid::from_u128(301);
@@ -1197,7 +1253,7 @@ mod tests {
         );
 
         assert_eq!(exited.violations.load(Ordering::Acquire), 0);
-        assert_eq!(active.violations.load(Ordering::Acquire), MEMORY_VIOLATION);
+        assert_eq!(active.violations.load(Ordering::Acquire), 0);
         assert!(state.exited_roots.contains(&exited_id));
     }
 

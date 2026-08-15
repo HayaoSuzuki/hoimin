@@ -607,25 +607,12 @@ mod platform {
 
             let run_path = create_unique_child(&parent, "hoimin")?;
             let setup = (|| {
-                write_memory_limit(
-                    &run_path.join("memory.max"),
-                    limits.max_memory.get(),
-                    diagnostics,
-                )?;
-                write_exact_limit(
-                    &run_path.join("pids.max"),
-                    limits.max_processes.get().to_string().as_bytes(),
-                )?;
-                write_exact_limit(&run_path.join("memory.oom.group"), b"1")?;
+                enable_required_controllers(&run_path, diagnostics)?;
                 verify_migration(&run_path, &launcher)?;
-                let counters = read_events(&run_path)?;
                 Ok(LinuxRunCgroup {
                     path: run_path.clone(),
                     diagnostics: diagnostics.clone(),
-                    state: Mutex::new(RunState {
-                        counters,
-                        ..RunState::default()
-                    }),
+                    state: Mutex::new(RunState::default()),
                 })
             })();
             let run = match setup {
@@ -676,9 +663,9 @@ mod platform {
         pub(crate) fn prepare(
             &self,
             _command: &mut Command,
-            _limits: ProcessLimits,
+            limits: ProcessLimits,
         ) -> Result<ProcessSupervisor, ResourceError> {
-            self.run.prepare_root()
+            self.run.prepare_root(limits)
         }
 
         pub fn close(&self) -> Result<(), ResourceError> {
@@ -697,7 +684,6 @@ mod platform {
     struct RunState {
         closed: bool,
         cleaned: bool,
-        counters: CgroupEventCounters,
         roots: HashMap<Uuid, RootEntry>,
     }
 
@@ -706,6 +692,7 @@ mod platform {
         root: Arc<RootCgroup>,
         signal: Arc<RootSignal>,
         active: bool,
+        counters: CgroupEventCounters,
     }
 
     #[derive(Debug)]
@@ -720,7 +707,10 @@ mod platform {
     }
 
     impl LinuxRunCgroup {
-        fn prepare_root(self: &Arc<Self>) -> Result<ProcessSupervisor, ResourceError> {
+        fn prepare_root(
+            self: &Arc<Self>,
+            limits: ProcessLimits,
+        ) -> Result<ProcessSupervisor, ResourceError> {
             let mut state = self
                 .state
                 .lock()
@@ -730,6 +720,18 @@ mod platform {
             }
             self.refresh_events(&mut state)?;
             let path = create_unique_child(&self.path, "root")?;
+            let mut diagnostics = Vec::new();
+            write_memory_limit(
+                &path.join("memory.max"),
+                limits.max_memory_bytes,
+                &mut diagnostics,
+            )?;
+            write_exact_limit(
+                &path.join("pids.max"),
+                limits.max_processes.to_string().as_bytes(),
+            )?;
+            write_exact_limit(&path.join("memory.oom.group"), b"1")?;
+            let counters = read_events(&path)?;
             let root = Arc::new(RootCgroup {
                 id: Uuid::new_v4(),
                 path,
@@ -741,6 +743,7 @@ mod platform {
                     root: Arc::clone(&root),
                     signal: Arc::clone(&signal),
                     active: false,
+                    counters,
                 },
             );
             Ok(ProcessSupervisor::Linux(LinuxSupervisor {
@@ -836,11 +839,11 @@ mod platform {
         }
 
         fn refresh_events(&self, state: &mut RunState) -> Result<(), ResourceError> {
-            let next = read_events(&self.path)?;
-            let violations = violations_since(state.counters, next);
-            state.counters = next;
-            if violations != 0 {
-                for entry in state.roots.values().filter(|entry| entry.active) {
+            for entry in state.roots.values_mut().filter(|entry| entry.active) {
+                let next = read_events(&entry.root.path)?;
+                let violations = violations_since(entry.counters, next);
+                entry.counters = next;
+                if violations != 0 {
                     entry
                         .signal
                         .violations

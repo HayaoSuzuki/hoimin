@@ -1317,7 +1317,7 @@ mod job_object {
     }
 
     #[tokio::test]
-    async fn job_object_memory_limit_is_aggregate_across_concurrent_roots() {
+    async fn job_object_memory_limit_is_isolated_per_concurrent_root() {
         let output = tempfile::tempdir().unwrap();
         let handler = Arc::new(hard_handler(
             Utf8Path::from_path(output.path()).unwrap(),
@@ -1338,12 +1338,15 @@ mod job_object {
         let (first, second) = tokio::join!(first, second);
         let terminations = [first.unwrap().termination, second.unwrap().termination];
 
-        assert!(terminations.contains(&ProcessTermination::OutOfMemory));
+        assert_eq!(
+            terminations,
+            [ProcessTermination::Exit(0), ProcessTermination::Exit(0)]
+        );
         handler.close().unwrap();
     }
 
     #[tokio::test]
-    async fn job_object_process_limit_is_aggregate_across_concurrent_roots() {
+    async fn job_object_process_limit_is_isolated_per_concurrent_root() {
         let output = tempfile::tempdir().unwrap();
         let handler = Arc::new(hard_handler(
             Utf8Path::from_path(output.path()).unwrap(),
@@ -1357,7 +1360,10 @@ mod job_object {
         let (first, second) = tokio::join!(first, second);
         let terminations = [first.unwrap().termination, second.unwrap().termination];
 
-        assert!(terminations.contains(&ProcessTermination::ProcessLimit));
+        assert_eq!(
+            terminations,
+            [ProcessTermination::Exit(0), ProcessTermination::Exit(0)]
+        );
         handler.close().unwrap();
     }
 
