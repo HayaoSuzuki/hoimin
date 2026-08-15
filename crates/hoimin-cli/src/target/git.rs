@@ -562,6 +562,24 @@ mod tests {
         );
     }
 
+    #[test]
+    fn lean_changed_target_parser_isolation_fixture() {
+        let diff = b"diff --git a/bad.txt b/bad.txt\n--- a/bad.txt\n+++ b/bad.txt\n@@ -1 +1 @@\n+++ b/decoy.py\n@@ -9 +9 @@\ndiff --git a/pkg/good.py b/pkg/good.py\n--- a/pkg/good.py\n+++ b/pkg/good.py\n@@ -2,0 +3 @@\n+value = 1 + 2\n";
+        let mut changed = BTreeMap::new();
+        let mut excluded = BTreeSet::new();
+
+        parse_diff(diff, &mut changed, &mut excluded).unwrap();
+
+        assert_eq!(
+            changed,
+            BTreeMap::from([(
+                Utf8PathBuf::from("pkg/good.py"),
+                vec![LineRange { start: 3, end: 3 }],
+            )])
+        );
+        assert!(excluded.is_empty());
+    }
+
     proptest! {
         #[test]
         fn generated_hostile_zero_context_diffs_match_ranges(

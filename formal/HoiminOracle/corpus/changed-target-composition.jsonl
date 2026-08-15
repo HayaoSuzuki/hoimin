@@ -1,0 +1,11 @@
+{"schema":1,"id":"modified-overlap","mode":"strict","scenario":"modified_overlap","path":"pkg/a.py","eligible_lines":[2,3,4,5,6,7]}
+{"schema":1,"id":"explicit-line","mode":"strict","scenario":"explicit_intersection","path":"pkg/a.py","eligible_lines":[4,5]}
+{"schema":1,"id":"symbol-line","mode":"strict","scenario":"symbol_intersection","path":"pkg/a.py","eligible_lines":[3]}
+{"schema":1,"id":"rename-destination","mode":"strict","scenario":"rename","path":"pkg/new.py","eligible_lines":[2]}
+{"schema":1,"id":"deleted-path","mode":"strict","scenario":"deleted","path":"pkg/deleted.py","eligible_lines":[]}
+{"schema":1,"id":"binary-path","mode":"strict","scenario":"binary","path":"pkg/binary.py","eligible_lines":[]}
+{"schema":1,"id":"untracked-unterminated","mode":"strict","scenario":"untracked","path":"pkg/new.py","eligible_lines":[1,2]}
+{"schema":1,"id":"diff-base-worktree","mode":"strict","scenario":"diff_base","path":"pkg/a.py","eligible_lines":[2,3]}
+{"schema":1,"id":"hostile-parser","mode":"internal-fixture","scenario":"parser_isolation","path":"pkg/good.py","eligible_lines":[3]}
+{"schema":1,"id":"non-utf8-path","mode":"model-only","scenario":"non_utf8_path","path":null,"eligible_lines":[]}
+{"schema":1,"id":"git-failure","mode":"infrastructure-error","scenario":"git_failure","path":null,"eligible_lines":[]}

@@ -66,3 +66,6 @@ import HoiminOracle.OutputRetentionProofs
 import HoiminOracle.CandidateSpanModel
 import HoiminOracle.CandidateSpanProofs
 import HoiminOracle.CandidateSpanCases
+import HoiminOracle.ChangedTargetModel
+import HoiminOracle.ChangedTargetProofs
+import HoiminOracle.ChangedTargetCases
