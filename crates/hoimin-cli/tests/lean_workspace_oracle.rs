@@ -4,8 +4,9 @@ use std::fs;
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_cli::workspace::{CopyOptions, WorkspaceHandler};
 use hoimin_core::{
-    ApplyMutation, BudgetLedger, ByteSpan, EffectFailed, EffectId, MutationCandidate, Preflight,
-    ResetWorker, RunBudgets, WorkspaceCopyGrant, reserve_workspace_copy,
+    ApplyMutation, BudgetLedger, ByteSpan, CANDIDATE_SCHEMA_VERSION, CandidateIdentity,
+    EffectFailed, EffectId, MutationCandidate, Preflight, ResetWorker, RunBudgets,
+    WorkspaceCopyGrant, reserve_workspace_copy, stable_mutant_id,
 };
 use serde::Deserialize;
 
@@ -202,7 +203,7 @@ impl StrictFixture {
             .blake3
             .to_hex()
             .to_string();
-        Ok(MutationCandidate {
+        let mut candidate = MutationCandidate {
             id: "lean-workspace-oracle".into(),
             sequence: 0,
             path: "pkg/a.py".into(),
@@ -217,7 +218,17 @@ impl StrictFixture {
             column: 0,
             symbol: None,
             file_hash: hash,
+        };
+        candidate.id = stable_mutant_id(&CandidateIdentity {
+            schema_version: CANDIDATE_SCHEMA_VERSION,
+            file_hash: candidate.file_hash.clone(),
+            path: candidate.path.clone(),
+            span: candidate.span,
+            operator: candidate.operator.clone(),
+            replacement: candidate.replacement.clone(),
         })
+        .to_string();
+        Ok(candidate)
     }
 
     fn apply(&mut self) -> Result<(), String> {

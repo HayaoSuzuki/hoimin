@@ -35,7 +35,7 @@
 ## 5. Delivery
 
 - [x] Write the audit report and counterexample ledger.
-- [ ] Run resource-guarded Lean checks, focused and workspace Rust tests,
+- [x] Run resource-guarded Lean checks, focused and workspace Rust tests,
   formatting, strict clippy, and diff checks.
 - [ ] Obtain independent review with no Critical or Important findings.
 - [ ] Push, open a PR closing #312, wait for all required CI, squash merge, and

@@ -2,7 +2,7 @@
 
 ## Verdict
 
-Issue #312 found one same-premise Rust mismatch. `WorkerWorkspace::apply_mutation`
+Issue #312 found two same-premise Rust mismatches. `WorkerWorkspace::apply_mutation`
 rechecked the manifest hash, byte bounds, and original bytes, but did not recheck
 the candidate line and Unicode-scalar column. A directly injected candidate with
 the right bytes and a wrong column was therefore written successfully.
@@ -12,7 +12,14 @@ The retained regression changes only `column` from 0 to 1 for source
 Before the fix the worker became `mutated!\n`; the contract requires rejection
 with the worker remaining `original\n`. The production repair calls the existing
 shared `validate_candidate` before any seek, truncation, or write and maps its
-result into existing `WorkspaceError` variants. No public API or schema changed.
+result into existing `WorkspaceError` variants.
+
+The same write boundary also discarded the stable ID returned by that validator.
+A candidate whose descriptor was otherwise valid but whose `id` changed from
+the canonical value to `m1_corrupted` was therefore written successfully. The
+second retained regression requires rejection with unchanged worker bytes. The
+repair compares the returned canonical ID with the transported candidate ID
+before writing. No public API or schema changed.
 
 ## Audited contract
 
@@ -77,10 +84,13 @@ of a preceding multibyte character. Public plan descriptors and public verify
 report candidates match path, span, original, replacement, operator, line,
 column, symbol, and stable ID.
 
-The adapter rejects unknown fields, duplicate IDs, crossed modes, stale harness
-expectations, malformed boundary/scalar arrays, wrong maximum, and inconsistent
-expected bytes. Model-only and infrastructure rows are never promoted to public
-Rust evidence.
+The adapter derives UTF-8 boundary and scalar-start vectors directly from each
+source and requires exact equality with the corpus arrays. It also rejects
+unknown fields, duplicate IDs, crossed modes, stale harness expectations, wrong
+maximum, and inconsistent expected bytes. Strict public observations recompute
+the expected stable ID independently from the corpus descriptor rather than
+comparing two production projections to each other. Model-only and
+infrastructure rows are never promoted to public Rust evidence.
 
 ## Transport observations
 
@@ -96,8 +106,9 @@ All twelve issue families are detected independently. Combined families use
 both required witnesses: short and long off-by-one spans, overflow and
 non-boundary endpoints, and suffix loss and duplication. Other witnesses cover
 byte/character offset confusion, byte columns, replacement-length validation,
-location from another snapshot, transport field loss, identity-field omission,
-apply-before-validation, truncate-before-validation, and missing reset.
+location from another snapshot, an explicit transport that drops the span,
+identity-field omission, apply-before-validation, truncate-before-validation,
+and missing reset.
 
 The existing property and focused tests remain the local foundation rather than
 being duplicated: `candidate_policy` covers strict validation, overflow, UTF-8,
@@ -108,11 +119,12 @@ composition.
 
 ## Production impact
 
-The workspace now reconstructs a `CandidateDescriptor` and invokes the shared
-canonical validator after verifying the worker manifest hash and before the
-existing byte replacement. Location, UTF-8, normalized-path, mutation-shape,
-and shared validation rules can no longer be bypassed at this last write
-boundary. Existing hash/original/span error codes remain stable.
+The workspace now reconstructs a `CandidateDescriptor`, invokes the shared
+canonical validator after verifying the worker manifest hash, and compares its
+returned stable ID with the transported candidate ID before the existing byte
+replacement. Location, UTF-8, normalized-path, mutation-shape, identity, and
+shared validation rules can no longer be bypassed at this last write boundary.
+Existing hash/original/span error codes remain stable.
 
 ## Resource measurements
 
@@ -121,13 +133,13 @@ root-plus-descendant RSS ceiling, and 250 ms sampling.
 
 | Command | Elapsed ms | Peak RSS KiB | Exit / reason |
 | --- | ---: | ---: | --- |
-| proof module direct compile | 563 | 649,216 | 0 / `child_exit` |
-| external proof consumer | 551 | 664,608 | 0 / `child_exit` |
-| sensitivity | 281 | 2,240 | 0 / `child_exit` |
-| fixed cases | 285 | 2,912 | 0 / `child_exit` |
-| corpus freshness | 284 | 2,032 | 0 / `child_exit` |
+| proof module direct compile | 2,427 | 665,056 | 0 / `child_exit` |
+| external proof consumer | 551 | 54,560 | 0 / `child_exit` |
+| sensitivity | 284 | 3,184 | 0 / `child_exit` |
+| fixed cases | 288 | 2,784 | 0 / `child_exit` |
+| corpus freshness | 283 | 2,800 | 0 / `child_exit` |
 
-No retained command reached either limit. The largest sample remained 121,824
+No retained command reached either limit. The largest sample remained 121,376
 KiB below the RSS ceiling.
 
 ## Exclusions

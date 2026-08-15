@@ -1427,8 +1427,9 @@ fn effect_failed(id: hoimin_core::EffectId, error: WorkspaceError) -> EffectFail
 mod task_tests {
     use camino::Utf8Path;
     use hoimin_core::{
-        ApplyMutation, BudgetLedger, ByteSpan, EffectId, MutationCandidate, Preflight, ResetWorker,
-        RunBudgets, RunEvent, reserve_workspace_copy,
+        ApplyMutation, BudgetLedger, ByteSpan, CANDIDATE_SCHEMA_VERSION, CandidateIdentity,
+        EffectId, MutationCandidate, Preflight, ResetWorker, RunBudgets, RunEvent,
+        reserve_workspace_copy, stable_mutant_id,
     };
 
     use super::{CopyOptions, WorkspaceHandler};
@@ -1461,7 +1462,7 @@ mod task_tests {
 
     fn candidate(handler: &WorkspaceHandler) -> MutationCandidate {
         let worker = handler.worker(0).unwrap();
-        MutationCandidate {
+        let mut candidate = MutationCandidate {
             id: "candidate".into(),
             sequence: 1,
             path: "pkg/a.py".into(),
@@ -1482,7 +1483,17 @@ mod task_tests {
                 .blake3
                 .to_hex()
                 .to_string(),
-        }
+        };
+        candidate.id = stable_mutant_id(&CandidateIdentity {
+            schema_version: CANDIDATE_SCHEMA_VERSION,
+            file_hash: candidate.file_hash.clone(),
+            path: candidate.path.clone(),
+            span: candidate.span,
+            operator: candidate.operator.clone(),
+            replacement: candidate.replacement.clone(),
+        })
+        .to_string();
+        candidate
     }
 
     #[test]

@@ -8,10 +8,10 @@ use hoimin_cli::analyzer::CandidateStore;
 use hoimin_cli::session::SessionHandler;
 use hoimin_cli::workspace::{CopyOptions, WorkerWorkspace, WorkspaceError, WorkspacePlan};
 use hoimin_core::{
-    ApplyMutation, BeginSession, BudgetLedger, ByteSpan, CandidateCursor, CandidateDescriptor,
-    CandidateIdentity, CandidateValidationError, EffectId, LookupStoredResult, MutantResult,
-    MutationCandidate, MutationStatus, PersistResult, ResourceMode, RunBudgets, RunFingerprint,
-    reserve_workspace_copy, stable_mutant_id, validate_candidate,
+    ApplyMutation, BeginSession, BudgetLedger, ByteSpan, CANDIDATE_SCHEMA_VERSION, CandidateCursor,
+    CandidateDescriptor, CandidateIdentity, CandidateValidationError, EffectId, LookupStoredResult,
+    MutantResult, MutationCandidate, MutationStatus, PersistResult, ResourceMode, RunBudgets,
+    RunFingerprint, reserve_workspace_copy, stable_mutant_id, validate_candidate,
 };
 use serde::Deserialize;
 
@@ -106,6 +106,24 @@ fn validate_case_shape(case: &OracleCase) {
     assert_eq!(case.scalar_starts.len(), case.source.len(), "{}", case.id);
     assert_eq!(case.boundaries.first(), Some(&true), "{}", case.id);
     assert_eq!(case.boundaries.last(), Some(&true), "{}", case.id);
+    let text = std::str::from_utf8(&case.source)
+        .unwrap_or_else(|error| panic!("{} source is not UTF-8: {error}", case.id));
+    assert_eq!(
+        case.boundaries,
+        (0..=case.source.len())
+            .map(|offset| text.is_char_boundary(offset))
+            .collect::<Vec<_>>(),
+        "{}",
+        case.id
+    );
+    assert_eq!(
+        case.scalar_starts,
+        (0..case.source.len())
+            .map(|offset| text.is_char_boundary(offset))
+            .collect::<Vec<_>>(),
+        "{}",
+        case.id
+    );
     assert_eq!(case.candidate.sequence, 1, "{}", case.id);
     assert!(
         matches!(case.candidate.hash_mode.as_str(), "current" | "stale"),
@@ -210,6 +228,15 @@ fn candidate_span_corpus_rejects_unknown_crossed_and_ignored_fields() {
     let mut ignored = rows;
     ignored[11]["expected_bytes"] = serde_json::json!([1]);
     assert!(std::panic::catch_unwind(|| parse_corpus(&render_rows(ignored))).is_err());
+
+    let mut false_boundary_premise = CORPUS
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    false_boundary_premise[2]["boundaries"][1] = serde_json::json!(true);
+    assert!(
+        std::panic::catch_unwind(|| parse_corpus(&render_rows(false_boundary_premise))).is_err()
+    );
 }
 
 fn render_rows(rows: Vec<serde_json::Value>) -> String {
@@ -501,6 +528,8 @@ async fn public_plan_and_verify_preserve_all_strict_candidate_fields() {
 }
 
 fn assert_public_candidate(actual: &serde_json::Value, case: &OracleCase) {
+    let expected_id = stable_mutant_id(&CandidateIdentity::from(&descriptor(case).unwrap()));
+    assert_eq!(actual["id"], expected_id.as_str());
     assert_eq!(actual["path"], case.candidate.path.as_str());
     assert_eq!(actual["span"]["start"], case.candidate.start);
     assert_eq!(actual["span"]["length"], case.candidate.length);
@@ -575,6 +604,15 @@ fn workspace_matches_apply_reject_unchanged_and_reset_rows() {
     second.original = "2".to_owned();
     second.replacement = "3".to_owned();
     second.column = 8;
+    second.id = stable_mutant_id(&CandidateIdentity {
+        schema_version: CANDIDATE_SCHEMA_VERSION,
+        file_hash: second.file_hash.clone(),
+        path: second.path.clone(),
+        span: second.span,
+        operator: second.operator.clone(),
+        replacement: second.replacement.clone(),
+    })
+    .to_string();
     worker.apply_mutation(&second).unwrap();
     assert_eq!(worker.read(&second.path).unwrap(), b"x = 1 + 3\n");
 }

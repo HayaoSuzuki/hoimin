@@ -30,30 +30,36 @@ impl WorkerWorkspace {
                 path: candidate.path.clone(),
             });
         }
-        validate_candidate(&bytes, &candidate_descriptor(candidate)).map_err(
-            |error| match error {
-                CandidateValidationError::FileHashMismatch => {
-                    WorkspaceError::MutationHashMismatch {
-                        path: candidate.path.clone(),
+        let stable_id =
+            validate_candidate(&bytes, &candidate_descriptor(candidate)).map_err(|error| {
+                match error {
+                    CandidateValidationError::FileHashMismatch => {
+                        WorkspaceError::MutationHashMismatch {
+                            path: candidate.path.clone(),
+                        }
+                    }
+                    CandidateValidationError::OriginalMismatch => {
+                        WorkspaceError::MutationOriginalMismatch {
+                            path: candidate.path.clone(),
+                        }
+                    }
+                    CandidateValidationError::UnsupportedSchema
+                    | CandidateValidationError::InvalidPath
+                    | CandidateValidationError::SpanOutOfBounds
+                    | CandidateValidationError::LocationMismatch
+                    | CandidateValidationError::InvalidUtf8
+                    | CandidateValidationError::InvalidMutation => {
+                        WorkspaceError::MutationSpanInvalid {
+                            path: candidate.path.clone(),
+                        }
                     }
                 }
-                CandidateValidationError::OriginalMismatch => {
-                    WorkspaceError::MutationOriginalMismatch {
-                        path: candidate.path.clone(),
-                    }
-                }
-                CandidateValidationError::UnsupportedSchema
-                | CandidateValidationError::InvalidPath
-                | CandidateValidationError::SpanOutOfBounds
-                | CandidateValidationError::LocationMismatch
-                | CandidateValidationError::InvalidUtf8
-                | CandidateValidationError::InvalidMutation => {
-                    WorkspaceError::MutationSpanInvalid {
-                        path: candidate.path.clone(),
-                    }
-                }
-            },
-        )?;
+            })?;
+        if stable_id.as_str() != candidate.id {
+            return Err(WorkspaceError::MutationSpanInvalid {
+                path: candidate.path.clone(),
+            });
+        }
 
         let start = usize::try_from(candidate.span.start).map_err(|_| {
             WorkspaceError::MutationSpanInvalid {
@@ -205,7 +211,7 @@ mod tests {
             .blake3
             .to_hex()
             .to_string();
-        let candidate = MutationCandidate {
+        let mut candidate = MutationCandidate {
             id: "race".into(),
             sequence: 0,
             path: Utf8PathBuf::from("swap/target.py"),
@@ -221,6 +227,12 @@ mod tests {
             symbol: None,
             file_hash: hash,
         };
+        candidate.id = hoimin_core::validate_candidate(
+            b"original\n",
+            &super::candidate_descriptor(&candidate),
+        )
+        .unwrap()
+        .to_string();
         (project, worker, candidate)
     }
 
@@ -273,6 +285,18 @@ mod tests {
     fn mutation_rejects_location_mismatch_without_changing_worker_bytes() {
         let (_project, mut worker, mut candidate) = worker_and_candidate();
         candidate.column = 1;
+
+        assert!(matches!(
+            worker.apply_mutation(&candidate),
+            Err(super::WorkspaceError::MutationSpanInvalid { .. })
+        ));
+        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
+    }
+
+    #[test]
+    fn mutation_rejects_stable_id_mismatch_without_changing_worker_bytes() {
+        let (_project, mut worker, mut candidate) = worker_and_candidate();
+        candidate.id = "m1_corrupted".to_owned();
 
         assert!(matches!(
             worker.apply_mutation(&candidate),

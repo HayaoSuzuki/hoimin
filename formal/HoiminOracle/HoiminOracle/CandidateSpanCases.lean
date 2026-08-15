@@ -178,9 +178,12 @@ def snapshotLocationSensitivity : Bool :=
     locationAt { multilineEnvironment with source := asciiSource }
       multilineCandidate.start != { line := 2, column := 6 }
 
+def brokenTransportDropsSpan (candidate : Candidate) : Candidate :=
+  { candidate with start := 0, length := 0 }
+
 def transportFieldSensitivity : Bool :=
   completeTransport multilineCandidate == multilineCandidate &&
-    completeTransport { multilineCandidate with length := 0 } != multilineCandidate
+    brokenTransportDropsSpan multilineCandidate != multilineCandidate
 
 def brokenIdentityWithoutSpan (candidate : Candidate) : Identity :=
   { identityOf candidate with start := 0, length := 0 }
