@@ -515,11 +515,17 @@ fn selected(request: &AnalyzeRequest<'_>, line: u32, symbol: Option<&str>) -> bo
             .any(|range| range.start <= line && line <= range.end);
     let symbol_selected = request.symbols.is_empty()
         || request.symbols.iter().any(|selector| {
-            let Some((module, qualname)) = selector.rsplit_once(':') else {
-                return false;
-            };
-            let current_module = module_name(request.path);
-            (current_module == module || current_module.ends_with(&format!(".{module}")))
+            let (module_selected, qualname) = selector.rsplit_once(':').map_or_else(
+                || (true, selector.as_str()),
+                |(module, qualname)| {
+                    let current_module = module_name(request.path);
+                    (
+                        current_module == module || current_module.ends_with(&format!(".{module}")),
+                        qualname,
+                    )
+                },
+            );
+            module_selected
                 && symbol.is_some_and(|symbol| {
                     symbol == qualname || symbol.starts_with(&format!("{qualname}."))
                 })
