@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -83,7 +84,10 @@ fn parse_corpus(input: &str) -> Vec<OracleCase> {
 }
 
 fn render_rows(rows: Vec<serde_json::Value>) -> String {
-    rows.into_iter().map(|row| format!("{row}\n")).collect()
+    rows.into_iter().fold(String::new(), |mut output, row| {
+        writeln!(output, "{row}").unwrap();
+        output
+    })
 }
 
 #[test]
@@ -235,10 +239,7 @@ fn assert_candidate_spans(repo: &Repo, candidates: &[serde_json::Value]) {
             &source[start..end],
             candidate["original"].as_str().unwrap().as_bytes()
         );
-        let line = 1 + source[..start]
-            .iter()
-            .filter(|byte| **byte == b'\n')
-            .count();
+        let line = source[..start].split(|byte| *byte == b'\n').count();
         assert_eq!(
             candidate["line"].as_u64().unwrap(),
             u64::try_from(line).unwrap()
@@ -255,9 +256,10 @@ fn observed_lines(manifest: &serde_json::Value, path: &str) -> BTreeSet<u32> {
 }
 
 fn arithmetic_source(lines: usize) -> String {
-    (1..=lines)
-        .map(|line| format!("value_{line} = {line} + 1\n"))
-        .collect()
+    (1..=lines).fold(String::new(), |mut source, line| {
+        writeln!(source, "value_{line} = {line} + 1").unwrap();
+        source
+    })
 }
 
 #[tokio::test]
