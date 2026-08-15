@@ -17,15 +17,20 @@ instance (ranges : List LineRange) (line : Nat) : Decidable (InRanges ranges lin
   unfold InRanges ValidRange
   infer_instance
 
--- The canonical semantic result of sorting, invalid-range removal, merging,
--- and deduplication is its positive one-based line-membership predicate.
+-- Extensionally, normalization is the positive one-based line set.  The bounded
+-- executable representation below orders and deduplicates that set; overlapping
+-- and adjacent input ranges therefore have one canonical representation.
 def normalize (ranges : List LineRange) : Nat → Prop := InRanges ranges
 
 instance (ranges : List LineRange) (line : Nat) : Decidable (normalize ranges line) := by
   unfold normalize
   infer_instance
 
-def normalizeAgain (selected : Nat → Prop) : Nat → Prop := selected
+def normalizedLines (maximum : Nat) (ranges : List LineRange) : List Nat :=
+  (List.range (maximum + 1)).filter fun line => decide (normalize ranges line)
+
+def normalizeLineSet (maximum : Nat) (lines : List Nat) : List Nat :=
+  (List.range (maximum + 1)).filter fun line => line ∈ lines
 
 inductive ChangeKind where
   | added | modified | deleted | renamed | binary | untracked

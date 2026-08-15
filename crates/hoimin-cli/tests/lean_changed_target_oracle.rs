@@ -5,6 +5,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use hoimin_cli::target::git::{ResolveGitChanges, handle_git};
+use hoimin_core::EffectId;
 use hoimin_core::{ByteSpan, CANDIDATE_SCHEMA_VERSION, CandidateIdentity, stable_mutant_id};
 use serde::Deserialize;
 
@@ -81,6 +83,17 @@ fn parse_corpus(input: &str) -> Vec<OracleCase> {
         }
     }
     cases
+}
+
+fn oracle_case(id: &str) -> OracleCase {
+    parse_corpus(CORPUS)
+        .into_iter()
+        .find(|case| case.id == id)
+        .unwrap_or_else(|| panic!("missing Lean oracle case {id}"))
+}
+
+fn expected_lines(case: &OracleCase) -> BTreeSet<u32> {
+    case.eligible_lines.iter().copied().collect()
 }
 
 fn render_rows(rows: Vec<serde_json::Value>) -> String {
@@ -212,38 +225,35 @@ fn candidates(manifest: &serde_json::Value) -> &[serde_json::Value] {
     manifest["candidates"].as_array().unwrap()
 }
 
-fn assert_candidate_ids(candidates: &[serde_json::Value]) {
+fn assert_candidate_correspondence(repo: &Repo, candidates: &[serde_json::Value]) {
     for candidate in candidates {
-        let expected = stable_mutant_id(&CandidateIdentity {
-            schema_version: CANDIDATE_SCHEMA_VERSION,
-            file_hash: candidate["file_hash"].as_str().unwrap().to_owned(),
-            path: candidate["path"].as_str().unwrap().into(),
-            span: ByteSpan {
-                start: candidate["span"]["start"].as_u64().unwrap(),
-                length: candidate["span"]["length"].as_u64().unwrap(),
-            },
-            operator: candidate["operator"].as_str().unwrap().to_owned(),
-            replacement: candidate["replacement"].as_str().unwrap().to_owned(),
-        });
-        assert_eq!(candidate["id"], expected.as_str());
-    }
-}
-
-fn assert_candidate_spans(repo: &Repo, candidates: &[serde_json::Value]) {
-    for candidate in candidates {
-        let source = fs::read(repo.root.join(candidate["path"].as_str().unwrap())).unwrap();
+        let path = candidate["path"].as_str().unwrap();
+        let source = fs::read(repo.root.join(path)).unwrap();
+        assert_eq!(
+            candidate["file_hash"],
+            blake3::hash(&source).to_hex().as_str()
+        );
+        assert_eq!(candidate["operator"], "binary_add_sub");
+        assert_eq!(candidate["original"], "+");
+        assert_eq!(candidate["replacement"], "-");
         let start = usize::try_from(candidate["span"]["start"].as_u64().unwrap()).unwrap();
         let length = usize::try_from(candidate["span"]["length"].as_u64().unwrap()).unwrap();
         let end = start.checked_add(length).unwrap();
-        assert_eq!(
-            &source[start..end],
-            candidate["original"].as_str().unwrap().as_bytes()
-        );
+        assert_eq!(&source[start..end], b"+");
         let line = source[..start].split(|byte| *byte == b'\n').count();
-        assert_eq!(
-            candidate["line"].as_u64().unwrap(),
-            u64::try_from(line).unwrap()
-        );
+        assert_eq!(candidate["line"], u64::try_from(line).unwrap());
+        let expected = stable_mutant_id(&CandidateIdentity {
+            schema_version: CANDIDATE_SCHEMA_VERSION,
+            file_hash: blake3::hash(&source).to_hex().to_string(),
+            path: path.into(),
+            span: ByteSpan {
+                start: u64::try_from(start).unwrap(),
+                length: u64::try_from(length).unwrap(),
+            },
+            operator: "binary_add_sub".to_owned(),
+            replacement: "-".to_owned(),
+        });
+        assert_eq!(candidate["id"], expected.as_str());
     }
 }
 
@@ -264,6 +274,8 @@ fn arithmetic_source(lines: usize) -> String {
 
 #[tokio::test]
 async fn public_plan_matches_changed_range_and_explicit_line_intersection() {
+    let overlap = oracle_case("modified-overlap");
+    let explicit = oracle_case("explicit-line");
     let repo = Repo::new();
     repo.write("pkg/a.py", arithmetic_source(8));
     repo.commit();
@@ -278,23 +290,22 @@ async fn public_plan_matches_changed_range_and_explicit_line_intersection() {
 
     let manifest = plan(&repo, &[]).await;
     assert_eq!(
-        observed_lines(&manifest, "pkg/a.py"),
-        BTreeSet::from([2, 3, 4, 5, 6, 7])
+        observed_lines(&manifest, overlap.path.as_deref().unwrap()),
+        expected_lines(&overlap)
     );
-    assert_candidate_ids(candidates(&manifest));
-    assert_candidate_spans(&repo, candidates(&manifest));
+    assert_candidate_correspondence(&repo, candidates(&manifest));
 
     let intersected = plan(&repo, &["--line", "pkg/a.py:4-5"]).await;
     assert_eq!(
-        observed_lines(&intersected, "pkg/a.py"),
-        BTreeSet::from([4, 5])
+        observed_lines(&intersected, explicit.path.as_deref().unwrap()),
+        expected_lines(&explicit)
     );
-    assert_candidate_ids(candidates(&intersected));
-    assert_candidate_spans(&repo, candidates(&intersected));
+    assert_candidate_correspondence(&repo, candidates(&intersected));
 }
 
 #[tokio::test]
 async fn public_plan_preserves_symbol_restrictions_under_changed_intersection() {
+    let case = oracle_case("symbol-line");
     let repo = Repo::new();
     repo.write(
         "pkg/a.py",
@@ -308,14 +319,22 @@ async fn public_plan_preserves_symbol_restrictions_under_changed_intersection() 
 
     let manifest = plan(&repo, &["--symbol", "a:Widget.run"]).await;
     let actual = candidates(&manifest);
-    assert!(!actual.is_empty());
-    assert!(actual.iter().all(|candidate| candidate["line"] == 3));
-    assert_candidate_ids(actual);
-    assert_candidate_spans(&repo, actual);
+    assert_eq!(
+        observed_lines(&manifest, case.path.as_deref().unwrap()),
+        expected_lines(&case)
+    );
+    assert!(
+        actual
+            .iter()
+            .all(|candidate| candidate["symbol"] == "Widget.run")
+    );
+    assert_candidate_correspondence(&repo, actual);
 }
 
 #[tokio::test]
 async fn public_plan_uses_rename_destination_and_excludes_deleted_and_binary() {
+    let rename = oracle_case("rename-destination");
+    let excluded = oracle_case("deleted-binary");
     let repo = Repo::new();
     repo.write("pkg/old.py", arithmetic_source(3));
     repo.write("pkg/deleted.py", "gone = 1 + 1\n");
@@ -329,19 +348,50 @@ async fn public_plan_uses_rename_destination_and_excludes_deleted_and_binary() {
     fs::remove_file(repo.root.join("pkg/deleted.py")).unwrap();
     repo.write("pkg/binary.py", b"after\0bytes\n");
 
+    let name_status = repo.git_output(&["diff", "--name-status", "HEAD"]);
+    let numstat = repo.git_output(&["diff", "--numstat", "HEAD"]);
+    assert!(name_status.contains("pkg/deleted.py") && name_status.contains("pkg/binary.py"));
+    assert!(numstat.contains("-\t-\tpkg/binary.py"));
+    let resolved = handle_git(ResolveGitChanges {
+        id: EffectId(313),
+        root: repo.root.to_str().unwrap().into(),
+        diff_base: None,
+    })
+    .await
+    .unwrap();
+    assert!(
+        resolved
+            .changed
+            .keys()
+            .any(|path| path.as_str() == rename.path.as_deref().unwrap())
+    );
+    for path in ["pkg/old.py", "pkg/deleted.py", "pkg/binary.py"] {
+        assert!(
+            !resolved
+                .changed
+                .keys()
+                .any(|actual| actual.as_str() == path),
+            "Git target leaked {path}"
+        );
+    }
+
     let manifest = plan(&repo, &[]).await;
-    assert_eq!(observed_lines(&manifest, "pkg/new.py"), BTreeSet::from([2]));
+    assert_eq!(
+        observed_lines(&manifest, rename.path.as_deref().unwrap()),
+        expected_lines(&rename)
+    );
+    assert!(excluded.path.is_none() && excluded.eligible_lines.is_empty());
     assert!(candidates(&manifest).iter().all(|candidate| {
         candidate["path"] != "pkg/old.py"
             && candidate["path"] != "pkg/deleted.py"
             && candidate["path"] != "pkg/binary.py"
     }));
-    assert_candidate_ids(candidates(&manifest));
-    assert_candidate_spans(&repo, candidates(&manifest));
+    assert_candidate_correspondence(&repo, candidates(&manifest));
 }
 
 #[tokio::test]
 async fn public_plan_counts_the_last_unterminated_untracked_line() {
+    let case = oracle_case("untracked-unterminated");
     let repo = Repo::new();
     repo.write("pkg/base.py", "base = 1\n");
     repo.commit();
@@ -349,15 +399,15 @@ async fn public_plan_counts_the_last_unterminated_untracked_line() {
 
     let manifest = plan(&repo, &[]).await;
     assert_eq!(
-        observed_lines(&manifest, "pkg/new.py"),
-        BTreeSet::from([1, 2])
+        observed_lines(&manifest, case.path.as_deref().unwrap()),
+        expected_lines(&case)
     );
-    assert_candidate_ids(candidates(&manifest));
-    assert_candidate_spans(&repo, candidates(&manifest));
+    assert_candidate_correspondence(&repo, candidates(&manifest));
 }
 
 #[tokio::test]
 async fn public_plan_diff_base_composes_head_and_worktree_destination_lines() {
+    let case = oracle_case("diff-base-worktree");
     let repo = Repo::new();
     repo.write("pkg/a.py", arithmetic_source(4));
     repo.commit();
@@ -374,9 +424,8 @@ async fn public_plan_diff_base_composes_head_and_worktree_destination_lines() {
 
     let manifest = plan(&repo, &["--diff-base", &base]).await;
     assert_eq!(
-        observed_lines(&manifest, "pkg/a.py"),
-        BTreeSet::from([2, 3])
+        observed_lines(&manifest, case.path.as_deref().unwrap()),
+        expected_lines(&case)
     );
-    assert_candidate_ids(candidates(&manifest));
-    assert_candidate_spans(&repo, candidates(&manifest));
+    assert_candidate_correspondence(&repo, candidates(&manifest));
 }

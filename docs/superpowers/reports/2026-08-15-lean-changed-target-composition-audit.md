@@ -20,13 +20,16 @@ It does not change the public schema or target representation.
 Lean models parsed semantic change facts rather than unified-diff bytes. A fact
 records its kind, source and destination paths, destination line ranges, and
 current line count. Range normalization is specified extensionally as membership
-in valid positive one-based inclusive ranges. This captures the durable result
-of sorting, invalid-range removal, overlap/adjacency merging, and deduplication;
-Rust tests separately pin the concrete canonical range list.
+in valid positive one-based inclusive ranges. `normalizedLines` materializes that
+set within an explicit bound as an ordered, duplicate-free list. Invalid ranges
+vanish and overlapping or adjacent ranges have the same canonical line-list
+representation as their merged form. Rust tests separately pin concrete range
+materialization.
 
 The kernel-checked modules prove:
 
-- normalization preserves membership and is idempotent;
+- bounded normalization preserves membership and its canonical line-list output
+  is idempotent;
 - changed/explicit intersection is commutative at observation level and a
   subset of both inputs;
 - intersection cannot create a path absent from the changed facts;
@@ -41,7 +44,10 @@ dependency boundary.
 
 ## Correspondence worksheet
 
-The closed corpus contains ten rows:
+The closed corpus contains ten rows. Each row is rendered from a typed Lean
+`AuditCase`; `eligible_lines` is computed by enumerating `CombinedEligible`, not
+stored as an expected literal. Rust looks up each strict row by ID and compares
+the public observation with those generated lines.
 
 | Mode | Rows | Observation |
 | --- | ---: | --- |
@@ -54,22 +60,30 @@ Strict cases cover contiguous modified lines, explicit line intersection,
 symbol intersection, rename destination attribution, deleted and binary
 exclusion, an unterminated untracked last line, and `--diff-base` composition of
 committed HEAD plus worktree edits. Candidate observations check path, line,
-source byte span, original bytes, and independently recomputed stable ID.
+source byte span, original/replacement/operator, a source-derived BLAKE3 file
+hash, symbol where applicable, and a stable ID recomputed only after those
+fields are independently validated. The deletion/binary fixture also inspects
+owned `ResolveGitChanges` output and raw Git name/numstat premises, so zero
+candidates cannot hide a leaked target.
 
 Git parsing remains Rust evidence. Existing property tests generate hostile
-zero-context diff bodies; integration tests pin destination hunk coordinates,
-rename configuration, binary numstat, deletion, staged/unstaged cancellation,
-and malformed-section isolation. These are not presented as Lean grammar proofs.
+zero-context diff bodies. A named internal regression corresponding to the
+`hostile-parser` row shows that structural-looking body lines in one section do
+not contaminate the later valid Python section. Integration tests pin
+destination hunk coordinates, rename configuration, binary numstat, deletion,
+and staged/unstaged cancellation. These are not presented as Lean grammar proofs.
 
 ## Sensitivity and bounded cases
 
-All ten required broken families are detected: failure to merge adjacency,
+All ten explicit faulty transports are distinguished from their canonical
+observations: failure to merge adjacency,
 merging across a one-line gap, old-side coordinates, deleted/binary retention,
 source-side rename attribution, untracked final-line loss, union instead of
 intersection, dropped symbol restriction, pre-normalization path membership,
 and contamination of a later valid section. Eight fixed semantic cases and ten
-sensitivity families run within the recorded bound of two facts and three
-ranges. Enumeration is evidence, not proof.
+sensitivity families run within the recorded bound of two facts and two ranges.
+The generated bounded range-set enumeration evaluates 1,365 membership states.
+Enumeration is evidence, not proof.
 
 ## Counterexample ledger
 
@@ -90,13 +104,13 @@ root-plus-descendant RSS ceiling, and 250 ms sampling.
 
 | Command | Elapsed ms | Peak RSS KiB | Exit / reason |
 | --- | ---: | ---: | --- |
-| proof module direct compile | 1,897 | 672,944 | 0 / `child_exit` |
-| external proof consumer | 552 | 54,688 | 0 / `child_exit` |
-| ten sensitivity families | 283 | 2,848 | 0 / `child_exit` |
-| eight fixed cases | 283 | 2,848 | 0 / `child_exit` |
-| corpus freshness | 282 | 2,000 | 0 / `child_exit` |
+| proof module direct compile | 2,693 | 669,136 | 0 / `child_exit` |
+| external proof consumer | 557 | 2,912 | 0 / `child_exit` |
+| ten sensitivity families | 290 | 336 | 0 / `child_exit` |
+| eight fixed cases | 290 | 2,608 | 0 / `child_exit` |
+| corpus freshness | 293 | 2,464 | 0 / `child_exit` |
 
-No retained command reached either limit. Peak RSS remained 113,488 KiB below
+No retained command reached either limit. Peak RSS remained 117,296 KiB below
 the ceiling.
 
 ## Exclusions

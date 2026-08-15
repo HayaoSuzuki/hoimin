@@ -6,9 +6,19 @@ theorem normalization_preserves_membership (ranges : List LineRange) (line : Nat
     normalize ranges line ↔ InRanges ranges line := by
   rfl
 
-theorem normalization_idempotent (ranges : List LineRange) :
-    normalizeAgain (normalize ranges) = normalize ranges := by
-  rfl
+theorem mem_normalizedLines_iff (maximum : Nat) (ranges : List LineRange) (line : Nat) :
+    line ∈ normalizedLines maximum ranges ↔ line ≤ maximum ∧ normalize ranges line := by
+  simp [normalizedLines]
+  omega
+
+theorem normalizedLines_idempotent (maximum : Nat) (ranges : List LineRange) :
+    normalizeLineSet maximum (normalizedLines maximum ranges) =
+      normalizedLines maximum ranges := by
+  simp only [normalizeLineSet, normalizedLines]
+  apply List.filter_congr
+  intro line member
+  simp only [List.mem_filter, List.mem_range] at member ⊢
+  simp [member]
 
 theorem combined_is_changed_subset (facts : List ChangeFact) (selectors : List Selector)
     (observation : Observation) (accepted : CombinedEligible facts selectors observation) :

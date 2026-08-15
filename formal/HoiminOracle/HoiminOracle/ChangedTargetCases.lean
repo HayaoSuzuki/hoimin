@@ -62,21 +62,111 @@ def strictDiffBaseComposition : Bool := decide <|
   ChangedEligible [modified "pkg/a.py" [range 2 3]] "pkg/a.py" 2 ∧
   ChangedEligible [modified "pkg/a.py" [range 2 3]] "pkg/a.py" 3
 
+structure AuditCase where
+  id : String
+  mode : String
+  scenario : String
+  path : Option String
+  facts : List ChangeFact := []
+  selectors : List Selector := []
+  symbol : Option String := none
+  maximum : Nat := 0
+  deriving Inhabited
+
+def AuditCase.eligibleLines (case : AuditCase) : List Nat :=
+  match case.path with
+  | none => []
+  | some path => (List.range (case.maximum + 1)).filter fun line =>
+      decide (CombinedEligible case.facts case.selectors (observation path line case.symbol))
+
+def auditCases : List AuditCase :=
+  [ { id := "modified-overlap", mode := "strict", scenario := "modified_overlap",
+      path := some "pkg/a.py", facts := [modified "pkg/a.py" [range 2 4, range 4 6, range 7 7]], maximum := 8 }
+  , { id := "explicit-line", mode := "strict", scenario := "explicit_intersection",
+      path := some "pkg/a.py", facts := [modified "pkg/a.py" [range 2 8]],
+      selectors := [{ path := "pkg/a.py", ranges := [range 4 5] }], maximum := 8 }
+  , { id := "symbol-line", mode := "strict", scenario := "symbol_intersection",
+      path := some "pkg/a.py", facts := [modified "pkg/a.py" [range 3 3]],
+      selectors := [{ path := "pkg/a.py", symbols := ["Widget.run"] }],
+      symbol := some "Widget.run", maximum := 6 }
+  , { id := "rename-destination", mode := "strict", scenario := "rename",
+      path := some "pkg/new.py", facts := [renamed "pkg/old.py" "pkg/new.py" [range 2 2]], maximum := 3 }
+  , { id := "deleted-binary", mode := "strict", scenario := "excluded", path := none }
+  , { id := "untracked-unterminated", mode := "strict", scenario := "untracked",
+      path := some "pkg/new.py", facts := [untracked "pkg/new.py" 2], maximum := 3 }
+  , { id := "diff-base-worktree", mode := "strict", scenario := "diff_base",
+      path := some "pkg/a.py", facts := [modified "pkg/a.py" [range 2 2], modified "pkg/a.py" [range 3 3]], maximum := 4 }
+  , { id := "hostile-parser", mode := "internal-fixture", scenario := "parser_isolation",
+      path := some "pkg/good.py", facts := [modified "bad.txt" [range 0 0], modified "pkg/good.py" [range 3 3]], maximum := 4 }
+  , { id := "non-utf8-path", mode := "model-only", scenario := "non_utf8_path", path := none }
+  , { id := "git-failure", mode := "infrastructure-error", scenario := "git_failure", path := none } ]
+
+-- Explicit faulty transports.  Each family is checked against the canonical
+-- observation, rather than merely re-evaluating the correct predicate.
+def canonicalAdjacent : List LineRange := [range 2 4]
+def brokenNoAdjacentMerge : List LineRange := [range 2 3, range 4 4]
+def brokenMergeGap : List LineRange := [range 2 4]
+
+def correctDestinationCoordinates : Bool := decide (InRanges [range 7 7] 7)
+def brokenOldCoordinates : Bool := decide (InRanges [range 2 2] 7)
+
+def correctExcludedEligibility : Bool := decide <|
+  ChangedEligible [modified "pkg/a.py" [range 1 3], deleted "pkg/a.py"] "pkg/a.py" 2
+def brokenRetainExcluded : Bool := decide (InRanges [range 1 3] 2)
+
+def correctRenamePath : Bool := strictRenameDestination
+def brokenRenameSourcePath : Bool := decide <|
+  ChangedEligible [renamed "pkg/old.py" "pkg/new.py" [range 2 2]] "pkg/old.py" 2
+
+def correctUntrackedBoundary : Bool := decide <|
+  ChangedEligible [untracked "pkg/new.py" 2] "pkg/new.py" 2
+def brokenDropUnterminatedLast : Bool := decide (0 < 2 ∧ 2 < 2)
+
+def correctIntersection : Bool := decide <|
+  CombinedEligible [modified "pkg/a.py" [range 2 2]]
+    [{ path := "pkg/a.py", ranges := [range 4 4] }] (observation "pkg/a.py" 2)
+def brokenUnion : Bool := decide <|
+  ChangedEligible [modified "pkg/a.py" [range 2 2]] "pkg/a.py" 2 ∨
+    ExplicitEligible [{ path := "pkg/a.py", ranges := [range 4 4] }]
+      (observation "pkg/a.py" 2)
+
+def correctSymbolRestriction : Bool := decide <|
+  CombinedEligible [modified "pkg/a.py" [range 2 8]]
+    [{ path := "pkg/a.py", symbols := ["Widget.run"] }]
+    (observation "pkg/a.py" 5 (some "Other.run"))
+def brokenDropSymbols : Bool := decide <|
+  CombinedEligible [modified "pkg/a.py" [range 2 8]]
+    [{ path := "pkg/a.py" }] (observation "pkg/a.py" 5 (some "Other.run"))
+
+def correctNormalizedPath : Bool := decide <|
+  ChangedEligible [modified "pkg/a.py" [range 2 2]] "pkg/a.py" 2
+def brokenRawPathMembership : Bool := decide <|
+  ChangedEligible [modified "pkg/./a.py" [range 2 2]] "pkg/a.py" 2
+
+def correctLaterSection : List Nat := AuditCase.eligibleLines (auditCases[7]!)
+def brokenContaminatedLaterSection : List Nat := []
+
 def sensitivity : List (String × Bool) :=
-  [ ("adjacent_merge", strictOverlap)
-  , ("gap_not_merged", decide (¬ InRanges [range 2 2, range 4 4] 3))
-  , ("destination_coordinates", decide (InRanges [range 7 7] 7 ∧ ¬ InRanges [range 2 2] 7))
-  , ("deleted_binary_exclusion", strictDeletedBinaryRejected)
-  , ("rename_destination", decide (strictRenameDestination && strictRenameSourceRejected))
-  , ("untracked_last_line", strictUntrackedLastLine)
-  , ("intersection_not_union", decide (¬ CombinedEligible [modified "pkg/a.py" [range 2 2]]
-      [{ path := "pkg/a.py", ranges := [range 4 4] }] (observation "pkg/a.py" 2)))
-  , ("symbol_retained", decide (¬ CombinedEligible [modified "pkg/a.py" [range 2 8]]
-      [{ path := "pkg/a.py", symbols := ["Widget.run"] }]
-      (observation "pkg/a.py" 5 (some "Other.run"))))
-  , ("normalized_path_membership", decide ("pkg/a.py" = "pkg/./a.py".replace "/./" "/"))
-  , ("later_section_independent", decide (ChangedEligible
-      [modified "bad.txt" [range 0 0], modified "pkg/good.py" [range 3 3]] "pkg/good.py" 3)) ]
+  [ ("adjacent_merge", decide (brokenNoAdjacentMerge ≠ canonicalAdjacent))
+  , ("gap_not_merged", decide (brokenMergeGap ≠ [range 2 2, range 4 4]))
+  , ("destination_coordinates", decide (correctDestinationCoordinates != brokenOldCoordinates))
+  , ("deleted_binary_exclusion", decide (correctExcludedEligibility != brokenRetainExcluded))
+  , ("rename_destination", decide (correctRenamePath != brokenRenameSourcePath))
+  , ("untracked_last_line", decide (correctUntrackedBoundary != brokenDropUnterminatedLast))
+  , ("intersection_not_union", decide (correctIntersection != brokenUnion))
+  , ("symbol_retained", decide (correctSymbolRestriction != brokenDropSymbols))
+  , ("normalized_path_membership", decide (correctNormalizedPath != brokenRawPathMembership))
+  , ("later_section_independent", decide
+      (correctLaterSection != brokenContaminatedLaterSection)) ]
+
+def boundedRanges : List LineRange :=
+  (List.range 4).flatMap fun start => (List.range 4).map fun stop => range start stop
+
+def boundedRangeSets : List (List LineRange) :=
+  [[]] ++ boundedRanges.map (fun item => [item]) ++
+    boundedRanges.flatMap fun left => boundedRanges.map fun right => [left, right]
+
+def exploredMembershipStates : Nat := boundedRangeSets.length * 5
 
 def fixedCases : List (String × Bool) :=
   [ ("overlap_adjacent", strictOverlap)
