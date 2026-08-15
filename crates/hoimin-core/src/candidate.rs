@@ -89,11 +89,15 @@ pub struct CandidateValidationContext<'source> {
     source: &'source [u8],
     text: Result<&'source str, std::str::Utf8Error>,
     file_hash: String,
-    line_starts: Vec<usize>,
+    line_starts: Vec<u32>,
 }
 
 impl<'source> CandidateValidationContext<'source> {
     #[must_use]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "candidate spans use u32 offsets, so sources cannot exceed u32::MAX bytes."
+    )]
     pub fn new(source: &'source [u8]) -> Self {
         let mut line_starts = Vec::new();
         line_starts.push(0);
@@ -101,7 +105,8 @@ impl<'source> CandidateValidationContext<'source> {
             source
                 .iter()
                 .enumerate()
-                .filter_map(|(offset, byte)| (*byte == b'\n').then_some(offset + 1)),
+                .filter(|(_, byte)| **byte == b'\n')
+                .map(|(offset, _)| (offset + 1) as u32),
         );
         Self {
             source,
@@ -206,13 +211,15 @@ pub fn validate_candidate_with_context(
     if !text.is_char_boundary(start) || !text.is_char_boundary(end) {
         return Err(CandidateValidationError::OriginalMismatch);
     }
+    let start_u32 = u32::try_from(start).map_err(|_| CandidateValidationError::LocationMismatch)?;
     let line_index = context
         .line_starts
-        .partition_point(|line_start| *line_start <= start)
+        .partition_point(|line_start| *line_start <= start_u32)
         .saturating_sub(1);
     let line =
         u32::try_from(line_index + 1).map_err(|_| CandidateValidationError::LocationMismatch)?;
-    let line_start = context.line_starts[line_index];
+    let line_start = usize::try_from(context.line_starts[line_index])
+        .map_err(|_| CandidateValidationError::LocationMismatch)?;
     let column = u32::try_from(text[line_start..start].chars().count())
         .map_err(|_| CandidateValidationError::LocationMismatch)?;
     if candidate.line != line || candidate.column != column {
