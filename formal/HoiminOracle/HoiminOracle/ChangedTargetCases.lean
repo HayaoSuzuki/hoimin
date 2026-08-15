@@ -91,7 +91,10 @@ def auditCases : List AuditCase :=
       symbol := some "Widget.run", maximum := 6 }
   , { id := "rename-destination", mode := "strict", scenario := "rename",
       path := some "pkg/new.py", facts := [renamed "pkg/old.py" "pkg/new.py" [range 2 2]], maximum := 3 }
-  , { id := "deleted-binary", mode := "strict", scenario := "excluded", path := none }
+  , { id := "deleted-binary", mode := "strict", scenario := "excluded",
+      path := some "pkg/deleted.py",
+      facts := [modified "pkg/deleted.py" [range 1 1], deleted "pkg/deleted.py",
+        binary "pkg/deleted.py"], maximum := 1 }
   , { id := "untracked-unterminated", mode := "strict", scenario := "untracked",
       path := some "pkg/new.py", facts := [untracked "pkg/new.py" 2], maximum := 3 }
   , { id := "diff-base-worktree", mode := "strict", scenario := "diff_base",
@@ -103,61 +106,76 @@ def auditCases : List AuditCase :=
 
 -- Explicit faulty transports.  Each family is checked against the canonical
 -- observation, rather than merely re-evaluating the correct predicate.
-def canonicalAdjacent : List LineRange := [range 2 4]
-def brokenNoAdjacentMerge : List LineRange := [range 2 3, range 4 4]
-def brokenMergeGap : List LineRange := [range 2 4]
+def adjacentInput : List LineRange := [range 2 3, range 4 4]
+def gapInput : List LineRange := [range 2 2, range 4 4]
+def brokenNoAdjacentMerge : List LineRange := normalizedRangesWithGap 0 4 adjacentInput
+def brokenMergeGap : List LineRange := normalizedRangesWithGap 2 4 gapInput
 
-def correctDestinationCoordinates : Bool := decide (InRanges [range 7 7] 7)
-def brokenOldCoordinates : Bool := decide (InRanges [range 2 2] 7)
+def destinationCoordinates (destination _source : List LineRange) (line : Nat) : Bool :=
+  decide (InRanges destination line)
+def brokenOldCoordinates (_destination source : List LineRange) (line : Nat) : Bool :=
+  decide (InRanges source line)
 
-def correctExcludedEligibility : Bool := decide <|
-  ChangedEligible [modified "pkg/a.py" [range 1 3], deleted "pkg/a.py"] "pkg/a.py" 2
-def brokenRetainExcluded : Bool := decide (InRanges [range 1 3] 2)
+def eligibleObservation (facts : List ChangeFact) (path : String) (line : Nat) : Bool :=
+  decide (ChangedEligible facts path line)
+def brokenRetainExcluded (facts : List ChangeFact) (path : String) (line : Nat) : Bool :=
+  decide (∃ fact ∈ facts, selectedBy fact path line)
 
-def correctRenamePath : Bool := strictRenameDestination
-def brokenRenameSourcePath : Bool := decide <|
-  ChangedEligible [renamed "pkg/old.py" "pkg/new.py" [range 2 2]] "pkg/old.py" 2
+def renamePath (fact : ChangeFact) : Option String := fact.destinationPath
+def brokenRenameSourcePath (fact : ChangeFact) : Option String := fact.sourcePath
 
-def correctUntrackedBoundary : Bool := decide <|
-  ChangedEligible [untracked "pkg/new.py" 2] "pkg/new.py" 2
-def brokenDropUnterminatedLast : Bool := decide (0 < 2 ∧ 2 < 2)
+def untrackedBoundary (count line : Nat) : Bool := decide (0 < line ∧ line ≤ count)
+def brokenDropUnterminatedLast (count line : Nat) : Bool := decide (0 < line ∧ line < count)
 
-def correctIntersection : Bool := decide <|
-  CombinedEligible [modified "pkg/a.py" [range 2 2]]
-    [{ path := "pkg/a.py", ranges := [range 4 4] }] (observation "pkg/a.py" 2)
-def brokenUnion : Bool := decide <|
-  ChangedEligible [modified "pkg/a.py" [range 2 2]] "pkg/a.py" 2 ∨
-    ExplicitEligible [{ path := "pkg/a.py", ranges := [range 4 4] }]
-      (observation "pkg/a.py" 2)
+def combinedObservation (facts : List ChangeFact) (selectors : List Selector)
+    (item : Observation) : Bool := decide (CombinedEligible facts selectors item)
+def brokenUnion (facts : List ChangeFact) (selectors : List Selector)
+    (item : Observation) : Bool :=
+  decide (ChangedEligible facts item.path item.line ∨ ExplicitEligible selectors item)
 
-def correctSymbolRestriction : Bool := decide <|
-  CombinedEligible [modified "pkg/a.py" [range 2 8]]
-    [{ path := "pkg/a.py", symbols := ["Widget.run"] }]
-    (observation "pkg/a.py" 5 (some "Other.run"))
-def brokenDropSymbols : Bool := decide <|
-  CombinedEligible [modified "pkg/a.py" [range 2 8]]
-    [{ path := "pkg/a.py" }] (observation "pkg/a.py" 5 (some "Other.run"))
+def brokenDropSymbols (facts : List ChangeFact) (selectors : List Selector)
+    (item : Observation) : Bool :=
+  let stripped := selectors.map fun selector => { selector with symbols := [] }
+  decide (CombinedEligible facts stripped item)
 
-def correctNormalizedPath : Bool := decide <|
-  ChangedEligible [modified "pkg/a.py" [range 2 2]] "pkg/a.py" 2
-def brokenRawPathMembership : Bool := decide <|
-  ChangedEligible [modified "pkg/./a.py" [range 2 2]] "pkg/a.py" 2
+def normalizedTransportPath (path : String) : String := path.replace "/./" "/"
+def brokenRawTransportPath (path : String) : String := path
 
-def correctLaterSection : List Nat := AuditCase.eligibleLines (auditCases[7]!)
-def brokenContaminatedLaterSection : List Nat := []
+def laterSection (sections : List AuditCase) : List Nat :=
+  sections.getLast?.map AuditCase.eligibleLines |>.getD []
+def brokenContaminatedLaterSection (_sections : List AuditCase) : List Nat := []
 
 def sensitivity : List (String × Bool) :=
-  [ ("adjacent_merge", decide (brokenNoAdjacentMerge ≠ canonicalAdjacent))
-  , ("gap_not_merged", decide (brokenMergeGap ≠ [range 2 2, range 4 4]))
-  , ("destination_coordinates", decide (correctDestinationCoordinates != brokenOldCoordinates))
-  , ("deleted_binary_exclusion", decide (correctExcludedEligibility != brokenRetainExcluded))
-  , ("rename_destination", decide (correctRenamePath != brokenRenameSourcePath))
-  , ("untracked_last_line", decide (correctUntrackedBoundary != brokenDropUnterminatedLast))
-  , ("intersection_not_union", decide (correctIntersection != brokenUnion))
-  , ("symbol_retained", decide (correctSymbolRestriction != brokenDropSymbols))
-  , ("normalized_path_membership", decide (correctNormalizedPath != brokenRawPathMembership))
+  [ ("adjacent_merge", decide (brokenNoAdjacentMerge ≠ normalizedRanges 4 adjacentInput))
+  , ("gap_not_merged", decide (brokenMergeGap ≠ normalizedRanges 4 gapInput))
+  , ("destination_coordinates", decide
+      (destinationCoordinates [range 7 7] [range 2 2] 7 !=
+       brokenOldCoordinates [range 7 7] [range 2 2] 7))
+  , ("deleted_binary_exclusion", decide
+      (eligibleObservation [modified "pkg/a.py" [range 1 3], deleted "pkg/a.py"] "pkg/a.py" 2 !=
+       brokenRetainExcluded [modified "pkg/a.py" [range 1 3], deleted "pkg/a.py"] "pkg/a.py" 2))
+  , ("rename_destination", decide
+      (renamePath (renamed "pkg/old.py" "pkg/new.py" [range 2 2]) !=
+       brokenRenameSourcePath (renamed "pkg/old.py" "pkg/new.py" [range 2 2])))
+  , ("untracked_last_line", decide
+      (untrackedBoundary 2 2 != brokenDropUnterminatedLast 2 2))
+  , ("intersection_not_union", decide
+      (combinedObservation [modified "pkg/a.py" [range 2 2]]
+        [{ path := "pkg/a.py", ranges := [range 4 4] }] (observation "pkg/a.py" 2) !=
+       brokenUnion [modified "pkg/a.py" [range 2 2]]
+        [{ path := "pkg/a.py", ranges := [range 4 4] }] (observation "pkg/a.py" 2)))
+  , ("symbol_retained", decide
+      (combinedObservation [modified "pkg/a.py" [range 2 8]]
+        [{ path := "pkg/a.py", symbols := ["Widget.run"] }]
+        (observation "pkg/a.py" 5 (some "Other.run")) !=
+       brokenDropSymbols [modified "pkg/a.py" [range 2 8]]
+        [{ path := "pkg/a.py", symbols := ["Widget.run"] }]
+        (observation "pkg/a.py" 5 (some "Other.run"))))
+  , ("normalized_path_membership", decide
+      (normalizedTransportPath "pkg/./a.py" != brokenRawTransportPath "pkg/./a.py"))
   , ("later_section_independent", decide
-      (correctLaterSection != brokenContaminatedLaterSection)) ]
+      (laterSection [auditCases[0]!, auditCases[7]!] !=
+       brokenContaminatedLaterSection [auditCases[0]!, auditCases[7]!])) ]
 
 def boundedRanges : List LineRange :=
   (List.range 4).flatMap fun start => (List.range 4).map fun stop => range start stop
@@ -167,6 +185,13 @@ def boundedRangeSets : List (List LineRange) :=
     boundedRanges.flatMap fun left => boundedRanges.map fun right => [left, right]
 
 def exploredMembershipStates : Nat := boundedRangeSets.length * 5
+
+def boundedStatePass (ranges : List LineRange) (line : Nat) : Bool :=
+  decide ((line ∈ normalizedLines 4 ranges) ↔ (line ≤ 4 ∧ normalize ranges line)) &&
+    decide (normalizeLineSet 4 (normalizedLines 4 ranges) = normalizedLines 4 ranges)
+
+def boundedExplorationPass : Bool :=
+  boundedRangeSets.all fun ranges => (List.range 5).all fun line => boundedStatePass ranges line
 
 def fixedCases : List (String × Bool) :=
   [ ("overlap_adjacent", strictOverlap)

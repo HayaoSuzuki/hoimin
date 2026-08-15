@@ -71,7 +71,7 @@ fn parse_corpus(input: &str) -> Vec<OracleCase> {
         match case.mode.as_str() {
             "strict" => {
                 if case.scenario == "excluded" {
-                    assert!(case.path.is_none() && case.eligible_lines.is_empty());
+                    assert!(case.path.is_some() && case.eligible_lines.is_empty());
                 } else {
                     assert!(case.path.is_some() && !case.eligible_lines.is_empty());
                 }
@@ -380,7 +380,9 @@ async fn public_plan_uses_rename_destination_and_excludes_deleted_and_binary() {
         observed_lines(&manifest, rename.path.as_deref().unwrap()),
         expected_lines(&rename)
     );
-    assert!(excluded.path.is_none() && excluded.eligible_lines.is_empty());
+    assert_eq!(excluded.path.as_deref(), Some("pkg/deleted.py"));
+    assert!(excluded.eligible_lines.is_empty());
+    assert!(observed_lines(&manifest, excluded.path.as_deref().unwrap()).is_empty());
     assert!(candidates(&manifest).iter().all(|candidate| {
         candidate["path"] != "pkg/old.py"
             && candidate["path"] != "pkg/deleted.py"

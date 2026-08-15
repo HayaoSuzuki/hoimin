@@ -32,6 +32,21 @@ def normalizedLines (maximum : Nat) (ranges : List LineRange) : List Nat :=
 def normalizeLineSet (maximum : Nat) (lines : List Nat) : List Nat :=
   (List.range (maximum + 1)).filter fun line => line ∈ lines
 
+def pushNormalizedLine (gap : Nat) (reversed : List LineRange) (line : Nat) : List LineRange :=
+  match reversed with
+  | [] => [⟨line, line⟩]
+  | current :: rest =>
+      if line ≤ current.stop + gap then
+        { current with stop := max current.stop line } :: rest
+      else
+        ⟨line, line⟩ :: reversed
+
+def normalizedRangesWithGap (gap maximum : Nat) (ranges : List LineRange) : List LineRange :=
+  ((normalizedLines maximum ranges).foldl (pushNormalizedLine gap) []).reverse
+
+def normalizedRanges (maximum : Nat) (ranges : List LineRange) : List LineRange :=
+  normalizedRangesWithGap 1 maximum ranges
+
 inductive ChangeKind where
   | added | modified | deleted | renamed | binary | untracked
   deriving Repr, DecidableEq, BEq

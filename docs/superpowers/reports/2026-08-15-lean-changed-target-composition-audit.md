@@ -81,8 +81,9 @@ merging across a one-line gap, old-side coordinates, deleted/binary retention,
 source-side rename attribution, untracked final-line loss, union instead of
 intersection, dropped symbol restriction, pre-normalization path membership,
 and contamination of a later valid section. Eight fixed semantic cases and ten
-sensitivity families run within the recorded bound of two facts and two ranges.
-The generated bounded range-set enumeration evaluates 1,365 membership states.
+sensitivity families run within the recorded bound of three facts and two ranges.
+The generated bounded range-set enumeration evaluates preservation and
+idempotence across 1,365 membership states; `--stats` fails if any state fails.
 Enumeration is evidence, not proof.
 
 ## Counterexample ledger
