@@ -1914,6 +1914,38 @@ fn collection_calls_and_literals_emit_exact_parseable_candidates() {
 }
 
 #[test]
+fn tuple_to_list_preserves_parenthesized_boundary_elements_in_unparenthesized_tuples() {
+    let cases = [
+        ("x = (1), (2)\n", "(1), (2)", "[(1), (2)]"),
+        (
+            "y = (1 + 2), (3 + 4)\n",
+            "(1 + 2), (3 + 4)",
+            "[(1 + 2), (3 + 4)]",
+        ),
+        ("v = d[(1), (2)]\n", "(1), (2)", "[(1), (2)]"),
+        ("wrapped = ((1), (2))\n", "((1), (2))", "[(1), (2)]"),
+    ];
+
+    for (source, original, replacement) in cases {
+        let output = analyze(source);
+        let candidates: Vec<_> = output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "collection_list_tuple")
+            .collect();
+
+        assert_eq!(
+            candidates.len(),
+            1,
+            "unexpected candidates: {candidates:#?}"
+        );
+        assert_eq!(candidates[0].original, original);
+        assert_eq!(candidates[0].replacement, replacement);
+        apply_candidate_and_reparse(source, candidates[0]);
+    }
+}
+
+#[test]
 fn collection_excludes_unsupported_call_and_literal_shapes() {
     let source = concat!(
         "list_comp = [item for item in items]\n",

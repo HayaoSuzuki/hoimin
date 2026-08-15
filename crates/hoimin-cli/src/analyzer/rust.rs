@@ -2447,10 +2447,11 @@ fn has_comma_after_element(
 
 fn tuple_to_list_replacement(source: &str, tuple: &ExprTuple) -> Option<String> {
     let literal = source_text(source, tuple.range())?;
-    let contents = literal
-        .strip_prefix('(')
-        .and_then(|literal| literal.strip_suffix(')'))
-        .unwrap_or(literal);
+    let contents = if tuple.parenthesized {
+        literal.strip_prefix('(')?.strip_suffix(')')?
+    } else {
+        literal
+    };
     Some(format!("[{contents}]"))
 }
 
