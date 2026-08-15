@@ -1116,7 +1116,7 @@ mod portable {
     }
 
     #[tokio::test]
-    async fn classification_failure_terminates_descendants_before_output_grace() {
+    async fn classification_failure_handles_descendants_after_the_root_is_reaped() {
         let output = tempfile::tempdir().unwrap();
         let output_dir = Utf8Path::from_path(output.path()).unwrap();
         let pid_file = output_dir.join("classification-failure-child.pid");
@@ -1155,11 +1155,20 @@ mod portable {
                 if code == "process.resource.classify"
                     && message.contains("injected portable classification failure")
         ));
+        #[cfg(unix)]
+        assert!(
+            process_exists(child_pid),
+            "the portable Unix backend must not signal a process group after its root is reaped"
+        );
+        #[cfg(windows)]
         assert!(wait_until_process_stops(child_pid).await);
+        #[cfg(windows)]
         assert!(
             cleanup_elapsed < Duration::from_millis(900),
             "classification cleanup took {cleanup_elapsed:?}"
         );
+        #[cfg(unix)]
+        let _ = cleanup_elapsed;
     }
 
     #[tokio::test]
@@ -1199,6 +1208,12 @@ mod portable {
                     && message.contains("supervised termination also failed")
                     && message.contains("injected portable termination failure")
         ));
+        #[cfg(unix)]
+        assert!(
+            process_exists(child_pid),
+            "the portable Unix backend must not signal a process group after its root is reaped"
+        );
+        #[cfg(windows)]
         assert!(wait_until_process_stops(child_pid).await);
     }
 

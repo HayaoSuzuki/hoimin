@@ -251,10 +251,18 @@ impl PortableSupervisor {
         suspended.assign(self.job as _, "assign spawned process to job")
     }
 
-    pub(crate) fn terminate(&mut self) -> Result<(), ResourceError> {
+    pub(crate) fn terminate(&mut self, live_root_owned: bool) -> Result<(), ResourceError> {
         if self.terminated {
             return Ok(());
         }
+        #[cfg(unix)]
+        if !live_root_owned {
+            // Once the root is reaped its numeric process-group ID may be recycled.  Forget it
+            // before any fallible cleanup so retries and Drop cannot signal a different group.
+            self.process_group = None;
+        }
+        #[cfg(not(unix))]
+        let _ = live_root_owned;
         if self
             .termination_failures
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |remaining| {
@@ -268,7 +276,7 @@ impl PortableSupervisor {
             ));
         }
         #[cfg(unix)]
-        if let Some(group) = self.process_group {
+        if live_root_owned && let Some(group) = self.process_group {
             // SAFETY: the child created this process group; negative pid targets that group only.
             let result = unsafe { libc::kill(-group, libc::SIGKILL) };
             if result != 0 {
@@ -287,9 +295,76 @@ impl PortableSupervisor {
 
 impl Drop for PortableSupervisor {
     fn drop(&mut self) {
-        let _ = self.terminate();
+        let _ = self.terminate(true);
         #[cfg(windows)]
         close_job(self.job);
+    }
+}
+
+#[cfg(all(test, unix))]
+mod unix_tests {
+    use std::process::Stdio;
+    use std::time::Duration;
+
+    use hoimin_core::ProcessLimits;
+    use tokio::process::Command;
+
+    use super::PortableBackend;
+
+    struct ProcessGroupCleanup(i32);
+
+    impl Drop for ProcessGroupCleanup {
+        fn drop(&mut self) {
+            // SAFETY: the test created this process group and uses this single cleanup signal.
+            unsafe {
+                libc::kill(-self.0, libc::SIGKILL);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn reaped_root_does_not_kill_its_live_process_group() {
+        let temporary = tempfile::tempdir().unwrap();
+        let marker = temporary.path().join("descendant-survived");
+        let backend = PortableBackend::for_tests();
+        let mut command = Command::new("sh");
+        command
+            .args([
+                "-c",
+                "(sleep 0.1; touch \"$1\"; sleep 60) & exit",
+                "portable-supervisor-test",
+            ])
+            .arg(&marker)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let mut supervisor = backend
+            .prepare(
+                &mut command,
+                ProcessLimits {
+                    timeout: Duration::from_secs(5),
+                    max_output_bytes: 64,
+                    max_memory_bytes: 256 * 1024 * 1024,
+                    max_processes: 8,
+                },
+            )
+            .unwrap();
+        let mut child = command.spawn().unwrap();
+        let group = i32::try_from(child.id().unwrap()).unwrap();
+        let _cleanup = ProcessGroupCleanup(group);
+
+        supervisor.attach(&child).unwrap();
+        child.wait().await.unwrap();
+        assert_eq!(child.id(), None);
+
+        supervisor.terminate(false).unwrap();
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !marker.exists() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("descendant must survive cleanup after the root is reaped");
     }
 }
 
