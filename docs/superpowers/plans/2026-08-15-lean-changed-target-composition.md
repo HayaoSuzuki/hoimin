@@ -2,31 +2,31 @@
 
 ## 1. Baseline and worksheet
 
-- [ ] Inventory Git parsing, range normalization, explicit resolution,
+- [x] Inventory Git parsing, range normalization, explicit resolution,
   intersection, analyzer filtering, and public plan seams.
-- [ ] Assign every retained case strict, internal-fixture, model-only, or
+- [x] Assign every retained case strict, internal-fixture, model-only, or
   infrastructure-error before generating the corpus.
 
 ## 2. Lean semantics
 
-- [ ] Model parsed change facts, inclusive ranges, exclusions, rename and
+- [x] Model parsed change facts, inclusive ranges, exclusions, rename and
   untracked semantics, explicit selectors, and candidate observations.
-- [ ] Prove normalization, intersection, subset, no-new-path, exclusion, rename,
+- [x] Prove normalization, intersection, subset, no-new-path, exclusion, rename,
   and untracked bounds properties.
-- [ ] Keep proofs importable without cases, generators, or Rust fixtures.
+- [x] Keep proofs importable without cases, generators, or Rust fixtures.
 
 ## 3. Cases and correspondence
 
-- [ ] Detect every required broken variant with minimized witnesses.
-- [ ] Generate and freshness-check a closed typed corpus with bounded stats.
-- [ ] Replay strict rows through real Git repositories and public plan output;
+- [x] Detect every required broken variant with minimized witnesses.
+- [x] Generate and freshness-check a closed typed corpus with bounded stats.
+- [x] Replay strict rows through real Git repositories and public plan output;
   keep parser-only evidence at an owned internal seam.
 
 ## 4. Repair and delivery
 
-- [ ] For each same-premise mismatch, add a failing Rust regression first and
+- [x] For each same-premise mismatch, add a failing Rust regression first and
   make the smallest production repair.
-- [ ] Write the audit report and counterexample ledger.
+- [x] Write the audit report and counterexample ledger.
 - [ ] Run resource-guarded Lean checks, focused and workspace Rust tests,
   formatting, strict clippy, and diff checks.
 - [ ] Obtain independent review with no Critical or Important findings.
