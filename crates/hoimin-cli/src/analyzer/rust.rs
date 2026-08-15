@@ -480,7 +480,7 @@ fn replacement(text: &str, unary: bool) -> Option<(&'static str, &'static str)> 
 }
 
 struct LineIndex {
-    starts: Vec<usize>,
+    starts: Vec<u32>,
 }
 
 impl LineIndex {
@@ -488,7 +488,7 @@ impl LineIndex {
         let mut starts = vec![0];
         for (index, byte) in source.bytes().enumerate() {
             if byte == b'\n' {
-                starts.push(index + 1);
+                starts.push(u32::try_from(index + 1).expect("Ruff source offset fits u32"));
             }
         }
         Self { starts }
@@ -499,8 +499,11 @@ impl LineIndex {
         reason = "Ruff TextSize offsets cap parsed source at u32::MAX bytes, and code-point counts cannot exceed byte counts."
     )]
     fn line_and_column(&self, source: &str, offset: usize) -> (u32, u32) {
-        let line_index = self.starts.partition_point(|start| *start <= offset) - 1;
-        let line_start = self.starts[line_index];
+        let line_index = self
+            .starts
+            .partition_point(|start| (*start as usize) <= offset)
+            - 1;
+        let line_start = self.starts[line_index] as usize;
         let line = line_index as u32 + 1;
         let column = source[line_start..offset].chars().count() as u32;
         (line, column)
