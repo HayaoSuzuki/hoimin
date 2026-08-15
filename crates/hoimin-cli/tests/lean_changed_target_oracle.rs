@@ -29,6 +29,7 @@ fn expected_contract() -> BTreeMap<&'static str, (&'static str, &'static str)> {
         ("rename-destination", ("strict", "rename")),
         ("deleted-binary", ("strict", "excluded")),
         ("untracked-unterminated", ("strict", "untracked")),
+        ("diff-base-worktree", ("strict", "diff_base")),
         ("hostile-parser", ("internal-fixture", "parser_isolation")),
         ("non-utf8-path", ("model-only", "non_utf8_path")),
         ("git-failure", ("infrastructure-error", "git_failure")),
@@ -87,7 +88,7 @@ fn render_rows(rows: Vec<serde_json::Value>) -> String {
 
 #[test]
 fn changed_target_corpus_is_closed_and_typed() {
-    assert_eq!(parse_corpus(CORPUS).len(), 9);
+    assert_eq!(parse_corpus(CORPUS).len(), 10);
 }
 
 #[test]
@@ -136,6 +137,10 @@ impl Repo {
     }
 
     fn git(&self, args: &[&str]) {
+        let _ = self.git_output(args);
+    }
+
+    fn git_output(&self, args: &[&str]) -> String {
         let output = Command::new("git")
             .args(args)
             .current_dir(&self.root)
@@ -146,6 +151,7 @@ impl Repo {
             "git {args:?}: {}",
             String::from_utf8_lossy(&output.stderr)
         );
+        String::from_utf8(output.stdout).unwrap().trim().to_owned()
     }
 
     fn commit(&self) {
@@ -219,6 +225,27 @@ fn assert_candidate_ids(candidates: &[serde_json::Value]) {
     }
 }
 
+fn assert_candidate_spans(repo: &Repo, candidates: &[serde_json::Value]) {
+    for candidate in candidates {
+        let source = fs::read(repo.root.join(candidate["path"].as_str().unwrap())).unwrap();
+        let start = usize::try_from(candidate["span"]["start"].as_u64().unwrap()).unwrap();
+        let length = usize::try_from(candidate["span"]["length"].as_u64().unwrap()).unwrap();
+        let end = start.checked_add(length).unwrap();
+        assert_eq!(
+            &source[start..end],
+            candidate["original"].as_str().unwrap().as_bytes()
+        );
+        let line = 1 + source[..start]
+            .iter()
+            .filter(|byte| **byte == b'\n')
+            .count();
+        assert_eq!(
+            candidate["line"].as_u64().unwrap(),
+            u64::try_from(line).unwrap()
+        );
+    }
+}
+
 fn observed_lines(manifest: &serde_json::Value, path: &str) -> BTreeSet<u32> {
     candidates(manifest)
         .iter()
@@ -253,6 +280,7 @@ async fn public_plan_matches_changed_range_and_explicit_line_intersection() {
         BTreeSet::from([2, 3, 4, 5, 6, 7])
     );
     assert_candidate_ids(candidates(&manifest));
+    assert_candidate_spans(&repo, candidates(&manifest));
 
     let intersected = plan(&repo, &["--line", "pkg/a.py:4-5"]).await;
     assert_eq!(
@@ -260,6 +288,7 @@ async fn public_plan_matches_changed_range_and_explicit_line_intersection() {
         BTreeSet::from([4, 5])
     );
     assert_candidate_ids(candidates(&intersected));
+    assert_candidate_spans(&repo, candidates(&intersected));
 }
 
 #[tokio::test]
@@ -280,6 +309,7 @@ async fn public_plan_preserves_symbol_restrictions_under_changed_intersection() 
     assert!(!actual.is_empty());
     assert!(actual.iter().all(|candidate| candidate["line"] == 3));
     assert_candidate_ids(actual);
+    assert_candidate_spans(&repo, actual);
 }
 
 #[tokio::test]
@@ -305,6 +335,7 @@ async fn public_plan_uses_rename_destination_and_excludes_deleted_and_binary() {
             && candidate["path"] != "pkg/binary.py"
     }));
     assert_candidate_ids(candidates(&manifest));
+    assert_candidate_spans(&repo, candidates(&manifest));
 }
 
 #[tokio::test]
@@ -320,4 +351,30 @@ async fn public_plan_counts_the_last_unterminated_untracked_line() {
         BTreeSet::from([1, 2])
     );
     assert_candidate_ids(candidates(&manifest));
+    assert_candidate_spans(&repo, candidates(&manifest));
+}
+
+#[tokio::test]
+async fn public_plan_diff_base_composes_head_and_worktree_destination_lines() {
+    let repo = Repo::new();
+    repo.write("pkg/a.py", arithmetic_source(4));
+    repo.commit();
+    let base = repo.git_output(&["rev-parse", "HEAD"]);
+    repo.write(
+        "pkg/a.py",
+        "value_1 = 1 + 1\nvalue_2 = 2 + 2\nvalue_3 = 3 + 1\nvalue_4 = 4 + 1\n",
+    );
+    repo.commit();
+    repo.write(
+        "pkg/a.py",
+        "value_1 = 1 + 1\nvalue_2 = 2 + 2\nvalue_3 = 3 + 2\nvalue_4 = 4 + 1\n",
+    );
+
+    let manifest = plan(&repo, &["--diff-base", &base]).await;
+    assert_eq!(
+        observed_lines(&manifest, "pkg/a.py"),
+        BTreeSet::from([2, 3])
+    );
+    assert_candidate_ids(candidates(&manifest));
+    assert_candidate_spans(&repo, candidates(&manifest));
 }

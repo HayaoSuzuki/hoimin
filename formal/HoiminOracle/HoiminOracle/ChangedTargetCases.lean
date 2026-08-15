@@ -58,6 +58,10 @@ def strictUntrackedLastLine : Bool := decide <|
   ChangedEligible [untracked "pkg/new.py" 2] "pkg/new.py" 2 ∧
   ¬ ChangedEligible [untracked "pkg/new.py" 2] "pkg/new.py" 3
 
+def strictDiffBaseComposition : Bool := decide <|
+  ChangedEligible [modified "pkg/a.py" [range 2 3]] "pkg/a.py" 2 ∧
+  ChangedEligible [modified "pkg/a.py" [range 2 3]] "pkg/a.py" 3
+
 def sensitivity : List (String × Bool) :=
   [ ("adjacent_merge", strictOverlap)
   , ("gap_not_merged", decide (¬ InRanges [range 2 2, range 4 4] 3))
@@ -81,6 +85,7 @@ def fixedCases : List (String × Bool) :=
   , ("rename_destination", strictRenameDestination)
   , ("rename_source_rejected", strictRenameSourceRejected)
   , ("deleted_binary_rejected", strictDeletedBinaryRejected)
-  , ("untracked_last_line", strictUntrackedLastLine) ]
+  , ("untracked_last_line", strictUntrackedLastLine)
+  , ("diff_base_composition", strictDiffBaseComposition) ]
 
 end HoiminOracle.ChangedTarget
