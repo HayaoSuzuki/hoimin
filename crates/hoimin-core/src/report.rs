@@ -151,7 +151,6 @@ pub enum VerificationSelectionScope {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct VerificationSelection {
     pub mode: VerificationSelectionMode,
     pub policy: VerificationSelectionPolicy,

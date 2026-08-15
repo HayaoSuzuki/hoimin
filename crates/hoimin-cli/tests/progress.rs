@@ -31,7 +31,8 @@ fn original_schema_v2_report() -> PathBuf {
 fn input_accepts_the_oldest_schema_v2_normalized_config() {
     let report = original_schema_v2_report();
 
-    assert!(matches!(read_report(&report), Ok(InputReport::Usable(_))));
+    let result = read_report(&report);
+    assert!(matches!(result, Ok(InputReport::Usable(_))), "{result:?}");
 }
 
 #[test]
@@ -246,6 +247,26 @@ fn input_accepts_an_additive_future_normalized_config_object() {
     let report = write_json(&fixture, "future-config.json", &document);
 
     assert!(matches!(read_report(&report), Ok(InputReport::Usable(_))));
+}
+
+#[test]
+fn input_accepts_an_additive_future_verification_selection_field() {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut document = valid_report();
+    document["run"]["verification_selection"] = json!({
+        "mode": "top",
+        "policy": "strict",
+        "requested": 3,
+        "selected": 2,
+        "scope": "retained_candidates",
+        "plan_truncated": false,
+        "version": 2,
+        "enabled": true
+    });
+    let report = write_json(&fixture, "future-verification-selection.json", &document);
+
+    let result = read_report(&report);
+    assert!(matches!(result, Ok(InputReport::Usable(_))), "{result:?}");
 }
 
 #[test]
