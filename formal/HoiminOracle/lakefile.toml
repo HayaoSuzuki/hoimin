@@ -96,3 +96,7 @@ root = "OutputRetentionAuditMain"
 [[lean_exe]]
 name = "generate_candidate_span"
 root = "CandidateSpanAuditMain"
+
+[[lean_exe]]
+name = "generate_changed_target"
+root = "ChangedTargetAuditMain"
