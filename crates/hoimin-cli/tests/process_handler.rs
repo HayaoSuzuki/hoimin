@@ -1138,7 +1138,7 @@ mod portable {
             cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
             limits: limits(Duration::from_secs(5), 64),
         };
-        let (failure, _cleanup_started) = tokio::join!(handler.handle(request), async {
+        let (failure, cleanup_started) = tokio::join!(handler.handle(request), async {
             let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
             while !pid_file.exists() && tokio::time::Instant::now() < deadline {
                 tokio::time::sleep(Duration::from_millis(10)).await;
@@ -1146,8 +1146,7 @@ mod portable {
             Instant::now()
         });
         let failure = failure.expect_err("injected classification failure remains observable");
-        #[cfg(windows)]
-        let cleanup_elapsed = _cleanup_started.elapsed();
+        let cleanup_elapsed = cleanup_started.elapsed();
         let child_pid = guard.pid().expect("fixture child wrote its pid");
 
         assert!(matches!(
@@ -1168,6 +1167,8 @@ mod portable {
             cleanup_elapsed < Duration::from_millis(900),
             "classification cleanup took {cleanup_elapsed:?}"
         );
+        #[cfg(unix)]
+        let _ = cleanup_elapsed;
     }
 
     #[tokio::test]
