@@ -63,3 +63,6 @@ import HoiminOracle.MutationScoreExitPolicyModel
 import HoiminOracle.MutationScoreExitPolicyProofs
 import HoiminOracle.OutputRetentionModel
 import HoiminOracle.OutputRetentionProofs
+import HoiminOracle.CandidateSpanModel
+import HoiminOracle.CandidateSpanProofs
+import HoiminOracle.CandidateSpanCases

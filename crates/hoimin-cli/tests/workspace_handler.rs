@@ -15,8 +15,9 @@ use hoimin_cli::workspace::{
     WorkspacePlan, build_command_environment,
 };
 use hoimin_core::{
-    ApplyMutation, BudgetLedger, ByteSpan, EffectId, IntegrityCheckpoint, MutationCandidate,
-    Preflight, RunBudgets, VerifyOriginals, reserve_workspace_copy,
+    ApplyMutation, BudgetLedger, ByteSpan, CANDIDATE_SCHEMA_VERSION, CandidateIdentity, EffectId,
+    IntegrityCheckpoint, MutationCandidate, Preflight, RunBudgets, VerifyOriginals,
+    reserve_workspace_copy, stable_mutant_id,
 };
 use tempfile::TempDir;
 
@@ -194,7 +195,7 @@ fn link_created_or_platform_denied(result: std::io::Result<()>) -> bool {
 }
 
 fn mutation_candidate(worker: &WorkerWorkspace) -> MutationCandidate {
-    MutationCandidate {
+    let mut candidate = MutationCandidate {
         id: "candidate".into(),
         sequence: 0,
         path: "pkg/a.py".into(),
@@ -215,7 +216,17 @@ fn mutation_candidate(worker: &WorkerWorkspace) -> MutationCandidate {
             .blake3
             .to_hex()
             .to_string(),
-    }
+    };
+    candidate.id = stable_mutant_id(&CandidateIdentity {
+        schema_version: CANDIDATE_SCHEMA_VERSION,
+        file_hash: candidate.file_hash.clone(),
+        path: candidate.path.clone(),
+        span: candidate.span,
+        operator: candidate.operator.clone(),
+        replacement: candidate.replacement.clone(),
+    })
+    .to_string();
+    candidate
 }
 
 #[test]
@@ -941,31 +952,7 @@ fn effect_handlers_preserve_original_ids_for_success_and_failure() {
             .id,
         EffectId(2)
     );
-    let hash = handler
-        .worker(0)
-        .unwrap()
-        .manifest()
-        .entry(Utf8Path::new("pkg/a.py"))
-        .unwrap()
-        .blake3
-        .to_hex()
-        .to_string();
-    let candidate = MutationCandidate {
-        id: "candidate".into(),
-        sequence: 0,
-        path: "pkg/a.py".into(),
-        span: ByteSpan {
-            start: 0,
-            length: 8,
-        },
-        original: "original".into(),
-        replacement: "mutated!".into(),
-        operator: "test".into(),
-        line: 1,
-        column: 0,
-        symbol: None,
-        file_hash: hash,
-    };
+    let candidate = mutation_candidate(handler.worker(0).unwrap());
     assert_eq!(
         handler
             .handle_apply_mutation(
