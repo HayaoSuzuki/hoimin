@@ -47,7 +47,7 @@ The imported model and proof modules establish:
 - `complete_transport_preserves_candidate` and
   `complete_transport_preserves_identity`;
 - `session_projection_preserves_identity`;
-- identity sensitivity for path, hash, span start/length, operator, and
+- identity sensitivity for schema, path, hash, span start/length, operator, and
   replacement;
 - `application_is_exact_reference`;
 - `application_preserves_prefix` and `application_preserves_suffix`;

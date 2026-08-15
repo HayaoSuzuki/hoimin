@@ -49,6 +49,12 @@ theorem session_projection_preserves_identity (candidate : Candidate) :
     (sessionProjection (completeTransport candidate)).identity = identityOf candidate := by
   rfl
 
+theorem identity_schema_sensitive (left right : Candidate)
+    (different : left.schema ≠ right.schema) :
+    identityOf left ≠ identityOf right := by
+  intro equal
+  exact different (congrArg Identity.schema equal)
+
 theorem identity_start_sensitive (left right : Candidate)
     (different : left.start ≠ right.start) :
     identityOf left ≠ identityOf right := by
