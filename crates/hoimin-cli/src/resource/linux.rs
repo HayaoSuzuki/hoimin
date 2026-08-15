@@ -592,7 +592,7 @@ mod platform {
         }
 
         fn probe_with_diagnostics(
-            limits: &RunLimits,
+            _limits: &RunLimits,
             launcher: OsString,
             diagnostics: &mut Vec<String>,
         ) -> Result<Self, ResourceError> {
@@ -718,7 +718,7 @@ mod platform {
             if state.closed {
                 return Err(ResourceError::RunClosed);
             }
-            self.refresh_events(&mut state)?;
+            Self::refresh_events(&mut state)?;
             let path = create_unique_child(&self.path, "root")?;
             let mut diagnostics = Vec::new();
             write_memory_limit(
@@ -771,7 +771,7 @@ mod platform {
             if state.closed {
                 return Err(ResourceError::RunClosed);
             }
-            self.refresh_events(&mut state)?;
+            Self::refresh_events(&mut state)?;
             fs::write(root.path.join("cgroup.procs"), pid.to_string())
                 .map_err(|error| ResourceError::io("attach stopped root to cgroup", error))?;
             let entry = state.roots.get_mut(&root.id).ok_or_else(|| {
@@ -799,7 +799,7 @@ mod platform {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             if !state.cleaned {
-                self.refresh_events(&mut state)?;
+                Self::refresh_events(&mut state)?;
             }
             let violations = signal.violations.load(Ordering::Acquire);
             if violations & MEMORY_VIOLATION != 0 {
@@ -821,7 +821,7 @@ mod platform {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             let accounting = (!state.cleaned)
-                .then(|| self.refresh_events(&mut state).err())
+                .then(|| Self::refresh_events(&mut state).err())
                 .flatten();
             if !state.roots.contains_key(&root.id) {
                 return accounting.map_or(Ok(()), Err);
@@ -838,7 +838,7 @@ mod platform {
             result
         }
 
-        fn refresh_events(&self, state: &mut RunState) -> Result<(), ResourceError> {
+        fn refresh_events(state: &mut RunState) -> Result<(), ResourceError> {
             for entry in state.roots.values_mut().filter(|entry| entry.active) {
                 let next = read_events(&entry.root.path)?;
                 let violations = violations_since(entry.counters, next);
@@ -862,7 +862,7 @@ mod platform {
             if state.cleaned {
                 return Ok(());
             }
-            let accounting = self.refresh_events(&mut state).err();
+            let accounting = Self::refresh_events(&mut state).err();
             let roots: Vec<_> = state
                 .roots
                 .values()
