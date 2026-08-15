@@ -41,6 +41,10 @@ def _normalize_path(value: str) -> str:
     return path.as_posix()
 
 
+def _symbol_name(value: str) -> str:
+    return value.rsplit("::", 1)[-1].casefold()
+
+
 def _explicit_path(value: str) -> str | None:
     path = _normalize_path(value)
     if not path.endswith(".rs"):
@@ -196,9 +200,7 @@ def discover_candidates(
         for value in values:
             add_path(value)
 
-    requested_symbols = frozenset(
-        symbol.rsplit("::", 1)[-1].casefold() for symbol in explicit_symbols
-    )
+    requested_symbols = frozenset(_symbol_name(symbol) for symbol in explicit_symbols)
     if requested_symbols:
         inventory = probe.text(
             ["rg", "--files", "--glob", "*.rs", str(snapshot.root)],

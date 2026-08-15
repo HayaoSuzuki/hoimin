@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from datetime import datetime, timezone
 import inspect
 from pathlib import Path
@@ -450,6 +451,49 @@ class FocusedMutationReportingTests(unittest.TestCase):
                     for item in record.candidates
                 )
             )
+
+    def test_qualified_inventory_method_matches_bare_discovery_symbol(
+        self,
+    ) -> None:
+        inventory = json.dumps(
+            [
+                {
+                    "file": "crates/hoimin-core/src/machine.rs",
+                    "name": "machine.rs:1: replace accept_completion",
+                    "function": {
+                        "function_name": "<hoimin_core::machine::RunState as StateMachine>::accept_completion"
+                    },
+                }
+            ]
+        )
+        selected = [
+            Candidate(
+                "crates/hoimin-core/src/machine.rs",
+                "accept_completion",
+                None,
+            )
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            options, dependencies, _ = workflow_fixture(directory)
+            options = replace(options, symbols=("accept_completion",))
+            with (
+                mock.patch(
+                    "tools.focused_mutation.discover_candidates",
+                    return_value=selected,
+                ),
+                mock.patch(f"{__name__}.WORKFLOW_LIST_JSON", inventory),
+            ):
+                record = run_workflow(options, dependencies)
+
+        self.assertEqual(len(record.candidates), 1)
+        candidate = record.candidates[0]
+        self.assertEqual(
+            candidate.symbol,
+            "<hoimin_core::machine::RunState as StateMachine>::accept_completion",
+        )
+        self.assertIn(
+            "explicit_symbol", [reason.code for reason in candidate.reasons]
+        )
 
     def test_baseline_uses_mutation_deadline_after_discovery_window(
         self,
