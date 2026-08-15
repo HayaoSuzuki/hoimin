@@ -1116,7 +1116,7 @@ mod portable {
     }
 
     #[tokio::test]
-    async fn classification_failure_terminates_descendants_before_output_grace() {
+    async fn classification_failure_handles_descendants_after_the_root_is_reaped() {
         let output = tempfile::tempdir().unwrap();
         let output_dir = Utf8Path::from_path(output.path()).unwrap();
         let pid_file = output_dir.join("classification-failure-child.pid");
@@ -1138,7 +1138,7 @@ mod portable {
             cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
             limits: limits(Duration::from_secs(5), 64),
         };
-        let (failure, cleanup_started) = tokio::join!(handler.handle(request), async {
+        let (failure, _cleanup_started) = tokio::join!(handler.handle(request), async {
             let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
             while !pid_file.exists() && tokio::time::Instant::now() < deadline {
                 tokio::time::sleep(Duration::from_millis(10)).await;
@@ -1146,7 +1146,8 @@ mod portable {
             Instant::now()
         });
         let failure = failure.expect_err("injected classification failure remains observable");
-        let cleanup_elapsed = cleanup_started.elapsed();
+        #[cfg(windows)]
+        let cleanup_elapsed = _cleanup_started.elapsed();
         let child_pid = guard.pid().expect("fixture child wrote its pid");
 
         assert!(matches!(
@@ -1155,7 +1156,14 @@ mod portable {
                 if code == "process.resource.classify"
                     && message.contains("injected portable classification failure")
         ));
+        #[cfg(unix)]
+        assert!(
+            process_exists(child_pid),
+            "the portable Unix backend must not signal a process group after its root is reaped"
+        );
+        #[cfg(windows)]
         assert!(wait_until_process_stops(child_pid).await);
+        #[cfg(windows)]
         assert!(
             cleanup_elapsed < Duration::from_millis(900),
             "classification cleanup took {cleanup_elapsed:?}"
@@ -1199,6 +1207,12 @@ mod portable {
                     && message.contains("supervised termination also failed")
                     && message.contains("injected portable termination failure")
         ));
+        #[cfg(unix)]
+        assert!(
+            process_exists(child_pid),
+            "the portable Unix backend must not signal a process group after its root is reaped"
+        );
+        #[cfg(windows)]
         assert!(wait_until_process_stops(child_pid).await);
     }
 
