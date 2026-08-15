@@ -182,10 +182,8 @@ impl ProcessSupervisor {
     }
 
     pub(crate) fn terminate(&mut self, live_root_owned: bool) -> Result<(), ResourceError> {
-        #[cfg(not(target_os = "linux"))]
-        let _ = live_root_owned;
         match self {
-            Self::Portable(supervisor) => supervisor.terminate(),
+            Self::Portable(supervisor) => supervisor.terminate(live_root_owned),
             #[cfg(target_os = "linux")]
             Self::Linux(supervisor) => supervisor.terminate(live_root_owned),
             #[cfg(windows)]
