@@ -77,6 +77,34 @@ time.sleep(30)
 """
 
 
+TERM_RESISTANT_DESCENDANT_FAKE = r"""
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import time
+
+root_ready = Path(sys.argv[1])
+descendant_ready = Path(sys.argv[2])
+if "--descendant" in sys.argv:
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    descendant_ready.write_text(str(os.getpid()), encoding="utf-8")
+    while True:
+        time.sleep(0.01)
+
+subprocess.Popen(
+    [sys.executable, __file__, str(root_ready), str(descendant_ready), "--descendant"],
+    stdin=subprocess.DEVNULL,
+    stdout=sys.stdout,
+    stderr=sys.stderr,
+)
+root_ready.write_text(str(os.getpid()), encoding="utf-8")
+while True:
+    time.sleep(0.01)
+"""
+
+
 LOG_CLEANUP_CALLBACK_ERROR = (
     "log cleanup callback failed: RuntimeError: cleanup callback exploded"
 )
@@ -521,6 +549,13 @@ class RunnerTests(unittest.TestCase):
         self.inherited_handle_fake = root / "inherited-handle-command.py"
         self.inherited_handle_fake.write_text(
             INHERITED_HANDLE_FAKE,
+            encoding="utf-8",
+        )
+        self.term_resistant_descendant_fake = (
+            root / "term-resistant-descendant-command.py"
+        )
+        self.term_resistant_descendant_fake.write_text(
+            TERM_RESISTANT_DESCENDANT_FAKE,
             encoding="utf-8",
         )
 
@@ -1132,6 +1167,41 @@ class RunnerTests(unittest.TestCase):
             wait_for_pid_exit(descendant_pid),
             f"descendant {descendant_pid} survived",
         )
+
+    @unittest.skipIf(os.name == "nt", "requires POSIX process groups")
+    def test_timeout_kills_term_resistant_descendant_after_root_exits(self) -> None:
+        root_ready = self.work / "term-resistant-root.ready"
+        descendant_ready = self.work / "term-resistant-descendant.ready"
+        descendant_pid: int | None = None
+
+        try:
+            with self.assertRaises(CommandTimedOut):
+                self.runner().run(
+                    [
+                        sys.executable,
+                        str(self.term_resistant_descendant_fake),
+                        str(root_ready),
+                        str(descendant_ready),
+                    ],
+                    cwd=self.work,
+                    timeout=0.2,
+                    label="term-resistant-descendant",
+                )
+            descendant_pid = read_ready_pid(descendant_ready)
+            self.assertIsNotNone(descendant_pid)
+            if descendant_pid is not None:
+                self.assertTrue(
+                    wait_for_pid_exit(descendant_pid),
+                    f"descendant {descendant_pid} survived",
+                )
+        finally:
+            if descendant_pid is None:
+                descendant_pid = read_ready_pid(descendant_ready)
+            if descendant_pid is not None:
+                try:
+                    os.kill(descendant_pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
 
     def test_inherited_handle_failure_cleanup_cancels_and_closes_handles(
         self,
