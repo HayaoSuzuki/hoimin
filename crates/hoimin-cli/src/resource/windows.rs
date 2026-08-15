@@ -586,8 +586,7 @@ fn create_limited_root_job(limits: ProcessLimits) -> Result<OwnedHandle, Resourc
     information.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
         | JOB_OBJECT_LIMIT_JOB_MEMORY
         | JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
-    information.BasicLimitInformation.ActiveProcessLimit = u32::try_from(limits.max_processes)
-        .map_err(|_| ResourceError::InvalidLimit("max_processes"))?;
+    information.BasicLimitInformation.ActiveProcessLimit = limits.max_processes;
     information.JobMemoryLimit = usize::try_from(limits.max_memory_bytes)
         .map_err(|_| ResourceError::InvalidLimit("max_memory"))?;
     set_extended_limits(job.raw(), &information, "configure nested root process job")?;
@@ -708,9 +707,8 @@ mod tests {
     };
 
     use super::{
-        ActiveRoot, AttachFault, MEMORY_VIOLATION, OwnedHandle, RootSignal, RunState,
-        WindowsBackend, active_process_count, detach_root_generation, forget_root_generation,
-        record_notification,
+        ActiveRoot, AttachFault, OwnedHandle, RootSignal, RunState, WindowsBackend,
+        active_process_count, detach_root_generation, forget_root_generation, record_notification,
     };
     use crate::process::ProcessHandler;
     use crate::resource::ResourceBackend;
