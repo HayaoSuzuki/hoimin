@@ -440,6 +440,26 @@ async fn verify_rejects_changed_source_before_baseline() {
     assert!(!marker.exists());
 }
 
+#[tokio::test]
+async fn verify_reports_source_change_before_ranking_for_changed_symbol_plan() {
+    let (project, _base_revision) = Project::new_changed_git();
+    let (path, manifest, marker) =
+        write_plan_manifest(&project, &["--changed", "--symbol", "calc:changed"]).await;
+    let requested = vec![manifest.candidates[0].id.clone()];
+    run_git(&project.path, &["add", "src/calc.py"]);
+    run_git(
+        &project.path,
+        &["commit", "--quiet", "-m", "commit planned change"],
+    );
+
+    let error = prepare_verify(&path, &requested, OutputFormat::Json)
+        .await
+        .unwrap_err();
+
+    assert_error_code(error, "plan.source.changed");
+    assert!(!marker.exists());
+}
+
 type ManifestMutation = fn(&mut serde_json::Value);
 type InvalidManifestCase = (&'static str, ManifestMutation, &'static str);
 

@@ -356,12 +356,6 @@ async fn prepare_verify_selection_inner(
     let targets = TargetHandler::resolve(&config.selection)
         .await
         .map_err(|error| PlanError::SourceChanged(error.to_string()))?;
-    validate_ranking_against(
-        &manifest.normalized_config.selection,
-        &targets,
-        &manifest.candidates,
-    )
-    .map_err(PlanError::ManifestInvalid)?;
     let current_sources = source_records(&config.root, &targets)
         .await
         .map_err(|error| PlanError::SourceChanged(error.to_string()))?;
@@ -377,6 +371,12 @@ async fn prepare_verify_selection_inner(
         &current_inputs,
         RecordMismatch::FingerprintInput,
     )?;
+    validate_ranking_against(
+        &manifest.normalized_config.selection,
+        &targets,
+        &manifest.candidates,
+    )
+    .map_err(PlanError::ManifestInvalid)?;
     config.fingerprint_inputs = current_inputs;
     let copy_options = crate::workspace::CopyOptions {
         includes: config.selection.includes.clone(),
