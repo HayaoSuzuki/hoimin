@@ -125,6 +125,7 @@
     },
     "verificationSelection": {
       "type": "object",
+      "description": "Verification selection metadata. New fields may be added in schema version 2.",
       "required": [
         "mode",
         "policy",
@@ -147,7 +148,7 @@
         },
         "plan_truncated": { "type": "boolean" }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "runStarted": {
       "type": "object",
