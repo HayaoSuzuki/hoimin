@@ -4,6 +4,7 @@ import os
 from pathlib import Path, PureWindowsPath
 import signal
 import subprocess
+import sys
 import time
 from typing import Any
 
@@ -15,6 +16,31 @@ from .windows_file import probe_delete_access
 WINDOWS_LOG_RELEASE_TIMEOUT = 2.0
 WINDOWS_LOG_RELEASE_POLL_INTERVAL = 0.01
 WINDOWS_PROCESS_TERMINATION_TIMEOUT = 2.0
+_POSIX_PROCESS_SUPERVISOR = """
+import os
+import signal
+import subprocess
+import sys
+import time
+
+terminating = False
+def hold_after_term(_signum, _frame):
+    global terminating
+    terminating = True
+
+signal.signal(signal.SIGTERM, hold_after_term)
+def restore_sigterm() -> None:
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+
+child = subprocess.Popen(sys.argv[1:], preexec_fn=restore_sigterm)
+returncode = child.wait()
+if terminating:
+    while True:
+        time.sleep(1)
+if returncode < 0:
+    os.kill(os.getpid(), -returncode)
+raise SystemExit(returncode)
+"""
 
 
 def terminate_windows_process_tree(
@@ -163,7 +189,7 @@ class CommandRunner:
             paths.stderr.open("wb") as stderr_file,
         ):
             process = self._popen_factory(
-                list(argv),
+                self._launch_argv(argv),
                 cwd=cwd,
                 stdin=subprocess.DEVNULL,
                 stdout=stdout_file,
@@ -226,6 +252,11 @@ class CommandRunner:
             monotonic=self._monotonic,
             sleep=self._sleep,
         )
+
+    def _launch_argv(self, argv: Sequence[str]) -> list[str]:
+        if os.name == "nt":
+            return list(argv)
+        return [sys.executable, "-c", _POSIX_PROCESS_SUPERVISOR, *argv]
 
     def _complete(
         self,
