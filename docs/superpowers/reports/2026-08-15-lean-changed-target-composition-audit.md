@@ -105,13 +105,13 @@ root-plus-descendant RSS ceiling, and 250 ms sampling.
 
 | Command | Elapsed ms | Peak RSS KiB | Exit / reason |
 | --- | ---: | ---: | --- |
-| proof module direct compile | 2,693 | 669,136 | 0 / `child_exit` |
-| external proof consumer | 557 | 2,912 | 0 / `child_exit` |
-| ten sensitivity families | 290 | 336 | 0 / `child_exit` |
-| eight fixed cases | 290 | 2,608 | 0 / `child_exit` |
-| corpus freshness | 293 | 2,464 | 0 / `child_exit` |
+| proof module direct compile | 1,630 | 573,872 | 0 / `child_exit` |
+| external proof consumer | 565 | 54,512 | 0 / `child_exit` |
+| ten sensitivity families | 292 | 224 | 0 / `child_exit` |
+| eight fixed cases | 288 | 2,672 | 0 / `child_exit` |
+| corpus freshness | 291 | 2,112 | 0 / `child_exit` |
 
-No retained command reached either limit. Peak RSS remained 117,296 KiB below
+No retained command reached either limit. Peak RSS remained 212,560 KiB below
 the ceiling.
 
 ## Exclusions
