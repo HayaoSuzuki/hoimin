@@ -29,7 +29,7 @@ def main (args : List String) : IO UInt32 := do
   | ["--cases"] => printChecks fixedCases
   | ["--sensitivity"] => printChecks sensitivity
   | ["--stats"] =>
-      IO.println s!"cases={auditCases.length}\nsensitivity_families={sensitivity.length}\nexplored_membership_states={exploredMembershipStates}\nbounded_exploration_pass={boundedExplorationPass}\nmaximum_facts=3\nmaximum_ranges=2"
+      IO.println s!"cases={auditCases.length}\nsensitivity_families={sensitivity.length}\nexplored_membership_states={exploredMembershipStates}\nbounded_exploration_pass={boundedExplorationPass}\nmaximum_facts=2\nmaximum_ranges=2"
       pure <| if boundedExplorationPass then 0 else 1
   | ["--check", path] =>
       let existing ← IO.FS.readFile path

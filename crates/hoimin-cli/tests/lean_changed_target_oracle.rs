@@ -30,7 +30,8 @@ fn expected_contract() -> BTreeMap<&'static str, (&'static str, &'static str)> {
         ("explicit-line", ("strict", "explicit_intersection")),
         ("symbol-line", ("strict", "symbol_intersection")),
         ("rename-destination", ("strict", "rename")),
-        ("deleted-binary", ("strict", "excluded")),
+        ("deleted-path", ("strict", "deleted")),
+        ("binary-path", ("strict", "binary")),
         ("untracked-unterminated", ("strict", "untracked")),
         ("diff-base-worktree", ("strict", "diff_base")),
         ("hostile-parser", ("internal-fixture", "parser_isolation")),
@@ -70,7 +71,7 @@ fn parse_corpus(input: &str) -> Vec<OracleCase> {
     for case in &cases {
         match case.mode.as_str() {
             "strict" => {
-                if case.scenario == "excluded" {
+                if matches!(case.scenario.as_str(), "deleted" | "binary") {
                     assert!(case.path.is_some() && case.eligible_lines.is_empty());
                 } else {
                     assert!(case.path.is_some() && !case.eligible_lines.is_empty());
@@ -105,7 +106,7 @@ fn render_rows(rows: Vec<serde_json::Value>) -> String {
 
 #[test]
 fn changed_target_corpus_is_closed_and_typed() {
-    assert_eq!(parse_corpus(CORPUS).len(), 10);
+    assert_eq!(parse_corpus(CORPUS).len(), 11);
 }
 
 #[test]
@@ -334,7 +335,8 @@ async fn public_plan_preserves_symbol_restrictions_under_changed_intersection() 
 #[tokio::test]
 async fn public_plan_uses_rename_destination_and_excludes_deleted_and_binary() {
     let rename = oracle_case("rename-destination");
-    let excluded = oracle_case("deleted-binary");
+    let deleted = oracle_case("deleted-path");
+    let binary = oracle_case("binary-path");
     let repo = Repo::new();
     repo.write("pkg/old.py", arithmetic_source(3));
     repo.write("pkg/deleted.py", "gone = 1 + 1\n");
@@ -380,9 +382,12 @@ async fn public_plan_uses_rename_destination_and_excludes_deleted_and_binary() {
         observed_lines(&manifest, rename.path.as_deref().unwrap()),
         expected_lines(&rename)
     );
-    assert_eq!(excluded.path.as_deref(), Some("pkg/deleted.py"));
-    assert!(excluded.eligible_lines.is_empty());
-    assert!(observed_lines(&manifest, excluded.path.as_deref().unwrap()).is_empty());
+    assert_eq!(deleted.path.as_deref(), Some("pkg/deleted.py"));
+    assert!(deleted.eligible_lines.is_empty());
+    assert!(observed_lines(&manifest, deleted.path.as_deref().unwrap()).is_empty());
+    assert_eq!(binary.path.as_deref(), Some("pkg/binary.py"));
+    assert!(binary.eligible_lines.is_empty());
+    assert!(observed_lines(&manifest, binary.path.as_deref().unwrap()).is_empty());
     assert!(candidates(&manifest).iter().all(|candidate| {
         candidate["path"] != "pkg/old.py"
             && candidate["path"] != "pkg/deleted.py"

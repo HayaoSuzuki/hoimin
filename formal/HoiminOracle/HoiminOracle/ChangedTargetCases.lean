@@ -91,10 +91,12 @@ def auditCases : List AuditCase :=
       symbol := some "Widget.run", maximum := 6 }
   , { id := "rename-destination", mode := "strict", scenario := "rename",
       path := some "pkg/new.py", facts := [renamed "pkg/old.py" "pkg/new.py" [range 2 2]], maximum := 3 }
-  , { id := "deleted-binary", mode := "strict", scenario := "excluded",
+  , { id := "deleted-path", mode := "strict", scenario := "deleted",
       path := some "pkg/deleted.py",
-      facts := [modified "pkg/deleted.py" [range 1 1], deleted "pkg/deleted.py",
-        binary "pkg/deleted.py"], maximum := 1 }
+      facts := [modified "pkg/deleted.py" [range 1 1], deleted "pkg/deleted.py"], maximum := 1 }
+  , { id := "binary-path", mode := "strict", scenario := "binary",
+      path := some "pkg/binary.py",
+      facts := [modified "pkg/binary.py" [range 1 1], binary "pkg/binary.py"], maximum := 1 }
   , { id := "untracked-unterminated", mode := "strict", scenario := "untracked",
       path := some "pkg/new.py", facts := [untracked "pkg/new.py" 2], maximum := 3 }
   , { id := "diff-base-worktree", mode := "strict", scenario := "diff_base",
@@ -174,8 +176,8 @@ def sensitivity : List (String × Bool) :=
   , ("normalized_path_membership", decide
       (normalizedTransportPath "pkg/./a.py" != brokenRawTransportPath "pkg/./a.py"))
   , ("later_section_independent", decide
-      (laterSection [auditCases[0]!, auditCases[7]!] !=
-       brokenContaminatedLaterSection [auditCases[0]!, auditCases[7]!])) ]
+      (laterSection [auditCases[0]!, auditCases[8]!] !=
+       brokenContaminatedLaterSection [auditCases[0]!, auditCases[8]!])) ]
 
 def boundedRanges : List LineRange :=
   (List.range 4).flatMap fun start => (List.range 4).map fun stop => range start stop

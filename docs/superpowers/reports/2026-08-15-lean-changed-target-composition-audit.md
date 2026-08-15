@@ -44,14 +44,14 @@ dependency boundary.
 
 ## Correspondence worksheet
 
-The closed corpus contains ten rows. Each row is rendered from a typed Lean
+The closed corpus contains eleven rows. Each row is rendered from a typed Lean
 `AuditCase`; `eligible_lines` is computed by enumerating `CombinedEligible`, not
 stored as an expected literal. Rust looks up each strict row by ID and compares
 the public observation with those generated lines.
 
 | Mode | Rows | Observation |
 | --- | ---: | --- |
-| `strict` | 7 | real Git fixture and public plan candidates |
+| `strict` | 8 | real Git fixture and public plan candidates |
 | `internal-fixture` | 1 | owned parser-isolation coverage |
 | `model-only` | 1 | non-UTF-8 logical path not representable publicly |
 | `infrastructure-error` | 1 | Git/setup failure classification only |
@@ -81,7 +81,7 @@ merging across a one-line gap, old-side coordinates, deleted/binary retention,
 source-side rename attribution, untracked final-line loss, union instead of
 intersection, dropped symbol restriction, pre-normalization path membership,
 and contamination of a later valid section. Eight fixed semantic cases and ten
-sensitivity families run within the recorded bound of three facts and two ranges.
+sensitivity families run within the recorded bound of two facts and two ranges.
 The generated bounded range-set enumeration evaluates preservation and
 idempotence across 1,365 membership states; `--stats` fails if any state fails.
 Enumeration is evidence, not proof.
@@ -128,6 +128,7 @@ lake env lean HoiminOracle/ChangedTargetProofs.lean
 lake env lean /tmp/hoimin-changed-target-proof-consumer.lean
 lake exe generate_changed_target -- --cases
 lake exe generate_changed_target -- --sensitivity
+lake exe generate_changed_target -- --stats
 lake exe generate_changed_target -- --check corpus/changed-target-composition.jsonl
 cargo test -p hoimin-core --test target_policy --all-features
 cargo test -p hoimin-cli --test target_handler --all-features
