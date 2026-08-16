@@ -469,58 +469,28 @@ impl WindowsSupervisor {
         termination: ProcessTermination,
     ) -> Result<ProcessTermination, ResourceError> {
         self.pid.ok_or(ResourceError::MissingProcessId)?;
-        let termination = self
-            .run
-            .classify_root(self.root_id, &self.signal, termination)?;
-        self.classify_root_notification(termination)
+        self.run
+            .classify_root(self.root_id, &self.signal, termination)
+            .map(|termination| self.classify_root_notification(termination))
     }
 
-    fn classify_root_notification(
-        &self,
-        termination: ProcessTermination,
-    ) -> Result<ProcessTermination, ResourceError> {
+    fn classify_root_notification(&self, termination: ProcessTermination) -> ProcessTermination {
         let mut violations = self.signal.violations.load(Ordering::Acquire);
-        let deadline = Instant::now() + NOTIFICATION_BARRIER_TIMEOUT;
-        loop {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                return Err(ResourceError::io(
-                    "wait for nested Job Object exit notification",
-                    io::Error::new(io::ErrorKind::TimedOut, "root exit notification timed out"),
-                ));
-            }
-            let timeout_ms = u32::try_from(remaining.as_millis().min(u128::from(u32::MAX)))
-                .expect("bounded timeout fits u32");
-            let Some((message, pid)) = WindowsRunJob::next_notification_from(
-                self.completion_port.raw(),
-                timeout_ms.max(1),
-            )?
-            else {
-                return Err(ResourceError::io(
-                    "wait for nested Job Object exit notification",
-                    io::Error::new(io::ErrorKind::TimedOut, "root exit notification timed out"),
-                ));
-            };
+        while let Ok(Some((message, _))) =
+            WindowsRunJob::next_notification_from(self.completion_port.raw(), 0)
+        {
             violations |= match message {
                 JOB_OBJECT_MSG_JOB_MEMORY_LIMIT => MEMORY_VIOLATION,
                 JOB_OBJECT_MSG_ACTIVE_PROCESS_LIMIT => PROCESS_VIOLATION,
                 _ => 0,
             };
-            if pid == self.pid.expect("checked before classifying")
-                && matches!(
-                    message,
-                    JOB_OBJECT_MSG_EXIT_PROCESS | JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS
-                )
-            {
-                break;
-            }
         }
         if violations & MEMORY_VIOLATION != 0 {
-            Ok(ProcessTermination::OutOfMemory)
+            ProcessTermination::OutOfMemory
         } else if violations & PROCESS_VIOLATION != 0 {
-            Ok(ProcessTermination::ProcessLimit)
+            ProcessTermination::ProcessLimit
         } else {
-            Ok(termination)
+            termination
         }
     }
 
