@@ -10,9 +10,9 @@ use std::time::Duration;
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{
     CandidateLoaded, Diagnostic, EffectFailed, EffectId, EmitOutput, FingerprintInput,
-    ObserveRemainingBudget, OutputEvent, RemainingBudgetObserved, ReportVersions, RunConfig,
-    RunEffect, RunEvent, RunPhase, RunProcess, RunState, SourceHash, StartRequested, TargetSlice,
-    fingerprint, transition,
+    ObserveRemainingBudget, OutputEvent, RemainingBudgetObserved, ReportVersions, ResourceMode,
+    RunConfig, RunEffect, RunEvent, RunPhase, RunProcess, RunState, SourceHash, StartRequested,
+    TargetSlice, fingerprint, transition,
 };
 use tempfile::TempDir;
 use tokio::sync::mpsc;
@@ -32,7 +32,7 @@ use crate::workspace::{
     CopyOptions, WorkspaceHandler, WorkspaceManifest, WorkspaceTask, WorkspaceTaskCompletion,
 };
 #[cfg(test)]
-use crate::workspace::{MaterializationPause, MaterializationPauseController};
+use crate::workspace::{MaterializationPause, MaterializationPauseController, PreflightPause};
 
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
@@ -299,6 +299,15 @@ struct ShellCompletion {
 enum BlockingEffect {
     Workspace(Box<WorkspaceTask>),
     Candidate(hoimin_core::ReadCandidate),
+    Preflight {
+        id: EffectId,
+        workspace: Box<WorkspaceHandler>,
+        request: hoimin_core::Preflight,
+        config: Box<RunConfig>,
+        copied_at_start: BTreeSet<Utf8PathBuf>,
+        targets: Vec<TargetSlice>,
+        resource_mode: ResourceMode,
+    },
     Cleanup {
         id: EffectId,
         process: Arc<ProcessHandler>,
@@ -320,7 +329,7 @@ enum BlockingEffect {
 enum BlockingEffectCompletion {
     Workspace(Box<WorkspaceTaskCompletion>),
     Candidate(Box<RunEvent>),
-    Cleanup {
+    OwnedWorkspace {
         id: EffectId,
         workspace: Box<WorkspaceHandler>,
         event: Box<RunEvent>,
@@ -332,6 +341,7 @@ impl BlockingEffect {
         match self {
             Self::Workspace(task) => task.id(),
             Self::Candidate(request) => request.id,
+            Self::Preflight { id, .. } => *id,
             Self::Cleanup { id, .. } => *id,
             #[cfg(test)]
             Self::TestOperation { id, .. } => *id,
@@ -345,6 +355,36 @@ impl BlockingEffect {
             Self::Workspace(task) => BlockingEffectCompletion::Workspace(Box::new(task.execute())),
             Self::Candidate(request) => {
                 BlockingEffectCompletion::Candidate(Box::new(replay_candidate(&request)))
+            }
+            Self::Preflight {
+                id,
+                mut workspace,
+                request,
+                config,
+                copied_at_start,
+                targets,
+                resource_mode,
+            } => {
+                let event = match workspace.handle_preflight_validated(request, |root, manifest| {
+                    recheck_fingerprint_inputs(&config, root, manifest, &copied_at_start, id)
+                }) {
+                    Ok(mut value) => match prepare_fingerprint(&config, &targets, resource_mode) {
+                        Ok(run_fingerprint) => {
+                            value.fingerprint = Some(run_fingerprint);
+                            RunEvent::PreflightCompleted(value)
+                        }
+                        Err(mut error) => {
+                            error.id = value.id;
+                            RunEvent::EffectFailed(error)
+                        }
+                    },
+                    Err(error) => RunEvent::EffectFailed(error),
+                };
+                BlockingEffectCompletion::OwnedWorkspace {
+                    id,
+                    workspace,
+                    event: Box::new(event),
+                }
             }
             Self::Cleanup {
                 id,
@@ -362,7 +402,7 @@ impl BlockingEffect {
                         error.to_string(),
                     )),
                 };
-                BlockingEffectCompletion::Cleanup {
+                BlockingEffectCompletion::OwnedWorkspace {
                     id,
                     workspace,
                     event: Box::new(event),
@@ -404,6 +444,7 @@ fn is_blocking_io_effect(effect: &RunEffect) -> bool {
     matches!(
         effect,
         RunEffect::CreateWorker(_)
+            | RunEffect::Preflight(_)
             | RunEffect::ReadCandidate(_)
             | RunEffect::ApplyMutation(_)
             | RunEffect::ResetWorker(_)
@@ -421,6 +462,32 @@ where
     Stderr: Write,
 {
     let task = match effect {
+        RunEffect::Preflight(request) => {
+            let id = request.id;
+            let targets = context.resolved_targets.clone().ok_or_else(|| {
+                EffectFailed::other(
+                    id,
+                    "shell.targets.missing",
+                    "preflight preceded target resolution",
+                )
+            })?;
+            let workspace = context.workspace.take().ok_or_else(|| {
+                EffectFailed::other(
+                    id,
+                    "shell.blocking_io",
+                    "workspace ownership is unavailable for preflight",
+                )
+            })?;
+            return Ok(BlockingEffect::Preflight {
+                id,
+                workspace: Box::new(workspace),
+                request,
+                config: Box::new(context.config.clone()),
+                copied_at_start: context.fingerprint_copy_inputs.clone(),
+                targets,
+                resource_mode: context.process.mode(),
+            });
+        }
         RunEffect::CreateWorker(request) => context.workspace_mut().prepare_create_task(request),
         RunEffect::ReadCandidate(request) => return Ok(BlockingEffect::Candidate(request)),
         RunEffect::ApplyMutation(request) => {
@@ -465,7 +532,7 @@ where
             .accept_task_completion(*completion)
             .unwrap_or_else(RunEvent::EffectFailed),
         BlockingEffectCompletion::Candidate(event) => *event,
-        BlockingEffectCompletion::Cleanup {
+        BlockingEffectCompletion::OwnedWorkspace {
             id,
             workspace,
             event,
@@ -474,7 +541,7 @@ where
                 return RunEvent::EffectFailed(EffectFailed::other(
                     id,
                     "shell.blocking_io",
-                    "cleanup returned duplicate workspace ownership",
+                    "blocking operation returned duplicate workspace ownership",
                 ));
             }
             context.workspace = Some(*workspace);
@@ -713,34 +780,27 @@ where
     }
 }
 
-async fn prepare_fingerprint<Stdout, Stderr>(
-    context: &ShellContext<Stdout, Stderr>,
+fn prepare_fingerprint(
+    config: &RunConfig,
+    targets: &[TargetSlice],
+    resource_mode: ResourceMode,
 ) -> Result<hoimin_core::RunFingerprint, EffectFailed> {
     let id = EffectId(0);
-    let targets = context.resolved_targets.as_ref().ok_or_else(|| {
-        EffectFailed::other(
-            id,
-            "shell.targets.missing",
-            "preflight preceded target resolution",
-        )
-    })?;
     let mut sources = Vec::with_capacity(targets.len());
     for target in targets {
-        let bytes = tokio::fs::read(context.config.root.join(&target.path))
-            .await
-            .map_err(|error| {
-                EffectFailed::other(id, "fingerprint.source.read", error.to_string())
-            })?;
+        let bytes = std::fs::read(config.root.join(&target.path)).map_err(|error| {
+            EffectFailed::other(id, "fingerprint.source.read", error.to_string())
+        })?;
         sources.push(SourceHash {
             path: target.path.clone(),
             hash: *blake3::hash(&bytes).as_bytes(),
         });
     }
     Ok(fingerprint(&FingerprintInput::from_config(
-        &context.config,
+        config,
         sources,
-        targets.clone(),
-        context.process.mode(),
+        targets.to_vec(),
+        resource_mode,
     )))
 }
 
@@ -812,10 +872,6 @@ where
     execute_effect_with_cancellation(context, effect, ProcessCancellation::new()).await
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "effect dispatch is intentionally centralized to preserve a one-to-one effect-to-event mapping"
-)]
 async fn execute_effect_with_cancellation<Stdout, Stderr>(
     context: &mut ShellContext<Stdout, Stderr>,
     effect: RunEffect,
@@ -835,30 +891,8 @@ where
             }
             Err(error) => Err(error),
         },
-        RunEffect::Preflight(request) => {
-            let config = &context.config;
-            let copied_at_start = &context.fingerprint_copy_inputs;
-            match context
-                .workspace
-                .as_mut()
-                .expect("workspace ownership is available during preflight")
-                .handle_preflight_validated(request, |root, manifest| {
-                    recheck_fingerprint_inputs(config, root, manifest, copied_at_start, id)
-                }) {
-                Ok(mut value) => match prepare_fingerprint(context).await {
-                    Ok(run_fingerprint) => {
-                        value.fingerprint = Some(run_fingerprint);
-                        Ok(RunEvent::PreflightCompleted(value))
-                    }
-                    Err(mut error) => {
-                        error.id = value.id;
-                        Err(error)
-                    }
-                },
-                Err(error) => Err(error),
-            }
-        }
-        RunEffect::CreateWorker(_)
+        RunEffect::Preflight(_)
+        | RunEffect::CreateWorker(_)
         | RunEffect::ReadCandidate(_)
         | RunEffect::ApplyMutation(_)
         | RunEffect::ResetWorker(_)
@@ -2329,7 +2363,9 @@ fn spawn_blocking_effect(
                 let event = match &completion {
                     BlockingEffectCompletion::Workspace(completion) => completion.event().clone(),
                     BlockingEffectCompletion::Candidate(event)
-                    | BlockingEffectCompletion::Cleanup { event, .. } => event.as_ref().clone(),
+                    | BlockingEffectCompletion::OwnedWorkspace { event, .. } => {
+                        event.as_ref().clone()
+                    }
                 };
                 (event, Some(Box::new(completion)))
             }
@@ -3034,6 +3070,7 @@ mod tests {
             cursor: hoimin_core::CandidateCursor::START,
         });
         let effects = [
+            RunEffect::Preflight(Preflight { id: EffectId(30) }),
             RunEffect::CreateWorker(create),
             read,
             RunEffect::ApplyMutation(ApplyMutation {
@@ -3592,6 +3629,77 @@ mod tests {
         release_tx.send(()).unwrap();
 
         assert_eq!(operation.await.unwrap().unwrap(), 42);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn preflight_filesystem_work_does_not_block_the_async_runtime() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
+        let config = crate::cli::parse_config_from([
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+            OsString::from("unused-test-command"),
+        ])
+        .unwrap();
+        let mut context = ShellContext::new(&config, Vec::new(), Vec::new())
+            .await
+            .unwrap();
+        let targets = vec![TargetSlice {
+            path: Utf8PathBuf::from("target.py"),
+            lines: Vec::new(),
+            symbols: Vec::new(),
+        }];
+        let expected_fingerprint = fingerprint(&FingerprintInput::from_config(
+            &config,
+            vec![SourceHash {
+                path: Utf8PathBuf::from("target.py"),
+                hash: *blake3::hash(b"pass\n").as_bytes(),
+            }],
+            targets.clone(),
+            context.process.mode(),
+        ));
+        context.resolved_targets = Some(targets);
+        let (pause, controller) = PreflightPause::new();
+        context.workspace_mut().set_preflight_pause(pause);
+        let (heartbeat_tx, heartbeat_rx) = std::sync::mpsc::channel();
+        let preflight_controller = std::thread::spawn(move || {
+            controller.wait_until_entered();
+            let heartbeat_observed = heartbeat_rx
+                .recv_timeout(Duration::from_millis(500))
+                .is_ok();
+            controller.release();
+            heartbeat_observed
+        });
+        let heartbeat = async {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            heartbeat_tx.send(()).unwrap();
+        };
+
+        let (event, ()) = tokio::join!(
+            execute_effect(
+                &mut context,
+                RunEffect::Preflight(Preflight { id: EffectId(17) }),
+            ),
+            heartbeat,
+        );
+        let heartbeat_observed = preflight_controller.join().unwrap();
+
+        assert!(
+            heartbeat_observed,
+            "preflight blocked the runtime until its filesystem work was released"
+        );
+        let RunEvent::PreflightCompleted(completed) = event else {
+            panic!("preflight failed: {event:?}")
+        };
+        assert_eq!(completed.id, EffectId(17));
+        assert_eq!(completed.fingerprint, Some(expected_fingerprint));
+        assert!(context.workspace.is_some());
     }
 
     #[tokio::test]

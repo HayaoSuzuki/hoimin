@@ -13,6 +13,8 @@ use std::ffi::OsString;
 use std::fmt;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+#[cfg(test)]
+use std::sync::Barrier;
 use std::sync::{Arc, Mutex};
 
 use camino::{Utf8Path, Utf8PathBuf};
@@ -664,6 +666,53 @@ pub struct WorkspaceHandler {
     pending_cleanup: BTreeMap<u32, WorkerWorkspace>,
     #[cfg(test)]
     materialization_pause: Option<MaterializationPause>,
+    #[cfg(test)]
+    preflight_pause: Option<PreflightPause>,
+}
+
+#[cfg(test)]
+#[derive(Clone, Debug)]
+pub(crate) struct PreflightPause {
+    entered: Arc<Barrier>,
+    release: Arc<Barrier>,
+}
+
+#[cfg(test)]
+#[derive(Debug)]
+pub(crate) struct PreflightPauseController {
+    entered: Arc<Barrier>,
+    release: Arc<Barrier>,
+}
+
+#[cfg(test)]
+impl PreflightPause {
+    pub(crate) fn new() -> (Self, PreflightPauseController) {
+        let entered = Arc::new(Barrier::new(2));
+        let release = Arc::new(Barrier::new(2));
+        (
+            Self {
+                entered: Arc::clone(&entered),
+                release: Arc::clone(&release),
+            },
+            PreflightPauseController { entered, release },
+        )
+    }
+
+    fn wait(&self) {
+        self.entered.wait();
+        self.release.wait();
+    }
+}
+
+#[cfg(test)]
+impl PreflightPauseController {
+    pub(crate) fn wait_until_entered(&self) {
+        self.entered.wait();
+    }
+
+    pub(crate) fn release(&self) {
+        self.release.wait();
+    }
 }
 
 pub(crate) enum WorkspaceTask {
@@ -864,12 +913,19 @@ impl WorkspaceHandler {
             pending_cleanup: BTreeMap::new(),
             #[cfg(test)]
             materialization_pause: None,
+            #[cfg(test)]
+            preflight_pause: None,
         }
     }
 
     #[cfg(test)]
     pub(crate) fn set_materialization_pause(&mut self, pause: MaterializationPause) {
         self.materialization_pause = Some(pause);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_preflight_pause(&mut self, pause: PreflightPause) {
+        self.preflight_pause = Some(pause);
     }
 
     /// # Errors
@@ -908,6 +964,10 @@ impl WorkspaceHandler {
         request: Preflight,
         validate: impl FnOnce(&Utf8Path, &WorkspaceManifest) -> Result<(), EffectFailed>,
     ) -> Result<PreflightCompleted, EffectFailed> {
+        #[cfg(test)]
+        if let Some(pause) = &self.preflight_pause {
+            pause.wait();
+        }
         let id = request.id;
         match WorkspacePlan::preflight_validated(
             &self.original_root,
