@@ -2,6 +2,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::future::Future;
 use std::io::Write;
 use std::sync::Arc;
+#[cfg(test)]
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
@@ -158,6 +160,8 @@ pub struct RunControl {
     #[cfg(test)]
     materialization_pause: Option<MaterializationPause>,
     #[cfg(test)]
+    cancel_before_run_finished: Arc<AtomicBool>,
+    #[cfg(test)]
     shutdown_grace: Duration,
 }
 
@@ -170,6 +174,8 @@ impl RunControl {
             max_completion_in_flight: Arc::new(AtomicUsize::new(0)),
             #[cfg(test)]
             materialization_pause: None,
+            #[cfg(test)]
+            cancel_before_run_finished: Arc::new(AtomicBool::new(false)),
             #[cfg(test)]
             shutdown_grace: SHUTDOWN_GRACE,
         }
@@ -191,6 +197,29 @@ impl RunControl {
         let (mut control, controller) = Self::with_materialization_pause(worker);
         control.shutdown_grace = shutdown_grace;
         (control, controller)
+    }
+
+    #[cfg(test)]
+    fn cancelling_before_run_finished() -> Self {
+        let control = Self::new();
+        control
+            .cancel_before_run_finished
+            .store(true, Ordering::Release);
+        control
+    }
+
+    #[cfg(test)]
+    fn before_effect_dispatch(&self, effect: &RunEffect) {
+        if matches!(
+            effect,
+            RunEffect::EmitOutput(value)
+                if matches!(&value.event, OutputEvent::RunFinished(_))
+        ) && self
+            .cancel_before_run_finished
+            .swap(false, Ordering::AcqRel)
+        {
+            self.cancel();
+        }
     }
 
     #[allow(
@@ -1271,10 +1300,12 @@ where
                 let Some(effect) = effects.pop_front() else {
                     break;
                 };
+                #[cfg(test)]
+                control.before_effect_dispatch(&effect);
                 if !stop_signalled
                     && (control.is_cancelled() || tokio::time::Instant::now() >= deadline)
                 {
-                    cancel_queued_effect(&effect, &mut metrics, &mut metrics_warnings);
+                    effects.push_front(effect);
                     cancellation.cancel();
                     stop_signalled = true;
                     let event = if control.is_cancelled() {
@@ -1918,7 +1949,12 @@ where
             );
 
             if external_stop || failed {
-                discard_queued_effects(&mut effects, &mut metrics, &mut metrics_warnings);
+                retain_machine_pending_effects(
+                    &mut effects,
+                    &state,
+                    &mut metrics,
+                    &mut metrics_warnings,
+                );
                 let candidate_budget = if deadline_stop {
                     ShutdownBudget::for_total_timeout_with_grace(deadline, shutdown_grace)
                 } else {
@@ -2139,6 +2175,25 @@ fn discard_queued_effects(
     for effect in effects.drain(..) {
         cancel_queued_effect(&effect, collector, warnings);
     }
+}
+
+fn retain_machine_pending_effects(
+    effects: &mut VecDeque<RunEffect>,
+    state: &RunState,
+    collector: &mut Option<MetricsCollector>,
+    warnings: &mut Vec<(&'static str, String)>,
+) {
+    let mut retained = VecDeque::with_capacity(effects.len());
+    let mut discarded = VecDeque::new();
+    while let Some(effect) = effects.pop_front() {
+        if state.is_effect_pending(effect.id()) {
+            retained.push_back(effect);
+        } else {
+            discarded.push_back(effect);
+        }
+    }
+    discard_queued_effects(&mut discarded, collector, warnings);
+    *effects = retained;
 }
 
 fn record_ready_processes<'a>(
@@ -2685,6 +2740,20 @@ mod tests {
         )
     }
 
+    #[cfg(unix)]
+    fn successful_test_command() -> Vec<OsString> {
+        vec![OsString::from("/usr/bin/true")]
+    }
+
+    #[cfg(windows)]
+    fn successful_test_command() -> Vec<OsString> {
+        vec![
+            OsString::from("cmd.exe"),
+            OsString::from("/C"),
+            OsString::from("exit 0"),
+        ]
+    }
+
     fn process_effect(worker: u32) -> RunEffect {
         RunEffect::RunMutant(RunProcess {
             id: EffectId(1),
@@ -2864,6 +2933,52 @@ mod tests {
 
         assert_eq!(retained.cause(), ShutdownCause::Cancellation);
         assert_eq!(retained.deadline(), first_deadline);
+    }
+
+    #[tokio::test]
+    async fn cancellation_before_final_report_dispatch_preserves_the_queued_output() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
+        let mut args = vec![
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--format"),
+            OsString::from("json"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+        ];
+        args.extend(successful_test_command());
+        let config = crate::cli::parse_config_from(args).unwrap();
+        let control = RunControl::cancelling_before_run_finished();
+        let observed_control = control.clone();
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let exit = tokio::time::timeout(
+            Duration::from_secs(10),
+            run_loop_with_control(config, &mut stdout, &mut stderr, control),
+        )
+        .await
+        .expect("final report dispatch must not stall")
+        .expect("the queued final report must remain dispatchable");
+
+        assert_eq!(exit, 0);
+        assert!(
+            !observed_control
+                .cancel_before_run_finished
+                .load(Ordering::Acquire),
+            "the cancellation hook did not observe RunFinished"
+        );
+        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(report["summary"]["complete"], true);
+        assert!(
+            !String::from_utf8(stderr).unwrap().contains("run stalled"),
+            "the scheduler reported a false stall"
+        );
     }
 
     #[test]
@@ -4025,6 +4140,47 @@ mod tests {
         cancel_queued_effect(&first, &mut metrics, &mut warnings);
         discard_queued_effects(&mut effects, &mut metrics, &mut warnings);
 
+        assert_metrics_sidecar_finishes(metrics, &warnings);
+    }
+
+    #[test]
+    fn stop_queue_filter_retains_only_effects_still_pending_in_the_machine() {
+        let config = crate::cli::parse_config_from([
+            "hoimin",
+            "run",
+            "--root",
+            ".",
+            "--source",
+            ".",
+            "--",
+            "unused-test-command",
+        ])
+        .unwrap();
+        let (state, pending_effects) = transition(
+            RunState::new("run-1", config),
+            RunEvent::StartRequested(StartRequested),
+        )
+        .unwrap();
+        let pending = pending_effects.into_iter().next().unwrap();
+        let pending_id = pending.id();
+        let mut obsolete_effect = process_effect(7);
+        let RunEffect::RunMutant(request) = &mut obsolete_effect else {
+            unreachable!()
+        };
+        request.id = EffectId(999);
+        assert!(state.is_effect_pending(pending_id));
+        assert!(!state.is_effect_pending(obsolete_effect.id()));
+        let mut effects = VecDeque::from([obsolete_effect, pending]);
+        let mut metrics = Some(MetricsCollector::new("run-1"));
+        metrics.as_mut().unwrap().queued(7).unwrap();
+        let mut warnings = Vec::new();
+
+        retain_machine_pending_effects(&mut effects, &state, &mut metrics, &mut warnings);
+
+        assert_eq!(
+            effects.iter().map(RunEffect::id).collect::<Vec<_>>(),
+            [pending_id]
+        );
         assert_metrics_sidecar_finishes(metrics, &warnings);
     }
 
