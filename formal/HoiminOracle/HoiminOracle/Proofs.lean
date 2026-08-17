@@ -68,6 +68,12 @@ theorem late_stop_preserves_final (state : State) (cause : StopCause)
   · simp [step, stop, finalPending]
   · simp [step, stop, finished]
 
+theorem stop_during_cleaning_is_noop (state : State) (cause : StopCause)
+    (cleaning : state.phase = .cleaning) :
+    (step state (.stop cause)).state = state ∧
+      (step state (.stop cause)).emitted = [] := by
+  simp [step, stop, cleaning]
+
 theorem no_ordinary_emission_after_stop (state : State) (event : Event)
     (stopped : state.stopCause.isSome = true) :
     .ordinary ∉ (step state event).emitted := by

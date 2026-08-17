@@ -144,9 +144,9 @@ def complete (state : State) (id : Nat) (kind : EffectKind) : Verdict :=
 
 def stop (state : State) (cause : StopCause) : Verdict :=
   match state.phase with
-  | .finalPending | .finished =>
+  | .cleaning | .finalPending | .finished =>
       { state := state, emitted := [], rejection := none }
-  | .running | .cleaning =>
+  | .running =>
       match state.stopCause with
       | some _ => { state := state, emitted := [], rejection := none }
       | none =>

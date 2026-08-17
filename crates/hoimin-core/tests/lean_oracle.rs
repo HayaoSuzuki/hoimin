@@ -3,9 +3,10 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Duration;
 
 use hoimin_core::{
-    CleanupFinished, CommandArg, EffectId, OutputConfig, OutputEmitted, OutputEvent, RawRunConfig,
-    RawRunLimits, RunConfig, RunEffect, RunEvent, RunPhase, RunState, StartRequested,
-    TargetsResolved, transition,
+    AnalysisFinished, CandidateSpoolRef, CleanupFinished, CommandArg, EffectId, OriginalsVerified,
+    OutputConfig, OutputEmitted, OutputEvent, OutputSpoolRef, PreflightCompleted, ProcessFinished,
+    ProcessTermination, RawRunConfig, RawRunLimits, ResourceMode, RunConfig, RunEffect, RunEvent,
+    RunPhase, RunState, StartRequested, TargetSlice, TargetsResolved, WorkerCreated, transition,
 };
 use serde::Deserialize;
 
@@ -108,6 +109,7 @@ impl Driver {
         };
         match scenario {
             "pending_resolve" => {}
+            "normal_cleaning_with_copy" => driver.advance_to_normal_cleanup()?,
             "final_pending_without_copy" => {
                 driver.apply("cancel")?;
                 driver.apply("complete_cleanup")?;
@@ -120,6 +122,187 @@ impl Driver {
             other => return Err(format!("unknown scenario {other}")),
         }
         Ok(driver)
+    }
+
+    fn apply_setup_completion(
+        &mut self,
+        event: RunEvent,
+        completed_id: EffectId,
+    ) -> Result<(), String> {
+        let state = self
+            .state
+            .take()
+            .ok_or_else(|| "setup state is unavailable".to_owned())?;
+        let (state, mut emitted) = transition(state, event)
+            .map_err(|error| format!("setup transition failed: {error}"))?;
+        self.outstanding
+            .retain(|effect| effect.id() != completed_id);
+        self.outstanding.append(&mut emitted);
+        self.state = Some(state);
+        Ok(())
+    }
+
+    fn advance_to_normal_cleanup(&mut self) -> Result<(), String> {
+        self.advance_to_baseline()?;
+        self.advance_to_empty_analysis()?;
+        self.advance_to_pre_final_cleanup()?;
+
+        let state = self
+            .state
+            .as_ref()
+            .ok_or_else(|| "setup state is unavailable".to_owned())?;
+        if state.phase() != RunPhase::Cleaning
+            || !self
+                .outstanding
+                .iter()
+                .any(|effect| matches!(effect, RunEffect::Cleanup(_)))
+        {
+            return Err("setup did not reach normal Cleaning".to_owned());
+        }
+        Ok(())
+    }
+
+    fn advance_to_baseline(&mut self) -> Result<(), String> {
+        self.apply_setup_completion(
+            RunEvent::TargetsResolved(TargetsResolved {
+                id: self.ordinary_id,
+                targets: vec![TargetSlice {
+                    path: "src/calc.py".into(),
+                    lines: Vec::new(),
+                    symbols: Vec::new(),
+                }],
+            }),
+            self.ordinary_id,
+        )?;
+
+        let preflight_id = self
+            .outstanding
+            .iter()
+            .find_map(|effect| match effect {
+                RunEffect::Preflight(value) => Some(value.id),
+                _ => None,
+            })
+            .ok_or_else(|| "setup did not emit Preflight".to_owned())?;
+        self.apply_setup_completion(
+            RunEvent::PreflightCompleted(PreflightCompleted {
+                id: preflight_id,
+                per_worker_logical_bytes: 10,
+                requested_workers: 1,
+                aggregate_logical_bytes: 10,
+                fingerprint: None,
+            }),
+            preflight_id,
+        )?;
+
+        let run_started_id = self
+            .outstanding
+            .iter()
+            .find_map(|effect| match effect {
+                RunEffect::EmitOutput(value)
+                    if matches!(&value.event, OutputEvent::RunStarted(_)) =>
+                {
+                    Some(value.id)
+                }
+                _ => None,
+            })
+            .ok_or_else(|| "setup did not emit RunStarted".to_owned())?;
+        self.apply_setup_completion(
+            RunEvent::OutputEmitted(OutputEmitted { id: run_started_id }),
+            run_started_id,
+        )?;
+
+        let (create_id, worker, reservation_id) = self
+            .outstanding
+            .iter()
+            .find_map(|effect| match effect {
+                RunEffect::CreateWorker(value) => {
+                    Some((value.id(), value.worker(), value.reservation_id()))
+                }
+                _ => None,
+            })
+            .ok_or_else(|| "setup did not emit CreateWorker".to_owned())?;
+        self.apply_setup_completion(
+            RunEvent::WorkerCreated(WorkerCreated {
+                id: create_id,
+                worker,
+                reservation_id,
+            }),
+            create_id,
+        )?;
+
+        let (verify_id, checkpoint) = pending_verification(&self.outstanding)?;
+        self.apply_setup_completion(
+            RunEvent::OriginalsVerified(OriginalsVerified {
+                id: verify_id,
+                checkpoint,
+            }),
+            verify_id,
+        )?;
+        Ok(())
+    }
+
+    fn advance_to_empty_analysis(&mut self) -> Result<(), String> {
+        let baseline_id = self
+            .outstanding
+            .iter()
+            .find_map(|effect| match effect {
+                RunEffect::RunBaseline(value) => Some(value.id),
+                _ => None,
+            })
+            .ok_or_else(|| "setup did not emit RunBaseline".to_owned())?;
+        self.apply_setup_completion(
+            RunEvent::BaselineFinished(successful_process(baseline_id)),
+            baseline_id,
+        )?;
+
+        let baseline_output_id = self
+            .outstanding
+            .iter()
+            .find_map(|effect| match effect {
+                RunEffect::EmitOutput(value) => Some(value.id),
+                _ => None,
+            })
+            .ok_or_else(|| "setup did not emit the baseline result".to_owned())?;
+        self.apply_setup_completion(
+            RunEvent::OutputEmitted(OutputEmitted {
+                id: baseline_output_id,
+            }),
+            baseline_output_id,
+        )?;
+        Ok(())
+    }
+
+    fn advance_to_pre_final_cleanup(&mut self) -> Result<(), String> {
+        let analysis_id = self
+            .outstanding
+            .iter()
+            .find_map(|effect| match effect {
+                RunEffect::AnalyzeFile(value) => Some(value.id),
+                _ => None,
+            })
+            .ok_or_else(|| "setup did not emit AnalyzeFile".to_owned())?;
+        self.apply_setup_completion(
+            RunEvent::AnalysisFinished(AnalysisFinished {
+                id: analysis_id,
+                spool: Some(CandidateSpoolRef {
+                    token: "empty".to_owned(),
+                    records: 0,
+                }),
+                truncated: false,
+                diagnostics: Vec::new(),
+            }),
+            analysis_id,
+        )?;
+
+        let (verify_id, checkpoint) = pending_verification(&self.outstanding)?;
+        self.apply_setup_completion(
+            RunEvent::OriginalsVerified(OriginalsVerified {
+                id: verify_id,
+                checkpoint,
+            }),
+            verify_id,
+        )?;
+        Ok(())
     }
 
     fn abstract_phase(&self, state: &RunState) -> String {
@@ -194,7 +377,6 @@ impl Driver {
             .ok_or_else(|| format!("cannot execute {name} after a rejected transition"))?;
         let pre_phase = self.abstract_phase(&state);
         let pre_pending = state.pending_count();
-        let terminal = pre_phase == "final_pending" || pre_phase == "finished";
         let (event, completion_id) = match name {
             "cancel" => (RunEvent::CancellationRequested, None),
             "deadline" => (RunEvent::DeadlineReached, None),
@@ -213,12 +395,8 @@ impl Driver {
             }),
             Ok((mut state, mut emitted)) => {
                 let mut visible: Vec<_> = emitted.iter().filter_map(normalize_effect).collect();
-                if completion_id.is_none() && !terminal {
-                    self.outstanding.clear();
-                }
-                if let Some(id) = completion_id {
-                    self.outstanding.retain(|effect| effect.id() != id);
-                }
+                self.outstanding
+                    .retain(|effect| state.is_effect_pending(effect.id()));
                 self.outstanding.append(&mut emitted);
                 if completion_id.is_none()
                     && let Some(run_started_id) =
@@ -296,6 +474,33 @@ fn normalize_effect(effect: &RunEffect) -> Option<String> {
         }
         RunEffect::EmitOutput(value) if matches!(&value.event, OutputEvent::RunStarted(_)) => None,
         _ => Some("ordinary".to_owned()),
+    }
+}
+
+fn pending_verification(
+    effects: &[RunEffect],
+) -> Result<(EffectId, hoimin_core::IntegrityCheckpoint), String> {
+    effects
+        .iter()
+        .find_map(|effect| match effect {
+            RunEffect::VerifyOriginals(value) => Some((value.id, value.checkpoint)),
+            _ => None,
+        })
+        .ok_or_else(|| "setup did not emit VerifyOriginals".to_owned())
+}
+
+fn successful_process(id: EffectId) -> ProcessFinished {
+    ProcessFinished {
+        id,
+        worker: Some(0),
+        termination: ProcessTermination::Exit(0),
+        output: OutputSpoolRef {
+            token: "output".to_owned(),
+            retained: 0,
+            observed: 0,
+        },
+        elapsed: Duration::from_millis(5),
+        resource_mode: ResourceMode::Hard,
     }
 }
 
@@ -448,7 +653,10 @@ fn validate_case(case: &OracleCase) -> Result<(), String> {
     }
     if !matches!(
         case.scenario.as_str(),
-        "pending_resolve" | "final_pending_without_copy" | "finished_without_copy"
+        "pending_resolve"
+            | "normal_cleaning_with_copy"
+            | "final_pending_without_copy"
+            | "finished_without_copy"
     ) {
         return Err(format!("unknown scenario {}", case.scenario));
     }
@@ -531,7 +739,7 @@ fn load_corpus() -> Result<Vec<OracleCase>, String> {
 fn corpus_is_well_formed() {
     let cases = load_corpus().expect("the committed Lean corpus must parse");
 
-    assert_eq!(cases.len(), 14);
+    assert_eq!(cases.len(), 16);
     assert!(cases.iter().all(|case| !case.expected.is_empty()));
     assert!(cases.iter().all(|case| case.mode == "strict"));
 }
