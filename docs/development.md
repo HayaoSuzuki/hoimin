@@ -153,6 +153,14 @@ parser tokens, AST facts, and small per-node replacement lists remain
 proportional to source size. `--max-memory` controls descendants rather than
 the Hoimin CLI, so it does not bound these analyzer structures.
 
+Candidate-local punctuation queries must use
+`AstFacts::candidate_tokens_in_range` with the smallest relevant AST range.
+Do not scan `Tokens::iter()` for each call, literal, or exception tuple: that
+turns a module containing many small candidates into quadratic work. The
+test-only candidate token lookup statistics count calls and tokens in the
+returned slices. Treat their operation-count bound as the complexity contract;
+wall-clock timings are diagnostic only.
+
 `AstFacts` finalizes immutable lookup indexes after its AST walk. Annotation
 and focused-profile arid containment use sorted starts with prefix-maximum end
 offsets, so overlapping ranges remain exact with `O(log n)` lookup. Unary
