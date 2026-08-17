@@ -522,7 +522,13 @@ impl LineIndex {
             - 1;
         let line_start = self.starts[line_index] as usize;
         let line = line_index as u32 + 1;
-        let column = source[line_start..offset].chars().count() as u32;
+        let line_prefix = &source[line_start..offset];
+        let column_prefix = if line_index == 0 {
+            line_prefix.strip_prefix('\u{feff}').unwrap_or(line_prefix)
+        } else {
+            line_prefix
+        };
+        let column = column_prefix.chars().count() as u32;
         (line, column)
     }
 }

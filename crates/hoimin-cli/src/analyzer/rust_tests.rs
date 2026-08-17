@@ -2880,6 +2880,27 @@ fn line_index_reports_one_based_lines_and_unicode_scalar_columns() {
 }
 
 #[test]
+fn line_index_ignores_only_a_leading_file_bom_in_columns() {
+    let source = "\u{feff}ab\n\u{feff}c\n";
+    let line_index = LineIndex::new(source);
+
+    for (offset, expected) in [
+        (0, (1, 0)),
+        (3, (1, 0)),
+        (5, (1, 2)),
+        (6, (2, 0)),
+        (9, (2, 1)),
+        (10, (2, 2)),
+    ] {
+        assert_eq!(
+            line_index.line_and_column(source, offset),
+            expected,
+            "position at byte offset {offset}",
+        );
+    }
+}
+
+#[test]
 fn line_index_positions_token_and_type_annotation_candidates() {
     let source = "from typing import Optional\nπ = left == right\n値: Optional[int]\n";
     let output = analyze_types(source);
@@ -4961,6 +4982,25 @@ fn reports_unicode_code_point_columns_without_changing_byte_spans() {
         String::from_utf8(changed).unwrap(),
         "# 日本語\n値 = left != right  # adjacent comment\n"
     );
+}
+
+#[test]
+fn reports_columns_without_counting_a_leading_file_bom() {
+    let source = "\u{feff}x = 1 + 2\n";
+    let candidate = analyze(source)
+        .candidates
+        .into_iter()
+        .find(|candidate| candidate.original == "+")
+        .expect("binary addition candidate");
+
+    assert_eq!(
+        candidate.span,
+        ByteSpan {
+            start: 9,
+            length: 1
+        }
+    );
+    assert_eq!((candidate.line, candidate.column), (1, 6));
 }
 
 #[test]
