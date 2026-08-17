@@ -1405,6 +1405,44 @@ fn annotations_do_not_emit_default_bitwise_mutations() {
 }
 
 #[test]
+fn annotations_suppress_all_default_token_mutations() {
+    let source = concat!(
+        "from typing import Annotated, Literal\n",
+        "\n",
+        "def choose(left: Literal[-1], enabled: Literal[True], size: Annotated[int, 1 + 2]) -> int:\n",
+        "    runtime_sign = -value\n",
+        "    runtime_flag = True\n",
+        "    return left + right\n",
+    );
+    let output = analyze(source);
+
+    assert_eq!(
+        output
+            .candidates
+            .iter()
+            .filter(|candidate| {
+                matches!(
+                    candidate.operator.as_str(),
+                    "unary_sign" | "boolean_literal" | "binary_add_sub"
+                )
+            })
+            .map(|candidate| {
+                (
+                    candidate.operator.as_str(),
+                    candidate.original.as_str(),
+                    candidate.line,
+                )
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            ("unary_sign", "-", 4),
+            ("boolean_literal", "True", 5),
+            ("binary_add_sub", "+", 6),
+        ]
+    );
+}
+
+#[test]
 fn type_alias_and_match_capture_bindings_shadow_collection_builtins() {
     for source in [
         "type list = int\nresult = list(items)\n",
@@ -2625,7 +2663,7 @@ fn benchmark_adversarial_ast_fact_indexes() {
 }
 
 #[test]
-fn irrelevant_operator_spelling_skips_annotation_index_lookup() {
+fn all_operator_tokens_query_annotation_index() {
     let addition = analyze("result = left + right\n");
     let multiplication = analyze("result = left * right\n");
     let bitwise = analyze("result = left & right\n");
@@ -2636,8 +2674,9 @@ fn irrelevant_operator_spelling_skips_annotation_index_lookup() {
     );
     assert_eq!(
         bitwise.fact_lookups.annotation.queries,
-        addition.fact_lookups.annotation.queries + 1,
+        addition.fact_lookups.annotation.queries,
     );
+    assert!(addition.fact_lookups.annotation.queries > 0);
     assert_eq!(addition.fact_lookups.annotation.comparisons, 0);
     assert_eq!(addition.fact_lookups.annotation.facts, 0);
 }
