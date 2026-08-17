@@ -104,3 +104,7 @@ root = "ChangedTargetAuditMain"
 [[lean_exe]]
 name = "generate_process_output"
 root = "ProcessOutputAuditMain"
+
+[[lean_exe]]
+name = "generate_timeout_limit"
+root = "TimeoutLimitAuditMain"

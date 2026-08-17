@@ -9,6 +9,7 @@ use thiserror::Error;
 use crate::{CommandArg, LineSelection, Selection};
 
 pub const MAX_JOBS: usize = 256;
+pub const MAX_TIMEOUT: Duration = Duration::from_secs(100 * 365 * 24 * 60 * 60);
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RawRunLimits {
@@ -647,15 +648,7 @@ impl TryFrom<&RawRunLimits> for RunLimits {
                 max_processes: raw.max_processes,
             });
         }
-        if raw
-            .baseline_timeout
-            .checked_mul(2)
-            .and_then(|value| value.checked_add(Duration::from_secs(1)))
-            .is_none()
-        {
-            return Err(ConfigError::InvalidLimit("baseline_timeout"));
-        }
-        Ok(Self {
+        let limits = Self {
             jobs: nonzero_usize(raw.jobs, "jobs")?,
             max_mutants: nonzero_usize(raw.max_mutants, "max_mutants")?,
             max_candidates: nonzero_usize(raw.max_candidates, "max_candidates")?,
@@ -673,7 +666,9 @@ impl TryFrom<&RawRunLimits> for RunLimits {
             max_copy_size: NonZeroU64::new(raw.max_copy_size)
                 .ok_or(ConfigError::InvalidLimit("max_copy_size"))?,
             max_processes: nonzero_usize(raw.max_processes, "max_processes")?,
-        })
+        };
+        validate_limits(&limits)?;
+        Ok(limits)
     }
 }
 
@@ -739,25 +734,26 @@ fn validate_limits(limits: &RunLimits) -> Result<(), ConfigError> {
         ("baseline_timeout", limits.baseline_timeout.get()),
         ("total_timeout", limits.total_timeout.get()),
     ] {
-        if duration.is_zero() {
-            return Err(ConfigError::InvalidLimit(name));
+        validate_timeout(name, duration)?;
+    }
+    match limits.mutant_timeout {
+        MutantTimeout::Auto => validate_timeout(
+            "baseline_timeout",
+            auto_mutant_timeout(limits.baseline_timeout.get()),
+        )?,
+        MutantTimeout::Fixed(duration) => {
+            validate_timeout("mutant_timeout", duration.get())?;
         }
     }
-    if let MutantTimeout::Fixed(duration) = limits.mutant_timeout
-        && duration.get().is_zero()
-    {
-        return Err(ConfigError::InvalidLimit("mutant_timeout"));
-    }
-    if limits
-        .baseline_timeout
-        .get()
-        .checked_mul(2)
-        .and_then(|value| value.checked_add(Duration::from_secs(1)))
-        .is_none()
-    {
-        return Err(ConfigError::InvalidLimit("baseline_timeout"));
-    }
     Ok(())
+}
+
+fn validate_timeout(name: &'static str, duration: Duration) -> Result<(), ConfigError> {
+    if duration.is_zero() || duration > MAX_TIMEOUT {
+        Err(ConfigError::InvalidLimit(name))
+    } else {
+        Ok(())
+    }
 }
 
 impl TryFrom<RawRunConfig> for RunConfig {

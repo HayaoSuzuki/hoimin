@@ -355,7 +355,7 @@ async fn plan_analyzer_timeout_dispatch_returns_two_without_a_manifest() {
 }
 
 #[tokio::test]
-async fn plan_analyzer_timeout_outside_deadline_range_returns_two_without_panicking() {
+async fn plan_oversized_analyzer_timeout_returns_two_without_panicking() {
     let project = Project::new();
     let marker = project.path.join("test-command-ran");
     let args = plan_args(
@@ -377,7 +377,7 @@ async fn plan_analyzer_timeout_outside_deadline_range_returns_two_without_panick
     assert!(stdout.is_empty(), "invalid deadline emitted a manifest");
     assert_eq!(
         String::from_utf8(stderr).unwrap(),
-        "plan.discovery: analyzer.timeout: --analyzer-timeout duration 584542046090years 7months 15days 17h 5m 3s is outside the supported deadline range\n"
+        "invalid zero or overflowing limit: --analyzer-timeout\n"
     );
     assert!(!marker.exists(), "plan launched the test command");
 }

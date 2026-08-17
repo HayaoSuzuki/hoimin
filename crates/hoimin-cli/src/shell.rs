@@ -63,7 +63,7 @@ impl ShutdownBudget {
     fn for_total_timeout_with_grace(run_deadline: tokio::time::Instant, grace: Duration) -> Self {
         Self {
             cause: ShutdownCause::TotalTimeout,
-            deadline: run_deadline + grace,
+            deadline: run_deadline.checked_add(grace).unwrap_or(run_deadline),
         }
     }
 
@@ -74,7 +74,7 @@ impl ShutdownBudget {
     ) -> Self {
         Self {
             cause,
-            deadline: observed_at + grace,
+            deadline: observed_at.checked_add(grace).unwrap_or(observed_at),
         }
     }
 
@@ -3033,6 +3033,31 @@ mod tests {
         let budget = active.unwrap();
         assert_eq!(budget.cause(), ShutdownCause::Failure);
         assert_eq!(budget.deadline(), now + Duration::from_millis(70));
+    }
+
+    #[test]
+    fn shutdown_grace_falls_back_at_the_instant_representation_boundary() {
+        let now = tokio::time::Instant::now();
+        let mut accepted_seconds = 0_u64;
+        let mut rejected_seconds = u64::MAX;
+        while accepted_seconds < rejected_seconds {
+            let difference = rejected_seconds - accepted_seconds;
+            let candidate = accepted_seconds + difference / 2 + difference % 2;
+            if now.checked_add(Duration::from_secs(candidate)).is_some() {
+                accepted_seconds = candidate;
+            } else {
+                rejected_seconds = candidate - 1;
+            }
+        }
+        let edge = now
+            .checked_add(Duration::from_secs(accepted_seconds))
+            .expect("binary search retains a representable instant");
+        let grace = Duration::from_secs(2);
+        assert!(edge.checked_add(grace).is_none());
+
+        let budget = ShutdownBudget::for_total_timeout_with_grace(edge, grace);
+
+        assert_eq!(budget.deadline(), edge);
     }
 
     #[test]

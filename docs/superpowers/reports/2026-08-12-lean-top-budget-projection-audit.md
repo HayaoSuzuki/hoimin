@@ -129,7 +129,7 @@ values are decimal strings so the serialization does not lose precision.
 | `auto_minimum` | 1-second baseline | 5-second minimum | `strict` | match |
 | `auto_scaled` | 8-second baseline | 17-second timeout | `strict` | match |
 | `large_wave_exact` | `2^32` waves at 1 ns | exact 4.294967296 seconds | `strict` | old mismatch; match after repair |
-| `duration_saturation` | two maximum durations | `Duration::MAX` | `strict` | match |
+| `duration_saturation` | 10 billion waves at the accepted 100-year timeout ceiling | `Duration::MAX` | `strict` | match |
 
 ## Refutation sensitivity
 

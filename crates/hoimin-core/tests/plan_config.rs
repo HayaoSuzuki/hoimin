@@ -1,6 +1,7 @@
 use hoimin_core::{
-    CommandArg, ConfigError, FingerprintInputFile, MAX_JOBS, MutationOperator, MutationProfile,
-    OutputConfig, OutputFormat, PlanConfig, RawRunConfig, RawRunLimits, RunConfig, SessionConfig,
+    CommandArg, ConfigError, FingerprintInputFile, MAX_JOBS, MAX_TIMEOUT, MutationOperator,
+    MutationProfile, OutputConfig, OutputFormat, PlanConfig, RawRunConfig, RawRunLimits, RunConfig,
+    SessionConfig,
 };
 
 fn plan_value() -> serde_json::Value {
@@ -212,6 +213,73 @@ fn normalized_limit_validation_accepts_maximum_jobs() {
     let config: PlanConfig = serde_json::from_value(value).unwrap();
 
     assert_eq!(config.validate(), Ok(()));
+}
+
+#[test]
+fn normalized_timeout_limits_enforce_the_inclusive_ceiling() {
+    for (name, encoded_name) in [
+        ("analyzer_timeout", "analyzer_timeout"),
+        ("baseline_timeout", "baseline_timeout"),
+        ("mutant_timeout", "mutant_timeout"),
+        ("total_timeout", "total_timeout"),
+    ] {
+        let mut accepted = plan_value();
+        accepted["limits"]["mutant_timeout"] = serde_json::json!({
+            "Fixed": {"secs": 5, "nanos": 0}
+        });
+        let maximum = serde_json::json!({
+            "secs": MAX_TIMEOUT.as_secs(),
+            "nanos": MAX_TIMEOUT.subsec_nanos()
+        });
+        if name == "mutant_timeout" {
+            accepted["limits"][encoded_name] = serde_json::json!({"Fixed": maximum});
+        } else {
+            accepted["limits"][encoded_name] = maximum;
+        }
+        let config: PlanConfig = serde_json::from_value(accepted).unwrap();
+        assert_eq!(config.validate(), Ok(()), "accepted {name}");
+
+        let mut rejected = plan_value();
+        rejected["limits"]["mutant_timeout"] = serde_json::json!({
+            "Fixed": {"secs": 5, "nanos": 0}
+        });
+        let oversized = MAX_TIMEOUT + std::time::Duration::from_nanos(1);
+        let oversized = serde_json::json!({
+            "secs": oversized.as_secs(),
+            "nanos": oversized.subsec_nanos()
+        });
+        if name == "mutant_timeout" {
+            rejected["limits"][encoded_name] = serde_json::json!({"Fixed": oversized});
+        } else {
+            rejected["limits"][encoded_name] = oversized;
+        }
+        let config: PlanConfig = serde_json::from_value(rejected).unwrap();
+        assert_eq!(
+            config.validate(),
+            Err(ConfigError::InvalidLimit(name)),
+            "rejected {name}"
+        );
+    }
+}
+
+#[test]
+fn normalized_auto_timeout_rejects_a_baseline_with_oversized_derived_timeout() {
+    let maximum_baseline = MAX_TIMEOUT
+        .checked_sub(std::time::Duration::from_secs(1))
+        .unwrap()
+        / 2;
+    let mut value = plan_value();
+    value["limits"]["baseline_timeout"] = serde_json::json!({
+        "secs": maximum_baseline.as_secs(),
+        "nanos": maximum_baseline.subsec_nanos() + 1
+    });
+    value["limits"]["mutant_timeout"] = serde_json::json!("Auto");
+    let config: PlanConfig = serde_json::from_value(value).unwrap();
+
+    assert_eq!(
+        config.validate(),
+        Err(ConfigError::InvalidLimit("baseline_timeout"))
+    );
 }
 
 #[cfg(target_pointer_width = "64")]
