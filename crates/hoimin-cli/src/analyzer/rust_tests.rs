@@ -2259,6 +2259,63 @@ fn structure_excludes_unsupported_shapes_and_receivers() {
 }
 
 #[test]
+fn candidate_punctuation_queries_are_range_bounded() {
+    use std::fmt::Write;
+
+    const SAMPLES: usize = 64;
+    let mut source = String::new();
+    for index in 0..SAMPLES {
+        writeln!(source, "got_{index} = mapping.get(key_{index})").unwrap();
+        writeln!(source, "one_{index} = [item_{index}]").unwrap();
+        source.push_str("try:\n    work()\nexcept (ValueError,):\n    pass\n");
+        source.push_str("try:\n    work()\nexcept (ValueError, TypeError):\n    pass\n");
+    }
+
+    let mut operators = MutationOperatorSelection::default();
+    operators.include(MutationOperator::ExceptionTupleAddPair);
+    operators.include(MutationOperator::ExceptionTupleRemoveMember);
+    let output = analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/generated.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            profile: MutationProfile::Full,
+            max_candidates: 10_000,
+        },
+        &source,
+    );
+
+    for operator in [
+        "structure_mapping_get_subscript",
+        "collection_list_tuple",
+        "exception_tuple_add_pair",
+        "exception_tuple_remove_member",
+    ] {
+        assert!(
+            output
+                .candidates
+                .iter()
+                .filter(|candidate| candidate.operator == operator)
+                .count()
+                >= SAMPLES,
+            "expected repeated {operator} candidates"
+        );
+    }
+    assert!(
+        output.candidate_token_lookups.lookups >= SAMPLES * 4,
+        "every reported punctuation path should perform bounded lookups: {:?}",
+        output.candidate_token_lookups
+    );
+    assert!(
+        output.candidate_token_lookups.tokens_examined
+            <= output.candidate_token_lookups.lookups * 8,
+        "candidate-local lookups examined unrelated module tokens: {:?}",
+        output.candidate_token_lookups
+    );
+}
+
+#[test]
 fn bitwise_and_or() {
     let source = "and_result = left & right\nor_result = left | right\n";
     let output = analyze(source);

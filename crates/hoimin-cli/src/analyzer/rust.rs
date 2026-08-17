@@ -1,3 +1,5 @@
+#[cfg(test)]
+use std::cell::Cell;
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::ops::Range;
@@ -41,6 +43,8 @@ pub(crate) struct AnalyzerOutput {
     pub retention: CandidateRetentionStats,
     #[cfg(test)]
     pub fact_lookups: FactLookupStats,
+    #[cfg(test)]
+    pub candidate_token_lookups: CandidateTokenLookupStats,
 }
 
 #[cfg(test)]
@@ -56,6 +60,13 @@ pub(crate) struct FactLookupStats {
     pub arid: IndexLookupStats,
     pub not_operand: IndexLookupStats,
     pub scope: IndexLookupStats,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct CandidateTokenLookupStats {
+    pub lookups: usize,
+    pub tokens_examined: usize,
 }
 
 pub(crate) struct ProducerPrefix {
@@ -361,6 +372,8 @@ pub(crate) fn analyze_source_cancellable(
         .collect();
     #[cfg(test)]
     let fact_lookups = facts.lookup_stats();
+    #[cfg(test)]
+    let candidate_token_lookups = facts.candidate_token_lookup_stats();
     Ok(AnalyzerOutput {
         candidates,
         diagnostics,
@@ -372,6 +385,8 @@ pub(crate) fn analyze_source_cancellable(
         },
         #[cfg(test)]
         fact_lookups,
+        #[cfg(test)]
+        candidate_token_lookups,
     })
 }
 
@@ -441,6 +456,8 @@ fn invalid_syntax(path: &Utf8Path) -> AnalyzerOutput {
         },
         #[cfg(test)]
         fact_lookups: FactLookupStats::default(),
+        #[cfg(test)]
+        candidate_token_lookups: CandidateTokenLookupStats::default(),
     }
 }
 
@@ -1287,6 +1304,10 @@ struct AstFacts<'tokens> {
     qualname: Vec<String>,
     tokens: Option<&'tokens ruff_python_ast::token::Tokens>,
     source: &'tokens str,
+    #[cfg(test)]
+    candidate_token_lookups: Cell<usize>,
+    #[cfg(test)]
+    candidate_tokens_examined: Cell<usize>,
 }
 impl<'tokens> AstFacts<'tokens> {
     fn from_module(
@@ -1363,6 +1384,21 @@ impl<'tokens> AstFacts<'tokens> {
         self.operator_token_starts.contains(&start)
     }
 
+    fn candidate_tokens_in_range(&self, range: TextRange) -> &[ruff_python_ast::token::Token] {
+        let tokens = self.tokens.expect("parser tokens are set").in_range(range);
+        #[cfg(test)]
+        {
+            self.candidate_token_lookups
+                .set(self.candidate_token_lookups.get().saturating_add(1));
+            self.candidate_tokens_examined.set(
+                self.candidate_tokens_examined
+                    .get()
+                    .saturating_add(tokens.len()),
+            );
+        }
+        tokens
+    }
+
     fn record_operator_tokens(&mut self, range: TextRange, spellings: &[&str]) {
         let source = self.source;
         let starts = self
@@ -1402,6 +1438,14 @@ impl<'tokens> AstFacts<'tokens> {
             arid: self.arid_index.stats(),
             not_operand: self.not_operand_index.stats(),
             scope: self.scope_index.stats(),
+        }
+    }
+
+    #[cfg(test)]
+    fn candidate_token_lookup_stats(&self) -> CandidateTokenLookupStats {
+        CandidateTokenLookupStats {
+            lookups: self.candidate_token_lookups.get(),
+            tokens_examined: self.candidate_tokens_examined.get(),
         }
     }
 
@@ -1950,8 +1994,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     fn has_trailing_argument_comma(&self, call: &ExprCall) -> bool {
         let inner_range = call.arguments.inner_range();
         self.facts
-            .tokens
-            .expect("parser tokens are set")
+            .candidate_tokens_in_range(inner_range)
             .iter()
             .rfind(|token| {
                 let range = token.range();
@@ -1969,11 +2012,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         {
             return;
         }
-        if let Some(replacement) = list_to_tuple_replacement(
-            self.source,
-            list,
-            self.facts.tokens.expect("parser tokens are set"),
-        ) {
+        if let Some(replacement) = list_to_tuple_replacement(self.source, list, self.facts) {
             self.add_candidate(
                 list.range(),
                 replacement,
@@ -2120,7 +2159,6 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         let Some(names) = supported_exception_tuple_names(tuple, self.facts) else {
             return;
         };
-        let tokens = self.facts.tokens.expect("parser tokens are set");
         if self
             .request
             .operators
@@ -2135,7 +2173,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                             .resolves_builtin(tuple.elts[0].range(), replacement)
                         && missing.insert(*replacement)
                         && let Some(tuple_replacement) =
-                            tuple_add_replacement(self.source, tuple, tokens, replacement)
+                            tuple_add_replacement(self.source, tuple, self.facts, replacement)
                     {
                         self.add_candidate(
                             tuple.range(),
@@ -2157,7 +2195,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                     continue;
                 }
                 if let Some(tuple_replacement) =
-                    tuple_remove_replacement(self.source, tuple, tokens, index)
+                    tuple_remove_replacement(self.source, tuple, self.facts, index)
                 {
                     self.add_candidate(
                         tuple.range(),
@@ -2427,7 +2465,7 @@ fn is_supported_mapping_key(expression: &Expr) -> bool {
 fn list_to_tuple_replacement(
     source: &str,
     list: &ExprList,
-    tokens: &ruff_python_ast::token::Tokens,
+    facts: &AstFacts<'_>,
 ) -> Option<String> {
     let range = list.range();
     let literal = source_text(source, range)?;
@@ -2435,25 +2473,18 @@ fn list_to_tuple_replacement(
     if list.elts.len() != 1 {
         return Some(format!("({contents})"));
     }
-    let element_end = usize::from(list.elts[0].range().end());
-    let content_end = usize::from(range.end()).checked_sub(1)?;
-    if has_comma_after_element(tokens, element_end, content_end) {
+    let comma_range = TextRange::new(list.elts[0].range().end(), range.end());
+    if has_comma_after_element(facts, comma_range) {
         return Some(format!("({contents})"));
     }
     Some(format!("({contents},)"))
 }
 
-fn has_comma_after_element(
-    tokens: &ruff_python_ast::token::Tokens,
-    element_end: usize,
-    content_end: usize,
-) -> bool {
-    tokens.iter().any(|token| {
-        let range = token.range();
-        usize::from(range.start()) >= element_end
-            && usize::from(range.end()) <= content_end
-            && token.kind() == TokenKind::Comma
-    })
+fn has_comma_after_element(facts: &AstFacts<'_>, range: TextRange) -> bool {
+    facts
+        .candidate_tokens_in_range(range)
+        .iter()
+        .any(|token| token.kind() == TokenKind::Comma)
 }
 
 fn tuple_to_list_replacement(source: &str, tuple: &ExprTuple) -> Option<String> {
@@ -2502,7 +2533,7 @@ fn supported_exception_tuple_names<'a>(
 fn tuple_add_replacement(
     source: &str,
     tuple: &ExprTuple,
-    tokens: &ruff_python_ast::token::Tokens,
+    facts: &AstFacts<'_>,
     name: &str,
 ) -> Option<String> {
     let literal = source_text(source, tuple.range())?;
@@ -2510,7 +2541,8 @@ fn tuple_add_replacement(
         return None;
     }
     let close_start = usize::from(tuple.range().end()).checked_sub(1)?;
-    let has_trailing_comma = tokens
+    let has_trailing_comma = facts
+        .candidate_tokens_in_range(tuple.range())
         .iter()
         .filter(|token| {
             let range = token.range();
@@ -2534,7 +2566,7 @@ fn tuple_add_replacement(
 fn tuple_remove_replacement(
     source: &str,
     tuple: &ExprTuple,
-    tokens: &ruff_python_ast::token::Tokens,
+    facts: &AstFacts<'_>,
     index: usize,
 ) -> Option<String> {
     let literal = source_text(source, tuple.range())?;
@@ -2544,7 +2576,8 @@ fn tuple_remove_replacement(
     let element_range = element.range();
     let element_start = usize::from(element_range.start());
     let element_end = usize::from(element_range.end());
-    let commas: Vec<_> = tokens
+    let commas: Vec<_> = facts
+        .candidate_tokens_in_range(tuple.range())
         .iter()
         .filter_map(|token| {
             let range = token.range();
