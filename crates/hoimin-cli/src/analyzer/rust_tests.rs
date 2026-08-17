@@ -1833,7 +1833,7 @@ fn collection_calls_and_literals_emit_exact_parseable_candidates() {
         "text.startswith(prefix)\n",
         "text.endswith(suffix, start, stop)\n",
         "text.split(separator, maxsplit=limit)\n",
-        "text.rsplit()\n",
+        "text.rsplit(None, 1)\n",
         "many = [first, *rest, last,]\n",
         "one = [item]\n",
         "empty_list = []\n",
@@ -1914,6 +1914,43 @@ fn collection_calls_and_literals_emit_exact_parseable_candidates() {
 }
 
 #[test]
+fn split_rsplit_candidates_require_explicit_maxsplit() {
+    let source = concat!(
+        "text.split()\n",
+        "text.split(',')\n",
+        "text.rsplit()\n",
+        "text.rsplit(',')\n",
+        "text.split(',', 1)\n",
+        "text.rsplit(',', 1)\n",
+        "text.split(',', maxsplit=1)\n",
+        "text.rsplit(maxsplit=1)\n",
+    );
+    let output = analyze(source);
+    let actual: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "collection_string_split_rsplit")
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.line,
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        actual,
+        vec![
+            ("split", "rsplit", 5),
+            ("rsplit", "split", 6),
+            ("split", "rsplit", 7),
+            ("rsplit", "split", 8),
+        ]
+    );
+}
+
+#[test]
 fn tuple_to_list_preserves_parenthesized_boundary_elements_in_unparenthesized_tuples() {
     let cases = [
         ("x = (1), (2)\n", "(1), (2)", "[(1), (2)]"),
@@ -1965,8 +2002,8 @@ fn collection_excludes_unsupported_call_and_literal_shapes() {
         "members.remove(value, extra)\n",
         "text.startswith(*parts)\n",
         "text.endswith(**options)\n",
-        "text.split(*parts)\n",
-        "text.rsplit(**options)\n",
+        "text.split(*parts, maxsplit=1)\n",
+        "text.rsplit(None, 1, **options)\n",
         "set_literal = {first, second}\n",
     );
     let output = analyze(source);

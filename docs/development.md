@@ -187,6 +187,10 @@ ambiguous cases are `Unknown` and suppress the candidate. Qualified builtin
 calls are not candidates. Method mutations are syntax-directed and do not
 infer receiver types.
 
+The analyzer emits a `split`/`rsplit` swap only when the call supplies a
+second positional argument or the named `maxsplit` keyword. Calls that omit
+`maxsplit` produce identical string results, so the analyzer skips them.
+
 Type-annotation collection records an import-state snapshot at each annotation
 site in source order. Signature annotations use their enclosing state, while a
 function body predeclares Python-local names before its body is visited. Nested
