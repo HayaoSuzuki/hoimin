@@ -520,6 +520,7 @@ fn sequence_accepts_output_close_timeout_error_with_known_termination() {
     sequence.observe(&event).unwrap();
 }
 
+#[cfg(not(feature = "contracts"))]
 #[test]
 fn sequence_rejects_output_close_timeout_without_its_diagnostic() {
     let mut sequence = sequence_with_started_mutant();
@@ -528,6 +529,7 @@ fn sequence_rejects_output_close_timeout_without_its_diagnostic() {
     assert!(sequence.observe(&event).is_err());
 }
 
+#[cfg(not(feature = "contracts"))]
 #[test]
 fn sequence_rejects_each_malformed_output_close_timeout_diagnostic() {
     let mut cases = Vec::new();
@@ -552,6 +554,7 @@ fn sequence_rejects_each_malformed_output_close_timeout_diagnostic() {
     }
 }
 
+#[cfg(not(feature = "contracts"))]
 #[test]
 fn sequence_rejects_close_timeout_diagnostic_for_complete_output() {
     let mut sequence = sequence_with_started_mutant();
@@ -564,6 +567,7 @@ fn sequence_rejects_close_timeout_diagnostic_for_complete_output() {
     assert!(sequence.observe(&event).is_err());
 }
 
+#[cfg(not(feature = "contracts"))]
 #[test]
 fn sequence_rejects_close_timeout_without_each_required_result_field() {
     let valid = output_close_timeout_event(vec![close_timeout_diagnostic()]);
