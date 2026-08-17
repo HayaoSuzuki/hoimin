@@ -604,6 +604,44 @@ fn lean_oracle_regression_cleanup_is_emitted_once() {
 }
 
 #[test]
+fn stop_signals_do_not_retire_normal_cleanup_or_change_success() {
+    for stop in [RunEvent::DeadlineReached, RunEvent::CancellationRequested] {
+        let (state, cleanup) = waiting_for_successful_cleanup();
+        assert_eq!(state.phase(), RunPhase::Cleaning);
+        assert_eq!(state.exit_code(), 0);
+
+        let (state, effects) = transition(state, stop).unwrap();
+
+        assert!(effects.is_empty());
+        assert_eq!(state.phase(), RunPhase::Cleaning);
+        assert_eq!(state.exit_code(), 0);
+        assert!(state.is_effect_pending(cleanup.id));
+        assert!(!state.is_effect_retired(cleanup.id));
+
+        let (state, effects) = transition(
+            state,
+            RunEvent::CleanupFinished(CleanupFinished {
+                id: cleanup.id,
+                released_reservations: cleanup.reservations,
+            }),
+        )
+        .unwrap();
+        assert_eq!(state.phase(), RunPhase::Finalize);
+        assert!(effects.iter().any(|effect| {
+            matches!(
+                effect,
+                RunEffect::EmitOutput(value)
+                    if matches!(
+                        &value.event,
+                        OutputEvent::RunFinished(summary)
+                            if summary.exit_code == 0 && summary.complete
+                    )
+            )
+        }));
+    }
+}
+
+#[test]
 fn stop_signals_do_not_reopen_a_pending_final_report() {
     for stop in [RunEvent::DeadlineReached, RunEvent::CancellationRequested] {
         let (state, effects) = waiting_for_final_report();
@@ -4513,6 +4551,18 @@ fn waiting_for_candidate() -> (RunState, Vec<RunEffect>) {
 }
 
 fn waiting_for_final_report() -> (RunState, Vec<RunEffect>) {
+    let (state, cleanup) = waiting_for_successful_cleanup();
+    transition(
+        state,
+        RunEvent::CleanupFinished(CleanupFinished {
+            id: cleanup.id,
+            released_reservations: cleanup.reservations,
+        }),
+    )
+    .unwrap()
+}
+
+fn waiting_for_successful_cleanup() -> (RunState, hoimin_core::Cleanup) {
     let (state, effects) = waiting_for_analysis();
     let analysis_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::AnalyzeFile(_))
@@ -4548,14 +4598,7 @@ fn waiting_for_final_report() -> (RunState, Vec<RunEffect>) {
     else {
         unreachable!()
     };
-    transition(
-        state,
-        RunEvent::CleanupFinished(CleanupFinished {
-            id: cleanup.id,
-            released_reservations: cleanup.reservations.clone(),
-        }),
-    )
-    .unwrap()
+    (state, cleanup.clone())
 }
 
 fn waiting_for_filtered_analysis(candidate_ids: BTreeSet<String>) -> (RunState, Vec<RunEffect>) {

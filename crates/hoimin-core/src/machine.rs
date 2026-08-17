@@ -1326,7 +1326,7 @@ pub fn transition(
         RunEvent::DeadlineReached | RunEvent::CancellationRequested
     ) && (state.run_finished_output_id.is_some()
         || state.phase == RunPhase::Finished
-        || (state.phase == RunPhase::Cleaning && state.flags.scheduling.stop_requested))
+        || state.phase == RunPhase::Cleaning)
     {
         return Ok((state, Vec::new()));
     }

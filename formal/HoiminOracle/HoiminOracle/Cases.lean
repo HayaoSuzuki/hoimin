@@ -71,6 +71,28 @@ def repeatedCleanupWitnessDetected : Bool :=
 where
   pendingWitnessState := State.withPending 1 .ordinary
 
+def brokenCleaningStop (state : State) (cause : StopCause) : Verdict where
+  state := {
+    state with
+      pending := [(state.nextId, .cleanup)]
+      retired := state.pending.map Prod.fst ++ state.retired
+      stopCause := some cause
+      cleanupEmitted := true
+      nextId := state.nextId + 1
+  }
+  emitted := [.cleanup]
+  rejection := none
+
+def normalCleaningStopWitnessDetected : Bool :=
+  let state := {
+    State.initial with
+      phase := .cleaning
+      pending := [(1, .cleanup)]
+      cleanupEmitted := true
+      nextId := 2
+  }
+  decide ((step state (.stop .deadline)) ≠ (brokenCleaningStop state .deadline))
+
 def brokenCleanupOrdering (state : State) : Verdict where
   state := { state with phase := .finalPending, finalEmitted := true }
   emitted := [.finalOutput]
@@ -92,7 +114,8 @@ def acceptedResultWitnessDetected : Bool :=
 
 def brokenWitnessesDetected : Bool :=
   duplicateWitnessDetected && lateStopWitnessDetected && stopSchedulingWitnessDetected &&
-    repeatedCleanupWitnessDetected && cleanupOrderingWitnessDetected &&
+    repeatedCleanupWitnessDetected && normalCleaningStopWitnessDetected &&
+    cleanupOrderingWitnessDetected &&
     acceptedResultWitnessDetected
 
 example : brokenWitnessesDetected = true := by decide
@@ -163,6 +186,14 @@ private def pendingOrdinary : State := State.withPending 1 .ordinary
 private def cleaning : State :=
   (step pendingOrdinary (.stop .cancelled)).state
 
+private def normalCleaning : State := {
+  State.initial with
+    phase := .cleaning
+    pending := [(1, .cleanup)]
+    cleanupEmitted := true
+    nextId := 2
+}
+
 private def finalPending : State :=
   (step cleaning (.complete 2 .cleanup)).state
 
@@ -225,6 +256,22 @@ private def specs : List CaseSpec := [
     schedule := [
       named "cancel" (.stop .cancelled),
       named "deadline" (.stop .deadline)
+    ] },
+  { id := "deadline_during_normal_cleanup_is_noop"
+    mode := strict
+    scenario := "normal_cleaning_with_copy"
+    initial := normalCleaning
+    schedule := [
+      named "deadline" (.stop .deadline),
+      named "complete_cleanup" (.complete 1 .cleanup)
+    ] },
+  { id := "cancel_during_normal_cleanup_is_noop"
+    mode := strict
+    scenario := "normal_cleaning_with_copy"
+    initial := normalCleaning
+    schedule := [
+      named "cancel" (.stop .cancelled),
+      named "complete_cleanup" (.complete 1 .cleanup)
     ] },
   { id := "final_output_is_emitted_once"
     mode := strict
