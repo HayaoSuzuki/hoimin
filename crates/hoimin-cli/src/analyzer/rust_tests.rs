@@ -2263,18 +2263,63 @@ fn candidate_punctuation_queries_are_range_bounded() {
     use std::fmt::Write;
 
     const SAMPLES: usize = 64;
-    let mut source = String::new();
+    let mut get_source = String::new();
+    let mut list_source = String::new();
+    let mut tuple_add_source = String::new();
+    let mut tuple_remove_source = String::new();
     for index in 0..SAMPLES {
-        writeln!(source, "got_{index} = mapping.get(key_{index})").unwrap();
-        writeln!(source, "one_{index} = [item_{index}]").unwrap();
-        source.push_str("try:\n    work()\nexcept (ValueError,):\n    pass\n");
-        source.push_str("try:\n    work()\nexcept (ValueError, TypeError):\n    pass\n");
+        writeln!(get_source, "got_{index} = mapping.get(key_{index})").unwrap();
+        writeln!(list_source, "one_{index} = [item_{index}]").unwrap();
+        tuple_add_source.push_str("try:\n    work()\nexcept (ValueError,):\n    pass\n");
+        tuple_remove_source
+            .push_str("try:\n    work()\nexcept (ValueError, TypeError):\n    pass\n");
     }
 
+    assert_bounded_candidate_token_lookups(
+        &analyze(&get_source),
+        "structure_mapping_get_subscript",
+        SAMPLES,
+        SAMPLES,
+        2,
+    );
+    assert_bounded_candidate_token_lookups(
+        &analyze(&list_source),
+        "collection_list_tuple",
+        SAMPLES,
+        SAMPLES,
+        2,
+    );
+    assert_bounded_candidate_token_lookups(
+        &analyze_with_extra_operators(
+            &tuple_add_source,
+            &[MutationOperator::ExceptionTupleAddPair],
+        ),
+        "exception_tuple_add_pair",
+        SAMPLES,
+        SAMPLES,
+        5,
+    );
+    assert_bounded_candidate_token_lookups(
+        &analyze_with_extra_operators(
+            &tuple_remove_source,
+            &[MutationOperator::ExceptionTupleRemoveMember],
+        ),
+        "exception_tuple_remove_member",
+        SAMPLES * 2,
+        SAMPLES * 2,
+        5,
+    );
+}
+
+fn analyze_with_extra_operators(
+    source: &str,
+    extra_operators: &[MutationOperator],
+) -> super::AnalyzerOutput {
     let mut operators = MutationOperatorSelection::default();
-    operators.include(MutationOperator::ExceptionTupleAddPair);
-    operators.include(MutationOperator::ExceptionTupleRemoveMember);
-    let output = analyze_source(
+    for operator in extra_operators {
+        operators.include(*operator);
+    }
+    analyze_source(
         &AnalyzeRequest {
             path: Utf8Path::new("pkg/generated.py"),
             lines: &[],
@@ -2283,34 +2328,33 @@ fn candidate_punctuation_queries_are_range_bounded() {
             profile: MutationProfile::Full,
             max_candidates: 10_000,
         },
-        &source,
-    );
+        source,
+    )
+}
 
-    for operator in [
-        "structure_mapping_get_subscript",
-        "collection_list_tuple",
-        "exception_tuple_add_pair",
-        "exception_tuple_remove_member",
-    ] {
-        assert!(
-            output
-                .candidates
-                .iter()
-                .filter(|candidate| candidate.operator == operator)
-                .count()
-                >= SAMPLES,
-            "expected repeated {operator} candidates"
-        );
-    }
-    assert!(
-        output.candidate_token_lookups.lookups >= SAMPLES * 4,
-        "every reported punctuation path should perform bounded lookups: {:?}",
-        output.candidate_token_lookups
+fn assert_bounded_candidate_token_lookups(
+    output: &super::AnalyzerOutput,
+    operator: &str,
+    expected_candidates: usize,
+    expected_lookups: usize,
+    max_tokens_per_lookup: usize,
+) {
+    assert_eq!(
+        output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == operator)
+            .count(),
+        expected_candidates,
+        "unexpected {operator} candidate count"
+    );
+    assert_eq!(
+        output.candidate_token_lookups.lookups, expected_lookups,
+        "{operator} did not route every punctuation query through the bounded accessor"
     );
     assert!(
-        output.candidate_token_lookups.tokens_examined
-            <= output.candidate_token_lookups.lookups * 8,
-        "candidate-local lookups examined unrelated module tokens: {:?}",
+        output.candidate_token_lookups.tokens_examined <= expected_lookups * max_tokens_per_lookup,
+        "{operator} lookups examined unrelated module tokens: {:?}",
         output.candidate_token_lookups
     );
 }
