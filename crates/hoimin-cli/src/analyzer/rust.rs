@@ -1833,7 +1833,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 .to_owned(),
                 MutationOperator::CollectionStringStartsEnds,
             ),
-            "split" | "rsplit" if same_contract => self.add_candidate(
+            "split" | "rsplit" if has_supported_split_rsplit_arguments(call) => self.add_candidate(
                 range,
                 if name == "split" { "rsplit" } else { "split" }.to_owned(),
                 MutationOperator::CollectionStringSplitRsplit,
@@ -2278,6 +2278,17 @@ fn has_supported_same_contract_arguments(call: &ExprCall) -> bool {
             .keywords
             .iter()
             .all(|keyword| keyword.arg.is_some())
+}
+
+fn has_supported_split_rsplit_arguments(call: &ExprCall) -> bool {
+    has_supported_same_contract_arguments(call)
+        && (call.arguments.args.len() >= 2
+            || call.arguments.keywords.iter().any(|keyword| {
+                keyword
+                    .arg
+                    .as_ref()
+                    .is_some_and(|argument| argument.as_str() == "maxsplit")
+            }))
 }
 
 fn is_zero_literal(expression: &Expr) -> bool {

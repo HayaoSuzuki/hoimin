@@ -1833,7 +1833,7 @@ fn collection_calls_and_literals_emit_exact_parseable_candidates() {
         "text.startswith(prefix)\n",
         "text.endswith(suffix, start, stop)\n",
         "text.split(separator, maxsplit=limit)\n",
-        "text.rsplit()\n",
+        "text.rsplit(None, 1)\n",
         "many = [first, *rest, last,]\n",
         "one = [item]\n",
         "empty_list = []\n",
@@ -1911,6 +1911,37 @@ fn collection_calls_and_literals_emit_exact_parseable_candidates() {
     for candidate in collection_candidates {
         apply_candidate_and_reparse(source, candidate);
     }
+}
+
+#[test]
+fn split_rsplit_candidates_require_explicit_maxsplit() {
+    let source = concat!(
+        "text.split()\n",
+        "text.split(',')\n",
+        "text.rsplit()\n",
+        "text.rsplit(',')\n",
+        "text.split(',', 1)\n",
+        "text.rsplit(',', 1)\n",
+        "text.split(',', maxsplit=1)\n",
+        "text.rsplit(maxsplit=1)\n",
+    );
+    let output = analyze(source);
+    let actual: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "collection_string_split_rsplit")
+        .map(|candidate| (candidate.original.as_str(), candidate.replacement.as_str()))
+        .collect();
+
+    assert_eq!(
+        actual,
+        vec![
+            ("split", "rsplit"),
+            ("rsplit", "split"),
+            ("split", "rsplit"),
+            ("rsplit", "split"),
+        ]
+    );
 }
 
 #[test]
