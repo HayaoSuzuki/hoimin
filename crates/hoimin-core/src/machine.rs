@@ -8,13 +8,14 @@ use crate::{
     CandidateSpoolRef, Cleanup, Diagnostic, EffectFailed, EffectFailure, EffectId, EmitOutput,
     ExitPolicy, FinishSession, IntegrityCheckpoint, LoadSession, LookupStoredResult,
     MutantFinished as MutantOutput, MutantResult, MutantStarted, MutantTimeout, MutationCandidate,
-    MutationStatus, MutationSummary, ObserveRemainingBudget, OutputEvent, PersistResult, Preflight,
-    ProcessFinished, ProcessLimits, ProcessTermination, ReadCandidate, ReservationId, ResetWorker,
+    MutationStatus, MutationSummary, ObserveRemainingBudget, OutputEvent,
+    PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE, PersistResult, Preflight, ProcessFinished, ProcessLimits,
+    ProcessOutputState, ProcessTermination, ReadCandidate, ReservationId, ResetWorker,
     ResolveTargets, ResumeDecision, RunBudgets, RunConfig, RunEffect, RunEvent, RunFingerprint,
-    RunProcess, RunStarted, RunSummary, TargetSlice, VerificationSelection,
+    RunProcess, RunStarted, RunSummary, SessionDiagnostic, TargetSlice, VerificationSelection,
     VerificationSelectionMode, VerifyOriginals, WorkspaceCopyGrant, auto_mutant_timeout,
-    classify_mutant, contract_ensure, exit_code_for, project_top_budget, release_workspace_copy,
-    reserve_workspace_copy,
+    classify_mutant_result, contract_ensure, exit_code_for, project_top_budget,
+    release_workspace_copy, reserve_workspace_copy,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1023,6 +1024,15 @@ impl RunState {
         let id = self.allocate_id()?;
         self.output_actions
             .insert(id, OutputAction::FinishMutant(worker));
+        let output_state = if result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE)
+        {
+            ProcessOutputState::CloseTimedOut
+        } else {
+            ProcessOutputState::Complete
+        };
         Ok(vec![RunEffect::EmitOutput(EmitOutput {
             id,
             event: OutputEvent::MutantFinished(MutantOutput {
@@ -1032,9 +1042,11 @@ impl RunState {
                 candidate: result.candidate,
                 status: result.status,
                 termination: result.termination,
+                output_state,
                 elapsed_ms: elapsed_millis(result.elapsed),
                 resource_mode: result.resource_mode,
                 output: result.output,
+                diagnostics: result.diagnostics,
             }),
         })])
     }
@@ -1058,9 +1070,11 @@ impl RunState {
                 candidate,
                 status,
                 termination: None,
+                output_state: ProcessOutputState::Complete,
                 elapsed_ms: 0,
                 resource_mode: crate::ResourceMode::Hard,
                 output: None,
+                diagnostics: Vec::new(),
             }),
         })])
     }
@@ -1614,7 +1628,19 @@ pub fn transition(
                 .worker
                 .ok_or(MachineError::WrongPhase { phase: state.phase })?;
             let candidate = state.candidate(worker)?;
-            let status = classify_mutant(value.termination);
+            let status = classify_mutant_result(value.termination, value.output_state);
+            let diagnostics = match value.output_state {
+                ProcessOutputState::Complete => Vec::new(),
+                ProcessOutputState::CloseTimedOut => vec![SessionDiagnostic {
+                    mutant_id: candidate.id.clone(),
+                    level: "error".to_owned(),
+                    code: PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE.to_owned(),
+                    message:
+                        "process termination was classified, but output collection timed out; \
+                              captured output may be incomplete"
+                            .to_owned(),
+                }],
+            };
             let result = MutantResult {
                 run_id: state
                     .session_run_id
@@ -1626,7 +1652,7 @@ pub fn transition(
                 elapsed: value.elapsed,
                 resource_mode: value.resource_mode,
                 output: Some(value.output),
-                diagnostics: Vec::new(),
+                diagnostics,
             };
             state.worker_mut(worker)?.result = Some(result.clone());
             if state.session_run_id.is_some() {

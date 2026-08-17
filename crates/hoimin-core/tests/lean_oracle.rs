@@ -494,6 +494,7 @@ fn successful_process(id: EffectId) -> ProcessFinished {
         id,
         worker: Some(0),
         termination: ProcessTermination::Exit(0),
+        output_state: hoimin_core::ProcessOutputState::Complete,
         output: OutputSpoolRef {
             token: "output".to_owned(),
             retained: 0,

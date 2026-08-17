@@ -328,9 +328,11 @@ mod correspondence {
                     candidate: candidate(id, mutant_sequence),
                     status: status(event.status.as_deref().ok_or("missing status")?)?,
                     termination: event.termination.as_deref().map(termination).transpose()?,
+                    output_state: hoimin_core::ProcessOutputState::Complete,
                     elapsed_ms: 1,
                     resource_mode: ResourceMode::Hard,
                     output: None,
+                    diagnostics: Vec::new(),
                 })
             }
             "run_finished" => OutputEvent::RunFinished(RunSummary {
@@ -440,6 +442,44 @@ mod correspondence {
                     (
                         "termination",
                         termination_name(*actual_termination).to_owned(),
+                    ),
+                ],
+            ),
+            ReportSequenceError::MutantOutputDiagnosticMismatch {
+                mutant_id,
+                mutant_sequence,
+                output_state,
+            } => (
+                "report.sequence.mutant_output_diagnostic_mismatch",
+                vec![
+                    ("mutant_id", normalize_mutant_id(mutant_id)?),
+                    ("mutant_sequence", mutant_sequence.to_string()),
+                    (
+                        "output_state",
+                        match output_state {
+                            hoimin_core::ProcessOutputState::Complete => "complete",
+                            hoimin_core::ProcessOutputState::CloseTimedOut => "close_timed_out",
+                        }
+                        .to_owned(),
+                    ),
+                ],
+            ),
+            ReportSequenceError::MutantOutputStateMismatch {
+                mutant_id,
+                mutant_sequence,
+                output_state,
+            } => (
+                "report.sequence.mutant_output_state_mismatch",
+                vec![
+                    ("mutant_id", normalize_mutant_id(mutant_id)?),
+                    ("mutant_sequence", mutant_sequence.to_string()),
+                    (
+                        "output_state",
+                        match output_state {
+                            hoimin_core::ProcessOutputState::Complete => "complete",
+                            hoimin_core::ProcessOutputState::CloseTimedOut => "close_timed_out",
+                        }
+                        .to_owned(),
                     ),
                 ],
             ),

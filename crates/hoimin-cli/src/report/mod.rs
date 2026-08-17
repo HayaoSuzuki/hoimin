@@ -103,6 +103,13 @@ where
             OutputFormat::Human => human::write_event(&mut self.stdout, &event)
                 .map_err(|error| human_failed(id, &error))?,
         }
+        if self.format == OutputFormat::Human
+            && let OutputEvent::MutantFinished(value) = &event
+            && !value.diagnostics.is_empty()
+        {
+            human::write_mutant_diagnostics(&mut self.stderr, &value.diagnostics)
+                .map_err(|error| human_failed(id, &error))?;
+        }
         Ok(OutputEmitted { id })
     }
 }

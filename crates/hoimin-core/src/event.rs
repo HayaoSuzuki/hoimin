@@ -89,11 +89,30 @@ pub struct SessionFinished {
     pub complete: bool,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProcessOutputState {
+    #[default]
+    Complete,
+    CloseTimedOut,
+}
+
+pub const PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE: &str = "process.output.close.timeout";
+
+impl ProcessOutputState {
+    #[must_use]
+    pub const fn is_complete(&self) -> bool {
+        matches!(self, Self::Complete)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ProcessFinished {
     pub id: EffectId,
     pub worker: Option<u32>,
     pub termination: ProcessTermination,
+    #[serde(default)]
+    pub output_state: ProcessOutputState,
     pub output: OutputSpoolRef,
     pub elapsed: Duration,
     pub resource_mode: ResourceMode,

@@ -1600,9 +1600,11 @@ fn mutant(key: &str, status: MutationStatus) -> MutantFinished {
         },
         status,
         termination: None,
+        output_state: hoimin_core::ProcessOutputState::Complete,
         elapsed_ms: 1,
         resource_mode: ResourceMode::Hard,
         output: None,
+        diagnostics: Vec::new(),
     }
 }
 

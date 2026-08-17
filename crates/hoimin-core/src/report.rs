@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
-    MutationCandidate, MutationStatus, OutputSpoolRef, ProcessTermination, ResourceMode, RunConfig,
+    MutationCandidate, MutationStatus, OutputSpoolRef, PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE,
+    ProcessOutputState, ProcessTermination, ResourceMode, RunConfig, SessionDiagnostic,
     contract_ensure,
 };
 
@@ -19,6 +20,17 @@ pub fn classify_mutant(termination: ProcessTermination) -> MutationStatus {
         ProcessTermination::OutOfMemory => MutationStatus::OutOfMemory,
         ProcessTermination::ProcessLimit => MutationStatus::ProcessLimit,
         ProcessTermination::Cancelled => MutationStatus::NotRun,
+    }
+}
+
+#[must_use]
+pub fn classify_mutant_result(
+    termination: ProcessTermination,
+    output_state: ProcessOutputState,
+) -> MutationStatus {
+    match output_state {
+        ProcessOutputState::Complete => classify_mutant(termination),
+        ProcessOutputState::CloseTimedOut => MutationStatus::Error,
     }
 }
 
@@ -234,9 +246,13 @@ pub struct MutantFinished {
     pub candidate: MutationCandidate,
     pub status: MutationStatus,
     pub termination: Option<ProcessTermination>,
+    #[serde(default, skip_serializing_if = "ProcessOutputState::is_complete")]
+    pub output_state: ProcessOutputState,
     pub elapsed_ms: u64,
     pub resource_mode: ResourceMode,
     pub output: Option<OutputSpoolRef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<SessionDiagnostic>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -377,6 +393,50 @@ pub enum ReportSequenceError {
         termination: ProcessTermination,
         expected_status: MutationStatus,
     },
+    #[error(
+        "mutant {mutant_id} sequence {mutant_sequence} output state {output_state:?} disagrees with its diagnostics"
+    )]
+    MutantOutputDiagnosticMismatch {
+        mutant_id: String,
+        mutant_sequence: u64,
+        output_state: ProcessOutputState,
+    },
+    #[error(
+        "mutant {mutant_id} sequence {mutant_sequence} output state {output_state:?} lacks its required result fields"
+    )]
+    MutantOutputStateMismatch {
+        mutant_id: String,
+        mutant_sequence: u64,
+        output_state: ProcessOutputState,
+    },
+}
+
+fn output_state_matches_result(value: &MutantFinished) -> bool {
+    match value.output_state {
+        ProcessOutputState::Complete => true,
+        ProcessOutputState::CloseTimedOut => {
+            value.termination.is_some()
+                && value.status == MutationStatus::Error
+                && value.output.is_some()
+        }
+    }
+}
+
+fn output_diagnostics_match(value: &MutantFinished) -> bool {
+    let close_timeout = value
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE)
+        .collect::<Vec<_>>();
+    match value.output_state {
+        ProcessOutputState::Complete => close_timeout.is_empty(),
+        ProcessOutputState::CloseTimedOut => {
+            close_timeout.len() == 1
+                && close_timeout[0].mutant_id == value.candidate.id
+                && close_timeout[0].level == "error"
+                && !close_timeout[0].message.trim().is_empty()
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -438,8 +498,21 @@ impl ReportSequence {
                                 mutant_id: value.candidate.id.clone(),
                                 mutant_sequence: value.candidate.sequence,
                             })
+                        } else if !output_state_matches_result(value) {
+                            Some(ReportSequenceError::MutantOutputStateMismatch {
+                                mutant_id: value.candidate.id.clone(),
+                                mutant_sequence: value.candidate.sequence,
+                                output_state: value.output_state,
+                            })
+                        } else if !output_diagnostics_match(value) {
+                            Some(ReportSequenceError::MutantOutputDiagnosticMismatch {
+                                mutant_id: value.candidate.id.clone(),
+                                mutant_sequence: value.candidate.sequence,
+                                output_state: value.output_state,
+                            })
                         } else if let Some(termination) = value.termination {
-                            let expected_status = classify_mutant(termination);
+                            let expected_status =
+                                classify_mutant_result(termination, value.output_state);
                             (value.status != expected_status).then(|| {
                                 ReportSequenceError::MutantStatusTerminationMismatch {
                                     mutant_id: value.candidate.id.clone(),

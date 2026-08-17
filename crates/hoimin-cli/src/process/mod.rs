@@ -9,8 +9,9 @@ use std::time::{Duration, Instant};
 
 use camino::Utf8PathBuf;
 use hoimin_core::{
-    CommandArg, EffectFailed, EffectFailure, EffectId, OutputSpoolRef, ProcessFinished,
-    ProcessTermination, RunProcess, contract_ensure,
+    CommandArg, EffectFailed, EffectFailure, EffectId, OutputSpoolRef,
+    PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE, ProcessFinished, ProcessOutputState, ProcessTermination,
+    RunProcess, contract_ensure,
 };
 use tokio::process::{Child, Command};
 use tokio::sync::Notify;
@@ -422,7 +423,12 @@ impl ProcessHandler {
             tokio::time::Instant::now() + POST_TERMINATION_GRACE,
         )
         .await;
-        let (termination, output) = combine_process_and_output(process_result, output_result)?;
+        let (termination, output, output_state) = combine_process_and_output(
+            process_result,
+            output_result,
+            process.mutant_id.as_deref(),
+            output_ref,
+        )?;
         contract_ensure!(
             "process.output.post",
             output.retained <= process.limits.max_output_bytes
@@ -433,6 +439,7 @@ impl ProcessHandler {
             id,
             worker: process.worker,
             termination,
+            output_state,
             output,
             elapsed: started.elapsed(),
             resource_mode: self.backend.mode(),
@@ -699,9 +706,24 @@ async fn terminate_and_reap(
 fn combine_process_and_output(
     process: Result<ProcessTermination, EffectFailed>,
     output: Result<OutputSpoolRef, EffectFailed>,
-) -> Result<(ProcessTermination, OutputSpoolRef), EffectFailed> {
+    mutant_id: Option<&str>,
+    fallback_output: OutputSpoolRef,
+) -> Result<(ProcessTermination, OutputSpoolRef, ProcessOutputState), EffectFailed> {
     match process {
-        Ok(termination) => output.map(|output| (termination, output)),
+        Ok(termination) => match output {
+            Ok(output) => Ok((termination, output, ProcessOutputState::Complete)),
+            Err(error)
+                if mutant_id.is_some()
+                    && error.failure.code() == PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE =>
+            {
+                Ok((
+                    termination,
+                    fallback_output,
+                    ProcessOutputState::CloseTimedOut,
+                ))
+            }
+            Err(error) => Err(error),
+        },
         Err(error) => Err(error),
     }
 }
@@ -823,12 +845,17 @@ fn native_argv(_argv: &[CommandArg]) -> Result<Vec<OsString>, String> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::future::{pending, ready};
     use std::process::Stdio;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
 
-    use hoimin_core::{EffectFailed, EffectFailure, EffectId, ProcessTermination};
+    use hoimin_core::{
+        EffectFailed, EffectFailure, EffectId, MutationStatus, OutputSpoolRef, ProcessOutputState,
+        ProcessTermination, classify_mutant_result,
+    };
+    use serde::Deserialize;
     use tokio::process::Command;
 
     use super::{
@@ -837,6 +864,168 @@ mod tests {
         wait_after_termination, wait_failure_after_cleanup,
     };
     use crate::resource::ResourceError;
+
+    fn output_ref() -> OutputSpoolRef {
+        OutputSpoolRef {
+            token: "output".to_owned(),
+            retained: 0,
+            observed: 0,
+        }
+    }
+
+    #[derive(Debug, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    #[allow(clippy::struct_excessive_bools)]
+    struct ProcessOutputCase {
+        schema: u64,
+        id: String,
+        mode: String,
+        execution: String,
+        process: String,
+        output: String,
+        expected_fatal: bool,
+        expected_status: Option<String>,
+        expected_termination: Option<String>,
+        expected_output_incomplete: bool,
+        expected_diagnostic: bool,
+        expected_continue: bool,
+        input_termination: Option<String>,
+    }
+
+    fn named_termination(name: &str) -> ProcessTermination {
+        match name {
+            "exit_success" => ProcessTermination::Exit(0),
+            "exit_failure" => ProcessTermination::Exit(7),
+            "timeout" => ProcessTermination::Timeout,
+            "out_of_memory" => ProcessTermination::OutOfMemory,
+            "process_limit" => ProcessTermination::ProcessLimit,
+            "cancelled" => ProcessTermination::Cancelled,
+            other => panic!("unknown termination {other}"),
+        }
+    }
+
+    fn named_status(name: &str) -> MutationStatus {
+        match name {
+            "killed" => MutationStatus::Killed,
+            "survived" => MutationStatus::Survived,
+            "timeout" => MutationStatus::Timeout,
+            "out_of_memory" => MutationStatus::OutOfMemory,
+            "process_limit" => MutationStatus::ProcessLimit,
+            "not_run" => MutationStatus::NotRun,
+            "error" => MutationStatus::Error,
+            other => panic!("unknown status {other}"),
+        }
+    }
+
+    fn process_output_cases() -> Vec<ProcessOutputCase> {
+        const CORPUS: &str =
+            include_str!("../../../../formal/HoiminOracle/corpus/process-output-outcome.jsonl");
+        let cases = CORPUS
+            .lines()
+            .map(|line| serde_json::from_str::<ProcessOutputCase>(line).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(cases.len(), 42);
+        assert_eq!(
+            cases
+                .iter()
+                .map(|case| case.id.as_str())
+                .collect::<BTreeSet<_>>()
+                .len(),
+            42
+        );
+        cases
+    }
+
+    #[test]
+    fn process_output_combiner_matches_every_lean_decision_row() {
+        for case in process_output_cases() {
+            assert_eq!(case.schema, 1, "{}", case.id);
+            assert_eq!(case.mode, "strict", "{}", case.id);
+            let process_failure = EffectFailed::other(
+                EffectId(7),
+                "process.wait.failed",
+                "fixture process failure",
+            );
+            let output_failure = match case.output.as_str() {
+                "close_timed_out" => EffectFailed::other(
+                    EffectId(7),
+                    "process.output.close.timeout",
+                    "fixture output timeout",
+                ),
+                "failed" => EffectFailed::other(
+                    EffectId(7),
+                    "process.stdout.read",
+                    "fixture output failure",
+                ),
+                "complete" => {
+                    EffectFailed::other(EffectId(7), "unreachable.complete", "unreachable")
+                }
+                other => panic!("unknown output {other}"),
+            };
+            let process = match case.input_termination.as_deref() {
+                Some(termination) => Ok(named_termination(termination)),
+                None => Err(process_failure.clone()),
+            };
+            let collected = OutputSpoolRef {
+                token: "collected".to_owned(),
+                retained: 3,
+                observed: 5,
+            };
+            let fallback = output_ref();
+            let output = if case.output == "complete" {
+                Ok(collected.clone())
+            } else {
+                Err(output_failure)
+            };
+            let mutant_id = (case.execution == "mutant").then_some("mutant");
+            let actual = combine_process_and_output(process, output, mutant_id, fallback.clone());
+
+            assert_eq!(actual.is_err(), case.expected_fatal, "{}", case.id);
+            assert_eq!(case.expected_continue, !case.expected_fatal, "{}", case.id);
+            let Ok((termination, output, output_state)) = actual else {
+                continue;
+            };
+            assert_eq!(
+                Some(termination),
+                case.expected_termination.as_deref().map(named_termination),
+                "{}",
+                case.id
+            );
+            assert_eq!(
+                output_state == ProcessOutputState::CloseTimedOut,
+                case.expected_output_incomplete,
+                "{}",
+                case.id
+            );
+            assert_eq!(
+                output_state == ProcessOutputState::CloseTimedOut,
+                case.expected_diagnostic,
+                "{}",
+                case.id
+            );
+            assert_eq!(
+                output,
+                if case.expected_output_incomplete {
+                    fallback
+                } else {
+                    collected
+                },
+                "{}",
+                case.id
+            );
+            if case.execution == "mutant" {
+                assert_eq!(
+                    classify_mutant_result(termination, output_state),
+                    named_status(case.expected_status.as_deref().unwrap()),
+                    "{}",
+                    case.id
+                );
+            } else {
+                assert!(case.expected_status.is_none(), "{}", case.id);
+            }
+            assert_eq!(case.process == "failed", case.input_termination.is_none());
+        }
+    }
 
     #[test]
     #[ignore = "subprocess fixture for bounded reap tests"]
@@ -937,8 +1126,13 @@ mod tests {
             "cleanup",
         );
 
-        let error = combine_process_and_output(Err(primary.clone()), Err(cleanup))
-            .expect_err("primary process failure wins");
+        let error = combine_process_and_output(
+            Err(primary.clone()),
+            Err(cleanup),
+            Some("mutant"),
+            output_ref(),
+        )
+        .expect_err("primary process failure wins");
 
         assert_eq!(error, primary);
     }
@@ -1044,18 +1238,87 @@ mod tests {
     }
 
     #[test]
-    fn successful_process_requires_successful_output_cleanup() {
+    fn mutant_output_close_timeout_preserves_the_known_termination() {
+        let cleanup = hoimin_core::EffectFailed::other(
+            EffectId(42),
+            "process.output.close.timeout",
+            "cleanup",
+        );
+        let fallback = output_ref();
+
+        let result = combine_process_and_output(
+            Ok(ProcessTermination::Timeout),
+            Err(cleanup),
+            Some("mutant"),
+            fallback.clone(),
+        )
+        .expect("mutant close timeout is a classified result");
+
+        assert_eq!(
+            result,
+            (
+                ProcessTermination::Timeout,
+                fallback,
+                ProcessOutputState::CloseTimedOut
+            )
+        );
+    }
+
+    #[test]
+    fn complete_output_preserves_normal_classification_inputs() {
+        let output = output_ref();
+
+        let result = combine_process_and_output(
+            Ok(ProcessTermination::Exit(0)),
+            Ok(output.clone()),
+            Some("mutant"),
+            output_ref(),
+        )
+        .expect("complete output is returned");
+
+        assert_eq!(
+            result,
+            (
+                ProcessTermination::Exit(0),
+                output,
+                ProcessOutputState::Complete
+            )
+        );
+    }
+
+    #[test]
+    fn baseline_output_close_timeout_remains_fatal() {
         let cleanup = hoimin_core::EffectFailed::other(
             EffectId(42),
             "process.output.close.timeout",
             "cleanup",
         );
 
-        let error =
-            combine_process_and_output(Ok(ProcessTermination::Exit(0)), Err(cleanup.clone()))
-                .expect_err("output cleanup failure is returned");
+        let error = combine_process_and_output(
+            Ok(ProcessTermination::Exit(0)),
+            Err(cleanup.clone()),
+            None,
+            output_ref(),
+        )
+        .expect_err("a real baseline worker keeps output cleanup failure fatal");
 
         assert_eq!(error, cleanup);
+    }
+
+    #[test]
+    fn mutant_output_io_failure_remains_fatal() {
+        let failure =
+            hoimin_core::EffectFailed::other(EffectId(42), "process.stdout.read", "read failed");
+
+        let error = combine_process_and_output(
+            Ok(ProcessTermination::Exit(0)),
+            Err(failure.clone()),
+            Some("mutant"),
+            output_ref(),
+        )
+        .expect_err("ordinary output failures remain fatal");
+
+        assert_eq!(error, failure);
     }
 
     #[test]

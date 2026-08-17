@@ -6,9 +6,9 @@ use hoimin_cli::report::ReportHandler;
 use hoimin_core::{
     BaselineFinished, ByteSpan, CommandArg, Diagnostic, EffectFailure, EffectId, EmitOutput,
     MutantFinished, MutantStarted, MutationCandidate, MutationStatus, MutationSummary, OutputEvent,
-    OutputFormat, OutputSpoolRef, ProcessTermination, REPORT_SCHEMA_VERSION, ReportSequence,
-    ResourceMode, RunStarted, RunSummary, VerificationSelection, VerificationSelectionMode,
-    VerificationSelectionPolicy, VerificationSelectionScope,
+    OutputFormat, OutputSpoolRef, ProcessOutputState, ProcessTermination, REPORT_SCHEMA_VERSION,
+    ReportSequence, ResourceMode, RunStarted, RunSummary, SessionDiagnostic, VerificationSelection,
+    VerificationSelectionMode, VerificationSelectionPolicy, VerificationSelectionScope,
 };
 use serde::{Deserialize, Serialize};
 
@@ -176,6 +176,7 @@ fn all_optional_report_events(current: bool) -> Vec<OutputEvent> {
             candidate,
             status: MutationStatus::Killed,
             termination: Some(ProcessTermination::Exit(7)),
+            output_state: hoimin_core::ProcessOutputState::Complete,
             elapsed_ms: 13,
             resource_mode: ResourceMode::Hard,
             output: Some(OutputSpoolRef {
@@ -183,6 +184,7 @@ fn all_optional_report_events(current: bool) -> Vec<OutputEvent> {
                 retained: 55,
                 observed: 89,
             }),
+            diagnostics: Vec::new(),
         }),
         OutputEvent::Diagnostic(Diagnostic::new(
             run_id,
@@ -758,6 +760,7 @@ fn documented_events() -> Vec<OutputEvent> {
             },
             status,
             termination,
+            output_state: hoimin_core::ProcessOutputState::Complete,
             elapsed_ms: 2,
             resource_mode: if mutant_sequence % 2 == 0 {
                 ResourceMode::Hard
@@ -765,6 +768,7 @@ fn documented_events() -> Vec<OutputEvent> {
                 ResourceMode::BestEffort
             },
             output: termination.map(|_| output_ref()),
+            diagnostics: Vec::new(),
         }));
         event_sequence += 1;
     }
@@ -1237,6 +1241,46 @@ fn human_format_writes_progress_to_stdout_and_diagnostics_to_stderr() {
 }
 
 #[test]
+fn human_format_writes_mutant_output_timeout_diagnostic_to_stderr() {
+    let stdout = SharedWriter::default();
+    let stderr = SharedWriter::default();
+    let mut handler = ReportHandler::new(
+        OutputFormat::Human,
+        stdout.clone(),
+        stderr.clone(),
+        std::env::temp_dir(),
+    )
+    .unwrap();
+    let mut event = mutant_finished(1, 0);
+    let OutputEvent::MutantFinished(finished) = &mut event else {
+        unreachable!()
+    };
+    finished.status = MutationStatus::Error;
+    finished.termination = Some(ProcessTermination::Timeout);
+    finished.output_state = ProcessOutputState::CloseTimedOut;
+    finished.diagnostics.push(SessionDiagnostic {
+        mutant_id: finished.candidate.id.clone(),
+        level: "error".to_owned(),
+        code: "process.output.close.timeout".to_owned(),
+        message: "captured output may be incomplete".to_owned(),
+    });
+
+    handler
+        .handle(EmitOutput {
+            id: EffectId(1),
+            event,
+        })
+        .unwrap();
+
+    assert!(stdout.text().contains("error"));
+    assert!(
+        stderr
+            .text()
+            .contains("error process.output.close.timeout: captured output may be incomplete")
+    );
+}
+
+#[test]
 fn human_format_renders_none_score_for_runs_without_decidable_mutants() {
     let stdout = SharedWriter::default();
     let mut handler = ReportHandler::new(
@@ -1534,9 +1578,11 @@ fn mutant_finished(event_sequence: u64, mutant_sequence: u64) -> OutputEvent {
         },
         status: MutationStatus::Killed,
         termination: Some(ProcessTermination::Exit(1)),
+        output_state: hoimin_core::ProcessOutputState::Complete,
         elapsed_ms: 2,
         resource_mode: ResourceMode::Hard,
         output: Some(output_ref()),
+        diagnostics: Vec::new(),
     })
 }
 

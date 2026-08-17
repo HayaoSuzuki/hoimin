@@ -69,3 +69,6 @@ import HoiminOracle.CandidateSpanCases
 import HoiminOracle.ChangedTargetModel
 import HoiminOracle.ChangedTargetProofs
 import HoiminOracle.ChangedTargetCases
+import HoiminOracle.ProcessOutputModel
+import HoiminOracle.ProcessOutputProofs
+import HoiminOracle.ProcessOutputCases
