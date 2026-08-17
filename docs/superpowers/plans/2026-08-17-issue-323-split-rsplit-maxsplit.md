@@ -171,4 +171,3 @@ Compare `origin/main...HEAD` with Issue 323 and the design. Confirm that the
 diff contains the two worktree documents, one predicate, one match guard, the
 focused regression, the positive fixture adjustment, and two documentation
 clarifications. Remove any unrelated change before review.
-

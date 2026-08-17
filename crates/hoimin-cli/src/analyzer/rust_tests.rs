@@ -1930,16 +1930,22 @@ fn split_rsplit_candidates_require_explicit_maxsplit() {
         .candidates
         .iter()
         .filter(|candidate| candidate.operator == "collection_string_split_rsplit")
-        .map(|candidate| (candidate.original.as_str(), candidate.replacement.as_str()))
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.line,
+            )
+        })
         .collect();
 
     assert_eq!(
         actual,
         vec![
-            ("split", "rsplit"),
-            ("rsplit", "split"),
-            ("split", "rsplit"),
-            ("rsplit", "split"),
+            ("split", "rsplit", 5),
+            ("rsplit", "split", 6),
+            ("split", "rsplit", 7),
+            ("rsplit", "split", 8),
         ]
     );
 }
@@ -1996,8 +2002,8 @@ fn collection_excludes_unsupported_call_and_literal_shapes() {
         "members.remove(value, extra)\n",
         "text.startswith(*parts)\n",
         "text.endswith(**options)\n",
-        "text.split(*parts)\n",
-        "text.rsplit(**options)\n",
+        "text.split(*parts, maxsplit=1)\n",
+        "text.rsplit(None, 1, **options)\n",
         "set_literal = {first, second}\n",
     );
     let output = analyze(source);
