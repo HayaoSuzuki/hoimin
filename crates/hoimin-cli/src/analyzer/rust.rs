@@ -212,7 +212,7 @@ pub(crate) fn analyze_source_cancellable(
         if !facts.is_operator_token(start) {
             continue;
         }
-        if matches!(text, "&" | "|" | "<<" | ">>") && facts.contains_annotation_span(range) {
+        if facts.contains_annotation_span(range) {
             continue;
         }
         let previous = tokens[..index]

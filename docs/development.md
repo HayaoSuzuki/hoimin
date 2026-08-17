@@ -139,9 +139,11 @@ AST gaps for their supported roles, such as comparisons, boolean and binary
 expressions, unary expressions, augmented assignments, boolean literals, and
 `break`/`continue`. A token with an ambiguous grammatical role is skipped
 conservatively: matching text alone is never enough to make it a candidate.
-Annotation-span exclusions remain in effect, and this gate does not change the
-existing selection, profile filtering, deduplication, source ordering, or
-candidate-limit behavior.
+Every approved raw-token operator is then checked against the annotation
+containment index and skipped when its complete token range lies inside an
+annotation. Deliberate annotation mutations remain in the separate opt-in
+`type_*` producer. These gates do not change the existing selection, profile
+filtering, deduplication, source ordering, or candidate-limit behavior.
 
 For one source file, the token scanner, AST pass, and type-annotation pass
 each retain no more than `max_candidates + 1` candidate records and
