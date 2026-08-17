@@ -649,6 +649,7 @@ struct NameOccurrence {
 struct NameResolutionIndex {
     scopes: Vec<NameScope>,
     occurrences: HashMap<usize, NameOccurrence>,
+    back_edge_bindings: HashMap<usize, HashSet<String>>,
 }
 
 impl NameResolutionIndex {
@@ -665,7 +666,17 @@ impl NameResolutionIndex {
         if occurrence.temporarily_shadowed {
             return NameResolution::Shadowed;
         }
-        self.resolve_scope(occurrence.scope, name, true, offset)
+        let resolution = self.resolve_scope(occurrence.scope, name, true, offset);
+        if resolution == NameResolution::DefinitelyBuiltin
+            && self
+                .back_edge_bindings
+                .get(&offset)
+                .is_some_and(|bindings| bindings.contains(name))
+        {
+            NameResolution::Unknown
+        } else {
+            resolution
+        }
     }
 
     fn resolve_scope(
@@ -805,6 +816,13 @@ struct NameResolutionBuilder {
     current: ScopeId,
     conditional_depth: usize,
     temporary_shadowed: Vec<(ScopeId, HashSet<String>)>,
+    loop_back_edges: Vec<LoopBackEdgeContext>,
+}
+
+struct LoopBackEdgeContext {
+    scope: ScopeId,
+    occurrences: Vec<usize>,
+    bindings: HashSet<String>,
 }
 
 impl NameResolutionBuilder {
@@ -813,10 +831,12 @@ impl NameResolutionBuilder {
             index: NameResolutionIndex {
                 scopes: vec![NameScope::new(NameScopeKind::Module, None)],
                 occurrences: HashMap::new(),
+                back_edge_bindings: HashMap::new(),
             },
             current: ScopeId(0),
             conditional_depth: 0,
             temporary_shadowed: Vec::new(),
+            loop_back_edges: Vec::new(),
         }
     }
 
@@ -833,6 +853,56 @@ impl NameResolutionBuilder {
         self.current = scope;
         visit(self);
         self.current = outer;
+    }
+
+    fn in_loop_back_edge(&mut self, visit: impl FnOnce(&mut Self)) {
+        self.loop_back_edges.push(LoopBackEdgeContext {
+            scope: self.current,
+            occurrences: Vec::new(),
+            bindings: HashSet::new(),
+        });
+        visit(self);
+        let context = self
+            .loop_back_edges
+            .pop()
+            .expect("loop back-edge context was pushed");
+        if context.bindings.is_empty() {
+            return;
+        }
+        for offset in context.occurrences {
+            self.index
+                .back_edge_bindings
+                .entry(offset)
+                .or_default()
+                .extend(context.bindings.iter().cloned());
+        }
+    }
+
+    fn loop_scope_visible(scopes: &[NameScope], current: ScopeId, owner: ScopeId) -> bool {
+        if owner == current {
+            return true;
+        }
+        if scopes[current.0].kind != NameScopeKind::Class {
+            return false;
+        }
+        let mut parent = scopes[current.0].parent;
+        while let Some(scope_id) = parent {
+            let scope = &scopes[scope_id.0];
+            match scope.kind {
+                NameScopeKind::Module => return scope_id == owner,
+                NameScopeKind::Class => parent = scope.parent,
+                NameScopeKind::Function | NameScopeKind::Comprehension => return false,
+            }
+        }
+        false
+    }
+
+    fn record_loop_back_edge_binding(&mut self, scope: ScopeId, name: &str) {
+        for context in &mut self.loop_back_edges {
+            if context.scope == scope {
+                context.bindings.insert(name.to_owned());
+            }
+        }
     }
 
     fn add_local(&mut self, scope: ScopeId, name: &str) {
@@ -877,6 +947,7 @@ impl NameResolutionBuilder {
         let globals = self.index.scopes[self.current.0].globals.contains(name);
         let nonlocals = self.index.scopes[self.current.0].nonlocals.contains(name);
         if globals {
+            self.record_loop_back_edge_binding(ScopeId(0), name);
             self.index.scopes[0]
                 .possible_bindings
                 .insert(name.to_owned());
@@ -890,6 +961,7 @@ impl NameResolutionBuilder {
         if nonlocals {
             return;
         }
+        self.record_loop_back_edge_binding(self.current, name);
         let scope = &mut self.index.scopes[self.current.0];
         scope.possible_bindings.insert(name.to_owned());
         match scope.kind {
@@ -913,6 +985,7 @@ impl NameResolutionBuilder {
         if !tracked_resolution_name(name) {
             return;
         }
+        self.record_loop_back_edge_binding(self.current, name);
         let scope = &mut self.index.scopes[self.current.0];
         scope.possible_bindings.insert(name.to_owned());
         if matches!(scope.kind, NameScopeKind::Module | NameScopeKind::Class) {
@@ -938,6 +1011,9 @@ impl NameResolutionBuilder {
             ruff_python_ast::Identifier::as_str,
         );
         if local == "*" {
+            for name in MUTABLE_BUILTINS.iter().chain(EXCEPTION_NAMES) {
+                self.record_loop_back_edge_binding(self.current, name);
+            }
             let scope = &mut self.index.scopes[self.current.0];
             scope.wildcard = true;
             for name in MUTABLE_BUILTINS.iter().chain(EXCEPTION_NAMES) {
@@ -963,6 +1039,9 @@ impl NameResolutionBuilder {
     }
 
     fn record_scope_wildcard(&mut self, scope_id: ScopeId, offset: usize) {
+        for name in MUTABLE_BUILTINS.iter().chain(EXCEPTION_NAMES) {
+            self.record_loop_back_edge_binding(scope_id, name);
+        }
         let scope = &mut self.index.scopes[scope_id.0];
         scope.wildcard = true;
         for name in MUTABLE_BUILTINS.iter().chain(EXCEPTION_NAMES) {
@@ -987,13 +1066,24 @@ impl NameResolutionBuilder {
             .iter()
             .rev()
             .any(|(scope, names)| names.contains(id) && self.temporary_binding_visible(*scope));
+        let offset = usize::from(name.range.start());
+        self.record_resolution_site(offset, temporarily_shadowed);
+    }
+
+    fn record_resolution_site(&mut self, offset: usize, temporarily_shadowed: bool) {
         self.index.occurrences.insert(
-            usize::from(name.range.start()),
+            offset,
             NameOccurrence {
                 scope: self.current,
                 temporarily_shadowed,
             },
         );
+        let scopes = &self.index.scopes;
+        for context in &mut self.loop_back_edges {
+            if Self::loop_scope_visible(scopes, self.current, context.scope) {
+                context.occurrences.push(offset);
+            }
+        }
     }
 
     fn temporary_binding_visible(&self, owner: ScopeId) -> bool {
@@ -1140,12 +1230,14 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
             Stmt::For(statement_for) => {
                 self.visit_expr(&statement_for.iter);
                 self.conditional_depth += 1;
-                self.record_target(
-                    &statement_for.target,
-                    usize::from(statement_for.iter.range().end()),
-                );
-                self.visit_expr(&statement_for.target);
-                self.visit_body(&statement_for.body);
+                self.in_loop_back_edge(|this| {
+                    this.record_target(
+                        &statement_for.target,
+                        usize::from(statement_for.iter.range().end()),
+                    );
+                    this.visit_expr(&statement_for.target);
+                    this.visit_body(&statement_for.body);
+                });
                 self.visit_body(&statement_for.orelse);
                 self.conditional_depth -= 1;
                 return;
@@ -1163,7 +1255,17 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
                 self.conditional_depth -= 1;
                 return;
             }
-            Stmt::If(_) | Stmt::While(_) | Stmt::Try(_) | Stmt::Match(_) => {
+            Stmt::While(statement_while) => {
+                self.conditional_depth += 1;
+                self.in_loop_back_edge(|this| {
+                    this.visit_expr(&statement_while.test);
+                    this.visit_body(&statement_while.body);
+                });
+                self.visit_body(&statement_while.orelse);
+                self.conditional_depth -= 1;
+                return;
+            }
+            Stmt::If(_) | Stmt::Try(_) | Stmt::Match(_) => {
                 self.conditional_depth += 1;
                 visitor::walk_stmt(self, statement);
                 self.conditional_depth -= 1;
@@ -1232,13 +1334,7 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
 
     fn visit_except_handler(&mut self, except_handler: &'ast ruff_python_ast::ExceptHandler) {
         let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
-        self.index.occurrences.insert(
-            usize::from(handler.range.start()),
-            NameOccurrence {
-                scope: self.current,
-                temporarily_shadowed: false,
-            },
-        );
+        self.record_resolution_site(usize::from(handler.range.start()), false);
         if let Some(type_) = &handler.type_ {
             self.visit_expr(type_);
         }

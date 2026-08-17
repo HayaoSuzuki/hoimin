@@ -1625,6 +1625,83 @@ fn shadowed_destination_suppresses_an_otherwise_builtin_source() {
 }
 
 #[test]
+fn loop_back_edge_bindings_suppress_builtin_pair_candidates() {
+    let source_binding = analyze(concat!(
+        "for item in values:\n",
+        "    current = sorted(item)\n",
+        "    sorted = fake_sorted\n",
+    ));
+    assert!(
+        source_binding
+            .candidates
+            .iter()
+            .all(|candidate| candidate.operator != "structure_sorted_reversed"),
+        "a source binding on the back edge must suppress the pair: {:#?}",
+        source_binding.candidates
+    );
+
+    let destination_binding = analyze(concat!(
+        "for item in values:\n",
+        "    current = sorted(item)\n",
+        "    reversed = fake_reversed\n",
+    ));
+    assert!(
+        destination_binding
+            .candidates
+            .iter()
+            .all(|candidate| candidate.operator != "structure_sorted_reversed"),
+        "a destination binding on the back edge must suppress the pair: {:#?}",
+        destination_binding.candidates
+    );
+
+    let target_load = analyze(concat!(
+        "for sink[sorted(item)] in values:\n",
+        "    sorted = fake_sorted\n",
+    ));
+    assert!(
+        target_load
+            .candidates
+            .iter()
+            .all(|candidate| candidate.operator != "structure_sorted_reversed"),
+        "a repeated target load must observe body bindings on the back edge: {:#?}",
+        target_load.candidates
+    );
+
+    let one_time_iterable = analyze(concat!(
+        "for item in sorted(values):\n",
+        "    sorted = fake_sorted\n",
+    ));
+    assert_eq!(
+        one_time_iterable
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "structure_sorted_reversed")
+            .map(|candidate| candidate.line)
+            .collect::<Vec<_>>(),
+        [1],
+        "the for iterable is evaluated before, not on, the back edge"
+    );
+
+    let class_nested_function = analyze(concat!(
+        "class Namespace:\n",
+        "    for item in values:\n",
+        "        def helper():\n",
+        "            return sorted(item)\n",
+        "        sorted = fake_sorted\n",
+    ));
+    assert_eq!(
+        class_nested_function
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "structure_sorted_reversed")
+            .map(|candidate| (candidate.line, candidate.symbol.as_deref()))
+            .collect::<Vec<_>>(),
+        [(4, Some("Namespace.helper"))],
+        "a nested function does not close over its parent class namespace"
+    );
+}
+
+#[test]
 fn module_class_closure_and_directive_resolution_is_scope_aware() {
     let source = concat!(
         "early = list(items)\n",
@@ -4960,6 +5037,150 @@ fn annotation_scope_marker_projections_use_site_entry_and_comprehension_scope() 
         name_resolution_test_snapshot(comprehension_source, "list(item)", "list").unwrap();
     assert_eq!(first_iterable.resolution, "definitely-builtin");
     assert_eq!(body.resolution, "shadowed");
+}
+
+#[test]
+fn loop_back_edge_bindings_make_builtin_resolution_uncertain() {
+    let cases = [
+        (
+            "module for body",
+            concat!(
+                "for item in values:\n",
+                "    current = list(item)\n",
+                "    list = custom_list\n",
+            ),
+            "list(item)",
+            "unknown",
+        ),
+        (
+            "class for body",
+            concat!(
+                "class Namespace:\n",
+                "    for item in values:\n",
+                "        current = list(item)\n",
+                "        list = custom_list\n",
+            ),
+            "list(item)",
+            "unknown",
+        ),
+        (
+            "while test",
+            concat!("while list(items):\n", "    list = custom_list\n",),
+            "list(items)",
+            "unknown",
+        ),
+        (
+            "nested same-scope loop",
+            concat!(
+                "for outer in values:\n",
+                "    current = list(outer)\n",
+                "    for inner in values:\n",
+                "        list = custom_list\n",
+            ),
+            "list(outer)",
+            "unknown",
+        ),
+        (
+            "module loop through class body",
+            concat!(
+                "for item in values:\n",
+                "    class Namespace:\n",
+                "        current = list(item)\n",
+                "    list = custom_list\n",
+            ),
+            "list(item)",
+            "unknown",
+        ),
+        (
+            "for target load",
+            concat!(
+                "for sink[list(item)] in values:\n",
+                "    list = custom_list\n",
+            ),
+            "list(item)",
+            "unknown",
+        ),
+    ];
+
+    assert_name_resolution_cases(&cases);
+}
+
+#[test]
+fn loop_back_edge_boundaries_preserve_definite_builtin_resolution() {
+    let cases = [
+        (
+            "one-time for iterable",
+            concat!("for item in list(values):\n", "    list = custom_list\n",),
+            "list(values)",
+            "definitely-builtin",
+        ),
+        (
+            "nested function binding",
+            concat!(
+                "for item in values:\n",
+                "    current = list(item)\n",
+                "    def helper():\n",
+                "        list = custom_list\n",
+            ),
+            "list(item)",
+            "definitely-builtin",
+        ),
+        (
+            "nested class binding",
+            concat!(
+                "for item in values:\n",
+                "    current = list(item)\n",
+                "    class Namespace:\n",
+                "        list = custom_list\n",
+            ),
+            "list(item)",
+            "definitely-builtin",
+        ),
+        (
+            "class loop binding outside nested function",
+            concat!(
+                "class Namespace:\n",
+                "    for item in values:\n",
+                "        def helper():\n",
+                "            return list(item)\n",
+                "        list = custom_list\n",
+            ),
+            "list(item)",
+            "definitely-builtin",
+        ),
+        (
+            "for else binding",
+            concat!(
+                "for item in values:\n",
+                "    current = list(item)\n",
+                "else:\n",
+                "    list = custom_list\n",
+            ),
+            "list(item)",
+            "definitely-builtin",
+        ),
+        (
+            "while else binding",
+            concat!(
+                "while condition:\n",
+                "    current = list(items)\n",
+                "else:\n",
+                "    list = custom_list\n",
+            ),
+            "list(items)",
+            "definitely-builtin",
+        ),
+    ];
+
+    assert_name_resolution_cases(&cases);
+}
+
+fn assert_name_resolution_cases(cases: &[(&str, &str, &str, &str)]) {
+    for (case, source, marker, expected) in cases {
+        let snapshot = name_resolution_test_snapshot(source, marker, "list")
+            .unwrap_or_else(|error| panic!("{error}; case={case}"));
+        assert_eq!(snapshot.resolution, *expected, "case={case}");
+    }
 }
 
 #[test]
