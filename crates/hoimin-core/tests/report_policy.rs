@@ -470,6 +470,131 @@ fn sequence_accepts_every_classified_status_and_an_absent_termination() {
     }
 }
 
+fn sequence_with_started_mutant() -> ReportSequence {
+    let mut sequence = ReportSequence::new();
+    sequence
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .unwrap();
+    sequence
+        .observe(&OutputEvent::MutantStarted(MutantStarted::new(
+            "run-1", 2, "m1", 7,
+        )))
+        .unwrap();
+    sequence
+}
+
+fn close_timeout_diagnostic() -> hoimin_core::SessionDiagnostic {
+    hoimin_core::SessionDiagnostic {
+        mutant_id: "m1".to_owned(),
+        level: "error".to_owned(),
+        code: "process.output.close.timeout".to_owned(),
+        message: "captured output may be incomplete".to_owned(),
+    }
+}
+
+fn output_close_timeout_event(diagnostics: Vec<hoimin_core::SessionDiagnostic>) -> OutputEvent {
+    let mut event = finished_event_with(
+        3,
+        candidate("m1", 7),
+        MutationStatus::Error,
+        Some(ProcessTermination::Timeout),
+    );
+    let OutputEvent::MutantFinished(finished) = &mut event else {
+        unreachable!()
+    };
+    finished.output_state = hoimin_core::ProcessOutputState::CloseTimedOut;
+    finished.output = Some(hoimin_core::OutputSpoolRef {
+        token: "fallback".to_owned(),
+        retained: 0,
+        observed: 0,
+    });
+    finished.diagnostics = diagnostics;
+    event
+}
+
+#[test]
+fn sequence_accepts_output_close_timeout_error_with_known_termination() {
+    let mut sequence = sequence_with_started_mutant();
+    let event = output_close_timeout_event(vec![close_timeout_diagnostic()]);
+
+    sequence.observe(&event).unwrap();
+}
+
+#[test]
+fn sequence_rejects_output_close_timeout_without_its_diagnostic() {
+    let mut sequence = sequence_with_started_mutant();
+    let event = output_close_timeout_event(Vec::new());
+
+    assert!(sequence.observe(&event).is_err());
+}
+
+#[test]
+fn sequence_rejects_each_malformed_output_close_timeout_diagnostic() {
+    let mut cases = Vec::new();
+    let mut wrong_mutant = close_timeout_diagnostic();
+    wrong_mutant.mutant_id = "other".to_owned();
+    cases.push(vec![wrong_mutant]);
+    let mut wrong_level = close_timeout_diagnostic();
+    wrong_level.level = "warning".to_owned();
+    cases.push(vec![wrong_level]);
+    let mut wrong_code = close_timeout_diagnostic();
+    wrong_code.code = "other".to_owned();
+    cases.push(vec![wrong_code]);
+    let mut empty_message = close_timeout_diagnostic();
+    empty_message.message.clear();
+    cases.push(vec![empty_message]);
+    cases.push(vec![close_timeout_diagnostic(), close_timeout_diagnostic()]);
+
+    for diagnostics in cases {
+        let mut sequence = sequence_with_started_mutant();
+        let event = output_close_timeout_event(diagnostics);
+        assert!(sequence.observe(&event).is_err());
+    }
+}
+
+#[test]
+fn sequence_rejects_close_timeout_diagnostic_for_complete_output() {
+    let mut sequence = sequence_with_started_mutant();
+    let mut event = finished_event(3, candidate("m1", 7));
+    let OutputEvent::MutantFinished(finished) = &mut event else {
+        unreachable!()
+    };
+    finished.diagnostics = vec![close_timeout_diagnostic()];
+
+    assert!(sequence.observe(&event).is_err());
+}
+
+#[test]
+fn sequence_rejects_close_timeout_without_each_required_result_field() {
+    let valid = output_close_timeout_event(vec![close_timeout_diagnostic()]);
+    for missing in ["termination", "status", "output"] {
+        let mut event = valid.clone();
+        let OutputEvent::MutantFinished(finished) = &mut event else {
+            unreachable!()
+        };
+        match missing {
+            "termination" => finished.termination = None,
+            "status" => finished.status = MutationStatus::Timeout,
+            "output" => finished.output = None,
+            _ => unreachable!(),
+        }
+        let mut sequence = sequence_with_started_mutant();
+        assert!(sequence.observe(&event).is_err(), "{missing}");
+    }
+}
+
+#[test]
+fn legacy_mutant_finish_defaults_and_omits_output_completion_fields() {
+    let event = finished_event(3, candidate("m1", 7));
+    let encoded = serde_json::to_value(&event).unwrap();
+    assert!(encoded.get("output_state").is_none());
+    assert!(encoded.get("diagnostics").is_none());
+
+    let restored: OutputEvent = serde_json::from_value(encoded).unwrap();
+
+    assert_eq!(restored, event);
+}
+
 #[test]
 fn all_event_variants_have_the_exact_public_kind() {
     let events = [
@@ -616,9 +741,11 @@ fn finished_event_with(
         candidate,
         status,
         termination,
+        output_state: hoimin_core::ProcessOutputState::Complete,
         elapsed_ms: 2,
         resource_mode: ResourceMode::Hard,
         output: None,
+        diagnostics: Vec::new(),
     })
 }
 

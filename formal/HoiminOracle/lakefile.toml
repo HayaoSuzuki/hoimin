@@ -100,3 +100,7 @@ root = "CandidateSpanAuditMain"
 [[lean_exe]]
 name = "generate_changed_target"
 root = "ChangedTargetAuditMain"
+
+[[lean_exe]]
+name = "generate_process_output"
+root = "ProcessOutputAuditMain"

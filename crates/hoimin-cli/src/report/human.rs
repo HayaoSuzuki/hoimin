@@ -1,9 +1,23 @@
 use std::io::{self, Write};
 
 use hoimin_core::{
-    MutationStatus, OutputEvent, ProcessTermination, RunSummary, VerificationSelectionMode,
-    VerificationSelectionPolicy, VerificationSelectionScope,
+    MutationStatus, OutputEvent, ProcessTermination, RunSummary, SessionDiagnostic,
+    VerificationSelectionMode, VerificationSelectionPolicy, VerificationSelectionScope,
 };
+
+pub(super) fn write_mutant_diagnostics(
+    writer: &mut impl Write,
+    diagnostics: &[SessionDiagnostic],
+) -> io::Result<()> {
+    for diagnostic in diagnostics {
+        writeln!(
+            writer,
+            "{} {}: {}",
+            diagnostic.level, diagnostic.code, diagnostic.message
+        )?;
+    }
+    writer.flush()
+}
 
 pub(super) fn write_event(writer: &mut impl Write, event: &OutputEvent) -> io::Result<()> {
     match event {

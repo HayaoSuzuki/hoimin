@@ -6,11 +6,11 @@ use hoimin_core::{
     CandidateSpoolRef, CleanupFinished, CommandArg, EffectFailed, EffectFailure, EffectId,
     IntegrityCheckpoint, MachineError, MutationApplied, MutationCandidate, MutationProfile,
     MutationStatus, MutationSummary, OriginalsVerified, OutputConfig, OutputEmitted, OutputEvent,
-    PreflightCompleted, ProcessFinished, ProcessTermination, RawRunConfig, RawRunLimits,
-    ReadCandidate, RemainingBudgetObserved, ReportSequence, ReservationId, ResourceMode,
-    ResultPersisted, RunConfig, RunEffect, RunEvent, RunFingerprint, RunPhase, RunState,
-    SessionFinished, SessionLoaded, SessionResumeRef, SessionStarted, StartRequested, StoredResult,
-    StoredResultLoaded, TargetSlice, TargetsResolved, VerificationSelection,
+    PreflightCompleted, ProcessFinished, ProcessOutputState, ProcessTermination, RawRunConfig,
+    RawRunLimits, ReadCandidate, RemainingBudgetObserved, ReportSequence, ReservationId,
+    ResourceMode, ResultPersisted, RunConfig, RunEffect, RunEvent, RunFingerprint, RunPhase,
+    RunState, SessionFinished, SessionLoaded, SessionResumeRef, SessionStarted, StartRequested,
+    StoredResult, StoredResultLoaded, TargetSlice, TargetsResolved, VerificationSelection,
     VerificationSelectionMode, VerificationSelectionPolicy, VerificationSelectionScope,
     WorkerCreated, WorkerReset, transition,
 };
@@ -2276,6 +2276,120 @@ fn cancellation_during_result_persistence_reports_the_classified_result() {
     assert_persisting_stop_preserves_result(RunEvent::CancellationRequested, 130);
 }
 
+fn assert_close_timeout_public_result(effects: &[RunEffect]) {
+    let public_result = match find_effect(effects, |effect| {
+        matches!(effect, RunEffect::EmitOutput(value)
+            if matches!(&value.event, OutputEvent::MutantFinished(_)))
+    }) {
+        RunEffect::EmitOutput(value) => serde_json::to_value(&value.event).unwrap(),
+        _ => unreachable!(),
+    };
+    assert_eq!(public_result["output_state"], "close_timed_out");
+    assert_eq!(
+        public_result["diagnostics"][0]["code"],
+        "process.output.close.timeout"
+    );
+}
+
+#[test]
+fn output_close_timeout_becomes_an_error_and_the_worker_continues() {
+    let (state, effects) = waiting_for_session_candidate(false);
+    let read_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }));
+    let candidate = fixture_candidate(1);
+    let (state, effects) = transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read_id,
+            worker: 0,
+            candidate: Some(candidate.clone()),
+            next_cursor: candidate_cursor(1, 1),
+        }),
+    )
+    .unwrap();
+    let lookup_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::LookupStoredResult(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::StoredResultLoaded(StoredResultLoaded {
+            id: lookup_id,
+            worker: 0,
+            result: None,
+        }),
+    )
+    .unwrap();
+    let apply_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ApplyMutation(_))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::MutationApplied(MutationApplied {
+            id: apply_id,
+            worker: 0,
+        }),
+    )
+    .unwrap();
+    let (state, effects) = complete_mutant_started(state, &effects);
+    let mutant_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::RunMutant(_))
+    }));
+    let mut finished = process_finished(mutant_id, ProcessTermination::Timeout);
+    finished.output_state = ProcessOutputState::CloseTimedOut;
+
+    let (state, effects) = transition(state, RunEvent::MutantFinished(finished)).unwrap();
+    let RunEffect::PersistResult(persist) = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::PersistResult(_))
+    }) else {
+        unreachable!()
+    };
+    let result = &persist.result;
+    assert_eq!(result.candidate, candidate);
+    assert_eq!(result.status, MutationStatus::Error);
+    assert_eq!(result.termination, Some(ProcessTermination::Timeout));
+    assert_eq!(result.diagnostics.len(), 1);
+    assert_eq!(result.diagnostics[0].code, "process.output.close.timeout");
+
+    let (state, effects) = transition(
+        state,
+        RunEvent::ResultPersisted(ResultPersisted {
+            id: persist.id,
+            worker: 0,
+            run_id: result.run_id.clone(),
+            mutant_id: result.candidate.id.clone(),
+        }),
+    )
+    .unwrap();
+    let output_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::EmitOutput(value)
+            if matches!(&value.event, OutputEvent::MutantFinished(_)))
+    }));
+    assert_close_timeout_public_result(&effects);
+    let (state, effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: output_id }),
+    )
+    .unwrap();
+    assert_eq!(state.summary().error, 1);
+    let reset_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ResetWorker(_))
+    }));
+    let (_, effects) = transition(
+        state,
+        RunEvent::WorkerReset(WorkerReset {
+            id: reset_id,
+            worker: 0,
+        }),
+    )
+    .unwrap();
+    assert!(
+        effects
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::ReadCandidate(_)))
+    );
+}
+
 #[test]
 fn deadline_during_result_persistence_reports_the_classified_result() {
     assert_persisting_stop_preserves_result(RunEvent::DeadlineReached, 4);
@@ -4002,6 +4116,7 @@ fn schedule_process_finished(
         id: process.id,
         worker: process.worker,
         termination,
+        output_state: ProcessOutputState::Complete,
         output: hoimin_core::OutputSpoolRef {
             token: "generated-output".to_owned(),
             retained: 0,
@@ -4804,6 +4919,7 @@ fn process_finished(id: EffectId, termination: ProcessTermination) -> ProcessFin
         id,
         worker: Some(0),
         termination,
+        output_state: ProcessOutputState::Complete,
         output: hoimin_core::OutputSpoolRef {
             token: "output".to_owned(),
             retained: 0,

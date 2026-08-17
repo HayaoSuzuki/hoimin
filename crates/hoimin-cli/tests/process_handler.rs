@@ -8,6 +8,8 @@ use hoimin_cli::resource::{
     CgroupCapabilities, PortableBackend, ResourceBackend, parse_cgroup_event_counters,
     select_linux_backend,
 };
+#[cfg(unix)]
+use hoimin_core::ProcessOutputState;
 use hoimin_core::{
     CommandArg, EffectFailure, EffectId, ProcessLimits, ProcessTermination, ResourceMode,
     RunProcess,
@@ -829,6 +831,40 @@ mod portable {
         assert_eq!(zero.resource_mode, ResourceMode::BestEffort);
         assert_eq!(nonzero.id, EffectId(5));
         assert_eq!(nonzero.termination, ProcessTermination::Exit(7));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn escaped_descendant_output_timeout_is_a_mutant_completion() {
+        let output = tempfile::tempdir().unwrap();
+        let output_dir = Utf8Path::from_path(output.path()).unwrap();
+        let pid_file = output_dir.join("escaped-output-child.pid");
+        let guard = FixtureChildGuard::new(pid_file.clone());
+        let handler = portable_handler(output_dir);
+        let code = "import pathlib,subprocess,sys; child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)'],start_new_session=True); pathlib.Path(sys.argv[1]).write_text(str(child.pid))";
+        let request = RunProcess {
+            id: EffectId(52),
+            worker: Some(0),
+            run_id: Some("run".to_owned()),
+            mutant_id: Some("mutant".to_owned()),
+            argv: vec![
+                python_executable(),
+                utf8_arg("-c"),
+                utf8_arg(code),
+                native_arg(pid_file.as_std_path().as_os_str()),
+            ],
+            cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
+            limits: limits(Duration::from_secs(5), 64),
+        };
+
+        let event = handler.handle(request).await.unwrap();
+        let descendant = guard.pid().expect("escaped descendant wrote its pid");
+
+        assert_eq!(event.termination, ProcessTermination::Exit(0));
+        assert_eq!(event.output_state, ProcessOutputState::CloseTimedOut);
+        assert!(process_exists(descendant));
+        assert_eq!(event.output.retained, 0);
+        assert_eq!(event.output.observed, 0);
     }
 
     #[tokio::test]

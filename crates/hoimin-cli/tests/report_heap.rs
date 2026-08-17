@@ -151,8 +151,10 @@ fn mutant_finished(event_sequence: u64, mutant_sequence: u64) -> OutputEvent {
         },
         status: MutationStatus::Killed,
         termination: Some(ProcessTermination::Exit(1)),
+        output_state: hoimin_core::ProcessOutputState::Complete,
         elapsed_ms: 2,
         resource_mode: ResourceMode::Hard,
         output: None,
+        diagnostics: Vec::new(),
     })
 }
