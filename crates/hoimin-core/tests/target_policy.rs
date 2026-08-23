@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use camino::Utf8PathBuf;
 use hoimin_core::{
-    ConfigError, DiscoveredFile, LineRange, LineSelection, MAX_JOBS, RawRunConfig, RunConfig,
-    Selection, SymbolSelection, TargetError, TargetSlice, auto_mutant_timeout,
+    ConfigError, DiscoveredFile, LineRange, LineSelection, MAX_JOBS, MAX_TIMEOUT, RawRunConfig,
+    RunConfig, Selection, SymbolSelection, TargetError, TargetSlice, auto_mutant_timeout,
     changed_is_normalized, intersect_changed, resolve_explicit, targets_are_normalized,
 };
 use hoimin_core::{MutationOperator, MutationProfile};
@@ -157,6 +157,67 @@ fn automatic_mutant_timeout_uses_baseline_duration() {
         auto_mutant_timeout(Duration::from_secs(8)),
         Duration::from_secs(17)
     );
+}
+
+#[test]
+fn raw_timeout_limits_accept_the_ceiling_and_reject_one_nanosecond_more() {
+    for name in [
+        "analyzer_timeout",
+        "baseline_timeout",
+        "mutant_timeout",
+        "total_timeout",
+    ] {
+        let mut accepted = raw_config();
+        accepted.limits.mutant_timeout = Some(Duration::from_secs(5));
+        match name {
+            "analyzer_timeout" => accepted.limits.analyzer_timeout = MAX_TIMEOUT,
+            "baseline_timeout" => accepted.limits.baseline_timeout = MAX_TIMEOUT,
+            "mutant_timeout" => accepted.limits.mutant_timeout = Some(MAX_TIMEOUT),
+            "total_timeout" => accepted.limits.total_timeout = MAX_TIMEOUT,
+            _ => unreachable!(),
+        }
+        assert!(RunConfig::try_from(accepted).is_ok(), "accepted {name}");
+
+        let mut rejected = raw_config();
+        rejected.limits.mutant_timeout = Some(Duration::from_secs(5));
+        let oversized = MAX_TIMEOUT + Duration::from_nanos(1);
+        match name {
+            "analyzer_timeout" => rejected.limits.analyzer_timeout = oversized,
+            "baseline_timeout" => rejected.limits.baseline_timeout = oversized,
+            "mutant_timeout" => rejected.limits.mutant_timeout = Some(oversized),
+            "total_timeout" => rejected.limits.total_timeout = oversized,
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            RunConfig::try_from(rejected),
+            Err(ConfigError::InvalidLimit(name)),
+            "rejected {name}"
+        );
+    }
+}
+
+#[test]
+fn raw_auto_mutant_timeout_bounds_the_derived_deadline() {
+    let maximum_baseline = MAX_TIMEOUT.checked_sub(Duration::from_secs(1)).unwrap() / 2;
+    assert_eq!(auto_mutant_timeout(maximum_baseline), MAX_TIMEOUT);
+
+    let mut accepted = raw_config();
+    accepted.limits.baseline_timeout = maximum_baseline;
+    accepted.limits.mutant_timeout = None;
+    assert!(RunConfig::try_from(accepted).is_ok());
+
+    let mut rejected = raw_config();
+    rejected.limits.baseline_timeout = maximum_baseline + Duration::from_nanos(1);
+    rejected.limits.mutant_timeout = None;
+    assert_eq!(
+        RunConfig::try_from(rejected),
+        Err(ConfigError::InvalidLimit("baseline_timeout"))
+    );
+}
+
+#[test]
+fn maximum_timeout_is_supported_by_standard_deadlines() {
+    assert!(std::time::Instant::now().checked_add(MAX_TIMEOUT).is_some());
 }
 
 #[test]

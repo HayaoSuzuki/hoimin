@@ -81,6 +81,72 @@ async fn invalid_clap_arguments_remain_on_stderr() {
 }
 
 #[tokio::test]
+async fn oversized_runtime_timeouts_are_rejected_before_project_execution() {
+    assert!(
+        tokio::time::Instant::now()
+            .checked_add(hoimin_core::MAX_TIMEOUT)
+            .is_some()
+    );
+
+    for flag in ["--total-timeout", "--mutant-timeout"] {
+        let directory = tempfile::tempdir().unwrap();
+        let marker = directory.path().join("test-command-ran");
+        let command = format!(
+            "from pathlib import Path; Path({:?}).write_text('ran')",
+            marker.to_string_lossy()
+        );
+        let root = fixture_root();
+        let python = python_executable();
+        let args = vec![
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            root.as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("src/calc.py"),
+            OsString::from(flag),
+            OsString::from("18446744073709551615s"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+            python.as_os_str().to_owned(),
+            OsString::from("-c"),
+            OsString::from(command),
+        ];
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let exit = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+
+        assert_eq!(exit, 2, "flag={flag}");
+        assert!(stdout.is_empty(), "flag={flag}");
+        let stderr = String::from_utf8(stderr).unwrap();
+        assert_eq!(
+            stderr,
+            format!("invalid zero or overflowing limit: {flag}\n")
+        );
+        assert!(!marker.exists(), "{flag} reached the test command");
+    }
+}
+
+#[tokio::test]
+async fn maximum_total_timeout_completes_without_overflowing_finalization_grace() {
+    let total_timeout = format!("{}s", hoimin_core::MAX_TIMEOUT.as_secs());
+    let run = run_fixture_options_extra(
+        &["-m", "unittest", "discover", "-s", "tests"],
+        None,
+        false,
+        &["--max-mutants", "1", "--total-timeout", &total_timeout],
+    )
+    .await;
+
+    assert_ne!(run.exit_code, 2, "stderr={}", run.stderr);
+    assert_eq!(
+        run.document["run"]["normalized_config"]["limits"]["total_timeout"]["secs"],
+        hoimin_core::MAX_TIMEOUT.as_secs()
+    );
+}
+
+#[tokio::test]
 async fn unittest_command_produces_the_expected_mutant_statuses() {
     let unittest = run_fixture(&["-m", "unittest", "discover", "-s", "tests"]).await;
 

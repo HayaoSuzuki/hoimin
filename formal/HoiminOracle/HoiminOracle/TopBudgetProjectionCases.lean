@@ -102,10 +102,10 @@ def cases : List OracleCase := [
   { schema := 1
     id := "duration_saturation"
     mode := "strict"
-    input := input 2 1 1 durationMax (.fixed durationMax)
+    input := input 10000000000 1 1 durationMax (.fixed 3153600000000000000)
     expected := {
-      effectiveMutantTimeout := durationMax
-      waves := 2
+      effectiveMutantTimeout := 3153600000000000000
+      waves := 10000000000
       projectedCapacity := durationMax
       shortfall := false } }
 ]
