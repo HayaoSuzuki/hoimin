@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make unchanged commits reproducible under an exact Rust 1.98.0 required-CI toolchain while preserving MSRV/nightly lanes and moving synchronous shell construction off Tokio's executor threads.
+**Goal:** Make unchanged commits reproducible under an exact Rust 1.98.0 ordinary-CI toolchain while preserving MSRV/nightly lanes and moving synchronous shell construction off Tokio's executor threads.
 
-**Architecture:** The repository root selects Rust 1.98.0, required jobs consume that selection, and a separate weekly workflow probes moving `stable`. `ShellContext::new` awaits a non-generic blocking preparation result, then attaches caller-owned writers on the async task; test-only immediate futures satisfy Rust 1.98 without changing the production trait.
+**Architecture:** The repository root selects Rust 1.98.0, every repository-toolchain job consumes that selection, and a separate weekly workflow probes moving `stable`. `ShellContext::new` awaits a non-generic blocking preparation result, then attaches caller-owned writers on the async task; test-only immediate futures satisfy Rust 1.98 without changing the production trait.
 
 **Tech Stack:** Rust 2024, Tokio 1.53, rustup, Clippy, GitHub Actions, Python 3.14 `unittest`, PyYAML, uv
 
@@ -19,7 +19,8 @@
 - Preserve `workspace.package.rust-version = "1.88"` and `nightly-2026-07-27`.
 - Add no dependency, public configuration field, report format, or release publication path.
 - Keep shell setup outside the run total-timeout interval.
-- Required CI uses exact Rust 1.98.0; only the canary uses moving `stable`.
+- Ordinary stable CI uses exact Rust 1.98.0; only the canary uses moving `stable`.
+- Treat “repository-toolchain job” as a compiler-selection category, not a claim about external GitHub branch-protection settings.
 - Follow RED, GREEN, refactor, focused verification, then commit for every task.
 
 ## File Map
@@ -30,18 +31,18 @@
 | `crates/hoimin-cli/src/report/mod.rs` | Separate non-generic report preparation from generic writer attachment. |
 | `crates/hoimin-cli/src/shell.rs` | Prepare synchronous shell infrastructure in `spawn_blocking` and test executor responsiveness. |
 | `rust-toolchain.toml` | Declare exact Rust 1.98.0, minimal profile, Clippy, and rustfmt. |
-| `.github/workflows/ci.yml` | Consume the repository toolchain in every ordinary required job. |
-| `.github/workflows/rust-stable-canary.yml` | Probe latest stable weekly without becoming a required check. |
-| `tests/test_ci_workflow.py` | Enforce toolchain, required-CI, canary, release, and documentation contracts. |
+| `.github/workflows/ci.yml` | Consume the repository toolchain in every ordinary stable job, including event-conditional jobs. |
+| `.github/workflows/rust-stable-canary.yml` | Probe latest stable weekly without a PR/push trigger or dependency from `ci.yml`. |
+| `tests/test_ci_workflow.py` | Enforce toolchain, ordinary-CI, canary, release, and documentation contracts. |
 | `docs/development.md` | Explain pinned stable updates separately from MSRV updates. |
 
 ## Spec-to-plan acceptance matrix
 
 | Specification contract | Implementation task | Executable or review evidence |
 | --- | --- | --- |
-| Exact Rust 1.98.0 for ordinary development and required CI | Task 4 | Parsed `rust-toolchain.toml`, exhaustive CI-job classification, install-before-use checks, Rustup resolution, Task 5 quality and test gates. |
+| Exact Rust 1.98.0 for ordinary development and repository-toolchain CI jobs | Task 4 | Parsed `rust-toolchain.toml`, exhaustive CI-job classification, install-before-use checks, Rustup resolution, Task 5 quality and test gates. |
 | Separate MSRV and pinned-nightly compatibility lanes | Task 4 | Exact `+1.88` and `+nightly-2026-07-27` workflow contracts; Task 5 runs both lanes. |
-| Moving stable is visible but cannot change required results | Task 4 | Exact canary trigger, permission, action, environment, and command structure; required CI contains no canary dependency or `+stable`. |
+| Moving stable is visible but cannot change ordinary-CI results | Task 4 | Exact canary trigger, permission, action, environment, and command structure; `ci.yml` contains no canary dependency or `+stable`. |
 | Release wheels consume the repository pin without changing publication policy | Task 4 | Existing exact artifact-only release contract, pinned `maturin-action` SHA, absence of a release toolchain input, and the pinned action-source behavior recorded in the spec. |
 | `ShellContext::new(...).await` remains public and keeps non-`Send`, non-`'static` writers | Task 3 | Compile-time borrowed-`Rc` writer characterization plus unchanged signature and focused constructor tests. |
 | Synchronous setup leaves Tokio's executor thread | Task 3 | Current-thread heartbeat regression, join-failure regression, manual inline counterfactual, and focused generated mutations. |
@@ -595,7 +596,7 @@ git commit -m "fix(shell): offload context setup"
 
 ---
 
-### Task 4: Pin required Rust and add an isolated latest-stable canary
+### Task 4: Pin ordinary CI Rust and add an isolated latest-stable canary
 
 **Files:**
 - Create: `rust-toolchain.toml`
@@ -660,14 +661,14 @@ class RepositoryRustToolchainContractTests(unittest.TestCase):
         )
 ```
 
-- [ ] **Step 2: Add exhaustive required-job classification and ordering**
+- [ ] **Step 2: Add exhaustive Rust-job classification and ordering**
 
 Add a separate contract class:
 
 ```python
-class RequiredRustJobContractTests(unittest.TestCase):
+class CiRustJobContractTests(unittest.TestCase):
 
-    def test_required_jobs_install_only_the_repository_toolchain(self) -> None:
+    def test_rust_jobs_install_only_their_classified_toolchain(self) -> None:
         workflow = CI_WORKFLOW.read_text(encoding="utf-8")
         decoded = yaml.safe_load(workflow)
 
@@ -873,7 +874,7 @@ profile = "minimal"
 components = ["clippy", "rustfmt"]
 ```
 
-- [ ] **Step 7: Make ordinary required jobs consume the repository declaration**
+- [ ] **Step 7: Make repository-toolchain jobs consume the repository declaration**
 
 In each job named in `REPOSITORY_RUST_JOBS`, replace the two-line rolling install/default block with:
 
@@ -937,7 +938,7 @@ Insert this section before `## Minimum supported Rust version` in `docs/developm
 ## Pinned Rust toolchain
 
 The repository root `rust-toolchain.toml` pins the Rust 1.98.0 compiler and the
-Clippy and rustfmt components used by local development, required CI, and
+Clippy and rustfmt components used by local development, ordinary CI, and
 release builds. Run ordinary `cargo` commands from the repository root; do not
 set a global default toolchain for this project.
 
@@ -1008,6 +1009,14 @@ git commit -m "ci: pin Rust toolchain and add stable canary"
 - Consumes: all deliverables from Tasks 1-4.
 - Produces: local cross-toolchain, full-workspace, independent-E2E, workflow-contract, scope-isolation, and focused mutation evidence.
 
+**Evidence boundary:** Steps 1-8 are evidence from the executor's current
+Windows host plus static workflow contracts. They do not prove that hosted
+Ubuntu/macOS matrices, the event-conditional self-hosted cgroup job, a tag-only
+release, or the first scheduled canary actually ran. Record those later Actions
+results separately and do not label them PASS from local evidence. The release
+contract before a tag consists of the exact workflow test, the pinned-action
+source audit in the spec, and the local wheel build/smoke result.
+
 - [ ] **Step 1: Run formatting, exact quality, MSRV, and workflow contracts**
 
 Run:
@@ -1030,7 +1039,7 @@ cargo +1.98.0 test --workspace
 cargo +1.98.0 test -p hoimin-cli --test run_e2e
 ```
 
-Expected: both PASS. The second command is intentionally independent, matching required CI; it is not a retry of a failed command.
+Expected: both PASS. The second command is intentionally independent, matching the ordinary test job; it is not a retry of a failed command.
 
 - [ ] **Step 3: Run contracts and the pinned randomized-order lane**
 
@@ -1146,4 +1155,8 @@ Run:
 git log --oneline origin/main..HEAD
 ```
 
-Expected: the two design-document commits, the implementation-plan commits, and the four implementation commits from Tasks 1-4. Verification must not create an empty commit.
+Expected: the log contains the reviewed specification/plan history followed by
+the four implementation commits from Tasks 1-4, with no implementation commit
+outside the File Map. Do not assert a fixed count for documentation-review
+commits: this plan intentionally preserves their audit history. Verification
+must not create an empty commit.

@@ -5,8 +5,10 @@
 The push of `6682a2cfc9af04eb1693dca7d2500899d1a7245a` failed before any Rust test
 job ran. All three quality jobs installed the moving `stable` channel, received
 Rust 1.98.0, and failed on the new `clippy::unused_async_trait_impl` lint. The
-same source passed the quality gate on Rust 1.97.1. A required CI result can
-therefore change without a source or dependency change.
+[cited macOS job](https://github.com/tokyogas-tech/hoimin/actions/runs/32644139281/job/97205635658)
+records the same commit, Rust 1.98.0, and exactly the three diagnostics described
+below. The same source passed the quality gate on Rust 1.97.1. An ordinary CI
+result can therefore change without a source or dependency change.
 
 The new diagnostic also exposes two different code conditions that must not be
 handled as one mechanical lint edit:
@@ -23,10 +25,11 @@ work is not evidence for the Rust 1.98 failure and is excluded from this design.
 
 ## Goals
 
-- Make required CI and release builds use one repository-pinned stable Rust
+- Make ordinary stable CI and release builds use one repository-pinned stable Rust
   toolchain.
 - Keep current-stable compatibility visible without letting an unreviewed
-  toolchain release change required results underneath an unchanged commit.
+  toolchain release change ordinary stable results underneath an unchanged
+  commit.
 - Pass the Rust 1.98 quality gate without lint suppression, dummy awaits, or a
   downgrade to Rust 1.97.
 - Preserve the public `ShellContext::new(...).await` call contract while making
@@ -50,16 +53,16 @@ work is not evidence for the Rust 1.98 failure and is excluded from this design.
 
 The repository gains a root `rust-toolchain.toml` with an exact `1.98.0`
 channel, the minimal profile, and the `clippy` and `rustfmt` components. This is
-the single stable development and required-CI toolchain declaration. Normal
+the single stable development and ordinary-CI toolchain declaration. Normal
 `cargo` and `rustup` commands run from the repository resolve that override
 without a mutable channel name, unless a developer deliberately supplies a
 higher-precedence command-line selector or `RUSTUP_TOOLCHAIN` environment
 override.
 
-Required jobs in `.github/workflows/ci.yml` install the active repository
-toolchain with `rustup toolchain install`; they do not name `stable` and do not
-change the user's default toolchain. Commands continue to omit a `+toolchain`
-selector and therefore use the repository override. The pinned
+Every repository-toolchain job in `.github/workflows/ci.yml` installs the
+active repository toolchain with `rustup toolchain install`; they do not name
+`stable` and do not change the user's default toolchain. Commands continue to
+omit a `+toolchain` selector and therefore use the repository override. The pinned
 `maturin-action` resolves the nearest `rust-toolchain.toml` before installing
 Rust, so release builds use the same channel without changing the release
 workflow shape. At the pinned
@@ -75,6 +78,13 @@ three paths in the pinned source before changing the workflow contract. A
 release tag therefore cannot silently select a newer compiler than the commit
 was tested with.
 
+In this document, a *repository-toolchain job* means a job in `ci.yml` that uses
+the ordinary stable compiler rather than the explicit MSRV or nightly selector.
+That set includes the event-conditional cgroup job. It does not mean that every
+such job is configured as a GitHub branch-protection required check; branch
+protection and repository rulesets are external state and are not inferred from
+workflow YAML.
+
 The two compatibility lanes remain explicit exceptions:
 
 - the MSRV job installs and invokes `+1.88`, matching
@@ -84,7 +94,7 @@ The two compatibility lanes remain explicit exceptions:
 
 The development guide distinguishes the pinned current toolchain from the
 MSRV. Updating the pinned compiler is a reviewed maintenance change: update
-`rust-toolchain.toml`, resolve its diagnostics, and run the complete required
+`rust-toolchain.toml`, resolve its diagnostics, and run the complete ordinary
 gate in one pull request. Raising the MSRV remains a separate decision and
 continues to require the existing manifest, workflow, test, and documentation
 updates.
@@ -94,21 +104,24 @@ updates.
 A separate `.github/workflows/rust-stable-canary.yml` runs at 03:00 UTC every
 Monday (`0 3 * * 1`) and on `workflow_dispatch`. It has read-only contents
 permission and runs on Ubuntu. It uses the same commit-pinned checkout,
-Python 3.14, and uv setup actions as required CI, runs `uv sync --frozen`, and
-installs `stable` with the minimal profile plus the `rustfmt` and `clippy`
-components. The validation commands select the canary toolchain explicitly:
+Python 3.14, and uv setup actions as the ordinary test jobs, runs
+`uv sync --frozen`, and installs `stable` with the minimal profile plus the
+`rustfmt` and `clippy` components. The validation commands select the canary
+toolchain explicitly:
 
 - `cargo +stable fmt --all -- --check`;
 - `cargo +stable clippy --workspace --all-targets --all-features -- -D warnings`;
 - `cargo +stable test --workspace`.
 
 The Python environment is not incidental: workspace tests exercise Python-backed
-paths, so a canary that omitted the required CI setup would measure a different
-system. The canary is not triggered by pull requests or pushes and is not a
-dependency of required CI jobs. It is also not added to branch protection. A new
-Rust release can therefore produce a visible failed canary without retroactively
-making an unchanged main commit fail its required checks. The resolution is a
-normal toolchain-update pull request, not a retry or an emergency downgrade.
+paths, so a canary that omitted that setup would measure a different system. The
+canary is not triggered by pull requests or pushes and is not a dependency of
+any `ci.yml` job. The workflow design does not require its check name in branch
+protection; because that setting is external to this diff, it must be reviewed
+separately if repository rules change. A new Rust release can therefore produce
+a visible failed canary without changing the result of an unchanged ordinary-CI
+commit. The resolution is a normal toolchain-update pull request, not a retry or
+an emergency downgrade.
 
 ## Shell setup boundary
 
@@ -195,7 +208,7 @@ stable-toolchain contracts:
   components;
 - reject mutable `stable` installation, `rustup default`, `rustup override`,
   `rustup run`, `rustup update`, an alternate toolchain setup action, or a
-  `RUSTUP_TOOLCHAIN` environment override in required CI;
+  `RUSTUP_TOOLCHAIN` environment override in repository-toolchain CI jobs;
 - require ordinary jobs to use the repository toolchain while preserving the
   explicit MSRV and nightly selectors, and reject an unnecessary `+stable`
   selector that would bypass the exact repository pin;
@@ -205,7 +218,7 @@ stable-toolchain contracts:
 - parse the canary workflow and require only `schedule` and
   `workflow_dispatch` triggers, read-only permissions, commit-pinned setup
   actions, Python and uv environment parity, the required stable components,
-  explicit `+stable` commands, and no dependency from required CI;
+  explicit `+stable` commands, and no dependency from `ci.yml`;
 - preserve the release workflow's exact artifact-only contract and reject a
   release-specific Rust selector that could override the repository pin;
 - require the development guide to describe deliberate pinned-toolchain
@@ -214,7 +227,7 @@ stable-toolchain contracts:
   wheel-gate commands; the MSRV and nightly commands remain in their separate
   compatibility sections.
 
-These tests prevent the repository declaration, required workflow, canary, and
+These tests prevent the repository declaration, ordinary CI workflow, canary, and
 documentation from drifting independently.
 
 ## Test strategy
@@ -272,10 +285,16 @@ uvx maturin build --release
 uv run --frozen python tests/wheel_smoke.py
 ```
 
-Required CI must then pass on Ubuntu, Windows, and macOS using the pinned
-toolchain. The canary workflow is validated structurally in this change; its
-first scheduled or manually dispatched result is follow-up evidence rather
-than a prerequisite for merging the required-CI repair.
+The hosted quality and test matrices must then pass on Ubuntu, Windows, and
+macOS using the pinned toolchain before cross-platform success is claimed.
+Local Windows verification cannot establish those hosted results. The
+event-conditional self-hosted cgroup job is covered by workflow structure and
+its next eligible main-push run, not by pretending it ran on a pull request.
+Likewise, the tag-only release action is supported before a release by its exact
+workflow contract, the pinned action-source audit above, and local wheel smoke;
+an actual tag build remains release evidence. The canary workflow is validated
+structurally in this change, while its first scheduled or manually dispatched
+result is follow-up evidence rather than a prerequisite for merging the repair.
 
 Focused generated mutation testing covers the two new, uniquely named
 production setup helpers, `prepare_shell_setup` and
@@ -312,7 +331,7 @@ problem. It neither validates current Rust nor repairs the async boundary.
 
 ### Fix the three diagnostics but keep rolling `stable`
 
-This makes the cited run green but leaves required results dependent on release
+This makes the cited run green but leaves ordinary stable results dependent on release
 date. Another lint, formatter, or compiler change can break unchanged main in
 the same way.
 
