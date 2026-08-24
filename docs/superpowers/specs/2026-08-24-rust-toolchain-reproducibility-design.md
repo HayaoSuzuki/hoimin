@@ -50,6 +50,10 @@ work is not evidence for the Rust 1.98 failure and is excluded from this design.
 - Changing Windows process/resource production behavior or weakening a Windows
   assertion. The root-path fixture may use a junction when symlink creation is
   unavailable, while exercising the same linked-parent rejection invariant.
+  Real-process integration fixtures may use one absolute six-second test
+  deadline so readiness is established before cancellation, close, or
+  classification is triggered; production timeout and cleanup semantics remain
+  unchanged.
 - Suppressing `clippy::unused_async_trait_impl` locally or globally.
 - Automatically merging toolchain updates.
 
@@ -334,9 +338,14 @@ or test scheduling. Two reviewed implementation-time exceptions are included:
 - `tests/run_e2e.rs` changes exactly two `ok().is_some_and(...)` expressions to
   `is_ok_and(...)` to satisfy Rust 1.98 Clippy, without changing waits,
   deadlines, shutdown logic, or test scheduling.
+- `tests/process_handler.rs` gives real-process fixtures one absolute six-second
+  test deadline. Operations controlled by the test wait for the child PID
+  readiness event before firing. Timeout fixtures use a five-second process
+  budget inside that deadline so Python startup is a precondition rather than
+  an accidental one-second race; the asserted 900ms cleanup bound is unchanged.
 
-Neither exception implements the earlier Job Object hypothesis or changes
-Windows runtime behavior.
+None of these exceptions implements the earlier Job Object hypothesis or
+changes Windows runtime behavior.
 
 The abandoned uncommitted Windows stabilization spec, plan, and code are not
 carried into this branch. After this prerequisite is merged and main is green,

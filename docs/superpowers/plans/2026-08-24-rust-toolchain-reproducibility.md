@@ -14,7 +14,7 @@
 
 - Work only on `fix/rust-1.98-ci`, which was created from `origin/main` without an upstream; do not change any remote branch.
 - Do not touch the existing untracked `.idea/` directory.
-- Do not modify `crates/hoimin-cli/src/resource/windows.rs`, `crates/hoimin-cli/src/resource/suspended.rs`, timeout values, retries, or test scheduling. Reviewed exceptions are limited to the test-only junction fallback in `workspace/root.rs` and exactly two Rust 1.98 lint-only `is_ok_and` rewrites in `tests/run_e2e.rs`.
+- Do not modify `crates/hoimin-cli/src/resource/windows.rs`, `crates/hoimin-cli/src/resource/suspended.rs`, production timeout values, retries, or test scheduling. Reviewed test-only exceptions are the junction fallback in `workspace/root.rs`, exactly two Rust 1.98 lint-only `is_ok_and` rewrites in `tests/run_e2e.rs`, and the absolute real-process fixture deadline in `tests/process_handler.rs`.
 - Preserve the public `ShellContext::new(&RunConfig, Stdout, Stderr).await -> Result<Self, String>` contract and do not add `Send + 'static` bounds to `Stdout` or `Stderr`.
 - Preserve `workspace.package.rust-version = "1.88"` and `nightly-2026-07-27`.
 - Add no dependency, public configuration field, report format, or release publication path.
@@ -37,6 +37,7 @@
 | `docs/development.md` | Explain pinned stable updates separately from MSRV updates. |
 | `crates/hoimin-cli/src/workspace/root.rs` | Keep the linked-parent Windows regression active without requiring symlink privilege by using a junction fallback in the test fixture only. |
 | `crates/hoimin-cli/tests/run_e2e.rs` | Apply exactly two mechanical `Result::is_ok_and` Rust 1.98 lint fixes; do not alter waits, deadlines, or shutdown behavior. |
+| `crates/hoimin-cli/tests/process_handler.rs` | Establish real child PID readiness before test-controlled termination and keep readiness plus cleanup within one absolute six-second fixture deadline. |
 
 ## Spec-to-plan acceptance matrix
 
@@ -71,6 +72,17 @@ RED is the unfiltered focused test failing at fixture construction. GREEN is the
 same test passing through the junction while still rejecting the linked parent.
 Then run the complete unfiltered Rust 1.98 workspace suite. Commit separately as
 `fix(test): fall back to Windows junctions`.
+
+The first unfiltered workspace and CLI-contract runs then exposed the same
+independent readiness race in two real-process tests: the one-second timeout
+fixture and Job Object close could terminate the root before its Python child
+wrote the PID file. Add a shared readiness helper and one absolute six-second
+deadline per affected test. Cancellation, close, and classification wait for
+the PID event before firing. Timeout fixtures use a five-second process budget
+inside the same deadline while retaining the 900ms cleanup assertion. Do not
+add retries, sleeps, serialization, or production resource changes. Require the
+two observed regressions to pass 20 consecutive local runs each, then commit as
+`fix(test): await real process fixture readiness`.
 
 ---
 
@@ -1172,7 +1184,7 @@ rg -n "ShellContext::new\(&config|let deadline = tokio::time::Instant::now\(\) \
 git status --short --branch
 ```
 
-Expected: changed paths are limited to the spec, this plan, and the ten implementation files in the File Map. The `shell.rs` function-context diff contains only the import, prepared setup, constructor, and focused tests. In `run_loop_prepared`, the `ShellContext::new` await remains before the single total-timeout deadline construction. There are no changes to the run-loop body or Windows resource production files. `workspace/root.rs` changes only its test fixture; `run_e2e.rs` contains exactly the two approved lint-only expressions and no timing or shutdown change. `.idea/` remains the sole unrelated untracked path; the status line is `## fix/rust-1.98-ci` with no upstream annotation.
+Expected: changed paths are limited to the spec, this plan, and the eleven implementation files in the File Map. The `shell.rs` function-context diff contains only the import, prepared setup, constructor, and focused tests. In `run_loop_prepared`, the `ShellContext::new` await remains before the single total-timeout deadline construction. There are no changes to the run-loop body or Windows resource production files. `workspace/root.rs` changes only its test fixture; `run_e2e.rs` contains exactly the two approved lint-only expressions and no timing or shutdown change; `process_handler.rs` changes only real-process fixture coordination and retains its 900ms cleanup assertions. `.idea/` remains the sole unrelated untracked path; the status line is `## fix/rust-1.98-ci` with no upstream annotation.
 
 - [ ] **Step 9: Confirm the final commit set without creating a verification-only commit**
 
@@ -1183,9 +1195,9 @@ git log --oneline origin/main..HEAD
 ```
 
 Expected: the log contains the reviewed specification/plan history followed by
-the six implementation commits from Tasks 0-4: junction fixture, output test
+the seven implementation commits from Tasks 0-4: junction fixture, output test
 double, report preparation, two E2E lint expressions, shell setup, and toolchain
-CI. Every implementation commit remains inside the revised File Map. Do not
+CI, plus real-process fixture readiness. Every implementation commit remains inside the revised File Map. Do not
 assert a fixed count for documentation-review
 commits: this plan intentionally preserves their audit history. Verification
 must not create an empty commit.
