@@ -1394,10 +1394,33 @@ mod tests {
             }
             #[cfg(windows)]
             {
-                std::os::windows::fs::symlink_dir(
-                    self.worker.parent().unwrap().join(target),
-                    self.worker.join(link),
-                )
+                let target = self.worker.parent().unwrap().join(target);
+                let link = self.worker.join(link);
+                match std::os::windows::fs::symlink_dir(&target, &link) {
+                    Ok(()) => Ok(()),
+                    Err(error)
+                        if error.kind() == std::io::ErrorKind::PermissionDenied
+                            || error.kind() == std::io::ErrorKind::Unsupported
+                            || error.raw_os_error() == Some(1314) =>
+                    {
+                        let output = std::process::Command::new("cmd")
+                            .arg("/C")
+                            .arg("mklink")
+                            .arg("/J")
+                            .arg(&link)
+                            .arg(&target)
+                            .output()?;
+                        if output.status.success() {
+                            Ok(())
+                        } else {
+                            Err(std::io::Error::other(format!(
+                                "failed to create Windows test junction: {}",
+                                String::from_utf8_lossy(&output.stderr)
+                            )))
+                        }
+                    }
+                    Err(error) => Err(error),
+                }
             }
         }
 
