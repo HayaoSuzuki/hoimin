@@ -343,6 +343,10 @@ or test scheduling. Two reviewed implementation-time exceptions are included:
   readiness event before firing. Timeout fixtures use a five-second process
   budget inside that deadline so Python startup is a precondition rather than
   an accidental one-second race; the asserted 900ms cleanup bound is unchanged.
+- `tests/test_ranked_plan_docs.py` reads the UTF-8 README explicitly instead of
+  depending on the Windows ANSI code page, and `tests/test_wheel_smoke.py`
+  distinguishes the development guide's new `uvx maturin` command from the
+  unchanged README command.
 
 None of these exceptions implements the earlier Job Object hypothesis or
 changes Windows runtime behavior.

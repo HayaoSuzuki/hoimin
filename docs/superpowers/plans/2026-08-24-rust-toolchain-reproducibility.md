@@ -38,6 +38,8 @@
 | `crates/hoimin-cli/src/workspace/root.rs` | Keep the linked-parent Windows regression active without requiring symlink privilege by using a junction fallback in the test fixture only. |
 | `crates/hoimin-cli/tests/run_e2e.rs` | Apply exactly two mechanical `Result::is_ok_and` Rust 1.98 lint fixes; do not alter waits, deadlines, or shutdown behavior. |
 | `crates/hoimin-cli/tests/process_handler.rs` | Establish real child PID readiness before test-controlled termination and keep readiness plus cleanup within one absolute six-second fixture deadline. |
+| `tests/test_ranked_plan_docs.py` | Read the UTF-8 README with an explicit encoding on Windows. |
+| `tests/test_wheel_smoke.py` | Keep the development-guide `uvx maturin` contract distinct from the unchanged README command. |
 
 ## Spec-to-plan acceptance matrix
 
@@ -83,6 +85,13 @@ inside the same deadline while retaining the 900ms cleanup assertion. Do not
 add retries, sleeps, serialization, or production resource changes. Require the
 two observed regressions to pass 20 consecutive local runs each, then commit as
 `fix(test): await real process fixture readiness`.
+
+The full Python discovery run must also execute under the Windows locale. If it
+exposes an implicit cp932 README read or a stale `uv run maturin` expectation,
+make the encoding explicit and split the development-guide and README command
+expectations without editing README. Require the focused tests and all Python
+contracts to pass, then commit as `fix(test): make Windows docs contracts
+explicit`.
 
 ---
 
@@ -1184,7 +1193,7 @@ rg -n "ShellContext::new\(&config|let deadline = tokio::time::Instant::now\(\) \
 git status --short --branch
 ```
 
-Expected: changed paths are limited to the spec, this plan, and the eleven implementation files in the File Map. The `shell.rs` function-context diff contains only the import, prepared setup, constructor, and focused tests. In `run_loop_prepared`, the `ShellContext::new` await remains before the single total-timeout deadline construction. There are no changes to the run-loop body or Windows resource production files. `workspace/root.rs` changes only its test fixture; `run_e2e.rs` contains exactly the two approved lint-only expressions and no timing or shutdown change; `process_handler.rs` changes only real-process fixture coordination and retains its 900ms cleanup assertions. `.idea/` remains the sole unrelated untracked path; the status line is `## fix/rust-1.98-ci` with no upstream annotation.
+Expected: changed paths are limited to the spec, this plan, and the thirteen implementation files in the File Map. The `shell.rs` function-context diff contains only the import, prepared setup, constructor, and focused tests. In `run_loop_prepared`, the `ShellContext::new` await remains before the single total-timeout deadline construction. There are no changes to the run-loop body or Windows resource production files. `workspace/root.rs` changes only its test fixture; `run_e2e.rs` contains exactly the two approved lint-only expressions and no timing or shutdown change; `process_handler.rs` changes only real-process fixture coordination and retains its 900ms cleanup assertions. The two additional Python test files only make Windows encoding and the documented build-command contracts explicit. `.idea/` remains the sole unrelated untracked path; the status line is `## fix/rust-1.98-ci` with no upstream annotation.
 
 - [ ] **Step 9: Confirm the final commit set without creating a verification-only commit**
 
@@ -1195,9 +1204,9 @@ git log --oneline origin/main..HEAD
 ```
 
 Expected: the log contains the reviewed specification/plan history followed by
-the seven implementation commits from Tasks 0-4: junction fixture, output test
+the eight implementation commits from Tasks 0-4: junction fixture, output test
 double, report preparation, two E2E lint expressions, shell setup, and toolchain
-CI, plus real-process fixture readiness. Every implementation commit remains inside the revised File Map. Do not
+CI, plus real-process fixture readiness and Windows Python contract fixes. Every implementation commit remains inside the revised File Map. Do not
 assert a fixed count for documentation-review
 commits: this plan intentionally preserves their audit history. Verification
 must not create an empty commit.
