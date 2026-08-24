@@ -53,7 +53,10 @@ work is not evidence for the Rust 1.98 failure and is excluded from this design.
   Real-process integration fixtures may use one absolute six-second test
   deadline so readiness is established before cancellation, close, or
   classification is triggered; production timeout and cleanup semantics remain
-  unchanged.
+  unchanged. The locked-session E2E fixture may select only the arithmetic
+  operator needed by its scenario and measure its test deadline from the
+  observed `mutant_started` event; its five-second production total timeout and
+  shutdown behavior remain unchanged.
 - Suppressing `clippy::unused_async_trait_impl` locally or globally.
 - Automatically merging toolchain updates.
 
@@ -330,14 +333,17 @@ Workflow and test-only changes have no Rust production mutation requirement.
 This design is implemented on `fix/rust-1.98-ci`, created from `origin/main`
 without tracking `origin/main`. Its diff must not contain changes to
 `resource/windows.rs`, `resource/suspended.rs`, Windows timeout values, retries,
-or test scheduling. Two reviewed implementation-time exceptions are included:
+or test scheduling. Four reviewed implementation-time exceptions are included:
 
 - `workspace/root.rs` changes only the Windows test fixture, falling back from
   a directory symlink to a junction when error 1314 shows that the host lacks
   symlink privilege; the same linked-parent rejection assertion remains active;
-- `tests/run_e2e.rs` changes exactly two `ok().is_some_and(...)` expressions to
-  `is_ok_and(...)` to satisfy Rust 1.98 Clippy, without changing waits,
-  deadlines, shutdown logic, or test scheduling.
+- `tests/run_e2e.rs` changes two `ok().is_some_and(...)` expressions to
+  `is_ok_and(...)` for Rust 1.98 Clippy. Its locked-session timeout fixture also
+  selects only `binary_add_sub`, records the absolute assertion deadline when
+  `mutant_started` is observed, and verifies that the hoimin child is still
+  running when the session lock is retained. The production five-second total
+  timeout, retry policy, shutdown logic, and test scheduling are unchanged.
 - `tests/process_handler.rs` gives real-process fixtures one absolute six-second
   test deadline. Operations controlled by the test wait for the child PID
   readiness event before firing. Timeout fixtures use a five-second process
