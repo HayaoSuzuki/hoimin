@@ -22,7 +22,7 @@ use uuid::Uuid;
 use crate::analyzer::{AnalyzerHandler, CandidateStore};
 use crate::metrics::{MetricsCollector, MetricsError, finalize_metrics};
 use crate::process::{ProcessCancellation, ProcessHandler, ProcessRequest, ProcessStartGate};
-use crate::report::ReportHandler;
+use crate::report::{PreparedReport, ReportHandler};
 #[cfg(not(any(windows, target_os = "linux")))]
 use crate::resource::PortableBackend;
 use crate::resource::ResourceBackend;
@@ -681,6 +681,70 @@ where
     }
 }
 
+struct PreparedShellSetup {
+    workspace: WorkspaceHandler,
+    analyzer: AnalyzerHandler,
+    process: Arc<ProcessHandler>,
+    report: PreparedReport,
+    spool_dir: Arc<TempDir>,
+    config: RunConfig,
+}
+
+async fn prepare_shell_setup(
+    config: RunConfig,
+    before_start: OwnedStartHook,
+) -> Result<PreparedShellSetup, String> {
+    tokio::task::spawn_blocking(move || {
+        before_start();
+        prepare_shell_setup_sync(config)
+    })
+    .await
+    .map_err(|error| format!("shell setup task failed: {error}"))?
+}
+
+fn prepare_shell_setup_sync(config: RunConfig) -> Result<PreparedShellSetup, String> {
+    let spool_dir = Arc::new(tempfile::tempdir().map_err(|error| error.to_string())?);
+    let spool_path = Utf8PathBuf::from_path_buf(spool_dir.path().to_owned())
+        .map_err(|_| "temporary spool path is not UTF-8".to_owned())?;
+    std::fs::create_dir_all(spool_path.join("report")).map_err(|error| error.to_string())?;
+    let requested_workers = u32::try_from(config.limits.jobs.get())
+        .map_err(|_| "--jobs exceeds the supported worker count".to_owned())?;
+    let workspace = WorkspaceHandler::new(
+        config.root.clone(),
+        config.selection.sources.clone(),
+        requested_workers,
+        CopyOptions {
+            includes: config.selection.includes.clone(),
+            excludes: config.selection.excludes.clone(),
+        },
+    );
+    let backend = resource_backend(&config).map_err(|error| error.to_string())?;
+    let process = Arc::new(ProcessHandler::new(
+        backend.clone(),
+        spool_path.join("process"),
+    ));
+    let analyzer = AnalyzerHandler::with_backend(
+        config.root.clone(),
+        backend,
+        config.limits.max_memory.get(),
+        u32::try_from(config.limits.max_processes.get())
+            .map_err(|_| "--max-processes exceeds the supported process count".to_owned())?,
+    )
+    .map_err(|error| error.to_string())?
+    .with_candidate_spool_owner(spool_dir.clone());
+    let report = PreparedReport::new(config.output.format, spool_path.join("report"))
+        .map_err(|error| error.to_string())?;
+
+    Ok(PreparedShellSetup {
+        workspace,
+        analyzer,
+        process,
+        report,
+        spool_dir,
+        config,
+    })
+}
+
 pub struct ShellContext<Stdout, Stderr> {
     workspace: Option<WorkspaceHandler>,
     analyzer: AnalyzerHandler,
@@ -706,59 +770,28 @@ where
     /// # Errors
     ///
     /// Returns an error when local run infrastructure cannot be initialized.
-    #[expect(
-        clippy::unused_async,
-        reason = "the constructor remains asynchronous for compatibility with the run infrastructure API"
-    )]
     pub async fn new(config: &RunConfig, stdout: Stdout, stderr: Stderr) -> Result<Self, String> {
-        let spool_dir = Arc::new(tempfile::tempdir().map_err(|error| error.to_string())?);
-        let spool_path = Utf8PathBuf::from_path_buf(spool_dir.path().to_owned())
-            .map_err(|_| "temporary spool path is not UTF-8".to_owned())?;
-        std::fs::create_dir_all(spool_path.join("report")).map_err(|error| error.to_string())?;
-        let source_roots = config.selection.sources.clone();
-        let requested_workers = u32::try_from(config.limits.jobs.get())
-            .map_err(|_| "--jobs exceeds the supported worker count".to_owned())?;
-        let workspace = WorkspaceHandler::new(
-            config.root.clone(),
-            source_roots,
-            requested_workers,
-            CopyOptions {
-                includes: config.selection.includes.clone(),
-                excludes: config.selection.excludes.clone(),
-            },
-        );
-        let backend = resource_backend(config).map_err(|error| error.to_string())?;
-        let process = Arc::new(ProcessHandler::new(
-            backend.clone(),
-            spool_path.join("process"),
-        ));
-        let analyzer = AnalyzerHandler::with_backend(
-            config.root.clone(),
-            backend,
-            config.limits.max_memory.get(),
-            u32::try_from(config.limits.max_processes.get())
-                .map_err(|_| "--max-processes exceeds the supported process count".to_owned())?,
-        )
-        .map_err(|error| error.to_string())?
-        .with_candidate_spool_owner(spool_dir.clone());
-        let report = ReportHandler::new(
-            config.output.format,
-            stdout,
-            stderr,
-            spool_path.join("report"),
-        )
-        .map_err(|error| error.to_string())?;
+        let PreparedShellSetup {
+            workspace,
+            analyzer,
+            process,
+            report,
+            spool_dir,
+            config,
+        } = prepare_shell_setup(config.clone(), Box::new(|| {})).await?;
+        let session_path = config.session.as_ref().map(|value| value.path.clone());
+
         Ok(Self {
             workspace: Some(workspace),
             analyzer,
             process,
-            report,
+            report: report.attach(stdout, stderr),
             session: None,
-            session_path: config.session.as_ref().map(|value| value.path.clone()),
+            session_path,
             active_candidates: BTreeMap::new(),
             _spool_dir: spool_dir,
             resolved_targets: None,
-            config: config.clone(),
+            config,
             fingerprint_copy_inputs: BTreeSet::new(),
             report_versions: ReportVersions {
                 os: std::env::consts::OS.to_owned(),
@@ -2788,6 +2821,108 @@ mod tests {
             OsString::from("/C"),
             OsString::from("exit 0"),
         ]
+    }
+
+    fn shell_setup_test_config(project: &TempDir) -> RunConfig {
+        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
+        crate::cli::parse_config_from([
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+            OsString::from("unused-test-command"),
+        ])
+        .unwrap()
+    }
+
+    struct BorrowedNonSendWriter<'a> {
+        buffer: &'a mut Vec<u8>,
+        _not_send: std::rc::Rc<()>,
+    }
+
+    impl std::io::Write for BorrowedNonSendWriter<'_> {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.buffer.extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn shell_context_constructor_accepts_borrowed_non_send_writers() {
+        let project = tempfile::tempdir().unwrap();
+        let config = shell_setup_test_config(&project);
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let future = ShellContext::new(
+            &config,
+            BorrowedNonSendWriter {
+                buffer: &mut stdout,
+                _not_send: std::rc::Rc::new(()),
+            },
+            BorrowedNonSendWriter {
+                buffer: &mut stderr,
+                _not_send: std::rc::Rc::new(()),
+            },
+        );
+
+        drop(future);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn shell_setup_does_not_block_the_async_runtime() {
+        let project = tempfile::tempdir().unwrap();
+        let config = shell_setup_test_config(&project);
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
+        let (heartbeat_tx, heartbeat_rx) = std::sync::mpsc::channel();
+        let controller = std::thread::spawn(move || {
+            entered_rx.recv_timeout(Duration::from_secs(4)).unwrap();
+            let observed = heartbeat_rx.recv_timeout(Duration::from_secs(1)).is_ok();
+            release_tx.send(()).unwrap();
+            observed
+        });
+        let before_start: OwnedStartHook = Box::new(move || {
+            entered_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+        });
+        let heartbeat = async move {
+            tokio::task::yield_now().await;
+            let _ = heartbeat_tx.send(());
+        };
+
+        let (prepared, ()) = tokio::time::timeout(Duration::from_secs(6), async {
+            tokio::join!(prepare_shell_setup(config, before_start), heartbeat)
+        })
+        .await
+        .expect("shell setup regression must remain bounded");
+
+        drop(prepared.unwrap());
+        assert!(
+            controller.join().unwrap(),
+            "shell setup blocked the runtime until its blocking work was released"
+        );
+    }
+
+    #[tokio::test]
+    async fn shell_setup_panic_is_reported_as_a_setup_join_failure() {
+        let project = tempfile::tempdir().unwrap();
+        let config = shell_setup_test_config(&project);
+        let result =
+            prepare_shell_setup(config, Box::new(|| panic!("controlled shell setup panic"))).await;
+        let Err(error) = result else {
+            panic!("controlled setup panic unexpectedly succeeded");
+        };
+
+        assert!(error.starts_with("shell setup task failed:"), "{error}");
+        assert!(error.contains("controlled shell setup panic"), "{error}");
     }
 
     fn process_effect(worker: u32) -> RunEffect {
