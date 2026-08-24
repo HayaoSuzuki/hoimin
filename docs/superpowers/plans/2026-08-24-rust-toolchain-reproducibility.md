@@ -46,7 +46,18 @@
 - Consumes: the existing private `OutputSink` async trait.
 - Produces: `FirstWriteFails::write_ring` as an immediate `Ready` future and `FirstWriteFails::finalize` as a deferred `poll_fn` invariant failure, both through return-position `impl Future`; no production interface changes.
 
-- [ ] **Step 1: Reproduce the exact lint failure**
+- [ ] **Step 1: Install the review toolchains before the repository pin exists**
+
+Run:
+
+```console
+rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+rustup toolchain install 1.88 --profile minimal
+```
+
+Expected: both exact toolchains are installed. This task cannot rely on `rust-toolchain.toml`, which is deliberately introduced only after the Rust 1.98 source diagnostics are green in Task 4.
+
+- [ ] **Step 2: Reproduce the exact lint failure**
 
 Run:
 
@@ -56,7 +67,7 @@ cargo +1.98.0 clippy --workspace --all-targets --all-features -- -D warnings
 
 Expected: exit 101 with `clippy::unused_async_trait_impl` at `output.rs` for `write_ring` and `finalize`, plus the independent `ShellContext::new` diagnostic.
 
-- [ ] **Step 2: Replace only the test-double method bodies and syntax**
+- [ ] **Step 3: Replace only the test-double method bodies and syntax**
 
 Use this implementation; keep the production trait and `FileOutputSink` unchanged:
 
@@ -87,17 +98,17 @@ impl OutputSink for FirstWriteFails {
 
 Do not wrap `finalize` in an `async` block: Rust 1.98 reports `clippy::manual_async_fn` for that counterproposal.
 
-- [ ] **Step 3: Run the behavioral regression**
+- [ ] **Step 4: Run the behavioral regression**
 
 Run:
 
 ```console
-cargo +1.98.0 test -p hoimin-cli process::output::tests::collector_drains_to_eof_and_keeps_first_write_error -- --exact
+cargo +1.98.0 test -p hoimin-cli --lib process::output::tests::collector_drains_to_eof_and_keeps_first_write_error -- --exact
 ```
 
 Expected: PASS, proving the first write error remains `lean-error-11` and `finalize` is not polled.
 
-- [ ] **Step 4: Confirm the two output diagnostics are gone**
+- [ ] **Step 5: Confirm the two output diagnostics are gone**
 
 Run:
 
@@ -107,7 +118,7 @@ cargo +1.98.0 clippy -p hoimin-cli --all-targets --all-features -- -D warnings
 
 Expected: the command can still fail at `ShellContext::new`, but it must contain no diagnostic for `process/output.rs` and no `manual_async_fn` diagnostic.
 
-- [ ] **Step 5: Confirm the syntax remains within MSRV**
+- [ ] **Step 6: Confirm the syntax remains within MSRV**
 
 Run:
 
@@ -117,7 +128,7 @@ cargo +1.88 check -p hoimin-cli --all-targets --all-features --locked
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit the isolated test-only repair**
+- [ ] **Step 7: Commit the isolated test-only repair**
 
 ```console
 git add crates/hoimin-cli/src/process/output.rs
@@ -177,7 +188,7 @@ mod tests {
 Run:
 
 ```console
-cargo +1.98.0 test -p hoimin-cli report::tests::prepared_report_is_send_and_encodes_format_state -- --exact
+cargo +1.98.0 test -p hoimin-cli --lib report::tests::prepared_report_is_send_and_encodes_format_state -- --exact
 ```
 
 Expected: compile failure because `PreparedReport` is not defined.
@@ -238,7 +249,7 @@ pub fn new(
 Run:
 
 ```console
-cargo +1.98.0 test -p hoimin-cli report::tests::prepared_report_is_send_and_encodes_format_state -- --exact
+cargo +1.98.0 test -p hoimin-cli --lib report::tests::prepared_report_is_send_and_encodes_format_state -- --exact
 cargo +1.98.0 test -p hoimin-cli --test report_handler
 cargo +1.98.0 test -p hoimin-cli --test report_heap
 ```
@@ -272,7 +283,8 @@ git commit -m "refactor(report): separate preparation from writers"
 
 **Interfaces:**
 - Consumes: `PreparedReport::new` and `PreparedReport::attach` from Task 2.
-- Produces: private `PreparedShellSetup`, `ShellSetupStartHook`, `prepare_shell_setup`, and `prepare_shell_setup_sync`.
+- Consumes: the existing private `OwnedStartHook = Box<dyn FnOnce() + Send + 'static>` used by other owned blocking operations in `shell.rs`.
+- Produces: private `PreparedShellSetup`, `prepare_shell_setup`, and `prepare_shell_setup_sync`.
 - Preserves: the public generic constructor and its writer bounds.
 
 - [ ] **Step 1: Import the prepared report type**
@@ -315,7 +327,7 @@ async fn shell_setup_does_not_block_the_async_runtime() {
         release_tx.send(()).unwrap();
         observed
     });
-    let before_start: ShellSetupStartHook = Box::new(move || {
+    let before_start: OwnedStartHook = Box::new(move || {
         entered_tx.send(()).unwrap();
         release_rx.recv().unwrap();
     });
@@ -343,18 +355,16 @@ async fn shell_setup_does_not_block_the_async_runtime() {
 Run:
 
 ```console
-cargo +1.98.0 test -p hoimin-cli shell::tests::shell_setup_does_not_block_the_async_runtime -- --exact
+cargo +1.98.0 test -p hoimin-cli --lib shell::tests::shell_setup_does_not_block_the_async_runtime -- --exact
 ```
 
-Expected: compile failure because `ShellSetupStartHook` and `prepare_shell_setup` do not exist.
+Expected: compile failure because `prepare_shell_setup` does not exist; `OwnedStartHook` already exists in `shell.rs`.
 
 - [ ] **Step 4: Add the non-generic preparation result and blocking functions**
 
 Place these definitions immediately before `ShellContext`:
 
 ```rust
-type ShellSetupStartHook = Box<dyn FnOnce() + Send + 'static>;
-
 struct PreparedShellSetup {
     workspace: WorkspaceHandler,
     analyzer: AnalyzerHandler,
@@ -366,7 +376,7 @@ struct PreparedShellSetup {
 
 async fn prepare_shell_setup(
     config: RunConfig,
-    before_start: ShellSetupStartHook,
+    before_start: OwnedStartHook,
 ) -> Result<PreparedShellSetup, String> {
     tokio::task::spawn_blocking(move || {
         before_start();
@@ -500,8 +510,8 @@ async fn shell_setup_panic_is_reported_as_a_setup_join_failure() {
 Run:
 
 ```console
-cargo +1.98.0 test -p hoimin-cli shell::tests::shell_setup_does_not_block_the_async_runtime -- --exact
-cargo +1.98.0 test -p hoimin-cli shell::tests::shell_setup_panic_is_reported_as_a_setup_join_failure -- --exact
+cargo +1.98.0 test -p hoimin-cli --lib shell::tests::shell_setup_does_not_block_the_async_runtime -- --exact
+cargo +1.98.0 test -p hoimin-cli --lib shell::tests::shell_setup_panic_is_reported_as_a_setup_join_failure -- --exact
 cargo +1.98.0 test -p hoimin-cli --test run_e2e shell_context_construction_performs_no_project_io -- --exact
 ```
 
@@ -585,9 +595,9 @@ class RustToolchainWorkflowContractTests(unittest.TestCase):
         )
         self.assertEqual(declaration["channel"], "1.98.0")
         self.assertEqual(declaration["profile"], "minimal")
-        self.assertEqual(
-            set(declaration["components"]),
-            {"clippy", "rustfmt"},
+        self.assertCountEqual(
+            declaration["components"],
+            ["clippy", "rustfmt"],
         )
 
     def test_required_jobs_install_only_the_repository_toolchain(self) -> None:
@@ -601,9 +611,10 @@ class RustToolchainWorkflowContractTests(unittest.TestCase):
             self.assertRegex(
                 job,
                 r"(?m)^        run: rustup toolchain install$",
+                job_name,
             )
             self.assertNotIn("rustup default", job, job_name)
-            self.assertNotRegex(job, r"cargo \+[^\s]+")
+            self.assertNotRegex(job, r"cargo \+[^\s]+", job_name)
 
         msrv = job_block(workflow, "msrv")
         shuffle = job_block(workflow, "rust-shuffle")
@@ -630,23 +641,34 @@ class RustToolchainWorkflowContractTests(unittest.TestCase):
         job = decoded["jobs"]["stable"]
         self.assertEqual(set(job), {"runs-on", "steps"})
         self.assertEqual(job["runs-on"], "ubuntu-latest")
-        uses = [step["uses"] for step in job["steps"] if "uses" in step]
         self.assertEqual(
-            uses,
-            [CHECKOUT_ACTION, SETUP_PYTHON_ACTION, SETUP_UV_ACTION],
-        )
-        self.assertIn("python-version: '3.14'", workflow)
-        commands = [step["run"] for step in job["steps"] if "run" in step]
-        self.assertEqual(
-            commands,
+            job["steps"],
             [
-                "rustup toolchain install stable --profile minimal "
-                "--component rustfmt --component clippy",
-                "uv sync --frozen",
-                "cargo +stable fmt --all -- --check",
-                "cargo +stable clippy --workspace --all-targets "
-                "--all-features -- -D warnings",
-                "cargo +stable test --workspace",
+                {"uses": CHECKOUT_ACTION},
+                {
+                    "uses": SETUP_PYTHON_ACTION,
+                    "with": {"python-version": "3.14"},
+                },
+                {
+                    "uses": SETUP_UV_ACTION,
+                    "with": {"enable-cache": True},
+                },
+                {
+                    "name": "Install latest stable Rust tooling",
+                    "run": (
+                        "rustup toolchain install stable --profile minimal "
+                        "--component rustfmt --component clippy"
+                    ),
+                },
+                {"run": "uv sync --frozen"},
+                {"run": "cargo +stable fmt --all -- --check"},
+                {
+                    "run": (
+                        "cargo +stable clippy --workspace --all-targets "
+                        "--all-features -- -D warnings"
+                    ),
+                },
+                {"run": "cargo +stable test --workspace"},
             ],
         )
         self.assertNotIn("rust-stable-canary", CI_WORKFLOW.read_text(encoding="utf-8"))
@@ -664,6 +686,15 @@ class RustToolchainWorkflowContractTests(unittest.TestCase):
         self.assertIn("rust-toolchain.toml", guide)
         self.assertIn("1.98.0", guide)
         self.assertIn("does not raise the minimum supported Rust version", guide)
+        for command in (
+            "cargo fmt --all -- --check",
+            "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+            "cargo test --workspace",
+            "cargo test -p hoimin-cli --test run_e2e",
+            "uvx maturin build --release",
+        ):
+            self.assertIn(f"{command}\n", guide)
+        self.assertNotIn("uv run maturin build --release", guide)
 ```
 
 - [ ] **Step 2: Run the workflow tests and observe RED**
@@ -761,7 +792,19 @@ Updating the pinned compiler does not raise the minimum supported Rust version.
 The MSRV remains the separate contract below.
 ```
 
-Change the final sentence of the MSRV update paragraph from “Stable CI remains required” to “The pinned stable CI gate remains required” so it cannot be read as moving stable.
+Replace the guide's opening command block with the required-CI equivalents:
+
+```console
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace
+cargo test -p hoimin-cli --test run_e2e
+uv run --frozen python -m unittest discover -s tests -p 'test_*.py' -v
+uvx maturin build --release
+uv run --frozen python tests/wheel_smoke.py
+```
+
+In the wheel-smoke paragraph, change its remaining `uv run maturin build --release` reference to `uvx maturin build --release`. Change the final sentence of the MSRV update paragraph from “Stable CI remains required” to “The pinned stable CI gate remains required” so it cannot be read as moving stable.
 
 - [ ] **Step 7: Run all executable workflow contracts**
 
@@ -828,14 +871,64 @@ cargo +1.98.0 test -p hoimin-cli --test run_e2e
 
 Expected: both PASS. The second command is intentionally independent, matching required CI; it is not a retry of a failed command.
 
-- [ ] **Step 3: Prove the blocking-boundary counterfactual is detected**
+- [ ] **Step 3: Run contracts and the pinned randomized-order lane**
+
+Run:
+
+```console
+cargo +1.98.0 test -p hoimin-core --features contracts
+cargo +1.98.0 test -p hoimin-cli --features contracts
+rustup toolchain install nightly-2026-07-27 --profile minimal
+cargo +nightly-2026-07-27 test --workspace -- -Z unstable-options --shuffle
+```
+
+Expected: all PASS. The nightly command supplements rather than replaces either stable test process.
+
+- [ ] **Step 4: Run the complete Python and wheel-smoke lane**
+
+Run:
+
+```powershell
+uv run --frozen python -m unittest discover -s tests -p 'test_*.py' -v
+$repositoryRoot = (Resolve-Path '.').Path
+$wheelDirectory = [System.IO.Path]::GetFullPath(
+    (Join-Path $repositoryRoot 'target\wheels')
+)
+$expectedPrefix = $repositoryRoot + [System.IO.Path]::DirectorySeparatorChar
+if (-not $wheelDirectory.StartsWith(
+    $expectedPrefix,
+    [System.StringComparison]::OrdinalIgnoreCase
+)) {
+    throw "Refusing to remove wheel artifacts outside repository: $wheelDirectory"
+}
+foreach ($candidate in @(
+    (Join-Path $repositoryRoot 'target'),
+    $wheelDirectory
+)) {
+    if (Test-Path -LiteralPath $candidate) {
+        $item = Get-Item -LiteralPath $candidate -Force
+        if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "Refusing to remove wheel artifacts through reparse point: $candidate"
+        }
+    }
+}
+if (Test-Path -LiteralPath $wheelDirectory) {
+    Remove-Item -LiteralPath $wheelDirectory -Recurse -Force
+}
+uvx maturin build --release
+uv run --frozen python tests/wheel_smoke.py
+```
+
+Expected: all Python tests pass, the release wheel is rebuilt from an empty artifact directory with the repository-pinned Rust toolchain, and wheel smoke passes. Removing `target/wheels` is limited to ignored build artifacts created by this repository.
+
+- [ ] **Step 5: Prove the blocking-boundary counterfactual is detected**
 
 Temporarily replace only `prepare_shell_setup` with this inline counterfactual using `apply_patch`:
 
 ```rust
 async fn prepare_shell_setup(
     config: RunConfig,
-    before_start: ShellSetupStartHook,
+    before_start: OwnedStartHook,
 ) -> Result<PreparedShellSetup, String> {
     before_start();
     prepare_shell_setup_sync(config)
@@ -845,12 +938,12 @@ async fn prepare_shell_setup(
 Run:
 
 ```console
-cargo +1.98.0 test -p hoimin-cli shell::tests::shell_setup_does_not_block_the_async_runtime -- --exact
+cargo +1.98.0 test -p hoimin-cli --lib shell::tests::shell_setup_does_not_block_the_async_runtime -- --exact
 ```
 
 Expected: FAIL after the controller releases the gate, with `shell setup blocked the runtime until its blocking work was released`; it must not hang or reach the six-second total timeout. Restore the exact `spawn_blocking` implementation from Task 3 with `apply_patch`, rerun the same command, and expect PASS. Verify `git diff` contains no counterfactual residue before continuing.
 
-- [ ] **Step 4: Run focused generated mutation testing for the production setup boundary**
+- [ ] **Step 6: Run focused generated mutation testing for the production setup boundary**
 
 Run in PowerShell:
 
@@ -864,13 +957,13 @@ uv run --frozen python tools/focused_mutation.py `
   --output $mutationOutput
 ```
 
-Expected: baseline passes. Explicit symbols receive the runner's highest ranking; do not add `--file`, which would raise every function in `shell.rs` and waste the bounded budget. Inspect `$mutationOutput\run.json` and `$mutationOutput\report.md`; every generated viable mutation belonging to the two selected functions is killed. The runner may also inventory lower-ranked functions changed from `origin/main`; their presence does not broaden this task's mutation claim. The manual counterfactual in Step 3, rather than cargo-mutants' generated inventory, is the required proof for removing `spawn_blocking`. Do not treat `not_run`, `pending`, `timeout`, `unviable`, or `error` for either selected function as passes.
+Expected: baseline passes. Explicit symbols receive the runner's highest ranking; do not add `--file`, which would raise every function in `shell.rs` and waste the bounded budget. Inspect `$mutationOutput\run.json` and `$mutationOutput\report.md`; every generated viable mutation belonging to the two selected functions is killed. The runner may also inventory lower-ranked functions changed from `origin/main`; their presence does not broaden this task's mutation claim. The manual counterfactual in Step 5, rather than cargo-mutants' generated inventory, is the required proof for removing `spawn_blocking`. Do not treat `not_run`, `pending`, `timeout`, `unviable`, or `error` for either selected function as passes.
 
-- [ ] **Step 5: Fail closed on incomplete mutation evidence**
+- [ ] **Step 7: Fail closed on incomplete mutation evidence**
 
 If `report.md` contains a survivor or `run.json` contains `not_run`, `pending`, `timeout`, `unviable`, or `error` for either selected function, do not claim mutation verification and do not add a speculative test. Record the exact generated mutation and outcome, then return it for design review. Continue only when the selected viable inventory is fully killed; an equivalent mutant requires an exact expression-level justification in the execution report.
 
-- [ ] **Step 6: Prove forbidden Windows and IDE paths are absent**
+- [ ] **Step 8: Prove forbidden Windows and IDE paths are absent**
 
 Run:
 
@@ -882,7 +975,7 @@ git status --short --branch
 
 Expected: changed paths are limited to the spec, this plan, the eight implementation files in the File Map, and any focused Rust regression added in `shell.rs` or `report/mod.rs`. There are no changes to Windows resource files or `run_e2e.rs`; `.idea/` remains the sole unrelated untracked path; the status line is `## fix/rust-1.98-ci` with no upstream annotation.
 
-- [ ] **Step 7: Confirm the final commit set without creating a verification-only commit**
+- [ ] **Step 9: Confirm the final commit set without creating a verification-only commit**
 
 Run:
 
@@ -890,4 +983,4 @@ Run:
 git log --oneline origin/main..HEAD
 ```
 
-Expected: the two design-document commits, the implementation-plan and plan-review commits, and the four implementation commits from Tasks 1-4. Verification must not create an empty commit.
+Expected: the two design-document commits, the implementation-plan commits, and the four implementation commits from Tasks 1-4. Verification must not create an empty commit.
