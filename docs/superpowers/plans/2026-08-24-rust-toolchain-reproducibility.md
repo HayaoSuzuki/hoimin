@@ -1192,6 +1192,20 @@ Expected: baseline passes. Explicit symbols receive the runner's highest ranking
 
 If `report.md` contains a survivor or `run.json` contains `not_run`, `pending`, `timeout`, `unviable`, or `error` for either selected function, do not claim mutation verification and do not add a speculative test. Record the exact generated mutation and outcome, then return it for design review. Continue only when the selected viable inventory is fully killed; an equivalent mutant requires an exact expression-level justification in the execution report.
 
+Execution record (2026-08-24): the focused wrapper could not create its Windows
+scratch tree because cargo-mutants attempted an unprivileged symlink for the
+ignored `.venv`. Direct `--in-place` runs avoided that infrastructure failure.
+After the locked-session E2E fixture repair, both unmutated baselines passed
+(58 seconds for `prepare_shell_setup_sync`, 60 seconds for
+`prepare_shell_setup`). Each exact inventory contained only the whole-function
+replacement `Ok(Default::default())`; both replacements were compile-time
+`unviable` because `PreparedShellSetup` does not implement `Default`. These are
+not counted as killed mutations, so generated mutation verification remains
+inconclusive. The separate manual inline-setup counterfactual is the structural
+evidence for the `spawn_blocking` boundary: it failed with
+`shell setup blocked the runtime until its blocking work was released`, and the
+restored implementation passed with no source residue.
+
 - [ ] **Step 8: Prove forbidden Windows and IDE paths are absent**
 
 Run:
