@@ -12,9 +12,11 @@
 
 ## Global Constraints
 
-- Work only on `fix/rust-1.98-ci`, which was created from `origin/main` without an upstream; do not change any remote branch.
+- Work only on `fix/rust-1.98-ci`, which was created from `origin/main` initially
+  without an upstream. After PR publication it tracks only
+  `origin/fix/rust-1.98-ci`; do not change the remote `main` branch.
 - Do not touch the existing untracked `.idea/` directory.
-- Do not modify `crates/hoimin-cli/src/resource/windows.rs`, `crates/hoimin-cli/src/resource/suspended.rs`, production timeout values, retries, or test scheduling. Reviewed test-only exceptions are the junction fallback in `workspace/root.rs`, the Rust 1.98 `is_ok_and` rewrites and event-anchored locked-session fixture in `tests/run_e2e.rs`, and the absolute real-process fixture deadline in `tests/process_handler.rs`.
+- Do not modify `crates/hoimin-cli/src/resource/windows.rs`, `crates/hoimin-cli/src/resource/suspended.rs`, production timeout values, retries, or test scheduling. Reviewed test-only exceptions are the junction fallback in `workspace/root.rs`, the Rust 1.98 `is_ok_and` rewrites and event-anchored locked-session fixture in `tests/run_e2e.rs`, the Unix-only matching lint rewrite in `tests/lean_shutdown_oracle.rs`, and the absolute real-process fixture deadline in `tests/process_handler.rs`.
 - Preserve the public `ShellContext::new(&RunConfig, Stdout, Stderr).await -> Result<Self, String>` contract and do not add `Send + 'static` bounds to `Stdout` or `Stderr`.
 - Preserve `workspace.package.rust-version = "1.88"` and `nightly-2026-07-27`.
 - Add no dependency, public configuration field, report format, or release publication path.
@@ -37,6 +39,7 @@
 | `docs/development.md` | Explain pinned stable updates separately from MSRV updates. |
 | `crates/hoimin-cli/src/workspace/root.rs` | Keep the linked-parent Windows regression active without requiring symlink privilege by using a junction fallback in the test fixture only. |
 | `crates/hoimin-cli/tests/run_e2e.rs` | Apply two mechanical `Result::is_ok_and` Rust 1.98 lint fixes. Stabilize the locked-session total-timeout fixture without changing the production timeout: select only its required arithmetic operator, anchor its assertion deadline at `mutant_started`, and check child liveness when retaining the lock. |
+| `crates/hoimin-cli/tests/lean_shutdown_oracle.rs` | Apply the same mechanical Rust 1.98 `Result::is_ok_and` lint fix to Unix-only process-liveness test code exposed by the Ubuntu gate. |
 | `crates/hoimin-cli/tests/process_handler.rs` | Establish real child PID readiness before test-controlled termination and keep readiness plus cleanup within one absolute six-second fixture deadline. |
 | `tests/test_ranked_plan_docs.py` | Read the UTF-8 README with an explicit encoding on Windows. |
 | `tests/test_wheel_smoke.py` | Keep the development-guide `uvx maturin` contract distinct from the unchanged README command. |
@@ -103,6 +106,16 @@ deadline from that event. At lock acquisition assert `child.try_wait()` is
 still pending instead of comparing elapsed time from subprocess launch. Run the
 focused regression 20 times and the complete independent E2E suite. Commit as
 `fix(test): anchor shutdown fixture to mutant start`.
+
+The first PR quality run then exposed one additional
+`ok().is_some_and(...)` occurrence in Unix-only
+`tests/lean_shutdown_oracle.rs`. The Windows local Clippy command could not
+compile that `cfg(unix)` function, while the Ubuntu Rust 1.98 job failed at the
+exact expression. A repository-wide multiline search confirmed it was the only
+remaining Rust occurrence. Apply the same semantics-preserving `is_ok_and`
+rewrite, rerun the full local gate, and require the hosted Unix quality jobs to
+validate the target-specific path. Commit as
+`fix(test): satisfy Rust 1.98 Unix result lint`.
 
 ---
 
@@ -1218,7 +1231,7 @@ rg -n "ShellContext::new\(&config|let deadline = tokio::time::Instant::now\(\) \
 git status --short --branch
 ```
 
-Expected: changed paths are limited to the spec, this plan, and the thirteen implementation files in the File Map. The `shell.rs` function-context diff contains only the import, prepared setup, constructor, and focused tests. In `run_loop_prepared`, the `ShellContext::new` await remains before the single total-timeout deadline construction. There are no changes to the run-loop body or Windows resource production files. `workspace/root.rs` changes only its test fixture; `run_e2e.rs` contains the two approved lint expressions and the event-anchored locked-session fixture while retaining `--total-timeout 5s`; `process_handler.rs` changes only real-process fixture coordination and retains its 900ms cleanup assertions. The two additional Python test files only make Windows encoding and the documented build-command contracts explicit. `.idea/` remains the sole unrelated untracked path; the status line is `## fix/rust-1.98-ci` with no upstream annotation.
+Expected: changed paths are limited to the spec, this plan, and the fourteen implementation files in the File Map. The `shell.rs` function-context diff contains only the import, prepared setup, constructor, and focused tests. In `run_loop_prepared`, the `ShellContext::new` await remains before the single total-timeout deadline construction. There are no changes to the run-loop body or Windows resource production files. `workspace/root.rs` changes only its test fixture; `run_e2e.rs` contains two approved lint expressions and the event-anchored locked-session fixture while retaining `--total-timeout 5s`; `lean_shutdown_oracle.rs` contains the third Unix-only lint expression; `process_handler.rs` changes only real-process fixture coordination and retains its 900ms cleanup assertions. The two additional Python test files only make Windows encoding and the documented build-command contracts explicit. `.idea/` remains the sole unrelated untracked path; the status line is `## fix/rust-1.98-ci...origin/fix/rust-1.98-ci` after PR publication.
 
 - [ ] **Step 9: Confirm the final commit set without creating a verification-only commit**
 
@@ -1229,8 +1242,8 @@ git log --oneline origin/main..HEAD
 ```
 
 Expected: the log contains the reviewed specification/plan history followed by
-the nine implementation commits from Tasks 0-5: junction fixture, output test
-double, report preparation, two E2E lint expressions, shell setup, and toolchain
+the ten implementation commits from Tasks 0-5 and PR verification: junction fixture, output test
+double, report preparation, three result-lint expressions, shell setup, and toolchain
 CI, plus real-process fixture readiness, Windows Python contract fixes, and the
 event-anchored locked-session E2E fixture. Every implementation commit remains inside the revised File Map. Do not
 assert a fixed count for documentation-review

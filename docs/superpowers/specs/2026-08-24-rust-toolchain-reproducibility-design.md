@@ -333,7 +333,7 @@ Workflow and test-only changes have no Rust production mutation requirement.
 This design is implemented on `fix/rust-1.98-ci`, created from `origin/main`
 without tracking `origin/main`. Its diff must not contain changes to
 `resource/windows.rs`, `resource/suspended.rs`, Windows timeout values, retries,
-or test scheduling. Four reviewed implementation-time exceptions are included:
+or test scheduling. Five reviewed implementation-time exceptions are included:
 
 - `workspace/root.rs` changes only the Windows test fixture, falling back from
   a directory symlink to a junction when error 1314 shows that the host lacks
@@ -344,6 +344,9 @@ or test scheduling. Four reviewed implementation-time exceptions are included:
   `mutant_started` is observed, and verifies that the hoimin child is still
   running when the session lock is retained. The production five-second total
   timeout, retry policy, shutdown logic, and test scheduling are unchanged.
+- `tests/lean_shutdown_oracle.rs` changes the same expression shape once in
+  Unix-only process-liveness test code. The Ubuntu Rust 1.98 Clippy job exposed
+  this target-specific occurrence after the Windows-local gate passed.
 - `tests/process_handler.rs` gives real-process fixtures one absolute six-second
   test deadline. Operations controlled by the test wait for the child PID
   readiness event before firing. Timeout fixtures use a five-second process
