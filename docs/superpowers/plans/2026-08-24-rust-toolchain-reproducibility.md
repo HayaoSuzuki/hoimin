@@ -14,7 +14,7 @@
 
 - Work only on `fix/rust-1.98-ci`, which was created from `origin/main` without an upstream; do not change any remote branch.
 - Do not touch the existing untracked `.idea/` directory.
-- Do not modify `crates/hoimin-cli/src/resource/windows.rs`, `crates/hoimin-cli/src/resource/suspended.rs`, `crates/hoimin-cli/tests/run_e2e.rs`, timeout values, retries, or test scheduling.
+- Do not modify `crates/hoimin-cli/src/resource/windows.rs`, `crates/hoimin-cli/src/resource/suspended.rs`, timeout values, retries, or test scheduling. Reviewed exceptions are limited to the test-only junction fallback in `workspace/root.rs` and exactly two Rust 1.98 lint-only `is_ok_and` rewrites in `tests/run_e2e.rs`.
 - Preserve the public `ShellContext::new(&RunConfig, Stdout, Stderr).await -> Result<Self, String>` contract and do not add `Send + 'static` bounds to `Stdout` or `Stderr`.
 - Preserve `workspace.package.rust-version = "1.88"` and `nightly-2026-07-27`.
 - Add no dependency, public configuration field, report format, or release publication path.
@@ -35,6 +35,8 @@
 | `.github/workflows/rust-stable-canary.yml` | Probe latest stable weekly without a PR/push trigger or dependency from `ci.yml`. |
 | `tests/test_ci_workflow.py` | Enforce toolchain, ordinary-CI, canary, release, and documentation contracts. |
 | `docs/development.md` | Explain pinned stable updates separately from MSRV updates. |
+| `crates/hoimin-cli/src/workspace/root.rs` | Keep the linked-parent Windows regression active without requiring symlink privilege by using a junction fallback in the test fixture only. |
+| `crates/hoimin-cli/tests/run_e2e.rs` | Apply exactly two mechanical `Result::is_ok_and` Rust 1.98 lint fixes; do not alter waits, deadlines, or shutdown behavior. |
 
 ## Spec-to-plan acceptance matrix
 
@@ -49,8 +51,26 @@
 | Setup errors remain distinct and every partially or fully prepared resource has one owner | Task 3 | Owned `PreparedShellSetup`, compiler-enforced `Send + 'static` blocking boundary, setup-panic classification, and existing constructor/drop integrations. |
 | Report writers remain on the async caller while JSON state is prepared off-thread | Task 2 | `PreparedReport: Send`, format-state unit test, and existing public report integrations. |
 | The immediate `FirstWriteFails` test double becomes Rust 1.98-clean without production-trait changes | Task 1 | Exact Clippy RED/GREEN and the first-write-error/finalize invariant regression. |
-| Setup stays outside total timeout and Windows-flake work stays excluded | Tasks 3 and 5 | The existing deadline remains after `ShellContext::new`; final function-context diff and forbidden-path review reject run-loop, Windows resource, and `run_e2e.rs` changes. |
-| No dependency, configuration, report-format, retry, or release-publication expansion | Tasks 1-5 | File Map allowlist, unchanged manifests and release workflow, existing exact artifact-only contract, and final path/diff review. |
+| Setup stays outside total timeout and Windows production-flake work stays excluded | Tasks 0, 3, and 5 | The existing deadline remains after `ShellContext::new`; final review rejects run-loop and Windows resource changes, while separately auditing the test-only junction fallback and two lint-only E2E expressions. |
+| No dependency, configuration, report-format, retry, or release-publication expansion | Tasks 0-5 | File Map allowlist, unchanged manifests and release workflow, existing exact artifact-only contract, and final path/diff review. |
+
+---
+
+### Task 0: Keep the Windows baseline unfiltered without symlink privilege
+
+**Files:**
+- Modify: `crates/hoimin-cli/src/workspace/root.rs` test module only.
+
+The existing linked-parent regression failed before product verification with
+Windows error 1314 because this host has neither symlink privilege nor Developer
+Mode. Reuse the repository's established fixture strategy: attempt
+`symlink_dir`, and only for error 1314 create a directory junction with
+`cmd /c mklink /J`. Keep the same production resolver and rejection assertion.
+
+RED is the unfiltered focused test failing at fixture construction. GREEN is the
+same test passing through the junction while still rejecting the linked parent.
+Then run the complete unfiltered Rust 1.98 workspace suite. Commit separately as
+`fix(test): fall back to Windows junctions`.
 
 ---
 
@@ -143,7 +163,11 @@ Run:
 cargo +1.88 check -p hoimin-cli --all-targets --all-features --locked
 ```
 
-Expected: PASS.
+Expected on the Ubuntu MSRV lane: PASS. On this Windows host the command reaches
+the pre-existing Windows-only `if let` guard in `resource/windows.rs` and fails
+with E0658 under Rust 1.88. Compile the exact changed async-trait implementation
+shape with Rust 1.88 as local syntax evidence, record the host limitation, and
+do not modify Windows production code to make this branch's local command pass.
 
 - [ ] **Step 7: Commit the isolated test-only repair**
 
@@ -574,7 +598,7 @@ cargo +1.98.0 test -p hoimin-cli --lib shell::tests::shell_setup_panic_is_report
 cargo +1.98.0 test -p hoimin-cli --test run_e2e shell_context_construction_performs_no_project_io -- --exact
 ```
 
-Expected: all PASS. The existing E2E test continues to prove that construction creates neither a missing project root nor its configured session database; do not edit `run_e2e.rs`.
+Expected: all PASS. The existing E2E test continues to prove that construction creates neither a missing project root nor its configured session database. The only permitted `run_e2e.rs` edits are the separately reviewed two mechanical `ok().is_some_and(...)` to `is_ok_and(...)` Rust 1.98 lint rewrites; no wait, deadline, or shutdown logic may change.
 
 - [ ] **Step 8: Run the exact Rust 1.98 quality gate**
 
@@ -1028,7 +1052,10 @@ cargo +1.88 check --workspace --all-targets --all-features --locked
 uv run --frozen python -m unittest tests/test_ci_workflow.py -v
 ```
 
-Expected: all PASS.
+Expected: formatting, Rust 1.98 quality, and workflow contracts PASS locally.
+The complete MSRV check must PASS on its Ubuntu CI lane; on this Windows host,
+record the known pre-existing E0658 at `resource/windows.rs` plus the separate
+Rust 1.88 syntax check for the changed test-double implementation.
 
 - [ ] **Step 2: Run the full workspace and independent E2E test processes**
 
@@ -1145,7 +1172,7 @@ rg -n "ShellContext::new\(&config|let deadline = tokio::time::Instant::now\(\) \
 git status --short --branch
 ```
 
-Expected: changed paths are limited to the spec, this plan, and the eight implementation files in the File Map. The `shell.rs` function-context diff contains only the import, prepared setup, constructor, and focused tests. In `run_loop_prepared`, the `ShellContext::new` await remains before the single total-timeout deadline construction. There are no changes to the run-loop body, Windows resource files, or `run_e2e.rs`; `.idea/` remains the sole unrelated untracked path; the status line is `## fix/rust-1.98-ci` with no upstream annotation.
+Expected: changed paths are limited to the spec, this plan, and the ten implementation files in the File Map. The `shell.rs` function-context diff contains only the import, prepared setup, constructor, and focused tests. In `run_loop_prepared`, the `ShellContext::new` await remains before the single total-timeout deadline construction. There are no changes to the run-loop body or Windows resource production files. `workspace/root.rs` changes only its test fixture; `run_e2e.rs` contains exactly the two approved lint-only expressions and no timing or shutdown change. `.idea/` remains the sole unrelated untracked path; the status line is `## fix/rust-1.98-ci` with no upstream annotation.
 
 - [ ] **Step 9: Confirm the final commit set without creating a verification-only commit**
 
@@ -1156,7 +1183,9 @@ git log --oneline origin/main..HEAD
 ```
 
 Expected: the log contains the reviewed specification/plan history followed by
-the four implementation commits from Tasks 1-4, with no implementation commit
-outside the File Map. Do not assert a fixed count for documentation-review
+the six implementation commits from Tasks 0-4: junction fixture, output test
+double, report preparation, two E2E lint expressions, shell setup, and toolchain
+CI. Every implementation commit remains inside the revised File Map. Do not
+assert a fixed count for documentation-review
 commits: this plan intentionally preserves their audit history. Verification
 must not create an empty commit.

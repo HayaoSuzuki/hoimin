@@ -37,7 +37,9 @@ work is not evidence for the Rust 1.98 failure and is excluded from this design.
 - Keep caller-provided output writers out of Tokio's blocking pool so the
   public API gains no `Send + 'static` requirement.
 - Preserve the declared Rust 1.88 MSRV and the pinned randomized-test nightly.
-- Keep CI/toolchain repair separate from any Windows flaky-test change.
+- Keep CI/toolchain repair separate from Windows process/resource production
+  changes. A test-fixture-only portability repair is allowed when it is needed
+  to run the unfiltered Windows baseline.
 
 ## Non-goals
 
@@ -45,7 +47,9 @@ work is not evidence for the Rust 1.98 failure and is excluded from this design.
 - Starting the run timeout before shell setup completes.
 - Making shell setup cooperatively cancellable.
 - Changing the existing preflight blocking-I/O state-machine design.
-- Fixing or weakening a Windows test in this branch.
+- Changing Windows process/resource production behavior or weakening a Windows
+  assertion. The root-path fixture may use a junction when symlink creation is
+  unavailable, while exercising the same linked-parent rejection invariant.
 - Suppressing `clippy::unused_async_trait_impl` locally or globally.
 - Automatically merging toolchain updates.
 
@@ -285,6 +289,15 @@ uvx maturin build --release
 uv run --frozen python tests/wheel_smoke.py
 ```
 
+On this Windows host, the complete `cargo +1.88 check --workspace
+--all-targets --all-features --locked` command reaches an unrelated pre-existing
+Windows-only `if let` guard in `resource/windows.rs` and fails with E0658 under
+Rust 1.88. The changed async-trait implementation syntax is therefore checked
+separately with Rust 1.88 locally; the complete MSRV command remains required
+on the Ubuntu MSRV CI lane. This limitation must be reported as such, not
+converted into a local PASS and not repaired by changing Windows production
+code in this branch.
+
 The hosted quality and test matrices must then pass on Ubuntu, Windows, and
 macOS using the pinned toolchain before cross-platform success is claimed.
 Local Windows verification cannot establish those hosted results. The
@@ -312,8 +325,18 @@ Workflow and test-only changes have no Rust production mutation requirement.
 
 This design is implemented on `fix/rust-1.98-ci`, created from `origin/main`
 without tracking `origin/main`. Its diff must not contain changes to
-`resource/windows.rs`, `resource/suspended.rs`, `run_e2e.rs`, Windows timeout
-values, retries, or test scheduling.
+`resource/windows.rs`, `resource/suspended.rs`, Windows timeout values, retries,
+or test scheduling. Two reviewed implementation-time exceptions are included:
+
+- `workspace/root.rs` changes only the Windows test fixture, falling back from
+  a directory symlink to a junction when error 1314 shows that the host lacks
+  symlink privilege; the same linked-parent rejection assertion remains active;
+- `tests/run_e2e.rs` changes exactly two `ok().is_some_and(...)` expressions to
+  `is_ok_and(...)` to satisfy Rust 1.98 Clippy, without changing waits,
+  deadlines, shutdown logic, or test scheduling.
+
+Neither exception implements the earlier Job Object hypothesis or changes
+Windows runtime behavior.
 
 The abandoned uncommitted Windows stabilization spec, plan, and code are not
 carried into this branch. After this prerequisite is merged and main is green,

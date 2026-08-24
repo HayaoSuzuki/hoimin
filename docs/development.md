@@ -42,8 +42,8 @@ The committed `Cargo.lock` must remain compilable on the MSRV. When a dependency
 update raises its compiler requirement, select the newest dependency release
 that still supports the MSRV. If the project deliberately raises its MSRV,
 update `workspace.package.rust-version`, the `msrv` CI job, its workflow
-contract test, and this section in the same pull request. Stable CI remains
-required in addition to the MSRV gate.
+contract test, and this section in the same pull request. The pinned stable CI
+gate remains required in addition to the MSRV gate.
 
 Before running the standalone wheel smoke script, you must build a release wheel
 first with `uvx maturin build --release`. Alternatively, set `HOIMIN_WHEEL`
