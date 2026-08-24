@@ -11,6 +11,38 @@ use hoimin_core::{
 
 use self::json::{JsonError, JsonReport};
 
+pub(crate) struct PreparedReport {
+    format: OutputFormat,
+    json: Option<JsonReport>,
+}
+
+impl PreparedReport {
+    pub(crate) fn new(format: OutputFormat, spool_dir: impl AsRef<Path>) -> io::Result<Self> {
+        let json = match format {
+            OutputFormat::Json => Some(JsonReport::new(spool_dir.as_ref())?),
+            OutputFormat::Jsonl | OutputFormat::Human => None,
+        };
+        Ok(Self { format, json })
+    }
+
+    pub(crate) fn attach<Stdout, Stderr>(
+        self,
+        stdout: Stdout,
+        stderr: Stderr,
+    ) -> ReportHandler<Stdout, Stderr>
+    where
+        Stdout: Write,
+        Stderr: Write,
+    {
+        ReportHandler {
+            format: self.format,
+            stdout,
+            stderr,
+            json: self.json,
+        }
+    }
+}
+
 pub struct ReportHandler<Stdout, Stderr> {
     format: OutputFormat,
     stdout: Stdout,
@@ -34,16 +66,7 @@ where
         stderr: Stderr,
         spool_dir: impl AsRef<Path>,
     ) -> io::Result<Self> {
-        let json = match format {
-            OutputFormat::Json => Some(JsonReport::new(spool_dir.as_ref())?),
-            OutputFormat::Jsonl | OutputFormat::Human => None,
-        };
-        Ok(Self {
-            format,
-            stdout,
-            stderr,
-            json,
-        })
+        Ok(PreparedReport::new(format, spool_dir)?.attach(stdout, stderr))
     }
 
     pub fn with_mutant_spool<Spool>(
@@ -155,5 +178,35 @@ fn human_failed(id: hoimin_core::EffectId, error: &io::Error) -> EffectFailed {
             operation: "write human report event".to_owned(),
             message: error.to_string(),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_send<T: Send>() {}
+
+    #[test]
+    fn prepared_report_is_send_and_encodes_format_state() {
+        assert_send::<PreparedReport>();
+        let spool_dir = tempfile::tempdir().unwrap();
+
+        let json = PreparedReport::new(OutputFormat::Json, spool_dir.path())
+            .unwrap()
+            .attach(Vec::new(), Vec::new());
+        let jsonl = PreparedReport::new(OutputFormat::Jsonl, spool_dir.path())
+            .unwrap()
+            .attach(Vec::new(), Vec::new());
+        let human = PreparedReport::new(OutputFormat::Human, spool_dir.path())
+            .unwrap()
+            .attach(Vec::new(), Vec::new());
+
+        assert!(json.json.is_some());
+        assert!(jsonl.json.is_none());
+        assert!(human.json.is_none());
+        assert_eq!(json.format, OutputFormat::Json);
+        assert_eq!(jsonl.format, OutputFormat::Jsonl);
+        assert_eq!(human.format, OutputFormat::Human);
     }
 }

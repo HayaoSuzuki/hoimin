@@ -48,7 +48,8 @@ class StandaloneContractTests(unittest.TestCase):
         repository_root = Path(__file__).resolve().parents[1]
         development = (repository_root / "docs/development.md").read_text(encoding="utf-8")
         readme = (repository_root / "README.md").read_text(encoding="utf-8")
-        build_command = "uv run maturin build --release"
+        development_build_command = "uvx maturin build --release"
+        readme_build_command = "uv run maturin build --release"
         development_smoke = "uv run --frozen python tests/wheel_smoke.py"
         readme_smoke = "uv run python tests/wheel_smoke.py"
 
@@ -57,10 +58,10 @@ class StandaloneContractTests(unittest.TestCase):
             " ".join(development.split()),
         )
         self.assertLess(
-            development.index(build_command),
+            development.index(development_build_command),
             development.index(development_smoke),
         )
-        self.assertLess(readme.index(build_command), readme.index(readme_smoke))
+        self.assertLess(readme.index(readme_build_command), readme.index(readme_smoke))
 
     def test_standalone_script_rejects_an_empty_wheel_directory(self) -> None:
         repository_root = Path(__file__).resolve().parents[1]

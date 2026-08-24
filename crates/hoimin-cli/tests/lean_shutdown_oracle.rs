@@ -362,9 +362,7 @@ fn spawn_scenario(
 
 #[cfg(unix)]
 fn process_is_alive(pid: u32) -> bool {
-    i32::try_from(pid)
-        .ok()
-        .is_some_and(|pid| unsafe { libc::kill(pid, 0) } == 0)
+    i32::try_from(pid).is_ok_and(|pid| unsafe { libc::kill(pid, 0) } == 0)
 }
 
 #[cfg(unix)]

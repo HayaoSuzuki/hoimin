@@ -3,13 +3,29 @@
 Run the Rust quality gate locally with the same commands used in CI:
 
 ```console
-cargo fmt --check
-cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace
+cargo test -p hoimin-cli --test run_e2e
+cargo test -p hoimin-core --features contracts
+cargo test -p hoimin-cli --features contracts
 uv run --frozen python -m unittest discover -s tests -p 'test_*.py' -v
-uv run maturin build --release
+uvx maturin build --release
 uv run --frozen python tests/wheel_smoke.py
 ```
+
+## Pinned Rust toolchain
+
+`rust-toolchain.toml` pins the repository development and blocking CI
+toolchain to Rust 1.98.0, including rustfmt and Clippy. Run `rustup toolchain
+install` from the repository root to install that exact declaration. The
+weekly latest-stable canary reports upcoming compatibility issues without
+changing the blocking toolchain.
+
+Updating this pin is a deliberate compatibility change: update
+`rust-toolchain.toml`, run every quality-gate command above, and review the
+latest-stable canary separately. Updating the repository pin does not raise the minimum supported Rust version.
+An MSRV change follows the distinct procedure below.
 
 ## Minimum supported Rust version
 
@@ -26,11 +42,11 @@ The committed `Cargo.lock` must remain compilable on the MSRV. When a dependency
 update raises its compiler requirement, select the newest dependency release
 that still supports the MSRV. If the project deliberately raises its MSRV,
 update `workspace.package.rust-version`, the `msrv` CI job, its workflow
-contract test, and this section in the same pull request. Stable CI remains
-required in addition to the MSRV gate.
+contract test, and this section in the same pull request. The pinned stable CI
+gate remains required in addition to the MSRV gate.
 
 Before running the standalone wheel smoke script, you must build a release wheel
-first with `uv run maturin build --release`. Alternatively, set `HOIMIN_WHEEL`
+first with `uvx maturin build --release`. Alternatively, set `HOIMIN_WHEEL`
 to the exact path of an existing wheel to test. The script only selects and
 tests an existing artifact; it does not build one.
 

@@ -13,6 +13,29 @@ CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 DEVELOPMENT_GUIDE = ROOT / "docs" / "development.md"
 CARGO_MANIFEST = ROOT / "Cargo.toml"
+RUST_TOOLCHAIN = ROOT / "rust-toolchain.toml"
+STABLE_CANARY_WORKFLOW = (
+    ROOT / ".github" / "workflows" / "rust-stable-canary.yml"
+)
+REPOSITORY_RUST_JOBS = {
+    "quality",
+    "rust",
+    "contracts",
+    "core-dependency-purity",
+    "wheel-smoke",
+    "linux-best-effort",
+    "linux-cgroup-v2-hard",
+}
+COMPATIBILITY_RUST_JOBS = {"msrv", "rust-shuffle"}
+CHECKOUT_ACTION = (
+    "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10"
+)
+SETUP_PYTHON_ACTION = (
+    "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1"
+)
+SETUP_UV_ACTION = (
+    "astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b"
+)
 UPLOAD_ARTIFACT_ACTION = (
     "actions/upload-artifact@"
     "ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -211,6 +234,201 @@ def assert_artifact_only_release(test: unittest.TestCase, workflow: str) -> None
     decoded = yaml.safe_load(workflow)
     test.assertIsInstance(decoded, dict)
     test.assertEqual(decoded, EXPECTED_RELEASE_WORKFLOW)
+
+
+class RepositoryRustToolchainContractTests(unittest.TestCase):
+    def test_repository_toolchain_is_exact_and_complete(self) -> None:
+        toolchain = tomllib.loads(RUST_TOOLCHAIN.read_text(encoding="utf-8"))
+
+        self.assertEqual(set(toolchain), {"toolchain"})
+        declaration = toolchain["toolchain"]
+        self.assertEqual(
+            set(declaration),
+            {"channel", "profile", "components"},
+        )
+        self.assertEqual(declaration["channel"], "1.98.0")
+        self.assertEqual(declaration["profile"], "minimal")
+        self.assertCountEqual(
+            declaration["components"],
+            ["clippy", "rustfmt"],
+        )
+
+
+class CiRustJobContractTests(unittest.TestCase):
+    def test_rust_jobs_install_only_their_classified_toolchain(self) -> None:
+        workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+        decoded = yaml.safe_load(workflow)
+
+        self.assertEqual(
+            set(decoded["jobs"]),
+            REPOSITORY_RUST_JOBS | COMPATIBILITY_RUST_JOBS,
+        )
+        self.assertNotIn("RUSTUP_TOOLCHAIN", workflow)
+        self.assertNotIn("rustup override", workflow)
+        self.assertNotIn("rustup default", workflow)
+        self.assertNotIn("rustup run", workflow)
+        self.assertNotIn("rustup update", workflow)
+        all_steps = [
+            step
+            for job in decoded["jobs"].values()
+            for step in job["steps"]
+        ]
+        self.assertFalse(
+            any(
+                "toolchain" in step.get("uses", "").lower()
+                for step in all_steps
+            )
+        )
+        install_commands = [
+            line.strip()
+            for step in all_steps
+            for line in step.get("run", "").splitlines()
+            if line.strip().startswith("rustup toolchain install")
+        ]
+        self.assertCountEqual(
+            install_commands,
+            ["rustup toolchain install"] * len(REPOSITORY_RUST_JOBS)
+            + [
+                "rustup toolchain install 1.88 --profile minimal",
+                (
+                    "rustup toolchain install nightly-2026-07-27 "
+                    "--profile minimal"
+                ),
+            ],
+        )
+        self.assertCountEqual(
+            re.findall(
+                r"(?m)\b(?:cargo|rustc|rustdoc) \+([^\s]+)",
+                workflow,
+            ),
+            ["1.88", "nightly-2026-07-27"],
+        )
+        for job_name in REPOSITORY_RUST_JOBS:
+            job = job_block(workflow, job_name)
+            steps = decoded["jobs"][job_name]["steps"]
+            install_indexes = [
+                index
+                for index, step in enumerate(steps)
+                if step.get("run") == "rustup toolchain install"
+            ]
+            rust_command_indexes = [
+                index
+                for index, step in enumerate(steps)
+                if re.search(
+                    r"(?m)^(?:cargo|rustc|rustdoc|uvx maturin)\b",
+                    step.get("run", ""),
+                )
+            ]
+            self.assertEqual(len(install_indexes), 1, job_name)
+            self.assertTrue(rust_command_indexes, job_name)
+            self.assertLess(
+                install_indexes[0],
+                min(rust_command_indexes),
+                job_name,
+            )
+            self.assertNotRegex(
+                job,
+                r"(?:cargo|rustc|rustdoc) \+[^\s]+",
+                job_name,
+            )
+
+        msrv = job_block(workflow, "msrv")
+        shuffle = job_block(workflow, "rust-shuffle")
+        self.assertIn("cargo +1.88 check", msrv)
+        self.assertIn("cargo +nightly-2026-07-27 test", shuffle)
+
+
+class LatestStableCanaryContractTests(unittest.TestCase):
+    def test_latest_stable_canary_is_isolated_and_environment_complete(self) -> None:
+        workflow = STABLE_CANARY_WORKFLOW.read_text(encoding="utf-8")
+        decoded = yaml.safe_load(workflow)
+
+        self.assertEqual(
+            set(decoded),
+            {"name", True, "permissions", "jobs"},
+        )
+        self.assertEqual(decoded["name"], "Latest stable Rust canary")
+        self.assertEqual(
+            trigger_events(workflow),
+            {"schedule", "workflow_dispatch"},
+        )
+        self.assertEqual(decoded["permissions"], {"contents": "read"})
+        self.assertEqual(decoded[True]["schedule"], [{"cron": "0 3 * * 1"}])
+        self.assertIsNone(decoded[True]["workflow_dispatch"])
+        self.assertEqual(set(decoded["jobs"]), {"stable"})
+        job = decoded["jobs"]["stable"]
+        self.assertEqual(set(job), {"runs-on", "steps"})
+        self.assertEqual(job["runs-on"], "ubuntu-latest")
+        self.assertEqual(
+            job["steps"],
+            [
+                {"uses": CHECKOUT_ACTION},
+                {
+                    "uses": SETUP_PYTHON_ACTION,
+                    "with": {"python-version": "3.14"},
+                },
+                {
+                    "uses": SETUP_UV_ACTION,
+                    "with": {"enable-cache": True},
+                },
+                {
+                    "name": "Install latest stable Rust tooling",
+                    "run": (
+                        "rustup toolchain install stable --profile minimal "
+                        "--component rustfmt --component clippy"
+                    ),
+                },
+                {"run": "uv sync --frozen"},
+                {"run": "cargo +stable fmt --all -- --check"},
+                {
+                    "run": (
+                        "cargo +stable clippy --workspace --all-targets "
+                        "--all-features -- -D warnings"
+                    ),
+                },
+                {"run": "cargo +stable test --workspace"},
+            ],
+        )
+        self.assertNotIn(
+            "rust-stable-canary",
+            CI_WORKFLOW.read_text(encoding="utf-8"),
+        )
+
+
+class ToolchainReleaseDocumentationContractTests(unittest.TestCase):
+    def test_release_has_no_toolchain_override(self) -> None:
+        release = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertNotIn("RUSTUP_TOOLCHAIN", release)
+        self.assertNotIn("rust-toolchain:", release)
+
+    def test_development_guide_separates_pin_updates_from_msrv_updates(self) -> None:
+        guide = DEVELOPMENT_GUIDE.read_text(encoding="utf-8")
+
+        self.assertIn("## Pinned Rust toolchain", guide)
+        self.assertIn("rust-toolchain.toml", guide)
+        self.assertIn("1.98.0", guide)
+        self.assertIn("does not raise the minimum supported Rust version", guide)
+        expected_commands = [
+            "cargo fmt --all -- --check",
+            "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+            "cargo test --workspace",
+            "cargo test -p hoimin-cli --test run_e2e",
+            "cargo test -p hoimin-core --features contracts",
+            "cargo test -p hoimin-cli --features contracts",
+            "uv run --frozen python -m unittest discover -s tests -p 'test_*.py' -v",
+            "uvx maturin build --release",
+            "uv run --frozen python tests/wheel_smoke.py",
+        ]
+        fence = chr(96) * 3
+        prefix = (
+            "Run the Rust quality gate locally with the same commands used in CI:"
+            f"\n\n{fence}console\n"
+        )
+        start = guide.index(prefix) + len(prefix)
+        end = guide.index(f"\n{fence}", start)
+        self.assertEqual(guide[start:end].splitlines(), expected_commands)
+        self.assertNotIn("uv run maturin build --release", guide)
 
 
 class ShuffleWorkflowContractTests(unittest.TestCase):

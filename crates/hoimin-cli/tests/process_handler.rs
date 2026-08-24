@@ -555,6 +555,9 @@ struct FixtureChildGuard {
     pid_file: Utf8PathBuf,
 }
 
+const REAL_PROCESS_FIXTURE_BUDGET: Duration = Duration::from_secs(6);
+const REAL_PROCESS_TIMEOUT: Duration = Duration::from_secs(5);
+
 impl FixtureChildGuard {
     fn new(pid_file: Utf8PathBuf) -> Self {
         Self { pid_file }
@@ -572,6 +575,20 @@ impl Drop for FixtureChildGuard {
         if let Some(pid) = self.pid().filter(|pid| process_exists(*pid)) {
             terminate_fixture_process(pid);
         }
+    }
+}
+
+async fn wait_for_fixture_pid(guard: &FixtureChildGuard, deadline: tokio::time::Instant) -> u32 {
+    loop {
+        if let Some(pid) = guard.pid() {
+            return pid;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "fixture child did not become ready before the test deadline: {}",
+            guard.pid_file
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
     }
 }
 
@@ -641,8 +658,13 @@ fn terminate_fixture_process(pid: u32) {
     }
 }
 
+#[cfg(target_os = "linux")]
 async fn wait_until_process_stops(pid: u32) -> bool {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    wait_until_process_stops_before(pid, deadline).await
+}
+
+async fn wait_until_process_stops_before(pid: u32, deadline: tokio::time::Instant) -> bool {
     while process_exists(pid) && tokio::time::Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
@@ -991,6 +1013,7 @@ mod portable {
         let pid_file = output_dir.join("fixture-child.pid");
         let guard = FixtureChildGuard::new(pid_file.clone());
         let handler = portable_handler(output_dir);
+        let deadline = tokio::time::Instant::now() + REAL_PROCESS_FIXTURE_BUDGET;
         let request = RunProcess {
             id: EffectId(9),
             worker: None,
@@ -1005,14 +1028,17 @@ mod portable {
                 native_arg(pid_file.as_std_path().as_os_str()),
             ],
             cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
-            limits: limits(Duration::from_secs(1), 64),
+            limits: limits(REAL_PROCESS_TIMEOUT, 64),
         };
 
-        let event = handler.handle(request).await.unwrap();
-        let child_pid = guard.pid().expect("fixture child wrote its pid");
+        let (event, child_pid) = tokio::join!(
+            handler.handle(request),
+            wait_for_fixture_pid(&guard, deadline)
+        );
+        let event = event.unwrap();
 
         assert_eq!(event.termination, ProcessTermination::Timeout);
-        assert!(wait_until_process_stops(child_pid).await);
+        assert!(wait_until_process_stops_before(child_pid, deadline).await);
     }
 
     #[tokio::test]
@@ -1023,6 +1049,7 @@ mod portable {
         let guard = FixtureChildGuard::new(pid_file.clone());
         let handler = portable_handler(output_dir);
         let cancellation = ProcessCancellation::new();
+        let deadline = tokio::time::Instant::now() + REAL_PROCESS_FIXTURE_BUDGET;
         let request = ProcessRequest::from(RunProcess {
             id: EffectId(10),
         worker: None,
@@ -1041,17 +1068,14 @@ mod portable {
         })
         .with_cancellation(cancellation.clone());
 
-        let (event, ()) = tokio::join!(handler.run(request), async {
-            let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
-            while !pid_file.exists() && tokio::time::Instant::now() < deadline {
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
+        let (event, child_pid) = tokio::join!(handler.run(request), async {
+            let child_pid = wait_for_fixture_pid(&guard, deadline).await;
             cancellation.cancel();
+            child_pid
         });
-        let child_pid = guard.pid().expect("fixture child wrote its pid");
 
         assert_eq!(event.unwrap().termination, ProcessTermination::Cancelled);
-        assert!(wait_until_process_stops(child_pid).await);
+        assert!(wait_until_process_stops_before(child_pid, deadline).await);
     }
 
     #[tokio::test]
@@ -1062,6 +1086,7 @@ mod portable {
         let guard = FixtureChildGuard::new(pid_file.clone());
         let handler = portable_handler_with_termination_failure(output_dir);
         let cancellation = ProcessCancellation::new();
+        let deadline = tokio::time::Instant::now() + REAL_PROCESS_FIXTURE_BUDGET;
         let request = ProcessRequest::from(RunProcess {
             id: EffectId(11),
             worker: None,
@@ -1080,17 +1105,13 @@ mod portable {
         })
         .with_cancellation(cancellation.clone());
 
-        let (event, cleanup_elapsed) = tokio::join!(handler.run(request), async {
-            let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
-            while !pid_file.exists() && tokio::time::Instant::now() < deadline {
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
+        let (event, (cleanup_started, child_pid)) = tokio::join!(handler.run(request), async {
+            let child_pid = wait_for_fixture_pid(&guard, deadline).await;
             let cleanup_started = Instant::now();
             cancellation.cancel();
-            cleanup_started
+            (cleanup_started, child_pid)
         });
-        let child_pid = guard.pid().expect("fixture child wrote its pid");
-        let cleanup_elapsed = cleanup_elapsed.elapsed();
+        let cleanup_elapsed = cleanup_started.elapsed();
 
         let failure = event.expect_err("injected supervisor failure remains observable");
         assert!(matches!(
@@ -1099,7 +1120,7 @@ mod portable {
                 if code == "process.resource.terminate"
                     && message.contains("injected portable termination failure")
         ));
-        assert!(wait_until_process_stops(child_pid).await);
+        assert!(wait_until_process_stops_before(child_pid, deadline).await);
         assert!(
             cleanup_elapsed < Duration::from_millis(900),
             "cancellation cleanup took {cleanup_elapsed:?}"
@@ -1113,7 +1134,8 @@ mod portable {
         let pid_file = output_dir.join("timeout-termination-failure-fixture-child.pid");
         let guard = FixtureChildGuard::new(pid_file.clone());
         let handler = portable_handler_with_termination_failure(output_dir);
-        let timeout = Duration::from_secs(1);
+        let timeout = REAL_PROCESS_TIMEOUT;
+        let deadline = tokio::time::Instant::now() + REAL_PROCESS_FIXTURE_BUDGET;
         let request = RunProcess {
             id: EffectId(12),
             worker: None,
@@ -1132,10 +1154,12 @@ mod portable {
         };
         let started = Instant::now();
 
-        let event = handler.handle(request).await;
+        let (event, child_pid) = tokio::join!(
+            handler.handle(request),
+            wait_for_fixture_pid(&guard, deadline)
+        );
         let total_elapsed = started.elapsed();
         let cleanup_elapsed = total_elapsed.saturating_sub(timeout);
-        let child_pid = guard.pid().expect("fixture child wrote its pid");
 
         let failure = event.expect_err("injected supervisor failure remains observable");
         assert!(matches!(
@@ -1144,7 +1168,7 @@ mod portable {
                 if code == "process.resource.terminate"
                     && message.contains("injected portable termination failure")
         ));
-        assert!(wait_until_process_stops(child_pid).await);
+        assert!(wait_until_process_stops_before(child_pid, deadline).await);
         assert!(
             cleanup_elapsed < Duration::from_millis(900),
             "timeout cleanup took {cleanup_elapsed:?} ({total_elapsed:?} total)"
@@ -1158,6 +1182,7 @@ mod portable {
         let pid_file = output_dir.join("classification-failure-child.pid");
         let guard = FixtureChildGuard::new(pid_file.clone());
         let handler = portable_handler_with_classification_failure(output_dir);
+        let deadline = tokio::time::Instant::now() + REAL_PROCESS_FIXTURE_BUDGET;
         let request = RunProcess {
             id: EffectId(13),
             worker: None,
@@ -1174,16 +1199,13 @@ mod portable {
             cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
             limits: limits(Duration::from_secs(5), 64),
         };
-        let (failure, cleanup_started) = tokio::join!(handler.handle(request), async {
-            let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-            while !pid_file.exists() && tokio::time::Instant::now() < deadline {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-            Instant::now()
-        });
+        let (failure, (cleanup_started, child_pid)) =
+            tokio::join!(handler.handle(request), async {
+                let child_pid = wait_for_fixture_pid(&guard, deadline).await;
+                (Instant::now(), child_pid)
+            });
         let failure = failure.expect_err("injected classification failure remains observable");
         let cleanup_elapsed = cleanup_started.elapsed();
-        let child_pid = guard.pid().expect("fixture child wrote its pid");
 
         assert!(matches!(
             failure.failure,
@@ -1197,7 +1219,7 @@ mod portable {
             "the portable Unix backend must not signal a process group after its root is reaped"
         );
         #[cfg(windows)]
-        assert!(wait_until_process_stops(child_pid).await);
+        assert!(wait_until_process_stops_before(child_pid, deadline).await);
         #[cfg(windows)]
         assert!(
             cleanup_elapsed < Duration::from_millis(900),
@@ -1214,6 +1236,7 @@ mod portable {
         let pid_file = output_dir.join("classification-and-termination-failure-child.pid");
         let guard = FixtureChildGuard::new(pid_file.clone());
         let handler = portable_handler_with_classification_and_termination_failure(output_dir);
+        let deadline = tokio::time::Instant::now() + REAL_PROCESS_FIXTURE_BUDGET;
         let request = RunProcess {
             id: EffectId(14),
             worker: None,
@@ -1231,11 +1254,11 @@ mod portable {
             limits: limits(Duration::from_secs(5), 64),
         };
 
-        let failure = handler
-            .handle(request)
-            .await
-            .expect_err("classification remains primary");
-        let child_pid = guard.pid().expect("fixture child wrote its pid");
+        let (failure, child_pid) = tokio::join!(
+            handler.handle(request),
+            wait_for_fixture_pid(&guard, deadline)
+        );
+        let failure = failure.expect_err("classification remains primary");
 
         assert!(matches!(
             failure.failure,
@@ -1250,7 +1273,7 @@ mod portable {
             "the portable Unix backend must not signal a process group after its root is reaped"
         );
         #[cfg(windows)]
-        assert!(wait_until_process_stops(child_pid).await);
+        assert!(wait_until_process_stops_before(child_pid, deadline).await);
     }
 
     #[test]
@@ -1442,6 +1465,7 @@ mod job_object {
         let pid_file = output_dir.join("hard-close-child.pid");
         let guard = FixtureChildGuard::new(pid_file.clone());
         let handler = Arc::new(hard_handler(output_dir, 512 * 1024 * 1024, 16));
+        let deadline = tokio::time::Instant::now() + REAL_PROCESS_FIXTURE_BUDGET;
         let request = RunProcess {
             id: EffectId(109),
             worker: None,
@@ -1460,17 +1484,14 @@ mod job_object {
         };
         let running = handler.handle(request);
         let close = async {
-            let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
-            while !pid_file.exists() && tokio::time::Instant::now() < deadline {
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
+            let child_pid = wait_for_fixture_pid(&guard, deadline).await;
             handler.close().unwrap();
+            child_pid
         };
 
-        let (finished, ()) = tokio::join!(running, close);
+        let (finished, child_pid) = tokio::join!(running, close);
         finished.unwrap();
-        let child_pid = guard.pid().expect("fixture child wrote its pid");
-        assert!(wait_until_process_stops(child_pid).await);
+        assert!(wait_until_process_stops_before(child_pid, deadline).await);
 
         let failed = handler
             .handle(run_python(

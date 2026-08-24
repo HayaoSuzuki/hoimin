@@ -19,10 +19,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      - name: Install stable Rust tooling
-        run: |
-          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
-          rustup default stable
+      - name: Install repository Rust toolchain
+        run: rustup toolchain install
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
@@ -52,10 +50,8 @@ jobs:
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           enable-cache: true
-      - name: Install stable Rust
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+      - name: Install repository Rust toolchain
+        run: rustup toolchain install
       - run: uv sync --frozen
       - run: cargo test --workspace
       - run: cargo test -p hoimin-cli --test run_e2e
@@ -90,10 +86,8 @@ jobs:
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           enable-cache: true
-      - name: Install stable Rust
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+      - name: Install repository Rust toolchain
+        run: rustup toolchain install
       - run: uv sync --frozen
       - run: cargo test -p hoimin-core --features contracts
       - run: cargo test -p hoimin-cli --features contracts
@@ -108,10 +102,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      - name: Install stable Rust
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+      - name: Install repository Rust toolchain
+        run: rustup toolchain install
       - name: Reject I/O dependencies in hoimin-core
         shell: bash
         run: |
@@ -134,10 +126,8 @@ jobs:
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           enable-cache: true
-      - name: Install stable Rust
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+      - name: Install repository Rust toolchain
+        run: rustup toolchain install
       - run: uv run --frozen python -m unittest discover -s tests -p 'test_*.py' -v
       - name: Reset wheel artifact directory
         run: python -c "import shutil; shutil.rmtree('target/wheels', ignore_errors=True)"
@@ -149,10 +139,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      - name: Install stable Rust
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+      - name: Install repository Rust toolchain
+        run: rustup toolchain install
       - run: cargo test -p hoimin-cli linux_policy::unavailable_cgroup_requires_explicit_best_effort_opt_in
 
   linux-cgroup-v2-hard:
@@ -167,10 +155,8 @@ jobs:
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           enable-cache: true
-      - name: Install stable Rust
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+      - name: Install repository Rust toolchain
+        run: rustup toolchain install
       - run: uv sync --frozen
       - name: Require delegated cgroup v2 hard tests to run
         shell: bash
