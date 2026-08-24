@@ -52,7 +52,9 @@ The repository gains a root `rust-toolchain.toml` with an exact `1.98.0`
 channel, the minimal profile, and the `clippy` and `rustfmt` components. This is
 the single stable development and required-CI toolchain declaration. Normal
 `cargo` and `rustup` commands run from the repository resolve that override
-without a mutable channel name.
+without a mutable channel name, unless a developer deliberately supplies a
+higher-precedence command-line selector or `RUSTUP_TOOLCHAIN` environment
+override.
 
 Required jobs in `.github/workflows/ci.yml` install the active repository
 toolchain with `rustup toolchain install`; they do not name `stable` and do not
@@ -81,18 +83,22 @@ updates.
 
 A separate `.github/workflows/rust-stable-canary.yml` runs at 03:00 UTC every
 Monday (`0 3 * * 1`) and on `workflow_dispatch`. It has read-only contents
-permission, runs on Ubuntu, installs `stable`, and invokes commands explicitly
-with `+stable`:
+permission and runs on Ubuntu. It uses the same commit-pinned checkout,
+Python 3.14, and uv setup actions as required CI, runs `uv sync --frozen`, and
+installs `stable` with the minimal profile plus the `rustfmt` and `clippy`
+components. The validation commands select the canary toolchain explicitly:
 
 - `cargo +stable fmt --all -- --check`;
 - `cargo +stable clippy --workspace --all-targets --all-features -- -D warnings`;
 - `cargo +stable test --workspace`.
 
-The canary is not triggered by pull requests or pushes and is not a dependency
-of required CI jobs. A new Rust release can therefore produce a visible failed
-canary without retroactively making an unchanged main commit fail its required
-checks. The resolution is a normal toolchain-update pull request, not a retry
-or an emergency downgrade.
+The Python environment is not incidental: workspace tests exercise Python-backed
+paths, so a canary that omitted the required CI setup would measure a different
+system. The canary is not triggered by pull requests or pushes and is not a
+dependency of required CI jobs. It is also not added to branch protection. A new
+Rust release can therefore produce a visible failed canary without retroactively
+making an unchanged main commit fail its required checks. The resolution is a
+normal toolchain-update pull request, not a retry or an emergency downgrade.
 
 ## Shell setup boundary
 
@@ -106,38 +112,48 @@ Tokio's blocking-task boundary:
 - the workspace handler;
 - the platform resource backend;
 - the process and analyzer handlers;
-- a prepared report spool for JSON output, when required.
+- a non-generic `PreparedReport` containing the output format and its initialized
+  JSON report state, when required.
 
-The async constructor submits that operation through a small shell-setup helper
-backed by `tokio::task::spawn_blocking` and awaits its join result. After the
-prepared value returns to the async task, the constructor combines it with the
-caller-provided `stdout` and `stderr` to build `ReportHandler` and then returns
-`ShellContext`.
+The async constructor clones the configuration before crossing the task
+boundary, submits preparation through a small shell-setup helper backed by
+`tokio::task::spawn_blocking`, and awaits its join result. After the prepared
+value returns to the async task, the constructor attaches the caller-provided
+`stdout` and `stderr` to `PreparedReport` and then returns `ShellContext`.
 
 This split is required because `run_with_io` accepts borrowed writers that are
 not required to be `Send` or `'static`. Moving the complete generic
 `ShellContext` into `spawn_blocking` would impose a new public bound and is
 rejected. Leaving `ReportHandler::new` to open its JSON temporary file after the
 await would retain blocking filesystem I/O on the async runtime and is also
-rejected. Report preparation therefore creates the optional spool in the
-blocking phase, while report composition retains the writers on the calling
-task.
+rejected. `PreparedReport` encodes the format and JSON-state invariant together;
+it cannot represent JSON output without initialized JSON state. The existing
+public `ReportHandler::new` remains available and delegates to the same prepare
+then attach operations, while shell setup performs the prepare operation in the
+blocking phase and retains the writers on the calling task.
 
 Setup remains outside the run's total-timeout interval, matching current
 behavior: `run_loop_prepared` establishes its deadline only after
 `ShellContext::new` returns. The awaited blocking task keeps the Tokio executor
-responsive, but setup is not abandoned on cancellation because the interrupt
-monitor and run state do not yet exist. Adding cancellation at this boundary
-would change startup and resource-ownership semantics and requires a separate
-design.
+responsive. Setup consists only of bounded initialization calls that must finish
+on their own; Tokio cannot abort `spawn_blocking` work after it starts, and
+runtime shutdown may wait for that work. Run-control cancellation does not apply
+because the interrupt monitor and run state do not yet exist. If the constructor
+future itself is dropped, its join handle is detached, but the blocking closure
+continues to own and eventually drop any partially constructed resources. Making
+startup cooperatively cancellable would change resource ownership and requires a
+separate design.
 
 ## Setup failure and ownership
 
 Ordinary preparation errors retain their existing user-facing messages.
 Failure before returning `PreparedShellSetup` drops every temporary file,
-handle, and directory owned by the blocking task. A panic or cancellation of
-the blocking-task wrapper is converted into a distinct shell-setup join error;
-it is not mislabeled as an effect failure because no run effect exists yet.
+handle, and directory owned by the blocking task. A join failure is converted
+into a distinct shell-setup join error; it is not mislabeled as an effect failure
+because no run effect exists yet. Once blocking preparation has started, the
+normal join failure is a panic. Cancellation is possible only while a queued
+blocking task has not started or while the Tokio runtime is shutting down; the
+design does not claim that an in-flight blocking operation can be aborted.
 
 Once preparation succeeds, ownership moves exactly once into `ShellContext`.
 No temporary path is reconstructed and no resource backend is created a second
@@ -151,12 +167,14 @@ operations await Tokio I/O. The test-only `FirstWriteFails` implementation has
 no asynchronous work. Its methods use non-async trait-implementation syntax,
 following the Rust 1.98 Clippy contract.
 
-The write error is constructed when `write_ring` is called and returned by the
-`std::future::Ready` future. `finalize` panics immediately if it is called after
-the write failure; its callers already await the call immediately, and the
-test's contract is that the call never occurs. Tests continue to prove that the
-collector stops using the failed sink and never finalizes it. No production
-trait abstraction changes for the sake of one test double.
+The write error is constructed when `write_ring` is called and returned by a
+`std::future::Ready` future. `finalize` returns a `std::future::poll_fn` future
+whose poll operation is the invariant panic. This preserves the existing
+deferred-on-poll behavior without declaring the trait method itself async and
+without triggering `clippy::manual_async_fn`, which an `async` block wrapper
+would trigger under Rust 1.98. Tests continue to prove that the collector stops
+using the failed sink and never finalizes it. No production trait abstraction
+changes for the sake of one test double.
 
 ## Executable workflow contracts
 
@@ -165,12 +183,17 @@ stable-toolchain contracts:
 
 - parse `rust-toolchain.toml` and require the exact channel, profile, and
   components;
-- reject mutable `stable` installation or `rustup default` in required CI;
+- reject mutable `stable` installation, `rustup default`, or a
+  `RUSTUP_TOOLCHAIN` environment override in required CI;
 - require ordinary jobs to use the repository toolchain while preserving the
-  explicit MSRV and nightly selectors;
+  explicit MSRV and nightly selectors, and reject an unnecessary `+stable`
+  selector that would bypass the exact repository pin;
 - parse the canary workflow and require only `schedule` and
-  `workflow_dispatch` triggers, read-only permissions, explicit `+stable`
-  commands, and no dependency from required CI;
+  `workflow_dispatch` triggers, read-only permissions, commit-pinned setup
+  actions, Python and uv environment parity, the required stable components,
+  explicit `+stable` commands, and no dependency from required CI;
+- preserve the release workflow's exact artifact-only contract and reject a
+  release-specific Rust selector that could override the repository pin;
 - require the development guide to describe deliberate pinned-toolchain
   updates separately from MSRV updates.
 
@@ -189,17 +212,23 @@ It currently fails on `ShellContext::new` and the two `FirstWriteFails` methods.
 The implementation must make that same command pass without an allow or expect
 for `unused_async_trait_impl`.
 
-The shell-setup helper receives a deterministic test operation. On a
-current-thread Tokio runtime, the operation blocks on a test gate while an
-independent heartbeat future runs. The heartbeat must complete before the gate
-is released, proving setup was submitted to the blocking pool. The test then
-releases the operation and checks its value or error. A counterfactual that
-executes the operation inline must fail this test.
+The real shell-preparation path accepts a test-only before-start hook, following
+the existing preflight pause-controller pattern. On a current-thread Tokio
+runtime, that hook signals entry and blocks on a test gate while an independent
+heartbeat future runs. A controller OS thread waits a bounded interval for the
+heartbeat and always releases the gate afterward. The test asserts that the
+heartbeat arrived before release and that real context preparation completed.
+This avoids deadlock in the counterfactual: if preparation runs inline, the
+controller times out, releases the gate, and the assertion fails. A total Tokio
+timeout bounds the regression itself.
 
-Existing constructor tests continue to prove that creating a context does not
-create a missing project root or session database. Output-collection tests
-continue to prove the first write error is retained and the failed sink is not
-finalized.
+The production constructor uses the same preparation function with a no-op hook;
+the test does not exercise an unrelated generic blocking helper. Existing
+constructor tests continue to prove that creating a context does not create a
+missing project root or session database. Report-handler tests cover both the
+existing public constructor and prepared-state attachment for JSON, JSON Lines,
+and human formats. Output-collection tests continue to prove the first write
+error is retained and the failed sink is not finalized.
 
 Final local verification includes:
 
