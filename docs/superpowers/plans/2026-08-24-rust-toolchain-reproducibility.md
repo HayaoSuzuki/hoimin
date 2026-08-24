@@ -35,6 +35,22 @@
 | `tests/test_ci_workflow.py` | Enforce toolchain, required-CI, canary, release, and documentation contracts. |
 | `docs/development.md` | Explain pinned stable updates separately from MSRV updates. |
 
+## Spec-to-plan acceptance matrix
+
+| Specification contract | Implementation task | Executable or review evidence |
+| --- | --- | --- |
+| Exact Rust 1.98.0 for ordinary development and required CI | Task 4 | Parsed `rust-toolchain.toml`, exhaustive CI-job classification, install-before-use checks, Rustup resolution, Task 5 quality and test gates. |
+| Separate MSRV and pinned-nightly compatibility lanes | Task 4 | Exact `+1.88` and `+nightly-2026-07-27` workflow contracts; Task 5 runs both lanes. |
+| Moving stable is visible but cannot change required results | Task 4 | Exact canary trigger, permission, action, environment, and command structure; required CI contains no canary dependency or `+stable`. |
+| Release wheels consume the repository pin without changing publication policy | Task 4 | Existing exact artifact-only release contract, pinned `maturin-action` SHA, absence of a release toolchain input, and the pinned action-source behavior recorded in the spec. |
+| `ShellContext::new(...).await` remains public and keeps non-`Send`, non-`'static` writers | Task 3 | Compile-time borrowed-`Rc` writer characterization plus unchanged signature and focused constructor tests. |
+| Synchronous setup leaves Tokio's executor thread | Task 3 | Current-thread heartbeat regression, join-failure regression, manual inline counterfactual, and focused generated mutations. |
+| Setup errors remain distinct and every partially or fully prepared resource has one owner | Task 3 | Owned `PreparedShellSetup`, compiler-enforced `Send + 'static` blocking boundary, setup-panic classification, and existing constructor/drop integrations. |
+| Report writers remain on the async caller while JSON state is prepared off-thread | Task 2 | `PreparedReport: Send`, format-state unit test, and existing public report integrations. |
+| The immediate `FirstWriteFails` test double becomes Rust 1.98-clean without production-trait changes | Task 1 | Exact Clippy RED/GREEN and the first-write-error/finalize invariant regression. |
+| Setup stays outside total timeout and Windows-flake work stays excluded | Tasks 3 and 5 | The existing deadline remains after `ShellContext::new`; final function-context diff and forbidden-path review reject run-loop, Windows resource, and `run_e2e.rs` changes. |
+| No dependency, configuration, report-format, retry, or release-publication expansion | Tasks 1-5 | File Map allowlist, unchanged manifests and release workflow, existing exact artifact-only contract, and final path/diff review. |
+
 ---
 
 ### Task 1: Make the immediate `OutputSink` test double Rust 1.98-clean
@@ -295,16 +311,15 @@ Change the report import to:
 use crate::report::{PreparedReport, ReportHandler};
 ```
 
-- [ ] **Step 2: Add the current-thread responsiveness regression before implementation**
+- [ ] **Step 2: Characterize the public writer-bound contract before implementation**
 
-Add this test inside `shell.rs`'s existing `tests` module:
+Add this shared fixture, local writer, and compile-time characterization inside
+`shell.rs`'s existing `tests` module:
 
 ```rust
-#[tokio::test(flavor = "current_thread")]
-async fn shell_setup_does_not_block_the_async_runtime() {
-    let project = tempfile::tempdir().unwrap();
+fn shell_setup_test_config(project: &TempDir) -> RunConfig {
     std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
-    let config = crate::cli::parse_config_from([
+    crate::cli::parse_config_from([
         OsString::from("hoimin"),
         OsString::from("run"),
         OsString::from("--root"),
@@ -315,7 +330,67 @@ async fn shell_setup_does_not_block_the_async_runtime() {
         OsString::from("--"),
         OsString::from("unused-test-command"),
     ])
-    .unwrap();
+    .unwrap()
+}
+
+struct BorrowedNonSendWriter<'a> {
+    buffer: &'a mut Vec<u8>,
+    _not_send: std::rc::Rc<()>,
+}
+
+impl std::io::Write for BorrowedNonSendWriter<'_> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.buffer.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn shell_context_constructor_accepts_borrowed_non_send_writers() {
+    let project = tempfile::tempdir().unwrap();
+    let config = shell_setup_test_config(&project);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let future = ShellContext::new(
+        &config,
+        BorrowedNonSendWriter {
+            buffer: &mut stdout,
+            _not_send: std::rc::Rc::new(()),
+        },
+        BorrowedNonSendWriter {
+            buffer: &mut stderr,
+            _not_send: std::rc::Rc::new(()),
+        },
+    );
+
+    drop(future);
+}
+```
+
+Run:
+
+```console
+cargo +1.98.0 test -p hoimin-cli --lib shell::tests::shell_context_constructor_accepts_borrowed_non_send_writers -- --exact
+```
+
+Expected: PASS against the current constructor. `Rc` makes each writer
+non-`Send`, its borrowed buffer makes it non-`'static`, and dropping the
+unpolled future leaves constructor setup unexecuted, so the test characterizes
+only the public writer bounds.
+
+- [ ] **Step 3: Add the responsiveness and join-failure regressions before implementation**
+
+Add these tests beside the characterization:
+
+```rust
+#[tokio::test(flavor = "current_thread")]
+async fn shell_setup_does_not_block_the_async_runtime() {
+    let project = tempfile::tempdir().unwrap();
+    let config = shell_setup_test_config(&project);
     let (entered_tx, entered_rx) = std::sync::mpsc::channel();
     let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
     let (heartbeat_tx, heartbeat_rx) = std::sync::mpsc::channel();
@@ -348,9 +423,26 @@ async fn shell_setup_does_not_block_the_async_runtime() {
         "shell setup blocked the runtime until its blocking work was released"
     );
 }
+
+#[tokio::test]
+async fn shell_setup_panic_is_reported_as_a_setup_join_failure() {
+    let project = tempfile::tempdir().unwrap();
+    let config = shell_setup_test_config(&project);
+    let result = prepare_shell_setup(
+        config,
+        Box::new(|| panic!("controlled shell setup panic")),
+    )
+    .await;
+    let Err(error) = result else {
+        panic!("controlled setup panic unexpectedly succeeded");
+    };
+
+    assert!(error.starts_with("shell setup task failed:"), "{error}");
+    assert!(error.contains("controlled shell setup panic"), "{error}");
+}
 ```
 
-- [ ] **Step 3: Run the new test and observe RED**
+- [ ] **Step 4: Run the new behavioral tests and observe RED**
 
 Run:
 
@@ -360,7 +452,7 @@ cargo +1.98.0 test -p hoimin-cli --lib shell::tests::shell_setup_does_not_block_
 
 Expected: compile failure because `prepare_shell_setup` does not exist; `OwnedStartHook` already exists in `shell.rs`.
 
-- [ ] **Step 4: Add the non-generic preparation result and blocking functions**
+- [ ] **Step 5: Add the non-generic preparation result and blocking functions**
 
 Place these definitions immediately before `ShellContext`:
 
@@ -431,7 +523,7 @@ fn prepare_shell_setup_sync(config: RunConfig) -> Result<PreparedShellSetup, Str
 }
 ```
 
-- [ ] **Step 5: Rebuild `ShellContext::new` from the prepared value**
+- [ ] **Step 6: Rebuild `ShellContext::new` from the prepared value**
 
 Remove the `#[expect(clippy::unused_async)]` attribute and replace the constructor body with:
 
@@ -467,49 +559,15 @@ pub async fn new(config: &RunConfig, stdout: Stdout, stderr: Stderr) -> Result<S
 }
 ```
 
-Do not move `stdout` or `stderr` into the blocking closure and do not add bounds beyond `Write`.
-
-- [ ] **Step 6: Add a join-failure classification test**
-
-Add beside the responsiveness regression:
-
-```rust
-#[tokio::test]
-async fn shell_setup_panic_is_reported_as_a_setup_join_failure() {
-    let project = tempfile::tempdir().unwrap();
-    std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
-    let config = crate::cli::parse_config_from([
-        OsString::from("hoimin"),
-        OsString::from("run"),
-        OsString::from("--root"),
-        project.path().as_os_str().to_owned(),
-        OsString::from("--file"),
-        OsString::from("target.py"),
-        OsString::from("--allow-best-effort-memory"),
-        OsString::from("--"),
-        OsString::from("unused-test-command"),
-    ])
-    .unwrap();
-
-    let result = prepare_shell_setup(
-        config,
-        Box::new(|| panic!("controlled shell setup panic")),
-    )
-    .await;
-    let Err(error) = result else {
-        panic!("controlled setup panic unexpectedly succeeded");
-    };
-
-    assert!(error.starts_with("shell setup task failed:"), "{error}");
-    assert!(error.contains("controlled shell setup panic"), "{error}");
-}
-```
+Do not move `stdout` or `stderr` into the blocking closure and do not add bounds
+beyond `Write`; the Step 2 characterization must continue to compile.
 
 - [ ] **Step 7: Run focused shell and constructor regressions**
 
 Run:
 
 ```console
+cargo +1.98.0 test -p hoimin-cli --lib shell::tests::shell_context_constructor_accepts_borrowed_non_send_writers -- --exact
 cargo +1.98.0 test -p hoimin-cli --lib shell::tests::shell_setup_does_not_block_the_async_runtime -- --exact
 cargo +1.98.0 test -p hoimin-cli --lib shell::tests::shell_setup_panic_is_reported_as_a_setup_join_failure -- --exact
 cargo +1.98.0 test -p hoimin-cli --test run_e2e shell_context_construction_performs_no_project_io -- --exact
@@ -551,7 +609,7 @@ git commit -m "fix(shell): offload context setup"
 - Produces: exact repository toolchain contract, ordinary-job install contract, latest-stable canary, and executable documentation/workflow tests.
 - Preserves: explicit `+1.88`, explicit `+nightly-2026-07-27`, and the exact artifact-only release workflow.
 
-- [ ] **Step 1: Add failing path constants and contract tests**
+- [ ] **Step 1: Add the exact repository-toolchain contract**
 
 Add these constants to `tests/test_ci_workflow.py`:
 
@@ -569,6 +627,7 @@ REPOSITORY_RUST_JOBS = {
     "linux-best-effort",
     "linux-cgroup-v2-hard",
 }
+COMPATIBILITY_RUST_JOBS = {"msrv", "rust-shuffle"}
 CHECKOUT_ACTION = (
     "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10"
 )
@@ -580,10 +639,10 @@ SETUP_UV_ACTION = (
 )
 ```
 
-Add a new test class:
+Add the repository declaration contract:
 
 ```python
-class RustToolchainWorkflowContractTests(unittest.TestCase):
+class RepositoryRustToolchainContractTests(unittest.TestCase):
     def test_repository_toolchain_is_exact_and_complete(self) -> None:
         toolchain = tomllib.loads(RUST_TOOLCHAIN.read_text(encoding="utf-8"))
 
@@ -599,27 +658,104 @@ class RustToolchainWorkflowContractTests(unittest.TestCase):
             declaration["components"],
             ["clippy", "rustfmt"],
         )
+```
+
+- [ ] **Step 2: Add exhaustive required-job classification and ordering**
+
+Add a separate contract class:
+
+```python
+class RequiredRustJobContractTests(unittest.TestCase):
 
     def test_required_jobs_install_only_the_repository_toolchain(self) -> None:
         workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+        decoded = yaml.safe_load(workflow)
 
+        self.assertEqual(
+            set(decoded["jobs"]),
+            REPOSITORY_RUST_JOBS | COMPATIBILITY_RUST_JOBS,
+        )
         self.assertNotIn("RUSTUP_TOOLCHAIN", workflow)
         self.assertNotIn("rustup override", workflow)
+        self.assertNotIn("rustup default", workflow)
+        self.assertNotIn("rustup run", workflow)
+        self.assertNotIn("rustup update", workflow)
+        all_steps = [
+            step
+            for job in decoded["jobs"].values()
+            for step in job["steps"]
+        ]
+        self.assertFalse(
+            any(
+                "toolchain" in step.get("uses", "").lower()
+                for step in all_steps
+            )
+        )
+        install_commands = [
+            line.strip()
+            for step in all_steps
+            for line in step.get("run", "").splitlines()
+            if line.strip().startswith("rustup toolchain install")
+        ]
+        self.assertCountEqual(
+            install_commands,
+            ["rustup toolchain install"] * len(REPOSITORY_RUST_JOBS)
+            + [
+                "rustup toolchain install 1.88 --profile minimal",
+                (
+                    "rustup toolchain install nightly-2026-07-27 "
+                    "--profile minimal"
+                ),
+            ],
+        )
+        self.assertCountEqual(
+            re.findall(
+                r"(?m)\b(?:cargo|rustc|rustdoc) \+([^\s]+)",
+                workflow,
+            ),
+            ["1.88", "nightly-2026-07-27"],
+        )
         for job_name in REPOSITORY_RUST_JOBS:
             job = job_block(workflow, job_name)
-            self.assertEqual(job.count("rustup toolchain install"), 1, job_name)
-            self.assertRegex(
-                job,
-                r"(?m)^        run: rustup toolchain install$",
+            steps = decoded["jobs"][job_name]["steps"]
+            install_indexes = [
+                index
+                for index, step in enumerate(steps)
+                if step.get("run") == "rustup toolchain install"
+            ]
+            rust_command_indexes = [
+                index
+                for index, step in enumerate(steps)
+                if re.search(
+                    r"(?m)^(?:cargo|rustc|rustdoc|uvx maturin)\b",
+                    step.get("run", ""),
+                )
+            ]
+            self.assertEqual(len(install_indexes), 1, job_name)
+            self.assertTrue(rust_command_indexes, job_name)
+            self.assertLess(
+                install_indexes[0],
+                min(rust_command_indexes),
                 job_name,
             )
-            self.assertNotIn("rustup default", job, job_name)
-            self.assertNotRegex(job, r"cargo \+[^\s]+", job_name)
+            self.assertNotRegex(
+                job,
+                r"(?:cargo|rustc|rustdoc) \+[^\s]+",
+                job_name,
+            )
 
         msrv = job_block(workflow, "msrv")
         shuffle = job_block(workflow, "rust-shuffle")
         self.assertIn("cargo +1.88 check", msrv)
         self.assertIn("cargo +nightly-2026-07-27 test", shuffle)
+```
+
+- [ ] **Step 3: Add the isolated latest-stable canary contract**
+
+Add the exact canary contract:
+
+```python
+class LatestStableCanaryContractTests(unittest.TestCase):
 
     def test_latest_stable_canary_is_isolated_and_environment_complete(self) -> None:
         workflow = STABLE_CANARY_WORKFLOW.read_text(encoding="utf-8")
@@ -672,6 +808,14 @@ class RustToolchainWorkflowContractTests(unittest.TestCase):
             ],
         )
         self.assertNotIn("rust-stable-canary", CI_WORKFLOW.read_text(encoding="utf-8"))
+```
+
+- [ ] **Step 4: Add release and development-document preservation contracts**
+
+Add the remaining preservation contracts:
+
+```python
+class ToolchainReleaseDocumentationContractTests(unittest.TestCase):
 
     def test_release_has_no_toolchain_override(self) -> None:
         release = RELEASE_WORKFLOW.read_text(encoding="utf-8")
@@ -686,18 +830,29 @@ class RustToolchainWorkflowContractTests(unittest.TestCase):
         self.assertIn("rust-toolchain.toml", guide)
         self.assertIn("1.98.0", guide)
         self.assertIn("does not raise the minimum supported Rust version", guide)
-        for command in (
+        expected_commands = [
             "cargo fmt --all -- --check",
             "cargo clippy --workspace --all-targets --all-features -- -D warnings",
             "cargo test --workspace",
             "cargo test -p hoimin-cli --test run_e2e",
+            "cargo test -p hoimin-core --features contracts",
+            "cargo test -p hoimin-cli --features contracts",
+            "uv run --frozen python -m unittest discover -s tests -p 'test_*.py' -v",
             "uvx maturin build --release",
-        ):
-            self.assertIn(f"{command}\n", guide)
+            "uv run --frozen python tests/wheel_smoke.py",
+        ]
+        fence = chr(96) * 3
+        prefix = (
+            "Run the Rust quality gate locally with the same commands used in CI:"
+            f"\n\n{fence}console\n"
+        )
+        start = guide.index(prefix) + len(prefix)
+        end = guide.index(f"\n{fence}", start)
+        self.assertEqual(guide[start:end].splitlines(), expected_commands)
         self.assertNotIn("uv run maturin build --release", guide)
 ```
 
-- [ ] **Step 2: Run the workflow tests and observe RED**
+- [ ] **Step 5: Run the workflow tests and observe RED**
 
 Run:
 
@@ -707,7 +862,7 @@ uv run --frozen python -m unittest tests/test_ci_workflow.py -v
 
 Expected: failures for the missing `rust-toolchain.toml`, missing canary, rolling stable installs, and missing development-guide section; existing MSRV, nightly, trigger, and release tests still pass.
 
-- [ ] **Step 3: Add the exact repository toolchain declaration**
+- [ ] **Step 6: Add the exact repository toolchain declaration**
 
 Create `rust-toolchain.toml`:
 
@@ -718,7 +873,7 @@ profile = "minimal"
 components = ["clippy", "rustfmt"]
 ```
 
-- [ ] **Step 4: Make ordinary required jobs consume the repository declaration**
+- [ ] **Step 7: Make ordinary required jobs consume the repository declaration**
 
 In each job named in `REPOSITORY_RUST_JOBS`, replace the two-line rolling install/default block with:
 
@@ -736,9 +891,11 @@ rustup toolchain install nightly-2026-07-27 --profile minimal
 cargo +nightly-2026-07-27 test --workspace -- -Z unstable-options --shuffle
 ```
 
-Do not add `rustup default`, `RUSTUP_TOOLCHAIN`, `cargo +stable`, or a release-workflow override.
+Do not add `rustup default`, `rustup override`, `rustup run`, `rustup update`,
+`RUSTUP_TOOLCHAIN`, an alternate toolchain setup action, a new `+toolchain`
+selector, or a release-workflow override.
 
-- [ ] **Step 5: Create the isolated canary workflow**
+- [ ] **Step 8: Create the isolated canary workflow**
 
 Create `.github/workflows/rust-stable-canary.yml`:
 
@@ -772,7 +929,7 @@ jobs:
       - run: cargo +stable test --workspace
 ```
 
-- [ ] **Step 6: Document pinned stable separately from MSRV**
+- [ ] **Step 9: Document pinned stable separately from MSRV**
 
 Insert this section before `## Minimum supported Rust version` in `docs/development.md`:
 
@@ -792,13 +949,17 @@ Updating the pinned compiler does not raise the minimum supported Rust version.
 The MSRV remains the separate contract below.
 ```
 
-Replace the guide's opening command block with the required-CI equivalents:
+Replace the guide's opening command block with the primary repository-toolchain
+and wheel-gate commands. The separate MSRV and nightly sections remain the
+compatibility-lane instructions:
 
 ```console
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace
 cargo test -p hoimin-cli --test run_e2e
+cargo test -p hoimin-core --features contracts
+cargo test -p hoimin-cli --features contracts
 uv run --frozen python -m unittest discover -s tests -p 'test_*.py' -v
 uvx maturin build --release
 uv run --frozen python tests/wheel_smoke.py
@@ -806,7 +967,7 @@ uv run --frozen python tests/wheel_smoke.py
 
 In the wheel-smoke paragraph, change its remaining `uv run maturin build --release` reference to `uvx maturin build --release`. Change the final sentence of the MSRV update paragraph from “Stable CI remains required” to “The pinned stable CI gate remains required” so it cannot be read as moving stable.
 
-- [ ] **Step 7: Run all executable workflow contracts**
+- [ ] **Step 10: Run all executable workflow contracts**
 
 Run:
 
@@ -816,20 +977,20 @@ uv run --frozen python -m unittest tests/test_ci_workflow.py -v
 
 Expected: all tests PASS, including existing exact release-workflow and trigger-reachability contracts.
 
-- [ ] **Step 8: Verify Rustup resolution and all explicit exceptions**
+- [ ] **Step 11: Verify Rustup resolution and all explicit exceptions**
 
 Run:
 
 ```console
 rustup show active-toolchain
 rustc --version
-rg -n "rustup default|rustup toolchain install stable|RUSTUP_TOOLCHAIN|cargo \+stable" .github/workflows/ci.yml .github/workflows/release.yml
+rg -n "rustup (default|override|run|update)|rustup toolchain install stable|RUSTUP_TOOLCHAIN|(cargo|rustc|rustdoc) \+stable|uses:.*toolchain" .github/workflows/ci.yml .github/workflows/release.yml
 rg -n "1\.88|nightly-2026-07-27" .github/workflows/ci.yml Cargo.toml docs/development.md tests/test_ci_workflow.py
 ```
 
 Expected: the first two commands report Rust 1.98.0 from the repository override; the first `rg` has no matches; the second shows the unchanged MSRV and pinned-nightly contracts.
 
-- [ ] **Step 9: Commit the reproducible CI boundary**
+- [ ] **Step 12: Commit the reproducible CI boundary**
 
 ```console
 git add rust-toolchain.toml .github/workflows/ci.yml .github/workflows/rust-stable-canary.yml tests/test_ci_workflow.py docs/development.md
@@ -970,10 +1131,12 @@ Run:
 ```console
 git diff --name-only origin/main
 git diff --check origin/main
+git diff --function-context origin/main -- crates/hoimin-cli/src/shell.rs
+rg -n "ShellContext::new\(&config|let deadline = tokio::time::Instant::now\(\) \+ config\.limits\.total_timeout\.get\(\)" crates/hoimin-cli/src/shell.rs
 git status --short --branch
 ```
 
-Expected: changed paths are limited to the spec, this plan, the eight implementation files in the File Map, and any focused Rust regression added in `shell.rs` or `report/mod.rs`. There are no changes to Windows resource files or `run_e2e.rs`; `.idea/` remains the sole unrelated untracked path; the status line is `## fix/rust-1.98-ci` with no upstream annotation.
+Expected: changed paths are limited to the spec, this plan, and the eight implementation files in the File Map. The `shell.rs` function-context diff contains only the import, prepared setup, constructor, and focused tests. In `run_loop_prepared`, the `ShellContext::new` await remains before the single total-timeout deadline construction. There are no changes to the run-loop body, Windows resource files, or `run_e2e.rs`; `.idea/` remains the sole unrelated untracked path; the status line is `## fix/rust-1.98-ci` with no upstream annotation.
 
 - [ ] **Step 9: Confirm the final commit set without creating a verification-only commit**
 

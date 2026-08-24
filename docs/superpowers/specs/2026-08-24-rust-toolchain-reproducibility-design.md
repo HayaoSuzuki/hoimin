@@ -62,8 +62,18 @@ change the user's default toolchain. Commands continue to omit a `+toolchain`
 selector and therefore use the repository override. The pinned
 `maturin-action` resolves the nearest `rust-toolchain.toml` before installing
 Rust, so release builds use the same channel without changing the release
-workflow shape. A release tag therefore cannot silently select a newer compiler
-than the commit was tested with.
+workflow shape. At the pinned
+`e83996d129638aa358a18fbd1dfb82f0b0fb5d3b` revision,
+[`getRustToolchain`](https://github.com/PyO3/maturin-action/blob/e83996d129638aa358a18fbd1dfb82f0b0fb5d3b/src/index.ts#L350-L394)
+walks from the manifest directory to the workspace root and reads the channel
+from `rust-toolchain.toml`; both
+[`dockerBuild`](https://github.com/PyO3/maturin-action/blob/e83996d129638aa358a18fbd1dfb82f0b0fb5d3b/src/index.ts#L599-L606)
+and
+[`hostBuild`](https://github.com/PyO3/maturin-action/blob/e83996d129638aa358a18fbd1dfb82f0b0fb5d3b/src/index.ts#L986-L1004)
+consume that result. Any future action-revision update must reverify those
+three paths in the pinned source before changing the workflow contract. A
+release tag therefore cannot silently select a newer compiler than the commit
+was tested with.
 
 The two compatibility lanes remain explicit exceptions:
 
@@ -183,11 +193,15 @@ stable-toolchain contracts:
 
 - parse `rust-toolchain.toml` and require the exact channel, profile, and
   components;
-- reject mutable `stable` installation, `rustup default`, or a
+- reject mutable `stable` installation, `rustup default`, `rustup override`,
+  `rustup run`, `rustup update`, an alternate toolchain setup action, or a
   `RUSTUP_TOOLCHAIN` environment override in required CI;
 - require ordinary jobs to use the repository toolchain while preserving the
   explicit MSRV and nightly selectors, and reject an unnecessary `+stable`
   selector that would bypass the exact repository pin;
+- require every CI job to be classified as either a repository-toolchain job
+  or one of the two explicit compatibility lanes, and require repository
+  toolchain installation to precede its first Rust or maturin command;
 - parse the canary workflow and require only `schedule` and
   `workflow_dispatch` triggers, read-only permissions, commit-pinned setup
   actions, Python and uv environment parity, the required stable components,
@@ -195,7 +209,10 @@ stable-toolchain contracts:
 - preserve the release workflow's exact artifact-only contract and reject a
   release-specific Rust selector that could override the repository pin;
 - require the development guide to describe deliberate pinned-toolchain
-  updates separately from MSRV updates.
+  updates separately from MSRV updates and to keep its opening local-gate
+  command block exactly aligned with the primary repository-toolchain and
+  wheel-gate commands; the MSRV and nightly commands remain in their separate
+  compatibility sections.
 
 These tests prevent the repository declaration, required workflow, canary, and
 documentation from drifting independently.
@@ -230,6 +247,13 @@ existing public constructor and prepared-state attachment for JSON, JSON Lines,
 and human formats. Output-collection tests continue to prove the first write
 error is retained and the failed sink is not finalized.
 
+A compile-time characterization test constructs the public constructor future
+with writers that borrow local buffers and contain `Rc`, making them both
+non-`'static` and non-`Send`. The future is deliberately not polled. This test
+passes before the refactor and must continue to compile afterward, so moving
+the writers into `spawn_blocking` or adding either bound is detected directly
+rather than inferred from `Vec<u8>` call sites.
+
 Final local verification includes:
 
 ```text
@@ -239,6 +263,13 @@ cargo +1.98.0 clippy --workspace --all-targets --all-features -- -D warnings
 cargo +1.88 check --workspace --all-targets --all-features --locked
 cargo +1.98.0 test --workspace
 cargo +1.98.0 test -p hoimin-cli --test run_e2e
+cargo +1.98.0 test -p hoimin-core --features contracts
+cargo +1.98.0 test -p hoimin-cli --features contracts
+rustup toolchain install nightly-2026-07-27 --profile minimal
+cargo +nightly-2026-07-27 test --workspace -- -Z unstable-options --shuffle
+uv run --frozen python -m unittest discover -s tests -p 'test_*.py' -v
+uvx maturin build --release
+uv run --frozen python tests/wheel_smoke.py
 ```
 
 Required CI must then pass on Ubuntu, Windows, and macOS using the pinned
@@ -246,10 +277,17 @@ toolchain. The canary workflow is validated structurally in this change; its
 first scheduled or manually dispatched result is follow-up evidence rather
 than a prerequisite for merging the required-CI repair.
 
-Focused mutation testing covers changed production setup code. At minimum, a
+Focused generated mutation testing covers the two new, uniquely named
+production setup helpers, `prepare_shell_setup` and
+`prepare_shell_setup_sync`. The runner resolves a requested method by its
+terminal name, so adding the generic names `new` or `attach` would select many
+unrelated methods and would not be focused evidence. `PreparedReport` and the
+constructor are instead covered by the format-state, public report integration,
+non-`Send` writer, and constructor regressions above. In addition, a manual
 counterfactual that executes setup inline instead of through `spawn_blocking`
-must be detected by the current-thread heartbeat regression. Workflow and
-test-only changes have no Rust production mutation requirement.
+must be detected by the current-thread heartbeat regression because generated
+expression mutations are not required to remove that structural boundary.
+Workflow and test-only changes have no Rust production mutation requirement.
 
 ## Change isolation and sequencing
 
