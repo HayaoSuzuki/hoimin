@@ -320,8 +320,8 @@ async fn shell_setup_does_not_block_the_async_runtime() {
         release_rx.recv().unwrap();
     });
     let heartbeat = async move {
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        heartbeat_tx.send(()).unwrap();
+        tokio::task::yield_now().await;
+        let _ = heartbeat_tx.send(());
     };
 
     let (prepared, ()) = tokio::time::timeout(Duration::from_secs(6), async {
@@ -330,7 +330,7 @@ async fn shell_setup_does_not_block_the_async_runtime() {
     .await
     .expect("shell setup regression must remain bounded");
 
-    prepared.unwrap();
+    drop(prepared.unwrap());
     assert!(
         controller.join().unwrap(),
         "shell setup blocked the runtime until its blocking work was released"
@@ -486,9 +486,8 @@ async fn shell_setup_panic_is_reported_as_a_setup_join_failure() {
         Box::new(|| panic!("controlled shell setup panic")),
     )
     .await;
-    let error = match result {
-        Ok(_) => panic!("controlled setup panic unexpectedly succeeded"),
-        Err(error) => error,
+    let Err(error) = result else {
+        panic!("controlled setup panic unexpectedly succeeded");
     };
 
     assert!(error.starts_with("shell setup task failed:"), "{error}");
@@ -548,7 +547,9 @@ Add these constants to `tests/test_ci_workflow.py`:
 
 ```python
 RUST_TOOLCHAIN = ROOT / "rust-toolchain.toml"
-STABLE_CANARY_WORKFLOW = ROOT / ".github" / "workflows" / "rust-stable-canary.yml"
+STABLE_CANARY_WORKFLOW = (
+    ROOT / ".github" / "workflows" / "rust-stable-canary.yml"
+)
 REPOSITORY_RUST_JOBS = {
     "quality",
     "rust",
@@ -558,11 +559,15 @@ REPOSITORY_RUST_JOBS = {
     "linux-best-effort",
     "linux-cgroup-v2-hard",
 }
-CHECKOUT_ACTION = "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10"
+CHECKOUT_ACTION = (
+    "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10"
+)
 SETUP_PYTHON_ACTION = (
     "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1"
 )
-SETUP_UV_ACTION = "astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b"
+SETUP_UV_ACTION = (
+    "astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b"
+)
 ```
 
 Add a new test class:
@@ -572,10 +577,16 @@ class RustToolchainWorkflowContractTests(unittest.TestCase):
     def test_repository_toolchain_is_exact_and_complete(self) -> None:
         toolchain = tomllib.loads(RUST_TOOLCHAIN.read_text(encoding="utf-8"))
 
-        self.assertEqual(toolchain["toolchain"]["channel"], "1.98.0")
-        self.assertEqual(toolchain["toolchain"]["profile"], "minimal")
+        self.assertEqual(set(toolchain), {"toolchain"})
+        declaration = toolchain["toolchain"]
         self.assertEqual(
-            set(toolchain["toolchain"]["components"]),
+            set(declaration),
+            {"channel", "profile", "components"},
+        )
+        self.assertEqual(declaration["channel"], "1.98.0")
+        self.assertEqual(declaration["profile"], "minimal")
+        self.assertEqual(
+            set(declaration["components"]),
             {"clippy", "rustfmt"},
         )
 
@@ -583,12 +594,16 @@ class RustToolchainWorkflowContractTests(unittest.TestCase):
         workflow = CI_WORKFLOW.read_text(encoding="utf-8")
 
         self.assertNotIn("RUSTUP_TOOLCHAIN", workflow)
+        self.assertNotIn("rustup override", workflow)
         for job_name in REPOSITORY_RUST_JOBS:
             job = job_block(workflow, job_name)
-            self.assertIn("rustup toolchain install", job, job_name)
-            self.assertNotIn("rustup toolchain install stable", job, job_name)
+            self.assertEqual(job.count("rustup toolchain install"), 1, job_name)
+            self.assertRegex(
+                job,
+                r"(?m)^        run: rustup toolchain install$",
+            )
             self.assertNotIn("rustup default", job, job_name)
-            self.assertNotRegex(job, r"cargo \+stable(?:\s|$)")
+            self.assertNotRegex(job, r"cargo \+[^\s]+")
 
         msrv = job_block(workflow, "msrv")
         shuffle = job_block(workflow, "rust-shuffle")
@@ -599,27 +614,41 @@ class RustToolchainWorkflowContractTests(unittest.TestCase):
         workflow = STABLE_CANARY_WORKFLOW.read_text(encoding="utf-8")
         decoded = yaml.safe_load(workflow)
 
-        self.assertEqual(trigger_events(workflow), {"schedule", "workflow_dispatch"})
+        self.assertEqual(
+            set(decoded),
+            {"name", True, "permissions", "jobs"},
+        )
+        self.assertEqual(decoded["name"], "Latest stable Rust canary")
+        self.assertEqual(
+            trigger_events(workflow),
+            {"schedule", "workflow_dispatch"},
+        )
         self.assertEqual(decoded["permissions"], {"contents": "read"})
         self.assertEqual(decoded[True]["schedule"], [{"cron": "0 3 * * 1"}])
+        self.assertIsNone(decoded[True]["workflow_dispatch"])
+        self.assertEqual(set(decoded["jobs"]), {"stable"})
         job = decoded["jobs"]["stable"]
+        self.assertEqual(set(job), {"runs-on", "steps"})
         self.assertEqual(job["runs-on"], "ubuntu-latest")
         uses = [step["uses"] for step in job["steps"] if "uses" in step]
-        self.assertEqual(uses, [CHECKOUT_ACTION, SETUP_PYTHON_ACTION, SETUP_UV_ACTION])
-        commands = "\n".join(step["run"] for step in job["steps"] if "run" in step)
+        self.assertEqual(
+            uses,
+            [CHECKOUT_ACTION, SETUP_PYTHON_ACTION, SETUP_UV_ACTION],
+        )
         self.assertIn("python-version: '3.14'", workflow)
-        self.assertIn("uv sync --frozen", commands)
-        self.assertIn(
-            "rustup toolchain install stable --profile minimal "
-            "--component rustfmt --component clippy",
-            commands.replace("\n", " "),
-        )
-        self.assertIn("cargo +stable fmt --all -- --check", commands)
-        self.assertIn(
-            "cargo +stable clippy --workspace --all-targets --all-features -- -D warnings",
+        commands = [step["run"] for step in job["steps"] if "run" in step]
+        self.assertEqual(
             commands,
+            [
+                "rustup toolchain install stable --profile minimal "
+                "--component rustfmt --component clippy",
+                "uv sync --frozen",
+                "cargo +stable fmt --all -- --check",
+                "cargo +stable clippy --workspace --all-targets "
+                "--all-features -- -D warnings",
+                "cargo +stable test --workspace",
+            ],
         )
-        self.assertIn("cargo +stable test --workspace", commands)
         self.assertNotIn("rust-stable-canary", CI_WORKFLOW.read_text(encoding="utf-8"))
 
     def test_release_has_no_toolchain_override(self) -> None:
@@ -830,13 +859,12 @@ $mutationOutput = Join-Path $env:TEMP ("hoimin-rust-1-98-mutation-" + [guid]::Ne
 uv run --frozen python tools/focused_mutation.py `
   --budget 30m `
   --base origin/main `
-  --file crates/hoimin-cli/src/shell.rs `
   --symbol prepare_shell_setup `
   --symbol prepare_shell_setup_sync `
   --output $mutationOutput
 ```
 
-Expected: baseline passes. Inspect `$mutationOutput\run.json` and `$mutationOutput\report.md`; every generated viable mutation for the two selected functions is killed. The manual counterfactual in Step 3, rather than cargo-mutants' generated inventory, is the required proof for removing `spawn_blocking`. Do not treat `not_run`, `pending`, `timeout`, `unviable`, or `error` as passes.
+Expected: baseline passes. Explicit symbols receive the runner's highest ranking; do not add `--file`, which would raise every function in `shell.rs` and waste the bounded budget. Inspect `$mutationOutput\run.json` and `$mutationOutput\report.md`; every generated viable mutation belonging to the two selected functions is killed. The runner may also inventory lower-ranked functions changed from `origin/main`; their presence does not broaden this task's mutation claim. The manual counterfactual in Step 3, rather than cargo-mutants' generated inventory, is the required proof for removing `spawn_blocking`. Do not treat `not_run`, `pending`, `timeout`, `unviable`, or `error` for either selected function as passes.
 
 - [ ] **Step 5: Fail closed on incomplete mutation evidence**
 
@@ -862,4 +890,4 @@ Run:
 git log --oneline origin/main..HEAD
 ```
 
-Expected: the two design-document commits, this implementation-plan commit, and the four implementation commits from Tasks 1-4. Verification must not create an empty commit.
+Expected: the two design-document commits, the implementation-plan and plan-review commits, and the four implementation commits from Tasks 1-4. Verification must not create an empty commit.
