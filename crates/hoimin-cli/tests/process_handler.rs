@@ -658,7 +658,7 @@ fn terminate_fixture_process(pid: u32) {
     }
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 async fn wait_until_process_stops(pid: u32) -> bool {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
     wait_until_process_stops_before(pid, deadline).await
