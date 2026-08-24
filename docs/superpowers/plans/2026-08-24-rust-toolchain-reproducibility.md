@@ -117,6 +117,15 @@ rewrite, rerun the full local gate, and require the hosted Unix quality jobs to
 validate the target-specific path. Commit as
 `fix(test): satisfy Rust 1.98 Unix result lint`.
 
+That follow-up made Ubuntu and Windows Quality pass, then exposed a distinct
+macOS dead-code error in `tests/process_handler.rs`. The relative
+`wait_until_process_stops` helper is called only by two tests inside the
+Linux-only `cgroup_v2` module, but its implementation-time gate was the broader
+`cfg(unix)`. Narrow the helper to `cfg(target_os = "linux")`; do not suppress
+dead code and do not alter either timeout. Require macOS Quality to pass before
+allowing dependent jobs to count. Commit as
+`fix(test): align process wait helper with Linux callers`.
+
 ---
 
 ### Task 1: Make the immediate `OutputSink` test double Rust 1.98-clean
@@ -1242,7 +1251,7 @@ git log --oneline origin/main..HEAD
 ```
 
 Expected: the log contains the reviewed specification/plan history followed by
-the ten implementation commits from Tasks 0-5 and PR verification: junction fixture, output test
+the eleven implementation commits from Tasks 0-5 and PR verification: junction fixture, output test
 double, report preparation, three result-lint expressions, shell setup, and toolchain
 CI, plus real-process fixture readiness, Windows Python contract fixes, and the
 event-anchored locked-session E2E fixture. Every implementation commit remains inside the revised File Map. Do not
