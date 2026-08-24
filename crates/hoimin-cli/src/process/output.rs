@@ -243,22 +243,25 @@ mod tests {
     }
 
     impl OutputSink for FirstWriteFails {
-        async fn write_ring(
+        fn write_ring(
             &mut self,
             _capacity: u64,
             _position: u64,
             _chunk: &[u8],
-        ) -> std::io::Result<u64> {
-            Err(std::io::Error::other(format!("lean-error-{}", self.code)))
+        ) -> impl std::future::Future<Output = std::io::Result<u64>> {
+            std::future::ready(Err(std::io::Error::other(format!(
+                "lean-error-{}",
+                self.code
+            ))))
         }
 
-        async fn finalize(
+        fn finalize(
             &mut self,
             _capacity: u64,
             _position: u64,
             _truncated: bool,
-        ) -> std::io::Result<()> {
-            panic!("a failed sink must not be finalized")
+        ) -> impl std::future::Future<Output = std::io::Result<()>> {
+            std::future::poll_fn(|_| panic!("a failed sink must not be finalized"))
         }
     }
 
