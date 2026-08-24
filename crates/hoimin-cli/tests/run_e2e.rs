@@ -1676,8 +1676,7 @@ async fn total_timeout_exits_after_grace_when_session_finish_is_locked() {
             }
             if mutant_started_tx.is_some()
                 && serde_json::from_slice::<serde_json::Value>(&line)
-                    .ok()
-                    .is_some_and(|event| event["kind"] == "mutant_started")
+                    .is_ok_and(|event| event["kind"] == "mutant_started")
             {
                 let sender = mutant_started_tx.take().expect("sender checked above");
                 let _ = sender.send(Ok(()));
@@ -1986,8 +1985,7 @@ async fn second_interrupt_scenario() {
                 break;
             }
             let is_started = serde_json::from_slice::<serde_json::Value>(&line)
-                .ok()
-                .is_some_and(|event| event["kind"] == "mutant_started");
+                .is_ok_and(|event| event["kind"] == "mutant_started");
             if is_started && started_tx.is_some() {
                 let started_tx = started_tx.take().expect("sender checked above");
                 let _ = started_tx.send(Ok(()));
