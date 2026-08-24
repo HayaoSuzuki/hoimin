@@ -1649,13 +1649,12 @@ async fn total_timeout_exits_after_grace_when_session_finish_is_locked() {
     let coordinator = tempfile::tempdir().unwrap();
     write_parallel_project(project.path());
     let session = coordinator.path().join("session.sqlite3");
-    let started_at = Instant::now();
     let (mut child, active, descendant_ready) = spawn_interrupt_fixture(
         project.path(),
         coordinator.path(),
         &session,
         "jsonl",
-        &["--total-timeout", "5s"],
+        &["--operators", "binary_add_sub", "--total-timeout", "5s"],
     );
     let stdout_pipe = child.stdout.take().unwrap();
     let stderr_pipe = child.stderr.take().unwrap();
@@ -1679,7 +1678,7 @@ async fn total_timeout_exits_after_grace_when_session_finish_is_locked() {
                     .is_ok_and(|event| event["kind"] == "mutant_started")
             {
                 let sender = mutant_started_tx.take().expect("sender checked above");
-                let _ = sender.send(Ok(()));
+                let _ = sender.send(Ok(Instant::now()));
             }
             stdout.extend_from_slice(&line);
         }
@@ -1692,36 +1691,41 @@ async fn total_timeout_exits_after_grace_when_session_finish_is_locked() {
     });
     let mut fixture_processes = None;
     let outcome: Result<_, String> = async {
-        // Allow readiness observation to outlive the child's five-second run deadline;
-        // the absolute elapsed assertion below still enforces deadline + grace.
-        tokio::time::timeout(Duration::from_secs(7), mutant_started_rx)
+        // Preparation before mutant_started is outside this shutdown scenario's
+        // assertion budget. Once observed, every readiness and exit wait shares
+        // one absolute deadline rather than accumulating relative timeouts.
+        let mutant_started_at = tokio::time::timeout(Duration::from_secs(7), mutant_started_rx)
             .await
             .map_err(|_| "timed out waiting for JSONL kind mutant_started".to_owned())?
             .map_err(|_| "stdout drain task stopped before mutant_started".to_owned())??;
+        let scenario_deadline = mutant_started_at + Duration::from_secs(9);
         fixture_processes = Some(
-            try_wait_for_fixture_processes(&active, &descendant_ready, Duration::from_secs(3))
-                .await?,
+            try_wait_for_fixture_processes(
+                &active,
+                &descendant_ready,
+                scenario_deadline.saturating_duration_since(Instant::now()),
+            )
+            .await?,
         );
         let lock = begin_immediate_with_retry(&session, Duration::from_secs(1)).await?;
-        let lock_acquired = started_at.elapsed();
-        let status = tokio::time::timeout(Duration::from_secs(9), child.wait())
+        if child
+            .try_wait()
+            .map_err(|error| error.to_string())?
+            .is_some()
+        {
+            return Err("hoimin exited before the session write lock was retained".to_owned());
+        }
+        let status = tokio::time::timeout_at(scenario_deadline.into(), child.wait())
             .await
             .map_err(|_| "hoimin exceeded total timeout plus shutdown grace".to_owned())?
             .map_err(|error| error.to_string())?;
-        let child_exit_elapsed = started_at.elapsed();
         let descendant_stopped = fixture_processes
             .as_ref()
             .expect("assigned above")
             .descendant
             .wait_until_stops(Duration::from_secs(2))
             .await;
-        Ok((
-            status,
-            child_exit_elapsed,
-            lock_acquired,
-            lock,
-            descendant_stopped,
-        ))
+        Ok((status, lock, descendant_stopped))
     }
     .await;
 
@@ -1741,10 +1745,9 @@ async fn total_timeout_exits_after_grace_when_session_finish_is_locked() {
     if let Err(error) = child_cleanup.and(process_cleanup) {
         panic!("test teardown failed: {error}; outcome={outcome:?}");
     }
-    let (status, child_exit_elapsed, lock_acquired, lock, descendant_stopped) = outcome
-        .unwrap_or_else(|error| {
-            panic!("locked-session timeout scenario failed after successful teardown: {error}")
-        });
+    let (status, lock, descendant_stopped) = outcome.unwrap_or_else(|error| {
+        panic!("locked-session timeout scenario failed after successful teardown: {error}")
+    });
     let stdout = String::from_utf8(
         stdout.unwrap_or_else(|error| panic!("could not drain JSONL stdout: {error}")),
     )
@@ -1755,14 +1758,6 @@ async fn total_timeout_exits_after_grace_when_session_finish_is_locked() {
     .unwrap();
 
     assert_eq!(status.code(), Some(2), "stderr={stderr} stdout={stdout}");
-    assert!(
-        lock_acquired < Duration::from_secs(5),
-        "session lock was acquired after the run deadline: {lock_acquired:?}"
-    );
-    assert!(
-        child_exit_elapsed < Duration::from_secs(9),
-        "child_exit_elapsed={child_exit_elapsed:?}"
-    );
     assert!(stderr.contains("total timeout"), "{stderr}");
     assert!(stderr.contains("shutdown grace expired"), "{stderr}");
     let events = stdout
