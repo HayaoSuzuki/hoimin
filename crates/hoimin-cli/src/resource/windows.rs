@@ -766,37 +766,178 @@ mod tests {
         }
     }
 
-    async fn wait_for_ready_pid(path: &Utf8Path) -> u32 {
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    async fn wait_for_ready_pid<F>(
+        path: &Utf8Path,
+        mut process: std::pin::Pin<&mut F>,
+        deadline: tokio::time::Instant,
+    ) -> Result<u32, String>
+    where
+        F: std::future::Future,
+        F::Output: std::fmt::Debug,
+    {
         loop {
             if let Some(pid) = std::fs::read_to_string(path)
                 .ok()
                 .and_then(|value| value.trim().parse::<u32>().ok())
                 .filter(|pid| *pid != 0)
             {
-                return pid;
+                return Ok(pid);
             }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "fixture did not atomically publish readiness at {path}"
-            );
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            let now = tokio::time::Instant::now();
+            if now >= deadline {
+                return Err(format!(
+                    "fixture did not atomically publish readiness before the test deadline at {path}"
+                ));
+            }
+            tokio::select! {
+                result = process.as_mut() => {
+                    return Err(format!(
+                        "fixture process completed before publishing readiness at {path}: {result:?}"
+                    ));
+                }
+                () = tokio::time::sleep_until((now + Duration::from_millis(10)).min(deadline)) => {}
+            }
         }
     }
 
-    async fn wait_for_job_process_count(backend: &WindowsBackend, expected: u32) {
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    #[tokio::test]
+    async fn fixture_readiness_uses_the_callers_absolute_deadline() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = Utf8Path::from_path(temporary.path())
+            .unwrap()
+            .join("never-ready");
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(25);
+        let process = std::future::pending::<Result<(), &'static str>>();
+        tokio::pin!(process);
+        let started = Instant::now();
+
+        let failure = tokio::time::timeout(
+            Duration::from_millis(500),
+            wait_for_ready_pid(&path, process.as_mut(), deadline),
+        )
+        .await
+        .expect("readiness wait ignored both the caller deadline and the test harness bound")
+        .expect_err("missing readiness must reach the caller's deadline");
+
+        assert!(failure.contains("test deadline"), "{failure}");
+        assert!(
+            started.elapsed() < Duration::from_millis(500),
+            "readiness wait ignored the caller's deadline: {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[tokio::test]
+    async fn fixture_readiness_reports_process_completion_before_publication() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = Utf8Path::from_path(temporary.path())
+            .unwrap()
+            .join("never-ready");
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+        let process = std::future::ready::<Result<(), &'static str>>(Err("spawn failed"));
+        tokio::pin!(process);
+        let started = Instant::now();
+
+        let failure = tokio::time::timeout(
+            Duration::from_millis(500),
+            wait_for_ready_pid(&path, process.as_mut(), deadline),
+        )
+        .await
+        .expect("readiness wait ignored early process completion")
+        .expect_err("early completion must be reported before readiness");
+
+        assert!(failure.contains("spawn failed"), "{failure}");
+        assert!(
+            started.elapsed() < Duration::from_millis(500),
+            "early process completion was not observed immediately: {:?}",
+            started.elapsed()
+        );
+    }
+
+    async fn wait_for_job_process_count_until(
+        backend: &WindowsBackend,
+        expected: u32,
+        deadline: tokio::time::Instant,
+    ) -> Result<(), String> {
         loop {
             let active = active_process_count(backend.inner.job.raw()).unwrap();
             if active == expected {
-                return;
+                return Ok(());
             }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "run Job Object has {active} assigned process(es), expected {expected}"
-            );
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            let now = tokio::time::Instant::now();
+            if now >= deadline {
+                return Err(format!(
+                    "run Job Object has {active} assigned process(es) at the test deadline, expected {expected}"
+                ));
+            }
+            tokio::time::sleep_until((now + Duration::from_millis(10)).min(deadline)).await;
         }
+    }
+
+    async fn wait_for_job_process_count<F>(
+        backend: &WindowsBackend,
+        expected: u32,
+        mut process: std::pin::Pin<&mut F>,
+        deadline: tokio::time::Instant,
+    ) -> Result<(), String>
+    where
+        F: std::future::Future,
+        F::Output: std::fmt::Debug,
+    {
+        tokio::select! {
+            result = wait_for_job_process_count_until(backend, expected, deadline) => result,
+            result = process.as_mut() => Err(format!(
+                "fixture process completed before the run Job Object reached {expected} assigned process(es): {result:?}"
+            )),
+        }
+    }
+
+    #[tokio::test]
+    async fn job_process_count_wait_uses_the_callers_absolute_deadline() {
+        let backend = WindowsBackend::new(&run_limits()).unwrap();
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(25);
+        let process = std::future::pending::<Result<(), &'static str>>();
+        tokio::pin!(process);
+        let started = Instant::now();
+
+        let failure = tokio::time::timeout(
+            Duration::from_millis(500),
+            wait_for_job_process_count(&backend, 1, process.as_mut(), deadline),
+        )
+        .await
+        .expect("Job Object wait ignored both the caller deadline and the test harness bound")
+        .expect_err("missing Job Object process must reach the caller's deadline");
+
+        assert!(failure.contains("test deadline"), "{failure}");
+        assert!(
+            started.elapsed() < Duration::from_millis(500),
+            "Job Object wait ignored the caller's deadline: {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[tokio::test]
+    async fn job_process_count_wait_reports_process_completion_before_assignment() {
+        let backend = WindowsBackend::new(&run_limits()).unwrap();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+        let process = std::future::ready::<Result<(), &'static str>>(Err("attach failed"));
+        tokio::pin!(process);
+        let started = Instant::now();
+
+        let failure = tokio::time::timeout(
+            Duration::from_millis(500),
+            wait_for_job_process_count(&backend, 1, process.as_mut(), deadline),
+        )
+        .await
+        .expect("Job Object wait ignored early process completion")
+        .expect_err("early completion must be reported before Job Object assignment");
+
+        assert!(failure.contains("attach failed"), "{failure}");
+        assert!(
+            started.elapsed() < Duration::from_millis(500),
+            "early process completion was not observed immediately: {:?}",
+            started.elapsed()
+        );
     }
 
     fn job_process_ids(backend: &WindowsBackend) -> Vec<u32> {
@@ -987,51 +1128,69 @@ mod tests {
         ));
         let _cleanup = HandlerCloseGuard(Arc::clone(&handler));
         let started = Instant::now();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(6);
+        let phase = std::cell::Cell::new("starting sibling root");
 
-        tokio::time::timeout(Duration::from_secs(6), async {
-            let sibling_handler = Arc::clone(&handler);
-            let sibling =
-                tokio::spawn(async move { sibling_handler.handle(sleeping_fixture(260)).await });
-            wait_for_job_process_count(&backend, 1).await;
+        let outcome = tokio::time::timeout_at(deadline, async {
+            let sibling = handler.handle(sleeping_fixture(260));
+            tokio::pin!(sibling);
+            wait_for_job_process_count(&backend, 1, sibling.as_mut(), deadline).await?;
 
+            phase.set("waiting for abnormal-root readiness");
             let handle_started = Instant::now();
-            let abnormal_handler = Arc::clone(&handler);
-            let fixture_ready = abnormal_ready.clone();
-            let fixture_release = abnormal_release.clone();
-            let abnormal = tokio::spawn(async move {
-                abnormal_handler
-                    .handle(abnormal_fixture(261, &fixture_ready, &fixture_release))
-                    .await
-            });
-            let abnormal_pid = wait_for_ready_pid(&abnormal_ready).await;
-            wait_for_job_process_count(&backend, 2).await;
+            let abnormal =
+                handler.handle(abnormal_fixture(261, &abnormal_ready, &abnormal_release));
+            tokio::pin!(abnormal);
+            let abnormal_pid =
+                wait_for_ready_pid(&abnormal_ready, abnormal.as_mut(), deadline).await?;
+            phase.set("confirming abnormal-root Job Object assignment");
+            wait_for_job_process_count(&backend, 2, abnormal.as_mut(), deadline).await?;
             assert!(
                 job_process_ids(&backend).contains(&abnormal_pid),
                 "published runtime PID is not the root assigned to the production Job Object"
             );
             std::fs::write(&abnormal_release, b"abort").unwrap();
+            phase.set("classifying abnormal-root termination");
             let abnormal = abnormal
                 .await
-                .expect("abnormal fixture task panicked")
-                .unwrap();
+                .map_err(|error| format!("abnormal fixture failed after release: {error:?}"))?;
             assert!(handle_started.elapsed() < Duration::from_secs(6));
             assert_eq!(
                 abnormal.termination,
                 ProcessTermination::Exit(-1_073_741_819)
             );
-            wait_for_job_process_count(&backend, 1).await;
+            phase.set("confirming sibling remains after abnormal-root exit");
+            wait_for_job_process_count(&backend, 1, sibling.as_mut(), deadline).await?;
 
+            phase.set("closing the run Job Object");
             let close_started = Instant::now();
-            handler.close().unwrap();
+            handler
+                .close()
+                .map_err(|error| format!("close the run Job Object: {error}"))?;
             assert!(close_started.elapsed() < Duration::from_secs(6));
-            sibling
-                .await
-                .expect("sibling fixture task panicked")
-                .expect("sibling handle did not complete after close");
-            wait_for_job_process_count(&backend, 0).await;
+            phase.set("reaping sibling after close");
+            sibling.await.map_err(|error| {
+                format!("sibling handle did not complete after close: {error:?}")
+            })?;
+            phase.set("confirming the run Job Object is empty");
+            wait_for_job_process_count_until(&backend, 0, deadline).await?;
+            Ok::<(), String>(())
         })
-        .await
-        .expect("abnormal Job Object fixture exceeded six seconds");
+        .await;
+        let failure = match outcome {
+            Ok(Ok(())) => None,
+            Ok(Err(error)) => Some(error),
+            Err(_) => Some("the shared six-second deadline expired".to_owned()),
+        };
+        if let Some(failure) = failure {
+            let readiness = std::fs::read_to_string(&abnormal_ready);
+            let active = active_process_count(backend.inner.job.raw());
+            let cleanup = handler.close();
+            panic!(
+                "abnormal Job Object fixture failed while {}; failure={failure}; readiness={readiness:?}; active_processes={active:?}; emergency_close={cleanup:?}",
+                phase.get(),
+            );
+        }
         assert!(started.elapsed() < Duration::from_secs(6));
     }
 
