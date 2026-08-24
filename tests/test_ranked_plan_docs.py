@@ -5,7 +5,9 @@ import unittest
 class RankedPlanDocumentationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.readme = (Path(__file__).resolve().parents[1] / "README.md").read_text()
+        cls.readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(
+            encoding="utf-8"
+        )
 
     def test_documents_ranked_two_command_workflow(self) -> None:
         for text in [
