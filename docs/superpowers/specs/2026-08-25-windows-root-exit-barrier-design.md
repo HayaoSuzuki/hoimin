@@ -33,7 +33,7 @@ For a detached generation:
 
 1. A delayed PID-specific notification removes the oldest matching generation and drops its handle.
 2. A reused PID cannot be registered by Windows while the old process object handle remains open.
-3. Run close or backend drop releases any notification that was never delivered.
+3. A delayed notification or backend drop releases the retained detached generation.
 
 ## Compatibility
 
