@@ -857,6 +857,35 @@ mod portable {
 
     #[cfg(unix)]
     #[tokio::test]
+    async fn preserves_explicit_152_and_sigxcpu_as_native_exits() {
+        let output = tempfile::tempdir().unwrap();
+        let handler = portable_handler(Utf8Path::from_path(output.path()).unwrap());
+        let explicit = handler
+            .handle(run_python(
+                71,
+                "raise SystemExit(152)",
+                limits(Duration::from_secs(5), 64),
+            ))
+            .await
+            .unwrap();
+        let signal = handler
+            .handle(run_python(
+                72,
+                "import os,signal\nsignal.signal(signal.SIGXCPU, signal.SIG_DFL)\nsignal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGXCPU})\nos.kill(os.getpid(), signal.SIGXCPU)",
+                limits(Duration::from_secs(5), 64),
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(explicit.termination, ProcessTermination::Exit(152));
+        assert_eq!(
+            signal.termination,
+            ProcessTermination::Exit(128 + libc::SIGXCPU),
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
     async fn escaped_descendant_output_timeout_is_a_mutant_completion() {
         let output = tempfile::tempdir().unwrap();
         let output_dir = Utf8Path::from_path(output.path()).unwrap();
