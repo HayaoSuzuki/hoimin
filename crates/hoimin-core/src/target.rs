@@ -1,5 +1,6 @@
 use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
@@ -253,10 +254,14 @@ fn is_within(path: &Utf8Path, directory: &Utf8Path) -> bool {
 }
 
 fn paths_equal(left: &Utf8Path, right: &Utf8Path) -> bool {
+    path_equality_key(left) == path_equality_key(right)
+}
+
+fn path_equality_key(path: &Utf8Path) -> Cow<'_, str> {
     if cfg!(windows) {
-        path_key(left.as_str()) == path_key(right.as_str())
+        Cow::Owned(path_key(path.as_str()))
     } else {
-        left == right
+        Cow::Borrowed(path.as_str())
     }
 }
 
@@ -358,10 +363,12 @@ pub fn intersect_changed(
             })
             .collect()
     } else {
+        let changed = changed_path_index(changed);
         explicit
             .iter()
             .filter_map(|target| {
-                let changed_lines = changed.get(&target.path)?;
+                let key = path_equality_key(&target.path);
+                let changed_lines = changed.get(key.as_ref())?;
                 let mut lines = if target.lines.is_empty() {
                     changed_lines.clone()
                 } else {
@@ -392,6 +399,22 @@ pub fn intersect_changed(
         &targets
     );
     targets
+}
+
+fn changed_path_index(
+    changed: BTreeMap<Utf8PathBuf, Vec<LineRange>>,
+) -> BTreeMap<String, Vec<LineRange>> {
+    let mut indexed = BTreeMap::<String, Vec<LineRange>>::new();
+    for (path, ranges) in changed {
+        indexed
+            .entry(path_equality_key(&path).into_owned())
+            .or_default()
+            .extend(ranges);
+    }
+    for ranges in indexed.values_mut() {
+        normalize_ranges(ranges);
+    }
+    indexed
 }
 
 #[must_use]

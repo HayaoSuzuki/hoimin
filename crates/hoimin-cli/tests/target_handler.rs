@@ -209,6 +209,51 @@ async fn changed_root_source_selects_changed_python_lines() {
     );
 }
 
+#[cfg(windows)]
+#[tokio::test]
+async fn changed_selection_matches_git_index_case_to_discovered_path() {
+    let repo = FixtureRepo::new();
+    repo.write("Src/App.py", "one\ntwo\nthree\n");
+    repo.commit_all("initial");
+    fs::rename(
+        repo.temp.path().join("Src"),
+        repo.temp.path().join("case-transition"),
+    )
+    .unwrap();
+    fs::rename(
+        repo.temp.path().join("case-transition"),
+        repo.temp.path().join("src"),
+    )
+    .unwrap();
+    repo.write("src/App.py", "one\nchanged two\nthree\n");
+
+    assert_eq!(
+        repo.changed_lines(None).await.changed,
+        BTreeMap::from([(
+            Utf8PathBuf::from("Src/App.py"),
+            vec![LineRange { start: 2, end: 2 }],
+        )])
+    );
+
+    let targets = TargetHandler::resolve(&Selection {
+        root: repo.root(),
+        sources: vec![Utf8PathBuf::from("src")],
+        changed: true,
+        ..Selection::default()
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(
+        targets,
+        vec![TargetSlice {
+            path: Utf8PathBuf::from("src/App.py"),
+            lines: vec![LineRange { start: 2, end: 2 }],
+            symbols: Vec::new(),
+        }]
+    );
+}
+
 #[tokio::test]
 async fn changed_collects_untracked_python_in_unborn_repository() {
     let repo = FixtureRepo::new();
