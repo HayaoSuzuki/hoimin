@@ -567,6 +567,97 @@ fn changed_intersects_file_line_symbol_and_source() {
 
 #[cfg(windows)]
 #[test]
+fn windows_changed_intersection_uses_discovered_path_case() {
+    let explicit = vec![TargetSlice {
+        path: Utf8PathBuf::from("src/App.py"),
+        lines: Vec::new(),
+        symbols: Vec::new(),
+    }];
+    let changed = BTreeMap::from([(
+        Utf8PathBuf::from("Src/App.py"),
+        vec![LineRange { start: 2, end: 3 }],
+    )]);
+
+    assert_eq!(
+        intersect_changed(&explicit, &changed),
+        vec![TargetSlice {
+            path: Utf8PathBuf::from("src/App.py"),
+            lines: vec![LineRange { start: 2, end: 3 }],
+            symbols: Vec::new(),
+        }]
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_changed_intersection_uses_unicode_path_equality() {
+    let explicit = vec![TargetSlice {
+        path: Utf8PathBuf::from("pkg/ς/App.py"),
+        lines: Vec::new(),
+        symbols: Vec::new(),
+    }];
+    let changed = BTreeMap::from([(
+        Utf8PathBuf::from("PKG/Σ/App.py"),
+        vec![LineRange { start: 5, end: 5 }],
+    )]);
+
+    assert_eq!(
+        intersect_changed(&explicit, &changed),
+        vec![TargetSlice {
+            path: Utf8PathBuf::from("pkg/ς/App.py"),
+            lines: vec![LineRange { start: 5, end: 5 }],
+            symbols: Vec::new(),
+        }]
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_changed_intersection_merges_case_equivalent_ranges() {
+    let explicit = vec![TargetSlice {
+        path: Utf8PathBuf::from("SRC/App.py"),
+        lines: Vec::new(),
+        symbols: Vec::new(),
+    }];
+    let changed = BTreeMap::from([
+        (
+            Utf8PathBuf::from("Src/App.py"),
+            vec![LineRange { start: 2, end: 3 }],
+        ),
+        (
+            Utf8PathBuf::from("src/app.py"),
+            vec![LineRange { start: 4, end: 5 }],
+        ),
+    ]);
+
+    assert_eq!(
+        intersect_changed(&explicit, &changed),
+        vec![TargetSlice {
+            path: Utf8PathBuf::from("SRC/App.py"),
+            lines: vec![LineRange { start: 2, end: 5 }],
+            symbols: Vec::new(),
+        }]
+    );
+}
+
+#[cfg(not(windows))]
+#[test]
+fn unix_changed_intersection_keeps_backslash_as_a_filename_character() {
+    let explicit = vec![TargetSlice {
+        path: Utf8PathBuf::from(r"pkg\App.py"),
+        lines: Vec::new(),
+        symbols: Vec::new(),
+    }];
+    let changed = BTreeMap::from([(
+        Utf8PathBuf::from("pkg/App.py"),
+        vec![LineRange { start: 2, end: 3 }],
+    )]);
+
+    assert!(intersect_changed(&explicit, &changed).is_empty());
+}
+
+#[cfg(windows)]
+#[test]
 fn windows_paths_use_mixed_slashes_and_case_insensitive_containment() {
     let selection = Selection {
         root: Utf8PathBuf::from("project"),
