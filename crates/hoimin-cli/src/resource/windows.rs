@@ -52,6 +52,8 @@ enum AttachFault {
     NestedAssign,
     #[cfg(test)]
     Resume,
+    #[cfg(test)]
+    ExitHandleOpen,
 }
 
 impl WindowsBackend {
@@ -239,29 +241,29 @@ impl WindowsRunJob {
         child.assign(self.job.raw(), "assign process to run-wide job")?;
         #[cfg(test)]
         if attach_fault == AttachFault::NestedAssign {
-            register_root(&mut state, root_id, pid, None, child)?;
+            register_root(&mut state, root_id, pid, None, child, attach_fault)?;
             return Err(ResourceError::io(
                 "assign process to nested root job",
                 io::Error::other("injected nested assignment failure"),
             ));
         }
         if let Err(error) = child.assign(root_job, "assign process to nested root job") {
-            register_root(&mut state, root_id, pid, None, child)?;
+            register_root(&mut state, root_id, pid, None, child, attach_fault)?;
             return Err(error);
         }
         #[cfg(test)]
         if attach_fault == AttachFault::Resume {
-            register_root(&mut state, root_id, pid, None, child)?;
+            register_root(&mut state, root_id, pid, None, child, attach_fault)?;
             return Err(ResourceError::io(
                 "resume suspended primary thread",
                 io::Error::other("injected resume failure"),
             ));
         }
         if let Err(error) = child.resume() {
-            register_root(&mut state, root_id, pid, None, child)?;
+            register_root(&mut state, root_id, pid, None, child, attach_fault)?;
             return Err(error);
         }
-        register_root(&mut state, root_id, pid, Some(signal), child)?;
+        register_root(&mut state, root_id, pid, Some(signal), child, attach_fault)?;
         Ok(pid)
     }
 
@@ -458,10 +460,47 @@ fn register_root(
     pid: u32,
     signal: Option<&Arc<RootSignal>>,
     child: super::suspended::SuspendedChild,
+    attach_fault: AttachFault,
 ) -> Result<(), ResourceError> {
-    // SAFETY: the retained suspended-child handle keeps this PID bound to the same process object
-    // until the synchronizable handle has been opened and installed in the generation.
-    let process = OwnedHandle::new(
+    let original_process = child.into_process_handle();
+    let process = match open_root_exit_handle(pid, attach_fault) {
+        Ok(process) => process,
+        Err(error) => {
+            state.active.push(ActiveRoot {
+                id: root_id,
+                pid,
+                signal: None,
+                process: Some(original_process),
+            });
+            return Err(error);
+        }
+    };
+    state.active.push(ActiveRoot {
+        id: root_id,
+        pid,
+        signal: signal.map(Arc::downgrade),
+        process: Some(process),
+    });
+    drop(original_process);
+    Ok(())
+}
+
+fn open_root_exit_handle(
+    pid: u32,
+    attach_fault: AttachFault,
+) -> Result<OwnedHandle, ResourceError> {
+    #[cfg(not(test))]
+    let _ = attach_fault;
+    #[cfg(test)]
+    if attach_fault == AttachFault::ExitHandleOpen {
+        return Err(ResourceError::io(
+            "open root process exit handle",
+            io::Error::other("injected root exit handle open failure"),
+        ));
+    }
+    // SAFETY: the caller retains an owned handle that keeps this PID bound to the same process
+    // object until the synchronizable handle has been opened.
+    OwnedHandle::new(
         unsafe {
             OpenProcess(
                 PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
@@ -470,15 +509,7 @@ fn register_root(
             )
         },
         "open root process exit handle",
-    )?;
-    state.active.push(ActiveRoot {
-        id: root_id,
-        pid,
-        signal: signal.map(Arc::downgrade),
-        process: Some(process),
-    });
-    drop(child.into_process_handle());
-    Ok(())
+    )
 }
 
 fn forget_root_generation(state: &mut RunState, root_id: Uuid) {
@@ -1329,6 +1360,47 @@ mod tests {
                 assert!(state.exited_roots.is_empty());
             }
         }
+    }
+
+    #[tokio::test]
+    async fn exit_handle_reopen_failure_preserves_detached_generation_identity() {
+        let temporary = tempfile::tempdir().unwrap();
+        let output_dir = Utf8Path::from_path(temporary.path()).unwrap();
+        let backend =
+            WindowsBackend::with_test_fault(&run_limits(), AttachFault::ExitHandleOpen).unwrap();
+        let handler = ProcessHandler::new(
+            ResourceBackend::Windows(backend.clone()),
+            output_dir.to_owned(),
+        );
+
+        let error = tokio::time::timeout(
+            Duration::from_secs(2),
+            handler.handle(sleeping_fixture(270)),
+        )
+        .await
+        .expect("exit-handle reopen failure cleanup is bounded")
+        .expect_err("injected exit-handle reopen failure is returned");
+
+        assert!(matches!(
+            error.failure,
+            EffectFailure::Io {
+                ref code,
+                ref message,
+                ..
+            } if code == "process.resource.attach"
+                && message.contains("injected root exit handle open failure")
+        ));
+        let state = backend
+            .inner
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert_eq!(state.active.len(), 1);
+        assert_ne!(state.active[0].id, Uuid::nil());
+        assert_ne!(state.active[0].pid, 0);
+        assert!(state.active[0].signal.is_none());
+        assert!(state.active[0].process.is_some());
+        assert!(state.exited_roots.is_empty());
     }
 
     #[tokio::test]
