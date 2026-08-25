@@ -36,13 +36,14 @@
 
 ## CI Follow-up: Natural Notification Independence
 
-Real-process timeout and attach-cleanup fixtures prove process exit plus detached generation identity and owned-handle retention. They assert that the exact retained handle is signaled and do not wait for natural Job Object notification delivery. Deterministic state-machine tests remain responsible for notification-first removal, delayed-generation consumption, and reused-PID ordering.
+Normal assigned-attach and timeout fixtures prove process exit plus detached generation identity and owned-handle retention by asserting that the exact synchronizable handle is signaled. The reopen-failure fixture proves termination by the absence of `spawned-child cleanup failed` and retains the original non-synchronizable handle as an identity and PID-reuse tombstone. None waits for natural Job Object notification delivery. Deterministic state-machine tests remain responsible for notification-first removal, delayed-generation consumption, and reused-PID ordering.
 
-Repeat each revised real-process regression 20 times locally and require zero failures. Do not add retries or repetition to CI. Exact test targets:
+Repeat all three real-process cleanup regressions 20 times locally and require zero failures. Do not add retries or repetition to CI. Exact test targets:
 
     cargo test -p hoimin-cli --lib resource::windows::tests::attach_failure_cleanup_retains_signaled_assigned_generation -- --exact --nocapture
+    cargo test -p hoimin-cli --lib resource::windows::tests::exit_handle_reopen_failure_preserves_detached_generation_identity -- --exact --nocapture
     cargo test -p hoimin-cli --lib resource::windows::tests::timeout_cleanup_retains_signaled_detached_generation -- --exact --nocapture
 
 ### Local Execution Evidence (Not CI)
 
-Both revised exact regressions passed 20/20. The default-parallel `cargo test -p hoimin-cli --lib --quiet` suite passed 20/20, with 372 passed and 8 ignored in every run. Three focused counterfactual mutants were caught 3/3: detach deletion at line 521, PID comparison reversal at line 422, and `root_process_signaled` returning false at line 438.
+All three real-process cleanup regressions passed 20/20. The default-parallel `cargo test -p hoimin-cli --lib --quiet` suite passed 20/20, with 372 passed and 8 ignored in every run. Three focused counterfactual mutants were caught 3/3: detach deletion at line 521, PID comparison reversal at line 422, and `root_process_signaled` returning false at line 438.

@@ -1349,6 +1349,8 @@ mod tests {
                 assert!(state.active.is_empty());
             } else {
                 assert_eq!(state.active.len(), 1);
+                assert_ne!(state.active[0].id, Uuid::nil());
+                assert_ne!(state.active[0].pid, 0);
                 assert!(state.active[0].signal.is_none());
                 assert!(state.active[0].process.is_some());
                 let root_id = state.active[0].id;
@@ -1388,6 +1390,7 @@ mod tests {
                 ..
             } if code == "process.resource.attach"
                 && message.contains("injected root exit handle open failure")
+                && !message.contains("spawned-child cleanup failed")
         ));
         let state = backend
             .inner
@@ -1435,6 +1438,8 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         assert_eq!(state.active.len(), 1);
+        assert_ne!(state.active[0].id, Uuid::nil());
+        assert_ne!(state.active[0].pid, 0);
         assert!(state.active[0].signal.is_none());
         assert!(state.active[0].process.is_some());
         let root_id = state.active[0].id;
