@@ -216,7 +216,7 @@ impl ProcessSupervisor {
 mod tests {
     use super::{ResourceError, validate_plan_resource_policy_for};
 
-    const DIAGNOSTIC: &str = "macOS uses process groups and RLIMIT_CPU; max-memory is not enforced";
+    const DIAGNOSTIC: &str = "macOS uses process groups; max-memory is not enforced";
 
     #[test]
     fn plan_policy_rejects_unapproved_best_effort_memory() {
@@ -226,7 +226,7 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "portable resource limits require --allow-best-effort-memory: \
-             macOS uses process groups and RLIMIT_CPU; max-memory is not enforced"
+             macOS uses process groups; max-memory is not enforced"
         );
     }
 

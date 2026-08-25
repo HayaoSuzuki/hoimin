@@ -1288,7 +1288,12 @@ mod portable {
     #[test]
     fn normal_linux_portable_backend_requires_explicit_opt_in() {
         let error = PortableBackend::new(false).unwrap_err();
-        assert!(error.to_string().contains("--allow-best-effort-memory"));
+        let message = error.to_string();
+        assert_eq!(
+            message,
+            "portable resource limits require --allow-best-effort-memory: portable Linux uses per-process RLIMIT_AS and process groups",
+        );
+        assert!(!message.contains("RLIMIT_CPU"));
         assert_eq!(
             PortableBackend::new(true).unwrap().mode(),
             ResourceMode::BestEffort
@@ -1305,7 +1310,7 @@ mod portable {
         assert_eq!(backend.mode(), ResourceMode::BestEffort);
         assert_eq!(
             backend.diagnostic(),
-            Some("macOS uses process groups and RLIMIT_CPU; max-memory is not enforced"),
+            Some("macOS uses process groups; max-memory is not enforced"),
         );
     }
 
