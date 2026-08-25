@@ -1288,7 +1288,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn attach_failures_kill_suspended_root_and_retain_assigned_identity_until_exit() {
+    async fn attach_failure_cleanup_retains_signaled_assigned_generation() {
         for (sequence, fault) in [
             AttachFault::Assign,
             AttachFault::NestedAssign,
@@ -1340,7 +1340,7 @@ mod tests {
                 EffectFailure::Io { ref code, .. } if code == "process.resource.attach"
             ));
 
-            let mut state = backend
+            let state = backend
                 .inner
                 .state
                 .lock()
@@ -1352,13 +1352,12 @@ mod tests {
                 assert!(state.active[0].signal.is_none());
                 assert!(state.active[0].process.is_some());
                 let root_id = state.active[0].id;
-                backend
-                    .inner
-                    .drain_until_root_exit(&mut state, root_id)
-                    .unwrap();
-                assert!(state.active.is_empty());
-                assert!(state.exited_roots.is_empty());
+                assert!(
+                    root_process_signaled(&state, root_id).unwrap(),
+                    "retained generation process handle must be signaled"
+                );
             }
+            assert!(state.exited_roots.is_empty());
         }
     }
 
@@ -1404,7 +1403,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn timed_out_root_retains_identity_until_its_exit_notification() {
+    async fn timeout_cleanup_retains_signaled_detached_generation() {
         let temporary = tempfile::tempdir().unwrap();
         let output_dir = Utf8Path::from_path(temporary.path()).unwrap();
         let backend = WindowsBackend::new(&run_limits()).unwrap();
@@ -1430,7 +1429,7 @@ mod tests {
         let event = handler.handle(request).await.unwrap();
         assert_eq!(event.termination, hoimin_core::ProcessTermination::Timeout);
 
-        let mut state = backend
+        let state = backend
             .inner
             .state
             .lock()
@@ -1439,11 +1438,10 @@ mod tests {
         assert!(state.active[0].signal.is_none());
         assert!(state.active[0].process.is_some());
         let root_id = state.active[0].id;
-        backend
-            .inner
-            .drain_until_root_exit(&mut state, root_id)
-            .unwrap();
-        assert!(state.active.is_empty());
+        assert!(
+            root_process_signaled(&state, root_id).unwrap(),
+            "retained generation process handle must be signaled"
+        );
         assert!(state.exited_roots.is_empty());
     }
 

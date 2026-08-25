@@ -43,6 +43,8 @@ No public API, configuration, dependency, timeout value, resource-limit status, 
 
 TDD begins with a real ended process handle and an empty completion port. On the current implementation the classification barrier reaches `root exit notification timed out`. The corrected implementation returns the original termination without waiting for an unavailable notification and retains the generation with its handle detached.
 
+Real-process timeout and attach-cleanup fixtures prove that cleanup completed and that every assigned generation remains a detached UUID/PID/owned-handle tombstone whose exact process handle is signaled. Natural Job Object notification delivery or ordering is not a pass condition for those fixtures. Deterministic state-machine tests prove notification-first removal, delayed-notification consumption, and reused-PID generation ordering.
+
 The regression must fail if any of these changes are introduced:
 
 - the process-handle fallback is removed;
@@ -52,3 +54,12 @@ The regression must fail if any of these changes are introduced:
 - a delayed notification is applied to a newer reused-PID generation.
 
 Existing memory-limit, process-limit, abnormal-root, root-before-descendant, timeout cleanup, and close tests remain green. The failing E2E is repeated on Windows without adding repetition or retries to CI. Formatting, Clippy, the workspace suite, the independent `run_e2e` suite, and focused mutation testing cover the final production diff.
+
+Repeat each revised real-process regression 20 times locally and require zero failures. Do not add retries or repetition to CI. Exact test targets:
+
+    cargo test -p hoimin-cli --lib resource::windows::tests::attach_failure_cleanup_retains_signaled_assigned_generation -- --exact --nocapture
+    cargo test -p hoimin-cli --lib resource::windows::tests::timeout_cleanup_retains_signaled_detached_generation -- --exact --nocapture
+
+### Local Execution Evidence (Not CI)
+
+Both revised exact regressions passed 20/20. The default-parallel `cargo test -p hoimin-cli --lib --quiet` suite passed 20/20, with 372 passed and 8 ignored in every run. Three focused counterfactual mutants were caught 3/3: detach deletion at line 521, PID comparison reversal at line 422, and `root_process_signaled` returning false at line 438.
