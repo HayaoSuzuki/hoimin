@@ -4367,6 +4367,52 @@ mod tests {
         assert_eq!(completed.id, id);
     }
 
+    #[tokio::test]
+    async fn fingerprint_recheck_rejects_changed_exact_input_excluded_from_worker_copy() {
+        let project = tempfile::tempdir().unwrap();
+        let source = project.path().join("src");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::write(source.join("calc.py"), "def calc():\n    return 1\n").unwrap();
+        let input = project.path().join("excluded.toml");
+        std::fs::write(&input, "value = 'A'\n").unwrap();
+        let config = crate::cli::parse_config_from([
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("src/calc.py"),
+            OsString::from("--exclude"),
+            OsString::from("excluded.toml"),
+            OsString::from("--fingerprint-file"),
+            OsString::from("excluded.toml"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+            OsString::from("unused-test-command"),
+        ])
+        .unwrap();
+        let config = prepare_run_config(config).unwrap();
+        assert_eq!(config.fingerprint_inputs.len(), 1);
+        assert_eq!(config.fingerprint_inputs[0].path, "excluded.toml");
+        let mut context = ShellContext::new(&config, Vec::new(), Vec::new())
+            .await
+            .unwrap();
+        let id = EffectId(45);
+        let copied_at_start = BTreeSet::new();
+
+        std::fs::write(&input, "value = 'B'\n").unwrap();
+        let error = context
+            .workspace_mut()
+            .handle_preflight_validated(hoimin_core::Preflight { id }, |root, manifest| {
+                assert!(manifest.entry(Utf8Path::new("excluded.toml")).is_none());
+                recheck_fingerprint_inputs(&config, root, manifest, &copied_at_start, id)
+            })
+            .unwrap_err();
+
+        assert_eq!(error.id, id);
+        assert_eq!(error.failure.code(), "plan.fingerprint_input.changed");
+    }
+
     fn assert_metrics_sidecar_finishes(
         metrics: Option<MetricsCollector>,
         warnings: &[(&'static str, String)],
