@@ -782,6 +782,28 @@ mod tests {
         );
     }
 
+    #[test]
+    fn pre_cancelled_discovery_returns_before_opening_missing_root() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = Utf8PathBuf::from_path_buf(directory.path().join("missing-root")).unwrap();
+        let cancellation = ProcessCancellation::new();
+        cancellation.cancel();
+        let work = discovery_work(
+            &root,
+            &[],
+            &MutationOperatorSelection::default(),
+            MutationProfile::Full,
+            10,
+            cancellation,
+            None,
+        );
+
+        let error = discover_targets_blocking(work).unwrap_err();
+
+        assert_eq!(error.failure.code(), "analyzer.cancelled");
+        assert_eq!(error.failure.message(), "analyzer was cancelled");
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn discovery_timeout_returns_before_detached_analysis_releases_resources() {
         let directory = tempfile::tempdir().unwrap();
