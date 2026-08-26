@@ -608,7 +608,8 @@ fn configure_command(command: &mut Command, limits: ProcessLimits) -> Result<(),
     use std::os::unix::process::CommandExt;
 
     let memory = limits.max_memory_bytes;
-    // SAFETY: this closure uses only async-signal-safe libc calls before exec.
+    // SAFETY: this retains the existing pre-exec setup contract: the closure mutates only
+    // child-local process-group and address-space limits before exec.
     unsafe {
         command.as_std_mut().pre_exec(move || {
             if libc::setpgid(0, 0) != 0 {
