@@ -53,9 +53,7 @@ the same applies to `--allow-best-effort-memory` or another execution or resourc
 
 The default total timeout is five minutes. Give a large candidate selection enough headroom
 when creating the plan, or split it into stable batches across multiple `verify` invocations.
-On macOS, `--max-memory` is accepted for plan compatibility but is not enforced. CPU-time limits
-and process-group cleanup remain available; pass `--allow-best-effort-memory` to `plan` when this
-best-effort memory policy is acceptable. `verify` does not provide that option.
+On macOS, `--max-memory` is accepted for plan compatibility but is not enforced. Hoimin still enforces monotonic wall-clock deadlines. On timeout or cancellation, while it owns a live root, it terminates that process group and reaps the root; descendants left after the root exits naturally are not guaranteed to be cleaned up. Pass `--allow-best-effort-memory` to `plan` when this memory policy is acceptable. `verify` does not provide that option.
 
 `plan` discovers candidates but does not run a baseline or test command, copy a worker, or create or reuse a session. A manifest with `truncated` set to `true` contains only a partial candidate set, and `plan` exits 4; it cannot establish full coverage of the selected targets. On such a plan, `--top N` means the top N among retained candidates, not among candidates that discovery did not retain. `verify` still runs the retained selection, but its report remains incomplete and exits 4 because discovery was truncated. `verify` rejects a changed target or fingerprint input before its baseline runs. Each `verify` command runs a fresh baseline and does not use a session. Plan manifests are trusted local invocation data, not a security boundary.
 
@@ -118,7 +116,7 @@ The defaults are:
 
 By default, there are no include/exclude overrides or SQLite session, and `--changed`, `--resume`, and `--allow-best-effort-memory` are disabled.
 
-Every numeric limit must be nonzero. Memory, process, copy, and total-timeout limits are run-wide and are not multiplied by `--jobs`. On Windows, Job Objects provide hard process and memory enforcement. On Linux, delegated cgroup v2 provides hard enforcement. When hard enforcement is unavailable, Unix uses best-effort process-group and rlimit controls; such a run is rejected unless `--allow-best-effort-memory` is explicit. On macOS specifically, the memory limit is not enforced, while CPU-time limits and process-group cleanup remain available. Reports identify `hard` or `best_effort` resource mode.
+Every numeric limit must be nonzero. Memory, process, copy, and total-timeout limits are run-wide and are not multiplied by `--jobs`. On Windows, Job Objects provide hard process and memory enforcement. On Linux, delegated cgroup v2 provides hard enforcement. When hard enforcement is unavailable, Unix uses best-effort process groups and non-macOS Unix also applies per-process `RLIMIT_AS`. Linux and macOS require explicit `--allow-best-effort-memory` approval for this policy. On macOS, the memory limit is not enforced. Hoimin uses monotonic wall-clock deadlines on portable Unix and, on timeout or cancellation while it owns a live root, terminates that process group and reaps the root. Cleanup of descendants after the root exits naturally is not guaranteed. Reports identify `hard` or `best_effort` resource mode.
 
 During discovery of one source file, each token, AST, and type-annotation
 producer retains at most `max_candidates + 1` candidate records and their

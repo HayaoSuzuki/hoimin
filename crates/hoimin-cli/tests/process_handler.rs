@@ -857,6 +857,35 @@ mod portable {
 
     #[cfg(unix)]
     #[tokio::test]
+    async fn preserves_explicit_152_and_sigxcpu_as_native_exits() {
+        let output = tempfile::tempdir().unwrap();
+        let handler = portable_handler(Utf8Path::from_path(output.path()).unwrap());
+        let explicit = handler
+            .handle(run_python(
+                71,
+                "raise SystemExit(152)",
+                limits(Duration::from_secs(5), 64),
+            ))
+            .await
+            .unwrap();
+        let signal = handler
+            .handle(run_python(
+                72,
+                "import os,signal\nsignal.signal(signal.SIGXCPU, signal.SIG_DFL)\nsignal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGXCPU})\nos.kill(os.getpid(), signal.SIGXCPU)",
+                limits(Duration::from_secs(5), 64),
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(explicit.termination, ProcessTermination::Exit(152));
+        assert_eq!(
+            signal.termination,
+            ProcessTermination::Exit(128 + libc::SIGXCPU),
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
     async fn escaped_descendant_output_timeout_is_a_mutant_completion() {
         let output = tempfile::tempdir().unwrap();
         let output_dir = Utf8Path::from_path(output.path()).unwrap();
@@ -1288,7 +1317,12 @@ mod portable {
     #[test]
     fn normal_linux_portable_backend_requires_explicit_opt_in() {
         let error = PortableBackend::new(false).unwrap_err();
-        assert!(error.to_string().contains("--allow-best-effort-memory"));
+        let message = error.to_string();
+        assert_eq!(
+            message,
+            "portable resource limits require --allow-best-effort-memory: portable Linux uses per-process RLIMIT_AS and process groups",
+        );
+        assert!(!message.contains("RLIMIT_CPU"));
         assert_eq!(
             PortableBackend::new(true).unwrap().mode(),
             ResourceMode::BestEffort
@@ -1305,7 +1339,7 @@ mod portable {
         assert_eq!(backend.mode(), ResourceMode::BestEffort);
         assert_eq!(
             backend.diagnostic(),
-            Some("macOS uses process groups and RLIMIT_CPU; max-memory is not enforced"),
+            Some("macOS uses process groups; max-memory is not enforced"),
         );
     }
 

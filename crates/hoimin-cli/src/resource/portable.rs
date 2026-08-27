@@ -20,7 +20,7 @@ enum AttachFault {
 
 #[cfg(target_os = "macos")]
 pub(super) const MACOS_BEST_EFFORT_DIAGNOSTIC: &str =
-    "macOS uses process groups and RLIMIT_CPU; max-memory is not enforced";
+    "macOS uses process groups; max-memory is not enforced";
 
 #[derive(Clone, Debug, Default)]
 pub struct PortableBackend {
@@ -41,8 +41,7 @@ impl PortableBackend {
         {
             if !allow_best_effort_memory {
                 return Err(ResourceError::BestEffortNotAllowed(
-                    "portable Linux uses per-process RLIMIT_AS/RLIMIT_CPU and process groups"
-                        .into(),
+                    "portable Linux uses per-process RLIMIT_AS and process groups".into(),
                 ));
             }
             Ok(Self {
@@ -303,13 +302,245 @@ impl Drop for PortableSupervisor {
 
 #[cfg(all(test, unix))]
 mod unix_tests {
+    use std::mem::MaybeUninit;
+    use std::os::unix::process::CommandExt;
     use std::process::Stdio;
     use std::time::Duration;
 
-    use hoimin_core::ProcessLimits;
-    use tokio::process::Command;
+    use hoimin_core::{EffectId, ProcessLimits};
+    use tokio::io::{AsyncRead, AsyncReadExt};
+    use tokio::process::{Child, Command};
 
     use super::PortableBackend;
+    use crate::process::wait_after_termination;
+    use crate::resource::ProcessSupervisor;
+
+    const EXPECTED_CPU_SOFT: &str = "HOIMIN_TEST_EXPECTED_CPU_SOFT";
+    const EXPECTED_CPU_HARD: &str = "HOIMIN_TEST_EXPECTED_CPU_HARD";
+
+    async fn read_pipe<R>(mut pipe: R) -> Vec<u8>
+    where
+        R: AsyncRead + Unpin,
+    {
+        let mut bytes = Vec::new();
+        pipe.read_to_end(&mut bytes).await.unwrap();
+        bytes
+    }
+
+    async fn finish_pipe(
+        mut task: tokio::task::JoinHandle<Vec<u8>>,
+        label: &str,
+        errors: &mut Vec<String>,
+    ) -> Vec<u8> {
+        match tokio::time::timeout(Duration::from_secs(2), &mut task).await {
+            Ok(Ok(bytes)) => bytes,
+            Ok(Err(error)) => {
+                errors.push(format!("join {label}: {error}"));
+                Vec::new()
+            }
+            Err(_) => {
+                task.abort();
+                let _ = task.await;
+                errors.push(format!("read {label}: timed out and aborted"));
+                Vec::new()
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn fixture_memory_limit() -> u64 {
+        1024 * 1024 * 1024
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[allow(
+        clippy::unnecessary_fallible_conversions,
+        clippy::useless_conversion,
+        reason = "libc::rlim_t signedness and width vary across supported Unix targets"
+    )]
+    fn finite_rlimit_to_u64(value: libc::rlim_t) -> u64 {
+        u64::try_from(value).expect("finite inherited RLIMIT_AS must fit u64")
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn fixture_memory_limit() -> u64 {
+        let mut inherited = MaybeUninit::<libc::rlimit>::uninit();
+        // SAFETY: `inherited` points to writable storage for one rlimit value.
+        assert_eq!(
+            unsafe { libc::getrlimit(libc::RLIMIT_AS, inherited.as_mut_ptr()) },
+            0
+        );
+        // SAFETY: getrlimit succeeded and initialized the value.
+        let inherited = unsafe { inherited.assume_init() };
+        let hard = if inherited.rlim_max == libc::RLIM_INFINITY {
+            1024 * 1024 * 1024
+        } else {
+            finite_rlimit_to_u64(inherited.rlim_max)
+        };
+        assert!(
+            hard >= 512 * 1024 * 1024,
+            "inherited RLIMIT_AS has no safe fixture headroom"
+        );
+        hard.min(1024 * 1024 * 1024)
+    }
+
+    async fn cleanup_probe(
+        supervisor: &mut ProcessSupervisor,
+        child: &mut Child,
+        terminate_group: bool,
+    ) -> Vec<String> {
+        let mut errors = Vec::new();
+        if terminate_group {
+            if let Err(error) = supervisor.terminate(true) {
+                errors.push(format!("terminate probe group: {error}"));
+                if let Err(error) = child.start_kill() {
+                    errors.push(format!("kill probe root: {error}"));
+                }
+            }
+        } else if let Err(error) = child.start_kill() {
+            errors.push(format!("kill unattached probe root: {error}"));
+        }
+        if let Err(error) = wait_after_termination(EffectId(900), child).await {
+            errors.push(format!("reap probe root: {error:?}"));
+        }
+        if child.id().is_none()
+            && let Err(error) = supervisor.terminate(false)
+        {
+            errors.push(format!("disarm reaped probe supervisor: {error}"));
+        }
+        errors
+    }
+
+    #[test]
+    #[ignore = "subprocess fixture for RLIMIT_CPU inheritance"]
+    fn rlimit_cpu_probe_fixture() {
+        let expected_soft = std::env::var(EXPECTED_CPU_SOFT)
+            .unwrap()
+            .parse::<libc::rlim_t>()
+            .unwrap();
+        let expected_hard = std::env::var(EXPECTED_CPU_HARD)
+            .unwrap()
+            .parse::<libc::rlim_t>()
+            .unwrap();
+        let mut observed = MaybeUninit::<libc::rlimit>::uninit();
+        // SAFETY: `observed` points to writable storage for one rlimit value.
+        assert_eq!(
+            unsafe { libc::getrlimit(libc::RLIMIT_CPU, observed.as_mut_ptr()) },
+            0
+        );
+        // SAFETY: getrlimit succeeded and initialized the value.
+        let observed = unsafe { observed.assume_init() };
+
+        assert_eq!(observed.rlim_cur, expected_soft);
+        assert_eq!(observed.rlim_max, expected_hard);
+    }
+
+    #[tokio::test]
+    async fn portable_setup_preserves_inherited_rlimit_cpu() {
+        let mut inherited = MaybeUninit::<libc::rlimit>::uninit();
+        // SAFETY: `inherited` points to writable storage for one rlimit value.
+        assert_eq!(
+            unsafe { libc::getrlimit(libc::RLIMIT_CPU, inherited.as_mut_ptr()) },
+            0
+        );
+        // SAFETY: getrlimit succeeded and initialized the value.
+        let inherited = unsafe { inherited.assume_init() };
+        let requested_hard = if inherited.rlim_max == libc::RLIM_INFINITY {
+            31
+        } else {
+            inherited.rlim_max.min(31)
+        };
+        assert!(
+            requested_hard >= 10,
+            "inherited RLIMIT_CPU has no safe fixture headroom"
+        );
+        let requested_soft = requested_hard - 1;
+
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command
+            .args([
+                "--ignored",
+                "--exact",
+                "resource::portable::unix_tests::rlimit_cpu_probe_fixture",
+                "--test-threads=1",
+            ])
+            .env(EXPECTED_CPU_SOFT, requested_soft.to_string())
+            .env(EXPECTED_CPU_HARD, requested_hard.to_string())
+            .kill_on_drop(true)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        // SAFETY: the closure changes only the soon-to-exec child and calls libc setrlimit.
+        unsafe {
+            command.as_std_mut().pre_exec(move || {
+                let requested = libc::rlimit {
+                    rlim_cur: requested_soft,
+                    rlim_max: requested_hard,
+                };
+                if libc::setrlimit(libc::RLIMIT_CPU, std::ptr::addr_of!(requested)) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+
+        let backend = PortableBackend::for_tests();
+        let mut supervisor = backend
+            .prepare(
+                &mut command,
+                ProcessLimits {
+                    timeout: Duration::from_secs(5),
+                    max_output_bytes: 64,
+                    max_memory_bytes: fixture_memory_limit(),
+                    max_processes: 8,
+                },
+            )
+            .unwrap();
+        let mut child = command.spawn().unwrap();
+        let stdout_task = tokio::spawn(read_pipe(child.stdout.take().unwrap()));
+        let stderr_task = tokio::spawn(read_pipe(child.stderr.take().unwrap()));
+        if let Err(error) = supervisor.attach(&child) {
+            let mut cleanup = cleanup_probe(&mut supervisor, &mut child, false).await;
+            let stdout = finish_pipe(stdout_task, "probe stdout", &mut cleanup).await;
+            let stderr = finish_pipe(stderr_task, "probe stderr", &mut cleanup).await;
+            panic!(
+                "attach RLIMIT_CPU probe: {error}; cleanup={cleanup:?}; stdout={} stderr={}",
+                String::from_utf8_lossy(&stdout),
+                String::from_utf8_lossy(&stderr),
+            );
+        }
+        let mut diagnostics = Vec::new();
+        let outcome = match tokio::time::timeout(Duration::from_secs(10), child.wait()).await {
+            Ok(Ok(status)) => supervisor
+                .terminate(false)
+                .map(|()| status)
+                .map_err(|error| format!("disarm RLIMIT_CPU supervisor: {error}")),
+            Ok(Err(error)) => {
+                diagnostics.extend(cleanup_probe(&mut supervisor, &mut child, true).await);
+                Err(format!("wait for RLIMIT_CPU probe: {error}"))
+            }
+            Err(_) => {
+                diagnostics.extend(cleanup_probe(&mut supervisor, &mut child, true).await);
+                Err("RLIMIT_CPU probe timed out".to_owned())
+            }
+        };
+        let stdout = finish_pipe(stdout_task, "probe stdout", &mut diagnostics).await;
+        let stderr = finish_pipe(stderr_task, "probe stderr", &mut diagnostics).await;
+        let status = outcome.unwrap_or_else(|error| {
+            panic!(
+                "{error}; diagnostics={diagnostics:?}; stdout={} stderr={}",
+                String::from_utf8_lossy(&stdout),
+                String::from_utf8_lossy(&stderr),
+            )
+        });
+        assert!(diagnostics.is_empty(), "probe diagnostics: {diagnostics:?}");
+        assert!(
+            status.success(),
+            "stdout={} stderr={}",
+            String::from_utf8_lossy(&stdout),
+            String::from_utf8_lossy(&stderr),
+        );
+    }
 
     struct ProcessGroupCleanup(i32);
 
@@ -377,12 +608,8 @@ fn configure_command(command: &mut Command, limits: ProcessLimits) -> Result<(),
     use std::os::unix::process::CommandExt;
 
     let memory = limits.max_memory_bytes;
-    let cpu_seconds = limits
-        .timeout
-        .as_secs()
-        .saturating_add(u64::from(limits.timeout.subsec_nanos() != 0))
-        .max(1);
-    // SAFETY: this closure uses only async-signal-safe libc calls before exec.
+    // SAFETY: this retains the existing pre-exec setup contract: the closure mutates only
+    // child-local process-group and address-space limits before exec.
     unsafe {
         command.as_std_mut().pre_exec(move || {
             if libc::setpgid(0, 0) != 0 {
@@ -393,13 +620,6 @@ fn configure_command(command: &mut Command, limits: ProcessLimits) -> Result<(),
                 rlim_max: memory as libc::rlim_t,
             };
             if libc::setrlimit(libc::RLIMIT_AS, std::ptr::addr_of!(address_space)) != 0 {
-                return Err(io::Error::last_os_error());
-            }
-            let cpu = libc::rlimit {
-                rlim_cur: cpu_seconds as libc::rlim_t,
-                rlim_max: cpu_seconds as libc::rlim_t,
-            };
-            if libc::setrlimit(libc::RLIMIT_CPU, std::ptr::addr_of!(cpu)) != 0 {
                 return Err(io::Error::last_os_error());
             }
             Ok(())
@@ -413,25 +633,13 @@ fn configure_command(command: &mut Command, limits: ProcessLimits) -> Result<(),
     clippy::unnecessary_wraps,
     reason = "the shared command configuration API retains a fallible signature across target-specific implementations"
 )]
-fn configure_command(command: &mut Command, limits: ProcessLimits) -> Result<(), ResourceError> {
+fn configure_command(command: &mut Command, _limits: ProcessLimits) -> Result<(), ResourceError> {
     use std::os::unix::process::CommandExt;
 
-    let cpu_seconds = limits
-        .timeout
-        .as_secs()
-        .saturating_add(u64::from(limits.timeout.subsec_nanos() != 0))
-        .max(1);
-    // SAFETY: this closure uses only async-signal-safe libc calls before exec.
+    // SAFETY: this closure changes only the soon-to-exec child process.
     unsafe {
         command.as_std_mut().pre_exec(move || {
             if libc::setpgid(0, 0) != 0 {
-                return Err(io::Error::last_os_error());
-            }
-            let cpu = libc::rlimit {
-                rlim_cur: cpu_seconds as libc::rlim_t,
-                rlim_max: cpu_seconds as libc::rlim_t,
-            };
-            if libc::setrlimit(libc::RLIMIT_CPU, std::ptr::addr_of!(cpu)) != 0 {
                 return Err(io::Error::last_os_error());
             }
             Ok(())
