@@ -208,7 +208,7 @@ fn classify_violations(termination: ProcessTermination, violations: u8) -> Proce
     let processes = violations & PROCESS_VIOLATION != 0;
     match (memory, processes) {
         (false, false) => termination,
-        (true, false) | (true, true) => ProcessTermination::OutOfMemory,
+        (true, false | true) => ProcessTermination::OutOfMemory,
         (false, true) => ProcessTermination::ProcessLimit,
     }
 }
