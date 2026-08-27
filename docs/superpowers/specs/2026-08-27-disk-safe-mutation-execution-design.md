@@ -13,6 +13,17 @@
 3. The formal/race/delivery pass fixed same-observation precedence, lease lifetime
    through absence verification, execution-versus-delivery scratch, retained roots,
    report/session acknowledgement, Lean correspondence layers, and exact CI gates.
+4. The resource-safety pass bounded walker descriptors, entries, elapsed scan time,
+   inventory capture, and candidate count. It also removed destructor-driven recursive
+   deletion and whole-report rendering.
+5. The concurrency/platform pass separated read-only Windows scan sharing from
+   destructive claim handles, anchored the user output directory, added setup rollback,
+   and covered catchable termination signals.
+6. The formal-executability pass removed an unavailable `Finset` dependency, represented
+   secondary stop evidence, defined failed components as settled, and added complete
+   counterexample records.
+7. The orphan-process pass added cleanup-ready and heartbeat evidence before janitor
+   reclaim, handle-anchored free-space queries, and a hard maximum of four mutation jobs.
 
 ## Purpose
 
@@ -29,9 +40,11 @@ The default policy is:
 | Minimum free bytes on every affected filesystem | `10GiB` |
 | Disk sampling interval | `250ms` |
 | Focused cargo-mutants jobs | `1` |
+| Maximum focused cargo-mutants jobs | `4` |
 | Retained focused command log bytes | `16MiB` per command |
 
-Users may change the byte limits or job count with explicit options. A run may
+Users may change the byte limits or choose a job count from one through four with
+explicit options. A run may
 not disable portable disk monitoring.
 
 ## Incident and root cause
@@ -102,6 +115,10 @@ per-file `RLIMIT_FSIZE` is a per-file backstop, not an aggregate quota.
 **Lease** is a marker plus an operating-system file lock held for the lifetime
 of an owned root.
 
+**Anchored output** is a user-owned output directory that the focused wrapper opens once,
+locks for the run, and accesses through that directory capability. Hoimin meters and
+writes it but never recursively deletes it.
+
 ## Architecture
 
 ### Shared policy
@@ -165,12 +182,14 @@ spool, cleans and absence-verifies the delivery root, and only then acknowledges
 `OutputEmitted`; session completion follows that acknowledgement. A write or delivery-
 root cleanup failure therefore leaves the session incomplete.
 
-The meter opens the owned root as a directory capability. It opens each child
-directory without following the last path component and enumerates through the
-open handle. A test process cannot redirect a scan outside the root by replacing
-a checked directory with a symlink between metadata and traversal. The walk
-fails closed after depth 128 or 1,000,000 entries so the meter cannot exhaust
-memory while trying to protect disk.
+The meter opens the owned root as a directory capability. It performs a streaming
+depth-first walk, opens each child directory without following the last path component,
+and enumerates through the open handle. It holds at most 129 directory handles, one for
+each permitted depth plus the root, and never collects a directory listing before
+processing it. A test process cannot redirect a scan outside the root by replacing a
+checked directory with a symlink between metadata and traversal. The walk fails closed
+after depth 128, 250,000 entries, or five seconds. These fixed caps bound the monitor's
+file descriptors, identity set, memory, and shutdown latency.
 
 The shell run loop treats the disk stop signal like a run-wide infrastructure
 stop. It stops new effect dispatch, drains processes through the existing
@@ -195,14 +214,28 @@ The wrapper creates one leased run root below a managed temporary root. It sets
 inventory, baseline, and cargo-mutants commands, and sets
 `CARGO_INCREMENTAL=0`. This redirects temporary copies and build trees into a
 directory that the wrapper owns. The wrapper passes `--jobs 1` unless the user
-chooses another positive value. The user-selected output must be absent or
+chooses another value from one through four. The user-selected output must be absent or
 empty at startup; Hoimin counts it during the run but never deletes it.
 
 Initialization rejects a non-empty output directory before it creates scratch or
-launches a child. Once accepted, the wrapper writes only its compact record and bounded
-command evidence there. The output root participates in every synchronous and periodic
-sample even though cleanup never owns it. The output may not be a symlink or reside
-inside either implementation's canonical managed root.
+launches a child. It atomically creates or opens the real directory, creates and locks a
+fixed ownership marker with `create_new`, and retains an anchored directory handle until
+the last report write finishes. A concurrent invocation cannot pass the same empty-root
+check and interleave evidence. Once accepted, the wrapper writes only its compact record
+and bounded command evidence there. The output root participates in every synchronous
+and periodic sample even though cleanup never owns it. The output may not be a symlink
+or reside inside either implementation's canonical managed root.
+
+Before it creates the output ownership marker, the wrapper queries capacity through the
+opened parent or output handle and requires free bytes above the configured reserve. The
+marker has a 64 KiB schema cap and remains as provenance after a successful run. Every
+subsequent checkpoint uses the guarded writer; no unmetered report write occurs between
+ownership acquisition and guard startup.
+
+Inventory is also bounded. The wrapper captures at most 32 MiB from cargo-mutants list
+output, accepts at most 10,000 discovered entries, and selects at most 1,000 candidates.
+Crossing a cap is a typed tool or infrastructure failure before baseline or mutation
+work. Explicit symbol selection must resolve each symbol to one production function.
 
 Each selected candidate uses a child run directory. After cargo-mutants exits,
 the wrapper reads the exact inventory and outcome, copies the bounded diagnostic
@@ -216,7 +249,8 @@ continues draining discarded bytes so a full pipe cannot block the child. The
 command record stores total observed bytes, retained bytes, and truncation
 status for each stream.
 
-On every focused-workflow exit, the wrapper closes dispatch first, terminates
+On every focused-workflow catchable exit, including `SIGINT` and `SIGTERM`, the wrapper
+closes dispatch first, terminates
 and reaps the active command, joins both output drains, extracts compact outcome
 evidence, stops the disk meter, and then cleans or retains scratch. It writes the
 final JSON and Markdown after the cleanup attempt. The meter therefore remains
@@ -240,7 +274,8 @@ following disabled.
 - It treats a vanished entry as a concurrent deletion and continues.
 - It returns a typed measurement failure for permission errors or integer
   overflow.
-- It fails closed after depth 128 or 1,000,000 entries.
+- It performs streaming depth-first traversal with at most 129 open directory handles.
+- It fails closed after depth 128, 250,000 entries, or five seconds.
 - It counts the focused workflow output directory because retained reports and
   logs consume disk too.
 
@@ -248,9 +283,11 @@ Logical lengths overcount sparse files and copy-on-write extents. The false
 positive preserves disk safety. Filesystem free space remains the independent
 physical-capacity signal.
 
-The monitor runs one scan at a time. It waits `250ms` between scan starts after
-accounting for scan duration. It records sampling delay so reports show when a
-large tree reduced observation frequency.
+The monitor runs one scan at a time. It waits `250ms` after one scan completes before it
+starts the next, so a slow scan cannot create a continuous I/O loop. The walker checks a
+monotonic five-second deadline at least every 256 entries. It records sampling delay and
+scan duration. A deadline overrun is a measurement failure. Synchronous samples share
+the same single-scan lock and deadline.
 
 The runtime also samples synchronously before each process dispatch and after
 process exit plus output drain, before it classifies the result. A threshold or
@@ -260,8 +297,11 @@ ready together.
 
 ### Free space
 
-The monitor groups roots by filesystem identity and queries available bytes for
-each group. It performs this query before analyzer, baseline, or mutant work
+The monitor groups roots by filesystem identity and queries available bytes through the
+same open root capabilities. Unix uses `fstatvfs` on the directory descriptor. Windows
+derives the volume path from the verified final handle path and confirms its volume
+identity before `GetDiskFreeSpaceExW`; it never re-trusts the original root path. It
+performs this query before analyzer, baseline, or mutant work
 starts. A filesystem at or below `10GiB` fails preflight without launching a
 child.
 
@@ -334,6 +374,12 @@ The transition order has these rules:
    cleanup failure does not erase an earlier cleanup failure or primary disk reason; it
    is exposed by the typed failure path because the report cannot describe its own
    failed delivery finalization.
+9. Managed-root and child guards never perform recursive deletion from `Drop` or Python
+   finalizers. Catchable paths call explicit ordered cleanup. Unwinding or interpreter
+   shutdown releases the lease and leaves the root for the next janitor.
+10. If setup fails after either lease is published, setup rolls back in reverse order
+    only after confirming that no process, drain, or monitor was started. A failure to
+    prove that condition abandons the root for the janitor.
 
 Disk stops use typed infrastructure codes:
 
@@ -358,7 +404,8 @@ rename, and janitor claim run under that lock. A per-run lease still proves
 liveness. The coordinator closes the race between the current owner's cleanup
 and a janitor in another Hoimin process.
 
-The coordinator marker and every lease or retention marker have fixed small schemas and
+The coordinator marker and every lease, heartbeat, retention, or cleanup-ready marker
+have fixed small schemas and
 a 64 KiB read cap. A managed root scan considers at most 100,000 direct children per
 invocation; reaching either cap is a typed measurement/setup failure rather than an
 unbounded allocation.
@@ -399,6 +446,18 @@ skips its directory.
 semantics while the lease lock remains held. The janitor validates both marker
 types and skips a retained root. It does not rewrite the locked lease file.
 
+An unlocked lease does not prove that descendants exited. After process reap and output
+drain, the owner creates and flushes a separate cleanup-ready marker while it still holds
+the lease. While a run is live, the owner refreshes the modification time of a fixed,
+open heartbeat marker at least once per minute without replacing its identity. A
+heartbeat update failure stops dispatch through the measurement-failure
+path. A janitor may reclaim an unlocked active or deleting root only when cleanup-ready
+validates or the last valid heartbeat is at least 24 hours old. A missing, malformed, or
+future heartbeat preserves the root. Staging roots without cleanup-ready evidence use
+their creation time because they were never published as active. This grace period
+prevents a new invocation from deleting below an orphaned child that survived parent
+panic, `SIGKILL`, or host supervision failure.
+
 Normal cleanup closes child processes and their inherited handles, acquires the
 coordinator lock, renames the root to the managed deleting prefix while the
 lease remains held, and then releases only the coordinator before removing the tree.
@@ -417,8 +476,13 @@ leases. It reports them without deleting them.
 
 Rust uses capability directory handles for janitor removal. Python uses
 directory-relative file descriptors with no-follow opens on Unix. On Windows,
-it holds no-delete-share directory handles, rejects reparse points, and verifies
-final handle paths before descending. A platform that cannot establish this
+read-only meter handles grant `FILE_SHARE_DELETE` so concurrent per-candidate cleanup
+does not fail because a scan observed the directory. Each handle stays bound to the
+opened object, rejects reparse points, and has its final path and file identity verified.
+Destructive janitor handles request `DELETE` access and perform handle-relative
+rename/disposition after the monitor has joined. Per-candidate owner cleanup may run
+while the run-root monitor is active because meter handles share deletion and treat
+vanished entries as concurrent cleanup. A platform that cannot establish this
 anchored walk fails closed instead of falling back to path-based recursive
 deletion.
 
@@ -436,7 +500,8 @@ The Rust run report and focused JSON record include:
 - every execution root and its cleanup result;
 - the delivery scratch identity and the explicit fact that its cleanup occurs after
   report bytes are flushed, so the report does not claim its own future cleanup;
-- bytes reclaimed when measurement permits the calculation;
+- removed logical bytes for an absence-verified owned root;
+- signed available-byte change per affected filesystem when both readings exist;
 - stale leases reclaimed during startup;
 - bounded-log observed and retained byte counts.
 
@@ -444,8 +509,12 @@ Cleanup success requires absence verification after recursive removal. A cleanup
 callback that returned without removing the path does not count as success.
 After process drain, the runtime takes a final pre-clean sample, stops and joins
 the monitor, cleans execution scratch, and queries the affected filesystem parents once
-more. It records end free space and reclaimed bytes when both observations are
-available; otherwise those fields remain explicitly unknown. Delivery scratch is
+more. It records the pre-clean logical size as `removed_logical_bytes` only after
+absence verification. It records end free space and a signed free-space change when
+both filesystem readings are available; otherwise those fields remain unknown. The
+report never calls a free-space delta physically reclaimed bytes because concurrent
+writes, sparse files, hard links, and copy-on-write extents make that attribution
+invalid. Delivery scratch is
 already static at monitor shutdown and is cleaned by the report acknowledgement path.
 
 The runtime keeps primary-run, cleanup, and report-delivery outcomes as three
@@ -468,6 +537,12 @@ measures the output root and checks the projected atomic temporary plus current
 filesystem reserve. If the next chunk would reach either boundary, it closes and
 unlinks only that exact wrapper-created temporary and surfaces report delivery failure
 through the typed return and stderr. The prior atomic report remains intact.
+The Markdown renderer yields sections and candidate rows to the guarded writer; it does
+not build a complete `str` or list of all rendered lines. JSON encoding uses
+`JSONEncoder.iterencode` over the existing bounded dataclasses and does not first create
+a recursive duplicate through `RunRecord.to_dict()`. Both paths retain only the bounded
+run record, and discovery
+caps bound that record's candidate collection.
 
 ## Configuration and persisted-data compatibility
 
@@ -539,6 +614,9 @@ The model tracks cleanup requests and clean, failed, or retained terminal outcom
 root ID. It also tracks process, output-drain, and monitor-join
 states, so `finished` requires all three boundaries plus a terminal cleanup
 outcome for each owned root.
+For process, drain, monitor, and report components, “terminal” means settled as success
+or failure. A failed report component therefore permits delivery-root cleanup while
+still preventing output acknowledgement.
 
 The bounded refutation pass enumerates the three threshold classes plus meter
 failure and explores eight normalized event families: dispatch, observe, process
@@ -551,10 +629,11 @@ definitions and theorems;
 the executable alone performs enumeration, sensitivity checks, and JSONL
 serialization.
 
-Lean proves these seven model claims:
+Lean proves these eight model claims:
 
 - a stop request disables future dispatch;
 - the first terminal reason stays unchanged;
+- a simultaneous reserve/size observation keeps reserve primary and size secondary;
 - each owned root receives one cleanup request;
 - cleanup failure cannot produce `cleanup_outcome=clean`;
 - the model cannot reach `finished` before cleanup attempts complete.
@@ -569,6 +648,13 @@ or `infrastructure_error`. Deliberately broken policies must fail corpus
 comparison. The audit report distinguishes model proofs from implementation
 observations.
 
+Each failed or deliberately broken case records the claim, model boundary, finite
+domain or theorem premises, minimal input or trace, intermediate states,
+classification, implementation correspondence, owner question, and reproduction
+command. The audit labels walker descriptor/entry/deadline caps, OS handle behavior,
+signal delivery, and renderer memory behavior outside the Lean model; deterministic
+production tests provide `internal-fixture` evidence for those claims.
+
 ## Testing
 
 ### Rust TDD
@@ -581,6 +667,8 @@ Tests inject a disk meter, clock, stop sink, and filesystem fixture. They cover:
 - sticky first failure and retained secondary errors;
 - measurement failure;
 - process drain before workspace cleanup;
+- non-destructive guard `Drop`, setup rollback, and janitor recovery after unwinding;
+- bounded descriptor count, entry count, hard-link identity storage, and scan deadline;
 - one cleanup attempt per owned root;
 - failed cleanup and absence verification;
 - live, abandoned, retained, malformed, and symlink lease entries;
@@ -597,8 +685,10 @@ Tests use fake cargo-mutants and injected measurements. They cover:
 - size, reserve, and measurement stops;
 - process-tree termination and reap before removal;
 - compact outcome extraction before candidate-tree deletion;
+- unique output ownership and anchored report writes under concurrent startup;
+- bounded inventory bytes, discovered entries, selected candidates, and streamed Markdown;
 - bounded stdout and stderr drain without child blockage;
-- cleanup after success, tool failure, timeout, and interruption;
+- cleanup after success, tool failure, timeout, `SIGINT`, and `SIGTERM`;
 - abandoned lease recovery on the next invocation;
 - `--keep-scratch` retention with active limits;
 - safe rejection of malformed or foreign cleanup entries.
@@ -619,7 +709,8 @@ Tests model large byte counts. They do not create GiB-scale files.
 
 The delivery does not run the full Rust workspace mutation inventory. Focused
 mutation targets only the new Rust policy and lifecycle code. The run cleans its
-scratch before completion and records peak use and reclaimed bytes.
+scratch before completion and records peak use, removed logical bytes, and signed
+free-space change without claiming physical byte attribution.
 
 ## Documentation
 
@@ -646,7 +737,8 @@ The change is complete when:
 2. Deterministic tests show that size, reserve, and measurement failures stop
    dispatch and trigger process drain plus cleanup.
 3. Catchable success and failure paths leave no non-retained owned root.
-4. A later invocation removes a simulated abandoned valid lease and preserves
+4. A later invocation removes a simulated cleanup-ready or 24-hour-old abandoned valid
+   lease and preserves
    live, retained, malformed, symlink, and foreign entries.
 5. Reports distinguish portable aggregate monitoring, per-file hard backstops,
    and caller-provided capacity roots.
@@ -655,3 +747,5 @@ The change is complete when:
 8. The one-worker real focused mutation evidence stays under the configured
    limits and removes its scratch.
 9. All normal, compatibility, contract, platform, and documentation gates pass.
+10. The guard itself stays within its descriptor, entry, scan-time, inventory, candidate,
+    and retained-log caps, and no destructor recursively deletes a live workspace.
