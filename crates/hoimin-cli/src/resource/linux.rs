@@ -2,12 +2,20 @@ use std::ffi::OsString;
 #[cfg(any(target_os = "linux", test))]
 use std::path::PathBuf;
 
+#[cfg(any(target_os = "linux", test))]
+use hoimin_core::ProcessTermination;
 use hoimin_core::RunLimits;
 
 use super::{PortableBackend, ResourceBackend, ResourceError};
 
 #[cfg(any(target_os = "linux", test))]
 const INTERNAL_LAUNCHER_ARG: &str = "--hoimin-internal-cgroup-launch";
+#[cfg(any(target_os = "linux", test))]
+const MEMORY_VIOLATION: u8 = 1;
+#[cfg(any(target_os = "linux", test))]
+const PROCESS_VIOLATION: u8 = 2;
+#[cfg(any(target_os = "linux", test))]
+const BOTH_VIOLATIONS: u8 = 3;
 
 #[cfg(any(target_os = "linux", test))]
 fn normalized_memory_limit(
@@ -184,12 +192,25 @@ fn value(counters: &[(&[u8], u64)], name: &[u8]) -> u64 {
 
 #[cfg(any(target_os = "linux", test))]
 fn violations_since(before: CgroupEventCounters, after: CgroupEventCounters) -> u8 {
-    let memory = after.memory_max > before.memory_max
-        || after.oom > before.oom
-        || after.oom_kill > before.oom_kill
-        || after.oom_group_kill > before.oom_group_kill;
+    let memory = after.oom_kill > before.oom_kill;
     let processes = after.pids_max > before.pids_max;
-    u8::from(memory) | (u8::from(processes) << 1)
+    match (memory, processes) {
+        (false, false) => 0,
+        (true, false) => MEMORY_VIOLATION,
+        (false, true) => PROCESS_VIOLATION,
+        (true, true) => BOTH_VIOLATIONS,
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn classify_violations(termination: ProcessTermination, violations: u8) -> ProcessTermination {
+    let memory = violations & MEMORY_VIOLATION != 0;
+    let processes = violations & PROCESS_VIOLATION != 0;
+    match (memory, processes) {
+        (false, false) => termination,
+        (true, false | true) => ProcessTermination::OutOfMemory,
+        (false, true) => ProcessTermination::ProcessLimit,
+    }
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -430,14 +451,13 @@ mod platform {
 
     use super::{
         CgroupCapabilities, CgroupEventCounters, INTERNAL_LAUNCHER_ARG,
-        begin_cgroup_member_cleanup, find_unified_mounts, finish_cgroup_member_cleanup,
-        normalized_memory_limit, parse_cgroup_event_counters, path_from_bytes, remove_cgroup_dir,
-        resolve_unified_cgroup, run_cleanup_after_accounting, violations_since, wrap_launcher_argv,
+        begin_cgroup_member_cleanup, classify_violations, find_unified_mounts,
+        finish_cgroup_member_cleanup, normalized_memory_limit, parse_cgroup_event_counters,
+        path_from_bytes, remove_cgroup_dir, resolve_unified_cgroup, run_cleanup_after_accounting,
+        violations_since, wrap_launcher_argv,
     };
     use crate::resource::{ProcessSupervisor, ResourceError};
 
-    const MEMORY_VIOLATION: u8 = 1;
-    const PROCESS_VIOLATION: u8 = 2;
     const CONTROL_WAIT: Duration = Duration::from_secs(1);
     const CGROUP2_SUPER_MAGIC: libc::c_long = 0x6367_7270;
 
@@ -802,13 +822,7 @@ mod platform {
                 Self::refresh_events(&mut state)?;
             }
             let violations = signal.violations.load(Ordering::Acquire);
-            if violations & MEMORY_VIOLATION != 0 {
-                Ok(ProcessTermination::OutOfMemory)
-            } else if violations & PROCESS_VIOLATION != 0 {
-                Ok(ProcessTermination::ProcessLimit)
-            } else {
-                Ok(termination)
-            }
+            Ok(classify_violations(termination, violations))
         }
 
         fn terminate_root(
@@ -1608,9 +1622,12 @@ mod tests {
     use std::cell::Cell;
     use std::ffi::OsString;
 
+    use hoimin_core::ProcessTermination;
+
     use super::{
-        CgroupEventCounters, CleanupStrategy, ResourceError, begin_cgroup_member_cleanup,
-        cleanup_strategy, find_unified_mount, find_unified_mounts, finish_cgroup_member_cleanup,
+        BOTH_VIOLATIONS, CgroupEventCounters, CleanupStrategy, MEMORY_VIOLATION, PROCESS_VIOLATION,
+        ResourceError, begin_cgroup_member_cleanup, classify_violations, cleanup_strategy,
+        find_unified_mount, find_unified_mounts, finish_cgroup_member_cleanup,
         normalized_memory_limit, remove_cgroup_dir, resolve_unified_cgroup,
         run_cleanup_after_accounting, violations_since, wrap_launcher_argv,
     };
@@ -1734,7 +1751,38 @@ mod tests {
     }
 
     #[test]
-    fn event_deltas_classify_only_new_memory_and_process_violations() {
+    fn pressure_counters_do_not_create_terminal_memory_evidence() {
+        let before = CgroupEventCounters {
+            memory_max: 5,
+            oom: 7,
+            oom_kill: 11,
+            oom_group_kill: 13,
+            pids_max: 17,
+        };
+        let observations = [
+            CgroupEventCounters {
+                memory_max: 6,
+                ..before
+            },
+            CgroupEventCounters { oom: 8, ..before },
+            CgroupEventCounters {
+                oom_group_kill: 14,
+                ..before
+            },
+            CgroupEventCounters {
+                memory_max: 6,
+                oom: 8,
+                oom_group_kill: 14,
+                ..before
+            },
+        ];
+        for after in observations {
+            assert_eq!(violations_since(before, after), 0);
+        }
+    }
+
+    #[test]
+    fn terminal_event_deltas_use_strict_monotonic_increases() {
         let before = CgroupEventCounters {
             memory_max: 5,
             oom: 7,
@@ -1749,12 +1797,71 @@ mod tests {
                 before,
                 CgroupEventCounters {
                     oom_kill: 12,
+                    ..before
+                }
+            ),
+            MEMORY_VIOLATION,
+        );
+        assert_eq!(
+            violations_since(
+                before,
+                CgroupEventCounters {
                     pids_max: 18,
                     ..before
                 }
             ),
-            3
+            PROCESS_VIOLATION,
         );
+        assert_eq!(
+            violations_since(
+                before,
+                CgroupEventCounters {
+                    oom_kill: 12,
+                    pids_max: 18,
+                    ..before
+                }
+            ),
+            BOTH_VIOLATIONS,
+        );
+        assert_eq!(
+            violations_since(
+                before,
+                CgroupEventCounters {
+                    oom_kill: 10,
+                    pids_max: 18,
+                    ..before
+                }
+            ),
+            PROCESS_VIOLATION,
+        );
+        assert_eq!(
+            violations_since(
+                before,
+                CgroupEventCounters {
+                    oom_kill: 12,
+                    pids_max: 16,
+                    ..before
+                }
+            ),
+            MEMORY_VIOLATION,
+        );
+    }
+
+    #[test]
+    fn known_violation_bits_map_with_memory_precedence() {
+        let incoming = ProcessTermination::Exit(7);
+        for (bits, expected) in [
+            (0, incoming),
+            (MEMORY_VIOLATION, ProcessTermination::OutOfMemory),
+            (PROCESS_VIOLATION, ProcessTermination::ProcessLimit),
+            (BOTH_VIOLATIONS, ProcessTermination::OutOfMemory),
+            (4, incoming),
+            (4 | MEMORY_VIOLATION, ProcessTermination::OutOfMemory),
+            (4 | PROCESS_VIOLATION, ProcessTermination::ProcessLimit),
+            (4 | BOTH_VIOLATIONS, ProcessTermination::OutOfMemory),
+        ] {
+            assert_eq!(classify_violations(incoming, bits), expected);
+        }
     }
 
     #[test]

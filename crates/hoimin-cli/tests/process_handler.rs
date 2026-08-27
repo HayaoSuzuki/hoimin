@@ -182,22 +182,17 @@ mod cgroup_v2 {
     use std::ffi::OsString;
     use std::sync::Arc;
 
+    use hoimin_cli::resource::LinuxBackend;
+
     use super::*;
 
-    fn hard_handler(
-        output_dir: &Utf8Path,
-        max_memory: u64,
-        max_processes: usize,
-    ) -> Option<ProcessHandler> {
+    fn hard_backend(max_memory: u64, max_processes: usize) -> Option<LinuxBackend> {
         let capabilities = probe_linux_cgroup_with_launcher(
             &hard_run_limits(max_memory, max_processes),
             OsString::from(env!("CARGO_BIN_EXE_hoimin")),
         );
         match capabilities {
-            CgroupCapabilities::Available(backend) => Some(ProcessHandler::new(
-                ResourceBackend::LinuxHard(backend),
-                output_dir.to_owned(),
-            )),
+            CgroupCapabilities::Available(backend) => Some(backend),
             CgroupCapabilities::Unavailable(reason) => {
                 eprintln!("SKIP: Linux cgroup v2 hard-limit capability unavailable: {reason}");
                 None
@@ -209,6 +204,83 @@ mod cgroup_v2 {
                 )
             }
         }
+    }
+
+    fn hard_handler(
+        output_dir: &Utf8Path,
+        max_memory: u64,
+        max_processes: usize,
+    ) -> Option<ProcessHandler> {
+        hard_backend(max_memory, max_processes).map(|backend| {
+            ProcessHandler::new(ResourceBackend::LinuxHard(backend), output_dir.to_owned())
+        })
+    }
+
+    fn hard_handler_without_swap(
+        output_dir: &Utf8Path,
+        max_memory: u64,
+        max_processes: usize,
+    ) -> Option<ProcessHandler> {
+        let backend = hard_backend(max_memory, max_processes)?;
+        let swap_max = backend.run_cgroup_path_for_tests().join("memory.swap.max");
+        if let Err(error) = fs::write(&swap_max, b"0") {
+            backend.close().unwrap();
+            eprintln!(
+                "SKIP: Linux cgroup v2 swap limiting unavailable: write {} failed: {error}",
+                swap_max.display()
+            );
+            return None;
+        }
+        let actual = match fs::read_to_string(&swap_max) {
+            Ok(actual) => actual,
+            Err(error) => {
+                backend.close().unwrap();
+                eprintln!(
+                    "SKIP: Linux cgroup v2 swap limiting unavailable: read {} failed: {error}",
+                    swap_max.display()
+                );
+                return None;
+            }
+        };
+        if actual.trim() != "0" {
+            let cleanup = backend.close();
+            panic!(
+                "Linux cgroup v2 memory.swap.max readback mismatch: requested 0, read {:?}; cleanup: {cleanup:?}",
+                actual.trim()
+            );
+        }
+
+        Some(ProcessHandler::new(
+            ResourceBackend::LinuxHard(backend),
+            output_dir.to_owned(),
+        ))
+    }
+
+    #[tokio::test]
+    async fn hard_cgroup_classifies_one_root_oom_kill() {
+        let output = tempfile::tempdir().unwrap();
+        let Some(handler) = hard_handler_without_swap(
+            Utf8Path::from_path(output.path()).unwrap(),
+            512 * 1024 * 1024,
+            16,
+        ) else {
+            return;
+        };
+        let mut process_limits = limits(Duration::from_secs(5), 64);
+        process_limits.max_memory_bytes = 160 * 1024 * 1024;
+
+        let event = handler
+            .handle(run_python(
+                210,
+                "chunks=[]\nfor _ in range(12):\n chunk=bytearray(16*1024*1024)\n for page in range(0,len(chunk),4096): chunk[page]=1\n chunks.append(chunk)",
+                process_limits,
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(event.resource_mode, ResourceMode::Hard);
+        assert_eq!(event.termination, ProcessTermination::OutOfMemory);
+        handler.close().unwrap();
     }
 
     #[test]
