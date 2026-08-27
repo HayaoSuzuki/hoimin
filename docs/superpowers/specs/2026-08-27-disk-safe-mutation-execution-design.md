@@ -1,6 +1,6 @@
 # Disk-safe mutation execution design
 
-**Status:** Approved in chat on 2026-08-27; written specification pending user review
+**Status:** Approved by the user on 2026-08-27
 
 ## Purpose
 
@@ -342,6 +342,13 @@ The Rust run report and focused JSON record include:
 
 Cleanup success requires absence verification after recursive removal. A cleanup
 callback that returned without removing the path does not count as success.
+
+The runtime keeps primary-run, cleanup, and report-delivery outcomes as three
+orthogonal internal values. A successfully delivered report contains the first two and
+all disk observations. If delivery itself fails, that fact cannot be written reliably
+to the failed channel; Hoimin exposes it through the typed return error, stderr, and an
+incomplete session record. The implementation must not predeclare delivery success in
+the report it is still attempting to write.
 
 ## Configuration and persisted-data compatibility
 
