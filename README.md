@@ -290,7 +290,7 @@ Mutant statuses are:
 - `killed`: the mutant test process exited nonzero;
 - `survived`: it exited zero;
 - `timeout`: its deadline elapsed;
-- `out_of_memory`: the run-wide memory limit stopped it;
+- `out_of_memory`: the kernel reported an OOM kill in the supervised root cgroup subtree;
 - `process_limit`: the run-wide descendant limit stopped it;
 - `error`: infrastructure could not produce a valid result;
 - `not_run`: it was discovered but not executed, including cancellation or a run-wide limit.

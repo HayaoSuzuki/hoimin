@@ -211,6 +211,33 @@ mod cgroup_v2 {
         }
     }
 
+    #[tokio::test]
+    async fn hard_cgroup_classifies_one_root_oom_kill() {
+        let output = tempfile::tempdir().unwrap();
+        let Some(handler) = hard_handler(
+            Utf8Path::from_path(output.path()).unwrap(),
+            512 * 1024 * 1024,
+            16,
+        ) else {
+            return;
+        };
+        let mut process_limits = limits(Duration::from_secs(5), 64);
+        process_limits.max_memory_bytes = 160 * 1024 * 1024;
+
+        let event = handler
+            .handle(run_python(
+                210,
+                "chunks=[]\nfor _ in range(12):\n chunk=bytearray(16*1024*1024)\n for page in range(0,len(chunk),4096): chunk[page]=1\n chunks.append(chunk)",
+                process_limits,
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(event.resource_mode, ResourceMode::Hard);
+        assert_eq!(event.termination, ProcessTermination::OutOfMemory);
+        handler.close().unwrap();
+    }
+
     #[test]
     fn decimal_memory_limit_keeps_hard_cgroup_enforcement() {
         let requested = 1_000_000_000;
