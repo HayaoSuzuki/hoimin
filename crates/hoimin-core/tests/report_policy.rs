@@ -6,6 +6,95 @@ use hoimin_core::{
 use serde_json::json;
 
 #[test]
+fn unmeasured_disk_summary_makes_no_enforcement_claim() {
+    let summary =
+        hoimin_core::DiskRunSummary::unmeasured(8 * 1024 * 1024 * 1024, 10 * 1024 * 1024 * 1024);
+
+    assert_eq!(summary.sample_count, 0);
+    assert!(summary.filesystems.is_empty());
+    assert!(summary.enforcement.is_empty());
+}
+
+#[test]
+fn disk_summary_rejects_unverified_or_unregistered_aggregate_claims() {
+    use hoimin_core::{DiskCapabilityProbe, DiskEnforcementReport};
+
+    assert!(
+        DiskEnforcementReport::verified_aggregate(
+            "unknown_backend".into(),
+            DiskCapabilityProbe {
+                capability: "unknown".into(),
+                verified: true,
+                observation: "probe passed".into(),
+            },
+        )
+        .is_err()
+    );
+    assert!(
+        DiskEnforcementReport::verified_aggregate(
+            "linux_project_quota".into(),
+            DiskCapabilityProbe {
+                capability: "project_quota".into(),
+                verified: false,
+                observation: "probe failed".into(),
+            },
+        )
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<DiskEnforcementReport>(serde_json::json!({
+            "kind": "verified_aggregate",
+            "backend": "linux_project_quota",
+            "probe": {
+                "capability": "project_quota",
+                "verified": false,
+                "observation": "probe failed"
+            }
+        }))
+        .is_err()
+    );
+}
+
+#[test]
+fn disk_summary_serializes_primary_stop_and_cleanup_independently() {
+    use hoimin_core::{DiskCleanupReport, DiskCleanupStatus, DiskRunSummary, DiskStopReport};
+
+    let summary = DiskRunSummary {
+        configured_max_owned_bytes: 8 * 1024 * 1024 * 1024,
+        configured_min_free_bytes: 10 * 1024 * 1024 * 1024,
+        peak_owned_bytes: 17,
+        minimum_available_bytes: Some(23),
+        filesystems: Vec::new(),
+        sample_count: 2,
+        maximum_measurement_ms: 7,
+        enforcement: Vec::new(),
+        stop: Some(DiskStopReport {
+            code: "workspace.size.exceeded".into(),
+            owned_bytes: Some(17),
+            available_bytes: Some(23),
+            message: None,
+        }),
+        cleanup: vec![DiskCleanupReport {
+            root_id: "execution".into(),
+            owner: "hoimin".into(),
+            status: DiskCleanupStatus::Failed,
+            examined_entries: 3,
+            removed_entries: 2,
+            details: vec!["one path remained".into()],
+            omitted_detail_count: 0,
+            remaining_root: Some("lease:execution".into()),
+        }],
+        removed_logical_bytes: None,
+        stale_roots_reclaimed: 0,
+    };
+
+    let value = serde_json::to_value(summary).unwrap();
+    assert_eq!(value["stop"]["code"], "workspace.size.exceeded");
+    assert_eq!(value["cleanup"][0]["status"], "failed");
+    assert_eq!(value["removed_logical_bytes"], serde_json::Value::Null);
+}
+
+#[test]
 fn run_started_versions_serialize_only_os_and_hoimin() {
     let versions = ReportVersions {
         os: "windows".into(),
@@ -627,7 +716,8 @@ fn all_event_variants_have_the_exact_public_kind() {
             "counts": { "killed": 0, "survived": 0, "timeout": 0,
                 "out_of_memory": 0, "process_limit": 0, "error": 0, "not_run": 0,
                 "inconclusive": 0, "score": null },
-            "complete": true, "exit_code": 0
+            "complete": true, "exit_code": 0,
+            "disk": disk_json()
         }))
         .unwrap(),
     ];
@@ -757,7 +847,7 @@ fn finished_event_with(
 fn run_finished_event(sequence: u64) -> OutputEvent {
     serde_json::from_value(serde_json::json!({
         "kind": "run_finished",
-        "schema_version": 2,
+        "schema_version": hoimin_core::REPORT_SCHEMA_VERSION,
         "sequence": sequence,
         "run_id": "run-1",
         "counts": {
@@ -773,7 +863,12 @@ fn run_finished_event(sequence: u64) -> OutputEvent {
         },
         "complete": true,
         "exit_code": 0,
+        "disk": disk_json(),
         "verification_selection": null
     }))
     .unwrap()
+}
+
+fn disk_json() -> serde_json::Value {
+    serde_json::to_value(hoimin_core::DiskRunSummary::unmeasured(8, 10)).unwrap()
 }

@@ -140,5 +140,15 @@ fn write_summary(writer: &mut impl Write, summary: &RunSummary) -> io::Result<()
         None => writeln!(writer, "  score: none")?,
     }
     writeln!(writer, "  complete: {}", summary.complete)?;
-    writeln!(writer, "  exit: {}", summary.exit_code)
+    writeln!(writer, "  exit: {}", summary.exit_code)?;
+    writeln!(
+        writer,
+        "  disk max owned bytes: {}",
+        summary.disk.configured_max_owned_bytes
+    )?;
+    writeln!(
+        writer,
+        "  disk minimum free bytes: {}",
+        summary.disk.configured_min_free_bytes
+    )
 }

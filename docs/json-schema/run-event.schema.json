@@ -13,7 +13,7 @@
   "$defs": {
     "schemaVersion": {
       "type": "integer",
-      "const": 2
+      "const": 3
     },
     "resourceMode": {
       "type": "string",
@@ -149,6 +149,103 @@
         "plan_truncated": { "type": "boolean" }
       },
       "additionalProperties": true
+    },
+    "diskCapabilityProbe": {
+      "type": "object",
+      "required": ["capability", "verified", "observation"],
+      "properties": {
+        "capability": { "const": "project_quota" },
+        "verified": { "const": true },
+        "observation": { "type": "string", "minLength": 1, "maxLength": 4096 }
+      },
+      "additionalProperties": false
+    },
+    "diskEnforcement": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": { "kind": { "const": "portable_guard" } },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "root_kind", "filesystem_key"],
+          "properties": {
+            "kind": { "const": "capacity_only" },
+            "root_kind": { "type": "string", "minLength": 1 },
+            "filesystem_key": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "backend", "probe"],
+          "properties": {
+            "kind": { "const": "verified_aggregate" },
+            "backend": { "type": "string", "enum": ["linux_project_quota"] },
+            "probe": { "$ref": "#/$defs/diskCapabilityProbe" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "diskFilesystem": {
+      "type": "object",
+      "required": ["key", "start_available_bytes", "minimum_available_bytes", "end_available_bytes", "available_bytes_change"],
+      "properties": {
+        "key": { "type": "string" },
+        "start_available_bytes": { "type": ["integer", "null"], "minimum": 0 },
+        "minimum_available_bytes": { "type": ["integer", "null"], "minimum": 0 },
+        "end_available_bytes": { "type": ["integer", "null"], "minimum": 0 },
+        "available_bytes_change": { "type": ["integer", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "diskCleanup": {
+      "type": "object",
+      "required": ["root_id", "owner", "status", "examined_entries", "removed_entries", "details", "omitted_detail_count", "remaining_root"],
+      "properties": {
+        "root_id": { "type": "string" },
+        "owner": { "type": "string" },
+        "status": { "type": "string", "enum": ["clean", "failed", "deferred", "retained", "cleanup_after_delivery"] },
+        "examined_entries": { "type": "integer", "minimum": 0 },
+        "removed_entries": { "type": "integer", "minimum": 0 },
+        "details": { "type": "array", "items": { "type": "string" } },
+        "omitted_detail_count": { "type": "integer", "minimum": 0 },
+        "remaining_root": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "diskStop": {
+      "type": ["object", "null"],
+      "required": ["code", "owned_bytes", "available_bytes", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "owned_bytes": { "type": ["integer", "null"], "minimum": 0 },
+        "available_bytes": { "type": ["integer", "null"], "minimum": 0 },
+        "message": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "diskRunSummary": {
+      "type": "object",
+      "required": ["configured_max_owned_bytes", "configured_min_free_bytes", "peak_owned_bytes", "minimum_available_bytes", "filesystems", "sample_count", "maximum_measurement_ms", "enforcement", "stop", "cleanup", "removed_logical_bytes", "stale_roots_reclaimed"],
+      "properties": {
+        "configured_max_owned_bytes": { "type": "integer", "minimum": 1 },
+        "configured_min_free_bytes": { "type": "integer", "minimum": 1 },
+        "peak_owned_bytes": { "type": "integer", "minimum": 0 },
+        "minimum_available_bytes": { "type": ["integer", "null"], "minimum": 0 },
+        "filesystems": { "type": "array", "items": { "$ref": "#/$defs/diskFilesystem" } },
+        "sample_count": { "type": "integer", "minimum": 0 },
+        "maximum_measurement_ms": { "type": "integer", "minimum": 0 },
+        "enforcement": { "type": "array", "items": { "$ref": "#/$defs/diskEnforcement" } },
+        "stop": { "$ref": "#/$defs/diskStop" },
+        "cleanup": { "type": "array", "items": { "$ref": "#/$defs/diskCleanup" } },
+        "removed_logical_bytes": { "type": ["integer", "null"], "minimum": 0 },
+        "stale_roots_reclaimed": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
     },
     "runStarted": {
       "type": "object",
@@ -306,7 +403,8 @@
         "run_id",
         "counts",
         "complete",
-        "exit_code"
+        "exit_code",
+        "disk"
       ],
       "properties": {
         "kind": { "const": "run_finished" },
@@ -316,6 +414,7 @@
         "counts": { "$ref": "#/$defs/counts" },
         "complete": { "type": "boolean" },
         "exit_code": { "type": "integer", "enum": [0, 1, 2, 3, 4, 130] },
+        "disk": { "$ref": "#/$defs/diskRunSummary" },
         "verification_selection": { "$ref": "#/$defs/verificationSelection" }
       },
       "additionalProperties": false

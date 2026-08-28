@@ -654,6 +654,8 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
         max_memory: parse_bytes(&args.max_memory, "--max-memory")?,
         max_output: parse_bytes(&args.max_output, "--max-output")?,
         max_copy_size: parse_bytes(&args.max_copy_size, "--max-copy-size")?,
+        max_workspace_size: RawRunLimits::default().max_workspace_size,
+        min_free_space: RawRunLimits::default().min_free_space,
         max_processes: args.max_processes,
     };
     Ok(RawRunConfig {

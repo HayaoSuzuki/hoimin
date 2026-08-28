@@ -336,12 +336,13 @@ mod correspondence {
                 })
             }
             "run_finished" => OutputEvent::RunFinished(RunSummary {
-                schema_version: 2,
+                schema_version: hoimin_core::REPORT_SCHEMA_VERSION,
                 sequence: event.sequence,
                 run_id: run_id.to_owned(),
                 counts: MutationSummary::default(),
                 complete: true,
                 exit_code: 0,
+                disk: hoimin_core::DiskRunSummary::unmeasured(8, 10),
                 verification_selection: None,
             }),
             value => return Err(format!("unknown event kind {value}")),

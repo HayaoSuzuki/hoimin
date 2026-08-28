@@ -47,6 +47,18 @@ fn golden_schema_v2_report_eras_are_usable() {
     }
 }
 
+#[test]
+fn current_report_requires_disk_summary() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("missing-disk.json");
+    let mut report = valid_report();
+    report["summary"].as_object_mut().unwrap().remove("disk");
+    std::fs::write(&path, serde_json::to_vec(&report).unwrap()).unwrap();
+
+    let error = read_report(&path).unwrap_err();
+    assert!(matches!(error, ProgressError::Parse { .. }));
+}
+
 #[tokio::test]
 async fn real_run_reports_expose_exact_regression_through_progress() {
     let project = tempfile::tempdir().unwrap();
@@ -2225,7 +2237,8 @@ fn valid_report() -> Value {
                 "score": 1.0
             },
             "complete": true,
-            "exit_code": 0
+            "exit_code": 0,
+            "disk": serde_json::to_value(hoimin_core::DiskRunSummary::unmeasured(8, 10)).unwrap()
         }
     })
 }

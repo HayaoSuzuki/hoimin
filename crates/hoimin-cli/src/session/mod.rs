@@ -85,6 +85,33 @@ impl SessionHandler {
             .optional()
             .map_err(|error| failed(id, "session.read", "load resume run", &error))?;
         let Some(run_id) = run_id else {
+            let latest_schema = self
+                .connection
+                .query_row(
+                    "SELECT fingerprints.schema_version FROM runs
+                     JOIN fingerprints ON fingerprints.digest=runs.fingerprint
+                     WHERE runs.complete=0 ORDER BY runs.id DESC LIMIT 1",
+                    [],
+                    |row| row.get::<_, Option<i64>>(0),
+                )
+                .optional()
+                .map_err(|error| failed(id, "session.read", "inspect resume schema", &error))?;
+            if let Some(schema) = latest_schema {
+                let schema = schema.ok_or_else(|| EffectFailed {
+                    id,
+                    failure: corrupt("NULL fingerprint schema version"),
+                })?;
+                if schema < i64::from(FINGERPRINT_SCHEMA_VERSION) {
+                    let expected = FINGERPRINT_SCHEMA_VERSION;
+                    return Err(EffectFailed::other(
+                        id,
+                        "session.resume.incompatible",
+                        format!(
+                            "incomplete session uses fingerprint schema {schema}, expected {expected}; start a new session"
+                        ),
+                    ));
+                }
+            }
             return Ok(SessionLoaded { id, resume: None });
         };
         let run_id = run_id.ok_or_else(|| EffectFailed {

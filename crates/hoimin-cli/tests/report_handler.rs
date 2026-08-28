@@ -22,12 +22,12 @@ struct WriterState {
 }
 
 #[test]
-fn original_schema_v2_report_fixture_matches_the_published_schema() {
+fn original_schema_v3_report_fixture_matches_the_published_schema() {
     let root = repo_root();
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
     let report =
-        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v2-original.json"));
+        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v3-original.json"));
 
     assert_schema_valid(&result_schema, &report, &event_schema);
     assert_report_optionals(&report, false);
@@ -44,7 +44,7 @@ struct GoldenReportDocument {
 
 #[test]
 fn current_report_golden_matches_typed_semantic_regeneration() {
-    let root = repo_root().join("crates/hoimin-cli/tests/golden/reports/schema-v2-current.json");
+    let root = repo_root().join("crates/hoimin-cli/tests/golden/reports/schema-v3-current.json");
     let checked: GoldenReportDocument =
         serde_json::from_slice(&std::fs::read(&root).unwrap()).unwrap();
     let regenerated: GoldenReportDocument =
@@ -59,8 +59,8 @@ fn current_report_golden_matches_typed_semantic_regeneration() {
 fn report_event_goldens_are_typed_complete_sequences() {
     let root = repo_root().join("crates/hoimin-cli/tests/golden/events");
     for (name, current) in [
-        ("schema-v2-original.jsonl", false),
-        ("schema-v2-current.jsonl", true),
+        ("schema-v3-original.jsonl", false),
+        ("schema-v3-current.jsonl", true),
     ] {
         let text = std::fs::read_to_string(root.join(name)).unwrap();
         let checked = text
@@ -78,7 +78,7 @@ fn report_event_goldens_are_typed_complete_sequences() {
 
 #[test]
 fn current_event_golden_matches_typed_semantic_regeneration() {
-    let path = repo_root().join("crates/hoimin-cli/tests/golden/events/schema-v2-current.jsonl");
+    let path = repo_root().join("crates/hoimin-cli/tests/golden/events/schema-v3-current.jsonl");
     let checked = std::fs::read_to_string(path)
         .unwrap()
         .lines()
@@ -125,9 +125,9 @@ fn all_optional_report_events(current: bool) -> Vec<OutputEvent> {
     config.session.as_mut().unwrap().path = "session.sqlite3".into();
     let verification_selection = current.then(documented_verification_selection);
     let run_id = if current {
-        "schema-v2-current"
+        "schema-v3-current"
     } else {
-        "schema-v2-original"
+        "schema-v3-original"
     };
     let mut started = RunStarted::minimal(run_id, 1);
     started.normalized_config = Some(config);
@@ -204,6 +204,7 @@ fn all_optional_report_events(current: bool) -> Vec<OutputEvent> {
             },
             complete: true,
             exit_code: 0,
+            disk: default_disk_summary(),
             verification_selection,
         }),
     ]
@@ -675,6 +676,7 @@ fn actual_pre_baseline_report() -> serde_json::Value {
             counts: MutationSummary::default(),
             complete: false,
             exit_code: 4,
+            disk: default_disk_summary(),
             verification_selection: None,
         }),
     );
@@ -787,6 +789,7 @@ fn documented_events() -> Vec<OutputEvent> {
         counts: summary,
         complete: false,
         exit_code: 2,
+        disk: default_disk_summary(),
         verification_selection: Some(documented_verification_selection()),
     }));
     events
@@ -1234,6 +1237,12 @@ fn human_format_writes_progress_to_stdout_and_diagnostics_to_stderr() {
     assert!(stdout.text().contains("score: 1.00"));
     assert!(stdout.text().contains("complete: true"));
     assert!(stdout.text().contains("exit: 0"));
+    assert!(stdout.text().contains("disk max owned bytes: 8589934592"));
+    assert!(
+        stdout
+            .text()
+            .contains("disk minimum free bytes: 10737418240")
+    );
     assert!(!stdout.text().contains("diagnostic text"));
     assert!(stderr.text().contains("warning x: diagnostic text"));
     assert_eq!(stdout.flushes(), 5);
@@ -1301,6 +1310,7 @@ fn human_format_renders_none_score_for_runs_without_decidable_mutants() {
                 counts: MutationSummary::default(),
                 complete: false,
                 exit_code: 4,
+                disk: default_disk_summary(),
                 verification_selection: None,
             }),
         })
@@ -1551,8 +1561,13 @@ fn run_summary(sequence: u64) -> OutputEvent {
         },
         complete: true,
         exit_code: 0,
+        disk: default_disk_summary(),
         verification_selection: None,
     })
+}
+
+fn default_disk_summary() -> hoimin_core::DiskRunSummary {
+    hoimin_core::DiskRunSummary::unmeasured(8 * 1024 * 1024 * 1024, 10 * 1024 * 1024 * 1024)
 }
 
 fn mutant_finished(event_sequence: u64, mutant_sequence: u64) -> OutputEvent {

@@ -1961,7 +1961,7 @@ fn cleanup_rejects_mismatched_reservations_without_consuming_the_pending_effect(
 }
 
 #[test]
-fn cleanup_failure_keeps_the_session_incomplete_before_final_reporting() {
+fn cleanup_failure_reports_before_attempting_incomplete_session_finalization() {
     let mut raw = fixture_raw_config();
     raw.session = Some(hoimin_core::SessionConfig {
         path: "session.sqlite3".into(),
@@ -2002,21 +2002,79 @@ fn cleanup_failure_keeps_the_session_incomplete_before_final_reporting() {
     let diagnostic_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::EmitOutput(_))
     }));
-    let (_, effects) = transition(
+    let (state, effects) = transition(
         state,
         RunEvent::OutputEmitted(OutputEmitted { id: diagnostic_id }),
     )
     .unwrap();
+    assert_failed_cleanup_delivery_order(state, &effects);
+}
 
+fn assert_failed_cleanup_delivery_order(state: RunState, effects: &[RunEffect]) {
+    let output = effects.iter().find_map(|effect| match effect {
+        RunEffect::EmitOutput(value)
+            if matches!(&value.event, hoimin_core::OutputEvent::RunFinished(_)) =>
+        {
+            Some(value)
+        }
+        _ => None,
+    });
+    assert!(
+        output.is_some(),
+        "cleanup must be followed by RunFinished output"
+    );
+    let output = output.unwrap();
+    let OutputEvent::RunFinished(summary) = &output.event else {
+        unreachable!()
+    };
+    assert!(!summary.complete);
+    assert_eq!(summary.disk.cleanup.len(), 1);
+    assert_eq!(
+        summary.disk.cleanup[0].status,
+        hoimin_core::DiskCleanupStatus::Failed
+    );
+    let (report_failed, failed_effects) = transition(
+        state.clone(),
+        RunEvent::EffectFailed(EffectFailed {
+            id: output.id,
+            failure: EffectFailure::ReportIo {
+                operation: "write RunFinished".into(),
+                message: "disk full".into(),
+            },
+        }),
+    )
+    .unwrap();
+    assert_eq!(report_failed.phase(), RunPhase::Finished);
+    assert!(failed_effects.is_empty());
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::FinishSession(_)))
+    );
+
+    let (state, effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: output.id }),
+    )
+    .unwrap();
     assert!(effects.iter().any(|effect| matches!(
         effect,
         RunEffect::FinishSession(value) if !value.complete && value.run_id == "session-run"
     )));
-    assert!(!effects.iter().any(|effect| matches!(
-        effect,
-        RunEffect::EmitOutput(value)
-            if matches!(&value.event, hoimin_core::OutputEvent::RunFinished(_))
-    )));
+    let finish = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::FinishSession(_))
+    });
+    let (finish_failed, failed_effects) = transition(
+        state,
+        RunEvent::EffectFailed(EffectFailed::other(
+            finish.id(),
+            "session.commit",
+            "commit failed",
+        )),
+    )
+    .unwrap();
+    assert_eq!(finish_failed.phase(), RunPhase::Finished);
+    assert!(failed_effects.is_empty());
 }
 
 #[test]
@@ -2590,21 +2648,6 @@ fn assert_persisting_stop_preserves_result(stop: RunEvent, expected_exit_code: i
         }),
     )
     .unwrap();
-    let RunEffect::FinishSession(finish) = find_effect(&effects, |effect| {
-        matches!(effect, RunEffect::FinishSession(_))
-    }) else {
-        unreachable!()
-    };
-    assert!(!finish.complete);
-    let (state, effects) = transition(
-        state,
-        RunEvent::SessionFinished(SessionFinished {
-            id: finish.id,
-            run_id: finish.run_id.clone(),
-            complete: finish.complete,
-        }),
-    )
-    .unwrap();
     let RunEffect::EmitOutput(output) = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::EmitOutput(value)
             if matches!(&value.event, OutputEvent::RunFinished(_)))
@@ -2621,6 +2664,21 @@ fn assert_persisting_stop_preserves_result(stop: RunEvent, expected_exit_code: i
     let (state, effects) = transition(
         state,
         RunEvent::OutputEmitted(OutputEmitted { id: output.id }),
+    )
+    .unwrap();
+    let RunEffect::FinishSession(finish) = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::FinishSession(_))
+    }) else {
+        unreachable!()
+    };
+    assert!(!finish.complete);
+    let (state, effects) = transition(
+        state,
+        RunEvent::SessionFinished(SessionFinished {
+            id: finish.id,
+            run_id: finish.run_id.clone(),
+            complete: finish.complete,
+        }),
     )
     .unwrap();
     assert!(effects.is_empty());
@@ -2752,22 +2810,6 @@ fn timeout_marks_the_session_and_final_report_incomplete() {
         }),
     )
     .unwrap();
-    let RunEffect::FinishSession(finish) = find_effect(&effects, |effect| {
-        matches!(effect, RunEffect::FinishSession(_))
-    }) else {
-        unreachable!()
-    };
-    assert!(!finish.complete);
-
-    let (_state, effects) = transition(
-        state,
-        RunEvent::SessionFinished(SessionFinished {
-            id: finish.id,
-            run_id: finish.run_id.clone(),
-            complete: finish.complete,
-        }),
-    )
-    .unwrap();
     let RunEffect::EmitOutput(output) = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::EmitOutput(value)
             if matches!(&value.event, OutputEvent::RunFinished(_)))
@@ -2780,6 +2822,27 @@ fn timeout_marks_the_session_and_final_report_incomplete() {
     assert!(!summary.complete);
     assert_eq!(summary.exit_code, 4);
     assert_eq!(summary.counts.timeout, 1);
+    let (state, effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: output.id }),
+    )
+    .unwrap();
+    let RunEffect::FinishSession(finish) = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::FinishSession(_))
+    }) else {
+        unreachable!()
+    };
+    assert!(!finish.complete);
+    let (_, effects) = transition(
+        state,
+        RunEvent::SessionFinished(SessionFinished {
+            id: finish.id,
+            run_id: finish.run_id.clone(),
+            complete: finish.complete,
+        }),
+    )
+    .unwrap();
+    assert!(effects.is_empty());
 }
 
 #[test]

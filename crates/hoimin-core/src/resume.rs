@@ -9,7 +9,7 @@ use crate::{
     TargetSlice,
 };
 
-pub const FINGERPRINT_SCHEMA_VERSION: u8 = 4;
+pub const FINGERPRINT_SCHEMA_VERSION: u8 = 5;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceHash {
@@ -263,6 +263,8 @@ fn encode_limits(limits: &RunLimits) -> Vec<u8> {
     out.u64(limits.max_memory.get());
     out.u64(limits.max_output.get());
     out.u64(limits.max_copy_size.get());
+    out.u64(limits.max_workspace_size.get());
+    out.u64(limits.min_free_space.get());
     out.u64(limits.max_processes.get() as u64);
     out.bytes
 }

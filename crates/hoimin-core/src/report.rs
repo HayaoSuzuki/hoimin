@@ -9,7 +9,175 @@ use crate::{
     contract_ensure,
 };
 
-pub const REPORT_SCHEMA_VERSION: u32 = 2;
+pub const REPORT_SCHEMA_VERSION: u32 = 3;
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DiskRunSummary {
+    pub configured_max_owned_bytes: u64,
+    pub configured_min_free_bytes: u64,
+    pub peak_owned_bytes: u64,
+    pub minimum_available_bytes: Option<u64>,
+    pub filesystems: Vec<DiskFilesystemReport>,
+    pub sample_count: u64,
+    pub maximum_measurement_ms: u64,
+    pub enforcement: Vec<DiskEnforcementReport>,
+    pub stop: Option<DiskStopReport>,
+    pub cleanup: Vec<DiskCleanupReport>,
+    pub removed_logical_bytes: Option<u64>,
+    pub stale_roots_reclaimed: u64,
+}
+
+impl DiskRunSummary {
+    #[must_use]
+    pub fn unmeasured(configured_max_owned_bytes: u64, configured_min_free_bytes: u64) -> Self {
+        Self {
+            configured_max_owned_bytes,
+            configured_min_free_bytes,
+            peak_owned_bytes: 0,
+            minimum_available_bytes: None,
+            filesystems: Vec::new(),
+            sample_count: 0,
+            maximum_measurement_ms: 0,
+            enforcement: Vec::new(),
+            stop: None,
+            cleanup: Vec::new(),
+            removed_logical_bytes: None,
+            stale_roots_reclaimed: 0,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DiskEnforcementReport {
+    PortableGuard,
+    CapacityOnly {
+        root_kind: String,
+        filesystem_key: String,
+    },
+    VerifiedAggregate {
+        backend: String,
+        probe: DiskCapabilityProbe,
+    },
+}
+
+impl<'de> Deserialize<'de> for DiskEnforcementReport {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(tag = "kind", rename_all = "snake_case")]
+        enum Encoded {
+            PortableGuard,
+            CapacityOnly {
+                root_kind: String,
+                filesystem_key: String,
+            },
+            VerifiedAggregate {
+                backend: String,
+                probe: DiskCapabilityProbe,
+            },
+        }
+
+        match Encoded::deserialize(deserializer)? {
+            Encoded::PortableGuard => Ok(Self::PortableGuard),
+            Encoded::CapacityOnly {
+                root_kind,
+                filesystem_key,
+            } => Ok(Self::CapacityOnly {
+                root_kind,
+                filesystem_key,
+            }),
+            Encoded::VerifiedAggregate { backend, probe } => {
+                Self::verified_aggregate(backend, probe).map_err(serde::de::Error::custom)
+            }
+        }
+    }
+}
+
+impl DiskEnforcementReport {
+    /// Creates a verified aggregate capability claim after validating its bounded evidence.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DiskEnforcementError`] when verification failed, the backend/capability pair is
+    /// not registered, or the observation exceeds 4 KiB.
+    pub fn verified_aggregate(
+        backend: String,
+        probe: DiskCapabilityProbe,
+    ) -> Result<Self, DiskEnforcementError> {
+        if !probe.verified {
+            return Err(DiskEnforcementError::Unverified);
+        }
+        if !matches!(
+            (backend.as_str(), probe.capability.as_str()),
+            ("linux_project_quota", "project_quota")
+        ) {
+            return Err(DiskEnforcementError::Unregistered);
+        }
+        if probe.observation.is_empty() || probe.observation.len() > 4 * 1024 {
+            return Err(DiskEnforcementError::InvalidObservation);
+        }
+        Ok(Self::VerifiedAggregate { backend, probe })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum DiskEnforcementError {
+    #[error("aggregate disk capability probe did not verify")]
+    Unverified,
+    #[error("aggregate disk backend and capability are not registered")]
+    Unregistered,
+    #[error("aggregate disk capability observation must contain at most 4096 bytes")]
+    InvalidObservation,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DiskCapabilityProbe {
+    pub capability: String,
+    pub verified: bool,
+    pub observation: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DiskFilesystemReport {
+    pub key: String,
+    pub start_available_bytes: Option<u64>,
+    pub minimum_available_bytes: Option<u64>,
+    pub end_available_bytes: Option<u64>,
+    pub available_bytes_change: Option<i128>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DiskCleanupStatus {
+    Clean,
+    Failed,
+    Deferred,
+    Retained,
+    CleanupAfterDelivery,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DiskCleanupReport {
+    pub root_id: String,
+    pub owner: String,
+    pub status: DiskCleanupStatus,
+    pub examined_entries: u64,
+    pub removed_entries: u64,
+    pub details: Vec<String>,
+    pub omitted_detail_count: u64,
+    pub remaining_root: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DiskStopReport {
+    pub code: String,
+    pub owned_bytes: Option<u64>,
+    pub available_bytes: Option<u64>,
+    pub message: Option<String>,
+}
 
 #[must_use]
 pub fn classify_mutant(termination: ProcessTermination) -> MutationStatus {
@@ -292,6 +460,7 @@ pub struct RunSummary {
     pub counts: MutationSummary,
     pub complete: bool,
     pub exit_code: i32,
+    pub disk: DiskRunSummary,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verification_selection: Option<VerificationSelection>,
 }
