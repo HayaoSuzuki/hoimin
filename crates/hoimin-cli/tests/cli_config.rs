@@ -434,7 +434,13 @@ fn verify_rejects_conflicting_or_invalid_selection_options() {
 
 #[test]
 fn verify_rejects_run_only_options_and_test_argv() {
-    for option in ["--source", "--session", "--fingerprint-file"] {
+    for option in [
+        "--source",
+        "--session",
+        "--fingerprint-file",
+        "--max-workspace-size",
+        "--min-free-space",
+    ] {
         assert!(
             parse_from([
                 "hoimin",
@@ -546,6 +552,134 @@ fn binary_byte_units_preserve_their_1024_multiplier() {
 }
 
 #[test]
+fn run_and_plan_apply_mandatory_disk_safety_defaults() {
+    let run = parse_config_from(["hoimin", "run", "--file", "pkg/a.py", "--", "python"]).unwrap();
+    let ParsedCommand::Plan(plan) =
+        parse_from(["hoimin", "plan", "--file", "pkg/a.py", "--", "python"]).unwrap()
+    else {
+        panic!("expected plan");
+    };
+    let plan = plan.into_run_config().unwrap();
+
+    for limits in [&run.limits, &plan.limits] {
+        assert_eq!(limits.max_workspace_size.get(), 8 * 1024 * 1024 * 1024);
+        assert_eq!(limits.min_free_space.get(), 10 * 1024 * 1024 * 1024);
+    }
+}
+
+#[test]
+fn run_and_plan_parse_explicit_disk_safety_limits() {
+    let run = parse_config_from([
+        "hoimin",
+        "run",
+        "--file",
+        "pkg/a.py",
+        "--max-workspace-size",
+        "768MiB",
+        "--min-free-space",
+        "12GiB",
+        "--",
+        "python",
+    ])
+    .unwrap();
+    let ParsedCommand::Plan(plan) = parse_from([
+        "hoimin",
+        "plan",
+        "--file",
+        "pkg/a.py",
+        "--max-workspace-size",
+        "768MiB",
+        "--min-free-space",
+        "12GiB",
+        "--",
+        "python",
+    ])
+    .unwrap() else {
+        panic!("expected plan");
+    };
+    let plan = plan.into_run_config().unwrap();
+
+    for limits in [&run.limits, &plan.limits] {
+        assert_eq!(limits.max_workspace_size.get(), 768 * 1024 * 1024);
+        assert_eq!(limits.min_free_space.get(), 12 * 1024 * 1024 * 1024);
+    }
+}
+
+#[test]
+fn disk_safety_limits_reject_zero_malformed_and_overflow_with_the_exact_flag() {
+    for command in ["run", "plan"] {
+        for (flag, value) in [
+            ("--max-workspace-size", "0"),
+            ("--max-workspace-size", "bogus"),
+            ("--max-workspace-size", "18446744073709551616B"),
+            ("--min-free-space", "0"),
+            ("--min-free-space", "bogus"),
+            ("--min-free-space", "18446744073709551616B"),
+        ] {
+            let args = [
+                "hoimin", "plan", "--file", "pkg/a.py", flag, value, "--", "python",
+            ];
+            let error = if command == "run" {
+                let mut args = args;
+                args[1] = "run";
+                parse_config_from(args).unwrap_err()
+            } else {
+                let ParsedCommand::Plan(plan) = parse_from(args).unwrap() else {
+                    panic!("expected plan");
+                };
+                plan.into_run_config().unwrap_err()
+            }
+            .to_string();
+
+            assert!(
+                error.contains(flag),
+                "missing {flag} from {command}: {error}"
+            );
+        }
+    }
+}
+
+#[test]
+fn command_help_explains_disk_scope_reserve_and_plan_inheritance() {
+    for command in ["run", "plan"] {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+            .args([command, "--help"])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let help = String::from_utf8(output.stdout).unwrap();
+        for expected in [
+            "--max-workspace-size",
+            "including generated files",
+            "--min-free-space",
+            "Mandatory minimum available bytes",
+        ] {
+            assert!(
+                help.contains(expected),
+                "missing {expected} from {command}:\n{help}"
+            );
+        }
+    }
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+        .args(["verify", "--help"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let help = String::from_utf8(output.stdout).unwrap();
+    for expected in [
+        "--max-workspace-size",
+        "--min-free-space",
+        "inherited from PLAN",
+    ] {
+        assert!(
+            help.contains(expected),
+            "missing {expected} from verify:\n{help}"
+        );
+    }
+}
+
+#[test]
 fn invalid_memory_value_lists_case_sensitive_byte_suffixes() {
     let error = parse_config_from([
         "hoimin",
@@ -610,6 +744,8 @@ fn documented_defaults_are_applied() {
     assert_eq!(cli.max_memory, "1GiB");
     assert_eq!(cli.max_output, "1MiB");
     assert_eq!(cli.max_copy_size, "1GiB");
+    assert_eq!(cli.max_workspace_size, "8GiB");
+    assert_eq!(cli.min_free_space, "10GiB");
     assert_eq!(cli.max_processes, 64);
 }
 
@@ -661,6 +797,8 @@ fn root_help_exposes_the_run_contract() {
         "--changed",
         "--jobs",
         "--max-memory",
+        "--max-workspace-size",
+        "--min-free-space",
         "--format",
         "--session",
         "-- <TEST_ARGV>",

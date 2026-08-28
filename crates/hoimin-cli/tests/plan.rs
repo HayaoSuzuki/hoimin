@@ -61,7 +61,7 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
     let stdout = String::from_utf8(stdout).unwrap();
     assert_eq!(stdout.matches('\n').count(), 1);
     let manifest: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(manifest["schema_version"], 2);
+    assert_eq!(manifest["schema_version"], 3);
     assert_eq!(manifest["ranking_rule_version"], 3);
     assert_eq!(manifest["kind"], "plan");
     assert!(
@@ -92,6 +92,14 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
     assert_eq!(
         manifest["normalized_config"]["fingerprint_files"],
         serde_json::json!(["pyproject.toml"])
+    );
+    assert_eq!(
+        manifest["normalized_config"]["limits"]["max_workspace_size"],
+        8 * 1024 * 1024 * 1024_u64
+    );
+    assert_eq!(
+        manifest["normalized_config"]["limits"]["min_free_space"],
+        10 * 1024 * 1024 * 1024_u64
     );
     assert!(manifest["normalized_config"].get("session").is_none());
     assert!(manifest["normalized_config"].get("resume").is_none());

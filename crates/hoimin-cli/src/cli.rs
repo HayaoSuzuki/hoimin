@@ -16,7 +16,7 @@ use hoimin_core::{
     name = "hoimin",
     version,
     about = "Bounded mutation testing for focused Python changes",
-    after_help = "Run contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates --analyzer-timeout\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-processes --allow-best-effort-memory\nOutput/session options:\n  --format <json|jsonl|human> --metrics <PATH> --session --resume"
+    after_help = "Run contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates --analyzer-timeout\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-workspace-size --min-free-space\n  --max-processes --allow-best-effort-memory\nOutput/session options:\n  --format <json|jsonl|human> --metrics <PATH> --session --resume"
 )]
 struct RootCli {
     #[command(subcommand)]
@@ -175,6 +175,14 @@ struct RawMutationArgs {
     #[arg(long, default_value = "1GiB", value_name = "BYTES")]
     max_copy_size: String,
 
+    /// Run-wide logical size of Hoimin-owned workspaces, including generated files.
+    #[arg(long, default_value = "8GiB", value_name = "BYTES")]
+    max_workspace_size: String,
+
+    /// Mandatory minimum available bytes preserved on every owned-workspace filesystem.
+    #[arg(long, default_value = "10GiB", value_name = "BYTES")]
+    min_free_space: String,
+
     /// Run-wide descendant process limit.
     #[arg(long, default_value_t = 64)]
     max_processes: usize,
@@ -228,10 +236,10 @@ struct RawPlanArgs {
             .multiple(false)
             .args(["candidate_ids", "top"])
     ),
-    after_help = "Execution and resource settings come from PLAN and cannot be overridden. Create a new plan to change them."
+    after_help = "Execution and resource settings come from PLAN and cannot be overridden. Disk safety limits --max-workspace-size and --min-free-space are inherited from PLAN. Create a new plan to change them."
 )]
 struct RawVerifyArgs {
-    /// Path to a version-2 plan manifest.
+    /// Path to a version-3 plan manifest.
     #[arg(value_name = "PLAN")]
     manifest: PathBuf,
 
@@ -305,6 +313,8 @@ pub struct RunArgs {
     pub max_memory: String,
     pub max_output: String,
     pub max_copy_size: String,
+    pub max_workspace_size: String,
+    pub min_free_space: String,
     pub max_processes: usize,
     pub allow_best_effort_memory: bool,
     pub format: OutputFormat,
@@ -399,7 +409,11 @@ impl fmt::Display for CliError {
                 formatter.write_str("at least one test argv element is required after `--`")
             }
             Self::InvalidValue { name, value } => match *name {
-                "--max-memory" | "--max-output" | "--max-copy-size" => write!(
+                "--max-memory"
+                | "--max-output"
+                | "--max-copy-size"
+                | "--max-workspace-size"
+                | "--min-free-space" => write!(
                     formatter,
                     "invalid {name}: {value}; expected bytes with one of: B, KB, MB, GB, KiB, MiB, GiB"
                 ),
@@ -552,6 +566,8 @@ fn run_args_from_mutation(
         max_memory: raw.max_memory,
         max_output: raw.max_output,
         max_copy_size: raw.max_copy_size,
+        max_workspace_size: raw.max_workspace_size,
+        min_free_space: raw.min_free_space,
         max_processes: raw.max_processes,
         allow_best_effort_memory: raw.allow_best_effort_memory,
         format,
@@ -654,8 +670,8 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
         max_memory: parse_bytes(&args.max_memory, "--max-memory")?,
         max_output: parse_bytes(&args.max_output, "--max-output")?,
         max_copy_size: parse_bytes(&args.max_copy_size, "--max-copy-size")?,
-        max_workspace_size: RawRunLimits::default().max_workspace_size,
-        min_free_space: RawRunLimits::default().min_free_space,
+        max_workspace_size: parse_bytes(&args.max_workspace_size, "--max-workspace-size")?,
+        min_free_space: parse_bytes(&args.min_free_space, "--min-free-space")?,
         max_processes: args.max_processes,
     };
     Ok(RawRunConfig {
