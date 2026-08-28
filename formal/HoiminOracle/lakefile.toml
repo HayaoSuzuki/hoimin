@@ -108,3 +108,7 @@ root = "ProcessOutputAuditMain"
 [[lean_exe]]
 name = "generate_timeout_limit"
 root = "TimeoutLimitAuditMain"
+
+[[lean_exe]]
+name = "generate_disk_guard"
+root = "DiskGuardAuditMain"
