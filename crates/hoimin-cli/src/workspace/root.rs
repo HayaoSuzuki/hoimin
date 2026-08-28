@@ -59,7 +59,7 @@ fn parent_opened(operation: &'static str, path: &Utf8Path) {
 }
 
 #[cfg(windows)]
-mod windows;
+pub(crate) mod windows;
 
 #[cfg(any(windows, test))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

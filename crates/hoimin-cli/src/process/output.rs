@@ -40,6 +40,7 @@ pub(crate) async fn collect_output(
     max_retained: u64,
     receiver: mpsc::Receiver<Vec<u8>>,
 ) -> io::Result<OutputSpoolRef> {
+    let staging_path = path.with_extension("finalizing");
     let spool = OpenOptions::new()
         .create(true)
         .truncate(true)
@@ -47,7 +48,7 @@ pub(crate) async fn collect_output(
         .write(true)
         .open(path)
         .await
-        .map(FileOutputSink);
+        .map(|file| FileOutputSink { file, staging_path });
     collect_output_with_sink(token, max_retained, receiver, spool).await
 }
 
@@ -57,18 +58,21 @@ trait OutputSink: Send {
     async fn finalize(&mut self, capacity: u64, position: u64, truncated: bool) -> io::Result<()>;
 }
 
-struct FileOutputSink(File);
+struct FileOutputSink {
+    file: File,
+    staging_path: Utf8PathBuf,
+}
 
 impl OutputSink for FileOutputSink {
     async fn write_ring(&mut self, capacity: u64, position: u64, chunk: &[u8]) -> io::Result<u64> {
-        write_ring(&mut self.0, capacity, position, chunk).await
+        write_ring(&mut self.file, capacity, position, chunk).await
     }
 
     async fn finalize(&mut self, capacity: u64, position: u64, truncated: bool) -> io::Result<()> {
         if truncated {
-            finalize_truncated(&mut self.0, capacity, position).await
+            finalize_truncated(&mut self.file, &self.staging_path, capacity, position).await
         } else {
-            self.0.flush().await
+            self.file.flush().await
         }
     }
 }
@@ -157,7 +161,12 @@ fn advance_ring(position: u64, amount: u64, capacity: u64) -> u64 {
     }
 }
 
-async fn finalize_truncated(spool: &mut File, capacity: u64, ring_position: u64) -> io::Result<()> {
+async fn finalize_truncated(
+    spool: &mut File,
+    staging_path: &camino::Utf8Path,
+    capacity: u64,
+    ring_position: u64,
+) -> io::Result<()> {
     if capacity == 0 {
         spool.set_len(0).await?;
         return spool.flush().await;
@@ -167,19 +176,29 @@ async fn finalize_truncated(spool: &mut File, capacity: u64, ring_position: u64)
     let marker_len = if capacity > marker_len { marker_len } else { 0 };
     let tail_len = capacity - marker_len;
     let tail_start = advance_ring(ring_position, marker_len, capacity);
-    let staging = tempfile::tempfile()?;
-    let mut staging = File::from_std(staging);
-
-    if marker_len != 0 {
-        staging.write_all(TRUNCATION_MARKER).await?;
+    let mut staging = OpenOptions::new()
+        .create_new(true)
+        .read(true)
+        .write(true)
+        .open(staging_path)
+        .await?;
+    let finalized = async {
+        if marker_len != 0 {
+            staging.write_all(TRUNCATION_MARKER).await?;
+        }
+        copy_ring_range(spool, &mut staging, capacity, tail_start, tail_len).await?;
+        staging.flush().await?;
+        staging.seek(SeekFrom::Start(0)).await?;
+        spool.set_len(0).await?;
+        spool.seek(SeekFrom::Start(0)).await?;
+        tokio::io::copy(&mut staging, spool).await?;
+        spool.flush().await
     }
-    copy_ring_range(spool, &mut staging, capacity, tail_start, tail_len).await?;
-    staging.flush().await?;
-    staging.seek(SeekFrom::Start(0)).await?;
-    spool.set_len(0).await?;
-    spool.seek(SeekFrom::Start(0)).await?;
-    tokio::io::copy(&mut staging, spool).await?;
-    spool.flush().await
+    .await;
+    drop(staging);
+    let removed = tokio::fs::remove_file(staging_path).await;
+    finalized?;
+    removed
 }
 
 async fn copy_ring_range(
@@ -502,7 +521,12 @@ mod tests {
                 .unwrap();
             assert_eq!(output.observed, case.expected_observed, "{}", case.id);
             assert_eq!(output.retained, case.expected_retained, "{}", case.id);
-            assert_eq!(fs::read(path).unwrap(), case.expected_bytes, "{}", case.id);
+            assert_eq!(fs::read(&path).unwrap(), case.expected_bytes, "{}", case.id);
+            assert!(
+                !path.with_extension("finalizing").exists(),
+                "{} left its managed staging file behind",
+                case.id
+            );
             assert_eq!(
                 case.chunks.iter().fold(0, |position, chunk| {
                     advance_ring(position, u64::try_from(chunk.len()).unwrap(), case.capacity)

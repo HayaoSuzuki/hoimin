@@ -1,8 +1,10 @@
 mod copy;
+mod disk;
 #[cfg(test)]
 mod lean_oracle_tests;
 mod manifest;
 mod mutation;
+mod owned;
 mod reset;
 mod root;
 
@@ -28,7 +30,9 @@ use copy::ValidatedPreflightError;
 pub use copy::WorkspacePlan;
 #[cfg(test)]
 pub(crate) use copy::{MaterializationPause, MaterializationPauseController};
+pub(crate) use disk::{DiskMeter, SystemAvailableSpace};
 pub use manifest::{ManifestEntry, WorkspaceManifest};
+pub(crate) use owned::{ManagedChild, ManagedRootCoordinator, ManagedRunRoot, OwnerKind};
 use root::WorkerRoot;
 
 pub(crate) fn build_validation_manifest(
@@ -115,6 +119,8 @@ pub enum WorkspaceError {
     },
     #[error("observed workspace copy reached {observed} bytes, allowance is {allowance}")]
     CopyAllowanceExceeded { observed: u64, allowance: u64 },
+    #[error("planned owned workspace reaches {planned} bytes, limit is {limit}")]
+    OwnedWorkspaceLimit { planned: u64, limit: u64 },
     #[error("worker {worker} already exists")]
     WorkerAlreadyExists { worker: u32 },
     #[error("original workspace changed: {path}")]
@@ -176,6 +182,7 @@ impl WorkspaceError {
             Self::InvalidGrant { .. }
             | Self::CopyAllowanceExceeded { .. }
             | Self::CopySizeOverflow => "workspace.copy.limit",
+            Self::OwnedWorkspaceLimit { .. } => hoimin_core::WORKSPACE_SIZE_EXCEEDED,
             Self::PreflightMismatch { .. } => "workspace.preflight.mismatch",
             Self::WorkerOutOfRange { .. } => "workspace.worker.out_of_range",
             Self::AllowanceMismatch { .. } => "workspace.allowance.mismatch",
@@ -265,8 +272,60 @@ impl SnapshotFile {
 }
 
 #[derive(Debug)]
+pub(crate) enum OwnedWorkspaceDirectory {
+    Temporary(tempfile::TempDir),
+    Managed(ManagedChild),
+}
+
+impl From<tempfile::TempDir> for OwnedWorkspaceDirectory {
+    fn from(value: tempfile::TempDir) -> Self {
+        Self::Temporary(value)
+    }
+}
+
+impl From<ManagedChild> for OwnedWorkspaceDirectory {
+    fn from(value: ManagedChild) -> Self {
+        Self::Managed(value)
+    }
+}
+
+impl OwnedWorkspaceDirectory {
+    fn path(&self) -> &Path {
+        match self {
+            Self::Temporary(temp) => temp.path(),
+            Self::Managed(child) => child.path().as_std_path(),
+        }
+    }
+
+    fn try_cleanup(&self) -> Result<(), WorkspaceError> {
+        match self {
+            Self::Temporary(temp) => fs::remove_dir_all(temp.path())
+                .or_else(|error| {
+                    if error.kind() == std::io::ErrorKind::NotFound {
+                        Ok(())
+                    } else {
+                        Err(error)
+                    }
+                })
+                .map_err(|error| {
+                    WorkspaceError::io(
+                        "remove temporary workspace",
+                        Utf8Path::from_path(temp.path()).unwrap_or(Utf8Path::new("<temporary>")),
+                        error,
+                    )
+                }),
+            Self::Managed(child) => child.cleanup(),
+        }
+    }
+
+    fn is_managed(&self) -> bool {
+        matches!(self, Self::Managed(_))
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct DiskSnapshot {
-    _temp: tempfile::TempDir,
+    _owner: OwnedWorkspaceDirectory,
     root: Utf8PathBuf,
     files: BTreeMap<Utf8PathBuf, SnapshotFile>,
 }
@@ -374,7 +433,7 @@ fn make_cleanup_entry_accessible(
 
 #[derive(Debug)]
 pub struct WorkerWorkspace {
-    temp: tempfile::TempDir,
+    temp: OwnedWorkspaceDirectory,
     root: WorkerRoot,
     manifest: WorkspaceManifest,
     snapshot: Arc<DiskSnapshot>,
@@ -388,7 +447,7 @@ pub struct WorkerWorkspace {
 impl WorkerWorkspace {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn from_materialized(
-        temp: tempfile::TempDir,
+        temp: OwnedWorkspaceDirectory,
         root: WorkerRoot,
         manifest: WorkspaceManifest,
         snapshot: Arc<DiskSnapshot>,
@@ -455,6 +514,15 @@ impl WorkerWorkspace {
             return Ok(());
         }
         self.root.close();
+        if self.temp.is_managed() {
+            return match self.temp.try_cleanup() {
+                Ok(()) => {
+                    self.cleanup_complete = true;
+                    Ok(())
+                }
+                Err(error) => Err(error),
+            };
+        }
         let wrapper = self.temp.path();
         let wrapper_metadata = match fs::symlink_metadata(wrapper) {
             Ok(metadata) => metadata,
@@ -474,20 +542,12 @@ impl WorkerWorkspace {
         let wrapper_error_path = Utf8Path::from_path(wrapper).unwrap_or(self.root.path());
         make_cleanup_entry_accessible(wrapper, &wrapper_metadata, wrapper_error_path)?;
         make_tree_writable(self.root.path().as_std_path(), self.root.path())?;
-        match fs::remove_dir_all(self.temp.path()) {
+        match self.temp.try_cleanup() {
             Ok(()) => {
                 self.cleanup_complete = true;
                 Ok(())
             }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                self.cleanup_complete = true;
-                Ok(())
-            }
-            Err(error) => Err(WorkspaceError::io(
-                "remove worker workspace",
-                self.root.path(),
-                error,
-            )),
+            Err(error) => Err(error),
         }
     }
 }
@@ -664,6 +724,8 @@ pub struct WorkspaceHandler {
     plan: Option<Arc<WorkspacePlan>>,
     workers: BTreeMap<u32, WorkerWorkspace>,
     pending_cleanup: BTreeMap<u32, WorkerWorkspace>,
+    managed_root: Option<Arc<ManagedRunRoot>>,
+    max_owned_bytes: Option<u64>,
     #[cfg(test)]
     materialization_pause: Option<MaterializationPause>,
     #[cfg(test)]
@@ -911,11 +973,25 @@ impl WorkspaceHandler {
             plan: None,
             workers: BTreeMap::new(),
             pending_cleanup: BTreeMap::new(),
+            managed_root: None,
+            max_owned_bytes: None,
             #[cfg(test)]
             materialization_pause: None,
             #[cfg(test)]
             preflight_pause: None,
         }
+    }
+
+    #[must_use]
+    pub(crate) fn with_managed_root(mut self, root: Arc<ManagedRunRoot>) -> Self {
+        self.managed_root = Some(root);
+        self
+    }
+
+    #[must_use]
+    pub(crate) const fn with_max_owned_bytes(mut self, limit: u64) -> Self {
+        self.max_owned_bytes = Some(limit);
+        self
     }
 
     #[cfg(test)]
@@ -939,12 +1015,19 @@ impl WorkspaceHandler {
         request: Preflight,
     ) -> Result<PreflightCompleted, EffectFailed> {
         let id = request.id;
-        WorkspacePlan::preflight(
+        WorkspacePlan::preflight_validated_in(
             &self.original_root,
             id,
             self.requested_workers,
             self.options.clone(),
+            self.managed_root.clone(),
+            self.max_owned_bytes,
+            |_, _| Ok::<_, std::convert::Infallible>(()),
         )
+        .map_err(|error| match error {
+            ValidatedPreflightError::Workspace(error) => error,
+            ValidatedPreflightError::Validation(never) => match never {},
+        })
         .map(|plan| {
             #[cfg(test)]
             let plan = plan.with_materialization_pause(self.materialization_pause.clone());
@@ -969,11 +1052,13 @@ impl WorkspaceHandler {
             pause.wait();
         }
         let id = request.id;
-        match WorkspacePlan::preflight_validated(
+        match WorkspacePlan::preflight_validated_in(
             &self.original_root,
             id,
             self.requested_workers,
             self.options.clone(),
+            self.managed_root.clone(),
+            self.max_owned_bytes,
             validate,
         ) {
             Ok(plan) => {
@@ -1239,15 +1324,20 @@ impl WorkspaceHandler {
                 }
             }
         }
-        for workspace in self.workers.values_mut() {
-            workspace
-                .try_cleanup()
-                .map_err(|error| effect_failed(request.id, error))?;
+        let mut first_error = None;
+        for workspace in self
+            .workers
+            .values_mut()
+            .chain(self.pending_cleanup.values_mut())
+        {
+            if let Err(error) = workspace.try_cleanup()
+                && first_error.is_none()
+            {
+                first_error = Some(error);
+            }
         }
-        for workspace in self.pending_cleanup.values_mut() {
-            workspace
-                .try_cleanup()
-                .map_err(|error| effect_failed(request.id, error))?;
+        if let Some(error) = first_error {
+            return Err(effect_failed(request.id, error));
         }
         self.workers.clear();
         self.pending_cleanup.clear();

@@ -9,11 +9,12 @@ use std::time::Duration;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{
-    CandidateLoaded, Diagnostic, EffectFailed, EffectId, EmitOutput, FingerprintInput,
-    ObserveRemainingBudget, OutputEvent, RemainingBudgetObserved, ReportVersions, ResourceMode,
-    RunConfig, RunEffect, RunEvent, RunPhase, RunProcess, RunState, SourceHash, StartRequested,
-    TargetSlice, fingerprint, transition,
+    CandidateLoaded, Diagnostic, DiskDecision, DiskObservation, DiskPolicy, EffectFailed, EffectId,
+    EmitOutput, FingerprintInput, ObserveRemainingBudget, OutputEvent, RemainingBudgetObserved,
+    ReportVersions, ResourceMode, RunConfig, RunEffect, RunEvent, RunPhase, RunProcess, RunState,
+    SourceHash, StartRequested, TargetSlice, fingerprint, transition,
 };
+#[cfg(test)]
 use tempfile::TempDir;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
@@ -29,7 +30,9 @@ use crate::resource::ResourceBackend;
 use crate::session::SessionDispatcher;
 use crate::target::TargetHandler;
 use crate::workspace::{
-    CopyOptions, WorkspaceHandler, WorkspaceManifest, WorkspaceTask, WorkspaceTaskCompletion,
+    CopyOptions, DiskMeter, ManagedChild, ManagedRootCoordinator, ManagedRunRoot, OwnerKind,
+    SystemAvailableSpace, WorkspaceHandler, WorkspaceManifest, WorkspaceTask,
+    WorkspaceTaskCompletion,
 };
 #[cfg(test)]
 use crate::workspace::{MaterializationPause, MaterializationPauseController, PreflightPause};
@@ -686,8 +689,71 @@ struct PreparedShellSetup {
     analyzer: AnalyzerHandler,
     process: Arc<ProcessHandler>,
     report: PreparedReport,
-    spool_dir: Arc<TempDir>,
+    spool_dir: Arc<ManagedShellRoots>,
     config: RunConfig,
+}
+
+#[derive(Debug)]
+struct ManagedShellRoots {
+    _execution_root: Arc<ManagedRunRoot>,
+    _delivery_root: Arc<ManagedRunRoot>,
+    _execution_spool: Arc<ManagedChild>,
+    _delivery_spool: Arc<ManagedChild>,
+}
+
+struct SetupRollback {
+    execution: Arc<ManagedRunRoot>,
+    delivery: Option<Arc<ManagedRunRoot>>,
+    execution_spool: Option<Arc<ManagedChild>>,
+    delivery_spool: Option<Arc<ManagedChild>>,
+    armed: bool,
+}
+
+impl SetupRollback {
+    fn new(execution: Arc<ManagedRunRoot>) -> Self {
+        Self {
+            execution,
+            delivery: None,
+            execution_spool: None,
+            delivery_spool: None,
+            armed: true,
+        }
+    }
+
+    fn attach_delivery(&mut self, delivery: Arc<ManagedRunRoot>) {
+        self.delivery = Some(delivery);
+    }
+
+    fn attach_execution_spool(&mut self, spool: Arc<ManagedChild>) {
+        self.execution_spool = Some(spool);
+    }
+
+    fn attach_delivery_spool(&mut self, spool: Arc<ManagedChild>) {
+        self.delivery_spool = Some(spool);
+    }
+}
+
+impl Drop for SetupRollback {
+    fn drop(&mut self) {
+        if self.armed {
+            // A concurrent creator may hold the coordinator lock long enough for immediate
+            // cleanup to defer. Publish cleanup-ready first so releasing our leases never turns
+            // a setup failure into a young root that the janitor must preserve for 24 hours.
+            let _ = self.execution.mark_cleanup_ready();
+            if let Some(delivery) = &self.delivery {
+                let _ = delivery.mark_cleanup_ready();
+            }
+            // Close every child capability owned by the guard before the root lifecycle checks
+            // for live handles. Callers bind this guard before their additional Arc clones, so
+            // those clones are also dropped before this guard during error unwinding.
+            self.delivery_spool.take();
+            self.execution_spool.take();
+            let _ = self.execution.cleanup(Duration::from_secs(60));
+            if let Some(delivery) = &self.delivery {
+                let _ = delivery.cleanup(Duration::from_secs(60));
+            }
+        }
+    }
 }
 
 async fn prepare_shell_setup(
@@ -703,10 +769,33 @@ async fn prepare_shell_setup(
 }
 
 fn prepare_shell_setup_sync(config: RunConfig) -> Result<PreparedShellSetup, String> {
-    let spool_dir = Arc::new(tempfile::tempdir().map_err(|error| error.to_string())?);
-    let spool_path = Utf8PathBuf::from_path_buf(spool_dir.path().to_owned())
-        .map_err(|_| "temporary spool path is not UTF-8".to_owned())?;
-    std::fs::create_dir_all(spool_path.join("report")).map_err(|error| error.to_string())?;
+    let temporary_parent = Utf8PathBuf::from_path_buf(std::env::temp_dir())
+        .map_err(|_| "temporary workspace parent is not UTF-8".to_owned())?;
+    prepare_shell_setup_sync_in(config, &temporary_parent, &|_| {})
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ShellSetupBoundary {
+    RootsCreated,
+    DiskPolicyVerified,
+    WorkspaceCreated,
+    BackendCreated,
+    ProcessCreated,
+    AnalyzerCreated,
+    ReportCreated,
+}
+
+fn prepare_shell_setup_sync_in(
+    config: RunConfig,
+    temporary_parent: &Utf8Path,
+    boundary: &impl Fn(ShellSetupBoundary),
+) -> Result<PreparedShellSetup, String> {
+    let (mut rollback, execution_root, delivery_root, execution_spool, delivery_spool) =
+        create_managed_shell_roots_in(temporary_parent, &|_| {})?;
+    boundary(ShellSetupBoundary::RootsCreated);
+    verify_initial_disk_policy(&config, &execution_root, &delivery_root)?;
+    boundary(ShellSetupBoundary::DiskPolicyVerified);
+    let spool_path = execution_spool.path().to_owned();
     let requested_workers = u32::try_from(config.limits.jobs.get())
         .map_err(|_| "--jobs exceeds the supported worker count".to_owned())?;
     let workspace = WorkspaceHandler::new(
@@ -717,12 +806,17 @@ fn prepare_shell_setup_sync(config: RunConfig) -> Result<PreparedShellSetup, Str
             includes: config.selection.includes.clone(),
             excludes: config.selection.excludes.clone(),
         },
-    );
+    )
+    .with_managed_root(Arc::clone(&execution_root))
+    .with_max_owned_bytes(config.limits.max_workspace_size.get());
+    boundary(ShellSetupBoundary::WorkspaceCreated);
     let backend = resource_backend(&config).map_err(|error| error.to_string())?;
+    boundary(ShellSetupBoundary::BackendCreated);
     let process = Arc::new(ProcessHandler::new(
         backend.clone(),
         spool_path.join("process"),
     ));
+    boundary(ShellSetupBoundary::ProcessCreated);
     let analyzer = AnalyzerHandler::with_backend(
         config.root.clone(),
         backend,
@@ -731,9 +825,18 @@ fn prepare_shell_setup_sync(config: RunConfig) -> Result<PreparedShellSetup, Str
             .map_err(|_| "--max-processes exceeds the supported process count".to_owned())?,
     )
     .map_err(|error| error.to_string())?
-    .with_candidate_spool_owner(spool_dir.clone());
-    let report = PreparedReport::new(config.output.format, spool_path.join("report"))
+    .with_managed_candidate_spool_owner(Arc::clone(&execution_spool));
+    boundary(ShellSetupBoundary::AnalyzerCreated);
+    let report = PreparedReport::new(config.output.format, delivery_spool.path())
         .map_err(|error| error.to_string())?;
+    boundary(ShellSetupBoundary::ReportCreated);
+    let spool_dir = Arc::new(ManagedShellRoots {
+        _execution_root: execution_root,
+        _delivery_root: delivery_root,
+        _execution_spool: execution_spool,
+        _delivery_spool: delivery_spool,
+    });
+    rollback.armed = false;
 
     Ok(PreparedShellSetup {
         workspace,
@@ -745,6 +848,107 @@ fn prepare_shell_setup_sync(config: RunConfig) -> Result<PreparedShellSetup, Str
     })
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ManagedRootSetupBoundary {
+    ExecutionPublished,
+    DeliveryPublished,
+    ExecutionSpoolCreated,
+    DeliverySpoolCreated,
+}
+
+#[allow(
+    clippy::type_complexity,
+    reason = "the tuple keeps the rollback guard armed alongside all four published owners"
+)]
+fn create_managed_shell_roots_in(
+    temporary_parent: &Utf8Path,
+    boundary: &impl Fn(ManagedRootSetupBoundary),
+) -> Result<
+    (
+        SetupRollback,
+        Arc<ManagedRunRoot>,
+        Arc<ManagedRunRoot>,
+        Arc<ManagedChild>,
+        Arc<ManagedChild>,
+    ),
+    String,
+> {
+    let coordinator =
+        ManagedRootCoordinator::open(temporary_parent).map_err(|error| error.to_string())?;
+    let _reclaim = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
+    let execution_root = Arc::new(
+        ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution)
+            .map_err(|error| error.to_string())?,
+    );
+    let mut rollback = SetupRollback::new(Arc::clone(&execution_root));
+    boundary(ManagedRootSetupBoundary::ExecutionPublished);
+    let delivery_root = Arc::new(
+        ManagedRunRoot::create(&coordinator, OwnerKind::PublicDelivery)
+            .map_err(|error| error.to_string())?,
+    );
+    rollback.attach_delivery(Arc::clone(&delivery_root));
+    boundary(ManagedRootSetupBoundary::DeliveryPublished);
+    let execution_spool = Arc::new(
+        execution_root
+            .create_child("spool-")
+            .map_err(|error| error.to_string())?,
+    );
+    rollback.attach_execution_spool(Arc::clone(&execution_spool));
+    boundary(ManagedRootSetupBoundary::ExecutionSpoolCreated);
+    let delivery_spool = Arc::new(
+        delivery_root
+            .create_child("report-")
+            .map_err(|error| error.to_string())?,
+    );
+    rollback.attach_delivery_spool(Arc::clone(&delivery_spool));
+    boundary(ManagedRootSetupBoundary::DeliverySpoolCreated);
+    Ok((
+        rollback,
+        execution_root,
+        delivery_root,
+        execution_spool,
+        delivery_spool,
+    ))
+}
+
+fn verify_initial_disk_policy(
+    config: &RunConfig,
+    execution_root: &ManagedRunRoot,
+    delivery_root: &ManagedRunRoot,
+) -> Result<(), String> {
+    let reading = DiskMeter::new(
+        vec![
+            execution_root
+                .disk_capability()
+                .map_err(|error| error.to_string())?,
+            delivery_root
+                .disk_capability()
+                .map_err(|error| error.to_string())?,
+        ],
+        SystemAvailableSpace,
+    )
+    .measure()
+    .map_err(|error| format!("disk.measurement.failed: {error}"))?;
+    let available_bytes = reading
+        .available_by_filesystem
+        .values()
+        .copied()
+        .min()
+        .ok_or_else(|| "disk.measurement.failed: no owned filesystem".to_owned())?;
+    let policy = DiskPolicy {
+        max_owned_bytes: config.limits.max_workspace_size,
+        min_free_bytes: config.limits.min_free_space,
+    };
+    if let DiskDecision::Stop(failure) = policy.evaluate(DiskObservation {
+        owned_bytes: reading.owned_bytes,
+        available_bytes,
+        measured_in: reading.elapsed,
+    }) {
+        return Err(format!("{}: disk preflight stopped dispatch", failure.code));
+    }
+    Ok(())
+}
+
 pub struct ShellContext<Stdout, Stderr> {
     workspace: Option<WorkspaceHandler>,
     analyzer: AnalyzerHandler,
@@ -753,7 +957,7 @@ pub struct ShellContext<Stdout, Stderr> {
     session: Option<SessionDispatcher>,
     session_path: Option<Utf8PathBuf>,
     active_candidates: BTreeMap<u32, hoimin_core::MutationCandidate>,
-    _spool_dir: Arc<TempDir>,
+    _spool_dir: Arc<ManagedShellRoots>,
     resolved_targets: Option<Vec<TargetSlice>>,
     config: RunConfig,
     fingerprint_copy_inputs: BTreeSet<Utf8PathBuf>,
@@ -2923,6 +3127,103 @@ mod tests {
 
         assert!(error.starts_with("shell setup task failed:"), "{error}");
         assert!(error.contains("controlled shell setup panic"), "{error}");
+    }
+
+    #[test]
+    fn every_managed_root_publication_boundary_rolls_back_on_unwind() {
+        for selected in [
+            ManagedRootSetupBoundary::ExecutionPublished,
+            ManagedRootSetupBoundary::DeliveryPublished,
+            ManagedRootSetupBoundary::ExecutionSpoolCreated,
+            ManagedRootSetupBoundary::DeliverySpoolCreated,
+        ] {
+            let parent = tempfile::tempdir().unwrap();
+            let parent = Utf8Path::from_path(parent.path()).unwrap();
+
+            let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _ = create_managed_shell_roots_in(parent, &|observed| {
+                    assert_ne!(observed, selected, "injected setup failure at {selected:?}");
+                });
+            }));
+
+            assert!(unwind.is_err(), "boundary {selected:?} did not unwind");
+            let managed = parent.join("hoimin-workspaces-v1");
+            let residual = std::fs::read_dir(&managed)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .filter(|name| name != ".hoimin-coordinator")
+                .collect::<Vec<_>>();
+            assert!(
+                residual.is_empty(),
+                "boundary {selected:?} leaked managed roots: {residual:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_post_publication_setup_boundary_rolls_back_on_unwind() {
+        for selected in [
+            ShellSetupBoundary::RootsCreated,
+            ShellSetupBoundary::DiskPolicyVerified,
+            ShellSetupBoundary::WorkspaceCreated,
+            ShellSetupBoundary::BackendCreated,
+            ShellSetupBoundary::ProcessCreated,
+            ShellSetupBoundary::AnalyzerCreated,
+            ShellSetupBoundary::ReportCreated,
+        ] {
+            let project = tempfile::tempdir().unwrap();
+            let managed_parent = tempfile::tempdir().unwrap();
+            let parent = Utf8Path::from_path(managed_parent.path()).unwrap();
+            let config = shell_setup_test_config(&project);
+
+            let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _ = prepare_shell_setup_sync_in(config, parent, &|observed| {
+                    assert_ne!(observed, selected, "injected setup failure at {selected:?}");
+                });
+            }));
+
+            assert!(unwind.is_err(), "boundary {selected:?} did not unwind");
+            let managed = parent.join("hoimin-workspaces-v1");
+            let residual = std::fs::read_dir(&managed)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .filter(|name| name != ".hoimin-coordinator")
+                .collect::<Vec<_>>();
+            assert!(
+                residual.is_empty(),
+                "boundary {selected:?} leaked managed roots: {residual:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn rollback_contention_marks_root_for_immediate_janitor_recovery() {
+        use fs2::FileExt;
+
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let execution =
+            Arc::new(ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap());
+        let execution_path = execution.path().to_owned();
+        let rollback = SetupRollback::new(execution);
+        let coordinator_file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(parent.join("hoimin-workspaces-v1/.hoimin-coordinator"))
+            .unwrap();
+        FileExt::try_lock_exclusive(&coordinator_file).unwrap();
+
+        drop(rollback);
+        assert!(
+            execution_path.exists(),
+            "contention path unexpectedly deleted root"
+        );
+        FileExt::unlock(&coordinator_file).unwrap();
+
+        let report = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
+        assert_eq!(report.reclaimed_roots, 1, "{report:?}");
+        assert!(!execution_path.exists());
     }
 
     fn process_effect(worker: u32) -> RunEffect {
