@@ -31,6 +31,20 @@
    the complete report/event golden-fixture set, and bounded all metadata probes.
 10. The platform/formal pass fixed Windows output anchoring, removed combinatorial Lean
     trace expansion, and stated the same-credential process trust boundary explicitly.
+11. The launcher/semantic-classification pass removed an unprovable `RLIMIT_FSIZE`
+    mutation result and put Python environment provisioning outside the guarded command.
+12. The formal lifecycle pass separated process-drain completion from one child exit,
+    required successful deletion boundaries, and made report/delivery failure reject
+    `finished`.
+13. The correspondence pass added per-implementation corpus targets for Rust's two-root
+    delivery topology and Python's one-root focused topology.
+14. The crash/disk-full recovery pass added marker-derived atomic-output cleanup,
+    chunk-aware reserve checks, exact bounded stderr recovery paths, and a fixed
+    coordinator slot wire format.
+15. The capture/memory pass bounded prior inventory, outcome JSON, selectors, reported
+    paths, and diagnostic log reads.
+16. The executable-gate pass made expected `rg` misses and concurrent-process checks
+    distinguish a real no-match from tool or process-list failure.
 
 ## Purpose
 
@@ -51,9 +65,11 @@ The default policy is:
 | Retained focused command log bytes | `16MiB` per command |
 | Maximum configured command log bytes | `64MiB` per command |
 | Retained cargo-mutants inventory stdout | `8MiB` |
+| Maximum prior-inventory or cargo-mutants outcome JSON | `8MiB` each |
 | Retained candidate diagnostic bytes | `16KiB` per candidate |
 | Retained run-wide candidate diagnostics | `16MiB` |
 | Maximum focused JSON or Markdown report | `32MiB` each |
+| Maximum UTF-8 and escaped reported path | `16KiB` each |
 | One cleanup slice | `5s` and `50,000` examined entries |
 | Current-owner cleanup budget | `60s` |
 | Startup janitor budget | `30s` and `256` candidates |
@@ -131,9 +147,9 @@ unused for the operating system and other applications.
 **Portable guard** combines owned-byte measurement with filesystem free-space
 measurement. It runs on macOS, Linux, and Windows.
 
-**Hard backstop** is a host capability that rejects a write independently of
-the portable sampler. The report must name the exact capability. A Unix
-per-file `RLIMIT_FSIZE` is a per-file backstop, not an aggregate quota.
+**Hard backstop** is a verified host capability that limits aggregate bytes for the
+owned root independently of the portable sampler. The report must name the exact
+capability probe and result.
 
 **Lease** is a marker plus an operating-system file lock held for the lifetime
 of an owned root.
@@ -240,6 +256,13 @@ samples.
 --keep-scratch
 ```
 
+The disk guard starts inside the Python process, so the supported invocation uses an
+already provisioned `.venv/bin/python`. `uv sync --frozen` is a separate setup action
+with free-space checks before and after it; the safe mutation command does not use
+`uv run`, which may create or update an environment before the wrapper can sample disk.
+The wrapper fails before output or scratch creation when the selected interpreter or
+locked environment is absent.
+
 The wrapper creates one leased run root below a managed temporary root. It sets
 `TMPDIR`, `TMP`, `TEMP`, and `CARGO_TARGET_DIR` to children of that root for
 inventory, baseline, and cargo-mutants commands, and sets
@@ -271,6 +294,20 @@ marker has a 64 KiB schema cap and remains as provenance after a successful run.
 subsequent checkpoint uses the guarded writer; no unmetered report write occurs between
 ownership acquisition and guard startup.
 
+Atomic report temporaries have deterministic names derived from the marker's run ID and
+the fixed destination kind. At most one exists at a time. A catchable failure closes and
+unlinks that exact regular file. On a later invocation, the wrapper may lock and validate
+an abandoned output marker, revalidate the anchored output identity, and unlink only the
+two derivable regular non-symlink temporary names. It preserves every completed report
+and other entry. If the directory then contains only the abandoned marker, it removes
+that wrapper-created marker and may reuse the empty directory; otherwise it rejects the
+non-empty output after bounded orphan-temporary cleanup. This recovery performs no
+recursive deletion and does not accept a path or temporary name from report contents.
+For an existing abandoned marker this exact orphan cleanup precedes the fresh-run reserve
+check, so a disk-full condition cannot prevent deletion of the wrapper's bounded
+temporary. The wrapper then samples capacity again and either continues from an empty
+directory or rejects without creating scratch.
+
 On Unix, output creation and atomic replacement use directory-relative operations on
 the held descriptor. On Windows, the wrapper opens the output directory without
 `FILE_SHARE_DELETE` and keeps that handle through the final flush, so another process
@@ -282,10 +319,18 @@ share deletion so candidate compaction can proceed.
 Inventory is also bounded. The wrapper retains at most 8 MiB of cargo-mutants list
 stdout and never more than the stdout share of the configured combined command-log
 allowance. With the default 16 MiB combined allowance this is exactly 8 MiB. It accepts
-at most 10,000 discovered entries and selects at most 1,000 candidates. Crossing a cap,
+at most 10,000 discovered entries, 1,000 requested selectors of at most 16 KiB encoded
+bytes each, and 1,000 selected candidates. Crossing a cap,
 or lowering `--max-log-size` so that complete inventory JSON does not fit in the stdout
 share, is a typed tool or infrastructure failure before baseline or mutation work.
 Explicit symbol selection must resolve each symbol to one production function.
+
+Every user/tool JSON input is bounded before decoding. `--prior-inventory` and each
+cargo-mutants `outcomes.json` are regular files of at most 8 MiB, read as at most the cap
+plus one byte and rejected on overflow. A candidate compiler/debug log is never loaded in
+full; the extractor obtains only bounded prefix/tail slices with seek/read and records the
+observed file size. Parsed candidate and string counts still obey the inventory limits,
+so a small compressed-looking JSON structure cannot create an unbounded object graph.
 
 Each selected candidate uses a child run directory. After cargo-mutants exits,
 the wrapper reads the exact inventory and outcome, copies the bounded diagnostic
@@ -386,8 +431,6 @@ An unavailable free-space query or an unidentifiable filesystem fails closed.
 
 The portable aggregate guard stays active on every host.
 
-- Unix launchers apply `RLIMIT_FSIZE` when the platform supports it. The limit
-  constrains a single file and the report labels it `hard_per_file`.
 - A user may place `--scratch-root` on a capacity-limited filesystem. Hoimin
   records the filesystem capacity and free-space observations. It labels an
   aggregate hard backend only when a platform capability probe verifies a
@@ -396,14 +439,11 @@ The portable aggregate guard stays active on every host.
 - A future aggregate quota backend implements the same capability interface.
   It may not weaken or replace the portable guard.
 
-The report uses `portable_only`, `hard_per_file`, or a named aggregate backend.
-It never labels per-file enforcement as an aggregate quota.
-
-`RLIMIT_FSIZE` attribution uses `SIGXFSZ` plus the mandatory post-exit disk
-sample. A child can install its own signal handler, observe `EFBIG`, and delete
-the file before exit; the host APIs cannot prove that case was caused by the
-limit. Reports describe this attribution boundary and never claim that the
-per-file backstop proves aggregate enforcement.
+The report uses `portable_only` or a named verified aggregate backend. A per-file limit
+is not installed for scored mutation commands: a child can catch `SIGXFSZ`, observe
+`EFBIG`, remove the file, and later exit like an ordinary test failure. The parent cannot
+prove that hidden path was infrastructure rather than a killed mutant, so using it would
+violate the rule that a disk-limited candidate never improves mutation score.
 
 ## Stop and cleanup state machine
 
@@ -446,6 +486,15 @@ The transition order has these rules:
 10. If setup fails after either lease is published, setup rolls back in reverse order
     only after confirming that no process, drain, or monitor was started. A failure to
     prove that condition abandons the root for the janitor.
+11. A destructive cleanup outcome (`clean` or `failed`) is accepted only after process
+    reap, both output drains, and monitor join have succeeded. A failed or unproven
+    boundary permits only `deferred` or explicit `retained`; component failure being
+    terminal for reporting does not make recursive removal safe.
+
+The lifecycle machine is constructed only after a process/drain/monitor owner has
+started. Rule 10's pre-owner setup rollback is a separate owned-root operation guarded by
+the explicit “no owner started” proof; it is not encoded as a cleanup transition from a
+state whose pending components might later become live.
 
 Disk stops use typed infrastructure codes:
 
@@ -556,11 +605,20 @@ prior invocation; it advances after selection even when a selected root is defer
 wraps after the final name. The stable coordinator protocol prevents compliant creators
 from changing the direct-child set during selection. This gives bounded cross-invocation
 fairness without collecting all names.
-The cursor lives in two fixed-size, CRC-protected generation slots preallocated inside
-the coordinator file, beyond its lock byte. Updating the inactive slot uses no directory
-entry allocation. A cursor-write/fsync failure is reported but does not prevent cleanup
-of candidates already selected; the previous valid slot remains authoritative, so a
-disk-full janitor can still free space and retry fairly later.
+The coordinator is exactly 1,025 bytes: lock byte zero followed by two 512-byte cursor
+slots at offsets 1 and 513. Each slot contains eight-byte magic `HMCUR001`, little-endian
+schema `u32`, little-endian generation `u64`, little-endian cursor length `u16`, a
+zero-padded 480-byte ASCII managed-child name, six reserved zero bytes, and a
+little-endian IEEE CRC-32 of the first 508 slot bytes. A length above 480, a name outside
+the managed grammar, nonzero padding, bad CRC, wrong schema/magic, or unequal contents at
+the same highest generation is invalid. Equal highest-generation slots choose slot zero.
+The creator preallocates and flushes both valid empty slots before any lock user opens the
+file. The janitor reads both complete slots, chooses the valid highest generation, and
+writes `generation + 1` to the inactive slot with a positioned write plus file flush.
+Generation overflow is a typed cursor-persistence failure. Updating the inactive slot
+uses no directory-entry allocation. A cursor-write or flush failure does not prevent
+cleanup of candidates already selected; the previous valid slot remains authoritative,
+so a disk-full janitor can still free space and retry.
 The 100,000-direct-child cap remains a fail-closed enumeration ceiling, not a promise to
 retain 100,000 records. Cleanup and reclaim reports keep at most 256 path/error details
 of at most 4 KiB each and aggregate all additional/truncated counts.
@@ -602,7 +660,8 @@ The Rust run report and focused JSON record include:
 - start and end free bytes per filesystem;
 - peak owned bytes and minimum observed free bytes;
 - sample count and maximum measurement duration;
-- enforcement capability names and probe evidence;
+- tagged enforcement capabilities: portable guard, capacity-only root, or verified
+  aggregate backend with its successful bounded probe evidence;
 - the first stop reason and observation;
 - secondary process, measurement, cleanup, and report errors;
 - every execution root and its cleanup result;
@@ -650,7 +709,8 @@ create a generation token; scratch registration and child dispatch stay frozen u
 the checkpoint finishes. The guarded writer splits encoder output into at most 64 KiB
 writes, rejects a total above 32 MiB, and checks
 `base_owned_bytes + temporary_bytes + next_chunk_bytes < max_owned_bytes` plus
-handle-based free space before every chunk. The initial reading already includes the old
+`available_bytes > min_free_bytes + next_chunk_bytes`, with checked arithmetic, before
+every chunk. The initial reading already includes the old
 destination, while the counter adds only bytes newly written to the atomic temporary.
 This permits a small report under a user limit below 32 MiB without weakening the hard
 report cap. The writer verifies the
@@ -658,6 +718,11 @@ output identity, generation token, and free space again after flush and before r
 it does not rescan the whole workspace for every chunk. If a boundary is reached, it closes and
 unlinks only that exact wrapper-created temporary and surfaces report delivery failure
 through the typed return and stderr. The prior atomic report remains intact.
+If the final report cannot be written while scratch is retained, deferred, or failed,
+stderr emits one escaped line capped at 20 KiB containing the typed report code and the
+already validated remaining owned-root path. It never embeds child output. This fallback
+allocates no file and gives the operator a recovery target when the disk reserve blocks
+the report itself.
 Execution cleanup invalidates a pre-clean token. Final evidence therefore uses the
 required post-clean absence/end-free observation to issue a new token; retained or
 deferred scratch remains registered in that observation.
@@ -726,14 +791,21 @@ The audit uses this correspondence worksheet before it defines the model:
 | Process reap, output drain, monitor join | explicit component states | Controlled Rust shell and Python runner fixtures | `internal-fixture` |
 | Report delivery failure | report component failure | Injected report writer | `internal-fixture` |
 | Uncatchable host death | abstract crash event | No deterministic same-premise public execution | `model-only` |
+| Pre-owner setup rollback | outside the lifecycle model | Owned-root fixture proves no process, drain, or monitor started | `internal-fixture` |
 
 Corpus records use only `strict`, `internal-fixture`, `model-only`, or
-`infrastructure-error`. Each record also names its `policy` or `runtime` layer.
-Policy adapters consume every policy record; controlled shell/runner adapters consume
-every runtime record. Each adapter rejects an unknown layer or mode, compares complete
-observations for `strict` and `internal-fixture`, and reports infrastructure failures
-without a semantic verdict. No adapter may count an unexecuted applicable record as a
-match.
+`infrastructure-error`. Each record also names its `policy` or `runtime` layer and a
+nonempty `implementation_targets` subset of `rust` and `python`. Policy records target
+both implementations. Complete one-root focused-runtime traces target Python; complete
+two-root delivery traces target Rust because public Hoimin owns a delivery scratch root.
+The Python wrapper has one leased scratch root and an anchored user-owned output that it
+must not recursively delete. A smaller runtime transition case targets both only when
+both adapters configure the same premise and expose the complete observation. Each
+adapter consumes every record naming it, rejects unknown/duplicate/empty
+targets and unknown layer/mode values, and compares complete observations for `strict`
+and `internal-fixture`. Infrastructure failure yields no semantic verdict. The audit
+reports per-target expected/executed case-ID sets, and an unexecuted applicable record
+cannot count as a match.
 
 The finite model contains:
 
@@ -747,12 +819,22 @@ The finite model contains:
 
 The model tracks cleanup requests and clean, failed, deferred, or retained outcomes by
 root ID. Clean, failed, and retained are terminal for lifecycle reporting; deferred is
-explicitly incomplete and blocks `finished`. It also tracks process, output-drain, and monitor-join
+explicitly incomplete and blocks `finished`. It also tracks process-drain, output-drain, and monitor-join
 states, so `finished` requires all three boundaries plus a terminal cleanup
 outcome for each owned root.
-For process, drain, monitor, and report components, “terminal” means settled as success
-or failure. A failed report component therefore permits delivery-root cleanup while
+For process-drain, output-drain, monitor, and report components, “terminal” means
+settled as success or failure. A cleanup request requires the process-drain,
+output-drain, and monitor components to be
+terminal. Clean or failed destructive cleanup additionally requires all three to have
+succeeded; any failed component permits only deferred or retained. A failed report
+component permits delivery-root cleanup after the other three components succeed, while
 still preventing output acknowledgement.
+`finished` represents successful output acknowledgement/session completion, not merely
+returning an error to the caller. It therefore also requires report success and `clean`
+for every delivery root. Report failure or delivery cleanup failure may reach a settled
+error state after bounded cleanup, but neither transition can set `finished`. Execution
+cleanup failure or explicit execution-root retention may be reported as a completed
+failed/retained run when delivery succeeds; deferred cleanup remains incomplete.
 
 The bounded refutation pass enumerates the three threshold classes plus meter
 failure and explores eight normalized event families: dispatch, observe, process
@@ -761,24 +843,37 @@ depth five the family-skeleton count is exactly
 `1 + 8 + 8² + 8³ + 8⁴ + 8⁵ = 37,449`. The generator does not expand every skeleton
 across a larger root/payload alphabet. It uses canonical representatives, proves root
 renaming and payload-class symmetry over the finite model, and adds one fixed witness
-for each noncanonical root and payload class. It records skeletons, representative
-traces, accepted transitions, reachable states, elapsed time, and peak memory. Imported Lean modules contain the transition
+for each noncanonical root and payload class. Fixed traces are not depth-five samples:
+the corpus includes complete ordered success, report-failure/rejected-finish,
+delivery-cleanup-failure/rejected-finish, monitor-failure/deferred,
+unsafe-cleanup-rejection, retained, one-root Python completion, and Rust delivery-cleanup
+traces of up to 16 events. It
+records skeletons, representative traces, accepted transitions, reachable states,
+elapsed time, and peak memory. Imported Lean modules contain the transition
 definitions and theorems;
 the executable alone performs enumeration, sensitivity checks, and JSONL
 serialization.
+The generator reports `bounded_skeleton_count=37449` and a separate fixed-case count;
+the tracked corpus total includes the fixed traces and is not asserted to equal 37,449.
 
-Lean proves these eight model claims:
+Lean proves these twelve model claims:
 
 - a stop request disables future dispatch;
 - the first terminal reason stays unchanged;
 - a simultaneous reserve/size observation keeps reserve primary and size secondary;
 - each owned root receives one cleanup request;
 - cleanup failure cannot produce `cleanup_outcome=clean`;
+- a cleanup request is not accepted before process-drain, output-drain, and monitor components
+  are terminal;
+- clean or failed destructive cleanup is not accepted unless those three components
+  succeeded;
 - the model cannot reach `finished` before cleanup attempts complete.
-- the model cannot reach `finished` before process exit, output drain, and monitor join
+- the model cannot reach `finished` before process drain, output drain, and monitor join
   are terminal.
 - a delivery-root cleanup request is not accepted before the report component is
   terminal.
+- `finished` implies that the report component succeeded;
+- `finished` implies that every delivery root is clean.
 
 Lean generates a versioned corpus. Rust and Python adapters invoke their real
 policy entry points for each case. They classify results as `match`, `mismatch`,
@@ -826,7 +921,10 @@ Tests use fake cargo-mutants and injected measurements. They cover:
 - process-tree termination and reap before removal;
 - compact outcome extraction before candidate-tree deletion;
 - unique output ownership and anchored report writes under concurrent startup;
+- bounded recovery of deterministic atomic output temporaries after simulated process
+  death, without deleting completed reports or foreign entries;
 - bounded inventory bytes, discovered entries, selected candidates, and streamed Markdown;
+- bounded prior/outcome JSON, selector/path bytes, and seek-based diagnostic slices;
 - bounded stdout and stderr drain without child blockage;
 - cleanup after success, tool failure, timeout, `SIGINT`, and `SIGTERM`;
 - abandoned lease recovery on the next invocation;
@@ -863,7 +961,8 @@ README and `docs/development.md` explain:
   reaction guarantee for a blocking filesystem call;
 - focused mutation's single-worker default and compact evidence retention;
 - cleanup behavior, `--keep-scratch`, stale recovery, and exact manual cleanup;
-- hard-backstop capability labels;
+- portable-versus-verified-aggregate capability labels and the interpreter-startup
+  boundary;
 - why direct unguarded `cargo mutants --workspace --jobs N` is discouraged.
 
 Repository mutation examples use `tools/focused_mutation.py` or a guard-backed
@@ -883,8 +982,8 @@ The change is complete when:
 4. A later invocation removes a simulated cleanup-ready or 24-hour-old abandoned valid
    lease and preserves
    live, retained, malformed, symlink, and foreign entries.
-5. Reports distinguish portable aggregate monitoring, per-file hard backstops,
-   and caller-provided capacity roots.
+5. Reports distinguish portable aggregate monitoring, verified aggregate backends, and
+   caller-provided capacity roots; no per-file signal path can receive mutation credit.
 6. Disk-stopped candidates remain unverified and do not improve mutation score.
 7. Rust and Python match the Lean-generated state-machine corpus.
 8. The one-worker real focused mutation evidence stays under the configured
@@ -893,3 +992,8 @@ The change is complete when:
 10. The guard itself stays within its descriptor, entry, scan-time, inventory, candidate,
     retained-log, cleanup-slice, janitor-work, and diagnostic caps, and no destructor
     recursively deletes a live workspace.
+11. A simulated crash leaves at most one bounded atomic output temporary; the next
+    invocation removes only the marker-derived orphan and preserves completed or foreign
+    output.
+12. Report failure and failed delivery cleanup remain settled errors but cannot produce
+    output acknowledgement or a completed session.

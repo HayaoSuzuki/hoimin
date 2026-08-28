@@ -14,7 +14,8 @@ bounded logs, extracts compact evidence, and deletes each bulky candidate tree b
 continuing. Both implementations use locked leases and a conservative direct-child
 janitor; neither accepts arbitrary cleanup paths from child output or reports.
 
-**Tech Stack:** Rust 1.88+ (`tokio`, `tempfile`, `fs2` 0.4.3, `cap-std` 4.0.2,
+**Tech Stack:** Rust 1.88+ (`tokio`, `tempfile`, `fs2` 0.4.3, `crc32fast` 1.4,
+`cap-std` 4.0.2,
 `cap-fs-ext` 4.0.2, `serde`), Python 3.14 standard library, Lean 4/Lake,
 cargo-mutants 27.1.0.
 
@@ -30,6 +31,14 @@ cleanup-resource bounds, capture/schema consistency, and platform/formal executa
 Material findings are folded into the steps. Task 10
 repeats three same-SHA implementation reviews because document approval is not
 implementation evidence.
+
+Six additional zero-based passes on 2026-08-28 covered launcher/classification,
+formal lifecycle, implementation correspondence, crash/disk-full recovery, bounded
+capture, and executable shell gates. They found unguarded environment creation,
+unobservable handled `SIGXFSZ` failures, unsafe cleanup after failed components,
+incorrect finish acceptance, Rust/Python root-topology drift, crash-orphaned report
+temporaries, unbounded tool-controlled reads, and fail-open no-match checks. The tasks
+below contain those corrections.
 
 ## Global Constraints
 
@@ -49,6 +58,9 @@ implementation evidence.
   every candidate record; candidate diagnostics are separately and globally bounded.
 - Do not run full-workspace cargo-mutants. The only mutation gate is the focused,
   single-worker command in Task 10, guarded by a fresh scratch root and disk preflight.
+- Provision the locked Python environment as an explicit setup gate. Invoke the focused
+  mutation wrapper with the existing `.venv/bin/python`; never put `uv run` between the
+  final free-space preflight and wrapper startup.
 - Start every real mutation or compatibility build only when more than 10 GiB is free.
   Stop immediately on ENOSPC, rising unowned scratch, or monitor/tool failure.
 - A disk stop is an infrastructure failure. It must not become `Killed`, increment the
@@ -57,6 +69,21 @@ implementation evidence.
   repeat the affected gates and independent reviews on one clean final SHA.
 - Commit only the files named by the task. Keep generated Lean corpus files tracked;
   keep runtime reports and temporary mutation output ignored.
+
+## Execution partition
+
+This program plan contains seven implementation batches. Execute and review them in
+order: Task 1; Tasks 2–4; Task 5; Task 6; Task 7; Tasks 8–9; Task 10.
+Do not assign two partitions to one implementation turn. Task 5 and Task 7 each require
+their own clean-start brief and final commit review because they own different languages
+and deletion implementations.
+
+Within a partition, each bullet in a RED list is one TDD increment: add one behavioral
+assertion, run its narrow target and confirm the intended behavioral failure, add the
+smallest production change, rerun that target, then continue. A numbered Step is a
+review checkpoint, not permission for a single bulk edit. Record the command and failure
+cause for each increment in ignored evidence; compile, import, fixture-setup, and ENOSPC
+failures do not count as RED.
 
 ---
 
@@ -76,10 +103,11 @@ implementation evidence.
 
 - Consumes: the approved threshold, stop-precedence, process-drain, monitor-join, and
   root-specific cleanup contract from the design.
-- Produces: `HoiminOracle.DiskGuard.step`, `run`, `Invariant`, the eight named theorems,
+- Produces: `HoiminOracle.DiskGuard.step`, `run`, `Invariant`, the twelve named theorems,
   an eight-event-family depth-five bounded explorer, and schema-1 JSONL records with
-  exact correspondence mode plus `policy` or `runtime` layer. Tasks 2, 6, and 8 consume
-  every applicable record and may not reinterpret its premises.
+  exact correspondence mode, `policy` or `runtime` layer, and nonempty
+  `implementation_targets`. Tasks 2, 6, and 8 consume every record naming their
+  implementation and may not reinterpret its premises.
 
 - [ ] **Step 1: Write the finite model and fixed cases**
 
@@ -111,7 +139,7 @@ structure State where
   cleanupFailed : List RootId := []
   cleanupDeferred : List RootId := []
   cleanupRetained : List RootId := []
-  process : ComponentState := .pending
+  processDrain : ComponentState := .pending
   outputDrain : ComponentState := .pending
   monitorJoin : ComponentState := .pending
   report : ComponentState := .pending
@@ -122,8 +150,8 @@ inductive Event where
   | dispatch
   | observe (owned maxOwned free minFree : Nat)
   | meterFailed
-  | processFailed
-  | processExited
+  | processDrainFailed
+  | processDrainSucceeded
   | requestCleanup (root : RootId)
   | cleanupSucceeded (root : RootId)
   | cleanupFailed (root : RootId)
@@ -149,26 +177,56 @@ When both hold in one successful observation, choose `reserveReached` and retain
 Insert a secondary reason once and preserve observation order. `step` must preserve the
 first stop reason, reject dispatch once `stop.isSome`, permit
 exactly one logical cleanup request per owned root, and reject `finish` until active
-work is zero, the process/output/monitor/report components are settled (`succeeded` or
+work is zero, the process-drain/output-drain/monitor/report components are settled (`succeeded` or
 `failed`), and every owned
 root has exactly one terminal cleanup outcome (`clean`, `failed`, or `retained`); a
 `deferred` outcome remains visible but blocks `finish`. It rejects a cleanup request for
-a root
-in `deliveryRoots` until `report` is settled. A failed report write therefore still
-permits the required delivery-root cleanup.
+a root until process-drain, output-drain, and monitor components are settled. It accepts
+`cleanupSucceeded` or `cleanupFailed` only when all three components succeeded; if any
+failed, only `cleanupDeferred` or `cleanupRetained` is valid. It also rejects a cleanup
+request for a root in `deliveryRoots` until `report` is settled. A failed report write
+therefore still permits the required delivery-root cleanup after the three deletion
+safety components succeeded.
+In addition, accept `finish` only when `report = succeeded` and every root in
+`deliveryRoots` is in `cleanupClean`. Report failure or failed delivery cleanup remains a
+settled error trace whose final `finish` event is rejected. Execution-root failed or
+retained cleanup may finish when report and delivery cleanup succeed.
+`processDrainSucceeded` and `processDrainFailed` are one global shutdown boundary, not
+one child exit; each sets `active = 0` and the corresponding `processDrain` state. The
+model therefore does not confuse one of two child completions with proof that every
+owned process was reaped.
+Construct `DiskLifecycle` only after a process/drain/monitor owner starts. Setup rollback
+before any owner starts is an explicit `ManagedRunRoot` fixture outside this model; do
+not manufacture pending-component cleanup events to represent it. Add that distinction
+to the correspondence worksheet as `internal-fixture`.
 
 Define strict fixed cases for below/at/above thresholds, meter failure, zero/one/two
 active processes, two competing stop reasons, cleanup
 success/failure/deferral/retention, and report success/failure. Normalize them to
-dispatch, observe, process terminal, output
+dispatch, observe, process-drain terminal, output
 terminal, monitor terminal, cleanup, report terminal, and finish. Explore family
 skeletons through depth five (`1 + 8 + 8² + 8³ + 8⁴ + 8⁵ = 37,449`). Do not expand
 that set across a larger root/payload alphabet. Use canonical representatives, prove
 root-renaming and payload-class symmetry over the finite model, and add one fixed
 witness for every noncanonical root and payload class.
-Every JSONL record must contain schema `1`, case ID, correspondence mode, layer, event
-sequence, and the complete expected terminal observation. Record transition/state
+Add fixed traces outside the depth-five explorer for complete ordered success,
+report-failure then delivery cleanup and rejected finish, delivery-cleanup failure and
+rejected finish, monitor-failure then deferred cleanup and rejected
+finish, rejected cleanup before component settlement, rejected destructive cleanup after
+a failed component, and explicit retention. Bound each fixed trace at 16 events. These
+long traces are mandatory corpus records; the depth-five count is only the normalized
+local refutation pass and cannot stand in for lifecycle correspondence.
+Every JSONL record must contain schema `1`, case ID, correspondence mode, layer, a
+nonempty duplicate-free `implementation_targets` list containing only `rust` and/or
+`python`, event sequence, and the complete expected terminal observation. Policy cases
+target both; complete one-root focused-runtime cases target Python; complete two-root
+delivery cases target Rust because Python's output root is user-owned and not a leased
+cleanup root. A smaller runtime case targets both only with an explicit same-premise
+worksheet row for each adapter. Record transition/state
 counts, elapsed time, and peak memory in the generator summary.
+Report `bounded_skeleton_count=37449`, `fixed_case_count`, and total corpus records as
+separate values; do not assert that the corpus line count equals 37,449 after adding the
+fixed traces.
 
 For every mismatch and every deliberate broken witness, emit a deterministic audit
 record containing: claim, model boundary, finite domain or theorem premises, minimal
@@ -179,11 +237,14 @@ runtime `internal-fixture` tests to Lean proof claims.
 
 - [ ] **Step 2: Add proof obligations and deliberate broken variants**
 
-Prove eight named obligations: `stopped_never_dispatches`,
+Prove twelve named obligations: `stopped_never_dispatches`,
 `first_reason_is_sticky`, `simultaneous_threshold_preserves_secondary`,
 `cleanup_requested_once_per_root`,
-`cleanup_failure_is_not_clean`, `finished_implies_cleanup_terminal`, and
-`finished_implies_components_settled`, plus `delivery_cleanup_after_report_settled`. Each theorem
+`cleanup_failure_is_not_clean`, `cleanup_request_implies_components_settled`,
+`destructive_cleanup_implies_components_succeeded`,
+`finished_implies_cleanup_terminal`, and
+`finished_implies_components_settled`, `delivery_cleanup_after_report_settled`,
+`finished_implies_report_succeeded`, and `finished_implies_delivery_clean`. Each theorem
 quantifies over a starting state and an accepted event trace, and states its property on
 the trace fold. This shared trace premise prevents the proofs from drifting away from
 the corpus generator.
@@ -201,6 +262,10 @@ Add broken functions for strictness (`>` instead of `>=`), reserve direction,
 lost simultaneous secondary evidence, stop-reason overwrite, post-stop dispatch,
 duplicate cleanup, clean-on-cleanup-error, and early finish. `--sensitivity` must return zero only if every broken family is
 distinguished by at least one fixed witness.
+Add two lifecycle broken variants: one accepts cleanup before component settlement, and
+one accepts clean/failed destructive cleanup after process, drain, or monitor failure.
+Add broken finish variants that accept report failure or failed delivery cleanup. The
+long fixed witnesses, rather than incidental depth-five enumeration, must kill all four.
 
 - [ ] **Step 3: Add the generator and initially stale corpus RED**
 
@@ -307,7 +372,10 @@ pub enum DiskSecondary {
     Error { code: String, message: String },
 }
 
-pub struct DiskRootId(u8);
+pub enum DiskRootId {
+    Execution,
+    Delivery,
+}
 
 pub enum DiskCleanupOutcome {
     Clean,
@@ -316,18 +384,32 @@ pub enum DiskCleanupOutcome {
     Retained,
 }
 
-impl DiskRootId {
-    pub fn new(value: u8) -> Self;
+pub enum DiskLifecycleError {
+    DuplicateRoot(DiskRootId),
+}
+
+pub enum DiskLifecycleEvent {
+    DispatchRequested,
+    Observation { policy: DiskPolicy, value: DiskObservation },
+    MeasurementFailed { message: String },
+    ProcessDrainSucceeded,
+    ProcessDrainFailed,
+    OutputDrainSucceeded,
+    OutputDrainFailed,
+    MonitorJoinSucceeded,
+    MonitorJoinFailed,
+    ReportSucceeded,
+    ReportFailed,
+    CleanupRequested { root: DiskRootId },
+    CleanupCompleted { root: DiskRootId, outcome: DiskCleanupOutcome },
+    FinishRequested,
 }
 
 impl DiskLifecycle {
-    pub fn new(owned_roots: impl IntoIterator<Item = DiskRootId>) -> Self;
-    pub fn observe(&mut self, policy: DiskPolicy, value: DiskObservation) -> DiskDecision;
-    pub fn fail_measurement(&mut self, message: String) -> DiskDecision;
-    pub fn request_dispatch(&mut self) -> bool;
-    pub fn process_exited(&mut self);
-    pub fn request_cleanup(&mut self, root: DiskRootId) -> bool;
-    pub fn complete_cleanup(&mut self, root: DiskRootId, outcome: DiskCleanupOutcome);
+    pub fn new(
+        owned_roots: impl IntoIterator<Item = DiskRootId>,
+    ) -> Result<Self, DiskLifecycleError>;
+    pub fn apply(&mut self, event: DiskLifecycleEvent) -> bool;
     pub fn may_finish(&self) -> bool;
     pub fn snapshot(&self) -> DiskLifecycleSnapshot;
 }
@@ -359,6 +441,13 @@ pub const WORKSPACE_CLEANUP_DEFERRED: &str = "workspace.cleanup.deferred";
 Keep the decision and transition seams uniquely named `evaluate_disk_policy` and
 `apply_disk_lifecycle_event`; public `DiskLifecycle` methods delegate to them. These are
 production helpers, not test-only duplicates, and Task 10 targets them narrowly.
+`apply_disk_lifecycle_event` consumes the public `DiskLifecycleEvent` above, so both
+corpus adapters exercise process, drain, monitor, report, cleanup, and finish transitions
+through one complete interface. `DiskRootId` is a two-variant enum matching Lean
+`Fin 2`; no public constructor may create a third root ID.
+Allow zero, one, or both roots as the finite model does, but reject a duplicate root in
+the constructor rather than silently changing the caller's cleanup obligations. The
+Python constructor has the same result and error code.
 
 Do not add a disk variant to `ProcessTermination`; a disk stop is never a test
 termination. Use checked counters and make duplicate logical cleanup requests return
@@ -367,8 +456,12 @@ termination. Use checked counters and make duplicate logical cleanup requests re
 - [ ] **Step 3: Complete policy and correspondence tests**
 
 Cover both boundaries, precedence, secondary errors, zero/one/two active work items,
-duplicate cleanup, cleanup absence failure, deferred cleanup, and finish gating. The Lean adapter must
-execute every `policy` record through public methods, reject unknown layers/modes,
+duplicate cleanup, cleanup absence failure, deferred cleanup, rejection before component
+settlement, rejection of destructive cleanup after any failed safety component, the
+complete policy-layer fixed cases, duplicate-root constructor rejection, and finish gating.
+Finish gating includes report-failure and delivery-cleanup-failure rejection.
+The Lean adapter must execute every `policy` record whose targets include `rust` through
+public methods, reject unknown layers/modes/targets and duplicate or empty target lists,
 classify each applicable case as match/mismatch/infrastructure error, and require:
 
 - every strict case matches;
@@ -462,11 +555,23 @@ pub struct DiskRunSummary {
     pub filesystems: Vec<DiskFilesystemReport>,
     pub sample_count: u64,
     pub maximum_measurement_ms: u64,
-    pub enforcement: Vec<String>,
+    pub enforcement: Vec<DiskEnforcementReport>,
     pub stop: Option<DiskStopReport>,
     pub cleanup: Vec<DiskCleanupReport>,
     pub removed_logical_bytes: Option<u64>,
     pub stale_roots_reclaimed: u64,
+}
+
+pub enum DiskEnforcementReport {
+    PortableGuard,
+    CapacityOnly { root_kind: String, filesystem_key: String },
+    VerifiedAggregate { backend: String, probe: DiskCapabilityProbe },
+}
+
+pub struct DiskCapabilityProbe {
+    pub capability: String,
+    pub verified: bool,
+    pub observation: String,
 }
 
 pub struct DiskFilesystemReport {
@@ -496,6 +601,12 @@ pub struct DiskCleanupReport {
     pub remaining_root: Option<String>,
 }
 ```
+
+Reject `VerifiedAggregate` unless `verified=true`, the backend/capability names match a
+registered probe, and observation evidence of at most 4 KiB is present. No free-form
+string may
+encode `hard_per_file`, `RLIMIT_FSIZE`, or an unprobed aggregate claim. Apply the same
+tagged shape to focused schema 2 and both v3 JSON Schemas.
 
 `RunSummary.disk` is present for new schema reports and must distinguish the primary run
 and cleanup outcomes. Internally retain a third `ReportDeliveryOutcome`; a delivery
@@ -643,6 +754,7 @@ Parse with the existing byte parser and populate `RawRunLimits`. Update safety h
 - [ ] **Step 3: Verify and commit**
 
 ```bash
+set -e
 cargo test -p hoimin-cli --test cli_config -- --nocapture
 cargo test -p hoimin-cli --test plan -- --nocapture
 cargo test -p hoimin-cli cli::tests:: -- --nocapture
@@ -719,6 +831,9 @@ Use tiny temporary trees and injected `AvailableSpace` values. Cover:
 - a persisted lexicographic janitor cursor advances past a selected deferred root and
   wraps, so more than 256 eligible roots are reached across invocations without an
   unbounded listing;
+- fixed coordinator golden bytes match the 1,025-byte layout; truncated writes, bad CRC,
+  nonzero padding, invalid cursor grammar, equal-generation disagreement, and generation
+  overflow fail closed while the prior valid slot remains readable;
 - a slice that makes no progress because of permission, identity, or traversal failure
   is `workspace.cleanup.failed`, not deferred;
 - dropping a live root or child performs no recursive removal; the next janitor can
@@ -735,7 +850,7 @@ cargo test -p hoimin-cli --test disk_workspace --no-run
 
 - [ ] **Step 2: Add the cross-platform primitive dependency**
 
-Add direct `fs2 = "0.4.3"` and `cap-std = "4.0.2"` to `hoimin-cli`; retain
+Add direct `fs2 = "0.4.3"`, `crc32fast = "1.4"`, and `cap-std = "4.0.2"` to `hoimin-cli`; retain
 `cap-fs-ext` at lockfile version 4.0.2. Use:
 
 ```rust
@@ -744,11 +859,12 @@ fs2::FileExt::try_lock_exclusive(&lease)
 cap_fs_ext::DirExt::open_dir_nofollow(&parent, child)
 ```
 
-The lock is advisory and valid only because both creator and janitor obey the protocol.
+Use `crc32fast` for the coordinator slot's IEEE CRC-32; Python uses the compatible
+standard-library `zlib.crc32`. The lock is advisory and valid only because both creator
+and janitor obey the protocol.
 Do not use PID liveness as a lock substitute. Keep `libc` and `windows-sys` for stable
-filesystem/file identities, handle-anchored capacity queries, and the Unix hard
-backstop; do not add a second lock crate or use path-based `fs2::available_space` for
-meter observations.
+filesystem/file identities and handle-anchored capacity queries; do not add a second lock
+crate or use path-based `fs2::available_space` for meter observations.
 
 - [ ] **Step 3: Implement managed-root creation and the lease API**
 
@@ -782,6 +898,9 @@ const JANITOR_SELECTION_BUDGET: Duration = Duration::from_secs(5);
 const MAX_RECLAIM_CANDIDATES: usize = 256;
 const MAX_DIAGNOSTIC_DETAILS: usize = 256;
 const MAX_DIAGNOSTIC_DETAIL_BYTES: usize = 4 * 1024;
+const COORDINATOR_BYTES: u64 = 1_025;
+const COORDINATOR_SLOT_BYTES: usize = 512;
+const COORDINATOR_CURSOR_BYTES: usize = 480;
 
 pub(crate) struct CleanupRecord {
     pub(crate) status: DiskCleanupStatus,
@@ -827,6 +946,14 @@ plus two CRC-protected `(generation, cursor)` slots before any byte-range lock a
 uses the file. Reject a symlink, reparse point, non-regular coordinator, wrong fixed
 length, ownership mismatch, or
 permission mismatch. Test two fresh processes racing the first bootstrap.
+The byte layout is normative: byte 0 is the lock; slots begin at 1 and 513. A slot is
+`HMCUR001` (8 bytes), schema `u32` LE, generation `u64` LE, cursor length `u16` LE,
+480 zero-padded ASCII cursor bytes, six zero reserved bytes, and CRC-32 LE over its first
+508 bytes. Validate all padding and managed-name grammar. Choose the highest valid
+generation; equal generations with unequal contents fail closed, equal contents choose
+slot zero. Write the next checked generation to the inactive slot using positioned I/O
+and flush it. Treat generation overflow as cursor-persistence failure while still
+allowing already selected candidates to be cleaned.
 
 ```rust
 pub(crate) fn path(&self) -> &Utf8Path;
@@ -1081,9 +1208,7 @@ git commit -m "feat: lease and measure mutation workspaces"
 - Modify: `crates/hoimin-cli/src/workspace/disk.rs`
 - Modify: `crates/hoimin-cli/src/shell.rs`
 - Modify: `crates/hoimin-cli/src/process/mod.rs`
-- Modify: `crates/hoimin-cli/src/resource/portable.rs`
 - Modify: `crates/hoimin-cli/src/resource/mod.rs`
-- Modify: `crates/hoimin-cli/src/resource/windows.rs`
 - Modify: `crates/hoimin-cli/src/report/mod.rs`
 - Modify: `crates/hoimin-cli/src/report/json.rs`
 - Modify: `crates/hoimin-cli/tests/process_handler.rs`
@@ -1094,12 +1219,12 @@ git commit -m "feat: lease and measure mutation workspaces"
 **Interfaces:**
 
 - Consumes: Tasks 1–5 corpus, policy, persisted limits, CLI config, leased root, and
-  meter. `DiskStopRequested.source_effect` is `None` for monitor observations and the
-  exact pending process effect for `SIGXFSZ`.
+  meter.
 - Produces: `DiskMonitor::{start,sample_now,stop_and_join}`, global disk-stop machine
-  transitions, post-drain/pre-classification sampling, `RLIMIT_FSIZE` attribution, and
+  transitions, post-drain/pre-classification sampling, and
   `ReportHandler` acknowledgement only after delivery-root cleanup, plus same-premise
-  execution of every `runtime` record through the controlled shell adapter. Task 10
+  execution of every `runtime` record targeting `rust` through the controlled shell
+  adapter. Task 10
   treats this runtime as the only Rust mutation safety boundary.
 
 - [ ] **Step 1: Add lifecycle RED tests**
@@ -1149,7 +1274,6 @@ Add this event rather than fabricating an `EffectId`:
 
 ```rust
 pub struct DiskStopRequested {
-    pub source_effect: Option<EffectId>,
     pub failure: DiskFailure,
 }
 
@@ -1183,11 +1307,9 @@ current explicit cleanup but prevents any later janitor from using the immediate
 path.
 
 Handle it through the same global-stop transition family as cancellation/deadline, but
-preserve its typed code and observation in disk evidence. A monitor supplies
-`source_effect=None`; the per-file backstop supplies the exact pending process effect ID
-so the machine closes that completion before global shutdown. Synthetic unfinished
-mutant events use `MutationStatus::NotRun`. A later `EffectFailed` becomes secondary and
-cannot replace the disk primary reason.
+preserve its typed code and observation in disk evidence. Synthetic unfinished mutant
+events use `MutationStatus::NotRun`. A later `EffectFailed` becomes secondary and cannot
+replace the disk primary reason.
 
 - [ ] **Step 3: Implement synchronous and periodic monitor sampling**
 
@@ -1224,7 +1346,6 @@ priority check as cancellation/deadline. On receipt:
 cancellation.cancel();
 stop_signalled = true;
 priority_event = Some(RunEvent::DiskStopRequested(DiskStopRequested {
-    source_effect: None,
     failure,
 }));
 ```
@@ -1250,7 +1371,7 @@ final `EmitOutput(RunFinished(_))`, merge these observations into its disk field
 replacing machine-owned stop/cleanup state. Final evidence remains on the existing
 ordered report path. Run blocked-join, cleanup-failure, end-free-query-failure,
 concurrent negative free-space change, and successful removed-logical-byte fixtures
-before adding the Unix backstop.
+before the final Task 6 gate.
 
 Do not short-circuit cleanup on a process resource-close error. Use
 `ProcessDrainReport`: if process reap, output drains, and monitor join are confirmed,
@@ -1268,35 +1389,7 @@ incomplete. The emitted summary labels this root `cleanup_after_delivery` and do
 predeclare success. Add JSON, JSONL, and human-handler fixtures for success, write
 failure, cleanup failure, and neighboring-sentinel preservation.
 
-- [ ] **Step 6: Add Unix per-file `RLIMIT_FSIZE` without misclassification**
-
-Add to `ProcessLimits`:
-
-```rust
-pub max_file_size_bytes: u64,
-```
-
-Populate it from `RunLimits.max_workspace_size`. In both macOS and other Unix
-`configure_command` closures, apply soft and hard `RLIMIT_FSIZE` to this value after a
-checked `rlim_t` conversion. Use a narrowly documented Clippy allow only where an ABI
-identity conversion triggers `useless_conversion`.
-
-Keep `ProcessTermination` unchanged. Change the internal exit decoder to return:
-
-```rust
-enum ExitClassification {
-    Test(ProcessTermination),
-    FileSizeLimit,
-}
-```
-
-Map Unix `SIGXFSZ` to `FileSizeLimit`. After process-tree cleanup and output drain,
-surface `workspace.size.exceeded` as a run-wide infrastructure stop; never pass
-`128 + SIGXFSZ` to mutation status classification. Non-Unix retains normal exit
-classification. Report enforcement as `portable_only` or
-`hard_per_file:RLIMIT_FSIZE`; do not claim aggregate hard quota.
-
-- [ ] **Step 7: Verify ordering and platform behavior**
+- [ ] **Step 6: Verify ordering and platform behavior**
 
 ```bash
 cargo test -p hoimin-cli --test disk_shutdown -- --nocapture
@@ -1311,19 +1404,22 @@ cargo check -p hoimin-cli --all-targets --all-features --target x86_64-pc-window
 git diff --check
 ```
 
-The SIGXFSZ test writes only KiB, confirms the file-size signal path, and asserts the
-mutant count does not increase. On Windows, compile and run the portable sampler/lifecycle
-tests; there is no RLIMIT claim.
+On Windows, compile and run the portable sampler/lifecycle tests. Add a regression that
+simulates a child catching a per-file limit error and exiting like a test failure; the
+runtime must have no installed per-file limit path that could turn it into mutation
+credit.
+The Rust oracle test compares expected and executed Rust case-ID sets for equality,
+including every applicable long trace and the Rust-only delivery-root traces, and rejects
+malformed target lists. Report-failure and delivery-cleanup-failure traces must perform
+their allowed cleanup, reject `finish`, and leave output/session acknowledgement absent.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add crates/hoimin-core/src/event.rs crates/hoimin-core/src/machine.rs \
   crates/hoimin-core/src/model.rs crates/hoimin-core/tests/machine.rs \
   crates/hoimin-cli/src/workspace/disk.rs crates/hoimin-cli/src/shell.rs \
   crates/hoimin-cli/src/process/mod.rs crates/hoimin-cli/src/resource/mod.rs \
-  crates/hoimin-cli/src/resource/portable.rs \
-  crates/hoimin-cli/src/resource/windows.rs \
   crates/hoimin-cli/src/report/mod.rs crates/hoimin-cli/src/report/json.rs \
   crates/hoimin-cli/tests/process_handler.rs \
   crates/hoimin-cli/tests/report_handler.rs \
@@ -1372,9 +1468,13 @@ min_free_bytes = 10 * 1024**3
 jobs = 1
 max_log_bytes = 16 * 1024**2
 max_command_log_bytes = 64 * 1024**2
+max_tool_json_bytes = 8 * 1024**2
+max_selector_count = 1_000
+max_selector_bytes = 16 * 1024
 max_candidate_diagnostic_bytes = 16 * 1024
 max_run_diagnostic_bytes = 16 * 1024**2
 max_report_bytes = 32 * 1024**2
+max_reported_path_bytes = 16 * 1024
 sample_interval_seconds = 0.250
 ```
 
@@ -1387,6 +1487,12 @@ subprocesses/meters, cover `TMPDIR`/`TMP`/`TEMP` propagation, explicit `--jobs`,
 size/reserve/meter stops, termination/reap before delete,
 candidate outcome extraction before delete, cleanup on success/failure/timeout/interrupt,
 and `--keep-scratch` with monitoring still active.
+Reject any path that can enter JSON, Markdown, or stderr when its strict UTF-8 encoding
+or its destination-specific escaped UTF-8 representation exceeds 16 KiB or contains
+surrogate/non-Unicode data, before creating a marker or child.
+This keeps the exact recovery path representable in JSON, Markdown, and the bounded
+stderr fallback. Test 16 KiB and 16 KiB plus one with injected path encoders rather than
+creating an operating-system maximum-length tree.
 With an injected Cargo home on a distinct fake filesystem, require reserve preflight and
 periodic stops while asserting that its files are never traversed, charged to owned
 bytes, or deleted. Deduplicate the capacity reading when Cargo home shares a filesystem
@@ -1397,6 +1503,18 @@ directory, symlink, or file must fail before scratch creation and child launch. 
 the accepted output directory is included in pre-dispatch, periodic, post-drain, and
 final pre-clean samples, but cleanup removes only leased scratch. Reject an output path
 inside either implementation's canonical managed root.
+The sole preflight exception is bounded recovery of a validated abandoned
+`.hoimin-output-owner`: acquire its lock nonblocking, match its run ID and anchored output
+identity, and inspect only the two deterministic atomic temporary names derived from
+that run ID and fixed `run.json`/Markdown kinds. Unlink an existing candidate only when
+it is a regular non-symlink entry reached through the anchored directory. Preserve
+completed reports and every foreign entry, then reject the still non-empty output. If
+only the marker remains, unlink that wrapper-created marker and allow normal empty-root
+initialization. Test simulated death before write, during each report write, after JSON
+replace, and with a neighboring sentinel or symlink at a derived name.
+Run this orphan cleanup before the fresh-run reserve check, then resample capacity. Add a
+fixture whose initial free space is at the reserve and rises after exact temporary
+removal; it may proceed only after the second reading is above the reserve.
 
 Race two initializers against the same absent and same empty output path. Exactly one
 must create and lock `.hoimin-output-owner`; the loser must fail before scratch creation
@@ -1430,11 +1548,18 @@ Run 1,000 synthetic candidate classifications and assert only the active command
 the full spool, each persisted diagnostic is at most 16 KiB, the shared persisted
 diagnostic bodies total at most 16 MiB, and later metadata is retained after the shared
 body allowance is exhausted.
+Also feed `--prior-inventory` and one-candidate `outcomes.json` files of 8 MiB plus one,
+1,001 selectors, and one 16 KiB plus one selector. Reject each before JSON decoding or
+baseline. Give a fake compiler log a multi-GiB reported length backed by a seekable sparse
+fixture and assert the extractor reads only its bounded prefix/tail windows and records
+the observed length; never materialize that size.
 
 Run and require behavioral failures, not import/syntax failures:
 
 ```bash
-uv run --frozen python -m unittest \
+python3 -c 'import shutil, sys; sys.exit(0 if shutil.disk_usage(".").free > 10 * 1024**3 else 1)'
+test -x .venv/bin/python
+.venv/bin/python -m unittest \
   tests.test_focused_mutation_disk \
   tests.test_focused_mutation_runner \
   tests.test_focused_mutation_reporting
@@ -1443,6 +1568,13 @@ uv run --frozen python -m unittest \
 - [ ] **Step 2: Implement the bounded Python policy and anchored meter**
 
 Use language-native dataclasses mirroring the Lean observation/result names. Define
+the two-value `DiskRootId`, every `DiskLifecycleEvent` listed in Task 2, and public
+`evaluate_disk_policy`/`apply_disk_lifecycle_event` entry points. Apply the same rules:
+cleanup requests wait for settled process/drain/monitor components, clean or failed
+destructive outcomes require all three to have succeeded, failed components permit only
+deferred or retained, and delivery cleanup also waits for report settlement. Do not
+expose an integer constructor that can create a root absent from Lean `Fin 2`.
+Define
 `MAX_TREE_ENTRIES = 250_000`, `MAX_TREE_DEPTH = 128`,
 `MAX_OPEN_DIRECTORIES = 129`, `MAX_SCAN_SECONDS = 5.0`,
 `MAX_CLEANUP_SLICE_ENTRIES = 50_000`, `MAX_CLEANUP_SLICE_SECONDS = 5.0`,
@@ -1530,8 +1662,10 @@ account boundary, not a sandbox.
 
 Bootstrap the managed directory and coordinator under the same create-or-open identity
 checks as Rust. The coordinator has the same preallocated lock byte and two fixed
-CRC/generation cursor slots. Serialize and flush each lease
-or output-ownership marker before locking its first existing byte on Windows. A
+CRC/generation cursor slots, byte offsets, little-endian fields, ASCII grammar, padding,
+tie/overflow rules, and 1,025-byte total length. Compute the IEEE checksum with
+`zlib.crc32(payload) & 0xffff_ffff` and test cross-language golden slot bytes. Serialize
+and flush each lease or output-ownership marker before locking its first existing byte on Windows. A
 zero-length file, replacement, or non-regular file fails setup.
 
 Apply mode `0700` on Unix. On Windows, use `ctypes` with the same protected-DACL policy
@@ -1624,6 +1758,8 @@ complete inventory stdout to `min(MAX_INVENTORY_BYTES, stdout_allowance)`, where
 more than 10,000 parsed inventory entries, and reject more than 1,000 selected
 candidates. Truncation is an infrastructure error; a truncated JSON prefix must never be
 accepted as a complete inventory.
+Accept at most 1,000 combined `--file`/`--symbol` selectors and at most 16 KiB of strict
+UTF-8 per selector before discovery.
 
 Route cargo-mutants version checks and Git/repository metadata probes through the same
 draining runner with a fixed 64 KiB combined allowance. Remove production
@@ -1644,12 +1780,20 @@ and always include `--jobs`, `str(jobs)`. Each candidate output path is under le
 scratch. After `classify_mutation_output`, copy only the exact outcome name, bounded log
 metadata, and minimal diagnostic tail into `RunRecord`, then delete and absence-verify
 the candidate directory before the next loop iteration.
+Before decoding, read `--prior-inventory` and candidate `outcomes.json` through one
+`read_bounded_regular_json(path, 8 * 1024**2)` helper that rejects symlinks/non-regular
+files and reads no more than cap plus one. Extract compiler/debug evidence with bounded
+seek/read prefix and tail operations; production code may not call `read_text()` or
+`read_bytes()` on a tool-controlled file. Open diagnostic files no-follow and require a
+regular file before seeking.
 If candidate cleanup returns `FAILED` or `DEFERRED`, close dispatch and finalize the run
 incomplete; do not start another candidate while prior bulky output remains.
 
 Extend `RunState` with `DISK_LIMIT` and bump focused `SCHEMA_VERSION` from 1 to 2. Store
 disk policy, observations, enforcement, stale cleanup, retained root, and cleanup results
-plus the effective `jobs` value in `RunRecord`. `RunStore` receives `OwnedOutput` rather
+plus `output_recovery.removed_temporary_count`,
+`output_recovery.remaining_temporary_names`, and the
+effective `jobs` value in `RunRecord`. `RunStore` receives `OwnedOutput` rather
 than reopening `Path` for each checkpoint. It writes relative to the held capability,
 keeps the ownership marker locked through final flush, and never deletes the user-owned
 root. `--keep-scratch` creates the separate retention marker and prints the exact
@@ -1682,9 +1826,10 @@ exact lease-backed root, set the run incomplete, return the typed nonzero cleanu
 and still attempt bounded final evidence delivery; do not loop until the filesystem is
 empty.
 
-For each checkpoint or final Markdown write, stream into a uniquely named
-wrapper-created atomic temporary through a writer that splits encoder output into at
-most 64 KiB chunks and a hard `MAX_REPORT_BYTES = 32 * 1024**2` total. Permit checkpoints
+For each checkpoint or final Markdown write, stream into the deterministic
+`.hoimin-output-{run_id}-{kind}.tmp` regular file with `create_new`, through a writer that
+splits encoder output into at most 64 KiB chunks and a hard
+`MAX_REPORT_BYTES = 32 * 1024**2` total. Permit checkpoints
 only at quiescent boundaries after process reap and both drains. Reuse the already
 required synchronous boundary sample to issue a registry-generation token and freeze
 scratch registration/child dispatch until replace completes. Before opening the
@@ -1692,7 +1837,9 @@ temporary, require the boundary sample itself to be below both limits.
 
 During streaming, count only exact bytes newly written to the temporary and require
 `base_owned_bytes + temporary_bytes + len(next_chunk) < max_disk` with checked
-arithmetic. Make a handle-based free-space query before each chunk; do not rescan the
+arithmetic. Make a handle-based free-space query and require
+`available_bytes > min_free_bytes + len(next_chunk)` with checked arithmetic before each
+chunk; do not rescan the
 entire owned tree per 64 KiB. The initial sample already includes the still-present old
 destination. This lets a small report succeed under a user `max_disk` below 32 MiB while
 the fixed report cap remains 32 MiB. After
@@ -1700,9 +1847,18 @@ flush, verify the generation token, output identity, and free space once more be
 replace. Refuse at an inclusive boundary, close and unlink only that exact temporary,
 and keep the prior destination intact. Tests keep scratch nonempty while writing, inject
 equal/below/above values, mutate the registry to invalidate a token, and catch both
-double-counting and output-only undercounting. A call-count fixture proves one checkpoint
+double-counting, output-only undercounting, and a chunk that would cross the reserve. A
+call-count fixture proves one checkpoint
 uses the existing boundary scan rather than hundreds of tree scans. Require
 report-delivery failure through stderr/status without unbounded buffering.
+Only one writer may be active, so at most one such temporary exists. Catchable failure
+closes and unlinks the exact current file. The next invocation runs the bounded marker
+recovery described in Step 1 before rejecting a non-empty output; it never learns a
+cleanup name from JSON, Markdown, child output, or an arbitrary path argument.
+When final evidence cannot be written and scratch remains, emit one escaped stderr line
+of at most 20 KiB with the typed report code and validated remaining root. Test a reserve
+boundary with deferred scratch and assert the line contains no child-output bytes and
+requires no filesystem write.
 For the final post-clean report, cleanup invalidates the pre-clean token; issue a new
 token from the required post-clean absence/end-free observation before writing. A
 retained or deferred root remains registered in that sample.
@@ -1719,9 +1875,9 @@ Keep a compatibility collector only in tests that need a string assertion.
 - [ ] **Step 7: Run focused Python tests and commit**
 
 ```bash
-uv run --frozen python -m unittest discover -s tests -p 'test_focused_mutation*.py'
-uv run --frozen python -m unittest tests.test_skills
-uv run --frozen mypy tools/focused_mutation.py tools/focused_mutation_support
+.venv/bin/python -m unittest discover -s tests -p 'test_focused_mutation*.py'
+.venv/bin/python -m unittest tests.test_skills
+.venv/bin/mypy tools/focused_mutation.py tools/focused_mutation_support
 git diff --check
 git add tools/focused_mutation.py tools/focused_mutation_support \
   tests/test_focused_mutation_disk.py tests/test_focused_mutation_discovery.py \
@@ -1743,8 +1899,10 @@ git commit -m "feat: bound and clean focused mutation scratch"
 - Consumes: Task 1 schema-1 corpus and Task 7 public Python policy/lifecycle calls.
 - Produces: a strict parser, per-mode match/mismatch/infrastructure results, and broken
   threshold, precedence, dispatch, and cleanup witnesses. It executes every `policy`
-  record through public policy calls and every `runtime` record through the controlled
-  runner. No adapter reads private fields to force correspondence.
+  record targeting `python` through public policy calls and every `runtime` record
+  targeting `python` through the controlled runner. Rust-only delivery-root records are
+  reported as non-applicable by target, not matched or skipped. No adapter reads private
+  fields to force correspondence.
 
 - [ ] **Step 1: Write the real-adapter corpus test**
 
@@ -1753,12 +1911,17 @@ Map each event to the public Python disk-policy/lifecycle entry points; do not d
 the expected transition function in the test. Classify every case as match, mismatch, or
 infrastructure error, require zero reviewed mismatches, and retain deliberately broken
 threshold/stickiness/cleanup variants that each fail at least one corpus case.
+Require execution of every Python-targeted long fixed lifecycle trace, including
+unsafe-cleanup rejections; a depth-five explorer statistic cannot satisfy those case IDs.
+Compare the expected and executed Python case-ID sets for equality. Reject an unknown,
+duplicate, or empty target list, and never count a Rust-only record in Python match
+statistics.
 
 - [ ] **Step 2: Run and commit**
 
 ```bash
-uv run --frozen python -m unittest tests.test_focused_mutation_disk_oracle -v
-uv run --frozen python -m unittest tests.test_focused_mutation_docs -v
+.venv/bin/python -m unittest tests.test_focused_mutation_disk_oracle -v
+.venv/bin/python -m unittest tests.test_focused_mutation_docs -v
 git diff --check
 git add tests/test_focused_mutation_disk_oracle.py \
   tools/focused_mutation_support/disk.py tests/test_focused_mutation_docs.py
@@ -1787,9 +1950,10 @@ versus copy-size distinction, mandatory reserve, the fact that 250 ms is a post-
 delay rather than a reaction guarantee, the ordinary 5.25-second cooperative detection
 ceiling and blocking-syscall limitation,
 single-worker focused default, cleanup/retention/stale-recovery behavior, capability
-labels, jobs maximum four, scan/inventory/candidate caps, cleanup-ready/heartbeat grace,
+labels, jobs maximum four, scan/inventory/tool-JSON/selector/candidate caps,
+cleanup-ready/heartbeat grace,
 cleanup slice/owner/janitor budgets, 64 MiB command-log hard maximum, 16 KiB/16 MiB
-diagnostic caps, 32 MiB report cap, Cargo-home capacity-only monitoring, and an exact safe
+diagnostic caps, 32 MiB report cap, 16 KiB encoded-path cap, Cargo-home capacity-only monitoring, and an exact safe
 wrapper example. Require no routine example matching:
 
 ```text
@@ -1802,8 +1966,10 @@ Document these commands:
 
 ```bash
 hoimin run --max-workspace-size 8GiB --min-free-space 10GiB -- python -m pytest
+python3 -c 'import shutil, sys; sys.exit(0 if shutil.disk_usage(".").free > 10 * 1024**3 else 1)'
 mutation_output="$(mktemp -d /tmp/hoimin-focused.XXXXXX)"
-uv run --frozen python tools/focused_mutation.py \
+test -x .venv/bin/python
+.venv/bin/python tools/focused_mutation.py \
   --budget 30m --jobs 1 --max-disk 8GiB --min-free-space 10GiB \
   --max-log-size 16MiB --output "$mutation_output"
 ```
@@ -1811,12 +1977,18 @@ uv run --frozen python tools/focused_mutation.py \
 Explain that raising a limit is explicit risk acceptance; monitoring cannot prevent one
 child from consuming the reserve between samples; the periodic cadence is scan duration
 plus 250 ms, normally at most about 5.25 seconds under the cooperative scan deadline;
-`RLIMIT_FSIZE` is per-file;
+no per-file signal limit is installed for scored mutation because handled write-limit
+failures cannot be attributed without risking false mutation credit;
 focused cargo-mutants jobs default to one and cannot exceed four; and only a verified
 named quota backend is aggregate hard enforcement. Include how to
 remove a retained exact scratch path without suggesting wildcard deletion. State that
 the output directory must start absent or empty, is monitored but preserved, and should
 be a fresh `mktemp -d` path as in the example.
+State that environment provisioning, including `uv sync --frozen`, occurs outside the
+wrapper's monitoring boundary and is not part of the safe mutation command. Require the
+operator to provision it earlier with separate capacity controls, then invoke the guarded
+mutation command through the already existing `.venv/bin/python`; do not present
+`uv run ... focused_mutation.py` as a safe example.
 Explain that deferred cleanup is incomplete and retried by the bounded janitor, that a
 single blocking filesystem syscall cannot be preempted portably, and that shared Cargo
 home is reserve-monitored but never traversed or deleted.
@@ -1825,15 +1997,20 @@ home is reserve-monitored but never traversed or deleted.
 
 ```bash
 cargo test -p hoimin-cli --test cli_config -- --nocapture
-uv run --frozen python -m unittest tests.test_focused_mutation_docs -v
-rg -n 'cargo mutants --workspace --jobs ([2-9]|[1-9][0-9]+)' README.md docs/development.md
+.venv/bin/python -m unittest tests.test_focused_mutation_docs -v
+if rg -n 'cargo mutants --workspace --jobs ([2-9]|[1-9][0-9]+)' README.md docs/development.md; then
+  exit 1
+else
+  test "$?" -eq 1
+fi
 git diff --check
 git add README.md docs/development.md crates/hoimin-cli/tests/cli_config.rs \
   tests/test_focused_mutation_docs.py
 git commit -m "docs: explain disk-safe mutation execution"
 ```
 
-The `rg` command must exit 1 with no matches; treat any match as RED.
+Exit 1 is the only accepted no-match result. A tool/I/O error such as exit 2 fails the
+gate.
 
 ### Task 10: Final verification, restrained mutation, review, and PR
 
@@ -1876,8 +2053,13 @@ set -e
 candidate_sha="$(cat .superpowers/sdd/2026-08-27-disk-safe-mutation-execution/candidate-sha.txt)"
 test "$(git rev-parse HEAD)" = "$candidate_sha"
 test -z "$(git status --porcelain=v1 --untracked-files=all)"
-check_disk() { uv run --frozen python -c 'import shutil, sys; sys.exit(0 if shutil.disk_usage(".").free > 10 * 1024**3 else 1)'; }
+check_disk() { python3 -c 'import os, pathlib, shutil, sys, tempfile; roots=[pathlib.Path("."), pathlib.Path(tempfile.gettempdir()), pathlib.Path(os.environ.get("CARGO_HOME", pathlib.Path.home()/".cargo")), pathlib.Path(os.environ.get("UV_CACHE_DIR", pathlib.Path.home()/".cache/uv"))]; existing=[]; [(lambda p: existing.append(p))(next(x for x in [p,*p.parents] if x.exists())) for p in roots]; seen=set(); free=[]
+for p in existing:
+ d=p.stat().st_dev
+ if d not in seen: seen.add(d); free.append(shutil.disk_usage(p).free)
+sys.exit(0 if free and min(free) > 10 * 1024**3 else 1)'; }
 check_disk
+test -x .venv/bin/python
 cargo fmt --all -- --check
 check_disk
 cargo clippy --workspace --all-targets --all-features -- -D warnings
@@ -1886,7 +2068,7 @@ cargo test --workspace
 check_disk
 cargo test -p hoimin-cli --test run_e2e
 check_disk
-uv run --frozen python -m unittest discover -s tests
+.venv/bin/python -m unittest discover -s tests
 check_disk
 (cd formal/HoiminOracle && lake build)
 check_disk
@@ -1905,11 +2087,15 @@ check_disk
 core_tree="$(mktemp /tmp/hoimin-core-tree.XXXXXX)"
 trap 'unlink "$core_tree" 2>/dev/null || true' EXIT
 cargo tree -p hoimin-core --edges normal --prefix none > "$core_tree"
-if rg -n '(^| )(tokio|rusqlite|tempfile|windows-sys|libc|hoimin-cli)( |$)' "$core_tree"; then exit 1; fi
+if rg -n '(^| )(tokio|rusqlite|tempfile|windows-sys|libc|hoimin-cli)( |$)' "$core_tree"; then
+  exit 1
+else
+  test "$?" -eq 1
+fi
 check_disk
 uvx maturin build --release
 check_disk
-uv run --frozen python tests/wheel_smoke.py
+.venv/bin/python tests/wheel_smoke.py
 check_disk
 git diff --check origin/main...HEAD
 test "$(git rev-parse HEAD)" = "$candidate_sha"
@@ -1942,9 +2128,22 @@ set -e
 candidate_sha="$(cat .superpowers/sdd/2026-08-27-disk-safe-mutation-execution/candidate-sha.txt)"
 test "$(git rev-parse HEAD)" = "$candidate_sha"
 test -z "$(git status --porcelain=v1 --untracked-files=all)"
-if ps -axo pid,etime,command | rg '[c]argo mutants'; then exit 1; fi
+python3 -c 'import os, pathlib, shutil, sys, tempfile; roots=[pathlib.Path("."), pathlib.Path(tempfile.gettempdir()), pathlib.Path(os.environ.get("CARGO_HOME", pathlib.Path.home()/".cargo")), pathlib.Path(os.environ.get("UV_CACHE_DIR", pathlib.Path.home()/".cache/uv"))]; existing=[]; [(lambda p: existing.append(p))(next(x for x in [p,*p.parents] if x.exists())) for p in roots]; seen=set(); free=[]
+for p in existing:
+ d=p.stat().st_dev
+ if d not in seen: seen.add(d); free.append(shutil.disk_usage(p).free)
+sys.exit(0 if free and min(free) > 10 * 1024**3 else 1)'
+process_list="$(mktemp /tmp/hoimin-process-list.XXXXXX)"
+trap 'unlink "$process_list" 2>/dev/null || true' EXIT
+ps -axo pid,etime,command > "$process_list"
+if rg '[c]argo mutants' "$process_list"; then
+  exit 1
+else
+  test "$?" -eq 1
+fi
+test -x .venv/bin/python
 mutation_output="$(mktemp -d "$PWD/.superpowers/sdd/2026-08-27-disk-safe-mutation-execution/focused.XXXXXX")"
-uv run --frozen python tools/focused_mutation.py \
+.venv/bin/python tools/focused_mutation.py \
   --budget 30m \
   --jobs 1 \
   --max-disk 8GiB \
@@ -1955,7 +2154,9 @@ uv run --frozen python tools/focused_mutation.py \
   --symbol measure_owned_tree \
   --symbol claim_managed_child \
   --output "$mutation_output"
-uv run --frozen python -c 'import json, pathlib, sys; p=pathlib.Path(sys.argv[1]); d=json.loads((p / "run.json").read_text()); scratch=pathlib.Path(d["scratch"]["path"]); assert d["schema_version"] == 2; assert d["state"] == "completed"; assert d["jobs"] == 1; assert d["scratch"]["cleanup"]["status"] == "clean"; assert d["scratch"]["cleanup"]["remaining_root"] is None; assert not scratch.exists(); assert 0 < len(d["candidates"]) <= 80; assert all(c["state"] not in {"pending", "not_run", "timeout", "error", "survived"} for c in d["candidates"])' "$mutation_output"
+.venv/bin/python -c 'import json, pathlib, sys; p=pathlib.Path(sys.argv[1]); d=json.loads((p / "run.json").read_text()); scratch=pathlib.Path(d["scratch"]["path"]); assert d["schema_version"] == 2; assert d["state"] == "completed"; assert d["jobs"] == 1; assert d["scratch"]["cleanup"]["status"] == "clean"; assert d["scratch"]["cleanup"]["remaining_root"] is None; assert not scratch.exists(); assert 0 < len(d["candidates"]) <= 80; assert all(c["state"] not in {"pending", "not_run", "timeout", "error", "survived"} for c in d["candidates"])' "$mutation_output"
+.venv/bin/python -c 'import json, pathlib, sys; p=pathlib.Path(sys.argv[1]); d=json.loads((p/"run.json").read_text()); assert d["output_recovery"]["remaining_temporary_names"] == []' "$mutation_output"
+.venv/bin/python -c 'import pathlib, sys; p=pathlib.Path(sys.argv[1]); assert not list(p.glob(".hoimin-output-*.tmp"))' "$mutation_output"
 test "$(git rev-parse HEAD)" = "$candidate_sha"
 test -z "$(git status --porcelain=v1 --untracked-files=all)"
 ```
@@ -1981,7 +2182,8 @@ After the independent mutation review writes that file, make acceptance executab
 
 ```bash
 set -e
-uv run --frozen python -c 'import json, pathlib, sys; out=pathlib.Path(sys.argv[1]); run=json.loads((out/"run.json").read_text()); review=json.loads((out/"focused-unviable-review.json").read_text()); assert review["schema"] == 1; assert review["candidate_sha"] == sys.argv[2]; assert sorted(review["inventory_names"]) == sorted(c["mutant_name"] for c in run["candidates"]); assert sorted(review["unviable_names"]) == sorted(c["mutant_name"] for c in run["candidates"] if c["state"] == "unviable"); assert all(item["compiler_log"] and item["reviewer"] and item["reason"] for item in review["unviable_reviews"]); assert sorted(item["mutant_name"] for item in review["unviable_reviews"]) == sorted(review["unviable_names"]); assert len(review["symbol_spans"]) == 4' "$mutation_output" "$candidate_sha"
+.venv/bin/python -c 'import pathlib, sys; p=pathlib.Path(sys.argv[1]); assert p.is_file(); assert p.stat().st_size <= 8 * 1024**2' "$mutation_output/focused-unviable-review.json"
+.venv/bin/python -c 'import json, pathlib, sys; out=pathlib.Path(sys.argv[1]); run=json.loads((out/"run.json").read_text()); review=json.loads((out/"focused-unviable-review.json").read_text()); assert review["schema"] == 1; assert review["candidate_sha"] == sys.argv[2]; assert sorted(review["inventory_names"]) == sorted(c["mutant_name"] for c in run["candidates"]); assert sorted(review["unviable_names"]) == sorted(c["mutant_name"] for c in run["candidates"] if c["state"] == "unviable"); assert all(item["compiler_log"] and item["reviewer"] and item["reason"] for item in review["unviable_reviews"]); assert sorted(item["mutant_name"] for item in review["unviable_reviews"]) == sorted(review["unviable_names"]); assert len(review["symbol_spans"]) == 4' "$mutation_output" "$candidate_sha"
 test "$(git rev-parse HEAD)" = "$candidate_sha"
 test -z "$(git status --porcelain=v1 --untracked-files=all)"
 ```
@@ -2060,6 +2262,12 @@ merge without separate user or maintainer authorization.
   bodies obey the 16 KiB per-candidate and 16 MiB run-wide caps.
 - [ ] Complete inventory stdout obeys both the fixed 8 MiB cap and its share of the
   configured command cap; short metadata probes are also drained and bounded.
+- [ ] Prior-inventory/outcome JSON, selector count/bytes, reported paths, diagnostic
+  seeks, and atomic output temporaries obey their hard caps.
+- [ ] The safe mutation command starts with an existing `.venv/bin/python`; environment
+  provisioning cannot occur between final preflight and wrapper startup.
+- [ ] Report failure or non-clean delivery cleanup cannot set lifecycle `finished` or
+  acknowledge output/session completion.
 - [ ] Lean proofs, sensitivity, freshness, Rust adapter, and Python adapter pass.
 - [ ] macOS/Linux native evidence is honest; Windows CI lifecycle evidence passes.
 - [ ] Only guarded, one-worker focused mutation evidence is used.
