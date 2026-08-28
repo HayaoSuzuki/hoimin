@@ -1764,10 +1764,7 @@ async fn total_timeout_exits_after_grace_when_session_finish_is_locked() {
         .lines()
         .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
         .collect::<Vec<_>>();
-    assert!(
-        !events.iter().any(|event| event["kind"] == "run_finished"),
-        "blocked FinishSession must not emit run_finished: {stdout}"
-    );
+    assert_one_incomplete_run_finished(&events, &stdout);
     let complete: i64 = lock
         .query_row("SELECT complete FROM runs", [], |row| row.get(0))
         .unwrap();
@@ -2056,10 +2053,24 @@ async fn second_interrupt_scenario() {
         .lines()
         .map(|line| serde_json::from_str(line).expect("complete stdout line must be JSON"))
         .collect();
-    assert!(
-        !events.iter().any(|event| event["kind"] == "run_finished"),
-        "FinishSession was blocked, so run_finished must not be emitted: {stdout_lines}"
+    assert_one_incomplete_run_finished(&events, &stdout_lines);
+    let complete: i64 = lock
+        .query_row("SELECT complete FROM runs", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(complete, 0);
+}
+
+fn assert_one_incomplete_run_finished(events: &[serde_json::Value], output: &str) {
+    let finished = events
+        .iter()
+        .filter(|event| event["kind"] == "run_finished")
+        .collect::<Vec<_>>();
+    assert_eq!(
+        finished.len(),
+        1,
+        "expected one run_finished before blocked FinishSession: {output}"
     );
+    assert_eq!(finished[0]["complete"], false);
 }
 
 #[cfg(unix)]
