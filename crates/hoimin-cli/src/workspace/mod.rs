@@ -30,9 +30,15 @@ use copy::ValidatedPreflightError;
 pub use copy::WorkspacePlan;
 #[cfg(test)]
 pub(crate) use copy::{MaterializationPause, MaterializationPauseController};
-pub(crate) use disk::{DiskMeter, SystemAvailableSpace};
+#[cfg(test)]
+pub(crate) use disk::{DiskMeasurement, MeterReading};
+pub(crate) use disk::{
+    DiskMonitor, FilesystemKey, available_for_managed_roots, measure_managed_roots,
+};
 pub use manifest::{ManifestEntry, WorkspaceManifest};
-pub(crate) use owned::{ManagedChild, ManagedRootCoordinator, ManagedRunRoot, OwnerKind};
+pub(crate) use owned::{
+    CleanupRecord, ManagedChild, ManagedRootCoordinator, ManagedRunRoot, OwnerKind,
+};
 use root::WorkerRoot;
 
 pub(crate) fn build_validation_manifest(

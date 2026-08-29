@@ -8,11 +8,16 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use camino::{Utf8Path, Utf8PathBuf};
+#[cfg(test)]
+use hoimin_core::DiskObservation;
+use hoimin_core::disk::{
+    DiskCleanupOutcome, DiskComponentState, DiskLifecycle, DiskLifecycleEvent, DiskRootId,
+};
 use hoimin_core::{
-    CandidateLoaded, Diagnostic, DiskDecision, DiskObservation, DiskPolicy, EffectFailed, EffectId,
-    EmitOutput, FingerprintInput, ObserveRemainingBudget, OutputEvent, RemainingBudgetObserved,
-    ReportVersions, ResourceMode, RunConfig, RunEffect, RunEvent, RunPhase, RunProcess, RunState,
-    SourceHash, StartRequested, TargetSlice, fingerprint, transition,
+    CandidateLoaded, Diagnostic, DiskPolicy, DiskStopRequested, EffectFailed, EffectId, EmitOutput,
+    FingerprintInput, ObserveRemainingBudget, OutputEvent, RemainingBudgetObserved, ReportVersions,
+    ResourceMode, RunConfig, RunEffect, RunEvent, RunPhase, RunProcess, RunState, SourceHash,
+    StartRequested, TargetSlice, fingerprint, transition,
 };
 #[cfg(test)]
 use tempfile::TempDir;
@@ -30,14 +35,52 @@ use crate::resource::ResourceBackend;
 use crate::session::SessionDispatcher;
 use crate::target::TargetHandler;
 use crate::workspace::{
-    CopyOptions, DiskMeter, ManagedChild, ManagedRootCoordinator, ManagedRunRoot, OwnerKind,
-    SystemAvailableSpace, WorkspaceHandler, WorkspaceManifest, WorkspaceTask,
-    WorkspaceTaskCompletion,
+    CleanupRecord, CopyOptions, DiskMonitor, FilesystemKey, ManagedChild, ManagedRootCoordinator,
+    ManagedRunRoot, OwnerKind, WorkspaceHandler, WorkspaceManifest, WorkspaceTask,
+    WorkspaceTaskCompletion, available_for_managed_roots, measure_managed_roots,
 };
 #[cfg(test)]
-use crate::workspace::{MaterializationPause, MaterializationPauseController, PreflightPause};
+use crate::workspace::{
+    DiskMeasurement, MaterializationPause, MaterializationPauseController, PreflightPause,
+};
 
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
+
+/// Production-owned adapter for the disk lifecycle enforced at shell boundaries.
+///
+/// The shell and the Lean runtime correspondence test both use this adapter. Keeping the
+/// transition owner here prevents the oracle from validating an unconnected shadow lifecycle.
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct ShellDiskLifecycle {
+    lifecycle: DiskLifecycle,
+}
+
+impl ShellDiskLifecycle {
+    /// Creates the shell lifecycle for the complete owned-root set.
+    ///
+    /// # Errors
+    ///
+    /// Returns the core lifecycle error when a logical root is duplicated.
+    pub fn new(
+        owned_roots: impl IntoIterator<Item = DiskRootId>,
+    ) -> Result<Self, hoimin_core::DiskLifecycleError> {
+        Ok(Self {
+            lifecycle: DiskLifecycle::new(owned_roots)?,
+        })
+    }
+
+    /// Applies one event at the same boundary used by the production shell.
+    pub fn apply(&mut self, event: DiskLifecycleEvent) -> bool {
+        self.lifecycle.apply(event)
+    }
+
+    /// Returns the complete observable lifecycle state.
+    #[must_use]
+    pub fn snapshot(&self) -> hoimin_core::DiskLifecycleSnapshot {
+        self.lifecycle.snapshot()
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ShutdownCause {
@@ -125,7 +168,7 @@ fn establish_event_shutdown_budget(
             observed_at,
             grace,
         ),
-        RunEvent::EffectFailed(_) => {
+        RunEvent::EffectFailed(_) | RunEvent::DiskStopRequested(_) => {
             ShutdownBudget::after_observation_with_grace(ShutdownCause::Failure, observed_at, grace)
         }
         _ => return None,
@@ -166,10 +209,127 @@ pub struct RunControl {
     cancel_before_run_finished: Arc<AtomicBool>,
     #[cfg(test)]
     shutdown_grace: Duration,
+    #[cfg(test)]
+    disk_meter: Option<TestDiskMeter>,
+    #[cfg(test)]
+    dispatched_effects: Arc<AtomicUsize>,
+    #[cfg(test)]
+    disk_sample_interval: Duration,
+    #[cfg(test)]
+    managed_root_paths: Arc<std::sync::Mutex<Vec<Utf8PathBuf>>>,
+    #[cfg(test)]
+    finalization_events: Arc<std::sync::Mutex<Vec<&'static str>>>,
+    #[cfg(test)]
+    managed_parent: Arc<TempDir>,
+    #[cfg(test)]
+    sabotage_delivery_cleanup: Arc<AtomicBool>,
+    #[cfg(test)]
+    delivery_cleanup_sentinel: Arc<std::sync::Mutex<Option<Utf8PathBuf>>>,
+    #[cfg(test)]
+    end_available_override: TestEndAvailableOverride,
+    #[cfg(test)]
+    final_measurement_pause: Option<FinalMeasurementPause>,
+    #[cfg(test)]
+    post_drain_disk_failure: Arc<std::sync::Mutex<Option<hoimin_core::DiskFailure>>>,
+    #[cfg(test)]
+    force_execution_cleanup_deferred: Arc<AtomicBool>,
+    #[cfg(test)]
+    duplicate_execution_cleanup_request: Arc<AtomicBool>,
+}
+
+#[cfg(test)]
+#[derive(Clone)]
+struct TestDiskMeter(Arc<std::sync::Mutex<Box<dyn DiskMeasurement>>>);
+
+#[cfg(test)]
+type TestEndAvailableOverride =
+    Arc<std::sync::Mutex<Option<Result<BTreeMap<FilesystemKey, u64>, String>>>>;
+
+#[cfg(test)]
+#[derive(Clone, Debug)]
+struct FinalMeasurementPause {
+    entered: std::sync::mpsc::SyncSender<()>,
+    release: Arc<std::sync::Mutex<std::sync::mpsc::Receiver<()>>>,
+}
+
+#[cfg(test)]
+#[derive(Debug)]
+struct FinalMeasurementPauseController {
+    entered: std::sync::mpsc::Receiver<()>,
+    release: std::sync::mpsc::SyncSender<()>,
+}
+
+#[cfg(test)]
+impl FinalMeasurementPause {
+    fn new() -> (Self, FinalMeasurementPauseController) {
+        let (entered, entered_receiver) = std::sync::mpsc::sync_channel(0);
+        let (release, release_receiver) = std::sync::mpsc::sync_channel(0);
+        (
+            Self {
+                entered,
+                release: Arc::new(std::sync::Mutex::new(release_receiver)),
+            },
+            FinalMeasurementPauseController {
+                entered: entered_receiver,
+                release,
+            },
+        )
+    }
+
+    fn wait(&self) {
+        if self.entered.send(()).is_ok() {
+            let _ = self
+                .release
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .recv();
+        }
+    }
+}
+
+#[cfg(test)]
+impl FinalMeasurementPauseController {
+    fn wait_until_entered(&self) {
+        self.entered
+            .recv()
+            .expect("final measurement pause entered");
+    }
+
+    fn release(&self) {
+        self.release
+            .send(())
+            .expect("release final measurement pause");
+    }
+}
+
+#[cfg(test)]
+impl std::fmt::Debug for TestDiskMeter {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("TestDiskMeter")
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+impl DiskMeasurement for TestDiskMeter {
+    fn measure(&self) -> std::io::Result<crate::workspace::MeterReading> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .measure()
+    }
 }
 
 impl RunControl {
     #[must_use]
+    #[cfg_attr(
+        test,
+        allow(
+            clippy::missing_panics_doc,
+            reason = "test-only managed-parent allocation is expected to succeed"
+        )
+    )]
     pub fn new() -> Self {
         Self {
             request: ProcessStartGate::new(),
@@ -181,7 +341,162 @@ impl RunControl {
             cancel_before_run_finished: Arc::new(AtomicBool::new(false)),
             #[cfg(test)]
             shutdown_grace: SHUTDOWN_GRACE,
+            #[cfg(test)]
+            disk_meter: None,
+            #[cfg(test)]
+            dispatched_effects: Arc::new(AtomicUsize::new(0)),
+            #[cfg(test)]
+            disk_sample_interval: hoimin_core::DISK_SAMPLE_INTERVAL,
+            #[cfg(test)]
+            managed_root_paths: Arc::new(std::sync::Mutex::new(Vec::new())),
+            #[cfg(test)]
+            finalization_events: Arc::new(std::sync::Mutex::new(Vec::new())),
+            #[cfg(test)]
+            managed_parent: Arc::new(tempfile::tempdir().expect("test managed parent")),
+            #[cfg(test)]
+            sabotage_delivery_cleanup: Arc::new(AtomicBool::new(false)),
+            #[cfg(test)]
+            delivery_cleanup_sentinel: Arc::new(std::sync::Mutex::new(None)),
+            #[cfg(test)]
+            end_available_override: Arc::new(std::sync::Mutex::new(None)),
+            #[cfg(test)]
+            final_measurement_pause: None,
+            #[cfg(test)]
+            post_drain_disk_failure: Arc::new(std::sync::Mutex::new(None)),
+            #[cfg(test)]
+            force_execution_cleanup_deferred: Arc::new(AtomicBool::new(false)),
+            #[cfg(test)]
+            duplicate_execution_cleanup_request: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    #[cfg(test)]
+    fn with_disk_meter(meter: impl DiskMeasurement) -> Self {
+        let mut control = Self::new();
+        control.disk_meter = Some(TestDiskMeter(Arc::new(std::sync::Mutex::new(Box::new(
+            meter,
+        )))));
+        control
+    }
+
+    #[cfg(test)]
+    fn with_disk_meter_and_interval(
+        meter: impl DiskMeasurement,
+        sample_interval: Duration,
+    ) -> Self {
+        let mut control = Self::with_disk_meter(meter);
+        control.disk_sample_interval = sample_interval;
+        control
+    }
+
+    #[cfg(test)]
+    fn disk_meter(&self) -> Option<TestDiskMeter> {
+        self.disk_meter.clone()
+    }
+
+    #[cfg(test)]
+    fn observe_effect_dispatch(&self) {
+        self.dispatched_effects.fetch_add(1, Ordering::AcqRel);
+    }
+
+    #[cfg(test)]
+    fn dispatched_effect_count(&self) -> usize {
+        self.dispatched_effects.load(Ordering::Acquire)
+    }
+
+    #[cfg(test)]
+    fn observe_managed_roots(&self, roots: &ManagedShellRoots) {
+        *self
+            .managed_root_paths
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = roots.paths();
+    }
+
+    #[cfg(test)]
+    fn managed_root_paths(&self) -> Vec<Utf8PathBuf> {
+        self.managed_root_paths
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    #[cfg(test)]
+    fn observe_finalization_event(&self, event: &'static str) {
+        self.finalization_events
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(event);
+    }
+
+    #[cfg(test)]
+    fn finalization_events(&self) -> Vec<&'static str> {
+        self.finalization_events
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    #[cfg(test)]
+    fn inject_delivery_cleanup_identity_failure(&self) {
+        self.sabotage_delivery_cleanup
+            .store(true, Ordering::Release);
+    }
+
+    #[cfg(test)]
+    fn before_delivery_cleanup(&self, root: &ManagedRunRoot) {
+        if !self.sabotage_delivery_cleanup.swap(false, Ordering::AcqRel) {
+            return;
+        }
+        let active = root.path();
+        let sentinel = active.with_file_name(format!(
+            "sentinel-{}",
+            active.file_name().expect("managed root name")
+        ));
+        std::fs::rename(active, &sentinel).expect("move delivery root to sentinel");
+        std::fs::create_dir(active).expect("create same-name replacement");
+        *self
+            .delivery_cleanup_sentinel
+            .lock()
+            .expect("delivery sentinel lock") = Some(sentinel);
+    }
+
+    #[cfg(test)]
+    fn delivery_cleanup_sentinel(&self) -> Option<Utf8PathBuf> {
+        self.delivery_cleanup_sentinel
+            .lock()
+            .expect("delivery sentinel lock")
+            .clone()
+    }
+
+    #[cfg(test)]
+    fn override_end_available(&self, result: Result<BTreeMap<FilesystemKey, u64>, String>) {
+        *self
+            .end_available_override
+            .lock()
+            .expect("end available override lock") = Some(result);
+    }
+
+    #[cfg_attr(
+        not(test),
+        allow(
+            clippy::unused_self,
+            reason = "test builds read the per-run end-capacity override"
+        )
+    )]
+    fn end_available(
+        &self,
+        roots: &[Arc<ManagedRunRoot>],
+    ) -> std::io::Result<BTreeMap<FilesystemKey, u64>> {
+        #[cfg(test)]
+        if let Some(result) = self
+            .end_available_override
+            .lock()
+            .expect("end available override lock")
+            .take()
+        {
+            return result.map_err(std::io::Error::other);
+        }
+        available_for_managed_roots(roots)
     }
 
     #[cfg(test)]
@@ -190,6 +505,54 @@ impl RunControl {
         let mut control = Self::new();
         control.materialization_pause = Some(pause);
         (control, controller)
+    }
+
+    #[cfg(test)]
+    fn with_final_measurement_pause() -> (Self, FinalMeasurementPauseController) {
+        let (pause, controller) = FinalMeasurementPause::new();
+        let mut control = Self::new();
+        control.final_measurement_pause = Some(pause);
+        (control, controller)
+    }
+
+    #[cfg(test)]
+    fn inject_post_drain_disk_failure(&self, failure: hoimin_core::DiskFailure) {
+        *self
+            .post_drain_disk_failure
+            .lock()
+            .expect("post-drain disk failure lock") = Some(failure);
+    }
+
+    #[cfg(test)]
+    fn take_post_drain_disk_failure(&self) -> Option<hoimin_core::DiskFailure> {
+        self.post_drain_disk_failure
+            .lock()
+            .expect("post-drain disk failure lock")
+            .take()
+    }
+
+    #[cfg(test)]
+    fn inject_execution_cleanup_deferred(&self) {
+        self.force_execution_cleanup_deferred
+            .store(true, Ordering::Release);
+    }
+
+    #[cfg(test)]
+    fn take_execution_cleanup_deferred(&self) -> bool {
+        self.force_execution_cleanup_deferred
+            .swap(false, Ordering::AcqRel)
+    }
+
+    #[cfg(test)]
+    fn inject_duplicate_execution_cleanup_request(&self) {
+        self.duplicate_execution_cleanup_request
+            .store(true, Ordering::Release);
+    }
+
+    #[cfg(test)]
+    fn take_duplicate_execution_cleanup_request(&self) -> bool {
+        self.duplicate_execution_cleanup_request
+            .swap(false, Ordering::AcqRel)
     }
 
     #[cfg(test)]
@@ -336,7 +699,19 @@ enum BlockingEffectCompletion {
         id: EffectId,
         workspace: Box<WorkspaceHandler>,
         event: Box<RunEvent>,
+        secondary_errors: Vec<String>,
     },
+}
+
+fn combine_cleanup_results(
+    close_error: Option<String>,
+    cleanup: Result<hoimin_core::CleanupFinished, EffectFailed>,
+) -> (RunEvent, Vec<String>) {
+    let event = cleanup.map_or_else(RunEvent::EffectFailed, RunEvent::CleanupFinished);
+    let secondary_errors = close_error
+        .map(|error| vec![format!("process.resource.close: {error}")])
+        .unwrap_or_default();
+    (event, secondary_errors)
 }
 
 impl BlockingEffect {
@@ -387,6 +762,7 @@ impl BlockingEffect {
                     id,
                     workspace,
                     event: Box::new(event),
+                    secondary_errors: Vec::new(),
                 }
             }
             Self::Cleanup {
@@ -395,20 +771,14 @@ impl BlockingEffect {
                 mut workspace,
                 request,
             } => {
-                let event = match process.close() {
-                    Ok(()) => workspace
-                        .handle_cleanup(request)
-                        .map_or_else(RunEvent::EffectFailed, RunEvent::CleanupFinished),
-                    Err(error) => RunEvent::EffectFailed(EffectFailed::other(
-                        id,
-                        "process.resource.close",
-                        error.to_string(),
-                    )),
-                };
+                let close_error = process.close().err().map(|error| error.to_string());
+                let (event, secondary_errors) =
+                    combine_cleanup_results(close_error, workspace.handle_cleanup(request));
                 BlockingEffectCompletion::OwnedWorkspace {
                     id,
                     workspace,
                     event: Box::new(event),
+                    secondary_errors,
                 }
             }
             #[cfg(test)]
@@ -539,6 +909,7 @@ where
             id,
             workspace,
             event,
+            secondary_errors,
         } => {
             if context.workspace.is_some() {
                 return RunEvent::EffectFailed(EffectFailed::other(
@@ -548,6 +919,7 @@ where
                 ));
             }
             context.workspace = Some(*workspace);
+            context.blocking_secondary_errors.extend(secondary_errors);
             *event
         }
     };
@@ -695,10 +1067,41 @@ struct PreparedShellSetup {
 
 #[derive(Debug)]
 struct ManagedShellRoots {
-    _execution_root: Arc<ManagedRunRoot>,
-    _delivery_root: Arc<ManagedRunRoot>,
-    _execution_spool: Arc<ManagedChild>,
-    _delivery_spool: Arc<ManagedChild>,
+    execution_root: Arc<ManagedRunRoot>,
+    delivery_root: Arc<ManagedRunRoot>,
+    execution_spool: std::sync::Mutex<Option<Arc<ManagedChild>>>,
+    delivery_spool: std::sync::Mutex<Option<Arc<ManagedChild>>>,
+}
+
+impl ManagedShellRoots {
+    fn monitor_roots(&self) -> Vec<Arc<ManagedRunRoot>> {
+        vec![
+            Arc::clone(&self.execution_root),
+            Arc::clone(&self.delivery_root),
+        ]
+    }
+
+    fn release_execution_spool(&self) {
+        self.execution_spool
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+    }
+
+    fn release_delivery_spool(&self) {
+        self.delivery_spool
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+    }
+
+    #[cfg(test)]
+    fn paths(&self) -> Vec<Utf8PathBuf> {
+        vec![
+            self.execution_root.path().to_owned(),
+            self.delivery_root.path().to_owned(),
+        ]
+    }
 }
 
 struct SetupRollback {
@@ -768,6 +1171,18 @@ async fn prepare_shell_setup(
     .map_err(|error| format!("shell setup task failed: {error}"))?
 }
 
+#[cfg(test)]
+async fn prepare_shell_setup_in(
+    config: RunConfig,
+    temporary_parent: Utf8PathBuf,
+) -> Result<PreparedShellSetup, String> {
+    tokio::task::spawn_blocking(move || {
+        prepare_shell_setup_sync_in(config, &temporary_parent, &|_| {})
+    })
+    .await
+    .map_err(|error| format!("shell setup task failed: {error}"))?
+}
+
 fn prepare_shell_setup_sync(config: RunConfig) -> Result<PreparedShellSetup, String> {
     let temporary_parent = Utf8PathBuf::from_path_buf(std::env::temp_dir())
         .map_err(|_| "temporary workspace parent is not UTF-8".to_owned())?;
@@ -793,7 +1208,6 @@ fn prepare_shell_setup_sync_in(
     let (mut rollback, execution_root, delivery_root, execution_spool, delivery_spool) =
         create_managed_shell_roots_in(temporary_parent, &|_| {})?;
     boundary(ShellSetupBoundary::RootsCreated);
-    verify_initial_disk_policy(&config, &execution_root, &delivery_root)?;
     boundary(ShellSetupBoundary::DiskPolicyVerified);
     let spool_path = execution_spool.path().to_owned();
     let requested_workers = u32::try_from(config.limits.jobs.get())
@@ -831,10 +1245,10 @@ fn prepare_shell_setup_sync_in(
         .map_err(|error| error.to_string())?;
     boundary(ShellSetupBoundary::ReportCreated);
     let spool_dir = Arc::new(ManagedShellRoots {
-        _execution_root: execution_root,
-        _delivery_root: delivery_root,
-        _execution_spool: execution_spool,
-        _delivery_spool: delivery_spool,
+        execution_root,
+        delivery_root,
+        execution_spool: std::sync::Mutex::new(Some(execution_spool)),
+        delivery_spool: std::sync::Mutex::new(Some(delivery_spool)),
     });
     rollback.armed = false;
 
@@ -911,42 +1325,224 @@ fn create_managed_shell_roots_in(
     ))
 }
 
-fn verify_initial_disk_policy(
-    config: &RunConfig,
-    execution_root: &ManagedRunRoot,
-    delivery_root: &ManagedRunRoot,
-) -> Result<(), String> {
-    let reading = DiskMeter::new(
-        vec![
-            execution_root
-                .disk_capability()
-                .map_err(|error| error.to_string())?,
-            delivery_root
-                .disk_capability()
-                .map_err(|error| error.to_string())?,
-        ],
-        SystemAvailableSpace,
-    )
-    .measure()
-    .map_err(|error| format!("disk.measurement.failed: {error}"))?;
-    let available_bytes = reading
-        .available_by_filesystem
-        .values()
-        .copied()
-        .min()
-        .ok_or_else(|| "disk.measurement.failed: no owned filesystem".to_owned())?;
+async fn start_disk_monitor<Stdout, Stderr>(
+    context: &ShellContext<Stdout, Stderr>,
+    control: &RunControl,
+) -> Result<DiskMonitor, String>
+where
+    Stdout: Write,
+    Stderr: Write,
+{
+    #[cfg(not(test))]
+    let _ = control;
     let policy = DiskPolicy {
-        max_owned_bytes: config.limits.max_workspace_size,
-        min_free_bytes: config.limits.min_free_space,
+        max_owned_bytes: context.config.limits.max_workspace_size,
+        min_free_bytes: context.config.limits.min_free_space,
     };
-    if let DiskDecision::Stop(failure) = policy.evaluate(DiskObservation {
-        owned_bytes: reading.owned_bytes,
-        available_bytes,
-        measured_in: reading.elapsed,
-    }) {
-        return Err(format!("{}: disk preflight stopped dispatch", failure.code));
+    let roots = context.spool_dir.monitor_roots();
+    #[cfg(test)]
+    if let Some(meter) = control.disk_meter() {
+        return Ok(DiskMonitor::start_with_meter_and_interval(
+            meter,
+            policy,
+            roots,
+            control.disk_sample_interval,
+        )
+        .await);
     }
-    Ok(())
+    DiskMonitor::start(policy, roots)
+        .await
+        .map_err(|error| format!("disk.measurement.failed: {error}"))
+}
+
+fn is_disk_guarded_dispatch(effect: &RunEffect) -> bool {
+    matches!(
+        effect,
+        RunEffect::AnalyzeFile(_) | RunEffect::RunBaseline(_) | RunEffect::RunMutant(_)
+    )
+}
+
+async fn sample_after_process_drain(
+    monitor: &DiskMonitor,
+    process_completion: bool,
+) -> Option<hoimin_core::DiskFailure> {
+    if process_completion {
+        monitor.sample_now().await
+    } else {
+        None
+    }
+}
+
+async fn run_cleanup_thread<T: Send + 'static>(
+    budget: &ShutdownBudget,
+    operation: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, String> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(operation());
+    });
+    budget
+        .wait(receiver)
+        .await
+        .map_err(|_| "workspace.cleanup.deferred: cleanup operation timed out".to_owned())?
+        .map_err(|_| "workspace.cleanup.failed: cleanup thread stopped without a result".to_owned())
+}
+
+#[derive(Debug)]
+enum ManagedCleanupOutcome {
+    Clean(CleanupRecord),
+    Failed(String),
+    Deferred(String),
+}
+
+fn cleanup_thread_error(error: String) -> ManagedCleanupOutcome {
+    if error.starts_with("workspace.cleanup.deferred:") {
+        ManagedCleanupOutcome::Deferred(error)
+    } else {
+        ManagedCleanupOutcome::Failed(error)
+    }
+}
+
+async fn cleanup_managed_root(
+    root: Arc<ManagedRunRoot>,
+    budget: &ShutdownBudget,
+) -> ManagedCleanupOutcome {
+    let marker_root = Arc::clone(&root);
+    let marker_error =
+        match run_cleanup_thread(budget, move || marker_root.mark_cleanup_ready()).await {
+            Ok(result) => result.err().map(|error| error.to_string()),
+            Err(error) => return cleanup_thread_error(error),
+        };
+    loop {
+        let remaining = budget
+            .deadline()
+            .saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            root.abandon_for_janitor("managed-root cleanup budget expired".to_owned());
+            return ManagedCleanupOutcome::Deferred(
+                "workspace.cleanup.deferred: managed-root cleanup budget expired".to_owned(),
+            );
+        }
+        let cleanup_root = Arc::clone(&root);
+        let mut cleanup =
+            match run_cleanup_thread(budget, move || cleanup_root.cleanup(remaining)).await {
+                Ok(cleanup) => cleanup,
+                Err(error) => return cleanup_thread_error(error),
+            };
+        let retryable_contention = cleanup.status == hoimin_core::DiskCleanupStatus::Deferred
+            && cleanup.details.iter().any(|detail| {
+                detail.contains("coordinator process lock is busy")
+                    || detail.contains("coordinator lock failed")
+            });
+        if retryable_contention && tokio::time::Instant::now() < budget.deadline() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            continue;
+        }
+        let marker = marker_error
+            .as_deref()
+            .map_or(String::new(), |error| format!("; cleanup-ready: {error}"));
+        let detail = format!(
+            "{}{}; omitted={}; remaining={:?}",
+            cleanup.details.join("; "),
+            marker,
+            cleanup.omitted_detail_count,
+            cleanup.remaining_root,
+        );
+        return match cleanup.status {
+            hoimin_core::DiskCleanupStatus::Clean => {
+                if let Some(error) = marker_error {
+                    cleanup.details.push(format!("cleanup-ready: {error}"));
+                }
+                ManagedCleanupOutcome::Clean(cleanup)
+            }
+            hoimin_core::DiskCleanupStatus::Failed => {
+                ManagedCleanupOutcome::Failed(format!("workspace.cleanup.failed: {detail}"))
+            }
+            hoimin_core::DiskCleanupStatus::Deferred => {
+                ManagedCleanupOutcome::Deferred(format!("workspace.cleanup.deferred: {detail}"))
+            }
+            hoimin_core::DiskCleanupStatus::Retained => ManagedCleanupOutcome::Deferred(format!(
+                "workspace.cleanup.deferred: retained: {detail}"
+            )),
+            hoimin_core::DiskCleanupStatus::CleanupAfterDelivery => ManagedCleanupOutcome::Failed(
+                format!("workspace.cleanup.failed: invalid execution cleanup status: {detail}"),
+            ),
+        };
+    }
+}
+
+fn append_finalization_error<T>(result: Result<T, String>, error: String) -> Result<T, String> {
+    match result {
+        Ok(_) => Err(error),
+        Err(primary) => Err(combine_shutdown_errors(primary, Some(error))),
+    }
+}
+
+fn apply_finalization_errors_to_summary(summary: &mut hoimin_core::RunSummary, errors: &[String]) {
+    if errors.is_empty() {
+        return;
+    }
+    summary.complete = false;
+    if summary.exit_code == 0 {
+        summary.exit_code = 2;
+    }
+    for error in errors {
+        let (code, message) = error.split_once(": ").map_or_else(
+            || ("run.finalization.failed".to_owned(), error.clone()),
+            |(code, message)| (code.to_owned(), message.to_owned()),
+        );
+        if let Some(stop) = &mut summary.disk.stop {
+            if stop.code == code
+                || stop
+                    .secondary
+                    .iter()
+                    .any(|secondary| secondary.code() == code)
+            {
+                continue;
+            }
+            stop.secondary
+                .push(hoimin_core::DiskSecondary::Error { code, message });
+        } else {
+            summary.disk.stop = Some(hoimin_core::DiskStopReport {
+                code,
+                owned_bytes: None,
+                available_bytes: None,
+                message: Some(message),
+                secondary: Vec::new(),
+            });
+        }
+    }
+}
+
+fn merge_monitor_stop(report: &mut hoimin_core::DiskStopReport, latest: hoimin_core::DiskFailure) {
+    let mut incoming = Vec::with_capacity(latest.secondary.len().saturating_add(1));
+    if report.code != latest.code {
+        if let Some(observation) = latest.observation {
+            incoming.push(hoimin_core::DiskSecondary::Observation {
+                reason: latest.reason,
+                value: observation,
+            });
+        } else {
+            incoming.push(hoimin_core::DiskSecondary::Error {
+                code: latest.code,
+                message: latest
+                    .message
+                    .unwrap_or_else(|| "disk monitor reported a secondary stop".to_owned()),
+            });
+        }
+    }
+    incoming.extend(latest.secondary);
+    for secondary in incoming {
+        if report.code == secondary.code()
+            || report
+                .secondary
+                .iter()
+                .any(|existing| existing.code() == secondary.code())
+        {
+            continue;
+        }
+        report.secondary.push(secondary);
+    }
 }
 
 pub struct ShellContext<Stdout, Stderr> {
@@ -957,11 +1553,12 @@ pub struct ShellContext<Stdout, Stderr> {
     session: Option<SessionDispatcher>,
     session_path: Option<Utf8PathBuf>,
     active_candidates: BTreeMap<u32, hoimin_core::MutationCandidate>,
-    _spool_dir: Arc<ManagedShellRoots>,
+    spool_dir: Arc<ManagedShellRoots>,
     resolved_targets: Option<Vec<TargetSlice>>,
     config: RunConfig,
     fingerprint_copy_inputs: BTreeSet<Utf8PathBuf>,
     report_versions: ReportVersions,
+    blocking_secondary_errors: Vec<String>,
 }
 
 impl<Stdout, Stderr> ShellContext<Stdout, Stderr>
@@ -975,6 +1572,11 @@ where
     ///
     /// Returns an error when local run infrastructure cannot be initialized.
     pub async fn new(config: &RunConfig, stdout: Stdout, stderr: Stderr) -> Result<Self, String> {
+        let prepared = prepare_shell_setup(config.clone(), Box::new(|| {})).await?;
+        Ok(Self::from_prepared(prepared, stdout, stderr))
+    }
+
+    fn from_prepared(prepared: PreparedShellSetup, stdout: Stdout, stderr: Stderr) -> Self {
         let PreparedShellSetup {
             workspace,
             analyzer,
@@ -982,10 +1584,10 @@ where
             report,
             spool_dir,
             config,
-        } = prepare_shell_setup(config.clone(), Box::new(|| {})).await?;
+        } = prepared;
         let session_path = config.session.as_ref().map(|value| value.path.clone());
 
-        Ok(Self {
+        Self {
             workspace: Some(workspace),
             analyzer,
             process,
@@ -993,7 +1595,7 @@ where
             session: None,
             session_path,
             active_candidates: BTreeMap::new(),
-            _spool_dir: spool_dir,
+            spool_dir,
             resolved_targets: None,
             config,
             fingerprint_copy_inputs: BTreeSet::new(),
@@ -1001,7 +1603,19 @@ where
                 os: std::env::consts::OS.to_owned(),
                 hoimin: env!("CARGO_PKG_VERSION").to_owned(),
             },
-        })
+            blocking_secondary_errors: Vec::new(),
+        }
+    }
+
+    #[cfg(test)]
+    async fn new_in(
+        config: &RunConfig,
+        stdout: Stdout,
+        stderr: Stderr,
+        temporary_parent: Utf8PathBuf,
+    ) -> Result<Self, String> {
+        let prepared = prepare_shell_setup_in(config.clone(), temporary_parent).await?;
+        Ok(Self::from_prepared(prepared, stdout, stderr))
     }
 
     fn workspace(&self) -> &WorkspaceHandler {
@@ -1497,7 +2111,19 @@ where
     Stderr: Write,
 {
     let metrics_path = config.output.metrics.clone();
+    #[cfg(not(test))]
     let mut context = ShellContext::new(&config, stdout, stderr).await?;
+    #[cfg(test)]
+    let mut context = ShellContext::new_in(
+        &config,
+        stdout,
+        stderr,
+        Utf8PathBuf::from_path_buf(control.managed_parent.path().to_owned())
+            .map_err(|_| "test managed parent is not UTF-8".to_owned())?,
+    )
+    .await?;
+    #[cfg(test)]
+    control.observe_managed_roots(&context.spool_dir);
     #[cfg(test)]
     if let Some(pause) = control.materialization_pause.clone() {
         context.workspace_mut().set_materialization_pause(pause);
@@ -1518,6 +2144,19 @@ where
     let mut shutdown_budget = None;
     let mut shutdown_expiry_reported = false;
     let mut interrupts = crate::interrupt::InterruptMonitor::spawn();
+    let mut disk_monitor = None;
+    let mut execution_safety_proven = false;
+    let mut final_measurement_joined = true;
+    let mut execution_cleaned = false;
+    let mut delivery_cleaned = false;
+    let mut execution_cleanup_attempted = false;
+    let mut delivery_cleanup_attempted = false;
+    let mut execution_preclean = None;
+    let mut execution_end_available: Option<BTreeMap<FilesystemKey, u64>> = None;
+    let mut execution_cleanup_record: Option<CleanupRecord> = None;
+    let mut finalization_errors = Vec::new();
+    let mut disk_lifecycle = ShellDiskLifecycle::new([DiskRootId::Execution, DiskRootId::Delivery])
+        .map_err(|error| format!("disk lifecycle initialization failed: {error}"))?;
     let run_result = async {
         let mut state = Box::new(match candidate_selection {
             CandidateSelection::Explicit(candidate_ids, verification_selection) => {
@@ -1538,6 +2177,12 @@ where
             .map_err(|error| error.to_string())?;
         *state = next;
         track_diagnostic_run_id(&mut diagnostic_run_id, &state);
+        let monitor = start_disk_monitor(&context, &control).await?;
+        let mut disk_stop = monitor.stop_receiver();
+        disk_monitor = Some(monitor);
+        let mut disk_stop_delivered = false;
+        #[cfg(test)]
+        let mut disk_stop_order_observed = false;
         if metrics_path.is_some() {
             let mut collector = MetricsCollector::new(state.run_id());
             if let Err(error) = collector.begin_stage("targets") {
@@ -1551,13 +2196,33 @@ where
         let (completion_tx, mut completion_rx) = mpsc::channel(channel_capacity);
         let mut process_tasks = JoinSet::new();
         let mut io_tasks = JoinSet::new();
+        #[cfg(test)]
+        let mut final_output_ids = BTreeSet::new();
         let mut in_flight = 0_usize;
         let mut io_in_flight = 0_usize;
         let mut stop_signalled = false;
 
         while state.phase() != RunPhase::Finished {
             let mut serial_completion = None;
-            let mut priority_event = None;
+            let mut priority_event = if disk_stop_delivered {
+                None
+            } else {
+                disk_stop.borrow_and_update().clone().map(|failure| {
+                    disk_stop_delivered = true;
+                    cancellation.cancel();
+                    stop_signalled = true;
+                    RunEvent::DiskStopRequested(DiskStopRequested { failure })
+                })
+            };
+            if let Some(event) = &priority_event {
+                establish_event_shutdown_budget(
+                    &mut shutdown_budget,
+                    event,
+                    deadline,
+                    tokio::time::Instant::now(),
+                    shutdown_grace,
+                );
+            }
             let mut signal_failure = None;
             let ready_process_completion = if !stop_signalled
                 && !control.is_cancelled()
@@ -1567,10 +2232,18 @@ where
             } else {
                 None
             };
-            while ready_process_completion.is_none() {
+            while ready_process_completion.is_none() && priority_event.is_none() {
                 let Some(effect) = effects.pop_front() else {
                     break;
                 };
+                #[cfg(test)]
+                if matches!(
+                    &effect,
+                    RunEffect::EmitOutput(value)
+                        if matches!(&value.event, OutputEvent::RunFinished(_))
+                ) {
+                    final_output_ids.insert(effect.id());
+                }
                 #[cfg(test)]
                 control.before_effect_dispatch(&effect);
                 if !stop_signalled
@@ -1597,6 +2270,195 @@ where
                 if !state.is_effect_pending(effect.id()) {
                     cancel_queued_effect(&effect, &mut metrics, &mut metrics_warnings);
                     continue;
+                }
+                if matches!(effect, RunEffect::Cleanup(_)) && !execution_safety_proven {
+                    let monitor = disk_monitor
+                        .as_ref()
+                        .expect("disk monitor started before cleanup");
+                    let cleanup_budget = shutdown_budget.unwrap_or_else(|| {
+                        ShutdownBudget::for_total_timeout_with_grace(deadline, shutdown_grace)
+                    });
+                    match cleanup_budget.wait(monitor.sample_now()).await {
+                        Ok(Some(failure)) if !disk_stop_delivered => {
+                            effects.push_front(effect);
+                            cancellation.cancel();
+                            stop_signalled = true;
+                            disk_stop_delivered = true;
+                            let event =
+                                RunEvent::DiskStopRequested(DiskStopRequested { failure });
+                            establish_event_shutdown_budget(
+                                &mut shutdown_budget,
+                                &event,
+                                deadline,
+                                tokio::time::Instant::now(),
+                                shutdown_grace,
+                            );
+                            priority_event = Some(event);
+                            break;
+                        }
+                        Ok(_) => {}
+                        Err(_) => finalization_errors.push(
+                            "disk.measurement.failed: final pre-clean sample exceeded the shutdown budget"
+                                .to_owned(),
+                        ),
+                    }
+                    let remaining = cleanup_budget
+                        .deadline()
+                        .saturating_duration_since(tokio::time::Instant::now());
+                    let process_drain = context
+                        .process
+                        .drain_for_shutdown(remaining)
+                        .await;
+                    #[cfg(test)]
+                    {
+                        if process_drain.all_reaped {
+                            control.observe_finalization_event("root_reaped");
+                        }
+                        if process_drain.output_drains_joined {
+                            control.observe_finalization_event("output_drained");
+                        }
+                    }
+                    finalization_errors.extend(process_drain.secondary_errors);
+                    let measurement_root = Arc::clone(&context.spool_dir.execution_root);
+                    #[cfg(test)]
+                    let final_measurement_pause = control.final_measurement_pause.clone();
+                    let measurement = run_cleanup_thread(&cleanup_budget, move || {
+                        #[cfg(test)]
+                        if let Some(pause) = final_measurement_pause {
+                            pause.wait();
+                        }
+                        measure_managed_roots(&[measurement_root])
+                    })
+                    .await;
+                    let measurement = match measurement {
+                        Ok(measurement) => measurement,
+                        Err(error) => {
+                            final_measurement_joined = false;
+                            Err(std::io::Error::new(std::io::ErrorKind::TimedOut, error))
+                        }
+                    };
+                    match measurement {
+                        Ok(reading) => execution_preclean = Some(reading),
+                        Err(error) if !disk_stop_delivered => {
+                            effects.push_front(effect);
+                            cancellation.cancel();
+                            stop_signalled = true;
+                            disk_stop_delivered = true;
+                            let event = RunEvent::DiskStopRequested(DiskStopRequested {
+                                failure: hoimin_core::DiskFailure {
+                                    code: hoimin_core::DISK_MEASUREMENT_FAILED.to_owned(),
+                                    reason: hoimin_core::DiskStopReason::MeasurementFailed,
+                                    observation: None,
+                                    message: Some(error.to_string()),
+                                    secondary: Vec::new(),
+                                },
+                            });
+                            establish_event_shutdown_budget(
+                                &mut shutdown_budget,
+                                &event,
+                                deadline,
+                                tokio::time::Instant::now(),
+                                shutdown_grace,
+                            );
+                            priority_event = Some(event);
+                            break;
+                        }
+                        Err(error) => finalization_errors.push(format!(
+                            "disk.measurement.failed: final execution measurement failed: {error}"
+                        )),
+                    }
+                    #[cfg(test)]
+                    control.observe_finalization_event("monitor_stopped");
+                    let remaining = cleanup_budget
+                        .deadline()
+                        .saturating_duration_since(tokio::time::Instant::now());
+                    let monitor_joined = monitor.stop_and_join(remaining).await;
+                    #[cfg(test)]
+                    if monitor_joined {
+                        control.observe_finalization_event("monitor_joined");
+                    }
+                    for (event, component) in [
+                        (
+                            if process_drain.all_reaped {
+                                DiskLifecycleEvent::ProcessDrainSucceeded
+                            } else {
+                                DiskLifecycleEvent::ProcessDrainFailed
+                            },
+                            "process drain",
+                        ),
+                        (
+                            if process_drain.output_drains_joined {
+                                DiskLifecycleEvent::OutputDrainSucceeded
+                            } else {
+                                DiskLifecycleEvent::OutputDrainFailed
+                            },
+                            "output drain",
+                        ),
+                        (
+                            if monitor_joined {
+                                DiskLifecycleEvent::MonitorJoinSucceeded
+                            } else {
+                                DiskLifecycleEvent::MonitorJoinFailed
+                            },
+                            "monitor join",
+                        ),
+                    ] {
+                        if !disk_lifecycle.apply(event) {
+                            return Err(format!(
+                                "disk lifecycle rejected {component} completion"
+                            ));
+                        }
+                    }
+                    if !(process_drain.all_reaped
+                        && process_drain.output_drains_joined
+                        && monitor_joined)
+                    {
+                        let id = effect.id();
+                        serial_completion = Some(ShellCompletion {
+                            event: RunEvent::EffectFailed(EffectFailed::other(
+                                id,
+                                hoimin_core::WORKSPACE_CLEANUP_DEFERRED,
+                                "process/output drain or disk monitor join was not proven",
+                            )),
+                            process_task: false,
+                            io_task: false,
+                            process: None,
+                            blocking: None,
+                        });
+                        effects.push_front(effect);
+                        break;
+                    }
+                    execution_safety_proven = true;
+                }
+                if is_disk_guarded_dispatch(&effect) {
+                    let failure = disk_monitor
+                        .as_ref()
+                        .expect("disk monitor started before effect dispatch")
+                        .sample_now()
+                        .await;
+                    if let Some(failure) = failure {
+                        effects.push_front(effect);
+                        cancellation.cancel();
+                        stop_signalled = true;
+                        disk_stop_delivered = true;
+                        let event = RunEvent::DiskStopRequested(DiskStopRequested { failure });
+                        establish_event_shutdown_budget(
+                            &mut shutdown_budget,
+                            &event,
+                            deadline,
+                            tokio::time::Instant::now(),
+                            shutdown_grace,
+                        );
+                        priority_event = Some(event);
+                        break;
+                    }
+                    if !disk_lifecycle.apply(DiskLifecycleEvent::DispatchRequested) {
+                        return Err(
+                            "disk lifecycle rejected guarded effect dispatch".to_owned(),
+                        );
+                    }
+                    #[cfg(test)]
+                    control.observe_effect_dispatch();
                 }
                 match effect {
                     RunEffect::RunBaseline(request) => {
@@ -1750,6 +2612,210 @@ where
                             blocking: None,
                         });
                     }
+                    RunEffect::EmitOutput(mut request)
+                        if matches!(&request.event, OutputEvent::RunFinished(_)) =>
+                    {
+                        if let OutputEvent::RunFinished(summary) = &mut request.event {
+                            let disk_stats = disk_monitor
+                                .as_ref()
+                                .expect("disk monitor exists through final reporting")
+                                .stats();
+                            summary.disk.peak_owned_bytes = disk_stats.peak_owned_bytes;
+                            summary.disk.minimum_available_bytes =
+                                disk_stats.minimum_available_bytes;
+                            summary.disk.sample_count = disk_stats.sample_count;
+                            summary.disk.maximum_measurement_ms =
+                                u64::try_from(disk_stats.maximum_measurement.as_millis())
+                                    .unwrap_or(u64::MAX);
+                            summary.disk.removed_logical_bytes = execution_cleaned
+                                .then(|| execution_preclean.as_ref().map(|value| value.owned_bytes))
+                                .flatten();
+                            summary.disk.filesystems = disk_stats
+                                .filesystems
+                                .iter()
+                                .map(|(key, filesystem)| {
+                                    let end_available_bytes = execution_end_available
+                                        .as_ref()
+                                        .and_then(|values| values.get(key))
+                                        .copied();
+                                    hoimin_core::DiskFilesystemReport {
+                                        key: key.0.to_string(),
+                                        start_available_bytes: Some(filesystem.start),
+                                        minimum_available_bytes: Some(filesystem.minimum),
+                                        end_available_bytes,
+                                        available_bytes_change: end_available_bytes.map(|end| {
+                                            i128::from(end) - i128::from(filesystem.start)
+                                        }),
+                                    }
+                                })
+                                .collect();
+                            if let Some(cleanup) = &execution_cleanup_record
+                                && let Some(report) = summary
+                                    .disk
+                                    .cleanup
+                                    .iter_mut()
+                                    .find(|report| report.root_id == "execution")
+                            {
+                                report.status = cleanup.status;
+                                report.examined_entries = cleanup.examined_entries;
+                                report.removed_entries = cleanup.removed_entries;
+                                report.details.clone_from(&cleanup.details);
+                                report.omitted_detail_count = cleanup.omitted_detail_count;
+                                report.remaining_root = cleanup
+                                    .remaining_root
+                                    .as_ref()
+                                    .map(ToString::to_string);
+                            }
+                            let latest_stop = {
+                                let receiver = disk_monitor
+                                    .as_ref()
+                                    .expect("disk monitor exists through final reporting")
+                                    .stop_receiver();
+                                receiver.borrow().clone()
+                            };
+                            if let (Some(report), Some(latest)) =
+                                (&mut summary.disk.stop, latest_stop)
+                            {
+                                merge_monitor_stop(report, latest);
+                            }
+                            apply_finalization_errors_to_summary(summary, &finalization_errors);
+                            if summary.disk.enforcement.is_empty() {
+                                summary
+                                    .disk
+                                    .enforcement
+                                    .push(hoimin_core::DiskEnforcementReport::PortableGuard);
+                            }
+                            if !summary
+                                .disk
+                                .cleanup
+                                .iter()
+                                .any(|record| record.root_id == "delivery")
+                            {
+                                summary.disk.cleanup.push(hoimin_core::DiskCleanupReport {
+                                    root_id: "delivery".to_owned(),
+                                    owner: "hoimin".to_owned(),
+                                    status: hoimin_core::DiskCleanupStatus::CleanupAfterDelivery,
+                                    examined_entries: 0,
+                                    removed_entries: 0,
+                                    details: Vec::new(),
+                                    omitted_detail_count: 0,
+                                    remaining_root: None,
+                                });
+                            }
+                        }
+                        let emitted = context.report.handle(request);
+                        #[cfg(test)]
+                        if emitted.is_ok() {
+                            control.observe_finalization_event("run_finished_written");
+                        }
+                        let mut delivery_errors = Vec::new();
+                        let report_flushed = match context.report.flush_and_release_spool() {
+                            Ok(()) => true,
+                            Err(error) => {
+                                delivery_errors.push(format!(
+                                    "report.finalization.failed: report flush before delivery cleanup failed: {error}"
+                                ));
+                                false
+                            }
+                        };
+                        let report_event = if emitted.is_ok() && report_flushed {
+                            DiskLifecycleEvent::ReportSucceeded
+                        } else {
+                            DiskLifecycleEvent::ReportFailed
+                        };
+                        if !disk_lifecycle.apply(report_event) {
+                            return Err("disk lifecycle rejected report completion".to_owned());
+                        }
+                        context.spool_dir.release_delivery_spool();
+                        #[cfg(test)]
+                        control.before_delivery_cleanup(&context.spool_dir.delivery_root);
+                        let cleanup_budget = shutdown_budget.unwrap_or_else(|| {
+                            ShutdownBudget::for_total_timeout_with_grace(deadline, shutdown_grace)
+                        });
+                        #[cfg(test)]
+                        control.observe_finalization_event("delivery_cleanup_requested_once");
+                        delivery_cleanup_attempted = true;
+                        if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
+                            root: DiskRootId::Delivery,
+                        }) {
+                            return Err(
+                                "disk lifecycle rejected delivery cleanup request".to_owned(),
+                            );
+                        }
+                        match cleanup_managed_root(
+                            Arc::clone(&context.spool_dir.delivery_root),
+                            &cleanup_budget,
+                        )
+                        .await
+                        {
+                            ManagedCleanupOutcome::Clean(_cleanup) => {
+                                if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
+                                    root: DiskRootId::Delivery,
+                                    outcome: DiskCleanupOutcome::Clean,
+                                }) {
+                                    return Err(
+                                        "disk lifecycle rejected clean delivery cleanup".to_owned(),
+                                    );
+                                }
+                                delivery_cleaned = true;
+                                #[cfg(test)]
+                                {
+                                    control.observe_finalization_event("delivery_root_absent");
+                                    control
+                                        .observe_finalization_event("delivery_workspace_absent");
+                                }
+                            }
+                            ManagedCleanupOutcome::Failed(error)
+                            | ManagedCleanupOutcome::Deferred(error) => {
+                                let outcome = if error.starts_with("workspace.cleanup.deferred:") {
+                                    DiskCleanupOutcome::Deferred(error.clone())
+                                } else {
+                                    DiskCleanupOutcome::Failed(error.clone())
+                                };
+                                if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
+                                    root: DiskRootId::Delivery,
+                                    outcome,
+                                }) {
+                                    return Err(
+                                        "disk lifecycle rejected incomplete delivery cleanup"
+                                            .to_owned(),
+                                    );
+                                }
+                                context.spool_dir.delivery_root.abandon_for_janitor(
+                                    "delivery-root cleanup did not complete".to_owned(),
+                                );
+                                delivery_errors.push(error);
+                            }
+                        }
+                        let mut terminal_errors = finalization_errors.clone();
+                        let output = match emitted {
+                            Ok(value) => Some(value),
+                            Err(error) => {
+                                terminal_errors
+                                    .push(format!("report.finalization.failed: {error:?}"));
+                                None
+                            }
+                        };
+                        terminal_errors.extend(delivery_errors);
+                        if !terminal_errors.is_empty() {
+                            let error = terminal_errors.join("; ");
+                            finalization_errors.clear();
+                            return Err(error);
+                        }
+                        if !disk_lifecycle.apply(DiskLifecycleEvent::FinishRequested) {
+                            return Err("disk lifecycle rejected run completion".to_owned());
+                        }
+                        let event = RunEvent::OutputEmitted(
+                            output.expect("successful finalization retains output acknowledgement"),
+                        );
+                        serial_completion = Some(ShellCompletion {
+                            event,
+                            process_task: false,
+                            io_task: false,
+                            process: None,
+                            blocking: None,
+                        });
+                    }
                     effect => {
                         let stopping = stop_signalled;
                         let event = if stopping {
@@ -1796,6 +2862,38 @@ where
                             ));
                             let selection = tokio::select! {
                                 biased;
+                                changed = disk_stop.changed(), if !disk_stop_delivered && !execution_safety_proven => {
+                                    changed.map_err(|_| {
+                                        "disk.measurement.failed: disk monitor stop channel closed"
+                                            .to_owned()
+                                    })?;
+                                    let failure = disk_stop
+                                        .borrow_and_update()
+                                        .clone()
+                                        .ok_or_else(|| {
+                                            "disk.measurement.failed: disk monitor signalled without a failure"
+                                                .to_owned()
+                                        })?;
+                                    disk_stop_delivered = true;
+                                    cancellation.cancel();
+                                    stop_signalled = true;
+                                    let event = RunEvent::DiskStopRequested(DiskStopRequested {
+                                        failure,
+                                    });
+                                    let budget = establish_event_shutdown_budget(
+                                        &mut shutdown_budget,
+                                        &event,
+                                        deadline,
+                                        tokio::time::Instant::now(),
+                                        shutdown_grace,
+                                    )
+                                    .expect("disk stop establishes a shutdown budget");
+                                    SerialSelection::Stopped {
+                                        event,
+                                        budget,
+                                        signal_failure: None,
+                                    }
+                                }
                                 event = &mut execution => SerialSelection::Completed(event),
                                 () = control.cancelled() => {
                                     cancellation.cancel();
@@ -1910,7 +3008,9 @@ where
                         };
                         if matches!(
                             event,
-                            RunEvent::DeadlineReached | RunEvent::CancellationRequested
+                            RunEvent::DeadlineReached
+                                | RunEvent::CancellationRequested
+                                | RunEvent::DiskStopRequested(_)
                         ) {
                             priority_event = Some(event);
                         } else {
@@ -2004,6 +3104,36 @@ where
             } else {
                 tokio::select! {
                     biased;
+                    changed = disk_stop.changed(), if !disk_stop_delivered && !execution_safety_proven => {
+                        changed.map_err(|_| {
+                            "disk.measurement.failed: disk monitor stop channel closed".to_owned()
+                        })?;
+                        let failure = disk_stop
+                            .borrow_and_update()
+                            .clone()
+                            .ok_or_else(|| {
+                                "disk.measurement.failed: disk monitor signalled without a failure"
+                                    .to_owned()
+                            })?;
+                        disk_stop_delivered = true;
+                        cancellation.cancel();
+                        stop_signalled = true;
+                        let event = RunEvent::DiskStopRequested(DiskStopRequested { failure });
+                        establish_event_shutdown_budget(
+                            &mut shutdown_budget,
+                            &event,
+                            deadline,
+                            tokio::time::Instant::now(),
+                            shutdown_grace,
+                        );
+                        ShellCompletion {
+                            event,
+                            process_task: false,
+                            io_task: false,
+                            process: None,
+                            blocking: None,
+                        }
+                    }
                     () = control.cancelled() => {
                         cancellation.cancel();
                         stop_signalled = true;
@@ -2087,6 +3217,83 @@ where
                     }
                 }
             };
+            let mut completion = completion;
+            let post_drain_failure = if stop_signalled || !completion.process_task {
+                None
+            } else {
+                #[cfg(test)]
+                if let Some(failure) = control.take_post_drain_disk_failure() {
+                    Some(failure)
+                } else {
+                    sample_after_process_drain(
+                        disk_monitor
+                            .as_ref()
+                            .expect("disk monitor started before process completion"),
+                        true,
+                    )
+                    .await
+                }
+                #[cfg(not(test))]
+                sample_after_process_drain(
+                    disk_monitor
+                        .as_ref()
+                        .expect("disk monitor started before process completion"),
+                    true,
+                )
+                .await
+            };
+            if let Some(mut failure) = post_drain_failure {
+                if let RunEvent::EffectFailed(error) = &completion.event {
+                    failure.secondary.push(hoimin_core::DiskSecondary::Error {
+                        code: error.failure.code().to_owned(),
+                        message: error.failure.message(),
+                    });
+                }
+                let process_failure = match process_tasks.join_next().await {
+                    Some(Ok(())) => None,
+                    Some(Err(error)) => Some(format!("process task failed: {error}")),
+                    None => Some("process completion had no task".to_owned()),
+                };
+                if let Some(error) = process_failure {
+                    failure.secondary.push(hoimin_core::DiskSecondary::Error {
+                        code: "process.drain.failed".to_owned(),
+                        message: error,
+                    });
+                }
+                if let Some((worker, _)) = completion.process {
+                    record_metrics(&mut metrics, &mut metrics_warnings, |metrics| {
+                        metrics.process_finished(worker, false)
+                    });
+                }
+                in_flight = in_flight.saturating_sub(1);
+                cancellation.cancel();
+                stop_signalled = true;
+                disk_stop_delivered = true;
+                let event = RunEvent::DiskStopRequested(DiskStopRequested { failure });
+                establish_event_shutdown_budget(
+                    &mut shutdown_budget,
+                    &event,
+                    deadline,
+                    tokio::time::Instant::now(),
+                    shutdown_grace,
+                );
+                completion = ShellCompletion {
+                    event,
+                    process_task: false,
+                    io_task: false,
+                    process: None,
+                    blocking: None,
+                };
+            }
+            #[cfg(test)]
+            if matches!(&completion.event, RunEvent::DiskStopRequested(_))
+                && !disk_stop_order_observed
+            {
+                disk_stop_order_observed = true;
+                control.observe_finalization_event("disk_stop");
+                control.observe_finalization_event("dispatch_gate_closed");
+                control.observe_finalization_event("root_termination_requested");
+            }
             if let Some(error) = signal_failure.take() {
                 cancellation.cancel();
                 let drain_budget = establish_shutdown_budget(
@@ -2121,14 +3328,124 @@ where
                 process,
                 blocking,
             } = completion;
+            #[cfg(test)]
+            let final_output_completed = matches!(
+                &event,
+                RunEvent::OutputEmitted(value) if final_output_ids.remove(&value.id)
+            );
             if let Some(blocking) = blocking {
                 event = accept_blocking_completion(&mut context, *blocking);
+            }
+            finalization_errors.append(&mut context.blocking_secondary_errors);
+            if let RunEvent::CleanupFinished(value) = &event
+                && execution_safety_proven
+                && !execution_cleaned
+            {
+                let id = value.id;
+                context.analyzer.release_candidate_spool();
+                context.spool_dir.release_execution_spool();
+                let cleanup_budget = shutdown_budget.unwrap_or_else(|| {
+                    ShutdownBudget::for_total_timeout_with_grace(deadline, shutdown_grace)
+                });
+                #[cfg(test)]
+                control.observe_finalization_event("workspace_cleanup_requested_once");
+                execution_cleanup_attempted = true;
+                #[cfg(test)]
+                if control.take_duplicate_execution_cleanup_request()
+                    && !disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
+                        root: DiskRootId::Execution,
+                    })
+                {
+                    return Err(
+                        "disk lifecycle rejected injected execution cleanup request".to_owned(),
+                    );
+                }
+                if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
+                    root: DiskRootId::Execution,
+                }) {
+                    return Err(
+                        "disk lifecycle rejected execution cleanup request".to_owned(),
+                    );
+                }
+                #[cfg(test)]
+                let cleanup_result = if control.take_execution_cleanup_deferred() {
+                    ManagedCleanupOutcome::Deferred(
+                        "workspace.cleanup.deferred: injected execution cleanup timeout".to_owned(),
+                    )
+                } else {
+                    cleanup_managed_root(
+                        Arc::clone(&context.spool_dir.execution_root),
+                        &cleanup_budget,
+                    )
+                    .await
+                };
+                #[cfg(not(test))]
+                let cleanup_result = cleanup_managed_root(
+                    Arc::clone(&context.spool_dir.execution_root),
+                    &cleanup_budget,
+                )
+                .await;
+                match cleanup_result {
+                    ManagedCleanupOutcome::Clean(cleanup) => {
+                        if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
+                            root: DiskRootId::Execution,
+                            outcome: DiskCleanupOutcome::Clean,
+                        }) {
+                            return Err(
+                                "disk lifecycle rejected clean execution cleanup".to_owned(),
+                            );
+                        }
+                        execution_cleaned = true;
+                        #[cfg(test)]
+                        control.observe_finalization_event("workspace_absent");
+                        execution_cleanup_record = Some(cleanup);
+                        match control.end_available(&[Arc::clone(
+                            &context.spool_dir.execution_root,
+                        )]) {
+                            Ok(available) => execution_end_available = Some(available),
+                            Err(error) => finalization_errors.push(format!(
+                                "disk.measurement.failed: end free-space query failed: {error}"
+                            )),
+                        }
+                    }
+                    ManagedCleanupOutcome::Failed(error) => {
+                        if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
+                            root: DiskRootId::Execution,
+                            outcome: DiskCleanupOutcome::Failed(error.clone()),
+                        }) {
+                            return Err(
+                                "disk lifecycle rejected failed execution cleanup".to_owned(),
+                            );
+                        }
+                        event = RunEvent::EffectFailed(EffectFailed::other(
+                            id,
+                            hoimin_core::WORKSPACE_CLEANUP_FAILED,
+                            error,
+                        ));
+                    }
+                    ManagedCleanupOutcome::Deferred(error) => {
+                        if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
+                            root: DiskRootId::Execution,
+                            outcome: DiskCleanupOutcome::Deferred(error.clone()),
+                        }) {
+                            return Err(
+                                "disk lifecycle rejected deferred execution cleanup".to_owned(),
+                            );
+                        }
+                        context.spool_dir.execution_root.abandon_for_janitor(
+                            "execution-root cleanup did not complete".to_owned(),
+                        );
+                        return Err(error);
+                    }
+                }
             }
             let previous_phase = state.phase();
             let accepted_mutant = matches!(&event, RunEvent::MutantFinished(_));
             let targets_resolved = matches!(&event, RunEvent::TargetsResolved(_));
             let preflight_completed = matches!(&event, RunEvent::PreflightCompleted(_));
             let cleanup_finished = matches!(&event, RunEvent::CleanupFinished(_));
+            #[cfg(test)]
+            let session_finished = matches!(&event, RunEvent::SessionFinished(_));
             let analyzed_records = match &event {
                 RunEvent::AnalysisFinished(value) => {
                     value.spool.as_ref().map(|spool| spool.records)
@@ -2137,7 +3454,9 @@ where
             };
             let external_stop = matches!(
                 event,
-                RunEvent::DeadlineReached | RunEvent::CancellationRequested
+                RunEvent::DeadlineReached
+                    | RunEvent::CancellationRequested
+                    | RunEvent::DiskStopRequested(_)
             );
             let deadline_stop = matches!(event, RunEvent::DeadlineReached);
             let failed = matches!(event, RunEvent::EffectFailed(_));
@@ -2194,6 +3513,14 @@ where
                 }
             };
             state = next;
+            #[cfg(test)]
+            if final_output_completed {
+                control.observe_finalization_event("output_acknowledged");
+            }
+            #[cfg(test)]
+            if session_finished {
+                control.observe_finalization_event("session_finished");
+            }
             track_diagnostic_run_id(&mut diagnostic_run_id, &state);
             if let Some((worker, true)) = process {
                 record_metrics(&mut metrics, &mut metrics_warnings, |metrics| {
@@ -2342,6 +3669,73 @@ where
             tokio::time::Instant::now(),
             shutdown_grace,
         );
+        let budget = shutdown_budget
+            .as_ref()
+            .expect("outer finalization established a shutdown budget");
+        let _disk_stats = disk_monitor.as_ref().map(DiskMonitor::stats);
+        let (process_reaped, output_drained, process_errors) = if execution_safety_proven {
+            (true, true, Vec::new())
+        } else {
+            let report = context
+                .process
+                .drain_for_shutdown(
+                    budget
+                        .deadline()
+                        .saturating_duration_since(tokio::time::Instant::now()),
+                )
+                .await;
+            (
+                report.all_reaped,
+                report.output_drains_joined,
+                report.secondary_errors,
+            )
+        };
+        let process_safe = process_reaped && output_drained;
+        let monitor_joined = if execution_safety_proven {
+            true
+        } else if let Some(monitor) = disk_monitor.as_ref() {
+            let remaining = shutdown_budget
+                .as_ref()
+                .expect("outer finalization established a shutdown budget")
+                .deadline()
+                .saturating_duration_since(tokio::time::Instant::now());
+            monitor.stop_and_join(remaining).await
+        } else {
+            true
+        };
+        let lifecycle_snapshot = disk_lifecycle.snapshot();
+        if lifecycle_snapshot.process_drain == DiskComponentState::Pending
+            && !disk_lifecycle.apply(if process_reaped {
+                DiskLifecycleEvent::ProcessDrainSucceeded
+            } else {
+                DiskLifecycleEvent::ProcessDrainFailed
+            })
+        {
+            finalization_errors
+                .push("disk lifecycle rejected outer process drain completion".to_owned());
+        }
+        let lifecycle_snapshot = disk_lifecycle.snapshot();
+        if lifecycle_snapshot.output_drain == DiskComponentState::Pending
+            && !disk_lifecycle.apply(if output_drained {
+                DiskLifecycleEvent::OutputDrainSucceeded
+            } else {
+                DiskLifecycleEvent::OutputDrainFailed
+            })
+        {
+            finalization_errors
+                .push("disk lifecycle rejected outer output drain completion".to_owned());
+        }
+        let lifecycle_snapshot = disk_lifecycle.snapshot();
+        if lifecycle_snapshot.monitor_join == DiskComponentState::Pending
+            && !disk_lifecycle.apply(if monitor_joined {
+                DiskLifecycleEvent::MonitorJoinSucceeded
+            } else {
+                DiskLifecycleEvent::MonitorJoinFailed
+            })
+        {
+            finalization_errors
+                .push("disk lifecycle rejected outer monitor join completion".to_owned());
+        }
         let close = close_context_resources(
             &mut context,
             shutdown_budget
@@ -2354,11 +3748,221 @@ where
         if close.expiry.is_some() {
             shutdown_expiry_reported = true;
         }
-        let mut run_result = match (run_result, close.expiry) {
+        let mut run_result = if monitor_joined {
+            run_result
+        } else {
+            let join_error =
+                "disk.measurement.failed: disk monitor join exceeded shutdown budget".to_owned();
+            match run_result {
+                Ok(_) => Err(join_error),
+                Err(primary) => Err(combine_shutdown_errors(primary, Some(join_error))),
+            }
+        };
+        run_result = match (run_result, close.expiry) {
             (Ok(_), Some(expiry)) => Err(expiry),
             (Err(primary), Some(expiry)) => Err(combine_shutdown_errors(primary, Some(expiry))),
             (result, None) => result,
         };
+        finalization_errors.append(&mut context.blocking_secondary_errors);
+        for error in finalization_errors.drain(..).chain(process_errors) {
+            run_result = append_finalization_error(run_result, error);
+        }
+        let safe_to_remove = process_safe && monitor_joined && final_measurement_joined;
+        if safe_to_remove {
+            if !execution_cleaned && !execution_cleanup_attempted {
+                context.analyzer.release_candidate_spool();
+                context.spool_dir.release_execution_spool();
+                execution_cleanup_attempted = true;
+                if disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
+                    root: DiskRootId::Execution,
+                }) {
+                    match cleanup_managed_root(
+                        Arc::clone(&context.spool_dir.execution_root),
+                        budget,
+                    )
+                    .await
+                    {
+                        ManagedCleanupOutcome::Clean(_) => {
+                            if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
+                                root: DiskRootId::Execution,
+                                outcome: DiskCleanupOutcome::Clean,
+                            }) {
+                                run_result = append_finalization_error(
+                                    run_result,
+                                    "disk lifecycle rejected outer clean execution cleanup"
+                                        .to_owned(),
+                                );
+                            }
+                            execution_cleaned = true;
+                        }
+                        ManagedCleanupOutcome::Failed(error)
+                        | ManagedCleanupOutcome::Deferred(error) => {
+                            let outcome = if error.starts_with("workspace.cleanup.deferred:") {
+                                DiskCleanupOutcome::Deferred(error.clone())
+                            } else {
+                                DiskCleanupOutcome::Failed(error.clone())
+                            };
+                            if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
+                                root: DiskRootId::Execution,
+                                outcome,
+                            }) {
+                                run_result = append_finalization_error(
+                                    run_result,
+                                    "disk lifecycle rejected outer incomplete execution cleanup"
+                                        .to_owned(),
+                                );
+                            }
+                            context.spool_dir.execution_root.abandon_for_janitor(
+                                "outer execution-root cleanup did not complete".to_owned(),
+                            );
+                            run_result = append_finalization_error(run_result, error);
+                        }
+                    }
+                } else {
+                    run_result = append_finalization_error(
+                        run_result,
+                        "disk lifecycle rejected outer execution cleanup request".to_owned(),
+                    );
+                }
+            }
+            if !execution_cleaned {
+                context
+                    .spool_dir
+                    .execution_root
+                    .abandon_for_janitor("execution-root cleanup was already attempted".to_owned());
+            }
+            if !delivery_cleaned && !delivery_cleanup_attempted {
+                if let Err(error) = context.report.flush_and_release_spool() {
+                    run_result = append_finalization_error(
+                        run_result,
+                        format!("report flush before delivery cleanup failed: {error}"),
+                    );
+                }
+                if disk_lifecycle.snapshot().report == DiskComponentState::Pending
+                    && !disk_lifecycle.apply(DiskLifecycleEvent::ReportFailed)
+                {
+                    run_result = append_finalization_error(
+                        run_result,
+                        "disk lifecycle rejected outer report failure".to_owned(),
+                    );
+                }
+                context.spool_dir.release_delivery_spool();
+                delivery_cleanup_attempted = true;
+                if disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
+                    root: DiskRootId::Delivery,
+                }) {
+                    match cleanup_managed_root(Arc::clone(&context.spool_dir.delivery_root), budget)
+                        .await
+                    {
+                        ManagedCleanupOutcome::Clean(_) => {
+                            if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
+                                root: DiskRootId::Delivery,
+                                outcome: DiskCleanupOutcome::Clean,
+                            }) {
+                                run_result = append_finalization_error(
+                                    run_result,
+                                    "disk lifecycle rejected outer clean delivery cleanup"
+                                        .to_owned(),
+                                );
+                            }
+                            delivery_cleaned = true;
+                            #[cfg(test)]
+                            control.observe_finalization_event("delivery_root_absent");
+                        }
+                        ManagedCleanupOutcome::Failed(error)
+                        | ManagedCleanupOutcome::Deferred(error) => {
+                            let outcome = if error.starts_with("workspace.cleanup.deferred:") {
+                                DiskCleanupOutcome::Deferred(error.clone())
+                            } else {
+                                DiskCleanupOutcome::Failed(error.clone())
+                            };
+                            if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
+                                root: DiskRootId::Delivery,
+                                outcome,
+                            }) {
+                                run_result = append_finalization_error(
+                                    run_result,
+                                    "disk lifecycle rejected outer incomplete delivery cleanup"
+                                        .to_owned(),
+                                );
+                            }
+                            context.spool_dir.delivery_root.abandon_for_janitor(
+                                "outer delivery-root cleanup did not complete".to_owned(),
+                            );
+                            run_result = append_finalization_error(run_result, error);
+                        }
+                    }
+                } else {
+                    run_result = append_finalization_error(
+                        run_result,
+                        "disk lifecycle rejected outer delivery cleanup request".to_owned(),
+                    );
+                }
+            }
+            if !delivery_cleaned {
+                context
+                    .spool_dir
+                    .delivery_root
+                    .abandon_for_janitor("delivery-root cleanup was already attempted".to_owned());
+            }
+        } else {
+            if !execution_cleaned && !execution_cleanup_attempted {
+                execution_cleanup_attempted = true;
+                let requested = disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
+                    root: DiskRootId::Execution,
+                });
+                let completed = requested
+                    && disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
+                        root: DiskRootId::Execution,
+                        outcome: DiskCleanupOutcome::Deferred(
+                            "process/output drain or monitor join incomplete".to_owned(),
+                        ),
+                    });
+                if !completed {
+                    run_result = append_finalization_error(
+                        run_result,
+                        "disk lifecycle rejected deferred outer execution cleanup".to_owned(),
+                    );
+                }
+            }
+            if !execution_cleaned {
+                context.spool_dir.execution_root.abandon_for_janitor(
+                    "process/output drain or disk monitor join was not proven".to_owned(),
+                );
+            }
+            if disk_lifecycle.snapshot().report == DiskComponentState::Pending {
+                let _ = disk_lifecycle.apply(DiskLifecycleEvent::ReportFailed);
+            }
+            if !delivery_cleaned && !delivery_cleanup_attempted {
+                delivery_cleanup_attempted = true;
+                let requested = disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
+                    root: DiskRootId::Delivery,
+                });
+                let completed = requested
+                    && disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
+                        root: DiskRootId::Delivery,
+                        outcome: DiskCleanupOutcome::Deferred(
+                            "process/output drain or monitor join incomplete".to_owned(),
+                        ),
+                    });
+                if !completed {
+                    run_result = append_finalization_error(
+                        run_result,
+                        "disk lifecycle rejected deferred outer delivery cleanup".to_owned(),
+                    );
+                }
+            }
+            if !delivery_cleaned {
+                context.spool_dir.delivery_root.abandon_for_janitor(
+                    "process/output drain or disk monitor join was not proven".to_owned(),
+                );
+            }
+            run_result = append_finalization_error(
+                run_result,
+                "workspace.cleanup.deferred: process/output drain or monitor join incomplete"
+                    .to_owned(),
+            );
+        }
         if let Some(path) = metrics_path {
             match (shutdown_budget.as_ref(), shutdown_expiry_reported) {
                 (Some(budget), false) => {
@@ -2984,6 +4588,7 @@ fn combine_close_results(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::{BTreeMap, VecDeque};
     use std::ffi::OsString;
     use std::time::{Duration, Instant};
 
@@ -2996,6 +4601,129 @@ mod tests {
 
     use crate::metrics::write_metrics;
     use crate::resource::PortableBackend;
+    use crate::workspace::{DiskMeasurement, FilesystemKey, MeterReading};
+
+    const DISK_STOP_FINALIZATION_ORDER: [&str; 14] = [
+        "disk_stop",
+        "dispatch_gate_closed",
+        "root_termination_requested",
+        "root_reaped",
+        "output_drained",
+        "monitor_stopped",
+        "monitor_joined",
+        "workspace_cleanup_requested_once",
+        "workspace_absent",
+        "run_finished_written",
+        "delivery_cleanup_requested_once",
+        "delivery_workspace_absent",
+        "output_acknowledged",
+        "session_finished",
+    ];
+
+    struct FixedDiskMeter(MeterReading);
+
+    impl DiskMeasurement for FixedDiskMeter {
+        fn measure(&self) -> std::io::Result<MeterReading> {
+            Ok(self.0.clone())
+        }
+    }
+
+    struct FailingDiskMeter;
+
+    impl DiskMeasurement for FailingDiskMeter {
+        fn measure(&self) -> std::io::Result<MeterReading> {
+            Err(std::io::Error::other("initial statvfs failed"))
+        }
+    }
+
+    struct ScriptedDiskMeter(std::sync::Mutex<VecDeque<MeterReading>>);
+
+    impl DiskMeasurement for ScriptedDiskMeter {
+        fn measure(&self) -> std::io::Result<MeterReading> {
+            Ok(self
+                .0
+                .lock()
+                .expect("scripted disk meter lock")
+                .pop_front()
+                .expect("scripted disk reading"))
+        }
+    }
+
+    struct FailingAfterDiskMeter {
+        calls: AtomicUsize,
+        healthy: MeterReading,
+        fail_at: usize,
+    }
+
+    impl DiskMeasurement for FailingAfterDiskMeter {
+        fn measure(&self) -> std::io::Result<MeterReading> {
+            let call = self.calls.fetch_add(1, Ordering::AcqRel);
+            if call >= self.fail_at {
+                Err(std::io::Error::other("post-drain statvfs failed"))
+            } else {
+                Ok(self.healthy.clone())
+            }
+        }
+    }
+
+    struct SwitchingDiskMeter {
+        stop: Arc<AtomicBool>,
+    }
+
+    impl DiskMeasurement for SwitchingDiskMeter {
+        fn measure(&self) -> std::io::Result<MeterReading> {
+            Ok(MeterReading {
+                owned_bytes: 0,
+                available_by_filesystem: BTreeMap::from([(
+                    FilesystemKey(7),
+                    if self.stop.load(Ordering::Acquire) {
+                        1
+                    } else {
+                        u64::MAX
+                    },
+                )]),
+                conservative_entries: false,
+                elapsed: Duration::from_millis(1),
+            })
+        }
+    }
+
+    struct BlockingAfterCallMeter {
+        calls: Arc<AtomicUsize>,
+        block_at: usize,
+        entered: std::sync::mpsc::Sender<()>,
+        release: Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>,
+    }
+
+    impl DiskMeasurement for BlockingAfterCallMeter {
+        fn measure(&self) -> std::io::Result<MeterReading> {
+            let call = self.calls.fetch_add(1, Ordering::AcqRel) + 1;
+            if call >= self.block_at {
+                let _ = self.entered.send(());
+                let (released, changed) = &*self.release;
+                let mut released = released.lock().expect("disk release lock");
+                while !*released {
+                    released = changed.wait(released).expect("disk release wait");
+                }
+            }
+            Ok(MeterReading {
+                owned_bytes: 0,
+                available_by_filesystem: BTreeMap::from([(FilesystemKey(7), u64::MAX)]),
+                conservative_entries: false,
+                elapsed: Duration::from_millis(1),
+            })
+        }
+    }
+
+    struct ReleaseBlockedMeter(Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>);
+
+    impl Drop for ReleaseBlockedMeter {
+        fn drop(&mut self) {
+            let (released, changed) = &*self.0;
+            *released.lock().expect("disk release lock") = true;
+            changed.notify_all();
+        }
+    }
 
     #[cfg(unix)]
     fn missing_executable_arg() -> CommandArg {
@@ -3018,6 +4746,24 @@ mod tests {
         vec![OsString::from("/usr/bin/true")]
     }
 
+    #[cfg(unix)]
+    fn long_running_test_command() -> Vec<OsString> {
+        vec![
+            OsString::from("/bin/sh"),
+            OsString::from("-c"),
+            OsString::from("sleep 30"),
+        ]
+    }
+
+    #[cfg(windows)]
+    fn long_running_test_command() -> Vec<OsString> {
+        vec![
+            OsString::from("cmd.exe"),
+            OsString::from("/C"),
+            OsString::from("ping -n 31 127.0.0.1 >NUL"),
+        ]
+    }
+
     #[cfg(windows)]
     fn successful_test_command() -> Vec<OsString> {
         vec![
@@ -3028,7 +4774,7 @@ mod tests {
     }
 
     fn shell_setup_test_config(project: &TempDir) -> RunConfig {
-        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
+        std::fs::write(project.path().join("target.py"), b"value = 1\n").unwrap();
         crate::cli::parse_config_from([
             OsString::from("hoimin"),
             OsString::from("run"),
@@ -3043,9 +4789,1003 @@ mod tests {
         .unwrap()
     }
 
+    fn output_failure_test_config(project: &TempDir, format: &str) -> RunConfig {
+        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
+        let mut args = vec![
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--format"),
+            OsString::from(format),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+        ];
+        args.extend(successful_test_command());
+        crate::cli::parse_config_from(args).unwrap()
+    }
+
+    #[tokio::test]
+    async fn initial_disk_stop_prevents_the_first_effect_dispatch() {
+        let project = tempfile::tempdir().unwrap();
+        let config = shell_setup_test_config(&project);
+        let control = RunControl::with_disk_meter(FixedDiskMeter(MeterReading {
+            owned_bytes: 0,
+            available_by_filesystem: BTreeMap::from([(FilesystemKey(7), 1)]),
+            conservative_entries: false,
+            elapsed: Duration::from_millis(1),
+        }));
+        let observed = control.clone();
+
+        let exit = run_loop_with_control(config, Vec::new(), Vec::new(), control)
+            .await
+            .expect("a typed disk stop must complete through the normal run state machine");
+
+        assert_ne!(exit, 0);
+        assert_eq!(observed.dispatched_effect_count(), 0);
+        assert_eq!(observed.max_process_tasks(), 0);
+    }
+
+    #[tokio::test]
+    async fn real_initial_threshold_is_a_typed_stop_after_start_requested() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"value = 1\n").unwrap();
+        let config = crate::cli::parse_config_from([
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--format"),
+            OsString::from("json"),
+            OsString::from("--min-free-space"),
+            OsString::from("18446744073709551615B"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+            OsString::from("unused-test-command"),
+        ])
+        .unwrap();
+        let control = RunControl::new();
+        let observed = control.clone();
+        let mut stdout = Vec::new();
+
+        let exit = run_loop_with_control(config, &mut stdout, Vec::new(), control)
+            .await
+            .expect("initial threshold must use the typed stop lifecycle");
+
+        assert_ne!(exit, 0);
+        assert_eq!(observed.dispatched_effect_count(), 0);
+        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(
+            report["summary"]["disk"]["stop"]["code"],
+            hoimin_core::FILESYSTEM_RESERVE_REACHED
+        );
+    }
+
+    #[tokio::test]
+    async fn initial_measurement_failure_is_typed_after_start_requested_before_dispatch() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"value = 1\n").unwrap();
+        let config = crate::cli::parse_config_from([
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--format"),
+            OsString::from("json"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+            OsString::from("unused-test-command"),
+        ])
+        .unwrap();
+        let control = RunControl::with_disk_meter(FailingDiskMeter);
+        let observed = control.clone();
+        let mut stdout = Vec::new();
+
+        let exit = run_loop_with_control(config, &mut stdout, Vec::new(), control)
+            .await
+            .expect("initial measurement failure must use the typed stop lifecycle");
+
+        assert_ne!(exit, 0);
+        assert_eq!(observed.dispatched_effect_count(), 0);
+        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(
+            report["summary"]["disk"]["stop"]["code"],
+            hoimin_core::DISK_MEASUREMENT_FAILED
+        );
+        assert_eq!(
+            report["summary"]["disk"]["stop"]["message"],
+            "initial statvfs failed"
+        );
+    }
+
+    #[tokio::test]
+    async fn pre_dispatch_sample_stops_before_analyzer_dispatch() {
+        let project = tempfile::tempdir().unwrap();
+        let config = shell_setup_test_config(&project);
+        let reading = |available_bytes| MeterReading {
+            owned_bytes: 0,
+            available_by_filesystem: BTreeMap::from([(FilesystemKey(7), available_bytes)]),
+            conservative_entries: false,
+            elapsed: Duration::from_millis(1),
+        };
+        let control = RunControl::with_disk_meter_and_interval(
+            ScriptedDiskMeter(std::sync::Mutex::new(VecDeque::from([
+                reading(u64::MAX),
+                reading(1),
+                reading(1),
+            ]))),
+            Duration::from_secs(60),
+        );
+        let observed = control.clone();
+
+        let exit = run_loop_with_control(config, Vec::new(), Vec::new(), control)
+            .await
+            .expect("a pre-dispatch disk stop must finish through the run state machine");
+
+        assert_ne!(exit, 0);
+        assert_eq!(observed.dispatched_effect_count(), 0);
+        assert_eq!(observed.max_process_tasks(), 0);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn periodic_disk_stop_interrupts_an_active_process() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"value = 1\n").unwrap();
+        let session_parent = tempfile::tempdir().unwrap();
+        let session = session_parent.path().join("session.sqlite3");
+        let mut args = vec![
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--session"),
+            session.as_os_str().to_owned(),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+        ];
+        args.extend(long_running_test_command());
+        let config = crate::cli::parse_config_from(args).unwrap();
+        let stop = Arc::new(AtomicBool::new(false));
+        let control = RunControl::with_disk_meter_and_interval(
+            SwitchingDiskMeter {
+                stop: Arc::clone(&stop),
+            },
+            Duration::from_millis(10),
+        );
+        let observed = control.clone();
+        let mut run = Box::pin(run_loop_with_control(
+            config,
+            Vec::new(),
+            Vec::new(),
+            control,
+        ));
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                tokio::select! {
+                    result = &mut run => {
+                        panic!("run finished before baseline dispatch: {result:?}")
+                    }
+                    () = tokio::time::sleep(Duration::from_millis(5)) => {
+                        if observed.max_process_tasks() != 0 {
+                            break;
+                        }
+                    }
+                }
+            }
+        })
+        .await
+        .expect("baseline process was not dispatched");
+
+        stop.store(true, Ordering::Release);
+        let stopped = tokio::time::timeout(Duration::from_secs(2), &mut run).await;
+        if stopped.is_err() {
+            observed.cancel();
+            let _ = tokio::time::timeout(Duration::from_secs(3), &mut run).await;
+            panic!("periodic disk stop did not interrupt the active process");
+        }
+        let exit = stopped.unwrap().unwrap();
+
+        assert_ne!(exit, 0);
+        let events = observed.finalization_events();
+        let observed_order = DISK_STOP_FINALIZATION_ORDER
+            .iter()
+            .map(|expected| {
+                events
+                    .iter()
+                    .position(|event| event == expected)
+                    .unwrap_or_else(|| panic!("missing {expected} in {events:?}"))
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            observed_order.windows(2).all(|pair| pair[0] < pair[1]),
+            "shutdown order mismatch: {events:?}"
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| **event == "workspace_cleanup_requested_once")
+                .count(),
+            1
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| **event == "delivery_cleanup_requested_once")
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn blocked_monitor_join_defers_both_roots_without_recursive_cleanup() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"value = 1\n").unwrap();
+        let mut args = vec![
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+        ];
+        args.extend(long_running_test_command());
+        let config = crate::cli::parse_config_from(args).unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let release = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+        let release_guard = ReleaseBlockedMeter(Arc::clone(&release));
+        let mut control = RunControl::with_disk_meter_and_interval(
+            BlockingAfterCallMeter {
+                calls,
+                block_at: 4,
+                entered: entered_tx,
+                release,
+            },
+            Duration::from_millis(50),
+        );
+        control.shutdown_grace = Duration::from_millis(50);
+        let observed = control.clone();
+        let mut run = Box::pin(run_loop_with_control(
+            config,
+            Vec::new(),
+            Vec::new(),
+            control,
+        ));
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                tokio::select! {
+                    result = &mut run => panic!("run finished before blocked periodic scan: {result:?}"),
+                    () = tokio::time::sleep(Duration::from_millis(5)) => {
+                        if observed.max_process_tasks() != 0 && entered_rx.try_recv().is_ok() {
+                            break;
+                        }
+                    }
+                }
+            }
+        })
+        .await
+        .expect("periodic scan did not block while the process was live");
+
+        observed.cancel();
+        let result = tokio::time::timeout(Duration::from_secs(2), &mut run)
+            .await
+            .expect("shutdown did not honor the join budget");
+        let error = result.expect_err("blocked monitor join must make cleanup deferred");
+        assert!(error.contains("workspace.cleanup.deferred"), "{error}");
+        let roots = observed.managed_root_paths();
+        assert_eq!(roots.len(), 2);
+        assert!(
+            roots.iter().all(|root| root.exists()),
+            "a root was removed while the monitor still held its capability: {roots:?}"
+        );
+        drop(release_guard);
+    }
+
+    #[tokio::test]
+    async fn process_completion_takes_a_post_drain_sample_before_classification() {
+        let reading = |available_bytes| MeterReading {
+            owned_bytes: 0,
+            available_by_filesystem: BTreeMap::from([(FilesystemKey(7), available_bytes)]),
+            conservative_entries: false,
+            elapsed: Duration::from_millis(1),
+        };
+        let meter = ScriptedDiskMeter(std::sync::Mutex::new(VecDeque::from([
+            reading(u64::MAX),
+            reading(1),
+        ])));
+        let policy = DiskPolicy {
+            max_owned_bytes: std::num::NonZeroU64::new(u64::MAX).unwrap(),
+            min_free_bytes: std::num::NonZeroU64::new(2).unwrap(),
+        };
+        let monitor = DiskMonitor::start_with_meter_and_interval(
+            meter,
+            policy,
+            Vec::new(),
+            Duration::from_secs(60),
+        )
+        .await;
+
+        let failure = sample_after_process_drain(&monitor, true)
+            .await
+            .expect("post-drain reserve stop");
+
+        assert_eq!(
+            failure.reason,
+            hoimin_core::DiskStopReason::FilesystemReserveReached
+        );
+        assert!(monitor.stop_and_join(Duration::from_secs(1)).await);
+    }
+
+    #[tokio::test]
+    async fn post_drain_disk_stop_retains_the_simultaneous_process_failure_as_secondary() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"value = 1\n").unwrap();
+        let config = crate::cli::parse_config_from([
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--format"),
+            OsString::from("json"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+            OsString::from("definitely-missing-hoimin-executable"),
+        ])
+        .unwrap();
+        let control = RunControl::with_disk_meter(FixedDiskMeter(MeterReading {
+            owned_bytes: 0,
+            available_by_filesystem: BTreeMap::from([(FilesystemKey(7), u64::MAX)]),
+            conservative_entries: false,
+            elapsed: Duration::from_millis(1),
+        }));
+        control.inject_post_drain_disk_failure(hoimin_core::DiskFailure {
+            code: hoimin_core::FILESYSTEM_RESERVE_REACHED.to_owned(),
+            reason: hoimin_core::DiskStopReason::FilesystemReserveReached,
+            observation: Some(DiskObservation {
+                owned_bytes: 0,
+                available_bytes: 1,
+                measured_in: Duration::from_millis(1),
+            }),
+            message: None,
+            secondary: Vec::new(),
+        });
+        let mut stdout = Vec::new();
+
+        let exit = run_loop_with_control(config, &mut stdout, Vec::new(), control)
+            .await
+            .expect("disk stop should complete through the typed state machine");
+
+        assert_ne!(exit, 0);
+        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let stop = &report["summary"]["disk"]["stop"];
+        assert_eq!(stop["code"], hoimin_core::FILESYSTEM_RESERVE_REACHED);
+        assert!(
+            stop["secondary"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|secondary| {
+                    secondary["Error"]["code"] == "process.spawn"
+                        && secondary["Error"]["message"]
+                            .as_str()
+                            .is_some_and(|message| message.contains("spawn process"))
+                }),
+            "{stop}"
+        );
+    }
+
+    #[tokio::test]
+    async fn real_monitor_stop_merge_preserves_the_simultaneous_process_failure() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"value = 1\n").unwrap();
+        let config = crate::cli::parse_config_from([
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--format"),
+            OsString::from("json"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+            OsString::from("definitely-missing-hoimin-executable"),
+        ])
+        .unwrap();
+        let healthy = MeterReading {
+            owned_bytes: 0,
+            available_by_filesystem: BTreeMap::from([(FilesystemKey(7), u64::MAX)]),
+            conservative_entries: false,
+            elapsed: Duration::from_millis(1),
+        };
+        let meter = FailingAfterDiskMeter {
+            calls: AtomicUsize::new(0),
+            healthy,
+            fail_at: 2,
+        };
+        let control = RunControl::with_disk_meter_and_interval(meter, Duration::from_secs(60));
+        let mut stdout = Vec::new();
+
+        let exit = run_loop_with_control(config, &mut stdout, Vec::new(), control)
+            .await
+            .expect("monitor stop should complete through the typed state machine");
+
+        assert_ne!(exit, 0);
+        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let stop = &report["summary"]["disk"]["stop"];
+        assert_eq!(stop["code"], hoimin_core::DISK_MEASUREMENT_FAILED);
+        assert_eq!(stop["message"], "post-drain statvfs failed");
+        assert!(
+            stop["secondary"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|secondary| {
+                    secondary["Error"]["code"] == "process.spawn"
+                        && secondary["Error"]["message"]
+                            .as_str()
+                            .is_some_and(|message| message.contains("spawn process"))
+                }),
+            "{stop}"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn final_execution_measurement_does_not_block_the_async_runtime() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
+        let mut args = vec![
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+        ];
+        args.extend(successful_test_command());
+        let config = crate::cli::parse_config_from(args).unwrap();
+        let (control, pause) = RunControl::with_final_measurement_pause();
+        let probe_requested = Arc::new(AtomicBool::new(false));
+        let probe_observed = Arc::new(AtomicBool::new(false));
+        let probe = tokio::spawn({
+            let requested = Arc::clone(&probe_requested);
+            let observed = Arc::clone(&probe_observed);
+            async move {
+                while !requested.load(Ordering::Acquire) {
+                    tokio::task::yield_now().await;
+                }
+                observed.store(true, Ordering::Release);
+            }
+        });
+        let observer = std::thread::spawn({
+            let requested = Arc::clone(&probe_requested);
+            let observed = Arc::clone(&probe_observed);
+            move || {
+                pause.wait_until_entered();
+                requested.store(true, Ordering::Release);
+                std::thread::sleep(Duration::from_millis(100));
+                let runtime_was_responsive = observed.load(Ordering::Acquire);
+                pause.release();
+                runtime_was_responsive
+            }
+        });
+
+        let result = run_loop_with_control(config, Vec::new(), Vec::new(), control).await;
+        probe.await.unwrap();
+
+        assert_eq!(result.unwrap(), 0);
+        assert!(
+            observer.join().unwrap(),
+            "final execution measurement blocked the Tokio runtime worker"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn expired_final_measurement_defers_cleanup_while_the_scan_owns_the_root() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
+        let mut args = vec![
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+        ];
+        args.extend(successful_test_command());
+        let config = crate::cli::parse_config_from(args).unwrap();
+        let (pause_hook, pause) = FinalMeasurementPause::new();
+        let mut control = RunControl::with_disk_meter(FixedDiskMeter(MeterReading {
+            owned_bytes: 0,
+            available_by_filesystem: BTreeMap::from([(FilesystemKey(7), 1)]),
+            conservative_entries: false,
+            elapsed: Duration::from_millis(1),
+        }));
+        control.final_measurement_pause = Some(pause_hook);
+        control.shutdown_grace = Duration::from_millis(30);
+        let observed = control.clone();
+        let release = std::thread::spawn(move || {
+            pause.wait_until_entered();
+            std::thread::sleep(Duration::from_millis(100));
+            pause.release();
+        });
+
+        let error = run_loop_with_control(config, Vec::new(), Vec::new(), control)
+            .await
+            .expect_err("expired final measurement must defer recursive cleanup");
+        release.join().unwrap();
+
+        assert!(error.contains("workspace.cleanup.deferred"), "{error}");
+        let roots = observed.managed_root_paths();
+        assert_eq!(roots.len(), 2);
+        assert!(
+            roots.iter().all(|root| root.exists()),
+            "cleanup raced an unjoined final measurement: {roots:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn deferred_execution_cleanup_is_incomplete_without_output_ack_or_outer_retry() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
+        let mut args = vec![
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+        ];
+        args.extend(successful_test_command());
+        let config = crate::cli::parse_config_from(args).unwrap();
+        let control = RunControl::new();
+        control.inject_execution_cleanup_deferred();
+        let observed = control.clone();
+
+        let error = run_loop_with_control(config, Vec::new(), Vec::new(), control)
+            .await
+            .expect_err("deferred execution cleanup must keep the run incomplete");
+
+        assert!(error.contains("workspace.cleanup.deferred"), "{error}");
+        assert!(
+            !observed
+                .finalization_events()
+                .contains(&"output_acknowledged"),
+            "deferred cleanup was acknowledged as delivered"
+        );
+        let roots = observed.managed_root_paths();
+        assert_eq!(roots.len(), 2);
+        assert!(
+            roots[0].exists(),
+            "outer finalization retried and removed the deferred execution root"
+        );
+    }
+
+    #[tokio::test]
+    async fn shell_cleanup_is_rejected_when_the_production_disk_lifecycle_sees_a_duplicate_request()
+    {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
+        let mut args = vec![
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+        ];
+        args.extend(successful_test_command());
+        let config = crate::cli::parse_config_from(args).unwrap();
+        let control = RunControl::new();
+        control.inject_duplicate_execution_cleanup_request();
+        let observed = control.clone();
+
+        let error = run_loop_with_control(config, Vec::new(), Vec::new(), control)
+            .await
+            .expect_err("duplicate cleanup request must be rejected by the runtime lifecycle");
+
+        assert!(
+            error.contains("disk lifecycle rejected execution cleanup request"),
+            "{error}"
+        );
+        assert!(!observed.finalization_events().contains(&"workspace_absent"));
+    }
+
+    #[tokio::test]
+    async fn normal_run_removes_both_managed_roots_before_returning() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
+        let mut args = vec![
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+        ];
+        args.extend(successful_test_command());
+        let config = crate::cli::parse_config_from(args).unwrap();
+        let control = RunControl::new();
+        let observed = control.clone();
+
+        let exit = run_loop_with_control(config, Vec::new(), Vec::new(), control)
+            .await
+            .unwrap();
+
+        assert_eq!(exit, 0);
+        let roots = observed.managed_root_paths();
+        assert_eq!(roots.len(), 2);
+        assert!(
+            roots.iter().all(|root| !root.exists()),
+            "managed roots survived normal finalization: {roots:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn delivery_cleanup_precedes_output_acknowledgement() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
+        let mut args = vec![
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+        ];
+        args.extend(successful_test_command());
+        let config = crate::cli::parse_config_from(args).unwrap();
+        let control = RunControl::new();
+        let observed = control.clone();
+
+        assert_eq!(
+            run_loop_with_control(config, Vec::new(), Vec::new(), control)
+                .await
+                .unwrap(),
+            0
+        );
+
+        let events = observed.finalization_events();
+        let position = |event| {
+            events
+                .iter()
+                .position(|observed| *observed == event)
+                .unwrap_or_else(|| panic!("missing {event} in {events:?}"))
+        };
+        assert!(position("run_finished_written") < position("delivery_root_absent"));
+        assert!(position("delivery_root_absent") < position("output_acknowledged"));
+    }
+
+    #[tokio::test]
+    async fn final_json_contains_runtime_disk_measurement_and_cleanup_evidence() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
+        let mut args = vec![
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--format"),
+            OsString::from("json"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+        ];
+        args.extend(successful_test_command());
+        let config = crate::cli::parse_config_from(args).unwrap();
+        let mut stdout = Vec::new();
+
+        assert_eq!(
+            run_loop_with_control(config, &mut stdout, Vec::new(), RunControl::new())
+                .await
+                .unwrap(),
+            0
+        );
+
+        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let disk = &report["summary"]["disk"];
+        assert!(disk["sample_count"].as_u64().unwrap() >= 3, "{disk}");
+        assert!(disk["minimum_available_bytes"].as_u64().is_some());
+        assert!(disk["removed_logical_bytes"].as_u64().is_some(), "{disk}");
+        let filesystems = disk["filesystems"].as_array().unwrap();
+        assert!(!filesystems.is_empty(), "{disk}");
+        assert!(filesystems.iter().all(|filesystem| {
+            filesystem["start_available_bytes"].as_u64().is_some()
+                && filesystem["minimum_available_bytes"].as_u64().is_some()
+                && filesystem["end_available_bytes"].as_u64().is_some()
+                && (filesystem["available_bytes_change"].as_i64().is_some()
+                    || filesystem["available_bytes_change"].as_u64().is_some())
+        }));
+        assert_eq!(disk["enforcement"][0]["kind"], "portable_guard");
+        let execution_cleanup = disk["cleanup"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|record| record["root_id"] == "execution")
+            .expect("execution cleanup evidence");
+        assert_eq!(execution_cleanup["status"], "clean");
+        assert!(execution_cleanup["examined_entries"].as_u64().unwrap() > 0);
+        assert!(execution_cleanup["removed_entries"].as_u64().unwrap() > 0);
+        assert!(disk["cleanup"].as_array().unwrap().iter().any(|record| {
+            record["root_id"] == "delivery" && record["status"] == "cleanup_after_delivery"
+        }));
+    }
+
+    #[tokio::test]
+    async fn final_disk_evidence_preserves_a_negative_free_space_change() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
+        let mut args = vec![
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--format"),
+            OsString::from("json"),
+            OsString::from("--min-free-space"),
+            OsString::from("1B"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+        ];
+        args.extend(successful_test_command());
+        let config = crate::cli::parse_config_from(args).unwrap();
+        let control = RunControl::with_disk_meter(FixedDiskMeter(MeterReading {
+            owned_bytes: 0,
+            available_by_filesystem: BTreeMap::from([(FilesystemKey(7), 1_000)]),
+            conservative_entries: false,
+            elapsed: Duration::from_millis(1),
+        }));
+        control.override_end_available(Ok(BTreeMap::from([(FilesystemKey(7), 500)])));
+        let mut stdout = Vec::new();
+
+        assert_eq!(
+            run_loop_with_control(config, &mut stdout, Vec::new(), control)
+                .await
+                .unwrap(),
+            0
+        );
+        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(
+            report["summary"]["disk"]["filesystems"][0]["available_bytes_change"],
+            -500
+        );
+    }
+
+    #[tokio::test]
+    async fn end_free_query_failure_rejects_output_acknowledgement() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
+        let mut args = vec![
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--format"),
+            OsString::from("json"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+        ];
+        args.extend(successful_test_command());
+        let config = crate::cli::parse_config_from(args).unwrap();
+        let control = RunControl::new();
+        control.override_end_available(Err("injected end query failure".to_owned()));
+        let observed = control.clone();
+        let mut stdout = Vec::new();
+
+        let error = run_loop_with_control(config, &mut stdout, Vec::new(), control)
+            .await
+            .expect_err("required end-free evidence failure must keep the run incomplete");
+
+        assert!(error.contains("disk.measurement.failed"), "{error}");
+        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(report["summary"]["complete"], false);
+        assert_eq!(
+            report["summary"]["disk"]["stop"]["code"],
+            "disk.measurement.failed"
+        );
+        assert!(report["summary"]["disk"]["filesystems"][0]["end_available_bytes"].is_null());
+        assert!(
+            !observed
+                .finalization_events()
+                .contains(&"output_acknowledged"),
+            "failed final disk evidence must not be acknowledged"
+        );
+    }
+
     struct BorrowedNonSendWriter<'a> {
         buffer: &'a mut Vec<u8>,
         _not_send: std::rc::Rc<()>,
+    }
+
+    struct AlwaysFailingWriter;
+
+    impl std::io::Write for AlwaysFailingWriter {
+        fn write(&mut self, _bytes: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("injected report write failure"))
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::other("injected report flush failure"))
+        }
+    }
+
+    #[tokio::test]
+    async fn report_write_failure_still_removes_delivery_root_without_output_ack() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
+        let mut args = vec![
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--format"),
+            OsString::from("json"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+        ];
+        args.extend(successful_test_command());
+        let config = crate::cli::parse_config_from(args).unwrap();
+        let control = RunControl::new();
+        let observed = control.clone();
+
+        let error = run_loop_with_control(config, AlwaysFailingWriter, Vec::new(), control)
+            .await
+            .expect_err("report write failure must not be acknowledged");
+
+        assert!(error.contains("report"), "{error}");
+        let roots = observed.managed_root_paths();
+        assert_eq!(roots.len(), 2);
+        assert!(
+            roots.iter().all(|root| !root.exists()),
+            "report failure stranded managed roots: {roots:?}"
+        );
+        assert!(
+            !observed
+                .finalization_events()
+                .contains(&"output_acknowledged")
+        );
+    }
+
+    #[tokio::test]
+    async fn delivery_cleanup_identity_failure_rejects_output_ack_and_preserves_replacement() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
+        let mut args = vec![
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--format"),
+            OsString::from("json"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+        ];
+        args.extend(successful_test_command());
+        let config = crate::cli::parse_config_from(args).unwrap();
+        let control = RunControl::new();
+        control.inject_delivery_cleanup_identity_failure();
+        let observed = control.clone();
+        let mut stdout = Vec::new();
+
+        let error = run_loop_with_control(config, &mut stdout, Vec::new(), control)
+            .await
+            .expect_err("delivery cleanup failure must not be acknowledged");
+
+        assert!(
+            error.contains(hoimin_core::WORKSPACE_CLEANUP_FAILED),
+            "{error}"
+        );
+        assert!(!stdout.is_empty(), "report bytes should be flushed first");
+        let roots = observed.managed_root_paths();
+        assert_eq!(roots.len(), 2);
+        assert!(!roots[0].exists(), "execution root must already be absent");
+        assert!(roots[1].exists(), "same-name replacement must be preserved");
+        assert!(
+            observed
+                .delivery_cleanup_sentinel()
+                .expect("original delivery sentinel")
+                .exists(),
+            "identity-pinned original delivery root must not be confused with the replacement"
+        );
+        assert!(
+            !observed
+                .finalization_events()
+                .contains(&"output_acknowledged")
+        );
+    }
+
+    #[tokio::test]
+    async fn every_output_format_rejects_ack_on_write_or_delivery_cleanup_failure() {
+        for format in ["json", "jsonl", "human"] {
+            let project = tempfile::tempdir().unwrap();
+            let config = output_failure_test_config(&project, format);
+            let control = RunControl::new();
+            let observed = control.clone();
+
+            let error = run_loop_with_control(config, AlwaysFailingWriter, Vec::new(), control)
+                .await
+                .expect_err("report write failure must not be acknowledged");
+
+            assert!(error.contains("report"), "format={format}: {error}");
+            assert!(
+                observed
+                    .managed_root_paths()
+                    .iter()
+                    .all(|root| !root.exists()),
+                "format={format}: report failure stranded a managed root"
+            );
+            assert!(
+                !observed
+                    .finalization_events()
+                    .contains(&"output_acknowledged"),
+                "format={format}: write failure was acknowledged"
+            );
+
+            let project = tempfile::tempdir().unwrap();
+            let config = output_failure_test_config(&project, format);
+            let control = RunControl::new();
+            control.inject_delivery_cleanup_identity_failure();
+            let observed = control.clone();
+
+            let error = run_loop_with_control(config, Vec::new(), Vec::new(), control)
+                .await
+                .expect_err("delivery cleanup failure must not be acknowledged");
+
+            assert!(
+                error.contains(hoimin_core::WORKSPACE_CLEANUP_FAILED),
+                "format={format}: {error}"
+            );
+            let roots = observed.managed_root_paths();
+            assert!(!roots[0].exists(), "format={format}: execution root");
+            assert!(roots[1].exists(), "format={format}: replacement root");
+            assert!(
+                observed
+                    .delivery_cleanup_sentinel()
+                    .expect("original delivery sentinel")
+                    .exists(),
+                "format={format}: original delivery sentinel"
+            );
+            assert!(
+                !observed
+                    .finalization_events()
+                    .contains(&"output_acknowledged"),
+                "format={format}: cleanup failure was acknowledged"
+            );
+        }
     }
 
     impl std::io::Write for BorrowedNonSendWriter<'_> {
@@ -3555,6 +6295,24 @@ mod tests {
 
         assert!(effects.iter().all(is_blocking_io_effect));
         assert!(!is_blocking_io_effect(&process_effect(0)));
+    }
+
+    #[test]
+    fn process_close_failure_does_not_replace_successful_workspace_cleanup() {
+        let id = EffectId(351);
+        let (event, secondary) = combine_cleanup_results(
+            Some("injected close failure".to_owned()),
+            Ok(hoimin_core::CleanupFinished {
+                id,
+                released_reservations: Vec::new(),
+            }),
+        );
+
+        assert!(matches!(event, RunEvent::CleanupFinished(value) if value.id == id));
+        assert_eq!(
+            secondary,
+            ["process.resource.close: injected close failure"]
+        );
     }
 
     #[tokio::test]

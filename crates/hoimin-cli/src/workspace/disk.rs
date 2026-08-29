@@ -2,6 +2,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::{Arc, Mutex, mpsc};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use camino::{Utf8Path, Utf8PathBuf};
@@ -250,6 +253,391 @@ impl<S: AvailableSpace> DiskMeter<S> {
             elapsed: started.elapsed(),
         })
     }
+}
+
+pub(crate) trait DiskMeasurement: Send + 'static {
+    fn measure(&self) -> io::Result<MeterReading>;
+}
+
+impl<S> DiskMeasurement for DiskMeter<S>
+where
+    S: AvailableSpace + Send + 'static,
+{
+    fn measure(&self) -> io::Result<MeterReading> {
+        Self::measure(self)
+    }
+}
+
+impl DiskMeasurement for Box<dyn DiskMeasurement> {
+    fn measure(&self) -> io::Result<MeterReading> {
+        self.as_ref().measure()
+    }
+}
+
+struct FailedDiskMeasurement {
+    kind: io::ErrorKind,
+    message: String,
+}
+
+impl FailedDiskMeasurement {
+    fn new(error: &io::Error) -> Self {
+        Self {
+            kind: error.kind(),
+            message: error.to_string(),
+        }
+    }
+}
+
+impl DiskMeasurement for FailedDiskMeasurement {
+    fn measure(&self) -> io::Result<MeterReading> {
+        Err(io::Error::new(self.kind, self.message.clone()))
+    }
+}
+
+fn initial_meter_from_capabilities(
+    capabilities: impl IntoIterator<Item = io::Result<RootCapability>>,
+) -> Box<dyn DiskMeasurement> {
+    match capabilities.into_iter().collect::<io::Result<Vec<_>>>() {
+        Ok(capabilities) => Box::new(DiskMeter::new(capabilities, SystemAvailableSpace)),
+        Err(error) => Box::new(FailedDiskMeasurement::new(&error)),
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct DiskMonitorStats {
+    pub(crate) peak_owned_bytes: u64,
+    pub(crate) minimum_available_bytes: Option<u64>,
+    pub(crate) sample_count: u64,
+    pub(crate) maximum_measurement: Duration,
+    pub(crate) filesystems: BTreeMap<FilesystemKey, FilesystemStats>,
+    pub(crate) latest_owned_bytes: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct FilesystemStats {
+    pub(crate) start: u64,
+    pub(crate) minimum: u64,
+    pub(crate) latest: u64,
+}
+
+enum MonitorCommand {
+    Sample(tokio::sync::oneshot::Sender<Option<hoimin_core::DiskFailure>>),
+    Stop,
+}
+
+pub(crate) struct DiskMonitor {
+    commands: mpsc::Sender<MonitorCommand>,
+    stop: tokio::sync::watch::Receiver<Option<hoimin_core::DiskFailure>>,
+    stats: Arc<Mutex<DiskMonitorStats>>,
+    thread: Mutex<Option<JoinHandle<()>>>,
+    join_status: Arc<AtomicU8>,
+}
+
+const MONITOR_JOIN_PENDING: u8 = 0;
+const MONITOR_JOIN_SUCCEEDED: u8 = 1;
+const MONITOR_JOIN_FAILED: u8 = 2;
+
+impl DiskMonitor {
+    pub(crate) async fn start(
+        policy: hoimin_core::DiskPolicy,
+        roots: Vec<Arc<super::ManagedRunRoot>>,
+    ) -> io::Result<Self> {
+        let meter =
+            initial_meter_from_capabilities(roots.iter().map(|root| root.disk_capability()));
+        Ok(Self::start_with_meter(meter, policy, roots).await)
+    }
+
+    pub(crate) async fn start_with_meter<M>(
+        meter: M,
+        policy: hoimin_core::DiskPolicy,
+        roots: Vec<Arc<super::ManagedRunRoot>>,
+    ) -> Self
+    where
+        M: DiskMeasurement,
+    {
+        Self::start_with_meter_and_interval(meter, policy, roots, hoimin_core::DISK_SAMPLE_INTERVAL)
+            .await
+    }
+
+    pub(crate) async fn start_with_meter_and_interval<M>(
+        meter: M,
+        policy: hoimin_core::DiskPolicy,
+        roots: Vec<Arc<super::ManagedRunRoot>>,
+        sample_interval: Duration,
+    ) -> Self
+    where
+        M: DiskMeasurement,
+    {
+        let (commands, receiver) = mpsc::channel();
+        let (stop_sender, stop) = tokio::sync::watch::channel(None);
+        let stats = Arc::new(Mutex::new(DiskMonitorStats::default()));
+        let thread_stats = Arc::clone(&stats);
+        let join_status = Arc::new(AtomicU8::new(MONITOR_JOIN_PENDING));
+        let thread = std::thread::spawn(move || {
+            monitor_loop(
+                meter,
+                policy,
+                roots,
+                receiver,
+                stop_sender,
+                thread_stats,
+                sample_interval,
+            );
+        });
+        let monitor = Self {
+            commands,
+            stop,
+            stats,
+            thread: Mutex::new(Some(thread)),
+            join_status,
+        };
+        let _ = monitor.sample_now().await;
+        monitor
+    }
+
+    pub(crate) fn stop_receiver(
+        &self,
+    ) -> tokio::sync::watch::Receiver<Option<hoimin_core::DiskFailure>> {
+        self.stop.clone()
+    }
+
+    pub(crate) async fn sample_now(&self) -> Option<hoimin_core::DiskFailure> {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        if self.commands.send(MonitorCommand::Sample(sender)).is_err() {
+            return Some(measurement_failure("disk monitor thread is unavailable"));
+        }
+        receiver
+            .await
+            .unwrap_or_else(|_| Some(measurement_failure("disk monitor sample was abandoned")))
+    }
+
+    pub(crate) fn stats(&self) -> DiskMonitorStats {
+        self.stats
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    pub(crate) async fn stop_and_join(&self, budget: Duration) -> bool {
+        let _ = self.commands.send(MonitorCommand::Stop);
+        let handle = self
+            .thread
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        let Some(handle) = handle else {
+            return self.join_status.load(Ordering::Acquire) == MONITOR_JOIN_SUCCEEDED;
+        };
+        let join_status = Arc::clone(&self.join_status);
+        let join = tokio::task::spawn_blocking(move || {
+            let joined = handle.join().is_ok();
+            join_status.store(
+                if joined {
+                    MONITOR_JOIN_SUCCEEDED
+                } else {
+                    MONITOR_JOIN_FAILED
+                },
+                Ordering::Release,
+            );
+            joined
+        });
+        matches!(tokio::time::timeout(budget, join).await, Ok(Ok(true)))
+    }
+}
+
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "the dedicated monitor thread owns its meter, roots, channels, and stats"
+)]
+fn monitor_loop<M: DiskMeasurement>(
+    meter: M,
+    policy: hoimin_core::DiskPolicy,
+    roots: Vec<Arc<super::ManagedRunRoot>>,
+    commands: mpsc::Receiver<MonitorCommand>,
+    stop: tokio::sync::watch::Sender<Option<hoimin_core::DiskFailure>>,
+    stats: Arc<Mutex<DiskMonitorStats>>,
+    sample_interval: Duration,
+) {
+    let mut last_refresh = None;
+    loop {
+        match commands.recv_timeout(sample_interval) {
+            Ok(MonitorCommand::Sample(response)) => {
+                if response.is_closed() {
+                    continue;
+                }
+                let failure =
+                    sample_meter(&meter, policy, &roots, &mut last_refresh, &stop, &stats);
+                let _ = response.send(failure);
+            }
+            Ok(MonitorCommand::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                let _ = sample_meter(&meter, policy, &roots, &mut last_refresh, &stop, &stats);
+            }
+        }
+    }
+}
+
+fn sample_meter(
+    meter: &impl DiskMeasurement,
+    policy: hoimin_core::DiskPolicy,
+    roots: &[Arc<super::ManagedRunRoot>],
+    last_refresh: &mut Option<Instant>,
+    stop: &tokio::sync::watch::Sender<Option<hoimin_core::DiskFailure>>,
+    stats: &Mutex<DiskMonitorStats>,
+) -> Option<hoimin_core::DiskFailure> {
+    sample_meter_with_refresh_at(
+        meter,
+        policy,
+        last_refresh,
+        stop,
+        stats,
+        Instant::now(),
+        &|| {
+            for root in roots {
+                root.refresh_heartbeat()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+            }
+            Ok(())
+        },
+    )
+}
+
+fn sample_meter_with_refresh_at(
+    meter: &impl DiskMeasurement,
+    policy: hoimin_core::DiskPolicy,
+    last_refresh: &mut Option<Instant>,
+    stop: &tokio::sync::watch::Sender<Option<hoimin_core::DiskFailure>>,
+    stats: &Mutex<DiskMonitorStats>,
+    now: Instant,
+    refresh: &impl Fn() -> io::Result<()>,
+) -> Option<hoimin_core::DiskFailure> {
+    let refresh_due = last_refresh.is_none_or(|value| {
+        now.checked_duration_since(value)
+            .is_none_or(|elapsed| elapsed >= Duration::from_secs(60))
+    });
+    if refresh_due {
+        if let Err(error) = refresh() {
+            return Some(publish_stop(stop, measurement_failure(error.to_string())));
+        }
+        *last_refresh = Some(now);
+    }
+    let reading = match meter.measure() {
+        Ok(reading) => reading,
+        Err(error) => return Some(publish_stop(stop, measurement_failure(error.to_string()))),
+    };
+    let Some(available_bytes) = reading.available_by_filesystem.values().copied().min() else {
+        return Some(publish_stop(
+            stop,
+            measurement_failure("disk measurement returned no filesystem capacity"),
+        ));
+    };
+    {
+        let mut snapshot = stats
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        snapshot.sample_count = snapshot.sample_count.saturating_add(1);
+        snapshot.peak_owned_bytes = snapshot.peak_owned_bytes.max(reading.owned_bytes);
+        snapshot.minimum_available_bytes = Some(
+            snapshot
+                .minimum_available_bytes
+                .map_or(available_bytes, |prior| prior.min(available_bytes)),
+        );
+        snapshot.maximum_measurement = snapshot.maximum_measurement.max(reading.elapsed);
+        snapshot.latest_owned_bytes = Some(reading.owned_bytes);
+        for (key, available) in &reading.available_by_filesystem {
+            snapshot
+                .filesystems
+                .entry(*key)
+                .and_modify(|filesystem| {
+                    filesystem.minimum = filesystem.minimum.min(*available);
+                    filesystem.latest = *available;
+                })
+                .or_insert(FilesystemStats {
+                    start: *available,
+                    minimum: *available,
+                    latest: *available,
+                });
+        }
+    }
+    match policy.evaluate(hoimin_core::DiskObservation {
+        owned_bytes: reading.owned_bytes,
+        available_bytes,
+        measured_in: reading.elapsed,
+    }) {
+        hoimin_core::DiskDecision::Continue => stop.borrow().clone(),
+        hoimin_core::DiskDecision::Stop(failure) => Some(publish_stop(stop, failure)),
+    }
+}
+
+pub(crate) fn measure_managed_roots(
+    roots: &[Arc<super::ManagedRunRoot>],
+) -> io::Result<MeterReading> {
+    let capabilities = roots
+        .iter()
+        .map(|root| root.disk_capability())
+        .collect::<io::Result<Vec<_>>>()?;
+    DiskMeter::new(capabilities, SystemAvailableSpace).measure()
+}
+
+pub(crate) fn available_for_managed_roots(
+    roots: &[Arc<super::ManagedRunRoot>],
+) -> io::Result<BTreeMap<FilesystemKey, u64>> {
+    let space = SystemAvailableSpace;
+    let mut available = BTreeMap::new();
+    for root in roots {
+        let capability = root.disk_capability()?;
+        let key = space.filesystem_key(&capability)?;
+        if let std::collections::btree_map::Entry::Vacant(entry) = available.entry(key) {
+            entry.insert(space.available(&capability)?);
+        }
+    }
+    Ok(available)
+}
+
+fn measurement_failure(message: impl Into<String>) -> hoimin_core::DiskFailure {
+    hoimin_core::DiskFailure {
+        code: hoimin_core::DISK_MEASUREMENT_FAILED.to_owned(),
+        reason: hoimin_core::DiskStopReason::MeasurementFailed,
+        observation: None,
+        message: Some(message.into()),
+        secondary: Vec::new(),
+    }
+}
+
+fn publish_stop(
+    stop: &tokio::sync::watch::Sender<Option<hoimin_core::DiskFailure>>,
+    mut failure: hoimin_core::DiskFailure,
+) -> hoimin_core::DiskFailure {
+    let Some(mut primary) = stop.borrow().clone() else {
+        stop.send_replace(Some(failure.clone()));
+        return failure;
+    };
+    let mut secondary = Vec::with_capacity(1 + failure.secondary.len());
+    if let Some(observation) = failure.observation {
+        secondary.push(hoimin_core::DiskSecondary::Observation {
+            reason: failure.reason,
+            value: observation,
+        });
+    } else if let Some(message) = failure.message.take() {
+        secondary.push(hoimin_core::DiskSecondary::Error {
+            code: failure.code.clone(),
+            message,
+        });
+    }
+    secondary.append(&mut failure.secondary);
+    for value in secondary {
+        if primary.code == value.code()
+            || primary
+                .secondary
+                .iter()
+                .any(|existing| existing.code() == value.code())
+        {
+            continue;
+        }
+        primary.secondary.push(value);
+    }
+    stop.send_replace(Some(primary.clone()));
+    primary
 }
 
 #[derive(Default)]
@@ -672,14 +1060,15 @@ fn should_count_unix_stat(metadata: &rustix::fs::Stat, state: &mut WalkState) ->
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, VecDeque};
 
     use camino::Utf8Path;
 
     use super::measure_owned_tree_with_hooks;
     use super::{
-        AvailableSpace, DiskMeter, FilesystemKey, RootCapability, WalkState,
-        measure_owned_tree_with_elapsed, record_entry,
+        AvailableSpace, DiskMeasurement, DiskMeter, DiskMonitor, FilesystemKey, MeterReading,
+        RootCapability, WalkState, initial_meter_from_capabilities,
+        measure_owned_tree_with_elapsed, record_entry, sample_meter_with_refresh_at,
     };
 
     #[derive(Debug)]
@@ -697,6 +1086,436 @@ mod tests {
 
     fn capability(path: &Utf8Path) -> RootCapability {
         RootCapability::open(path).unwrap()
+    }
+
+    struct ScriptedMeter {
+        readings: std::sync::Mutex<VecDeque<std::io::Result<MeterReading>>>,
+    }
+
+    impl DiskMeasurement for ScriptedMeter {
+        fn measure(&self) -> std::io::Result<MeterReading> {
+            self.readings
+                .lock()
+                .expect("scripted meter lock")
+                .pop_front()
+                .expect("scripted reading")
+        }
+    }
+
+    struct SpacedMeter {
+        active: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        maximum_active: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        starts: std::sync::Arc<std::sync::Mutex<Vec<std::time::Instant>>>,
+        scan_duration: std::time::Duration,
+    }
+
+    struct BlockingAfterInitialMeter {
+        calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        entered: std::sync::mpsc::Sender<()>,
+        release: std::sync::Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>,
+    }
+
+    struct PanickingAfterInitialMeter {
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    impl DiskMeasurement for PanickingAfterInitialMeter {
+        fn measure(&self) -> std::io::Result<MeterReading> {
+            let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+            assert_eq!(call, 0, "injected monitor panic after initial sample");
+            Ok(MeterReading {
+                owned_bytes: 1,
+                available_by_filesystem: BTreeMap::from([(FilesystemKey(7), u64::MAX)]),
+                conservative_entries: false,
+                elapsed: std::time::Duration::from_millis(1),
+            })
+        }
+    }
+
+    impl DiskMeasurement for BlockingAfterInitialMeter {
+        fn measure(&self) -> std::io::Result<MeterReading> {
+            let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+            if call != 0 {
+                let _ = self.entered.send(());
+                let (released, changed) = &*self.release;
+                let mut released = released.lock().expect("release lock");
+                while !*released {
+                    released = changed.wait(released).expect("release wait");
+                }
+            }
+            Ok(MeterReading {
+                owned_bytes: 1,
+                available_by_filesystem: BTreeMap::from([(FilesystemKey(7), u64::MAX)]),
+                conservative_entries: false,
+                elapsed: std::time::Duration::from_millis(1),
+            })
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn timed_out_monitor_join_stays_unjoined_until_the_scan_exits() {
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let release =
+            std::sync::Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+        let monitor = std::sync::Arc::new(
+            DiskMonitor::start_with_meter_and_interval(
+                BlockingAfterInitialMeter {
+                    calls,
+                    entered: entered_tx,
+                    release: std::sync::Arc::clone(&release),
+                },
+                hoimin_core::DiskPolicy {
+                    max_owned_bytes: std::num::NonZeroU64::new(u64::MAX).unwrap(),
+                    min_free_bytes: std::num::NonZeroU64::new(1).unwrap(),
+                },
+                Vec::new(),
+                std::time::Duration::from_secs(60),
+            )
+            .await,
+        );
+        let sampler = {
+            let monitor = std::sync::Arc::clone(&monitor);
+            tokio::spawn(async move { monitor.sample_now().await })
+        };
+        tokio::task::spawn_blocking(move || {
+            entered_rx
+                .recv_timeout(std::time::Duration::from_secs(1))
+                .expect("blocked scan entered");
+        })
+        .await
+        .unwrap();
+
+        assert!(
+            !monitor
+                .stop_and_join(std::time::Duration::from_millis(10))
+                .await
+        );
+        let second_join = monitor
+            .stop_and_join(std::time::Duration::from_millis(10))
+            .await;
+
+        let (released, changed) = &*release;
+        *released.lock().expect("release lock") = true;
+        changed.notify_all();
+        sampler.await.unwrap();
+        assert!(
+            !second_join,
+            "a missing JoinHandle must not masquerade as a completed monitor"
+        );
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while !monitor
+                .stop_and_join(std::time::Duration::from_millis(10))
+                .await
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("monitor eventually joined");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn panicked_monitor_never_reports_join_success() {
+        let monitor = DiskMonitor::start_with_meter_and_interval(
+            PanickingAfterInitialMeter {
+                calls: std::sync::atomic::AtomicUsize::new(0),
+            },
+            hoimin_core::DiskPolicy {
+                max_owned_bytes: std::num::NonZeroU64::new(u64::MAX).unwrap(),
+                min_free_bytes: std::num::NonZeroU64::new(1).unwrap(),
+            },
+            Vec::new(),
+            std::time::Duration::from_secs(60),
+        )
+        .await;
+
+        assert!(monitor.sample_now().await.is_some());
+        assert!(
+            !monitor
+                .stop_and_join(std::time::Duration::from_secs(1))
+                .await
+        );
+        assert!(
+            !monitor
+                .stop_and_join(std::time::Duration::from_millis(10))
+                .await,
+            "a panicked monitor must never be reported as cleanly joined"
+        );
+    }
+
+    impl DiskMeasurement for SpacedMeter {
+        fn measure(&self) -> std::io::Result<MeterReading> {
+            let active = self
+                .active
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
+                + 1;
+            self.maximum_active
+                .fetch_max(active, std::sync::atomic::Ordering::AcqRel);
+            self.starts
+                .lock()
+                .expect("scan starts lock")
+                .push(std::time::Instant::now());
+            std::thread::sleep(self.scan_duration);
+            self.active
+                .fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+            Ok(MeterReading {
+                owned_bytes: 1,
+                available_by_filesystem: BTreeMap::from([(FilesystemKey(7), u64::MAX)]),
+                conservative_entries: false,
+                elapsed: self.scan_duration,
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn monitor_runs_one_scan_at_a_time_and_waits_after_each_scan() {
+        let active = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let maximum_active = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let starts = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let scan_duration = std::time::Duration::from_millis(20);
+        let interval = std::time::Duration::from_millis(20);
+        let monitor = DiskMonitor::start_with_meter_and_interval(
+            SpacedMeter {
+                active: std::sync::Arc::clone(&active),
+                maximum_active: std::sync::Arc::clone(&maximum_active),
+                starts: std::sync::Arc::clone(&starts),
+                scan_duration,
+            },
+            hoimin_core::DiskPolicy {
+                max_owned_bytes: std::num::NonZeroU64::new(u64::MAX).unwrap(),
+                min_free_bytes: std::num::NonZeroU64::new(1).unwrap(),
+            },
+            Vec::new(),
+            interval,
+        )
+        .await;
+
+        tokio::time::sleep(std::time::Duration::from_millis(75)).await;
+        assert!(
+            monitor
+                .stop_and_join(std::time::Duration::from_secs(1))
+                .await
+        );
+
+        assert_eq!(maximum_active.load(std::sync::atomic::Ordering::Acquire), 1);
+        let starts = starts.lock().expect("scan starts lock");
+        assert!(starts.len() >= 2, "expected a periodic scan: {starts:?}");
+        assert!(starts.windows(2).all(|pair| {
+            pair[1].duration_since(pair[0]) >= scan_duration.saturating_add(interval)
+        }));
+    }
+
+    #[tokio::test]
+    async fn monitor_samples_at_start_and_keeps_the_first_stop_reason() {
+        let reading = |owned_bytes, available_bytes| MeterReading {
+            owned_bytes,
+            available_by_filesystem: BTreeMap::from([(FilesystemKey(7), available_bytes)]),
+            conservative_entries: false,
+            elapsed: std::time::Duration::from_millis(3),
+        };
+        let meter = ScriptedMeter {
+            readings: std::sync::Mutex::new(VecDeque::from([
+                Ok(reading(100, 1_000)),
+                Ok(reading(200, 400)),
+                Ok(reading(900, 800)),
+                Err(std::io::Error::other("statvfs failed")),
+            ])),
+        };
+        let policy = hoimin_core::DiskPolicy {
+            max_owned_bytes: std::num::NonZeroU64::new(800).unwrap(),
+            min_free_bytes: std::num::NonZeroU64::new(500).unwrap(),
+        };
+
+        let monitor = DiskMonitor::start_with_meter(meter, policy, Vec::new()).await;
+        assert!(monitor.stop_receiver().borrow().is_none());
+        let first = monitor.sample_now().await.expect("reserve stop");
+        assert_eq!(
+            first.reason,
+            hoimin_core::DiskStopReason::FilesystemReserveReached
+        );
+        let second = monitor.sample_now().await.expect("sticky stop");
+        assert_eq!(second.reason, first.reason);
+        assert_eq!(
+            second
+                .secondary
+                .iter()
+                .map(hoimin_core::DiskSecondary::code)
+                .collect::<Vec<_>>(),
+            vec![hoimin_core::WORKSPACE_SIZE_EXCEEDED]
+        );
+        let third = monitor.sample_now().await.expect("sticky measurement stop");
+        assert_eq!(third.reason, first.reason);
+        assert_eq!(
+            third
+                .secondary
+                .iter()
+                .map(hoimin_core::DiskSecondary::code)
+                .collect::<Vec<_>>(),
+            vec![
+                hoimin_core::WORKSPACE_SIZE_EXCEEDED,
+                hoimin_core::DISK_MEASUREMENT_FAILED,
+            ]
+        );
+        let stats = monitor.stats();
+        assert_eq!(stats.sample_count, 3);
+        assert_eq!(stats.latest_owned_bytes, Some(900));
+        assert_eq!(
+            stats.filesystems.get(&FilesystemKey(7)),
+            Some(&super::FilesystemStats {
+                start: 1_000,
+                minimum: 400,
+                latest: 800,
+            })
+        );
+        assert!(
+            monitor
+                .stop_and_join(std::time::Duration::from_secs(1))
+                .await
+        );
+    }
+
+    #[tokio::test]
+    async fn initial_measurement_failure_is_published_as_the_typed_monitor_stop() {
+        let monitor = DiskMonitor::start_with_meter(
+            ScriptedMeter {
+                readings: std::sync::Mutex::new(VecDeque::from([Err(std::io::Error::other(
+                    "initial statvfs failed",
+                ))])),
+            },
+            hoimin_core::DiskPolicy {
+                max_owned_bytes: std::num::NonZeroU64::new(u64::MAX).unwrap(),
+                min_free_bytes: std::num::NonZeroU64::new(1).unwrap(),
+            },
+            Vec::new(),
+        )
+        .await;
+
+        let failure = monitor
+            .stop_receiver()
+            .borrow()
+            .clone()
+            .expect("initial measurement failure");
+        assert_eq!(failure.code, hoimin_core::DISK_MEASUREMENT_FAILED);
+        assert_eq!(
+            failure.reason,
+            hoimin_core::DiskStopReason::MeasurementFailed
+        );
+        assert_eq!(failure.message.as_deref(), Some("initial statvfs failed"));
+        assert_eq!(monitor.stats().sample_count, 0);
+        assert!(
+            monitor
+                .stop_and_join(std::time::Duration::from_secs(1))
+                .await
+        );
+    }
+
+    #[test]
+    fn initial_capability_failure_becomes_a_failed_measurement() {
+        let meter = initial_meter_from_capabilities([Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "capability denied",
+        ))]);
+
+        let error = meter.measure().unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+        assert_eq!(error.to_string(), "capability denied");
+    }
+
+    #[tokio::test]
+    async fn initial_empty_filesystem_map_is_published_as_a_typed_failure() {
+        let monitor = DiskMonitor::start_with_meter(
+            ScriptedMeter {
+                readings: std::sync::Mutex::new(VecDeque::from([Ok(MeterReading {
+                    owned_bytes: 1,
+                    available_by_filesystem: BTreeMap::new(),
+                    conservative_entries: false,
+                    elapsed: std::time::Duration::from_millis(1),
+                })])),
+            },
+            hoimin_core::DiskPolicy {
+                max_owned_bytes: std::num::NonZeroU64::new(u64::MAX).unwrap(),
+                min_free_bytes: std::num::NonZeroU64::new(1).unwrap(),
+            },
+            Vec::new(),
+        )
+        .await;
+
+        let failure = monitor
+            .stop_receiver()
+            .borrow()
+            .clone()
+            .expect("empty-filesystem failure");
+        assert_eq!(failure.code, hoimin_core::DISK_MEASUREMENT_FAILED);
+        assert_eq!(
+            failure.message.as_deref(),
+            Some("disk measurement returned no filesystem capacity")
+        );
+        assert_eq!(monitor.stats().sample_count, 0);
+        assert!(
+            monitor
+                .stop_and_join(std::time::Duration::from_secs(1))
+                .await
+        );
+    }
+
+    #[test]
+    fn heartbeat_refresh_uses_the_exact_sixty_second_boundary_and_fails_closed() {
+        let base = std::time::Instant::now();
+        let mut last_refresh = Some(base);
+        let meter = ScriptedMeter {
+            readings: std::sync::Mutex::new(VecDeque::from([Ok(MeterReading {
+                owned_bytes: 1,
+                available_by_filesystem: BTreeMap::from([(FilesystemKey(7), u64::MAX)]),
+                conservative_entries: false,
+                elapsed: std::time::Duration::from_millis(1),
+            })])),
+        };
+        let policy = hoimin_core::DiskPolicy {
+            max_owned_bytes: std::num::NonZeroU64::new(u64::MAX).unwrap(),
+            min_free_bytes: std::num::NonZeroU64::new(1).unwrap(),
+        };
+        let (stop, _) = tokio::sync::watch::channel(None);
+        let stats = std::sync::Mutex::new(super::DiskMonitorStats::default());
+        let refreshes = std::cell::Cell::new(0_u32);
+
+        assert!(
+            sample_meter_with_refresh_at(
+                &meter,
+                policy,
+                &mut last_refresh,
+                &stop,
+                &stats,
+                base + std::time::Duration::from_millis(59_999),
+                &|| {
+                    refreshes.set(refreshes.get() + 1);
+                    Ok(())
+                },
+            )
+            .is_none()
+        );
+        assert_eq!(refreshes.get(), 0);
+
+        let failure = sample_meter_with_refresh_at(
+            &meter,
+            policy,
+            &mut last_refresh,
+            &stop,
+            &stats,
+            base + std::time::Duration::from_secs(60),
+            &|| {
+                refreshes.set(refreshes.get() + 1);
+                Err(std::io::Error::other("heartbeat fsync failed"))
+            },
+        )
+        .expect("heartbeat failure must stop dispatch");
+        assert_eq!(refreshes.get(), 1);
+        assert_eq!(
+            failure.reason,
+            hoimin_core::DiskStopReason::MeasurementFailed
+        );
+        assert_eq!(last_refresh, Some(base));
     }
 
     #[test]

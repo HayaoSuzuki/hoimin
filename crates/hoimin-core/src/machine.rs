@@ -348,6 +348,11 @@ impl RunState {
     }
 
     #[must_use]
+    pub fn disk_summary(&self) -> &crate::DiskRunSummary {
+        &self.disk_summary
+    }
+
+    #[must_use]
     pub fn run_id(&self) -> &str {
         &self.run_id
     }
@@ -1345,12 +1350,17 @@ pub fn transition(
     mut state: RunState,
     event: RunEvent,
 ) -> Result<(RunState, Vec<RunEffect>), MachineError> {
-    if matches!(
+    let is_stop = matches!(
         event,
-        RunEvent::DeadlineReached | RunEvent::CancellationRequested
-    ) && (state.run_finished_output_id.is_some()
-        || state.phase == RunPhase::Finished
-        || state.phase == RunPhase::Cleaning)
+        RunEvent::DeadlineReached
+            | RunEvent::CancellationRequested
+            | RunEvent::DiskStopRequested(_)
+    );
+    if is_stop
+        && (state.run_finished_output_id.is_some()
+            || state.flags.cleanup.session_finish_attempted
+            || state.phase == RunPhase::Finished
+            || state.phase == RunPhase::Cleaning)
     {
         return Ok((state, Vec::new()));
     }
@@ -1359,6 +1369,18 @@ pub fn transition(
     let completed = state.accept_completion(&event)?;
     let completed_kind = completed.as_ref().map(|pending| pending.kind);
     let completed_worker = completed.and_then(|pending| pending.worker);
+    if let RunEvent::EffectFailed(failed) = &event
+        && let Some(stop) = &mut state.disk_summary.stop
+        && stop
+            .secondary
+            .iter()
+            .all(|secondary| secondary.code() != failed.failure.code())
+    {
+        stop.secondary.push(crate::DiskSecondary::Error {
+            code: failed.failure.code().to_owned(),
+            message: failed.failure.message(),
+        });
+    }
     let effects = match event {
         RunEvent::StartRequested(_) if state.phase == RunPhase::Validate => {
             state.phase = RunPhase::Preflight;
@@ -1879,6 +1901,32 @@ pub fn transition(
                 state.cleanup_effects()?
             }
         }
+        RunEvent::DiskStopRequested(value) => {
+            state.flags.outcome.incomplete = true;
+            state.flags.scheduling.stop_requested = true;
+            if state.disk_summary.stop.is_none() {
+                state.disk_summary.stop = Some(crate::DiskStopReport {
+                    code: value.failure.code,
+                    owned_bytes: value.failure.observation.map(|item| item.owned_bytes),
+                    available_bytes: value.failure.observation.map(|item| item.available_bytes),
+                    message: value.failure.message,
+                    secondary: value.failure.secondary,
+                });
+            }
+            let was_mutating = state.phase == RunPhase::Mutants;
+            state.retire_pending();
+            if was_mutating {
+                state.begin_stopped_mutant_drain()?
+            } else if !state.flags.report.report_started {
+                state.flags.report.stop_after_run_started = true;
+                state.start_run_effects()?
+            } else if state.copy_grant.is_some() {
+                state.phase = RunPhase::Finalize;
+                state.finalize_effects()?
+            } else {
+                state.cleanup_effects()?
+            }
+        }
         RunEvent::CancellationRequested => {
             state.flags.report.interrupted = true;
             state.flags.scheduling.stop_requested = true;
@@ -2021,6 +2069,7 @@ fn is_report_failure(failure: &EffectFailure) -> bool {
 fn completion(event: &RunEvent) -> Option<(EffectId, CompletionKind)> {
     Some(match event {
         RunEvent::StartRequested(_)
+        | RunEvent::DiskStopRequested(_)
         | RunEvent::DeadlineReached
         | RunEvent::CancellationRequested => return None,
         RunEvent::TargetsResolved(value) => (value.id, CompletionKind::TargetsResolved),

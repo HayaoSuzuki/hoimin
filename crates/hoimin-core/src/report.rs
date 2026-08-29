@@ -177,6 +177,8 @@ pub struct DiskStopReport {
     pub owned_bytes: Option<u64>,
     pub available_bytes: Option<u64>,
     pub message: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secondary: Vec<crate::DiskSecondary>,
 }
 
 #[must_use]

@@ -3,7 +3,8 @@ use std::time::Duration;
 
 use hoimin_core::{
     AnalysisDiagnostic, AnalysisFinished, ByteSpan, CandidateCursor, CandidateLoaded,
-    CandidateSpoolRef, CleanupFinished, CommandArg, EffectFailed, EffectFailure, EffectId,
+    CandidateSpoolRef, CleanupFinished, CommandArg, DiskFailure, DiskObservation, DiskStopReason,
+    DiskStopRequested, EffectFailed, EffectFailure, EffectId, FILESYSTEM_RESERVE_REACHED,
     IntegrityCheckpoint, MachineError, MutationApplied, MutationCandidate, MutationProfile,
     MutationStatus, MutationSummary, OriginalsVerified, OutputConfig, OutputEmitted, OutputEvent,
     PreflightCompleted, ProcessFinished, ProcessOutputState, ProcessTermination, RawRunConfig,
@@ -573,6 +574,61 @@ fn deadline_and_cancellation_stop_scheduling_new_mutants() {
                 .any(|effect| matches!(effect, RunEffect::RunMutant(_)))
         );
     }
+}
+
+#[test]
+fn disk_stop_is_a_global_infrastructure_stop_before_new_mutant_dispatch() {
+    let (state, _) = waiting_for_baseline();
+    let failure = DiskFailure {
+        code: FILESYSTEM_RESERVE_REACHED.to_owned(),
+        reason: DiskStopReason::FilesystemReserveReached,
+        observation: Some(DiskObservation {
+            owned_bytes: 4096,
+            available_bytes: 1024,
+            measured_in: Duration::from_millis(7),
+        }),
+        message: None,
+        secondary: Vec::new(),
+    };
+
+    let (next, effects) = transition(
+        state,
+        RunEvent::DiskStopRequested(DiskStopRequested { failure }),
+    )
+    .unwrap();
+
+    assert_eq!(next.phase(), RunPhase::Finalize);
+    assert_eq!(next.exit_code(), 4);
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::RunMutant(_)))
+    );
+
+    let followup = effect_id(effects.first().expect("post-stop reporting effect"));
+    let (next, _) = transition(
+        next,
+        RunEvent::EffectFailed(EffectFailed::other(
+            followup,
+            "process.resource.close",
+            "close failed after disk stop",
+        )),
+    )
+    .unwrap();
+    let stop = next
+        .disk_summary()
+        .stop
+        .as_ref()
+        .expect("disk primary stop");
+    assert_eq!(stop.code, FILESYSTEM_RESERVE_REACHED);
+    assert!(stop.secondary.iter().any(|secondary| {
+        secondary.code() == "process.resource.close"
+            && matches!(
+                secondary,
+                hoimin_core::DiskSecondary::Error { message, .. }
+                    if message == "close failed after disk stop"
+            )
+    }));
 }
 
 #[test]
@@ -4197,6 +4253,53 @@ fn schedule_action_strategy() -> impl Strategy<Value = ScheduleAction> {
         1 => Just(ScheduleAction::Deadline),
         1 => any::<usize>().prop_map(ScheduleAction::Fail),
     ]
+}
+
+#[test]
+fn deadline_during_pending_session_finish_does_not_reemit_cleanup_or_run_finished() {
+    let mut harness = ScheduleHarness::new(0, 2, ScheduleFilter::All, true, vec![0]);
+    harness.complete_until(|effect| matches!(effect, RunEffect::FinishSession(_)));
+    assert_eq!(
+        harness
+            .effect_trace
+            .iter()
+            .filter(|trace| **trace == ScheduleTrace::Cleanup)
+            .count(),
+        1
+    );
+    assert_eq!(
+        harness
+            .effect_trace
+            .iter()
+            .filter(|trace| **trace == ScheduleTrace::RunFinished)
+            .count(),
+        1
+    );
+
+    harness.stop(RunEvent::DeadlineReached);
+
+    assert_eq!(
+        harness
+            .effect_trace
+            .iter()
+            .filter(|trace| **trace == ScheduleTrace::Cleanup)
+            .count(),
+        1
+    );
+    assert_eq!(
+        harness
+            .effect_trace
+            .iter()
+            .filter(|trace| **trace == ScheduleTrace::RunFinished)
+            .count(),
+        1
+    );
+    assert!(
+        harness
+            .pending
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::FinishSession(_)))
+    );
 }
 
 proptest! {

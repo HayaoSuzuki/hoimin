@@ -38,9 +38,9 @@ pub enum DiskDecision {
     Stop(DiskFailure),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DiskFailure {
-    pub code: &'static str,
+    pub code: String,
     pub reason: DiskStopReason,
     pub observation: Option<DiskObservation>,
     pub message: Option<String>,
@@ -66,7 +66,7 @@ impl DiskStopReason {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum DiskSecondary {
     Observation {
         reason: DiskStopReason,
@@ -298,7 +298,7 @@ pub fn evaluate_disk_policy(policy: DiskPolicy, observation: DiskObservation) ->
         Vec::new()
     };
     DiskDecision::Stop(DiskFailure {
-        code: reason.code(),
+        code: reason.code().to_owned(),
         reason,
         observation: Some(observation),
         message: None,
@@ -336,7 +336,7 @@ pub fn apply_disk_lifecycle_event(
             record_failure(
                 lifecycle,
                 DiskFailure {
-                    code: DISK_MEASUREMENT_FAILED,
+                    code: DISK_MEASUREMENT_FAILED.to_owned(),
                     reason: DiskStopReason::MeasurementFailed,
                     observation: None,
                     message: Some(message),
@@ -459,7 +459,7 @@ fn record_failure(lifecycle: &mut DiskLifecycle, mut failure: DiskFailure) {
         });
     } else if let Some(message) = failure.message {
         values.push(DiskSecondary::Error {
-            code: failure.code.into(),
+            code: failure.code,
             message,
         });
     }

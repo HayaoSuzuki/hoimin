@@ -73,6 +73,7 @@ fn disk_summary_serializes_primary_stop_and_cleanup_independently() {
             owned_bytes: Some(17),
             available_bytes: Some(23),
             message: None,
+            secondary: Vec::new(),
         }),
         cleanup: vec![DiskCleanupReport {
             root_id: "execution".into(),

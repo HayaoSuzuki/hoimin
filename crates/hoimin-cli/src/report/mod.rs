@@ -135,6 +135,13 @@ where
         }
         Ok(OutputEmitted { id })
     }
+
+    pub(crate) fn flush_and_release_spool(&mut self) -> io::Result<()> {
+        self.stdout.flush()?;
+        self.stderr.flush()?;
+        self.json = None;
+        Ok(())
+    }
 }
 
 fn serialization_failed(id: hoimin_core::EffectId, error: &serde_json::Error) -> EffectFailed {

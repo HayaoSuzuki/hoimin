@@ -443,6 +443,11 @@ impl AnalyzerHandler {
         self
     }
 
+    pub(crate) fn release_candidate_spool(&mut self) {
+        self.store = None;
+        self.candidate_spool_owner = None;
+    }
+
     /// # Errors
     ///
     /// Returns an error when analysis is cancelled, the source cannot be read or decoded, a
