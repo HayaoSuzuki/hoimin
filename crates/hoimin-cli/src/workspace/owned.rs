@@ -127,6 +127,21 @@ mod tests {
     }
 
     #[test]
+    fn cleanup_ready_retry_replaces_a_partial_marker_from_an_interrupted_write() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        root.dir.write(super::CLEANUP_READY_FILE, b"{").unwrap();
+
+        root.mark_cleanup_ready().unwrap();
+
+        let marker = super::read_cleanup_ready_marker(&root.dir).expect("complete marker");
+        assert_eq!(marker.run_id, root.run_id);
+        assert_eq!(marker.owner, root.owner);
+    }
+
+    #[test]
     fn every_root_constructor_failure_rolls_back_or_is_immediately_reclaimable() {
         for selected in [
             super::PublishBoundary::StagingCreated,
@@ -2140,6 +2155,7 @@ pub(crate) struct ManagedRunRoot {
 #[derive(Debug, Default)]
 struct RootLifecycle {
     cleanup_started: bool,
+    cleanup_ready: bool,
     live_children: u64,
 }
 
@@ -2610,7 +2626,16 @@ impl ManagedRunRoot {
         reason = "Task 6 wires post-drain cleanup-ready transitions"
     )]
     pub(crate) fn mark_cleanup_ready(&self) -> Result<(), WorkspaceError> {
-        write_cleanup_ready_marker(&self.dir, &self.path, &self.run_id, self.owner, &self.lease)
+        let mut lifecycle = self
+            .lifecycle
+            .lock()
+            .map_err(|_| WorkspaceError::StatePoisoned)?;
+        if lifecycle.cleanup_ready {
+            return Ok(());
+        }
+        write_cleanup_ready_marker(&self.dir, &self.path, &self.run_id, self.owner, &self.lease)?;
+        lifecycle.cleanup_ready = true;
+        Ok(())
     }
 
     #[allow(dead_code, reason = "shared by Task 6 lifecycle marker transitions")]
@@ -3281,6 +3306,45 @@ fn write_cleanup_ready_marker(
         lease_inode,
     };
     let marker_path = path.join(CLEANUP_READY_FILE);
+    if let Some(existing) = read_cleanup_ready_marker(dir)
+        && existing.schema == marker.schema
+        && existing.run_id == marker.run_id
+        && existing.owner == marker.owner
+        && existing.lease_device == marker.lease_device
+        && existing.lease_inode == marker.lease_inode
+    {
+        return Ok(());
+    }
+    match dir.symlink_metadata(CLEANUP_READY_FILE) {
+        Ok(_) => {
+            let existing =
+                open_regular_file_nofollow(dir, CLEANUP_READY_FILE).map_err(|error| {
+                    WorkspaceError::io("open partial workspace marker", &marker_path, error)
+                })?;
+            let identity = file_identity(&existing).map_err(|error| {
+                WorkspaceError::io("identify partial workspace marker", &marker_path, error)
+            })?;
+            remove_cleanup_entry_checked(
+                dir,
+                std::ffi::OsStr::new(CLEANUP_READY_FILE),
+                &marker_path,
+                identity,
+                std::time::Instant::now(),
+                OWNER_CLEANUP_BUDGET,
+            )
+            .map_err(|error| {
+                WorkspaceError::io("remove partial workspace marker", &marker_path, error)
+            })?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(WorkspaceError::io(
+                "open partial workspace marker",
+                &marker_path,
+                error,
+            ));
+        }
+    }
     let mut options = cap_std::fs::OpenOptions::new();
     options.create_new(true).write(true);
     configure_no_follow(&mut options);
