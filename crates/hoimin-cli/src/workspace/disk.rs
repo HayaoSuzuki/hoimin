@@ -682,7 +682,7 @@ fn measure_owned_tree_with_hooks(
 
     use rustix::fs::{AtFlags, FileType};
 
-    let root_dir = rustix::fs::Dir::read_from(&root.dir).map_err(io::Error::from)?;
+    let root_dir = open_meter_root_directory(root)?;
     let root_device = rustix::fs::fstat(root_dir.fd().map_err(io::Error::from)?)
         .map_err(io::Error::from)?
         .st_dev;
@@ -779,6 +779,17 @@ fn measure_owned_tree_with_hooks(
         }
     }
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn open_meter_root_directory(root: &RootCapability) -> io::Result<rustix::fs::Dir> {
+    // cap-std uses O_PATH for directory capabilities, while enumeration needs a readable fd.
+    rustix::fs::Dir::new(open_meter_directory(&root.dir, c".")?).map_err(io::Error::from)
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+fn open_meter_root_directory(root: &RootCapability) -> io::Result<rustix::fs::Dir> {
+    rustix::fs::Dir::read_from(&root.dir).map_err(io::Error::from)
 }
 
 #[cfg(target_os = "macos")]
