@@ -3048,14 +3048,33 @@ class FocusedMutationReportingTests(unittest.TestCase):
             )[-len(expected_mutation_args) :],
             expected_mutation_args,
         )
+        core_candidate = Candidate(
+            "crates/hoimin-core/src/disk.rs",
+            "apply_disk_lifecycle_event",
+            "crates/hoimin-core/src/disk.rs:1: replace function",
+        )
+        self.assertEqual(
+            build_mutation_command(
+                Path("/repo"),
+                Path("/evidence/run"),
+                core_candidate,
+                iterate=False,
+                jobs=1,
+            )[-len(expected_mutation_args) :],
+            expected_mutation_args,
+        )
 
     def test_focused_command_enables_reuse_only_when_requested(self) -> None:
         candidate = Candidate("crates/a/src/lib.rs", "f", "name")
-        self.assertEqual(
-            build_mutation_command(
-                Path("/repo"), Path("/evidence/run"), candidate, iterate=True, jobs=4
-            )[-1],
+        self.assertIn(
             "--iterate",
+            build_mutation_command(
+                Path("/repo"),
+                Path("/evidence/run"),
+                candidate,
+                iterate=True,
+                jobs=4,
+            ),
         )
 
     def test_focused_command_requires_inventory_name(self) -> None:

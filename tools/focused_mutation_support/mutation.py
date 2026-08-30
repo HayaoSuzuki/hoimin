@@ -236,9 +236,9 @@ def build_mutation_command(
     ]
     if iterate:
         command.append("--iterate")
-    parts = Path(candidate.path).parts
-    if len(parts) >= 2 and parts[:2] == ("crates", "hoimin-cli"):
-        _append_outer_guard_skips(command, through_cargo_mutants=True)
+    # Mutation commands use --workspace even when the mutant is in another
+    # crate, so the hoimin-cli physical-depth fixtures are always reachable.
+    _append_outer_guard_skips(command, through_cargo_mutants=True)
     return command
 
 
