@@ -1900,6 +1900,7 @@ git commit -m "feat: bound and clean focused mutation scratch"
 **Files:**
 
 - Create: `tests/test_focused_mutation_disk_oracle.py`
+- Modify: `tools/focused_mutation.py`
 - Modify: `tools/focused_mutation_support/disk.py`
 - Modify: `tests/test_focused_mutation_docs.py`
 
@@ -1933,7 +1934,9 @@ statistics.
 .venv/bin/python -m unittest tests.test_focused_mutation_docs -v
 git diff --check
 git add tests/test_focused_mutation_disk_oracle.py \
-  tools/focused_mutation_support/disk.py tests/test_focused_mutation_docs.py
+  tools/focused_mutation.py tools/focused_mutation_support/disk.py \
+  tests/test_focused_mutation_docs.py \
+  docs/superpowers/plans/2026-08-27-disk-safe-mutation-execution.md
 git commit -m "test: audit Python disk guard correspondence"
 ```
 

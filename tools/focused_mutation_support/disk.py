@@ -120,6 +120,7 @@ FILESYSTEM_RESERVE_REACHED = "filesystem.reserve.reached"
 DISK_MEASUREMENT_FAILED = "disk.measurement.failed"
 WORKSPACE_CLEANUP_FAILED = "workspace.cleanup.failed"
 WORKSPACE_CLEANUP_DEFERRED = "workspace.cleanup.deferred"
+PROCESS_LIFECYCLE_FAILED = "process.failed"
 
 
 @dataclass(frozen=True)
@@ -152,6 +153,7 @@ class DiskStopReason(StrEnum):
     WORKSPACE_SIZE_EXCEEDED = "workspace_size_exceeded"
     FILESYSTEM_RESERVE_REACHED = "filesystem_reserve_reached"
     MEASUREMENT_FAILED = "measurement_failed"
+    PROCESS_FAILED = "process_failed"
 
     @property
     def code(self) -> str:
@@ -159,6 +161,7 @@ class DiskStopReason(StrEnum):
             self.WORKSPACE_SIZE_EXCEEDED: WORKSPACE_SIZE_EXCEEDED,
             self.FILESYSTEM_RESERVE_REACHED: FILESYSTEM_RESERVE_REACHED,
             self.MEASUREMENT_FAILED: DISK_MEASUREMENT_FAILED,
+            self.PROCESS_FAILED: PROCESS_LIFECYCLE_FAILED,
         }[self]
 
 
@@ -350,6 +353,33 @@ class DiskLifecycle:
         self.finished = False
 
 
+@dataclass(frozen=True)
+class DiskLifecycleSnapshot:
+    stop: DiskFailure | None
+    secondary: tuple[DiskSecondary, ...]
+    active: int
+    dispatched: int
+    owned_roots: tuple[DiskRootId, ...]
+    delivery_roots: tuple[DiskRootId, ...]
+    cleanup_requested: tuple[DiskRootId, ...]
+    cleanup_clean: tuple[DiskRootId, ...]
+    cleanup_failed: tuple[DiskRootId, ...]
+    cleanup_deferred: tuple[DiskRootId, ...]
+    cleanup_retained: tuple[DiskRootId, ...]
+    process_drain: ComponentState
+    output_drain: ComponentState
+    monitor_join: ComponentState
+    report: ComponentState
+    finished: bool
+
+
+@dataclass(frozen=True)
+class DiskLifecycleTraceResult:
+    snapshot: DiskLifecycleSnapshot
+    accepted: bool
+    rejected_at: int | None
+
+
 def _settled(state: ComponentState) -> bool:
     return state is not ComponentState.PENDING
 
@@ -374,6 +404,45 @@ def _safety_succeeded(lifecycle: DiskLifecycle) -> bool:
             lifecycle.monitor_join,
         )
     )
+
+
+def _record_secondary(
+    lifecycle: DiskLifecycle, secondary: DiskSecondary
+) -> None:
+    if secondary.reason is None:
+        lifecycle.secondary.append(secondary)
+        return
+    reasons = {
+        value.reason
+        for value in (
+            *(() if lifecycle.stop is None else lifecycle.stop.secondary),
+            *lifecycle.secondary,
+        )
+        if value.reason is not None
+    }
+    if lifecycle.stop is not None:
+        reasons.add(lifecycle.stop.reason)
+    if secondary.reason not in reasons:
+        lifecycle.secondary.append(secondary)
+
+
+def _record_disk_failure(
+    lifecycle: DiskLifecycle, failure: DiskFailure
+) -> None:
+    if lifecycle.stop is None:
+        lifecycle.stop = failure
+        return
+    _record_secondary(
+        lifecycle,
+        DiskSecondary(
+            reason=failure.reason,
+            observation=failure.observation,
+            code=failure.code,
+            message=failure.message,
+        ),
+    )
+    for secondary in failure.secondary:
+        _record_secondary(lifecycle, secondary)
 
 
 def apply_disk_lifecycle_event(
@@ -405,21 +474,31 @@ def apply_disk_lifecycle_event(
         setattr(lifecycle, attribute, state)
         if attribute == "process_drain":
             lifecycle.active = 0
+            if state is ComponentState.FAILED:
+                _record_disk_failure(
+                    lifecycle,
+                    DiskFailure(
+                        code=PROCESS_LIFECYCLE_FAILED,
+                        reason=DiskStopReason.PROCESS_FAILED,
+                    ),
+                )
         return True
     if kind is EventKind.OBSERVATION:
         if event.policy is None or event.value is None:
             return False
         failure = evaluate_disk_policy(event.policy, event.value)
-        if failure is not None and lifecycle.stop is None:
-            lifecycle.stop = failure
+        if failure is not None:
+            _record_disk_failure(lifecycle, failure)
         return True
     if kind is EventKind.MEASUREMENT_FAILED:
-        if lifecycle.stop is None:
-            lifecycle.stop = DiskFailure(
+        _record_disk_failure(
+            lifecycle,
+            DiskFailure(
                 code=DISK_MEASUREMENT_FAILED,
                 reason=DiskStopReason.MEASUREMENT_FAILED,
                 message=event.message,
-            )
+            ),
+        )
         return True
     if kind is EventKind.CLEANUP_REQUESTED:
         root = event.root
@@ -485,6 +564,118 @@ def apply_disk_lifecycle_event(
         lifecycle.finished = True
         return True
     return False
+
+
+def snapshot_disk_lifecycle(
+    lifecycle: DiskLifecycle,
+) -> DiskLifecycleSnapshot:
+    return DiskLifecycleSnapshot(
+        stop=lifecycle.stop,
+        secondary=tuple(lifecycle.secondary),
+        active=lifecycle.active,
+        dispatched=lifecycle.dispatched,
+        owned_roots=tuple(lifecycle.owned_roots),
+        delivery_roots=tuple(lifecycle.delivery_roots),
+        cleanup_requested=tuple(lifecycle.cleanup_requested),
+        cleanup_clean=tuple(lifecycle.cleanup_clean),
+        cleanup_failed=tuple(lifecycle.cleanup_failed),
+        cleanup_deferred=tuple(lifecycle.cleanup_deferred),
+        cleanup_retained=tuple(lifecycle.cleanup_retained),
+        process_drain=lifecycle.process_drain,
+        output_drain=lifecycle.output_drain,
+        monitor_join=lifecycle.monitor_join,
+        report=lifecycle.report,
+        finished=lifecycle.finished,
+    )
+
+
+class DiskLifecycleTraceRunner:
+    """Execute a fixed public lifecycle trace without fixture state injection."""
+
+    def __init__(self, owned_roots: list[DiskRootId]) -> None:
+        self._lifecycle = DiskLifecycle(owned_roots)
+
+    def snapshot(self) -> DiskLifecycleSnapshot:
+        return snapshot_disk_lifecycle(self._lifecycle)
+
+    @property
+    def stop(self) -> DiskFailure | None:
+        return self._lifecycle.stop
+
+    def apply(self, event: DiskLifecycleEvent) -> bool:
+        return apply_disk_lifecycle_event(self._lifecycle, event)
+
+    def record_disk_failure(
+        self, policy: DiskPolicy, failure: DiskFailure
+    ) -> bool:
+        return self.apply(
+            DiskLifecycleEvent.observation(policy, failure.observation)
+            if failure.observation is not None
+            else DiskLifecycleEvent.measurement_failed(failure.message)
+        )
+
+    def dispatch(self) -> bool:
+        return self.apply(DiskLifecycleEvent.dispatch_requested())
+
+    def record_process_drain(self, succeeded: bool) -> bool:
+        return self.apply(
+            DiskLifecycleEvent.process_drain_succeeded()
+            if succeeded
+            else DiskLifecycleEvent.process_drain_failed()
+        )
+
+    def record_output_drain(self, succeeded: bool) -> bool:
+        return self.apply(
+            DiskLifecycleEvent.output_drain_succeeded()
+            if succeeded
+            else DiskLifecycleEvent.output_drain_failed()
+        )
+
+    def record_monitor_join(self, succeeded: bool) -> bool:
+        return self.apply(
+            DiskLifecycleEvent.monitor_join_succeeded()
+            if succeeded
+            else DiskLifecycleEvent.monitor_join_failed()
+        )
+
+    def request_cleanup(self, root: DiskRootId) -> bool:
+        return self.apply(DiskLifecycleEvent.cleanup_requested(root))
+
+    def complete_cleanup(
+        self,
+        root: DiskRootId,
+        outcome: CleanupOutcome,
+        message: str | None = None,
+    ) -> bool:
+        return self.apply(
+            DiskLifecycleEvent.cleanup_completed(root, outcome, message)
+        )
+
+    def record_report(self, succeeded: bool) -> bool:
+        return self.apply(
+            DiskLifecycleEvent.report_succeeded()
+            if succeeded
+            else DiskLifecycleEvent.report_failed()
+        )
+
+    def finish(self) -> bool:
+        return self.apply(DiskLifecycleEvent.finish_requested())
+
+    def run(
+        self, events: Iterable[DiskLifecycleEvent]
+    ) -> DiskLifecycleTraceResult:
+        for index, event in enumerate(events):
+            if not self.apply(event):
+                return DiskLifecycleTraceResult(
+                    snapshot=self.snapshot(),
+                    accepted=False,
+                    rejected_at=index,
+                )
+        return DiskLifecycleTraceResult(
+            snapshot=self.snapshot(),
+            accepted=True,
+            rejected_at=None,
+        )
 
 
 @dataclass(frozen=True)

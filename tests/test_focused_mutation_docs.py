@@ -6,6 +6,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FocusedMutationDocumentationTests(unittest.TestCase):
+    def test_disk_guard_oracle_has_a_python_correspondence_test(self) -> None:
+        source = (ROOT / "tests/test_focused_mutation_disk_oracle.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("disk-guard-lifecycle.jsonl", source)
+        self.assertIn("implementation_targets", source)
+        self.assertIn("OracleResultKind.INFRASTRUCTURE", source)
+
     def test_development_guide_documents_bounded_workflow(self) -> None:
         text = (ROOT / "docs" / "development.md").read_text(encoding="utf-8")
         self.assertNotIn(

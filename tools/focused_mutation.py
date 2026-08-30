@@ -32,14 +32,13 @@ from tools.focused_mutation_support.disk import (
     CleanupOutcome,
     DiskFailure,
     DiskGuard,
-    DiskLifecycle,
     DiskLifecycleEvent,
+    DiskLifecycleTraceRunner,
     DiskObservation,
     DiskPolicy,
     DiskRootId,
     DiskStopReason,
     MeterRoot,
-    apply_disk_lifecycle_event,
     evaluate_disk_policy,
     parse_byte_size,
 )
@@ -717,7 +716,7 @@ def run_workflow(
     capacity_root = runtime.capacity_root
     capacity_exact = runtime.capacity_exact
     command_environment = runtime.command_environment
-    disk_lifecycle = DiskLifecycle([DiskRootId.EXECUTION])
+    disk_lifecycle = DiskLifecycleTraceRunner([DiskRootId.EXECUTION])
     record.disk_policy = {
         "max_disk_bytes": options.disk_policy.max_disk_bytes,
         "min_free_bytes": options.disk_policy.min_free_bytes,
@@ -769,16 +768,9 @@ def run_workflow(
         if isinstance(dependencies.runner, CommandRunner):
             preflight_failure = guard.sample()
             if preflight_failure is not None:
-                event = (
-                    DiskLifecycleEvent.observation(
-                        options.disk_policy, preflight_failure.observation
-                    )
-                    if preflight_failure.observation is not None
-                    else DiskLifecycleEvent.measurement_failed(
-                        preflight_failure.message
-                    )
+                disk_lifecycle.record_disk_failure(
+                    options.disk_policy, preflight_failure
                 )
-                apply_disk_lifecycle_event(disk_lifecycle, event)
             if disk_lifecycle.stop is not None:
                 try:
                     return dependencies.runner.run(
@@ -798,9 +790,7 @@ def run_workflow(
                     record.commands.append(error.record)
                     raise
         scratch.note_dispatch()
-        if not apply_disk_lifecycle_event(
-            disk_lifecycle, DiskLifecycleEvent.dispatch_requested()
-        ):
+        if not disk_lifecycle.dispatch():
             raise RuntimeError("disk lifecycle rejected command dispatch")
         try:
             if isinstance(dependencies.runner, CommandRunner):
@@ -827,16 +817,9 @@ def run_workflow(
             CommandLifecycleFailed,
         ) as error:
             if isinstance(error, CommandDiskStopped):
-                event = (
-                    DiskLifecycleEvent.observation(
-                        options.disk_policy, error.failure.observation
-                    )
-                    if error.failure.observation is not None
-                    else DiskLifecycleEvent.measurement_failed(
-                        error.failure.message
-                    )
+                disk_lifecycle.record_disk_failure(
+                    options.disk_policy, error.failure
                 )
-                apply_disk_lifecycle_event(disk_lifecycle, event)
             record.commands.append(error.record)
             try:
                 checkpoint()
@@ -1122,14 +1105,7 @@ def run_workflow(
         record.state = RunState.DISK_LIMIT
         record.error = error.failure.code
         _record_disk_failure(record, error.failure)
-        event = (
-            DiskLifecycleEvent.observation(
-                options.disk_policy, error.failure.observation
-            )
-            if error.failure.observation is not None
-            else DiskLifecycleEvent.measurement_failed(error.failure.message)
-        )
-        apply_disk_lifecycle_event(disk_lifecycle, event)
+        disk_lifecycle.record_disk_failure(options.disk_policy, error.failure)
         _mark_pending(record, "disk_limit")
     except CommandTimedOut as error:
         if command_stage == "discovery":
@@ -1222,16 +1198,9 @@ def run_workflow(
         if join_failure is not None:
             _record_disk_failure(record, join_failure)
         if guard.failure is not None:
-            event = (
-                DiskLifecycleEvent.observation(
-                    options.disk_policy, guard.failure.observation
-                )
-                if guard.failure.observation is not None
-                else DiskLifecycleEvent.measurement_failed(
-                    guard.failure.message
-                )
+            disk_lifecycle.record_disk_failure(
+                options.disk_policy, guard.failure
             )
-            apply_disk_lifecycle_event(disk_lifecycle, event)
         if guard.failure is not None and record.state is not RunState.INTERRUPTED:
             if record.state not in {
                 RunState.RUNNING,
@@ -1269,25 +1238,25 @@ def run_workflow(
         command_root_close_errors = store.close_command_root()
         if command_root_close_errors:
             _append_report_error(record, command_root_close_errors)
-        for event in (
-            DiskLifecycleEvent.process_drain_succeeded()
-            if process_drain_safe
-            else DiskLifecycleEvent.process_drain_failed(),
-            DiskLifecycleEvent.output_drain_succeeded()
-            if output_drain_safe
-            else DiskLifecycleEvent.output_drain_failed(),
-            DiskLifecycleEvent.monitor_join_succeeded()
-            if joined
-            else DiskLifecycleEvent.monitor_join_failed(),
+        for label, record_outcome in (
+            (
+                "process_drain",
+                lambda: disk_lifecycle.record_process_drain(process_drain_safe),
+            ),
+            (
+                "output_drain",
+                lambda: disk_lifecycle.record_output_drain(output_drain_safe),
+            ),
+            (
+                "monitor_join",
+                lambda: disk_lifecycle.record_monitor_join(joined),
+            ),
         ):
-            if not apply_disk_lifecycle_event(disk_lifecycle, event):
+            if not record_outcome():
                 raise RuntimeError(
-                    f"disk lifecycle rejected finalization event {event.kind}"
+                    f"disk lifecycle rejected finalization event {label}"
                 )
-        cleanup_requested = apply_disk_lifecycle_event(
-            disk_lifecycle,
-            DiskLifecycleEvent.cleanup_requested(DiskRootId.EXECUTION),
-        )
+        cleanup_requested = disk_lifecycle.request_cleanup(DiskRootId.EXECUTION)
         cleanup_safe = (
             joined
             and process_drain_safe
@@ -1389,13 +1358,10 @@ def run_workflow(
             ScratchCleanupStatus.DEFERRED: CleanupOutcome.DEFERRED,
             ScratchCleanupStatus.RETAINED: CleanupOutcome.RETAINED,
         }[cleanup.status]
-        if cleanup_requested and not apply_disk_lifecycle_event(
-            disk_lifecycle,
-            DiskLifecycleEvent.cleanup_completed(
+        if cleanup_requested and not disk_lifecycle.complete_cleanup(
                 DiskRootId.EXECUTION,
                 cleanup_outcome,
                 "; ".join(cleanup.details) or None,
-            ),
         ):
             if record.state is RunState.COMPLETED:
                 record.state = RunState.COMMAND_FAILED
@@ -1827,17 +1793,10 @@ def run_workflow(
                 *owned_output.close_directory(),
             ]
             _append_report_error(record, trailing_close_errors)
-            report_event = (
-                DiskLifecycleEvent.report_succeeded()
-                if record.report_error is None
-                else DiskLifecycleEvent.report_failed()
-            )
-            if not apply_disk_lifecycle_event(disk_lifecycle, report_event):
+            if not disk_lifecycle.record_report(record.report_error is None):
                 raise RuntimeError("disk lifecycle rejected report outcome")
             if record.report_error is None:
-                apply_disk_lifecycle_event(
-                    disk_lifecycle, DiskLifecycleEvent.finish_requested()
-                )
+                disk_lifecycle.finish()
     return record
 
 
