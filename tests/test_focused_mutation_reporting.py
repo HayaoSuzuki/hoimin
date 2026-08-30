@@ -3053,6 +3053,35 @@ class FocusedMutationReportingTests(unittest.TestCase):
             ],
         )
 
+    def test_list_parser_ignores_non_function_mutants(self) -> None:
+        inventory = json.loads(LIST_JSON_27_1_0)
+        inventory.insert(
+            0,
+            {
+                "file": "src/lib.rs",
+                "function": None,
+                "name": "src/lib.rs:1:20: replace * with +",
+            },
+        )
+
+        try:
+            candidates = parse_list_json(json.dumps(inventory))
+        except ValueError as error:
+            self.fail(f"valid non-function mutant was rejected: {error}")
+
+        self.assertEqual(
+            candidates,
+            [
+                Candidate(
+                    path="src/lib.rs",
+                    symbol="add",
+                    mutant_name=(
+                        "src/lib.rs:2:5: replace add -> u64 with 0"
+                    ),
+                )
+            ],
+        )
+
     def test_list_parser_rejects_incomplete_entries(self) -> None:
         with self.assertRaisesRegex(ValueError, "name"):
             parse_list_json('[{"file": "src/lib.rs"}]')

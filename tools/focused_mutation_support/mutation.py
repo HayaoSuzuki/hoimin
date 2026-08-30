@@ -140,7 +140,11 @@ def parse_list_json(text: str) -> list[Candidate]:
             raise ValueError("cargo-mutants list entry must be an object")
         path = _required_string(entry, "file")
         mutant_name = _required_string(entry, "name")
-        function = entry.get("function")
+        if "function" not in entry:
+            raise ValueError("cargo-mutants list entry requires function")
+        function = entry["function"]
+        if function is None:
+            continue
         if not isinstance(function, dict):
             raise ValueError("cargo-mutants list entry requires function")
         symbol = _required_string(function, "function_name")
