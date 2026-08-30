@@ -1441,6 +1441,29 @@ async fn sample_after_process_drain(
 
 type CleanupThreadJob = Box<dyn FnOnce() + Send + 'static>;
 
+#[derive(Debug, PartialEq, Eq)]
+enum CleanupThreadFailure {
+    Spawn(String),
+    TimedOut,
+    Stopped,
+}
+
+impl std::fmt::Display for CleanupThreadFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Spawn(error) => write!(
+                formatter,
+                "workspace.cleanup.failed: cleanup thread could not start: {error}"
+            ),
+            Self::TimedOut => {
+                formatter.write_str("workspace.cleanup.deferred: cleanup operation timed out")
+            }
+            Self::Stopped => formatter
+                .write_str("workspace.cleanup.failed: cleanup thread stopped without a result"),
+        }
+    }
+}
+
 fn spawn_cleanup_thread(job: CleanupThreadJob) -> std::io::Result<()> {
     std::thread::Builder::new()
         .name("hoimin-cleanup".to_owned())
@@ -1451,7 +1474,7 @@ fn spawn_cleanup_thread(job: CleanupThreadJob) -> std::io::Result<()> {
 async fn run_cleanup_thread<T: Send + 'static>(
     budget: &ShutdownBudget,
     operation: impl FnOnce() -> T + Send + 'static,
-) -> Result<T, String> {
+) -> Result<T, CleanupThreadFailure> {
     run_cleanup_thread_with_spawner(budget, operation, spawn_cleanup_thread).await
 }
 
@@ -1459,19 +1482,17 @@ async fn run_cleanup_thread_with_spawner<T: Send + 'static>(
     budget: &ShutdownBudget,
     operation: impl FnOnce() -> T + Send + 'static,
     spawner: impl FnOnce(CleanupThreadJob) -> std::io::Result<()>,
-) -> Result<T, String> {
+) -> Result<T, CleanupThreadFailure> {
     let (sender, receiver) = tokio::sync::oneshot::channel();
     spawner(Box::new(move || {
         let _ = sender.send(operation());
     }))
-    .map_err(|error| {
-        format!("workspace.cleanup.failed: cleanup thread could not start: {error}")
-    })?;
+    .map_err(|error| CleanupThreadFailure::Spawn(error.to_string()))?;
     budget
         .wait(receiver)
         .await
-        .map_err(|_| "workspace.cleanup.deferred: cleanup operation timed out".to_owned())?
-        .map_err(|_| "workspace.cleanup.failed: cleanup thread stopped without a result".to_owned())
+        .map_err(|_| CleanupThreadFailure::TimedOut)?
+        .map_err(|_| CleanupThreadFailure::Stopped)
 }
 
 #[derive(Debug)]
@@ -1488,11 +1509,18 @@ enum ManagedCleanupOutcome {
 }
 
 fn recordless_cleanup_outcome(
-    error: String,
+    mut error: String,
     stable_remaining_root: Option<Utf8PathBuf>,
 ) -> ManagedCleanupOutcome {
     let deferred =
         error.starts_with("workspace.cleanup.deferred:") || stable_remaining_root.is_none();
+    let detail = error.clone();
+    if deferred && !error.starts_with("workspace.cleanup.deferred:") {
+        let message = error
+            .strip_prefix("workspace.cleanup.failed:")
+            .map_or(error.as_str(), str::trim);
+        error = format!("workspace.cleanup.deferred: {message}");
+    }
     let mut record = CleanupRecord {
         status: if deferred {
             hoimin_core::DiskCleanupStatus::Deferred
@@ -1505,12 +1533,21 @@ fn recordless_cleanup_outcome(
         omitted_detail_count: 0,
         remaining_root: stable_remaining_root,
     };
-    record.push_detail(error.clone());
+    record.push_detail(detail);
     if deferred {
         ManagedCleanupOutcome::Deferred { record, error }
     } else {
         ManagedCleanupOutcome::Failed { record, error }
     }
+}
+
+fn cleanup_thread_failure_outcome(
+    root: &ManagedRunRoot,
+    failure: &CleanupThreadFailure,
+) -> ManagedCleanupOutcome {
+    let stable_remaining_root =
+        matches!(failure, CleanupThreadFailure::Spawn(_)).then(|| root.path().to_owned());
+    recordless_cleanup_outcome(failure.to_string(), stable_remaining_root)
 }
 
 fn cleanup_with_panic_recovery(
@@ -1571,7 +1608,7 @@ async fn cleanup_managed_root(
             Ok(result) => result.err().map(|error| error.to_string()),
             Err(error) => {
                 return attach_cleanup_ready_error(
-                    recordless_cleanup_outcome(error, Some(root.path().to_owned())),
+                    recordless_cleanup_outcome(error.to_string(), Some(root.path().to_owned())),
                     Some("cleanup-ready operation did not complete"),
                 );
             }
@@ -1600,7 +1637,7 @@ async fn cleanup_managed_root(
             Ok(cleanup) => cleanup,
             Err(error) => {
                 return attach_cleanup_ready_error(
-                    recordless_cleanup_outcome(error, None),
+                    cleanup_thread_failure_outcome(&root, &error),
                     marker_error.as_deref(),
                 );
             }
@@ -2556,7 +2593,10 @@ where
                         Ok(measurement) => measurement,
                         Err(error) => {
                             final_measurement_joined = false;
-                            Err(std::io::Error::new(std::io::ErrorKind::TimedOut, error))
+                            Err(std::io::Error::new(
+                                std::io::ErrorKind::TimedOut,
+                                error.to_string(),
+                            ))
                         }
                     };
                     match measurement {
@@ -5920,7 +5960,11 @@ mod tests {
         };
         assert_eq!(record.status, hoimin_core::DiskCleanupStatus::Deferred);
         assert!(record.remaining_root.is_none());
-        assert_eq!(record.details, vec![error]);
+        assert!(error.starts_with("workspace.cleanup.deferred:"), "{error}");
+        assert_eq!(
+            record.details,
+            vec!["workspace.cleanup.failed: cleanup worker stopped"]
+        );
     }
 
     #[test]
@@ -5959,9 +6003,33 @@ mod tests {
 
         assert_eq!(
             error,
+            CleanupThreadFailure::Spawn("injected thread exhaustion".to_owned())
+        );
+        assert_eq!(
+            error.to_string(),
             "workspace.cleanup.failed: cleanup thread could not start: injected thread exhaustion"
         );
         assert!(!operation_ran.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn cleanup_spawn_failure_is_failed_with_the_stable_active_root() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+
+        let outcome = cleanup_thread_failure_outcome(
+            &root,
+            &CleanupThreadFailure::Spawn("injected thread exhaustion".to_owned()),
+        );
+
+        let ManagedCleanupOutcome::Failed { record, error } = outcome else {
+            panic!("a cleanup operation that never started must keep its stable root")
+        };
+        assert_eq!(record.status, hoimin_core::DiskCleanupStatus::Failed);
+        assert_eq!(record.remaining_root.as_deref(), Some(root.path()));
+        assert!(error.starts_with("workspace.cleanup.failed:"), "{error}");
     }
 
     #[tokio::test]
