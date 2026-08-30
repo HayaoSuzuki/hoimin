@@ -3604,7 +3604,16 @@ where
                         }
                     }
                     ManagedCleanupOutcome::Failed { record, error } => {
-                        execution_cleanup_record = record;
+                        execution_cleanup_record = Some(record.unwrap_or_else(|| CleanupRecord {
+                            status: hoimin_core::DiskCleanupStatus::Failed,
+                            examined_entries: 0,
+                            removed_entries: 0,
+                            details: vec![error.clone()],
+                            omitted_detail_count: 0,
+                            remaining_root: Some(
+                                context.spool_dir.execution_root.path().to_owned(),
+                            ),
+                        }));
                         if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                             root: DiskRootId::Execution,
                             outcome: DiskCleanupOutcome::Failed(error.clone()),
@@ -5757,6 +5766,7 @@ mod tests {
         drop(preserved);
         drop(coordinator);
         control.inject_execution_cleanup_failed_without_record();
+        let observed = control.clone();
         let mut stdout = Vec::new();
 
         let _result = run_loop_with_control(config, &mut stdout, Vec::new(), control).await;
@@ -5768,6 +5778,10 @@ mod tests {
             .iter()
             .find(|record| record["root_id"] == "execution")
             .expect("execution cleanup evidence");
+        assert_eq!(
+            execution_cleanup["remaining_root"],
+            observed.managed_root_paths()[0].as_str()
+        );
         assert!(
             execution_cleanup["details"]
                 .as_array()

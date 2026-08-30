@@ -56,8 +56,10 @@ below contain those corrections.
   and 100,001-child boundaries; never materialize those trees or create GiB-scale fixtures.
 - Keep only one full command spool in memory. Never copy a per-command retained log into
   every candidate record; candidate diagnostics are separately and globally bounded.
-- Do not run full-workspace cargo-mutants. The only mutation gate is the focused,
-  single-worker command in Task 10, guarded by a fresh scratch root and disk preflight.
+- Do not run Rust mutation testing. On 2026-08-30 the user explicitly disabled both
+  full-workspace and focused cargo-mutants execution after repeated disk-capacity
+  incidents. Task 10 records the mutation gate as deliberately omitted; ordinary,
+  formal, compatibility, and native lifecycle gates remain required.
 - Provision the locked Python environment as an explicit setup gate. Invoke the focused
   mutation wrapper with the existing `.venv/bin/python`; never put `uv run` between the
   final free-space preflight and wrapper startup.
@@ -2200,80 +2202,16 @@ evidence gap, not a fabricated pass.
 Every platform report must name `candidate_sha`; after all native evidence, re-run the
 exact SHA and clean-status assertions from Step 2.
 
-- [ ] **Step 4: Run only the guarded focused mutation slice**
+- [x] **Step 4: Omit Rust mutation execution by explicit user directive**
 
-Preflight free space and ensure no concurrent cargo-mutants process. Run through the new
-wrapper, not raw full-workspace cargo-mutants:
-
-```bash
-set -e
-candidate_sha="$(cat .superpowers/sdd/2026-08-27-disk-safe-mutation-execution/candidate-sha.txt)"
-test "$(git rev-parse HEAD)" = "$candidate_sha"
-test -z "$(git status --porcelain=v1 --untracked-files=all)"
-python3 -c 'import os, pathlib, shutil, sys, tempfile; roots=[pathlib.Path("."), pathlib.Path(tempfile.gettempdir()), pathlib.Path(os.environ.get("CARGO_HOME", pathlib.Path.home()/".cargo")), pathlib.Path(os.environ.get("UV_CACHE_DIR", pathlib.Path.home()/".cache/uv"))]; existing=[]; [(lambda p: existing.append(p))(next(x for x in [p,*p.parents] if x.exists())) for p in roots]; seen=set(); free=[]
-for p in existing:
- d=p.stat().st_dev
- if d not in seen: seen.add(d); free.append(shutil.disk_usage(p).free)
-sys.exit(0 if free and min(free) > 10 * 1024**3 else 1)'
-process_list="$(mktemp /tmp/hoimin-process-list.XXXXXX)"
-trap 'unlink "$process_list" 2>/dev/null || true' EXIT
-ps -axo pid,etime,command > "$process_list"
-if rg '[c]argo mutants' "$process_list"; then
-  exit 1
-else
-  test "$?" -eq 1
-fi
-test -x .venv/bin/python
-mutation_output="$(mktemp -d "$PWD/.superpowers/sdd/2026-08-27-disk-safe-mutation-execution/focused.XXXXXX")"
-.venv/bin/python tools/focused_mutation.py \
-  --budget 30m \
-  --jobs 1 \
-  --max-disk 8GiB \
-  --min-free-space 10GiB \
-  --max-log-size 16MiB \
-  --symbol evaluate_disk_policy \
-  --symbol apply_disk_lifecycle_event \
-  --symbol measure_owned_tree \
-  --symbol claim_managed_child \
-  --output "$mutation_output"
-.venv/bin/python -c 'import json, pathlib, sys; p=pathlib.Path(sys.argv[1]); d=json.loads((p / "run.json").read_text()); scratch=pathlib.Path(d["scratch"]["path"]); assert d["schema_version"] == 2; assert d["state"] == "completed"; assert d["jobs"] == 1; assert d["scratch"]["cleanup"]["status"] == "clean"; assert d["scratch"]["cleanup"]["remaining_root"] is None; assert not scratch.exists(); assert 0 < len(d["candidates"]) <= 80; assert all(c["state"] not in {"pending", "not_run", "timeout", "error", "survived"} for c in d["candidates"])' "$mutation_output"
-.venv/bin/python -c 'import json, pathlib, sys; p=pathlib.Path(sys.argv[1]); d=json.loads((p/"run.json").read_text()); assert d["output_recovery"]["remaining_temporary_names"] == []' "$mutation_output"
-.venv/bin/python -c 'import pathlib, sys; p=pathlib.Path(sys.argv[1]); assert not list(p.glob(".hoimin-output-*.tmp"))' "$mutation_output"
-test "$(git rev-parse HEAD)" = "$candidate_sha"
-test -z "$(git status --porcelain=v1 --untracked-files=all)"
-```
-
-The four function names above are required unique, platform-portable implementation
-seams from Tasks 2 and 5; add an exact discovery test and stop if any resolves to zero
-or multiple functions.
-Acceptance requires no more than 80 inventoried mutants, exact cargo-mutants 27.1.0;
-one mutation worker; no disk/budget/timeout/
-tool/error outcome; every applicable focused mutant caught; scratch cleanup verified;
-retained evidence bounded; disk remained above reserve. A platform-inapplicable mutant
-must be mapped by exact name and cfg. Do not run the full 3,000+ mutant inventory.
-
-The shell assertion permits `unviable` only so the run can finish and preserve its log.
-Before acceptance, enumerate every unviable exact mutant name into
-`focused-unviable-review.json`, link its compiler log, and independently confirm that the
-replacement cannot compile on the tested target. Any executable semantic survivor,
-unmapped unviable result, truncated inventory, or name mismatch fails the gate. The
-review file must also prove each requested symbol maps to one `(path, function span)`;
-multiple mutant entries within that one function are expected.
-
-After the independent mutation review writes that file, make acceptance executable:
-
-```bash
-set -e
-.venv/bin/python -c 'import pathlib, sys; p=pathlib.Path(sys.argv[1]); assert p.is_file(); assert p.stat().st_size <= 8 * 1024**2' "$mutation_output/focused-unviable-review.json"
-.venv/bin/python -c 'import json, pathlib, sys; out=pathlib.Path(sys.argv[1]); run=json.loads((out/"run.json").read_text()); review=json.loads((out/"focused-unviable-review.json").read_text()); assert review["schema"] == 1; assert review["candidate_sha"] == sys.argv[2]; assert sorted(review["inventory_names"]) == sorted(c["mutant_name"] for c in run["candidates"]); assert sorted(review["unviable_names"]) == sorted(c["mutant_name"] for c in run["candidates"] if c["state"] == "unviable"); assert all(item["compiler_log"] and item["reviewer"] and item["reason"] for item in review["unviable_reviews"]); assert sorted(item["mutant_name"] for item in review["unviable_reviews"]) == sorted(review["unviable_names"]); assert len(review["symbol_spans"]) == 4' "$mutation_output" "$candidate_sha"
-test "$(git rev-parse HEAD)" = "$candidate_sha"
-test -z "$(git status --porcelain=v1 --untracked-files=all)"
-```
-
-If a non-equivalent outside-scope survivor appears, prove whether it is pre-existing with
-an exact single-worker same-host `origin/main` narrow comparison and stop for scope
-direction. If an exact equivalent mutant is independently reviewed, add a fully anchored
-exclusion plus reason to `.cargo/mutants.toml`, commit it, and repeat a fresh focused run.
+On 2026-08-30 the user prohibited further Rust mutation testing because prior runs
+caused unsafe disk growth. Do not invoke raw cargo-mutants, the focused wrapper, an
+inventory-only cargo-mutants command, or an origin/main mutation comparison. This is an
+intentional safety decision, not a passed or fabricated mutation result. Record the
+omission and reason beside the candidate SHA. Acceptance for this delivery therefore
+uses the complete ordinary Rust/Python suite, Lean build/freshness/sensitivity,
+compatibility/contracts/wheel gates, native macOS/Linux evidence, and three independent
+same-SHA reviews.
 
 - [ ] **Step 5: Three same-SHA independent reviews**
 
@@ -2352,7 +2290,8 @@ merge without separate user or maintainer authorization.
   acknowledge output/session completion.
 - [ ] Lean proofs, sensitivity, freshness, Rust adapter, and Python adapter pass.
 - [ ] macOS/Linux native evidence is honest; Windows CI lifecycle evidence passes.
-- [ ] Only guarded, one-worker focused mutation evidence is used.
+- [ ] Rust mutation execution is omitted and recorded by explicit user directive; no
+  cargo-mutants process or new mutation artifact exists for the candidate SHA.
 - [ ] Final SHA is clean, independently reviewed, pushed, and equal to the PR head.
 - [ ] GitHub checks are watched at 60-second intervals and the exact PR job set passes;
   push-to-main-only jobs are identified as not applicable.
