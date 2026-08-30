@@ -2251,7 +2251,7 @@ gh pr create --base main --head feat/disk-safe-mutation \
 
 The PR body links the approved design, states defaults/limits, enumerates native evidence,
 explains that no full-workspace mutation was run, and records exact cleanup outcomes.
-Verify remote head SHA once, then watch actual checks at 30-second intervals. Do not poll
+Verify remote head SHA once, then watch actual checks at 60-second intervals. Do not poll
 GitHub Actions every 10 seconds:
 
 ```bash
@@ -2259,7 +2259,7 @@ set -e
 candidate_sha="$(cat .superpowers/sdd/2026-08-27-disk-safe-mutation-execution/candidate-sha.txt)"
 remote_sha="$(gh pr view --json headRefOid --jq .headRefOid)"
 test "$remote_sha" = "$candidate_sha"
-gh pr checks --watch --interval 30
+gh pr checks --watch --interval 60
 ```
 
 Require the complete PR job set from `.github/workflows/ci.yml`: Quality on Ubuntu,
@@ -2303,5 +2303,5 @@ merge without separate user or maintainer authorization.
 - [ ] macOS/Linux native evidence is honest; Windows CI lifecycle evidence passes.
 - [ ] Only guarded, one-worker focused mutation evidence is used.
 - [ ] Final SHA is clean, independently reviewed, pushed, and equal to the PR head.
-- [ ] GitHub checks are watched at 30-second intervals and the exact PR job set passes;
+- [ ] GitHub checks are watched at 60-second intervals and the exact PR job set passes;
   push-to-main-only jobs are identified as not applicable.
