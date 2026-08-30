@@ -2644,7 +2644,13 @@ where
                                         minimum_available_bytes: Some(filesystem.minimum),
                                         end_available_bytes,
                                         available_bytes_change: end_available_bytes.map(|end| {
-                                            i128::from(end) - i128::from(filesystem.start)
+                                            let change =
+                                                i128::from(end) - i128::from(filesystem.start);
+                                            match i64::try_from(change) {
+                                                Ok(change) => change,
+                                                Err(_) if change.is_negative() => i64::MIN,
+                                                Err(_) => i64::MAX,
+                                            }
                                         }),
                                     }
                                 })

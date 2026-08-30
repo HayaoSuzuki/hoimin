@@ -6,6 +6,34 @@ use hoimin_core::{
 use serde_json::json;
 
 #[test]
+fn disk_filesystem_report_round_trips_through_json() {
+    let filesystem = hoimin_core::DiskFilesystemReport {
+        key: "workspace".into(),
+        start_available_bytes: Some(1_024),
+        minimum_available_bytes: Some(512),
+        end_available_bytes: Some(768),
+        available_bytes_change: Some(-256),
+    };
+    let mut disk = hoimin_core::DiskRunSummary::unmeasured(2_048, 256);
+    disk.filesystems.push(filesystem);
+    let event = OutputEvent::RunFinished(hoimin_core::RunSummary {
+        schema_version: hoimin_core::REPORT_SCHEMA_VERSION,
+        sequence: 1,
+        run_id: "run-1".into(),
+        counts: summarize(&[]),
+        complete: true,
+        exit_code: 0,
+        disk,
+        verification_selection: None,
+    });
+
+    let encoded = serde_json::to_vec(&event).unwrap();
+    let decoded: OutputEvent = serde_json::from_slice(&encoded).unwrap();
+
+    assert_eq!(decoded, event);
+}
+
+#[test]
 fn unmeasured_disk_summary_makes_no_enforcement_claim() {
     let summary =
         hoimin_core::DiskRunSummary::unmeasured(8 * 1024 * 1024 * 1024, 10 * 1024 * 1024 * 1024);

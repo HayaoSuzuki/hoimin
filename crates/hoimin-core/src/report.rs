@@ -146,7 +146,7 @@ pub struct DiskFilesystemReport {
     pub start_available_bytes: Option<u64>,
     pub minimum_available_bytes: Option<u64>,
     pub end_available_bytes: Option<u64>,
-    pub available_bytes_change: Option<i128>,
+    pub available_bytes_change: Option<i64>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
