@@ -3007,14 +3007,15 @@ class FocusedMutationReportingTests(unittest.TestCase):
             "measure_owned_tree",
             "crates/hoimin-cli/src/workspace/disk.rs:1: replace function",
         )
-        expected_test_args = [
+        expected_baseline_args = [
             "--",
             "--skip",
             "workspace::disk::tests::rejects_a_tree_deeper_than_the_bound",
         ]
+        expected_mutation_args = ["--", *expected_baseline_args]
 
         self.assertEqual(
-            build_baseline_command(candidate)[-3:], expected_test_args
+            build_baseline_command(candidate)[-3:], expected_baseline_args
         )
         self.assertEqual(
             build_mutation_command(
@@ -3023,8 +3024,8 @@ class FocusedMutationReportingTests(unittest.TestCase):
                 candidate,
                 iterate=False,
                 jobs=1,
-            )[-3:],
-            expected_test_args,
+            )[-4:],
+            expected_mutation_args,
         )
 
     def test_focused_command_enables_reuse_only_when_requested(self) -> None:

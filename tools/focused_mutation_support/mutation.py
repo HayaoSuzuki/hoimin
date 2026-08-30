@@ -212,7 +212,9 @@ def build_mutation_command(
         command.append("--iterate")
     parts = Path(candidate.path).parts
     if len(parts) >= 2 and parts[:2] == ("crates", "hoimin-cli"):
-        command.extend(["--", "--skip", _OUTER_GUARD_DEPTH_FIXTURE])
+        # The first separator belongs to cargo-mutants; the second is passed
+        # through to cargo test so the skip reaches the libtest harness.
+        command.extend(["--", "--", "--skip", _OUTER_GUARD_DEPTH_FIXTURE])
     return command
 
 
