@@ -248,6 +248,8 @@ pub struct RunControl {
     #[cfg(test)]
     force_execution_cleanup_deferred: Arc<AtomicBool>,
     #[cfg(test)]
+    force_execution_cleanup_failed_without_record: Arc<AtomicBool>,
+    #[cfg(test)]
     duplicate_execution_cleanup_request: Arc<AtomicBool>,
     #[cfg(test)]
     force_process_reap_failure: Arc<AtomicBool>,
@@ -381,6 +383,8 @@ impl RunControl {
             post_drain_disk_failure: Arc::new(std::sync::Mutex::new(None)),
             #[cfg(test)]
             force_execution_cleanup_deferred: Arc::new(AtomicBool::new(false)),
+            #[cfg(test)]
+            force_execution_cleanup_failed_without_record: Arc::new(AtomicBool::new(false)),
             #[cfg(test)]
             duplicate_execution_cleanup_request: Arc::new(AtomicBool::new(false)),
             #[cfg(test)]
@@ -558,6 +562,18 @@ impl RunControl {
     #[cfg(test)]
     fn take_execution_cleanup_deferred(&self) -> bool {
         self.force_execution_cleanup_deferred
+            .swap(false, Ordering::AcqRel)
+    }
+
+    #[cfg(test)]
+    fn inject_execution_cleanup_failed_without_record(&self) {
+        self.force_execution_cleanup_failed_without_record
+            .store(true, Ordering::Release);
+    }
+
+    #[cfg(test)]
+    fn take_execution_cleanup_failed_without_record(&self) -> bool {
+        self.force_execution_cleanup_failed_without_record
             .swap(false, Ordering::AcqRel)
     }
 
@@ -1613,10 +1629,17 @@ fn apply_finalization_errors_to_summary(summary: &mut hoimin_core::RunSummary, e
 
 fn apply_execution_cleanup_evidence(
     report: &mut hoimin_core::DiskCleanupReport,
-    cleanup: &CleanupRecord,
+    cleanup: Option<&CleanupRecord>,
     startup_reclaim: &ReclaimReport,
 ) {
-    let mut cleanup = cleanup.clone();
+    let mut cleanup = cleanup.cloned().unwrap_or_else(|| CleanupRecord {
+        status: report.status,
+        examined_entries: report.examined_entries,
+        removed_entries: report.removed_entries,
+        details: report.details.clone(),
+        omitted_detail_count: report.omitted_detail_count,
+        remaining_root: report.remaining_root.as_ref().map(Utf8PathBuf::from),
+    });
     startup_reclaim.append_to_cleanup(&mut cleanup);
     report.status = cleanup.status;
     report.examined_entries = cleanup.examined_entries;
@@ -2793,16 +2816,15 @@ where
                                     }
                                 })
                                 .collect();
-                            if let Some(cleanup) = &execution_cleanup_record
-                                && let Some(report) = summary
-                                    .disk
-                                    .cleanup
-                                    .iter_mut()
-                                    .find(|report| report.root_id == "execution")
+                            if let Some(report) = summary
+                                .disk
+                                .cleanup
+                                .iter_mut()
+                                .find(|report| report.root_id == "execution")
                             {
                                 apply_execution_cleanup_evidence(
                                     report,
-                                    cleanup,
+                                    execution_cleanup_record.as_ref(),
                                     &context.spool_dir.startup_reclaim,
                                 );
                             }
@@ -3533,7 +3555,13 @@ where
                     );
                 }
                 #[cfg(test)]
-                let cleanup_result = if control.take_execution_cleanup_deferred() {
+                let cleanup_result = if control.take_execution_cleanup_failed_without_record() {
+                    ManagedCleanupOutcome::Failed {
+                        record: None,
+                        error: "workspace.cleanup.failed: injected cleanup thread failure"
+                            .to_owned(),
+                    }
+                } else if control.take_execution_cleanup_deferred() {
                     ManagedCleanupOutcome::Deferred {
                         record: None,
                         error: "workspace.cleanup.deferred: injected execution cleanup timeout"
@@ -5705,6 +5733,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn startup_janitor_evidence_survives_recordless_execution_cleanup_failure() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
+        let mut args = vec![
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--format"),
+            OsString::from("json"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+        ];
+        args.extend(successful_test_command());
+        let config = crate::cli::parse_config_from(args).unwrap();
+        let control = RunControl::new();
+        let managed_parent = Utf8Path::from_path(control.managed_parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(managed_parent).unwrap();
+        let preserved = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        drop(preserved);
+        drop(coordinator);
+        control.inject_execution_cleanup_failed_without_record();
+        let mut stdout = Vec::new();
+
+        let _result = run_loop_with_control(config, &mut stdout, Vec::new(), control).await;
+
+        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let execution_cleanup = report["summary"]["disk"]["cleanup"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|record| record["root_id"] == "execution")
+            .expect("execution cleanup evidence");
+        assert!(
+            execution_cleanup["details"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|detail| detail == "startup janitor preserved 1 managed roots"),
+            "{execution_cleanup}"
+        );
+    }
+
+    #[tokio::test]
     async fn shell_cleanup_is_rejected_when_the_production_disk_lifecycle_sees_a_duplicate_request()
     {
         let project = tempfile::tempdir().unwrap();
@@ -6275,7 +6349,7 @@ mod tests {
             remaining_root: Some("stale".to_owned()),
         };
 
-        super::apply_execution_cleanup_evidence(&mut report, &cleanup, &reclaim);
+        super::apply_execution_cleanup_evidence(&mut report, Some(&cleanup), &reclaim);
 
         assert_eq!(report.status, hoimin_core::DiskCleanupStatus::Clean);
         assert_eq!(report.examined_entries, 4);
