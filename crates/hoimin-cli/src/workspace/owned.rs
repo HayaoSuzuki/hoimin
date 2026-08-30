@@ -816,6 +816,41 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn interrupted_cleanup_reports_the_verified_deleting_root_with_bounded_detail() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let active = format!("{}{}", super::ACTIVE_PREFIX, root.run_id);
+        let deleting = format!("{}{}", super::DELETING_PREFIX, root.run_id);
+        assert_eq!(
+            super::claim_managed_child(
+                &coordinator.dir,
+                &active,
+                &deleting,
+                &root.run_id,
+                root.owner,
+                &root.dir,
+                &root.lease,
+            )
+            .unwrap(),
+            super::ClaimResult::Claimed
+        );
+
+        let record = root.interrupted_cleanup_record(true, "x".repeat(8 * 1024));
+
+        assert_eq!(record.status, hoimin_core::DiskCleanupStatus::Failed);
+        assert_eq!(
+            record.remaining_root,
+            Some(root.path().parent().unwrap().join(&deleting))
+        );
+        assert_eq!(record.details.len(), 1);
+        assert!(record.details[0].len() <= super::MAX_DIAGNOSTIC_DETAIL_BYTES);
+        assert_eq!(record.omitted_detail_count, 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn janitor_resumes_a_partially_removed_deleting_root() {
         let parent = tempfile::tempdir().unwrap();
         let parent = Utf8Path::from_path(parent.path()).unwrap();
@@ -2995,21 +3030,47 @@ impl ManagedRunRoot {
         record
     }
 
+    fn verified_remaining_root(&self) -> Option<Utf8PathBuf> {
+        let expected_identity = directory_identity(&self.dir).ok()?;
+        let parent = self.path.parent()?;
+        for name in [
+            format!("{DELETING_PREFIX}{}", self.run_id),
+            format!("{ACTIVE_PREFIX}{}", self.run_id),
+        ] {
+            let Ok(candidate) = open_owned_directory(&self.coordinator_dir, &name) else {
+                continue;
+            };
+            if directory_identity(&candidate).ok() == Some(expected_identity) {
+                return Some(parent.join(name));
+            }
+        }
+        None
+    }
+
+    pub(crate) fn interrupted_cleanup_record(&self, failed: bool, reason: String) -> CleanupRecord {
+        let remaining_root = self.verified_remaining_root();
+        let mut record = CleanupRecord {
+            status: if failed && remaining_root.is_some() {
+                DiskCleanupStatus::Failed
+            } else {
+                DiskCleanupStatus::Deferred
+            },
+            examined_entries: 0,
+            removed_entries: 0,
+            details: Vec::new(),
+            omitted_detail_count: 0,
+            remaining_root,
+        };
+        record.push_detail(reason);
+        record
+    }
+
     #[allow(
         dead_code,
         reason = "Task 6 wires unsafe-to-clean shutdown transitions"
     )]
     pub(crate) fn abandon_for_janitor(&self, reason: String) -> CleanupRecord {
-        let mut record = CleanupRecord {
-            status: DiskCleanupStatus::Deferred,
-            examined_entries: 0,
-            removed_entries: 0,
-            details: Vec::new(),
-            omitted_detail_count: 0,
-            remaining_root: Some(self.path.clone()),
-        };
-        record.push_detail(reason);
-        record
+        self.interrupted_cleanup_record(false, reason)
     }
 
     #[allow(

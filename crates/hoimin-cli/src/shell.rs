@@ -250,6 +250,8 @@ pub struct RunControl {
     #[cfg(test)]
     force_execution_cleanup_failed_without_record: Arc<AtomicBool>,
     #[cfg(test)]
+    force_inner_monitor_join_timeout_once: Arc<AtomicBool>,
+    #[cfg(test)]
     duplicate_execution_cleanup_request: Arc<AtomicBool>,
     #[cfg(test)]
     force_process_reap_failure: Arc<AtomicBool>,
@@ -385,6 +387,8 @@ impl RunControl {
             force_execution_cleanup_deferred: Arc::new(AtomicBool::new(false)),
             #[cfg(test)]
             force_execution_cleanup_failed_without_record: Arc::new(AtomicBool::new(false)),
+            #[cfg(test)]
+            force_inner_monitor_join_timeout_once: Arc::new(AtomicBool::new(false)),
             #[cfg(test)]
             duplicate_execution_cleanup_request: Arc::new(AtomicBool::new(false)),
             #[cfg(test)]
@@ -574,6 +578,18 @@ impl RunControl {
     #[cfg(test)]
     fn take_execution_cleanup_failed_without_record(&self) -> bool {
         self.force_execution_cleanup_failed_without_record
+            .swap(false, Ordering::AcqRel)
+    }
+
+    #[cfg(test)]
+    fn inject_inner_monitor_join_timeout_once(&self) {
+        self.force_inner_monitor_join_timeout_once
+            .store(true, Ordering::Release);
+    }
+
+    #[cfg(test)]
+    fn take_inner_monitor_join_timeout_once(&self) -> bool {
+        self.force_inner_monitor_join_timeout_once
             .swap(false, Ordering::AcqRel)
     }
 
@@ -1451,15 +1467,15 @@ enum ManagedCleanupOutcome {
     },
 }
 
-fn cleanup_thread_error(error: String) -> ManagedCleanupOutcome {
+fn cleanup_thread_error(root: &ManagedRunRoot, error: String) -> ManagedCleanupOutcome {
     if error.starts_with("workspace.cleanup.deferred:") {
         ManagedCleanupOutcome::Deferred {
-            record: None,
+            record: Some(root.interrupted_cleanup_record(false, error.clone())),
             error,
         }
     } else {
         ManagedCleanupOutcome::Failed {
-            record: None,
+            record: Some(root.interrupted_cleanup_record(true, error.clone())),
             error,
         }
     }
@@ -1513,7 +1529,7 @@ async fn cleanup_managed_root(
             Ok(result) => result.err().map(|error| error.to_string()),
             Err(error) => {
                 return attach_cleanup_ready_error(
-                    cleanup_thread_error(error),
+                    cleanup_thread_error(&root, error),
                     Some("cleanup-ready operation did not complete"),
                 );
             }
@@ -1539,7 +1555,7 @@ async fn cleanup_managed_root(
                 Ok(cleanup) => cleanup,
                 Err(error) => {
                     return attach_cleanup_ready_error(
-                        cleanup_thread_error(error),
+                        cleanup_thread_error(&root, error),
                         marker_error.as_deref(),
                     );
                 }
@@ -2525,7 +2541,20 @@ where
                     let remaining = cleanup_budget
                         .deadline()
                         .saturating_duration_since(tokio::time::Instant::now());
+                    #[cfg(test)]
+                    let monitor_joined = if control.take_inner_monitor_join_timeout_once() {
+                        false
+                    } else {
+                        monitor.stop_and_join(remaining).await
+                    };
+                    #[cfg(not(test))]
                     let monitor_joined = monitor.stop_and_join(remaining).await;
+                    if !monitor_joined {
+                        finalization_errors.push(
+                            "disk.measurement.failed: disk monitor join exceeded shutdown budget"
+                                .to_owned(),
+                        );
+                    }
                     #[cfg(test)]
                     if monitor_joined {
                         control.observe_finalization_event("monitor_joined");
@@ -3604,15 +3633,11 @@ where
                         }
                     }
                     ManagedCleanupOutcome::Failed { record, error } => {
-                        execution_cleanup_record = Some(record.unwrap_or_else(|| CleanupRecord {
-                            status: hoimin_core::DiskCleanupStatus::Failed,
-                            examined_entries: 0,
-                            removed_entries: 0,
-                            details: vec![error.clone()],
-                            omitted_detail_count: 0,
-                            remaining_root: Some(
-                                context.spool_dir.execution_root.path().to_owned(),
-                            ),
+                        execution_cleanup_record = Some(record.unwrap_or_else(|| {
+                            context
+                                .spool_dir
+                                .execution_root
+                                .interrupted_cleanup_record(true, error.clone())
                         }));
                         if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                             root: DiskRootId::Execution,
@@ -3629,7 +3654,12 @@ where
                         ));
                     }
                     ManagedCleanupOutcome::Deferred { record, error } => {
-                        execution_cleanup_record = record;
+                        execution_cleanup_record = Some(record.unwrap_or_else(|| {
+                            context
+                                .spool_dir
+                                .execution_root
+                                .interrupted_cleanup_record(false, error.clone())
+                        }));
                         if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                             root: DiskRootId::Execution,
                             outcome: DiskCleanupOutcome::Deferred(error.clone()),
@@ -3641,7 +3671,12 @@ where
                         context.spool_dir.execution_root.abandon_for_janitor(
                             "execution-root cleanup did not complete".to_owned(),
                         );
-                        return Err(error);
+                        finalization_errors.push(error.clone());
+                        event = RunEvent::EffectFailed(EffectFailed::other(
+                            id,
+                            hoimin_core::WORKSPACE_CLEANUP_DEFERRED,
+                            error,
+                        ));
                     }
                 }
             }
@@ -5713,16 +5748,24 @@ mod tests {
             project.path().as_os_str().to_owned(),
             OsString::from("--file"),
             OsString::from("target.py"),
+            OsString::from("--format"),
+            OsString::from("json"),
             OsString::from("--allow-best-effort-memory"),
             OsString::from("--"),
         ];
         args.extend(successful_test_command());
         let config = crate::cli::parse_config_from(args).unwrap();
         let control = RunControl::new();
+        let managed_parent = Utf8Path::from_path(control.managed_parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(managed_parent).unwrap();
+        let preserved = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        drop(preserved);
+        drop(coordinator);
         control.inject_execution_cleanup_deferred();
         let observed = control.clone();
+        let mut stdout = Vec::new();
 
-        let error = run_loop_with_control(config, Vec::new(), Vec::new(), control)
+        let error = run_loop_with_control(config, &mut stdout, Vec::new(), control)
             .await
             .expect_err("deferred execution cleanup must keep the run incomplete");
 
@@ -5738,6 +5781,71 @@ mod tests {
         assert!(
             roots[0].exists(),
             "outer finalization retried and removed the deferred execution root"
+        );
+        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let execution_cleanup = report["summary"]["disk"]["cleanup"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|record| record["root_id"] == "execution")
+            .expect("execution cleanup evidence");
+        assert_eq!(execution_cleanup["status"], "deferred");
+        assert_eq!(execution_cleanup["remaining_root"], roots[0].as_str());
+        assert!(
+            execution_cleanup["details"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|detail| detail == "startup janitor preserved 1 managed roots"),
+            "{execution_cleanup}"
+        );
+    }
+
+    #[tokio::test]
+    async fn inner_monitor_join_timeout_is_persisted_when_outer_retry_joins() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
+        let mut args = vec![
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--format"),
+            OsString::from("json"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+        ];
+        args.extend(successful_test_command());
+        let config = crate::cli::parse_config_from(args).unwrap();
+        let control = RunControl::new();
+        control.inject_inner_monitor_join_timeout_once();
+        let observed = control.clone();
+        let mut stdout = Vec::new();
+
+        let error = run_loop_with_control(config, &mut stdout, Vec::new(), control)
+            .await
+            .expect_err("an unjoined monitor must keep the run incomplete");
+
+        assert!(error.contains("disk.measurement.failed"), "{error}");
+        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(
+            report["summary"]["disk"]["stop"]["code"],
+            hoimin_core::DISK_MEASUREMENT_FAILED
+        );
+        assert!(
+            report["summary"]["disk"]["stop"]["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("monitor join")),
+            "{}",
+            report["summary"]["disk"]["stop"]
+        );
+        assert!(
+            !observed
+                .finalization_events()
+                .contains(&"output_acknowledged"),
+            "monitor join timeout was acknowledged as delivered"
         );
     }
 

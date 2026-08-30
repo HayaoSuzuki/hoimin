@@ -60,11 +60,10 @@ below contain those corrections.
   full-workspace and focused cargo-mutants execution after repeated disk-capacity
   incidents. Task 10 records the mutation gate as deliberately omitted; ordinary,
   formal, compatibility, and native lifecycle gates remain required.
-- Provision the locked Python environment as an explicit setup gate. Invoke the focused
-  mutation wrapper with the existing `.venv/bin/python`; never put `uv run` between the
-  final free-space preflight and wrapper startup.
-- Start every real mutation or compatibility build only when more than 10 GiB is free.
-  Stop immediately on ENOSPC, rising unowned scratch, or monitor/tool failure.
+- Provision the locked Python environment as an explicit setup gate for tests and wheel
+  smoke verification. Do not invoke the focused mutation wrapper in this delivery.
+- Start every compatibility build only when more than 10 GiB is free. Stop immediately
+  on ENOSPC, rising unowned scratch, or monitor/tool failure.
 - A disk stop is an infrastructure failure. It must not become `Killed`, increment the
   mutation score, or overwrite a prior primary failure.
 - After every code-review or CI-driven edit, invalidate evidence for the old SHA and
@@ -449,7 +448,8 @@ pub const WORKSPACE_CLEANUP_DEFERRED: &str = "workspace.cleanup.deferred";
 
 Keep the decision and transition seams uniquely named `evaluate_disk_policy` and
 `apply_disk_lifecycle_event`; public `DiskLifecycle` methods delegate to them. These are
-production helpers, not test-only duplicates, and Task 10 targets them narrowly.
+production helpers, not test-only duplicates, and ordinary/formal tests target them
+directly without mutation execution.
 `apply_disk_lifecycle_event` consumes the public `DiskLifecycleEvent` above, so both
 corpus adapters exercise process, drain, monitor, report, cleanup, and finish transitions
 through one complete interface. `DiskRootId` is a two-variant enum matching Lean
@@ -1153,7 +1153,7 @@ sample; never reopen the original root path for a capacity reading.
 
 Name the production walker `measure_owned_tree` and the platform deletion entry point
 `remove_claimed_tree`. Both consume already-open capabilities or handles; neither
-accepts an arbitrary absolute descendant path. Task 10 mutation-tests the portable
+accepts an arbitrary absolute descendant path. Ordinary tests cover the portable
 walker; native tests and security review cover platform deletion adapters.
 
 Run aggregation, hard-link, symlink-swap, vanished-entry, depth/entry-cap, overflow, and
@@ -1257,8 +1257,7 @@ git commit -m "feat: lease and measure mutation workspaces"
   transitions, post-drain/pre-classification sampling, and
   `ReportHandler` acknowledgement only after delivery-root cleanup, plus same-premise
   execution of every `runtime` record targeting `rust` through the controlled shell
-  adapter. Task 10
-  treats this runtime as the only Rust mutation safety boundary.
+  adapter. Task 10 verifies this runtime without executing Rust mutation testing.
 
 - [ ] **Step 1: Add lifecycle RED tests**
 
@@ -2096,20 +2095,22 @@ git commit -m "docs: explain disk-safe mutation execution"
 Exit 1 is the only accepted no-match result. A tool/I/O error such as exit 2 fails the
 gate.
 
-### Task 10: Final verification, restrained mutation, review, and PR
+### Task 10: Final verification, review, and delivery handoff
 
 **Files:**
 
-- Modify only if an exact equivalent mutant is proved:
-  `.cargo/mutants.toml` with a fully anchored `exclude_re` and adjacent TOML reason
+- Modify: `crates/hoimin-cli/src/shell.rs`
+- Modify: `crates/hoimin-cli/src/workspace/owned.rs`
+- Modify: `docs/superpowers/plans/2026-08-27-disk-safe-mutation-execution.md`
 - Create ignored evidence under:
   `.superpowers/sdd/2026-08-27-disk-safe-mutation-execution/`
 
 **Interfaces:**
 
 - Consumes: every tracked deliverable and its focused test entry point.
-- Produces: final-SHA native/compatibility/formal/mutation evidence, three independent
-  same-SHA reviews, a pushed branch, and a PR whose remote head equals the reviewed SHA.
+- Produces: final-SHA native/compatibility/formal evidence, an explicit record that Rust
+  mutation was prohibited and omitted, three independent same-SHA reviews, and a
+  delivery handoff. Push/PR work occurs only after the user's explicit choice.
 
 - [ ] **Step 1: Rebase on current main before final evidence**
 
@@ -2227,9 +2228,10 @@ self-critical passes: spec coverage, error/race paths, and security/destructive 
 Record each verdict beside `candidate-sha.txt`. A review is not current unless its
 recorded SHA equals that file and the reviewed worktree was clean.
 
-- [ ] **Step 6: Push, create PR, and watch GitHub Actions gracefully**
+- [ ] **Step 6: Present the finishing options; push or create a PR only if selected**
 
-Push only after all same-SHA gates/reviews pass:
+After all same-SHA gates/reviews pass, present the finishing-branch menu. Run the
+following only if the user explicitly selects the push/PR option:
 
 ```bash
 git push -u origin feat/disk-safe-mutation
@@ -2239,7 +2241,8 @@ gh pr create --base main --head feat/disk-safe-mutation \
 ```
 
 The PR body links the approved design, states defaults/limits, enumerates native evidence,
-explains that no full-workspace mutation was run, and records exact cleanup outcomes.
+explains that no Rust mutation testing of any scope was run by explicit user directive,
+and records exact cleanup outcomes.
 Verify remote head SHA once, then watch actual checks at 60-second intervals. Do not poll
 GitHub Actions every 10 seconds:
 
