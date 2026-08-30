@@ -123,6 +123,72 @@ mod tests {
     }
 
     #[test]
+    fn startup_reclaim_diagnostics_merge_into_bounded_cleanup_evidence() {
+        let reclaim = super::ReclaimReport {
+            reclaimed_roots: 2,
+            preserved_roots: 3,
+            details: vec!["enumerate managed roots failed: EBADF".to_owned()],
+            omitted_detail_count: 2,
+            truncated_detail_count: 1,
+        };
+        let mut cleanup = super::CleanupRecord {
+            status: hoimin_core::DiskCleanupStatus::Clean,
+            examined_entries: 4,
+            removed_entries: 4,
+            details: Vec::new(),
+            omitted_detail_count: 0,
+            remaining_root: None,
+        };
+
+        reclaim.append_to_cleanup(&mut cleanup);
+
+        assert_eq!(
+            cleanup.details,
+            [
+                "startup janitor preserved 3 managed roots",
+                "enumerate managed roots failed: EBADF",
+            ]
+        );
+        assert_eq!(cleanup.omitted_detail_count, 3);
+    }
+
+    #[test]
+    fn selection_deadline_after_eof_does_not_update_the_cursor() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let before = super::read_coordinator_state(
+            &coordinator.file,
+            &coordinator.path.join(super::COORDINATOR_FILE),
+        )
+        .unwrap();
+        let base = std::time::Instant::now();
+        let crossed = std::cell::Cell::new(false);
+
+        let error = super::select_reclaim_candidates_locked_with_hooks(
+            &coordinator,
+            std::time::Duration::from_secs(5),
+            &|| {
+                if crossed.get() {
+                    base + std::time::Duration::from_secs(6)
+                } else {
+                    base
+                }
+            },
+            &|| crossed.set(true),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("deadline"), "{error}");
+        let after = super::read_coordinator_state(
+            &coordinator.file,
+            &coordinator.path.join(super::COORDINATOR_FILE),
+        )
+        .unwrap();
+        assert_eq!(after, before);
+    }
+
+    #[test]
     fn published_root_has_a_canonical_name_and_drop_is_non_destructive() {
         let parent = tempfile::tempdir().unwrap();
         let parent = Utf8Path::from_path(parent.path()).unwrap();
@@ -2319,6 +2385,24 @@ pub(crate) struct ReclaimReport {
     pub(crate) truncated_detail_count: u64,
 }
 
+impl ReclaimReport {
+    pub(crate) fn append_to_cleanup(&self, cleanup: &mut CleanupRecord) {
+        if self.preserved_roots != 0 {
+            cleanup.push_detail(format!(
+                "startup janitor preserved {} managed roots",
+                self.preserved_roots
+            ));
+        }
+        for detail in &self.details {
+            cleanup.push_detail(detail.clone());
+        }
+        cleanup.omitted_detail_count = cleanup
+            .omitted_detail_count
+            .saturating_add(self.omitted_detail_count)
+            .saturating_add(self.truncated_detail_count);
+    }
+}
+
 impl ManagedRunRoot {
     pub(crate) fn create(
         coordinator: &ManagedRootCoordinator,
@@ -3436,22 +3520,45 @@ fn select_reclaim_candidates(
 fn select_reclaim_candidates_locked(
     coordinator: &ManagedRootCoordinator,
 ) -> Result<(Vec<String>, Option<String>), WorkspaceError> {
+    select_reclaim_candidates_locked_with_hooks(
+        coordinator,
+        JANITOR_SELECTION_BUDGET,
+        &std::time::Instant::now,
+        &|| {},
+    )
+}
+
+fn select_reclaim_candidates_locked_with_hooks(
+    coordinator: &ManagedRootCoordinator,
+    budget: Duration,
+    now: &impl Fn() -> std::time::Instant,
+    after_enumeration: &impl Fn(),
+) -> Result<(Vec<String>, Option<String>), WorkspaceError> {
+    let started = now();
+    let deadline = started.checked_add(budget).ok_or_else(|| {
+        WorkspaceError::io(
+            "select abandoned workspaces",
+            &coordinator.path,
+            "selection deadline overflow",
+        )
+    })?;
+    ensure_selection_deadline(coordinator, deadline, now)?;
     let coordinator_path = coordinator.path.join(COORDINATOR_FILE);
     let (active_slot, state) = read_coordinator_state(&coordinator.file, &coordinator_path)?;
-    let started = std::time::Instant::now();
-    let entries = owned_directory_entries(&coordinator.dir)
+    ensure_selection_deadline(coordinator, deadline, now)?;
+    let mut entries = owned_directory_entries(&coordinator.dir)
         .map_err(|error| WorkspaceError::io("enumerate managed roots", &coordinator.path, error))?;
+    ensure_selection_deadline(coordinator, deadline, now)?;
     let mut examined = 0_usize;
     let mut after = BTreeSet::new();
     let mut wrapped = BTreeSet::new();
-    for entry in entries {
-        if started.elapsed() >= JANITOR_SELECTION_BUDGET {
-            return Err(WorkspaceError::io(
-                "select abandoned workspaces",
-                &coordinator.path,
-                "selection deadline exceeded",
-            ));
-        }
+    loop {
+        ensure_selection_deadline(coordinator, deadline, now)?;
+        let entry = entries.next();
+        ensure_selection_deadline(coordinator, deadline, now)?;
+        let Some(entry) = entry else {
+            break;
+        };
         let entry = entry.map_err(|error| {
             WorkspaceError::io("enumerate managed roots", &coordinator.path, error)
         })?;
@@ -3481,9 +3588,12 @@ fn select_reclaim_candidates_locked(
             insert_bounded_name(&mut wrapped, name);
         }
     }
+    after_enumeration();
+    ensure_selection_deadline(coordinator, deadline, now)?;
     let candidates = if after.is_empty() { wrapped } else { after }
         .into_iter()
         .collect::<Vec<_>>();
+    ensure_selection_deadline(coordinator, deadline, now)?;
     let cursor_error = candidates.last().and_then(|cursor| {
         persist_coordinator_cursor(
             &coordinator.file,
@@ -3496,6 +3606,22 @@ fn select_reclaim_candidates_locked(
         .map(|error| error.to_string())
     });
     Ok((candidates, cursor_error))
+}
+
+fn ensure_selection_deadline(
+    coordinator: &ManagedRootCoordinator,
+    deadline: std::time::Instant,
+    now: &impl Fn() -> std::time::Instant,
+) -> Result<(), WorkspaceError> {
+    if now() < deadline {
+        Ok(())
+    } else {
+        Err(WorkspaceError::io(
+            "select abandoned workspaces",
+            &coordinator.path,
+            "selection deadline exceeded",
+        ))
+    }
 }
 
 fn insert_bounded_name(names: &mut BTreeSet<String>, name: String) {

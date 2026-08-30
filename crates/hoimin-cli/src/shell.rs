@@ -36,7 +36,7 @@ use crate::session::SessionDispatcher;
 use crate::target::TargetHandler;
 use crate::workspace::{
     CleanupRecord, CopyOptions, DiskMonitor, FilesystemKey, ManagedChild, ManagedRootCoordinator,
-    ManagedRunRoot, OwnerKind, WorkspaceHandler, WorkspaceManifest, WorkspaceTask,
+    ManagedRunRoot, OwnerKind, ReclaimReport, WorkspaceHandler, WorkspaceManifest, WorkspaceTask,
     WorkspaceTaskCompletion, available_for_managed_roots, measure_managed_roots,
     truncate_diagnostic_detail,
 };
@@ -1095,7 +1095,7 @@ struct ManagedShellRoots {
     delivery_root: Arc<ManagedRunRoot>,
     execution_spool: std::sync::Mutex<Option<Arc<ManagedChild>>>,
     delivery_spool: std::sync::Mutex<Option<Arc<ManagedChild>>>,
-    stale_roots_reclaimed: u64,
+    startup_reclaim: ReclaimReport,
 }
 
 impl ManagedShellRoots {
@@ -1236,7 +1236,7 @@ fn prepare_shell_setup_sync_in(
         delivery_root,
         execution_spool,
         delivery_spool,
-        stale_roots_reclaimed,
+        startup_reclaim,
     ) = create_managed_shell_roots_in(temporary_parent, &|_| {})?;
     boundary(ShellSetupBoundary::RootsCreated);
     boundary(ShellSetupBoundary::DiskPolicyVerified);
@@ -1280,7 +1280,7 @@ fn prepare_shell_setup_sync_in(
         delivery_root,
         execution_spool: std::sync::Mutex::new(Some(execution_spool)),
         delivery_spool: std::sync::Mutex::new(Some(delivery_spool)),
-        stale_roots_reclaimed,
+        startup_reclaim,
     });
     rollback.armed = false;
 
@@ -1316,7 +1316,7 @@ fn create_managed_shell_roots_in(
         Arc<ManagedRunRoot>,
         Arc<ManagedChild>,
         Arc<ManagedChild>,
-        u64,
+        ReclaimReport,
     ),
     String,
 > {
@@ -1355,7 +1355,7 @@ fn create_managed_shell_roots_in(
         delivery_root,
         execution_spool,
         delivery_spool,
-        reclaim.reclaimed_roots,
+        reclaim,
     ))
 }
 
@@ -1609,6 +1609,21 @@ fn apply_finalization_errors_to_summary(summary: &mut hoimin_core::RunSummary, e
             });
         }
     }
+}
+
+fn apply_execution_cleanup_evidence(
+    report: &mut hoimin_core::DiskCleanupReport,
+    cleanup: &CleanupRecord,
+    startup_reclaim: &ReclaimReport,
+) {
+    let mut cleanup = cleanup.clone();
+    startup_reclaim.append_to_cleanup(&mut cleanup);
+    report.status = cleanup.status;
+    report.examined_entries = cleanup.examined_entries;
+    report.removed_entries = cleanup.removed_entries;
+    report.details = cleanup.details;
+    report.omitted_detail_count = cleanup.omitted_detail_count;
+    report.remaining_root = cleanup.remaining_root.as_ref().map(ToString::to_string);
 }
 
 fn merge_monitor_stop(report: &mut hoimin_core::DiskStopReport, latest: hoimin_core::DiskFailure) {
@@ -2755,7 +2770,7 @@ where
                                 u64::try_from(disk_stats.maximum_measurement.as_millis())
                                     .unwrap_or(u64::MAX);
                             summary.disk.stale_roots_reclaimed =
-                                context.spool_dir.stale_roots_reclaimed;
+                                context.spool_dir.startup_reclaim.reclaimed_roots;
                             summary.disk.removed_logical_bytes = execution_cleaned
                                 .then(|| execution_preclean.as_ref().map(|value| value.owned_bytes))
                                 .flatten();
@@ -2785,15 +2800,11 @@ where
                                     .iter_mut()
                                     .find(|report| report.root_id == "execution")
                             {
-                                report.status = cleanup.status;
-                                report.examined_entries = cleanup.examined_entries;
-                                report.removed_entries = cleanup.removed_entries;
-                                report.details.clone_from(&cleanup.details);
-                                report.omitted_detail_count = cleanup.omitted_detail_count;
-                                report.remaining_root = cleanup
-                                    .remaining_root
-                                    .as_ref()
-                                    .map(ToString::to_string);
+                                apply_execution_cleanup_evidence(
+                                    report,
+                                    cleanup,
+                                    &context.spool_dir.startup_reclaim,
+                                );
                             }
                             let latest_stop = {
                                 let receiver = disk_monitor
@@ -6224,16 +6235,60 @@ mod tests {
             .join(format!(".deleting-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&abandoned).unwrap();
 
-        let (rollback, execution, delivery, execution_spool, delivery_spool, reclaimed) =
+        let (rollback, execution, delivery, execution_spool, delivery_spool, reclaim) =
             create_managed_shell_roots_in(parent, &|_| {}).unwrap();
 
-        assert_eq!(reclaimed, 1);
+        assert_eq!(reclaim.reclaimed_roots, 1);
         assert!(!abandoned.exists());
         drop(delivery_spool);
         drop(execution_spool);
         drop(delivery);
         drop(execution);
         drop(rollback);
+    }
+
+    #[test]
+    fn startup_janitor_diagnostics_reach_the_execution_cleanup_report() {
+        let cleanup = CleanupRecord {
+            status: hoimin_core::DiskCleanupStatus::Clean,
+            examined_entries: 4,
+            removed_entries: 3,
+            details: vec!["execution cleanup detail".to_owned()],
+            omitted_detail_count: 0,
+            remaining_root: None,
+        };
+        let reclaim = ReclaimReport {
+            reclaimed_roots: 1,
+            preserved_roots: 1,
+            details: vec!["startup janitor enumeration failed".to_owned()],
+            omitted_detail_count: 0,
+            truncated_detail_count: 0,
+        };
+        let mut report = hoimin_core::DiskCleanupReport {
+            root_id: "execution".to_owned(),
+            owner: "hoimin".to_owned(),
+            status: hoimin_core::DiskCleanupStatus::Failed,
+            examined_entries: 0,
+            removed_entries: 0,
+            details: Vec::new(),
+            omitted_detail_count: 0,
+            remaining_root: Some("stale".to_owned()),
+        };
+
+        super::apply_execution_cleanup_evidence(&mut report, &cleanup, &reclaim);
+
+        assert_eq!(report.status, hoimin_core::DiskCleanupStatus::Clean);
+        assert_eq!(report.examined_entries, 4);
+        assert_eq!(report.removed_entries, 3);
+        assert_eq!(
+            report.details,
+            [
+                "execution cleanup detail",
+                "startup janitor preserved 1 managed roots",
+                "startup janitor enumeration failed",
+            ]
+        );
+        assert_eq!(report.remaining_root, None);
     }
 
     #[test]

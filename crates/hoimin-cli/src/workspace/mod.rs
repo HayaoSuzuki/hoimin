@@ -37,7 +37,7 @@ pub(crate) use disk::{
 };
 pub use manifest::{ManifestEntry, WorkspaceManifest};
 pub(crate) use owned::{
-    CleanupRecord, ManagedChild, ManagedRootCoordinator, ManagedRunRoot, OwnerKind,
+    CleanupRecord, ManagedChild, ManagedRootCoordinator, ManagedRunRoot, OwnerKind, ReclaimReport,
     truncate_diagnostic_detail,
 };
 use root::WorkerRoot;

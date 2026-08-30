@@ -781,12 +781,18 @@ git commit -m "feat: expose disk safety limits in the CLI"
 - Modify: `crates/hoimin-cli/Cargo.toml`
 - Modify: `Cargo.lock`
 - Create: `crates/hoimin-cli/src/workspace/owned.rs`
+- Create: `crates/hoimin-cli/src/workspace/owned/windows.rs`
 - Create: `crates/hoimin-cli/src/workspace/disk.rs`
 - Modify: `crates/hoimin-cli/src/workspace/mod.rs`
 - Modify: `crates/hoimin-cli/src/workspace/copy.rs`
+- Modify: `crates/hoimin-cli/src/workspace/root.rs`
+- Create: `crates/hoimin-cli/src/workspace/root/windows.rs`
+- Modify: `crates/hoimin-cli/src/analyzer/mod.rs`
+- Modify: `crates/hoimin-cli/src/process/output.rs`
 - Modify: `crates/hoimin-cli/src/shell.rs`
 - Modify: `crates/hoimin-cli/src/report/mod.rs`
 - Create: `crates/hoimin-cli/tests/disk_workspace.rs`
+- Modify: `crates/hoimin-cli/tests/workspace_handler.rs`
 - Modify: `crates/hoimin-cli/tests/workspace_recovery.rs`
 
 **Interfaces:**
@@ -814,6 +820,11 @@ Use tiny temporary trees and injected `AvailableSpace` values. Cover:
   create 250,001 or 100,001 filesystem objects;
 - a wide tree never holds more than 129 directory handles and never collects a full
   directory listing; the hard-link identity set never exceeds 250,000 entries;
+- Linux janitor enumeration reopens a capability `O_PATH` directory as a readable,
+  independently owned `openat2` handle without crossing links or mounts;
+- selection checks its absolute five-second deadline after opening the iterator and
+  after every `next()`, including EOF, and never advances the coordinator cursor after
+  the deadline;
 - free bytes equal to the reserve stop at preflight;
 - manifest logical bytes at the maximum fail before snapshot creation;
 - active locked lease is skipped;
@@ -837,6 +848,8 @@ Use tiny temporary trees and injected `AvailableSpace` values. Cover:
 - owner cleanup stops after 60 seconds with `workspace.cleanup.deferred`; startup
   reclamation stops after 30 seconds, considers at most 256 candidates fairly, and
   retains at most 256 diagnostic details;
+- startup janitor preserved-root and bounded error details are merged into the public
+  execution cleanup evidence instead of retaining only the reclaimed-root count;
 - a persisted lexicographic janitor cursor advances past a selected deferred root and
   wraps, so more than 256 eligible roots are reached across invocations without an
   unbounded listing;
@@ -1196,12 +1209,18 @@ git diff --check
 ```bash
 git add Cargo.lock crates/hoimin-cli/Cargo.toml \
   crates/hoimin-cli/src/workspace/owned.rs \
+  crates/hoimin-cli/src/workspace/owned/windows.rs \
   crates/hoimin-cli/src/workspace/disk.rs \
   crates/hoimin-cli/src/workspace/mod.rs \
   crates/hoimin-cli/src/workspace/copy.rs \
+  crates/hoimin-cli/src/workspace/root.rs \
+  crates/hoimin-cli/src/workspace/root/windows.rs \
+  crates/hoimin-cli/src/analyzer/mod.rs \
+  crates/hoimin-cli/src/process/output.rs \
   crates/hoimin-cli/src/shell.rs \
   crates/hoimin-cli/src/report/mod.rs \
   crates/hoimin-cli/tests/disk_workspace.rs \
+  crates/hoimin-cli/tests/workspace_handler.rs \
   crates/hoimin-cli/tests/workspace_recovery.rs
 git commit -m "feat: lease and measure mutation workspaces"
 ```
@@ -1462,8 +1481,10 @@ git commit -m "feat: stop and clean runs at disk safety limits"
 
 **Files:**
 
+- Modify: `tools/__init__.py`
 - Create: `tools/focused_mutation_support/disk.py`
 - Create: `tools/focused_mutation_support/lease.py`
+- Create: `tools/focused_mutation_support/windows_file.py`
 - Modify: `tools/focused_mutation_support/__init__.py`
 - Modify: `tools/focused_mutation_support/discovery.py`
 - Modify: `tools/focused_mutation_support/model.py`
@@ -1918,7 +1939,7 @@ Keep a compatibility collector only in tests that need a string assertion.
 .venv/bin/python -m unittest tests.test_skills
 .venv/bin/mypy tools/focused_mutation.py tools/focused_mutation_support
 git diff --check
-git add tools/focused_mutation.py tools/focused_mutation_support \
+git add tools/__init__.py tools/focused_mutation.py tools/focused_mutation_support \
   tests/test_focused_mutation_disk.py tests/test_focused_mutation_discovery.py \
   tests/test_focused_mutation_runner.py \
   tests/test_focused_mutation_reporting.py tests/test_focused_mutation_budget.py
