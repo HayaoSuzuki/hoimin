@@ -34,6 +34,22 @@ mod tests {
         )));
     }
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn managed_root_capability_is_enumerable_on_linux() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        coordinator.dir.create_dir("run-entry").unwrap();
+
+        let entries = super::owned_directory_entries(&coordinator.dir)
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert!(entries.iter().any(|entry| entry == "run-entry"));
+    }
+
     #[test]
     fn coordinator_registry_lock_honors_the_bootstrap_deadline() {
         let registry = super::LocalCoordinatorRegistry::default();
@@ -1195,7 +1211,23 @@ impl Iterator for OwnedDirectoryEntries {
 }
 
 fn owned_directory_entries(dir: &cap_std::fs::Dir) -> std::io::Result<OwnedDirectoryEntries> {
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
+    {
+        use rustix::fs::{Mode, OFlags, ResolveFlags};
+
+        let readable = rustix::fs::openat2(
+            dir,
+            c".",
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+            Mode::empty(),
+            ResolveFlags::BENEATH | ResolveFlags::NO_SYMLINKS | ResolveFlags::NO_XDEV,
+        )
+        .map_err(std::io::Error::from)?;
+        rustix::fs::Dir::new(readable)
+            .map(OwnedDirectoryEntries)
+            .map_err(std::io::Error::from)
+    }
+    #[cfg(all(unix, not(target_os = "linux")))]
     {
         rustix::fs::Dir::read_from(dir)
             .map(OwnedDirectoryEntries)
