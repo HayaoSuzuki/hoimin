@@ -2999,6 +2999,34 @@ class FocusedMutationReportingTests(unittest.TestCase):
         self.assertNotIn("--iterate", argv)
         self.assertEqual(argv[argv.index("--jobs") + 1], "1")
 
+    def test_cli_commands_skip_depth_fixture_that_trips_the_outer_guard(
+        self,
+    ) -> None:
+        candidate = Candidate(
+            "crates/hoimin-cli/src/workspace/disk.rs",
+            "measure_owned_tree",
+            "crates/hoimin-cli/src/workspace/disk.rs:1: replace function",
+        )
+        expected_test_args = [
+            "--",
+            "--skip",
+            "workspace::disk::tests::rejects_a_tree_deeper_than_the_bound",
+        ]
+
+        self.assertEqual(
+            build_baseline_command(candidate)[-3:], expected_test_args
+        )
+        self.assertEqual(
+            build_mutation_command(
+                Path("/repo"),
+                Path("/evidence/run"),
+                candidate,
+                iterate=False,
+                jobs=1,
+            )[-3:],
+            expected_test_args,
+        )
+
     def test_focused_command_enables_reuse_only_when_requested(self) -> None:
         candidate = Candidate("crates/a/src/lib.rs", "f", "name")
         self.assertEqual(
@@ -3032,7 +3060,15 @@ class FocusedMutationReportingTests(unittest.TestCase):
         )
         self.assertEqual(
             build_baseline_command(cli),
-            ["cargo", "test", "-p", "hoimin-cli"],
+            [
+                "cargo",
+                "test",
+                "-p",
+                "hoimin-cli",
+                "--",
+                "--skip",
+                "workspace::disk::tests::rejects_a_tree_deeper_than_the_bound",
+            ],
         )
 
     def test_baseline_rejects_path_outside_workspace_member(self) -> None:

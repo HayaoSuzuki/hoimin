@@ -16,6 +16,9 @@ MAX_INVENTORY_ENTRIES = 10_000
 MAX_JSON_NODES = 100_000
 MAX_JSON_DEPTH = 64
 MAX_JSON_STRING_BYTES = 16 * 1024
+_OUTER_GUARD_DEPTH_FIXTURE = (
+    "workspace::disk::tests::rejects_a_tree_deeper_than_the_bound"
+)
 
 
 def read_bounded_regular(path: Path, capacity: int) -> bytes:
@@ -173,7 +176,12 @@ def build_baseline_command(candidate: Candidate) -> list[str]:
         raise ValueError(
             f"candidate is outside a workspace member: {candidate.path}"
         )
-    return ["cargo", "test", "-p", parts[1]]
+    command = ["cargo", "test", "-p", parts[1]]
+    if parts[1] == "hoimin-cli":
+        # This test deliberately creates a tree beyond the monitored depth.
+        # The injected boundary tests still cover the same failure contract.
+        command.extend(["--", "--skip", _OUTER_GUARD_DEPTH_FIXTURE])
+    return command
 
 
 def build_mutation_command(
@@ -202,6 +210,9 @@ def build_mutation_command(
     ]
     if iterate:
         command.append("--iterate")
+    parts = Path(candidate.path).parts
+    if len(parts) >= 2 and parts[:2] == ("crates", "hoimin-cli"):
+        command.extend(["--", "--skip", _OUTER_GUARD_DEPTH_FIXTURE])
     return command
 
 
