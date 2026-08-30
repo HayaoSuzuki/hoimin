@@ -16,8 +16,17 @@ MAX_INVENTORY_ENTRIES = 10_000
 MAX_JSON_NODES = 100_000
 MAX_JSON_DEPTH = 64
 MAX_JSON_STRING_BYTES = 16 * 1024
-_OUTER_GUARD_DEPTH_FIXTURE = (
-    "workspace::disk::tests::rejects_a_tree_deeper_than_the_bound"
+_OUTER_GUARD_DEPTH_FIXTURES = (
+    "workspace::disk::tests::exact_depth_bound_uses_at_most_one_hundred_twenty_nine_directory_handles",
+    "workspace::disk::tests::rejects_a_tree_deeper_than_the_bound",
+    "workspace::owned::tests::cleanup_removes_a_tree_deeper_than_the_meter_limit",
+    "workspace::root::tests::post_order_removal_handles_a_tree_at_the_supported_depth",
+    "workspace::root::tests::post_order_removal_reports_the_shared_depth_limit",
+    "cleanup_releases_state_when_the_temporary_wrapper_was_already_removed",
+    "reset_preserves_depth_error_while_discard_cleanup_is_pending",
+    "reset_handles_a_tree_at_the_supported_depth",
+    "reset_reports_a_depth_error_beyond_the_supported_depth",
+    "cleanup_reports_the_same_depth_error_as_reset",
 )
 
 
@@ -170,6 +179,21 @@ def validate_cargo_mutants_version(
     )
 
 
+def _append_outer_guard_skips(
+    command: list[str], *, through_cargo_mutants: bool
+) -> None:
+    # These tests deliberately create physical trees at or beyond the
+    # production limit. Normal test runs retain them; a monitored mutation
+    # run uses injected boundary tests for the same contract instead.
+    command.append("--")
+    if through_cargo_mutants:
+        # cargo-mutants consumes the first separator. The second reaches
+        # cargo test and forwards the following skips to libtest.
+        command.append("--")
+    for fixture in _OUTER_GUARD_DEPTH_FIXTURES:
+        command.extend(["--skip", fixture])
+
+
 def build_baseline_command(candidate: Candidate) -> list[str]:
     parts = Path(candidate.path).parts
     if len(parts) < 3 or parts[0] != "crates":
@@ -178,9 +202,7 @@ def build_baseline_command(candidate: Candidate) -> list[str]:
         )
     command = ["cargo", "test", "-p", parts[1]]
     if parts[1] == "hoimin-cli":
-        # This test deliberately creates a tree beyond the monitored depth.
-        # The injected boundary tests still cover the same failure contract.
-        command.extend(["--", "--skip", _OUTER_GUARD_DEPTH_FIXTURE])
+        _append_outer_guard_skips(command, through_cargo_mutants=False)
     return command
 
 
@@ -212,9 +234,7 @@ def build_mutation_command(
         command.append("--iterate")
     parts = Path(candidate.path).parts
     if len(parts) >= 2 and parts[:2] == ("crates", "hoimin-cli"):
-        # The first separator belongs to cargo-mutants; the second is passed
-        # through to cargo test so the skip reaches the libtest harness.
-        command.extend(["--", "--", "--skip", _OUTER_GUARD_DEPTH_FIXTURE])
+        _append_outer_guard_skips(command, through_cargo_mutants=True)
     return command
 
 

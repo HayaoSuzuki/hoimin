@@ -2999,7 +2999,7 @@ class FocusedMutationReportingTests(unittest.TestCase):
         self.assertNotIn("--iterate", argv)
         self.assertEqual(argv[argv.index("--jobs") + 1], "1")
 
-    def test_cli_commands_skip_depth_fixture_that_trips_the_outer_guard(
+    def test_cli_commands_skip_depth_fixtures_that_trip_the_outer_guard(
         self,
     ) -> None:
         candidate = Candidate(
@@ -3007,15 +3007,26 @@ class FocusedMutationReportingTests(unittest.TestCase):
             "measure_owned_tree",
             "crates/hoimin-cli/src/workspace/disk.rs:1: replace function",
         )
-        expected_baseline_args = [
-            "--",
-            "--skip",
+        physical_depth_fixtures = [
+            "workspace::disk::tests::exact_depth_bound_uses_at_most_one_hundred_twenty_nine_directory_handles",
             "workspace::disk::tests::rejects_a_tree_deeper_than_the_bound",
+            "workspace::owned::tests::cleanup_removes_a_tree_deeper_than_the_meter_limit",
+            "workspace::root::tests::post_order_removal_handles_a_tree_at_the_supported_depth",
+            "workspace::root::tests::post_order_removal_reports_the_shared_depth_limit",
+            "cleanup_releases_state_when_the_temporary_wrapper_was_already_removed",
+            "reset_preserves_depth_error_while_discard_cleanup_is_pending",
+            "reset_handles_a_tree_at_the_supported_depth",
+            "reset_reports_a_depth_error_beyond_the_supported_depth",
+            "cleanup_reports_the_same_depth_error_as_reset",
         ]
+        expected_baseline_args = ["--"]
+        for fixture in physical_depth_fixtures:
+            expected_baseline_args.extend(["--skip", fixture])
         expected_mutation_args = ["--", *expected_baseline_args]
 
         self.assertEqual(
-            build_baseline_command(candidate)[-3:], expected_baseline_args
+            build_baseline_command(candidate)[-len(expected_baseline_args) :],
+            expected_baseline_args,
         )
         self.assertEqual(
             build_mutation_command(
@@ -3024,7 +3035,7 @@ class FocusedMutationReportingTests(unittest.TestCase):
                 candidate,
                 iterate=False,
                 jobs=1,
-            )[-4:],
+            )[-len(expected_mutation_args) :],
             expected_mutation_args,
         )
 
@@ -3068,7 +3079,25 @@ class FocusedMutationReportingTests(unittest.TestCase):
                 "hoimin-cli",
                 "--",
                 "--skip",
+                "workspace::disk::tests::exact_depth_bound_uses_at_most_one_hundred_twenty_nine_directory_handles",
+                "--skip",
                 "workspace::disk::tests::rejects_a_tree_deeper_than_the_bound",
+                "--skip",
+                "workspace::owned::tests::cleanup_removes_a_tree_deeper_than_the_meter_limit",
+                "--skip",
+                "workspace::root::tests::post_order_removal_handles_a_tree_at_the_supported_depth",
+                "--skip",
+                "workspace::root::tests::post_order_removal_reports_the_shared_depth_limit",
+                "--skip",
+                "cleanup_releases_state_when_the_temporary_wrapper_was_already_removed",
+                "--skip",
+                "reset_preserves_depth_error_while_discard_cleanup_is_pending",
+                "--skip",
+                "reset_handles_a_tree_at_the_supported_depth",
+                "--skip",
+                "reset_reports_a_depth_error_beyond_the_supported_depth",
+                "--skip",
+                "cleanup_reports_the_same_depth_error_as_reset",
             ],
         )
 
