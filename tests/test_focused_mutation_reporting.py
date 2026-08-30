@@ -1833,6 +1833,10 @@ class FocusedMutationReportingTests(unittest.TestCase):
                 assert isinstance(environment, dict)
                 self.assertIn("TMPDIR", environment)
                 self.assertIn("CARGO_TARGET_DIR", environment)
+                self.assertEqual(
+                    environment.get("HOIMIN_FOCUSED_MUTATION_OUTER_DEPTH_GUARD"),
+                    "1",
+                )
             self.assertTrue(
                 all(
                     not Path(command.stdout_path).exists()

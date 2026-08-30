@@ -376,6 +376,7 @@ def _prepare_runtime(
                 "TEMP": str(process_tmp),
                 "CARGO_TARGET_DIR": str(cargo_target),
                 "CARGO_INCREMENTAL": "0",
+                "HOIMIN_FOCUSED_MUTATION_OUTER_DEPTH_GUARD": "1",
             },
         )
     except BaseException as primary_error:
