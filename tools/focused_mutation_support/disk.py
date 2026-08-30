@@ -875,13 +875,13 @@ def _measure_fd(
         if monotonic() - started >= MAX_SCAN_SECONDS:
             raise DiskMeasurementError("owned scratch scan exceeded five seconds")
 
-    stack: list[_DirectoryStream] = [
-        _DirectoryStream(_reopen_same_directory(root_fd))
+    stack: list[tuple[_DirectoryStream, tuple[str, ...]]] = [
+        (_DirectoryStream(_reopen_same_directory(root_fd)), ())
     ]
     try:
         while stack:
             check_deadline()
-            current = stack[-1]
+            current, path_prefix = stack[-1]
             selected = current.next_name()
             if selected is None:
                 current.close()
@@ -908,8 +908,13 @@ def _measure_fd(
             if stat.S_ISDIR(mode):
                 child_depth = len(stack)
                 if child_depth > MAX_TREE_DEPTH:
+                    relative = "/".join((*path_prefix, selected))
+                    bounded = (
+                        relative.encode("utf-8", errors="backslashreplace")[:768]
+                        .decode("utf-8", errors="ignore")
+                    )
                     raise DiskMeasurementError(
-                        f"owned scratch depth exceeds {MAX_TREE_DEPTH}"
+                        f"owned scratch depth exceeds {MAX_TREE_DEPTH} below {bounded}"
                     )
                 if metadata.st_dev != root_stat.st_dev:
                     raise DiskMeasurementError(
@@ -933,7 +938,12 @@ def _measure_fd(
                     raise DiskMeasurementError(
                         "owned scratch scan refuses to cross a filesystem boundary"
                     )
-                stack.append(_DirectoryStream(child_fd))
+                stack.append(
+                    (
+                        _DirectoryStream(child_fd),
+                        (*path_prefix, selected)[:8],
+                    )
+                )
                 continue
             if stat.S_ISREG(mode):
                 try:
@@ -969,7 +979,7 @@ def _measure_fd(
     finally:
         while stack:
             try:
-                stack.pop().close()
+                stack.pop()[0].close()
             except OSError:
                 pass
     return owned_bytes, conservative_entries

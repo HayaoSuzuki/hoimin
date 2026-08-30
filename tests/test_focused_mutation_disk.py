@@ -361,6 +361,32 @@ class BoundedCommandDrainTests(unittest.TestCase):
 
 
 class AnchoredDiskGuardTests(unittest.TestCase):
+    def test_depth_failure_identifies_a_bounded_relative_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            nested = root / "diagnostic-anchor"
+            nested.mkdir()
+            for index in range(129):
+                nested /= f"d{index}"
+                nested.mkdir()
+            guard = DiskGuard(
+                DiskPolicy(
+                    max_disk_bytes=8 * 1024**3,
+                    min_free_bytes=1,
+                    scratch_root=root,
+                ),
+                [MeterRoot(root, enforcement="owned:test")],
+            )
+            self.addCleanup(guard.close)
+
+            failure = guard.sample()
+
+            self.assertIsNotNone(failure)
+            assert failure is not None
+            self.assertEqual(failure.reason, DiskStopReason.MEASUREMENT_FAILED)
+            self.assertIn("diagnostic-anchor/d0/d1", failure.message)
+            self.assertLessEqual(len(failure.message.encode("utf-8")), 1_024)
+
     def test_reserved_spool_bytes_trip_owned_limit_before_write(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
