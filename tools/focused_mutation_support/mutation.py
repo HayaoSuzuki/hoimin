@@ -219,10 +219,17 @@ def build_mutation_command(
 ) -> list[str]:
     if candidate.mutant_name is None:
         raise ValueError("candidate has no mutant name from inventory")
+    parts = Path(candidate.path).parts
+    if len(parts) < 3 or parts[0] != "crates":
+        raise ValueError(
+            f"candidate is outside a workspace member: {candidate.path}"
+        )
+    package = parts[1]
     command = [
         "cargo",
         "mutants",
-        "--workspace",
+        "--package",
+        package,
         "--manifest-path",
         str(repository / "Cargo.toml"),
         "--output",
@@ -236,9 +243,8 @@ def build_mutation_command(
     ]
     if iterate:
         command.append("--iterate")
-    # Mutation commands use --workspace even when the mutant is in another
-    # crate, so the hoimin-cli physical-depth fixtures are always reachable.
-    _append_outer_guard_skips(command, through_cargo_mutants=True)
+    if package == "hoimin-cli":
+        _append_outer_guard_skips(command, through_cargo_mutants=True)
     return command
 
 

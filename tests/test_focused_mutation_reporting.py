@@ -3005,6 +3005,8 @@ class FocusedMutationReportingTests(unittest.TestCase):
         )
         self.assertNotIn("--iterate", argv)
         self.assertEqual(argv[argv.index("--jobs") + 1], "1")
+        self.assertNotIn("--workspace", argv)
+        self.assertEqual(argv[argv.index("--package") + 1], "hoimin-core")
 
     def test_cli_commands_skip_depth_fixtures_that_trip_the_outer_guard(
         self,
@@ -3053,15 +3055,15 @@ class FocusedMutationReportingTests(unittest.TestCase):
             "apply_disk_lifecycle_event",
             "crates/hoimin-core/src/disk.rs:1: replace function",
         )
-        self.assertEqual(
-            build_mutation_command(
-                Path("/repo"),
-                Path("/evidence/run"),
-                core_candidate,
-                iterate=False,
-                jobs=1,
-            )[-len(expected_mutation_args) :],
-            expected_mutation_args,
+        core_command = build_mutation_command(
+            Path("/repo"),
+            Path("/evidence/run"),
+            core_candidate,
+            iterate=False,
+            jobs=1,
+        )
+        self.assertFalse(
+            any(argument.startswith("--cargo-test-arg=") for argument in core_command)
         )
 
     def test_focused_command_enables_reuse_only_when_requested(self) -> None:
