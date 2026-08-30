@@ -1439,14 +1439,34 @@ async fn sample_after_process_drain(
     }
 }
 
+type CleanupThreadJob = Box<dyn FnOnce() + Send + 'static>;
+
+fn spawn_cleanup_thread(job: CleanupThreadJob) -> std::io::Result<()> {
+    std::thread::Builder::new()
+        .name("hoimin-cleanup".to_owned())
+        .spawn(job)
+        .map(|_| ())
+}
+
 async fn run_cleanup_thread<T: Send + 'static>(
     budget: &ShutdownBudget,
     operation: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T, String> {
+    run_cleanup_thread_with_spawner(budget, operation, spawn_cleanup_thread).await
+}
+
+async fn run_cleanup_thread_with_spawner<T: Send + 'static>(
+    budget: &ShutdownBudget,
+    operation: impl FnOnce() -> T + Send + 'static,
+    spawner: impl FnOnce(CleanupThreadJob) -> std::io::Result<()>,
+) -> Result<T, String> {
     let (sender, receiver) = tokio::sync::oneshot::channel();
-    std::thread::spawn(move || {
+    spawner(Box::new(move || {
         let _ = sender.send(operation());
-    });
+    }))
+    .map_err(|error| {
+        format!("workspace.cleanup.failed: cleanup thread could not start: {error}")
+    })?;
     budget
         .wait(receiver)
         .await
@@ -5916,6 +5936,32 @@ mod tests {
         assert_eq!(record.remaining_root.as_deref(), Some(root.path()));
         assert_eq!(record.details.len(), 1);
         assert!(record.details[0].contains("cleanup worker panicked"));
+    }
+
+    #[tokio::test]
+    async fn cleanup_thread_spawn_failure_is_typed_without_running_the_operation() {
+        let budget = ShutdownBudget::for_total_timeout_with_grace(
+            tokio::time::Instant::now() + Duration::from_secs(1),
+            Duration::ZERO,
+        );
+        let operation_ran = Arc::new(AtomicBool::new(false));
+        let observed_operation = Arc::clone(&operation_ran);
+
+        let error = run_cleanup_thread_with_spawner(
+            &budget,
+            move || {
+                observed_operation.store(true, Ordering::Release);
+            },
+            |_| Err(std::io::Error::other("injected thread exhaustion")),
+        )
+        .await
+        .expect_err("thread creation failure must be typed");
+
+        assert_eq!(
+            error,
+            "workspace.cleanup.failed: cleanup thread could not start: injected thread exhaustion"
+        );
+        assert!(!operation_ran.load(Ordering::Acquire));
     }
 
     #[tokio::test]
