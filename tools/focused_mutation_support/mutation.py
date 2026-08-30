@@ -185,13 +185,17 @@ def _append_outer_guard_skips(
     # These tests deliberately create physical trees at or beyond the
     # production limit. Normal test runs retain them; a monitored mutation
     # run uses injected boundary tests for the same contract instead.
-    command.append("--")
     if through_cargo_mutants:
-        # cargo-mutants consumes the first separator. The second reaches
-        # cargo test and forwards the following skips to libtest.
+        cargo_test_args = ["--"]
+        for fixture in _OUTER_GUARD_DEPTH_FIXTURES:
+            cargo_test_args.extend(["--skip", fixture])
+        command.extend(
+            f"--cargo-test-arg={argument}" for argument in cargo_test_args
+        )
+    else:
         command.append("--")
-    for fixture in _OUTER_GUARD_DEPTH_FIXTURES:
-        command.extend(["--skip", fixture])
+        for fixture in _OUTER_GUARD_DEPTH_FIXTURES:
+            command.extend(["--skip", fixture])
 
 
 def build_baseline_command(candidate: Candidate) -> list[str]:

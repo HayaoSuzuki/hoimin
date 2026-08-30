@@ -3029,7 +3029,10 @@ class FocusedMutationReportingTests(unittest.TestCase):
         expected_baseline_args = ["--"]
         for fixture in physical_depth_fixtures:
             expected_baseline_args.extend(["--skip", fixture])
-        expected_mutation_args = ["--", *expected_baseline_args]
+        expected_mutation_args = [
+            f"--cargo-test-arg={argument}"
+            for argument in expected_baseline_args
+        ]
 
         self.assertEqual(
             build_baseline_command(candidate)[-len(expected_baseline_args) :],
