@@ -82,6 +82,16 @@ theorem stopped_never_dispatches {start result : State} {events : List Event}
               simpa [run, stepResult] using accepted
             _ = start.dispatched := contract.2
 
+theorem settled_process_drain_rejects_dispatch {state : State}
+    (settled : state.processDrain ≠ .pending) :
+    step state .dispatch = none := by
+  simp [step, transition, settled]
+
+theorem active_work_rejects_cleanup {state : State} {root : RootId}
+    (active : state.active ≠ 0) :
+    step state (.requestCleanup root) = none := by
+  simp [step, transition, active]
+
 theorem first_reason_is_sticky {start result : State} {events : List Event}
     (startValid : Invariant start = true) {reason : StopReason}
     (stopped : start.stop = some reason)
@@ -232,9 +242,9 @@ theorem finished_implies_delivery_clean {start result : State} {events : List Ev
   intro finished
   simpa [finished] using guard
 
-theorem root_renaming_symmetry : rootRenamingCasesPass = true := by native_decide
+theorem root_renaming_samples_match : rootRenamingCasesPass = true := by native_decide
 
-theorem payload_class_symmetry : payloadSymmetryCasesPass = true := by native_decide
+theorem payload_class_samples_match : payloadSymmetryCasesPass = true := by native_decide
 
 theorem fixed_cases_match_literal_expectations : casesPass = true := by native_decide
 

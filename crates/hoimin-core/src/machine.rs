@@ -1819,6 +1819,11 @@ pub fn transition(
         }
         RunEvent::OutputEmitted(_) => Vec::new(),
         RunEvent::EffectFailed(failed) if state.phase == RunPhase::Cleaning => {
+            let cleanup_status = if failed.failure.code() == crate::WORKSPACE_CLEANUP_DEFERRED {
+                crate::DiskCleanupStatus::Deferred
+            } else {
+                crate::DiskCleanupStatus::Failed
+            };
             state.flags.outcome.infrastructure_error = true;
             state.flags.scheduling.stop_requested = true;
             state.retire_pending();
@@ -1827,7 +1832,7 @@ pub fn transition(
             state.disk_summary.cleanup.push(crate::DiskCleanupReport {
                 root_id: "execution".into(),
                 owner: "hoimin".into(),
-                status: crate::DiskCleanupStatus::Failed,
+                status: cleanup_status,
                 examined_entries: 0,
                 removed_entries: 0,
                 details: vec![failed.failure.message()],

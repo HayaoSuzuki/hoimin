@@ -233,6 +233,25 @@ def _record_disk_failure(record: RunRecord, failure: DiskFailure) -> None:
             record.secondary_errors.append(evidence)
 
 
+def _merge_disk_lifecycle_evidence(
+    record: RunRecord, lifecycle: DiskLifecycleTraceRunner
+) -> None:
+    snapshot = lifecycle.snapshot()
+    if snapshot.stop is None:
+        return
+    stop = snapshot.stop
+    _record_disk_failure(
+        record,
+        DiskFailure(
+            code=stop.code,
+            reason=stop.reason,
+            observation=stop.observation,
+            message=stop.message,
+            secondary=(*stop.secondary, *snapshot.secondary),
+        ),
+    )
+
+
 def _record_disk_failures_for_observation(
     record: RunRecord,
     policy: DiskPolicy,
@@ -1257,6 +1276,7 @@ def run_workflow(
                 raise RuntimeError(
                     f"disk lifecycle rejected finalization event {label}"
                 )
+        _merge_disk_lifecycle_evidence(record, disk_lifecycle)
         cleanup_requested = disk_lifecycle.request_cleanup(DiskRootId.EXECUTION)
         cleanup_safe = (
             joined

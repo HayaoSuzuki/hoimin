@@ -103,7 +103,7 @@ failures do not count as RED.
 
 - Consumes: the approved threshold, stop-precedence, process-drain, monitor-join, and
   root-specific cleanup contract from the design.
-- Produces: `HoiminOracle.DiskGuard.step`, `run`, `Invariant`, the twelve named theorems,
+- Produces: `HoiminOracle.DiskGuard.step`, `run`, `Invariant`, the fourteen named theorems,
   an eight-event-family depth-five bounded explorer, and schema-1 JSONL records with
   exact correspondence mode, `policy` or `runtime` layer, and nonempty
   `implementation_targets`. Tasks 2, 6, and 8 consume every record naming their
@@ -206,9 +206,10 @@ success/failure/deferral/retention, and report success/failure. Normalize them t
 dispatch, observe, process-drain terminal, output
 terminal, monitor terminal, cleanup, report terminal, and finish. Explore family
 skeletons through depth five (`1 + 8 + 8² + 8³ + 8⁴ + 8⁵ = 37,449`). Do not expand
-that set across a larger root/payload alphabet. Use canonical representatives, prove
-root-renaming and payload-class symmetry over the finite model, and add one fixed
-witness for every noncanonical root and payload class.
+that set across a larger root/payload alphabet. Use canonical representatives, but do
+not generalize the bounded result to arbitrary noncanonical traces. Validate a finite
+set of root-renaming and payload-class samples, and add one fixed witness for every
+noncanonical root and payload class used by the correspondence corpus.
 Add fixed traces outside the depth-five explorer for complete ordered success,
 report-failure then delivery cleanup and rejected finish, delivery-cleanup failure and
 rejected finish, monitor-failure then deferred cleanup and rejected
@@ -237,29 +238,33 @@ runtime `internal-fixture` tests to Lean proof claims.
 
 - [ ] **Step 2: Add proof obligations and deliberate broken variants**
 
-Prove twelve named obligations: `stopped_never_dispatches`,
+Prove fourteen named obligations: `stopped_never_dispatches`,
+`settled_process_drain_rejects_dispatch`, `active_work_rejects_cleanup`,
 `first_reason_is_sticky`, `simultaneous_threshold_preserves_secondary`,
 `cleanup_requested_once_per_root`,
 `cleanup_failure_is_not_clean`, `cleanup_request_implies_components_settled`,
 `destructive_cleanup_implies_components_succeeded`,
 `finished_implies_cleanup_terminal`, and
 `finished_implies_components_settled`, `delivery_cleanup_after_report_settled`,
-`finished_implies_report_succeeded`, and `finished_implies_delivery_clean`. Each theorem
-quantifies over a starting state and an accepted event trace, and states its property on
-the trace fold. This shared trace premise prevents the proofs from drifting away from
-the corpus generator.
+`finished_implies_report_succeeded`, and `finished_implies_delivery_clean`. The two
+single-transition guard theorems state their exact rejected event premise; the other
+twelve quantify over a starting state and an accepted event trace and state their
+property on the trace fold. This shared trace premise prevents those proofs from
+drifting away from the corpus generator.
 `finished_implies_cleanup_terminal` must prove that no owned root remains deferred.
-Add root-renaming and payload-class symmetry lemmas used by the bounded explorer; the
-generator must fail if a representative lacks a corresponding fixed witness.
-Root renaming must map `ownedRoots`, `deliveryRoots`, all five cleanup collections, and
-root-bearing events together; it may not swap an event root without the state's delivery
-role. Payload symmetry states that two observations with identical
-`owned >= maxOwned` and `free <= minFree` truth values take the same policy transition,
-including simultaneous-stop secondary evidence. Test each lemma with both root IDs and
-every below/at/above threshold representative before relying on normalization.
+Add finite root-renaming and payload-class sample checks for the bounded explorer; these
+checks are regression evidence, not universal commutation lemmas. The generator must
+fail if a representative lacks a corresponding fixed witness. Root-renaming samples
+map `ownedRoots`, `deliveryRoots`, all five cleanup collections, and root-bearing events
+together; they may not swap an event root without the state's delivery role. Payload
+samples pair observations with identical `owned >= maxOwned` and `free <= minFree`
+truth values and require the same policy transition, including simultaneous-stop
+secondary evidence. Cover both root IDs and every below/at/above threshold class used
+by the tracked corpus. The depth-five result remains explicitly canonical-only.
 
 Add broken functions for strictness (`>` instead of `>=`), reserve direction,
 lost simultaneous secondary evidence, stop-reason overwrite, post-stop dispatch,
+post-process-drain dispatch,
 duplicate cleanup, clean-on-cleanup-error, and early finish. `--sensitivity` must return zero only if every broken family is
 distinguished by at least one fixed witness.
 Add two lifecycle broken variants: one accepts cleanup before component settlement, and
@@ -292,11 +297,11 @@ Run sequentially:
 
 ```bash
 cd formal/HoiminOracle
-../../.venv/bin/python ../../tools/lean_resource_guard.py --timeout-seconds 30 --rss-limit-mib 768 --sample-ms 250 --stats /tmp/disk-guard-build.json -- lake build HoiminOracle.DiskGuardProofs generate_disk_guard
-../../.venv/bin/python ../../tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 768 --sample-ms 250 --stats /tmp/disk-guard-sensitivity.json -- lake exe generate_disk_guard -- --sensitivity
+../../.venv/bin/python tools/lean_resource_guard.py --timeout-seconds 30 --rss-limit-mib 768 --sample-ms 250 --stats /tmp/disk-guard-build.json -- lake build HoiminOracle.DiskGuardProofs generate_disk_guard
+../../.venv/bin/python tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 768 --sample-ms 250 --stats /tmp/disk-guard-sensitivity.json -- lake exe generate_disk_guard -- --sensitivity
 lake exe generate_disk_guard -- --output corpus/disk-guard-lifecycle.jsonl
 lake exe generate_disk_guard -- --check corpus/disk-guard-lifecycle.jsonl
-lake env lean HoiminOracle/DiskGuardBrokenConsumer.lean
+lake env lean DiskGuardBrokenConsumer.lean
 ```
 
 `DiskGuardBrokenConsumer.lean` must verify that every broken family has a witness; it
@@ -365,6 +370,7 @@ pub enum DiskStopReason {
     WorkspaceSizeExceeded,
     FilesystemReserveReached,
     MeasurementFailed,
+    ProcessFailed,
 }
 
 pub enum DiskSecondary {
@@ -434,6 +440,7 @@ report retains the full map. Expose exact codes:
 pub const WORKSPACE_SIZE_EXCEEDED: &str = "workspace.size.exceeded";
 pub const FILESYSTEM_RESERVE_REACHED: &str = "filesystem.reserve.reached";
 pub const DISK_MEASUREMENT_FAILED: &str = "disk.measurement.failed";
+pub const PROCESS_LIFECYCLE_FAILED: &str = "process.failed";
 pub const WORKSPACE_CLEANUP_FAILED: &str = "workspace.cleanup.failed";
 pub const WORKSPACE_CLEANUP_DEFERRED: &str = "workspace.cleanup.deferred";
 ```
@@ -492,6 +499,7 @@ git commit -m "feat: define portable disk guard policy"
 
 **Files:**
 
+- Modify: `crates/hoimin-core/Cargo.toml`
 - Modify: `crates/hoimin-core/src/config.rs`
 - Modify: `crates/hoimin-core/src/resume.rs`
 - Modify: `crates/hoimin-core/src/report.rs`
@@ -693,7 +701,8 @@ Verify no disk monitor, process-limit, or workspace-deletion integration entered
 commit; the only lifecycle change is the tested report/session ordering above. Then:
 
 ```bash
-git add crates/hoimin-core/src/config.rs crates/hoimin-core/src/resume.rs \
+git add crates/hoimin-core/Cargo.toml \
+  crates/hoimin-core/src/config.rs crates/hoimin-core/src/resume.rs \
   crates/hoimin-core/src/report.rs crates/hoimin-core/src/machine.rs \
   crates/hoimin-core/tests/lean_oracle.rs \
   crates/hoimin-core/tests/lean_report_sequence_oracle.rs \
@@ -1209,10 +1218,13 @@ git commit -m "feat: lease and measure mutation workspaces"
 - Modify: `crates/hoimin-cli/src/shell.rs`
 - Modify: `crates/hoimin-cli/src/process/mod.rs`
 - Modify: `crates/hoimin-cli/src/resource/mod.rs`
+- Modify: `crates/hoimin-cli/src/resource/portable.rs`
 - Modify: `crates/hoimin-cli/src/report/mod.rs`
 - Modify: `crates/hoimin-cli/src/report/json.rs`
 - Modify: `crates/hoimin-cli/tests/process_handler.rs`
 - Modify: `crates/hoimin-cli/tests/report_handler.rs`
+- Modify: `crates/hoimin-cli/tests/run_e2e.rs`
+- Modify: `docs/superpowers/specs/2026-08-27-disk-safe-mutation-execution-design.md`
 - Create: `crates/hoimin-cli/tests/disk_shutdown.rs`
 - Create: `crates/hoimin-cli/tests/lean_disk_shutdown_oracle.rs`
 
@@ -1306,6 +1318,16 @@ not sufficient for marker publication: a successful monitor join is also require
 current explicit cleanup but prevents any later janitor from using the immediate-reclaim
 path.
 
+On portable Unix, reaping either a naturally exited root or a root terminated while still
+owned does not itself prove that the original process group is empty. Move the PGID out
+of the signalable live-root slot before any fallible post-reap operation, retain it in a
+non-signalable verification slot, and probe with signal zero until absence is proven or
+the bounded quiescence grace expires. If a member remains, preserve the command result
+but leave the sticky process-reap proof false so execution and delivery cleanup are
+deferred. If the group is absent, normal childless or successfully terminated completion
+is quiescent. Do not turn the probe into a post-reap `killpg` call. Cover natural exit,
+live-root termination, absent-group, live-group, and probe-error branches.
+
 Handle it through the same global-stop transition family as cancellation/deadline, but
 preserve its typed code and observation in disk evidence. Synthetic unfinished mutant
 events use `MutationStatus::NotRun`. A later `EffectFailed` becomes secondary and cannot
@@ -1379,6 +1401,11 @@ attempt every execution cleanup and retain close errors as secondary; otherwise 
 `abandon_for_janitor` and make no recursive removal attempt. Apply the same rule to the
 shutdown-budget and detached-cleanup paths.
 
+On portable Unix, retry the non-signalling original-PGID absence check for at most 250
+milliseconds. This leaves explicit room inside the existing fixed two-second shutdown
+grace for the one-second output-drain bound and shell completion delivery. Expiry is not
+quiescence: record process reap as unproven and retain the workspace for the janitor.
+
 For `RunFinished`, make `ReportHandler` write and flush output, drop its JSON spool,
 clean and absence-verify the delivery root, and only then return `OutputEmitted`. On
 write failure it still attempts exact delivery-root cleanup and returns the report error
@@ -1420,9 +1447,12 @@ git add crates/hoimin-core/src/event.rs crates/hoimin-core/src/machine.rs \
   crates/hoimin-core/src/model.rs crates/hoimin-core/tests/machine.rs \
   crates/hoimin-cli/src/workspace/disk.rs crates/hoimin-cli/src/shell.rs \
   crates/hoimin-cli/src/process/mod.rs crates/hoimin-cli/src/resource/mod.rs \
+  crates/hoimin-cli/src/resource/portable.rs \
   crates/hoimin-cli/src/report/mod.rs crates/hoimin-cli/src/report/json.rs \
   crates/hoimin-cli/tests/process_handler.rs \
   crates/hoimin-cli/tests/report_handler.rs \
+  crates/hoimin-cli/tests/run_e2e.rs \
+  docs/superpowers/specs/2026-08-27-disk-safe-mutation-execution-design.md \
   crates/hoimin-cli/tests/disk_shutdown.rs \
   crates/hoimin-cli/tests/lean_disk_shutdown_oracle.rs
 git commit -m "feat: stop and clean runs at disk safety limits"

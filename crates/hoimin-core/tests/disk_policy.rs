@@ -4,7 +4,7 @@ use std::time::Duration;
 use hoimin_core::disk::{
     DISK_MEASUREMENT_FAILED, DiskCleanupOutcome, DiskDecision, DiskLifecycle, DiskLifecycleError,
     DiskLifecycleEvent, DiskObservation, DiskPolicy, DiskRootId, DiskStopReason,
-    FILESYSTEM_RESERVE_REACHED, WORKSPACE_SIZE_EXCEEDED,
+    FILESYSTEM_RESERVE_REACHED, PROCESS_LIFECYCLE_FAILED, WORKSPACE_SIZE_EXCEEDED,
 };
 
 fn policy(max_owned_bytes: u64, min_free_bytes: u64) -> DiskPolicy {
@@ -97,6 +97,26 @@ fn stopped_lifecycle_rejects_dispatch_without_incrementing_counters() {
     let snapshot = lifecycle.snapshot();
     assert_eq!(snapshot.active, 0);
     assert_eq!(snapshot.dispatched, 0);
+}
+
+#[test]
+fn process_drain_failure_is_a_sticky_primary_or_secondary_stop() {
+    let mut process_first = DiskLifecycle::new([]).unwrap();
+    assert!(process_first.apply(DiskLifecycleEvent::ProcessDrainFailed));
+    let failure = process_first.snapshot().stop.unwrap();
+    assert_eq!(failure.code, PROCESS_LIFECYCLE_FAILED);
+    assert_eq!(failure.reason, DiskStopReason::ProcessFailed);
+
+    let mut disk_first = DiskLifecycle::new([]).unwrap();
+    assert!(disk_first.apply(DiskLifecycleEvent::Observation {
+        policy: policy(10, 10),
+        value: observation(10, 11),
+    }));
+    assert!(disk_first.apply(DiskLifecycleEvent::ProcessDrainFailed));
+    let failure = disk_first.snapshot().stop.unwrap();
+    assert_eq!(failure.reason, DiskStopReason::WorkspaceSizeExceeded);
+    assert_eq!(failure.secondary.len(), 1);
+    assert_eq!(failure.secondary[0].code(), PROCESS_LIFECYCLE_FAILED);
 }
 
 #[test]
@@ -224,6 +244,22 @@ fn zero_one_and_two_active_work_items_are_drained_globally() {
         assert_eq!(snapshot.active, 0);
         assert_eq!(snapshot.dispatched, dispatches);
     }
+}
+
+#[test]
+fn settled_process_drain_is_terminal_for_dispatch_and_cleanup_never_races_active_work() {
+    let mut lifecycle = DiskLifecycle::new([DiskRootId::Execution]).unwrap();
+    settle_safety(&mut lifecycle);
+
+    assert!(!lifecycle.apply(DiskLifecycleEvent::DispatchRequested));
+    assert_eq!(lifecycle.snapshot().active, 0);
+    assert!(lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
+        root: DiskRootId::Execution,
+    }));
+    assert!(lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
+        root: DiskRootId::Execution,
+        outcome: DiskCleanupOutcome::Clean,
+    }));
 }
 
 fn settle_safety(lifecycle: &mut DiskLifecycle) {

@@ -161,6 +161,7 @@ private def familyName : BrokenFamily → String
   | .simultaneousSecondary => "simultaneous_secondary"
   | .overwritePrimary => "first_reason_stickiness"
   | .postStopDispatch => "post_stop_dispatch"
+  | .postDrainDispatch => "post_drain_dispatch"
   | .duplicateCleanup => "duplicate_cleanup"
   | .cleanOnCleanupError => "cleanup_error_not_clean"
   | .earlyFinish => "early_finish"
@@ -207,7 +208,7 @@ private def ensureAudit : IO (Except UInt32 Unit) := do
     IO.eprintln "disk-guard corpus violates schema/ID/target/trace bounds"
     return .error 2
   unless rootRenamingCasesPass && payloadSymmetryCasesPass do
-    IO.eprintln "disk-guard normalization lacks a symmetry witness"
+    IO.eprintln "disk-guard normalization lacks a finite sample witness"
     return .error 2
   unless sensitivityPasses do
     IO.eprintln "one or more broken disk-guard families escaped detection"

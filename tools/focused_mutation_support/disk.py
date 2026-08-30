@@ -452,7 +452,10 @@ def apply_disk_lifecycle_event(
         return False
     kind = event.kind
     if kind is EventKind.DISPATCH_REQUESTED:
-        if lifecycle.stop is not None or lifecycle.process_drain is ComponentState.FAILED:
+        if (
+            lifecycle.stop is not None
+            or lifecycle.process_drain is not ComponentState.PENDING
+        ):
             return False
         lifecycle.active += 1
         lifecycle.dispatched += 1
@@ -505,6 +508,7 @@ def apply_disk_lifecycle_event(
         if (
             root not in lifecycle.owned_roots
             or root in lifecycle.cleanup_requested
+            or lifecycle.active != 0
             or not _safety_settled(lifecycle)
             or (root in lifecycle.delivery_roots and lifecycle.report is ComponentState.PENDING)
         ):

@@ -200,6 +200,31 @@
         "end_available_bytes": { "type": ["integer", "null"], "minimum": 0 },
         "available_bytes_change": { "type": ["integer", "null"] }
       },
+      "oneOf": [
+        {
+          "required": ["start_available_bytes", "end_available_bytes", "available_bytes_change"],
+          "properties": {
+            "start_available_bytes": { "type": "integer" },
+            "end_available_bytes": { "type": "integer" },
+            "available_bytes_change": { "type": "integer" }
+          }
+        },
+        {
+          "required": ["start_available_bytes", "available_bytes_change"],
+          "properties": {
+            "start_available_bytes": { "type": "null" },
+            "available_bytes_change": { "type": "null" }
+          }
+        },
+        {
+          "required": ["start_available_bytes", "end_available_bytes", "available_bytes_change"],
+          "properties": {
+            "start_available_bytes": { "type": "integer" },
+            "end_available_bytes": { "type": "null" },
+            "available_bytes_change": { "type": "null" }
+          }
+        }
+      ],
       "additionalProperties": false
     },
     "diskCleanup": {
@@ -224,9 +249,66 @@
         "code": { "type": "string" },
         "owned_bytes": { "type": ["integer", "null"], "minimum": 0 },
         "available_bytes": { "type": ["integer", "null"], "minimum": 0 },
-        "message": { "type": ["string", "null"] }
+        "message": { "type": ["string", "null"] },
+        "secondary": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/diskSecondary" }
+        }
       },
       "additionalProperties": false
+    },
+    "diskSecondary": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["Observation"],
+          "properties": {
+            "Observation": {
+              "type": "object",
+              "required": ["reason", "value"],
+              "properties": {
+                "reason": { "type": "string", "enum": ["workspace_size_exceeded", "filesystem_reserve_reached", "measurement_failed", "process_failed"] },
+                "value": {
+                  "type": "object",
+                  "required": ["owned_bytes", "available_bytes", "measured_in"],
+                  "properties": {
+                    "owned_bytes": { "type": "integer", "minimum": 0 },
+                    "available_bytes": { "type": "integer", "minimum": 0 },
+                    "measured_in": {
+                      "type": "object",
+                      "required": ["secs", "nanos"],
+                      "properties": {
+                        "secs": { "type": "integer", "minimum": 0 },
+                        "nanos": { "type": "integer", "minimum": 0, "maximum": 999999999 }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["Error"],
+          "properties": {
+            "Error": {
+              "type": "object",
+              "required": ["code", "message"],
+              "properties": {
+                "code": { "type": "string" },
+                "message": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
     },
     "diskRunSummary": {
       "type": "object",

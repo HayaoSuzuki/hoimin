@@ -38,6 +38,7 @@ use crate::workspace::{
     CleanupRecord, CopyOptions, DiskMonitor, FilesystemKey, ManagedChild, ManagedRootCoordinator,
     ManagedRunRoot, OwnerKind, WorkspaceHandler, WorkspaceManifest, WorkspaceTask,
     WorkspaceTaskCompletion, available_for_managed_roots, measure_managed_roots,
+    truncate_diagnostic_detail,
 };
 #[cfg(test)]
 use crate::workspace::{
@@ -45,6 +46,19 @@ use crate::workspace::{
 };
 
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
+const CLEANUP_QUIESCENCE_UNPROVEN: &str =
+    "process/output drain, disk monitor join, or final disk measurement join was not proven";
+
+const fn cleanup_quiescence_proven(components: [bool; 4]) -> bool {
+    components[0] && components[1] && components[2] && components[3]
+}
+
+fn lifecycle_safety_succeeded(lifecycle: &ShellDiskLifecycle) -> bool {
+    let snapshot = lifecycle.snapshot();
+    snapshot.process_drain == DiskComponentState::Succeeded
+        && snapshot.output_drain == DiskComponentState::Succeeded
+        && snapshot.monitor_join == DiskComponentState::Succeeded
+}
 
 /// Production-owned adapter for the disk lifecycle enforced at shell boundaries.
 ///
@@ -235,6 +249,8 @@ pub struct RunControl {
     force_execution_cleanup_deferred: Arc<AtomicBool>,
     #[cfg(test)]
     duplicate_execution_cleanup_request: Arc<AtomicBool>,
+    #[cfg(test)]
+    force_process_reap_failure: Arc<AtomicBool>,
 }
 
 #[cfg(test)]
@@ -367,6 +383,8 @@ impl RunControl {
             force_execution_cleanup_deferred: Arc::new(AtomicBool::new(false)),
             #[cfg(test)]
             duplicate_execution_cleanup_request: Arc::new(AtomicBool::new(false)),
+            #[cfg(test)]
+            force_process_reap_failure: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -553,6 +571,12 @@ impl RunControl {
     fn take_duplicate_execution_cleanup_request(&self) -> bool {
         self.duplicate_execution_cleanup_request
             .swap(false, Ordering::AcqRel)
+    }
+
+    #[cfg(test)]
+    fn inject_process_reap_failure(&self) {
+        self.force_process_reap_failure
+            .store(true, Ordering::Release);
     }
 
     #[cfg(test)]
@@ -1071,6 +1095,7 @@ struct ManagedShellRoots {
     delivery_root: Arc<ManagedRunRoot>,
     execution_spool: std::sync::Mutex<Option<Arc<ManagedChild>>>,
     delivery_spool: std::sync::Mutex<Option<Arc<ManagedChild>>>,
+    stale_roots_reclaimed: u64,
 }
 
 impl ManagedShellRoots {
@@ -1205,8 +1230,14 @@ fn prepare_shell_setup_sync_in(
     temporary_parent: &Utf8Path,
     boundary: &impl Fn(ShellSetupBoundary),
 ) -> Result<PreparedShellSetup, String> {
-    let (mut rollback, execution_root, delivery_root, execution_spool, delivery_spool) =
-        create_managed_shell_roots_in(temporary_parent, &|_| {})?;
+    let (
+        mut rollback,
+        execution_root,
+        delivery_root,
+        execution_spool,
+        delivery_spool,
+        stale_roots_reclaimed,
+    ) = create_managed_shell_roots_in(temporary_parent, &|_| {})?;
     boundary(ShellSetupBoundary::RootsCreated);
     boundary(ShellSetupBoundary::DiskPolicyVerified);
     let spool_path = execution_spool.path().to_owned();
@@ -1249,6 +1280,7 @@ fn prepare_shell_setup_sync_in(
         delivery_root,
         execution_spool: std::sync::Mutex::new(Some(execution_spool)),
         delivery_spool: std::sync::Mutex::new(Some(delivery_spool)),
+        stale_roots_reclaimed,
     });
     rollback.armed = false;
 
@@ -1284,12 +1316,13 @@ fn create_managed_shell_roots_in(
         Arc<ManagedRunRoot>,
         Arc<ManagedChild>,
         Arc<ManagedChild>,
+        u64,
     ),
     String,
 > {
     let coordinator =
         ManagedRootCoordinator::open(temporary_parent).map_err(|error| error.to_string())?;
-    let _reclaim = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
+    let reclaim = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
     let execution_root = Arc::new(
         ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution)
             .map_err(|error| error.to_string())?,
@@ -1322,6 +1355,7 @@ fn create_managed_shell_roots_in(
         delivery_root,
         execution_spool,
         delivery_spool,
+        reclaim.reclaimed_roots,
     ))
 }
 
@@ -1391,16 +1425,66 @@ async fn run_cleanup_thread<T: Send + 'static>(
 #[derive(Debug)]
 enum ManagedCleanupOutcome {
     Clean(CleanupRecord),
-    Failed(String),
-    Deferred(String),
+    Failed {
+        record: Option<CleanupRecord>,
+        error: String,
+    },
+    Deferred {
+        record: Option<CleanupRecord>,
+        error: String,
+    },
 }
 
 fn cleanup_thread_error(error: String) -> ManagedCleanupOutcome {
     if error.starts_with("workspace.cleanup.deferred:") {
-        ManagedCleanupOutcome::Deferred(error)
+        ManagedCleanupOutcome::Deferred {
+            record: None,
+            error,
+        }
     } else {
-        ManagedCleanupOutcome::Failed(error)
+        ManagedCleanupOutcome::Failed {
+            record: None,
+            error,
+        }
     }
+}
+
+fn attach_cleanup_ready_error(
+    mut outcome: ManagedCleanupOutcome,
+    marker_error: Option<&str>,
+) -> ManagedCleanupOutcome {
+    let Some(marker_error) = marker_error else {
+        return outcome;
+    };
+    let detail = format!("cleanup-ready: {marker_error}");
+    let bounded_detail = truncate_diagnostic_detail(detail.clone()).0;
+    match &mut outcome {
+        ManagedCleanupOutcome::Clean(record) => record.push_detail(detail),
+        ManagedCleanupOutcome::Failed { record, error }
+        | ManagedCleanupOutcome::Deferred { record, error } => {
+            if let Some(record) = record {
+                record.push_detail(detail);
+            }
+            error.push_str("; ");
+            error.push_str(&bounded_detail);
+        }
+    }
+    outcome
+}
+
+fn delivery_cleanup_secondary_errors(record: &CleanupRecord) -> Vec<String> {
+    record
+        .details
+        .iter()
+        .filter(|detail| detail.starts_with("cleanup-ready: "))
+        .map(|detail| {
+            truncate_diagnostic_detail(format!(
+                "{}: {detail}",
+                hoimin_core::WORKSPACE_CLEANUP_FAILED
+            ))
+            .0
+        })
+        .collect()
 }
 
 async fn cleanup_managed_root(
@@ -1411,23 +1495,38 @@ async fn cleanup_managed_root(
     let marker_error =
         match run_cleanup_thread(budget, move || marker_root.mark_cleanup_ready()).await {
             Ok(result) => result.err().map(|error| error.to_string()),
-            Err(error) => return cleanup_thread_error(error),
+            Err(error) => {
+                return attach_cleanup_ready_error(
+                    cleanup_thread_error(error),
+                    Some("cleanup-ready operation did not complete"),
+                );
+            }
         };
     loop {
         let remaining = budget
             .deadline()
             .saturating_duration_since(tokio::time::Instant::now());
         if remaining.is_zero() {
-            root.abandon_for_janitor("managed-root cleanup budget expired".to_owned());
-            return ManagedCleanupOutcome::Deferred(
-                "workspace.cleanup.deferred: managed-root cleanup budget expired".to_owned(),
+            let record = root.abandon_for_janitor("managed-root cleanup budget expired".to_owned());
+            return attach_cleanup_ready_error(
+                ManagedCleanupOutcome::Deferred {
+                    record: Some(record),
+                    error: "workspace.cleanup.deferred: managed-root cleanup budget expired"
+                        .to_owned(),
+                },
+                marker_error.as_deref(),
             );
         }
         let cleanup_root = Arc::clone(&root);
-        let mut cleanup =
+        let cleanup =
             match run_cleanup_thread(budget, move || cleanup_root.cleanup(remaining)).await {
                 Ok(cleanup) => cleanup,
-                Err(error) => return cleanup_thread_error(error),
+                Err(error) => {
+                    return attach_cleanup_ready_error(
+                        cleanup_thread_error(error),
+                        marker_error.as_deref(),
+                    );
+                }
             };
         let retryable_contention = cleanup.status == hoimin_core::DiskCleanupStatus::Deferred
             && cleanup.details.iter().any(|detail| {
@@ -1438,36 +1537,34 @@ async fn cleanup_managed_root(
             tokio::time::sleep(Duration::from_millis(10)).await;
             continue;
         }
-        let marker = marker_error
-            .as_deref()
-            .map_or(String::new(), |error| format!("; cleanup-ready: {error}"));
         let detail = format!(
-            "{}{}; omitted={}; remaining={:?}",
+            "{}; omitted={}; remaining={:?}",
             cleanup.details.join("; "),
-            marker,
             cleanup.omitted_detail_count,
             cleanup.remaining_root,
         );
-        return match cleanup.status {
-            hoimin_core::DiskCleanupStatus::Clean => {
-                if let Some(error) = marker_error {
-                    cleanup.details.push(format!("cleanup-ready: {error}"));
-                }
-                ManagedCleanupOutcome::Clean(cleanup)
-            }
-            hoimin_core::DiskCleanupStatus::Failed => {
-                ManagedCleanupOutcome::Failed(format!("workspace.cleanup.failed: {detail}"))
-            }
-            hoimin_core::DiskCleanupStatus::Deferred => {
-                ManagedCleanupOutcome::Deferred(format!("workspace.cleanup.deferred: {detail}"))
-            }
-            hoimin_core::DiskCleanupStatus::Retained => ManagedCleanupOutcome::Deferred(format!(
-                "workspace.cleanup.deferred: retained: {detail}"
-            )),
-            hoimin_core::DiskCleanupStatus::CleanupAfterDelivery => ManagedCleanupOutcome::Failed(
-                format!("workspace.cleanup.failed: invalid execution cleanup status: {detail}"),
-            ),
+        let outcome = match cleanup.status {
+            hoimin_core::DiskCleanupStatus::Clean => ManagedCleanupOutcome::Clean(cleanup),
+            hoimin_core::DiskCleanupStatus::Failed => ManagedCleanupOutcome::Failed {
+                record: Some(cleanup),
+                error: format!("workspace.cleanup.failed: {detail}"),
+            },
+            hoimin_core::DiskCleanupStatus::Deferred => ManagedCleanupOutcome::Deferred {
+                record: Some(cleanup),
+                error: format!("workspace.cleanup.deferred: {detail}"),
+            },
+            hoimin_core::DiskCleanupStatus::Retained => ManagedCleanupOutcome::Deferred {
+                record: Some(cleanup),
+                error: format!("workspace.cleanup.deferred: retained: {detail}"),
+            },
+            hoimin_core::DiskCleanupStatus::CleanupAfterDelivery => ManagedCleanupOutcome::Failed {
+                record: Some(cleanup),
+                error: format!(
+                    "workspace.cleanup.failed: invalid execution cleanup status: {detail}"
+                ),
+            },
         };
+        return attach_cleanup_ready_error(outcome, marker_error.as_deref());
     }
 }
 
@@ -1543,6 +1640,20 @@ fn merge_monitor_stop(report: &mut hoimin_core::DiskStopReport, latest: hoimin_c
         }
         report.secondary.push(secondary);
     }
+}
+
+fn merge_lifecycle_stop(summary: &mut hoimin_core::RunSummary, failure: hoimin_core::DiskFailure) {
+    if let Some(report) = &mut summary.disk.stop {
+        merge_monitor_stop(report, failure);
+        return;
+    }
+    summary.disk.stop = Some(hoimin_core::DiskStopReport {
+        code: failure.code,
+        owned_bytes: failure.observation.map(|value| value.owned_bytes),
+        available_bytes: failure.observation.map(|value| value.available_bytes),
+        message: failure.message,
+        secondary: failure.secondary,
+    });
 }
 
 pub struct ShellContext<Stdout, Stderr> {
@@ -2125,6 +2236,10 @@ where
     #[cfg(test)]
     control.observe_managed_roots(&context.spool_dir);
     #[cfg(test)]
+    if control.force_process_reap_failure.load(Ordering::Acquire) {
+        context.process.inject_process_reap_failure();
+    }
+    #[cfg(test)]
     if let Some(pause) = control.materialization_pause.clone() {
         context.workspace_mut().set_materialization_pause(pause);
     }
@@ -2409,16 +2524,28 @@ where
                             ));
                         }
                     }
-                    if !(process_drain.all_reaped
-                        && process_drain.output_drains_joined
-                        && monitor_joined)
-                    {
+                    if !cleanup_quiescence_proven([
+                        process_drain.all_reaped,
+                        process_drain.output_drains_joined,
+                        monitor_joined,
+                        final_measurement_joined,
+                    ]) {
                         let id = effect.id();
+                        execution_cleanup_record = Some(CleanupRecord {
+                            status: hoimin_core::DiskCleanupStatus::Deferred,
+                            examined_entries: 0,
+                            removed_entries: 0,
+                            details: vec![CLEANUP_QUIESCENCE_UNPROVEN.to_owned()],
+                            omitted_detail_count: 0,
+                            remaining_root: Some(
+                                context.spool_dir.execution_root.path().to_owned(),
+                            ),
+                        });
                         serial_completion = Some(ShellCompletion {
                             event: RunEvent::EffectFailed(EffectFailed::other(
                                 id,
                                 hoimin_core::WORKSPACE_CLEANUP_DEFERRED,
-                                "process/output drain or disk monitor join was not proven",
+                                CLEANUP_QUIESCENCE_UNPROVEN,
                             )),
                             process_task: false,
                             io_task: false,
@@ -2627,6 +2754,8 @@ where
                             summary.disk.maximum_measurement_ms =
                                 u64::try_from(disk_stats.maximum_measurement.as_millis())
                                     .unwrap_or(u64::MAX);
+                            summary.disk.stale_roots_reclaimed =
+                                context.spool_dir.stale_roots_reclaimed;
                             summary.disk.removed_logical_bytes = execution_cleaned
                                 .then(|| execution_preclean.as_ref().map(|value| value.owned_bytes))
                                 .flatten();
@@ -2644,13 +2773,7 @@ where
                                         minimum_available_bytes: Some(filesystem.minimum),
                                         end_available_bytes,
                                         available_bytes_change: end_available_bytes.map(|end| {
-                                            let change =
-                                                i128::from(end) - i128::from(filesystem.start);
-                                            match i64::try_from(change) {
-                                                Ok(change) => change,
-                                                Err(_) if change.is_negative() => i64::MIN,
-                                                Err(_) => i64::MAX,
-                                            }
+                                            i128::from(end) - i128::from(filesystem.start)
                                         }),
                                     }
                                 })
@@ -2683,6 +2806,9 @@ where
                                 (&mut summary.disk.stop, latest_stop)
                             {
                                 merge_monitor_stop(report, latest);
+                            }
+                            if let Some(failure) = disk_lifecycle.snapshot().stop {
+                                merge_lifecycle_stop(summary, failure);
                             }
                             apply_finalization_errors_to_summary(summary, &finalization_errors);
                             if summary.disk.enforcement.is_empty() {
@@ -2748,13 +2874,16 @@ where
                                 "disk lifecycle rejected delivery cleanup request".to_owned(),
                             );
                         }
-                        match cleanup_managed_root(
-                            Arc::clone(&context.spool_dir.delivery_root),
-                            &cleanup_budget,
-                        )
-                        .await
-                        {
-                            ManagedCleanupOutcome::Clean(_cleanup) => {
+                        if execution_safety_proven {
+                            match cleanup_managed_root(
+                                Arc::clone(&context.spool_dir.delivery_root),
+                                &cleanup_budget,
+                            )
+                            .await
+                            {
+                            ManagedCleanupOutcome::Clean(cleanup) => {
+                                delivery_errors
+                                    .extend(delivery_cleanup_secondary_errors(&cleanup));
                                 if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                                     root: DiskRootId::Delivery,
                                     outcome: DiskCleanupOutcome::Clean,
@@ -2771,8 +2900,8 @@ where
                                         .observe_finalization_event("delivery_workspace_absent");
                                 }
                             }
-                            ManagedCleanupOutcome::Failed(error)
-                            | ManagedCleanupOutcome::Deferred(error) => {
+                            ManagedCleanupOutcome::Failed { error, .. }
+                            | ManagedCleanupOutcome::Deferred { error, .. } => {
                                 let outcome = if error.starts_with("workspace.cleanup.deferred:") {
                                     DiskCleanupOutcome::Deferred(error.clone())
                                 } else {
@@ -2792,6 +2921,25 @@ where
                                 );
                                 delivery_errors.push(error);
                             }
+                            }
+                        } else {
+                            let detail = CLEANUP_QUIESCENCE_UNPROVEN.to_owned();
+                            context
+                                .spool_dir
+                                .delivery_root
+                                .abandon_for_janitor(detail.clone());
+                            if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
+                                root: DiskRootId::Delivery,
+                                outcome: DiskCleanupOutcome::Deferred(detail.clone()),
+                            }) {
+                                return Err(
+                                    "disk lifecycle rejected deferred delivery cleanup".to_owned(),
+                                );
+                            }
+                            delivery_errors.push(format!(
+                                "{}: {detail}",
+                                hoimin_core::WORKSPACE_CLEANUP_DEFERRED
+                            ));
                         }
                         let mut terminal_errors = finalization_errors.clone();
                         let output = match emitted {
@@ -3375,9 +3523,11 @@ where
                 }
                 #[cfg(test)]
                 let cleanup_result = if control.take_execution_cleanup_deferred() {
-                    ManagedCleanupOutcome::Deferred(
-                        "workspace.cleanup.deferred: injected execution cleanup timeout".to_owned(),
-                    )
+                    ManagedCleanupOutcome::Deferred {
+                        record: None,
+                        error: "workspace.cleanup.deferred: injected execution cleanup timeout"
+                            .to_owned(),
+                    }
                 } else {
                     cleanup_managed_root(
                         Arc::clone(&context.spool_dir.execution_root),
@@ -3414,7 +3564,8 @@ where
                             )),
                         }
                     }
-                    ManagedCleanupOutcome::Failed(error) => {
+                    ManagedCleanupOutcome::Failed { record, error } => {
+                        execution_cleanup_record = record;
                         if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                             root: DiskRootId::Execution,
                             outcome: DiskCleanupOutcome::Failed(error.clone()),
@@ -3429,7 +3580,8 @@ where
                             error,
                         ));
                     }
-                    ManagedCleanupOutcome::Deferred(error) => {
+                    ManagedCleanupOutcome::Deferred { record, error } => {
+                        execution_cleanup_record = record;
                         if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                             root: DiskRootId::Execution,
                             outcome: DiskCleanupOutcome::Deferred(error.clone()),
@@ -3696,7 +3848,6 @@ where
                 report.secondary_errors,
             )
         };
-        let process_safe = process_reaped && output_drained;
         let monitor_joined = if execution_safety_proven {
             true
         } else if let Some(monitor) = disk_monitor.as_ref() {
@@ -3742,12 +3893,19 @@ where
             finalization_errors
                 .push("disk lifecycle rejected outer monitor join completion".to_owned());
         }
+        let safe_to_remove = cleanup_quiescence_proven([
+            process_reaped,
+            output_drained,
+            monitor_joined,
+            final_measurement_joined,
+        ]) && lifecycle_safety_succeeded(&disk_lifecycle);
         let close = close_context_resources(
             &mut context,
             shutdown_budget
                 .as_ref()
                 .expect("outer finalization established a shutdown budget"),
             shutdown_expiry_reported,
+            safe_to_remove,
             Box::new(|| {}),
         )
         .await;
@@ -3773,7 +3931,6 @@ where
         for error in finalization_errors.drain(..).chain(process_errors) {
             run_result = append_finalization_error(run_result, error);
         }
-        let safe_to_remove = process_safe && monitor_joined && final_measurement_joined;
         if safe_to_remove {
             if !execution_cleaned && !execution_cleanup_attempted {
                 context.analyzer.release_candidate_spool();
@@ -3801,8 +3958,8 @@ where
                             }
                             execution_cleaned = true;
                         }
-                        ManagedCleanupOutcome::Failed(error)
-                        | ManagedCleanupOutcome::Deferred(error) => {
+                        ManagedCleanupOutcome::Failed { error, .. }
+                        | ManagedCleanupOutcome::Deferred { error, .. } => {
                             let outcome = if error.starts_with("workspace.cleanup.deferred:") {
                                 DiskCleanupOutcome::Deferred(error.clone())
                             } else {
@@ -3860,7 +4017,7 @@ where
                     match cleanup_managed_root(Arc::clone(&context.spool_dir.delivery_root), budget)
                         .await
                     {
-                        ManagedCleanupOutcome::Clean(_) => {
+                        ManagedCleanupOutcome::Clean(cleanup) => {
                             if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                                 root: DiskRootId::Delivery,
                                 outcome: DiskCleanupOutcome::Clean,
@@ -3872,11 +4029,14 @@ where
                                 );
                             }
                             delivery_cleaned = true;
+                            for error in delivery_cleanup_secondary_errors(&cleanup) {
+                                run_result = append_finalization_error(run_result, error);
+                            }
                             #[cfg(test)]
                             control.observe_finalization_event("delivery_root_absent");
                         }
-                        ManagedCleanupOutcome::Failed(error)
-                        | ManagedCleanupOutcome::Deferred(error) => {
+                        ManagedCleanupOutcome::Failed { error, .. }
+                        | ManagedCleanupOutcome::Deferred { error, .. } => {
                             let outcome = if error.starts_with("workspace.cleanup.deferred:") {
                                 DiskCleanupOutcome::Deferred(error.clone())
                             } else {
@@ -3921,7 +4081,7 @@ where
                     && disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                         root: DiskRootId::Execution,
                         outcome: DiskCleanupOutcome::Deferred(
-                            "process/output drain or monitor join incomplete".to_owned(),
+                            CLEANUP_QUIESCENCE_UNPROVEN.to_owned(),
                         ),
                     });
                 if !completed {
@@ -3932,9 +4092,10 @@ where
                 }
             }
             if !execution_cleaned {
-                context.spool_dir.execution_root.abandon_for_janitor(
-                    "process/output drain or disk monitor join was not proven".to_owned(),
-                );
+                context
+                    .spool_dir
+                    .execution_root
+                    .abandon_for_janitor(CLEANUP_QUIESCENCE_UNPROVEN.to_owned());
             }
             if disk_lifecycle.snapshot().report == DiskComponentState::Pending {
                 let _ = disk_lifecycle.apply(DiskLifecycleEvent::ReportFailed);
@@ -3948,7 +4109,7 @@ where
                     && disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                         root: DiskRootId::Delivery,
                         outcome: DiskCleanupOutcome::Deferred(
-                            "process/output drain or monitor join incomplete".to_owned(),
+                            CLEANUP_QUIESCENCE_UNPROVEN.to_owned(),
                         ),
                     });
                 if !completed {
@@ -3959,14 +4120,17 @@ where
                 }
             }
             if !delivery_cleaned {
-                context.spool_dir.delivery_root.abandon_for_janitor(
-                    "process/output drain or disk monitor join was not proven".to_owned(),
-                );
+                context
+                    .spool_dir
+                    .delivery_root
+                    .abandon_for_janitor(CLEANUP_QUIESCENCE_UNPROVEN.to_owned());
             }
             run_result = append_finalization_error(
                 run_result,
-                "workspace.cleanup.deferred: process/output drain or monitor join incomplete"
-                    .to_owned(),
+                format!(
+                    "{}: {CLEANUP_QUIESCENCE_UNPROVEN}",
+                    hoimin_core::WORKSPACE_CLEANUP_DEFERRED
+                ),
             );
         }
         if let Some(path) = metrics_path {
@@ -4397,7 +4561,7 @@ fn finish_failed_event_drain(
 }
 
 struct ResourceCloseCompletion {
-    workspace: WorkspaceHandler,
+    workspace: Option<WorkspaceHandler>,
     workspace_result: Result<(), String>,
     process_result: Result<(), String>,
 }
@@ -4426,10 +4590,11 @@ fn detach_resource_cleanup(
 
 fn detach_context_resources<Stdout, Stderr>(
     context: &mut ShellContext<Stdout, Stderr>,
+    close_workspace: bool,
     before_start: OwnedStartHook,
 ) {
     detach_resource_cleanup(
-        context.workspace.take(),
+        close_workspace.then(|| context.workspace.take()).flatten(),
         Arc::clone(&context.process),
         before_start,
     );
@@ -4439,14 +4604,18 @@ async fn close_context_resources<Stdout, Stderr>(
     context: &mut ShellContext<Stdout, Stderr>,
     budget: &ShutdownBudget,
     shutdown_already_expired: bool,
+    close_workspace: bool,
     before_start: OwnedStartHook,
 ) -> ResourceCloseResults
 where
     Stdout: Write,
     Stderr: Write,
 {
+    if !close_workspace && let Some(workspace) = context.workspace.as_mut() {
+        workspace.retain_workers_for_janitor();
+    }
     if shutdown_already_expired {
-        detach_context_resources(context, before_start);
+        detach_context_resources(context, close_workspace, before_start);
         return ResourceCloseResults {
             workspace: Ok(()),
             process: Ok(()),
@@ -4455,26 +4624,33 @@ where
     }
     if tokio::time::Instant::now() >= budget.deadline() {
         let expiry = budget.expiry_error(0, 0);
-        detach_context_resources(context, before_start);
+        detach_context_resources(context, close_workspace, before_start);
         return ResourceCloseResults {
             workspace: Ok(()),
             process: Ok(()),
             expiry: Some(expiry),
         };
     }
-    let Some(workspace) = context.workspace.take() else {
-        return ResourceCloseResults {
-            workspace: Err("workspace ownership is unavailable during final cleanup".to_owned()),
-            process: Ok(()),
-            expiry: None,
+    let workspace = if close_workspace {
+        let Some(workspace) = context.workspace.take() else {
+            return ResourceCloseResults {
+                workspace: Err("workspace ownership is unavailable during final cleanup".to_owned()),
+                process: Ok(()),
+                expiry: None,
+            };
         };
+        Some(workspace)
+    } else {
+        None
     };
     let process = Arc::clone(&context.process);
     let mut task = tokio::task::spawn_blocking(move || {
         before_start();
         let mut workspace = workspace;
         let process_result = process.close().map_err(|error| error.to_string());
-        let workspace_result = workspace.close().map_err(|error| error.to_string());
+        let workspace_result = workspace.as_mut().map_or(Ok(()), |workspace| {
+            workspace.close().map_err(|error| error.to_string())
+        });
         ResourceCloseCompletion {
             workspace,
             workspace_result,
@@ -4499,7 +4675,9 @@ where
             };
         }
     };
-    context.workspace = Some(completion.workspace);
+    if let Some(workspace) = completion.workspace {
+        context.workspace = Some(workspace);
+    }
     ResourceCloseResults {
         workspace: completion.workspace_result,
         process: completion.process_result,
@@ -5312,6 +5490,8 @@ mod tests {
             project.path().as_os_str().to_owned(),
             OsString::from("--file"),
             OsString::from("target.py"),
+            OsString::from("--format"),
+            OsString::from("json"),
             OsString::from("--allow-best-effort-memory"),
             OsString::from("--"),
         ];
@@ -5327,24 +5507,151 @@ mod tests {
         control.final_measurement_pause = Some(pause_hook);
         control.shutdown_grace = Duration::from_millis(30);
         let observed = control.clone();
+        let mut stdout = Vec::new();
         let release = std::thread::spawn(move || {
             pause.wait_until_entered();
             std::thread::sleep(Duration::from_millis(100));
             pause.release();
         });
 
-        let error = run_loop_with_control(config, Vec::new(), Vec::new(), control)
+        let error = run_loop_with_control(config, &mut stdout, Vec::new(), control)
             .await
             .expect_err("expired final measurement must defer recursive cleanup");
         release.join().unwrap();
 
-        assert!(error.contains("workspace.cleanup.deferred"), "{error}");
+        assert!(
+            error.contains(&format!(
+                "{}: {CLEANUP_QUIESCENCE_UNPROVEN}",
+                hoimin_core::WORKSPACE_CLEANUP_DEFERRED
+            )),
+            "{error}"
+        );
         let roots = observed.managed_root_paths();
         assert_eq!(roots.len(), 2);
         assert!(
             roots.iter().all(|root| root.exists()),
             "cleanup raced an unjoined final measurement: {roots:?}"
         );
+        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let execution_cleanup = report["summary"]["disk"]["cleanup"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|record| record["root_id"] == "execution")
+            .expect("execution cleanup evidence");
+        assert_eq!(execution_cleanup["status"], "deferred");
+        assert_eq!(execution_cleanup["remaining_root"], roots[0].as_str());
+    }
+
+    #[tokio::test]
+    async fn unproven_process_reap_is_published_as_the_lifecycle_stop() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
+        let mut args = vec![
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--format"),
+            OsString::from("json"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+        ];
+        args.extend(successful_test_command());
+        let config = crate::cli::parse_config_from(args).unwrap();
+        let control = RunControl::new();
+        control.inject_process_reap_failure();
+        let observed = control.clone();
+        let mut stdout = Vec::new();
+
+        let error = run_loop_with_control(config, &mut stdout, Vec::new(), control)
+            .await
+            .expect_err("unproven process reap must leave cleanup incomplete");
+
+        assert!(
+            error.contains(hoimin_core::WORKSPACE_CLEANUP_DEFERRED),
+            "{error}"
+        );
+        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(
+            report["summary"]["disk"]["stop"]["code"],
+            hoimin_core::PROCESS_LIFECYCLE_FAILED
+        );
+        assert_eq!(
+            report["summary"]["disk"]["stop"]["message"],
+            "process drain failed"
+        );
+        assert!(
+            observed
+                .managed_root_paths()
+                .iter()
+                .all(|root| root.exists()),
+            "unproven reap removed an owned root"
+        );
+    }
+
+    #[tokio::test]
+    async fn unproven_process_reap_is_secondary_to_an_existing_disk_stop() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
+        let mut args = vec![
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--format"),
+            OsString::from("json"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+        ];
+        args.extend(successful_test_command());
+        let config = crate::cli::parse_config_from(args).unwrap();
+        let control = RunControl::with_disk_meter(FixedDiskMeter(MeterReading {
+            owned_bytes: 0,
+            available_by_filesystem: BTreeMap::from([(FilesystemKey(7), 1)]),
+            conservative_entries: false,
+            elapsed: Duration::from_millis(1),
+        }));
+        control.inject_process_reap_failure();
+        let mut stdout = Vec::new();
+
+        let error = run_loop_with_control(config, &mut stdout, Vec::new(), control)
+            .await
+            .expect_err("disk stop plus unproven reap must remain incomplete");
+
+        assert!(
+            error.contains(hoimin_core::WORKSPACE_CLEANUP_DEFERRED),
+            "{error}"
+        );
+        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let stop = &report["summary"]["disk"]["stop"];
+        assert_eq!(stop["code"], hoimin_core::FILESYSTEM_RESERVE_REACHED);
+        assert!(
+            stop["secondary"].as_array().unwrap().iter().any(
+                |secondary| secondary["Error"]["code"] == hoimin_core::PROCESS_LIFECYCLE_FAILED
+            ),
+            "{stop}"
+        );
+    }
+
+    #[test]
+    fn cleanup_quiescence_requires_the_final_measurement_to_join() {
+        assert!(cleanup_quiescence_proven([true, true, true, true]));
+        assert!(!cleanup_quiescence_proven([true, true, true, false]));
+    }
+
+    #[test]
+    fn later_success_cannot_erase_a_failed_lifecycle_component() {
+        let mut lifecycle = ShellDiskLifecycle::new([]).unwrap();
+        assert!(lifecycle.apply(DiskLifecycleEvent::ProcessDrainSucceeded));
+        assert!(lifecycle.apply(DiskLifecycleEvent::OutputDrainSucceeded));
+        assert!(lifecycle.apply(DiskLifecycleEvent::MonitorJoinFailed));
+
+        assert!(!lifecycle_safety_succeeded(&lifecycle));
     }
 
     #[tokio::test]
@@ -5907,6 +6214,29 @@ mod tests {
     }
 
     #[test]
+    fn shell_root_setup_carries_the_startup_janitor_reclaim_count() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        drop(coordinator);
+        let abandoned = parent
+            .join("hoimin-workspaces-v1")
+            .join(format!(".deleting-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&abandoned).unwrap();
+
+        let (rollback, execution, delivery, execution_spool, delivery_spool, reclaimed) =
+            create_managed_shell_roots_in(parent, &|_| {}).unwrap();
+
+        assert_eq!(reclaimed, 1);
+        assert!(!abandoned.exists());
+        drop(delivery_spool);
+        drop(execution_spool);
+        drop(delivery);
+        drop(execution);
+        drop(rollback);
+    }
+
+    #[test]
     fn every_post_publication_setup_boundary_rolls_back_on_unwind() {
         for selected in [
             ShellSetupBoundary::RootsCreated,
@@ -6383,7 +6713,8 @@ mod tests {
         );
         let started = Instant::now();
 
-        let close = close_context_resources(&mut context, &budget, false, Box::new(|| {})).await;
+        let close =
+            close_context_resources(&mut context, &budget, false, true, Box::new(|| {})).await;
 
         assert!(started.elapsed() < Duration::from_millis(200));
         assert!(
@@ -6396,6 +6727,205 @@ mod tests {
             "detached cleanup owns the workspace after expiry"
         );
         wait_until_path_is_removed(&worker_root).await;
+    }
+
+    #[tokio::test]
+    async fn unsafe_final_close_never_detaches_or_removes_the_worker_workspace() {
+        let (_project, mut context, _candidate, _create) = context_with_worker().await;
+        let worker_root = context.workspace().worker(0).unwrap().root().to_owned();
+        let execution_root = Arc::clone(&context.spool_dir.execution_root);
+        let delivery_root = Arc::clone(&context.spool_dir.delivery_root);
+        let budget = ShutdownBudget::for_total_timeout_with_grace(
+            tokio::time::Instant::now() - Duration::from_secs(1),
+            Duration::ZERO,
+        );
+
+        let close =
+            close_context_resources(&mut context, &budget, false, false, Box::new(|| {})).await;
+
+        assert!(close.expiry.is_some());
+        assert!(
+            context.workspace.is_some(),
+            "unproven process/output quiescence must retain workspace ownership"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(
+            worker_root.exists(),
+            "detached resource close must not delete a live worker workspace"
+        );
+        drop(context);
+        assert!(
+            worker_root.exists(),
+            "dropping retained workspace ownership must leave cleanup to the janitor"
+        );
+        let cleanup_budget = ShutdownBudget::for_total_timeout_with_grace(
+            tokio::time::Instant::now() + Duration::from_secs(2),
+            Duration::ZERO,
+        );
+        assert!(matches!(
+            cleanup_managed_root(execution_root, &cleanup_budget).await,
+            ManagedCleanupOutcome::Clean(_)
+        ));
+        let cleanup_budget = ShutdownBudget::for_total_timeout_with_grace(
+            tokio::time::Instant::now() + Duration::from_secs(2),
+            Duration::ZERO,
+        );
+        assert!(matches!(
+            cleanup_managed_root(delivery_root, &cleanup_budget).await,
+            ManagedCleanupOutcome::Clean(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn dropping_context_without_finalization_leaves_managed_workers_for_the_janitor() {
+        let (_project, context, _candidate, _create) = context_with_worker().await;
+        let worker_root = context.workspace().worker(0).unwrap().root().to_owned();
+        let execution_root = Arc::clone(&context.spool_dir.execution_root);
+        let delivery_root = Arc::clone(&context.spool_dir.delivery_root);
+
+        drop(context);
+
+        assert!(
+            worker_root.exists(),
+            "Drop must not recursively delete a managed worker without lifecycle proof"
+        );
+        let cleanup_budget = ShutdownBudget::for_total_timeout_with_grace(
+            tokio::time::Instant::now() + Duration::from_secs(2),
+            Duration::ZERO,
+        );
+        assert!(matches!(
+            cleanup_managed_root(execution_root, &cleanup_budget).await,
+            ManagedCleanupOutcome::Clean(_)
+        ));
+        let cleanup_budget = ShutdownBudget::for_total_timeout_with_grace(
+            tokio::time::Instant::now() + Duration::from_secs(2),
+            Duration::ZERO,
+        );
+        assert!(matches!(
+            cleanup_managed_root(delivery_root, &cleanup_budget).await,
+            ManagedCleanupOutcome::Clean(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn managed_cleanup_outcome_preserves_the_deferred_cleanup_record() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root =
+            Arc::new(ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap());
+        let child = root.create_child("live-").unwrap();
+        let budget = ShutdownBudget::for_total_timeout_with_grace(
+            tokio::time::Instant::now() + Duration::from_secs(1),
+            Duration::from_secs(1),
+        );
+
+        let outcome = cleanup_managed_root(Arc::clone(&root), &budget).await;
+
+        let ManagedCleanupOutcome::Deferred {
+            record: Some(record),
+            error,
+        } = outcome
+        else {
+            panic!("live managed child did not produce a recorded deferred cleanup")
+        };
+        assert_eq!(record.status, hoimin_core::DiskCleanupStatus::Deferred);
+        assert_eq!(record.remaining_root.as_deref(), Some(root.path()));
+        assert!(error.starts_with("workspace.cleanup.deferred:"), "{error}");
+        drop(child);
+        let _ = root.cleanup(Duration::from_secs(1));
+    }
+
+    #[tokio::test]
+    async fn managed_cleanup_record_preserves_cleanup_ready_marker_failure() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root =
+            Arc::new(ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap());
+        let child = root.create_child("live-").unwrap();
+        let marker = root.path().join(".hoimin-cleanup-ready.json");
+        std::fs::create_dir(&marker).unwrap();
+        let budget = ShutdownBudget::for_total_timeout_with_grace(
+            tokio::time::Instant::now() + Duration::from_secs(1),
+            Duration::from_secs(1),
+        );
+
+        let outcome = cleanup_managed_root(Arc::clone(&root), &budget).await;
+
+        let ManagedCleanupOutcome::Deferred {
+            record: Some(record),
+            ..
+        } = outcome
+        else {
+            panic!("live managed child did not produce a recorded deferred cleanup")
+        };
+        assert!(
+            record
+                .details
+                .iter()
+                .any(|detail| detail.starts_with("cleanup-ready: ")),
+            "cleanup-ready failure was missing from {record:?}"
+        );
+        drop(child);
+        std::fs::remove_dir(marker).unwrap();
+        let _ = root.cleanup(Duration::from_secs(1));
+    }
+
+    #[tokio::test]
+    async fn expired_cleanup_record_preserves_cleanup_ready_marker_failure() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root =
+            Arc::new(ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap());
+        let marker = root.path().join(".hoimin-cleanup-ready.json");
+        std::fs::create_dir(&marker).unwrap();
+        let marker_error = root.mark_cleanup_ready().unwrap_err().to_string();
+        let record = root.abandon_for_janitor("managed-root cleanup budget expired".to_owned());
+
+        let outcome = attach_cleanup_ready_error(
+            ManagedCleanupOutcome::Deferred {
+                record: Some(record),
+                error: "workspace.cleanup.deferred: managed-root cleanup budget expired".to_owned(),
+            },
+            Some(&marker_error),
+        );
+
+        let ManagedCleanupOutcome::Deferred {
+            record: Some(record),
+            error,
+        } = outcome
+        else {
+            panic!("expired cleanup did not preserve its deferred record")
+        };
+        assert!(
+            record
+                .details
+                .iter()
+                .any(|detail| detail.starts_with("cleanup-ready: ")),
+            "cleanup-ready failure was missing from {record:?}"
+        );
+        assert!(error.contains("cleanup-ready: "), "{error}");
+        std::fs::remove_dir(marker).unwrap();
+        let _ = root.cleanup(Duration::from_secs(1));
+    }
+
+    #[test]
+    fn clean_delivery_cleanup_surfaces_cleanup_ready_secondary() {
+        let record = CleanupRecord {
+            status: hoimin_core::DiskCleanupStatus::Clean,
+            examined_entries: 1,
+            removed_entries: 1,
+            details: vec!["cleanup-ready: injected marker failure".to_owned()],
+            omitted_detail_count: 0,
+            remaining_root: None,
+        };
+
+        assert_eq!(
+            delivery_cleanup_secondary_errors(&record),
+            ["workspace.cleanup.failed: cleanup-ready: injected marker failure"]
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -6423,6 +6953,7 @@ mod tests {
                 &mut context,
                 &budget,
                 false,
+                true,
                 Box::new(move || {
                     entered_tx.send(()).unwrap();
                     release_rx.recv().unwrap();

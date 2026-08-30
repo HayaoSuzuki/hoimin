@@ -33,6 +33,62 @@ fn original_schema_v3_report_fixture_matches_the_published_schema() {
     assert_report_optionals(&report, false);
 }
 
+#[test]
+fn disk_stop_secondary_evidence_matches_the_published_event_schema() {
+    let root = repo_root();
+    let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
+    let mut disk = default_disk_summary();
+    disk.stop = Some(hoimin_core::DiskStopReport {
+        code: hoimin_core::FILESYSTEM_RESERVE_REACHED.to_owned(),
+        owned_bytes: Some(17),
+        available_bytes: Some(5),
+        message: None,
+        secondary: vec![
+            hoimin_core::DiskSecondary::Observation {
+                reason: hoimin_core::DiskStopReason::WorkspaceSizeExceeded,
+                value: hoimin_core::DiskObservation {
+                    owned_bytes: 17,
+                    available_bytes: 5,
+                    measured_in: std::time::Duration::from_millis(3),
+                },
+            },
+            hoimin_core::DiskSecondary::Error {
+                code: "process.reap.failed".to_owned(),
+                message: "fixture secondary error".to_owned(),
+            },
+        ],
+    });
+    let event = serde_json::to_value(OutputEvent::RunFinished(RunSummary {
+        schema_version: REPORT_SCHEMA_VERSION,
+        sequence: 1,
+        run_id: "secondary-schema".to_owned(),
+        counts: MutationSummary::default(),
+        complete: false,
+        exit_code: 2,
+        disk,
+        verification_selection: None,
+    }))
+    .unwrap();
+
+    assert_schema_valid(&event_schema, &event, &event_schema);
+}
+
+#[test]
+fn disk_filesystem_schema_requires_a_delta_for_two_endpoints() {
+    let root = repo_root();
+    let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
+    let filesystem_schema = &event_schema["$defs"]["diskFilesystem"];
+    let incomplete = serde_json::json!({
+        "key": "workspace",
+        "start_available_bytes": 1024,
+        "minimum_available_bytes": 512,
+        "end_available_bytes": 768,
+        "available_bytes_change": null
+    });
+
+    assert_schema_invalid(filesystem_schema, &incomplete, &event_schema);
+}
+
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 struct GoldenReportDocument {
     schema_version: u32,
@@ -44,9 +100,14 @@ struct GoldenReportDocument {
 
 #[test]
 fn current_report_golden_matches_typed_semantic_regeneration() {
-    let root = repo_root().join("crates/hoimin-cli/tests/golden/reports/schema-v3-current.json");
-    let checked: GoldenReportDocument =
-        serde_json::from_slice(&std::fs::read(&root).unwrap()).unwrap();
+    let root = repo_root();
+    let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
+    let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
+    let path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v3-current.json");
+    let checked_bytes = std::fs::read(&path).unwrap();
+    let checked: GoldenReportDocument = serde_json::from_slice(&checked_bytes).unwrap();
+    let checked_value: serde_json::Value = serde_json::from_slice(&checked_bytes).unwrap();
+    assert_schema_valid(&result_schema, &checked_value, &event_schema);
     let regenerated: GoldenReportDocument =
         serde_json::from_slice(&render_json_report(&all_optional_report_events(true))).unwrap();
 
@@ -57,7 +118,9 @@ fn current_report_golden_matches_typed_semantic_regeneration() {
 
 #[test]
 fn report_event_goldens_are_typed_complete_sequences() {
-    let root = repo_root().join("crates/hoimin-cli/tests/golden/events");
+    let repo = repo_root();
+    let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
+    let root = repo.join("crates/hoimin-cli/tests/golden/events");
     for (name, current) in [
         ("schema-v3-original.jsonl", false),
         ("schema-v3-current.jsonl", true),
@@ -65,7 +128,12 @@ fn report_event_goldens_are_typed_complete_sequences() {
         let text = std::fs::read_to_string(root.join(name)).unwrap();
         let checked = text
             .lines()
-            .map(|line| serde_json::from_str::<OutputEvent>(line).unwrap())
+            .map(|line| {
+                let event = serde_json::from_str::<OutputEvent>(line).unwrap();
+                let value: serde_json::Value = serde_json::from_str(line).unwrap();
+                assert_schema_valid(&event_schema, &value, &event_schema);
+                event
+            })
             .collect::<Vec<_>>();
         let mut sequence = ReportSequence::new();
         for event in &checked {
@@ -78,14 +146,63 @@ fn report_event_goldens_are_typed_complete_sequences() {
 
 #[test]
 fn current_event_golden_matches_typed_semantic_regeneration() {
-    let path = repo_root().join("crates/hoimin-cli/tests/golden/events/schema-v3-current.jsonl");
+    let root = repo_root();
+    let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
+    let path = root.join("crates/hoimin-cli/tests/golden/events/schema-v3-current.jsonl");
     let checked = std::fs::read_to_string(path)
         .unwrap()
         .lines()
-        .map(|line| serde_json::from_str::<OutputEvent>(line).unwrap())
+        .map(|line| {
+            let event = serde_json::from_str::<OutputEvent>(line).unwrap();
+            let value: serde_json::Value = serde_json::from_str(line).unwrap();
+            assert_schema_valid(&event_schema, &value, &event_schema);
+            event
+        })
         .collect::<Vec<_>>();
 
     assert_eq!(checked, all_optional_report_events(true));
+}
+
+#[test]
+fn raw_goldens_reject_unknown_fields_before_typed_comparison() {
+    let root = repo_root();
+    let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
+    let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
+    let mut report =
+        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v3-current.json"));
+    report["unexpected"] = serde_json::json!(true);
+    assert_schema_invalid(&result_schema, &report, &event_schema);
+
+    let line = std::fs::read_to_string(
+        root.join("crates/hoimin-cli/tests/golden/events/schema-v3-current.jsonl"),
+    )
+    .unwrap();
+    let mut event: serde_json::Value = serde_json::from_str(line.lines().next().unwrap()).unwrap();
+    event["unexpected"] = serde_json::json!(true);
+    assert_schema_invalid(&event_schema, &event, &event_schema);
+}
+
+#[test]
+fn raw_goldens_reject_duplicate_known_fields_before_value_parsing() {
+    let root = repo_root();
+    let report_path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v3-current.json");
+    let report = std::fs::read_to_string(report_path).unwrap();
+    let duplicate_report = report.replacen(
+        "\"schema_version\": 3,",
+        "\"schema_version\": 3,\n  \"schema_version\": 3,",
+        1,
+    );
+    assert!(serde_json::from_str::<GoldenReportDocument>(&duplicate_report).is_err());
+
+    let event_path = root.join("crates/hoimin-cli/tests/golden/events/schema-v3-current.jsonl");
+    let events = std::fs::read_to_string(event_path).unwrap();
+    let first = events.lines().next().unwrap();
+    let duplicate_event = first.replacen(
+        "\"kind\":\"run_started\",",
+        "\"kind\":\"run_started\",\"kind\":\"run_started\",",
+        1,
+    );
+    assert!(serde_json::from_str::<OutputEvent>(&duplicate_event).is_err());
 }
 
 #[allow(

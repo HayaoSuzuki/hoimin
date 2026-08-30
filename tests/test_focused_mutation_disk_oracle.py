@@ -558,7 +558,7 @@ class FocusedMutationDiskOracleTests(unittest.TestCase):
         }
 
         self.assertEqual(executed_ids, expected_ids)
-        self.assertEqual(len(executed_ids), 21)
+        self.assertEqual(len(executed_ids), 22)
         failures = [
             result
             for result in results

@@ -177,7 +177,7 @@ def transition (state : State) (event : Event) : Option State :=
   if state.finished then none else
   match event with
   | .dispatch =>
-      if state.stop.isSome then none
+      if state.stop.isSome || state.processDrain != .pending then none
       else some { state with active := state.active + 1, dispatched := state.dispatched + 1 }
   | .observe owned maxOwned free minFree =>
       some (recordReasons state (observationReasons owned maxOwned free minFree))
@@ -217,7 +217,7 @@ def transition (state : State) (event : Event) : Option State :=
       else none
   | .requestCleanup root =>
       if !state.ownedRoots.contains root || state.cleanupRequested.contains root ||
-          !allSafetySettled state then none
+          state.active != 0 || !allSafetySettled state then none
       else if state.deliveryRoots.contains root &&
           !(state.report == .succeeded || state.report == .failed) then none
       else some { state with cleanupRequested := state.cleanupRequested ++ [root] }

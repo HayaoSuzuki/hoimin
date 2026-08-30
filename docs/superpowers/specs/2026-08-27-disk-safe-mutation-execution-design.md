@@ -491,6 +491,17 @@ The transition order has these rules:
     boundary permits only `deferred` or explicit `retained`; component failure being
     terminal for reporting does not make recursive removal safe.
 
+For portable Unix, reaping a root is not by itself proof that the owned process group is
+empty. Before any post-reap check, Hoimin moves the original PGID from its signalable
+live-root slot into a non-signalable verification slot. It then checks the original group
+without delivering a signal until either absence is proven or the bounded quiescence
+grace expires. That proof attempt is capped at 250 milliseconds so the existing fixed
+two-second shutdown grace still has time for output drains and completion delivery. This
+applies after both natural root exit and live-root termination. A
+still-live or unprovable group makes process reap unproven and therefore permits only
+deferred cleanup; Hoimin never sends a post-reap signal that could target a recycled
+process-group ID.
+
 The lifecycle machine is constructed only after a process/drain/monitor owner has
 started. Rule 10's pre-owner setup rollback is a separate owned-root operation guarded by
 the explicit “no owner started” proof; it is not encoded as a cleanup transition from a
@@ -503,6 +514,7 @@ Disk stops use typed infrastructure codes:
 | `workspace.size.exceeded` | Aggregate owned bytes reached the configured maximum |
 | `filesystem.reserve.reached` | Available bytes reached the configured reserve |
 | `disk.measurement.failed` | Hoimin could not establish a safe measurement |
+| `process.failed` | Process reap or process-tree quiescence was not proven |
 | `workspace.cleanup.failed` | Identity, permission, traversal, or absence verification failed |
 | `workspace.cleanup.deferred` | Safe cleanup stopped at a lifecycle or resource budget and will be retried |
 
@@ -853,9 +865,11 @@ failure and explores eight normalized event families: dispatch, observe, process
 terminal, output terminal, monitor terminal, cleanup, report terminal, and finish. At
 depth five the family-skeleton count is exactly
 `1 + 8 + 8² + 8³ + 8⁴ + 8⁵ = 37,449`. The generator does not expand every skeleton
-across a larger root/payload alphabet. It uses canonical representatives, proves root
-renaming and payload-class symmetry over the finite model, and adds one fixed witness
-for each noncanonical root and payload class. Fixed traces are not depth-five samples:
+across a larger root/payload alphabet. It uses canonical representatives and does not
+claim that the depth-five result covers arbitrary noncanonical traces. Finite
+root-renaming and payload-class sample checks provide regression evidence, while one
+fixed witness is tracked for each noncanonical root and payload class used by the
+correspondence corpus. Fixed traces are not depth-five samples:
 the corpus includes complete ordered success, report-failure/rejected-finish,
 delivery-cleanup-failure/rejected-finish, monitor-failure/deferred,
 unsafe-cleanup-rejection, retained, one-root Python completion, and Rust delivery-cleanup
@@ -868,9 +882,11 @@ serialization.
 The generator reports `bounded_skeleton_count=37449` and a separate fixed-case count;
 the tracked corpus total includes the fixed traces and is not asserted to equal 37,449.
 
-Lean proves these twelve model claims:
+Lean proves these fourteen model claims:
 
 - a stop request disables future dispatch;
+- a settled process-drain component disables future dispatch;
+- active work rejects a cleanup request;
 - the first terminal reason stays unchanged;
 - a simultaneous reserve/size observation keeps reserve primary and size secondary;
 - each owned root receives one cleanup request;

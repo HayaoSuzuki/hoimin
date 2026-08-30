@@ -9,6 +9,7 @@ pub const DISK_SAMPLE_INTERVAL: Duration = Duration::from_millis(250);
 pub const WORKSPACE_SIZE_EXCEEDED: &str = "workspace.size.exceeded";
 pub const FILESYSTEM_RESERVE_REACHED: &str = "filesystem.reserve.reached";
 pub const DISK_MEASUREMENT_FAILED: &str = "disk.measurement.failed";
+pub const PROCESS_LIFECYCLE_FAILED: &str = "process.failed";
 pub const WORKSPACE_CLEANUP_FAILED: &str = "workspace.cleanup.failed";
 pub const WORKSPACE_CLEANUP_DEFERRED: &str = "workspace.cleanup.deferred";
 
@@ -53,6 +54,7 @@ pub enum DiskStopReason {
     WorkspaceSizeExceeded,
     FilesystemReserveReached,
     MeasurementFailed,
+    ProcessFailed,
 }
 
 impl DiskStopReason {
@@ -62,6 +64,7 @@ impl DiskStopReason {
             Self::WorkspaceSizeExceeded => WORKSPACE_SIZE_EXCEEDED,
             Self::FilesystemReserveReached => FILESYSTEM_RESERVE_REACHED,
             Self::MeasurementFailed => DISK_MEASUREMENT_FAILED,
+            Self::ProcessFailed => PROCESS_LIFECYCLE_FAILED,
         }
     }
 }
@@ -315,7 +318,7 @@ pub fn apply_disk_lifecycle_event(
     }
     match event {
         DiskLifecycleEvent::DispatchRequested => {
-            if lifecycle.stop.is_some() || lifecycle.process_drain == DiskComponentState::Failed {
+            if lifecycle.stop.is_some() || lifecycle.process_drain != DiskComponentState::Pending {
                 return false;
             }
             let Some(active) = lifecycle.active.checked_add(1) else {
@@ -348,7 +351,20 @@ pub fn apply_disk_lifecycle_event(
             return complete_process_drain(lifecycle, DiskComponentState::Succeeded);
         }
         DiskLifecycleEvent::ProcessDrainFailed => {
-            return complete_process_drain(lifecycle, DiskComponentState::Failed);
+            if !complete_process_drain(lifecycle, DiskComponentState::Failed) {
+                return false;
+            }
+            record_failure(
+                lifecycle,
+                DiskFailure {
+                    code: PROCESS_LIFECYCLE_FAILED.to_owned(),
+                    reason: DiskStopReason::ProcessFailed,
+                    observation: None,
+                    message: Some("process drain failed".to_owned()),
+                    secondary: Vec::new(),
+                },
+            );
+            return true;
         }
         DiskLifecycleEvent::OutputDrainSucceeded => {
             return complete_component(&mut lifecycle.output_drain, DiskComponentState::Succeeded);
@@ -403,6 +419,7 @@ fn complete_component(component: &mut DiskComponentState, state: DiskComponentSt
 fn request_cleanup(lifecycle: &mut DiskLifecycle, root: DiskRootId) -> bool {
     if !lifecycle.owned_roots.contains(&root)
         || lifecycle.cleanup_requested.contains(&root)
+        || lifecycle.active != 0
         || !all_safety_settled(lifecycle)
         || (lifecycle.delivery_roots.contains(&root)
             && lifecycle.report == DiskComponentState::Pending)

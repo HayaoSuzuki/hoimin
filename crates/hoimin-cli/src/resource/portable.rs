@@ -169,6 +169,9 @@ pub(crate) struct PortableSupervisor {
     #[cfg(all(windows, test))]
     attach_fault: AttachFault,
     terminated: bool,
+    tree_quiescent: bool,
+    #[cfg(unix)]
+    reaped_process_group: Option<i32>,
     classification_failures: Arc<AtomicU8>,
     termination_failures: Arc<AtomicU8>,
 }
@@ -193,6 +196,9 @@ impl PortableSupervisor {
             #[cfg(all(windows, test))]
             attach_fault,
             terminated: false,
+            tree_quiescent: false,
+            #[cfg(unix)]
+            reaped_process_group: None,
             classification_failures,
             termination_failures,
         })
@@ -250,16 +256,22 @@ impl PortableSupervisor {
         suspended.assign(self.job as _, "assign spawned process to job")
     }
 
-    pub(crate) fn terminate(&mut self, live_root_owned: bool) -> Result<(), ResourceError> {
+    pub(crate) fn terminate(&mut self, live_root_owned: bool) -> Result<bool, ResourceError> {
         if self.terminated {
-            return Ok(());
+            return Ok(self.tree_quiescent);
         }
         #[cfg(unix)]
-        if !live_root_owned {
+        let reaped_root_quiescent = if live_root_owned {
+            false
+        } else {
             // Once the root is reaped its numeric process-group ID may be recycled.  Forget it
             // before any fallible cleanup so retries and Drop cannot signal a different group.
-            self.process_group = None;
-        }
+            probe_reaped_process_group(
+                &mut self.process_group,
+                &mut self.reaped_process_group,
+                process_group_is_absent,
+            )?
+        };
         #[cfg(not(unix))]
         let _ = live_root_owned;
         if self
@@ -288,8 +300,74 @@ impl PortableSupervisor {
         #[cfg(windows)]
         terminate_job(self.job)?;
         self.terminated = true;
-        Ok(())
+        #[cfg(unix)]
+        {
+            self.tree_quiescent = reaped_root_quiescent;
+        }
+        #[cfg(not(unix))]
+        {
+            self.tree_quiescent = true;
+        }
+        Ok(self.tree_quiescent)
     }
+
+    pub(crate) fn refresh_tree_quiescence_after_root_reap(
+        &mut self,
+    ) -> Result<bool, ResourceError> {
+        if self.tree_quiescent {
+            return Ok(true);
+        }
+        #[cfg(unix)]
+        {
+            self.tree_quiescent = probe_reaped_process_group(
+                &mut self.process_group,
+                &mut self.reaped_process_group,
+                process_group_is_absent,
+            )?;
+        }
+        #[cfg(not(unix))]
+        {
+            self.tree_quiescent = true;
+        }
+        Ok(self.tree_quiescent)
+    }
+}
+
+#[cfg(unix)]
+fn process_group_is_absent(group: i32) -> Result<bool, ResourceError> {
+    // SAFETY: signal zero performs existence/permission checking without delivering a signal.
+    let result = unsafe { libc::kill(-group, 0) };
+    if result == 0 {
+        return Ok(false);
+    }
+    let error = io::Error::last_os_error();
+    match error.raw_os_error() {
+        Some(libc::ESRCH) => Ok(true),
+        Some(libc::EPERM) => Ok(false),
+        _ => Err(ResourceError::io("probe portable process group", error)),
+    }
+}
+
+#[cfg(unix)]
+fn probe_reaped_process_group<F>(
+    process_group: &mut Option<i32>,
+    reaped_process_group: &mut Option<i32>,
+    probe: F,
+) -> Result<bool, ResourceError>
+where
+    F: FnOnce(i32) -> Result<bool, ResourceError>,
+{
+    if reaped_process_group.is_none() {
+        *reaped_process_group = process_group.take();
+    }
+    let Some(group) = *reaped_process_group else {
+        return Ok(false);
+    };
+    let absent = probe(group)?;
+    if absent {
+        *reaped_process_group = None;
+    }
+    Ok(absent)
 }
 
 impl Drop for PortableSupervisor {
@@ -311,12 +389,56 @@ mod unix_tests {
     use tokio::io::{AsyncRead, AsyncReadExt};
     use tokio::process::{Child, Command};
 
-    use super::PortableBackend;
+    use super::{PortableBackend, probe_reaped_process_group};
     use crate::process::wait_after_termination;
     use crate::resource::ProcessSupervisor;
 
     const EXPECTED_CPU_SOFT: &str = "HOIMIN_TEST_EXPECTED_CPU_SOFT";
     const EXPECTED_CPU_HARD: &str = "HOIMIN_TEST_EXPECTED_CPU_HARD";
+
+    #[test]
+    fn reaped_group_is_forgotten_before_probe_error_can_escape() {
+        let mut process_group = Some(41);
+        let mut reaped_process_group = None;
+
+        let error =
+            probe_reaped_process_group(&mut process_group, &mut reaped_process_group, |_| {
+                Err(super::ResourceError::io(
+                    "injected process-group probe",
+                    std::io::Error::other("injected probe failure"),
+                ))
+            })
+            .unwrap_err();
+
+        assert!(process_group.is_none());
+        assert_eq!(reaped_process_group, Some(41));
+        assert!(error.to_string().contains("injected probe failure"));
+    }
+
+    #[test]
+    fn reaped_group_is_retained_until_absence_is_proven() {
+        let mut process_group = Some(41);
+        let mut reaped_process_group = None;
+
+        assert!(
+            !probe_reaped_process_group(&mut process_group, &mut reaped_process_group, |_| Ok(
+                false
+            ),)
+            .unwrap()
+        );
+        assert_eq!(process_group, None);
+        assert_eq!(reaped_process_group, Some(41));
+
+        assert!(
+            probe_reaped_process_group(
+                &mut process_group,
+                &mut reaped_process_group,
+                |_| Ok(true),
+            )
+            .unwrap()
+        );
+        assert_eq!(reaped_process_group, None);
+    }
 
     async fn read_pipe<R>(mut pipe: R) -> Vec<u8>
     where
@@ -513,7 +635,7 @@ mod unix_tests {
         let outcome = match tokio::time::timeout(Duration::from_secs(10), child.wait()).await {
             Ok(Ok(status)) => supervisor
                 .terminate(false)
-                .map(|()| status)
+                .map(|_| status)
                 .map_err(|error| format!("disarm RLIMIT_CPU supervisor: {error}")),
             Ok(Err(error)) => {
                 diagnostics.extend(cleanup_probe(&mut supervisor, &mut child, true).await);
@@ -587,7 +709,7 @@ mod unix_tests {
         child.wait().await.unwrap();
         assert_eq!(child.id(), None);
 
-        supervisor.terminate(false).unwrap();
+        assert!(!supervisor.terminate(false).unwrap());
 
         tokio::time::timeout(Duration::from_secs(1), async {
             while !marker.exists() {

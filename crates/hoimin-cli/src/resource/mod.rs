@@ -181,13 +181,25 @@ impl ProcessSupervisor {
         }
     }
 
-    pub(crate) fn terminate(&mut self, live_root_owned: bool) -> Result<(), ResourceError> {
+    pub(crate) fn terminate(&mut self, live_root_owned: bool) -> Result<bool, ResourceError> {
         match self {
             Self::Portable(supervisor) => supervisor.terminate(live_root_owned),
             #[cfg(target_os = "linux")]
-            Self::Linux(supervisor) => supervisor.terminate(live_root_owned),
+            Self::Linux(supervisor) => supervisor.terminate(live_root_owned).map(|()| true),
             #[cfg(windows)]
-            Self::Windows(supervisor) => supervisor.terminate(),
+            Self::Windows(supervisor) => supervisor.terminate().map(|()| true),
+        }
+    }
+
+    pub(crate) fn refresh_tree_quiescence_after_root_reap(
+        &mut self,
+    ) -> Result<bool, ResourceError> {
+        match self {
+            Self::Portable(supervisor) => supervisor.refresh_tree_quiescence_after_root_reap(),
+            #[cfg(target_os = "linux")]
+            Self::Linux(_) => Ok(true),
+            #[cfg(windows)]
+            Self::Windows(_) => Ok(true),
         }
     }
 

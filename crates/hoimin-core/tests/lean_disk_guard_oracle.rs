@@ -262,6 +262,7 @@ fn reason_name(reason: DiskStopReason) -> &'static str {
         DiskStopReason::WorkspaceSizeExceeded => "workspace_size_exceeded",
         DiskStopReason::FilesystemReserveReached => "filesystem_reserve_reached",
         DiskStopReason::MeasurementFailed => "measurement_failed",
+        DiskStopReason::ProcessFailed => "process_failed",
     }
 }
 

@@ -102,7 +102,7 @@ fn every_rust_runtime_oracle_case_executes_and_matches_the_complete_observation(
     }
 
     assert_eq!(executed, expected);
-    assert_eq!(executed.len(), 11);
+    assert_eq!(executed.len(), 12);
 }
 
 #[test]
@@ -172,16 +172,15 @@ fn assert_terminal_observation(
     let actual_stop = snapshot
         .stop
         .as_ref()
-        .map(|failure| stop_name(failure.reason).to_owned())
-        .or_else(|| {
-            (snapshot.process_drain == DiskComponentState::Failed)
-                .then(|| "process_failed".to_owned())
-        });
+        .map(|failure| stop_name(failure.reason).to_owned());
     let secondary_stops = snapshot
         .secondary
         .iter()
         .filter_map(|secondary| match secondary {
             DiskSecondary::Observation { reason, .. } => Some(stop_name(*reason).to_owned()),
+            DiskSecondary::Error { code, .. } if code == hoimin_core::PROCESS_LIFECYCLE_FAILED => {
+                Some("process_failed".to_owned())
+            }
             DiskSecondary::Error { .. } => None,
         })
         .collect::<Vec<_>>();
@@ -410,5 +409,6 @@ fn stop_name(reason: DiskStopReason) -> &'static str {
         DiskStopReason::WorkspaceSizeExceeded => "workspace_size_exceeded",
         DiskStopReason::FilesystemReserveReached => "filesystem_reserve_reached",
         DiskStopReason::MeasurementFailed => "measurement_failed",
+        DiskStopReason::ProcessFailed => "process_failed",
     }
 }

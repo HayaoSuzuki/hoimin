@@ -312,6 +312,26 @@ class WorkflowRunner:
         return record
 
 
+class UnsafeProcessWorkflowRunner(CommandRunner):
+    def __init__(self, output: Path) -> None:
+        super().__init__(RunStore(output))
+        self.delegate = WorkflowRunner(output)
+
+    @property
+    def process_drain_safe(self) -> bool:
+        return False
+
+    def run(
+        self,
+        argv: Sequence[str],
+        cwd: Path,
+        timeout: float,
+        label: str,
+        **_kwargs: object,
+    ) -> CommandRecord:
+        return self.delegate.run(list(argv), cwd, timeout, label)
+
+
 def workflow_fixture(
     directory: str,
     *,
@@ -933,6 +953,55 @@ class FocusedMutationReportingTests(unittest.TestCase):
                 any(
                     item.get("code") == "disk.measurement.failed"
                     and "monitor did not join" in str(item.get("message"))
+                    for item in record.secondary_errors
+                )
+            )
+
+    def test_process_drain_failure_is_persisted_as_the_disk_stop(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            options, dependencies, _ = workflow_fixture(directory)
+            runner = UnsafeProcessWorkflowRunner(options.output)
+            dependencies = replace(dependencies, runner=runner)
+
+            record = run_workflow(options, dependencies)
+
+            self.assertEqual(record.disk_stop["code"], "process.failed")
+            self.assertEqual(record.disk_stop["reason"], "process_failed")
+            persisted = json.loads((options.output / "run.json").read_text())
+            self.assertEqual(persisted["disk_stop"], record.disk_stop)
+
+    def test_process_drain_failure_is_secondary_to_an_existing_disk_stop(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            options, dependencies, _ = workflow_fixture(directory)
+            runner = UnsafeProcessWorkflowRunner(options.output)
+            dependencies = replace(dependencies, runner=runner)
+
+            def threshold_before_process_drain(
+                guard: DiskGuard, timeout: float
+            ) -> bool:
+                del timeout
+                failure = DiskFailure(
+                    code="workspace.size.exceeded",
+                    reason=DiskStopReason.WORKSPACE_SIZE_EXCEEDED,
+                )
+                guard.failure = failure
+                guard.latest_failure = failure
+                return True
+
+            with mock.patch(
+                "tools.focused_mutation_support.disk.DiskGuard.stop_and_join",
+                autospec=True,
+                side_effect=threshold_before_process_drain,
+            ):
+                record = run_workflow(options, dependencies)
+
+            self.assertEqual(record.disk_stop["code"], "workspace.size.exceeded")
+            self.assertTrue(
+                any(
+                    item.get("code") == "process.failed"
+                    and item.get("reason") == "process_failed"
                     for item in record.secondary_errors
                 )
             )

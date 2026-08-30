@@ -1,8 +1,27 @@
 use hoimin_core::{
-    ByteSpan, ExitPolicy, MutantFinished, MutantStarted, MutationCandidate, MutationStatus,
-    OutputEvent, ProcessTermination, ReportSequence, ReportVersions, ResourceMode, RunStarted,
-    VerificationSelectionPolicy, exit_code, exit_code_for, summarize,
+    ByteSpan, DiskFilesystemReport, ExitPolicy, MutantFinished, MutantStarted, MutationCandidate,
+    MutationStatus, OutputEvent, ProcessTermination, ReportSequence, ReportVersions, ResourceMode,
+    RunStarted, VerificationSelectionPolicy, exit_code, exit_code_for, summarize,
 };
+
+#[test]
+fn disk_filesystem_report_rejects_missing_and_unknown_wire_fields() {
+    let missing = r#"{
+        "key":"workspace",
+        "minimum_available_bytes":10
+    }"#;
+    assert!(serde_json::from_str::<DiskFilesystemReport>(missing).is_err());
+
+    let unknown = r#"{
+        "key":"workspace",
+        "start_available_bytes":null,
+        "minimum_available_bytes":10,
+        "end_available_bytes":null,
+        "available_bytes_change":null,
+        "unexpected":true
+    }"#;
+    assert!(serde_json::from_str::<DiskFilesystemReport>(unknown).is_err());
+}
 use serde_json::json;
 
 #[test]
@@ -31,6 +50,86 @@ fn disk_filesystem_report_round_trips_through_json() {
     let decoded: OutputEvent = serde_json::from_slice(&encoded).unwrap();
 
     assert_eq!(decoded, event);
+}
+
+#[test]
+fn disk_filesystem_delta_preserves_the_full_u64_difference() {
+    let positive = hoimin_core::DiskFilesystemReport {
+        key: "positive".into(),
+        start_available_bytes: Some(0),
+        minimum_available_bytes: Some(0),
+        end_available_bytes: Some(u64::MAX),
+        available_bytes_change: Some(i128::from(u64::MAX)),
+    };
+    let negative = hoimin_core::DiskFilesystemReport {
+        key: "negative".into(),
+        start_available_bytes: Some(u64::MAX),
+        minimum_available_bytes: Some(0),
+        end_available_bytes: Some(0),
+        available_bytes_change: Some(-i128::from(u64::MAX)),
+    };
+
+    let mut disk = hoimin_core::DiskRunSummary::unmeasured(u64::MAX, 1);
+    disk.filesystems = vec![positive, negative];
+    let event = OutputEvent::RunFinished(hoimin_core::RunSummary {
+        schema_version: hoimin_core::REPORT_SCHEMA_VERSION,
+        sequence: 1,
+        run_id: "wide-delta".into(),
+        counts: summarize(&[]),
+        complete: true,
+        exit_code: 0,
+        disk,
+        verification_selection: None,
+    });
+
+    let encoded = serde_json::to_vec(&event).unwrap();
+    let decoded: OutputEvent = serde_json::from_slice(&encoded).unwrap();
+    assert_eq!(decoded, event);
+}
+
+#[test]
+fn disk_filesystem_report_rejects_a_non_numeric_delta() {
+    let malformed = json!({
+        "key": "workspace",
+        "start_available_bytes": 1024,
+        "minimum_available_bytes": 512,
+        "end_available_bytes": 768,
+        "available_bytes_change": "-256"
+    });
+
+    let decoded = serde_json::from_value::<hoimin_core::DiskFilesystemReport>(malformed);
+
+    assert!(decoded.is_err());
+}
+
+#[test]
+fn disk_filesystem_report_rejects_a_delta_that_disagrees_with_its_endpoints() {
+    let inconsistent = json!({
+        "key": "workspace",
+        "start_available_bytes": 1024,
+        "minimum_available_bytes": 512,
+        "end_available_bytes": 768,
+        "available_bytes_change": -255
+    });
+
+    let decoded = serde_json::from_value::<hoimin_core::DiskFilesystemReport>(inconsistent);
+
+    assert!(decoded.is_err());
+}
+
+#[test]
+fn disk_filesystem_report_requires_a_delta_when_both_endpoints_exist() {
+    let incomplete = json!({
+        "key": "workspace",
+        "start_available_bytes": 1024,
+        "minimum_available_bytes": 512,
+        "end_available_bytes": 768,
+        "available_bytes_change": null
+    });
+
+    let decoded = serde_json::from_value::<hoimin_core::DiskFilesystemReport>(incomplete);
+
+    assert!(decoded.is_err());
 }
 
 #[test]

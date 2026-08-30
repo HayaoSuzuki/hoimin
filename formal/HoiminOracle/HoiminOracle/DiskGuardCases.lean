@@ -114,6 +114,13 @@ def fixedCases : List OracleCase := [
   policyCase "policy_stopped_dispatch_rejected"
     [.observe 10 10 11 10, .dispatch]
     { State.initial with stop := some .sizeExceeded } false (some 1),
+  { id := "runtime_settled_process_drain_rejects_dispatch"
+    mode := .strict, layer := .runtime, implementationTargets := both
+    initial := State.initial [executionRoot]
+    events := [.processDrainSucceeded, .dispatch]
+    expected := expected
+      { State.initial [executionRoot] with processDrain := .succeeded }
+      false (some 1) },
   { id := "runtime_zero_active_python_completion"
     mode := .internalFixture, layer := .runtime, implementationTargets := pythonOnly
     initial := State.initial [executionRoot]
@@ -317,14 +324,14 @@ def corpusContractValid : Bool :=
 
 inductive BrokenFamily where
   | strictSize | reserveDirection | simultaneousSecondary | overwritePrimary
-  | postStopDispatch | duplicateCleanup | cleanOnCleanupError | earlyFinish
+  | postStopDispatch | postDrainDispatch | duplicateCleanup | cleanOnCleanupError | earlyFinish
   | cleanupBeforeSettlement | destructiveAfterFailure | finishAfterReportFailure
   | finishAfterDeliveryFailure
   deriving BEq, DecidableEq, Repr
 
 def allBrokenFamilies : List BrokenFamily := [
   .strictSize, .reserveDirection, .simultaneousSecondary, .overwritePrimary,
-  .postStopDispatch, .duplicateCleanup, .cleanOnCleanupError, .earlyFinish,
+  .postStopDispatch, .postDrainDispatch, .duplicateCleanup, .cleanOnCleanupError, .earlyFinish,
   .cleanupBeforeSettlement, .destructiveAfterFailure, .finishAfterReportFailure,
   .finishAfterDeliveryFailure]
 
@@ -350,6 +357,10 @@ def brokenStep (family : BrokenFamily) (state : State) (event : Event) : Option 
       | reason :: rest => accept { state with stop := some reason, secondaryStops := rest }
   | .postStopDispatch, .dispatch =>
       some { state with active := state.active + 1, dispatched := state.dispatched + 1 }
+  | .postDrainDispatch, .dispatch =>
+      if state.stop.isNone then
+        some { state with active := state.active + 1, dispatched := state.dispatched + 1 }
+      else step state event
   | .duplicateCleanup, .requestCleanup root =>
       if state.ownedRoots.contains root && allSafetySettled state then
         some { state with cleanupRequested := state.cleanupRequested ++ [root] }
@@ -393,6 +404,8 @@ def brokenWitness : BrokenFamily → State × List Event
   | .simultaneousSecondary => (State.initial, [.observe 10 10 10 10])
   | .overwritePrimary => (State.initial, [.meterFailed, .observe 10 10 11 10])
   | .postStopDispatch => (State.initial, [.observe 10 10 11 10, .dispatch])
+  | .postDrainDispatch =>
+      (State.initial [executionRoot], [.processDrainSucceeded, .dispatch])
   | .duplicateCleanup =>
       (State.initial [executionRoot], [.processDrainSucceeded, .outputDrained,
         .monitorJoined, .requestCleanup executionRoot, .requestCleanup executionRoot])

@@ -38,6 +38,7 @@ pub(crate) use disk::{
 pub use manifest::{ManifestEntry, WorkspaceManifest};
 pub(crate) use owned::{
     CleanupRecord, ManagedChild, ManagedRootCoordinator, ManagedRunRoot, OwnerKind,
+    truncate_diagnostic_detail,
 };
 use root::WorkerRoot;
 
@@ -448,6 +449,7 @@ pub struct WorkerWorkspace {
     worker: u32,
     charged: u64,
     cleanup_complete: bool,
+    cleanup_on_drop: bool,
 }
 
 impl WorkerWorkspace {
@@ -462,6 +464,7 @@ impl WorkerWorkspace {
         worker: u32,
         charged: u64,
     ) -> Self {
+        let cleanup_on_drop = !temp.is_managed();
         Self {
             temp,
             root,
@@ -472,6 +475,7 @@ impl WorkerWorkspace {
             worker,
             charged,
             cleanup_complete: false,
+            cleanup_on_drop,
         }
     }
 
@@ -556,11 +560,15 @@ impl WorkerWorkspace {
             Err(error) => Err(error),
         }
     }
+
+    fn retain_for_janitor(&mut self) {
+        self.cleanup_on_drop = false;
+    }
 }
 
 impl Drop for WorkerWorkspace {
     fn drop(&mut self) {
-        if !self.cleanup_complete && self.try_cleanup().is_err() {
+        if self.cleanup_on_drop && !self.cleanup_complete && self.try_cleanup().is_err() {
             return;
         }
         if fs::symlink_metadata(self.temp.path()).is_ok() {
@@ -1420,6 +1428,15 @@ impl WorkspaceHandler {
         self.pending_cleanup.clear();
         self.plan = None;
         Ok(())
+    }
+
+    pub(crate) fn retain_workers_for_janitor(&mut self) {
+        for workspace in self.workers.values_mut() {
+            workspace.retain_for_janitor();
+        }
+        for workspace in self.pending_cleanup.values_mut() {
+            workspace.retain_for_janitor();
+        }
     }
 
     #[must_use]

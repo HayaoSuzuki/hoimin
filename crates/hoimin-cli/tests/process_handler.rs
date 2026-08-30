@@ -925,6 +925,49 @@ mod portable {
         assert_eq!(zero.resource_mode, ResourceMode::BestEffort);
         assert_eq!(nonzero.id, EffectId(5));
         assert_eq!(nonzero.termination, ProcessTermination::Exit(7));
+        let drain = handler.drain_for_shutdown(Duration::from_secs(1)).await;
+        assert!(drain.all_reaped);
+        assert!(drain.output_drains_joined);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn naturally_exited_portable_root_does_not_claim_live_descendants_are_reaped() {
+        let output = tempfile::tempdir().unwrap();
+        let output_dir = Utf8Path::from_path(output.path()).unwrap();
+        let pid_file = output_dir.join("natural-exit-descendant.pid");
+        let guard = FixtureChildGuard::new(pid_file.clone());
+        let handler = portable_handler(output_dir);
+        let deadline = tokio::time::Instant::now() + REAL_PROCESS_FIXTURE_BUDGET;
+        let request = RunProcess {
+            id: EffectId(207),
+            worker: None,
+            run_id: None,
+            mutant_id: None,
+            argv: vec![
+                python_executable(),
+                utf8_arg("-c"),
+                utf8_arg(
+                    "import pathlib,subprocess,sys; child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)'],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); pathlib.Path(sys.argv[1]).write_text(str(child.pid))",
+                ),
+                native_arg(pid_file.as_std_path().as_os_str()),
+            ],
+            cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
+            limits: limits(Duration::from_secs(5), 64),
+        };
+
+        let (event, descendant_pid) = tokio::join!(
+            handler.handle(request),
+            wait_for_fixture_pid(&guard, deadline)
+        );
+
+        assert_eq!(event.unwrap().termination, ProcessTermination::Exit(0));
+        assert!(process_exists(descendant_pid));
+        let drain = handler.drain_for_shutdown(Duration::from_secs(1)).await;
+        assert!(
+            !drain.all_reaped,
+            "a live portable process group must keep destructive cleanup deferred"
+        );
     }
 
     #[cfg(unix)]
@@ -1140,6 +1183,9 @@ mod portable {
 
         assert_eq!(event.termination, ProcessTermination::Timeout);
         assert!(wait_until_process_stops_before(child_pid, deadline).await);
+        let drain = handler.drain_for_shutdown(Duration::from_secs(1)).await;
+        assert!(drain.all_reaped);
+        assert!(drain.output_drains_joined);
     }
 
     #[tokio::test]
@@ -1177,6 +1223,9 @@ mod portable {
 
         assert_eq!(event.unwrap().termination, ProcessTermination::Cancelled);
         assert!(wait_until_process_stops_before(child_pid, deadline).await);
+        let drain = handler.drain_for_shutdown(Duration::from_secs(1)).await;
+        assert!(drain.all_reaped);
+        assert!(drain.output_drains_joined);
     }
 
     #[tokio::test]

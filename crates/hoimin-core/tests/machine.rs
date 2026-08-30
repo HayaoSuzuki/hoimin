@@ -2066,6 +2066,45 @@ fn cleanup_failure_reports_before_attempting_incomplete_session_finalization() {
     assert_failed_cleanup_delivery_order(state, &effects);
 }
 
+#[test]
+fn deferred_cleanup_failure_is_reported_as_deferred() {
+    let (state, cleanup) = waiting_for_cleanup();
+    let (state, effects) = transition(
+        state,
+        RunEvent::EffectFailed(EffectFailed::other(
+            cleanup.id,
+            hoimin_core::WORKSPACE_CLEANUP_DEFERRED,
+            "process/output quiescence was not proven",
+        )),
+    )
+    .unwrap();
+    let diagnostic_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::EmitOutput(value)
+            if matches!(&value.event, hoimin_core::OutputEvent::Diagnostic(_)))
+    }));
+    let (_state, effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: diagnostic_id }),
+    )
+    .unwrap();
+    let report = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::EmitOutput(value)
+            if matches!(&value.event, hoimin_core::OutputEvent::RunFinished(_)))
+    });
+    let RunEffect::EmitOutput(report) = report else {
+        unreachable!()
+    };
+    let OutputEvent::RunFinished(summary) = &report.event else {
+        unreachable!()
+    };
+
+    assert_eq!(summary.disk.cleanup.len(), 1);
+    assert_eq!(
+        summary.disk.cleanup[0].status,
+        hoimin_core::DiskCleanupStatus::Deferred
+    );
+}
+
 fn assert_failed_cleanup_delivery_order(state: RunState, effects: &[RunEffect]) {
     let output = effects.iter().find_map(|effect| match effect {
         RunEffect::EmitOutput(value)

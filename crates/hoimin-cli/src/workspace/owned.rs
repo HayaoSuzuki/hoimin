@@ -1003,6 +1003,28 @@ mod tests {
     }
 
     #[test]
+    fn live_managed_child_keeps_the_root_lease_after_the_owner_is_dropped() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let child = root.create_child("worker-").unwrap();
+        let published = root.path().to_owned();
+        root.mark_cleanup_ready().unwrap();
+        drop(root);
+
+        let live = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
+
+        assert_eq!(live.reclaimed_roots, 0);
+        assert!(published.exists());
+
+        drop(child);
+        let settled = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
+        assert_eq!(settled.reclaimed_roots, 1);
+        assert!(!published.exists());
+    }
+
+    #[test]
     fn cleanup_ready_for_a_different_lease_identity_is_rejected() {
         let parent = tempfile::tempdir().unwrap();
         let parent = Utf8Path::from_path(parent.path()).unwrap();
@@ -2154,7 +2176,7 @@ pub(crate) struct ManagedRunRoot {
     coordinator_local_lock: Arc<Mutex<()>>,
     run_id: String,
     owner: OwnerKind,
-    lease: File,
+    lease: Arc<File>,
     heartbeat: Mutex<File>,
     lifecycle: Arc<Mutex<RootLifecycle>>,
 }
@@ -2243,7 +2265,7 @@ pub(crate) struct CleanupRecord {
 }
 
 impl CleanupRecord {
-    fn push_detail(&mut self, detail: String) {
+    pub(crate) fn push_detail(&mut self, detail: String) {
         if self.details.len() >= MAX_DIAGNOSTIC_DETAILS {
             self.omitted_detail_count = self.omitted_detail_count.saturating_add(1);
             return;
@@ -2524,7 +2546,7 @@ impl ManagedRunRoot {
             coordinator_local_lock: Arc::clone(&coordinator.local_lock),
             run_id: run_id.to_owned(),
             owner,
-            lease,
+            lease: Arc::new(lease),
             heartbeat: Mutex::new(heartbeat),
             lifecycle: Arc::new(Mutex::new(RootLifecycle::default())),
         })
@@ -2620,6 +2642,7 @@ impl ManagedRunRoot {
             parent: child_parent,
             name,
             lifecycle: Arc::clone(&self.lifecycle),
+            _lease: Arc::clone(&self.lease),
         })
     }
 
@@ -3147,7 +3170,7 @@ fn push_reclaim_detail(report: &mut ReclaimReport, detail: String) {
     report.details.push(detail);
 }
 
-fn truncate_diagnostic_detail(mut detail: String) -> (String, bool) {
+pub(crate) fn truncate_diagnostic_detail(mut detail: String) -> (String, bool) {
     if detail.len() <= MAX_DIAGNOSTIC_DETAIL_BYTES {
         return (detail, false);
     }
@@ -4679,6 +4702,9 @@ pub(crate) struct ManagedChild {
     parent: cap_std::fs::Dir,
     name: String,
     lifecycle: Arc<Mutex<RootLifecycle>>,
+    // A detached blocking workspace task may outlive its owner future. Holding the original
+    // locked file keeps startup janitors out until that task drops its managed child.
+    _lease: Arc<File>,
 }
 
 impl Drop for ManagedChild {

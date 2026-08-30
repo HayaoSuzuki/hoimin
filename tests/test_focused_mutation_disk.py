@@ -222,6 +222,11 @@ class DiskPolicyDecisionTests(unittest.TestCase):
             DiskLifecycleEvent.monitor_join_succeeded(),
         ):
             self.assertTrue(apply_disk_lifecycle_event(lifecycle, event))
+        self.assertFalse(
+            apply_disk_lifecycle_event(
+                lifecycle, DiskLifecycleEvent.dispatch_requested()
+            )
+        )
         self.assertTrue(
             apply_disk_lifecycle_event(
                 lifecycle,

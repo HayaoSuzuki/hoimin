@@ -140,13 +140,76 @@ pub struct DiskCapabilityProbe {
     pub observation: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct DiskFilesystemReport {
     pub key: String,
     pub start_available_bytes: Option<u64>,
     pub minimum_available_bytes: Option<u64>,
     pub end_available_bytes: Option<u64>,
-    pub available_bytes_change: Option<i64>,
+    pub available_bytes_change: Option<i128>,
+}
+
+impl<'de> Deserialize<'de> for DiskFilesystemReport {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            key: String,
+            start_available_bytes: Box<serde_json::value::RawValue>,
+            minimum_available_bytes: Box<serde_json::value::RawValue>,
+            end_available_bytes: Box<serde_json::value::RawValue>,
+            available_bytes_change: Box<serde_json::value::RawValue>,
+        }
+
+        let wire = Wire::deserialize(deserializer)?;
+        let start_available_bytes =
+            serde_json::from_str::<Option<u64>>(wire.start_available_bytes.get())
+                .map_err(serde::de::Error::custom)?;
+        let minimum_available_bytes =
+            serde_json::from_str::<Option<u64>>(wire.minimum_available_bytes.get())
+                .map_err(serde::de::Error::custom)?;
+        let end_available_bytes =
+            serde_json::from_str::<Option<u64>>(wire.end_available_bytes.get())
+                .map_err(serde::de::Error::custom)?;
+        let available_bytes_change =
+            serde_json::from_str::<Option<i128>>(wire.available_bytes_change.get())
+                .map_err(serde::de::Error::custom)?;
+        match (
+            start_available_bytes,
+            end_available_bytes,
+            available_bytes_change,
+        ) {
+            (Some(start), Some(end), Some(reported)) => {
+                let expected = i128::from(end) - i128::from(start);
+                if reported != expected {
+                    return Err(serde::de::Error::custom(format_args!(
+                        "available_bytes_change {reported} does not match end-start {expected}"
+                    )));
+                }
+            }
+            (Some(_), Some(_), None) => {
+                return Err(serde::de::Error::custom(
+                    "available_bytes_change is required when both endpoints are present",
+                ));
+            }
+            (_, _, Some(_)) => {
+                return Err(serde::de::Error::custom(
+                    "available_bytes_change requires both endpoints",
+                ));
+            }
+            (_, _, None) => {}
+        }
+        Ok(Self {
+            key: wire.key,
+            start_available_bytes,
+            minimum_available_bytes,
+            end_available_bytes,
+            available_bytes_change,
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -467,7 +530,7 @@ pub struct RunSummary {
     pub verification_selection: Option<VerificationSelection>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[allow(clippy::large_enum_variant)]
 pub enum OutputEvent {
@@ -477,6 +540,53 @@ pub enum OutputEvent {
     MutantFinished(MutantFinished),
     Diagnostic(Diagnostic),
     RunFinished(RunSummary),
+}
+
+impl<'de> Deserialize<'de> for OutputEvent {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        enum Kind {
+            RunStarted,
+            BaselineFinished,
+            MutantStarted,
+            MutantFinished,
+            Diagnostic,
+            RunFinished,
+        }
+
+        #[derive(Deserialize)]
+        struct Envelope {
+            kind: Kind,
+        }
+
+        let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+        let envelope =
+            serde_json::from_str::<Envelope>(raw.get()).map_err(serde::de::Error::custom)?;
+        match envelope.kind {
+            Kind::RunStarted => serde_json::from_str(raw.get())
+                .map(Self::RunStarted)
+                .map_err(serde::de::Error::custom),
+            Kind::BaselineFinished => serde_json::from_str(raw.get())
+                .map(Self::BaselineFinished)
+                .map_err(serde::de::Error::custom),
+            Kind::MutantStarted => serde_json::from_str(raw.get())
+                .map(Self::MutantStarted)
+                .map_err(serde::de::Error::custom),
+            Kind::MutantFinished => serde_json::from_str(raw.get())
+                .map(Self::MutantFinished)
+                .map_err(serde::de::Error::custom),
+            Kind::Diagnostic => serde_json::from_str(raw.get())
+                .map(Self::Diagnostic)
+                .map_err(serde::de::Error::custom),
+            Kind::RunFinished => serde_json::from_str(raw.get())
+                .map(Self::RunFinished)
+                .map_err(serde::de::Error::custom),
+        }
+    }
 }
 
 impl OutputEvent {

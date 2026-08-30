@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use std::{collections::BTreeSet, str};
 
@@ -492,6 +492,7 @@ async fn real_binary_json_report_and_diagnostic_use_separate_streams() {
 #[tokio::test]
 async fn explicit_candidate_run_rejects_a_missing_candidate() {
     let project = tempfile::tempdir().unwrap();
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(project.path());
     let missing_id = "candidate-that-is-not-in-the-spool";
     let (error, stdout) = run_missing_explicit_candidate(
@@ -567,6 +568,7 @@ async fn mypy_reports_a_surviving_nullable_contract_mutant() {
 async fn jobs_one_and_four_produce_the_same_candidates_and_statuses() {
     let one = tempfile::tempdir().unwrap();
     let four = tempfile::tempdir().unwrap();
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(one.path());
     write_parallel_project(four.path());
     let command = "from src.calc import total; assert total(1, 2, 3, 4, 5) == 15";
@@ -607,6 +609,7 @@ async fn jobs_one_and_four_produce_the_same_candidates_and_statuses() {
 async fn jobs_four_reaches_a_cross_process_barrier() {
     let directory = tempfile::tempdir().unwrap();
     let coordinator = tempfile::tempdir().unwrap();
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(directory.path());
     let markers = coordinator.path().join("markers");
     std::fs::create_dir(&markers).unwrap();
@@ -641,6 +644,7 @@ async fn jobs_four_processes_receive_isolated_run_mutant_and_worker_metadata() {
     let coordinator = tempfile::tempdir().unwrap();
     let records = coordinator.path().join("records");
     std::fs::create_dir(&records).unwrap();
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(project.path());
     let original = "return a + b + c + d + e";
     let mutant = format!(
@@ -1229,6 +1233,7 @@ async fn fresh_session_and_sessionless_results_preserve_the_same_termination() {
 async fn concurrent_real_cli_runs_refuse_live_session_ownership() {
     let project = tempfile::tempdir().unwrap();
     let coordinator = tempfile::tempdir().unwrap();
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(project.path());
     let active = coordinator.path().join("active");
     std::fs::create_dir(&active).unwrap();
@@ -1330,6 +1335,7 @@ async fn fingerprint_include_change_starts_a_distinct_session_run() {
     let sessions = tempfile::tempdir().unwrap();
     let database = sessions.path().join("session.sqlite3");
     let watched = project.path().join("watched.toml");
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(project.path());
     std::fs::write(&watched, "value = 1\n").unwrap();
     let command = "from src.calc import total; assert total(1, 2, 3, 4, 5) == 15";
@@ -1380,6 +1386,7 @@ async fn fingerprint_file_ignores_nested_names_but_tracks_the_exact_file() {
     let project = tempfile::tempdir().unwrap();
     let sessions = tempfile::tempdir().unwrap();
     let database = sessions.path().join("session.sqlite3");
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(project.path());
     std::fs::write(project.path().join("pyproject.toml"), "value = 1\n").unwrap();
     let nested = project.path().join(".worktrees/a/pyproject.toml");
@@ -1430,6 +1437,7 @@ async fn sqlite_session_can_be_resumed_after_repeated_mutant_limits() {
     let project = tempfile::tempdir().unwrap();
     let sessions = tempfile::tempdir().unwrap();
     let database = sessions.path().join("session.sqlite3");
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(project.path());
     let command = "from src.calc import total; assert total(1, 2, 3, 4, 5) == 15";
 
@@ -1647,6 +1655,7 @@ async fn total_timeout_cancels_and_reaps_descendants_before_cleanup() {
 async fn total_timeout_exits_after_grace_when_session_finish_is_locked() {
     let project = tempfile::tempdir().unwrap();
     let coordinator = tempfile::tempdir().unwrap();
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(project.path());
     let session = coordinator.path().join("session.sqlite3");
     let (mut child, active, descendant_ready) = spawn_interrupt_fixture(
@@ -1774,21 +1783,28 @@ async fn total_timeout_exits_after_grace_when_session_finish_is_locked() {
 }
 
 #[tokio::test]
-async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_incomplete() {
+#[expect(
+    clippy::too_many_lines,
+    reason = "the real cancellation fixture keeps process-tree and incomplete-report assertions in one scope"
+)]
+async fn injected_ctrl_c_finishes_incomplete_or_defers_when_tree_quiescence_is_unproven() {
     let project = tempfile::tempdir().unwrap();
     let coordinator = tempfile::tempdir().unwrap();
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(project.path());
     let active = coordinator.path().join("active");
     std::fs::create_dir(&active).unwrap();
     let descendant_ready = coordinator.path().join("descendant-ready");
-    let descendant_ready_temp = coordinator.path().join("descendant-ready.tmp");
+    let descendant_heartbeats = coordinator.path().join("descendant-heartbeats");
+    std::fs::create_dir(&descendant_ready).unwrap();
+    std::fs::create_dir(&descendant_heartbeats).unwrap();
     let session = coordinator.path().join("session.sqlite3");
-    let child = "import time; time.sleep(20)";
+    let child = "from pathlib import Path\nimport os,sys,time\nheartbeat=Path(sys.argv[1],str(os.getpid()))\nwhile True:\n heartbeat.write_text(str(time.monotonic_ns()))\n time.sleep(0.05)";
     let mutant = format!(
-        "from pathlib import Path; import os,subprocess,sys,time; Path({:?},str(os.getpid())).write_text('running'); time.sleep(0.5); child=subprocess.Popen([sys.executable,'-c',{:?}]); ready_temp=Path({:?}); ready_temp.write_text(str(child.pid)); ready_temp.replace({:?}); time.sleep(20)",
+        "from pathlib import Path\nimport os,subprocess,sys,time\nPath({:?},str(os.getpid())).write_text('running')\ntime.sleep(0.5)\nchild=subprocess.Popen([sys.executable,'-c',{:?},{:?}])\nPath({:?},str(child.pid)).write_text(str(os.getpid()))\ntime.sleep(20)",
         active.to_string_lossy(),
         child,
-        descendant_ready_temp.to_string_lossy(),
+        descendant_heartbeats.to_string_lossy(),
         descendant_ready.to_string_lossy(),
     );
     let original = "return a + b + c + d + e";
@@ -1828,22 +1844,48 @@ async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_in
         control.clone(),
     );
     let cancel = async {
-        let descendant =
-            wait_for_descendant_process(&descendant_ready, Duration::from_secs(15)).await;
+        let descendants =
+            wait_for_descendant_processes(&descendant_ready, 4, Duration::from_secs(15)).await;
+        let heartbeat_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while descendants.iter().any(|descendant| {
+            std::fs::read(descendant_heartbeats.join(descendant.pid().to_string())).is_err()
+        }) {
+            assert!(
+                tokio::time::Instant::now() < heartbeat_deadline,
+                "every descendant did not publish its heartbeat before cancellation"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
         control.cancel();
-        descendant
+        descendants
     };
-    let (exit, descendant) = Box::pin(tokio::time::timeout(Duration::from_secs(30), async {
+    let (exit, descendants) = Box::pin(tokio::time::timeout(Duration::from_secs(30), async {
         tokio::join!(run, cancel)
     }))
     .await
     .expect("cancelled run must finish promptly");
-    let exit = exit.unwrap();
-
-    assert_eq!(exit, 130);
+    let cleanup_deferred = match exit {
+        Ok(exit) => {
+            assert_eq!(exit, 130);
+            false
+        }
+        Err(error) => {
+            assert!(
+                error.contains(hoimin_core::WORKSPACE_CLEANUP_DEFERRED),
+                "{error}"
+            );
+            true
+        }
+    };
     let document: serde_json::Value =
         serde_json::from_slice(&stdout.bytes()).expect("parseable cancelled report");
     assert_eq!(document["summary"]["complete"], false);
+    if cleanup_deferred {
+        assert_eq!(
+            document["summary"]["disk"]["stop"]["code"],
+            hoimin_core::PROCESS_LIFECYCLE_FAILED
+        );
+    }
     let not_run_count = document["summary"]["counts"]["not_run"]
         .as_u64()
         .expect("not_run summary count");
@@ -1863,16 +1905,29 @@ async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_in
         .unwrap();
     assert_eq!(complete, 0);
     drop(connection);
-    assert!(
-        descendant.wait_until_stops(Duration::from_secs(5)).await,
-        "cancelled descendant {} outlived the run",
-        descendant.pid()
-    );
+    for descendant in descendants {
+        if !descendant
+            .wait_until_stops(Duration::from_millis(500))
+            .await
+        {
+            let heartbeat = descendant_heartbeats.join(descendant.pid().to_string());
+            let before = std::fs::read(&heartbeat).unwrap();
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            let after = std::fs::read(&heartbeat).unwrap();
+            assert_eq!(
+                before,
+                after,
+                "cancelled descendant {} continued executing after the run",
+                descendant.pid()
+            );
+        }
+    }
 }
 
 async fn first_interrupt_scenario() {
     let project = tempfile::tempdir().unwrap();
     let coordinator = tempfile::tempdir().unwrap();
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(project.path());
     let session = coordinator.path().join("session.sqlite3");
     let (mut child, active, descendant_ready) =
@@ -1997,6 +2052,7 @@ async fn drain_second_interrupt_stdout(
 async fn second_interrupt_scenario() {
     let project = tempfile::tempdir().unwrap();
     let coordinator = tempfile::tempdir().unwrap();
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(project.path());
     let session = coordinator.path().join("session.sqlite3");
     let (mut child, active, descendant_ready) =
@@ -2118,6 +2174,7 @@ async fn serial_output_that_requests_stop_is_accepted_before_cancellation() {
     let project = tempfile::tempdir().unwrap();
     let metrics_directory = tempfile::tempdir().unwrap();
     let metrics_path = metrics_directory.path().join("metrics.json");
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(project.path());
     let python = python_executable();
     let args = [
@@ -2130,7 +2187,7 @@ async fn serial_output_that_requests_stop_is_accepted_before_cancellation() {
         OsString::from("--file"),
         OsString::from("src/calc.py"),
         OsString::from("--jobs"),
-        OsString::from("4"),
+        OsString::from("1"),
         OsString::from("--format"),
         OsString::from("jsonl"),
         OsString::from("--allow-best-effort-memory"),
@@ -2610,6 +2667,13 @@ impl Write for RejectMutantStarted {
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
+}
+
+async fn parallel_project_test_guard() -> tokio::sync::OwnedMutexGuard<()> {
+    static LOCK: OnceLock<Arc<tokio::sync::Mutex<()>>> = OnceLock::new();
+    Arc::clone(LOCK.get_or_init(|| Arc::new(tokio::sync::Mutex::new(()))))
+        .lock_owned()
+        .await
 }
 
 fn write_parallel_project(root: &Path) {
@@ -3145,19 +3209,27 @@ impl Drop for FixtureProcess {
     }
 }
 
-async fn wait_for_descendant_process(marker: &Path, timeout: Duration) -> FixtureProcess {
+async fn wait_for_descendant_processes(
+    directory: &Path,
+    expected: usize,
+    timeout: Duration,
+) -> Vec<FixtureProcess> {
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
-        if let Some(pid) = std::fs::read_to_string(marker)
-            .ok()
-            .and_then(|value| value.trim().parse().ok())
-            && let Some(process) = FixtureProcess::open(pid)
-        {
-            return process;
+        let processes = std::fs::read_dir(directory)
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter_map(|entry| entry.file_name().to_str()?.parse::<u32>().ok())
+            .filter_map(FixtureProcess::open)
+            .collect::<Vec<_>>();
+        if processes.len() >= expected {
+            return processes;
         }
         assert!(
             tokio::time::Instant::now() < deadline,
-            "descendant-ready marker did not yield an open process before cancellation"
+            "descendant directory yielded {} processes, expected {expected}",
+            processes.len()
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
