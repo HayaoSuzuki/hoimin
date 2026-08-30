@@ -63,6 +63,56 @@ class DiscoveryTests(unittest.TestCase):
             [(("rg", "--files", "--glob", "*.rs", str(root)), 17.0)],
         )
 
+    def test_symbol_selector_excludes_unrelated_changed_functions_before_cap(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            changed = root / "crates/core/src/changed.rs"
+            target = root / "crates/core/src/target.rs"
+            changed.parent.mkdir(parents=True)
+            changed.write_text(
+                "fn unrelated_first() {}\nfn unrelated_second() {}\n",
+                encoding="utf-8",
+            )
+            target.write_text("fn selected() {}\n", encoding="utf-8")
+            snapshot = RepositorySnapshot(
+                root,
+                "abc",
+                "feature",
+                (),
+                ("crates/core/src/changed.rs",),
+                (),
+            )
+            probe = FakeProbe(
+                {
+                    (
+                        "rg",
+                        "--files",
+                        "--glob",
+                        "*.rs",
+                        str(root),
+                    ): f"{changed}\n{target}\n"
+                }
+            )
+
+            try:
+                candidates = discover_candidates(
+                    snapshot,
+                    (),
+                    ("selected",),
+                    probe,
+                    lambda: 17.0,
+                    max_candidates=1,
+                )
+            except ValueError as error:
+                self.fail(f"symbol selection included unrelated functions: {error}")
+
+        self.assertEqual(
+            [(item.path, item.symbol) for item in candidates],
+            [("crates/core/src/target.rs", "selected")],
+        )
+
     def test_explicit_rust_file_overrides_implicit_path_exclusions(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -217,6 +217,7 @@ def discover_candidates(
                 ):
                     return
 
+    requested_symbols = frozenset(_symbol_name(symbol) for symbol in explicit_symbols)
     normalized_explicit_files: list[str] = []
     for value in explicit_files:
         path = _explicit_path(value)
@@ -226,9 +227,8 @@ def discover_candidates(
         add_path(value, explicit=True)
     for values in (snapshot.dirty_paths, snapshot.base_paths):
         for value in values:
-            add_path(value)
+            add_path(value, symbols=requested_symbols or None)
 
-    requested_symbols = frozenset(_symbol_name(symbol) for symbol in explicit_symbols)
     if requested_symbols:
         inventory = probe.text(
             ["rg", "--files", "--glob", "*.rs", str(snapshot.root)],
