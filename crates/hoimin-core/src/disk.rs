@@ -512,3 +512,42 @@ fn has_outcome(lifecycle: &DiskLifecycle, root: DiskRootId) -> bool {
         || lifecycle.cleanup_deferred.contains(&root)
         || lifecycle.cleanup_retained.contains(&root)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn direct_dispatch_transition_is_accepted_and_counted() {
+        let mut lifecycle = DiskLifecycle::new([]).unwrap();
+
+        assert!(apply_disk_lifecycle_event(
+            &mut lifecycle,
+            DiskLifecycleEvent::DispatchRequested,
+        ));
+
+        let snapshot = lifecycle.snapshot();
+        assert_eq!(snapshot.active, 1);
+        assert_eq!(snapshot.dispatched, 1);
+    }
+
+    #[test]
+    fn direct_dispatch_rejects_either_independent_stop_gate() {
+        let mut lifecycle = DiskLifecycle::new([]).unwrap();
+        assert!(apply_disk_lifecycle_event(
+            &mut lifecycle,
+            DiskLifecycleEvent::MeasurementFailed {
+                message: "stop before dispatch".into(),
+            },
+        ));
+
+        assert!(!apply_disk_lifecycle_event(
+            &mut lifecycle,
+            DiskLifecycleEvent::DispatchRequested,
+        ));
+
+        let snapshot = lifecycle.snapshot();
+        assert_eq!(snapshot.active, 0);
+        assert_eq!(snapshot.dispatched, 0);
+    }
+}
