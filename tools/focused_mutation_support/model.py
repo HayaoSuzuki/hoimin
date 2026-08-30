@@ -4,7 +4,7 @@ from enum import StrEnum
 from typing import cast
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 RANKING_RULE_VERSION = 1
 
 
@@ -17,6 +17,7 @@ class RunState(StrEnum):
     COMMAND_FAILED = "command_failed"
     INTERRUPTED = "interrupted"
     REPORT_FAILED = "report_failed"
+    DISK_LIMIT = "disk_limit"
 
 
 class CandidateState(StrEnum):
@@ -47,6 +48,10 @@ class Candidate:
     not_run_reason: str | None = None
     command_sequences: list[int] = field(default_factory=list)
     manual_classification: str | None = None
+    diagnostic: str | None = None
+    diagnostic_observed_bytes: int = 0
+    diagnostic_retained_bytes: int = 0
+    diagnostic_truncated: bool = False
 
 
 @dataclass
@@ -64,6 +69,14 @@ class CommandRecord:
     stdout_path: str = ""
     stderr_path: str = ""
     cleanup_errors: list[str] = field(default_factory=list)
+    stdout_observed_bytes: int = 0
+    stdout_retained_bytes: int = 0
+    stdout_truncated: bool = False
+    stderr_observed_bytes: int = 0
+    stderr_retained_bytes: int = 0
+    stderr_truncated: bool = False
+    disk_stop_code: str | None = None
+    _spool: object | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass
@@ -81,6 +94,21 @@ class RunRecord:
     elapsed_seconds: float | None
     comparison: dict[str, object] | None
     error: str | None
+    report_error: str | None = None
+    disk_policy: dict[str, object] = field(default_factory=dict)
+    disk_observations: list[dict[str, object]] = field(default_factory=list)
+    disk_summary: dict[str, object] = field(default_factory=dict)
+    disk_stop: dict[str, object] | None = None
+    secondary_errors: list[dict[str, object]] = field(default_factory=list)
+    disk_enforcement: list[str] = field(default_factory=list)
+    stale_cleanup: list[dict[str, object]] = field(default_factory=list)
+    stale_cleanup_omitted_count: int = 0
+    stale_cleanup_diagnostics: list[str] = field(default_factory=list)
+    stale_cleanup_diagnostics_omitted_count: int = 0
+    scratch: dict[str, object] | None = None
+    cleanup: dict[str, object] | None = None
+    output_recovery: dict[str, object] = field(default_factory=dict)
+    jobs: int = 1
 
     @classmethod
     def new(cls, total_budget_seconds: float) -> "RunRecord":
@@ -108,6 +136,7 @@ class RunRecord:
                 return {
                     item.name: encode(getattr(value, item.name))
                     for item in fields(value)
+                    if not item.name.startswith("_")
                 }
             if isinstance(value, list):
                 return [encode(item) for item in value]

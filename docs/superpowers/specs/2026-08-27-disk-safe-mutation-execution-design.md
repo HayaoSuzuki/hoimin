@@ -629,6 +629,18 @@ error yields `failed`. Reaching a slice or total budget after making safe progre
 cleanup is incomplete and uses `workspace.cleanup.deferred`, but it is not mislabeled as
 a removal error. Individual filesystem calls cannot be preempted portably, so the time
 budgets are checked before and after each entry operation.
+If a parent-relative, identity-checked `rmdir` returns success while its syscall crosses
+the deadline, that successful syscall is the authoritative namespace-removal proof and
+the result is `clean`; cleanup starts no follow-up `stat`. When budget remains, cleanup
+still performs an anchored absence check so a surviving name or injected no-op adapter
+is `failed`.
+
+The sole path-evidence exception is an identity-integrity or namespace-I/O failure that
+prevents validating any current path for the still-open owned-root capability. It yields
+`deferred` with no `remaining_root`, records a bounded integrity diagnostic, and stops
+further dispatch. Because no safe path can be rescanned, final evidence conservatively
+carries the complete last pre-clean owned-byte floor and identity provenance into the
+post-clean observation. This exception never reports `clean` or removed logical bytes.
 
 If the disk monitor cannot join within the shutdown budget, the runtime marks cleanup
 deferred, emits no cleanup-ready marker, and leaves the monitor's shared lease guard

@@ -36,6 +36,6 @@ class StoreTests(unittest.TestCase):
             record.state = RunState.COMPLETED
             store.checkpoint(record)
             value = json.loads((Path(directory) / "run.json").read_text())
-            self.assertEqual(value["schema_version"], 1)
+            self.assertEqual(value["schema_version"], 2)
             self.assertEqual(value["state"], "completed")
             self.assertFalse((Path(directory) / ".run.json.tmp").exists())

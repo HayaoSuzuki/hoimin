@@ -1801,8 +1801,17 @@ quoted deletion path.
 Schema 2 includes `scratch.path`, `scratch.run_id`, and a cleanup record with exact
 `status`, examined/removed counts, omitted details, and remaining-root identity. A clean
 record must have `remaining_root=null`; a retained/deferred/failed record must name the
-same validated leased root. These report paths are evidence only and are never accepted
-by cleanup APIs.
+same validated leased root. The sole fail-closed exception is an identity-integrity or
+namespace-I/O failure that prevents validating any current path for the still-open root
+capability: it reports `deferred` with `remaining_root=null`, records the bounded lookup
+diagnostic, stops further dispatch, and carries the complete last pre-clean owned-byte
+floor and identity provenance into the post-clean observation. It never reports clean or
+removed bytes. These report paths are evidence only and are never accepted by cleanup
+APIs.
+Treat a successful parent-relative, identity-checked `rmdir` as authoritative absence
+when the syscall itself crosses the cleanup deadline: return `clean` and start no
+follow-up filesystem operation. If budget remains, perform the anchored absence check
+and return `failed` if the name survives, including under an injected no-op adapter.
 
 Return zero only for `COMPLETED`. Preserve 130 for interruption; return 3 for
 `BUDGET_EXHAUSTED` and 2 for other non-completed states, including `DISK_LIMIT` and

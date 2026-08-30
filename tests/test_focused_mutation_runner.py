@@ -15,8 +15,15 @@ from unittest import mock
 from typing import Any, BinaryIO
 
 from tools.focused_mutation_support.model import CommandRecord
+from tools.focused_mutation_support.disk import (
+    DiskFailure,
+    DiskStopReason,
+)
 from tools.focused_mutation_support.runner import (
+    CommandDrainFailed,
+    CommandDiskStopped,
     CommandInterrupted,
+    CommandLifecycleFailed,
     CommandRunner,
     CommandTimedOut,
     ProcessLifecycleError,
@@ -115,6 +122,37 @@ def handle_term(_signum, _frame):
 signal.signal(signal.SIGTERM, handle_term)
 while True:
     time.sleep(0.01)
+"""
+
+
+NORMAL_EXIT_WITH_DESCENDANT_FAKE = r"""
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import time
+
+descendant_ready = Path(sys.argv[1])
+if "--descendant" in sys.argv:
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    descendant_ready.write_text(str(os.getpid()), encoding="utf-8")
+    print("DESCENDANT-READY", flush=True)
+    while True:
+        time.sleep(0.01)
+
+subprocess.Popen(
+    [sys.executable, __file__, str(descendant_ready), "--descendant"],
+    stdin=subprocess.DEVNULL,
+    stdout=sys.stdout,
+    stderr=sys.stderr,
+)
+deadline = time.monotonic() + 2.0
+while not descendant_ready.exists():
+    if time.monotonic() >= deadline:
+        raise RuntimeError("descendant did not start")
+    time.sleep(0.01)
+print("ROOT-EXIT", flush=True)
 """
 
 
@@ -260,7 +298,10 @@ def wait_for_pid_exit_or_zombie(pid: int, timeout: float = 2.0) -> bool:
                 text=True,
             ).stdout.strip()
         except OSError:
-            return wait_for_pid_exit(pid, timeout=0.0)
+            return wait_for_pid_exit(
+                pid,
+                timeout=max(0.0, deadline - time.monotonic()),
+            )
         if not state or state.startswith("Z"):
             return True
         time.sleep(0.01)
@@ -589,6 +630,13 @@ class RunnerTests(unittest.TestCase):
             TERM_RESISTANT_DESCENDANT_FAKE,
             encoding="utf-8",
         )
+        self.normal_exit_with_descendant_fake = (
+            root / "normal-exit-with-descendant-command.py"
+        )
+        self.normal_exit_with_descendant_fake.write_text(
+            NORMAL_EXIT_WITH_DESCENDANT_FAKE,
+            encoding="utf-8",
+        )
 
     def runner(
         self,
@@ -638,6 +686,135 @@ class RunnerTests(unittest.TestCase):
             timeout=2.0,
             check=False,
         )
+
+    def test_command_spool_refuses_precreated_stdout_symlink(self) -> None:
+        root = Path(self.temporary.name)
+        commands = root / "pinned-commands"
+        commands.mkdir()
+        sentinel = root / "sentinel"
+        sentinel.write_text("outside", encoding="utf-8")
+        store = RunStore(self.output, command_root=commands)
+        runner = CommandRunner(store)
+        script = (
+            "import os, pathlib, sys\n"
+            "commands = pathlib.Path(sys.argv[1])\n"
+            "os.symlink(sys.argv[2], commands / '0001-swap.stdout')\n"
+            "print('captured')\n"
+        )
+
+        with self.assertRaises(OSError):
+            runner.run(
+                [sys.executable, "-c", script, str(commands), str(sentinel)],
+                cwd=root,
+                timeout=5.0,
+                label="swap",
+            )
+
+        self.assertEqual(sentinel.read_text(encoding="utf-8"), "outside")
+        store.close_command_root()
+
+    def test_command_spool_paths_are_validated_before_writer_creation(self) -> None:
+        store_module = __import__(
+            "tools.focused_mutation_support.store",
+            fromlist=["validate_reported_path"],
+        )
+        real_validate = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["validate_reported_path"],
+        ).validate_reported_path
+
+        def reject_stdout(path: Path) -> str:
+            if path.name.endswith(".stdout"):
+                raise ValueError("injected stdout report path rejection")
+            return real_validate(path)
+
+        with (
+            mock.patch.object(
+                store_module,
+                "validate_reported_path",
+                side_effect=reject_stdout,
+                create=True,
+            ),
+            self.assertRaisesRegex(ValueError, "stdout report path"),
+        ):
+            self.store.command_paths(1, "validated")
+
+        self.assertEqual(list((self.output / "commands").iterdir()), [])
+
+    def test_command_spool_stays_on_pinned_directory_after_path_swap(self) -> None:
+        root = Path(self.temporary.name)
+        commands = root / "pinned-commands"
+        commands.mkdir()
+        moved = root / "pinned-commands-moved"
+        sentinel = root / "sentinel"
+        sentinel.write_text("outside", encoding="utf-8")
+        store = RunStore(self.output, command_root=commands)
+        runner = CommandRunner(store)
+        script = (
+            "import os, pathlib, sys\n"
+            "commands = pathlib.Path(sys.argv[1])\n"
+            "moved = pathlib.Path(sys.argv[2])\n"
+            "commands.rename(moved)\n"
+            "commands.mkdir()\n"
+            "os.symlink(sys.argv[3], commands / '0001-directory-swap.stdout')\n"
+            "print('captured')\n"
+        )
+
+        record = runner.run(
+            [
+                sys.executable,
+                "-c",
+                script,
+                str(commands),
+                str(moved),
+                str(sentinel),
+            ],
+            cwd=root,
+            timeout=5.0,
+            label="directory-swap",
+        )
+
+        self.assertEqual(record.exit_code, 0)
+        self.assertEqual(sentinel.read_text(encoding="utf-8"), "outside")
+        self.assertEqual(
+            (moved / "0001-directory-swap.stdout").read_text(), "captured\n"
+        )
+        store.close_command_root()
+
+    def test_second_spool_failure_removes_first_and_blocks_cleanup(self) -> None:
+        root = Path(self.temporary.name)
+        commands = root / "pinned-commands"
+        commands.mkdir()
+        store = RunStore(self.output, command_root=commands)
+        runner = CommandRunner(store)
+        real_open_writer = __import__(
+            "tools.focused_mutation_support.store",
+            fromlist=["CommandPaths"],
+        ).CommandPaths.open_writer
+
+        def fail_stderr(paths: object, stream_name: str) -> object:
+            if stream_name == "stderr":
+                raise OSError("injected stderr spool open failure")
+            return real_open_writer(paths, stream_name)
+
+        with (
+            mock.patch(
+                "tools.focused_mutation_support.store.CommandPaths.open_writer",
+                autospec=True,
+                side_effect=fail_stderr,
+            ),
+            self.assertRaisesRegex(OSError, "stderr spool"),
+        ):
+            runner.run(
+                [sys.executable, "-c", "print('captured')"],
+                cwd=root,
+                timeout=5.0,
+                label="two-spools",
+            )
+
+        self.assertFalse((commands / "0001-two-spools.stdout").exists())
+        self.assertFalse(runner.output_drain_safe)
+        store.close_command_root()
 
     def test_windows_tree_terminator_rejects_nonzero_exit(self) -> None:
         run = mock.Mock(
@@ -1085,6 +1262,248 @@ class RunnerTests(unittest.TestCase):
             )
         self.assertEqual(popen_factory.call_count, 1)
 
+    def test_disk_stop_remains_primary_when_forced_reap_fails(self) -> None:
+        process = UnreapableProcess(
+            subprocess.TimeoutExpired(["fake-command"], 5.0)
+        )
+        popen_factory = mock.Mock(return_value=process)
+        runner = self.runner(
+            popen_factory=popen_factory,
+            windows_tree_terminator=mock.Mock(),
+        )
+        failure = mock.Mock(code="filesystem.reserve.reached")
+        guard = mock.Mock(failure=failure)
+        guard.sample.return_value = None
+
+        def invoke() -> None:
+            runner.run(
+                [str(self.fake)],
+                cwd=self.work,
+                timeout=5.0,
+                label="unreapable-disk-stop",
+                disk_guard=guard,
+            )
+
+        if os.name == "nt":
+            with self.assertRaises(CommandDiskStopped) as caught:
+                invoke()
+        else:
+            with (
+                mock.patch(
+                    "tools.focused_mutation_support.runner.os.killpg"
+                ),
+                self.assertRaises(CommandDiskStopped) as caught,
+            ):
+                invoke()
+
+        self.assertIs(caught.exception.failure, failure)
+        self.assertFalse(runner.cleanup_safe)
+        self.assertEqual(
+            caught.exception.record.cleanup_errors,
+            [
+                "process lifecycle cleanup failed: "
+                "root process 12345 was not reaped after forced kill"
+            ],
+        )
+
+    def test_spool_reservation_stops_before_materializing_retained_output(
+        self,
+    ) -> None:
+        runner = self.runner()
+        failure = DiskFailure(
+            code="filesystem.reserve.reached",
+            reason=DiskStopReason.FILESYSTEM_RESERVE_REACHED,
+        )
+        guard = mock.Mock(failure=None)
+        guard.sample.return_value = None
+        guard.reserve_additional_bytes.return_value = failure
+
+        with self.assertRaises(CommandDiskStopped) as caught:
+            runner.run(
+                [str(self.fake), "payload"],
+                cwd=self.work,
+                timeout=5.0,
+                label="spool-reserve",
+                disk_guard=guard,
+            )
+
+        guard.reserve_additional_bytes.assert_called_once()
+        self.assertIs(caught.exception.failure, failure)
+        self.assertFalse(Path(caught.exception.record.stdout_path).exists())
+        self.assertFalse(Path(caught.exception.record.stderr_path).exists())
+
+    def test_post_drain_disk_stop_wins_over_command_timeout(self) -> None:
+        runner = self.runner()
+        failure = DiskFailure(
+            code="filesystem.reserve.reached",
+            reason=DiskStopReason.FILESYSTEM_RESERVE_REACHED,
+        )
+        guard = mock.Mock(failure=None)
+        guard.sample.return_value = None
+        guard.reserve_additional_bytes.return_value = failure
+
+        with self.assertRaises(CommandDiskStopped) as caught:
+            runner.run(
+                [str(self.fake), "--sleep"],
+                cwd=self.work,
+                timeout=0.01,
+                label="timeout-spool-reserve",
+                disk_guard=guard,
+            )
+
+        guard.reserve_additional_bytes.assert_called_once()
+        self.assertIs(caught.exception.failure, failure)
+        self.assertTrue(caught.exception.record.timed_out)
+        self.assertEqual(
+            caught.exception.record.disk_stop_code,
+            "filesystem.reserve.reached",
+        )
+        self.assertFalse(Path(caught.exception.record.stdout_path).exists())
+        self.assertFalse(Path(caught.exception.record.stderr_path).exists())
+
+    def test_command_cwd_is_validated_before_spool_or_launch(self) -> None:
+        runner_module = __import__(
+            "tools.focused_mutation_support.runner",
+            fromlist=["validate_reported_path"],
+        )
+        real_validate = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["validate_reported_path"],
+        ).validate_reported_path
+
+        def reject_cwd(path: Path) -> str:
+            if path == self.work:
+                raise ValueError("injected cwd report path rejection")
+            return real_validate(path)
+
+        with (
+            mock.patch.object(
+                runner_module,
+                "validate_reported_path",
+                side_effect=reject_cwd,
+                create=True,
+            ),
+            mock.patch.object(
+                self.store,
+                "command_paths",
+                side_effect=AssertionError("spool path created before cwd validation"),
+            ),
+            self.assertRaisesRegex(ValueError, "cwd report path"),
+        ):
+            self.runner().run(
+                [str(self.fake)],
+                cwd=self.work,
+                timeout=5.0,
+                label="invalid-cwd",
+            )
+
+    def test_post_write_disk_stop_is_typed_before_return(self) -> None:
+        runner = self.runner()
+        failure = DiskFailure(
+            code="filesystem.reserve.reached",
+            reason=DiskStopReason.FILESYSTEM_RESERVE_REACHED,
+        )
+        guard = mock.Mock(failure=None)
+        guard.sample.side_effect = [None, None, failure]
+        guard.reserve_additional_bytes.return_value = None
+
+        with self.assertRaises(CommandDiskStopped) as caught:
+            runner.run(
+                [str(self.fake), "payload"],
+                cwd=self.work,
+                timeout=5.0,
+                label="post-write-disk-stop",
+                disk_guard=guard,
+            )
+
+        self.assertIs(caught.exception.failure, failure)
+        self.assertEqual(guard.sample.call_count, 3)
+
+    def test_drain_error_remains_cleanup_unsafe_when_disk_also_stops(
+        self,
+    ) -> None:
+        runner = self.runner()
+        failure = DiskFailure(
+            code="filesystem.reserve.reached",
+            reason=DiskStopReason.FILESYSTEM_RESERVE_REACHED,
+        )
+        guard = mock.Mock(failure=None)
+        guard.sample.return_value = None
+        guard.reserve_additional_bytes.return_value = failure
+
+        with (
+            mock.patch(
+                "tools.focused_mutation_support.runner._BoundedCapture.drain",
+                autospec=True,
+                side_effect=lambda capture, stream: (
+                    setattr(capture, "error", OSError("injected drain failure")),
+                    stream.close(),
+                ),
+            ),
+            self.assertRaises(CommandDiskStopped) as caught,
+        ):
+            runner.run(
+                [str(self.fake)],
+                cwd=self.work,
+                timeout=5.0,
+                label="drain-and-disk-stop",
+                disk_guard=guard,
+            )
+
+        self.assertFalse(runner.output_drain_safe)
+        self.assertTrue(
+            any(
+                "injected drain failure" in item
+                for item in caught.exception.record.cleanup_errors
+            )
+        )
+
+    def test_spool_read_preserves_primary_when_descriptor_close_fails(
+        self,
+    ) -> None:
+        paths = self.store.command_paths(77, "read-close")
+        with paths.open_writer("stdout") as stream:
+            stream.write(b"payload")
+        store_module = __import__(
+            "tools.focused_mutation_support.store",
+            fromlist=["CommandPaths"],
+        )
+        real_close = store_module.os.close
+
+        def close_then_fail(descriptor: int) -> None:
+            real_close(descriptor)
+            raise OSError("injected spool descriptor close failure")
+
+        with (
+            mock.patch.object(
+                store_module.os,
+                "read",
+                side_effect=OSError("injected spool read failure"),
+            ),
+            mock.patch.object(
+                store_module.os,
+                "close",
+                side_effect=close_then_fail,
+            ),
+            self.assertRaisesRegex(
+                OSError, "injected spool read failure"
+            ) as caught,
+        ):
+            paths.read("stdout", 32)
+
+        self.assertTrue(
+            any(
+                "spool descriptor close failure" in note
+                for note in getattr(caught.exception, "__notes__", ())
+            )
+        )
+        self.assertTrue(
+            any(
+                "spool descriptor close failure" in detail
+                for detail in self.store.close_command_root()
+            )
+        )
+
     @unittest.skipUnless(os.name == "nt", "requires Windows handle inheritance")
     def test_windows_timeout_terminates_inherited_handle_descendant(self) -> None:
         root_ready = self.work / "root.ready"
@@ -1236,6 +1655,295 @@ class RunnerTests(unittest.TestCase):
                     os.kill(descendant_pid, signal.SIGKILL)
                 except ProcessLookupError:
                     pass
+
+    @unittest.skipIf(os.name == "nt", "requires POSIX process groups")
+    def test_normal_exit_kills_pipe_holding_descendant_before_drain_join(self) -> None:
+        descendant_ready = self.work / "normal-exit-descendant.ready"
+        result: list[CommandRecord] = []
+        errors: list[BaseException] = []
+
+        def invoke() -> None:
+            try:
+                result.append(
+                    self.runner().run(
+                        [
+                            sys.executable,
+                            str(self.normal_exit_with_descendant_fake),
+                            str(descendant_ready),
+                        ],
+                        cwd=self.work,
+                        timeout=2.0,
+                        label="normal-exit-with-descendant",
+                    )
+                )
+            except BaseException as error:
+                errors.append(error)
+
+        thread = threading.Thread(target=invoke, daemon=True)
+        thread.start()
+        descendant_pid: int | None = None
+        try:
+            deadline = time.monotonic() + 2.0
+            while descendant_pid is None and time.monotonic() < deadline:
+                descendant_pid = read_ready_pid(descendant_ready)
+                time.sleep(0.01)
+            self.assertIsNotNone(descendant_pid)
+            thread.join(timeout=0.5)
+            self.assertFalse(thread.is_alive(), "runner blocked on inherited pipe")
+            self.assertEqual(errors, [])
+            self.assertEqual([record.exit_code for record in result], [0])
+            if descendant_pid is not None:
+                self.assertTrue(
+                    wait_for_pid_exit_or_zombie(descendant_pid),
+                    f"descendant {descendant_pid} survived normal completion",
+                )
+        finally:
+            if descendant_pid is None:
+                descendant_pid = read_ready_pid(descendant_ready)
+            if descendant_pid is not None:
+                try:
+                    os.kill(descendant_pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            thread.join(timeout=3.0)
+
+    def test_output_drain_deadline_marks_cleanup_unsafe(self) -> None:
+        held: list[int] = []
+
+        class CompletedProcess:
+            pid = 12345
+            returncode = 0
+
+            def wait(self, timeout: float | None = None) -> int:
+                return 0
+
+        def popen_factory(*_args: object, **kwargs: object) -> CompletedProcess:
+            for name in ("stdout", "stderr"):
+                stream = kwargs[name]
+                held.append(os.dup(stream.fileno()))  # type: ignore[union-attr]
+            return CompletedProcess()
+
+        def release() -> None:
+            time.sleep(0.5)
+            for fd in held:
+                os.close(fd)
+
+        releaser = threading.Thread(target=release)
+        releaser.start()
+        runner = self.runner(popen_factory=popen_factory)
+        try:
+            with (
+                mock.patch(
+                    "tools.focused_mutation_support.runner.OUTPUT_DRAIN_JOIN_TIMEOUT",
+                    0.05,
+                    create=True,
+                ),
+                self.assertRaisesRegex(RuntimeError, "output drain"),
+            ):
+                runner.run(
+                    ["fake"],
+                    cwd=self.work,
+                    timeout=1.0,
+                    label="held-output-pipe",
+                )
+            self.assertFalse(runner.cleanup_safe)
+        finally:
+            releaser.join(timeout=2.0)
+
+    def test_completed_process_quiesce_error_blocks_cleanup(self) -> None:
+        runner = self.runner()
+        with mock.patch.object(
+            CommandRunner,
+            "_quiesce_completed_process_tree",
+            side_effect=ProcessLifecycleError(12345, "permission denied"),
+        ), self.assertRaises(CommandLifecycleFailed) as raised:
+            runner.run(
+                [sys.executable, "-c", "pass"], cwd=self.work,
+                timeout=2.0, label="quiesce-error",
+            )
+
+        record = raised.exception.record
+        self.assertEqual(record.exit_code, 0)
+        self.assertFalse(runner.process_drain_safe)
+        self.assertTrue(
+            any("permission denied" in item for item in record.cleanup_errors)
+        )
+
+    def test_lifecycle_failure_with_unsettled_drain_never_materializes_spool(
+        self,
+    ) -> None:
+        runner = self.runner()
+        with (
+            mock.patch.object(
+                CommandRunner,
+                "_quiesce_completed_process_tree",
+                side_effect=ProcessLifecycleError(12345, "permission denied"),
+            ),
+            mock.patch.object(threading.Thread, "is_alive", return_value=True),
+            mock.patch(
+                "tools.focused_mutation_support.runner._BoundedCapture.write_to",
+                side_effect=AssertionError(
+                    "spool materialized before output drain settled"
+                ),
+            ) as write_to,
+            self.assertRaises(CommandLifecycleFailed),
+        ):
+            runner.run(
+                [sys.executable, "-c", "pass"],
+                cwd=self.work,
+                timeout=2.0,
+                label="quiesce-and-drain-error",
+            )
+
+        write_to.assert_not_called()
+        self.assertFalse(runner.cleanup_safe)
+
+    def test_posix_permission_error_is_a_process_lifecycle_error(self) -> None:
+        process = mock.Mock(spec=subprocess.Popen)
+        process.pid = 12345
+        with (
+            mock.patch(
+                "tools.focused_mutation_support.runner.os.killpg",
+                side_effect=PermissionError("denied"),
+            ),
+            self.assertRaises(ProcessLifecycleError),
+        ):
+            CommandRunner._quiesce_completed_process_tree(process)
+
+    def test_cancellation_after_pipe_setup_still_prevents_popen(self) -> None:
+        cancellation = threading.Event()
+        popen_factory = mock.Mock(
+            side_effect=AssertionError("Popen must not be called")
+        )
+        runner = CommandRunner(
+            self.store,
+            popen_factory=popen_factory,
+            cancellation_event=cancellation,
+        )
+        real_pipe = os.pipe
+        pipe_calls = 0
+
+        def cancel_after_second_pipe() -> tuple[int, int]:
+            nonlocal pipe_calls
+            descriptors = real_pipe()
+            pipe_calls += 1
+            if pipe_calls == 2:
+                cancellation.set()
+            return descriptors
+
+        with (
+            mock.patch(
+                "tools.focused_mutation_support.runner.os.pipe",
+                side_effect=cancel_after_second_pipe,
+            ),
+            self.assertRaises(CommandInterrupted),
+        ):
+            runner.run(
+                [str(self.fake)],
+                cwd=self.work,
+                timeout=2.0,
+                label="cancel-before-popen",
+            )
+
+        popen_factory.assert_not_called()
+
+    def test_drain_thread_start_failure_forces_process_reap(self) -> None:
+        launched: list[subprocess.Popen[bytes]] = []
+
+        def popen_factory(
+            argv: Sequence[str], **kwargs: object
+        ) -> subprocess.Popen[bytes]:
+            process = subprocess.Popen(argv, **kwargs)  # type: ignore[arg-type]
+            launched.append(process)
+            return process
+
+        runner = self.runner(popen_factory=popen_factory)
+        with (
+            mock.patch(
+                "tools.focused_mutation_support.runner.threading.Thread.start",
+                side_effect=RuntimeError("injected thread start failure"),
+            ),
+            self.assertRaises(CommandLifecycleFailed) as caught,
+        ):
+            runner.run(
+                [sys.executable, str(self.fake), "--sleep"],
+                cwd=self.work,
+                timeout=5.0,
+                label="drain-start-failure",
+            )
+
+        self.assertEqual(len(launched), 1)
+        self.assertIsNotNone(launched[0].returncode)
+        self.assertIn("output-drain setup failed", str(caught.exception))
+        self.assertTrue(runner.process_drain_safe)
+
+    def test_output_read_error_blocks_cleanup_after_threads_join(self) -> None:
+        def fail_drain(capture: object, stream: BinaryIO) -> None:
+            setattr(capture, "error", OSError("injected read failure"))
+            stream.close()
+
+        runner = self.runner()
+        with mock.patch(
+            "tools.focused_mutation_support.runner._BoundedCapture.drain",
+            new=fail_drain,
+        ), self.assertRaises(CommandDrainFailed) as raised:
+            runner.run(
+                [sys.executable, "-c", "pass"],
+                cwd=self.work,
+                timeout=2.0,
+                label="drain-read-error",
+            )
+
+        record = raised.exception.record
+        self.assertEqual(record.exit_code, 0)
+        self.assertFalse(runner.output_drain_safe)
+        self.assertTrue(
+            any("injected read failure" in item for item in record.cleanup_errors)
+        )
+
+    def test_wait_oserror_is_typed_and_marks_process_drain_unsafe(self) -> None:
+        class WaitFailure:
+            pid = 12345
+            returncode = None
+
+            def wait(self, timeout: float | None = None) -> int:
+                raise OSError("injected wait failure")
+
+        process = WaitFailure()
+        runner = self.runner(popen_factory=lambda *_args, **_kwargs: process)
+
+        with mock.patch.object(
+            runner,
+            "_terminate",
+            side_effect=ProcessLifecycleError(12345, "forced cleanup attempted"),
+        ) as terminate, self.assertRaises(CommandLifecycleFailed) as raised:
+            runner.run(["fake"], cwd=self.work, timeout=2.0, label="wait-failure")
+
+        terminate.assert_called_once_with(process)
+        self.assertFalse(runner.process_drain_safe)
+        self.assertTrue(
+            any(
+                "injected wait failure" in item
+                for item in raised.exception.record.cleanup_errors
+            )
+        )
+
+    def test_post_terminate_wait_oserror_is_process_lifecycle_error(self) -> None:
+        process = mock.Mock()
+        process.pid = 12345
+        process.wait.side_effect = OSError("injected reap failure")
+        runner = self.runner()
+
+        if os.name == "nt":
+            patcher = mock.patch.object(runner, "_windows_tree_terminator")
+        else:
+            patcher = mock.patch(
+                "tools.focused_mutation_support.runner.os.killpg"
+            )
+        with patcher, self.assertRaisesRegex(
+            ProcessLifecycleError, "injected reap failure"
+        ):
+            runner._terminate(process)
 
     def test_inherited_handle_failure_cleanup_cancels_and_closes_handles(
         self,
@@ -1449,7 +2157,13 @@ class RunnerTests(unittest.TestCase):
                     "tools.focused_mutation_support.runner.os.killpg"
                 ) as killpg:
                     result = invoke()
-                killpg.assert_called_once_with(process.pid, 15)
+                self.assertEqual(
+                    killpg.call_args_list,
+                    [
+                        mock.call(process.pid, signal.SIGTERM),
+                        mock.call(process.pid, signal.SIGKILL),
+                    ],
+                )
         except BaseException as error:
             result = error
 
@@ -1495,7 +2209,13 @@ class RunnerTests(unittest.TestCase):
                 self.assertRaises(CommandInterrupted) as caught,
             ):
                 invoke()
-            killpg.assert_called_once_with(process.pid, 15)
+            self.assertEqual(
+                killpg.call_args_list,
+                [
+                    mock.call(process.pid, signal.SIGTERM),
+                    mock.call(process.pid, signal.SIGKILL),
+                ],
+            )
 
         record = caught.exception.record
         self.assertEqual(
