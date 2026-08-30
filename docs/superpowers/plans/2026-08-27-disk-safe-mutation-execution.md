@@ -1946,6 +1946,7 @@ git commit -m "test: audit Python disk guard correspondence"
 
 - Modify: `README.md`
 - Modify: `docs/development.md`
+- Modify: `docs/superpowers/plans/2026-08-27-disk-safe-mutation-execution.md`
 - Modify: `crates/hoimin-cli/tests/cli_config.rs`
 - Modify: `tests/test_focused_mutation_docs.py`
 
@@ -1977,7 +1978,9 @@ cargo mutants --workspace --jobs ([2-9]|[1-9][0-9]+)
 Document these commands:
 
 ```bash
-hoimin run --max-workspace-size 8GiB --min-free-space 10GiB -- python -m pytest
+test -x .venv/bin/python
+hoimin_python="$(pwd -P)/.venv/bin/python"
+hoimin run --file tools/focused_mutation_support/disk.py --allow-best-effort-memory --max-workspace-size 8GiB --min-free-space 10GiB -- "$hoimin_python" -m unittest tests.test_focused_mutation_disk
 python3 -c 'import shutil, sys; sys.exit(0 if shutil.disk_usage(".").free > 10 * 1024**3 else 1)'
 mutation_output="$(mktemp -d /tmp/hoimin-focused.XXXXXX)"
 test -x .venv/bin/python
@@ -1986,8 +1989,9 @@ test -x .venv/bin/python
   --max-log-size 16MiB --output "$mutation_output"
 ```
 
-Explain that raising a limit is explicit risk acceptance; monitoring cannot prevent one
-child from consuming the reserve between samples; the periodic cadence is scan duration
+Explain that raising a consumption limit or lowering the reserve is explicit risk
+acceptance; monitoring cannot prevent one child from consuming the reserve between
+samples; the periodic cadence is scan duration
 plus 250 ms, normally at most about 5.25 seconds under the cooperative scan deadline;
 no per-file signal limit is installed for scored mutation because handled write-limit
 failures cannot be attributed without risking false mutation credit;
@@ -2001,9 +2005,18 @@ wrapper's monitoring boundary and is not part of the safe mutation command. Requ
 operator to provision it earlier with separate capacity controls, then invoke the guarded
 mutation command through the already existing `.venv/bin/python`; do not present
 `uv run ... focused_mutation.py` as a safe example.
+State that the first `run.json` checkpoint follows setup. An abrupt termination before
+that checkpoint can leave only `.hoimin-output-owner`, with no recoverable mutation
+result; direct operators to use `run.json` for recovery only when it exists.
 Explain that deferred cleanup is incomplete and retried by the bounded janitor, that a
 single blocking filesystem syscall cannot be preempted portably, and that shared Cargo
 home is reserve-monitored but never traversed or deleted.
+Remove routine raw `cargo mutants --workspace` examples. Describe a complete inventory
+only behind a verified named quota backend or an isolated hard-capacity volume, one
+worker, a separate 10 GiB host reserve, and exact-volume cleanup.
+State that this repository does not provide a supported complete-inventory command and
+that complete inventory remains unavailable until an operator provisions and verifies
+that infrastructure; do not invite operators to improvise a raw workspace command.
 
 - [ ] **Step 3: Verify and commit**
 
@@ -2015,9 +2028,15 @@ if rg -n 'cargo mutants --workspace --jobs ([2-9]|[1-9][0-9]+)' README.md docs/d
 else
   test "$?" -eq 1
 fi
+if rg -n '^cargo mutants --workspace(?:[[:space:]]|$)' README.md docs/development.md; then
+  exit 1
+else
+  test "$?" -eq 1
+fi
 git diff --check
 git add README.md docs/development.md crates/hoimin-cli/tests/cli_config.rs \
-  tests/test_focused_mutation_docs.py
+  tests/test_focused_mutation_docs.py \
+  docs/superpowers/plans/2026-08-27-disk-safe-mutation-execution.md
 git commit -m "docs: explain disk-safe mutation execution"
 ```
 
