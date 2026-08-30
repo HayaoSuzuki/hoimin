@@ -312,14 +312,17 @@ def classify_mutation_output(
         1
         for item in outcome_items
         if isinstance(item, dict)
-        and item.get("scenario") == "UnmutatedBaseline"
+        and item.get("scenario") == "Baseline"
         and item.get("summary") == "Success"
     )
     mutant_matches = [
         item
         for item in outcome_items
         if isinstance(item, dict)
-        and item.get("mutant") == candidate.mutant_name
+        and isinstance(item.get("scenario"), dict)
+        and isinstance(item["scenario"].get("Mutant"), dict)
+        and item["scenario"]["Mutant"].get("name")
+        == candidate.mutant_name
         and item.get("summary") == expected
     ]
     if baseline_count != 1 or len(mutant_matches) != 1:
@@ -328,11 +331,14 @@ def classify_mutation_output(
         not isinstance(item, dict)
         or not (
             (
-                item.get("scenario") == "UnmutatedBaseline"
+                item.get("scenario") == "Baseline"
                 and item.get("summary") == "Success"
             )
             or (
-                item.get("mutant") == candidate.mutant_name
+                isinstance(item.get("scenario"), dict)
+                and isinstance(item["scenario"].get("Mutant"), dict)
+                and item["scenario"]["Mutant"].get("name")
+                == candidate.mutant_name
                 and item.get("summary") == expected
             )
         )

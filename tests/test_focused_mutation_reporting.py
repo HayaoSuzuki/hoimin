@@ -293,11 +293,15 @@ class WorkflowRunner:
                             "total_mutants": 1,
                             "outcomes": [
                                 {
-                                    "scenario": "UnmutatedBaseline",
+                                    "scenario": "Baseline",
                                     "summary": "Success",
                                 },
                                 {
-                                    "mutant": exact.rstrip("\n"),
+                                    "scenario": {
+                                        "Mutant": {
+                                            "name": exact.rstrip("\n")
+                                        }
+                                    },
                                     "summary": outcome_name,
                                 }
                             ],
@@ -363,8 +367,11 @@ def write_outcomes_json(
             {
                 "total_mutants": 1,
                 "outcomes": [
-                    {"scenario": "UnmutatedBaseline", "summary": "Success"},
-                    {"mutant": mutant_name, "summary": summary},
+                    {"scenario": "Baseline", "summary": "Success"},
+                    {
+                        "scenario": {"Mutant": {"name": mutant_name}},
+                        "summary": summary,
+                    },
                 ],
             }
         ),
@@ -3291,9 +3298,19 @@ class FocusedMutationReportingTests(unittest.TestCase):
                     {
                         "total_mutants": 1,
                         "outcomes": [
-                            {"scenario": "UnmutatedBaseline", "summary": "Success"},
-                            {"mutant": "exact mutant", "summary": "MissedMutant"},
-                            {"mutant": "different", "summary": "CaughtMutant"},
+                            {"scenario": "Baseline", "summary": "Success"},
+                            {
+                                "scenario": {
+                                    "Mutant": {"name": "exact mutant"}
+                                },
+                                "summary": "MissedMutant",
+                            },
+                            {
+                                "scenario": {
+                                    "Mutant": {"name": "different"}
+                                },
+                                "summary": "CaughtMutant",
+                            },
                         ],
                     }
                 ),
@@ -3341,9 +3358,19 @@ class FocusedMutationReportingTests(unittest.TestCase):
                     {
                         "total_mutants": 1,
                         "outcomes": [
-                            {"scenario": "UnmutatedBaseline", "summary": "Success"},
-                            {"mutant": "exact mutant", "summary": "CaughtMutant"},
-                            {"mutant": "other mutant", "summary": "CaughtMutant"},
+                            {"scenario": "Baseline", "summary": "Success"},
+                            {
+                                "scenario": {
+                                    "Mutant": {"name": "exact mutant"}
+                                },
+                                "summary": "CaughtMutant",
+                            },
+                            {
+                                "scenario": {
+                                    "Mutant": {"name": "other mutant"}
+                                },
+                                "summary": "CaughtMutant",
+                            },
                         ],
                     }
                 ),
