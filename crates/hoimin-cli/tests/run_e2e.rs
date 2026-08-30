@@ -1953,6 +1953,47 @@ async fn first_ctrl_c_event_finishes_a_parseable_incomplete_session() {
     first_interrupt_scenario().await;
 }
 
+async fn drain_second_interrupt_stdout(
+    stdout_pipe: tokio::process::ChildStdout,
+    started_tx: tokio::sync::oneshot::Sender<Result<(), String>>,
+    finished_tx: tokio::sync::oneshot::Sender<Result<(), String>>,
+) -> std::io::Result<Vec<u8>> {
+    let mut reader = BufReader::new(stdout_pipe);
+    let mut stdout = Vec::new();
+    let mut started_tx = Some(started_tx);
+    let mut finished_tx = Some(finished_tx);
+    loop {
+        let mut line = Vec::new();
+        let bytes = reader.read_until(b'\n', &mut line).await?;
+        if bytes == 0 {
+            if let Some(started_tx) = started_tx.take() {
+                let _ = started_tx.send(Err("stdout closed before mutant_started".to_owned()));
+            }
+            if let Some(finished_tx) = finished_tx.take() {
+                let _ = finished_tx.send(Err("stdout closed before run_finished".to_owned()));
+            }
+            break;
+        }
+        let event = serde_json::from_slice::<serde_json::Value>(&line).ok();
+        if event
+            .as_ref()
+            .is_some_and(|event| event["kind"] == "mutant_started")
+            && let Some(started_tx) = started_tx.take()
+        {
+            let _ = started_tx.send(Ok(()));
+        }
+        if event
+            .as_ref()
+            .is_some_and(|event| event["kind"] == "run_finished")
+            && let Some(finished_tx) = finished_tx.take()
+        {
+            let _ = finished_tx.send(Ok(()));
+        }
+        stdout.extend_from_slice(&line);
+    }
+    Ok(stdout)
+}
+
 async fn second_interrupt_scenario() {
     let project = tempfile::tempdir().unwrap();
     let coordinator = tempfile::tempdir().unwrap();
@@ -1963,29 +2004,12 @@ async fn second_interrupt_scenario() {
     // Keep draining after the readiness event so a blocked report write cannot mask the signal.
     let stdout_pipe = child.stdout.take().unwrap();
     let (started_tx, started_rx) = tokio::sync::oneshot::channel();
-    let stdout_task = tokio::spawn(async move {
-        let mut reader = BufReader::new(stdout_pipe);
-        let mut stdout = Vec::new();
-        let mut started_tx = Some(started_tx);
-        loop {
-            let mut line = Vec::new();
-            let bytes = reader.read_until(b'\n', &mut line).await?;
-            if bytes == 0 {
-                if let Some(started_tx) = started_tx.take() {
-                    let _ = started_tx.send(Err("stdout closed before mutant_started".to_owned()));
-                }
-                break;
-            }
-            let is_started = serde_json::from_slice::<serde_json::Value>(&line)
-                .is_ok_and(|event| event["kind"] == "mutant_started");
-            if is_started && started_tx.is_some() {
-                let started_tx = started_tx.take().expect("sender checked above");
-                let _ = started_tx.send(Ok(()));
-            }
-            stdout.extend_from_slice(&line);
-        }
-        Ok::<_, std::io::Error>(stdout)
-    });
+    let (finished_tx, finished_rx) = tokio::sync::oneshot::channel();
+    let stdout_task = tokio::spawn(drain_second_interrupt_stdout(
+        stdout_pipe,
+        started_tx,
+        finished_tx,
+    ));
     let mut fixture_processes = None;
     let outcome: Result<_, String> = async {
         tokio::time::timeout(Duration::from_secs(15), started_rx)
@@ -2015,6 +2039,10 @@ async fn second_interrupt_scenario() {
                 descendant_process.pid()
             ));
         }
+        tokio::time::timeout(Duration::from_secs(5), finished_rx)
+            .await
+            .map_err(|_| "timed out waiting for JSONL kind run_finished".to_owned())?
+            .map_err(|_| "stdout drain task stopped before run_finished".to_owned())??;
 
         let forced_at = Instant::now();
         // The retained SQLite lock keeps the live child blocked in session finalization.
