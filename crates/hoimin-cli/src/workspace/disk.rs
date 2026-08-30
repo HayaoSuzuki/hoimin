@@ -1588,10 +1588,11 @@ mod tests {
 
     #[test]
     fn exact_depth_bound_uses_at_most_one_hundred_twenty_nine_directory_handles() {
+        use std::cell::Cell;
+
         if outer_depth_guard_active() {
             return;
         }
-        use std::cell::Cell;
 
         let temp = tempfile::tempdir().unwrap();
         let temp = Utf8Path::from_path(temp.path()).unwrap();
@@ -1631,10 +1632,11 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn directory_handle_bound_child() {
+        use std::cell::Cell;
+
         if outer_depth_guard_active() {
             return;
         }
-        use std::cell::Cell;
 
         if std::env::var_os("HOIMIN_DISK_HANDLE_BOUND_CHILD").is_none() {
             return;
