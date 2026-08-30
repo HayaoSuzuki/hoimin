@@ -28,7 +28,9 @@ from tools.focused_mutation_support.disk import (
     DiskGuard,
     MeterRoot,
     DiskRootId,
+    DiskSecondary,
     DiskStopReason,
+    DISK_MEASUREMENT_FAILED,
     apply_disk_lifecycle_event,
     evaluate_disk_policy,
     parse_byte_size,
@@ -275,6 +277,45 @@ class DiskPolicyDecisionTests(unittest.TestCase):
                 ),
             )
         )
+
+    def test_same_reason_keeps_distinct_evidence_and_deduplicates_exact_repeats(
+        self,
+    ) -> None:
+        lifecycle = DiskLifecycle([])
+        self.assertTrue(
+            apply_disk_lifecycle_event(
+                lifecycle, DiskLifecycleEvent.measurement_failed("first")
+            )
+        )
+        self.assertTrue(
+            apply_disk_lifecycle_event(
+                lifecycle, DiskLifecycleEvent.measurement_failed("second")
+            )
+        )
+        self.assertTrue(
+            apply_disk_lifecycle_event(
+                lifecycle, DiskLifecycleEvent.measurement_failed("second")
+            )
+        )
+
+        self.assertEqual(
+            lifecycle.secondary,
+            [
+                DiskSecondary(
+                    reason=DiskStopReason.MEASUREMENT_FAILED,
+                    code=DISK_MEASUREMENT_FAILED,
+                    message="second",
+                )
+            ],
+        )
+
+        threshold = DiskLifecycle([])
+        value = DiskObservation(owned_bytes=100, available_bytes=20)
+        event = DiskLifecycleEvent.observation(self.policy(), value)
+        self.assertTrue(apply_disk_lifecycle_event(threshold, event))
+        self.assertTrue(apply_disk_lifecycle_event(threshold, event))
+        self.assertEqual(len(threshold.stop.secondary), 1)
+        self.assertEqual(threshold.secondary, [])
 
 
 class BoundedCommandDrainTests(unittest.TestCase):

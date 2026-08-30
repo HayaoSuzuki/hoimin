@@ -409,21 +409,30 @@ def _safety_succeeded(lifecycle: DiskLifecycle) -> bool:
 def _record_secondary(
     lifecycle: DiskLifecycle, secondary: DiskSecondary
 ) -> None:
-    if secondary.reason is None:
-        lifecycle.secondary.append(secondary)
+    if lifecycle.stop is not None and _failure_matches_secondary(
+        lifecycle.stop, secondary
+    ):
         return
-    reasons = {
-        value.reason
-        for value in (
-            *(() if lifecycle.stop is None else lifecycle.stop.secondary),
-            *lifecycle.secondary,
+    if lifecycle.stop is not None and secondary in lifecycle.stop.secondary:
+        return
+    if secondary in lifecycle.secondary:
+        return
+    lifecycle.secondary.append(secondary)
+
+
+def _failure_matches_secondary(
+    failure: DiskFailure, secondary: DiskSecondary
+) -> bool:
+    if secondary.observation is not None:
+        return (
+            failure.reason is secondary.reason
+            and failure.observation == secondary.observation
         )
-        if value.reason is not None
-    }
-    if lifecycle.stop is not None:
-        reasons.add(lifecycle.stop.reason)
-    if secondary.reason not in reasons:
-        lifecycle.secondary.append(secondary)
+    return (
+        failure.reason is secondary.reason
+        and failure.code == secondary.code
+        and failure.message == secondary.message
+    )
 
 
 def _record_disk_failure(

@@ -426,6 +426,11 @@ For one successful observation that reaches both boundaries, the reserve reason 
 primary because it represents immediate filesystem capacity; the owned-size reason is
 retained as secondary evidence. A measurement failure has its own terminal reason and
 does not synthesize either numeric observation.
+Structured secondary evidence is deduplicated only when the complete observation or
+the complete `(code, message)` error is equal. Distinct failures with the same stable
+code remain ordered evidence. The Lean oracle projects these structured values to one
+entry per stop-reason class; that finite projection does not discard detail from the
+runtime report.
 
 An unavailable free-space query or an unidentifiable filesystem fails closed.
 
@@ -649,12 +654,21 @@ the result is `clean`; cleanup starts no follow-up `stat`. When budget remains, 
 still performs an anchored absence check so a surviving name or injected no-op adapter
 is `failed`.
 
-The sole path-evidence exception is an identity-integrity or namespace-I/O failure that
-prevents validating any current path for the still-open owned-root capability. It yields
-`deferred` with no `remaining_root`, records a bounded integrity diagnostic, and stops
-further dispatch. Because no safe path can be rescanned, final evidence conservatively
-carries the complete last pre-clean owned-byte floor and identity provenance into the
-post-clean observation. This exception never reports `clean` or removed logical bytes.
+The Python focused workflow's path-evidence exception is an identity-integrity or
+namespace-I/O failure that prevents validating any current path for the still-open
+owned-root capability. It yields `deferred` with no `remaining_root`, records a bounded
+integrity diagnostic, and stops further dispatch. Because no safe path can be rescanned,
+its final evidence conservatively carries the complete last pre-clean owned-byte floor
+and identity provenance into the post-clean observation. This exception never reports
+`clean` or removed logical bytes.
+
+Rust has one additional honest null-path outcome: a cleanup worker that started but did
+not settle within the shutdown budget may still be changing the active/deleting
+namespace. The caller does not race it with a synchronous identity scan. It reports
+`deferred` with no `remaining_root` and a bounded worker-timeout or worker-stopped
+diagnostic; the worker retains the root capability and lease until it exits. The Rust
+summary retains its sampled peak/minimum/filesystem evidence, claims no removed logical
+bytes, emits no output acknowledgement, and leaves later reclamation to the janitor.
 
 If the disk monitor cannot join within the shutdown budget, the runtime marks cleanup
 deferred, emits no cleanup-ready marker, and leaves the monitor's shared lease guard

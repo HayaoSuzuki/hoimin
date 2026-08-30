@@ -59,7 +59,7 @@ fn measurement_failure_uses_stable_code_without_an_observation() {
 }
 
 #[test]
-fn first_stop_is_sticky_and_secondary_reasons_are_ordered_and_deduplicated() {
+fn first_stop_is_sticky_and_only_exact_secondary_evidence_is_deduplicated() {
     let mut lifecycle = DiskLifecycle::new([]).unwrap();
     assert!(lifecycle.apply(DiskLifecycleEvent::MeasurementFailed {
         message: "first".into(),
@@ -76,13 +76,27 @@ fn first_stop_is_sticky_and_secondary_reasons_are_ordered_and_deduplicated() {
     let failure = snapshot.stop.unwrap();
     assert_eq!(failure.reason, DiskStopReason::MeasurementFailed);
     assert_eq!(
-        failure
-            .secondary
-            .iter()
-            .map(hoimin_core::DiskSecondary::code)
-            .collect::<Vec<_>>(),
-        vec![FILESYSTEM_RESERVE_REACHED, WORKSPACE_SIZE_EXCEEDED]
+        failure.secondary,
+        vec![
+            hoimin_core::DiskSecondary::Observation {
+                reason: DiskStopReason::FilesystemReserveReached,
+                value: observation(10, 10),
+            },
+            hoimin_core::DiskSecondary::Observation {
+                reason: DiskStopReason::WorkspaceSizeExceeded,
+                value: observation(10, 10),
+            },
+            hoimin_core::DiskSecondary::Error {
+                code: DISK_MEASUREMENT_FAILED.into(),
+                message: "duplicate".into(),
+            },
+        ]
     );
+
+    assert!(lifecycle.apply(DiskLifecycleEvent::MeasurementFailed {
+        message: "duplicate".into(),
+    }));
+    assert_eq!(lifecycle.snapshot().secondary.len(), 3);
 }
 
 #[test]

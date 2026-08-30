@@ -188,6 +188,10 @@ failed, only `cleanupDeferred` or `cleanupRetained` is valid. It also rejects a 
 request for a root in `deliveryRoots` until `report` is settled. A failed report write
 therefore still permits the required delivery-root cleanup after the three deletion
 safety components succeeded.
+
+The finite Lean state records each secondary stop-reason class once. Rust and Python
+retain ordered structured evidence and deduplicate only an exactly equal observation or
+an exactly equal `(code, message)` error before projecting to that finite reason list.
 In addition, accept `finish` only when `report = succeeded` and every root in
 `deliveryRoots` is in `cleanupClean`. Report failure or failed delivery cleanup remains a
 settled error trace whose final `finish` event is rejected. Execution-root failed or
@@ -2099,11 +2103,38 @@ gate.
 
 **Files:**
 
+- Modify: `crates/hoimin-core/Cargo.toml`
+- Modify: `crates/hoimin-core/src/disk.rs`
+- Modify: `crates/hoimin-core/src/machine.rs`
+- Modify: `crates/hoimin-core/src/report.rs`
+- Modify: `crates/hoimin-core/tests/disk_policy.rs`
+- Modify: `crates/hoimin-core/tests/lean_disk_guard_oracle.rs`
+- Modify: `crates/hoimin-core/tests/machine.rs`
+- Modify: `crates/hoimin-core/tests/report_policy.rs`
+- Modify: `crates/hoimin-cli/src/process/mod.rs`
+- Modify: `crates/hoimin-cli/src/resource/mod.rs`
+- Modify: `crates/hoimin-cli/src/resource/portable.rs`
 - Modify: `crates/hoimin-cli/src/shell.rs`
 - Modify: `crates/hoimin-cli/src/workspace/mod.rs`
 - Modify: `crates/hoimin-cli/src/workspace/owned.rs`
+- Modify: `crates/hoimin-cli/tests/lean_disk_shutdown_oracle.rs`
+- Modify: `crates/hoimin-cli/tests/process_handler.rs`
+- Modify: `crates/hoimin-cli/tests/report_handler.rs`
+- Modify: `crates/hoimin-cli/tests/run_e2e.rs`
+- Modify: `docs/json-schema/run-event.schema.json`
 - Modify: `docs/superpowers/specs/2026-08-27-disk-safe-mutation-execution-design.md`
 - Modify: `docs/superpowers/plans/2026-08-27-disk-safe-mutation-execution.md`
+- Modify: `formal/HoiminOracle/DiskGuardAuditMain.lean`
+- Modify: `formal/HoiminOracle/DiskGuardBrokenConsumer.lean`
+- Modify: `formal/HoiminOracle/HoiminOracle/DiskGuardCases.lean`
+- Modify: `formal/HoiminOracle/HoiminOracle/DiskGuardModel.lean`
+- Modify: `formal/HoiminOracle/HoiminOracle/DiskGuardProofs.lean`
+- Modify: `formal/HoiminOracle/corpus/disk-guard-lifecycle.jsonl`
+- Modify: `tests/test_focused_mutation_disk.py`
+- Modify: `tests/test_focused_mutation_disk_oracle.py`
+- Modify: `tests/test_focused_mutation_reporting.py`
+- Modify: `tools/focused_mutation.py`
+- Modify: `tools/focused_mutation_support/disk.py`
 - Create ignored evidence under:
   `.superpowers/sdd/2026-08-27-disk-safe-mutation-execution/`
 
@@ -2113,6 +2144,22 @@ gate.
 - Produces: final-SHA native/compatibility/formal evidence, an explicit record that Rust
   mutation was prohibited and omitted, three independent same-SHA reviews, and a
   delivery handoff. Push/PR work occurs only after the user's explicit choice.
+
+Task 10 review fixes may touch any file above because they close cross-task lifecycle,
+schema, platform, formal-correspondence, or reporting findings. Stage only the explicit
+files that changed, commit each fix wave before freezing `candidate-sha.txt`, and never
+use `git add -A` for this handoff. For the final current fix wave the staging command is:
+
+```bash
+git add -- \
+  crates/hoimin-core/src/disk.rs \
+  crates/hoimin-core/tests/disk_policy.rs \
+  tools/focused_mutation_support/disk.py \
+  tests/test_focused_mutation_disk.py \
+  docs/superpowers/specs/2026-08-27-disk-safe-mutation-execution-design.md \
+  docs/superpowers/plans/2026-08-27-disk-safe-mutation-execution.md
+git commit -m "fix: preserve distinct lifecycle evidence"
+```
 
 - [ ] **Step 1: Rebase on current main before final evidence**
 

@@ -485,11 +485,8 @@ fn record_failure(lifecycle: &mut DiskLifecycle, mut failure: DiskFailure) {
         if lifecycle
             .stop
             .as_ref()
-            .is_some_and(|primary| primary.reason.code() == value.code())
-            || lifecycle
-                .secondary
-                .iter()
-                .any(|existing| existing.code() == value.code())
+            .is_some_and(|primary| failure_matches_secondary(primary, &value))
+            || lifecycle.secondary.contains(&value)
         {
             continue;
         }
@@ -498,13 +495,30 @@ fn record_failure(lifecycle: &mut DiskLifecycle, mut failure: DiskFailure) {
 }
 
 fn add_error(lifecycle: &mut DiskLifecycle, code: &'static str, message: String) {
-    if lifecycle.secondary.iter().any(|value| value.code() == code) {
-        return;
-    }
-    lifecycle.secondary.push(DiskSecondary::Error {
+    let secondary = DiskSecondary::Error {
         code: code.into(),
         message,
-    });
+    };
+    if lifecycle
+        .stop
+        .as_ref()
+        .is_some_and(|primary| failure_matches_secondary(primary, &secondary))
+        || lifecycle.secondary.contains(&secondary)
+    {
+        return;
+    }
+    lifecycle.secondary.push(secondary);
+}
+
+fn failure_matches_secondary(failure: &DiskFailure, secondary: &DiskSecondary) -> bool {
+    match secondary {
+        DiskSecondary::Observation { reason, value } => {
+            failure.reason == *reason && failure.observation.as_ref() == Some(value)
+        }
+        DiskSecondary::Error { code, message } => {
+            failure.code == *code && failure.message.as_ref() == Some(message)
+        }
+    }
 }
 
 fn settled(state: DiskComponentState) -> bool {
