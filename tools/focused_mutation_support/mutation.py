@@ -18,6 +18,8 @@ MAX_JSON_DEPTH = 64
 MAX_JSON_STRING_BYTES = 16 * 1024
 _OUTER_GUARD_DEPTH_FIXTURES = (
     "workspace::disk::tests::exact_depth_bound_uses_at_most_one_hundred_twenty_nine_directory_handles",
+    "workspace::disk::tests::directory_handle_bound_child",
+    "workspace::disk::tests::fresh_process_observes_the_real_directory_descriptor_bound",
     "workspace::disk::tests::rejects_a_tree_deeper_than_the_bound",
     "workspace::owned::tests::cleanup_removes_a_tree_deeper_than_the_meter_limit",
     "workspace::root::tests::post_order_removal_handles_a_tree_at_the_supported_depth",
