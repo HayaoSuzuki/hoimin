@@ -606,12 +606,22 @@ fn disk_stop_is_a_global_infrastructure_stop_before_new_mutant_dispatch() {
     );
 
     let followup = effect_id(effects.first().expect("post-stop reporting effect"));
-    let (next, _) = transition(
+    let (next, effects) = transition(
         next,
         RunEvent::EffectFailed(EffectFailed::other(
             followup,
             "process.resource.close",
             "close failed after disk stop",
+        )),
+    )
+    .unwrap();
+    let second_followup = effect_id(effects.first().expect("second post-stop effect"));
+    let (next, _) = transition(
+        next,
+        RunEvent::EffectFailed(EffectFailed::other(
+            second_followup,
+            "process.resource.close",
+            "second close failed after disk stop",
         )),
     )
     .unwrap();
@@ -627,6 +637,14 @@ fn disk_stop_is_a_global_infrastructure_stop_before_new_mutant_dispatch() {
                 secondary,
                 hoimin_core::DiskSecondary::Error { message, .. }
                     if message == "close failed after disk stop"
+            )
+    }));
+    assert!(stop.secondary.iter().any(|secondary| {
+        secondary.code() == "process.resource.close"
+            && matches!(
+                secondary,
+                hoimin_core::DiskSecondary::Error { message, .. }
+                    if message == "second close failed after disk stop"
             )
     }));
 }

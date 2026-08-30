@@ -1371,15 +1371,19 @@ pub fn transition(
     let completed_worker = completed.and_then(|pending| pending.worker);
     if let RunEvent::EffectFailed(failed) = &event
         && let Some(stop) = &mut state.disk_summary.stop
-        && stop
-            .secondary
-            .iter()
-            .all(|secondary| secondary.code() != failed.failure.code())
     {
-        stop.secondary.push(crate::DiskSecondary::Error {
+        let secondary = crate::DiskSecondary::Error {
             code: failed.failure.code().to_owned(),
             message: failed.failure.message(),
-        });
+        };
+        let matches_primary = matches!(
+            &secondary,
+            crate::DiskSecondary::Error { code, message }
+                if stop.code == *code && stop.message.as_ref() == Some(message)
+        );
+        if !matches_primary && !stop.secondary.contains(&secondary) {
+            stop.secondary.push(secondary);
+        }
     }
     let effects = match event {
         RunEvent::StartRequested(_) if state.phase == RunPhase::Validate => {

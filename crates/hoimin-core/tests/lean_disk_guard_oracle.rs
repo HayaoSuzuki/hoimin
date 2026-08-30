@@ -202,11 +202,16 @@ fn assert_policy_case(case: &CorpusCase) {
             failure
                 .secondary
                 .iter()
-                .map(|value| match value {
-                    DiskSecondary::Observation { reason, .. } => reason_name(*reason),
-                    DiskSecondary::Error { .. } => "measurement_failed",
+                .fold(Vec::new(), |mut reasons, value| {
+                    let reason = match value {
+                        DiskSecondary::Observation { reason, .. } => reason_name(*reason),
+                        DiskSecondary::Error { .. } => "measurement_failed",
+                    };
+                    if !reasons.contains(&reason) {
+                        reasons.push(reason);
+                    }
+                    reasons
                 })
-                .collect::<Vec<_>>()
         })
         .unwrap_or_default();
     assert_eq!(

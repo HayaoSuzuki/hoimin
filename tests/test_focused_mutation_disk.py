@@ -317,6 +317,40 @@ class DiskPolicyDecisionTests(unittest.TestCase):
         self.assertEqual(len(threshold.stop.secondary), 1)
         self.assertEqual(threshold.secondary, [])
 
+        cleanup = DiskLifecycle(
+            [DiskRootId.EXECUTION, DiskRootId.DELIVERY]
+        )
+        for event in (
+            DiskLifecycleEvent.process_drain_succeeded(),
+            DiskLifecycleEvent.output_drain_succeeded(),
+            DiskLifecycleEvent.monitor_join_succeeded(),
+            DiskLifecycleEvent.report_succeeded(),
+        ):
+            self.assertTrue(apply_disk_lifecycle_event(cleanup, event))
+        for root in (DiskRootId.EXECUTION, DiskRootId.DELIVERY):
+            self.assertTrue(
+                apply_disk_lifecycle_event(
+                    cleanup, DiskLifecycleEvent.cleanup_requested(root)
+                )
+            )
+            self.assertTrue(
+                apply_disk_lifecycle_event(
+                    cleanup,
+                    DiskLifecycleEvent.cleanup_completed(
+                        root, CleanupOutcome.FAILED, "same cleanup failure"
+                    ),
+                )
+            )
+        self.assertEqual(
+            cleanup.secondary,
+            [
+                DiskSecondary(
+                    code="workspace.cleanup.failed",
+                    message="same cleanup failure",
+                )
+            ],
+        )
+
 
 class BoundedCommandDrainTests(unittest.TestCase):
     def test_concurrent_stdout_and_stderr_are_drained_and_bounded(self) -> None:

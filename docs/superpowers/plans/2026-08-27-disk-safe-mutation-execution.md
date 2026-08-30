@@ -2115,6 +2115,7 @@ gate.
 - Modify: `crates/hoimin-cli/src/resource/mod.rs`
 - Modify: `crates/hoimin-cli/src/resource/portable.rs`
 - Modify: `crates/hoimin-cli/src/shell.rs`
+- Modify: `crates/hoimin-cli/src/workspace/disk.rs`
 - Modify: `crates/hoimin-cli/src/workspace/mod.rs`
 - Modify: `crates/hoimin-cli/src/workspace/owned.rs`
 - Modify: `crates/hoimin-cli/tests/lean_disk_shutdown_oracle.rs`
@@ -2152,13 +2153,14 @@ use `git add -A` for this handoff. For the final current fix wave the staging co
 
 ```bash
 git add -- \
-  crates/hoimin-core/src/disk.rs \
-  crates/hoimin-core/tests/disk_policy.rs \
+  crates/hoimin-core/src/machine.rs \
+  crates/hoimin-core/tests/lean_disk_guard_oracle.rs \
+  crates/hoimin-core/tests/machine.rs \
+  crates/hoimin-cli/src/workspace/disk.rs \
   tools/focused_mutation_support/disk.py \
   tests/test_focused_mutation_disk.py \
-  docs/superpowers/specs/2026-08-27-disk-safe-mutation-execution-design.md \
   docs/superpowers/plans/2026-08-27-disk-safe-mutation-execution.md
-git commit -m "fix: preserve distinct lifecycle evidence"
+git commit -m "fix: preserve exact secondary evidence"
 ```
 
 - [ ] **Step 1: Rebase on current main before final evidence**

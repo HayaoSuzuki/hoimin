@@ -626,18 +626,27 @@ fn publish_stop(
     }
     secondary.append(&mut failure.secondary);
     for value in secondary {
-        if primary.code == value.code()
-            || primary
-                .secondary
-                .iter()
-                .any(|existing| existing.code() == value.code())
-        {
+        if stop_matches_secondary(&primary, &value) || primary.secondary.contains(&value) {
             continue;
         }
         primary.secondary.push(value);
     }
     stop.send_replace(Some(primary.clone()));
     primary
+}
+
+fn stop_matches_secondary(
+    stop: &hoimin_core::DiskFailure,
+    secondary: &hoimin_core::DiskSecondary,
+) -> bool {
+    match secondary {
+        hoimin_core::DiskSecondary::Observation { reason, value } => {
+            stop.reason == *reason && stop.observation.as_ref() == Some(value)
+        }
+        hoimin_core::DiskSecondary::Error { code, message } => {
+            stop.code == *code && stop.message.as_ref() == Some(message)
+        }
+    }
 }
 
 #[derive(Default)]
@@ -1335,6 +1344,8 @@ mod tests {
                 Ok(reading(200, 400)),
                 Ok(reading(900, 800)),
                 Err(std::io::Error::other("statvfs failed")),
+                Err(std::io::Error::other("statvfs failed differently")),
+                Err(std::io::Error::other("statvfs failed differently")),
             ])),
         };
         let policy = hoimin_core::DiskPolicy {
@@ -1372,6 +1383,25 @@ mod tests {
                 hoimin_core::DISK_MEASUREMENT_FAILED,
             ]
         );
+        let fourth = monitor
+            .sample_now()
+            .await
+            .expect("distinct sticky measurement stop");
+        assert_eq!(fourth.reason, first.reason);
+        assert_eq!(fourth.secondary.len(), 3);
+        assert!(fourth.secondary.iter().any(|secondary| {
+            matches!(
+                secondary,
+                hoimin_core::DiskSecondary::Error { code, message }
+                    if code == hoimin_core::DISK_MEASUREMENT_FAILED
+                        && message == "statvfs failed differently"
+            )
+        }));
+        let fifth = monitor
+            .sample_now()
+            .await
+            .expect("exact duplicate measurement stop");
+        assert_eq!(fifth.secondary.len(), 3);
         let stats = monitor.stats();
         assert_eq!(stats.sample_count, 3);
         assert_eq!(stats.latest_owned_bytes, Some(900));

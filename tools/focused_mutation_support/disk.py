@@ -550,11 +550,13 @@ def apply_disk_lifecycle_event(
             return False
         target.append(root)
         if event.outcome is CleanupOutcome.FAILED:
-            lifecycle.secondary.append(
+            _record_secondary(
+                lifecycle,
                 DiskSecondary(code=WORKSPACE_CLEANUP_FAILED, message=event.message)
             )
         elif event.outcome is CleanupOutcome.DEFERRED:
-            lifecycle.secondary.append(
+            _record_secondary(
+                lifecycle,
                 DiskSecondary(code=WORKSPACE_CLEANUP_DEFERRED, message=event.message)
             )
         return True
