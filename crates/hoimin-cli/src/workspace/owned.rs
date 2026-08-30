@@ -851,6 +851,31 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn interrupted_cleanup_records_unverifiable_namespace_evidence() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let active = root.path().file_name().unwrap();
+        coordinator
+            .dir
+            .rename(active, &coordinator.dir, ".parked-interrupted-root")
+            .unwrap();
+
+        let record = root.interrupted_cleanup_record(true, "cleanup stopped".to_owned());
+
+        assert_eq!(record.status, hoimin_core::DiskCleanupStatus::Deferred);
+        assert!(record.remaining_root.is_none());
+        assert!(
+            record
+                .details
+                .iter()
+                .any(|detail| { detail.contains("cleanup root namespace entry was not found") })
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn janitor_resumes_a_partially_removed_deleting_root() {
         let parent = tempfile::tempdir().unwrap();
         let parent = Utf8Path::from_path(parent.path()).unwrap();
@@ -3030,25 +3055,51 @@ impl ManagedRunRoot {
         record
     }
 
-    fn verified_remaining_root(&self) -> Option<Utf8PathBuf> {
-        let expected_identity = directory_identity(&self.dir).ok()?;
-        let parent = self.path.parent()?;
+    fn verified_remaining_root(&self) -> Result<Option<Utf8PathBuf>, String> {
+        let expected_identity = directory_identity(&self.dir)
+            .map_err(|error| format!("inspect interrupted cleanup root identity: {error}"))?;
+        let parent = self
+            .path
+            .parent()
+            .ok_or_else(|| "managed root has no parent".to_owned())?;
         for name in [
-            format!("{DELETING_PREFIX}{}", self.run_id),
             format!("{ACTIVE_PREFIX}{}", self.run_id),
+            format!("{DELETING_PREFIX}{}", self.run_id),
         ] {
-            let Ok(candidate) = open_owned_directory(&self.coordinator_dir, &name) else {
-                continue;
+            let metadata = match self.coordinator_dir.symlink_metadata(&name) {
+                Ok(metadata) => metadata,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => {
+                    return Err(format!("inspect interrupted cleanup entry {name}: {error}"));
+                }
             };
-            if directory_identity(&candidate).ok() == Some(expected_identity) {
-                return Some(parent.join(name));
+            if !metadata.is_dir()
+                || metadata.file_type().is_symlink()
+                || metadata_identity(&metadata) != expected_identity
+            {
+                return Err(format!(
+                    "interrupted cleanup entry {name} did not match the owned root identity"
+                ));
             }
+            let candidate = open_owned_directory(&self.coordinator_dir, &name)
+                .map_err(|error| format!("open interrupted cleanup entry {name}: {error}"))?;
+            let candidate_identity = directory_identity(&candidate)
+                .map_err(|error| format!("identify interrupted cleanup entry {name}: {error}"))?;
+            if candidate_identity != expected_identity {
+                return Err(format!(
+                    "opened interrupted cleanup entry {name} changed identity"
+                ));
+            }
+            return Ok(Some(parent.join(name)));
         }
-        None
+        Ok(None)
     }
 
     pub(crate) fn interrupted_cleanup_record(&self, failed: bool, reason: String) -> CleanupRecord {
-        let remaining_root = self.verified_remaining_root();
+        let (remaining_root, integrity_detail) = match self.verified_remaining_root() {
+            Ok(remaining_root) => (remaining_root, None),
+            Err(error) => (None, Some(error)),
+        };
         let mut record = CleanupRecord {
             status: if failed && remaining_root.is_some() {
                 DiskCleanupStatus::Failed
@@ -3062,6 +3113,11 @@ impl ManagedRunRoot {
             remaining_root,
         };
         record.push_detail(reason);
+        if let Some(detail) = integrity_detail {
+            record.push_detail(format!("cleanup integrity unverifiable: {detail}"));
+        } else if record.remaining_root.is_none() {
+            record.push_detail("cleanup root namespace entry was not found".to_owned());
+        }
         record
     }
 
@@ -3070,7 +3126,16 @@ impl ManagedRunRoot {
         reason = "Task 6 wires unsafe-to-clean shutdown transitions"
     )]
     pub(crate) fn abandon_for_janitor(&self, reason: String) -> CleanupRecord {
-        self.interrupted_cleanup_record(false, reason)
+        let mut record = CleanupRecord {
+            status: DiskCleanupStatus::Deferred,
+            examined_entries: 0,
+            removed_entries: 0,
+            details: Vec::new(),
+            omitted_detail_count: 0,
+            remaining_root: Some(self.path.clone()),
+        };
+        record.push_detail(reason);
+        record
     }
 
     #[allow(

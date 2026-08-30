@@ -121,7 +121,9 @@ disk writes. Cleanup that depends on cargo-mutants destructors cannot run after
   boundary.
 - Hoimin does not delete Cargo caches, a repository `target/`, user-selected
   output, or any directory that lacks a valid Hoimin lease.
-- This change does not make full-workspace cargo-mutants runs a delivery gate.
+- By explicit user directive on 2026-08-30, this delivery runs no Rust mutation testing
+  of any scope: raw, focused, inventory-only, or origin/main comparison. The wrapper
+  remains a product feature, but mutation execution is not delivery evidence.
 - This change does not infer that a disk-limited mutant was caught by tests.
 - This change does not add a background service or require administrator
   privileges.
@@ -971,12 +973,12 @@ Tests model large byte counts. They do not create GiB-scale files.
 - Windows lifecycle and locked-file cleanup behavior in CI;
 - Lean build, broken witnesses, corpus freshness, Rust adapter, and Python
   adapter;
-- a small real focused cargo-mutants run with one worker under the new guard.
+- an explicit final-SHA record that all Rust mutation execution was prohibited and
+  omitted, without presenting the omission as a passed mutation gate.
 
-The delivery does not run the full Rust workspace mutation inventory. Focused
-mutation targets only the new Rust policy and lifecycle code. The run cleans its
-scratch before completion and records peak use, removed logical bytes, and signed
-free-space change without claiming physical byte attribution.
+The delivery does not run Rust mutation testing. Ordinary, formal, compatibility,
+contract, wheel, and native lifecycle evidence replace the formerly planned focused
+mutation gate. No mutation score or mutation-pass claim is produced for this candidate.
 
 ## Documentation
 
@@ -1014,8 +1016,8 @@ The change is complete when:
    caller-provided capacity roots; no per-file signal path can receive mutation credit.
 6. Disk-stopped candidates remain unverified and do not improve mutation score.
 7. Rust and Python match the Lean-generated state-machine corpus.
-8. The one-worker real focused mutation evidence stays under the configured
-   limits and removes its scratch.
+8. The candidate evidence explicitly records that Rust mutation was prohibited and
+   omitted; no cargo-mutants process or new mutation artifact exists for the final SHA.
 9. All normal, compatibility, contract, platform, and documentation gates pass.
 10. The guard itself stays within its descriptor, entry, scan-time, inventory, candidate,
     retained-log, cleanup-slice, janitor-work, and diagnostic caps, and no destructor

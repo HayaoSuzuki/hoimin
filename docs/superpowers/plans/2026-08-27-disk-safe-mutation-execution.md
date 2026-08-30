@@ -2100,7 +2100,9 @@ gate.
 **Files:**
 
 - Modify: `crates/hoimin-cli/src/shell.rs`
+- Modify: `crates/hoimin-cli/src/workspace/mod.rs`
 - Modify: `crates/hoimin-cli/src/workspace/owned.rs`
+- Modify: `docs/superpowers/specs/2026-08-27-disk-safe-mutation-execution-design.md`
 - Modify: `docs/superpowers/plans/2026-08-27-disk-safe-mutation-execution.md`
 - Create ignored evidence under:
   `.superpowers/sdd/2026-08-27-disk-safe-mutation-execution/`
@@ -2295,6 +2297,9 @@ merge without separate user or maintainer authorization.
 - [ ] macOS/Linux native evidence is honest; Windows CI lifecycle evidence passes.
 - [ ] Rust mutation execution is omitted and recorded by explicit user directive; no
   cargo-mutants process or new mutation artifact exists for the candidate SHA.
-- [ ] Final SHA is clean, independently reviewed, pushed, and equal to the PR head.
-- [ ] GitHub checks are watched at 60-second intervals and the exact PR job set passes;
-  push-to-main-only jobs are identified as not applicable.
+- [ ] Final SHA is clean and independently reviewed. If the user selects the PR option,
+  it is pushed and equals the PR head; otherwise remote delivery is explicitly not
+  applicable for this handoff.
+- [ ] If the user selects the PR option, GitHub checks are watched at 60-second intervals
+  and the exact PR job set passes; otherwise this external-state gate is marked not
+  applicable. Push-to-main-only jobs are identified separately.
