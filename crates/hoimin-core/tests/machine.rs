@@ -598,7 +598,7 @@ fn disk_stop_is_a_global_infrastructure_stop_before_new_mutant_dispatch() {
     .unwrap();
 
     assert_eq!(next.phase(), RunPhase::Finalize);
-    assert_eq!(next.exit_code(), 4);
+    assert_eq!(next.exit_code(), 2);
     assert!(
         !effects
             .iter()

@@ -1902,6 +1902,7 @@ pub fn transition(
             }
         }
         RunEvent::DiskStopRequested(value) => {
+            state.flags.outcome.infrastructure_error = true;
             state.flags.outcome.incomplete = true;
             state.flags.scheduling.stop_requested = true;
             if state.disk_summary.stop.is_none() {
