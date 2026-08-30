@@ -232,6 +232,7 @@ def build_mutation_command(
         "mutants",
         "--package",
         package,
+        "--test-workspace=false",
         "--manifest-path",
         str(repository / "Cargo.toml"),
         "--output",

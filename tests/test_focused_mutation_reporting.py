@@ -3010,6 +3010,7 @@ class FocusedMutationReportingTests(unittest.TestCase):
         self.assertNotIn("--iterate", argv)
         self.assertEqual(argv[argv.index("--jobs") + 1], "1")
         self.assertNotIn("--workspace", argv)
+        self.assertIn("--test-workspace=false", argv)
         self.assertEqual(argv[argv.index("--package") + 1], "hoimin-core")
 
     def test_cli_commands_skip_depth_fixtures_that_trip_the_outer_guard(
