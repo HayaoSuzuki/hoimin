@@ -2491,6 +2491,7 @@ enum ChildCreationBoundary {
     Opened,
 }
 
+#[cfg_attr(unix, derive(Clone, Copy))]
 struct StagingPublication<'a> {
     name: &'a str,
     path: &'a Utf8Path,
