@@ -478,7 +478,8 @@ impl RunControl {
             "sentinel-{}",
             active.file_name().expect("managed root name")
         ));
-        std::fs::rename(active, &sentinel).expect("move delivery root to sentinel");
+        root.move_for_identity_replacement_test(&sentinel)
+            .expect("move delivery root to sentinel");
         std::fs::create_dir(active).expect("create same-name replacement");
         *self
             .delivery_cleanup_sentinel
@@ -6436,7 +6437,7 @@ mod tests {
         assert_eq!(roots.len(), 2);
         assert!(
             roots.iter().all(|root| !root.exists()),
-            "report failure stranded managed roots: {roots:?}"
+            "report failure stranded managed roots: {roots:?}; run error: {error}"
         );
         assert!(
             !observed

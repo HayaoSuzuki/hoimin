@@ -311,6 +311,13 @@ impl PortableSupervisor {
         Ok(self.tree_quiescent)
     }
 
+    #[cfg_attr(
+        not(unix),
+        allow(
+            clippy::unnecessary_wraps,
+            reason = "the shared supervisor API is fallible on Unix but infallible on Windows"
+        )
+    )]
     pub(crate) fn refresh_tree_quiescence_after_root_reap(
         &mut self,
     ) -> Result<bool, ResourceError> {

@@ -877,10 +877,13 @@ fn cleanup_lock_returns_typed_failure_keeps_worker_and_succeeds_on_retry() {
         .unwrap_err();
 
     assert_eq!(failed.id, EffectId(162));
-    assert!(matches!(
-        failed.failure,
-        EffectFailure::Io { ref operation, .. } if operation == "remove worker workspace"
-    ));
+    assert!(
+        matches!(
+            failed.failure,
+            EffectFailure::Io { ref operation, .. } if operation == "remove worker workspace"
+        ),
+        "unexpected cleanup failure: {failed:?}"
+    );
     assert_eq!(handler.worker_count(), 1);
     assert!(worker_root.exists());
     assert_eq!(ledger.reserved(hoimin_core::BudgetKind::Copy), 9);

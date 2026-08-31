@@ -648,7 +648,7 @@ async fn jobs_four_processes_receive_isolated_run_mutant_and_worker_metadata() {
     write_parallel_project(project.path());
     let original = "return a + b + c + d + e";
     let mutant = format!(
-        "assert Path(os.environ['HOIMIN_WORKER_ROOT']).resolve() == Path.cwd().resolve()\nPath({:?}, os.environ['HOIMIN_MUTANT_ID']).write_text(os.environ['HOIMIN_RUN_ID'])",
+        "assert os.path.samefile(os.environ['HOIMIN_WORKER_ROOT'], Path.cwd())\nPath({:?}, os.environ['HOIMIN_MUTANT_ID']).write_text(os.environ['HOIMIN_RUN_ID'])",
         records.to_string_lossy(),
     );
     let command = format!(
@@ -665,10 +665,17 @@ async fn jobs_four_processes_receive_isolated_run_mutant_and_worker_metadata() {
     let run_id = run.document["run"]["run_id"].as_str().unwrap();
     for mutant in run.document["mutants"].as_array().unwrap() {
         let mutant_id = mutant["candidate"]["id"].as_str().unwrap();
-        assert_eq!(
-            std::fs::read_to_string(records.join(mutant_id)).unwrap(),
-            run_id
+        let record = records.join(mutant_id);
+        assert!(
+            record.is_file(),
+            "missing metadata record for {mutant_id}; mutant={mutant}; records={:?}",
+            std::fs::read_dir(&records)
+                .unwrap()
+                .filter_map(Result::ok)
+                .map(|entry| entry.file_name())
+                .collect::<Vec<_>>()
         );
+        assert_eq!(std::fs::read_to_string(record).unwrap(), run_id);
     }
 }
 
@@ -1792,17 +1799,14 @@ async fn injected_ctrl_c_finishes_incomplete_or_defers_when_tree_quiescence_is_u
     let coordinator = tempfile::tempdir().unwrap();
     let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(project.path());
-    let active = coordinator.path().join("active");
-    std::fs::create_dir(&active).unwrap();
     let descendant_ready = coordinator.path().join("descendant-ready");
     let descendant_heartbeats = coordinator.path().join("descendant-heartbeats");
     std::fs::create_dir(&descendant_ready).unwrap();
     std::fs::create_dir(&descendant_heartbeats).unwrap();
     let session = coordinator.path().join("session.sqlite3");
-    let child = "from pathlib import Path\nimport os,sys,time\nheartbeat=Path(sys.argv[1],str(os.getpid()))\nwhile True:\n heartbeat.write_text(str(time.monotonic_ns()))\n time.sleep(0.05)";
+    let child = "from pathlib import Path\nimport sys,time\nheartbeat=Path(sys.argv[1],sys.argv[2])\nwhile True:\n heartbeat.write_text(str(time.monotonic_ns()))\n time.sleep(0.05)";
     let mutant = format!(
-        "from pathlib import Path\nimport os,subprocess,sys,time\nPath({:?},str(os.getpid())).write_text('running')\ntime.sleep(0.5)\nchild=subprocess.Popen([sys.executable,'-c',{:?},{:?}])\nPath({:?},str(child.pid)).write_text(str(os.getpid()))\ntime.sleep(20)",
-        active.to_string_lossy(),
+        "from pathlib import Path\nimport os,subprocess,sys,time\ntoken=str(os.getpid())\nchild=subprocess.Popen([sys.executable,'-c',{:?},{:?},token])\nPath({:?},token).write_text(str(child.pid))\ntime.sleep(20)",
         child,
         descendant_heartbeats.to_string_lossy(),
         descendant_ready.to_string_lossy(),
@@ -1845,14 +1849,28 @@ async fn injected_ctrl_c_finishes_incomplete_or_defers_when_tree_quiescence_is_u
     );
     let cancel = async {
         let descendants =
-            wait_for_descendant_processes(&descendant_ready, 4, Duration::from_secs(15)).await;
+            wait_for_tokenized_descendant_processes(&descendant_ready, 4, Duration::from_secs(15))
+                .await;
         let heartbeat_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        while descendants.iter().any(|descendant| {
-            std::fs::read(descendant_heartbeats.join(descendant.pid().to_string())).is_err()
-        }) {
+        while descendants
+            .iter()
+            .any(|(token, _)| std::fs::read(descendant_heartbeats.join(token)).is_err())
+        {
+            let readiness = descendants
+                .iter()
+                .map(|(token, descendant)| {
+                    (
+                        token,
+                        descendant.pid(),
+                        descendant.is_alive(),
+                        descendant_heartbeats.join(token).exists(),
+                    )
+                })
+                .collect::<Vec<_>>();
             assert!(
                 tokio::time::Instant::now() < heartbeat_deadline,
-                "every descendant did not publish its heartbeat before cancellation"
+                "every descendant did not publish its heartbeat before cancellation: {readiness:?}; stderr={}",
+                String::from_utf8_lossy(&stderr.bytes())
             );
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -1905,12 +1923,12 @@ async fn injected_ctrl_c_finishes_incomplete_or_defers_when_tree_quiescence_is_u
         .unwrap();
     assert_eq!(complete, 0);
     drop(connection);
-    for descendant in descendants {
+    for (token, descendant) in descendants {
         if !descendant
             .wait_until_stops(Duration::from_millis(500))
             .await
         {
-            let heartbeat = descendant_heartbeats.join(descendant.pid().to_string());
+            let heartbeat = descendant_heartbeats.join(token);
             let before = std::fs::read(&heartbeat).unwrap();
             tokio::time::sleep(Duration::from_millis(500)).await;
             let after = std::fs::read(&heartbeat).unwrap();
@@ -3209,26 +3227,33 @@ impl Drop for FixtureProcess {
     }
 }
 
-async fn wait_for_descendant_processes(
+async fn wait_for_tokenized_descendant_processes(
     directory: &Path,
     expected: usize,
     timeout: Duration,
-) -> Vec<FixtureProcess> {
+) -> Vec<(String, FixtureProcess)> {
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
         let processes = std::fs::read_dir(directory)
             .into_iter()
             .flatten()
             .filter_map(Result::ok)
-            .filter_map(|entry| entry.file_name().to_str()?.parse::<u32>().ok())
-            .filter_map(FixtureProcess::open)
+            .filter_map(|entry| {
+                let token = entry.file_name().to_str()?.to_owned();
+                let pid = std::fs::read_to_string(entry.path())
+                    .ok()?
+                    .trim()
+                    .parse::<u32>()
+                    .ok()?;
+                FixtureProcess::open(pid).map(|process| (token, process))
+            })
             .collect::<Vec<_>>();
         if processes.len() >= expected {
             return processes;
         }
         assert!(
             tokio::time::Instant::now() < deadline,
-            "descendant directory yielded {} processes, expected {expected}",
+            "tokenized descendant directory yielded {} processes, expected {expected}",
             processes.len()
         );
         tokio::time::sleep(Duration::from_millis(20)).await;

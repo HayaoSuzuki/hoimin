@@ -187,7 +187,7 @@ impl ProcessSupervisor {
             #[cfg(target_os = "linux")]
             Self::Linux(supervisor) => supervisor.terminate(live_root_owned).map(|()| true),
             #[cfg(windows)]
-            Self::Windows(supervisor) => supervisor.terminate().map(|()| true),
+            Self::Windows(supervisor) => supervisor.terminate(),
         }
     }
 
@@ -199,7 +199,7 @@ impl ProcessSupervisor {
             #[cfg(target_os = "linux")]
             Self::Linux(_) => Ok(true),
             #[cfg(windows)]
-            Self::Windows(_) => Ok(true),
+            Self::Windows(supervisor) => supervisor.refresh_tree_quiescence_after_root_reap(),
         }
     }
 

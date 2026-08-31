@@ -9,7 +9,8 @@ use std::ptr;
 
 use camino::Utf8Path;
 use windows_sys::Win32::Foundation::{
-    CloseHandle, ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS, HANDLE, INVALID_HANDLE_VALUE, LocalFree,
+    CloseHandle, ERROR_ALREADY_EXISTS, ERROR_FILE_NOT_FOUND, ERROR_INSUFFICIENT_BUFFER,
+    ERROR_SUCCESS, GetLastError, HANDLE, INVALID_HANDLE_VALUE, LocalFree,
 };
 use windows_sys::Win32::Security::Authorization::{
     ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, GetSecurityInfo,
@@ -24,9 +25,11 @@ use windows_sys::Win32::Security::{
 use windows_sys::Win32::Storage::FileSystem::{
     CreateDirectoryW, CreateFileW, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS,
     FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
-    OPEN_EXISTING, READ_CONTROL, WRITE_DAC,
+    OPEN_EXISTING, READ_CONTROL, SYNCHRONIZE, WRITE_DAC,
 };
-use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+use windows_sys::Win32::System::Threading::{
+    CreateEventW, GetCurrentProcess, OpenEventW, OpenProcessToken,
+};
 
 struct LocalMemory(*mut c_void);
 
@@ -133,8 +136,17 @@ struct SecurityDescriptor {
 }
 
 impl SecurityDescriptor {
-    fn for_user(token: &UserToken) -> io::Result<Self> {
-        let sddl = managed_dacl_sddl(&token.sid_string()?);
+    fn for_user(token: &UserToken, directory: bool) -> io::Result<Self> {
+        let sddl = managed_dacl_sddl(&token.sid_string()?, directory);
+        Self::from_sddl(&sddl)
+    }
+
+    fn for_mutation_barrier(token: &UserToken) -> io::Result<Self> {
+        let sddl = mutation_barrier_sddl(&token.sid_string()?);
+        Self::from_sddl(&sddl)
+    }
+
+    fn from_sddl(sddl: &str) -> io::Result<Self> {
         let wide = OsStr::new(&sddl)
             .encode_wide()
             .chain(std::iter::once(0))
@@ -183,13 +195,90 @@ impl SecurityDescriptor {
     }
 }
 
-fn managed_dacl_sddl(user_sid: &str) -> String {
-    format!("D:P(A;OICI;FA;;;{user_sid})(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
+fn managed_dacl_sddl(user_sid: &str, directory: bool) -> String {
+    let inheritance = if directory { "OICI" } else { "" };
+    format!(
+        "D:P(A;{inheritance};FA;;;{user_sid})(A;{inheritance};FA;;;SY)(A;{inheritance};FA;;;BA)"
+    )
+}
+
+fn mutation_barrier_sddl(user_sid: &str) -> String {
+    format!("D:P(A;;GA;;;{user_sid})(A;;GA;;;SY)(A;;GA;;;BA)")
+}
+
+fn mutation_barrier_name(token: &UserToken, run_id: &str) -> io::Result<Vec<u16>> {
+    let name = format!(
+        "Global\\hoimin-workspace-mutation-{}-{run_id}",
+        token.sid_string()?
+    );
+    Ok(OsStr::new(&name)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect())
+}
+
+#[derive(Debug)]
+pub(super) struct RootMutationBarrier(isize);
+
+impl RootMutationBarrier {
+    pub(super) fn create(run_id: &str) -> io::Result<Self> {
+        let token = UserToken::open()?;
+        let descriptor = SecurityDescriptor::for_mutation_barrier(&token)?;
+        let attributes = SECURITY_ATTRIBUTES {
+            nLength: u32::try_from(size_of::<SECURITY_ATTRIBUTES>())
+                .expect("SECURITY_ATTRIBUTES size fits u32"),
+            lpSecurityDescriptor: descriptor.pointer(),
+            bInheritHandle: 0,
+        };
+        let name = mutation_barrier_name(&token, run_id)?;
+        // SAFETY: name is NUL-terminated and attributes references a live descriptor.
+        let handle = unsafe { CreateEventW(&raw const attributes, 1, 0, name.as_ptr()) };
+        if handle.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: GetLastError is the documented way to distinguish create from open after a
+        // successful named CreateEventW call.
+        if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
+            // SAFETY: CreateEventW returned one owned handle even for an existing event.
+            unsafe { CloseHandle(handle) };
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "managed-root mutation barrier already exists",
+            ));
+        }
+        Ok(Self(handle as isize))
+    }
+}
+
+impl Drop for RootMutationBarrier {
+    fn drop(&mut self) {
+        // SAFETY: the barrier owns exactly one CreateEventW handle.
+        unsafe { CloseHandle(self.0 as HANDLE) };
+    }
+}
+
+pub(super) fn root_mutation_barrier_exists(run_id: &str) -> io::Result<bool> {
+    let token = UserToken::open()?;
+    let name = mutation_barrier_name(&token, run_id)?;
+    // SAFETY: name is NUL-terminated and the returned handle is owned on success.
+    let handle = unsafe { OpenEventW(SYNCHRONIZE, 0, name.as_ptr()) };
+    if handle.is_null() {
+        let error = io::Error::last_os_error();
+        if error.raw_os_error()
+            == Some(i32::try_from(ERROR_FILE_NOT_FOUND).expect("error code fits i32"))
+        {
+            return Ok(false);
+        }
+        return Err(error);
+    }
+    // SAFETY: OpenEventW returned one owned handle.
+    unsafe { CloseHandle(handle) };
+    Ok(true)
 }
 
 pub(super) fn create_managed_directory(path: &Utf8Path) -> io::Result<()> {
     let token = UserToken::open()?;
-    let descriptor = SecurityDescriptor::for_user(&token)?;
+    let descriptor = SecurityDescriptor::for_user(&token, true)?;
     let attributes = SECURITY_ATTRIBUTES {
         nLength: u32::try_from(size_of::<SECURITY_ATTRIBUTES>())
             .expect("SECURITY_ATTRIBUTES size fits u32"),
@@ -258,7 +347,7 @@ fn secure_object(expected: &File, path: &Utf8Path, directory: bool) -> io::Resul
 
     let token = UserToken::open()?;
     verify_owner(&secured, &token)?;
-    let expected_descriptor = SecurityDescriptor::for_user(&token)?;
+    let expected_descriptor = SecurityDescriptor::for_user(&token, directory)?;
     let expected_dacl = expected_descriptor.dacl()?;
     // SAFETY: secured has READ_CONTROL|WRITE_DAC and expected_dacl belongs to a live descriptor.
     let status = unsafe {
@@ -321,13 +410,6 @@ fn verify_owner(file: &(impl AsRawHandle + ?Sized), token: &UserToken) -> io::Re
 }
 
 pub(super) fn verify_current_user_owner(file: &File) -> io::Result<()> {
-    let token = UserToken::open()?;
-    verify_owner(file, &token)
-}
-
-pub(super) fn verify_current_user_owner_handle(
-    file: &(impl AsRawHandle + ?Sized),
-) -> io::Result<()> {
     let token = UserToken::open()?;
     verify_owner(file, &token)
 }
@@ -399,11 +481,41 @@ pub(super) fn file_identity(file: &File) -> io::Result<(u64, u64)> {
 
 #[cfg(test)]
 mod tests {
+    use uuid::Uuid;
+
     #[test]
-    fn protected_dacl_contains_only_the_required_full_access_trustees() {
+    fn protected_directory_dacl_contains_only_the_required_full_access_trustees() {
         assert_eq!(
-            super::managed_dacl_sddl("S-1-5-21-123"),
+            super::managed_dacl_sddl("S-1-5-21-123", true),
             "D:P(A;OICI;FA;;;S-1-5-21-123)(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
         );
+    }
+
+    #[test]
+    fn protected_file_dacl_contains_no_inheritance_flags() {
+        assert_eq!(
+            super::managed_dacl_sddl("S-1-5-21-123", false),
+            "D:P(A;;FA;;;S-1-5-21-123)(A;;FA;;;SY)(A;;FA;;;BA)"
+        );
+    }
+
+    #[test]
+    fn mutation_barrier_dacl_is_restricted_to_the_required_trustees() {
+        assert_eq!(
+            super::mutation_barrier_sddl("S-1-5-21-123"),
+            "D:P(A;;GA;;;S-1-5-21-123)(A;;GA;;;SY)(A;;GA;;;BA)"
+        );
+    }
+
+    #[test]
+    fn mutation_barrier_exists_exactly_while_its_owner_handle_is_live() {
+        let run_id = Uuid::new_v4().to_string();
+        assert!(!super::root_mutation_barrier_exists(&run_id).unwrap());
+
+        let barrier = super::RootMutationBarrier::create(&run_id).unwrap();
+        assert!(super::root_mutation_barrier_exists(&run_id).unwrap());
+
+        drop(barrier);
+        assert!(!super::root_mutation_barrier_exists(&run_id).unwrap());
     }
 }

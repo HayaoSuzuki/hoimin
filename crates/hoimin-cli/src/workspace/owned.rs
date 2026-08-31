@@ -324,6 +324,37 @@ mod tests {
         drop(root);
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn live_mutation_barrier_preserves_a_cleanup_ready_root_with_an_unlocked_lease() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let published = root.path().to_owned();
+        root.mark_cleanup_ready().unwrap();
+        {
+            let lease = root.lease.lock().unwrap();
+            fs2::FileExt::unlock(lease.as_deref().unwrap()).unwrap();
+        }
+
+        let report = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
+
+        assert_eq!(report.reclaimed_roots, 0, "{report:?}");
+        assert_eq!(report.preserved_roots, 1, "{report:?}");
+        assert!(published.exists());
+        {
+            let lease = root.lease.lock().unwrap();
+            fs2::FileExt::try_lock_exclusive(lease.as_deref().unwrap()).unwrap();
+        }
+        let cleanup = root.cleanup(std::time::Duration::from_secs(5));
+        assert_eq!(
+            cleanup.status,
+            hoimin_core::DiskCleanupStatus::Clean,
+            "{cleanup:?}"
+        );
+    }
+
     #[test]
     fn unlocked_lease_with_a_heartbeat_at_least_twenty_four_hours_old_is_reclaimed() {
         let parent = tempfile::tempdir().unwrap();
@@ -336,7 +367,7 @@ mod tests {
 
         let report = ManagedRunRoot::reclaim_abandoned(&coordinator, future);
 
-        assert_eq!(report.reclaimed_roots, 1);
+        assert_eq!(report.reclaimed_roots, 1, "{report:?}");
         assert_eq!(report.preserved_roots, 0);
         assert!(!published.exists());
     }
@@ -655,6 +686,48 @@ mod tests {
         assert!(!root.path().exists());
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn child_handles_close_before_quiescence_is_published() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root = std::sync::Arc::new(
+            ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap(),
+        );
+        let mut child = root.create_child("spool-").unwrap();
+        let gate = std::sync::Arc::new(super::ManagedChildDropGate {
+            before_closed_state: std::sync::Arc::new(std::sync::Barrier::new(2)),
+            release: std::sync::Arc::new(std::sync::Barrier::new(2)),
+            after_published_state: None,
+            after_published_release: None,
+        });
+        child.drop_gate = Some(std::sync::Arc::clone(&gate));
+        let drop_thread = std::thread::spawn(move || drop(child));
+
+        gate.before_closed_state.wait();
+        let while_closing = root.cleanup(std::time::Duration::from_secs(5));
+        gate.release.wait();
+        drop_thread.join().unwrap();
+
+        assert_eq!(
+            while_closing.status,
+            hoimin_core::DiskCleanupStatus::Deferred,
+            "child handle closure was published too early: {while_closing:?}"
+        );
+        assert!(
+            while_closing
+                .details
+                .iter()
+                .any(|detail| detail.contains("live child handle")),
+            "missing live-child evidence: {while_closing:?}"
+        );
+        assert_eq!(
+            root.cleanup(std::time::Duration::from_secs(5)).status,
+            hoimin_core::DiskCleanupStatus::Clean
+        );
+    }
+
     #[test]
     fn busy_coordinator_defers_owner_cleanup_and_does_not_block_startup_reclaim() {
         let parent = tempfile::tempdir().unwrap();
@@ -723,7 +796,7 @@ mod tests {
         let child = root.create_child("worker-").unwrap();
         std::fs::write(child.path().join("payload"), b"retained").unwrap();
         let name = child.path().file_name().unwrap();
-        let identity = super::directory_identity(&child.dir).unwrap();
+        let identity = super::directory_identity(child.dir.as_ref().unwrap()).unwrap();
 
         let error = super::remove_one_claimed_entry(
             &root.dir,
@@ -780,16 +853,8 @@ mod tests {
         let active = format!("{}{}", super::ACTIVE_PREFIX, root.run_id);
         let deleting = format!("{}{}", super::DELETING_PREFIX, root.run_id);
         assert_eq!(
-            super::claim_managed_child(
-                &coordinator.dir,
-                &active,
-                &deleting,
-                &root.run_id,
-                root.owner,
-                &root.dir,
-                &root.lease,
-            )
-            .unwrap(),
+            root.claim_with_handle_handoff(&coordinator.dir, &active, &deleting, &|| Ok(()),)
+                .unwrap(),
             super::ClaimResult::Claimed
         );
 
@@ -824,16 +889,8 @@ mod tests {
         let active = format!("{}{}", super::ACTIVE_PREFIX, root.run_id);
         let deleting = format!("{}{}", super::DELETING_PREFIX, root.run_id);
         assert_eq!(
-            super::claim_managed_child(
-                &coordinator.dir,
-                &active,
-                &deleting,
-                &root.run_id,
-                root.owner,
-                &root.dir,
-                &root.lease,
-            )
-            .unwrap(),
+            root.claim_with_handle_handoff(&coordinator.dir, &active, &deleting, &|| Ok(()),)
+                .unwrap(),
             super::ClaimResult::Claimed
         );
 
@@ -886,16 +943,8 @@ mod tests {
         std::fs::write(root.path().join("second"), b"2").unwrap();
         let active = format!("{}{}", super::ACTIVE_PREFIX, root.run_id);
         let deleting = format!("{}{}", super::DELETING_PREFIX, root.run_id);
-        super::claim_managed_child(
-            &coordinator.dir,
-            &active,
-            &deleting,
-            &root.run_id,
-            root.owner,
-            &root.dir,
-            &root.lease,
-        )
-        .unwrap();
+        root.claim_with_handle_handoff(&coordinator.dir, &active, &deleting, &|| Ok(()))
+            .unwrap();
         super::remove_one_claimed_entry(
             &coordinator.dir,
             &deleting,
@@ -923,16 +972,8 @@ mod tests {
         let active = format!("{}{}", super::ACTIVE_PREFIX, root.run_id);
         let deleting = format!("{}{}", super::DELETING_PREFIX, root.run_id);
         assert_eq!(
-            super::claim_managed_child(
-                &coordinator.dir,
-                &active,
-                &deleting,
-                &root.run_id,
-                root.owner,
-                &root.dir,
-                &root.lease,
-            )
-            .unwrap(),
+            root.claim_with_handle_handoff(&coordinator.dir, &active, &deleting, &|| Ok(()),)
+                .unwrap(),
             super::ClaimResult::Claimed
         );
         drop(root);
@@ -953,16 +994,8 @@ mod tests {
         let active = format!("{}{}", super::ACTIVE_PREFIX, root.run_id);
         let deleting = format!("{}{}", super::DELETING_PREFIX, root.run_id);
         assert_eq!(
-            super::claim_managed_child(
-                &coordinator.dir,
-                &active,
-                &deleting,
-                &root.run_id,
-                root.owner,
-                &root.dir,
-                &root.lease,
-            )
-            .unwrap(),
+            root.claim_with_handle_handoff(&coordinator.dir, &active, &deleting, &|| Ok(()),)
+                .unwrap(),
             super::ClaimResult::Claimed
         );
         root.dir.remove_file(super::HEARTBEAT_FILE).unwrap();
@@ -986,16 +1019,8 @@ mod tests {
         let active = format!("{}{}", super::ACTIVE_PREFIX, root.run_id);
         let deleting = format!("{}{}", super::DELETING_PREFIX, root.run_id);
         assert_eq!(
-            super::claim_managed_child(
-                &coordinator.dir,
-                &active,
-                &deleting,
-                &root.run_id,
-                root.owner,
-                &root.dir,
-                &root.lease,
-            )
-            .unwrap(),
+            root.claim_with_handle_handoff(&coordinator.dir, &active, &deleting, &|| Ok(()),)
+                .unwrap(),
             super::ClaimResult::Claimed
         );
         root.dir.remove_file(super::HEARTBEAT_FILE).unwrap();
@@ -1067,42 +1092,104 @@ mod tests {
         let parked_name = format!("{}{}", super::STAGING_PREFIX, original.run_id);
         let deleting_name = format!("{}{}", super::DELETING_PREFIX, original.run_id);
         let replacement_name = replacement.path().file_name().unwrap().to_owned();
-        coordinator
-            .dir
-            .rename(&original_name, &coordinator.dir, &parked_name)
-            .unwrap();
-        coordinator
-            .dir
-            .rename(&replacement_name, &coordinator.dir, &original_name)
-            .unwrap();
+        assert_eq!(
+            original
+                .claim_with_handle_handoff(&coordinator.dir, &original_name, &parked_name, &|| Ok(
+                    ()
+                ),)
+                .unwrap(),
+            super::ClaimResult::Claimed
+        );
+        assert_eq!(
+            replacement
+                .claim_with_handle_handoff(
+                    &coordinator.dir,
+                    &replacement_name,
+                    &original_name,
+                    &|| Ok(()),
+                )
+                .unwrap(),
+            super::ClaimResult::Claimed
+        );
         let copied_marker = super::LeaseMarker {
             schema: super::LEASE_SCHEMA,
             run_id: original.run_id.clone(),
             created_unix_seconds: 0,
             owner: original.owner,
         };
-        let mut marker = coordinator
+        let replacement_lease = replacement.lease.lock().unwrap();
+        let marker = replacement_lease.as_deref().unwrap();
+        fs2::FileExt::unlock(marker).unwrap();
+        let mut options = cap_std::fs::OpenOptions::new();
+        options.write(true).truncate(true);
+        let mut marker_writer = replacement
             .dir
-            .open_dir(&original_name)
-            .unwrap()
-            .create(super::LEASE_FILE)
+            .open_with(super::LEASE_FILE, &options)
             .unwrap();
-        marker.set_len(0).unwrap();
-        serde_json::to_writer(&mut marker, &copied_marker).unwrap();
-        marker.sync_all().unwrap();
-        let claim = super::claim_managed_child(
+        serde_json::to_writer(&mut marker_writer, &copied_marker).unwrap();
+        marker_writer.sync_all().unwrap();
+        drop(marker_writer);
+        fs2::FileExt::try_lock_exclusive(marker).unwrap();
+        let claim = original.claim_with_handle_handoff(
             &coordinator.dir,
             &original_name,
             &deleting_name,
-            &original.run_id,
-            original.owner,
-            &original.dir,
-            &original.lease,
+            &|| Ok(()),
         );
 
         assert!(claim.is_err());
         assert!(coordinator.dir.symlink_metadata(&original_name).is_ok());
         assert!(coordinator.dir.symlink_metadata(&deleting_name).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn failed_windows_claim_restores_the_exact_locked_lease_and_heartbeat() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let active_name = root.path().file_name().unwrap().to_owned();
+        let lease_identity = {
+            let lease = root.lease.lock().unwrap();
+            super::file_identity(lease.as_deref().unwrap()).unwrap()
+        };
+        let heartbeat_identity = {
+            let heartbeat = root.heartbeat.lock().unwrap();
+            super::file_identity(heartbeat.as_ref().unwrap()).unwrap()
+        };
+
+        let claim =
+            root.claim_with_handle_handoff(&coordinator.dir, &active_name, "invalid/name", &|| {
+                Ok(())
+            });
+
+        assert!(claim.is_err());
+        assert!(coordinator.dir.symlink_metadata(&active_name).is_ok());
+        root.refresh_heartbeat().unwrap();
+        let lease = root.lease.lock().unwrap();
+        assert_eq!(
+            super::file_identity(lease.as_deref().unwrap()).unwrap(),
+            lease_identity
+        );
+        let competing = super::open_regular_file_nofollow(&root.dir, super::LEASE_FILE).unwrap();
+        let lock_error = fs2::FileExt::try_lock_exclusive(&competing).unwrap_err();
+        assert!(super::lock_error_is_busy(&lock_error), "{lock_error}");
+        drop(competing);
+        drop(lease);
+        let heartbeat = root.heartbeat.lock().unwrap();
+        assert_eq!(
+            super::file_identity(heartbeat.as_ref().unwrap()).unwrap(),
+            heartbeat_identity
+        );
+        drop(heartbeat);
+
+        let cleanup = root.cleanup(std::time::Duration::from_secs(5));
+        assert_eq!(
+            cleanup.status,
+            hoimin_core::DiskCleanupStatus::Clean,
+            "{cleanup:?}"
+        );
     }
 
     #[test]
@@ -1140,7 +1227,7 @@ mod tests {
 
         let report = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
 
-        assert_eq!(report.reclaimed_roots, 1);
+        assert_eq!(report.reclaimed_roots, 1, "{report:?}");
         assert!(!published.exists());
     }
 
@@ -1217,16 +1304,8 @@ mod tests {
         let active = format!("{}{}", super::ACTIVE_PREFIX, root.run_id);
         let deleting = format!("{}{}", super::DELETING_PREFIX, root.run_id);
         assert_eq!(
-            super::claim_managed_child(
-                &coordinator.dir,
-                &active,
-                &deleting,
-                &root.run_id,
-                root.owner,
-                &root.dir,
-                &root.lease,
-            )
-            .unwrap(),
+            root.claim_with_handle_handoff(&coordinator.dir, &active, &deleting, &|| Ok(()),)
+                .unwrap(),
             super::ClaimResult::Claimed
         );
         drop(root);
@@ -1273,7 +1352,7 @@ mod tests {
 
         let report = ManagedRunRoot::reclaim_abandoned(&coordinator, future);
 
-        assert_eq!(report.reclaimed_roots, 1);
+        assert_eq!(report.reclaimed_roots, 1, "{report:?}");
         assert!(coordinator.dir.symlink_metadata(&staging).is_err());
     }
 
@@ -1301,11 +1380,11 @@ mod tests {
         let active = format!("{}{}", super::ACTIVE_PREFIX, root.run_id);
         let staging = format!("{}{}", super::STAGING_PREFIX, root.run_id);
         root.dir.remove_file(super::HEARTBEAT_FILE).unwrap();
+        drop(root);
         coordinator
             .dir
             .rename(&active, &coordinator.dir, &staging)
             .unwrap();
-        drop(root);
         let future = std::time::SystemTime::now() + std::time::Duration::from_secs(25 * 60 * 60);
 
         let report = ManagedRunRoot::reclaim_abandoned(&coordinator, future);
@@ -1394,7 +1473,9 @@ fn owned_directory_entries(dir: &cap_std::fs::Dir) -> std::io::Result<OwnedDirec
     #[cfg(windows)]
     {
         let directory = dir.try_clone()?.into_std_file();
-        super::root::windows::DirectoryEntries::open(directory).map(OwnedDirectoryEntries)
+        Ok(OwnedDirectoryEntries(
+            super::root::windows::DirectoryEntries::open(directory),
+        ))
     }
 }
 
@@ -1439,7 +1520,7 @@ pub(crate) enum OwnerKind {
     PublicDelivery,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct LeaseMarker {
     schema: u32,
@@ -1474,29 +1555,43 @@ struct CoordinatorLockGuard<'a> {
 
 impl<'a> CoordinatorLockGuard<'a> {
     fn acquire(coordinator: &'a ManagedRootCoordinator) -> Result<Self, WorkspaceError> {
+        Self::try_acquire(coordinator)?.ok_or_else(|| {
+            WorkspaceError::io(
+                "lock coordinator",
+                &coordinator.path,
+                std::io::Error::new(
+                    std::io::ErrorKind::WouldBlock,
+                    "coordinator is busy in this process or another process",
+                ),
+            )
+        })
+    }
+
+    fn try_acquire(
+        coordinator: &'a ManagedRootCoordinator,
+    ) -> Result<Option<Self>, WorkspaceError> {
         let local = match coordinator.local_lock.try_lock() {
             Ok(guard) => guard,
             Err(std::sync::TryLockError::Poisoned(_)) => {
                 return Err(WorkspaceError::StatePoisoned);
             }
             Err(std::sync::TryLockError::WouldBlock) => {
-                return Err(WorkspaceError::io(
-                    "lock coordinator",
-                    &coordinator.path,
-                    std::io::Error::new(
-                        std::io::ErrorKind::WouldBlock,
-                        "coordinator is busy in this process",
-                    ),
-                ));
+                return Ok(None);
             }
         };
-        FileExt::try_lock_exclusive(&coordinator.file)
-            .map_err(|error| WorkspaceError::io("lock coordinator", &coordinator.path, error))?;
-        Ok(Self {
-            file: &coordinator.file,
-            _local: local,
-            locked: true,
-        })
+        match FileExt::try_lock_exclusive(&coordinator.file) {
+            Ok(()) => Ok(Some(Self {
+                file: &coordinator.file,
+                _local: local,
+                locked: true,
+            })),
+            Err(error) if lock_error_is_busy(&error) => Ok(None),
+            Err(error) => Err(WorkspaceError::io(
+                "lock coordinator",
+                &coordinator.path,
+                error,
+            )),
+        }
     }
 
     fn acquire_until(
@@ -1645,6 +1740,12 @@ fn ensure_bootstrap_deadline(
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct MarkerEvidence {
+    identity: (u64, u64),
+    marker: LeaseMarker,
+}
+
 #[cfg(unix)]
 fn create_managed_root_entry(parent: &cap_std::fs::Dir, _path: &Utf8Path) -> std::io::Result<()> {
     rustix::fs::mkdirat(parent, MANAGED_DIR, rustix::fs::Mode::from_raw_mode(0o700))
@@ -1696,6 +1797,17 @@ fn open_owned_directory(
     Ok(cap_std::fs::Dir::from_std_file(directory))
 }
 
+#[cfg(windows)]
+fn open_owned_directory_for_rename(
+    parent: &cap_std::fs::Dir,
+    name: impl AsRef<std::path::Path>,
+) -> std::io::Result<cap_std::fs::Dir> {
+    let directory =
+        super::root::windows::open_directory_for_rename(parent, name.as_ref().as_os_str())?;
+    windows::verify_current_user_owner(&directory)?;
+    Ok(cap_std::fs::Dir::from_std_file(directory))
+}
+
 #[cfg(unix)]
 fn verify_current_user_owned_metadata(metadata: &cap_std::fs::Metadata) -> std::io::Result<()> {
     use cap_fs_ext::OsMetadataExt;
@@ -1714,11 +1826,6 @@ fn verify_current_user_owned_metadata(metadata: &cap_std::fs::Metadata) -> std::
 #[cfg(unix)]
 fn verify_current_user_owned_directory(dir: &cap_std::fs::Dir) -> std::io::Result<()> {
     verify_current_user_owned_metadata(&dir.metadata(".")?)
-}
-
-#[cfg(windows)]
-fn verify_current_user_owned_directory(dir: &cap_std::fs::Dir) -> std::io::Result<()> {
-    windows::verify_current_user_owner_handle(dir)
 }
 
 #[cfg(unix)]
@@ -1755,26 +1862,28 @@ fn rename_owned_directory_with_guard(
 }
 
 #[cfg(windows)]
-fn rename_owned_directory(
+fn rename_open_owned_directory(
     parent: &cap_std::fs::Dir,
-    source: &str,
+    source: &cap_std::fs::Dir,
     destination: &str,
     expected_identity: (u64, u64),
 ) -> std::io::Result<()> {
-    rename_owned_directory_with_guard(parent, source, destination, expected_identity, &|| Ok(()))
+    rename_open_owned_directory_with_guard(parent, source, destination, expected_identity, &|| {
+        Ok(())
+    })
 }
 
 #[cfg(windows)]
-fn rename_owned_directory_with_guard(
+fn rename_open_owned_directory_with_guard(
     parent: &cap_std::fs::Dir,
-    source: &str,
+    source: &cap_std::fs::Dir,
     destination: &str,
     expected_identity: (u64, u64),
     before_next_operation: &impl Fn() -> Result<(), WorkspaceError>,
 ) -> std::io::Result<()> {
-    super::root::windows::rename_entry_relative_with_guard(
+    super::root::windows::rename_open_entry_relative_with_guard(
         parent,
-        std::ffi::OsStr::new(source),
+        source,
         std::ffi::OsStr::new(destination),
         expected_identity,
         &|| before_next_operation().map_err(std::io::Error::other),
@@ -2075,22 +2184,6 @@ fn lock_error_is_busy(error: &std::io::Error) -> bool {
     }
 }
 
-fn open_coordinator_file(
-    dir: &cap_std::fs::Dir,
-    managed_path: &Utf8Path,
-) -> Result<File, WorkspaceError> {
-    let coordinator_path = managed_path.join(COORDINATOR_FILE);
-    let mut open = cap_std::fs::OpenOptions::new();
-    open.read(true).write(true);
-    configure_no_follow(&mut open);
-    let file = dir
-        .open_with(COORDINATOR_FILE, &open)
-        .map_err(|error| WorkspaceError::io("open coordinator", &coordinator_path, error))?;
-    let mut file = file.into_std();
-    validate_coordinator_file(&mut file, &coordinator_path)?;
-    Ok(file)
-}
-
 #[cfg(unix)]
 fn configure_no_follow(options: &mut cap_std::fs::OpenOptions) {
     use cap_std::fs::OpenOptionsExt;
@@ -2366,9 +2459,13 @@ pub(crate) struct ManagedRunRoot {
     coordinator_local_lock: Arc<Mutex<()>>,
     run_id: String,
     owner: OwnerKind,
-    lease: Arc<File>,
-    heartbeat: Mutex<File>,
+    lease: Mutex<Option<Arc<File>>>,
+    heartbeat: Mutex<Option<File>>,
     lifecycle: Arc<Mutex<RootLifecycle>>,
+    #[cfg(windows)]
+    rename_handle: cap_std::fs::Dir,
+    #[cfg(windows)]
+    _mutation_barrier: windows::RootMutationBarrier,
 }
 
 #[derive(Debug, Default)]
@@ -2394,13 +2491,14 @@ enum ChildCreationBoundary {
     Opened,
 }
 
-#[derive(Clone, Copy)]
 struct StagingPublication<'a> {
     name: &'a str,
     path: &'a Utf8Path,
     run_id: &'a str,
     owner: OwnerKind,
     dir: &'a cap_std::fs::Dir,
+    #[cfg(windows)]
+    rename_handle: cap_std::fs::Dir,
 }
 
 struct NewDirectoryRollback<'a> {
@@ -2535,6 +2633,16 @@ impl ManagedRunRoot {
         let staging_identity = metadata_identity(&staging_metadata);
         staging_rollback.expect_identity(staging_identity);
         publish_hook(PublishBoundary::StagingCreated)?;
+        #[cfg(windows)]
+        let staging_rename_handle =
+            open_owned_directory_for_rename(&coordinator.dir, &staging_name).map_err(|error| {
+                WorkspaceError::io("open staging root for rename", &staging_path, error)
+            })?;
+        #[cfg(windows)]
+        let staging_dir = staging_rename_handle.try_clone().map_err(|error| {
+            WorkspaceError::io("clone staging root capability", &staging_path, error)
+        })?;
+        #[cfg(unix)]
         let staging_dir = open_owned_directory(&coordinator.dir, &staging_name)
             .map_err(|error| WorkspaceError::io("open staging root", &staging_path, error))?;
         publish_hook(PublishBoundary::StagingOpened)?;
@@ -2549,6 +2657,8 @@ impl ManagedRunRoot {
             run_id: &run_id,
             owner,
             dir: &staging_dir,
+            #[cfg(windows)]
+            rename_handle: staging_rename_handle,
         };
         let result =
             Self::publish_staging(coordinator, publication, initialization_guard, publish_hook);
@@ -2581,7 +2691,13 @@ impl ManagedRunRoot {
             run_id,
             owner,
             dir: staging_dir,
+            #[cfg(windows)]
+            rename_handle,
         } = publication;
+        #[cfg(windows)]
+        let mutation_barrier = windows::RootMutationBarrier::create(run_id).map_err(|error| {
+            WorkspaceError::io("create managed-root mutation barrier", staging_path, error)
+        })?;
         let marker = LeaseMarker {
             schema: LEASE_SCHEMA,
             run_id: run_id.to_owned(),
@@ -2626,6 +2742,21 @@ impl ManagedRunRoot {
         heartbeat.sync_all().map_err(|error| {
             WorkspaceError::io("flush heartbeat marker", &heartbeat_path, error)
         })?;
+        #[cfg(windows)]
+        let publication_marker_evidence = (
+            MarkerEvidence {
+                identity: file_identity(&lease).map_err(|error| {
+                    WorkspaceError::io("identify lease marker", &lease_path, error)
+                })?,
+                marker: marker.clone(),
+            },
+            MarkerEvidence {
+                identity: file_identity(&heartbeat).map_err(|error| {
+                    WorkspaceError::io("identify heartbeat marker", &heartbeat_path, error)
+                })?,
+                marker: marker.clone(),
+            },
+        );
         initialization_guard.unlock(&coordinator.path)?;
 
         let active_name = format!("{ACTIVE_PREFIX}{run_id}");
@@ -2635,6 +2766,12 @@ impl ManagedRunRoot {
         )?;
         let staging_identity = directory_identity(staging_dir)
             .map_err(|error| WorkspaceError::io("identify staging root", staging_path, error))?;
+        #[cfg(windows)]
+        {
+            drop(lease);
+            drop(heartbeat);
+        }
+        #[cfg(unix)]
         let publish = rename_owned_directory(
             &coordinator.dir,
             staging_name,
@@ -2642,8 +2779,49 @@ impl ManagedRunRoot {
             staging_identity,
         )
         .map_err(|error| WorkspaceError::io("publish managed root", staging_path, error));
-        let unlock = publish_guard.unlock(&coordinator.path);
+        #[cfg(windows)]
+        let publish = rename_open_owned_directory(
+            &coordinator.dir,
+            &rename_handle,
+            &active_name,
+            staging_identity,
+        )
+        .map_err(|error| WorkspaceError::io("publish managed root", staging_path, error));
         publish?;
+        #[cfg(windows)]
+        if let Err(error) = publish_hook(PublishBoundary::RenamedActive) {
+            rollback_closed_published_root(
+                coordinator,
+                staging_name,
+                &active_name,
+                staging_dir,
+                &rename_handle,
+                staging_identity,
+                &publication_marker_evidence.0,
+            );
+            return Err(error);
+        }
+        #[cfg(windows)]
+        let (lease, heartbeat) = match reopen_published_markers(
+            staging_dir,
+            &publication_marker_evidence,
+            &coordinator.path.join(&active_name),
+        ) {
+            Ok(markers) => markers,
+            Err(error) => {
+                rollback_closed_published_root(
+                    coordinator,
+                    staging_name,
+                    &active_name,
+                    staging_dir,
+                    &rename_handle,
+                    staging_identity,
+                    &publication_marker_evidence.0,
+                );
+                return Err(error);
+            }
+        };
+        let unlock = publish_guard.unlock(&coordinator.path);
         if let Err(error) = unlock {
             rollback_published_root(
                 coordinator,
@@ -2655,6 +2833,7 @@ impl ManagedRunRoot {
             );
             return Err(error);
         }
+        #[cfg(unix)]
         if let Err(error) = publish_hook(PublishBoundary::RenamedActive) {
             rollback_published_root(
                 coordinator,
@@ -2692,7 +2871,7 @@ impl ManagedRunRoot {
             );
             return Err(error);
         }
-        let coordinator_file = match open_coordinator_file(&coordinator.dir, &coordinator.path) {
+        let coordinator_file = match coordinator.file.try_clone() {
             Ok(file) => file,
             Err(error) => {
                 rollback_published_root(
@@ -2703,7 +2882,11 @@ impl ManagedRunRoot {
                     staging_dir,
                     &lease,
                 );
-                return Err(error);
+                return Err(WorkspaceError::io(
+                    "clone coordinator",
+                    &coordinator.path,
+                    error,
+                ));
             }
         };
         if let Err(error) = publish_hook(PublishBoundary::CoordinatorOpened) {
@@ -2754,15 +2937,64 @@ impl ManagedRunRoot {
             coordinator_local_lock: Arc::clone(&coordinator.local_lock),
             run_id: run_id.to_owned(),
             owner,
-            lease: Arc::new(lease),
-            heartbeat: Mutex::new(heartbeat),
+            lease: Mutex::new(Some(Arc::new(lease))),
+            heartbeat: Mutex::new(Some(heartbeat)),
             lifecycle: Arc::new(Mutex::new(RootLifecycle::default())),
+            #[cfg(windows)]
+            rename_handle,
+            #[cfg(windows)]
+            _mutation_barrier: mutation_barrier,
         })
     }
 
     #[allow(dead_code, reason = "Task 6 reports retained managed-root locations")]
     pub(crate) fn path(&self) -> &Utf8Path {
         &self.path
+    }
+
+    #[cfg(test)]
+    pub(crate) fn move_for_identity_replacement_test(
+        &self,
+        destination: &Utf8Path,
+    ) -> Result<(), WorkspaceError> {
+        if destination.parent() != self.path.parent() {
+            return Err(WorkspaceError::InvalidPath {
+                path: destination.to_owned(),
+            });
+        }
+        let current_name = self
+            .path
+            .file_name()
+            .ok_or_else(|| WorkspaceError::InvalidPath {
+                path: self.path.clone(),
+            })?;
+        let destination_name =
+            destination
+                .file_name()
+                .ok_or_else(|| WorkspaceError::InvalidPath {
+                    path: destination.to_owned(),
+                })?;
+        let local_guard = self.coordinator_local_lock.try_lock().map_err(|error| {
+            WorkspaceError::io("lock coordinator", &self.path, error.to_string())
+        })?;
+        FileExt::try_lock_exclusive(&self.coordinator_file)
+            .map_err(|error| WorkspaceError::io("lock coordinator", &self.path, error))?;
+        let claim = self.claim_with_handle_handoff(
+            &self.coordinator_dir,
+            current_name,
+            destination_name,
+            &|| Ok(()),
+        );
+        let unlock = FileExt::unlock(&self.coordinator_file)
+            .map_err(|error| WorkspaceError::io("unlock coordinator", &self.path, error));
+        drop(local_guard);
+        match (claim, unlock) {
+            (Ok(ClaimResult::Claimed), Ok(())) => Ok(()),
+            (Ok(ClaimResult::Absent), Ok(())) => Err(WorkspaceError::InvalidPath {
+                path: self.path.clone(),
+            }),
+            (Err(error), _) | (_, Err(error)) => Err(error),
+        }
     }
 
     pub(crate) fn disk_capability(&self) -> std::io::Result<super::disk::RootCapability> {
@@ -2838,6 +3070,19 @@ impl ManagedRunRoot {
         if opened_child_identity != child_identity {
             return Err(WorkspaceError::InvalidPath { path });
         }
+        let lease = self
+            .lease
+            .lock()
+            .map_err(|_| WorkspaceError::StatePoisoned)?
+            .as_ref()
+            .map(Arc::clone)
+            .ok_or_else(|| {
+                WorkspaceError::io(
+                    "create managed child",
+                    &self.path,
+                    "managed root lease is unavailable",
+                )
+            })?;
         lifecycle.live_children = lifecycle
             .live_children
             .checked_add(1)
@@ -2846,11 +3091,13 @@ impl ManagedRunRoot {
         drop(child_rollback);
         Ok(ManagedChild {
             path,
-            dir,
-            parent: child_parent,
+            dir: Some(dir),
+            parent: Some(child_parent),
             name,
             lifecycle: Arc::clone(&self.lifecycle),
-            _lease: Arc::clone(&self.lease),
+            lease: Some(lease),
+            #[cfg(all(test, windows))]
+            drop_gate: None,
         })
     }
 
@@ -2871,7 +3118,18 @@ impl ManagedRunRoot {
         if lifecycle.cleanup_ready {
             return Ok(());
         }
-        write_cleanup_ready_marker(&self.dir, &self.path, &self.run_id, self.owner, &self.lease)?;
+        let lease = self
+            .lease
+            .lock()
+            .map_err(|_| WorkspaceError::StatePoisoned)?;
+        let lease = lease.as_deref().ok_or_else(|| {
+            WorkspaceError::io(
+                "mark workspace cleanup ready",
+                &self.path,
+                "managed root lease is unavailable",
+            )
+        })?;
+        write_cleanup_ready_marker(&self.dir, &self.path, &self.run_id, self.owner, lease)?;
         lifecycle.cleanup_ready = true;
         Ok(())
     }
@@ -2915,8 +3173,101 @@ impl ManagedRunRoot {
             .heartbeat
             .lock()
             .map_err(|_| WorkspaceError::StatePoisoned)?;
-        refresh_file_modified_time(&heartbeat)
+        let heartbeat = heartbeat.as_ref().ok_or_else(|| {
+            WorkspaceError::io(
+                "refresh workspace heartbeat",
+                &self.path,
+                "managed root heartbeat is unavailable",
+            )
+        })?;
+        refresh_file_modified_time(heartbeat)
             .map_err(|error| WorkspaceError::io("refresh workspace heartbeat", &self.path, error))
+    }
+
+    fn claim_with_handle_handoff(
+        &self,
+        parent: &cap_std::fs::Dir,
+        current_name: &str,
+        deleting_name: &str,
+        before_next_operation: &impl Fn() -> Result<(), WorkspaceError>,
+    ) -> Result<ClaimResult, WorkspaceError> {
+        let mut lease_slot = self
+            .lease
+            .lock()
+            .map_err(|_| WorkspaceError::StatePoisoned)?;
+        let lease = lease_slot.take().ok_or_else(|| {
+            WorkspaceError::io(
+                "claim managed workspace",
+                &self.path,
+                "managed root lease is unavailable",
+            )
+        })?;
+        let mut lease = match Arc::try_unwrap(lease) {
+            Ok(lease) => Some(lease),
+            Err(shared) => {
+                *lease_slot = Some(shared);
+                return Err(WorkspaceError::io(
+                    "claim managed workspace",
+                    &self.path,
+                    "managed root still has a shared lease guard",
+                ));
+            }
+        };
+        #[cfg(windows)]
+        let Ok(mut heartbeat_slot) = self.heartbeat.lock() else {
+            *lease_slot = lease.take().map(Arc::new);
+            return Err(WorkspaceError::StatePoisoned);
+        };
+        #[cfg(windows)]
+        let heartbeat_evidence = match heartbeat_slot.as_ref() {
+            Some(heartbeat) => {
+                match inspect_marker_evidence(heartbeat, &self.path.join(HEARTBEAT_FILE)) {
+                    Ok(evidence) => Some(evidence),
+                    Err(error) => {
+                        *lease_slot = lease.take().map(Arc::new);
+                        return Err(error);
+                    }
+                }
+            }
+            None => None,
+        };
+        #[cfg(windows)]
+        drop(heartbeat_slot.take());
+
+        let claim = claim_managed_child(
+            parent,
+            current_name,
+            deleting_name,
+            &self.run_id,
+            self.owner,
+            &self.dir,
+            #[cfg(windows)]
+            &self.rename_handle,
+            &mut lease,
+            before_next_operation,
+        );
+        *lease_slot = lease.map(Arc::new);
+        #[cfg(windows)]
+        if !matches!(&claim, Ok(ClaimResult::Claimed | ClaimResult::Absent))
+            && let Some(evidence) = heartbeat_evidence.as_ref()
+        {
+            match reopen_heartbeat(&self.dir, evidence, &self.path) {
+                Ok(heartbeat) => *heartbeat_slot = Some(heartbeat),
+                Err(restore_error) => {
+                    let claim_error = claim
+                        .as_ref()
+                        .expect_err("only a failed claim restores the heartbeat");
+                    return Err(WorkspaceError::io(
+                        "restore workspace heartbeat after failed claim",
+                        &self.path,
+                        format!(
+                            "claim failed: {claim_error}; heartbeat restore failed: {restore_error}"
+                        ),
+                    ));
+                }
+            }
+        }
+        claim
     }
 
     #[allow(
@@ -2957,7 +3308,6 @@ impl ManagedRunRoot {
                 return record;
             }
         };
-        let expected_lease = &self.lease;
         let local_guard = match self.coordinator_local_lock.try_lock() {
             Ok(guard) => guard,
             Err(std::sync::TryLockError::WouldBlock) => {
@@ -2980,14 +3330,10 @@ impl ManagedRunRoot {
         let active_name = format!("{ACTIVE_PREFIX}{}", self.run_id);
         let deleting_name = format!("{DELETING_PREFIX}{}", self.run_id);
         let claim_deadline_expired = std::cell::Cell::new(false);
-        let claim = claim_managed_child_with_guard(
+        let claim = self.claim_with_handle_handoff(
             &self.coordinator_dir,
             &active_name,
             &deleting_name,
-            &self.run_id,
-            self.owner,
-            &self.dir,
-            expected_lease,
             &|| {
                 if started.elapsed() < budget {
                     Ok(())
@@ -3211,7 +3557,45 @@ impl ManagedRunRoot {
                 report.preserved_roots += 1;
                 continue;
             }
-            let Ok(candidate) = open_owned_directory(&coordinator.dir, name) else {
+            #[cfg(windows)]
+            let mutation_barrier = windows::root_mutation_barrier_exists(run_id);
+            #[cfg(windows)]
+            match mutation_barrier {
+                Ok(true) => {
+                    report.preserved_roots += 1;
+                    continue;
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    report.preserved_roots += 1;
+                    push_reclaim_detail(
+                        &mut report,
+                        format!("inspect managed-root mutation barrier failed: {error}"),
+                    );
+                    continue;
+                }
+            }
+            // A Windows directory cannot be renamed while another process has any descendant
+            // marker open. Acquire the coordinator before opening marker handles so the
+            // owner's close/rename/reopen handoff is actually exclusive across processes.
+            #[cfg(windows)]
+            let mut coordinator_guard = match CoordinatorLockGuard::try_acquire(coordinator) {
+                Ok(Some(guard)) => Some(guard),
+                Ok(None) => {
+                    report.preserved_roots += 1;
+                    continue;
+                }
+                Err(error) => {
+                    report.preserved_roots += 1;
+                    push_reclaim_detail(&mut report, error.to_string());
+                    continue;
+                }
+            };
+            #[cfg(unix)]
+            let candidate = open_owned_directory(&coordinator.dir, name);
+            #[cfg(windows)]
+            let candidate = open_owned_directory_for_rename(&coordinator.dir, name);
+            let Ok(candidate) = candidate else {
                 report.preserved_roots += 1;
                 continue;
             };
@@ -3228,31 +3612,23 @@ impl ManagedRunRoot {
             if matches!(&lease_metadata, Err(error) if error.kind() == std::io::ErrorKind::NotFound)
                 && (unmarked_staging_is_reclaimable || empty_deleting_is_resumable)
             {
-                let local_guard = match coordinator.local_lock.try_lock() {
-                    Ok(guard) => guard,
-                    Err(std::sync::TryLockError::WouldBlock) => {
+                #[cfg(unix)]
+                let coordinator_guard = match CoordinatorLockGuard::try_acquire(coordinator) {
+                    Ok(Some(guard)) => guard,
+                    Ok(None) => {
                         report.preserved_roots += 1;
                         continue;
                     }
-                    Err(std::sync::TryLockError::Poisoned(_)) => {
+                    Err(error) => {
                         report.preserved_roots += 1;
-                        push_reclaim_detail(
-                            &mut report,
-                            "coordinator process lock is poisoned".to_owned(),
-                        );
+                        push_reclaim_detail(&mut report, error.to_string());
                         continue;
                     }
                 };
-                if let Err(error) = FileExt::try_lock_exclusive(&coordinator.file) {
-                    report.preserved_roots += 1;
-                    if !lock_error_is_busy(&error) {
-                        push_reclaim_detail(
-                            &mut report,
-                            format!("coordinator lock failed: {error}"),
-                        );
-                    }
-                    continue;
-                }
+                #[cfg(windows)]
+                let coordinator_guard = coordinator_guard
+                    .take()
+                    .expect("Windows janitor acquired the coordinator before opening a marker");
                 let removal = remove_empty_unmarked_directory(
                     &coordinator.dir,
                     name,
@@ -3260,11 +3636,17 @@ impl ManagedRunRoot {
                     cleanup_started,
                     JANITOR_CLEANUP_BUDGET,
                 );
-                let unlock = FileExt::unlock(&coordinator.file);
-                drop(local_guard);
+                let unlock = coordinator_guard.unlock(&coordinator.path);
                 match (removal, unlock) {
                     (Ok(()), Ok(())) => report.reclaimed_roots += 1,
-                    (Err(error), _) | (_, Err(error)) => {
+                    (Err(error), _) => {
+                        report.preserved_roots += 1;
+                        push_reclaim_detail(
+                            &mut report,
+                            format!("empty unmarked-root cleanup failed for {name}: {error}"),
+                        );
+                    }
+                    (_, Err(error)) => {
                         report.preserved_roots += 1;
                         push_reclaim_detail(
                             &mut report,
@@ -3318,37 +3700,35 @@ impl ManagedRunRoot {
                 );
                 continue;
             }
-            let local_guard = match coordinator.local_lock.try_lock() {
-                Ok(guard) => guard,
-                Err(std::sync::TryLockError::WouldBlock) => {
+            #[cfg(unix)]
+            let coordinator_guard = match CoordinatorLockGuard::try_acquire(coordinator) {
+                Ok(Some(guard)) => guard,
+                Ok(None) => {
                     report.preserved_roots += 1;
                     continue;
                 }
-                Err(std::sync::TryLockError::Poisoned(_)) => {
+                Err(error) => {
                     report.preserved_roots += 1;
-                    push_reclaim_detail(
-                        &mut report,
-                        "coordinator process lock is poisoned".to_owned(),
-                    );
+                    push_reclaim_detail(&mut report, error.to_string());
                     continue;
                 }
             };
-            if let Err(error) = FileExt::try_lock_exclusive(&coordinator.file) {
-                report.preserved_roots += 1;
-                if !lock_error_is_busy(&error) {
-                    push_reclaim_detail(&mut report, format!("coordinator lock failed: {error}"));
-                }
-                continue;
-            }
+            #[cfg(windows)]
+            let coordinator_guard = coordinator_guard
+                .take()
+                .expect("Windows janitor acquired the coordinator before opening a marker");
             let deleting_name = format!("{DELETING_PREFIX}{run_id}");
-            let claim = claim_managed_child_with_guard(
+            let mut lease = Some(lease);
+            let claim = claim_managed_child(
                 &coordinator.dir,
                 name,
                 &deleting_name,
                 run_id,
                 marker.owner,
                 &candidate,
-                &lease,
+                #[cfg(windows)]
+                &candidate,
+                &mut lease,
                 &|| {
                     if cleanup_started.elapsed() < JANITOR_CLEANUP_BUDGET {
                         Ok(())
@@ -3364,8 +3744,7 @@ impl ManagedRunRoot {
                     }
                 },
             );
-            let unlock = FileExt::unlock(&coordinator.file);
-            drop(local_guard);
+            let unlock = coordinator_guard.unlock(&coordinator.path);
             if let Err(error) = unlock {
                 report.preserved_roots += 1;
                 push_reclaim_detail(&mut report, format!("coordinator unlock failed: {error}"));
@@ -3375,6 +3754,14 @@ impl ManagedRunRoot {
                 report.preserved_roots += 1;
                 continue;
             }
+            let Some(lease) = lease else {
+                report.preserved_roots += 1;
+                push_reclaim_detail(
+                    &mut report,
+                    format!("claimed root lease could not be reopened: {deleting_name}"),
+                );
+                continue;
+            };
             record_or_queue_reclaim_removal(
                 &mut report,
                 &mut pending_cleanup,
@@ -3549,6 +3936,40 @@ fn ensure_direct_child_capacity(existing_entries: usize) -> Result<(), Workspace
     Ok(())
 }
 
+#[cfg(windows)]
+fn rollback_closed_published_root(
+    coordinator: &ManagedRootCoordinator,
+    staging_name: &str,
+    active_name: &str,
+    expected_dir: &cap_std::fs::Dir,
+    rename_handle: &cap_std::fs::Dir,
+    expected_root_identity: (u64, u64),
+    lease_evidence: &MarkerEvidence,
+) {
+    // No descendant handle owned by this process is live here, so first restore the unpublished
+    // staging name. If another same-user actor prevents that rename, leave identity-bound
+    // cleanup evidence on the anchored directory for the next serialized janitor pass.
+    if rename_open_owned_directory(
+        &coordinator.dir,
+        rename_handle,
+        staging_name,
+        expected_root_identity,
+    )
+    .is_ok()
+    {
+        return;
+    }
+    let published_path = coordinator.path.join(active_name);
+    let marker = &lease_evidence.marker;
+    let _ = write_cleanup_ready_marker_for_identity(
+        expected_dir,
+        &published_path,
+        &marker.run_id,
+        marker.owner,
+        lease_evidence.identity,
+    );
+}
+
 fn rollback_published_root(
     coordinator: &ManagedRootCoordinator,
     active_name: &str,
@@ -3557,39 +3978,54 @@ fn rollback_published_root(
     expected_dir: &cap_std::fs::Dir,
     expected_lease: &File,
 ) {
-    let deleting_name = format!("{DELETING_PREFIX}{run_id}");
-    let Ok(expected_root_identity) = directory_identity(expected_dir) else {
-        return;
-    };
     // From this point the active name is externally visible. Publish immediate-reclaim evidence
     // before attempting any serialized claim, so lock contention or a later rollback failure can
     // never degrade into a young unlocked root that is preserved for 24 hours.
     let published_path = coordinator.path.join(active_name);
     let _ =
         write_cleanup_ready_marker(expected_dir, &published_path, run_id, owner, expected_lease);
-    let Ok(guard) = CoordinatorLockGuard::acquire_until(
-        coordinator,
-        std::time::Instant::now() + JANITOR_SELECTION_BUDGET,
-    ) else {
-        return;
-    };
-    let claim = claim_managed_child(
-        &coordinator.dir,
-        active_name,
-        &deleting_name,
-        run_id,
-        owner,
-        expected_dir,
-        expected_lease,
-    );
-    let unlock = guard.unlock(&coordinator.path);
-    if claim == Ok(ClaimResult::Claimed) && unlock.is_ok() {
-        let _ = remove_claimed_tree_bounded(
+
+    // Windows cannot rename a directory while either marker file is open. The caller still owns
+    // both handles here, so the cleanup-ready marker is the rollback: once construction unwinds
+    // and closes those handles, the next serialized janitor pass can reclaim it immediately.
+    #[cfg(windows)]
+    return;
+
+    #[cfg(unix)]
+    {
+        let deleting_name = format!("{DELETING_PREFIX}{run_id}");
+        let Ok(expected_root_identity) = directory_identity(expected_dir) else {
+            return;
+        };
+        let Ok(expected_lease) = expected_lease.try_clone() else {
+            return;
+        };
+        let mut expected_lease = Some(expected_lease);
+        let Ok(guard) = CoordinatorLockGuard::acquire_until(
+            coordinator,
+            std::time::Instant::now() + JANITOR_SELECTION_BUDGET,
+        ) else {
+            return;
+        };
+        let claim = claim_managed_child(
             &coordinator.dir,
+            active_name,
             &deleting_name,
-            Some(expected_root_identity),
-            OWNER_CLEANUP_BUDGET,
+            run_id,
+            owner,
+            expected_dir,
+            &mut expected_lease,
+            &|| Ok(()),
         );
+        let unlock = guard.unlock(&coordinator.path);
+        if claim == Ok(ClaimResult::Claimed) && unlock.is_ok() {
+            let _ = remove_claimed_tree_bounded(
+                &coordinator.dir,
+                &deleting_name,
+                Some(expected_root_identity),
+                OWNER_CLEANUP_BUDGET,
+            );
+        }
     }
 }
 
@@ -3600,8 +4036,19 @@ fn write_cleanup_ready_marker(
     owner: OwnerKind,
     lease: &File,
 ) -> Result<(), WorkspaceError> {
-    let (lease_device, lease_inode) = file_identity(lease)
+    let lease_identity = file_identity(lease)
         .map_err(|error| WorkspaceError::io("inspect workspace lease", path, error))?;
+    write_cleanup_ready_marker_for_identity(dir, path, run_id, owner, lease_identity)
+}
+
+fn write_cleanup_ready_marker_for_identity(
+    dir: &cap_std::fs::Dir,
+    path: &Utf8Path,
+    run_id: &str,
+    owner: OwnerKind,
+    lease_identity: (u64, u64),
+) -> Result<(), WorkspaceError> {
+    let (lease_device, lease_inode) = lease_identity;
     let marker = CleanupReadyMarker {
         schema: LEASE_SCHEMA,
         run_id: run_id.to_owned(),
@@ -3821,6 +4268,11 @@ fn remove_empty_unmarked_directory(
     )
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    reason = "claim keeps expected directory, lease, marker, deadline, and rollback adjacent"
+)]
 fn claim_managed_child(
     parent: &cap_std::fs::Dir,
     current_name: &str,
@@ -3828,35 +4280,22 @@ fn claim_managed_child(
     run_id: &str,
     owner: OwnerKind,
     expected_dir: &cap_std::fs::Dir,
-    expected_lease: &File,
-) -> Result<ClaimResult, WorkspaceError> {
-    claim_managed_child_with_guard(
-        parent,
-        current_name,
-        deleting_name,
-        run_id,
-        owner,
-        expected_dir,
-        expected_lease,
-        &|| Ok(()),
-    )
-}
-
-#[allow(
-    clippy::too_many_arguments,
-    reason = "claim keeps expected directory, lease, marker, and deadline evidence adjacent"
-)]
-fn claim_managed_child_with_guard(
-    parent: &cap_std::fs::Dir,
-    current_name: &str,
-    deleting_name: &str,
-    run_id: &str,
-    owner: OwnerKind,
-    expected_dir: &cap_std::fs::Dir,
-    expected_lease: &File,
+    #[cfg(windows)] rename_handle: &cap_std::fs::Dir,
+    expected_lease: &mut Option<File>,
     before_next_operation: &impl Fn() -> Result<(), WorkspaceError>,
 ) -> Result<ClaimResult, WorkspaceError> {
     before_next_operation()?;
+    let lease_path = Utf8PathBuf::from(current_name).join(LEASE_FILE);
+    let expected_lease_evidence = inspect_marker_evidence(
+        expected_lease.as_ref().ok_or_else(|| {
+            WorkspaceError::io(
+                "inspect expected lease",
+                &lease_path,
+                "managed root lease is unavailable",
+            )
+        })?,
+        &lease_path,
+    )?;
     let (candidate, claimed_name) = match open_owned_directory(parent, current_name) {
         Ok(candidate) => (candidate, current_name),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -3914,31 +4353,26 @@ fn claim_managed_child_with_guard(
             error,
         )
     })?;
-    let expected_lease_identity = file_identity(expected_lease).map_err(|error| {
-        WorkspaceError::io(
-            "inspect expected lease identity",
-            Utf8Path::new(current_name),
-            error,
-        )
-    })?;
-    if candidate_lease_identity != expected_lease_identity {
+    if candidate_lease_identity != expected_lease_evidence.identity {
         return Err(WorkspaceError::InvalidPath {
             path: Utf8PathBuf::from(claimed_name),
         });
     }
     before_next_operation()?;
-    let marker = read_marker_file(&candidate_lease).ok_or_else(|| WorkspaceError::InvalidPath {
-        path: Utf8PathBuf::from(claimed_name),
-    })?;
+    let marker = &expected_lease_evidence.marker;
     if marker.schema != LEASE_SCHEMA || marker.run_id != run_id || marker.owner != owner {
         return Err(WorkspaceError::InvalidPath {
             path: Utf8PathBuf::from(current_name),
         });
     }
     before_next_operation()?;
+    drop(candidate_lease);
     if claimed_name != deleting_name {
         before_next_operation()?;
-        rename_owned_directory_with_guard(
+        #[cfg(windows)]
+        drop(expected_lease.take());
+        #[cfg(unix)]
+        let rename = rename_owned_directory_with_guard(
             parent,
             claimed_name,
             deleting_name,
@@ -3951,18 +4385,60 @@ fn claim_managed_child_with_guard(
                 Utf8Path::new(claimed_name),
                 error,
             )
-        })?;
+        });
+        #[cfg(windows)]
+        let rename = rename_open_owned_directory_with_guard(
+            parent,
+            rename_handle,
+            deleting_name,
+            candidate_identity,
+            before_next_operation,
+        )
+        .map_err(|error| {
+            WorkspaceError::io(
+                "claim managed workspace",
+                Utf8Path::new(claimed_name),
+                error,
+            )
+        });
+        #[cfg(unix)]
+        rename?;
+        #[cfg(windows)]
+        {
+            if let Err(error) = rename {
+                match reopen_locked_lease(
+                    &candidate,
+                    &expected_lease_evidence,
+                    Utf8Path::new(current_name),
+                ) {
+                    Ok(lease) => {
+                        *expected_lease = Some(lease);
+                        return Err(error);
+                    }
+                    Err(restore_error) => {
+                        return Err(WorkspaceError::io(
+                            "restore workspace lease after failed claim",
+                            Utf8Path::new(current_name),
+                            format!("claim failed: {error}; lease restore failed: {restore_error}"),
+                        ));
+                    }
+                }
+            }
+            *expected_lease = Some(reopen_locked_lease(
+                &candidate,
+                &expected_lease_evidence,
+                Utf8Path::new(deleting_name),
+            )?);
+        }
     }
     Ok(ClaimResult::Claimed)
 }
 
-fn candidate_is_stale(candidate: &cap_std::fs::Dir, run_id: &str, now: SystemTime) -> bool {
-    let Ok(lease) = open_regular_file_nofollow(candidate, LEASE_FILE) else {
-        return false;
-    };
-    let Some(lease_marker) = read_json_file::<LeaseMarker>(&lease) else {
-        return false;
-    };
+fn candidate_is_stale(
+    candidate: &cap_std::fs::Dir,
+    lease_marker: &LeaseMarker,
+    now: SystemTime,
+) -> bool {
     let Ok(heartbeat) = open_regular_file_nofollow(candidate, HEARTBEAT_FILE) else {
         return false;
     };
@@ -3970,9 +4446,8 @@ fn candidate_is_stale(candidate: &cap_std::fs::Dir, run_id: &str, now: SystemTim
         return false;
     };
     if lease_marker.schema != LEASE_SCHEMA
-        || lease_marker.run_id != run_id
         || heartbeat_marker.schema != LEASE_SCHEMA
-        || heartbeat_marker.run_id != run_id
+        || heartbeat_marker.run_id != lease_marker.run_id
         || heartbeat_marker.owner != lease_marker.owner
     {
         return false;
@@ -3994,7 +4469,7 @@ fn staging_candidate_is_stale(
     now: SystemTime,
 ) -> bool {
     match candidate.symlink_metadata(HEARTBEAT_FILE) {
-        Ok(_) => candidate_is_stale(candidate, &marker.run_id, now),
+        Ok(_) => candidate_is_stale(candidate, marker, now),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => UNIX_EPOCH
             .checked_add(Duration::from_secs(marker.created_unix_seconds))
             .and_then(|created| created.checked_add(STALE_AFTER))
@@ -4028,7 +4503,7 @@ fn candidate_is_reclaimable(
     {
         return true;
     }
-    candidate_is_stale(candidate, &marker.run_id, now)
+    candidate_is_stale(candidate, marker, now)
 }
 
 fn staging_contents_are_safe(candidate: &cap_std::fs::Dir) -> bool {
@@ -4068,6 +4543,75 @@ fn read_cleanup_ready_marker(candidate: &cap_std::fs::Dir) -> Option<CleanupRead
 
 fn read_marker_file(file: &File) -> Option<LeaseMarker> {
     read_json_file(file)
+}
+
+fn inspect_marker_evidence(file: &File, path: &Utf8Path) -> Result<MarkerEvidence, WorkspaceError> {
+    let identity = file_identity(file)
+        .map_err(|error| WorkspaceError::io("identify workspace lease", path, error))?;
+    let marker = read_marker_file(file).ok_or_else(|| WorkspaceError::InvalidPath {
+        path: path.to_owned(),
+    })?;
+    Ok(MarkerEvidence { identity, marker })
+}
+
+#[cfg(windows)]
+fn reopen_locked_lease(
+    dir: &cap_std::fs::Dir,
+    expected: &MarkerEvidence,
+    path: &Utf8Path,
+) -> Result<File, WorkspaceError> {
+    let lease_path = path.join(LEASE_FILE);
+    let lease =
+        super::root::windows::open_regular_file_shared(dir, std::ffi::OsStr::new(LEASE_FILE))
+            .map_err(|error| WorkspaceError::io("reopen workspace lease", &lease_path, error))?;
+    verify_current_user_owned_file(&lease)
+        .map_err(|error| WorkspaceError::io("verify workspace lease owner", &lease_path, error))?;
+    if file_identity(&lease)
+        .map_err(|error| WorkspaceError::io("identify workspace lease", &lease_path, error))?
+        != expected.identity
+    {
+        return Err(WorkspaceError::InvalidPath { path: lease_path });
+    }
+    FileExt::try_lock_exclusive(&lease)
+        .map_err(|error| WorkspaceError::io("lock workspace lease", &lease_path, error))?;
+    if read_marker_file(&lease).as_ref() != Some(&expected.marker) {
+        return Err(WorkspaceError::InvalidPath { path: lease_path });
+    }
+    Ok(lease)
+}
+
+#[cfg(windows)]
+fn reopen_heartbeat(
+    dir: &cap_std::fs::Dir,
+    expected: &MarkerEvidence,
+    path: &Utf8Path,
+) -> Result<File, WorkspaceError> {
+    let heartbeat_path = path.join(HEARTBEAT_FILE);
+    let heartbeat = super::root::windows::open_regular_file_for_update_shared(
+        dir,
+        std::ffi::OsStr::new(HEARTBEAT_FILE),
+    )
+    .map_err(|error| WorkspaceError::io("reopen workspace heartbeat", &heartbeat_path, error))?;
+    verify_current_user_owned_file(&heartbeat).map_err(|error| {
+        WorkspaceError::io("verify workspace heartbeat owner", &heartbeat_path, error)
+    })?;
+    if inspect_marker_evidence(&heartbeat, &heartbeat_path)? != *expected {
+        return Err(WorkspaceError::InvalidPath {
+            path: heartbeat_path,
+        });
+    }
+    Ok(heartbeat)
+}
+
+#[cfg(windows)]
+fn reopen_published_markers(
+    dir: &cap_std::fs::Dir,
+    expected: &(MarkerEvidence, MarkerEvidence),
+    path: &Utf8Path,
+) -> Result<(File, File), WorkspaceError> {
+    let lease = reopen_locked_lease(dir, &expected.0, path)?;
+    let heartbeat = reopen_heartbeat(dir, &expected.1, path)?;
+    Ok((lease, heartbeat))
 }
 
 fn read_json_file<T: serde::de::DeserializeOwned>(file: &File) -> Option<T> {
@@ -5014,22 +5558,56 @@ fn valid_child_prefix(prefix: &str) -> bool {
 #[derive(Debug)]
 pub(crate) struct ManagedChild {
     path: Utf8PathBuf,
-    dir: cap_std::fs::Dir,
-    parent: cap_std::fs::Dir,
+    dir: Option<cap_std::fs::Dir>,
+    parent: Option<cap_std::fs::Dir>,
     name: String,
     lifecycle: Arc<Mutex<RootLifecycle>>,
     // A detached blocking workspace task may outlive its owner future. Holding the original
     // locked file keeps startup janitors out until that task drops its managed child.
-    _lease: Arc<File>,
+    lease: Option<Arc<File>>,
+    #[cfg(all(test, windows))]
+    drop_gate: Option<Arc<ManagedChildDropGate>>,
+}
+
+#[cfg(all(test, windows))]
+#[derive(Debug)]
+struct ManagedChildDropGate {
+    before_closed_state: Arc<std::sync::Barrier>,
+    release: Arc<std::sync::Barrier>,
+    after_published_state: Option<Arc<std::sync::Barrier>>,
+    after_published_release: Option<Arc<std::sync::Barrier>>,
 }
 
 impl Drop for ManagedChild {
     fn drop(&mut self) {
+        // Close every child-owned OS handle before publishing that no live child remains.
+        // Cleanup may run on another thread as soon as the lifecycle count reaches zero; leaving
+        // Rust's automatic field drop until after this method returns creates a Windows rename
+        // race even though the logical child count is already quiescent.
+        drop(self.dir.take());
+        drop(self.parent.take());
+        // Keep the lease locked until the child and parent directory handles are gone, so an
+        // external janitor cannot begin a claim during this drop transition.
+        drop(self.lease.take());
+        #[cfg(all(test, windows))]
+        if let Some(gate) = &self.drop_gate {
+            gate.before_closed_state.wait();
+            gate.release.wait();
+        }
         let mut lifecycle = self
             .lifecycle
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         lifecycle.live_children = lifecycle.live_children.saturating_sub(1);
+        drop(lifecycle);
+        #[cfg(all(test, windows))]
+        if let Some(gate) = &self.drop_gate
+            && let (Some(published), Some(release)) =
+                (&gate.after_published_state, &gate.after_published_release)
+        {
+            published.wait();
+            release.wait();
+        }
     }
 }
 
@@ -5038,16 +5616,35 @@ impl ManagedChild {
         &self.path
     }
 
+    #[cfg(all(test, windows))]
+    pub(crate) fn pause_after_quiescence_for_test(
+        &mut self,
+    ) -> (Arc<std::sync::Barrier>, Arc<std::sync::Barrier>) {
+        let published = Arc::new(std::sync::Barrier::new(2));
+        let release = Arc::new(std::sync::Barrier::new(2));
+        self.drop_gate = Some(Arc::new(ManagedChildDropGate {
+            before_closed_state: Arc::new(std::sync::Barrier::new(1)),
+            release: Arc::new(std::sync::Barrier::new(1)),
+            after_published_state: Some(Arc::clone(&published)),
+            after_published_release: Some(Arc::clone(&release)),
+        }));
+        (published, release)
+    }
+
     pub(crate) fn cleanup(&self) -> Result<(), WorkspaceError> {
-        let identity = directory_identity(&self.dir)
+        let dir = self
+            .dir
+            .as_ref()
+            .expect("managed child directory is live before drop");
+        let parent = self
+            .parent
+            .as_ref()
+            .expect("managed child parent is live before drop");
+        let identity = directory_identity(dir)
             .map_err(|error| WorkspaceError::io("identify managed child", &self.path, error))?;
-        let result = remove_claimed_tree_bounded(
-            &self.parent,
-            &self.name,
-            Some(identity),
-            OWNER_CLEANUP_BUDGET,
-        )
-        .map_err(|error| WorkspaceError::io("remove managed child", &self.path, error))?;
+        let result =
+            remove_claimed_tree_bounded(parent, &self.name, Some(identity), OWNER_CLEANUP_BUDGET)
+                .map_err(|error| WorkspaceError::io("remove managed child", &self.path, error))?;
         if !result.complete {
             return Err(WorkspaceError::io(
                 "remove managed child",
@@ -5055,7 +5652,7 @@ impl ManagedChild {
                 "cleanup budget exhausted",
             ));
         }
-        match self.parent.symlink_metadata(&self.name) {
+        match parent.symlink_metadata(&self.name) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(error) => Err(WorkspaceError::io(
                 "verify managed child removal",

@@ -40,10 +40,31 @@ incorrect finish acceptance, Rust/Python root-topology drift, crash-orphaned rep
 temporaries, unbounded tool-controlled reads, and fail-open no-match checks. The tasks
 below contain those corrections.
 
+A Windows-native implementation review on 2026-08-31 corrected two assumptions that
+Unix testing and compile-only Windows coverage had not established. First, regular files
+do not retain directory ACE inheritance flags, so exact protected-DACL verification must
+use object-kind-specific descriptors. Second, delete sharing does not allow a directory
+rename while a descendant marker is open. The resulting design uses a coordinator-held,
+identity-checked close/rename/reopen/relock handoff. It also reads a locked lease through
+the locking handle because Windows byte-range locks are mandatory for competing handles.
+An A/B run retained native handle-relative rename and removed speculative parent rights
+and NUL padding: the Win32 rename wrapper returned `ERROR_INVALID_PARAMETER`, while
+`NtSetInformationFile(FileRenameInformation)` succeeded with the live parent handle.
+The subsequent cleanup regression established a separate acquisition-order rule:
+opening a new `DELETE`-capable directory handle during cleanup fails while a live
+handle to that directory denies delete sharing. A shared descendant can permit the late
+open but still prevents the directory rename until it closes. The live owner must
+acquire rename capability before creating markers and retain the same handle through
+publication and claim. A janitor, which cannot inherit a crashed process's handle, must
+acquire its candidate `DELETE` handle before opening any descendant marker.
+Managed-child quiescence likewise may be published only after every sibling descendant
+handle has closed.
+
 ## Global Constraints
 
-- Work only in `/Users/hayao/RustroverProjects/hoimin/.worktrees/disk-safe-mutation`
-  on branch `feat/disk-safe-mutation`.
+- Work only in an isolated worktree on branch `feat/disk-safe-mutation`, tracking
+  `origin/feat/disk-safe-mutation`. `origin/main` is the PR base/comparison ref, not this
+  branch's upstream; do not change the upstream to `origin/main`.
 - Before each task, require a clean tracked worktree and record the exact HEAD. Preserve
   ignored evidence under `.superpowers/sdd/2026-08-27-disk-safe-mutation-execution/`.
 - Use `apply_patch` for source and documentation edits. Do not delete repository
@@ -962,9 +983,22 @@ permissions. `ManagedRunRoot::create(&coordinator, owner)` generates a canonical
 internally, then creates a staging
 directory and marker with `create_new`, lock
 the marker, acquire the managed-root coordinator, rename to `run-{run_id}`, and retain
-the open locked file. On Windows, use `OpenOptionsExt` to grant read/write/delete sharing
-and request the access needed for parent-directory rename/removal, so the locked lease
-can remain open through absence verification. Expose only:
+the open locked file. Unix keeps the lease and heartbeat open across publication. Windows
+must not attempt that sequence: an open descendant prevents directory rename even when
+the handle grants delete sharing. Immediately after staging creation and before any
+marker open, acquire a no-follow `DELETE`-capable handle and duplicate it for ordinary
+inspection. The duplicate carries the same OS access rights but is never used as rename
+authority. Retain the original handle in `ManagedRunRoot`. While holding the
+coordinator, record the exact lease and heartbeat identities and contents, close both
+handles, rename through the retained source handle relative to the live coordinator
+directory handle, reopen both markers relative to the live run-directory inspection
+handle, verify current-user ownership plus exact identity and contents, and relock the
+lease before releasing the coordinator. Never reopen owner rename authority during
+publication or cleanup. If marker reopen fails, first rename the anchored root back to
+staging through the retained handle; if that rollback cannot complete, write
+cleanup-ready evidence bound to the original lease identity so the root is immediately
+reclaimable after unwinding.
+Expose only:
 
 Managed-root bootstrap must tolerate two creators without replacing an existing object:
 atomically create the directory if absent, reopen it as a capability, verify identity
@@ -1000,12 +1034,24 @@ pub(crate) fn reclaim_abandoned(
 without deleting content. `ManagedRunRoot::Drop` also releases handles and performs no
 recursive deletion. Catchable control flow must call `cleanup` explicitly. Panic or
 task-cancellation tests must leave a locked or abandoned root for the next janitor.
+Before `ManagedChild::Drop` decrements `live_children`, it explicitly closes its
+directory and parent handles, then releases its shared lease. Any containing type with
+another descendant handle must close that handle first: `WorkerWorkspace::Drop`, for
+example, closes `WorkerRoot` before dropping its managed-child token. A deterministic
+Windows gate test must pause immediately after quiescence publication and prove cleanup
+can rename at that point.
 
-Cleanup closes child handles first, acquires the coordinator, revalidates its active
-child and marker through anchored handles, and renames only its own direct child to
-`.deleting-{run_id}` while the lease remains locked. It then releases the coordinator
-before anchored removal, retains the per-run lease through absence verification, and
-closes it only afterward. `abandon_for_janitor` records the deferred reason and releases
+Cleanup closes child handles first, acquires the coordinator, and revalidates its active
+child and marker through anchored handles. Unix renames only its own direct child to
+`.deleting-{run_id}` while the lease remains locked. Windows captures exact lease and
+heartbeat evidence, closes the heartbeat and final lease handles, renames the directory
+through the handle retained since staging creation, reopens the lease from the live
+candidate-directory inspection handle, verifies owner, identity, and complete marker
+contents, and relocks it before releasing the coordinator. On a failed rename it must
+reopen and relock the original lease and restore the exact heartbeat before returning.
+It must not attempt to acquire a replacement owner `DELETE` handle at this point. It
+then performs anchored removal, retains the per-run lease through absence
+verification, and closes it only afterward. `abandon_for_janitor` records the deferred reason and releases
 only the caller's lease guard without invoking recursive cleanup; a monitor or other
 live component's cloned guard remains locked. `cleanup` repeats resumable anchored
 slices until absence, a hard error/no-progress result, or its total budget. Each slice
@@ -1038,6 +1084,11 @@ These markers provide crash-recovery evidence, not cryptographic authenticity ag
 deliberately malicious process running with the same user credentials. “Forged marker”
 tests cover wrong schema, identity, owner, ordering, or filename; they must not claim a
 portable same-user sandbox boundary.
+On Windows, byte-range locks are mandatory for competing handles. Once janitor acquires
+the lease, it reads and validates the marker through that locked handle rather than
+opening a second reader. The coordinator is held across the bounded close/rename/reopen/
+relock interval, so no compliant creator, owner cleanup, or janitor can observe the lease
+temporarily unlocked.
 
 Run the creation, UUID/name, active-lease, and owner/janitor coordinator race tests before
 continuing. The only accepted failures at this point are deletion and platform-security
@@ -1048,8 +1099,11 @@ cases implemented by the next two steps.
 On Unix, set and verify mode `0700` on the managed directory. On Windows, add the needed
 `windows-sys` security authorization features and install a protected DACL granting full
 access only to the current user SID, `SYSTEM`, and `Administrators`; read it back before
-creating a staging child. A failure to establish this boundary fails closed. Tests use a
-platform adapter rather than shelling out to `icacls`.
+creating a staging child. Directory ACEs carry object/container inheritance; regular-file
+ACEs do not, because Windows strips those inheritance flags from a file and exact DACL
+self-verification must compare the descriptor appropriate to the object kind. A failure
+to establish this boundary fails closed. Tests use a platform adapter rather than
+shelling out to `icacls`.
 
 On Unix, implement anchored removal through directory-relative no-follow operations. On
 Windows, use handles opened with `DELETE`, directory-list, and attribute rights; reject
@@ -1062,14 +1116,22 @@ Do not call `cap_std::fs::Dir::remove_dir_all` on Windows. The pinned
 calls path-based `std::fs::remove_dir_all`; its source labels that transition racy. Use a
 small owned `windows-sys 0.60` adapter around `CreateFileW`,
 `GetFinalPathNameByHandleW`, `GetFileInformationByHandleEx`, and
-`SetFileInformationByHandle`, with every constant covered by a Windows compile test.
+`SetFileInformationByHandle`. Capability-relative rename uses
+`NtSetInformationFile(FileRenameInformation)` with a live parent handle because the
+Win32 wrapper rejects this relative-root form with `ERROR_INVALID_PARAMETER` on the
+supported Windows host. Every constant is covered by a Windows compile test.
 Keep Unix and Windows deletion behind one trait so a platform stub cannot fall back to
 ambient recursive removal.
 
 Keep measurement and deletion handle policies separate. Windows read-only scan handles
 must include `FILE_SHARE_DELETE`; the open handle and identity checks anchor the object
 while permitting a candidate directory to be removed. Destructive janitor claim
-handles request `DELETE` access and run only after root monitor join. The current owner
+handles request `DELETE` access and run only after root monitor join. The live owner
+acquires its rename handle before any staging descendant exists and retains it for both
+namespace transitions. The janitor checks the protected named mutation barrier,
+acquires the coordinator, and then acquires its `DELETE`-capable candidate before
+opening or locking any descendant marker; that same handle is used for claim. The
+current owner
 may remove a compacted candidate below the still-monitored run root; the walker treats
 its vanished entries as concurrent cleanup. Add a Windows regression in which a scan
 observes a candidate while the owner removes it, then assert no traversal escape and no sharing
@@ -1080,7 +1142,9 @@ violation.
 The janitor opens the canonical managed root as `cap_std::fs::Dir`, streams at most
 `MAX_MANAGED_CHILDREN` direct entries without collecting the listing, considers at most
 `MAX_RECLAIM_CANDIDATES` eligible roots, and opens candidates with
-`DirExt::open_dir_nofollow`; it never performs check-then-path-open traversal. It caps
+`DirExt::open_dir_nofollow`; on Windows this is the one `DELETE`-capable candidate
+opened under the coordinator before any marker handle. It never performs a second
+late-open for rename authority or check-then-path-open traversal. It caps
 marker reads before deserialization, validates schema/owner/name/run ID and retention,
 then acquires the nonblocking lease and coordinator. Under both locks it compares the
 already-open child and marker identities again before renaming. Valid `.deleting-`
@@ -1094,10 +1158,13 @@ as proof that descendant processes exited.
 
 Keep the validated claim transition in one uniquely named production helper,
 `claim_managed_child`; both owner cleanup and janitor call it with their allowed prefix
-and expected identity.
+and expected identity. The owner wrapper additionally transfers its unique lease and
+heartbeat handles into and out of the Windows handoff; a live `ManagedChild` retains a
+shared lease guard and prevents that transfer.
 
 After claiming or recognizing a `.deleting-` entry, release the coordinator but keep
-the candidate lease locked through removal and absence verification. If a staging entry
+the candidate lease locked through removal and absence verification. On Windows this is
+the reopened, identity-equal lease acquired before coordinator release. If a staging entry
 has a marker, validate and lock it before claim; never treat age alone as liveness.
 
 Run active, abandoned, retained, malformed, oversized-marker, excessive-child, and

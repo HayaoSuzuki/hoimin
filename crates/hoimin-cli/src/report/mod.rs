@@ -137,10 +137,12 @@ where
     }
 
     pub(crate) fn flush_and_release_spool(&mut self) -> io::Result<()> {
-        self.stdout.flush()?;
-        self.stderr.flush()?;
+        let stdout = self.stdout.flush();
+        let stderr = self.stderr.flush();
+        // Release the descendant spool handle even when either external writer fails. Windows
+        // cannot claim the delivery directory while any descendant file remains open.
         self.json = None;
-        Ok(())
+        stdout.and(stderr)
     }
 }
 

@@ -45,6 +45,9 @@
     paths, and diagnostic log reads.
 16. The executable-gate pass made expected `rg` misses and concurrent-process checks
     distinguish a real no-match from tool or process-list failure.
+17. The native Windows cleanup pass made namespace-mutation capability acquisition part
+    of root construction rather than cleanup. It also made descendant-handle closure a
+    prerequisite for publishing managed-child quiescence.
 
 ## Purpose
 
@@ -548,12 +551,45 @@ unbounded allocation.
 Creation follows this sequence:
 
 1. Create an unadvertised staging directory with `create_new` semantics.
-2. Create a regular lease marker containing schema version, run ID, creation
-   time, and owner kind.
-3. Acquire and hold an exclusive operating-system lock on the marker.
-4. Acquire the coordinator lock and rename the staging directory to the managed
-   active prefix.
-5. Create worker or cargo-mutants children below it.
+2. On Windows, before creating any descendant marker, open the staging directory once
+   with `DELETE`, no-follow directory access, and delete sharing. Retain that same
+   rename-capable handle across staging publication and owner cleanup; use a duplicate
+   only for staging inspection and marker access, then open an ordinary shared handle
+   for later child access. Duplication preserves the underlying access rights;
+   “ordinary” describes its role, not a reduced handle policy.
+3. Create and flush regular lease and heartbeat markers containing schema version,
+   run ID, creation time, and owner kind.
+4. Acquire an exclusive operating-system lock on the lease marker.
+5. Acquire the coordinator lock and publish the staging directory under the managed
+   active prefix. Unix keeps both marker handles open during the rename. Windows first
+   records both marker identities and contents, closes the descendant handles, performs
+   the rename through the retained source handle relative to the still-live coordinator
+   handle, reopens both markers from the still-live run-directory inspection handle,
+   revalidates owner, identity, and complete marker contents, and reacquires the lease
+   lock before releasing the coordinator.
+6. Create worker or cargo-mutants children below the published root.
+
+Windows requires this handoff because an open descendant prevents its containing
+directory from being renamed, including when that descendant grants delete sharing.
+The coordinator makes the temporary lease-unlocked interval unobservable to other
+compliant Hoimin processes. Identity and content revalidation prevents the reopened
+handle from silently changing generations. Acquiring `DELETE` only at publication or
+cleanup is not reliable: a still-live handle to that directory which denies delete
+sharing rejects the late open. A shared descendant can permit the late open but still
+prevents the rename until it closes. The retained handle therefore supplies
+namespace-mutation authority without a late path reopen, while the handoff closes every
+descendant before exercising that authority. If publication fails after the rename but
+before marker reopen, rollback first renames the anchored directory back to staging
+through that handle; if that is no longer possible, it writes cleanup-ready evidence
+bound to the original lease identity for immediate janitor recovery after construction
+unwinds.
+
+The Windows owner also keeps a same-user, protected named mutation barrier for the
+root's in-process lifetime. A janitor checks it before opening the candidate and
+preserves the root while it exists. The barrier is a crash boundary, not the rename
+capability: it disappears when the process exits, whereas the retained directory handle
+is the only handle used by the live owner for both namespace transitions. Field and
+explicit drop order keep the barrier live until all owner directory handles are closed.
 
 A crash can leave a staging directory before the rename. The janitor removes a
 staging entry only when it is a direct, non-symlink child with the staging
@@ -575,7 +611,8 @@ The janitor accepts a deletion candidate only when all checks pass:
 
 The lock closes the PID-reuse race. The operating system releases it after an
 uncatchable process death. An active process keeps the lock and the janitor
-skips its directory.
+skips its directory. On Windows, marker reads after acquiring a byte-range lock use the
+locked handle itself because those locks are mandatory for competing handles.
 
 `--keep-scratch` creates a separate regular retention marker with `create_new`
 semantics while the lease lock remains held. The janitor validates both marker
@@ -599,11 +636,21 @@ Cleanup-ready and heartbeat validation checks structure, run identity, ordering,
 time; it is not cryptographic proof against the same-credential process excluded by the
 threat model.
 
-Normal cleanup closes child processes and their inherited handles, acquires the
-coordinator lock, renames the root to the managed deleting prefix while the
-lease remains held, and then releases only the coordinator before removing the tree.
-The per-run lease remains locked until anchored removal and absence verification finish;
-only then is its surviving handle closed. Removal uses an anchored no-follow walk and
+Normal cleanup closes child processes and their inherited handles and acquires the
+coordinator lock. Unix renames the root to the managed deleting prefix while the lease
+remains held. Windows records the exact lease and heartbeat evidence, closes the
+heartbeat and final lease handles, renames the root through the handle retained since
+staging creation, reopens the lease from the still-live run-directory inspection handle,
+revalidates the exact owner, identity, and marker contents, and relocks it before
+releasing the coordinator. Cleanup never opens a new owner `DELETE` handle. A failed
+Windows rename restores both the locked lease and heartbeat before returning an error;
+a failed restoration remains a hard, fail-closed cleanup error. Every object that owns a
+descendant handle closes it before decrementing or otherwise publishing managed-child
+quiescence. In particular, dropping a worker closes its `WorkerRoot` before its
+`ManagedChild` token can make root cleanup eligible on another thread. After a
+successful claim, the per-run lease remains locked until anchored removal and absence
+verification finish; only then is its surviving handle closed. Removal uses an anchored
+no-follow walk and
 treats `NotFound` as success. It is a resumable streaming depth-first operation. One
 slice examines at most 50,000 entries and performs at most five seconds of cooperative
 work. Cleanup deliberately does not reuse the meter's depth-128 stack: otherwise the
@@ -686,7 +733,14 @@ read-only meter handles grant `FILE_SHARE_DELETE` so concurrent per-candidate cl
 does not fail because a scan observed the directory. Each handle stays bound to the
 opened object, rejects reparse points, and has its final path and file identity verified.
 Destructive janitor handles request `DELETE` access and perform handle-relative
-rename/disposition after the monitor has joined. Per-candidate owner cleanup may run
+rename/disposition after the monitor has joined. Delete sharing permits removal of the
+opened entry but does not permit renaming a directory that still has an open descendant;
+publication and claim therefore use the coordinator-serialized marker-handle handoff
+described above. A janitor cannot inherit the crashed owner's retained handle, so after
+checking the mutation barrier and acquiring the coordinator it opens the candidate with
+`DELETE` before it opens any lease, heartbeat, or cleanup marker. It retains that exact
+candidate handle through validation and claim; it never performs a second late
+rename-capability open. Per-candidate owner cleanup may run
 while the run-root monitor is active because meter handles share deletion and treat
 vanished entries as concurrent cleanup. A platform that cannot establish this
 anchored walk fails closed instead of falling back to path-based recursive

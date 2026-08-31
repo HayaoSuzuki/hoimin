@@ -11,7 +11,8 @@ use camino::Utf8Path;
 use windows_sys::Wdk::Foundation::OBJECT_ATTRIBUTES;
 use windows_sys::Wdk::Storage::FileSystem::{
     FILE_DIRECTORY_FILE, FILE_NON_DIRECTORY_FILE, FILE_OPEN, FILE_OPEN_IF, FILE_OPEN_REPARSE_POINT,
-    FILE_SYNCHRONOUS_IO_NONALERT, NtCreateFile,
+    FILE_RENAME_INFORMATION, FILE_SYNCHRONOUS_IO_NONALERT, FileRenameInformation, NtCreateFile,
+    NtSetInformationFile,
 };
 use windows_sys::Win32::Foundation::{
     ERROR_NO_MORE_FILES, HANDLE, OBJ_CASE_INSENSITIVE, RtlNtStatusToDosError, UNICODE_STRING,
@@ -20,11 +21,11 @@ use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, DELETE, FILE_ATTRIBUTE_REPARSE_POINT, FILE_DISPOSITION_FLAG_DELETE,
     FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE, FILE_DISPOSITION_FLAG_POSIX_SEMANTICS,
     FILE_DISPOSITION_INFO, FILE_DISPOSITION_INFO_EX, FILE_ID_BOTH_DIR_INFO, FILE_LIST_DIRECTORY,
-    FILE_READ_ATTRIBUTES, FILE_READ_DATA, FILE_RENAME_INFO, FILE_SHARE_DELETE, FILE_SHARE_READ,
-    FILE_SHARE_WRITE, FILE_WRITE_ATTRIBUTES, FILE_WRITE_DATA, FileDispositionInfo,
-    FileDispositionInfoEx, FileIdBothDirectoryInfo, FileIdBothDirectoryRestartInfo, FileRenameInfo,
-    GetFileInformationByHandle, GetFileInformationByHandleEx, GetVolumeInformationByHandleW,
-    READ_CONTROL, SYNCHRONIZE, SetFileInformationByHandle,
+    FILE_READ_ATTRIBUTES, FILE_READ_DATA, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    FILE_WRITE_ATTRIBUTES, FILE_WRITE_DATA, FileDispositionInfo, FileDispositionInfoEx,
+    FileIdBothDirectoryInfo, FileIdBothDirectoryRestartInfo, GetFileInformationByHandle,
+    GetFileInformationByHandleEx, GetVolumeInformationByHandleW, READ_CONTROL, SYNCHRONIZE,
+    SetFileInformationByHandle,
 };
 use windows_sys::Win32::System::IO::IO_STATUS_BLOCK;
 
@@ -234,10 +235,33 @@ pub(crate) fn open_directory_shared(
     parent: &(impl AsRawHandle + ?Sized),
     name: &OsStr,
 ) -> io::Result<File> {
-    let file = open_relative_shared(
+    open_directory_with_access(
         parent,
         name,
         SYNCHRONIZE | READ_CONTROL | FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY,
+    )
+}
+
+pub(crate) fn open_directory_for_rename(
+    parent: &(impl AsRawHandle + ?Sized),
+    name: &OsStr,
+) -> io::Result<File> {
+    open_directory_with_access(
+        parent,
+        name,
+        DELETE | SYNCHRONIZE | READ_CONTROL | FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY,
+    )
+}
+
+fn open_directory_with_access(
+    parent: &(impl AsRawHandle + ?Sized),
+    name: &OsStr,
+    desired_access: u32,
+) -> io::Result<File> {
+    let file = open_relative_shared(
+        parent,
+        name,
+        desired_access,
         FILE_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
     )?;
     let metadata = file.metadata()?;
@@ -278,18 +302,26 @@ pub(crate) fn open_regular_file_shared(
     Ok(file)
 }
 
-pub(crate) fn rename_entry_relative(
+pub(crate) fn open_regular_file_for_update_shared(
     parent: &(impl AsRawHandle + ?Sized),
-    source: &OsStr,
-    destination: &OsStr,
-    expected_identity: (u64, u64),
-) -> io::Result<()> {
-    rename_entry_relative_with_guard(parent, source, destination, expected_identity, &|| Ok(()))
+    name: &OsStr,
+) -> io::Result<File> {
+    let file = open_relative_shared(
+        parent,
+        name,
+        SYNCHRONIZE | READ_CONTROL | FILE_READ_ATTRIBUTES | FILE_READ_DATA | FILE_WRITE_ATTRIBUTES,
+        FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
+    )?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(io::Error::other("managed entry is not a regular file"));
+    }
+    Ok(file)
 }
 
-pub(crate) fn rename_entry_relative_with_guard(
+pub(crate) fn rename_open_entry_relative_with_guard(
     parent: &(impl AsRawHandle + ?Sized),
-    source: &OsStr,
+    source: &(impl AsRawHandle + ?Sized),
     destination: &OsStr,
     expected_identity: (u64, u64),
     before_next_operation: &impl Fn() -> io::Result<()>,
@@ -301,14 +333,7 @@ pub(crate) fn rename_entry_relative_with_guard(
         ));
     }
     before_next_operation()?;
-    let source = open_relative_shared(
-        parent,
-        source,
-        DELETE | SYNCHRONIZE | FILE_READ_ATTRIBUTES,
-        FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
-    )?;
-    before_next_operation()?;
-    if file_identity_io(&source)? != expected_identity {
+    if file_identity_io(source)? != expected_identity {
         return Err(io::Error::other("rename source identity changed"));
     }
     before_next_operation()?;
@@ -317,12 +342,12 @@ pub(crate) fn rename_entry_relative_with_guard(
         .len()
         .checked_mul(size_of::<u16>())
         .ok_or_else(|| io::Error::other("rename destination length overflow"))?;
-    let header_len = std::mem::offset_of!(FILE_RENAME_INFO, FileName);
+    let header_len = std::mem::offset_of!(FILE_RENAME_INFORMATION, FileName);
     let buffer_bytes = header_len
         .checked_add(name_bytes)
         .ok_or_else(|| io::Error::other("rename buffer length overflow"))?;
     let mut buffer = vec![0_usize; buffer_bytes.div_ceil(size_of::<usize>())];
-    let rename = buffer.as_mut_ptr().cast::<FILE_RENAME_INFO>();
+    let rename = buffer.as_mut_ptr().cast::<FILE_RENAME_INFORMATION>();
     // SAFETY: buffer is suitably aligned and sized for the fixed header and destination name.
     unsafe {
         (*rename).Anonymous.ReplaceIfExists = false;
@@ -336,18 +361,21 @@ pub(crate) fn rename_entry_relative_with_guard(
         );
     }
     before_next_operation()?;
-    // SAFETY: source is live and buffer contains a correctly sized FILE_RENAME_INFO record.
-    if unsafe {
-        SetFileInformationByHandle(
+    // SAFETY: source is live, io_status is writable, and buffer contains a correctly sized
+    // FILE_RENAME_INFORMATION record whose target is anchored to the live parent handle.
+    let status = unsafe {
+        let mut io_status: IO_STATUS_BLOCK = zeroed();
+        NtSetInformationFile(
             source.as_raw_handle() as HANDLE,
-            FileRenameInfo,
+            ptr::from_mut(&mut io_status),
             buffer.as_ptr().cast(),
             u32::try_from(buffer_bytes)
                 .map_err(|_| io::Error::other("rename buffer length overflow"))?,
+            FileRenameInformation,
         )
-    } == 0
-    {
-        Err(io::Error::last_os_error())
+    };
+    if status < 0 {
+        Err(io_error_from_ntstatus(status))
     } else {
         Ok(())
     }
@@ -499,15 +527,15 @@ pub(crate) struct DirectoryEntries {
 }
 
 impl DirectoryEntries {
-    pub(crate) fn open(directory: File) -> io::Result<Self> {
-        Ok(Self {
+    pub(crate) fn open(directory: File) -> Self {
+        Self {
             directory,
             buffer: vec![0; DIRECTORY_ENTRY_BUFFER_BYTES.div_ceil(size_of::<usize>())],
             offset: 0,
             needs_refill: true,
             restart: true,
             done: false,
-        })
+        }
     }
 
     pub(crate) fn directory(&self) -> &File {
@@ -919,5 +947,139 @@ mod tests {
             create_options(WindowsFinalOperation::RemoveEntry) & FILE_OPEN_REPARSE_POINT,
             0
         );
+    }
+
+    #[test]
+    fn shared_descendant_allows_late_delete_open_but_blocks_rename() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let temporary = tempfile::tempdir().unwrap();
+        let parent =
+            cap_std::fs::Dir::open_ambient_dir(temporary.path(), cap_std::ambient_authority())
+                .unwrap();
+        parent.create_dir("source").unwrap();
+        parent.write("source/child", b"content").unwrap();
+        let child = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+            .open(temporary.path().join("source/child"))
+            .unwrap();
+
+        let source = open_directory_for_rename(&parent, OsStr::new("source")).unwrap();
+        let expected_identity = file_identity_io(&source).unwrap();
+        let blocked = rename_open_entry_relative_with_guard(
+            &parent,
+            &source,
+            OsStr::new("destination"),
+            expected_identity,
+            &|| Ok(()),
+        );
+        assert!(
+            blocked.is_err(),
+            "Windows renamed a directory while a shared descendant handle was live"
+        );
+        drop(child);
+        rename_open_entry_relative_with_guard(
+            &parent,
+            &source,
+            OsStr::new("destination"),
+            expected_identity,
+            &|| Ok(()),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn nonsharing_directory_handle_blocks_late_delete_open() {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+        };
+
+        let temporary = tempfile::tempdir().unwrap();
+        let parent =
+            cap_std::fs::Dir::open_ambient_dir(temporary.path(), cap_std::ambient_authority())
+                .unwrap();
+        parent.create_dir("source").unwrap();
+        let inspection = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(temporary.path().join("source"))
+            .unwrap();
+
+        assert!(
+            open_directory_for_rename(&parent, OsStr::new("source")).is_err(),
+            "Windows granted DELETE access while the same directory denied delete sharing"
+        );
+        drop(inspection);
+        open_directory_for_rename(&parent, OsStr::new("source")).unwrap();
+    }
+
+    #[test]
+    fn retained_delete_handle_renames_with_an_inspection_handle_live() {
+        let temporary = tempfile::tempdir().unwrap();
+        let parent =
+            cap_std::fs::Dir::open_ambient_dir(temporary.path(), cap_std::ambient_authority())
+                .unwrap();
+        parent.create_dir("source").unwrap();
+        let source = open_directory_for_rename(&parent, OsStr::new("source")).unwrap();
+        let expected_identity = file_identity_io(&source).unwrap();
+        let inspection = open_directory_shared(&parent, OsStr::new("source")).unwrap();
+
+        rename_open_entry_relative_with_guard(
+            &parent,
+            &source,
+            OsStr::new("destination"),
+            expected_identity,
+            &|| Ok(()),
+        )
+        .unwrap();
+        assert_eq!(file_identity_io(&inspection).unwrap(), expected_identity);
+        assert!(parent.symlink_metadata("source").is_err());
+        assert!(parent.symlink_metadata("destination").unwrap().is_dir());
+    }
+
+    #[test]
+    fn retained_delete_handle_waits_for_a_nonsharing_descendant_handle() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let temporary = tempfile::tempdir().unwrap();
+        let parent =
+            cap_std::fs::Dir::open_ambient_dir(temporary.path(), cap_std::ambient_authority())
+                .unwrap();
+        parent.create_dir("source").unwrap();
+        parent.write("source/child", b"content").unwrap();
+        let source = open_directory_for_rename(&parent, OsStr::new("source")).unwrap();
+        let expected_identity = file_identity_io(&source).unwrap();
+        let child = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+            .open(temporary.path().join("source/child"))
+            .unwrap();
+
+        let blocked = rename_open_entry_relative_with_guard(
+            &parent,
+            &source,
+            OsStr::new("destination"),
+            expected_identity,
+            &|| Ok(()),
+        );
+
+        assert!(
+            blocked.is_err(),
+            "Windows renamed a directory while a nonsharing descendant handle was live"
+        );
+        drop(child);
+        rename_open_entry_relative_with_guard(
+            &parent,
+            &source,
+            OsStr::new("destination"),
+            expected_identity,
+            &|| Ok(()),
+        )
+        .unwrap();
+        assert!(parent.symlink_metadata("source").is_err());
+        assert!(parent.symlink_metadata("destination").unwrap().is_dir());
     }
 }

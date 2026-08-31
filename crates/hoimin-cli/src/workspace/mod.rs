@@ -330,6 +330,19 @@ impl OwnedWorkspaceDirectory {
     }
 }
 
+fn worker_cleanup_error(error: WorkspaceError) -> WorkspaceError {
+    match error {
+        WorkspaceError::Io { path, message, .. } => WorkspaceError::Io {
+            // Preserve the effect-level operation that predates the owned-root implementation.
+            // The ownership strategy is an internal detail of a worker cleanup request.
+            operation: "remove worker workspace",
+            path,
+            message,
+        },
+        error => error,
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct DiskSnapshot {
     _owner: OwnedWorkspaceDirectory,
@@ -525,7 +538,7 @@ impl WorkerWorkspace {
         }
         self.root.close();
         if self.temp.is_managed() {
-            return match self.temp.try_cleanup() {
+            return match self.temp.try_cleanup().map_err(worker_cleanup_error) {
                 Ok(()) => {
                     self.cleanup_complete = true;
                     Ok(())
@@ -552,7 +565,7 @@ impl WorkerWorkspace {
         let wrapper_error_path = Utf8Path::from_path(wrapper).unwrap_or(self.root.path());
         make_cleanup_entry_accessible(wrapper, &wrapper_metadata, wrapper_error_path)?;
         make_tree_writable(self.root.path().as_std_path(), self.root.path())?;
-        match self.temp.try_cleanup() {
+        match self.temp.try_cleanup().map_err(worker_cleanup_error) {
             Ok(()) => {
                 self.cleanup_complete = true;
                 Ok(())
@@ -568,6 +581,10 @@ impl WorkerWorkspace {
 
 impl Drop for WorkerWorkspace {
     fn drop(&mut self) {
+        // The temp field owns the managed-child lifetime token, while root owns a descendant OS
+        // handle. Close the descendant before dropping that token: root cleanup may start on
+        // another thread as soon as the token publishes quiescence.
+        self.root.close();
         if self.cleanup_on_drop && !self.cleanup_complete && self.try_cleanup().is_err() {
             return;
         }
@@ -1752,5 +1769,75 @@ mod task_tests {
         assert_eq!(handler.pending_cleanup_count(), 0);
         assert_ne!(handler.worker(0).unwrap().root(), old_root);
         assert!(!old_root.exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn dropping_a_managed_worker_closes_its_root_before_releasing_child_lifetime() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::create_dir(project.path().join("pkg")).unwrap();
+        std::fs::write(project.path().join("pkg/a.py"), b"original\n").unwrap();
+        let project_root = Utf8Path::from_path(project.path()).unwrap().to_owned();
+        let managed_parent = tempfile::tempdir().unwrap();
+        let managed_parent_path = Utf8Path::from_path(managed_parent.path()).unwrap();
+        let coordinator = super::ManagedRootCoordinator::open(managed_parent_path).unwrap();
+        let managed_root = std::sync::Arc::new(
+            super::ManagedRunRoot::create(&coordinator, super::OwnerKind::PublicExecution).unwrap(),
+        );
+        let mut handler =
+            WorkspaceHandler::new(project_root, Vec::new(), 1, CopyOptions::default())
+                .with_managed_root(std::sync::Arc::clone(&managed_root));
+        let completed = handler
+            .handle_preflight(Preflight { id: EffectId(1) })
+            .unwrap();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: completed.aggregate_logical_bytes,
+            processes: 1,
+        });
+        let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+        handler
+            .handle_create_worker(grant.create_worker(EffectId(2), 0).unwrap())
+            .unwrap();
+        let mut worker = handler.workers.remove(&0).unwrap();
+        let super::OwnedWorkspaceDirectory::Managed(child) = &mut worker.temp else {
+            panic!("managed root must create a managed worker");
+        };
+        let (published, release) = child.pause_after_quiescence_for_test();
+
+        let replacement_snapshot = tempfile::tempdir().unwrap();
+        let replacement_root = Utf8Path::from_path(replacement_snapshot.path())
+            .unwrap()
+            .to_owned();
+        let original_snapshot = std::mem::replace(
+            &mut worker.snapshot,
+            std::sync::Arc::new(super::DiskSnapshot {
+                _owner: replacement_snapshot.into(),
+                root: replacement_root,
+                files: std::collections::BTreeMap::new(),
+            }),
+        );
+        drop(handler);
+        drop(original_snapshot);
+        let drop_thread = std::thread::spawn(move || drop(worker));
+
+        published.wait();
+        let during_drop = managed_root.cleanup(std::time::Duration::from_secs(5));
+        release.wait();
+        drop_thread.join().unwrap();
+        if during_drop.status != hoimin_core::DiskCleanupStatus::Clean {
+            let cleanup = managed_root.cleanup(std::time::Duration::from_secs(5));
+            assert_eq!(
+                cleanup.status,
+                hoimin_core::DiskCleanupStatus::Clean,
+                "test cleanup did not recover: {cleanup:?}"
+            );
+        }
+
+        assert_eq!(
+            during_drop.status,
+            hoimin_core::DiskCleanupStatus::Clean,
+            "worker root outlived its managed-child lifetime: {during_drop:?}"
+        );
     }
 }

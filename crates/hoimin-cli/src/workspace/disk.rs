@@ -1,6 +1,8 @@
 //! Bounded disk measurement for Hoimin-owned workspace roots.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
+#[cfg(unix)]
+use std::collections::BTreeSet;
 use std::io;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
@@ -683,6 +685,7 @@ fn stop_matches_secondary(
 struct WalkState {
     owned_bytes: u64,
     entries: usize,
+    #[cfg(unix)]
     identities: BTreeSet<(u64, u64)>,
 }
 
@@ -930,6 +933,10 @@ struct WindowsWalkFrame {
 }
 
 #[cfg(windows)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the walker keeps every filesystem operation and its deadline check adjacent"
+)]
 fn measure_owned_tree_with_hooks(
     root: &RootCapability,
     state: &mut WalkState,
@@ -946,13 +953,14 @@ fn measure_owned_tree_with_hooks(
     check_scan_deadline(elapsed)?;
     let root_dir = root.dir.try_clone()?.into_std_file();
     check_scan_deadline(elapsed)?;
-    let root_entries = super::root::windows::DirectoryEntries::open(root_dir)?;
+    let root_entries = super::root::windows::DirectoryEntries::open(root_dir);
     check_scan_deadline(elapsed)?;
-    let mut stack = vec![WindowsWalkFrame {
+    let root_frame = WindowsWalkFrame {
         entries: root_entries,
         depth: 0,
         display_path: root.display_path.clone(),
-    }];
+    };
+    let mut stack = vec![root_frame];
     observe_open_directories(stack.len());
     while let Some(frame) = stack.last_mut() {
         check_scan_deadline(elapsed)?;
@@ -1059,13 +1067,14 @@ fn measure_owned_tree_with_hooks(
                     "owned workspace directory identity changed while opening: {display}"
                 )));
             }
-            let entries = super::root::windows::DirectoryEntries::open(child)?;
+            let entries = super::root::windows::DirectoryEntries::open(child);
             check_scan_deadline(elapsed)?;
-            stack.push(WindowsWalkFrame {
+            let child_frame = WindowsWalkFrame {
                 entries,
                 depth: child_depth,
                 display_path: display,
-            });
+            };
+            stack.push(child_frame);
             observe_open_directories(stack.len());
         } else if metadata.is_file() {
             state.owned_bytes = state
@@ -1077,7 +1086,7 @@ fn measure_owned_tree_with_hooks(
     Ok(())
 }
 
-#[cfg(windows)]
+#[cfg(all(test, windows))]
 fn open_windows_meter_root(
     path: &Utf8Path,
     expected_identity: Option<(u64, u64)>,

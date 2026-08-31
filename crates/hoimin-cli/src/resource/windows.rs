@@ -585,16 +585,24 @@ impl WindowsSupervisor {
         }
     }
 
-    pub(crate) fn terminate(&mut self) -> Result<(), ResourceError> {
+    pub(crate) fn terminate(&mut self) -> Result<bool, ResourceError> {
         if self.terminated {
-            return Ok(());
+            return self.tree_is_quiescent();
         }
         terminate_job(self.root_job.raw(), "terminate nested root process job")?;
         self.terminated = true;
         if self.pid.is_some() {
             self.run.unregister_root(self.root_id);
         }
-        Ok(())
+        self.tree_is_quiescent()
+    }
+
+    pub(crate) fn refresh_tree_quiescence_after_root_reap(&self) -> Result<bool, ResourceError> {
+        self.tree_is_quiescent()
+    }
+
+    fn tree_is_quiescent(&self) -> Result<bool, ResourceError> {
+        active_process_count(self.root_job.raw()).map(|active| active == 0)
     }
 }
 
@@ -752,6 +760,7 @@ mod tests {
     use std::ffi::OsStr;
     use std::fs;
     use std::os::windows::ffi::OsStrExt;
+    use std::process::Stdio;
     use std::sync::Arc;
     use std::sync::atomic::Ordering;
     use std::time::{Duration, Instant};
@@ -761,6 +770,7 @@ mod tests {
         CommandArg, EffectFailure, EffectId, ProcessLimits, ProcessTermination, RawRunLimits,
         RunLimits, RunProcess,
     };
+    use tokio::process::Command;
     use uuid::Uuid;
     use windows_sys::Win32::Foundation::{WAIT_OBJECT_0, WAIT_TIMEOUT};
     use windows_sys::Win32::System::IO::PostQueuedCompletionStatus;
@@ -803,7 +813,7 @@ mod tests {
         }
     }
 
-    fn fixture_python() -> CommandArg {
+    fn fixture_python_path() -> std::path::PathBuf {
         let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let configuration = std::fs::read_to_string(workspace.join(".venv/pyvenv.cfg")).unwrap();
         let home = configuration
@@ -816,7 +826,11 @@ mod tests {
             "base fixture interpreter does not exist: {}",
             executable.display()
         );
-        arg(executable)
+        executable
+    }
+
+    fn fixture_python() -> CommandArg {
+        arg(fixture_python_path())
     }
 
     fn sleeping_fixture(id: u64) -> RunProcess {
@@ -1091,8 +1105,7 @@ mod tests {
             }
         }
 
-        async fn wait_until_exits(&self) -> bool {
-            let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        async fn wait_until_exits(&self, deadline: tokio::time::Instant) -> bool {
             loop {
                 match self.wait_result() {
                     WAIT_OBJECT_0 => return true,
@@ -1114,20 +1127,6 @@ mod tests {
         identities.next().is_none().then_some((root, descendant))
     }
 
-    async fn wait_until_job_is_empty(backend: &WindowsBackend) -> bool {
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
-        loop {
-            let active = active_process_count(backend.inner.job.raw()).unwrap();
-            if active == 0 {
-                return true;
-            }
-            if tokio::time::Instant::now() >= deadline {
-                return false;
-            }
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-    }
-
     #[tokio::test]
     async fn exited_root_is_observed_before_assigned_descendant_cleanup() {
         let temporary = tempfile::tempdir().unwrap();
@@ -1135,71 +1134,79 @@ mod tests {
         let identities = output_dir.join("root-and-descendant.txt");
         let release = output_dir.join("release-root");
         let backend = WindowsBackend::new(&run_limits()).unwrap();
-        let handler = ProcessHandler::new(
-            ResourceBackend::Windows(backend.clone()),
-            output_dir.to_owned(),
-        );
         let code = "import os,pathlib,subprocess,sys,time; identities=pathlib.Path(sys.argv[1]); release=pathlib.Path(sys.argv[2]); child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)'],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); pending=identities.with_suffix('.pending'); pending.write_text(f'{os.getpid()} {child.pid}',encoding='utf-8'); os.replace(pending,identities);\nwhile not release.exists(): time.sleep(0.005)";
-        let request = RunProcess {
-            id: EffectId(251),
-            worker: None,
-            run_id: None,
-            mutant_id: None,
-            argv: vec![
-                python(),
-                arg("-c"),
-                arg(code),
-                arg(identities.as_std_path()),
-                arg(release.as_std_path()),
-            ],
-            cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
-            limits: ProcessLimits {
-                timeout: Duration::from_secs(5),
-                max_output_bytes: 64,
-                max_memory_bytes: 256 * 1024 * 1024,
-                max_processes: 8,
-            },
-        };
         let started = Instant::now();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(6);
 
-        tokio::time::timeout(Duration::from_secs(6), async {
-            let handle = handler.handle(request);
-            tokio::pin!(handle);
+        tokio::time::timeout_at(deadline, async {
+            let mut command = Command::new(fixture_python_path());
+            command
+                .arg("-c")
+                .arg(code)
+                .arg(identities.as_std_path())
+                .arg(release.as_std_path())
+                .current_dir(std::env::current_dir().unwrap())
+                .kill_on_drop(true)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+            let mut supervisor = backend.prepare(&mut command, fixture_limits()).unwrap();
+            let mut child = command.spawn().unwrap();
+            supervisor.attach(&child).unwrap();
+
             let (root_pid, descendant_pid) = loop {
                 if let Some(identities) = published_process_identities(&identities) {
                     break identities;
                 }
-                tokio::select! {
-                    result = &mut handle => {
-                        panic!("root completed before publishing fixture identities: {result:?}");
-                    }
-                    () = tokio::time::sleep(Duration::from_millis(5)) => {}
-                }
+                let now = tokio::time::Instant::now();
+                assert!(
+                    now < deadline,
+                    "fixture did not publish root and descendant identities before the test deadline"
+                );
+                tokio::time::sleep_until((now + Duration::from_millis(5)).min(deadline)).await;
             };
+            assert_eq!(child.id(), Some(root_pid));
             let root = FixtureProcessHandle::open(root_pid);
             let descendant = FixtureProcessHandle::open(descendant_pid);
             fs::write(&release, b"exit").unwrap();
 
+            let status = tokio::time::timeout_at(deadline, child.wait())
+                .await
+                .expect("runtime root did not exit before the test deadline")
+                .unwrap();
             assert!(
-                root.wait_until_exits().await,
-                "runtime root process handle did not signal after coordinated exit"
+                !root.is_active(),
+                "runtime root process handle remained active after child.wait completed"
             );
             assert!(
                 descendant.is_active(),
-                "assigned descendant was not active when the root handle signaled"
+                "assigned descendant exited before root termination was classified"
             );
 
-            let result = (&mut handle).await.unwrap();
-            assert_eq!(result.termination, hoimin_core::ProcessTermination::Exit(0));
+            let termination = supervisor
+                .classify(crate::process::exit_termination(status))
+                .unwrap();
+            assert_eq!(termination, ProcessTermination::Exit(0));
             assert!(
-                descendant.wait_until_exits().await,
-                "assigned descendant remained active after normal root cleanup"
+                descendant.is_active(),
+                "root classification terminated or waited for the assigned descendant"
             );
             assert!(
-                wait_until_job_is_empty(&backend).await,
-                "production run Job Object retained an active assigned process"
+                !supervisor
+                    .refresh_tree_quiescence_after_root_reap()
+                    .unwrap(),
+                "an active assigned descendant was reported as quiescent"
             );
-            handler.close().unwrap();
+
+            supervisor.terminate(false).unwrap();
+            assert!(
+                descendant.wait_until_exits(deadline).await,
+                "assigned descendant remained active after nested Job Object termination"
+            );
+            wait_for_job_process_count_until(&backend, 0, deadline)
+                .await
+                .unwrap();
+            backend.close().unwrap();
             assert_eq!(active_process_count(backend.inner.job.raw()).unwrap(), 0);
         })
         .await
