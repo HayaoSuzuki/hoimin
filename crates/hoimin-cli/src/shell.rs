@@ -1119,6 +1119,8 @@ struct PreparedShellSetup {
     report: PreparedReport,
     spool_dir: Arc<ManagedShellRoots>,
     config: RunConfig,
+    // Keep this last so every handler/root clone is dropped before an armed rollback.
+    rollback: SetupRollback,
 }
 
 #[derive(Debug)]
@@ -1191,6 +1193,10 @@ impl SetupRollback {
     fn attach_delivery_spool(&mut self, spool: Arc<ManagedChild>) {
         self.delivery_spool = Some(spool);
     }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
 }
 
 impl Drop for SetupRollback {
@@ -1262,14 +1268,8 @@ fn prepare_shell_setup_sync_in(
     temporary_parent: &Utf8Path,
     boundary: &impl Fn(ShellSetupBoundary),
 ) -> Result<PreparedShellSetup, String> {
-    let (
-        mut rollback,
-        execution_root,
-        delivery_root,
-        execution_spool,
-        delivery_spool,
-        startup_reclaim,
-    ) = create_managed_shell_roots_in(temporary_parent, &|_| {})?;
+    let (rollback, execution_root, delivery_root, execution_spool, delivery_spool, startup_reclaim) =
+        create_managed_shell_roots_in(temporary_parent, &|_| {})?;
     boundary(ShellSetupBoundary::RootsCreated);
     boundary(ShellSetupBoundary::DiskPolicyVerified);
     let spool_path = execution_spool.path().to_owned();
@@ -1314,8 +1314,6 @@ fn prepare_shell_setup_sync_in(
         delivery_spool: std::sync::Mutex::new(Some(delivery_spool)),
         startup_reclaim,
     });
-    rollback.armed = false;
-
     Ok(PreparedShellSetup {
         workspace,
         analyzer,
@@ -1323,6 +1321,7 @@ fn prepare_shell_setup_sync_in(
         report,
         spool_dir,
         config,
+        rollback,
     })
 }
 
@@ -1408,13 +1407,14 @@ where
     let roots = context.spool_dir.monitor_roots();
     #[cfg(test)]
     if let Some(meter) = control.disk_meter() {
-        return Ok(DiskMonitor::start_with_meter_and_interval(
+        return DiskMonitor::start_with_meter_and_interval(
             meter,
             policy,
             roots,
             control.disk_sample_interval,
         )
-        .await);
+        .await
+        .map_err(|error| format!("disk.measurement.failed: {error}"));
     }
     DiskMonitor::start(policy, roots)
         .await
@@ -1814,6 +1814,8 @@ pub struct ShellContext<Stdout, Stderr> {
     fingerprint_copy_inputs: BTreeSet<Utf8PathBuf>,
     report_versions: ReportVersions,
     blocking_secondary_errors: Vec<String>,
+    // Keep this last so every handler/root clone is dropped before an armed rollback.
+    setup_rollback: Option<SetupRollback>,
 }
 
 impl<Stdout, Stderr> ShellContext<Stdout, Stderr>
@@ -1839,6 +1841,7 @@ where
             report,
             spool_dir,
             config,
+            rollback,
         } = prepared;
         let session_path = config.session.as_ref().map(|value| value.path.clone());
 
@@ -1859,6 +1862,13 @@ where
                 hoimin: env!("CARGO_PKG_VERSION").to_owned(),
             },
             blocking_secondary_errors: Vec::new(),
+            setup_rollback: Some(rollback),
+        }
+    }
+
+    fn commit_setup(&mut self) {
+        if let Some(mut rollback) = self.setup_rollback.take() {
+            rollback.disarm();
         }
     }
 
@@ -2412,6 +2422,7 @@ where
     let mut delivery_cleanup_attempted = false;
     let mut execution_preclean = None;
     let mut execution_end_available: Option<BTreeMap<FilesystemKey, u64>> = None;
+    let mut execution_end_available_observed = false;
     let mut execution_cleanup_record: Option<CleanupRecord> = None;
     let mut finalization_errors = Vec::new();
     let mut disk_lifecycle = ShellDiskLifecycle::new([DiskRootId::Execution, DiskRootId::Delivery])
@@ -2437,6 +2448,7 @@ where
         *state = next;
         track_diagnostic_run_id(&mut diagnostic_run_id, &state);
         let monitor = start_disk_monitor(&context, &control).await?;
+        context.commit_setup();
         let mut disk_stop = monitor.stop_receiver();
         disk_monitor = Some(monitor);
         let mut disk_stop_delivered = false;
@@ -2902,6 +2914,17 @@ where
                     RunEffect::EmitOutput(mut request)
                         if matches!(&request.event, OutputEvent::RunFinished(_)) =>
                     {
+                        if !execution_end_available_observed {
+                            execution_end_available_observed = true;
+                            match control.end_available(&[Arc::clone(
+                                &context.spool_dir.execution_root,
+                            )]) {
+                                Ok(available) => execution_end_available = Some(available),
+                                Err(error) => finalization_errors.push(format!(
+                                    "disk.measurement.failed: end free-space query failed: {error}"
+                                )),
+                            }
+                        }
                         if let OutputEvent::RunFinished(summary) = &mut request.event {
                             let disk_stats = disk_monitor
                                 .as_ref()
@@ -3714,14 +3737,6 @@ where
                         #[cfg(test)]
                         control.observe_finalization_event("workspace_absent");
                         execution_cleanup_record = Some(cleanup);
-                        match control.end_available(&[Arc::clone(
-                            &context.spool_dir.execution_root,
-                        )]) {
-                            Ok(available) => execution_end_available = Some(available),
-                            Err(error) => finalization_errors.push(format!(
-                                "disk.measurement.failed: end free-space query failed: {error}"
-                            )),
-                        }
                     }
                     ManagedCleanupOutcome::Failed { record, error } => {
                         execution_cleanup_record = Some(record);
@@ -5462,7 +5477,8 @@ mod tests {
             Vec::new(),
             Duration::from_secs(60),
         )
-        .await;
+        .await
+        .expect("monitor thread starts");
 
         let failure = sample_after_process_drain(&monitor, true)
             .await
@@ -5831,18 +5847,26 @@ mod tests {
             OsString::from("target.py"),
             OsString::from("--format"),
             OsString::from("json"),
+            OsString::from("--min-free-space"),
+            OsString::from("1B"),
             OsString::from("--allow-best-effort-memory"),
             OsString::from("--"),
         ];
         args.extend(successful_test_command());
         let config = crate::cli::parse_config_from(args).unwrap();
-        let control = RunControl::new();
+        let control = RunControl::with_disk_meter(FixedDiskMeter(MeterReading {
+            owned_bytes: 0,
+            available_by_filesystem: BTreeMap::from([(FilesystemKey(7), 1_000)]),
+            conservative_entries: false,
+            elapsed: Duration::from_millis(1),
+        }));
         let managed_parent = Utf8Path::from_path(control.managed_parent.path()).unwrap();
         let coordinator = ManagedRootCoordinator::open(managed_parent).unwrap();
         let preserved = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
         drop(preserved);
         drop(coordinator);
         control.inject_execution_cleanup_deferred();
+        control.override_end_available(Ok(BTreeMap::from([(FilesystemKey(7), 500)])));
         let observed = control.clone();
         let mut stdout = Vec::new();
 
@@ -5872,6 +5896,14 @@ mod tests {
             .expect("execution cleanup evidence");
         assert_eq!(execution_cleanup["status"], "deferred");
         assert!(execution_cleanup["remaining_root"].is_null());
+        assert_eq!(
+            report["summary"]["disk"]["filesystems"][0]["end_available_bytes"],
+            500
+        );
+        assert_eq!(
+            report["summary"]["disk"]["filesystems"][0]["available_bytes_change"],
+            -500
+        );
         assert!(
             execution_cleanup["details"]
                 .as_array()
@@ -5895,12 +5927,19 @@ mod tests {
             OsString::from("target.py"),
             OsString::from("--format"),
             OsString::from("json"),
+            OsString::from("--min-free-space"),
+            OsString::from("1B"),
             OsString::from("--allow-best-effort-memory"),
             OsString::from("--"),
         ];
         args.extend(successful_test_command());
         let config = crate::cli::parse_config_from(args).unwrap();
-        let control = RunControl::new();
+        let control = RunControl::with_disk_meter(FixedDiskMeter(MeterReading {
+            owned_bytes: 0,
+            available_by_filesystem: BTreeMap::from([(FilesystemKey(7), 1_000)]),
+            conservative_entries: false,
+            elapsed: Duration::from_millis(1),
+        }));
         control.inject_post_drain_disk_failure(hoimin_core::DiskFailure {
             code: hoimin_core::DISK_MEASUREMENT_FAILED.to_owned(),
             reason: hoimin_core::DiskStopReason::MeasurementFailed,
@@ -5909,6 +5948,7 @@ mod tests {
             secondary: Vec::new(),
         });
         control.inject_inner_monitor_join_timeout_once();
+        control.override_end_available(Ok(BTreeMap::from([(FilesystemKey(7), 500)])));
         let observed = control.clone();
         let mut stdout = Vec::new();
 
@@ -5925,6 +5965,14 @@ mod tests {
         assert_eq!(
             report["summary"]["disk"]["stop"]["message"],
             "injected prior measurement failure"
+        );
+        assert_eq!(
+            report["summary"]["disk"]["filesystems"][0]["end_available_bytes"],
+            500
+        );
+        assert_eq!(
+            report["summary"]["disk"]["filesystems"][0]["available_bytes_change"],
+            -500
         );
         assert!(
             report["summary"]["disk"]["stop"]["secondary"]
@@ -6045,18 +6093,26 @@ mod tests {
             OsString::from("target.py"),
             OsString::from("--format"),
             OsString::from("json"),
+            OsString::from("--min-free-space"),
+            OsString::from("1B"),
             OsString::from("--allow-best-effort-memory"),
             OsString::from("--"),
         ];
         args.extend(successful_test_command());
         let config = crate::cli::parse_config_from(args).unwrap();
-        let control = RunControl::new();
+        let control = RunControl::with_disk_meter(FixedDiskMeter(MeterReading {
+            owned_bytes: 0,
+            available_by_filesystem: BTreeMap::from([(FilesystemKey(7), 1_000)]),
+            conservative_entries: false,
+            elapsed: Duration::from_millis(1),
+        }));
         let managed_parent = Utf8Path::from_path(control.managed_parent.path()).unwrap();
         let coordinator = ManagedRootCoordinator::open(managed_parent).unwrap();
         let preserved = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
         drop(preserved);
         drop(coordinator);
         control.inject_execution_cleanup_failed_without_record();
+        control.override_end_available(Ok(BTreeMap::from([(FilesystemKey(7), 500)])));
         let observed = control.clone();
         let mut stdout = Vec::new();
 
@@ -6072,6 +6128,14 @@ mod tests {
         assert_eq!(
             execution_cleanup["remaining_root"],
             observed.managed_root_paths()[0].as_str()
+        );
+        assert_eq!(
+            report["summary"]["disk"]["filesystems"][0]["end_available_bytes"],
+            500
+        );
+        assert_eq!(
+            report["summary"]["disk"]["filesystems"][0]["available_bytes_change"],
+            -500
         );
         assert!(
             execution_cleanup["details"]
@@ -6707,6 +6771,24 @@ mod tests {
     }
 
     #[test]
+    fn prepared_setup_remains_rollback_armed_until_monitor_starts() {
+        let project = tempfile::tempdir().unwrap();
+        let managed_parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(managed_parent.path()).unwrap();
+        let prepared =
+            prepare_shell_setup_sync_in(shell_setup_test_config(&project), parent, &|_| {})
+                .unwrap();
+        let roots = prepared.spool_dir.paths();
+
+        drop(prepared);
+
+        assert!(
+            roots.iter().all(|root| !root.exists()),
+            "prepared setup leaked managed roots before monitor start: {roots:?}"
+        );
+    }
+
+    #[test]
     fn rollback_contention_marks_root_for_immediate_janitor_recovery() {
         use fs2::FileExt;
 
@@ -6777,6 +6859,8 @@ mod tests {
         let mut context = ShellContext::new(&config, Vec::new(), Vec::new())
             .await
             .unwrap();
+        // This fixture models an active run after the monitor-start boundary.
+        context.commit_setup();
         let completed = context
             .workspace_mut()
             .handle_preflight(Preflight { id: EffectId(1) })

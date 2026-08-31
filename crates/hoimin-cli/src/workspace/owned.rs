@@ -1207,6 +1207,38 @@ mod tests {
     }
 
     #[test]
+    fn retained_deleting_root_is_preserved_even_when_cleanup_ready() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        root.retain().unwrap();
+        root.mark_cleanup_ready().unwrap();
+        let active = format!("{}{}", super::ACTIVE_PREFIX, root.run_id);
+        let deleting = format!("{}{}", super::DELETING_PREFIX, root.run_id);
+        assert_eq!(
+            super::claim_managed_child(
+                &coordinator.dir,
+                &active,
+                &deleting,
+                &root.run_id,
+                root.owner,
+                &root.dir,
+                &root.lease,
+            )
+            .unwrap(),
+            super::ClaimResult::Claimed
+        );
+        drop(root);
+
+        let report = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
+
+        assert_eq!(report.reclaimed_roots, 0, "{report:?}");
+        assert_eq!(report.preserved_roots, 1, "{report:?}");
+        assert!(coordinator.dir.symlink_metadata(&deleting).is_ok());
+    }
+
+    #[test]
     fn janitor_cursor_reaches_the_two_hundred_fifty_seventh_root() {
         let parent = tempfile::tempdir().unwrap();
         let parent = Utf8Path::from_path(parent.path()).unwrap();
@@ -3270,7 +3302,7 @@ impl ManagedRunRoot {
                 report.preserved_roots += 1;
                 continue;
             }
-            if (!deleting && candidate.symlink_metadata(RETAIN_FILE).is_ok())
+            if candidate.symlink_metadata(RETAIN_FILE).is_ok()
                 || (staging && !staging_contents_are_safe(&candidate))
                 || if staging {
                     !staging_candidate_is_stale(&candidate, &marker, now)

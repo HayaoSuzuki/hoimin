@@ -238,11 +238,15 @@ impl<S: AvailableSpace> DiskMeter<S> {
         let mut state = WalkState::default();
         let mut available_by_filesystem = BTreeMap::new();
         for root in &self.roots {
+            check_scan_deadline(&|| started.elapsed())?;
             let key = self.space.filesystem_key(root)?;
+            check_scan_deadline(&|| started.elapsed())?;
             if let std::collections::btree_map::Entry::Vacant(entry) =
                 available_by_filesystem.entry(key)
             {
-                entry.insert(self.space.available(root)?);
+                let available = self.space.available(root)?;
+                check_scan_deadline(&|| started.elapsed())?;
+                entry.insert(available);
             }
             measure_owned_tree(root, started, &mut state)?;
         }
@@ -325,6 +329,8 @@ enum MonitorCommand {
     Stop,
 }
 
+type MonitorWorker = Box<dyn FnOnce() + Send + 'static>;
+
 pub(crate) struct DiskMonitor {
     commands: mpsc::Sender<MonitorCommand>,
     stop: tokio::sync::watch::Receiver<Option<hoimin_core::DiskFailure>>,
@@ -344,14 +350,14 @@ impl DiskMonitor {
     ) -> io::Result<Self> {
         let meter =
             initial_meter_from_capabilities(roots.iter().map(|root| root.disk_capability()));
-        Ok(Self::start_with_meter(meter, policy, roots).await)
+        Self::start_with_meter(meter, policy, roots).await
     }
 
     pub(crate) async fn start_with_meter<M>(
         meter: M,
         policy: hoimin_core::DiskPolicy,
         roots: Vec<Arc<super::ManagedRunRoot>>,
-    ) -> Self
+    ) -> io::Result<Self>
     where
         M: DiskMeasurement,
     {
@@ -364,7 +370,31 @@ impl DiskMonitor {
         policy: hoimin_core::DiskPolicy,
         roots: Vec<Arc<super::ManagedRunRoot>>,
         sample_interval: Duration,
-    ) -> Self
+    ) -> io::Result<Self>
+    where
+        M: DiskMeasurement,
+    {
+        Self::start_with_meter_and_interval_and_spawner(
+            meter,
+            policy,
+            roots,
+            sample_interval,
+            |worker| {
+                std::thread::Builder::new()
+                    .name("hoimin-disk-monitor".to_owned())
+                    .spawn(worker)
+            },
+        )
+        .await
+    }
+
+    async fn start_with_meter_and_interval_and_spawner<M>(
+        meter: M,
+        policy: hoimin_core::DiskPolicy,
+        roots: Vec<Arc<super::ManagedRunRoot>>,
+        sample_interval: Duration,
+        spawner: impl FnOnce(MonitorWorker) -> io::Result<JoinHandle<()>>,
+    ) -> io::Result<Self>
     where
         M: DiskMeasurement,
     {
@@ -373,7 +403,7 @@ impl DiskMonitor {
         let stats = Arc::new(Mutex::new(DiskMonitorStats::default()));
         let thread_stats = Arc::clone(&stats);
         let join_status = Arc::new(AtomicU8::new(MONITOR_JOIN_PENDING));
-        let thread = std::thread::spawn(move || {
+        let thread = spawner(Box::new(move || {
             monitor_loop(
                 meter,
                 policy,
@@ -383,7 +413,7 @@ impl DiskMonitor {
                 thread_stats,
                 sample_interval,
             );
-        });
+        }))?;
         let monitor = Self {
             commands,
             stop,
@@ -392,7 +422,7 @@ impl DiskMonitor {
             join_status,
         };
         let _ = monitor.sample_now().await;
-        monitor
+        Ok(monitor)
     }
 
     pub(crate) fn stop_receiver(
@@ -679,7 +709,22 @@ fn measure_owned_tree_with_elapsed(
     measure_owned_tree_with_hooks(root, state, elapsed, &|_| {}, &|_| {})
 }
 
+fn check_scan_deadline(elapsed: &impl Fn() -> Duration) -> io::Result<()> {
+    if elapsed() >= MAX_SCAN_DURATION {
+        Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "owned workspace scan exceeded five seconds",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 #[cfg(unix)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the walker keeps every filesystem operation and its deadline check adjacent"
+)]
 fn measure_owned_tree_with_hooks(
     root: &RootCapability,
     state: &mut WalkState,
@@ -691,12 +736,19 @@ fn measure_owned_tree_with_hooks(
 
     use rustix::fs::{AtFlags, FileType};
 
+    check_scan_deadline(elapsed)?;
     let root_dir = open_meter_root_directory(root)?;
-    let root_device = rustix::fs::fstat(root_dir.fd().map_err(io::Error::from)?)
-        .map_err(io::Error::from)?
-        .st_dev;
+    check_scan_deadline(elapsed)?;
+    let root_metadata =
+        rustix::fs::fstat(root_dir.fd().map_err(io::Error::from)?).map_err(io::Error::from)?;
+    check_scan_deadline(elapsed)?;
+    let root_device = root_metadata.st_dev;
     #[cfg(target_os = "macos")]
-    let root_mount = macos_mount_identity(&root_dir.fd().map_err(io::Error::from)?)?;
+    let root_mount = {
+        let identity = macos_mount_identity(&root_dir.fd().map_err(io::Error::from)?)?;
+        check_scan_deadline(elapsed)?;
+        identity
+    };
     let mut stack = vec![WalkFrame {
         entries: root_dir,
         depth: 0,
@@ -704,13 +756,10 @@ fn measure_owned_tree_with_hooks(
     }];
     observe_open_directories(stack.len());
     while let Some(frame) = stack.last_mut() {
-        if elapsed() >= MAX_SCAN_DURATION {
-            return Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                "owned workspace scan exceeded five seconds",
-            ));
-        }
-        let Some(entry) = frame.entries.next() else {
+        check_scan_deadline(elapsed)?;
+        let next_entry = frame.entries.next();
+        check_scan_deadline(elapsed)?;
+        let Some(entry) = next_entry else {
             stack.pop();
             continue;
         };
@@ -731,7 +780,9 @@ fn measure_owned_tree_with_hooks(
                 .ok_or_else(|| io::Error::other("non-UTF-8 workspace entry"))?,
         );
         let directory = frame.entries.fd().map_err(io::Error::from)?;
-        let metadata = match rustix::fs::statat(directory, name, AtFlags::SYMLINK_NOFOLLOW) {
+        let metadata_result = rustix::fs::statat(directory, name, AtFlags::SYMLINK_NOFOLLOW);
+        check_scan_deadline(elapsed)?;
+        let metadata = match metadata_result {
             Ok(metadata) => metadata,
             Err(error) if io::Error::from(error).kind() == io::ErrorKind::NotFound => continue,
             Err(error) => return Err(io::Error::from(error)),
@@ -753,25 +804,35 @@ fn measure_owned_tree_with_hooks(
                 )));
             }
             before_directory_open(&display);
-            let child = match open_meter_directory(&directory, name) {
+            check_scan_deadline(elapsed)?;
+            let child_result = open_meter_directory(&directory, name);
+            check_scan_deadline(elapsed)?;
+            let child = match child_result {
                 Ok(child) => child,
                 Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
                 Err(error) => return Err(error),
             };
             #[cfg(target_os = "macos")]
-            if macos_mount_identity(&child)? != root_mount {
-                return Err(io::Error::other(format!(
-                    "owned workspace scan refuses to cross a mount boundary: {display}"
-                )));
+            {
+                let child_mount = macos_mount_identity(&child)?;
+                check_scan_deadline(elapsed)?;
+                if child_mount != root_mount {
+                    return Err(io::Error::other(format!(
+                        "owned workspace scan refuses to cross a mount boundary: {display}"
+                    )));
+                }
             }
             let opened_metadata = rustix::fs::fstat(&child).map_err(io::Error::from)?;
+            check_scan_deadline(elapsed)?;
             if unix_stat_identity(&metadata) != unix_stat_identity(&opened_metadata) {
                 return Err(io::Error::other(format!(
                     "owned workspace directory identity changed while opening: {display}"
                 )));
             }
+            let entries = rustix::fs::Dir::new(child).map_err(io::Error::from)?;
+            check_scan_deadline(elapsed)?;
             stack.push(WalkFrame {
-                entries: rustix::fs::Dir::new(child).map_err(io::Error::from)?,
+                entries,
                 depth: child_depth,
                 display_path: display,
             });
@@ -882,29 +943,33 @@ fn measure_owned_tree_with_hooks(
         FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
     };
 
+    check_scan_deadline(elapsed)?;
     let root_dir = root.dir.try_clone()?.into_std_file();
+    check_scan_deadline(elapsed)?;
+    let root_entries = super::root::windows::DirectoryEntries::open(root_dir)?;
+    check_scan_deadline(elapsed)?;
     let mut stack = vec![WindowsWalkFrame {
-        entries: super::root::windows::DirectoryEntries::open(root_dir)?,
+        entries: root_entries,
         depth: 0,
         display_path: root.display_path.clone(),
     }];
     observe_open_directories(stack.len());
     while let Some(frame) = stack.last_mut() {
-        if elapsed() >= MAX_SCAN_DURATION {
-            return Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                "owned workspace scan exceeded five seconds",
-            ));
-        }
-        let Some(entry) = frame.entries.next() else {
-            stack.pop();
-            continue;
-        };
-        let entry = match entry {
-            Ok(entry) => entry,
+        check_scan_deadline(elapsed)?;
+        let next_entry = frame.entries.next_entry();
+        check_scan_deadline(elapsed)?;
+        let entry = match next_entry {
+            Ok(Some(entry)) => entry,
+            Ok(None) => {
+                stack.pop();
+                continue;
+            }
             Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
             Err(error) => return Err(error),
         };
+        if entry.name() == "." || entry.name() == ".." {
+            continue;
+        }
         record_entry(state)?;
         let attributes = entry.file_attributes();
         let entry_file_id = entry.file_id();
@@ -926,34 +991,42 @@ fn measure_owned_tree_with_hooks(
         // enumerated file without increasing the directory-handle peak, and the file-id check
         // makes a same-name replacement fail closed.
         if frame.depth == MAX_TREE_DEPTH {
-            let inspected = match super::root::windows::open_regular_file_shared(
-                frame.entries.directory(),
-                &name,
-            ) {
+            let inspected_result =
+                super::root::windows::open_regular_file_shared(frame.entries.directory(), &name);
+            check_scan_deadline(elapsed)?;
+            let inspected = match inspected_result {
                 Ok(file) => file,
                 Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
                 Err(error) => return Err(error),
             };
             let identity = super::root::windows::file_identity_io(&inspected)?;
+            check_scan_deadline(elapsed)?;
             if identity.1 != entry_file_id {
                 return Err(io::Error::other(format!(
                     "owned workspace entry identity changed while opening: {display}"
                 )));
             }
+            let length = inspected.metadata()?.len();
+            check_scan_deadline(elapsed)?;
             state.owned_bytes = state
                 .owned_bytes
-                .checked_add(inspected.metadata()?.len())
+                .checked_add(length)
                 .ok_or_else(|| io::Error::other("owned workspace byte count overflow"))?;
             continue;
         }
-        let inspected =
-            match super::root::windows::open_entry_shared(frame.entries.directory(), &name) {
-                Ok(file) => file,
-                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
-                Err(error) => return Err(error),
-            };
+        let inspected_result =
+            super::root::windows::open_entry_shared(frame.entries.directory(), &name);
+        check_scan_deadline(elapsed)?;
+        let inspected = match inspected_result {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error),
+        };
         let metadata = inspected.metadata()?;
-        if super::root::windows::file_identity_io(&inspected)?.1 != entry_file_id {
+        check_scan_deadline(elapsed)?;
+        let inspected_identity = super::root::windows::file_identity_io(&inspected)?;
+        check_scan_deadline(elapsed)?;
+        if inspected_identity.1 != entry_file_id {
             return Err(io::Error::other(format!(
                 "owned workspace entry identity changed while opening: {display}"
             )));
@@ -963,26 +1036,33 @@ fn measure_owned_tree_with_hooks(
         }
         if metadata.is_dir() {
             before_directory_open(&display);
+            check_scan_deadline(elapsed)?;
             observe_open_directories(child_depth + 1);
             let expected_identity = super::root::windows::file_identity_io(&inspected)?;
+            check_scan_deadline(elapsed)?;
             // Keep the depth bound equal to the handle bound: release the inspection handle
             // before acquiring the one child handle that the next frame will own. The identity
             // retained above makes any replacement during this gap fail closed below.
             drop(inspected);
-            let child =
-                match super::root::windows::open_directory_shared(frame.entries.directory(), &name)
-                {
-                    Ok(child) => child,
-                    Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
-                    Err(error) => return Err(error),
-                };
-            if super::root::windows::file_identity_io(&child)? != expected_identity {
+            let child_result =
+                super::root::windows::open_directory_shared(frame.entries.directory(), &name);
+            check_scan_deadline(elapsed)?;
+            let child = match child_result {
+                Ok(child) => child,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error),
+            };
+            let child_identity = super::root::windows::file_identity_io(&child)?;
+            check_scan_deadline(elapsed)?;
+            if child_identity != expected_identity {
                 return Err(io::Error::other(format!(
                     "owned workspace directory identity changed while opening: {display}"
                 )));
             }
+            let entries = super::root::windows::DirectoryEntries::open(child)?;
+            check_scan_deadline(elapsed)?;
             stack.push(WindowsWalkFrame {
-                entries: super::root::windows::DirectoryEntries::open(child)?,
+                entries,
                 depth: child_depth,
                 display_path: display,
             });
@@ -1176,6 +1256,36 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn monitor_thread_spawn_failure_is_returned() {
+        let result = DiskMonitor::start_with_meter_and_interval_and_spawner(
+            ScriptedMeter {
+                readings: std::sync::Mutex::new(VecDeque::from([Ok(MeterReading {
+                    owned_bytes: 1,
+                    available_by_filesystem: BTreeMap::from([(FilesystemKey(7), u64::MAX)]),
+                    conservative_entries: false,
+                    elapsed: std::time::Duration::from_millis(1),
+                })])),
+            },
+            hoimin_core::DiskPolicy {
+                max_owned_bytes: std::num::NonZeroU64::new(u64::MAX).unwrap(),
+                min_free_bytes: std::num::NonZeroU64::new(1).unwrap(),
+            },
+            Vec::new(),
+            std::time::Duration::from_secs(60),
+            |worker| {
+                let _worker = worker;
+                Err(std::io::Error::other("injected monitor spawn failure"))
+            },
+        )
+        .await;
+
+        let Err(error) = result else {
+            panic!("monitor spawn unexpectedly succeeded")
+        };
+        assert_eq!(error.to_string(), "injected monitor spawn failure");
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn timed_out_monitor_join_stays_unjoined_until_the_scan_exits() {
         let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -1196,7 +1306,8 @@ mod tests {
                 Vec::new(),
                 std::time::Duration::from_secs(60),
             )
-            .await,
+            .await
+            .expect("monitor thread starts"),
         );
         let sampler = {
             let monitor = std::sync::Arc::clone(&monitor);
@@ -1252,7 +1363,8 @@ mod tests {
             Vec::new(),
             std::time::Duration::from_secs(60),
         )
-        .await;
+        .await
+        .expect("monitor thread starts");
 
         assert!(monitor.sample_now().await.is_some());
         assert!(
@@ -1313,7 +1425,8 @@ mod tests {
             Vec::new(),
             interval,
         )
-        .await;
+        .await
+        .expect("monitor thread starts");
 
         tokio::time::sleep(std::time::Duration::from_millis(75)).await;
         assert!(
@@ -1353,7 +1466,9 @@ mod tests {
             min_free_bytes: std::num::NonZeroU64::new(500).unwrap(),
         };
 
-        let monitor = DiskMonitor::start_with_meter(meter, policy, Vec::new()).await;
+        let monitor = DiskMonitor::start_with_meter(meter, policy, Vec::new())
+            .await
+            .expect("monitor thread starts");
         assert!(monitor.stop_receiver().borrow().is_none());
         let first = monitor.sample_now().await.expect("reserve stop");
         assert_eq!(
@@ -1434,7 +1549,8 @@ mod tests {
             },
             Vec::new(),
         )
-        .await;
+        .await
+        .expect("monitor thread starts");
 
         let failure = monitor
             .stop_receiver()
@@ -1485,7 +1601,8 @@ mod tests {
             },
             Vec::new(),
         )
-        .await;
+        .await
+        .expect("monitor thread starts");
 
         let failure = monitor
             .stop_receiver()
@@ -1579,6 +1696,42 @@ mod tests {
         state.entries = super::MAX_TREE_ENTRIES;
         assert!(record_entry(&mut state).is_err());
         assert_eq!(state.entries, super::MAX_TREE_ENTRIES + 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scan_does_not_open_child_after_prior_operation_crosses_deadline() {
+        use std::cell::Cell;
+
+        let temp = tempfile::tempdir().unwrap();
+        let temp = Utf8Path::from_path(temp.path()).unwrap();
+        std::fs::create_dir(temp.join("child")).unwrap();
+        let root = capability(temp);
+        let deadline_crossed = Cell::new(false);
+        let child_opened = Cell::new(false);
+        let mut state = WalkState::default();
+
+        let error = measure_owned_tree_with_hooks(
+            &root,
+            &mut state,
+            &|| {
+                if deadline_crossed.get() {
+                    super::MAX_SCAN_DURATION
+                } else {
+                    std::time::Duration::ZERO
+                }
+            },
+            &|_| deadline_crossed.set(true),
+            &|open| {
+                if open > 1 {
+                    child_opened.set(true);
+                }
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+        assert!(!child_opened.get());
     }
 
     #[cfg(unix)]

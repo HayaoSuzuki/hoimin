@@ -552,7 +552,7 @@ impl DirectoryEntries {
         Ok(())
     }
 
-    fn next_entry(&mut self) -> io::Result<Option<DirectoryEntryInfo>> {
+    pub(crate) fn next_entry(&mut self) -> io::Result<Option<DirectoryEntryInfo>> {
         if self.done {
             return Ok(None);
         }

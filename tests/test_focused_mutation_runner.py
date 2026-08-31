@@ -144,8 +144,8 @@ if "--descendant" in sys.argv:
 subprocess.Popen(
     [sys.executable, __file__, str(descendant_ready), "--descendant"],
     stdin=subprocess.DEVNULL,
-    stdout=sys.stdout,
-    stderr=sys.stderr,
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
 )
 deadline = time.monotonic() + 2.0
 while not descendant_ready.exists():
@@ -163,6 +163,11 @@ LOG_CLEANUP_CALLBACK_ERROR = (
 
 def raising_log_cleanup(_: Sequence[Path]) -> list[str]:
     raise RuntimeError("cleanup callback exploded")
+
+
+def posix_group_absent_after_signal(_pid: int, sent_signal: int) -> None:
+    if sent_signal == 0:
+        raise ProcessLookupError
 
 
 SYNCHRONIZE = 0x00100000
@@ -1657,7 +1662,9 @@ class RunnerTests(unittest.TestCase):
                     pass
 
     @unittest.skipIf(os.name == "nt", "requires POSIX process groups")
-    def test_normal_exit_kills_pipe_holding_descendant_before_drain_join(self) -> None:
+    def test_normal_exit_with_live_descendant_blocks_cleanup_without_signalling(
+        self,
+    ) -> None:
         descendant_ready = self.work / "normal-exit-descendant.ready"
         result: list[CommandRecord] = []
         errors: list[BaseException] = []
@@ -1688,15 +1695,13 @@ class RunnerTests(unittest.TestCase):
                 descendant_pid = read_ready_pid(descendant_ready)
                 time.sleep(0.01)
             self.assertIsNotNone(descendant_pid)
-            thread.join(timeout=0.5)
-            self.assertFalse(thread.is_alive(), "runner blocked on inherited pipe")
-            self.assertEqual(errors, [])
-            self.assertEqual([record.exit_code for record in result], [0])
+            thread.join(timeout=1.0)
+            self.assertFalse(thread.is_alive(), "runner blocked probing descendants")
+            self.assertEqual(result, [])
+            self.assertEqual(len(errors), 1)
+            self.assertIsInstance(errors[0], CommandLifecycleFailed)
             if descendant_pid is not None:
-                self.assertTrue(
-                    wait_for_pid_exit_or_zombie(descendant_pid),
-                    f"descendant {descendant_pid} survived normal completion",
-                )
+                os.kill(descendant_pid, 0)
         finally:
             if descendant_pid is None:
                 descendant_pid = read_ready_pid(descendant_ready)
@@ -1801,6 +1806,7 @@ class RunnerTests(unittest.TestCase):
     def test_posix_permission_error_is_a_process_lifecycle_error(self) -> None:
         process = mock.Mock(spec=subprocess.Popen)
         process.pid = 12345
+        runner = self.runner()
         with (
             mock.patch(
                 "tools.focused_mutation_support.runner.os.killpg",
@@ -1808,7 +1814,35 @@ class RunnerTests(unittest.TestCase):
             ),
             self.assertRaises(ProcessLifecycleError),
         ):
-            CommandRunner._quiesce_completed_process_tree(process)
+            runner._quiesce_completed_process_tree(process)
+
+    @unittest.skipIf(os.name == "nt", "requires POSIX process groups")
+    def test_reaped_process_group_probe_never_sends_a_signal(self) -> None:
+        process = mock.Mock(spec=subprocess.Popen)
+        process.pid = 12345
+        clock = FakeClock()
+        runner = CommandRunner(
+            self.store,
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+        )
+
+        with (
+            mock.patch(
+                "tools.focused_mutation_support.runner.os.killpg",
+            ) as killpg,
+            self.assertRaisesRegex(
+                ProcessLifecycleError,
+                "still exists after root reap",
+            ),
+        ):
+            runner._quiesce_completed_process_tree(process)
+
+        self.assertGreaterEqual(clock.now, 0.25)
+        self.assertGreaterEqual(killpg.call_count, 2)
+        self.assertTrue(
+            all(call.args == (process.pid, 0) for call in killpg.call_args_list)
+        )
 
     def test_cancellation_after_pipe_setup_still_prevents_popen(self) -> None:
         cancellation = threading.Event()
@@ -2154,14 +2188,15 @@ class RunnerTests(unittest.TestCase):
                 result = invoke()
             else:
                 with mock.patch(
-                    "tools.focused_mutation_support.runner.os.killpg"
+                    "tools.focused_mutation_support.runner.os.killpg",
+                    side_effect=posix_group_absent_after_signal,
                 ) as killpg:
                     result = invoke()
                 self.assertEqual(
                     killpg.call_args_list,
                     [
                         mock.call(process.pid, signal.SIGTERM),
-                        mock.call(process.pid, signal.SIGKILL),
+                        mock.call(process.pid, 0),
                     ],
                 )
         except BaseException as error:
@@ -2204,7 +2239,8 @@ class RunnerTests(unittest.TestCase):
         else:
             with (
                 mock.patch(
-                    "tools.focused_mutation_support.runner.os.killpg"
+                    "tools.focused_mutation_support.runner.os.killpg",
+                    side_effect=posix_group_absent_after_signal,
                 ) as killpg,
                 self.assertRaises(CommandInterrupted) as caught,
             ):
@@ -2213,7 +2249,7 @@ class RunnerTests(unittest.TestCase):
                 killpg.call_args_list,
                 [
                     mock.call(process.pid, signal.SIGTERM),
-                    mock.call(process.pid, signal.SIGKILL),
+                    mock.call(process.pid, 0),
                 ],
             )
 

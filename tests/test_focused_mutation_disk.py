@@ -441,6 +441,164 @@ class BoundedCommandDrainTests(unittest.TestCase):
 
 
 class AnchoredDiskGuardTests(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "POSIX descriptor walker only")
+    def test_directory_stream_checks_deadline_immediately_after_readdir(
+        self,
+    ) -> None:
+        disk_module = __import__(
+            "tools.focused_mutation_support.disk",
+            fromlist=["_DirectoryStream"],
+        )
+        stream = object.__new__(disk_module._DirectoryStream)
+        stream._ctypes = mock.Mock()
+        stream._libc = mock.Mock()
+        stream._libc.readdir.return_value = 1
+        stream._pointer = 2
+
+        def expired() -> None:
+            raise disk_module.DiskMeasurementError(
+                "owned scratch scan exceeded five seconds"
+            )
+
+        with self.assertRaisesRegex(
+            disk_module.DiskMeasurementError,
+            "exceeded five seconds",
+        ):
+            stream.next_name(check_deadline=expired)
+
+        stream._libc.readdir.assert_called_once_with(stream._pointer)
+        stream._ctypes.string_at.assert_not_called()
+
+    @unittest.skipIf(os.name == "nt", "POSIX descriptor walker only")
+    def test_expired_measurement_stops_before_root_stat(self) -> None:
+        disk_module = __import__(
+            "tools.focused_mutation_support.disk",
+            fromlist=["_measure_fd"],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                with (
+                    mock.patch.object(
+                        disk_module.os,
+                        "fstat",
+                        side_effect=AssertionError(
+                            "root stat started after measurement deadline"
+                        ),
+                    ),
+                    self.assertRaisesRegex(
+                        disk_module.DiskMeasurementError,
+                        "exceeded five seconds",
+                    ),
+                ):
+                    disk_module._measure_fd(
+                        root_fd,
+                        monotonic=lambda: 5.0,
+                        started=0.0,
+                        identities=set(),
+                        identity_bytes={},
+                    )
+            finally:
+                os.close(root_fd)
+
+    @unittest.skipIf(os.name == "nt", "POSIX descriptor walker only")
+    def test_measurement_does_not_stat_after_readdir_crosses_deadline(self) -> None:
+        disk_module = __import__(
+            "tools.focused_mutation_support.disk",
+            fromlist=["_DirectoryStream", "_measure_fd"],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "payload").write_bytes(b"payload")
+            root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+            clock = mock.Mock(return_value=0.0)
+            real_next = disk_module._DirectoryStream.next_name
+
+            def crossing_next(
+                stream: object,
+                *,
+                check_deadline: Callable[[], None],
+            ) -> str | None:
+                selected = real_next(stream, check_deadline=check_deadline)
+                clock.return_value = 5.0
+                return selected
+
+            try:
+                with (
+                    mock.patch.object(
+                        disk_module._DirectoryStream,
+                        "next_name",
+                        crossing_next,
+                    ),
+                    mock.patch.object(
+                        disk_module.os,
+                        "stat",
+                        side_effect=AssertionError(
+                            "stat started after measurement deadline"
+                        ),
+                    ),
+                    self.assertRaisesRegex(
+                        disk_module.DiskMeasurementError,
+                        "exceeded five seconds",
+                    ),
+                ):
+                    disk_module._measure_fd(
+                        root_fd,
+                        monotonic=clock,
+                        started=0.0,
+                        identities=set(),
+                        identity_bytes={},
+                    )
+            finally:
+                os.close(root_fd)
+
+    @unittest.skipIf(os.name == "nt", "POSIX descriptor walker only")
+    def test_capacity_query_crossing_deadline_stops_before_tree_scan(self) -> None:
+        disk_module = __import__(
+            "tools.focused_mutation_support.disk",
+            fromlist=["_measure_fd"],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            clock = mock.Mock(return_value=0.0)
+            guard = DiskGuard(
+                DiskPolicy(
+                    max_disk_bytes=8 * 1024**3,
+                    min_free_bytes=1,
+                    scratch_root=root,
+                ),
+                [MeterRoot(root, enforcement="owned:test")],
+                monotonic=clock,
+            )
+            self.addCleanup(guard.close)
+            real_fstatvfs = os.fstatvfs
+
+            def crossing_capacity(fd: int) -> object:
+                result = real_fstatvfs(fd)
+                clock.return_value = 5.0
+                return result
+
+            with (
+                mock.patch.object(
+                    disk_module.os,
+                    "fstatvfs",
+                    side_effect=crossing_capacity,
+                ),
+                mock.patch.object(
+                    disk_module,
+                    "_measure_fd",
+                    side_effect=AssertionError(
+                        "tree scan started after capacity query crossed deadline"
+                    ),
+                ),
+            ):
+                failure = guard.sample()
+
+            self.assertIsNotNone(failure)
+            assert failure is not None
+            self.assertEqual(failure.reason, DiskStopReason.MEASUREMENT_FAILED)
+            self.assertIn("exceeded five seconds", failure.message)
+
     def test_depth_failure_identifies_a_bounded_relative_prefix(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

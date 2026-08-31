@@ -20,6 +20,8 @@ WINDOWS_LOG_RELEASE_TIMEOUT = 2.0
 WINDOWS_LOG_RELEASE_POLL_INTERVAL = 0.01
 WINDOWS_PROCESS_TERMINATION_TIMEOUT = 2.0
 OUTPUT_DRAIN_JOIN_TIMEOUT = 2.0
+POSIX_REAP_PROBE_TIMEOUT = 0.25
+POSIX_REAP_PROBE_INTERVAL = 0.01
 _POSIX_PROCESS_SUPERVISOR = """
 import os
 import signal
@@ -654,24 +656,36 @@ class CommandRunner:
             f"process lifecycle cleanup failed: {error}"
         )
 
-    @staticmethod
-    def _quiesce_completed_process_tree(process: subprocess.Popen[Any]) -> None:
-        """Kill pipe-holding descendants after the supervised root exits.
+    def _quiesce_completed_process_tree(
+        self,
+        process: subprocess.Popen[Any],
+    ) -> None:
+        """Prove that a reaped root's process group is no longer present.
 
-        The focused workflow never permits a mutation command to leave a daemon
-        behind.  The root has already been reaped, so there is no graceful owner
-        left to notify and an immediate group kill is the bounded operation.
+        Once ``wait`` has reaped the root, its PID/process-group ID can be
+        reused.  Sending a terminating signal at that point could therefore
+        kill an unrelated process group.  Signal zero is non-destructive; a
+        group that remains present or cannot be inspected makes cleanup unsafe.
         """
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        except OSError as error:
-            raise ProcessLifecycleError(
-                process.pid,
-                f"process group {process.pid} quiesce failed: "
-                f"{type(error).__name__}: {error}",
-            ) from None
+        deadline = self._monotonic() + POSIX_REAP_PROBE_TIMEOUT
+        while True:
+            try:
+                os.killpg(process.pid, 0)
+            except ProcessLookupError:
+                return
+            except OSError as error:
+                raise ProcessLifecycleError(
+                    process.pid,
+                    f"process group {process.pid} post-reap probe failed: "
+                    f"{type(error).__name__}: {error}",
+                ) from None
+            remaining = deadline - self._monotonic()
+            if remaining <= 0:
+                raise ProcessLifecycleError(
+                    process.pid,
+                    f"process group {process.pid} still exists after root reap",
+                )
+            self._sleep(min(POSIX_REAP_PROBE_INTERVAL, remaining))
 
     def _terminate(self, process: Any) -> None:
         if os.name == "nt":
@@ -702,35 +716,16 @@ class CommandRunner:
         try:
             process.wait(timeout=2.0)
             if os.name != "nt":
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                except OSError as error:
-                    raise ProcessLifecycleError(
-                        process.pid,
-                        f"process group {process.pid} quiesce failed: "
-                        f"{type(error).__name__}: {error}",
-                    ) from None
+                self._quiesce_completed_process_tree(process)
             return
         except subprocess.TimeoutExpired:
             pass
         except (OSError, subprocess.SubprocessError) as error:
-            first_error = error
-            try:
-                if os.name == "nt":
-                    process.kill()
-                else:
-                    os.killpg(process.pid, signal.SIGKILL)
-                process.wait(timeout=2.0)
-            except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as forced:
-                raise ProcessLifecycleError(
-                    process.pid,
-                    f"process {process.pid} reap after termination failed: "
-                    f"{type(first_error).__name__}: {first_error}; forced cleanup failed: "
-                    f"{type(forced).__name__}: {forced}",
-                ) from None
-            return
+            raise ProcessLifecycleError(
+                process.pid,
+                f"process {process.pid} reap after termination failed: "
+                f"{type(error).__name__}: {error}",
+            ) from None
 
         if os.name == "nt":
             process.kill()
@@ -755,3 +750,5 @@ class CommandRunner:
                 f"process {process.pid} reap after forced kill failed: "
                 f"{type(error).__name__}: {error}",
             ) from None
+        if os.name != "nt":
+            self._quiesce_completed_process_tree(process)

@@ -785,23 +785,44 @@ def _open_child_regular(parent_fd: int, name: str) -> int:
     return int(result)
 
 
-def _reopen_same_directory(fd: int) -> int:
+def _reopen_same_directory(
+    fd: int,
+    *,
+    check_deadline: Callable[[], None],
+) -> int:
     flags = (
         os.O_RDONLY
         | getattr(os, "O_DIRECTORY", 0)
         | getattr(os, "O_NOFOLLOW", 0)
     )
     reopened = os.open(".", flags, dir_fd=fd)
-    original = os.fstat(fd)
-    current = os.fstat(reopened)
-    if (original.st_dev, original.st_ino) != (current.st_dev, current.st_ino):
+    try:
+        check_deadline()
+        original = os.fstat(fd)
+        check_deadline()
+        current = os.fstat(reopened)
+        check_deadline()
+        if (original.st_dev, original.st_ino) != (
+            current.st_dev,
+            current.st_ino,
+        ):
+            raise DiskMeasurementError(
+                "owned root identity changed while reopening"
+            )
+        return reopened
+    except BaseException:
         os.close(reopened)
-        raise DiskMeasurementError("owned root identity changed while reopening")
-    return reopened
+        raise
 
 
-def _filesystem_identity(fd: int) -> tuple[int, int, int]:
+def _filesystem_identity(
+    fd: int,
+    *,
+    check_deadline: Callable[[], None] | None = None,
+) -> tuple[int, int, int]:
     metadata = os.fstat(fd)
+    if check_deadline is not None:
+        check_deadline()
     if sys.platform != "darwin":
         return metadata.st_dev, 0, 0
     import ctypes
@@ -812,6 +833,8 @@ def _filesystem_identity(fd: int) -> tuple[int, int, int]:
     if libc.fstatfs(fd, ctypes.byref(value)) != 0:
         error_number = ctypes.get_errno()
         raise OSError(error_number, os.strerror(error_number))
+    if check_deadline is not None:
+        check_deadline()
     first, second = struct.unpack_from("=ii", value.raw, 48)
     return metadata.st_dev, first, second
 
@@ -847,10 +870,15 @@ class _DirectoryStream:
             raise OSError(error_number, os.strerror(error_number))
         return int(value)
 
-    def next_name(self) -> str | None:
+    def next_name(
+        self,
+        *,
+        check_deadline: Callable[[], None],
+    ) -> str | None:
         while True:
             self._ctypes.set_errno(0)
             pointer = self._libc.readdir(self._pointer)
+            check_deadline()
             if not pointer:
                 error_number = self._ctypes.get_errno()
                 if error_number:
@@ -880,26 +908,39 @@ def _measure_fd(
     identities: set[tuple[int, int]],
     identity_bytes: dict[tuple[int, int], int],
 ) -> tuple[int, int]:
-    root_stat = os.fstat(root_fd)
-    root_filesystem = _filesystem_identity(root_fd)
-    entries = 0
-    owned_bytes = 0
-    conservative_entries = 0
-
     def check_deadline() -> None:
         if monotonic() - started >= MAX_SCAN_SECONDS:
             raise DiskMeasurementError("owned scratch scan exceeded five seconds")
 
-    stack: list[tuple[_DirectoryStream, tuple[str, ...]]] = [
-        (_DirectoryStream(_reopen_same_directory(root_fd)), ())
-    ]
+    check_deadline()
+    root_stat = os.fstat(root_fd)
+    check_deadline()
+    root_filesystem = _filesystem_identity(
+        root_fd,
+        check_deadline=check_deadline,
+    )
+    entries = 0
+    owned_bytes = 0
+    conservative_entries = 0
+
+    root_stream = _DirectoryStream(
+        _reopen_same_directory(root_fd, check_deadline=check_deadline)
+    )
+    try:
+        check_deadline()
+    except BaseException:
+        root_stream.close()
+        raise
+    stack: list[tuple[_DirectoryStream, tuple[str, ...]]] = [(root_stream, ())]
     try:
         while stack:
             check_deadline()
             current, path_prefix = stack[-1]
-            selected = current.next_name()
+            selected = current.next_name(check_deadline=check_deadline)
+            check_deadline()
             if selected is None:
                 current.close()
+                check_deadline()
                 stack.pop()
                 continue
             entries += 1
@@ -910,13 +951,16 @@ def _measure_fd(
             if entries % 256 == 0:
                 check_deadline()
             try:
-                metadata = os.stat(
+                metadata_result = os.stat(
                     selected,
                     dir_fd=current.fd,
                     follow_symlinks=False,
                 )
             except FileNotFoundError:
+                check_deadline()
                 continue
+            check_deadline()
+            metadata = metadata_result
             mode = metadata.st_mode
             if stat.S_ISLNK(mode):
                 continue
@@ -938,8 +982,15 @@ def _measure_fd(
                 try:
                     child_fd = _open_child_directory(current.fd, selected)
                 except FileNotFoundError:
+                    check_deadline()
                     continue
-                opened = os.fstat(child_fd)
+                try:
+                    check_deadline()
+                    opened = os.fstat(child_fd)
+                    check_deadline()
+                except BaseException:
+                    os.close(child_fd)
+                    raise
                 if (opened.st_dev, opened.st_ino) != (
                     metadata.st_dev,
                     metadata.st_ino,
@@ -948,27 +999,40 @@ def _measure_fd(
                     raise DiskMeasurementError(
                         "owned scratch directory identity changed while opening"
                     )
-                if _filesystem_identity(child_fd) != root_filesystem:
+                try:
+                    child_filesystem = _filesystem_identity(
+                        child_fd,
+                        check_deadline=check_deadline,
+                    )
+                except BaseException:
+                    os.close(child_fd)
+                    raise
+                if child_filesystem != root_filesystem:
                     os.close(child_fd)
                     raise DiskMeasurementError(
                         "owned scratch scan refuses to cross a filesystem boundary"
                     )
-                stack.append(
-                    (
-                        _DirectoryStream(child_fd),
-                        (*path_prefix, selected)[:8],
-                    )
-                )
+                child_stream = _DirectoryStream(child_fd)
+                try:
+                    check_deadline()
+                except BaseException:
+                    child_stream.close()
+                    raise
+                stack.append((child_stream, (*path_prefix, selected)[:8]))
                 continue
             if stat.S_ISREG(mode):
                 try:
                     file_fd = _open_child_regular(current.fd, selected)
                 except FileNotFoundError:
+                    check_deadline()
                     continue
                 try:
+                    check_deadline()
                     opened = os.fstat(file_fd)
+                    check_deadline()
                 finally:
                     os.close(file_fd)
+                check_deadline()
                 if not stat.S_ISREG(opened.st_mode) or (
                     opened.st_dev,
                     opened.st_ino,
@@ -1143,17 +1207,26 @@ class DiskGuard:
 
     def _sample_locked(self) -> DiskFailure | None:
         started = self._monotonic()
+
+        def check_deadline() -> None:
+            if self._monotonic() - started >= MAX_SCAN_SECONDS:
+                raise DiskMeasurementError(
+                    "owned scratch scan exceeded five seconds"
+                )
+
         owned = 0
         root_owned: dict[str, int] = {}
         conservative_entries = 0
         available: dict[tuple[int, int, int], int] = {}
         try:
+            check_deadline()
             now = self._monotonic()
             if self._heartbeat is not None and (
                 self._last_heartbeat is None
                 or now - self._last_heartbeat >= 60.0
             ):
                 self._heartbeat()
+                check_deadline()
                 self._last_heartbeat = now
             identities: set[tuple[int, int]] = set()
             identity_bytes: dict[tuple[int, int], int] = {}
@@ -1161,6 +1234,7 @@ class DiskGuard:
                 str, frozenset[tuple[int, int]]
             ] = {}
             for index, (root, fd, open_error) in enumerate(self._root_capabilities):
+                check_deadline()
                 if fd is None:
                     raise DiskMeasurementError(
                         f"disk root capability unavailable for {root.enforcement}: "
@@ -1168,48 +1242,63 @@ class DiskGuard:
                     )
                 capacity_fd = fd
                 transient_fd = -1
-                if root.exact_path is not None:
-                    verification_fd = _open_directory(root.path)
-                    try:
-                        verification = os.fstat(verification_fd)
-                        if (verification.st_dev, verification.st_ino) != (
-                            self._root_identities[index]
-                        ):
-                            raise DiskMeasurementError(
-                                f"disk root path identity changed for {root.enforcement}"
-                            )
-                    finally:
-                        os.close(verification_fd)
-                    try:
-                        transient_fd = _open_directory(root.exact_path)
-                    except FileNotFoundError:
-                        if self._exact_identities[index] is not None:
-                            raise DiskMeasurementError(
-                                f"exact disk root disappeared for {root.enforcement}"
-                            )
-                        transient_fd = -1
-                    else:
-                        exact_metadata = os.fstat(transient_fd)
-                        exact_identity = (
-                            exact_metadata.st_dev,
-                            exact_metadata.st_ino,
-                        )
-                        expected_exact = self._exact_identities[index]
-                        if expected_exact is None:
-                            self._exact_identities[index] = exact_identity
-                        elif exact_identity != expected_exact:
-                            os.close(transient_fd)
-                            transient_fd = -1
-                            raise DiskMeasurementError(
-                                f"exact disk root identity changed for {root.enforcement}"
-                            )
-                        capacity_fd = transient_fd
                 try:
-                    filesystem = _filesystem_identity(capacity_fd)
+                    if root.exact_path is not None:
+                        verification_fd = _open_directory(root.path)
+                        try:
+                            check_deadline()
+                            verification = os.fstat(verification_fd)
+                            check_deadline()
+                            if (verification.st_dev, verification.st_ino) != (
+                                self._root_identities[index]
+                            ):
+                                raise DiskMeasurementError(
+                                    "disk root path identity changed for "
+                                    f"{root.enforcement}"
+                                )
+                        finally:
+                            os.close(verification_fd)
+                        check_deadline()
+                        try:
+                            transient_fd = _open_directory(root.exact_path)
+                        except FileNotFoundError:
+                            check_deadline()
+                            if self._exact_identities[index] is not None:
+                                raise DiskMeasurementError(
+                                    "exact disk root disappeared for "
+                                    f"{root.enforcement}"
+                                )
+                            transient_fd = -1
+                        else:
+                            check_deadline()
+                            exact_metadata = os.fstat(transient_fd)
+                            check_deadline()
+                            exact_identity = (
+                                exact_metadata.st_dev,
+                                exact_metadata.st_ino,
+                            )
+                            expected_exact = self._exact_identities[index]
+                            if expected_exact is None:
+                                self._exact_identities[index] = exact_identity
+                            elif exact_identity != expected_exact:
+                                os.close(transient_fd)
+                                transient_fd = -1
+                                raise DiskMeasurementError(
+                                    "exact disk root identity changed for "
+                                    f"{root.enforcement}"
+                                )
+                            capacity_fd = transient_fd
+                    check_deadline()
+                    filesystem = _filesystem_identity(
+                        capacity_fd,
+                        check_deadline=check_deadline,
+                    )
                     if filesystem not in available:
                         values = os.fstatvfs(capacity_fd)
+                        check_deadline()
                         available[filesystem] = values.f_bavail * values.f_frsize
                     if root.charge_owned_bytes:
+                        check_deadline()
                         before = owned
                         identities_before = set(identities)
                         measured, conservative = _measure_fd(
@@ -1219,6 +1308,7 @@ class DiskGuard:
                             identities=identities,
                             identity_bytes=identity_bytes,
                         )
+                        check_deadline()
                         owned += measured
                         root_owned[root.enforcement] = (
                             root_owned.get(root.enforcement, 0)
@@ -1233,6 +1323,7 @@ class DiskGuard:
                 finally:
                     if transient_fd >= 0:
                         os.close(transient_fd)
+                check_deadline()
             if not available:
                 raise DiskMeasurementError("disk guard has no capacity roots")
             observation = DiskObservation(
