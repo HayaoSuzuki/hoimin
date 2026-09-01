@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import builtins
 import os
 import stat
 import sys
 import tempfile
 import types
 import unittest
+from collections.abc import Mapping, Sequence
 from dataclasses import FrozenInstanceError
 from pathlib import Path
+from typing import Any, cast
 from unittest import mock
 
 from tools.focused_mutation_support.filesystem import (
@@ -35,6 +38,12 @@ from tools.focused_mutation_support.posix_filesystem import (
 )
 
 
+def _set_backend_hook(
+    backend: PosixFilesystemBackend, name: str, value: object
+) -> None:
+    setattr(cast(Any, backend), name, value)
+
+
 class RecordingOwner:
     def __init__(self) -> None:
         self.closed: list[int] = []
@@ -45,13 +54,13 @@ class RecordingOwner:
     def close_resource(self, resource: object) -> None:
         if self.fail_close:
             raise OSError("close failed")
-        self.closed.append(int(resource))
+        self.closed.append(int(cast(Any, resource)))
 
     def detach_file_resource(self, resource: object, flags: int) -> int:
         if self.fail_detach:
             raise OSError("detach failed")
-        self.detached.append((int(resource), flags))
-        return int(resource) + 100
+        self.detached.append((int(cast(Any, resource)), flags))
+        return int(cast(Any, resource)) + 100
 
 
 def _test_file_capability(
@@ -281,7 +290,7 @@ class CapabilityOwnershipTests(unittest.TestCase):
 
     def test_constructor_rejects_invalid_identity_size_and_kind(self) -> None:
         owner = RecordingOwner()
-        invalid_cases = [
+        invalid_cases: list[dict[str, Any]] = [
             {"identity": FileIdentity(0, 2)},
             {"identity": FileIdentity(1, 0)},
             {"filesystem": FilesystemIdentity(0)},
@@ -377,6 +386,49 @@ class FilesystemProtocolTests(unittest.TestCase):
                 finally:
                     _reset_default_filesystem_backend_for_tests()
 
+    def test_posix_factory_selection_never_imports_windows_backend(self) -> None:
+        original_import = builtins.__import__
+
+        def guarded_import(
+            name: str,
+            globals: Mapping[str, object] | None = None,
+            locals: Mapping[str, object] | None = None,
+            fromlist: Sequence[str] = (),
+            level: int = 0,
+        ) -> types.ModuleType:
+            if name.endswith("windows_filesystem"):
+                raise AssertionError("POSIX selection imported Windows DLL bindings")
+            return original_import(name, globals, locals, fromlist, level)
+
+        _reset_default_filesystem_backend_for_tests()
+        try:
+            with (
+                mock.patch.object(filesystem_module, "_platform_name", return_value="posix"),
+                mock.patch.object(builtins, "__import__", side_effect=guarded_import),
+            ):
+                backend = default_filesystem_backend()
+                self.assertIsInstance(backend, PosixFilesystemBackend)
+        finally:
+            _reset_default_filesystem_backend_for_tests()
+
+    @unittest.skipUnless(os.name == "nt", "requires the native Windows backend")
+    def test_windows_factory_selection_constructs_real_backend_lazily(self) -> None:
+        _reset_default_filesystem_backend_for_tests()
+        try:
+            with mock.patch.object(
+                filesystem_module, "_platform_name", return_value="nt"
+            ):
+                first = default_filesystem_backend()
+                second = default_filesystem_backend()
+                self.assertIs(first, second)
+                self.assertEqual(
+                    first.__class__.__module__,
+                    "tools.focused_mutation_support.windows_filesystem",
+                )
+                self.assertEqual(first.__class__.__name__, "WindowsFilesystemBackend")
+        finally:
+            _reset_default_filesystem_backend_for_tests()
+
 
 @unittest.skipUnless(os.name == "posix", "requires POSIX descriptor primitives")
 class PosixBackendTests(unittest.TestCase):
@@ -403,6 +455,7 @@ class PosixBackendTests(unittest.TestCase):
             self.assertEqual(reopened.identity, identity)
             self.assertIs(reopened.kind, EntryKind.REGULAR)
             self.assertEqual(reopened.security_domain, SecurityDomain.MANAGED)
+            assert isinstance(reopened, FileCapability)
             backend.touch(reopened)
             backend.flush(reopened)
             self.assertGreater(backend.allocation_unit(root), 0)
@@ -703,8 +756,10 @@ class PosixBackendSeamTests(unittest.TestCase):
                 raise FileExistsError("exists")
             raise FileNotFoundError("vanished")
 
-        backend._native_open_relative = unstable_open
-        backend.entry = lambda _parent, _name: observed
+        _set_backend_hook(backend, "_native_open_relative", unstable_open)
+        _set_backend_hook(
+            backend, "entry", lambda _parent, _name: observed
+        )
         with (
             mock.patch("os.close"),
             self.assertRaisesRegex(OSError, "did not stabilize"),
@@ -853,17 +908,33 @@ class PosixBackendReviewFixTests(unittest.TestCase):
             with self.subTest(kind=kind):
                 backend = PosixFilesystemBackend()
                 parent = self._directory(backend, 81)
-                backend.entry = lambda _parent, _name: self._entry(kind)
+                _set_backend_hook(
+                    backend,
+                    "entry",
+                    lambda _parent, _name: self._entry(kind),
+                )
                 native_calls: list[int] = []
                 hook_calls: list[str] = []
-                backend._before_relative_open = (
-                    lambda _parent, name: hook_calls.append(name)
+                _set_backend_hook(
+                    backend,
+                    "_before_relative_open",
+                    lambda _parent, name: hook_calls.append(name),
                 )
-                backend._native_open_relative = (
-                    lambda _fd, _name, flags, _mode=0: native_calls.append(flags)
-                    or 82
+
+                def native_open(
+                    _fd: int, _name: str, flags: int, _mode: int = 0
+                ) -> int:
+                    native_calls.append(flags)
+                    return 82
+
+                _set_backend_hook(
+                    backend, "_native_open_relative", native_open
                 )
-                backend._new_file_capability = lambda *_args, **_kwargs: object()
+                _set_backend_hook(
+                    backend,
+                    "_new_file_capability",
+                    lambda *_args, **_kwargs: object(),
+                )
                 with (
                     mock.patch("os.close"),
                     self.assertRaisesRegex(OSError, "not a regular file"),
@@ -882,7 +953,11 @@ class PosixBackendReviewFixTests(unittest.TestCase):
     def test_open_or_create_wrong_kind_makes_only_exclusive_attempt(self) -> None:
         backend = PosixFilesystemBackend()
         parent = self._directory(backend, 83)
-        backend.entry = lambda _parent, _name: self._entry(EntryKind.REPARSE)
+        _set_backend_hook(
+            backend,
+            "entry",
+            lambda _parent, _name: self._entry(EntryKind.REPARSE),
+        )
         native_calls: list[int] = []
 
         def native_open(_fd: int, _name: str, flags: int, _mode: int = 0) -> int:
@@ -891,8 +966,12 @@ class PosixBackendReviewFixTests(unittest.TestCase):
                 raise FileExistsError("exists")
             return 84
 
-        backend._native_open_relative = native_open
-        backend._new_file_capability = lambda *_args, **_kwargs: object()
+        _set_backend_hook(backend, "_native_open_relative", native_open)
+        _set_backend_hook(
+            backend,
+            "_new_file_capability",
+            lambda *_args, **_kwargs: object(),
+        )
         with (
             mock.patch("os.close"),
             self.assertRaisesRegex(OSError, "not a regular file"),
@@ -911,18 +990,24 @@ class PosixBackendReviewFixTests(unittest.TestCase):
     def test_regular_to_fifo_race_opens_nonblocking_then_rejects(self) -> None:
         backend = PosixFilesystemBackend()
         parent = self._directory(backend, 85)
-        backend.entry = lambda _parent, _name: self._entry(EntryKind.REGULAR)
+        _set_backend_hook(
+            backend,
+            "entry",
+            lambda _parent, _name: self._entry(EntryKind.REGULAR),
+        )
         hook_calls: list[str] = []
         native_flags: list[int] = []
-        backend._before_relative_open = (
-            lambda _parent, name: hook_calls.append(name)
+        _set_backend_hook(
+            backend,
+            "_before_relative_open",
+            lambda _parent, name: hook_calls.append(name),
         )
 
         def native_open(_fd: int, _name: str, flags: int, _mode: int = 0) -> int:
             native_flags.append(flags)
             return 86
 
-        backend._native_open_relative = native_open
+        _set_backend_hook(backend, "_native_open_relative", native_open)
         fifo_metadata = (
             FileIdentity(1, 78),
             FilesystemIdentity(1),
@@ -967,10 +1052,15 @@ class PosixBackendReviewFixTests(unittest.TestCase):
         observed = self._entry(
             EntryKind.DIRECTORY, name="managed", identity=identity
         )
-        backend.entry = mock.Mock(return_value=observed)
-        backend._native_open_relative = lambda *_args, **_kwargs: 91
-        backend.verify_managed_security = mock.Mock(
-            side_effect=OSError("primary root security failure")
+        entry_mock = mock.Mock(return_value=observed)
+        _set_backend_hook(backend, "entry", entry_mock)
+        _set_backend_hook(
+            backend, "_native_open_relative", lambda *_args, **_kwargs: 91
+        )
+        _set_backend_hook(
+            backend,
+            "verify_managed_security",
+            mock.Mock(side_effect=OSError("primary root security failure")),
         )
         metadata = (identity, FilesystemIdentity(1), stat.S_IFDIR | 0o700, 0, 0)
         with (
@@ -986,7 +1076,7 @@ class PosixBackendReviewFixTests(unittest.TestCase):
             ) as caught:
                 backend.create_secure_root(parent, "managed")
         rmdir.assert_not_called()
-        self.assertEqual(backend.entry.call_count, 1)
+        self.assertEqual(entry_mock.call_count, 1)
         self.assertIn(
             "directory creation identity was not atomically bound; "
             "rollback unavailable",
@@ -1004,8 +1094,11 @@ class PosixBackendReviewFixTests(unittest.TestCase):
         observed = self._entry(
             EntryKind.DIRECTORY, name="child", identity=identity
         )
-        backend.entry = mock.Mock(return_value=observed)
-        backend._native_open_relative = lambda *_args, **_kwargs: 93
+        entry_mock = mock.Mock(return_value=observed)
+        _set_backend_hook(backend, "entry", entry_mock)
+        _set_backend_hook(
+            backend, "_native_open_relative", lambda *_args, **_kwargs: 93
+        )
         metadata = (identity, FilesystemIdentity(1), stat.S_IFDIR | 0o700, 0, 0)
         with (
             mock.patch("os.mkdir"),
@@ -1025,7 +1118,7 @@ class PosixBackendReviewFixTests(unittest.TestCase):
             ) as caught:
                 backend.create_directory(parent, "child", SharePolicy.MUTATION)
         rmdir.assert_not_called()
-        self.assertEqual(backend.entry.call_count, 1)
+        self.assertEqual(entry_mock.call_count, 1)
         self.assertIn(
             "directory creation identity was not atomically bound; "
             "rollback unavailable",
@@ -1039,8 +1132,11 @@ class PosixBackendReviewFixTests(unittest.TestCase):
         parent = self._directory(backend, 94)
         identity = FileIdentity(1, 95)
         observed = self._entry(EntryKind.REGULAR, identity=identity)
-        backend.entry = mock.Mock(side_effect=(observed, None))
-        backend._native_open_relative = lambda *_args, **_kwargs: 95
+        entry_mock = mock.Mock(side_effect=(observed, None))
+        _set_backend_hook(backend, "entry", entry_mock)
+        _set_backend_hook(
+            backend, "_native_open_relative", lambda *_args, **_kwargs: 95
+        )
         raw_metadata = types.SimpleNamespace(
             st_dev=1,
             st_ino=95,
@@ -1071,7 +1167,7 @@ class PosixBackendReviewFixTests(unittest.TestCase):
                 disposition=CreateDisposition.CREATE_NEW,
             )
         unlink.assert_called_once_with("item", dir_fd=94)
-        self.assertEqual(backend.entry.call_count, 2)
+        self.assertEqual(entry_mock.call_count, 2)
         with mock.patch("os.close"):
             parent.close()
 
@@ -1080,8 +1176,10 @@ class PosixBackendReviewFixTests(unittest.TestCase):
         parent = self._directory(backend, 96)
         identity = FileIdentity(1, 97)
         observed = self._entry(EntryKind.REGULAR, identity=identity)
-        backend.entry = mock.Mock(return_value=observed)
-        backend._native_open_relative = lambda *_args, **_kwargs: 97
+        _set_backend_hook(backend, "entry", mock.Mock(return_value=observed))
+        _set_backend_hook(
+            backend, "_native_open_relative", lambda *_args, **_kwargs: 97
+        )
         raw_metadata = types.SimpleNamespace(
             st_dev=1,
             st_ino=97,
@@ -1123,8 +1221,11 @@ class PosixBackendReviewFixTests(unittest.TestCase):
     def test_raw_fstat_failure_makes_create_identity_unavailable(self) -> None:
         backend = PosixFilesystemBackend()
         parent = self._directory(backend, 98)
-        backend._native_open_relative = lambda *_args, **_kwargs: 99
-        backend.entry = mock.Mock()
+        _set_backend_hook(
+            backend, "_native_open_relative", lambda *_args, **_kwargs: 99
+        )
+        entry_mock = mock.Mock()
+        _set_backend_hook(backend, "entry", entry_mock)
         with (
             mock.patch("os.close"),
             mock.patch("os.unlink") as unlink,
@@ -1140,7 +1241,7 @@ class PosixBackendReviewFixTests(unittest.TestCase):
                     disposition=CreateDisposition.CREATE_NEW,
                 )
         unlink.assert_not_called()
-        backend.entry.assert_not_called()
+        entry_mock.assert_not_called()
         self.assertIn(
             "identity unavailable for rollback",
             " ".join(getattr(caught.exception, "__notes__", ())),
@@ -1153,8 +1254,11 @@ class PosixBackendReviewFixTests(unittest.TestCase):
         parent = self._directory(backend, 105)
         identity = FileIdentity(1, 106)
         matching = self._entry(EntryKind.REGULAR, identity=identity)
-        backend.entry = mock.Mock(side_effect=(matching, None))
-        backend._native_open_relative = lambda *_args, **_kwargs: 106
+        entry_mock = mock.Mock(side_effect=(matching, None))
+        _set_backend_hook(backend, "entry", entry_mock)
+        _set_backend_hook(
+            backend, "_native_open_relative", lambda *_args, **_kwargs: 106
+        )
         raw_metadata = types.SimpleNamespace(
             st_dev=1,
             st_ino=106,
@@ -1180,7 +1284,7 @@ class PosixBackendReviewFixTests(unittest.TestCase):
                 disposition=CreateDisposition.CREATE_NEW,
             )
         unlink.assert_called_once_with("item", dir_fd=105)
-        self.assertEqual(backend.entry.call_count, 2)
+        self.assertEqual(entry_mock.call_count, 2)
         with mock.patch("os.close"):
             parent.close()
 
@@ -1196,8 +1300,10 @@ class PosixBackendReviewFixTests(unittest.TestCase):
             logical_size=0,
             modified_ns=0,
         )
-        backend.entry = mock.Mock(return_value=mismatch)
-        backend._native_open_relative = lambda *_args, **_kwargs: 108
+        _set_backend_hook(backend, "entry", mock.Mock(return_value=mismatch))
+        _set_backend_hook(
+            backend, "_native_open_relative", lambda *_args, **_kwargs: 108
+        )
         raw_metadata = types.SimpleNamespace(
             st_dev=1,
             st_ino=108,
@@ -1252,13 +1358,16 @@ class PosixBackendReviewFixTests(unittest.TestCase):
                 matching = self._entry(EntryKind.REGULAR, identity=identity)
                 signal = CleanupSignal(f"{phase} cleanup baseexception")
                 if phase == "reobserve":
-                    backend.entry = mock.Mock(side_effect=signal)
+                    entry_hook = mock.Mock(side_effect=signal)
                 elif phase == "removal":
-                    backend.entry = mock.Mock(return_value=matching)
+                    entry_hook = mock.Mock(return_value=matching)
                 else:
-                    backend.entry = mock.Mock(side_effect=(matching, signal))
-                backend._native_open_relative = (
-                    lambda *_args, value=file_fd, **_kwargs: value
+                    entry_hook = mock.Mock(side_effect=(matching, signal))
+                _set_backend_hook(backend, "entry", entry_hook)
+                _set_backend_hook(
+                    backend,
+                    "_native_open_relative",
+                    lambda *_args, value=file_fd, **_kwargs: value,
                 )
                 raw_metadata = types.SimpleNamespace(
                     st_dev=1,
@@ -1305,7 +1414,9 @@ class PosixBackendReviewFixTests(unittest.TestCase):
 
         backend = PosixFilesystemBackend()
         parent = self._directory(backend, 190)
-        backend._native_open_relative = lambda *_args, **_kwargs: 191
+        _set_backend_hook(
+            backend, "_native_open_relative", lambda *_args, **_kwargs: 191
+        )
         raw_metadata = types.SimpleNamespace(
             st_dev=1,
             st_ino=191,
@@ -1368,10 +1479,16 @@ class PosixBackendReviewFixTests(unittest.TestCase):
             parent=parent,
             name="managed",
         )
-        backend.entry = mock.Mock(return_value=existing)
-        backend._open_observed_directory = mock.Mock(return_value=opened)
-        backend.verify_managed_security = mock.Mock(
-            side_effect=OSError("primary security failure")
+        _set_backend_hook(backend, "entry", mock.Mock(return_value=existing))
+        _set_backend_hook(
+            backend,
+            "_open_observed_directory",
+            mock.Mock(return_value=opened),
+        )
+        _set_backend_hook(
+            backend,
+            "verify_managed_security",
+            mock.Mock(side_effect=OSError("primary security failure")),
         )
 
         def close_opened(fd: int) -> None:
@@ -1402,8 +1519,12 @@ class PosixBackendReviewFixTests(unittest.TestCase):
             name="child",
             identity=FileIdentity(1, 102),
         )
-        backend.entry = mock.Mock(return_value=replacement)
-        backend._native_open_relative = lambda *_args, **_kwargs: 101
+        _set_backend_hook(
+            backend, "entry", mock.Mock(return_value=replacement)
+        )
+        _set_backend_hook(
+            backend, "_native_open_relative", lambda *_args, **_kwargs: 101
+        )
         metadata = (
             replacement.identity,
             FilesystemIdentity(1),
@@ -1444,9 +1565,12 @@ class PosixBackendReviewFixTests(unittest.TestCase):
         existing = self._entry(
             EntryKind.DIRECTORY, name="managed", identity=identity
         )
-        backend.entry = mock.Mock(return_value=existing)
-        backend._open_observed_directory = mock.Mock(
-            side_effect=OSError("existing root open failure")
+        entry_mock = mock.Mock(return_value=existing)
+        _set_backend_hook(backend, "entry", entry_mock)
+        _set_backend_hook(
+            backend,
+            "_open_observed_directory",
+            mock.Mock(side_effect=OSError("existing root open failure")),
         )
         with (
             mock.patch("os.mkdir", side_effect=FileExistsError("exists")),
@@ -1456,7 +1580,7 @@ class PosixBackendReviewFixTests(unittest.TestCase):
         ):
             backend.create_secure_root(parent, "managed")
         rmdir.assert_not_called()
-        self.assertEqual(backend.entry.call_count, 1)
+        self.assertEqual(entry_mock.call_count, 1)
         with mock.patch("os.close"):
             parent.close()
 

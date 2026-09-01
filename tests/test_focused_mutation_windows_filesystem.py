@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import errno
+import ctypes
 import gc
 import os
 import struct
 import subprocess
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from typing import Any, cast
@@ -1256,6 +1258,13 @@ class WindowsLayoutTests(unittest.TestCase):
             self.assertEqual(IO_STATUS_BLOCK.Information.offset, 4)
         self.assertEqual(FILE_ID_INFO.FileId.offset, 8)
         self.assertEqual(FILE_ID_EXTD_DIR_INFO.FileName.offset, 88)
+        self.assertIs(
+            windows_native.FILE_DISPOSITION_INFO._fields_[0][1],
+            ctypes.c_uint8,
+        )
+        self.assertEqual(
+            ctypes.sizeof(windows_native.FILE_DISPOSITION_INFO), 1
+        )
 
 class WindowsPureContractTests(unittest.TestCase):
     def test_attribute_kind_mapping_checks_reparse_before_directory(self) -> None:
@@ -1485,6 +1494,9 @@ class WindowsOpenTests(unittest.TestCase):
             self._before = before
             self._after = after
             self.nt_create_calls = 0
+            self.nt_create_records: list[dict[str, int | str]] = []
+            self.disposition_calls: list[tuple[int, int, int]] = []
+            self.fail_next_disposition = False
             self.fail_next_close = False
             self.fail_handle: int | None = None
             self.last_opened_handle: int | None = None
@@ -1494,9 +1506,22 @@ class WindowsOpenTests(unittest.TestCase):
             return getattr(self._native, name)
 
         def NtCreateFile(self, *args: object) -> int:
-            import ctypes
-
             self.nt_create_calls += 1
+            attributes = ctypes.cast(
+                cast(Any, args[2]), ctypes.POINTER(OBJECT_ATTRIBUTES)
+            ).contents
+            unicode_name = attributes.ObjectName.contents
+            encoded_name = ctypes.string_at(
+                unicode_name.Buffer, int(unicode_name.Length)
+            )
+            self.nt_create_records.append(
+                {
+                    "name": encoded_name.decode("utf-16-le", errors="strict"),
+                    "desired_access": int(cast(Any, args[1])),
+                    "disposition": int(cast(Any, args[7])),
+                    "security_descriptor": int(attributes.SecurityDescriptor or 0),
+                }
+            )
             status = self._native.NtCreateFile(*args)
             if status >= 0:
                 pointer = ctypes.cast(
@@ -1504,6 +1529,17 @@ class WindowsOpenTests(unittest.TestCase):
                 )
                 self.last_opened_handle = int(pointer.contents.value or 0)
             return status
+
+        def SetFileInformationByHandle(self, *args: object) -> bool:
+            handle = int(cast(Any, args[0]))
+            information_class = int(cast(Any, args[1]))
+            buffer_size = int(cast(Any, args[3]))
+            self.disposition_calls.append((handle, information_class, buffer_size))
+            if self.fail_next_disposition:
+                self.fail_next_disposition = False
+                self._last_error = windows_native.ERROR_ACCESS_DENIED
+                return False
+            return bool(self._native.SetFileInformationByHandle(*args))
 
         def CloseHandle(self, handle: int) -> bool:
             if self.fail_next_close or handle == self.fail_handle:
@@ -1794,7 +1830,7 @@ class WindowsOpenTests(unittest.TestCase):
                         access=FileAccess.READ_WRITE,
                         disposition=CreateDisposition.CREATE_NEW,
                     )
-                self.assertEqual(old.read_bytes(), b"")
+                self.assertFalse(old.exists())
                 self.assertEqual(item.read_bytes(), b"replacement")
             finally:
                 root.close()
@@ -1933,6 +1969,1455 @@ class WindowsOpenTests(unittest.TestCase):
             root_path.rename(moved)
 
 
+class _SecurityPolicyApi:
+    def __init__(self, *, owner_matches: bool = True) -> None:
+        self.owner_matches = owner_matches
+        self.events: list[str] = []
+        self.security_writes: list[tuple[object, ...]] = []
+        self.local_free_results: list[int] = []
+
+    def EqualSid(self, first: object, second: object) -> bool:
+        self.events.append("equal-owner")
+        return self.owner_matches
+
+    def SetSecurityInfo(self, *args: object) -> int:
+        self.events.append("set-dacl")
+        self.security_writes.append(args)
+        return 0
+
+    def LocalFree(self, pointer: object) -> int:
+        self.events.append("local-free")
+        if self.local_free_results:
+            return self.local_free_results.pop(0)
+        return 0
+
+    def CloseHandle(self, _handle: int) -> bool:
+        return True
+
+    def last_error(self) -> int:
+        return 5
+
+
+def _security_capability(
+    backend: WindowsFilesystemBackend,
+    *,
+    kind: EntryKind = EntryKind.REGULAR,
+) -> FileCapability | DirectoryCapability:
+    resource = _WindowsResource(211, None, "item", True)
+    if kind is EntryKind.DIRECTORY:
+        return DirectoryCapability(
+            backend,
+            resource,
+            kind=EntryKind.DIRECTORY,
+            identity=FileIdentity(7, 11),
+            filesystem=FilesystemIdentity(7, 255, 0x4006),
+            logical_size=0,
+            modified_ns=0,
+            security_domain=SecurityDomain.MANAGED,
+            share_policy=SharePolicy.MUTATION,
+            created=False,
+            path_hint=Path("C:/managed/item"),
+        )
+    return FileCapability(
+        backend,
+        resource,
+        kind=kind,
+        identity=FileIdentity(7, 11),
+        filesystem=FilesystemIdentity(7, 255, 0x4006),
+        logical_size=0,
+        modified_ns=0,
+        security_domain=SecurityDomain.MANAGED,
+        share_policy=SharePolicy.MUTATION,
+        created=False,
+        path_hint=Path("C:/managed/item"),
+    )
+
+
+def _security_material_for_tests() -> types.SimpleNamespace:
+    return types.SimpleNamespace(
+        sid=ctypes.c_void_p(101),
+        descriptor=ctypes.c_void_p(102),
+        dacl=ctypes.c_void_p(103),
+        dacl_bytes=b"expected-dacl",
+        close=mock.Mock(),
+    )
+
+
+def _security_snapshot_for_tests(
+    *,
+    dacl_bytes: bytes = b"expected-dacl",
+    control: int | None = None,
+) -> types.SimpleNamespace:
+    if control is None:
+        control = windows_native.SE_DACL_PROTECTED
+    return types.SimpleNamespace(
+        owner=ctypes.c_void_p(201),
+        dacl=ctypes.c_void_p(202),
+        dacl_present=True,
+        control=control,
+        dacl_bytes=dacl_bytes,
+        close=mock.Mock(),
+    )
+
+
+def _token_user_sid_for_tests() -> str:
+    api = _WindowsApi()
+    token = windows_native.HANDLE()
+    if not api.OpenProcessToken(
+        api.GetCurrentProcess(),
+        windows_native.TOKEN_QUERY,
+        ctypes.byref(token),
+    ):
+        raise OSError(api.last_error(), "OpenProcessToken failed")
+    try:
+        needed = windows_native.ULONG()
+        first = api.GetTokenInformation(
+            token,
+            windows_native.TokenUser,
+            None,
+            0,
+            ctypes.byref(needed),
+        )
+        if first or api.last_error() != windows_native.ERROR_INSUFFICIENT_BUFFER:
+            raise OSError("unexpected TOKEN_USER size-query result")
+        if needed.value == 0 or needed.value > windows_native._MAX_TOKEN_USER_BYTES:
+            raise OSError("invalid TOKEN_USER buffer size")
+        buffer = ctypes.create_string_buffer(int(needed.value))
+        if not api.GetTokenInformation(
+            token,
+            windows_native.TokenUser,
+            buffer,
+            needed,
+            ctypes.byref(needed),
+        ):
+            raise OSError(api.last_error(), "GetTokenInformation failed")
+        token_user = ctypes.cast(
+            buffer, ctypes.POINTER(windows_native.TOKEN_USER)
+        ).contents
+        string_sid = ctypes.c_wchar_p()
+        if not api.ConvertSidToStringSidW(
+            token_user.User.Sid, ctypes.byref(string_sid)
+        ):
+            raise OSError(api.last_error(), "ConvertSidToStringSidW failed")
+        try:
+            if not string_sid.value:
+                raise OSError("token SID conversion returned null")
+            return string_sid.value
+        finally:
+            if api.LocalFree(ctypes.cast(string_sid, ctypes.c_void_p)):
+                raise OSError(api.last_error(), "LocalFree SID string failed")
+    finally:
+        if not api.CloseHandle(token):
+            raise OSError(api.last_error(), "CloseHandle token failed")
+
+
+def _security_descriptor_bytes_for_tests(path: Path) -> bytes:
+    api = _WindowsApi()
+    owner = ctypes.c_void_p()
+    group = ctypes.c_void_p()
+    dacl = ctypes.c_void_p()
+    descriptor = ctypes.c_void_p()
+    result = int(
+        api.GetNamedSecurityInfoW(
+            str(path),
+            windows_native.SE_FILE_OBJECT,
+            windows_native.OWNER_SECURITY_INFORMATION
+            | windows_native.GROUP_SECURITY_INFORMATION
+            | windows_native.DACL_SECURITY_INFORMATION,
+            ctypes.byref(owner),
+            ctypes.byref(group),
+            ctypes.byref(dacl),
+            None,
+            ctypes.byref(descriptor),
+        )
+    )
+    if result != 0:
+        raise OSError(result, "GetNamedSecurityInfoW failed")
+    try:
+        if not descriptor.value:
+            raise OSError("named security descriptor is null")
+        length = int(api.GetSecurityDescriptorLength(descriptor))
+        if length <= 0:
+            raise OSError("named security descriptor has zero length")
+        return ctypes.string_at(descriptor, length)
+    finally:
+        if descriptor.value and api.LocalFree(descriptor):
+            raise OSError(api.last_error(), "LocalFree descriptor failed")
+
+
+def _named_owner_dacl_for_tests(path: Path) -> tuple[str, int, bytes]:
+    api = _WindowsApi()
+    owner = ctypes.c_void_p()
+    dacl = ctypes.c_void_p()
+    descriptor = ctypes.c_void_p()
+    result = int(
+        api.GetNamedSecurityInfoW(
+            str(path),
+            windows_native.SE_FILE_OBJECT,
+            windows_native.OWNER_SECURITY_INFORMATION
+            | windows_native.DACL_SECURITY_INFORMATION,
+            ctypes.byref(owner),
+            None,
+            ctypes.byref(dacl),
+            None,
+            ctypes.byref(descriptor),
+        )
+    )
+    if result != 0:
+        raise OSError(result, "GetNamedSecurityInfoW failed")
+    string_sid = ctypes.c_wchar_p()
+    try:
+        if not owner.value or not dacl.value or not descriptor.value:
+            raise OSError("named owner or DACL is null")
+        if not api.ConvertSidToStringSidW(owner, ctypes.byref(string_sid)):
+            raise OSError(api.last_error(), "ConvertSidToStringSidW failed")
+        control = windows_native.SECURITY_DESCRIPTOR_CONTROL()
+        revision = windows_native.ULONG()
+        if not api.GetSecurityDescriptorControl(
+            descriptor, ctypes.byref(control), ctypes.byref(revision)
+        ):
+            raise OSError(api.last_error(), "GetSecurityDescriptorControl failed")
+        acl = ctypes.cast(dacl, ctypes.POINTER(windows_native.ACL)).contents
+        if acl.AclSize < ctypes.sizeof(windows_native.ACL):
+            raise OSError("named DACL size is invalid")
+        assert string_sid.value is not None
+        return (
+            string_sid.value,
+            int(control.value),
+            ctypes.string_at(dacl, int(acl.AclSize)),
+        )
+    finally:
+        if string_sid.value and api.LocalFree(ctypes.cast(string_sid, ctypes.c_void_p)):
+            raise OSError(api.last_error(), "LocalFree SID string failed")
+        if descriptor.value and api.LocalFree(descriptor):
+            raise OSError(api.last_error(), "LocalFree descriptor failed")
+
+
+def _expected_managed_dacl_for_tests(sid: str, *, directory: bool) -> bytes:
+    api = _WindowsApi()
+    inheritance = "OICI" if directory else ""
+    sddl = (
+        f"O:{sid}D:P(A;{inheritance};FA;;;{sid})"
+        f"(A;{inheritance};FA;;;SY)(A;{inheritance};FA;;;BA)"
+    )
+    descriptor = ctypes.c_void_p()
+    length = windows_native.ULONG()
+    if not api.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+        sddl,
+        windows_native.SDDL_REVISION_1,
+        ctypes.byref(descriptor),
+        ctypes.byref(length),
+    ):
+        raise OSError(api.last_error(), "SDDL conversion failed")
+    try:
+        present = windows_native.BOOL()
+        defaulted = windows_native.BOOL()
+        dacl = ctypes.c_void_p()
+        if not api.GetSecurityDescriptorDacl(
+            descriptor,
+            ctypes.byref(present),
+            ctypes.byref(dacl),
+            ctypes.byref(defaulted),
+        ):
+            raise OSError(api.last_error(), "GetSecurityDescriptorDacl failed")
+        if not present.value or not dacl.value:
+            raise OSError("expected DACL is absent")
+        acl = ctypes.cast(dacl, ctypes.POINTER(windows_native.ACL)).contents
+        return ctypes.string_at(dacl, int(acl.AclSize))
+    finally:
+        if descriptor.value and api.LocalFree(descriptor):
+            raise OSError(api.last_error(), "LocalFree descriptor failed")
+
+
+class WindowsSecurityTests(unittest.TestCase):
+    def test_managed_sddl_has_exact_token_owner_and_dacl(self) -> None:
+        sid = "S-1-5-21-123"
+        self.assertEqual(
+            windows_native._managed_security_sddl(sid, directory=True),
+            "O:S-1-5-21-123D:P(A;OICI;FA;;;S-1-5-21-123)"
+            "(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)",
+        )
+        self.assertEqual(
+            windows_native._managed_security_sddl(sid, directory=False),
+            "O:S-1-5-21-123D:P(A;;FA;;;S-1-5-21-123)"
+            "(A;;FA;;;SY)(A;;FA;;;BA)",
+        )
+
+    def test_local_allocation_release_failure_retains_pointer_for_retry(self) -> None:
+        api = _SecurityPolicyApi()
+        api.local_free_results = [123, 0]
+        allocation = windows_native._LocalAllocation(
+            api, ctypes.c_void_p(123), "test allocation"
+        )
+        with self.assertRaises(OSError):
+            allocation.close()
+        self.assertTrue(allocation.is_owned)
+        allocation.close()
+        allocation.close()
+        self.assertFalse(allocation.is_owned)
+        self.assertEqual(api.events, ["local-free", "local-free"])
+
+    def test_existing_owner_mismatch_never_writes_owner_or_dacl(self) -> None:
+        api = _SecurityPolicyApi(owner_matches=False)
+        backend = WindowsFilesystemBackend(
+            api=api, osfhandle_opener=lambda _handle, _flags: 0
+        )
+        capability = _security_capability(backend)
+        material = _security_material_for_tests()
+        snapshot = _security_snapshot_for_tests(dacl_bytes=b"wrong")
+        with (
+            mock.patch.object(
+                backend, "_managed_security_material", return_value=material
+            ),
+            mock.patch.object(
+                backend, "_read_security_snapshot", return_value=snapshot
+            ),
+            self.assertRaises(PermissionError),
+        ):
+            backend.verify_managed_security(capability, repair_dacl=True)
+        self.assertEqual(api.events, ["equal-owner"])
+        self.assertEqual(api.security_writes, [])
+        material.close.assert_called_once_with()
+        snapshot.close.assert_called_once_with()
+        capability.close()
+
+    def test_dacl_mismatch_is_read_only_without_repair(self) -> None:
+        api = _SecurityPolicyApi(owner_matches=True)
+        backend = WindowsFilesystemBackend(
+            api=api, osfhandle_opener=lambda _handle, _flags: 0
+        )
+        capability = _security_capability(backend)
+        material = _security_material_for_tests()
+        snapshot = _security_snapshot_for_tests(dacl_bytes=b"wrong")
+        with (
+            mock.patch.object(
+                backend, "_managed_security_material", return_value=material
+            ),
+            mock.patch.object(
+                backend, "_read_security_snapshot", return_value=snapshot
+            ),
+            self.assertRaises(PermissionError),
+        ):
+            backend.verify_managed_security(capability, repair_dacl=False)
+        self.assertEqual(api.security_writes, [])
+        capability.close()
+
+    def test_owner_verified_repair_writes_only_dacl_then_reverifies(self) -> None:
+        api = _SecurityPolicyApi(owner_matches=True)
+        backend = WindowsFilesystemBackend(
+            api=api, osfhandle_opener=lambda _handle, _flags: 0
+        )
+        capability = _security_capability(backend)
+        material = _security_material_for_tests()
+        first = _security_snapshot_for_tests(dacl_bytes=b"wrong")
+        second = _security_snapshot_for_tests()
+        with (
+            mock.patch.object(
+                backend, "_managed_security_material", return_value=material
+            ),
+            mock.patch.object(
+                backend,
+                "_read_security_snapshot",
+                side_effect=(first, second),
+            ),
+        ):
+            backend.verify_managed_security(capability, repair_dacl=True)
+        self.assertEqual(api.events, ["equal-owner", "set-dacl", "equal-owner"])
+        self.assertEqual(len(api.security_writes), 1)
+        write = api.security_writes[0]
+        self.assertEqual(int(cast(Any, write[2])), windows_native.DACL_SECURITY_INFORMATION | windows_native.PROTECTED_DACL_SECURITY_INFORMATION)
+        self.assertFalse(cast(Any, write[3]))
+        self.assertFalse(cast(Any, write[4]))
+        self.assertEqual(cast(Any, write[5]).value, material.dacl.value)
+        capability.close()
+
+    def test_managed_creation_failure_phases_keep_exact_owners(self) -> None:
+        metadata = windows_native._Metadata(
+            FileIdentity(7, 12),
+            FilesystemIdentity(7, 255, 0x4006),
+            EntryKind.REGULAR,
+            0,
+            0,
+        )
+        cases = ("descriptor", "native", "verification", "material-close")
+        for phase in cases:
+            with self.subTest(phase=phase):
+                api = _SecurityPolicyApi()
+                backend = WindowsFilesystemBackend(
+                    api=api, osfhandle_opener=lambda _handle, _flags: 0
+                )
+                parent = _security_capability(
+                    backend, kind=EntryKind.DIRECTORY
+                )
+                assert isinstance(parent, DirectoryCapability)
+                material = _security_material_for_tests()
+                native_open = mock.Mock(return_value=(313, windows_native.FILE_CREATED))
+                finish = mock.Mock(return_value=(metadata, True))
+                verify = mock.Mock()
+                rollback = mock.Mock()
+                if phase == "descriptor":
+                    material_factory = mock.Mock(
+                        side_effect=OSError("descriptor construction failed")
+                    )
+                else:
+                    material_factory = mock.Mock(return_value=material)
+                if phase == "native":
+                    native_open.side_effect = OSError("native create failed")
+                if phase == "verification":
+                    verify.side_effect = OSError("security verification failed")
+                if phase == "material-close":
+                    material.close.side_effect = (
+                        OSError("material close failed"),
+                        None,
+                    )
+                with (
+                    mock.patch.object(
+                        backend,
+                        "_managed_security_material",
+                        material_factory,
+                    ),
+                    mock.patch.object(
+                        backend, "_native_relative_open", native_open
+                    ),
+                    mock.patch.object(
+                        backend, "_finish_relative_open", finish
+                    ),
+                    mock.patch.object(
+                        backend,
+                        "_verify_managed_security_resource",
+                        verify,
+                    ),
+                    mock.patch.object(
+                        backend, "_set_delete_disposition", rollback
+                    ),
+                    self.assertRaisesRegex(OSError, phase.split("-")[0]),
+                ):
+                    backend.open_file(
+                        parent,
+                        "item",
+                        access=FileAccess.READ_WRITE,
+                        disposition=CreateDisposition.CREATE_NEW,
+                    )
+                if phase == "descriptor":
+                    native_open.assert_not_called()
+                else:
+                    material.close.assert_called()
+                if phase in {"verification", "material-close"}:
+                    rollback.assert_called_once()
+                else:
+                    rollback.assert_not_called()
+                if phase == "material-close":
+                    self.assertEqual(backend._failed_security_owners, [material])
+                    backend._close_security_owner(
+                        backend._failed_security_owners.pop()
+                    )
+                parent.close()
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows security APIs")
+    def test_security_bindings_have_exact_signatures(self) -> None:
+        api = _WindowsApi()
+        self.assertEqual(
+            api.OpenProcessToken.argtypes,
+            (
+                windows_native.HANDLE,
+                windows_native.ULONG,
+                ctypes.POINTER(windows_native.HANDLE),
+            ),
+        )
+        self.assertIs(api.OpenProcessToken.restype, windows_native.BOOL)
+        self.assertEqual(
+            api.GetTokenInformation.argtypes,
+            (
+                windows_native.HANDLE,
+                windows_native.ULONG,
+                ctypes.c_void_p,
+                windows_native.ULONG,
+                ctypes.POINTER(windows_native.ULONG),
+            ),
+        )
+        self.assertIs(api.GetTokenInformation.restype, windows_native.BOOL)
+        self.assertEqual(
+            api.ConvertSidToStringSidW.argtypes,
+            (
+                ctypes.c_void_p,
+                ctypes.POINTER(ctypes.c_wchar_p),
+            ),
+        )
+        self.assertIs(api.ConvertSidToStringSidW.restype, windows_native.BOOL)
+        self.assertEqual(
+            api.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes,
+            (
+                ctypes.c_wchar_p,
+                windows_native.ULONG,
+                ctypes.POINTER(ctypes.c_void_p),
+                ctypes.POINTER(windows_native.ULONG),
+            ),
+        )
+        self.assertIs(
+            api.ConvertStringSecurityDescriptorToSecurityDescriptorW.restype,
+            windows_native.BOOL,
+        )
+        security_query_args = (
+            windows_native.HANDLE,
+            windows_native.ULONG,
+            windows_native.ULONG,
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        )
+        self.assertEqual(api.GetSecurityInfo.argtypes, security_query_args)
+        self.assertIs(api.GetSecurityInfo.restype, windows_native.ULONG)
+        self.assertEqual(
+            api.SetSecurityInfo.argtypes,
+            (
+                windows_native.HANDLE,
+                windows_native.ULONG,
+                windows_native.ULONG,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+            ),
+        )
+        self.assertIs(api.SetSecurityInfo.restype, windows_native.ULONG)
+        self.assertEqual(
+            api.GetNamedSecurityInfoW.argtypes,
+            (ctypes.c_wchar_p, *security_query_args[1:]),
+        )
+        self.assertIs(api.GetNamedSecurityInfoW.restype, windows_native.ULONG)
+        self.assertEqual(api.GetSecurityDescriptorLength.argtypes, (ctypes.c_void_p,))
+        self.assertIs(api.GetSecurityDescriptorLength.restype, windows_native.ULONG)
+        self.assertEqual(
+            api.GetSecurityDescriptorControl.argtypes,
+            (
+                ctypes.c_void_p,
+                ctypes.POINTER(windows_native.SECURITY_DESCRIPTOR_CONTROL),
+                ctypes.POINTER(windows_native.ULONG),
+            ),
+        )
+        self.assertIs(
+            api.GetSecurityDescriptorControl.restype, windows_native.BOOL
+        )
+        self.assertEqual(
+            api.GetSecurityDescriptorDacl.argtypes,
+            (
+                ctypes.c_void_p,
+                ctypes.POINTER(windows_native.BOOL),
+                ctypes.POINTER(ctypes.c_void_p),
+                ctypes.POINTER(windows_native.BOOL),
+            ),
+        )
+        self.assertIs(api.GetSecurityDescriptorDacl.restype, windows_native.BOOL)
+        self.assertEqual(
+            api.EqualSid.argtypes,
+            (ctypes.c_void_p, ctypes.c_void_p),
+        )
+        self.assertIs(api.EqualSid.restype, windows_native.BOOL)
+        self.assertEqual(api.LocalFree.argtypes, (ctypes.c_void_p,))
+        self.assertIs(api.LocalFree.restype, ctypes.c_void_p)
+        self.assertEqual(
+            api.NtSetInformationFile.argtypes,
+            (
+                windows_native.HANDLE,
+                ctypes.POINTER(windows_native.IO_STATUS_BLOCK),
+                ctypes.c_void_p,
+                windows_native.ULONG,
+                windows_native.ULONG,
+            ),
+        )
+        self.assertIs(api.NtSetInformationFile.restype, windows_native.NTSTATUS)
+        self.assertEqual(
+            api.SetFileInformationByHandle.argtypes,
+            (
+                windows_native.HANDLE,
+                ctypes.c_int32,
+                ctypes.c_void_p,
+                windows_native.ULONG,
+            ),
+        )
+        self.assertIs(
+            api.SetFileInformationByHandle.restype, windows_native.BOOL
+        )
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows security APIs")
+    def test_caller_root_security_descriptor_is_byte_identical_after_open(self) -> None:
+        backend = WindowsFilesystemBackend()
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw)
+            before = _security_descriptor_bytes_for_tests(path)
+            root = backend.open_root(
+                path, SharePolicy.PINNED, SecurityDomain.CALLER
+            )
+            root.close()
+            after = _security_descriptor_bytes_for_tests(path)
+        self.assertEqual(after, before)
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows security APIs")
+    def test_managed_root_and_children_have_token_owner_and_exact_dacl(self) -> None:
+        proxy = WindowsOpenTests._ApiProxy()
+        backend = WindowsFilesystemBackend(api=proxy)
+        with tempfile.TemporaryDirectory() as raw:
+            parent_path = Path(raw)
+            parent = backend.open_root(parent_path, SharePolicy.MUTATION)
+            caller_file = backend.open_file(
+                parent,
+                "caller-file",
+                access=FileAccess.READ_WRITE,
+                disposition=CreateDisposition.CREATE_NEW,
+            )
+            caller_file.close()
+            managed = backend.create_secure_root(parent, "managed")
+            directory = backend.create_directory(
+                managed, "directory", SharePolicy.MUTATION
+            )
+            file = backend.open_file(
+                managed,
+                "file",
+                access=FileAccess.READ_WRITE,
+                disposition=CreateDisposition.CREATE_NEW,
+            )
+            try:
+                self.assertTrue(managed.created)
+                self.assertTrue(directory.created)
+                self.assertTrue(file.created)
+                sid = _token_user_sid_for_tests()
+                for path, capability, is_directory in (
+                    (parent_path / "managed", managed, True),
+                    (parent_path / "managed" / "directory", directory, True),
+                    (parent_path / "managed" / "file", file, False),
+                ):
+                    with self.subTest(path=path):
+                        owner, control, dacl = _named_owner_dacl_for_tests(path)
+                        self.assertEqual(owner, sid)
+                        self.assertTrue(control & windows_native.SE_DACL_PROTECTED)
+                        self.assertEqual(
+                            dacl,
+                            _expected_managed_dacl_for_tests(
+                                sid, directory=is_directory
+                            ),
+                        )
+                        backend.verify_managed_security(
+                            capability, repair_dacl=False
+                        )
+
+                creation_records = {
+                    cast(str, record["name"]): record
+                    for record in proxy.nt_create_records
+                    if record["disposition"]
+                    in {windows_native.FILE_CREATE, windows_native.FILE_OPEN_IF}
+                }
+                self.assertEqual(
+                    creation_records["caller-file"]["security_descriptor"], 0
+                )
+                for name in ("managed", "directory", "file"):
+                    self.assertNotEqual(
+                        creation_records[name]["security_descriptor"], 0
+                    )
+            finally:
+                file.close()
+                directory.close()
+                managed.close()
+                parent.close()
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows security APIs")
+    def test_secure_root_and_managed_open_or_create_use_native_result(self) -> None:
+        proxy = WindowsOpenTests._ApiProxy()
+        backend = WindowsFilesystemBackend(api=proxy)
+        with tempfile.TemporaryDirectory() as raw:
+            parent = backend.open_root(Path(raw), SharePolicy.MUTATION)
+            first = backend.create_secure_root(parent, "managed")
+            self.assertTrue(first.created)
+            first.close()
+            managed = backend.create_secure_root(parent, "managed")
+            self.assertFalse(managed.created)
+            created = backend.open_file(
+                managed,
+                "item",
+                access=FileAccess.READ_WRITE,
+                disposition=CreateDisposition.OPEN_OR_CREATE,
+            )
+            self.assertTrue(created.created)
+            created.close()
+            opened = backend.open_file(
+                managed,
+                "item",
+                access=FileAccess.READ_WRITE,
+                disposition=CreateDisposition.OPEN_OR_CREATE,
+            )
+            self.assertFalse(opened.created)
+            opened.close()
+            ordinary = backend.open_file(
+                managed,
+                "item",
+                access=FileAccess.READ,
+                disposition=CreateDisposition.OPEN_EXISTING,
+            )
+            last = proxy.nt_create_records[-1]
+            self.assertEqual(last["security_descriptor"], 0)
+            self.assertFalse(int(last["desired_access"]) & windows_native.WRITE_DAC)
+            ordinary.close()
+            managed.close()
+            parent.close()
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows security APIs")
+    def test_post_create_failure_rolls_back_exact_handle_not_replacement(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root_path = Path(raw)
+            item = root_path / "item"
+            old = root_path / "old"
+
+            def replace() -> None:
+                item.rename(old)
+                item.write_bytes(b"replacement")
+
+            proxy = WindowsOpenTests._ApiProxy(after=replace)
+            backend = WindowsFilesystemBackend(api=proxy)
+            root = backend.open_root(root_path, SharePolicy.MUTATION)
+            try:
+                with self.assertRaisesRegex(OSError, "identity changed"):
+                    backend.open_file(
+                        root,
+                        "item",
+                        access=FileAccess.READ_WRITE,
+                        disposition=CreateDisposition.CREATE_NEW,
+                    )
+                self.assertFalse(old.exists())
+                self.assertEqual(item.read_bytes(), b"replacement")
+                self.assertEqual(len(proxy.disposition_calls), 1)
+            finally:
+                root.close()
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows security APIs")
+    def test_rollback_failure_and_close_failure_stay_secondary(self) -> None:
+        for failure in ("rollback", "close"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as raw:
+                root_path = Path(raw)
+                item = root_path / "item"
+                old = root_path / "old"
+                proxy = WindowsOpenTests._ApiProxy()
+
+                def replace() -> None:
+                    item.rename(old)
+                    item.write_bytes(b"replacement")
+                    if failure == "rollback":
+                        proxy.fail_next_disposition = True
+                    else:
+                        proxy.fail_handle = proxy.last_opened_handle
+
+                proxy._after = replace
+                backend = WindowsFilesystemBackend(api=proxy)
+                root = backend.open_root(root_path, SharePolicy.MUTATION)
+                try:
+                    with self.assertRaisesRegex(OSError, "identity changed") as caught:
+                        backend.open_file(
+                            root,
+                            "item",
+                            access=FileAccess.READ_WRITE,
+                            disposition=CreateDisposition.CREATE_NEW,
+                        )
+                    notes = " ".join(getattr(caught.exception, "__notes__", ()))
+                    if failure == "rollback":
+                        self.assertIn("rollback", notes)
+                        self.assertTrue(old.exists())
+                    else:
+                        self.assertIn("close failed", notes)
+                        self.assertEqual(len(backend._failed_closes), 1)
+                        backend.close_resource(backend._failed_closes.pop())
+                        self.assertFalse(old.exists())
+                    self.assertEqual(item.read_bytes(), b"replacement")
+                finally:
+                    root.close()
+
+
+class _MutationApi:
+    def __init__(self) -> None:
+        self.events: list[str] = []
+        self.rename_calls: list[dict[str, int | str]] = []
+        self.disposition_calls: list[dict[str, int]] = []
+        self.disposition_outcomes: list[tuple[bool, int]] = []
+        self.close_outcomes: list[bool] = []
+        self.set_time_outcome = True
+        self.flush_outcome = True
+        self._last_error = windows_native.ERROR_ACCESS_DENIED
+
+    def NtSetInformationFile(self, *args: object) -> int:
+        handle = int(cast(Any, args[0]))
+        information = ctypes.cast(
+            cast(Any, args[2]), ctypes.POINTER(FILE_RENAME_INFORMATION)
+        ).contents
+        encoded = ctypes.string_at(
+            ctypes.addressof(information) + FILE_RENAME_INFORMATION.FileName.offset,
+            int(information.FileNameLength),
+        )
+        self.events.append("rename")
+        self.rename_calls.append(
+            {
+                "handle": handle,
+                "root": int(information.RootDirectory or 0),
+                "replace": int(information.ReplaceIfExists),
+                "name_length": int(information.FileNameLength),
+                "name": encoded.decode("utf-16-le", errors="strict"),
+                "buffer_length": int(cast(Any, args[3])),
+                "information_class": int(cast(Any, args[4])),
+            }
+        )
+        return 0
+
+    def SetFileInformationByHandle(self, *args: object) -> bool:
+        information_class = int(cast(Any, args[1]))
+        record = {
+            "handle": int(cast(Any, args[0])),
+            "information_class": information_class,
+            "buffer_length": int(cast(Any, args[3])),
+        }
+        if information_class == windows_native.FILE_DISPOSITION_INFO_EX_CLASS:
+            record["flags"] = int(
+                ctypes.cast(
+                    cast(Any, args[2]),
+                    ctypes.POINTER(windows_native.FILE_DISPOSITION_INFO_EX),
+                ).contents.Flags
+            )
+        else:
+            record["delete"] = int(
+                ctypes.cast(
+                    cast(Any, args[2]),
+                    ctypes.POINTER(windows_native.FILE_DISPOSITION_INFO),
+                ).contents.DeleteFile
+            )
+        self.events.append("disposition")
+        self.disposition_calls.append(record)
+        if self.disposition_outcomes:
+            succeeded, code = self.disposition_outcomes.pop(0)
+            self._last_error = code
+            return succeeded
+        return True
+
+    def GetSystemTimeAsFileTime(self, pointer: object) -> None:
+        value = ctypes.cast(
+            cast(Any, pointer), ctypes.POINTER(windows_native.FILETIME)
+        ).contents
+        value.dwLowDateTime = 0x89AB_CDEF
+        value.dwHighDateTime = 0x0123_4567
+        self.events.append("clock")
+
+    def SetFileTime(self, *args: object) -> bool:
+        self.events.append("touch")
+        self.touch_call = args
+        return self.set_time_outcome
+
+    def FlushFileBuffers(self, handle: int) -> bool:
+        self.events.append("flush")
+        self.flush_handle = handle
+        return self.flush_outcome
+
+    def CloseHandle(self, handle: int) -> bool:
+        self.events.append("close")
+        self.closed_handle = handle
+        if self.close_outcomes:
+            return self.close_outcomes.pop(0)
+        return True
+
+    def RtlNtStatusToDosError(self, status: int) -> int:
+        return windows_native.ERROR_ACCESS_DENIED
+
+    def last_error(self) -> int:
+        return self._last_error
+
+
+def _mutation_parent(
+    backend: WindowsFilesystemBackend,
+    *,
+    handle: int,
+    identity: FileIdentity,
+    path: str,
+) -> DirectoryCapability:
+    access = _directory_access(SharePolicy.MUTATION, relative_target=True)
+    return DirectoryCapability(
+        backend,
+        _WindowsResource(
+            handle,
+            None,
+            Path(path).name,
+            bool(access & DELETE),
+            access,
+            _share_mode(SharePolicy.MUTATION),
+        ),
+        identity=identity,
+        filesystem=FilesystemIdentity(31, 255, 0x4006),
+        kind=EntryKind.DIRECTORY,
+        logical_size=0,
+        modified_ns=0,
+        security_domain=SecurityDomain.CALLER,
+        share_policy=SharePolicy.MUTATION,
+        created=False,
+        path_hint=Path(path),
+    )
+
+
+def _mutation_source(
+    backend: WindowsFilesystemBackend,
+    parent: DirectoryCapability | None,
+    *,
+    handle: int = 303,
+    name: str | None = "source",
+    policy: SharePolicy = SharePolicy.PINNED,
+    delete_authority: bool = True,
+    kind: EntryKind = EntryKind.REGULAR,
+) -> FileCapability | DirectoryCapability:
+    path_hint = (
+        parent.path_hint / name
+        if parent is not None and name
+        else Path("C:/source")
+    )
+    resource = _WindowsResource(
+        handle,
+        parent,
+        name,
+        delete_authority,
+        DELETE | windows_native.READ_CONTROL,
+        _share_mode(policy),
+    )
+    if kind is EntryKind.DIRECTORY:
+        return DirectoryCapability(
+            backend,
+            resource,
+            kind=EntryKind.DIRECTORY,
+            identity=FileIdentity(31, 41),
+            filesystem=FilesystemIdentity(31, 255, 0x4006),
+            logical_size=0,
+            modified_ns=0,
+            security_domain=SecurityDomain.CALLER,
+            share_policy=policy,
+            created=False,
+            path_hint=path_hint,
+        )
+    return FileCapability(
+        backend,
+        resource,
+        kind=kind,
+        identity=FileIdentity(31, 41),
+        filesystem=FilesystemIdentity(31, 255, 0x4006),
+        logical_size=0,
+        modified_ns=0,
+        security_domain=SecurityDomain.CALLER,
+        share_policy=policy,
+        created=False,
+        path_hint=path_hint,
+    )
+
+
+def _mutation_metadata(
+    capability: FileCapability | DirectoryCapability,
+) -> Any:
+    return windows_native._Metadata(
+        capability.identity,
+        capability.filesystem,
+        capability.kind,
+        capability.logical_size,
+        capability.modified_ns,
+    )
+
+
+def _mutation_entry(
+    capability: FileCapability | DirectoryCapability,
+    name: str,
+) -> Any:
+    return windows_native.DirectoryEntry(
+        name,
+        capability.kind,
+        capability.identity,
+        capability.filesystem,
+        capability.logical_size,
+        capability.modified_ns,
+    )
+
+
+class WindowsMutationTests(unittest.TestCase):
+    def _fixture(
+        self,
+    ) -> tuple[
+        _MutationApi,
+        WindowsFilesystemBackend,
+        DirectoryCapability,
+        DirectoryCapability,
+        FileCapability | DirectoryCapability,
+    ]:
+        api = _MutationApi()
+        backend = WindowsFilesystemBackend(
+            api=api, osfhandle_opener=lambda _handle, _flags: 0
+        )
+        source_parent = _mutation_parent(
+            backend, handle=301, identity=FileIdentity(31, 51), path="C:/source-parent"
+        )
+        destination_parent = _mutation_parent(
+            backend,
+            handle=302,
+            identity=FileIdentity(31, 52),
+            path="C:/destination-parent",
+        )
+        source = _mutation_source(backend, source_parent)
+        return api, backend, source_parent, destination_parent, source
+
+    def test_rename_is_destination_anchored_and_updates_evidence_after_checks(self) -> None:
+        api, backend, source_parent, destination_parent, source = self._fixture()
+        metadata = _mutation_metadata(source)
+        old_entry = _mutation_entry(source, "source")
+        destination_entry = _mutation_entry(source, "x")
+
+        def observe(parent: DirectoryCapability, name: str) -> Any:
+            if not api.rename_calls:
+                self.assertIs(parent, source_parent)
+                self.assertEqual(name, "source")
+                return old_entry
+            if parent is destination_parent and name == "x":
+                return destination_entry
+            if parent is source_parent and name == "source":
+                return None
+            raise AssertionError((parent, name))
+
+        with (
+            mock.patch.object(backend, "_metadata", side_effect=(metadata, metadata)),
+            mock.patch.object(backend, "entry", side_effect=observe),
+        ):
+            backend.rename(source, destination_parent, "x", replace=True)
+
+        self.assertEqual(len(api.rename_calls), 1)
+        call = api.rename_calls[0]
+        self.assertEqual(call["handle"], 303)
+        self.assertEqual(call["root"], 302)
+        self.assertEqual(call["replace"], 1)
+        self.assertEqual(call["name"], "x")
+        self.assertEqual(call["name_length"], len("x".encode("utf-16-le")))
+        self.assertEqual(
+            call["buffer_length"],
+            max(
+                FILE_RENAME_INFORMATION.FileName.offset
+                + len("x".encode("utf-16-le")),
+                ctypes.sizeof(FILE_RENAME_INFORMATION),
+            ),
+        )
+        self.assertEqual(
+            call["information_class"],
+            windows_native.FILE_RENAME_INFORMATION_CLASS,
+        )
+        resource = backend._resource(source)
+        self.assertIs(resource.parent, destination_parent)
+        self.assertEqual(resource.name, "x")
+        self.assertEqual(source.path_hint, destination_parent.path_hint / "x")
+        source.close()
+        source_parent.close()
+        destination_parent.close()
+
+    def test_rename_rejects_policy_authority_parent_and_name_before_api(self) -> None:
+        cases = ("policy", "authority", "absolute", "invalid-name")
+        for case in cases:
+            with self.subTest(case=case):
+                api, backend, source_parent, destination_parent, source = self._fixture()
+                if case == "policy":
+                    source._share_policy = SharePolicy.MUTATION
+                elif case == "authority":
+                    backend._resource(source).delete_authority = False
+                elif case == "absolute":
+                    backend._resource(source).parent = None
+                destination_name = "a/b" if case == "invalid-name" else "renamed"
+                with (
+                    mock.patch.object(backend, "_metadata") as metadata,
+                    mock.patch.object(backend, "entry") as entry,
+                    self.assertRaises((ValueError, RuntimeError)),
+                ):
+                    backend.rename(
+                        source, destination_parent, destination_name, replace=False
+                    )
+                self.assertEqual(api.rename_calls, [])
+                metadata.assert_not_called()
+                entry.assert_not_called()
+                source.close()
+                source_parent.close()
+                destination_parent.close()
+
+    def test_rename_precheck_and_each_postcheck_fail_closed(self) -> None:
+        cases = ("handle-before", "entry-before", "handle-after", "destination", "old")
+        for case in cases:
+            with self.subTest(case=case):
+                api, backend, source_parent, destination_parent, source = self._fixture()
+                matching = _mutation_metadata(source)
+                changed = windows_native._Metadata(
+                    FileIdentity(31, 999),
+                    source.filesystem,
+                    source.kind,
+                    0,
+                    0,
+                )
+                metadata_values = (
+                    [changed]
+                    if case == "handle-before"
+                    else [matching, changed]
+                    if case == "handle-after"
+                    else [matching, matching]
+                )
+
+                def observe(parent: DirectoryCapability, name: str) -> Any:
+                    if not api.rename_calls:
+                        if case == "entry-before":
+                            return None
+                        return _mutation_entry(source, "source")
+                    if parent is destination_parent:
+                        if case == "destination":
+                            return None
+                        return _mutation_entry(source, "renamed")
+                    if case == "old":
+                        return _mutation_entry(source, "source")
+                    return None
+
+                with (
+                    mock.patch.object(
+                        backend, "_metadata", side_effect=metadata_values
+                    ),
+                    mock.patch.object(backend, "entry", side_effect=observe),
+                    self.assertRaises(OSError),
+                ):
+                    backend.rename(source, destination_parent, "renamed", replace=False)
+                if case in {"handle-before", "entry-before"}:
+                    self.assertEqual(api.rename_calls, [])
+                else:
+                    self.assertEqual(len(api.rename_calls), 1)
+                resource = backend._resource(source)
+                self.assertIs(resource.parent, source_parent)
+                self.assertEqual(resource.name, "source")
+                self.assertEqual(source.path_hint, source_parent.path_hint / "source")
+                source.close()
+                source_parent.close()
+                destination_parent.close()
+
+    def test_delete_uses_extended_exact_handle_then_closes_before_absence(self) -> None:
+        api, backend, source_parent, destination_parent, source = self._fixture()
+        matching = _mutation_metadata(source)
+        observations = 0
+
+        def observe(parent: DirectoryCapability, name: str) -> Any:
+            nonlocal observations
+            self.assertIs(parent, source_parent)
+            self.assertEqual(name, "source")
+            observations += 1
+            api.events.append(f"entry-{observations}")
+            return _mutation_entry(source, "source") if observations == 1 else None
+
+        with (
+            mock.patch.object(backend, "_metadata", return_value=matching),
+            mock.patch.object(backend, "entry", side_effect=observe),
+        ):
+            backend.delete(source)
+        self.assertTrue(source.closed)
+        self.assertEqual(len(api.disposition_calls), 1)
+        disposition = api.disposition_calls[0]
+        self.assertEqual(disposition["handle"], 303)
+        self.assertEqual(
+            disposition["information_class"],
+            windows_native.FILE_DISPOSITION_INFO_EX_CLASS,
+        )
+        self.assertEqual(
+            disposition["flags"],
+            windows_native.FILE_DISPOSITION_FLAG_DELETE
+            | windows_native.FILE_DISPOSITION_FLAG_POSIX_SEMANTICS
+            | windows_native.FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE,
+        )
+        self.assertEqual(api.events, ["entry-1", "disposition", "close", "entry-2"])
+        source_parent.close()
+        destination_parent.close()
+
+    def test_delete_falls_back_only_for_two_compatibility_errors(self) -> None:
+        for code in (
+            windows_native.ERROR_INVALID_PARAMETER,
+            windows_native.ERROR_NOT_SUPPORTED,
+        ):
+            api, backend, source_parent, destination_parent, source = self._fixture()
+            api.disposition_outcomes = [(False, code), (True, 0)]
+            observations = iter((_mutation_entry(source, "source"), None))
+            with (
+                self.subTest(code=code),
+                mock.patch.object(
+                    backend, "_metadata", return_value=_mutation_metadata(source)
+                ),
+                mock.patch.object(backend, "entry", side_effect=lambda *_: next(observations)),
+            ):
+                backend.delete(source)
+            self.assertEqual(
+                [call["information_class"] for call in api.disposition_calls],
+                [
+                    windows_native.FILE_DISPOSITION_INFO_EX_CLASS,
+                    windows_native.FILE_DISPOSITION_INFO_CLASS,
+                ],
+            )
+            self.assertEqual({call["handle"] for call in api.disposition_calls}, {303})
+            source_parent.close()
+            destination_parent.close()
+
+        api, backend, source_parent, destination_parent, source = self._fixture()
+        api.disposition_outcomes = [
+            (False, windows_native.ERROR_ACCESS_DENIED)
+        ]
+        with (
+            mock.patch.object(backend, "_metadata", return_value=_mutation_metadata(source)),
+            mock.patch.object(backend, "entry", return_value=_mutation_entry(source, "source")),
+            self.assertRaises(PermissionError),
+        ):
+            backend.delete(source)
+        self.assertEqual(len(api.disposition_calls), 1)
+        self.assertTrue(source.is_open)
+        source.close()
+        source_parent.close()
+        destination_parent.close()
+
+    def test_delete_close_failure_retries_without_second_disposition(self) -> None:
+        api, backend, source_parent, destination_parent, source = self._fixture()
+        api.close_outcomes = [False, True]
+        observations = iter((_mutation_entry(source, "source"), None))
+        with (
+            mock.patch.object(backend, "_metadata", return_value=_mutation_metadata(source)),
+            mock.patch.object(backend, "entry", side_effect=lambda *_: next(observations)),
+        ):
+            with self.assertRaises(OSError):
+                backend.delete(source)
+            self.assertTrue(source.is_open)
+            backend.delete(source)
+        self.assertTrue(source.closed)
+        self.assertEqual(len(api.disposition_calls), 1)
+        self.assertEqual(api.events.count("close"), 2)
+        source_parent.close()
+        destination_parent.close()
+
+    def test_delete_reports_same_name_replacement_without_mutating_it(self) -> None:
+        api, backend, source_parent, destination_parent, source = self._fixture()
+        replacement = windows_native.DirectoryEntry(
+            "source",
+            EntryKind.REGULAR,
+            FileIdentity(31, 999),
+            source.filesystem,
+            0,
+            0,
+        )
+        observations = iter((_mutation_entry(source, "source"), replacement))
+        with (
+            mock.patch.object(backend, "_metadata", return_value=_mutation_metadata(source)),
+            mock.patch.object(backend, "entry", side_effect=lambda *_: next(observations)),
+            self.assertRaisesRegex(OSError, "replacement|remains"),
+        ):
+            backend.delete(source)
+        self.assertTrue(source.closed)
+        self.assertEqual(len(api.disposition_calls), 1)
+        source_parent.close()
+        destination_parent.close()
+
+    def test_delete_rejects_wrong_policy_authority_or_parent_before_api(self) -> None:
+        for case in ("policy", "authority", "parent"):
+            api, backend, source_parent, destination_parent, source = self._fixture()
+            if case == "policy":
+                source._share_policy = SharePolicy.MUTATION
+            elif case == "authority":
+                backend._resource(source).delete_authority = False
+            else:
+                backend._resource(source).parent = None
+            with (
+                self.subTest(case=case),
+                mock.patch.object(backend, "_metadata") as metadata,
+                mock.patch.object(backend, "entry") as entry,
+                self.assertRaises(RuntimeError),
+            ):
+                backend.delete(source)
+            self.assertEqual(api.disposition_calls, [])
+            metadata.assert_not_called()
+            entry.assert_not_called()
+            source.close()
+            source_parent.close()
+            destination_parent.close()
+
+    def test_touch_and_flush_use_same_regular_handle_and_recheck_identity(self) -> None:
+        api, backend, source_parent, destination_parent, source = self._fixture()
+        matching = _mutation_metadata(source)
+        with mock.patch.object(
+            backend, "_metadata", side_effect=(matching, matching, matching, matching)
+        ):
+            backend.touch(cast(FileCapability, source))
+            backend.flush(cast(FileCapability, source))
+        touch_call = api.touch_call
+        self.assertEqual(int(cast(Any, touch_call[0])), 303)
+        self.assertFalse(cast(Any, touch_call[1]))
+        self.assertFalse(cast(Any, touch_call[2]))
+        self.assertTrue(cast(Any, touch_call[3]))
+        written = ctypes.cast(
+            cast(Any, touch_call[3]), ctypes.POINTER(windows_native.FILETIME)
+        ).contents
+        self.assertEqual(written.dwLowDateTime, 0x89AB_CDEF)
+        self.assertEqual(written.dwHighDateTime, 0x0123_4567)
+        self.assertEqual(api.flush_handle, 303)
+        source.close()
+        source_parent.close()
+        destination_parent.close()
+
+    def test_touch_and_flush_reject_api_or_identity_changes(self) -> None:
+        for operation in ("touch-error", "flush-error", "touch-identity", "flush-identity"):
+            api, backend, source_parent, destination_parent, source = self._fixture()
+            matching = _mutation_metadata(source)
+            changed = windows_native._Metadata(
+                FileIdentity(31, 999), source.filesystem, source.kind, 0, 0
+            )
+            if operation == "touch-error":
+                api.set_time_outcome = False
+                metadata_values = [matching]
+            elif operation == "flush-error":
+                api.flush_outcome = False
+                metadata_values = [matching]
+            else:
+                metadata_values = [matching, changed]
+            with (
+                self.subTest(operation=operation),
+                mock.patch.object(backend, "_metadata", side_effect=metadata_values),
+                self.assertRaises(OSError),
+            ):
+                if operation.startswith("touch"):
+                    backend.touch(cast(FileCapability, source))
+                else:
+                    backend.flush(cast(FileCapability, source))
+            source.close()
+            source_parent.close()
+            destination_parent.close()
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows native mutation")
+    def test_native_rename_is_pinned_relative_and_supports_replacement(self) -> None:
+        backend = WindowsFilesystemBackend()
+        with tempfile.TemporaryDirectory() as raw:
+            root_path = Path(raw)
+            destination_path = root_path / "destination"
+            destination_path.mkdir()
+            (root_path / "source").write_bytes(b"source")
+            (destination_path / "sentinel").write_bytes(b"sentinel")
+            root = backend.open_root(root_path, SharePolicy.MUTATION)
+            destination = backend.open_directory(
+                root, "destination", SharePolicy.MUTATION
+            )
+            source = backend.open_entry(root, "source", SharePolicy.PINNED)
+            identity = source.identity
+            try:
+                with self.assertRaises(OSError):
+                    (root_path / "source").rename(root_path / "external")
+                backend.rename(source, root, "x", replace=False)
+                self.assertIsNone(backend.entry(root, "source"))
+                same_parent = backend.entry(root, "x")
+                assert same_parent is not None
+                self.assertEqual(same_parent.identity, identity)
+                backend.rename(source, destination, "published", replace=False)
+                self.assertEqual(source.identity, identity)
+                self.assertIsNone(backend.entry(root, "x"))
+                published = backend.entry(destination, "published")
+                assert published is not None
+                self.assertEqual(published.identity, identity)
+
+                (destination_path / "target").write_bytes(b"sentinel")
+                second = root_path / "second"
+                second.write_bytes(b"replacement")
+                replacement = backend.open_entry(
+                    root, "second", SharePolicy.PINNED
+                )
+                try:
+                    with self.assertRaises(OSError):
+                        backend.rename(
+                            replacement, destination, "target", replace=False
+                        )
+                    self.assertEqual(
+                        (destination_path / "target").read_bytes(), b"sentinel"
+                    )
+                    backend.rename(
+                        replacement, destination, "target", replace=True
+                    )
+                    replacement.close()
+                    self.assertEqual(
+                        (destination_path / "target").read_bytes(), b"replacement"
+                    )
+                finally:
+                    replacement.close()
+                self.assertEqual(
+                    (destination_path / "sentinel").read_bytes(), b"sentinel"
+                )
+            finally:
+                source.close()
+                destination.close()
+                root.close()
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows native mutation")
+    def test_native_delete_handles_readonly_empty_directory_reparse_and_pin(self) -> None:
+        backend = WindowsFilesystemBackend()
+        with tempfile.TemporaryDirectory() as raw:
+            root_path = Path(raw)
+            readonly = root_path / "readonly"
+            readonly.write_bytes(b"payload")
+            readonly.chmod(0o444)
+            empty = root_path / "empty"
+            empty.mkdir()
+            nonempty = root_path / "nonempty"
+            nonempty.mkdir()
+            (nonempty / "sentinel").write_bytes(b"sentinel")
+            target = root_path / "target"
+            target.mkdir()
+            (target / "sentinel").write_bytes(b"outside")
+            WindowsEnumerationTests()._junction(root_path / "junction", target)
+            root = backend.open_root(root_path, SharePolicy.MUTATION)
+            try:
+                for name in ("readonly", "empty", "junction"):
+                    opened = backend.open_entry(root, name, SharePolicy.PINNED)
+                    try:
+                        if name == "readonly":
+                            with self.assertRaises(OSError):
+                                (root_path / name).rename(root_path / "external")
+                        backend.delete(opened)
+                    finally:
+                        opened.close()
+                    self.assertFalse((root_path / name).exists())
+                self.assertEqual((target / "sentinel").read_bytes(), b"outside")
+
+                directory = backend.open_directory(
+                    root, "nonempty", SharePolicy.PINNED
+                )
+                try:
+                    with self.assertRaises(OSError):
+                        backend.delete(directory)
+                    self.assertTrue(directory.is_open)
+                finally:
+                    directory.close()
+                self.assertEqual(
+                    (nonempty / "sentinel").read_bytes(), b"sentinel"
+                )
+            finally:
+                root.close()
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows native mutation")
+    def test_native_touch_flush_preserve_128_bit_identity_and_advance_time(self) -> None:
+        backend = WindowsFilesystemBackend()
+        with tempfile.TemporaryDirectory() as raw:
+            root_path = Path(raw)
+            (root_path / "heartbeat").write_bytes(b"heartbeat")
+            root = backend.open_root(root_path, SharePolicy.MUTATION)
+            heartbeat = backend.open_file(
+                root,
+                "heartbeat",
+                access=FileAccess.READ_WRITE,
+                disposition=CreateDisposition.OPEN_EXISTING,
+            )
+            identity = heartbeat.identity
+            before = backend.entry(root, "heartbeat")
+            assert before is not None
+            backend.touch(heartbeat)
+            backend.flush(heartbeat)
+            after = backend.entry(root, "heartbeat")
+            assert after is not None
+            self.assertEqual(after.identity, identity)
+            self.assertEqual(heartbeat.identity, identity)
+            self.assertGreaterEqual(after.modified_ns, before.modified_ns)
+            heartbeat.close()
+            root.close()
+
+
 class WindowsReviewFixTests(unittest.TestCase):
     def test_win32_error_mapping_preserves_errno_and_narrow_types(self) -> None:
         cases = (
@@ -1961,16 +3446,21 @@ class WindowsReviewFixTests(unittest.TestCase):
                 self.assertLessEqual(len(error.filename.encode("utf-8")), 4_096)
 
     @unittest.skipUnless(os.name == "nt", "requires Windows native handles")
-    def test_managed_parent_allows_only_existing_file_open(self) -> None:
+    def test_managed_parent_uses_security_only_for_created_files(self) -> None:
         api = WindowsOpenTests._ApiProxy()
         backend = WindowsFilesystemBackend(api=api)
         with tempfile.TemporaryDirectory() as raw:
             root_path = Path(raw)
-            (root_path / "existing").write_bytes(b"payload")
             root = backend.open_root(root_path, SharePolicy.MUTATION)
-            managed = backend.reopen_directory(root)
-            managed._security_domain = SecurityDomain.MANAGED
+            managed = backend.create_secure_root(root, "managed")
             try:
+                existing = backend.open_file(
+                    managed,
+                    "existing",
+                    access=FileAccess.READ_WRITE,
+                    disposition=CreateDisposition.CREATE_NEW,
+                )
+                existing.close()
                 listed = backend.entry(managed, "existing")
                 self.assertIsNotNone(listed)
                 opened = backend.open_file(
@@ -1984,6 +3474,12 @@ class WindowsReviewFixTests(unittest.TestCase):
                     self.assertEqual(opened.identity, listed.identity)
                     self.assertIs(opened.kind, EntryKind.REGULAR)
                     self.assertIs(opened.security_domain, SecurityDomain.MANAGED)
+                    record = api.nt_create_records[-1]
+                    self.assertEqual(record["security_descriptor"], 0)
+                    self.assertFalse(
+                        int(record["desired_access"])
+                        & windows_native.WRITE_DAC
+                    )
                 finally:
                     opened.close()
 
@@ -1993,14 +3489,33 @@ class WindowsReviewFixTests(unittest.TestCase):
                 ):
                     with self.subTest(disposition=disposition):
                         calls_before = api.nt_create_calls
-                        with self.assertRaises(NotImplementedError):
-                            backend.open_file(
-                                managed,
-                                name,
-                                access=FileAccess.READ_WRITE,
-                                disposition=disposition,
+                        created = backend.open_file(
+                            managed,
+                            name,
+                            access=FileAccess.READ_WRITE,
+                            disposition=disposition,
+                        )
+                        try:
+                            self.assertTrue(created.created)
+                            self.assertGreater(api.nt_create_calls, calls_before)
+                            records = api.nt_create_records[calls_before:]
+                            secured = [
+                                record
+                                for record in records
+                                if record["security_descriptor"]
+                            ]
+                            self.assertEqual(len(secured), 1)
+                            record = secured[0]
+                            self.assertNotEqual(record["security_descriptor"], 0)
+                            self.assertEqual(
+                                bool(
+                                    int(record["desired_access"])
+                                    & windows_native.WRITE_DAC
+                                ),
+                                disposition is CreateDisposition.OPEN_OR_CREATE,
                             )
-                        self.assertEqual(api.nt_create_calls, calls_before)
+                        finally:
+                            created.close()
             finally:
                 managed.close()
                 root.close()

@@ -37,6 +37,7 @@ ULONGLONG = ctypes.c_uint64
 
 DELETE = 0x0001_0000
 READ_CONTROL = 0x0002_0000
+WRITE_DAC = 0x0004_0000
 SYNCHRONIZE = 0x0010_0000
 FILE_READ_DATA = 0x0001
 FILE_LIST_DIRECTORY = FILE_READ_DATA
@@ -69,6 +70,9 @@ FILE_CREATE = 2
 FILE_OPEN_IF = 3
 FILE_OPENED = 1
 FILE_CREATED = 2
+FILE_RENAME_INFORMATION_CLASS = 10
+FILE_DISPOSITION_INFO_CLASS = 4
+FILE_DISPOSITION_INFO_EX_CLASS = 21
 FILE_ID_INFO_CLASS = 18
 FILE_ID_EXTD_DIRECTORY_INFO_CLASS = 19
 FILE_ID_EXTD_DIRECTORY_RESTART_INFO_CLASS = 20
@@ -81,6 +85,7 @@ _DIRECTORY_BUFFER_BYTES = 64 * 1024
 _FINAL_PATH_INITIAL_UNITS = 512
 _FINAL_PATH_MAX_UNITS = 16 * 1024
 _MAX_UINT64 = (1 << 64) - 1
+_MAX_TOKEN_USER_BYTES = 64 * 1024
 _VOLUME_GUID_ROOT = re.compile(
     r"^\\\\\?\\Volume\{"
     r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-"
@@ -92,9 +97,26 @@ ERROR_FILE_NOT_FOUND = 2
 ERROR_PATH_NOT_FOUND = 3
 ERROR_ACCESS_DENIED = 5
 ERROR_NO_MORE_FILES = 18
+ERROR_NOT_SUPPORTED = 50
+ERROR_INVALID_PARAMETER = 87
+ERROR_INSUFFICIENT_BUFFER = 122
 INVALID_OWNED_HANDLE = 0
 _INVALID_WIN32_HANDLE = ctypes.c_void_p(-1).value
 _ERROR_EVIDENCE_BYTES = 4_096
+
+TOKEN_QUERY = 0x0008
+TokenUser = 1
+SDDL_REVISION_1 = 1
+SE_FILE_OBJECT = 1
+OWNER_SECURITY_INFORMATION = 0x0000_0001
+GROUP_SECURITY_INFORMATION = 0x0000_0002
+DACL_SECURITY_INFORMATION = 0x0000_0004
+PROTECTED_DACL_SECURITY_INFORMATION = 0x8000_0000
+SE_DACL_PROTECTED = 0x1000
+
+FILE_DISPOSITION_FLAG_DELETE = 0x0000_0001
+FILE_DISPOSITION_FLAG_POSIX_SEMANTICS = 0x0000_0002
+FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE = 0x0000_0010
 
 _KERNEL32: Any | None
 _ADVAPI32: Any | None
@@ -195,6 +217,108 @@ class FILE_RENAME_INFORMATION(ctypes.Structure):
         ("FileNameLength", ULONG),
         ("FileName", WCHAR * 1),
     ]
+
+
+class SID_AND_ATTRIBUTES(ctypes.Structure):
+    _fields_ = [("Sid", ctypes.c_void_p), ("Attributes", ULONG)]
+
+
+class TOKEN_USER(ctypes.Structure):
+    _fields_ = [("User", SID_AND_ATTRIBUTES)]
+
+
+SECURITY_DESCRIPTOR_CONTROL = USHORT
+
+
+class ACL(ctypes.Structure):
+    _fields_ = [
+        ("AclRevision", ctypes.c_uint8),
+        ("Sbz1", ctypes.c_uint8),
+        ("AclSize", USHORT),
+        ("AceCount", USHORT),
+        ("Sbz2", USHORT),
+    ]
+
+
+class FILE_DISPOSITION_INFO(ctypes.Structure):
+    _fields_ = [("DeleteFile", ctypes.c_uint8)]
+
+
+class FILE_DISPOSITION_INFO_EX(ctypes.Structure):
+    _fields_ = [("Flags", ULONG)]
+
+
+class _LocalAllocation:
+    __slots__ = ("_api", "_label", "_pointer")
+
+    def __init__(self, api: Any, pointer: ctypes.c_void_p, label: str) -> None:
+        if not pointer.value:
+            raise OSError(f"{label} is null")
+        self._api = api
+        self._pointer = pointer
+        self._label = label
+
+    @property
+    def pointer(self) -> ctypes.c_void_p:
+        if not self._pointer.value:
+            raise RuntimeError(f"{self._label} is not owned")
+        return self._pointer
+
+    @property
+    def is_owned(self) -> bool:
+        return bool(self._pointer.value)
+
+    def close(self) -> None:
+        if not self._pointer.value:
+            return
+        failed = self._api.LocalFree(self._pointer)
+        if failed:
+            raise _error_from_win32(
+                self._api.last_error(), f"release {self._label}", self._label
+            )
+        self._pointer = ctypes.c_void_p()
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except (OSError, RuntimeError):
+            pass
+
+
+@dataclass(slots=True)
+class _TokenUserValue:
+    buffer: Any
+    sid: ctypes.c_void_p
+    sid_text: str
+
+
+@dataclass(slots=True)
+class _ManagedSecurityMaterial:
+    sid_owner: _TokenUserValue
+    allocation: _LocalAllocation
+    descriptor: ctypes.c_void_p
+    dacl: ctypes.c_void_p
+    dacl_bytes: bytes
+
+    @property
+    def sid(self) -> ctypes.c_void_p:
+        return self.sid_owner.sid
+
+    def close(self) -> None:
+        self.allocation.close()
+
+
+@dataclass(slots=True)
+class _SecuritySnapshot:
+    allocation: _LocalAllocation
+    owner: ctypes.c_void_p
+    dacl: ctypes.c_void_p
+    dacl_present: bool
+    control: int
+    dacl_bytes: bytes
+
+    def close(self) -> None:
+        self.allocation.close()
 
 
 @dataclass(frozen=True, slots=True)
@@ -300,6 +424,14 @@ def _encode_windows_component(name: str) -> bytes:
     if len(encoded) > 0xFFFF:
         raise ValueError("Windows filesystem component is too long")
     return encoded
+
+
+def _managed_security_sddl(user_sid: str, *, directory: bool) -> str:
+    inheritance = "OICI" if directory else ""
+    return (
+        f"O:{user_sid}D:P(A;{inheritance};FA;;;{user_sid})"
+        f"(A;{inheritance};FA;;;SY)(A;{inheritance};FA;;;BA)"
+    )
 
 
 def _share_mode(policy: SharePolicy) -> int:
@@ -643,6 +775,14 @@ class _WindowsApi:
         self.FlushFileBuffers = kernel32.FlushFileBuffers
         self.FlushFileBuffers.argtypes = (HANDLE,)
         self.FlushFileBuffers.restype = BOOL
+        self.SetFileInformationByHandle = kernel32.SetFileInformationByHandle
+        self.SetFileInformationByHandle.argtypes = (
+            HANDLE,
+            ctypes.c_int32,
+            ctypes.c_void_p,
+            ULONG,
+        )
+        self.SetFileInformationByHandle.restype = BOOL
         self.GetCurrentProcess = kernel32.GetCurrentProcess
         self.GetCurrentProcess.argtypes = ()
         self.GetCurrentProcess.restype = HANDLE
@@ -657,6 +797,99 @@ class _WindowsApi:
             ULONG,
         )
         self.DuplicateHandle.restype = BOOL
+        self.LocalFree = kernel32.LocalFree
+        self.LocalFree.argtypes = (ctypes.c_void_p,)
+        self.LocalFree.restype = ctypes.c_void_p
+
+        advapi32 = _ADVAPI32
+        self.OpenProcessToken = advapi32.OpenProcessToken
+        self.OpenProcessToken.argtypes = (
+            HANDLE,
+            ULONG,
+            ctypes.POINTER(HANDLE),
+        )
+        self.OpenProcessToken.restype = BOOL
+        self.GetTokenInformation = advapi32.GetTokenInformation
+        self.GetTokenInformation.argtypes = (
+            HANDLE,
+            ULONG,
+            ctypes.c_void_p,
+            ULONG,
+            ctypes.POINTER(ULONG),
+        )
+        self.GetTokenInformation.restype = BOOL
+        self.ConvertSidToStringSidW = advapi32.ConvertSidToStringSidW
+        self.ConvertSidToStringSidW.argtypes = (
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_wchar_p),
+        )
+        self.ConvertSidToStringSidW.restype = BOOL
+        self.ConvertStringSecurityDescriptorToSecurityDescriptorW = (
+            advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW
+        )
+        self.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = (
+            ctypes.c_wchar_p,
+            ULONG,
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ULONG),
+        )
+        self.ConvertStringSecurityDescriptorToSecurityDescriptorW.restype = BOOL
+        self.GetSecurityInfo = advapi32.GetSecurityInfo
+        self.GetSecurityInfo.argtypes = (
+            HANDLE,
+            ULONG,
+            ULONG,
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        )
+        self.GetSecurityInfo.restype = ULONG
+        self.SetSecurityInfo = advapi32.SetSecurityInfo
+        self.SetSecurityInfo.argtypes = (
+            HANDLE,
+            ULONG,
+            ULONG,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        )
+        self.SetSecurityInfo.restype = ULONG
+        self.GetNamedSecurityInfoW = advapi32.GetNamedSecurityInfoW
+        self.GetNamedSecurityInfoW.argtypes = (
+            ctypes.c_wchar_p,
+            ULONG,
+            ULONG,
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        )
+        self.GetNamedSecurityInfoW.restype = ULONG
+        self.GetSecurityDescriptorLength = advapi32.GetSecurityDescriptorLength
+        self.GetSecurityDescriptorLength.argtypes = (ctypes.c_void_p,)
+        self.GetSecurityDescriptorLength.restype = ULONG
+        self.GetSecurityDescriptorControl = advapi32.GetSecurityDescriptorControl
+        self.GetSecurityDescriptorControl.argtypes = (
+            ctypes.c_void_p,
+            ctypes.POINTER(SECURITY_DESCRIPTOR_CONTROL),
+            ctypes.POINTER(ULONG),
+        )
+        self.GetSecurityDescriptorControl.restype = BOOL
+        self.GetSecurityDescriptorDacl = advapi32.GetSecurityDescriptorDacl
+        self.GetSecurityDescriptorDacl.argtypes = (
+            ctypes.c_void_p,
+            ctypes.POINTER(BOOL),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(BOOL),
+        )
+        self.GetSecurityDescriptorDacl.restype = BOOL
+        self.EqualSid = advapi32.EqualSid
+        self.EqualSid.argtypes = (ctypes.c_void_p, ctypes.c_void_p)
+        self.EqualSid.restype = BOOL
         self.NtCreateFile = ntdll.NtCreateFile
         self.NtCreateFile.argtypes = (
             ctypes.POINTER(HANDLE),
@@ -672,6 +905,15 @@ class _WindowsApi:
             ULONG,
         )
         self.NtCreateFile.restype = NTSTATUS
+        self.NtSetInformationFile = ntdll.NtSetInformationFile
+        self.NtSetInformationFile.argtypes = (
+            HANDLE,
+            ctypes.POINTER(IO_STATUS_BLOCK),
+            ctypes.c_void_p,
+            ULONG,
+            ULONG,
+        )
+        self.NtSetInformationFile.restype = NTSTATUS
         self.RtlNtStatusToDosError = ntdll.RtlNtStatusToDosError
         self.RtlNtStatusToDosError.argtypes = (NTSTATUS,)
         self.RtlNtStatusToDosError.restype = ULONG
@@ -770,6 +1012,7 @@ class _WindowsResource:
     delete_authority: bool
     desired_access: int = 0
     share_mode: int = 0
+    disposition_set: bool = False
 
 
 class WindowsFilesystemBackend:
@@ -780,6 +1023,7 @@ class WindowsFilesystemBackend:
         osfhandle_opener: Callable[[int, int], int] | None = None,
     ) -> None:
         self._failed_closes: list[_WindowsResource] = []
+        self._failed_security_owners: list[Any] = []
         self._api = api if api is not None else _WindowsApi()
         if osfhandle_opener is None:
             if os.name != "nt":
@@ -847,6 +1091,296 @@ class WindowsFilesystemBackend:
                 )
             )
             self._failed_closes.append(resource)
+
+    def _close_security_owner(
+        self,
+        owner: Any,
+        primary_error: BaseException | None = None,
+    ) -> None:
+        try:
+            owner.close()
+        except BaseException as close_error:
+            self._failed_security_owners.append(owner)
+            if primary_error is None:
+                raise
+            primary_error.add_note(
+                _bounded_evidence(
+                    f"security allocation release failed: {close_error}"
+                )
+            )
+
+    @staticmethod
+    def _acl_bytes(dacl: ctypes.c_void_p) -> bytes:
+        if not dacl.value:
+            raise OSError("security descriptor DACL is null")
+        acl = ctypes.cast(dacl, ctypes.POINTER(ACL)).contents
+        size = int(acl.AclSize)
+        if size < ctypes.sizeof(ACL):
+            raise OSError("security descriptor DACL size is invalid")
+        return ctypes.string_at(dacl, size)
+
+    def _current_token_user(self) -> _TokenUserValue:
+        token = HANDLE()
+        if not self._api.OpenProcessToken(
+            self._api.GetCurrentProcess(),
+            TOKEN_QUERY,
+            ctypes.byref(token),
+        ):
+            self._raise_last_error("open current process token", "TOKEN_USER")
+        token_handle = int(token.value or 0)
+        if token_handle == INVALID_OWNED_HANDLE:
+            raise OSError("OpenProcessToken returned an invalid handle")
+        try:
+            needed = ULONG()
+            size_result = self._api.GetTokenInformation(
+                token,
+                TokenUser,
+                None,
+                0,
+                ctypes.byref(needed),
+            )
+            if size_result or self._api.last_error() != ERROR_INSUFFICIENT_BUFFER:
+                raise OSError("TOKEN_USER size query returned an unexpected result")
+            size = int(needed.value)
+            if size <= 0 or size > _MAX_TOKEN_USER_BYTES:
+                raise OSError("TOKEN_USER size is outside the bounded buffer")
+            buffer = ctypes.create_string_buffer(size)
+            if not self._api.GetTokenInformation(
+                token,
+                TokenUser,
+                buffer,
+                size,
+                ctypes.byref(needed),
+            ):
+                self._raise_last_error("read current token user", "TOKEN_USER")
+            if int(needed.value) <= 0 or int(needed.value) > size:
+                raise OSError("TOKEN_USER returned an invalid buffer length")
+            token_user = ctypes.cast(buffer, ctypes.POINTER(TOKEN_USER)).contents
+            sid = ctypes.c_void_p(token_user.User.Sid)
+            if not sid.value:
+                raise OSError("TOKEN_USER returned a null SID")
+            sid_string = ctypes.c_wchar_p()
+            if not self._api.ConvertSidToStringSidW(
+                sid, ctypes.byref(sid_string)
+            ):
+                self._raise_last_error("convert current token SID", "TOKEN_USER")
+            allocation = _LocalAllocation(
+                self._api,
+                ctypes.cast(sid_string, ctypes.c_void_p),
+                "token SID string",
+            )
+            try:
+                if not sid_string.value:
+                    raise OSError("token SID conversion returned an empty string")
+                sid_text = sid_string.value
+            except BaseException as primary_error:
+                self._close_security_owner(allocation, primary_error)
+                raise
+            self._close_security_owner(allocation)
+            result = _TokenUserValue(buffer, sid, sid_text)
+        except BaseException as primary_error:
+            self._close_after_error(
+                primary_error,
+                token_handle,
+                None,
+                "process token",
+                False,
+            )
+            raise
+        token_resource = _WindowsResource(
+            token_handle, None, "process token", False
+        )
+        try:
+            self.close_resource(token_resource)
+        except BaseException:
+            self._failed_closes.append(token_resource)
+            raise
+        return result
+
+    def _managed_security_material(
+        self, *, directory: bool
+    ) -> _ManagedSecurityMaterial:
+        token_user = self._current_token_user()
+        sddl = _managed_security_sddl(
+            token_user.sid_text, directory=directory
+        )
+        descriptor = ctypes.c_void_p()
+        descriptor_size = ULONG()
+        if not self._api.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl,
+            SDDL_REVISION_1,
+            ctypes.byref(descriptor),
+            ctypes.byref(descriptor_size),
+        ):
+            self._raise_last_error("convert managed security descriptor", sddl)
+        allocation = _LocalAllocation(
+            self._api, descriptor, "managed security descriptor"
+        )
+        try:
+            if int(descriptor_size.value) <= 0:
+                raise OSError("managed security descriptor has zero length")
+            present = BOOL()
+            defaulted = BOOL()
+            dacl = ctypes.c_void_p()
+            if not self._api.GetSecurityDescriptorDacl(
+                descriptor,
+                ctypes.byref(present),
+                ctypes.byref(dacl),
+                ctypes.byref(defaulted),
+            ):
+                self._raise_last_error(
+                    "read managed security descriptor DACL", sddl
+                )
+            if not present.value or not dacl.value:
+                raise OSError("managed security descriptor has no DACL")
+            dacl_bytes = self._acl_bytes(dacl)
+            return _ManagedSecurityMaterial(
+                token_user,
+                allocation,
+                descriptor,
+                dacl,
+                dacl_bytes,
+            )
+        except BaseException as primary_error:
+            self._close_security_owner(allocation, primary_error)
+            raise
+
+    def _read_security_snapshot(
+        self,
+        resource: _WindowsResource,
+        component: object,
+    ) -> _SecuritySnapshot:
+        owner = ctypes.c_void_p()
+        dacl = ctypes.c_void_p()
+        descriptor = ctypes.c_void_p()
+        result = int(
+            self._api.GetSecurityInfo(
+                resource.handle,
+                SE_FILE_OBJECT,
+                OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+                ctypes.byref(owner),
+                None,
+                ctypes.byref(dacl),
+                None,
+                ctypes.byref(descriptor),
+            )
+        )
+        if result != 0:
+            raise _error_from_win32(
+                result, "read managed filesystem security", component
+            )
+        allocation = _LocalAllocation(
+            self._api, descriptor, "queried security descriptor"
+        )
+        try:
+            if not owner.value:
+                raise OSError("managed filesystem owner is null")
+            control = SECURITY_DESCRIPTOR_CONTROL()
+            revision = ULONG()
+            if not self._api.GetSecurityDescriptorControl(
+                descriptor,
+                ctypes.byref(control),
+                ctypes.byref(revision),
+            ):
+                self._raise_last_error(
+                    "read managed security descriptor control", component
+                )
+            present = BOOL()
+            defaulted = BOOL()
+            descriptor_dacl = ctypes.c_void_p()
+            if not self._api.GetSecurityDescriptorDacl(
+                descriptor,
+                ctypes.byref(present),
+                ctypes.byref(descriptor_dacl),
+                ctypes.byref(defaulted),
+            ):
+                self._raise_last_error(
+                    "read managed security descriptor DACL", component
+                )
+            if descriptor_dacl.value != dacl.value:
+                raise OSError("managed security descriptor DACL is inconsistent")
+            dacl_bytes = (
+                self._acl_bytes(descriptor_dacl)
+                if present.value and descriptor_dacl.value
+                else b""
+            )
+            return _SecuritySnapshot(
+                allocation,
+                owner,
+                descriptor_dacl,
+                bool(present.value),
+                int(control.value),
+                dacl_bytes,
+            )
+        except BaseException as primary_error:
+            self._close_security_owner(allocation, primary_error)
+            raise
+
+    def _verify_managed_security_resource(
+        self,
+        resource: _WindowsResource,
+        *,
+        directory: bool,
+        component: object,
+        repair_dacl: bool,
+        material: Any | None = None,
+    ) -> None:
+        owns_material = material is None
+        if material is None:
+            material = self._managed_security_material(directory=directory)
+        primary_error: BaseException | None = None
+        try:
+            repaired = False
+            while True:
+                snapshot = self._read_security_snapshot(resource, component)
+                snapshot_error: BaseException | None = None
+                try:
+                    if not self._api.EqualSid(snapshot.owner, material.sid):
+                        raise PermissionError(
+                            "managed filesystem owner does not match TOKEN_USER"
+                        )
+                    dacl_matches = (
+                        snapshot.dacl_present
+                        and bool(snapshot.dacl.value)
+                        and bool(snapshot.control & SE_DACL_PROTECTED)
+                        and snapshot.dacl_bytes == material.dacl_bytes
+                    )
+                    if dacl_matches:
+                        return
+                    if not repair_dacl or repaired:
+                        raise PermissionError(
+                            "managed filesystem DACL does not match the protocol"
+                        )
+                    result = int(
+                        self._api.SetSecurityInfo(
+                            resource.handle,
+                            SE_FILE_OBJECT,
+                            DACL_SECURITY_INFORMATION
+                            | PROTECTED_DACL_SECURITY_INFORMATION,
+                            None,
+                            None,
+                            material.dacl,
+                            None,
+                        )
+                    )
+                    if result != 0:
+                        raise _error_from_win32(
+                            result,
+                            "repair managed filesystem DACL",
+                            component,
+                        )
+                    repaired = True
+                except BaseException as error:
+                    snapshot_error = error
+                    raise
+                finally:
+                    self._close_security_owner(snapshot, snapshot_error)
+        except BaseException as error:
+            primary_error = error
+            raise
+        finally:
+            if owns_material:
+                self._close_security_owner(material, primary_error)
 
     def _metadata(self, handle: int, component: object) -> _Metadata:
         file_id = FILE_ID_INFO()
@@ -916,6 +1450,7 @@ class WindowsFilesystemBackend:
         create_options: int,
         file_attributes: int,
         run_hooks: bool,
+        security_descriptor: ctypes.c_void_p | None = None,
     ) -> tuple[int, int]:
         encoded = _encode_windows_component(name)
         parent_resource = self._resource(parent)
@@ -931,7 +1466,7 @@ class WindowsFilesystemBackend:
             parent_resource.handle,
             ctypes.pointer(unicode_name),
             OBJ_CASE_INSENSITIVE,
-            None,
+            security_descriptor,
             None,
         )
         result_handle = HANDLE()
@@ -1105,6 +1640,101 @@ class WindowsFilesystemBackend:
             )
         return observed
 
+    def _set_delete_disposition(self, resource: _WindowsResource) -> None:
+        extended = FILE_DISPOSITION_INFO_EX(
+            FILE_DISPOSITION_FLAG_DELETE
+            | FILE_DISPOSITION_FLAG_POSIX_SEMANTICS
+            | FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE
+        )
+        if self._api.SetFileInformationByHandle(
+            resource.handle,
+            FILE_DISPOSITION_INFO_EX_CLASS,
+            ctypes.byref(extended),
+            ctypes.sizeof(extended),
+        ):
+            return
+        code = self._api.last_error()
+        if code not in {ERROR_INVALID_PARAMETER, ERROR_NOT_SUPPORTED}:
+            raise _error_from_win32(
+                code, "set exact-handle delete disposition", resource.name
+            )
+        legacy = FILE_DISPOSITION_INFO(True)
+        if not self._api.SetFileInformationByHandle(
+            resource.handle,
+            FILE_DISPOSITION_INFO_CLASS,
+            ctypes.byref(legacy),
+            ctypes.sizeof(legacy),
+        ):
+            raise _error_from_win32(
+                self._api.last_error(),
+                "set legacy exact-handle delete disposition",
+                resource.name,
+            )
+
+    def _rollback_created_handle(
+        self,
+        primary_error: BaseException,
+        handle: int,
+        parent: DirectoryCapability,
+        name: str,
+        desired_access: int,
+        share_mode: int,
+    ) -> None:
+        resource = _WindowsResource(
+            handle,
+            parent,
+            name,
+            bool(desired_access & DELETE),
+            desired_access,
+            share_mode,
+        )
+        try:
+            self._set_delete_disposition(resource)
+        except BaseException as rollback_error:
+            primary_error.add_note(
+                _bounded_evidence(
+                    f"created-object exact-handle rollback failed: {rollback_error}"
+                )
+            )
+        try:
+            self.close_resource(resource)
+        except BaseException as close_error:
+            primary_error.add_note(
+                _bounded_evidence(
+                    f"filesystem capability close failed: {close_error}"
+                )
+            )
+            self._failed_closes.append(resource)
+
+    def _cleanup_relative_open_after_error(
+        self,
+        primary_error: BaseException,
+        *,
+        handle: int,
+        information: int,
+        parent: DirectoryCapability,
+        name: str,
+        desired_access: int,
+        share_policy: SharePolicy,
+    ) -> None:
+        if information == FILE_CREATED:
+            self._rollback_created_handle(
+                primary_error,
+                handle,
+                parent,
+                name,
+                desired_access,
+                _share_mode(share_policy),
+            )
+            return
+        self._close_after_error(
+            primary_error,
+            handle,
+            parent,
+            name,
+            bool(desired_access & DELETE),
+        )
+
     def _finish_relative_open(
         self,
         *,
@@ -1138,13 +1768,95 @@ class WindowsFilesystemBackend:
                 )
             return metadata, information == FILE_CREATED
         except BaseException as primary_error:
-            self._close_after_error(
+            self._cleanup_relative_open_after_error(
                 primary_error,
+                handle=handle,
+                information=information,
+                parent=parent,
+                name=name,
+                desired_access=desired_access,
+                share_policy=share_policy,
+            )
+            raise
+
+    def _managed_relative_open(
+        self,
+        *,
+        parent: DirectoryCapability,
+        name: str,
+        desired_access: int,
+        share_policy: SharePolicy,
+        disposition: int,
+        create_options: int,
+        file_attributes: int,
+        expected: DirectoryEntry | None,
+        expected_kind: EntryKind,
+        allowed_information: set[int],
+    ) -> tuple[int, _Metadata, bool]:
+        material = self._managed_security_material(
+            directory=expected_kind is EntryKind.DIRECTORY
+        )
+        cleanup_material: _ManagedSecurityMaterial | None = material
+        handle: int | None = None
+        information = 0
+        finished = False
+        try:
+            handle, information = self._native_relative_open(
+                parent,
+                name,
+                desired_access=desired_access,
+                share_mode=_share_mode(share_policy),
+                disposition=disposition,
+                create_options=create_options,
+                file_attributes=file_attributes,
+                run_hooks=True,
+                security_descriptor=material.descriptor,
+            )
+            metadata, created = self._finish_relative_open(
+                handle=handle,
+                information=information,
+                parent=parent,
+                name=name,
+                desired_access=desired_access,
+                share_policy=share_policy,
+                expected=expected,
+                expected_kind=expected_kind,
+                allowed_information=allowed_information,
+            )
+            finished = True
+            resource = _WindowsResource(
                 handle,
                 parent,
                 name,
                 bool(desired_access & DELETE),
+                desired_access,
+                _share_mode(share_policy),
             )
+            self._verify_managed_security_resource(
+                resource,
+                directory=expected_kind is EntryKind.DIRECTORY,
+                component=name,
+                repair_dacl=not created,
+                material=material,
+            )
+            owner = cleanup_material
+            cleanup_material = None
+            assert owner is not None
+            self._close_security_owner(owner)
+            return handle, metadata, created
+        except BaseException as primary_error:
+            if finished and handle is not None:
+                self._cleanup_relative_open_after_error(
+                    primary_error,
+                    handle=handle,
+                    information=information,
+                    parent=parent,
+                    name=name,
+                    desired_access=desired_access,
+                    share_policy=share_policy,
+                )
+            if cleanup_material is not None:
+                self._close_security_owner(cleanup_material, primary_error)
             raise
 
     def open_root(
@@ -1153,11 +1865,11 @@ class WindowsFilesystemBackend:
         share_policy: SharePolicy,
         security_domain: SecurityDomain = SecurityDomain.CALLER,
     ) -> DirectoryCapability:
-        if security_domain is not SecurityDomain.CALLER:
-            raise NotImplementedError("managed Windows security is not available")
         if not path.is_absolute():
             raise ValueError("Windows filesystem root must be absolute")
         desired_access = _directory_access(share_policy, relative_target=False)
+        if security_domain is SecurityDomain.MANAGED:
+            desired_access |= WRITE_DAC
         handle_value = self._api.CreateFileW(
             str(path),
             desired_access,
@@ -1179,6 +1891,20 @@ class WindowsFilesystemBackend:
                 expected_kind=EntryKind.DIRECTORY,
                 operation="filesystem root",
             )
+            if security_domain is SecurityDomain.MANAGED:
+                self._verify_managed_security_resource(
+                    _WindowsResource(
+                        handle,
+                        None,
+                        str(path),
+                        bool(desired_access & DELETE),
+                        desired_access,
+                        _share_mode(share_policy),
+                    ),
+                    directory=True,
+                    component=path,
+                    repair_dacl=True,
+                )
             return self._directory_capability(
                 handle,
                 metadata,
@@ -1292,41 +2018,66 @@ class WindowsFilesystemBackend:
         name: str,
         share_policy: SharePolicy,
     ) -> DirectoryCapability:
-        if parent.security_domain is not SecurityDomain.CALLER:
-            raise NotImplementedError("managed Windows security is not available")
+        _encode_windows_component(name)
         desired_access = _directory_access(share_policy, relative_target=True)
-        handle, information = self._native_relative_open(
-            parent,
-            name,
-            desired_access=desired_access,
-            share_mode=_share_mode(share_policy),
-            disposition=FILE_CREATE,
-            create_options=FILE_OPEN_REPARSE_POINT | FILE_DIRECTORY_FILE,
-            file_attributes=FILE_ATTRIBUTE_DIRECTORY,
-            run_hooks=True,
-        )
-        metadata, created = self._finish_relative_open(
-            handle=handle,
-            information=information,
-            parent=parent,
-            name=name,
-            desired_access=desired_access,
-            share_policy=share_policy,
-            expected=None,
-            expected_kind=EntryKind.DIRECTORY,
-            allowed_information={FILE_CREATED},
-        )
-        return self._directory_capability(
-            handle,
-            metadata,
-            parent=parent,
-            name=name,
-            share_policy=share_policy,
-            security_domain=parent.security_domain,
-            created=created,
-            path_hint=parent.path_hint / name,
-            desired_access=desired_access,
-        )
+        if parent.security_domain is SecurityDomain.MANAGED:
+            handle, metadata, created = self._managed_relative_open(
+                parent=parent,
+                name=name,
+                desired_access=desired_access,
+                share_policy=share_policy,
+                disposition=FILE_CREATE,
+                create_options=FILE_OPEN_REPARSE_POINT | FILE_DIRECTORY_FILE,
+                file_attributes=FILE_ATTRIBUTE_DIRECTORY,
+                expected=None,
+                expected_kind=EntryKind.DIRECTORY,
+                allowed_information={FILE_CREATED},
+            )
+        else:
+            handle, information = self._native_relative_open(
+                parent,
+                name,
+                desired_access=desired_access,
+                share_mode=_share_mode(share_policy),
+                disposition=FILE_CREATE,
+                create_options=FILE_OPEN_REPARSE_POINT | FILE_DIRECTORY_FILE,
+                file_attributes=FILE_ATTRIBUTE_DIRECTORY,
+                run_hooks=True,
+            )
+            metadata, created = self._finish_relative_open(
+                handle=handle,
+                information=information,
+                parent=parent,
+                name=name,
+                desired_access=desired_access,
+                share_policy=share_policy,
+                expected=None,
+                expected_kind=EntryKind.DIRECTORY,
+                allowed_information={FILE_CREATED},
+            )
+        try:
+            return self._directory_capability(
+                handle,
+                metadata,
+                parent=parent,
+                name=name,
+                share_policy=share_policy,
+                security_domain=parent.security_domain,
+                created=created,
+                path_hint=parent.path_hint / name,
+                desired_access=desired_access,
+            )
+        except BaseException as primary_error:
+            self._cleanup_relative_open_after_error(
+                primary_error,
+                handle=handle,
+                information=FILE_CREATED if created else FILE_OPENED,
+                parent=parent,
+                name=name,
+                desired_access=desired_access,
+                share_policy=share_policy,
+            )
+            raise
 
     def open_file(
         self,
@@ -1337,11 +2088,6 @@ class WindowsFilesystemBackend:
         disposition: CreateDisposition,
         share_policy: SharePolicy = SharePolicy.MUTATION,
     ) -> FileCapability:
-        if (
-            parent.security_domain is SecurityDomain.MANAGED
-            and disposition is not CreateDisposition.OPEN_EXISTING
-        ):
-            raise NotImplementedError("managed Windows security is not available")
         _encode_windows_component(name)
         if disposition is CreateDisposition.OPEN_EXISTING:
             expected = self._observe_required(parent, name)
@@ -1356,27 +2102,50 @@ class WindowsFilesystemBackend:
             native_disposition = FILE_OPEN_IF
             allowed_information = {FILE_OPENED, FILE_CREATED}
         desired_access = _file_access(access, share_policy)
-        handle, information = self._native_relative_open(
-            parent,
-            name,
-            desired_access=desired_access,
-            share_mode=_share_mode(share_policy),
-            disposition=native_disposition,
-            create_options=FILE_OPEN_REPARSE_POINT | FILE_NON_DIRECTORY_FILE,
-            file_attributes=FILE_ATTRIBUTE_NORMAL,
-            run_hooks=True,
+        managed_creation = (
+            parent.security_domain is SecurityDomain.MANAGED
+            and disposition is not CreateDisposition.OPEN_EXISTING
         )
-        metadata, created = self._finish_relative_open(
-            handle=handle,
-            information=information,
-            parent=parent,
-            name=name,
-            desired_access=desired_access,
-            share_policy=share_policy,
-            expected=expected,
-            expected_kind=EntryKind.REGULAR,
-            allowed_information=allowed_information,
-        )
+        if (
+            parent.security_domain is SecurityDomain.MANAGED
+            and disposition is CreateDisposition.OPEN_OR_CREATE
+        ):
+            desired_access |= WRITE_DAC
+        if managed_creation:
+            handle, metadata, created = self._managed_relative_open(
+                parent=parent,
+                name=name,
+                desired_access=desired_access,
+                share_policy=share_policy,
+                disposition=native_disposition,
+                create_options=FILE_OPEN_REPARSE_POINT | FILE_NON_DIRECTORY_FILE,
+                file_attributes=FILE_ATTRIBUTE_NORMAL,
+                expected=expected,
+                expected_kind=EntryKind.REGULAR,
+                allowed_information=allowed_information,
+            )
+        else:
+            handle, information = self._native_relative_open(
+                parent,
+                name,
+                desired_access=desired_access,
+                share_mode=_share_mode(share_policy),
+                disposition=native_disposition,
+                create_options=FILE_OPEN_REPARSE_POINT | FILE_NON_DIRECTORY_FILE,
+                file_attributes=FILE_ATTRIBUTE_NORMAL,
+                run_hooks=True,
+            )
+            metadata, created = self._finish_relative_open(
+                handle=handle,
+                information=information,
+                parent=parent,
+                name=name,
+                desired_access=desired_access,
+                share_policy=share_policy,
+                expected=expected,
+                expected_kind=EntryKind.REGULAR,
+                allowed_information=allowed_information,
+            )
         resource = _WindowsResource(
             handle,
             parent,
@@ -1385,19 +2154,31 @@ class WindowsFilesystemBackend:
             desired_access,
             _share_mode(share_policy),
         )
-        return FileCapability(
-            self,
-            resource,
-            identity=metadata.identity,
-            filesystem=metadata.filesystem,
-            kind=EntryKind.REGULAR,
-            logical_size=metadata.logical_size,
-            modified_ns=metadata.modified_ns,
-            security_domain=parent.security_domain,
-            share_policy=share_policy,
-            created=created,
-            path_hint=parent.path_hint / name,
-        )
+        try:
+            return FileCapability(
+                self,
+                resource,
+                identity=metadata.identity,
+                filesystem=metadata.filesystem,
+                kind=EntryKind.REGULAR,
+                logical_size=metadata.logical_size,
+                modified_ns=metadata.modified_ns,
+                security_domain=parent.security_domain,
+                share_policy=share_policy,
+                created=created,
+                path_hint=parent.path_hint / name,
+            )
+        except BaseException as primary_error:
+            self._cleanup_relative_open_after_error(
+                primary_error,
+                handle=handle,
+                information=FILE_CREATED if created else FILE_OPENED,
+                parent=parent,
+                name=name,
+                desired_access=desired_access,
+                share_policy=share_policy,
+            )
+            raise
 
     def open_entry(
         self,
@@ -1501,7 +2282,47 @@ class WindowsFilesystemBackend:
     def create_secure_root(
         self, parent: DirectoryCapability, name: str
     ) -> DirectoryCapability:
-        raise NotImplementedError("managed Windows security is not available")
+        _encode_windows_component(name)
+        desired_access = (
+            _directory_access(SharePolicy.MUTATION, relative_target=True)
+            | READ_CONTROL
+            | WRITE_DAC
+        )
+        handle, metadata, created = self._managed_relative_open(
+            parent=parent,
+            name=name,
+            desired_access=desired_access,
+            share_policy=SharePolicy.MUTATION,
+            disposition=FILE_OPEN_IF,
+            create_options=FILE_OPEN_REPARSE_POINT | FILE_DIRECTORY_FILE,
+            file_attributes=FILE_ATTRIBUTE_DIRECTORY,
+            expected=self.entry(parent, name),
+            expected_kind=EntryKind.DIRECTORY,
+            allowed_information={FILE_OPENED, FILE_CREATED},
+        )
+        try:
+            return self._directory_capability(
+                handle,
+                metadata,
+                parent=parent,
+                name=name,
+                share_policy=SharePolicy.MUTATION,
+                security_domain=SecurityDomain.MANAGED,
+                created=created,
+                path_hint=parent.path_hint / name,
+                desired_access=desired_access,
+            )
+        except BaseException as primary_error:
+            self._cleanup_relative_open_after_error(
+                primary_error,
+                handle=handle,
+                information=FILE_CREATED if created else FILE_OPENED,
+                parent=parent,
+                name=name,
+                desired_access=desired_access,
+                share_policy=SharePolicy.MUTATION,
+            )
+            raise
 
     def entries(self, parent: DirectoryCapability) -> DirectoryIterator:
         reopened = self.reopen_directory(parent)
@@ -1606,6 +2427,51 @@ class WindowsFilesystemBackend:
             raise OSError("capacity root identity changed")
         return metadata
 
+    @staticmethod
+    def _metadata_matches_capability(
+        metadata: _Metadata,
+        capability: FileCapability | DirectoryCapability,
+    ) -> bool:
+        return (
+            metadata.identity == capability.identity
+            and metadata.filesystem == capability.filesystem
+            and metadata.kind is capability.kind
+        )
+
+    def _relative_mutation_resource(
+        self,
+        capability: FileCapability | DirectoryCapability,
+        operation: str,
+    ) -> tuple[_WindowsResource, DirectoryCapability, str]:
+        if capability.share_policy is not SharePolicy.PINNED:
+            raise RuntimeError(f"Windows {operation} requires a PINNED capability")
+        resource = self._resource(capability)
+        if not resource.delete_authority:
+            raise RuntimeError(f"Windows {operation} requires native DELETE authority")
+        if resource.parent is None or resource.name is None:
+            raise RuntimeError(f"Windows {operation} requires a relative capability")
+        parent = resource.parent
+        self._resource(parent)
+        if capability.filesystem != parent.filesystem:
+            raise OSError(f"Windows {operation} source crosses a filesystem boundary")
+        return resource, parent, resource.name
+
+    def _revalidate_mutation_source(
+        self,
+        capability: FileCapability | DirectoryCapability,
+        resource: _WindowsResource,
+        parent: DirectoryCapability,
+        name: str,
+        operation: str,
+    ) -> _Metadata:
+        metadata = self._metadata(resource.handle, capability.path_hint)
+        if not self._metadata_matches_capability(metadata, capability):
+            raise OSError(f"Windows {operation} source handle identity changed")
+        observed = self.entry(parent, name)
+        if observed is None or not self._same_evidence(metadata, observed):
+            raise OSError(f"Windows {operation} source entry identity changed")
+        return metadata
+
     def rename(
         self,
         source: FileCapability | DirectoryCapability,
@@ -1614,10 +2480,93 @@ class WindowsFilesystemBackend:
         *,
         replace: bool,
     ) -> None:
-        raise NotImplementedError("Windows rename is not available")
+        encoded_name = _encode_windows_component(destination_name)
+        resource, source_parent, source_name = self._relative_mutation_resource(
+            source, "rename"
+        )
+        destination_resource = self._resource(destination_parent)
+        if source.filesystem != destination_parent.filesystem:
+            raise OSError("Windows rename destination crosses a filesystem boundary")
+        before = self._revalidate_mutation_source(
+            source,
+            resource,
+            source_parent,
+            source_name,
+            "rename",
+        )
+
+        allocation_size = FILE_RENAME_INFORMATION.FileName.offset + len(encoded_name)
+        buffer_size = max(
+            allocation_size, ctypes.sizeof(FILE_RENAME_INFORMATION)
+        )
+        allocation = ctypes.create_string_buffer(buffer_size)
+        information = FILE_RENAME_INFORMATION.from_buffer(allocation)
+        information.ReplaceIfExists = int(replace)
+        information.RootDirectory = destination_resource.handle
+        information.FileNameLength = len(encoded_name)
+        ctypes.memmove(
+            ctypes.addressof(allocation) + FILE_RENAME_INFORMATION.FileName.offset,
+            encoded_name,
+            len(encoded_name),
+        )
+        io_status = IO_STATUS_BLOCK()
+        status = int(
+            self._api.NtSetInformationFile(
+                resource.handle,
+                ctypes.byref(io_status),
+                allocation,
+                buffer_size,
+                FILE_RENAME_INFORMATION_CLASS,
+            )
+        )
+        if status < 0:
+            code = int(self._api.RtlNtStatusToDosError(status))
+            raise _error_from_win32(
+                code, "rename exact filesystem capability", destination_name
+            )
+
+        after = self._metadata(resource.handle, source.path_hint)
+        if (
+            not self._metadata_matches_capability(after, source)
+            or after.identity != before.identity
+            or after.filesystem != before.filesystem
+        ):
+            raise OSError("Windows rename source handle identity changed after mutation")
+        destination = self.entry(destination_parent, destination_name)
+        if destination is None or not self._same_evidence(after, destination):
+            raise OSError("Windows rename destination identity is ambiguous")
+        same_entry = (
+            source_parent.identity == destination_parent.identity
+            and source_parent.filesystem == destination_parent.filesystem
+            and source_name == destination_name
+        )
+        if not same_entry and self.entry(source_parent, source_name) is not None:
+            raise OSError("Windows rename old source entry remains present")
+
+        resource.parent = destination_parent
+        resource.name = destination_name
+        source._path_hint = destination_parent.path_hint / destination_name
 
     def delete(self, capability: FileCapability | DirectoryCapability) -> None:
-        raise NotImplementedError("Windows delete is not available")
+        resource, parent, name = self._relative_mutation_resource(
+            capability, "delete"
+        )
+        if not resource.disposition_set:
+            self._revalidate_mutation_source(
+                capability,
+                resource,
+                parent,
+                name,
+                "delete",
+            )
+            self._set_delete_disposition(resource)
+            resource.disposition_set = True
+        capability.close()
+        remaining = self.entry(parent, name)
+        if remaining is not None:
+            raise OSError(
+                "Windows delete found the original or a same-name replacement"
+            )
 
     def available_bytes(self, directory: DirectoryCapability) -> int:
         before = self._capacity_handle_metadata(directory)
@@ -1656,10 +2605,45 @@ class WindowsFilesystemBackend:
         return sectors_per_cluster * bytes_per_sector
 
     def touch(self, file: FileCapability) -> None:
-        raise NotImplementedError("Windows timestamp mutation is not available")
+        if not isinstance(file, FileCapability) or file.kind is not EntryKind.REGULAR:
+            raise RuntimeError("Windows touch requires a regular file capability")
+        resource = self._resource(file)
+        before = self._metadata(resource.handle, file.path_hint)
+        if not self._metadata_matches_capability(before, file):
+            raise OSError("Windows touch file identity changed before mutation")
+        now = FILETIME()
+        self._api.GetSystemTimeAsFileTime(ctypes.byref(now))
+        if not self._api.SetFileTime(
+            resource.handle,
+            None,
+            None,
+            ctypes.byref(now),
+        ):
+            self._raise_last_error("update file last-write time", file.path_hint)
+        after = self._metadata(resource.handle, file.path_hint)
+        if (
+            not self._metadata_matches_capability(after, file)
+            or after.identity != before.identity
+            or after.filesystem != before.filesystem
+        ):
+            raise OSError("Windows touch file identity changed after mutation")
 
     def flush(self, file: FileCapability) -> None:
-        raise NotImplementedError("Windows flush is not available")
+        if not isinstance(file, FileCapability) or file.kind is not EntryKind.REGULAR:
+            raise RuntimeError("Windows flush requires a regular file capability")
+        resource = self._resource(file)
+        before = self._metadata(resource.handle, file.path_hint)
+        if not self._metadata_matches_capability(before, file):
+            raise OSError("Windows flush file identity changed before mutation")
+        if not self._api.FlushFileBuffers(resource.handle):
+            self._raise_last_error("flush file capability", file.path_hint)
+        after = self._metadata(resource.handle, file.path_hint)
+        if (
+            not self._metadata_matches_capability(after, file)
+            or after.identity != before.identity
+            or after.filesystem != before.filesystem
+        ):
+            raise OSError("Windows flush file identity changed after mutation")
 
     def final_path(self, directory: DirectoryCapability) -> Path:
         path = self._final_path_string(directory, VOLUME_NAME_DOS)
@@ -1673,11 +2657,26 @@ class WindowsFilesystemBackend:
         *,
         repair_dacl: bool,
     ) -> None:
-        raise NotImplementedError("managed Windows security is not available")
+        if capability.security_domain is not SecurityDomain.MANAGED:
+            raise PermissionError(
+                "caller-domain capability is not managed protocol state"
+            )
+        resource = self._resource(capability)
+        self._verify_managed_security_resource(
+            resource,
+            directory=capability.kind is EntryKind.DIRECTORY,
+            component=capability.path_hint,
+            repair_dacl=repair_dacl,
+        )
 
     def __del__(self) -> None:
         for resource in getattr(self, "_failed_closes", ()):
             try:
                 self.close_resource(resource)
+            except (OSError, RuntimeError):
+                pass
+        for owner in getattr(self, "_failed_security_owners", ()):
+            try:
+                owner.close()
             except (OSError, RuntimeError):
                 pass
