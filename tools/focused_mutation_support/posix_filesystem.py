@@ -27,6 +27,9 @@ from .filesystem import (
 _INVALID_FD = -1
 _OPEN_OR_CREATE_CYCLES = 8
 _OPENAT2_RESOLVE_MASK = 0x01 | 0x02 | 0x04 | 0x08
+_SECONDARY_NOTE_BYTES = 512
+
+_Metadata = tuple[FileIdentity, FilesystemIdentity, int, int, int]
 
 
 class _DirectoryStreamResource(Protocol):
@@ -80,7 +83,7 @@ def _filesystem_identity(fd: int) -> FilesystemIdentity:
 
 def _metadata(
     fd: int,
-) -> tuple[FileIdentity, FilesystemIdentity, int, int, int]:
+) -> _Metadata:
     value = os.fstat(fd)
     identity = FileIdentity(value.st_dev, value.st_ino)
     if identity.volume == 0 or identity.file == 0:
@@ -99,11 +102,31 @@ def _entry_kind(mode: int) -> EntryKind:
     return EntryKind.OTHER
 
 
+def _bounded_note(value: str) -> str:
+    return (
+        value.encode("utf-8", errors="backslashreplace")[:_SECONDARY_NOTE_BYTES]
+        .decode("utf-8", errors="ignore")
+    )
+
+
+def _add_secondary_note(
+    primary_error: BaseException,
+    label: str,
+    secondary_error: BaseException | None = None,
+) -> None:
+    detail = label if secondary_error is None else f"{label}: {secondary_error}"
+    primary_error.add_note(_bounded_note(detail))
+
+
 def _add_close_note(primary_error: BaseException, close: Callable[[], None]) -> None:
     try:
         close()
     except OSError as close_error:
-        primary_error.add_note(f"filesystem capability close failed: {close_error}")
+        _add_secondary_note(
+            primary_error,
+            "filesystem capability close failed",
+            close_error,
+        )
 
 
 def _effective_uid() -> int:
@@ -257,7 +280,13 @@ class PosixFilesystemBackend:
             raise RuntimeError("POSIX filesystem resource is not detachable")
         if native.access is None:
             raise RuntimeError("POSIX directory resource is not detachable")
-        requested = flags & getattr(os, "O_ACCMODE", 3)
+        access_mask = getattr(os, "O_ACCMODE", 3)
+        ignored_mask = getattr(os, "O_BINARY", 0) | getattr(
+            os, "O_NOINHERIT", 0
+        )
+        if flags < 0 or flags & ~(access_mask | ignored_mask):
+            raise ValueError("descriptor flags contain unsupported POSIX semantics")
+        requested = flags & access_mask
         compatible = {
             FileAccess.READ: {os.O_RDONLY},
             FileAccess.WRITE: {os.O_WRONLY},
@@ -311,6 +340,51 @@ class PosixFilesystemBackend:
             raise OSError(error_number, os.strerror(error_number), name)
         return int(result)
 
+    def _validate_directory_metadata(
+        self,
+        metadata: _Metadata,
+        *,
+        parent: DirectoryCapability | None,
+        expected: DirectoryEntry | None,
+    ) -> None:
+        identity, filesystem, mode, _size, _modified_ns = metadata
+        if not stat.S_ISDIR(mode) or stat.S_ISLNK(mode):
+            raise OSError("filesystem capability is not a real directory")
+        if expected is not None and identity != expected.identity:
+            raise OSError("directory identity changed while opening")
+        if expected is not None and filesystem != expected.filesystem:
+            raise OSError("directory filesystem changed while opening")
+        if parent is not None and filesystem != parent.filesystem:
+            raise OSError("directory crosses a filesystem boundary")
+
+    def _directory_capability_from_metadata(
+        self,
+        fd: int,
+        metadata: _Metadata,
+        *,
+        parent: DirectoryCapability | None,
+        name: str | None,
+        security_domain: SecurityDomain,
+        share_policy: SharePolicy,
+        created: bool,
+        path_hint: Path,
+    ) -> DirectoryCapability:
+        identity, filesystem, _mode, size, modified_ns = metadata
+        resource = _PosixResource(fd, parent, name, None)
+        return DirectoryCapability(
+            self,
+            resource,
+            identity=identity,
+            filesystem=filesystem,
+            kind=EntryKind.DIRECTORY,
+            logical_size=size,
+            modified_ns=modified_ns,
+            security_domain=security_domain,
+            share_policy=share_policy,
+            created=created,
+            path_hint=path_hint,
+        )
+
     def _new_directory_capability(
         self,
         fd: int,
@@ -324,24 +398,15 @@ class PosixFilesystemBackend:
         expected: DirectoryEntry | None = None,
     ) -> DirectoryCapability:
         try:
-            identity, filesystem, mode, size, modified_ns = _metadata(fd)
-            if not stat.S_ISDIR(mode) or stat.S_ISLNK(mode):
-                raise OSError("filesystem capability is not a real directory")
-            if expected is not None and identity != expected.identity:
-                raise OSError("directory identity changed while opening")
-            if expected is not None and filesystem != expected.filesystem:
-                raise OSError("directory filesystem changed while opening")
-            if parent is not None and filesystem != parent.filesystem:
-                raise OSError("directory crosses a filesystem boundary")
-            resource = _PosixResource(fd, parent, name, None)
-            return DirectoryCapability(
-                self,
-                resource,
-                identity=identity,
-                filesystem=filesystem,
-                kind=EntryKind.DIRECTORY,
-                logical_size=size,
-                modified_ns=modified_ns,
+            metadata = _metadata(fd)
+            self._validate_directory_metadata(
+                metadata, parent=parent, expected=expected
+            )
+            return self._directory_capability_from_metadata(
+                fd,
+                metadata,
+                parent=parent,
+                name=name,
                 security_domain=security_domain,
                 share_policy=share_policy,
                 created=created,
@@ -350,6 +415,48 @@ class PosixFilesystemBackend:
         except BaseException as primary_error:
             _add_close_note(primary_error, lambda: os.close(fd))
             raise
+
+    def _validate_file_metadata(
+        self,
+        metadata: _Metadata,
+        *,
+        parent: DirectoryCapability,
+        expected: DirectoryEntry | None,
+    ) -> None:
+        identity, filesystem, mode, _size, _modified_ns = metadata
+        if not stat.S_ISREG(mode):
+            raise OSError("filesystem capability is not a regular file")
+        if expected is not None and identity != expected.identity:
+            raise OSError("file identity changed while opening")
+        if filesystem != parent.filesystem:
+            raise OSError("file crosses a filesystem boundary")
+
+    def _file_capability_from_metadata(
+        self,
+        fd: int,
+        metadata: _Metadata,
+        *,
+        parent: DirectoryCapability,
+        name: str,
+        access: FileAccess,
+        share_policy: SharePolicy,
+        created: bool,
+    ) -> FileCapability:
+        identity, filesystem, _mode, size, modified_ns = metadata
+        resource = _PosixResource(fd, parent, name, access)
+        return FileCapability(
+            self,
+            resource,
+            identity=identity,
+            filesystem=filesystem,
+            kind=EntryKind.REGULAR,
+            logical_size=size,
+            modified_ns=modified_ns,
+            security_domain=parent.security_domain,
+            share_policy=share_policy,
+            created=created,
+            path_hint=parent.path_hint / name,
+        )
 
     def _new_file_capability(
         self,
@@ -363,29 +470,190 @@ class PosixFilesystemBackend:
         expected: DirectoryEntry | None = None,
     ) -> FileCapability:
         try:
-            identity, filesystem, mode, size, modified_ns = _metadata(fd)
-            if not stat.S_ISREG(mode):
-                raise OSError("filesystem capability is not a regular file")
-            if expected is not None and identity != expected.identity:
-                raise OSError("file identity changed while opening")
-            if filesystem != parent.filesystem:
-                raise OSError("file crosses a filesystem boundary")
-            resource = _PosixResource(fd, parent, name, access)
-            return FileCapability(
-                self,
-                resource,
-                identity=identity,
-                filesystem=filesystem,
-                kind=EntryKind.REGULAR,
-                logical_size=size,
-                modified_ns=modified_ns,
-                security_domain=parent.security_domain,
+            metadata = _metadata(fd)
+            self._validate_file_metadata(
+                metadata, parent=parent, expected=expected
+            )
+            return self._file_capability_from_metadata(
+                fd,
+                metadata,
+                parent=parent,
+                name=name,
+                access=access,
                 share_policy=share_policy,
                 created=created,
-                path_hint=parent.path_hint / name,
             )
         except BaseException as primary_error:
             _add_close_note(primary_error, lambda: os.close(fd))
+            raise
+
+    def _close_created_owner(
+        self,
+        primary_error: BaseException,
+        capability: FileCapability | DirectoryCapability | None,
+        descriptor: int | None,
+    ) -> bool:
+        try:
+            if capability is not None:
+                capability.close()
+            elif descriptor is not None:
+                os.close(descriptor)
+        except OSError as close_error:
+            _add_secondary_note(
+                primary_error,
+                "created object close failed; rollback unavailable",
+                close_error,
+            )
+            return False
+        return True
+
+    def _rollback_created(
+        self,
+        primary_error: BaseException,
+        *,
+        parent: DirectoryCapability,
+        name: str,
+        identity: FileIdentity | None,
+        kind: EntryKind,
+        owner_closed: bool,
+    ) -> None:
+        if not owner_closed:
+            return
+        if identity is None:
+            _add_secondary_note(
+                primary_error,
+                "created object identity unavailable for rollback",
+            )
+            return
+        try:
+            current = self.entry(parent, name)
+        except Exception as observe_error:
+            _add_secondary_note(
+                primary_error,
+                "created object rollback re-observation failed",
+                observe_error,
+            )
+            return
+        if current is None:
+            return
+        if current.identity != identity or current.kind is not kind:
+            _add_secondary_note(
+                primary_error,
+                "created object rollback refused a same-name replacement",
+            )
+            return
+        try:
+            if kind is EntryKind.DIRECTORY:
+                os.rmdir(name, dir_fd=self._directory_fd(parent))
+            else:
+                os.unlink(name, dir_fd=self._directory_fd(parent))
+        except Exception as removal_error:
+            _add_secondary_note(
+                primary_error,
+                "created object rollback removal failed",
+                removal_error,
+            )
+            return
+        try:
+            remaining = self.entry(parent, name)
+        except Exception as verify_error:
+            _add_secondary_note(
+                primary_error,
+                "created object rollback absence verification failed",
+                verify_error,
+            )
+            return
+        if remaining is not None:
+            _add_secondary_note(
+                primary_error,
+                "created object rollback absence verification found an entry",
+            )
+
+    def _finish_created_directory(
+        self,
+        parent: DirectoryCapability,
+        name: str,
+        expected: DirectoryEntry,
+        share_policy: SharePolicy,
+        *,
+        security_domain: SecurityDomain,
+        verify_security: bool,
+    ) -> DirectoryCapability:
+        descriptor: int | None = None
+        capability: DirectoryCapability | None = None
+        try:
+            self._before_relative_open(parent, name)
+            descriptor = self._native_open_relative(
+                self._directory_fd(parent), name, _directory_flags()
+            )
+            metadata = _metadata(descriptor)
+            self._validate_directory_metadata(
+                metadata, parent=parent, expected=expected
+            )
+            capability = self._directory_capability_from_metadata(
+                descriptor,
+                metadata,
+                parent=parent,
+                name=name,
+                security_domain=security_domain,
+                share_policy=share_policy,
+                created=True,
+                path_hint=parent.path_hint / name,
+            )
+            if verify_security:
+                self.verify_managed_security(capability, repair_dacl=True)
+            return capability
+        except BaseException as primary_error:
+            owner_closed = self._close_created_owner(
+                primary_error, capability, descriptor
+            )
+            self._rollback_created(
+                primary_error,
+                parent=parent,
+                name=name,
+                identity=expected.identity,
+                kind=EntryKind.DIRECTORY,
+                owner_closed=owner_closed,
+            )
+            raise
+
+    def _finish_created_file(
+        self,
+        descriptor: int,
+        parent: DirectoryCapability,
+        name: str,
+        *,
+        access: FileAccess,
+        share_policy: SharePolicy,
+    ) -> FileCapability:
+        capability: FileCapability | None = None
+        identity: FileIdentity | None = None
+        try:
+            metadata = _metadata(descriptor)
+            identity = metadata[0]
+            self._validate_file_metadata(metadata, parent=parent, expected=None)
+            capability = self._file_capability_from_metadata(
+                descriptor,
+                metadata,
+                parent=parent,
+                name=name,
+                access=access,
+                share_policy=share_policy,
+                created=True,
+            )
+            return capability
+        except BaseException as primary_error:
+            owner_closed = self._close_created_owner(
+                primary_error, capability, descriptor
+            )
+            self._rollback_created(
+                primary_error,
+                parent=parent,
+                name=name,
+                identity=identity,
+                kind=EntryKind.REGULAR,
+                owner_closed=owner_closed,
+            )
             raise
 
     def open_root(
@@ -441,9 +709,30 @@ class PosixFilesystemBackend:
                 created = True
             except FileExistsError:
                 created = False
-            observed = self.entry(parent, name)
+            try:
+                observed = self.entry(parent, name)
+            except BaseException as primary_error:
+                if created:
+                    self._rollback_created(
+                        primary_error,
+                        parent=parent,
+                        name=name,
+                        identity=None,
+                        kind=EntryKind.DIRECTORY,
+                        owner_closed=True,
+                    )
+                raise
             if observed is None:
                 continue
+            if created:
+                return self._finish_created_directory(
+                    parent,
+                    name,
+                    observed,
+                    SharePolicy.MUTATION,
+                    security_domain=SecurityDomain.MANAGED,
+                    verify_security=True,
+                )
             try:
                 capability = self._open_observed_directory(
                     parent,
@@ -515,16 +804,27 @@ class PosixFilesystemBackend:
     ) -> DirectoryCapability:
         validate_component(name)
         os.mkdir(name, mode=0o700, dir_fd=self._directory_fd(parent))
-        observed = self.entry(parent, name)
+        try:
+            observed = self.entry(parent, name)
+        except BaseException as primary_error:
+            self._rollback_created(
+                primary_error,
+                parent=parent,
+                name=name,
+                identity=None,
+                kind=EntryKind.DIRECTORY,
+                owner_closed=True,
+            )
+            raise
         if observed is None:
             raise OSError("created directory did not resolve through its parent")
-        return self._open_observed_directory(
+        return self._finish_created_directory(
             parent,
             name,
             observed,
             share_policy,
             security_domain=parent.security_domain,
-            created=True,
+            verify_security=False,
         )
 
     def _open_observed_file(
@@ -536,6 +836,8 @@ class PosixFilesystemBackend:
         access: FileAccess,
         share_policy: SharePolicy,
     ) -> FileCapability:
+        if observed.kind is not EntryKind.REGULAR:
+            raise OSError("filesystem entry is not a regular file")
         self._before_relative_open(parent, name)
         descriptor = self._native_open_relative(
             self._directory_fd(parent), name, _file_flags(access)
@@ -577,13 +879,12 @@ class PosixFilesystemBackend:
             descriptor = self._native_open_relative(
                 parent_fd, name, flags | os.O_CREAT | os.O_EXCL, 0o600
             )
-            return self._new_file_capability(
+            return self._finish_created_file(
                 descriptor,
                 parent=parent,
                 name=name,
                 access=access,
                 share_policy=share_policy,
-                created=True,
             )
 
         for _cycle in range(_OPEN_OR_CREATE_CYCLES):
@@ -606,13 +907,12 @@ class PosixFilesystemBackend:
                 except FileNotFoundError:
                     continue
             else:
-                return self._new_file_capability(
+                return self._finish_created_file(
                     descriptor,
                     parent=parent,
                     name=name,
                     access=access,
                     share_policy=share_policy,
-                    created=True,
                 )
         raise OSError("open-or-create entry did not stabilize")
 
@@ -692,11 +992,23 @@ class PosixFilesystemBackend:
     def entry(
         self, parent: DirectoryCapability, name: str
     ) -> DirectoryEntry | None:
+        return self._entry_at_fd(
+            parent,
+            name,
+            self._directory_fd(parent),
+        )
+
+    def _entry_at_fd(
+        self,
+        parent: DirectoryCapability,
+        name: str,
+        parent_fd: int,
+    ) -> DirectoryEntry | None:
         validate_component(name)
         try:
             metadata = os.stat(
                 name,
-                dir_fd=self._directory_fd(parent),
+                dir_fd=parent_fd,
                 follow_symlinks=False,
             )
         except FileNotFoundError:
@@ -747,6 +1059,47 @@ class PosixFilesystemBackend:
             raise OSError("root capability is not a relative mutation source")
         return resource
 
+    def _source_namespace_fd(
+        self,
+        capability: FileCapability | DirectoryCapability,
+        resource: _PosixResource,
+    ) -> int:
+        parent = resource.parent
+        if parent is None:
+            raise OSError("root capability is not a relative mutation source")
+        original_parent_fd = self._directory_fd(parent)
+        if capability.kind not in {EntryKind.REPARSE, EntryKind.OTHER}:
+            return original_parent_fd
+        if resource.stream is not None or resource.fd == _INVALID_FD:
+            raise RuntimeError("non-follow source has no owned parent surrogate")
+        return resource.fd
+
+    def _validated_parent_surrogate(
+        self,
+        parent: DirectoryCapability,
+        parent_fd: int,
+    ) -> int:
+        descriptor = os.open(".", _directory_flags(), dir_fd=parent_fd)
+        try:
+            metadata = _metadata(descriptor)
+            expected = DirectoryEntry(
+                name=".",
+                kind=EntryKind.DIRECTORY,
+                identity=parent.identity,
+                filesystem=parent.filesystem,
+                logical_size=parent.logical_size,
+                modified_ns=parent.modified_ns,
+            )
+            self._validate_directory_metadata(
+                metadata,
+                parent=None,
+                expected=expected,
+            )
+            return descriptor
+        except BaseException as primary_error:
+            _add_close_note(primary_error, lambda: os.close(descriptor))
+            raise
+
     def rename(
         self,
         source: FileCapability | DirectoryCapability,
@@ -759,29 +1112,68 @@ class PosixFilesystemBackend:
         resource = self._require_pinned_relative(source)
         source_parent = resource.parent
         source_name = resource.name
-        current = self.entry(source_parent, source_name)
+        source_parent_fd = self._source_namespace_fd(source, resource)
+        current = self._entry_at_fd(
+            source_parent,
+            source_name,
+            source_parent_fd,
+        )
         if current is None:
             raise FileNotFoundError(source_name)
         if current.identity != source.identity or current.kind is not source.kind:
             raise OSError("rename source identity changed")
         if source.filesystem != destination_parent.filesystem:
             raise OSError("rename crosses a filesystem boundary")
+        destination_path_hint = destination_parent.path_hint / destination_name
+        destination_parent_fd = self._directory_fd(destination_parent)
+        destination_surrogate: int | None = None
+        if source.kind in {EntryKind.REPARSE, EntryKind.OTHER}:
+            destination_surrogate = self._validated_parent_surrogate(
+                destination_parent,
+                destination_parent_fd,
+            )
         operation = os.replace if replace else os.rename
-        operation(
-            source_name,
-            destination_name,
-            src_dir_fd=self._directory_fd(source_parent),
-            dst_dir_fd=self._directory_fd(destination_parent),
-        )
-        resource.parent = destination_parent
-        resource.name = destination_name
-        source._path_hint = destination_parent.path_hint / destination_name
+        try:
+            operation(
+                source_name,
+                destination_name,
+                src_dir_fd=source_parent_fd,
+                dst_dir_fd=destination_parent_fd,
+            )
+        except BaseException as primary_error:
+            if destination_surrogate is not None:
+                _add_close_note(
+                    primary_error,
+                    lambda: os.close(destination_surrogate),
+                )
+            raise
+        if destination_surrogate is not None:
+            try:
+                os.dup2(destination_surrogate, resource.fd, inheritable=False)
+            except BaseException as primary_error:
+                resource.parent = destination_parent
+                resource.name = destination_name
+                source._path_hint = destination_path_hint
+                _add_close_note(
+                    primary_error,
+                    lambda: os.close(destination_surrogate),
+                )
+                raise
+            resource.parent = destination_parent
+            resource.name = destination_name
+            source._path_hint = destination_path_hint
+            os.close(destination_surrogate)
+        else:
+            resource.parent = destination_parent
+            resource.name = destination_name
+            source._path_hint = destination_path_hint
 
     def delete(self, capability: FileCapability | DirectoryCapability) -> None:
         resource = self._require_pinned_relative(capability)
         parent = resource.parent
         name = resource.name
-        current = self.entry(parent, name)
+        source_parent_fd = self._source_namespace_fd(capability, resource)
+        current = self._entry_at_fd(parent, name, source_parent_fd)
         if current is None:
             raise FileNotFoundError(name)
         if (
@@ -790,9 +1182,9 @@ class PosixFilesystemBackend:
         ):
             raise OSError("delete target identity changed")
         if capability.kind is EntryKind.DIRECTORY:
-            os.rmdir(name, dir_fd=self._directory_fd(parent))
+            os.rmdir(name, dir_fd=source_parent_fd)
         else:
-            os.unlink(name, dir_fd=self._directory_fd(parent))
+            os.unlink(name, dir_fd=source_parent_fd)
         capability.close()
         if self.entry(parent, name) is not None:
             raise OSError("deleted entry still resolves through its parent")
