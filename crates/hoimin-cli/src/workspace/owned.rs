@@ -15,6 +15,22 @@ mod tests {
         std::env::var_os("HOIMIN_FOCUSED_MUTATION_OUTER_DEPTH_GUARD").is_some()
     }
 
+    fn create_test_owned_directory_entry(
+        parent: &cap_std::fs::Dir,
+        name: &str,
+    ) -> std::io::Result<()> {
+        #[cfg(unix)]
+        {
+            rustix::fs::mkdirat(parent, name, rustix::fs::Mode::from_raw_mode(0o700))
+                .map_err(std::io::Error::from)
+        }
+        #[cfg(windows)]
+        {
+            super::windows::create_relative_managed_directory(parent, std::ffi::OsStr::new(name))
+                .map(drop)
+        }
+    }
+
     #[test]
     fn direct_child_limit_rejects_the_first_child_beyond_the_cap() {
         assert!(ensure_direct_child_capacity(MAX_MANAGED_CHILDREN - 1).is_ok());
@@ -45,6 +61,8 @@ mod tests {
         super::windows::verify_current_user_owner(&coordinator.file).unwrap();
 
         let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let root_file = root.dir.try_clone().unwrap().into_std_file();
+        super::windows::verify_current_user_owner(&root_file).unwrap();
         super::windows::verify_current_user_owner(root.lease.lock().unwrap().as_deref().unwrap())
             .unwrap();
         super::windows::verify_current_user_owner(root.heartbeat.lock().unwrap().as_ref().unwrap())
@@ -488,6 +506,62 @@ mod tests {
             super::windows::verify_current_user_owner(&directory).unwrap();
             super::windows::verify_current_user_owner(&file).unwrap();
         }
+    }
+
+    #[test]
+    fn owned_directory_open_failure_rolls_back_the_created_identity() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent_dir =
+            cap_std::fs::Dir::open_ambient_dir(parent.path(), cap_std::ambient_authority())
+                .unwrap();
+
+        let error = super::create_owned_directory_with(
+            &parent_dir,
+            "rolled-back-directory",
+            create_test_owned_directory_entry,
+            |_, _| Err(std::io::Error::other("injected directory open failure")),
+            super::rollback_new_owned_directory,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::Other);
+        assert_eq!(error.to_string(), "injected directory open failure");
+        assert_eq!(
+            parent_dir
+                .symlink_metadata("rolled-back-directory")
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::NotFound,
+        );
+    }
+
+    #[test]
+    fn owned_directory_rollback_failure_keeps_the_open_error_first() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent_dir =
+            cap_std::fs::Dir::open_ambient_dir(parent.path(), cap_std::ambient_authority())
+                .unwrap();
+
+        let error = super::create_owned_directory_with(
+            &parent_dir,
+            "rollback-failure-directory",
+            create_test_owned_directory_entry,
+            |_, _| Err(std::io::Error::other("injected directory open failure")),
+            |_, _, _| Err(std::io::Error::other("injected cleanup failure")),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::Other);
+        assert_eq!(
+            error.to_string(),
+            "injected directory open failure; secondary created-directory rollback failure: injected cleanup failure",
+        );
+        assert!(
+            parent_dir
+                .symlink_metadata("rollback-failure-directory")
+                .unwrap()
+                .is_dir()
+        );
     }
 
     #[test]
@@ -1893,9 +1967,105 @@ fn create_owned_directory(
     parent: &cap_std::fs::Dir,
     name: &str,
 ) -> std::io::Result<cap_std::fs::Dir> {
-    rustix::fs::mkdirat(parent, name, rustix::fs::Mode::from_raw_mode(0o700))
-        .map_err(std::io::Error::from)?;
-    open_owned_directory(parent, name)
+    create_owned_directory_with(
+        parent,
+        name,
+        |parent, name| {
+            rustix::fs::mkdirat(parent, name, rustix::fs::Mode::from_raw_mode(0o700))
+                .map_err(std::io::Error::from)
+        },
+        open_owned_directory,
+        rollback_new_owned_directory,
+    )
+}
+
+#[cfg(any(unix, test))]
+fn create_owned_directory_with(
+    parent: &cap_std::fs::Dir,
+    name: &str,
+    create: impl FnOnce(&cap_std::fs::Dir, &str) -> std::io::Result<()>,
+    open: impl FnOnce(&cap_std::fs::Dir, &str) -> std::io::Result<cap_std::fs::Dir>,
+    rollback: impl FnOnce(&cap_std::fs::Dir, &str, (u64, u64)) -> std::io::Result<()>,
+) -> std::io::Result<cap_std::fs::Dir> {
+    create(parent, name)?;
+    let metadata = parent.symlink_metadata(name)?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(std::io::Error::other(
+            "new owned directory changed before it could be opened",
+        ));
+    }
+    let expected_identity = metadata_identity(&metadata);
+    let directory = match open(parent, name) {
+        Ok(directory) => directory,
+        Err(primary) => {
+            return Err(error_after_created_directory_rollback_with(
+                parent,
+                name,
+                expected_identity,
+                primary,
+                rollback,
+            ));
+        }
+    };
+    let opened_identity = match directory_identity(&directory) {
+        Ok(identity) => identity,
+        Err(primary) => {
+            drop(directory);
+            return Err(error_after_created_directory_rollback_with(
+                parent,
+                name,
+                expected_identity,
+                primary,
+                rollback,
+            ));
+        }
+    };
+    if opened_identity != expected_identity {
+        drop(directory);
+        return Err(error_after_created_directory_rollback_with(
+            parent,
+            name,
+            expected_identity,
+            std::io::Error::other("new owned directory identity changed while opening it"),
+            rollback,
+        ));
+    }
+    Ok(directory)
+}
+
+#[cfg(any(unix, test))]
+fn error_after_created_directory_rollback_with(
+    parent: &cap_std::fs::Dir,
+    name: &str,
+    expected_identity: (u64, u64),
+    primary: std::io::Error,
+    rollback: impl FnOnce(&cap_std::fs::Dir, &str, (u64, u64)) -> std::io::Result<()>,
+) -> std::io::Error {
+    match rollback(parent, name, expected_identity) {
+        Ok(()) => primary,
+        Err(secondary) => std::io::Error::new(
+            primary.kind(),
+            format!("{primary}; secondary created-directory rollback failure: {secondary}"),
+        ),
+    }
+}
+
+#[cfg(any(unix, test))]
+fn rollback_new_owned_directory(
+    parent: &cap_std::fs::Dir,
+    name: &str,
+    expected_identity: (u64, u64),
+) -> std::io::Result<()> {
+    let removal =
+        remove_claimed_tree_bounded(parent, name, Some(expected_identity), OWNER_CLEANUP_BUDGET)?;
+    if removal.complete {
+        Ok(())
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "bounded cleanup did not remove the newly created directory",
+        ))
+    }
 }
 
 #[cfg(windows)]
