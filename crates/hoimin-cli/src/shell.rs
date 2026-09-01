@@ -46,6 +46,8 @@ use crate::workspace::{
 };
 
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
+#[cfg(test)]
+const FINAL_MEASUREMENT_PAUSE_TIMEOUT: Duration = Duration::from_secs(5);
 const CLEANUP_QUIESCENCE_UNPROVEN: &str =
     "process/output drain, disk monitor join, or final disk measurement join was not proven";
 
@@ -268,30 +270,38 @@ type TestEndAvailableOverride =
 #[cfg(test)]
 #[derive(Clone, Debug)]
 struct FinalMeasurementPause {
-    entered: std::sync::mpsc::SyncSender<()>,
+    entered: std::sync::mpsc::Sender<()>,
     release: Arc<std::sync::Mutex<std::sync::mpsc::Receiver<()>>>,
+    release_timeout: Duration,
 }
 
 #[cfg(test)]
 #[derive(Debug)]
 struct FinalMeasurementPauseController {
     entered: std::sync::mpsc::Receiver<()>,
-    release: std::sync::mpsc::SyncSender<()>,
+    release: std::sync::mpsc::Sender<()>,
+    entered_timeout: Duration,
 }
 
 #[cfg(test)]
 impl FinalMeasurementPause {
     fn new() -> (Self, FinalMeasurementPauseController) {
-        let (entered, entered_receiver) = std::sync::mpsc::sync_channel(0);
-        let (release, release_receiver) = std::sync::mpsc::sync_channel(0);
+        Self::with_timeout(FINAL_MEASUREMENT_PAUSE_TIMEOUT)
+    }
+
+    fn with_timeout(timeout: Duration) -> (Self, FinalMeasurementPauseController) {
+        let (entered, entered_receiver) = std::sync::mpsc::channel();
+        let (release, release_receiver) = std::sync::mpsc::channel();
         (
             Self {
                 entered,
                 release: Arc::new(std::sync::Mutex::new(release_receiver)),
+                release_timeout: timeout,
             },
             FinalMeasurementPauseController {
                 entered: entered_receiver,
                 release,
+                entered_timeout: timeout,
             },
         )
     }
@@ -302,23 +312,19 @@ impl FinalMeasurementPause {
                 .release
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .recv();
+                .recv_timeout(self.release_timeout);
         }
     }
 }
 
 #[cfg(test)]
 impl FinalMeasurementPauseController {
-    fn wait_until_entered(&self) {
-        self.entered
-            .recv()
-            .expect("final measurement pause entered");
+    fn wait_until_entered(&self) -> Result<(), std::sync::mpsc::RecvTimeoutError> {
+        self.entered.recv_timeout(self.entered_timeout)
     }
 
-    fn release(&self) {
-        self.release
-            .send(())
-            .expect("release final measurement pause");
+    fn release(&self) -> Result<(), std::sync::mpsc::SendError<()>> {
+        self.release.send(())
     }
 }
 
@@ -5608,6 +5614,88 @@ mod tests {
         );
     }
 
+    #[test]
+    fn final_measurement_pause_returns_when_release_is_missing() {
+        let (pause, controller) = FinalMeasurementPause::with_timeout(Duration::from_millis(25));
+        let (finished_tx, finished_rx) = std::sync::mpsc::sync_channel(1);
+        let waiter = std::thread::spawn(move || {
+            pause.wait();
+            let _ = finished_tx.send(());
+        });
+
+        controller
+            .wait_until_entered()
+            .expect("final measurement pause entered");
+        let finished = finished_rx.recv_timeout(Duration::from_millis(250));
+        drop(controller);
+        waiter.join().unwrap();
+
+        assert_eq!(
+            finished,
+            Ok(()),
+            "final measurement pause remained blocked without a release signal"
+        );
+    }
+
+    #[test]
+    fn final_measurement_pause_controller_times_out_when_hook_never_enters() {
+        let (pause, controller) = FinalMeasurementPause::with_timeout(Duration::from_millis(25));
+        let (finished_tx, finished_rx) = std::sync::mpsc::sync_channel(1);
+        let waiter = std::thread::spawn(move || {
+            let result = controller.wait_until_entered();
+            let _ = finished_tx.send(result);
+        });
+
+        let finished = finished_rx.recv_timeout(Duration::from_millis(250));
+        drop(pause);
+        waiter.join().unwrap();
+        assert_eq!(
+            finished,
+            Ok(Err(std::sync::mpsc::RecvTimeoutError::Timeout)),
+            "final measurement pause controller remained blocked waiting for entry"
+        );
+    }
+
+    #[test]
+    fn final_measurement_pause_hook_returns_when_entry_is_not_received() {
+        let (pause, controller) = FinalMeasurementPause::with_timeout(Duration::from_millis(25));
+        let (finished_tx, finished_rx) = std::sync::mpsc::sync_channel(1);
+        let waiter = std::thread::spawn(move || {
+            pause.wait();
+            let _ = finished_tx.send(());
+        });
+
+        let finished = finished_rx.recv_timeout(Duration::from_millis(250));
+        drop(controller);
+        waiter.join().unwrap();
+
+        assert_eq!(
+            finished,
+            Ok(()),
+            "final measurement pause blocked while reporting that it was entered"
+        );
+    }
+
+    #[test]
+    fn final_measurement_pause_release_returns_before_hook_waits() {
+        let (pause, controller) = FinalMeasurementPause::with_timeout(Duration::from_millis(25));
+        let (finished_tx, finished_rx) = std::sync::mpsc::sync_channel(1);
+        let releaser = std::thread::spawn(move || {
+            let returned = controller.release().is_ok();
+            let _ = finished_tx.send(returned);
+        });
+
+        let finished = finished_rx.recv_timeout(Duration::from_millis(250));
+        drop(pause);
+        releaser.join().unwrap();
+
+        assert_eq!(
+            finished,
+            Ok(true),
+            "final measurement pause blocked while sending an early release"
+        );
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn final_execution_measurement_does_not_block_the_async_runtime() {
         let project = tempfile::tempdir().unwrap();
@@ -5625,37 +5713,37 @@ mod tests {
         args.extend(successful_test_command());
         let config = crate::cli::parse_config_from(args).unwrap();
         let (control, pause) = RunControl::with_final_measurement_pause();
-        let probe_requested = Arc::new(AtomicBool::new(false));
-        let probe_observed = Arc::new(AtomicBool::new(false));
-        let probe = tokio::spawn({
-            let requested = Arc::clone(&probe_requested);
-            let observed = Arc::clone(&probe_observed);
-            async move {
-                while !requested.load(Ordering::Acquire) {
-                    tokio::task::yield_now().await;
-                }
-                observed.store(true, Ordering::Release);
+        let (probe_request_tx, probe_request_rx) = tokio::sync::oneshot::channel();
+        let (probe_observed_tx, probe_observed_rx) = std::sync::mpsc::channel();
+        let probe = tokio::spawn(async move {
+            if probe_request_rx.await.is_ok() {
+                let _ = probe_observed_tx.send(());
             }
         });
-        let observer = std::thread::spawn({
-            let requested = Arc::clone(&probe_requested);
-            let observed = Arc::clone(&probe_observed);
-            move || {
-                pause.wait_until_entered();
-                requested.store(true, Ordering::Release);
-                std::thread::sleep(Duration::from_millis(100));
-                let runtime_was_responsive = observed.load(Ordering::Acquire);
-                pause.release();
-                runtime_was_responsive
-            }
+        let observer = std::thread::spawn(move || {
+            pause
+                .wait_until_entered()
+                .map_err(|error| format!("wait for final measurement pause: {error}"))?;
+            let request_sent = probe_request_tx.send(()).is_ok();
+            let runtime_was_responsive = request_sent
+                && probe_observed_rx
+                    .recv_timeout(Duration::from_millis(500))
+                    .is_ok();
+            pause
+                .release()
+                .map_err(|error| format!("release final measurement pause: {error}"))?;
+            Ok::<bool, String>(runtime_was_responsive)
         });
 
         let result = run_loop_with_control(config, Vec::new(), Vec::new(), control).await;
-        probe.await.unwrap();
+        probe.await.expect("runtime responsiveness probe joined");
+        let runtime_was_responsive = observer
+            .join()
+            .expect("final measurement pause observer joined");
 
         assert_eq!(result.unwrap(), 0);
         assert!(
-            observer.join().unwrap(),
+            runtime_was_responsive.expect("final measurement pause observer completed"),
             "final execution measurement blocked the Tokio runtime worker"
         );
     }
@@ -5690,15 +5778,21 @@ mod tests {
         let observed = control.clone();
         let mut stdout = Vec::new();
         let release = std::thread::spawn(move || {
-            pause.wait_until_entered();
+            pause
+                .wait_until_entered()
+                .map_err(|error| format!("wait for final measurement pause: {error}"))?;
             std::thread::sleep(Duration::from_millis(100));
-            pause.release();
+            pause
+                .release()
+                .map_err(|error| format!("release final measurement pause: {error}"))
         });
 
         let error = run_loop_with_control(config, &mut stdout, Vec::new(), control)
             .await
             .expect_err("expired final measurement must defer recursive cleanup");
-        release.join().unwrap();
+        let release_result = release
+            .join()
+            .expect("final measurement pause releaser joined");
 
         assert!(
             error.contains(&format!(
@@ -5707,6 +5801,7 @@ mod tests {
             )),
             "{error}"
         );
+        release_result.expect("final measurement pause releaser completed");
         let roots = observed.managed_root_paths();
         assert_eq!(roots.len(), 2);
         assert!(
