@@ -3,6 +3,8 @@ from __future__ import annotations
 import ctypes
 import errno
 import os
+import re
+import struct
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -31,6 +33,7 @@ ULONG = ctypes.c_uint32
 WCHAR = ctypes.c_uint16
 BOOL = ctypes.c_int32
 LONGLONG = ctypes.c_int64
+ULONGLONG = ctypes.c_uint64
 
 DELETE = 0x0001_0000
 READ_CONTROL = 0x0002_0000
@@ -67,13 +70,28 @@ FILE_OPEN_IF = 3
 FILE_OPENED = 1
 FILE_CREATED = 2
 FILE_ID_INFO_CLASS = 18
+FILE_ID_EXTD_DIRECTORY_INFO_CLASS = 19
+FILE_ID_EXTD_DIRECTORY_RESTART_INFO_CLASS = 20
 DUPLICATE_SAME_ACCESS = 0x0002
+VOLUME_NAME_DOS = 0x0
+VOLUME_NAME_GUID = 0x1
 
 _WINDOWS_EPOCH_100NS = 116_444_736_000_000_000
+_DIRECTORY_BUFFER_BYTES = 64 * 1024
+_FINAL_PATH_INITIAL_UNITS = 512
+_FINAL_PATH_MAX_UNITS = 16 * 1024
+_MAX_UINT64 = (1 << 64) - 1
+_VOLUME_GUID_ROOT = re.compile(
+    r"^\\\\\?\\Volume\{"
+    r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-"
+    r"[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
+    r"\}\\"
+)
 
 ERROR_FILE_NOT_FOUND = 2
 ERROR_PATH_NOT_FOUND = 3
 ERROR_ACCESS_DENIED = 5
+ERROR_NO_MORE_FILES = 18
 INVALID_OWNED_HANDLE = 0
 _INVALID_WIN32_HANDLE = ctypes.c_void_p(-1).value
 _ERROR_EVIDENCE_BYTES = 4_096
@@ -193,6 +211,17 @@ def _bounded_evidence(value: str) -> str:
         value.encode("utf-8", errors="backslashreplace")[:_ERROR_EVIDENCE_BYTES]
         .decode("utf-8", errors="ignore")
     )
+
+
+def _add_close_note(primary_error: BaseException, close: Callable[[], None]) -> None:
+    try:
+        close()
+    except BaseException as close_error:
+        primary_error.add_note(
+            _bounded_evidence(
+                f"filesystem capability close failed: {close_error}"
+            )
+        )
 
 
 _WIN32_ERRNO_FALLBACKS = {
@@ -327,6 +356,189 @@ def _filetime_to_unix_ns(value: int) -> int:
     return (value - _WINDOWS_EPOCH_100NS) * 100
 
 
+class _DirectoryRecordParser:
+    def __init__(
+        self,
+        encoded: bytes | bytearray | memoryview,
+        filesystem: FilesystemIdentity,
+    ) -> None:
+        self._encoded = memoryview(encoded).cast("B")
+        self._filesystem = filesystem
+        self._offset = 0
+        self._finished = False
+
+    @staticmethod
+    def _aligned(value: int) -> int:
+        return (value + 7) & ~7
+
+    def next_record(self) -> DirectoryEntry | None:
+        while not self._finished:
+            offset = self._offset
+            header_size = FILE_ID_EXTD_DIR_INFO.FileName.offset
+            if offset < 0 or offset + header_size > len(self._encoded):
+                raise OSError("directory record header is outside the buffer")
+            (
+                next_entry_offset,
+                _file_index,
+                _creation_time,
+                _last_access_time,
+                last_write_time,
+                _change_time,
+                end_of_file,
+                _allocation_size,
+                file_attributes,
+                file_name_length,
+                _ea_size,
+                reparse_point_tag,
+            ) = struct.unpack_from("<IIqqqqqqIIII", self._encoded, offset)
+
+            if file_name_length % 2:
+                raise OSError("directory record has an odd UTF-16 name length")
+            name_start = offset + header_size
+            name_end = name_start + file_name_length
+
+            if next_entry_offset:
+                if next_entry_offset % 8:
+                    raise OSError("directory record offset is not aligned")
+                next_offset = offset + next_entry_offset
+                if next_offset <= offset:
+                    raise OSError("directory record offset does not advance")
+                if next_offset + header_size > len(self._encoded):
+                    raise OSError("directory record offset is outside the buffer")
+                if next_offset < self._aligned(name_end):
+                    raise OSError("directory record offset overlaps this record")
+                record_limit = next_offset
+            else:
+                record_limit = len(self._encoded)
+
+            if name_end > record_limit:
+                raise OSError("directory record name is outside the record")
+            try:
+                name = bytes(self._encoded[name_start:name_end]).decode(
+                    "utf-16-le", errors="strict"
+                )
+            except UnicodeDecodeError as error:
+                raise OSError("directory record name is invalid UTF-16") from error
+
+            identity_value = int.from_bytes(
+                self._encoded[offset + 72 : offset + 88], "little"
+            )
+            if identity_value == 0:
+                raise OSError("directory record has a zero file identity")
+            if self._filesystem.volume <= 0:
+                raise OSError("directory record has a zero parent volume")
+            if end_of_file < 0:
+                raise OSError("directory record has a negative logical size")
+            if last_write_time < 0:
+                raise OSError("directory record has a negative raw FILETIME")
+            is_reparse = bool(file_attributes & FILE_ATTRIBUTE_REPARSE_POINT)
+            if is_reparse != bool(reparse_point_tag):
+                raise OSError("directory record has an inconsistent reparse tag")
+
+            if next_entry_offset:
+                self._offset = offset + next_entry_offset
+            else:
+                padding_start = self._aligned(name_end)
+                if any(self._encoded[padding_start:]):
+                    raise OSError(
+                        "directory record terminates before the final record"
+                    )
+                self._finished = True
+
+            if name in {".", ".."}:
+                continue
+            return DirectoryEntry(
+                name=name,
+                kind=_entry_kind_from_attributes(file_attributes),
+                identity=FileIdentity(self._filesystem.volume, identity_value),
+                filesystem=self._filesystem,
+                logical_size=end_of_file,
+                modified_ns=_filetime_to_unix_ns(last_write_time),
+            )
+        return None
+
+
+class _WindowsEntries:
+    def __init__(
+        self,
+        backend: WindowsFilesystemBackend,
+        source: DirectoryCapability,
+    ) -> None:
+        self._backend = backend
+        self._buffer = ctypes.create_string_buffer(_DIRECTORY_BUFFER_BYTES)
+        self._parser: _DirectoryRecordParser | None = None
+        self._restart = True
+        self._closed = False
+        self._directory = source._move_for(backend)
+
+    @property
+    def directory(self) -> DirectoryCapability:
+        return self._directory
+
+    def __iter__(self) -> _WindowsEntries:
+        return self
+
+    def _refill(self) -> bool:
+        resource = self._backend._resource(self._directory)
+        information_class = (
+            FILE_ID_EXTD_DIRECTORY_RESTART_INFO_CLASS
+            if self._restart
+            else FILE_ID_EXTD_DIRECTORY_INFO_CLASS
+        )
+        self._restart = False
+        ctypes.memset(self._buffer, 0, _DIRECTORY_BUFFER_BYTES)
+        if not self._backend._api.GetFileInformationByHandleEx(
+            resource.handle,
+            information_class,
+            self._buffer,
+            _DIRECTORY_BUFFER_BYTES,
+        ):
+            code = self._backend._api.last_error()
+            if code == ERROR_NO_MORE_FILES:
+                return False
+            raise _error_from_win32(
+                code,
+                "enumerate directory capability",
+                self._directory.path_hint,
+            )
+        self._parser = _DirectoryRecordParser(
+            bytes(self._buffer), self._directory.filesystem
+        )
+        return True
+
+    def __next__(self) -> DirectoryEntry:
+        if self._closed:
+            raise StopIteration
+        while True:
+            try:
+                if self._parser is not None:
+                    record = self._parser.next_record()
+                    if record is not None:
+                        return record
+                    self._parser = None
+                refilled = self._refill()
+            except BaseException as primary_error:
+                _add_close_note(primary_error, self.close)
+                raise
+            if not refilled:
+                self.close()
+                raise StopIteration
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._directory.close()
+        self._closed = True
+
+    def __del__(self) -> None:
+        if not hasattr(self, "_directory"):
+            return
+        try:
+            self.close()
+        except OSError:
+            pass
+
+
 class _WindowsApi:
     def __init__(self) -> None:
         if _KERNEL32 is None or _ADVAPI32 is None or _NTDLL is None:
@@ -373,6 +585,50 @@ class _WindowsApi:
             ULONG,
         )
         self.GetVolumeInformationByHandleW.restype = BOOL
+        self.GetFinalPathNameByHandleW = kernel32.GetFinalPathNameByHandleW
+        self.GetFinalPathNameByHandleW.argtypes = (
+            HANDLE,
+            ctypes.POINTER(WCHAR),
+            ULONG,
+            ULONG,
+        )
+        self.GetFinalPathNameByHandleW.restype = ULONG
+        self.GetVolumePathNameW = kernel32.GetVolumePathNameW
+        self.GetVolumePathNameW.argtypes = (
+            ctypes.c_wchar_p,
+            ctypes.POINTER(WCHAR),
+            ULONG,
+        )
+        self.GetVolumePathNameW.restype = BOOL
+        self.GetVolumeInformationW = kernel32.GetVolumeInformationW
+        self.GetVolumeInformationW.argtypes = (
+            ctypes.c_wchar_p,
+            ctypes.POINTER(WCHAR),
+            ULONG,
+            ctypes.POINTER(ULONG),
+            ctypes.POINTER(ULONG),
+            ctypes.POINTER(ULONG),
+            ctypes.POINTER(WCHAR),
+            ULONG,
+        )
+        self.GetVolumeInformationW.restype = BOOL
+        self.GetDiskFreeSpaceExW = kernel32.GetDiskFreeSpaceExW
+        self.GetDiskFreeSpaceExW.argtypes = (
+            ctypes.c_wchar_p,
+            ctypes.POINTER(ULONGLONG),
+            ctypes.POINTER(ULONGLONG),
+            ctypes.POINTER(ULONGLONG),
+        )
+        self.GetDiskFreeSpaceExW.restype = BOOL
+        self.GetDiskFreeSpaceW = kernel32.GetDiskFreeSpaceW
+        self.GetDiskFreeSpaceW.argtypes = (
+            ctypes.c_wchar_p,
+            ctypes.POINTER(ULONG),
+            ctypes.POINTER(ULONG),
+            ctypes.POINTER(ULONG),
+            ctypes.POINTER(ULONG),
+        )
+        self.GetDiskFreeSpaceW.restype = BOOL
         self.GetSystemTimeAsFileTime = kernel32.GetSystemTimeAsFileTime
         self.GetSystemTimeAsFileTime.argtypes = (ctypes.POINTER(FILETIME),)
         self.GetSystemTimeAsFileTime.restype = None
@@ -423,6 +679,82 @@ class _WindowsApi:
     def last_error(self) -> int:
         return ctypes.get_last_error()
 
+    @staticmethod
+    def _buffer_text(buffer: Any, capacity: int) -> str:
+        encoded = ctypes.string_at(buffer, capacity * ctypes.sizeof(WCHAR))
+        terminator = next(
+            (
+                index
+                for index in range(0, len(encoded), 2)
+                if encoded[index : index + 2] == b"\0\0"
+            ),
+            None,
+        )
+        if terminator is None:
+            raise OSError("Windows path buffer has no terminator")
+        try:
+            return encoded[:terminator].decode("utf-16-le", errors="strict")
+        except UnicodeDecodeError as error:
+            raise OSError("Windows path buffer is invalid UTF-16") from error
+
+    def get_volume_path(self, path: str) -> str:
+        buffer = (WCHAR * _FINAL_PATH_MAX_UNITS)()
+        if not self.GetVolumePathNameW(path, buffer, _FINAL_PATH_MAX_UNITS):
+            raise _error_from_win32(
+                self.last_error(), "recover filesystem volume root", path
+            )
+        return self._buffer_text(buffer, _FINAL_PATH_MAX_UNITS)
+
+    def get_volume_information(self, root: str) -> tuple[int, int, int]:
+        serial = ULONG()
+        maximum_component_length = ULONG()
+        filesystem_flags = ULONG()
+        if not self.GetVolumeInformationW(
+            root,
+            None,
+            0,
+            ctypes.byref(serial),
+            ctypes.byref(maximum_component_length),
+            ctypes.byref(filesystem_flags),
+            None,
+            0,
+        ):
+            raise _error_from_win32(
+                self.last_error(), "read path filesystem identity", root
+            )
+        return (
+            int(serial.value),
+            int(maximum_component_length.value),
+            int(filesystem_flags.value),
+        )
+
+    def get_disk_free_space_ex(self, path: str) -> int:
+        available = ULONGLONG()
+        if not self.GetDiskFreeSpaceExW(
+            path, ctypes.byref(available), None, None
+        ):
+            raise _error_from_win32(
+                self.last_error(), "read filesystem available bytes", path
+            )
+        return int(available.value)
+
+    def get_disk_free_space(self, root: str) -> tuple[int, int]:
+        sectors_per_cluster = ULONG()
+        bytes_per_sector = ULONG()
+        free_clusters = ULONG()
+        total_clusters = ULONG()
+        if not self.GetDiskFreeSpaceW(
+            root,
+            ctypes.byref(sectors_per_cluster),
+            ctypes.byref(bytes_per_sector),
+            ctypes.byref(free_clusters),
+            ctypes.byref(total_clusters),
+        ):
+            raise _error_from_win32(
+                self.last_error(), "read filesystem allocation unit", root
+            )
+        return int(sectors_per_cluster.value), int(bytes_per_sector.value)
+
     def before_relative_open(self) -> None:
         return None
 
@@ -436,6 +768,8 @@ class _WindowsResource:
     parent: DirectoryCapability | None
     name: str | None
     delete_authority: bool
+    desired_access: int = 0
+    share_mode: int = 0
 
 
 class WindowsFilesystemBackend:
@@ -685,11 +1019,20 @@ class WindowsFilesystemBackend:
         created: bool,
         path_hint: Path,
         desired_access: int,
+        share_mode: int | None = None,
     ) -> DirectoryCapability:
+        actual_share_mode = (
+            _share_mode(share_policy) if share_mode is None else share_mode
+        )
         return DirectoryCapability(
             self,
             _WindowsResource(
-                handle, parent, name, bool(desired_access & DELETE)
+                handle,
+                parent,
+                name,
+                bool(desired_access & DELETE),
+                desired_access,
+                actual_share_mode,
             ),
             identity=metadata.identity,
             filesystem=metadata.filesystem,
@@ -714,7 +1057,12 @@ class WindowsFilesystemBackend:
         desired_access: int,
     ) -> FileCapability | DirectoryCapability:
         resource = _WindowsResource(
-            handle, parent, name, bool(desired_access & DELETE)
+            handle,
+            parent,
+            name,
+            bool(desired_access & DELETE),
+            desired_access,
+            _share_mode(share_policy),
         )
         if metadata.kind is EntryKind.DIRECTORY:
             return DirectoryCapability(
@@ -1030,7 +1378,12 @@ class WindowsFilesystemBackend:
             allowed_information=allowed_information,
         )
         resource = _WindowsResource(
-            handle, parent, name, bool(desired_access & DELETE)
+            handle,
+            parent,
+            name,
+            bool(desired_access & DELETE),
+            desired_access,
+            _share_mode(share_policy),
         )
         return FileCapability(
             self,
@@ -1093,9 +1446,15 @@ class WindowsFilesystemBackend:
         effective_policy = (
             directory.share_policy if share_policy is None else share_policy
         )
-        if effective_policy is not directory.share_policy:
-            raise ValueError("duplicate handle cannot change its share policy")
         source = self._resource(directory)
+        requested_access = _directory_access(
+            effective_policy, relative_target=source.parent is not None
+        )
+        requested_share_mode = _share_mode(effective_policy)
+        if requested_share_mode != source.share_mode:
+            raise ValueError("duplicate handle cannot change its share mode")
+        if requested_access & ~source.desired_access:
+            raise ValueError("duplicate handle cannot widen its authority")
         process = self._api.GetCurrentProcess()
         duplicate = HANDLE()
         if not self._api.DuplicateHandle(
@@ -1126,7 +1485,8 @@ class WindowsFilesystemBackend:
                 security_domain=directory.security_domain,
                 created=False,
                 path_hint=directory.path_hint,
-                desired_access=DELETE if source.delete_authority else 0,
+                desired_access=source.desired_access,
+                share_mode=source.share_mode,
             )
         except BaseException as primary_error:
             self._close_after_error(
@@ -1144,10 +1504,107 @@ class WindowsFilesystemBackend:
         raise NotImplementedError("managed Windows security is not available")
 
     def entries(self, parent: DirectoryCapability) -> DirectoryIterator:
-        raise NotImplementedError("Windows enumeration is not available")
+        reopened = self.reopen_directory(parent)
+        try:
+            return self.entries_owned(reopened)
+        except BaseException as primary_error:
+            _add_close_note(primary_error, reopened.close)
+            raise
 
     def entries_owned(self, parent: DirectoryCapability) -> DirectoryIterator:
-        raise NotImplementedError("Windows enumeration is not available")
+        return _WindowsEntries(self, parent)
+
+    def _final_path_string(
+        self, directory: DirectoryCapability, volume_name: int
+    ) -> str:
+        resource = self._resource(directory)
+        capacity = _FINAL_PATH_INITIAL_UNITS
+        while True:
+            buffer = (WCHAR * capacity)()
+            result = int(
+                self._api.GetFinalPathNameByHandleW(
+                    resource.handle, buffer, capacity, volume_name
+                )
+            )
+            if result == 0:
+                self._raise_last_error(
+                    "recover final directory path", directory.path_hint
+                )
+            if result >= capacity:
+                if result <= capacity:
+                    raise OSError("final path buffer did not make progress")
+                if result > _FINAL_PATH_MAX_UNITS:
+                    raise OSError("final path exceeds the bounded buffer")
+                capacity = result
+                continue
+            try:
+                path = ctypes.string_at(
+                    buffer, result * ctypes.sizeof(WCHAR)
+                ).decode("utf-16-le", errors="strict")
+            except UnicodeDecodeError as error:
+                raise OSError("final path is invalid UTF-16") from error
+            if not path or "\0" in path:
+                raise OSError("final path is empty or malformed")
+            return path
+
+    @staticmethod
+    def _is_absolute_dos_path(path: str) -> bool:
+        if "/" in path or "\0" in path:
+            return False
+        if len(path) >= 7 and path.startswith("\\\\?\\"):
+            drive = path[4:7]
+            if (
+                drive[0].isascii()
+                and drive[0].isalpha()
+                and drive[1:] == ":\\"
+            ):
+                return True
+        unc_prefix = "\\\\?\\UNC\\"
+        if path.startswith(unc_prefix):
+            components = path[len(unc_prefix) :].split("\\")
+            return len(components) >= 2 and bool(components[0]) and bool(
+                components[1]
+            )
+        return False
+
+    def _volume_paths(
+        self, directory: DirectoryCapability
+    ) -> tuple[str, str]:
+        volume_path = self._final_path_string(directory, VOLUME_NAME_GUID)
+        match = _VOLUME_GUID_ROOT.match(volume_path)
+        if match is None or "/" in volume_path or "\0" in volume_path:
+            raise OSError("final path is not an absolute volume-GUID path")
+        expected_root = match.group(0)
+        volume_root = self._api.get_volume_path(volume_path)
+        if volume_root != expected_root or not volume_root.endswith("\\"):
+            raise OSError("filesystem volume root does not match the GUID path")
+        return volume_path, volume_root
+
+    def _verify_path_volume(
+        self, volume_root: str, expected: FilesystemIdentity
+    ) -> None:
+        serial, maximum_component_length, filesystem_flags = (
+            self._api.get_volume_information(volume_root)
+        )
+        if (
+            serial != expected.volume & 0xFFFF_FFFF
+            or maximum_component_length != expected.discriminator_a
+            or filesystem_flags != expected.discriminator_b
+        ):
+            raise OSError("path filesystem identity changed")
+
+    def _capacity_handle_metadata(
+        self, directory: DirectoryCapability
+    ) -> _Metadata:
+        resource = self._resource(directory)
+        metadata = self._metadata(resource.handle, directory.path_hint)
+        if (
+            metadata.identity != directory.identity
+            or metadata.filesystem != directory.filesystem
+            or metadata.kind is not EntryKind.DIRECTORY
+        ):
+            raise OSError("capacity root identity changed")
+        return metadata
 
     def rename(
         self,
@@ -1163,10 +1620,40 @@ class WindowsFilesystemBackend:
         raise NotImplementedError("Windows delete is not available")
 
     def available_bytes(self, directory: DirectoryCapability) -> int:
-        raise NotImplementedError("Windows capacity is not available")
+        before = self._capacity_handle_metadata(directory)
+        volume_path, volume_root = self._volume_paths(directory)
+        self._verify_path_volume(volume_root, before.filesystem)
+        available = self._api.get_disk_free_space_ex(volume_path)
+        self._verify_path_volume(volume_root, before.filesystem)
+        after = self._capacity_handle_metadata(directory)
+        if (
+            before.identity != after.identity
+            or before.filesystem != after.filesystem
+        ):
+            raise OSError("capacity root identity changed")
+        if available < 0:
+            raise OSError("filesystem reported negative available bytes")
+        return available
 
     def allocation_unit(self, directory: DirectoryCapability) -> int:
-        raise NotImplementedError("Windows capacity is not available")
+        before = self._capacity_handle_metadata(directory)
+        _volume_path, volume_root = self._volume_paths(directory)
+        self._verify_path_volume(volume_root, before.filesystem)
+        sectors_per_cluster, bytes_per_sector = (
+            self._api.get_disk_free_space(volume_root)
+        )
+        self._verify_path_volume(volume_root, before.filesystem)
+        after = self._capacity_handle_metadata(directory)
+        if (
+            before.identity != after.identity
+            or before.filesystem != after.filesystem
+        ):
+            raise OSError("capacity root identity changed")
+        if sectors_per_cluster <= 0 or bytes_per_sector <= 0:
+            raise OSError("filesystem reported an invalid allocation unit")
+        if sectors_per_cluster > _MAX_UINT64 // bytes_per_sector:
+            raise OSError("filesystem allocation unit overflows 64 bits")
+        return sectors_per_cluster * bytes_per_sector
 
     def touch(self, file: FileCapability) -> None:
         raise NotImplementedError("Windows timestamp mutation is not available")
@@ -1175,7 +1662,10 @@ class WindowsFilesystemBackend:
         raise NotImplementedError("Windows flush is not available")
 
     def final_path(self, directory: DirectoryCapability) -> Path:
-        raise NotImplementedError("Windows final path is not available")
+        path = self._final_path_string(directory, VOLUME_NAME_DOS)
+        if not self._is_absolute_dos_path(path):
+            raise OSError("final path is not an absolute DOS path")
+        return Path(path)
 
     def verify_managed_security(
         self,
