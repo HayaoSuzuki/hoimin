@@ -224,6 +224,10 @@ class FileCapability(_Capability):
 
     def detach_to_fd(self, flags: int) -> int:
         resource = self._resource_for(self._owner)
+        if self._kind is not EntryKind.REGULAR:
+            raise RuntimeError(
+                "only regular file capabilities can detach to a descriptor"
+            )
         descriptor = self._owner.detach_file_resource(  # type: ignore[attr-defined]
             resource, flags
         )

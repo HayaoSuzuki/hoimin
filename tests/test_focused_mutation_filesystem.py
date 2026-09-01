@@ -187,6 +187,26 @@ class CapabilityOwnershipTests(unittest.TestCase):
         capability.close()
         self.assertEqual(owner.closed, [])
 
+    def test_non_regular_capability_cannot_detach(self) -> None:
+        for resource, kind in (
+            (10, EntryKind.REPARSE),
+            (11, EntryKind.OTHER),
+        ):
+            with self.subTest(kind=kind):
+                owner = RecordingOwner()
+                capability = _test_file_capability(owner, resource, kind=kind)
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "only regular file capabilities can detach to a descriptor",
+                ):
+                    capability.detach_to_fd(3)
+                self.assertEqual(owner.detached, [])
+                self.assertTrue(capability.is_open)
+                self.assertTrue(capability.owned_by(owner))
+                capability.close()
+                capability.close()
+                self.assertEqual(owner.closed, [resource])
+
     def test_directory_move_invalidates_source_and_closes_replacement_once(self) -> None:
         owner = RecordingOwner()
         source = _test_directory_capability(owner, 13)
