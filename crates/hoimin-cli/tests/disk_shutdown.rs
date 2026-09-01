@@ -15,11 +15,27 @@ fn successful_command() -> Vec<OsString> {
     }
 }
 
+fn with_host_independent_reserve(mut args: Vec<OsString>) -> Vec<OsString> {
+    assert!(
+        !args.iter().any(|argument| argument == "--min-free-space"),
+        "host-independent runtime test must not override an explicit reserve"
+    );
+    let command_separator = args
+        .iter()
+        .position(|argument| argument == "--")
+        .expect("runtime test arguments contain a command separator");
+    args.splice(
+        command_separator..command_separator,
+        [OsString::from("--min-free-space"), OsString::from("1B")],
+    );
+    args
+}
+
 #[tokio::test]
 async fn public_runtime_emits_measured_disk_and_cleanup_evidence() {
     let project = tempfile::tempdir().unwrap();
     std::fs::write(project.path().join("target.py"), b"value = 1\n").unwrap();
-    let mut args = vec![
+    let mut args = with_host_independent_reserve(vec![
         OsString::from("hoimin"),
         OsString::from("run"),
         OsString::from("--root"),
@@ -32,7 +48,7 @@ async fn public_runtime_emits_measured_disk_and_cleanup_evidence() {
         OsString::from("1"),
         OsString::from("--allow-best-effort-memory"),
         OsString::from("--"),
-    ];
+    ]);
     args.extend(successful_command());
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -103,7 +119,7 @@ async fn public_initial_reserve_failure_uses_the_typed_report_path_before_dispat
 async fn public_jsonl_runtime_emits_disk_evidence() {
     let project = tempfile::tempdir().unwrap();
     std::fs::write(project.path().join("target.py"), b"value = 1\n").unwrap();
-    let mut args = vec![
+    let mut args = with_host_independent_reserve(vec![
         OsString::from("hoimin"),
         OsString::from("run"),
         OsString::from("--root"),
@@ -116,7 +132,7 @@ async fn public_jsonl_runtime_emits_disk_evidence() {
         OsString::from("1"),
         OsString::from("--allow-best-effort-memory"),
         OsString::from("--"),
-    ];
+    ]);
     args.extend(successful_command());
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -146,7 +162,7 @@ async fn public_jsonl_runtime_emits_disk_evidence() {
 async fn public_human_runtime_emits_disk_policy_evidence() {
     let project = tempfile::tempdir().unwrap();
     std::fs::write(project.path().join("target.py"), b"value = 1\n").unwrap();
-    let mut args = vec![
+    let mut args = with_host_independent_reserve(vec![
         OsString::from("hoimin"),
         OsString::from("run"),
         OsString::from("--root"),
@@ -159,7 +175,7 @@ async fn public_human_runtime_emits_disk_policy_evidence() {
         OsString::from("1"),
         OsString::from("--allow-best-effort-memory"),
         OsString::from("--"),
-    ];
+    ]);
     args.extend(successful_command());
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();

@@ -5168,6 +5168,10 @@ mod tests {
     }
 
     fn parse_host_independent_shell_test_config(mut args: Vec<OsString>) -> RunConfig {
+        assert!(
+            !args.iter().any(|argument| argument == "--min-free-space"),
+            "host-independent shell test config must not override an explicit reserve"
+        );
         let command_separator = args
             .iter()
             .position(|argument| argument == "--")

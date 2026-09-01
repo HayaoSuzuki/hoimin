@@ -1218,7 +1218,7 @@ mod tests {
     struct SpacedMeter {
         active: std::sync::Arc<std::sync::atomic::AtomicUsize>,
         maximum_active: std::sync::Arc<std::sync::atomic::AtomicUsize>,
-        starts: std::sync::Arc<std::sync::Mutex<Vec<std::time::Instant>>>,
+        starts: std::sync::mpsc::Sender<std::time::Instant>,
         scan_duration: std::time::Duration,
     }
 
@@ -1398,9 +1398,8 @@ mod tests {
             self.maximum_active
                 .fetch_max(active, std::sync::atomic::Ordering::AcqRel);
             self.starts
-                .lock()
-                .expect("scan starts lock")
-                .push(std::time::Instant::now());
+                .send(std::time::Instant::now())
+                .expect("scan start receiver");
             std::thread::sleep(self.scan_duration);
             self.active
                 .fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
@@ -1417,14 +1416,14 @@ mod tests {
     async fn monitor_runs_one_scan_at_a_time_and_waits_after_each_scan() {
         let active = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let maximum_active = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let starts = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let (starts_tx, starts_rx) = std::sync::mpsc::channel();
         let scan_duration = std::time::Duration::from_millis(20);
         let interval = std::time::Duration::from_millis(20);
         let monitor = DiskMonitor::start_with_meter_and_interval(
             SpacedMeter {
                 active: std::sync::Arc::clone(&active),
                 maximum_active: std::sync::Arc::clone(&maximum_active),
-                starts: std::sync::Arc::clone(&starts),
+                starts: starts_tx,
                 scan_duration,
             },
             hoimin_core::DiskPolicy {
@@ -1437,7 +1436,12 @@ mod tests {
         .await
         .expect("monitor thread starts");
 
-        tokio::time::sleep(std::time::Duration::from_millis(75)).await;
+        let first = starts_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("initial scan starts");
+        let second = starts_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("periodic scan starts");
         assert!(
             monitor
                 .stop_and_join(std::time::Duration::from_secs(1))
@@ -1445,11 +1449,10 @@ mod tests {
         );
 
         assert_eq!(maximum_active.load(std::sync::atomic::Ordering::Acquire), 1);
-        let starts = starts.lock().expect("scan starts lock");
-        assert!(starts.len() >= 2, "expected a periodic scan: {starts:?}");
-        assert!(starts.windows(2).all(|pair| {
-            pair[1].duration_since(pair[0]) >= scan_duration.saturating_add(interval)
-        }));
+        assert!(
+            second.duration_since(first) >= scan_duration.saturating_add(interval),
+            "periodic scan started too early: first={first:?}, second={second:?}"
+        );
     }
 
     #[tokio::test]
