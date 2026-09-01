@@ -1166,4 +1166,82 @@ mod tests {
         assert!(parent.symlink_metadata("source").is_err());
         assert!(parent.symlink_metadata("destination").unwrap().is_dir());
     }
+
+    #[test]
+    fn round_six_checked_remove_entry_blocks_replacement_after_identity_validation() {
+        let temporary = tempfile::tempdir().unwrap();
+        let parent =
+            cap_std::fs::Dir::open_ambient_dir(temporary.path(), cap_std::ambient_authority())
+                .unwrap();
+        parent.write("source", b"original").unwrap();
+        let original = open_entry_shared(&parent, OsStr::new("source")).unwrap();
+        let original_identity = file_identity_io(&original).unwrap();
+        drop(original);
+        let hook_calls = std::cell::Cell::new(0_u8);
+        let rename_blocked = std::cell::Cell::new(false);
+        let replacement_installed = std::cell::Cell::new(false);
+
+        remove_entry_io_checked_with_guard(
+            &parent,
+            OsStr::new("source"),
+            original_identity,
+            &|| {
+                let call = hook_calls.get().saturating_add(1);
+                hook_calls.set(call);
+                if call == 3 {
+                    match parent.rename("source", &parent, "parked") {
+                        Ok(()) => {
+                            parent.write("source", b"replacement")?;
+                            replacement_installed.set(true);
+                        }
+                        Err(_) => rename_blocked.set(true),
+                    }
+                }
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        assert!(
+            rename_blocked.get(),
+            "the checked DELETE handle allowed rename"
+        );
+        assert!(
+            !replacement_installed.get(),
+            "a same-name replacement was installed during checked deletion"
+        );
+        assert!(parent.symlink_metadata("source").is_err());
+        assert!(parent.symlink_metadata("parked").is_err());
+    }
+
+    #[test]
+    fn round_six_remove_handle_is_pinned_but_shared_inspection_stays_compatible() {
+        let temporary = tempfile::tempdir().unwrap();
+        let parent =
+            cap_std::fs::Dir::open_ambient_dir(temporary.path(), cap_std::ambient_authority())
+                .unwrap();
+        parent.write("source", b"content").unwrap();
+        let removal =
+            open_final_handle(&parent, OsStr::new("source"), WindowsFinalOperation::Remove)
+                .unwrap();
+        let inspection = open_entry_shared(&parent, OsStr::new("source")).unwrap();
+
+        assert_eq!(
+            file_identity_io(&removal).unwrap(),
+            file_identity_io(&inspection).unwrap()
+        );
+        assert!(
+            parent.rename("source", &parent, "destination").is_err(),
+            "a live Remove handle allowed an independent rename"
+        );
+        assert!(
+            parent.remove_file("source").is_err(),
+            "a live Remove handle allowed an independent delete"
+        );
+
+        drop(inspection);
+        drop(removal);
+        parent.rename("source", &parent, "destination").unwrap();
+        parent.remove_file("destination").unwrap();
+    }
 }

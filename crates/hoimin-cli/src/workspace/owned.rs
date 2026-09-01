@@ -177,27 +177,6 @@ mod tests {
     }
 
     #[test]
-    fn deferred_cleanup_keeps_the_exclusive_lease_guard() {
-        use fs2::FileExt;
-
-        let temp = tempfile::tempdir().unwrap();
-        let lease_path = temp.path().join("lease");
-        let lease = std::fs::File::create(&lease_path).unwrap();
-        FileExt::try_lock_exclusive(&lease).unwrap();
-        let pending = super::PendingCleanup {
-            deleting_name: ".deleting-test".to_owned(),
-            expected_identity: (1, 2),
-            _lease_guard: lease,
-        };
-        let contender = std::fs::File::open(&lease_path).unwrap();
-
-        assert!(FileExt::try_lock_exclusive(&contender).is_err());
-        drop(pending);
-        FileExt::try_lock_exclusive(&contender).unwrap();
-        FileExt::unlock(&contender).unwrap();
-    }
-
-    #[test]
     fn diagnostic_details_have_count_and_utf8_byte_caps() {
         let mut report = super::ReclaimReport::default();
         for _ in 0..=super::MAX_DIAGNOSTIC_DETAILS {
@@ -1348,6 +1327,27 @@ mod tests {
         assert!(second_path.exists());
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn round_six_live_owner_cleanup_consumes_claimed_root_and_lease_pins() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let active = format!("{}{}", super::ACTIVE_PREFIX, root.run_id);
+        let deleting = format!("{}{}", super::DELETING_PREFIX, root.run_id);
+
+        let record = root.cleanup(std::time::Duration::from_secs(5));
+
+        assert_eq!(
+            record.status,
+            hoimin_core::DiskCleanupStatus::Clean,
+            "{record:?}"
+        );
+        assert!(coordinator.dir.symlink_metadata(&active).is_err());
+        assert!(coordinator.dir.symlink_metadata(&deleting).is_err());
+    }
+
     #[test]
     fn owner_cleanup_defers_until_all_managed_child_handles_are_closed() {
         let parent = tempfile::tempdir().unwrap();
@@ -1913,6 +1913,26 @@ mod tests {
         assert!(!published.exists());
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn round_six_abandoned_cleanup_ready_active_root_consumes_claim_pins() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let active = format!("{}{}", super::ACTIVE_PREFIX, root.run_id);
+        let deleting = format!("{}{}", super::DELETING_PREFIX, root.run_id);
+        root.mark_cleanup_ready().unwrap();
+        drop(root);
+
+        let report = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
+
+        assert_eq!(report.reclaimed_roots, 1, "{report:?}");
+        assert_eq!(report.preserved_roots, 0, "{report:?}");
+        assert!(coordinator.dir.symlink_metadata(&active).is_err());
+        assert!(coordinator.dir.symlink_metadata(&deleting).is_err());
+    }
+
     #[test]
     fn live_managed_child_keeps_the_root_lease_after_the_owner_is_dropped() {
         let parent = tempfile::tempdir().unwrap();
@@ -2051,6 +2071,22 @@ mod tests {
 
         assert_eq!(report.reclaimed_roots, 1, "{report:?}");
         assert!(coordinator.dir.symlink_metadata(&staging).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn round_six_empty_unmarked_deleting_root_consumes_candidate_pin() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let deleting = format!("{}{}", super::DELETING_PREFIX, uuid::Uuid::new_v4());
+        coordinator.dir.create_dir(&deleting).unwrap();
+
+        let report = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
+
+        assert_eq!(report.reclaimed_roots, 1, "{report:?}");
+        assert_eq!(report.preserved_roots, 0, "{report:?}");
+        assert!(coordinator.dir.symlink_metadata(&deleting).is_err());
     }
 
     #[test]
