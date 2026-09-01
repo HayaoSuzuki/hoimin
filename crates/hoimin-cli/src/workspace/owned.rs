@@ -2147,8 +2147,8 @@ fn error_after_created_directory_rollback_with(
 ) -> std::io::Error {
     let Some(expected_identity) = expected_identity else {
         return created_directory_rollback_error(
-            primary,
-            std::io::Error::other(
+            &primary,
+            &std::io::Error::other(
                 "bounded cleanup cannot proceed without the created directory identity; unverified name left untouched",
             ),
         );
@@ -2165,14 +2165,14 @@ fn error_after_created_directory_rollback_with(
     };
     match cleanup {
         Ok(()) => primary,
-        Err(secondary) => created_directory_rollback_error(primary, secondary),
+        Err(secondary) => created_directory_rollback_error(&primary, &secondary),
     }
 }
 
 #[cfg(any(unix, test))]
 fn created_directory_rollback_error(
-    primary: std::io::Error,
-    secondary: std::io::Error,
+    primary: &std::io::Error,
+    secondary: &std::io::Error,
 ) -> std::io::Error {
     std::io::Error::new(
         primary.kind(),
