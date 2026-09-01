@@ -4365,6 +4365,172 @@ class WindowsTask5ReviewFixRound2Tests(unittest.TestCase):
                 parent.close()
 
 
+class WindowsTask5ReviewFixRound3Tests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "requires Windows native handles")
+    def test_native_open_or_create_opened_results_have_final_share_profile(
+        self,
+    ) -> None:
+        read_write_access = (
+            windows_native.SYNCHRONIZE
+            | windows_native.READ_CONTROL
+            | windows_native.FILE_READ_ATTRIBUTES
+            | windows_native.FILE_READ_DATA
+            | windows_native.FILE_WRITE_DATA
+            | windows_native.FILE_WRITE_ATTRIBUTES
+        )
+        read_access = (
+            windows_native.SYNCHRONIZE
+            | windows_native.READ_CONTROL
+            | windows_native.FILE_READ_ATTRIBUTES
+            | windows_native.FILE_READ_DATA
+        )
+        cases = (
+            (
+                SecurityDomain.CALLER,
+                SharePolicy.PINNED,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+            ),
+            (
+                SecurityDomain.CALLER,
+                SharePolicy.SCAN,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            ),
+            (
+                SecurityDomain.MANAGED,
+                SharePolicy.PINNED,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+            ),
+            (
+                SecurityDomain.MANAGED,
+                SharePolicy.SCAN,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            ),
+        )
+        for domain, policy, expected_share in cases:
+            with (
+                self.subTest(domain=domain, policy=policy),
+                tempfile.TemporaryDirectory() as raw,
+            ):
+                api = _Task5ReviewApi()
+                backend = WindowsFilesystemBackend(api=api)
+                root = backend.open_root(Path(raw), SharePolicy.MUTATION)
+                managed: DirectoryCapability | None = None
+                opened: FileCapability | None = None
+                second: FileCapability | None = None
+                try:
+                    parent = root
+                    if domain is SecurityDomain.MANAGED:
+                        managed = backend.create_secure_root(root, "managed")
+                        parent = managed
+
+                    initial = backend.open_file(
+                        parent,
+                        "item",
+                        access=FileAccess.READ_WRITE,
+                        disposition=CreateDisposition.CREATE_NEW,
+                        share_policy=policy,
+                    )
+                    try:
+                        expected_identity = initial.identity
+                        expected_kind = initial.kind
+                        expected_filesystem = initial.filesystem
+                    finally:
+                        initial.close()
+
+                    calls_before = len(api.nt_create_records)
+                    original_verify = backend._verify_managed_security_resource
+                    with mock.patch.object(
+                        backend,
+                        "_verify_managed_security_resource",
+                        wraps=original_verify,
+                    ) as verify:
+                        opened = backend.open_file(
+                            parent,
+                            "item",
+                            access=FileAccess.READ_WRITE,
+                            disposition=CreateDisposition.OPEN_OR_CREATE,
+                            share_policy=policy,
+                        )
+
+                    expected_open_access = read_write_access
+                    if domain is SecurityDomain.MANAGED:
+                        expected_open_access |= windows_native.WRITE_DAC
+                    opened_records = [
+                        record
+                        for record in api.nt_create_records[calls_before:]
+                        if record["disposition"] == windows_native.FILE_CREATE
+                        or (
+                            record["disposition"] == windows_native.FILE_OPEN
+                            and record["desired_access"]
+                            == expected_open_access
+                        )
+                    ]
+                    self.assertEqual(
+                        [record["disposition"] for record in opened_records],
+                        [windows_native.FILE_CREATE, windows_native.FILE_OPEN],
+                    )
+                    self.assertEqual(
+                        int(opened_records[1]["security_descriptor"]), 0
+                    )
+                    if domain is SecurityDomain.MANAGED:
+                        self.assertNotEqual(
+                            int(opened_records[0]["security_descriptor"]), 0
+                        )
+                        verify.assert_called_once()
+                        self.assertTrue(verify.call_args.kwargs["repair_dacl"])
+                        self.assertFalse(verify.call_args.kwargs["directory"])
+                    else:
+                        self.assertEqual(
+                            int(opened_records[0]["security_descriptor"]), 0
+                        )
+                        verify.assert_not_called()
+
+                    opened_resource = backend._resource(opened)
+                    self.assertFalse(opened.created)
+                    self.assertEqual(opened.identity, expected_identity)
+                    self.assertIs(opened.kind, expected_kind)
+                    self.assertEqual(opened.filesystem, expected_filesystem)
+                    self.assertFalse(opened_resource.delete_authority)
+                    self.assertEqual(
+                        opened_resource.desired_access, expected_open_access
+                    )
+                    self.assertEqual(
+                        opened_resource.share_mode, expected_share
+                    )
+
+                    second = backend.open_file(
+                        parent,
+                        "item",
+                        access=FileAccess.READ,
+                        disposition=CreateDisposition.OPEN_EXISTING,
+                        share_policy=SharePolicy.PINNED,
+                    )
+                    second_resource = backend._resource(second)
+                    self.assertFalse(second.created)
+                    self.assertEqual(second.identity, expected_identity)
+                    self.assertIs(second.kind, expected_kind)
+                    self.assertEqual(second.filesystem, expected_filesystem)
+                    self.assertFalse(second_resource.delete_authority)
+                    self.assertEqual(second_resource.desired_access, read_access)
+                    self.assertEqual(
+                        second_resource.share_mode,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    )
+
+                    second.close()
+                    second = None
+                    opened.close()
+                    opened = None
+                finally:
+                    if second is not None:
+                        second.close()
+                    if opened is not None:
+                        opened.close()
+                    if managed is not None:
+                        managed.close()
+                    root.close()
+
+
 class WindowsTask5ReviewFixTests(unittest.TestCase):
     @unittest.skipUnless(os.name == "nt", "requires Windows native handles")
     def test_native_pinned_and_scan_failures_remove_only_created_identity(self) -> None:
