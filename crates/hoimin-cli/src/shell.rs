@@ -5159,6 +5159,28 @@ mod tests {
         .unwrap()
     }
 
+    fn assert_host_independent_test_reserve(config: &RunConfig) {
+        assert_eq!(
+            config.limits.min_free_space.get(),
+            1,
+            "ordinary shell tests must not depend on host free space"
+        );
+    }
+
+    fn parse_host_independent_shell_test_config(mut args: Vec<OsString>) -> RunConfig {
+        let command_separator = args
+            .iter()
+            .position(|argument| argument == "--")
+            .expect("shell test config contains a command separator");
+        args.splice(
+            command_separator..command_separator,
+            [OsString::from("--min-free-space"), OsString::from("1B")],
+        );
+        let config = crate::cli::parse_config_from(args).unwrap();
+        assert_host_independent_test_reserve(&config);
+        config
+    }
+
     fn output_failure_test_config(project: &TempDir, format: &str) -> RunConfig {
         std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
         let mut args = vec![
@@ -5711,7 +5733,7 @@ mod tests {
             OsString::from("--"),
         ];
         args.extend(successful_test_command());
-        let config = crate::cli::parse_config_from(args).unwrap();
+        let config = parse_host_independent_shell_test_config(args);
         let (control, pause) = RunControl::with_final_measurement_pause();
         let (probe_request_tx, probe_request_rx) = tokio::sync::oneshot::channel();
         let (probe_observed_tx, probe_observed_rx) = std::sync::mpsc::channel();
@@ -5836,7 +5858,7 @@ mod tests {
             OsString::from("--"),
         ];
         args.extend(successful_test_command());
-        let config = crate::cli::parse_config_from(args).unwrap();
+        let config = parse_host_independent_shell_test_config(args);
         let control = RunControl::new();
         control.inject_process_reap_failure();
         let observed = control.clone();
@@ -6290,7 +6312,7 @@ mod tests {
             OsString::from("--"),
         ];
         args.extend(successful_test_command());
-        let config = crate::cli::parse_config_from(args).unwrap();
+        let config = parse_host_independent_shell_test_config(args);
         let control = RunControl::new();
         let observed = control.clone();
 
@@ -6322,7 +6344,7 @@ mod tests {
             OsString::from("--"),
         ];
         args.extend(successful_test_command());
-        let config = crate::cli::parse_config_from(args).unwrap();
+        let config = parse_host_independent_shell_test_config(args);
         let control = RunControl::new();
         let observed = control.clone();
 
@@ -6361,7 +6383,7 @@ mod tests {
             OsString::from("--"),
         ];
         args.extend(successful_test_command());
-        let config = crate::cli::parse_config_from(args).unwrap();
+        let config = parse_host_independent_shell_test_config(args);
         let mut stdout = Vec::new();
 
         assert_eq!(
@@ -6459,7 +6481,7 @@ mod tests {
             OsString::from("--"),
         ];
         args.extend(successful_test_command());
-        let config = crate::cli::parse_config_from(args).unwrap();
+        let config = parse_host_independent_shell_test_config(args);
         let control = RunControl::new();
         control.override_end_available(Err("injected end query failure".to_owned()));
         let observed = control.clone();
@@ -7114,7 +7136,7 @@ mod tests {
             OsString::from("--"),
         ];
         args.extend(successful_test_command());
-        let config = crate::cli::parse_config_from(args).unwrap();
+        let config = parse_host_independent_shell_test_config(args);
         let control = RunControl::cancelling_before_run_finished();
         let observed_control = control.clone();
         let mut stdout = Vec::new();
@@ -8126,7 +8148,7 @@ mod tests {
         let project = tempfile::tempdir().unwrap();
         let original = project.path().join("target.py");
         std::fs::write(&original, b"original\n").unwrap();
-        let config = crate::cli::parse_config_from([
+        let config = parse_host_independent_shell_test_config(vec![
             OsString::from("hoimin"),
             OsString::from("run"),
             OsString::from("--root"),
@@ -8138,8 +8160,7 @@ mod tests {
             OsString::from("--allow-best-effort-memory"),
             OsString::from("--"),
             OsString::from("unused-test-command"),
-        ])
-        .unwrap();
+        ]);
         let (control, mut pause_controller) = RunControl::with_materialization_pause(0);
         let observed_control = control.clone();
         let mutation = tokio::task::spawn_blocking(move || {
@@ -8174,7 +8195,7 @@ mod tests {
         total_timeout: &str,
     ) -> RunConfig {
         std::fs::write(project.path().join("target.py"), b"value = 1\n").unwrap();
-        crate::cli::parse_config_from([
+        parse_host_independent_shell_test_config(vec![
             OsString::from("hoimin"),
             OsString::from("run"),
             OsString::from("--root"),
@@ -8187,7 +8208,6 @@ mod tests {
             OsString::from("--"),
             OsString::from("unused-test-command"),
         ])
-        .unwrap()
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
