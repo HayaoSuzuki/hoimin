@@ -120,18 +120,28 @@ class CreateDisposition(StrEnum):
     OPEN_EXISTING = "open_existing"
     CREATE_NEW = "create_new"
     OPEN_OR_CREATE = "open_or_create"
-
-class FileCapability: ...
-class DirectoryCapability: ...
-class FilesystemBackend(Protocol): ...
 ```
+
+The module also defines the owning `FileCapability` and
+`DirectoryCapability` classes plus the structural `FilesystemBackend`
+protocol detailed below.
 
 `FileCapability` and `DirectoryCapability` are owning context managers. Their
 `close()` method is idempotent in state, reports a failed close without
 discarding ownership, and marks the capability closed only after the native
 close succeeds. They expose no public raw handle. A regular file may transfer
 its ownership once to a CRT descriptor for `LeaseLock` or buffered output; the
-capability becomes detached at that point.
+capability becomes detached at that point. `entries_owned` moves a directory's
+resource into a fresh iterator-owned capability and marks the caller's source
+capability transferred, so an accidentally retained Python reference cannot
+operate on or close the resource. `is_open` is true only in the owning open
+state, and `owned_by(backend)` exposes backend identity without exposing the
+native resource.
+
+Every capability also retains the native create result as `created: bool`.
+`OPEN_OR_CREATE` callers use that result to distinguish a descriptor applied at
+creation from verification of an already-existing object; pathname existence
+checks are never used as a substitute.
 
 On Windows, the transfer method calls `msvcrt.open_osfhandle` while the
 capability is still the sole owner. A failed conversion leaves the capability
@@ -168,8 +178,14 @@ open_file(
     disposition: CreateDisposition,
     share_policy: SharePolicy = SharePolicy.MUTATION,
 ) -> FileCapability
+open_entry(
+    parent: DirectoryCapability,
+    name: str,
+    share_policy: SharePolicy,
+) -> FileCapability | DirectoryCapability
 entry(parent: DirectoryCapability, name: str) -> DirectoryEntry | None
-entries(parent: DirectoryCapability) -> Iterator[DirectoryEntry]
+entries(parent: DirectoryCapability) -> DirectoryIterator
+entries_owned(parent: DirectoryCapability) -> DirectoryIterator
 rename(
     source: FileCapability | DirectoryCapability,
     destination_parent: DirectoryCapability,
@@ -179,13 +195,28 @@ rename(
 ) -> None
 delete(capability: FileCapability | DirectoryCapability) -> None
 available_bytes(directory: DirectoryCapability) -> int
+allocation_unit(directory: DirectoryCapability) -> int
 touch(file: FileCapability) -> None
 flush(file: FileCapability) -> None
+final_path(directory: DirectoryCapability) -> Path
+verify_managed_security(
+    capability: FileCapability | DirectoryCapability,
+    *,
+    repair_dacl: bool,
+) -> None
 ```
 
 Every child name is one non-empty component, is not `.` or `..`, and contains
-no slash, backslash, NUL, or platform separator. The interface rejects invalid
-components before entering a native API.
+no NUL or separator active on the host (`os.sep` and non-null `os.altsep`). The
+interface rejects invalid components before entering a native API. A backslash
+therefore remains a valid POSIX payload character.
+
+The Windows encoder additionally rejects both `/` and `\`, colon/alternate-
+stream syntax, control characters, Win32-forbidden punctuation, trailing dot
+or space, DOS device basenames, unpaired UTF-16 surrogates, and names whose
+encoded byte length cannot fit `UNICODE_STRING.Length`. This stricter rule
+stays in the Windows backend so arbitrary POSIX payload names do not become a
+cross-platform regression.
 
 `open_root` opens and pins an existing final directory. Code that may create a
 managed root first opens its existing parent and passes exactly one validated
@@ -193,15 +224,39 @@ component to `create_secure_root`; root creation is therefore anchored too.
 `reopen_directory` duplicates the already-open directory object and does not
 smuggle `.` through the child-name interface.
 
+`open_entry` opens the named entry itself without following it and returns the
+capability kind reported by the opened object. Cleanup uses it for regular,
+reparse, and other entries so deletion always acts on an opened object rather
+than a pathname. Backends reject identity changes between `entry` and
+`open_entry`; they do not reinterpret an unsupported object as absent.
+
+`rename` and `delete` accept only a relative `PINNED` source capability. On
+Windows that source has self-`DELETE` authority but denies delete sharing, so
+the validated object cannot move before the native namespace operation.
+`delete` is consuming: it retains parent/name evidence locally, unlinks or sets
+disposition on that exact opened object, closes the capability, and only then
+verifies absence relative to the live parent. This ordering is required on
+Windows because disposition takes effect at handle close. A failed close
+leaves the capability retryable and the delete fails; a same-name replacement
+found during absence verification is reported but is never opened or deleted
+as a fallback target.
+
 Each directory capability records a `SecurityDomain`. `create_secure_root`
 returns `MANAGED`; reopen and relative child opens preserve the parent's domain.
 Creates below `MANAGED` use the secure descriptor and verify it. Creates below
-`CALLER` retain normal platform inheritance. Output and capacity-only roots are
-`CALLER`, so capability pinning cannot accidentally become ACL ownership.
+`CALLER` retain caller ACL inheritance on Windows. POSIX creation keeps the
+existing explicit private modes (`0700` directories and `0600` files) in both
+domains; opening a caller root never chmods it. Output and capacity-only roots
+are `CALLER`, so capability pinning cannot accidentally become ACL ownership.
 
-The iterator is streaming. It owns an independent reopened enumeration
-capability, returns at most one decoded record at a time, and closes its buffer
-and capability on normal exhaustion, failure, or explicit close.
+`DirectoryIterator` is streaming and exposes its owned directory as a borrowed
+`directory` property for relative child opens. `entries` first reopens the
+supplied directory; `entries_owned` instead moves the supplied capability's
+resource into the iterator and invalidates the source wrapper. The iterator
+returns at most one decoded record at a time and closes its buffer and
+capability on normal exhaustion, failure, or explicit close. DFS uses
+`entries_owned`, so each stack frame accounts for exactly one directory
+capability rather than a directory plus a duplicate iterator handle.
 
 ### POSIX backend
 
@@ -223,10 +278,11 @@ It uses:
 - `CreateFileW` for an initial absolute root open;
 - `NtCreateFile` with `OBJECT_ATTRIBUTES.RootDirectory` for child opens and
   creates;
-- `GetFileInformationByHandle` for file identity and basic attributes;
+- `GetFileInformationByHandleEx(FileIdInfo)` for 128-bit file identity and
+  `GetFileInformationByHandle` for basic attributes;
 - `GetVolumeInformationByHandleW` for filesystem identity;
-- `GetFileInformationByHandleEx` with the file-ID directory information
-  classes for streaming enumeration;
+- `GetFileInformationByHandleEx` with `FileIdExtdDirectoryInfo` and
+  `FileIdExtdDirectoryRestartInfo` for streaming 128-bit-ID enumeration;
 - `GetFinalPathNameByHandleW` plus volume identity revalidation before and
   after `GetDiskFreeSpaceExW`;
 - `NtSetInformationFile` with a destination root handle for rename;
@@ -243,14 +299,27 @@ The share policies mean:
 
 | Policy | Requested authority | Share mode | Use |
 | --- | --- | --- | --- |
-| `SCAN` | enumerate/read attributes/synchronize | read, write, delete | meter and non-destructive inspection |
-| `PINNED` | enumerate/read attributes/synchronize | read, write | output root whose pathname must not move |
-| `MUTATION` | inspect plus `DELETE` and required write attributes | read, write, delete | publication, claim, rename, and removal |
+| `SCAN` | enumerate/traverse/read attributes/synchronize | read, write, delete | meter and non-destructive inspection |
+| `PINNED` | absolute root and typed file: no self-`DELETE`; relative directory and deletion-only `open_entry`: self-`DELETE` | read, write | output/marker pinning and exact relative rename/delete targets whose names must not move during validation and mutation |
+| `MUTATION` | child mutation plus self-`DELETE` and write attributes | read, write, delete | shareable managed/destination parents and command roots |
 
-An opened object is rejected when it is a reparse point, has the wrong kind,
-has an unsupported or zero identity, crosses the root filesystem, or changes
-identity between enumeration and open. A vanished child is returned only as
-absence; access denial, malformed native data, and other errors stay errors.
+Windows rename and delete require a relative `PINNED` source capability with
+native self-`DELETE` authority. Relative pinned directories receive that right;
+files are reopened through deletion-only `open_entry`, because ordinary pinned
+typed-file handles for coordinator/lease/heartbeat must remain concurrently
+openable for locking and reads. Omission of `FILE_SHARE_DELETE` prevents another
+handle from moving or deleting the source between identity validation and the
+native namespace call. `MUTATION` remains delete-sharing so separate Hoimin
+processes can concurrently retain the managed parent; it is not sufficient as
+the source proof for rename/delete.
+
+Typed root, directory, and regular-file opens reject a reparse point, the wrong
+kind, an unsupported or zero identity, a root-filesystem crossing, or an
+identity change between enumeration and open. The deletion-only `open_entry`
+operation may instead return a no-follow `REPARSE` capability so cleanup can
+delete that exact opened object; no caller may traverse or read it as a normal
+file. A vanished child is returned only as absence; access denial, malformed
+native data, and other errors stay errors.
 
 The Windows directory iterator validates every variable-length record,
 including record offset, name-byte alignment, name length, buffer bounds, and
@@ -300,29 +369,52 @@ owner-verified direct managed root or a protocol-recognized object reached from
 that root. Arbitrary ancestors, unrecognized descendants, and caller-provided
 output directories are never re-ACL'd.
 
+Only recognized managed protocol objects call `verify_managed_security`: the
+managed root, coordinator, lease, heartbeat, retention, cleanup-ready marker,
+and Hoimin run directories. Output-owner markers and report temporaries remain
+below the `CALLER` output root. Newly created command spools inherit the
+`MANAGED` command-root creation descriptor, but an existing spool is never
+accepted or DACL-repaired as a protocol object. Worker payload opened during
+cleanup is never relabeled or repaired merely because Hoimin has opened it.
+
 ## Integration by subsystem
 
 ### Disk metering
 
-`DiskGuard` retains one `DirectoryCapability` per configured root. Each sample
-reopens an enumeration capability relative to that retained root and performs
-the existing streaming DFS.
+`DiskGuard` retains one `DirectoryCapability` per configured root. A
+`MeterRoot` may provide a zero-argument capability factory when the owner
+already has an anchored root; `ManagedScratch` and `OwnedOutput` use that path
+so metering cannot reopen their names during a replacement window. Capacity-
+only roots without an existing owner still use `open_root`. `DiskGuard` calls
+each factory once and solely owns the returned capability. Each sample reopens
+an enumeration capability relative to that retained root and performs the
+existing streaming DFS.
 
 Directory and regular-file children are opened relative to the live parent.
 The opened identity must equal the enumerated identity before the entry is
 used. Hard-link deduplication uses `(volume, file)` across all owned roots.
 
-Free-space measurement is tied to the retained root. Windows obtains the final
-volume path from the handle, confirms the volume identity, queries free bytes,
-and confirms the identity again. A path disappearance or replacement for an
-`exact_path` root remains a typed measurement failure.
+Free-space measurement is tied to the retained root. Windows obtains a volume-
+GUID final path from the handle, compares path-reported volume information with
+the handle identity, queries free bytes, then repeats both handle and path-
+volume checks. It fails closed when no volume-GUID path is available. A path
+disappearance or replacement for an `exact_path` root remains a typed
+measurement failure.
+
+Reservation rounding uses `allocation_unit` on the same retained capability.
+POSIX obtains `f_frsize` from `fstatvfs`; Windows derives the volume root from
+the handle's GUID path, obtains sectors per cluster and bytes per sector there,
+and repeats the same object/path-volume identity checks before returning their
+positive product.
 
 The existing limits remain exact:
 
 - depth: 128;
 - entries: 250,000;
 - elapsed scan time: five seconds;
-- open directory capabilities: at most 129 for metering;
+- active DFS-frame directory capabilities: at most 129 for metering, with the
+  existing one retained capability per configured `MeterRoot` accounted
+  separately;
 - hard-link identities: at most the entry limit.
 
 ### Managed scratch, leases, and publication
@@ -331,9 +423,15 @@ Managed-root creation uses the secure descriptor above. Coordinator, lease,
 heartbeat, retention, and cleanup-ready markers are regular-file capabilities
 opened relative to the managed or run root.
 
-On Windows, staging creation acquires the `MUTATION` capability before any
+Long-lived lease, heartbeat, and output-owner marker handles use `PINNED`
+sharing, so another process cannot remove or rename the marker while its lock
+or identity evidence is live. Windows publication/claim closes those marker
+handles before renaming the containing directory, then reopens and revalidates
+them before publishing the new state.
+
+On Windows, staging creation acquires a relative `PINNED` capability before any
 descendant marker is published. Marker capabilities close before publication.
-The retained mutation capability renames staging to active relative to the
+The retained pinned capability renames staging to active relative to the
 live managed-root capability. Markers are reopened, identity/content verified,
 and the lease is reacquired before the coordinator is released.
 
@@ -344,9 +442,11 @@ it never publishes quiescence or a clean result.
 ### Bounded cleanup and janitor
 
 Cleanup walks through live directory capabilities. It never accepts a delete
-path from a marker or report. It opens the candidate with `MUTATION` authority
-before opening descendants and retains that capability through claim,
-traversal, deletion, and absence verification.
+path from a marker or report. It opens the candidate as a relative `PINNED`
+target with `DELETE` authority before opening descendants. The bounded walker
+moves the pin to the current directory, reopens cursor components with identity
+checks, and reacquires an exact pinned capability before each directory delete;
+no namespace mutation occurs from cursor text alone.
 
 Files and empty directories are deleted by handle. Cursor reopen validates
 every saved identity and filesystem boundary. The existing cleanup limits
@@ -373,8 +473,11 @@ children are still created and opened relative to the capability.
 Opening the output root does not alter any ancestor or the root's ACL. The
 final opened object is rejected if it is a reparse point or not a directory,
 and its identity is retained for every later capacity and child operation. Its
-`CALLER` security domain propagates to the owner marker, report temporaries, and
-command spools, which preserve normal ACL inheritance while remaining anchored.
+`CALLER` security domain propagates to the owner marker and report temporaries,
+which preserve normal ACL inheritance while remaining anchored. Command spools
+live below the managed command-root capability instead; they get the managed
+descriptor only on exclusive creation and are never repaired in place as
+trusted pre-existing protocol files.
 
 The owner marker is created exclusively, flushed, locked, and identity
 verified. Atomic report writing creates one deterministic temporary relative
@@ -384,6 +487,12 @@ renames it relative to the same output capability with replacement enabled.
 Command stdout and stderr spools use the same relative file capability API.
 Reads remain bounded before decoding, and discard verifies absence relative to
 the command-root capability.
+
+The command root is not reopened from the `Path` returned by child creation.
+`ManagedScratch.open_child(name, policy)` opens it relative to the retained run
+root and compares the registered creation identity; `RunStore` takes ownership
+of that capability while retaining the path only for reporting and subprocess
+arguments. Constructor failure closes the transferred capability.
 
 Abandoned-output recovery accepts only the canonical marker and its two
 marker-derived temporary names. It locks and validates the marker before
@@ -436,7 +545,8 @@ Finalizers may close a handle. They may not rename, walk, or delete a tree.
 ### Python native primitive tests
 
 - Root and relative child opens retain identity across pathname replacement.
-- Reparse-point roots and children are rejected without following them.
+- Reparse-point roots and typed children are rejected without following them;
+  deletion-only `open_entry` returns the no-follow object for exact deletion.
 - Directory enumeration is streaming, bounded, and rejects malformed records.
 - Relative create is exclusive, rename is destination-root anchored, and
   deletion affects only the opened object.
