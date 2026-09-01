@@ -259,7 +259,12 @@ pub(crate) fn open_directory_for_rename(
     open_directory_with_access(
         parent,
         name,
-        DELETE | SYNCHRONIZE | READ_CONTROL | FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY,
+        DELETE
+            | SYNCHRONIZE
+            | READ_CONTROL
+            | FILE_READ_ATTRIBUTES
+            | FILE_WRITE_ATTRIBUTES
+            | FILE_LIST_DIRECTORY,
         NativeSharePolicy::Pinned,
     )
 }
@@ -361,7 +366,12 @@ pub(crate) fn open_regular_file_for_delete_pinned(
     let file = open_relative(
         parent,
         name,
-        DELETE | SYNCHRONIZE | READ_CONTROL | FILE_READ_ATTRIBUTES | FILE_READ_DATA,
+        DELETE
+            | SYNCHRONIZE
+            | READ_CONTROL
+            | FILE_READ_ATTRIBUTES
+            | FILE_WRITE_ATTRIBUTES
+            | FILE_READ_DATA,
         FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
         NativeSharePolicy::Pinned,
     )?;

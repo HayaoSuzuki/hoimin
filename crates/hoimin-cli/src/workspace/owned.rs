@@ -4677,6 +4677,11 @@ impl ManagedRunRoot {
             omitted_detail_count: 0,
             remaining_root: Some(self.path.clone()),
         };
+        if NamespaceLifecycle::load(&self.namespace) == NamespaceLifecycle::Complete {
+            record.status = DiskCleanupStatus::Clean;
+            record.remaining_root = None;
+            return record;
+        }
         if budget.is_zero() {
             record.status = DiskCleanupStatus::Deferred;
             return record;
@@ -4696,11 +4701,6 @@ impl ManagedRunRoot {
         }
         let active_name = format!("{ACTIVE_PREFIX}{}", self.run_id);
         let deleting_name = format!("{DELETING_PREFIX}{}", self.run_id);
-        if NamespaceLifecycle::load(&self.namespace) == NamespaceLifecycle::Complete {
-            record.status = DiskCleanupStatus::Clean;
-            record.remaining_root = None;
-            return record;
-        }
         let expected_root_identity = match directory_identity(&self.dir) {
             Ok(identity) => identity,
             Err(error) => {
