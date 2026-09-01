@@ -18,9 +18,9 @@ use windows_sys::Win32::Security::Authorization::{
 };
 use windows_sys::Win32::Security::{
     ACL, DACL_SECURITY_INFORMATION, EqualSid, GetSecurityDescriptorControl,
-    GetSecurityDescriptorDacl, GetTokenInformation, OWNER_SECURITY_INFORMATION,
-    PROTECTED_DACL_SECURITY_INFORMATION, PSID, SE_DACL_PROTECTED, SECURITY_ATTRIBUTES, TOKEN_QUERY,
-    TOKEN_USER, TokenUser,
+    GetSecurityDescriptorDacl, GetSecurityDescriptorOwner, GetTokenInformation,
+    OWNER_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, PSID, SE_DACL_PROTECTED,
+    SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER, TokenUser,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     CreateDirectoryW, CreateFileW, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS,
@@ -137,7 +137,7 @@ struct SecurityDescriptor {
 
 impl SecurityDescriptor {
     fn for_user(token: &UserToken, directory: bool) -> io::Result<Self> {
-        let sddl = managed_dacl_sddl(&token.sid_string()?, directory);
+        let sddl = managed_security_sddl(&token.sid_string()?, directory);
         Self::from_sddl(&sddl)
     }
 
@@ -193,12 +193,29 @@ impl SecurityDescriptor {
         }
         Ok(dacl)
     }
+
+    fn owner(&self) -> io::Result<PSID> {
+        let mut owner = ptr::null_mut();
+        let mut defaulted = 0;
+        if unsafe { GetSecurityDescriptorOwner(self.pointer(), &raw mut owner, &raw mut defaulted) }
+            == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        if owner.is_null() || defaulted != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "managed descriptor has no explicit owner",
+            ));
+        }
+        Ok(owner)
+    }
 }
 
-fn managed_dacl_sddl(user_sid: &str, directory: bool) -> String {
+fn managed_security_sddl(user_sid: &str, directory: bool) -> String {
     let inheritance = if directory { "OICI" } else { "" };
     format!(
-        "D:P(A;{inheritance};FA;;;{user_sid})(A;{inheritance};FA;;;SY)(A;{inheritance};FA;;;BA)"
+        "O:{user_sid}D:P(A;{inheritance};FA;;;{user_sid})(A;{inheritance};FA;;;SY)(A;{inheritance};FA;;;BA)"
     )
 }
 
@@ -484,18 +501,30 @@ mod tests {
     use uuid::Uuid;
 
     #[test]
-    fn protected_directory_dacl_contains_only_the_required_full_access_trustees() {
+    fn protected_directory_descriptor_has_token_user_owner_and_required_dacl() {
         assert_eq!(
-            super::managed_dacl_sddl("S-1-5-21-123", true),
-            "D:P(A;OICI;FA;;;S-1-5-21-123)(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+            super::managed_security_sddl("S-1-5-21-123", true),
+            "O:S-1-5-21-123D:P(A;OICI;FA;;;S-1-5-21-123)(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
         );
     }
 
     #[test]
-    fn protected_file_dacl_contains_no_inheritance_flags() {
+    fn protected_file_descriptor_has_token_user_owner_without_inheritance_flags() {
         assert_eq!(
-            super::managed_dacl_sddl("S-1-5-21-123", false),
-            "D:P(A;;FA;;;S-1-5-21-123)(A;;FA;;;SY)(A;;FA;;;BA)"
+            super::managed_security_sddl("S-1-5-21-123", false),
+            "O:S-1-5-21-123D:P(A;;FA;;;S-1-5-21-123)(A;;FA;;;SY)(A;;FA;;;BA)"
+        );
+    }
+
+    #[test]
+    fn native_managed_descriptor_owner_equals_token_user() {
+        let token = super::UserToken::open().unwrap();
+        let descriptor = super::SecurityDescriptor::for_user(&token, true).unwrap();
+        assert_ne!(
+            unsafe {
+                windows_sys::Win32::Security::EqualSid(descriptor.owner().unwrap(), token.sid())
+            },
+            0
         );
     }
 
