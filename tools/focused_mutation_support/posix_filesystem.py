@@ -27,6 +27,7 @@ from .filesystem import (
 _INVALID_FD = -1
 _OPEN_OR_CREATE_CYCLES = 8
 _OPENAT2_RESOLVE_MASK = 0x01 | 0x02 | 0x04 | 0x08
+_PROVISIONAL_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
 _SECONDARY_NOTE_BYTES = 512
 
 _Metadata = tuple[FileIdentity, FilesystemIdentity, int, int, int]
@@ -65,7 +66,7 @@ def _file_flags(access: FileAccess) -> int:
         value = os.O_WRONLY
     else:
         value = os.O_RDWR
-    return value | getattr(os, "O_NOFOLLOW", 0)
+    return value | getattr(os, "O_NOFOLLOW", 0) | _PROVISIONAL_NONBLOCK
 
 
 def _filesystem_identity(fd: int) -> FilesystemIdentity:
@@ -121,7 +122,7 @@ def _add_secondary_note(
 def _add_close_note(primary_error: BaseException, close: Callable[[], None]) -> None:
     try:
         close()
-    except OSError as close_error:
+    except BaseException as close_error:
         _add_secondary_note(
             primary_error,
             "filesystem capability close failed",
@@ -498,7 +499,7 @@ class PosixFilesystemBackend:
                 capability.close()
             elif descriptor is not None:
                 os.close(descriptor)
-        except OSError as close_error:
+        except BaseException as close_error:
             _add_secondary_note(
                 primary_error,
                 "created object close failed; rollback unavailable",
@@ -514,6 +515,7 @@ class PosixFilesystemBackend:
         parent: DirectoryCapability,
         name: str,
         identity: FileIdentity | None,
+        filesystem: FilesystemIdentity | None,
         kind: EntryKind,
         owner_closed: bool,
     ) -> None:
@@ -525,9 +527,15 @@ class PosixFilesystemBackend:
                 "created object identity unavailable for rollback",
             )
             return
+        if filesystem is None:
+            _add_secondary_note(
+                primary_error,
+                "created object exact creation evidence unavailable for rollback",
+            )
+            return
         try:
             current = self.entry(parent, name)
-        except Exception as observe_error:
+        except BaseException as observe_error:
             _add_secondary_note(
                 primary_error,
                 "created object rollback re-observation failed",
@@ -536,18 +544,19 @@ class PosixFilesystemBackend:
             return
         if current is None:
             return
-        if current.identity != identity or current.kind is not kind:
+        if (
+            current.identity != identity
+            or current.kind is not kind
+            or current.filesystem != filesystem
+        ):
             _add_secondary_note(
                 primary_error,
-                "created object rollback refused a same-name replacement",
+                "created object rollback refused changed creation evidence",
             )
             return
         try:
-            if kind is EntryKind.DIRECTORY:
-                os.rmdir(name, dir_fd=self._directory_fd(parent))
-            else:
-                os.unlink(name, dir_fd=self._directory_fd(parent))
-        except Exception as removal_error:
+            os.unlink(name, dir_fd=self._directory_fd(parent))
+        except BaseException as removal_error:
             _add_secondary_note(
                 primary_error,
                 "created object rollback removal failed",
@@ -556,7 +565,7 @@ class PosixFilesystemBackend:
             return
         try:
             remaining = self.entry(parent, name)
-        except Exception as verify_error:
+        except BaseException as verify_error:
             _add_secondary_note(
                 primary_error,
                 "created object rollback absence verification failed",
@@ -604,16 +613,13 @@ class PosixFilesystemBackend:
                 self.verify_managed_security(capability, repair_dacl=True)
             return capability
         except BaseException as primary_error:
-            owner_closed = self._close_created_owner(
+            self._close_created_owner(
                 primary_error, capability, descriptor
             )
-            self._rollback_created(
+            _add_secondary_note(
                 primary_error,
-                parent=parent,
-                name=name,
-                identity=expected.identity,
-                kind=EntryKind.DIRECTORY,
-                owner_closed=owner_closed,
+                "directory creation identity was not atomically bound; "
+                "rollback unavailable",
             )
             raise
 
@@ -628,9 +634,25 @@ class PosixFilesystemBackend:
     ) -> FileCapability:
         capability: FileCapability | None = None
         identity: FileIdentity | None = None
+        filesystem: FilesystemIdentity | None = None
         try:
-            metadata = _metadata(descriptor)
-            identity = metadata[0]
+            raw = os.fstat(descriptor)
+            identity = FileIdentity(raw.st_dev, raw.st_ino)
+            if identity.volume == 0 or identity.file == 0:
+                identity = None
+                raise OSError("filesystem returned an unsupported zero identity")
+            if not stat.S_ISREG(raw.st_mode):
+                raise OSError("filesystem capability is not a regular file")
+            if identity.volume != parent.identity.volume:
+                raise OSError("file crosses a filesystem boundary")
+            filesystem = parent.filesystem
+            metadata = (
+                identity,
+                _filesystem_identity(descriptor),
+                raw.st_mode,
+                raw.st_size,
+                raw.st_mtime_ns,
+            )
             self._validate_file_metadata(metadata, parent=parent, expected=None)
             capability = self._file_capability_from_metadata(
                 descriptor,
@@ -651,6 +673,7 @@ class PosixFilesystemBackend:
                 parent=parent,
                 name=name,
                 identity=identity,
+                filesystem=filesystem,
                 kind=EntryKind.REGULAR,
                 owner_closed=owner_closed,
             )
@@ -713,13 +736,10 @@ class PosixFilesystemBackend:
                 observed = self.entry(parent, name)
             except BaseException as primary_error:
                 if created:
-                    self._rollback_created(
+                    _add_secondary_note(
                         primary_error,
-                        parent=parent,
-                        name=name,
-                        identity=None,
-                        kind=EntryKind.DIRECTORY,
-                        owner_closed=True,
+                        "directory creation identity was not atomically bound; "
+                        "rollback unavailable",
                     )
                 raise
             if observed is None:
@@ -807,17 +827,20 @@ class PosixFilesystemBackend:
         try:
             observed = self.entry(parent, name)
         except BaseException as primary_error:
-            self._rollback_created(
+            _add_secondary_note(
                 primary_error,
-                parent=parent,
-                name=name,
-                identity=None,
-                kind=EntryKind.DIRECTORY,
-                owner_closed=True,
+                "directory creation identity was not atomically bound; "
+                "rollback unavailable",
             )
             raise
         if observed is None:
-            raise OSError("created directory did not resolve through its parent")
+            error = OSError("created directory did not resolve through its parent")
+            _add_secondary_note(
+                error,
+                "directory creation identity was not atomically bound; "
+                "rollback unavailable",
+            )
+            raise error
         return self._finish_created_directory(
             parent,
             name,
@@ -1072,33 +1095,25 @@ class PosixFilesystemBackend:
             return original_parent_fd
         if resource.stream is not None or resource.fd == _INVALID_FD:
             raise RuntimeError("non-follow source has no owned parent surrogate")
+        self._validate_parent_fd(
+            parent,
+            resource.fd,
+            changed_message="parent surrogate identity changed",
+        )
         return resource.fd
 
-    def _validated_parent_surrogate(
+    def _validate_parent_fd(
         self,
         parent: DirectoryCapability,
         parent_fd: int,
-    ) -> int:
-        descriptor = os.open(".", _directory_flags(), dir_fd=parent_fd)
-        try:
-            metadata = _metadata(descriptor)
-            expected = DirectoryEntry(
-                name=".",
-                kind=EntryKind.DIRECTORY,
-                identity=parent.identity,
-                filesystem=parent.filesystem,
-                logical_size=parent.logical_size,
-                modified_ns=parent.modified_ns,
-            )
-            self._validate_directory_metadata(
-                metadata,
-                parent=None,
-                expected=expected,
-            )
-            return descriptor
-        except BaseException as primary_error:
-            _add_close_note(primary_error, lambda: os.close(descriptor))
-            raise
+        *,
+        changed_message: str,
+    ) -> None:
+        identity, filesystem, mode, _size, _modified_ns = _metadata(parent_fd)
+        if not stat.S_ISDIR(mode) or stat.S_ISLNK(mode):
+            raise OSError(changed_message)
+        if identity != parent.identity or filesystem != parent.filesystem:
+            raise OSError(changed_message)
 
     def rename(
         self,
@@ -1126,43 +1141,29 @@ class PosixFilesystemBackend:
             raise OSError("rename crosses a filesystem boundary")
         destination_path_hint = destination_parent.path_hint / destination_name
         destination_parent_fd = self._directory_fd(destination_parent)
-        destination_surrogate: int | None = None
-        if source.kind in {EntryKind.REPARSE, EntryKind.OTHER}:
-            destination_surrogate = self._validated_parent_surrogate(
-                destination_parent,
-                destination_parent_fd,
-            )
+        self._validate_parent_fd(
+            destination_parent,
+            destination_parent_fd,
+            changed_message="destination parent identity changed",
+        )
         operation = os.replace if replace else os.rename
-        try:
-            operation(
-                source_name,
-                destination_name,
-                src_dir_fd=source_parent_fd,
-                dst_dir_fd=destination_parent_fd,
-            )
-        except BaseException as primary_error:
-            if destination_surrogate is not None:
-                _add_close_note(
-                    primary_error,
-                    lambda: os.close(destination_surrogate),
-                )
-            raise
-        if destination_surrogate is not None:
+        operation(
+            source_name,
+            destination_name,
+            src_dir_fd=source_parent_fd,
+            dst_dir_fd=destination_parent_fd,
+        )
+        if source.kind in {EntryKind.REPARSE, EntryKind.OTHER}:
             try:
-                os.dup2(destination_surrogate, resource.fd, inheritable=False)
-            except BaseException as primary_error:
+                os.dup2(destination_parent_fd, resource.fd, inheritable=False)
+            except BaseException:
                 resource.parent = destination_parent
                 resource.name = destination_name
                 source._path_hint = destination_path_hint
-                _add_close_note(
-                    primary_error,
-                    lambda: os.close(destination_surrogate),
-                )
                 raise
             resource.parent = destination_parent
             resource.name = destination_name
             source._path_hint = destination_path_hint
-            os.close(destination_surrogate)
         else:
             resource.parent = destination_parent
             resource.name = destination_name

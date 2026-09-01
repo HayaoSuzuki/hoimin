@@ -908,14 +908,66 @@ class PosixBackendReviewFixTests(unittest.TestCase):
         with mock.patch("os.close"):
             parent.close()
 
-    def test_created_secure_root_security_failure_removes_exact_identity(self) -> None:
+    def test_regular_to_fifo_race_opens_nonblocking_then_rejects(self) -> None:
+        backend = PosixFilesystemBackend()
+        parent = self._directory(backend, 85)
+        backend.entry = lambda _parent, _name: self._entry(EntryKind.REGULAR)
+        hook_calls: list[str] = []
+        native_flags: list[int] = []
+        backend._before_relative_open = (
+            lambda _parent, name: hook_calls.append(name)
+        )
+
+        def native_open(_fd: int, _name: str, flags: int, _mode: int = 0) -> int:
+            native_flags.append(flags)
+            return 86
+
+        backend._native_open_relative = native_open
+        fifo_metadata = (
+            FileIdentity(1, 78),
+            FilesystemIdentity(1),
+            stat.S_IFIFO | 0o600,
+            0,
+            0,
+        )
+        with (
+            mock.patch("os.close") as close,
+            mock.patch.object(
+                posix_filesystem_module,
+                "_PROVISIONAL_NONBLOCK",
+                0x400000,
+                create=True,
+            ),
+            mock.patch.object(
+                posix_filesystem_module,
+                "_metadata",
+                return_value=fifo_metadata,
+            ),
+            self.assertRaisesRegex(OSError, "not a regular file"),
+        ):
+            backend.open_file(
+                parent,
+                "item",
+                access=FileAccess.READ,
+                disposition=CreateDisposition.OPEN_EXISTING,
+            )
+        self.assertEqual(hook_calls, ["item"])
+        self.assertEqual(len(native_flags), 1)
+        self.assertTrue(native_flags[0] & 0x400000)
+        close.assert_called_once_with(86)
+        with mock.patch("os.close"):
+            parent.close()
+
+    def test_created_secure_root_failure_never_removes_first_observation(
+        self,
+    ) -> None:
         backend = PosixFilesystemBackend()
         parent = self._directory(backend, 90)
         identity = FileIdentity(1, 91)
         observed = self._entry(
             EntryKind.DIRECTORY, name="managed", identity=identity
         )
-        backend.entry = mock.Mock(side_effect=(observed, observed, None))
+        backend.entry = mock.Mock(return_value=observed)
         backend._native_open_relative = lambda *_args, **_kwargs: 91
         backend.verify_managed_security = mock.Mock(
             side_effect=OSError("primary root security failure")
@@ -928,15 +980,22 @@ class PosixBackendReviewFixTests(unittest.TestCase):
             mock.patch.object(
                 posix_filesystem_module, "_metadata", return_value=metadata
             ),
-            self.assertRaisesRegex(OSError, "primary root security failure"),
         ):
-            backend.create_secure_root(parent, "managed")
-        rmdir.assert_called_once_with("managed", dir_fd=90)
-        self.assertEqual(backend.entry.call_count, 3)
+            with self.assertRaisesRegex(
+                OSError, "primary root security failure"
+            ) as caught:
+                backend.create_secure_root(parent, "managed")
+        rmdir.assert_not_called()
+        self.assertEqual(backend.entry.call_count, 1)
+        self.assertIn(
+            "directory creation identity was not atomically bound; "
+            "rollback unavailable",
+            " ".join(getattr(caught.exception, "__notes__", ())),
+        )
         with mock.patch("os.close"):
             parent.close()
 
-    def test_created_directory_constructor_failure_rolls_back_and_verifies(
+    def test_created_directory_failure_never_removes_first_observation(
         self,
     ) -> None:
         backend = PosixFilesystemBackend()
@@ -945,7 +1004,7 @@ class PosixBackendReviewFixTests(unittest.TestCase):
         observed = self._entry(
             EntryKind.DIRECTORY, name="child", identity=identity
         )
-        backend.entry = mock.Mock(side_effect=(observed, observed, None))
+        backend.entry = mock.Mock(return_value=observed)
         backend._native_open_relative = lambda *_args, **_kwargs: 93
         metadata = (identity, FilesystemIdentity(1), stat.S_IFDIR | 0o700, 0, 0)
         with (
@@ -960,11 +1019,18 @@ class PosixBackendReviewFixTests(unittest.TestCase):
                 "DirectoryCapability",
                 side_effect=OSError("primary directory construction failure"),
             ),
-            self.assertRaisesRegex(OSError, "primary directory construction failure"),
         ):
-            backend.create_directory(parent, "child", SharePolicy.MUTATION)
-        rmdir.assert_called_once_with("child", dir_fd=92)
-        self.assertEqual(backend.entry.call_count, 3)
+            with self.assertRaisesRegex(
+                OSError, "primary directory construction failure"
+            ) as caught:
+                backend.create_directory(parent, "child", SharePolicy.MUTATION)
+        rmdir.assert_not_called()
+        self.assertEqual(backend.entry.call_count, 1)
+        self.assertIn(
+            "directory creation identity was not atomically bound; "
+            "rollback unavailable",
+            " ".join(getattr(caught.exception, "__notes__", ())),
+        )
         with mock.patch("os.close"):
             parent.close()
 
@@ -975,12 +1041,21 @@ class PosixBackendReviewFixTests(unittest.TestCase):
         observed = self._entry(EntryKind.REGULAR, identity=identity)
         backend.entry = mock.Mock(side_effect=(observed, None))
         backend._native_open_relative = lambda *_args, **_kwargs: 95
-        metadata = (identity, FilesystemIdentity(1), stat.S_IFREG | 0o600, 0, 0)
+        raw_metadata = types.SimpleNamespace(
+            st_dev=1,
+            st_ino=95,
+            st_mode=stat.S_IFREG | 0o600,
+            st_size=0,
+            st_mtime_ns=0,
+        )
         with (
             mock.patch("os.close"),
+            mock.patch("os.fstat", return_value=raw_metadata),
             mock.patch("os.unlink") as unlink,
             mock.patch.object(
-                posix_filesystem_module, "_metadata", return_value=metadata
+                posix_filesystem_module,
+                "_filesystem_identity",
+                return_value=FilesystemIdentity(1),
             ),
             mock.patch.object(
                 posix_filesystem_module,
@@ -1007,12 +1082,21 @@ class PosixBackendReviewFixTests(unittest.TestCase):
         observed = self._entry(EntryKind.REGULAR, identity=identity)
         backend.entry = mock.Mock(return_value=observed)
         backend._native_open_relative = lambda *_args, **_kwargs: 97
-        metadata = (identity, FilesystemIdentity(1), stat.S_IFREG | 0o600, 0, 0)
+        raw_metadata = types.SimpleNamespace(
+            st_dev=1,
+            st_ino=97,
+            st_mode=stat.S_IFREG | 0o600,
+            st_size=0,
+            st_mtime_ns=0,
+        )
         with (
             mock.patch("os.close"),
+            mock.patch("os.fstat", return_value=raw_metadata),
             mock.patch("os.unlink", side_effect=OSError("secondary unlink failure")),
             mock.patch.object(
-                posix_filesystem_module, "_metadata", return_value=metadata
+                posix_filesystem_module,
+                "_filesystem_identity",
+                return_value=FilesystemIdentity(1),
             ),
             mock.patch.object(
                 posix_filesystem_module,
@@ -1036,7 +1120,7 @@ class PosixBackendReviewFixTests(unittest.TestCase):
         with mock.patch("os.close"):
             parent.close()
 
-    def test_identity_unavailable_create_failure_never_unlinks(self) -> None:
+    def test_raw_fstat_failure_makes_create_identity_unavailable(self) -> None:
         backend = PosixFilesystemBackend()
         parent = self._directory(backend, 98)
         backend._native_open_relative = lambda *_args, **_kwargs: 99
@@ -1044,11 +1128,7 @@ class PosixBackendReviewFixTests(unittest.TestCase):
         with (
             mock.patch("os.close"),
             mock.patch("os.unlink") as unlink,
-            mock.patch.object(
-                posix_filesystem_module,
-                "_metadata",
-                side_effect=OSError("primary identity unavailable"),
-            ),
+            mock.patch("os.fstat", side_effect=OSError("primary identity unavailable")),
         ):
             with self.assertRaisesRegex(
                 OSError, "primary identity unavailable"
@@ -1068,21 +1148,269 @@ class PosixBackendReviewFixTests(unittest.TestCase):
         with mock.patch("os.close"):
             parent.close()
 
-    def test_same_name_directory_replacement_is_not_removed(self) -> None:
+    def test_raw_identity_survives_later_filesystem_query_failure(self) -> None:
+        backend = PosixFilesystemBackend()
+        parent = self._directory(backend, 105)
+        identity = FileIdentity(1, 106)
+        matching = self._entry(EntryKind.REGULAR, identity=identity)
+        backend.entry = mock.Mock(side_effect=(matching, None))
+        backend._native_open_relative = lambda *_args, **_kwargs: 106
+        raw_metadata = types.SimpleNamespace(
+            st_dev=1,
+            st_ino=106,
+            st_mode=stat.S_IFREG | 0o600,
+            st_size=0,
+            st_mtime_ns=0,
+        )
+        with (
+            mock.patch("os.fstat", return_value=raw_metadata),
+            mock.patch("os.close"),
+            mock.patch("os.unlink") as unlink,
+            mock.patch.object(
+                posix_filesystem_module,
+                "_filesystem_identity",
+                side_effect=OSError("later filesystem query failure"),
+            ),
+            self.assertRaisesRegex(OSError, "later filesystem query failure"),
+        ):
+            backend.open_file(
+                parent,
+                "item",
+                access=FileAccess.READ_WRITE,
+                disposition=CreateDisposition.CREATE_NEW,
+            )
+        unlink.assert_called_once_with("item", dir_fd=105)
+        self.assertEqual(backend.entry.call_count, 2)
+        with mock.patch("os.close"):
+            parent.close()
+
+    def test_created_file_filesystem_mismatch_preserves_entry(self) -> None:
+        backend = PosixFilesystemBackend()
+        parent = self._directory(backend, 107)
+        identity = FileIdentity(1, 108)
+        mismatch = DirectoryEntry(
+            name="item",
+            kind=EntryKind.REGULAR,
+            identity=identity,
+            filesystem=FilesystemIdentity(999),
+            logical_size=0,
+            modified_ns=0,
+        )
+        backend.entry = mock.Mock(return_value=mismatch)
+        backend._native_open_relative = lambda *_args, **_kwargs: 108
+        raw_metadata = types.SimpleNamespace(
+            st_dev=1,
+            st_ino=108,
+            st_mode=stat.S_IFREG | 0o600,
+            st_size=0,
+            st_mtime_ns=0,
+        )
+        with (
+            mock.patch("os.fstat", return_value=raw_metadata),
+            mock.patch("os.close"),
+            mock.patch("os.unlink") as unlink,
+            mock.patch.object(
+                posix_filesystem_module,
+                "_filesystem_identity",
+                return_value=FilesystemIdentity(1),
+            ),
+            mock.patch.object(
+                posix_filesystem_module,
+                "FileCapability",
+                side_effect=OSError("primary construction failure"),
+            ),
+        ):
+            with self.assertRaisesRegex(
+                OSError, "primary construction failure"
+            ) as caught:
+                backend.open_file(
+                    parent,
+                    "item",
+                    access=FileAccess.READ_WRITE,
+                    disposition=CreateDisposition.CREATE_NEW,
+                )
+        unlink.assert_not_called()
+        self.assertIn(
+            "rollback refused changed creation evidence",
+            " ".join(getattr(caught.exception, "__notes__", ())),
+        )
+        with mock.patch("os.close"):
+            parent.close()
+
+    def test_created_cleanup_baseexceptions_remain_secondary(self) -> None:
+        class CleanupSignal(BaseException):
+            pass
+
+        cases = ("reobserve", "removal", "absence")
+        for offset, phase in enumerate(cases):
+            with self.subTest(phase=phase):
+                backend = PosixFilesystemBackend()
+                parent_fd = 160 + offset * 10
+                file_fd = parent_fd + 1
+                parent = self._directory(backend, parent_fd)
+                identity = FileIdentity(1, file_fd)
+                matching = self._entry(EntryKind.REGULAR, identity=identity)
+                signal = CleanupSignal(f"{phase} cleanup baseexception")
+                if phase == "reobserve":
+                    backend.entry = mock.Mock(side_effect=signal)
+                elif phase == "removal":
+                    backend.entry = mock.Mock(return_value=matching)
+                else:
+                    backend.entry = mock.Mock(side_effect=(matching, signal))
+                backend._native_open_relative = (
+                    lambda *_args, value=file_fd, **_kwargs: value
+                )
+                raw_metadata = types.SimpleNamespace(
+                    st_dev=1,
+                    st_ino=file_fd,
+                    st_mode=stat.S_IFREG | 0o600,
+                    st_size=0,
+                    st_mtime_ns=0,
+                )
+                unlink_effect = signal if phase == "removal" else None
+                with (
+                    mock.patch("os.fstat", return_value=raw_metadata),
+                    mock.patch("os.close"),
+                    mock.patch("os.unlink", side_effect=unlink_effect),
+                    mock.patch.object(
+                        posix_filesystem_module,
+                        "_filesystem_identity",
+                        return_value=FilesystemIdentity(1),
+                    ),
+                    mock.patch.object(
+                        posix_filesystem_module,
+                        "FileCapability",
+                        side_effect=OSError("primary construction failure"),
+                    ),
+                ):
+                    with self.assertRaisesRegex(
+                        OSError, "primary construction failure"
+                    ) as caught:
+                        backend.open_file(
+                            parent,
+                            "item",
+                            access=FileAccess.READ_WRITE,
+                            disposition=CreateDisposition.CREATE_NEW,
+                        )
+                self.assertIn(
+                    f"{phase} cleanup baseexception",
+                    " ".join(getattr(caught.exception, "__notes__", ())),
+                )
+                with mock.patch("os.close"):
+                    parent.close()
+
+    def test_created_owner_close_baseexception_remains_secondary(self) -> None:
+        class CleanupSignal(BaseException):
+            pass
+
+        backend = PosixFilesystemBackend()
+        parent = self._directory(backend, 190)
+        backend._native_open_relative = lambda *_args, **_kwargs: 191
+        raw_metadata = types.SimpleNamespace(
+            st_dev=1,
+            st_ino=191,
+            st_mode=stat.S_IFREG | 0o600,
+            st_size=0,
+            st_mtime_ns=0,
+        )
+
+        def close_created(fd: int) -> None:
+            if fd == 191:
+                raise CleanupSignal("close cleanup baseexception")
+
+        with (
+            mock.patch("os.fstat", return_value=raw_metadata),
+            mock.patch("os.close", side_effect=close_created),
+            mock.patch("os.unlink") as unlink,
+            mock.patch.object(
+                posix_filesystem_module,
+                "_filesystem_identity",
+                return_value=FilesystemIdentity(1),
+            ),
+            mock.patch.object(
+                posix_filesystem_module,
+                "FileCapability",
+                side_effect=OSError("primary construction failure"),
+            ),
+        ):
+            with self.assertRaisesRegex(
+                OSError, "primary construction failure"
+            ) as caught:
+                backend.open_file(
+                    parent,
+                    "item",
+                    access=FileAccess.READ_WRITE,
+                    disposition=CreateDisposition.CREATE_NEW,
+                )
+        unlink.assert_not_called()
+        self.assertIn(
+            "close cleanup baseexception",
+            " ".join(getattr(caught.exception, "__notes__", ())),
+        )
+        with mock.patch("os.close"):
+            parent.close()
+
+    def test_existing_capability_close_baseexception_remains_secondary(self) -> None:
+        class CleanupSignal(BaseException):
+            pass
+
+        backend = PosixFilesystemBackend()
+        parent = self._directory(backend, 192)
+        existing = self._entry(
+            EntryKind.DIRECTORY,
+            name="managed",
+            identity=FileIdentity(1, 193),
+        )
+        opened = self._directory(
+            backend,
+            193,
+            identity=existing.identity,
+            parent=parent,
+            name="managed",
+        )
+        backend.entry = mock.Mock(return_value=existing)
+        backend._open_observed_directory = mock.Mock(return_value=opened)
+        backend.verify_managed_security = mock.Mock(
+            side_effect=OSError("primary security failure")
+        )
+
+        def close_opened(fd: int) -> None:
+            if fd == 193:
+                raise CleanupSignal("capability close baseexception")
+
+        with (
+            mock.patch("os.mkdir", side_effect=FileExistsError("exists")),
+            mock.patch("os.close", side_effect=close_opened),
+        ):
+            with self.assertRaisesRegex(OSError, "primary security failure") as caught:
+                backend.create_secure_root(parent, "managed")
+        self.assertIn(
+            "capability close baseexception",
+            " ".join(getattr(caught.exception, "__notes__", ())),
+        )
+        with mock.patch("os.close"):
+            opened.close()
+            parent.close()
+
+    def test_replacement_before_first_directory_observation_is_not_removed(
+        self,
+    ) -> None:
         backend = PosixFilesystemBackend()
         parent = self._directory(backend, 100)
-        identity = FileIdentity(1, 101)
-        observed = self._entry(
-            EntryKind.DIRECTORY, name="child", identity=identity
-        )
         replacement = self._entry(
             EntryKind.DIRECTORY,
             name="child",
             identity=FileIdentity(1, 102),
         )
-        backend.entry = mock.Mock(side_effect=(observed, replacement))
+        backend.entry = mock.Mock(return_value=replacement)
         backend._native_open_relative = lambda *_args, **_kwargs: 101
-        metadata = (identity, FilesystemIdentity(1), stat.S_IFDIR | 0o700, 0, 0)
+        metadata = (
+            replacement.identity,
+            FilesystemIdentity(1),
+            stat.S_IFDIR | 0o700,
+            0,
+            0,
+        )
         with (
             mock.patch("os.mkdir"),
             mock.patch("os.close"),
@@ -1102,7 +1430,8 @@ class PosixBackendReviewFixTests(unittest.TestCase):
                 backend.create_directory(parent, "child", SharePolicy.MUTATION)
         rmdir.assert_not_called()
         self.assertIn(
-            "same-name replacement",
+            "directory creation identity was not atomically bound; "
+            "rollback unavailable",
             " ".join(getattr(caught.exception, "__notes__", ())),
         )
         with mock.patch("os.close"):
@@ -1166,6 +1495,17 @@ class PosixBackendReviewFixTests(unittest.TestCase):
                     mock.patch("os.stat", side_effect=stat_entry),
                     mock.patch("os.unlink") as unlink,
                     mock.patch("os.close"),
+                    mock.patch.object(
+                        posix_filesystem_module,
+                        "_metadata",
+                        return_value=(
+                            parent.identity,
+                            parent.filesystem,
+                            stat.S_IFDIR | 0o700,
+                            0,
+                            0,
+                        ),
+                    ),
                 ):
                     backend.delete(source)
                     unlink.assert_called_once_with("item", dir_fd=surrogate_fd)
@@ -1190,7 +1530,7 @@ class PosixBackendReviewFixTests(unittest.TestCase):
             unlink.assert_not_called()
             source.close()
 
-    def test_non_follow_rename_refreshes_surrogate_to_destination_parent(self) -> None:
+    def test_non_follow_rename_directly_refreshes_owned_surrogate(self) -> None:
         backend = PosixFilesystemBackend()
         source_parent = self._directory(backend, 140)
         destination_parent = self._directory(
@@ -1214,23 +1554,28 @@ class PosixBackendReviewFixTests(unittest.TestCase):
                 st_mtime_ns=0,
             )
 
-        destination_metadata = (
-            destination_parent.identity,
-            destination_parent.filesystem,
-            stat.S_IFDIR | 0o700,
-            0,
-            0,
-        )
+        def parent_metadata(fd: int) -> tuple[object, ...]:
+            identity = (
+                source_parent.identity if fd == 142 else destination_parent.identity
+            )
+            return (
+                identity,
+                FilesystemIdentity(1),
+                stat.S_IFDIR | 0o700,
+                0,
+                0,
+            )
+
         with (
             mock.patch("os.stat", side_effect=stat_entry),
             mock.patch("os.rename") as rename,
-            mock.patch("os.open", return_value=143) as reopen,
+            mock.patch("os.open") as reopen,
             mock.patch("os.dup2") as duplicate,
             mock.patch("os.close") as close,
             mock.patch.object(
                 posix_filesystem_module,
                 "_metadata",
-                return_value=destination_metadata,
+                side_effect=parent_metadata,
             ),
         ):
             backend.rename(
@@ -1252,63 +1597,110 @@ class PosixBackendReviewFixTests(unittest.TestCase):
                 src_dir_fd=142,
                 dst_dir_fd=141,
             )
-            reopen.assert_called_once_with(".", mock.ANY, dir_fd=141)
-            duplicate.assert_called_once_with(143, 142, inheritable=False)
-            close.assert_called_once_with(143)
+            reopen.assert_not_called()
+            duplicate.assert_called_once_with(141, 142, inheritable=False)
+            close.assert_not_called()
             source.close()
             source_parent.close()
             destination_parent.close()
 
-    def test_non_follow_rename_failure_closes_only_preacquired_surrogate(self) -> None:
-        backend = PosixFilesystemBackend()
-        source_parent = self._directory(backend, 150)
-        destination_parent = self._directory(
-            backend, 151, identity=FileIdentity(1, 30)
-        )
-        source = self._non_follow_file(
-            backend, 152, source_parent, EntryKind.OTHER
-        )
-        source_metadata = types.SimpleNamespace(
-            st_dev=1,
-            st_ino=77,
-            st_mode=stat.S_IFIFO,
-            st_size=0,
-            st_mtime_ns=0,
-        )
-        destination_metadata = (
-            destination_parent.identity,
-            destination_parent.filesystem,
-            stat.S_IFDIR | 0o700,
-            0,
-            0,
-        )
-        with (
-            mock.patch("os.stat", return_value=source_metadata),
-            mock.patch("os.rename", side_effect=OSError("rename failed")),
-            mock.patch("os.open", return_value=153) as reopen,
-            mock.patch("os.close") as close,
-            mock.patch.object(
-                posix_filesystem_module,
-                "_metadata",
-                return_value=destination_metadata,
-            ),
-            self.assertRaisesRegex(OSError, "rename failed"),
-        ):
-            backend.rename(
-                source,
-                destination_parent,
-                "renamed",
-                replace=False,
-            )
-        resource = source._resource_for(backend)
-        self.assertIsInstance(resource, _PosixResource)
-        assert isinstance(resource, _PosixResource)
-        self.assertEqual(resource.fd, 152)
-        self.assertIs(resource.parent, source_parent)
-        self.assertEqual(resource.name, "item")
-        reopen.assert_called_once_with(".", mock.ANY, dir_fd=151)
-        close.assert_called_once_with(153)
-        with mock.patch("os.close"):
-            source.close()
-            source_parent.close()
-            destination_parent.close()
+    def test_dup2_failure_blocks_later_non_follow_mutation(self) -> None:
+        for offset, later_operation in enumerate(("delete", "rename")):
+            with self.subTest(later_operation=later_operation):
+                backend = PosixFilesystemBackend()
+                source_parent_fd = 150 + offset * 10
+                destination_parent_fd = source_parent_fd + 1
+                surrogate_fd = source_parent_fd + 2
+                source_parent = self._directory(backend, source_parent_fd)
+                destination_parent = self._directory(
+                    backend,
+                    destination_parent_fd,
+                    identity=FileIdentity(1, 30 + offset),
+                )
+                source = self._non_follow_file(
+                    backend, surrogate_fd, source_parent, EntryKind.OTHER
+                )
+                source_metadata = types.SimpleNamespace(
+                    st_dev=1,
+                    st_ino=77,
+                    st_mode=stat.S_IFIFO,
+                    st_size=0,
+                    st_mtime_ns=0,
+                )
+
+                def parent_metadata(fd: int) -> tuple[object, ...]:
+                    identity = (
+                        source_parent.identity
+                        if fd == surrogate_fd
+                        else destination_parent.identity
+                    )
+                    return (
+                        identity,
+                        FilesystemIdentity(1),
+                        stat.S_IFDIR | 0o700,
+                        0,
+                        0,
+                    )
+
+                with (
+                    mock.patch("os.stat", return_value=source_metadata) as stat_entry,
+                    mock.patch("os.rename") as rename,
+                    mock.patch("os.unlink") as unlink,
+                    mock.patch("os.open") as reopen,
+                    mock.patch(
+                        "os.dup2", side_effect=OSError("surrogate refresh failed")
+                    ) as duplicate,
+                    mock.patch("os.close") as close,
+                    mock.patch.object(
+                        posix_filesystem_module,
+                        "_metadata",
+                        side_effect=parent_metadata,
+                    ),
+                ):
+                    with self.assertRaisesRegex(
+                        OSError, "surrogate refresh failed"
+                    ):
+                        backend.rename(
+                            source,
+                            destination_parent,
+                            "renamed",
+                            replace=False,
+                        )
+                    resource = source._resource_for(backend)
+                    self.assertIsInstance(resource, _PosixResource)
+                    assert isinstance(resource, _PosixResource)
+                    self.assertEqual(resource.fd, surrogate_fd)
+                    self.assertIs(resource.parent, destination_parent)
+                    self.assertEqual(resource.name, "renamed")
+                    reopen.assert_not_called()
+                    duplicate.assert_called_once_with(
+                        destination_parent_fd,
+                        surrogate_fd,
+                        inheritable=False,
+                    )
+                    close.assert_not_called()
+
+                    stat_entry.reset_mock()
+                    rename.reset_mock()
+                    unlink.reset_mock()
+                    if later_operation == "delete":
+                        with self.assertRaisesRegex(
+                            OSError, "parent surrogate identity changed"
+                        ):
+                            backend.delete(source)
+                    else:
+                        with self.assertRaisesRegex(
+                            OSError, "parent surrogate identity changed"
+                        ):
+                            backend.rename(
+                                source,
+                                destination_parent,
+                                "again",
+                                replace=False,
+                            )
+                    stat_entry.assert_not_called()
+                    rename.assert_not_called()
+                    unlink.assert_not_called()
+                    source.close()
+                    source_parent.close()
+                    destination_parent.close()
