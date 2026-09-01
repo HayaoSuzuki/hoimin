@@ -3530,5 +3530,846 @@ class WindowsReviewFixTests(unittest.TestCase):
         self.assertEqual(allocation_size, expected_offset + len(encoded))
 
 
+class _Task5ReviewApi(WindowsOpenTests._ApiProxy):
+    def __init__(self) -> None:
+        super().__init__()
+        self.duplicate_calls: list[dict[str, int | bool]] = []
+        self.opened_handles: list[dict[str, int | str]] = []
+        self.close_calls: list[int] = []
+        self.close_failures: dict[int, int] = {}
+        self.duplicate_failure = False
+        self.last_duplicate: int | None = None
+
+    def NtCreateFile(self, *args: object) -> int:
+        status = super().NtCreateFile(*args)
+        if status >= 0:
+            pointer = ctypes.cast(
+                cast(Any, args[0]), ctypes.POINTER(ctypes.c_void_p)
+            )
+            record = dict(self.nt_create_records[-1])
+            record["handle"] = int(pointer.contents.value or 0)
+            self.opened_handles.append(record)
+        return status
+
+    def DuplicateHandle(self, *args: object) -> bool:
+        record: dict[str, int | bool] = {
+            "source": int(cast(Any, args[1])),
+            "desired_access": int(cast(Any, args[4])),
+            "inherit": bool(cast(Any, args[5])),
+            "options": int(cast(Any, args[6])),
+        }
+        self.duplicate_calls.append(record)
+        if self.duplicate_failure:
+            self._last_error = windows_native.ERROR_ACCESS_DENIED
+            return False
+        succeeded = bool(self._native.DuplicateHandle(*args))
+        if succeeded:
+            pointer = ctypes.cast(
+                cast(Any, args[3]), ctypes.POINTER(ctypes.c_void_p)
+            )
+            self.last_duplicate = int(pointer.contents.value or 0)
+            record["duplicate"] = self.last_duplicate
+        return succeeded
+
+    def CloseHandle(self, handle: int) -> bool:
+        value = int(handle)
+        self.close_calls.append(value)
+        remaining = self.close_failures.get(value, 0)
+        if remaining:
+            self.close_failures[value] = remaining - 1
+            self._last_error = windows_native.ERROR_ACCESS_DENIED
+            return False
+        return bool(self._native.CloseHandle(handle))
+
+
+class _Task5ReviewFakeApi:
+    def __init__(self) -> None:
+        self.after_error: BaseException | None = None
+        self.information = windows_native.FILE_CREATED
+        self.create_handle = 701
+        self.duplicate_handle = 702
+        self.duplicate_calls: list[dict[str, int | bool]] = []
+        self.close_calls: list[int] = []
+        self.close_failures: dict[int, int] = {}
+        self.disposition_calls: list[int] = []
+        self.disposition_success = True
+        self._last_error = windows_native.ERROR_ACCESS_DENIED
+
+    def before_relative_open(self) -> None:
+        return None
+
+    def after_relative_open(self) -> None:
+        if self.after_error is not None:
+            raise self.after_error
+
+    def NtCreateFile(self, *args: object) -> int:
+        handle = ctypes.cast(
+            cast(Any, args[0]), ctypes.POINTER(ctypes.c_void_p)
+        )
+        handle.contents.value = self.create_handle
+        status = ctypes.cast(
+            cast(Any, args[3]), ctypes.POINTER(IO_STATUS_BLOCK)
+        )
+        status.contents.Information = self.information
+        return 0
+
+    def DuplicateHandle(self, *args: object) -> bool:
+        self.duplicate_calls.append(
+            {
+                "source": int(cast(Any, args[1])),
+                "desired_access": int(cast(Any, args[4])),
+                "inherit": bool(cast(Any, args[5])),
+                "options": int(cast(Any, args[6])),
+            }
+        )
+        duplicate = ctypes.cast(
+            cast(Any, args[3]), ctypes.POINTER(ctypes.c_void_p)
+        )
+        duplicate.contents.value = self.duplicate_handle
+        return True
+
+    def GetCurrentProcess(self) -> int:
+        return 1
+
+    def SetFileInformationByHandle(self, *args: object) -> bool:
+        self.disposition_calls.append(int(cast(Any, args[0])))
+        return self.disposition_success
+
+    def CloseHandle(self, handle: int) -> bool:
+        value = int(handle)
+        self.close_calls.append(value)
+        remaining = self.close_failures.get(value, 0)
+        if remaining:
+            self.close_failures[value] = remaining - 1
+            return False
+        return True
+
+    def RtlNtStatusToDosError(self, _status: int) -> int:
+        return self._last_error
+
+    def last_error(self) -> int:
+        return self._last_error
+
+
+class WindowsTask5ReviewFixTests(unittest.TestCase):
+    @staticmethod
+    def _created_handle(api: _Task5ReviewApi, name: str) -> int:
+        records = [
+            record
+            for record in api.opened_handles
+            if record["name"] == name
+            and record["disposition"] == windows_native.FILE_CREATE
+        ]
+        if len(records) != 1:
+            raise AssertionError(records)
+        return int(records[0]["handle"])
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows native handles")
+    def test_native_create_handoff_downgrades_to_exact_final_authority(self) -> None:
+        api = _Task5ReviewApi()
+        backend = WindowsFilesystemBackend(api=api)
+        with tempfile.TemporaryDirectory() as raw:
+            root = backend.open_root(Path(raw), SharePolicy.MUTATION)
+            cases = (
+                (
+                    "pinned-file",
+                    "file",
+                    SharePolicy.PINNED,
+                    _file_access(FileAccess.READ_WRITE, SharePolicy.PINNED),
+                ),
+                (
+                    "scan-file",
+                    "file",
+                    SharePolicy.SCAN,
+                    _file_access(FileAccess.READ_WRITE, SharePolicy.SCAN),
+                ),
+                (
+                    "scan-directory",
+                    "directory",
+                    SharePolicy.SCAN,
+                    _directory_access(SharePolicy.SCAN, relative_target=True),
+                ),
+            )
+            try:
+                for name, kind, policy, final_access in cases:
+                    with self.subTest(name=name):
+                        duplicate_before = len(api.duplicate_calls)
+                        capability: FileCapability | DirectoryCapability
+                        if kind == "file":
+                            capability = backend.open_file(
+                                root,
+                                name,
+                                access=FileAccess.READ_WRITE,
+                                disposition=CreateDisposition.CREATE_NEW,
+                                share_policy=policy,
+                            )
+                        else:
+                            capability = backend.create_directory(
+                                root, name, policy
+                            )
+                        try:
+                            resource = backend._resource(capability)
+                            self.assertEqual(resource.desired_access, final_access)
+                            self.assertFalse(resource.delete_authority)
+                            self.assertEqual(resource.share_mode, _share_mode(policy))
+                            creation = [
+                                record
+                                for record in api.nt_create_records
+                                if record["name"] == name
+                                and record["disposition"]
+                                == windows_native.FILE_CREATE
+                            ]
+                            self.assertEqual(len(creation), 1)
+                            self.assertEqual(
+                                creation[0]["desired_access"],
+                                final_access | DELETE,
+                            )
+                            duplicates = api.duplicate_calls[duplicate_before:]
+                            self.assertEqual(len(duplicates), 1)
+                            self.assertEqual(
+                                duplicates[0],
+                                {
+                                    "source": self._created_handle(api, name),
+                                    "desired_access": final_access,
+                                    "inherit": False,
+                                    "options": 0,
+                                    "duplicate": resource.handle,
+                                },
+                            )
+                        finally:
+                            capability.close()
+            finally:
+                root.close()
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows native handles")
+    def test_native_pinned_and_scan_failures_remove_only_created_identity(self) -> None:
+        cases = (
+            ("pinned-file-metadata", "file", SharePolicy.PINNED, "metadata"),
+            ("pinned-file-constructor", "file", SharePolicy.PINNED, "constructor"),
+            ("scan-file-metadata", "file", SharePolicy.SCAN, "metadata"),
+            ("scan-file-constructor", "file", SharePolicy.SCAN, "constructor"),
+            ("scan-directory-metadata", "directory", SharePolicy.SCAN, "metadata"),
+            (
+                "scan-directory-constructor",
+                "directory",
+                SharePolicy.SCAN,
+                "constructor",
+            ),
+        )
+        for name, kind, policy, failure in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as raw:
+                path = Path(raw) / name
+                backend = WindowsFilesystemBackend()
+                root = backend.open_root(Path(raw), SharePolicy.MUTATION)
+                try:
+                    if failure == "metadata":
+                        patcher = mock.patch.object(
+                            backend,
+                            "_metadata",
+                            side_effect=OSError("post-create metadata failed"),
+                        )
+                    elif kind == "file":
+                        patcher = mock.patch.object(
+                            windows_native,
+                            "FileCapability",
+                            side_effect=OSError("capability construction failed"),
+                        )
+                    else:
+                        patcher = mock.patch.object(
+                            windows_native,
+                            "DirectoryCapability",
+                            side_effect=OSError("capability construction failed"),
+                        )
+                    with patcher, self.assertRaises(OSError):
+                        if kind == "file":
+                            backend.open_file(
+                                root,
+                                name,
+                                access=FileAccess.READ_WRITE,
+                                disposition=CreateDisposition.CREATE_NEW,
+                                share_policy=policy,
+                            )
+                        else:
+                            backend.create_directory(root, name, policy)
+                    self.assertFalse(path.exists())
+                finally:
+                    root.close()
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows native handles")
+    def test_native_managed_security_failures_remove_scan_and_pinned_creates(self) -> None:
+        cases = (
+            ("pinned-file", "file", SharePolicy.PINNED),
+            ("scan-file", "file", SharePolicy.SCAN),
+            ("scan-directory", "directory", SharePolicy.SCAN),
+        )
+        for name, kind, policy in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as raw:
+                backend = WindowsFilesystemBackend()
+                parent = backend.open_root(Path(raw), SharePolicy.MUTATION)
+                managed = backend.create_secure_root(parent, "managed")
+                path = Path(raw) / "managed" / name
+                try:
+                    with (
+                        mock.patch.object(
+                            backend,
+                            "_verify_managed_security_resource",
+                            side_effect=OSError("managed security failed"),
+                        ),
+                        self.assertRaisesRegex(OSError, "managed security"),
+                    ):
+                        if kind == "file":
+                            backend.open_file(
+                                managed,
+                                name,
+                                access=FileAccess.READ_WRITE,
+                                disposition=CreateDisposition.CREATE_NEW,
+                                share_policy=policy,
+                            )
+                        else:
+                            backend.create_directory(managed, name, policy)
+                    self.assertFalse(path.exists())
+                finally:
+                    managed.close()
+                    parent.close()
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows native handles")
+    def test_after_open_hook_uses_created_information_for_every_policy(self) -> None:
+        for policy in (
+            SharePolicy.MUTATION,
+            SharePolicy.PINNED,
+            SharePolicy.SCAN,
+        ):
+            with self.subTest(policy=policy), tempfile.TemporaryDirectory() as raw:
+                api = _Task5ReviewApi()
+                api._after = mock.Mock(side_effect=OSError("after hook failed"))
+                backend = WindowsFilesystemBackend(api=api)
+                root = backend.open_root(Path(raw), SharePolicy.MUTATION)
+                path = Path(raw) / policy.value
+                try:
+                    with self.assertRaisesRegex(OSError, "after hook failed"):
+                        backend.open_file(
+                            root,
+                            policy.value,
+                            access=FileAccess.READ_WRITE,
+                            disposition=CreateDisposition.CREATE_NEW,
+                            share_policy=policy,
+                        )
+                    self.assertFalse(path.exists())
+                finally:
+                    root.close()
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows native handles")
+    def test_duplicate_failure_and_identity_mismatch_rollback_original_guard(self) -> None:
+        for failure in ("api", "identity"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as raw:
+                api = _Task5ReviewApi()
+                api.duplicate_failure = failure == "api"
+                backend = WindowsFilesystemBackend(api=api)
+                root = backend.open_root(Path(raw), SharePolicy.MUTATION)
+                original_metadata = backend._metadata
+
+                def metadata(handle: int, component: object) -> Any:
+                    result = original_metadata(handle, component)
+                    if failure == "identity" and handle == api.last_duplicate:
+                        return windows_native._Metadata(
+                            FileIdentity(result.identity.volume, 999),
+                            result.filesystem,
+                            result.kind,
+                            result.logical_size,
+                            result.modified_ns,
+                        )
+                    return result
+
+                path = Path(raw) / "item"
+                try:
+                    with (
+                        mock.patch.object(backend, "_metadata", side_effect=metadata),
+                        self.assertRaises(OSError),
+                    ):
+                        backend.open_file(
+                            root,
+                            "item",
+                            access=FileAccess.READ_WRITE,
+                            disposition=CreateDisposition.CREATE_NEW,
+                            share_policy=SharePolicy.PINNED,
+                        )
+                    self.assertFalse(path.exists())
+                    self.assertEqual(len(api.disposition_calls), 1)
+                    self.assertEqual(
+                        api.disposition_calls[0][0],
+                        self._created_handle(api, "item"),
+                    )
+                finally:
+                    root.close()
+
+    def test_created_cleanup_absence_results_are_secondary_once(self) -> None:
+        cases: tuple[tuple[str, object, int], ...] = (
+            ("absent", None, 0),
+            ("observation-error", OSError("absence observation failed"), 1),
+            (
+                "surviving-original",
+                windows_native.DirectoryEntry(
+                    "item",
+                    EntryKind.REGULAR,
+                    FileIdentity(31, 41),
+                    FilesystemIdentity(31, 255, 0x4006),
+                    0,
+                    0,
+                ),
+                1,
+            ),
+            (
+                "replacement",
+                windows_native.DirectoryEntry(
+                    "item",
+                    EntryKind.REGULAR,
+                    FileIdentity(31, 999),
+                    FilesystemIdentity(31, 255, 0x4006),
+                    0,
+                    0,
+                ),
+                1,
+            ),
+        )
+        for label, outcome, note_count in cases:
+            with self.subTest(label=label):
+                api = _Task5ReviewFakeApi()
+                primary = OSError("after hook primary")
+                api.after_error = primary
+                backend = WindowsFilesystemBackend(
+                    api=api, osfhandle_opener=lambda _handle, _flags: 0
+                )
+                parent = _mutation_parent(
+                    backend,
+                    handle=301,
+                    identity=FileIdentity(31, 51),
+                    path="C:/parent",
+                )
+                entry = mock.Mock(
+                    side_effect=outcome if isinstance(outcome, BaseException) else None,
+                    return_value=None if isinstance(outcome, BaseException) else outcome,
+                )
+                with (
+                    mock.patch.object(backend, "entry", entry),
+                    self.assertRaisesRegex(OSError, "after hook primary") as caught,
+                ):
+                    backend.open_file(
+                        parent,
+                        "item",
+                        access=FileAccess.READ_WRITE,
+                        disposition=CreateDisposition.CREATE_NEW,
+                    )
+                self.assertIs(caught.exception, primary)
+                self.assertEqual(api.disposition_calls, [api.create_handle])
+                self.assertEqual(entry.call_count, 1)
+                notes = list(getattr(primary, "__notes__", ()))
+                self.assertEqual(len(notes), note_count)
+                if notes:
+                    self.assertLessEqual(len(notes[0].encode("utf-8")), 4_096)
+                parent.close()
+
+    def test_two_owner_close_failure_defers_one_absence_check_until_retry(self) -> None:
+        for failed_handle in (701, 702):
+            with self.subTest(failed_handle=failed_handle):
+                api = _Task5ReviewFakeApi()
+                api.close_failures[failed_handle] = 1
+                backend = WindowsFilesystemBackend(
+                    api=api, osfhandle_opener=lambda _handle, _flags: 0
+                )
+                parent = _mutation_parent(
+                    backend,
+                    handle=301,
+                    identity=FileIdentity(31, 51),
+                    path="C:/parent",
+                )
+                metadata = windows_native._Metadata(
+                    FileIdentity(31, 41),
+                    parent.filesystem,
+                    EntryKind.REGULAR,
+                    0,
+                    0,
+                )
+                entry = mock.Mock(return_value=None)
+                with (
+                    mock.patch.object(
+                        backend,
+                        "_finish_relative_open",
+                        return_value=(metadata, True),
+                    ),
+                    mock.patch.object(
+                        backend, "_metadata", return_value=metadata
+                    ),
+                    mock.patch.object(backend, "entry", entry),
+                    mock.patch.object(
+                        windows_native,
+                        "FileCapability",
+                        side_effect=OSError("constructor primary"),
+                    ),
+                    self.assertRaisesRegex(OSError, "constructor primary") as caught,
+                ):
+                    backend.open_file(
+                        parent,
+                        "item",
+                        access=FileAccess.READ_WRITE,
+                        disposition=CreateDisposition.CREATE_NEW,
+                        share_policy=SharePolicy.PINNED,
+                    )
+                self.assertEqual(entry.call_count, 0)
+                with mock.patch.object(backend, "entry", entry):
+                    backend.__del__()
+                self.assertEqual(entry.call_count, 1)
+                self.assertEqual(api.close_calls.count(failed_handle), 2)
+                self.assertEqual(api.disposition_calls, [api.create_handle])
+                notes = list(getattr(caught.exception, "__notes__", ()))
+                self.assertEqual(
+                    sum("close failed" in note for note in notes), 1
+                )
+                parent.close()
+
+    def test_creation_guard_close_failure_retains_retryable_owner(self) -> None:
+        api = _Task5ReviewFakeApi()
+        api.close_failures[api.create_handle] = 1
+        backend = WindowsFilesystemBackend(
+            api=api, osfhandle_opener=lambda _handle, _flags: 0
+        )
+        parent = _mutation_parent(
+            backend,
+            handle=301,
+            identity=FileIdentity(31, 51),
+            path="C:/parent",
+        )
+        metadata = windows_native._Metadata(
+            FileIdentity(31, 41),
+            parent.filesystem,
+            EntryKind.REGULAR,
+            0,
+            0,
+        )
+        entry = mock.Mock(return_value=None)
+        with (
+            mock.patch.object(
+                backend, "_finish_relative_open", return_value=(metadata, True)
+            ),
+            mock.patch.object(backend, "_metadata", return_value=metadata),
+            mock.patch.object(backend, "entry", entry),
+            self.assertRaisesRegex(OSError, "close filesystem capability"),
+        ):
+            backend.open_file(
+                parent,
+                "item",
+                access=FileAccess.READ_WRITE,
+                disposition=CreateDisposition.CREATE_NEW,
+                share_policy=SharePolicy.PINNED,
+            )
+        self.assertEqual(api.disposition_calls, [api.create_handle])
+        self.assertEqual(entry.call_count, 0)
+        self.assertEqual(api.close_calls.count(api.create_handle), 1)
+        with mock.patch.object(backend, "entry", entry):
+            backend.__del__()
+        self.assertEqual(api.close_calls.count(api.create_handle), 2)
+        self.assertEqual(entry.call_count, 1)
+        parent.close()
+
+    def test_disposition_failure_closes_both_owners_without_absence_lookup(self) -> None:
+        api = _Task5ReviewFakeApi()
+        api.disposition_success = False
+        backend = WindowsFilesystemBackend(
+            api=api, osfhandle_opener=lambda _handle, _flags: 0
+        )
+        parent = _mutation_parent(
+            backend,
+            handle=301,
+            identity=FileIdentity(31, 51),
+            path="C:/parent",
+        )
+        metadata = windows_native._Metadata(
+            FileIdentity(31, 41),
+            parent.filesystem,
+            EntryKind.REGULAR,
+            0,
+            0,
+        )
+        entry = mock.Mock(return_value=None)
+        with (
+            mock.patch.object(
+                backend, "_finish_relative_open", return_value=(metadata, True)
+            ),
+            mock.patch.object(backend, "_metadata", return_value=metadata),
+            mock.patch.object(backend, "entry", entry),
+            mock.patch.object(
+                windows_native,
+                "FileCapability",
+                side_effect=OSError("constructor primary"),
+            ),
+            self.assertRaisesRegex(OSError, "constructor primary") as caught,
+        ):
+            backend.open_file(
+                parent,
+                "item",
+                access=FileAccess.READ_WRITE,
+                disposition=CreateDisposition.CREATE_NEW,
+                share_policy=SharePolicy.PINNED,
+            )
+        self.assertEqual(api.disposition_calls, [api.create_handle])
+        self.assertCountEqual(api.close_calls, [api.duplicate_handle, api.create_handle])
+        self.assertEqual(entry.call_count, 0)
+        notes = list(getattr(caught.exception, "__notes__", ()))
+        self.assertEqual(sum("rollback failed" in note for note in notes), 1)
+        parent.close()
+
+    def test_file_opened_failure_never_sets_creation_disposition(self) -> None:
+        api = _Task5ReviewFakeApi()
+        api.information = windows_native.FILE_OPENED
+        backend = WindowsFilesystemBackend(
+            api=api, osfhandle_opener=lambda _handle, _flags: 0
+        )
+        parent = _mutation_parent(
+            backend,
+            handle=301,
+            identity=FileIdentity(31, 51),
+            path="C:/parent",
+        )
+        metadata = windows_native._Metadata(
+            FileIdentity(31, 41),
+            parent.filesystem,
+            EntryKind.REGULAR,
+            0,
+            0,
+        )
+        entry = mock.Mock(return_value=None)
+        with (
+            mock.patch.object(
+                backend, "_finish_relative_open", return_value=(metadata, False)
+            ),
+            mock.patch.object(backend, "_metadata", return_value=metadata),
+            mock.patch.object(backend, "entry", entry),
+            mock.patch.object(
+                windows_native,
+                "FileCapability",
+                side_effect=OSError("constructor primary"),
+            ),
+            self.assertRaisesRegex(OSError, "constructor primary"),
+        ):
+            backend.open_file(
+                parent,
+                "item",
+                access=FileAccess.READ_WRITE,
+                disposition=CreateDisposition.OPEN_OR_CREATE,
+                share_policy=SharePolicy.PINNED,
+            )
+        self.assertEqual(api.disposition_calls, [])
+        self.assertCountEqual(api.close_calls, [api.duplicate_handle, api.create_handle])
+        self.assertEqual(entry.call_count, 1)
+        parent.close()
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows native security")
+    def test_managed_security_namespace_replacement_never_returns_stale_evidence(self) -> None:
+        cases = (
+            ("secure-root-created", "root", CreateDisposition.CREATE_NEW, True),
+            ("secure-root-opened", "root", CreateDisposition.OPEN_EXISTING, False),
+            ("create-new-created", "file", CreateDisposition.CREATE_NEW, True),
+            (
+                "open-or-create-created",
+                "file",
+                CreateDisposition.OPEN_OR_CREATE,
+                True,
+            ),
+            (
+                "open-or-create-opened",
+                "file",
+                CreateDisposition.OPEN_OR_CREATE,
+                False,
+            ),
+        )
+        for label, kind, disposition, created_by_call in cases:
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as raw:
+                backend = WindowsFilesystemBackend()
+                root_path = Path(raw)
+                parent = backend.open_root(root_path, SharePolicy.MUTATION)
+                managed: DirectoryCapability | None = None
+                if kind == "root":
+                    target = root_path / "managed"
+                    if not created_by_call:
+                        existing = backend.create_secure_root(parent, "managed")
+                        existing.close()
+                else:
+                    managed = backend.create_secure_root(parent, "managed")
+                    target = root_path / "managed" / "item"
+                    if not created_by_call:
+                        existing_file = backend.open_file(
+                            managed,
+                            "item",
+                            access=FileAccess.READ_WRITE,
+                            disposition=CreateDisposition.CREATE_NEW,
+                        )
+                        existing_file.close()
+                        target.write_bytes(b"original")
+                old = target.with_name(target.name + "-old")
+                original_verify = backend._verify_managed_security_resource
+
+                def verify_then_replace(
+                    resource: _WindowsResource,
+                    *,
+                    directory: bool,
+                    component: object,
+                    repair_dacl: bool,
+                    material: Any | None = None,
+                ) -> None:
+                    original_verify(
+                        resource,
+                        directory=directory,
+                        component=component,
+                        repair_dacl=repair_dacl,
+                        material=material,
+                    )
+                    target.rename(old)
+                    if kind == "root":
+                        target.mkdir()
+                    else:
+                        target.write_bytes(b"replacement")
+
+                try:
+                    with (
+                        mock.patch.object(
+                            backend,
+                            "_verify_managed_security_resource",
+                            side_effect=verify_then_replace,
+                        ),
+                        self.assertRaises(OSError),
+                    ):
+                        if kind == "root":
+                            backend.create_secure_root(parent, "managed")
+                        else:
+                            assert managed is not None
+                            backend.open_file(
+                                managed,
+                                "item",
+                                access=FileAccess.READ_WRITE,
+                                disposition=disposition,
+                            )
+                    self.assertTrue(target.exists())
+                    if kind == "file":
+                        self.assertEqual(target.read_bytes(), b"replacement")
+                    self.assertEqual(old.exists(), not created_by_call)
+                finally:
+                    if managed is not None:
+                        managed.close()
+                    parent.close()
+
+    def test_managed_postsecurity_handle_changes_fail_after_material_cleanup(self) -> None:
+        changes = (
+            ("identity", FileIdentity(31, 999), FilesystemIdentity(31, 255, 0x4006), EntryKind.REGULAR),
+            ("filesystem", FileIdentity(31, 41), FilesystemIdentity(32, 255, 0x4006), EntryKind.REGULAR),
+            ("kind", FileIdentity(31, 41), FilesystemIdentity(31, 255, 0x4006), EntryKind.DIRECTORY),
+        )
+        for label, identity, filesystem, kind in changes:
+            with self.subTest(label=label):
+                api = _SecurityPolicyApi()
+                backend = WindowsFilesystemBackend(
+                    api=api, osfhandle_opener=lambda _handle, _flags: 0
+                )
+                parent = _mutation_parent(
+                    backend,
+                    handle=301,
+                    identity=FileIdentity(31, 51),
+                    path="C:/parent",
+                )
+                before = windows_native._Metadata(
+                    FileIdentity(31, 41),
+                    FilesystemIdentity(31, 255, 0x4006),
+                    EntryKind.REGULAR,
+                    0,
+                    0,
+                )
+                after = windows_native._Metadata(
+                    identity, filesystem, kind, 0, 0
+                )
+                material = _security_material_for_tests()
+                events: list[str] = []
+                material.close.side_effect = lambda: events.append("material-close")
+
+                def post_metadata(*_args: object) -> Any:
+                    events.append("post-metadata")
+                    return after
+
+                with (
+                    mock.patch.object(
+                        backend,
+                        "_managed_security_material",
+                        return_value=material,
+                    ),
+                    mock.patch.object(
+                        backend,
+                        "_native_relative_open",
+                        return_value=(701, windows_native.FILE_OPENED),
+                    ),
+                    mock.patch.object(
+                        backend,
+                        "_finish_relative_open",
+                        return_value=(before, False),
+                    ),
+                    mock.patch.object(
+                        backend, "_verify_managed_security_resource"
+                    ),
+                    mock.patch.object(
+                        backend, "_metadata", side_effect=post_metadata
+                    ),
+                    self.assertRaisesRegex(OSError, "identity|filesystem|kind"),
+                ):
+                    backend._managed_relative_open(
+                        parent=parent,
+                        name="item",
+                        desired_access=_file_access(
+                            FileAccess.READ_WRITE, SharePolicy.MUTATION
+                        ),
+                        share_policy=SharePolicy.MUTATION,
+                        disposition=windows_native.FILE_OPEN_IF,
+                        create_options=windows_native.FILE_OPEN_REPARSE_POINT
+                        | windows_native.FILE_NON_DIRECTORY_FILE,
+                        file_attributes=windows_native.FILE_ATTRIBUTE_NORMAL,
+                        expected=None,
+                        expected_kind=EntryKind.REGULAR,
+                        allowed_information={windows_native.FILE_OPENED},
+                    )
+                self.assertEqual(events[:2], ["material-close", "post-metadata"])
+                self.assertEqual(api.security_writes, [])
+                parent.close()
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows native security")
+    def test_existing_typed_opens_still_skip_automatic_managed_repair(self) -> None:
+        backend = WindowsFilesystemBackend()
+        with tempfile.TemporaryDirectory() as raw:
+            parent = backend.open_root(Path(raw), SharePolicy.MUTATION)
+            managed = backend.create_secure_root(parent, "managed")
+            file = backend.open_file(
+                managed,
+                "item",
+                access=FileAccess.READ_WRITE,
+                disposition=CreateDisposition.CREATE_NEW,
+            )
+            file.close()
+            directory = backend.create_directory(
+                managed, "payload", SharePolicy.MUTATION
+            )
+            directory.close()
+            with mock.patch.object(
+                backend, "_verify_managed_security_resource"
+            ) as verify:
+                opened_file = backend.open_file(
+                    managed,
+                    "item",
+                    access=FileAccess.READ,
+                    disposition=CreateDisposition.OPEN_EXISTING,
+                )
+                opened_directory = backend.open_directory(
+                    managed, "payload", SharePolicy.SCAN
+                )
+            verify.assert_not_called()
+            opened_file.close()
+            opened_directory.close()
+            managed.close()
+            parent.close()
+
+
 if os.name == "nt":
     import msvcrt

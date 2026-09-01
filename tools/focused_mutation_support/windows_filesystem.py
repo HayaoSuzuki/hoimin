@@ -1005,6 +1005,15 @@ class _WindowsApi:
 
 
 @dataclass(slots=True)
+class _CreatedRollbackState:
+    parent: DirectoryCapability
+    name: str
+    primary_error: BaseException
+    remaining_owners: int
+    completed: bool = False
+
+
+@dataclass(slots=True)
 class _WindowsResource:
     handle: int
     parent: DirectoryCapability | None
@@ -1013,6 +1022,7 @@ class _WindowsResource:
     desired_access: int = 0
     share_mode: int = 0
     disposition_set: bool = False
+    rollback_state: _CreatedRollbackState | None = None
 
 
 class WindowsFilesystemBackend:
@@ -1023,7 +1033,9 @@ class WindowsFilesystemBackend:
         osfhandle_opener: Callable[[int, int], int] | None = None,
     ) -> None:
         self._failed_closes: list[_WindowsResource] = []
+        self._failed_capabilities: list[FileCapability | DirectoryCapability] = []
         self._failed_security_owners: list[Any] = []
+        self._pending_directory_resources: dict[int, _WindowsResource] = {}
         self._api = api if api is not None else _WindowsApi()
         if osfhandle_opener is None:
             if os.name != "nt":
@@ -1049,6 +1061,38 @@ class WindowsFilesystemBackend:
                 native.name,
             )
         native.handle = INVALID_OWNED_HANDLE
+        rollback_state = native.rollback_state
+        native.rollback_state = None
+        if rollback_state is not None:
+            rollback_state.remaining_owners -= 1
+            if rollback_state.remaining_owners < 0:
+                raise RuntimeError("created rollback owner count underflow")
+            if rollback_state.remaining_owners == 0:
+                self._verify_created_rollback_absence(rollback_state)
+
+    def _verify_created_rollback_absence(
+        self, state: _CreatedRollbackState
+    ) -> None:
+        if state.completed:
+            return
+        state.completed = True
+        try:
+            observed = self.entry(state.parent, state.name)
+        except BaseException as observation_error:
+            state.primary_error.add_note(
+                _bounded_evidence(
+                    "created-object absence verification failed: "
+                    f"{observation_error}"
+                )
+            )
+            return
+        if observed is not None:
+            state.primary_error.add_note(
+                _bounded_evidence(
+                    "created-object rollback found the original or a "
+                    f"same-name replacement: {observed.identity!r}"
+                )
+            )
 
     def detach_file_resource(self, resource: object, flags: int) -> int:
         native = self._checked_resource(resource)
@@ -1493,19 +1537,27 @@ class WindowsFilesystemBackend:
         handle = int(result_handle.value or 0)
         if handle == INVALID_OWNED_HANDLE:
             raise OSError("native relative open returned an invalid handle")
+        information = int(io_status.Information)
         if run_hooks:
             try:
                 self._api.after_relative_open()
             except BaseException as primary_error:
-                self._close_after_error(
-                    primary_error,
+                resource = _WindowsResource(
                     handle,
                     parent,
                     name,
                     bool(desired_access & DELETE),
+                    desired_access,
+                    share_mode,
                 )
+                if information == FILE_CREATED:
+                    self._rollback_created_resources(primary_error, resource)
+                else:
+                    self._close_resources_after_error(
+                        primary_error, (resource,)
+                    )
                 raise
-        return handle, int(io_status.Information)
+        return handle, information
 
     @staticmethod
     def _same_evidence(metadata: _Metadata, expected: DirectoryEntry) -> bool:
@@ -1559,16 +1611,19 @@ class WindowsFilesystemBackend:
         actual_share_mode = (
             _share_mode(share_policy) if share_mode is None else share_mode
         )
-        return DirectoryCapability(
-            self,
-            _WindowsResource(
+        resource = self._pending_directory_resources.pop(handle, None)
+        if resource is None:
+            resource = _WindowsResource(
                 handle,
                 parent,
                 name,
                 bool(desired_access & DELETE),
                 desired_access,
                 actual_share_mode,
-            ),
+            )
+        return DirectoryCapability(
+            self,
+            resource,
             identity=metadata.identity,
             filesystem=metadata.filesystem,
             kind=EntryKind.DIRECTORY,
@@ -1627,6 +1682,185 @@ class WindowsFilesystemBackend:
             path_hint=parent.path_hint / name,
         )
 
+    def _close_capability_after_error(
+        self,
+        primary_error: BaseException,
+        capability: FileCapability | DirectoryCapability,
+    ) -> None:
+        try:
+            capability.close()
+        except BaseException as close_error:
+            primary_error.add_note(
+                _bounded_evidence(
+                    f"filesystem capability close failed: {close_error}"
+                )
+            )
+            self._failed_capabilities.append(capability)
+
+    def _fail_constructed_guard_handoff(
+        self,
+        primary_error: BaseException,
+        *,
+        capability: FileCapability | DirectoryCapability,
+        resource: _WindowsResource,
+        guard: _WindowsResource,
+        information: int,
+    ) -> None:
+        if information != FILE_CREATED:
+            self._close_capability_after_error(primary_error, capability)
+            self._failed_closes.append(guard)
+            return
+        try:
+            self._set_delete_disposition(guard)
+        except BaseException as rollback_error:
+            primary_error.add_note(
+                _bounded_evidence(
+                    f"created-object exact-handle rollback failed: {rollback_error}"
+                )
+            )
+            self._close_capability_after_error(primary_error, capability)
+            self._close_resources_after_error(primary_error, (guard,))
+            return
+        guard.disposition_set = True
+        if guard.parent is None or guard.name is None:
+            raise RuntimeError("created rollback lacks parent/name evidence")
+        state = _CreatedRollbackState(
+            guard.parent, guard.name, primary_error, 2
+        )
+        resource.rollback_state = state
+        guard.rollback_state = state
+        self._close_capability_after_error(primary_error, capability)
+        self._failed_closes.append(guard)
+
+    def _complete_constructed_handoff(
+        self,
+        capability: FileCapability | DirectoryCapability,
+        resource: _WindowsResource,
+        guard: _WindowsResource | None,
+        information: int,
+    ) -> FileCapability | DirectoryCapability:
+        if guard is None:
+            return capability
+        try:
+            self.close_resource(guard)
+        except BaseException as primary_error:
+            self._fail_constructed_guard_handoff(
+                primary_error,
+                capability=capability,
+                resource=resource,
+                guard=guard,
+                information=information,
+            )
+            raise
+        return capability
+
+    def _relative_directory_capability(
+        self,
+        *,
+        handle: int,
+        metadata: _Metadata,
+        information: int,
+        parent: DirectoryCapability,
+        name: str,
+        share_policy: SharePolicy,
+        security_domain: SecurityDomain,
+        created: bool,
+        path_hint: Path,
+        actual_access: int,
+        final_access: int,
+    ) -> DirectoryCapability:
+        resource, guard = self._prepare_relative_resource(
+            handle=handle,
+            metadata=metadata,
+            information=information,
+            parent=parent,
+            name=name,
+            actual_access=actual_access,
+            final_access=final_access,
+            share_policy=share_policy,
+        )
+        try:
+            self._pending_directory_resources[resource.handle] = resource
+            capability = self._directory_capability(
+                resource.handle,
+                metadata,
+                parent=parent,
+                name=name,
+                share_policy=share_policy,
+                security_domain=security_domain,
+                created=created,
+                path_hint=path_hint,
+                desired_access=final_access,
+            )
+        except BaseException as primary_error:
+            self._pending_directory_resources.pop(resource.handle, None)
+            self._cleanup_relative_resources_after_error(
+                primary_error,
+                guard=resource if guard is None else guard,
+                information=information,
+                companions=() if guard is None else (resource,),
+            )
+            raise
+        owned_resource = self._resource(capability)
+        if owned_resource is not resource:
+            raise RuntimeError("directory capability handoff changed handle")
+        completed = self._complete_constructed_handoff(
+            capability, resource, guard, information
+        )
+        assert isinstance(completed, DirectoryCapability)
+        return completed
+
+    def _relative_file_capability(
+        self,
+        *,
+        handle: int,
+        metadata: _Metadata,
+        information: int,
+        parent: DirectoryCapability,
+        name: str,
+        share_policy: SharePolicy,
+        created: bool,
+        actual_access: int,
+        final_access: int,
+    ) -> FileCapability:
+        resource, guard = self._prepare_relative_resource(
+            handle=handle,
+            metadata=metadata,
+            information=information,
+            parent=parent,
+            name=name,
+            actual_access=actual_access,
+            final_access=final_access,
+            share_policy=share_policy,
+        )
+        try:
+            capability = FileCapability(
+                self,
+                resource,
+                identity=metadata.identity,
+                filesystem=metadata.filesystem,
+                kind=EntryKind.REGULAR,
+                logical_size=metadata.logical_size,
+                modified_ns=metadata.modified_ns,
+                security_domain=parent.security_domain,
+                share_policy=share_policy,
+                created=created,
+                path_hint=parent.path_hint / name,
+            )
+        except BaseException as primary_error:
+            self._cleanup_relative_resources_after_error(
+                primary_error,
+                guard=resource if guard is None else guard,
+                information=information,
+                companions=() if guard is None else (resource,),
+            )
+            raise
+        completed = self._complete_constructed_handoff(
+            capability, resource, guard, information
+        )
+        assert isinstance(completed, FileCapability)
+        return completed
+
     def _observe_required(
         self, parent: DirectoryCapability, name: str
     ) -> DirectoryEntry:
@@ -1680,7 +1914,7 @@ class WindowsFilesystemBackend:
         desired_access: int,
         share_mode: int,
     ) -> None:
-        resource = _WindowsResource(
+        guard = _WindowsResource(
             handle,
             parent,
             name,
@@ -1688,23 +1922,55 @@ class WindowsFilesystemBackend:
             desired_access,
             share_mode,
         )
+        self._rollback_created_resources(primary_error, guard)
+
+    def _close_resources_after_error(
+        self,
+        primary_error: BaseException,
+        resources: tuple[_WindowsResource, ...],
+    ) -> None:
+        for resource in resources:
+            try:
+                self.close_resource(resource)
+            except BaseException as close_error:
+                primary_error.add_note(
+                    _bounded_evidence(
+                        f"filesystem capability close failed: {close_error}"
+                    )
+                )
+                self._failed_closes.append(resource)
+
+    def _rollback_created_resources(
+        self,
+        primary_error: BaseException,
+        guard: _WindowsResource,
+        *companions: _WindowsResource,
+    ) -> None:
         try:
-            self._set_delete_disposition(resource)
+            self._set_delete_disposition(guard)
         except BaseException as rollback_error:
             primary_error.add_note(
                 _bounded_evidence(
                     f"created-object exact-handle rollback failed: {rollback_error}"
                 )
             )
-        try:
-            self.close_resource(resource)
-        except BaseException as close_error:
-            primary_error.add_note(
-                _bounded_evidence(
-                    f"filesystem capability close failed: {close_error}"
-                )
+            self._close_resources_after_error(
+                primary_error, (*companions, guard)
             )
-            self._failed_closes.append(resource)
+            return
+        guard.disposition_set = True
+        resources = (*companions, guard)
+        if guard.parent is None or guard.name is None:
+            raise RuntimeError("created rollback lacks parent/name evidence")
+        state = _CreatedRollbackState(
+            guard.parent,
+            guard.name,
+            primary_error,
+            len(resources),
+        )
+        for resource in resources:
+            resource.rollback_state = state
+        self._close_resources_after_error(primary_error, resources)
 
     def _cleanup_relative_open_after_error(
         self,
@@ -1734,6 +2000,115 @@ class WindowsFilesystemBackend:
             name,
             bool(desired_access & DELETE),
         )
+
+    @staticmethod
+    def _creation_access(
+        desired_access: int, allowed_information: set[int]
+    ) -> int:
+        if FILE_CREATED in allowed_information:
+            return desired_access | DELETE
+        return desired_access
+
+    def _cleanup_relative_resources_after_error(
+        self,
+        primary_error: BaseException,
+        *,
+        guard: _WindowsResource,
+        information: int,
+        companions: tuple[_WindowsResource, ...] = (),
+    ) -> None:
+        if information == FILE_CREATED:
+            self._rollback_created_resources(
+                primary_error,
+                guard,
+                *companions,
+            )
+            return
+        self._close_resources_after_error(primary_error, (*companions, guard))
+
+    def _prepare_relative_resource(
+        self,
+        *,
+        handle: int,
+        metadata: _Metadata,
+        information: int,
+        parent: DirectoryCapability,
+        name: str,
+        actual_access: int,
+        final_access: int,
+        share_policy: SharePolicy,
+    ) -> tuple[_WindowsResource, _WindowsResource | None]:
+        share_mode = _share_mode(share_policy)
+        guard = _WindowsResource(
+            handle,
+            parent,
+            name,
+            bool(actual_access & DELETE),
+            actual_access,
+            share_mode,
+        )
+        if actual_access == final_access:
+            return guard, None
+        duplicate = HANDLE()
+        process = self._api.GetCurrentProcess()
+        try:
+            if not self._api.DuplicateHandle(
+                process,
+                guard.handle,
+                process,
+                ctypes.byref(duplicate),
+                final_access,
+                False,
+                0,
+            ):
+                self._raise_last_error(
+                    "downgrade created filesystem capability", name
+                )
+        except BaseException as primary_error:
+            self._cleanup_relative_resources_after_error(
+                primary_error,
+                guard=guard,
+                information=information,
+            )
+            raise
+        duplicate_handle = int(duplicate.value or 0)
+        if duplicate_handle == INVALID_OWNED_HANDLE:
+            invalid_handle_error = OSError(
+                "duplicate filesystem capability returned an invalid handle"
+            )
+            self._cleanup_relative_resources_after_error(
+                invalid_handle_error,
+                guard=guard,
+                information=information,
+            )
+            raise invalid_handle_error
+        resource = _WindowsResource(
+            duplicate_handle,
+            parent,
+            name,
+            bool(final_access & DELETE),
+            final_access,
+            share_mode,
+        )
+        try:
+            duplicate_metadata = self._metadata(duplicate_handle, name)
+            if (
+                duplicate_metadata.identity != metadata.identity
+                or duplicate_metadata.filesystem != metadata.filesystem
+                or duplicate_metadata.kind is not metadata.kind
+            ):
+                raise OSError(
+                    "filesystem identity changed while downgrading authority"
+                )
+        except BaseException as primary_error:
+            self._cleanup_relative_resources_after_error(
+                primary_error,
+                guard=guard,
+                information=information,
+                companions=(resource,),
+            )
+            raise
+        return resource, guard
 
     def _finish_relative_open(
         self,
@@ -1793,6 +2168,9 @@ class WindowsFilesystemBackend:
         expected_kind: EntryKind,
         allowed_information: set[int],
     ) -> tuple[int, _Metadata, bool]:
+        actual_access = self._creation_access(
+            desired_access, allowed_information
+        )
         material = self._managed_security_material(
             directory=expected_kind is EntryKind.DIRECTORY
         )
@@ -1804,7 +2182,7 @@ class WindowsFilesystemBackend:
             handle, information = self._native_relative_open(
                 parent,
                 name,
-                desired_access=desired_access,
+                desired_access=actual_access,
                 share_mode=_share_mode(share_policy),
                 disposition=disposition,
                 create_options=create_options,
@@ -1817,7 +2195,7 @@ class WindowsFilesystemBackend:
                 information=information,
                 parent=parent,
                 name=name,
-                desired_access=desired_access,
+                desired_access=actual_access,
                 share_policy=share_policy,
                 expected=expected,
                 expected_kind=expected_kind,
@@ -1828,8 +2206,8 @@ class WindowsFilesystemBackend:
                 handle,
                 parent,
                 name,
-                bool(desired_access & DELETE),
-                desired_access,
+                bool(actual_access & DELETE),
+                actual_access,
                 _share_mode(share_policy),
             )
             self._verify_managed_security_resource(
@@ -1843,7 +2221,26 @@ class WindowsFilesystemBackend:
             cleanup_material = None
             assert owner is not None
             self._close_security_owner(owner)
-            return handle, metadata, created
+            post_security = self._metadata(handle, name)
+            if post_security.identity != metadata.identity:
+                raise OSError(
+                    "managed filesystem identity changed after security validation"
+                )
+            if post_security.filesystem != metadata.filesystem:
+                raise OSError(
+                    "managed filesystem changed after security validation"
+                )
+            if post_security.kind is not metadata.kind:
+                raise OSError(
+                    "managed filesystem kind changed after security validation"
+                )
+            post_entry = self._observe_required(parent, name)
+            if not self._same_evidence(post_security, post_entry):
+                raise OSError(
+                    "managed filesystem parent/name identity changed after "
+                    "security validation"
+                )
+            return handle, post_security, created
         except BaseException as primary_error:
             if finished and handle is not None:
                 self._cleanup_relative_open_after_error(
@@ -1852,7 +2249,7 @@ class WindowsFilesystemBackend:
                     information=information,
                     parent=parent,
                     name=name,
-                    desired_access=desired_access,
+                    desired_access=actual_access,
                     share_policy=share_policy,
                 )
             if cleanup_material is not None:
@@ -2020,6 +2417,10 @@ class WindowsFilesystemBackend:
     ) -> DirectoryCapability:
         _encode_windows_component(name)
         desired_access = _directory_access(share_policy, relative_target=True)
+        allowed_information = {FILE_CREATED}
+        actual_access = self._creation_access(
+            desired_access, allowed_information
+        )
         if parent.security_domain is SecurityDomain.MANAGED:
             handle, metadata, created = self._managed_relative_open(
                 parent=parent,
@@ -2031,13 +2432,13 @@ class WindowsFilesystemBackend:
                 file_attributes=FILE_ATTRIBUTE_DIRECTORY,
                 expected=None,
                 expected_kind=EntryKind.DIRECTORY,
-                allowed_information={FILE_CREATED},
+                allowed_information=allowed_information,
             )
         else:
             handle, information = self._native_relative_open(
                 parent,
                 name,
-                desired_access=desired_access,
+                desired_access=actual_access,
                 share_mode=_share_mode(share_policy),
                 disposition=FILE_CREATE,
                 create_options=FILE_OPEN_REPARSE_POINT | FILE_DIRECTORY_FILE,
@@ -2049,35 +2450,26 @@ class WindowsFilesystemBackend:
                 information=information,
                 parent=parent,
                 name=name,
-                desired_access=desired_access,
+                desired_access=actual_access,
                 share_policy=share_policy,
                 expected=None,
                 expected_kind=EntryKind.DIRECTORY,
-                allowed_information={FILE_CREATED},
+                allowed_information=allowed_information,
             )
-        try:
-            return self._directory_capability(
-                handle,
-                metadata,
-                parent=parent,
-                name=name,
-                share_policy=share_policy,
-                security_domain=parent.security_domain,
-                created=created,
-                path_hint=parent.path_hint / name,
-                desired_access=desired_access,
-            )
-        except BaseException as primary_error:
-            self._cleanup_relative_open_after_error(
-                primary_error,
-                handle=handle,
-                information=FILE_CREATED if created else FILE_OPENED,
-                parent=parent,
-                name=name,
-                desired_access=desired_access,
-                share_policy=share_policy,
-            )
-            raise
+        information = FILE_CREATED if created else FILE_OPENED
+        return self._relative_directory_capability(
+            handle=handle,
+            metadata=metadata,
+            information=information,
+            parent=parent,
+            name=name,
+            share_policy=share_policy,
+            security_domain=parent.security_domain,
+            created=created,
+            path_hint=parent.path_hint / name,
+            actual_access=actual_access,
+            final_access=desired_access,
+        )
 
     def open_file(
         self,
@@ -2111,6 +2503,9 @@ class WindowsFilesystemBackend:
             and disposition is CreateDisposition.OPEN_OR_CREATE
         ):
             desired_access |= WRITE_DAC
+        actual_access = self._creation_access(
+            desired_access, allowed_information
+        )
         if managed_creation:
             handle, metadata, created = self._managed_relative_open(
                 parent=parent,
@@ -2128,7 +2523,7 @@ class WindowsFilesystemBackend:
             handle, information = self._native_relative_open(
                 parent,
                 name,
-                desired_access=desired_access,
+                desired_access=actual_access,
                 share_mode=_share_mode(share_policy),
                 disposition=native_disposition,
                 create_options=FILE_OPEN_REPARSE_POINT | FILE_NON_DIRECTORY_FILE,
@@ -2140,45 +2535,24 @@ class WindowsFilesystemBackend:
                 information=information,
                 parent=parent,
                 name=name,
-                desired_access=desired_access,
+                desired_access=actual_access,
                 share_policy=share_policy,
                 expected=expected,
                 expected_kind=EntryKind.REGULAR,
                 allowed_information=allowed_information,
             )
-        resource = _WindowsResource(
-            handle,
-            parent,
-            name,
-            bool(desired_access & DELETE),
-            desired_access,
-            _share_mode(share_policy),
+        information = FILE_CREATED if created else FILE_OPENED
+        return self._relative_file_capability(
+            handle=handle,
+            metadata=metadata,
+            information=information,
+            parent=parent,
+            name=name,
+            share_policy=share_policy,
+            created=created,
+            actual_access=actual_access,
+            final_access=desired_access,
         )
-        try:
-            return FileCapability(
-                self,
-                resource,
-                identity=metadata.identity,
-                filesystem=metadata.filesystem,
-                kind=EntryKind.REGULAR,
-                logical_size=metadata.logical_size,
-                modified_ns=metadata.modified_ns,
-                security_domain=parent.security_domain,
-                share_policy=share_policy,
-                created=created,
-                path_hint=parent.path_hint / name,
-            )
-        except BaseException as primary_error:
-            self._cleanup_relative_open_after_error(
-                primary_error,
-                handle=handle,
-                information=FILE_CREATED if created else FILE_OPENED,
-                parent=parent,
-                name=name,
-                desired_access=desired_access,
-                share_policy=share_policy,
-            )
-            raise
 
     def open_entry(
         self,
@@ -2288,6 +2662,10 @@ class WindowsFilesystemBackend:
             | READ_CONTROL
             | WRITE_DAC
         )
+        allowed_information = {FILE_OPENED, FILE_CREATED}
+        actual_access = self._creation_access(
+            desired_access, allowed_information
+        )
         handle, metadata, created = self._managed_relative_open(
             parent=parent,
             name=name,
@@ -2298,31 +2676,21 @@ class WindowsFilesystemBackend:
             file_attributes=FILE_ATTRIBUTE_DIRECTORY,
             expected=self.entry(parent, name),
             expected_kind=EntryKind.DIRECTORY,
-            allowed_information={FILE_OPENED, FILE_CREATED},
+            allowed_information=allowed_information,
         )
-        try:
-            return self._directory_capability(
-                handle,
-                metadata,
-                parent=parent,
-                name=name,
-                share_policy=SharePolicy.MUTATION,
-                security_domain=SecurityDomain.MANAGED,
-                created=created,
-                path_hint=parent.path_hint / name,
-                desired_access=desired_access,
-            )
-        except BaseException as primary_error:
-            self._cleanup_relative_open_after_error(
-                primary_error,
-                handle=handle,
-                information=FILE_CREATED if created else FILE_OPENED,
-                parent=parent,
-                name=name,
-                desired_access=desired_access,
-                share_policy=SharePolicy.MUTATION,
-            )
-            raise
+        return self._relative_directory_capability(
+            handle=handle,
+            metadata=metadata,
+            information=FILE_CREATED if created else FILE_OPENED,
+            parent=parent,
+            name=name,
+            share_policy=SharePolicy.MUTATION,
+            security_domain=SecurityDomain.MANAGED,
+            created=created,
+            path_hint=parent.path_hint / name,
+            actual_access=actual_access,
+            final_access=desired_access,
+        )
 
     def entries(self, parent: DirectoryCapability) -> DirectoryIterator:
         reopened = self.reopen_directory(parent)
@@ -2670,6 +3038,11 @@ class WindowsFilesystemBackend:
         )
 
     def __del__(self) -> None:
+        for capability in getattr(self, "_failed_capabilities", ()):
+            try:
+                capability.close()
+            except (OSError, RuntimeError):
+                pass
         for resource in getattr(self, "_failed_closes", ()):
             try:
                 self.close_resource(resource)
