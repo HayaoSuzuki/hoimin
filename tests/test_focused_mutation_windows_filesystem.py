@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import os
 import subprocess
 import tempfile
@@ -67,15 +68,6 @@ class WindowsLayoutTests(unittest.TestCase):
             self.assertEqual(IO_STATUS_BLOCK.Information.offset, 4)
         self.assertEqual(FILE_ID_INFO.FileId.offset, 8)
         self.assertEqual(FILE_ID_EXTD_DIR_INFO.FileName.offset, 88)
-
-    def test_rename_allocation_uses_the_ctypes_filename_offset(self) -> None:
-        import ctypes
-
-        encoded = "renamed".encode("utf-16-le")
-        allocation_size = FILE_RENAME_INFORMATION.FileName.offset + len(encoded)
-        value = ctypes.create_string_buffer(allocation_size)
-        self.assertEqual(len(value), allocation_size)
-
 
 class WindowsPureContractTests(unittest.TestCase):
     def test_attribute_kind_mapping_checks_reparse_before_directory(self) -> None:
@@ -751,6 +743,88 @@ class WindowsOpenTests(unittest.TestCase):
             finally:
                 root.close()
             root_path.rename(moved)
+
+
+class WindowsReviewFixTests(unittest.TestCase):
+    def test_win32_error_mapping_preserves_errno_and_narrow_types(self) -> None:
+        cases = (
+            (2, True, FileNotFoundError, errno.ENOENT),
+            (2, False, OSError, errno.ENOENT),
+            (3, False, OSError, errno.ENOENT),
+            (5, False, PermissionError, errno.EACCES),
+            (32, False, OSError, errno.EACCES),
+            (80, False, OSError, errno.EEXIST),
+            (123, False, OSError, errno.EINVAL),
+        )
+        for code, leaf, expected_type, expected_errno in cases:
+            with self.subTest(code=code, leaf=leaf):
+                error = _error_from_win32(
+                    code,
+                    "review error mapping",
+                    "x" * 20_000,
+                    leaf=leaf,
+                )
+                self.assertIs(type(error), expected_type)
+                self.assertEqual(error.errno, expected_errno)
+                self.assertEqual(error.winerror, code)
+                self.assertEqual(
+                    isinstance(error, FileNotFoundError), code == 2 and leaf
+                )
+                self.assertLessEqual(len(error.filename.encode("utf-8")), 4_096)
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows native handles")
+    def test_managed_parent_allows_only_existing_file_open(self) -> None:
+        api = WindowsOpenTests._ApiProxy()
+        backend = WindowsFilesystemBackend(api=api)
+        with tempfile.TemporaryDirectory() as raw:
+            root_path = Path(raw)
+            (root_path / "existing").write_bytes(b"payload")
+            root = backend.open_root(root_path, SharePolicy.MUTATION)
+            managed = backend.reopen_directory(root)
+            managed._security_domain = SecurityDomain.MANAGED
+            try:
+                listed = backend.entry(managed, "existing")
+                self.assertIsNotNone(listed)
+                opened = backend.open_file(
+                    managed,
+                    "existing",
+                    access=FileAccess.READ,
+                    disposition=CreateDisposition.OPEN_EXISTING,
+                )
+                try:
+                    assert listed is not None
+                    self.assertEqual(opened.identity, listed.identity)
+                    self.assertIs(opened.kind, EntryKind.REGULAR)
+                    self.assertIs(opened.security_domain, SecurityDomain.MANAGED)
+                finally:
+                    opened.close()
+
+                for name, disposition in (
+                    ("create-new", CreateDisposition.CREATE_NEW),
+                    ("open-or-create", CreateDisposition.OPEN_OR_CREATE),
+                ):
+                    with self.subTest(disposition=disposition):
+                        calls_before = api.nt_create_calls
+                        with self.assertRaises(NotImplementedError):
+                            backend.open_file(
+                                managed,
+                                name,
+                                access=FileAccess.READ_WRITE,
+                                disposition=disposition,
+                            )
+                        self.assertEqual(api.nt_create_calls, calls_before)
+            finally:
+                managed.close()
+                root.close()
+
+    def test_rename_header_has_fixed_pointer_width_abi_offset(self) -> None:
+        import ctypes
+
+        expected_offset = 20 if ctypes.sizeof(ctypes.c_void_p) == 8 else 12
+        self.assertEqual(FILE_RENAME_INFORMATION.FileName.offset, expected_offset)
+        encoded = "renamed".encode("utf-16-le")
+        allocation_size = FILE_RENAME_INFORMATION.FileName.offset + len(encoded)
+        self.assertEqual(allocation_size, expected_offset + len(encoded))
 
 
 if os.name == "nt":

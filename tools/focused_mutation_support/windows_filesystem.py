@@ -195,6 +195,24 @@ def _bounded_evidence(value: str) -> str:
     )
 
 
+_WIN32_ERRNO_FALLBACKS = {
+    2: errno.ENOENT,
+    3: errno.ENOENT,
+    5: errno.EACCES,
+    32: errno.EACCES,
+    80: errno.EEXIST,
+    123: errno.EINVAL,
+}
+
+
+def _errno_from_win32(code: int) -> int:
+    if os.name == "nt":
+        mapped = OSError(0, "", None, code).errno
+        if mapped is not None:
+            return int(mapped)
+    return _WIN32_ERRNO_FALLBACKS.get(code, errno.EIO)
+
+
 def _error_from_win32(
     code: int,
     operation: str,
@@ -204,20 +222,20 @@ def _error_from_win32(
 ) -> OSError:
     bounded_operation = _bounded_evidence(operation)
     bounded_component = _bounded_evidence(str(component))
+    error_number = _errno_from_win32(code)
+    message = f"{bounded_operation} failed with Windows error {code}"
     if code == ERROR_FILE_NOT_FOUND and leaf:
-        error_type: type[OSError] = FileNotFoundError
-        error_number = errno.ENOENT
+        error: OSError = FileNotFoundError(
+            errno.ENOENT, message, bounded_component
+        )
     elif code == ERROR_ACCESS_DENIED:
-        error_type = PermissionError
-        error_number = errno.EACCES
+        error = PermissionError(errno.EACCES, message, bounded_component)
     else:
-        error_type = OSError
-        error_number = errno.EIO
-    error = error_type(
-        error_number,
-        f"{bounded_operation} failed with Windows error {code}",
-        bounded_component,
-    )
+        error = OSError()
+        error.args = (error_number, message)
+        error.errno = error_number
+        error.strerror = message
+        error.filename = bounded_component
     error.winerror = code  # type: ignore[attr-defined]
     return error
 
@@ -971,7 +989,10 @@ class WindowsFilesystemBackend:
         disposition: CreateDisposition,
         share_policy: SharePolicy = SharePolicy.MUTATION,
     ) -> FileCapability:
-        if parent.security_domain is not SecurityDomain.CALLER:
+        if (
+            parent.security_domain is SecurityDomain.MANAGED
+            and disposition is not CreateDisposition.OPEN_EXISTING
+        ):
             raise NotImplementedError("managed Windows security is not available")
         _encode_windows_component(name)
         if disposition is CreateDisposition.OPEN_EXISTING:
