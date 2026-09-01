@@ -31,6 +31,28 @@ mod tests {
         }
     }
 
+    fn only_test_entry_with_prefix(path: &Utf8Path, prefix: &str) -> String {
+        let names = std::fs::read_dir(path)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .filter(|name| name.starts_with(prefix))
+            .collect::<Vec<_>>();
+        assert_eq!(names.len(), 1, "entries with prefix {prefix:?}: {names:?}");
+        names.into_iter().next().unwrap()
+    }
+
+    #[cfg(unix)]
+    fn assert_primary_then_cleanup_unavailable(error: &super::WorkspaceError, primary: &str) {
+        let message = error.to_string();
+        let primary_offset = message.find(primary).expect("primary error is retained");
+        let cleanup = "secondary new-directory rollback failure: bounded cleanup cannot proceed without the created directory identity; unverified name left untouched";
+        let cleanup_offset = message
+            .find(cleanup)
+            .expect("one cleanup-unavailable secondary is retained");
+        assert!(primary_offset < cleanup_offset, "{message}");
+        assert_eq!(message.matches(cleanup).count(), 1, "{message}");
+    }
+
     #[test]
     fn direct_child_limit_rejects_the_first_child_beyond_the_cap() {
         assert!(ensure_direct_child_capacity(MAX_MANAGED_CHILDREN - 1).is_ok());
@@ -375,6 +397,317 @@ mod tests {
                 residual.is_empty(),
                 "boundary {selected:?} left managed children: {residual:?}"
             );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn round_five_staging_first_handle_identity_failure_preserves_a_same_name_replacement() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let parked_name = "parked-round-five-staging";
+        let original_identity = std::cell::Cell::new(None);
+        let replacement_identity = std::cell::Cell::new(None);
+
+        let error = ManagedRunRoot::create_with_hooks(
+            &coordinator,
+            OwnerKind::PublicExecution,
+            &|_| Ok(()),
+            &|_| {
+                let staging_name =
+                    only_test_entry_with_prefix(&coordinator.path, super::STAGING_PREFIX);
+                let original = super::metadata_identity(
+                    &coordinator.dir.symlink_metadata(&staging_name).unwrap(),
+                );
+                original_identity.set(Some(original));
+                coordinator
+                    .dir
+                    .rename(&staging_name, &coordinator.dir, parked_name)?;
+                create_test_owned_directory_entry(&coordinator.dir, &staging_name)?;
+                let replacement = super::metadata_identity(
+                    &coordinator.dir.symlink_metadata(&staging_name).unwrap(),
+                );
+                assert_ne!(replacement, original);
+                replacement_identity.set(Some(replacement));
+                Err(std::io::Error::other("injected staging identity failure"))
+            },
+        )
+        .unwrap_err();
+
+        assert_primary_then_cleanup_unavailable(&error, "injected staging identity failure");
+        let staging_name = only_test_entry_with_prefix(&coordinator.path, super::STAGING_PREFIX);
+        assert_eq!(
+            Some(super::metadata_identity(
+                &coordinator.dir.symlink_metadata(&staging_name).unwrap()
+            )),
+            replacement_identity.get(),
+        );
+        assert_eq!(
+            Some(super::metadata_identity(
+                &coordinator.dir.symlink_metadata(parked_name).unwrap()
+            )),
+            original_identity.get(),
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn round_five_child_first_handle_identity_failure_preserves_replacement_and_lifecycle() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let parked_name = "parked-round-five-child";
+        let original_identity = std::cell::Cell::new(None);
+        let replacement_identity = std::cell::Cell::new(None);
+
+        let error = root
+            .create_child_with_hooks("round-five-", &|_| Ok(()), &|_| {
+                let child_name = only_test_entry_with_prefix(&root.path, "round-five-");
+                let original =
+                    super::metadata_identity(&root.dir.symlink_metadata(&child_name).unwrap());
+                original_identity.set(Some(original));
+                root.dir.rename(&child_name, &root.dir, parked_name)?;
+                create_test_owned_directory_entry(&root.dir, &child_name)?;
+                let replacement =
+                    super::metadata_identity(&root.dir.symlink_metadata(&child_name).unwrap());
+                assert_ne!(replacement, original);
+                replacement_identity.set(Some(replacement));
+                Err(std::io::Error::other("injected child identity failure"))
+            })
+            .unwrap_err();
+
+        assert_primary_then_cleanup_unavailable(&error, "injected child identity failure");
+        let child_name = only_test_entry_with_prefix(&root.path, "round-five-");
+        assert_eq!(
+            Some(super::metadata_identity(
+                &root.dir.symlink_metadata(&child_name).unwrap()
+            )),
+            replacement_identity.get(),
+        );
+        assert_eq!(
+            Some(super::metadata_identity(
+                &root.dir.symlink_metadata(parked_name).unwrap()
+            )),
+            original_identity.get(),
+        );
+        assert_eq!(root.lifecycle.lock().unwrap().live_children, 0);
+    }
+
+    #[test]
+    fn round_five_explicit_rollback_runs_once_with_deadline_remainder_and_keeps_error_order() {
+        let base = std::time::Instant::now();
+        let cleanup_calls = std::cell::Cell::new(0_u32);
+        let error = super::error_after_new_directory_rollback_with(
+            std::io::Error::other("primary construction failure"),
+            base + std::time::Duration::from_secs(10),
+            || base + std::time::Duration::from_secs(4),
+            |remaining| {
+                cleanup_calls.set(cleanup_calls.get() + 1);
+                assert_eq!(remaining, std::time::Duration::from_secs(6));
+                Err(std::io::Error::other("bounded rollback failure"))
+            },
+            |primary, secondary| {
+                std::io::Error::new(
+                    primary.kind(),
+                    format!("{primary}; secondary new-directory rollback failure: {secondary}"),
+                )
+            },
+        );
+
+        assert_eq!(cleanup_calls.get(), 1);
+        assert_eq!(
+            error.to_string(),
+            "primary construction failure; secondary new-directory rollback failure: bounded rollback failure"
+        );
+        drop(error);
+        assert_eq!(cleanup_calls.get(), 1, "drop repeated namespace cleanup");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn round_five_staging_first_identity_failure_uses_exact_handle_rollback() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let replacement_was_blocked = std::cell::Cell::new(false);
+
+        let error = ManagedRunRoot::create_with_hooks(
+            &coordinator,
+            OwnerKind::PublicExecution,
+            &|_| Ok(()),
+            &|_| {
+                let staging_name =
+                    only_test_entry_with_prefix(&coordinator.path, super::STAGING_PREFIX);
+                let source = coordinator.path.join(&staging_name);
+                let destination = coordinator.path.join("round-five-staging-replacement");
+                replacement_was_blocked.set(std::fs::rename(source, destination).is_err());
+                Err(std::io::Error::other("injected staging identity failure"))
+            },
+        )
+        .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("injected staging identity failure")
+        );
+        assert!(replacement_was_blocked.get());
+        assert!(
+            std::fs::read_dir(&coordinator.path)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+                .all(|name| !name.starts_with(super::STAGING_PREFIX)),
+            "exact-handle rollback left the empty staging directory"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn round_five_child_first_identity_failure_uses_exact_handle_rollback_before_lifecycle() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let replacement_was_blocked = std::cell::Cell::new(false);
+
+        let error = root
+            .create_child_with_hooks("round-five-", &|_| Ok(()), &|_| {
+                let child_name = only_test_entry_with_prefix(&root.path, "round-five-");
+                let source = root.path.join(&child_name);
+                let destination = root.path.join("round-five-child-replacement");
+                replacement_was_blocked.set(std::fs::rename(source, destination).is_err());
+                Err(std::io::Error::other("injected child identity failure"))
+            })
+            .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("injected child identity failure")
+        );
+        assert!(replacement_was_blocked.get());
+        assert!(
+            std::fs::read_dir(&root.path)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+                .all(|name| !name.starts_with("round-five-")),
+            "exact-handle rollback left the empty managed child"
+        );
+        assert_eq!(root.lifecycle.lock().unwrap().live_children, 0);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn round_five_published_markers_are_pinned_but_allow_intended_concurrent_opens() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let root_path = root.path.clone();
+        let lease_path = root.path.join(super::LEASE_FILE);
+        let heartbeat_path = root.path.join(super::HEARTBEAT_FILE);
+        let moved_lease_path = root.path.join("round-five-moved-lease");
+        let lease_reader = super::super::root::windows::open_regular_file_shared(
+            &root.dir,
+            std::ffi::OsStr::new(super::LEASE_FILE),
+        )
+        .unwrap();
+        assert!(super::read_marker_file(&lease_reader).is_some());
+        assert!(fs2::FileExt::try_lock_exclusive(&lease_reader).is_err());
+        let heartbeat_updater = super::super::root::windows::open_regular_file_for_update_shared(
+            &root.dir,
+            std::ffi::OsStr::new(super::HEARTBEAT_FILE),
+        )
+        .unwrap();
+        super::refresh_file_modified_time(&heartbeat_updater).unwrap();
+
+        assert!(
+            std::fs::rename(&lease_path, &moved_lease_path).is_err(),
+            "the reopened lease allowed an independent rename"
+        );
+        assert!(
+            std::fs::remove_file(&heartbeat_path).is_err(),
+            "the reopened heartbeat allowed an independent delete"
+        );
+
+        drop(lease_reader);
+        drop(heartbeat_updater);
+        drop(root);
+        std::fs::rename(&lease_path, &moved_lease_path).unwrap();
+        std::fs::remove_file(&moved_lease_path).unwrap();
+        std::fs::remove_file(&heartbeat_path).unwrap();
+        std::fs::remove_dir(root_path).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn round_five_returned_root_dir_matches_the_retained_rename_capability() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+
+        assert_eq!(
+            super::directory_identity(&root.dir).unwrap(),
+            super::directory_identity(&root.rename_handle).unwrap()
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn round_five_post_rename_replacement_never_builds_a_mixed_managed_root() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let replacement_installed = std::cell::Cell::new(false);
+
+        let result = ManagedRunRoot::create_with_publish_hook(
+            &coordinator,
+            OwnerKind::PublicExecution,
+            &|boundary| {
+                if boundary != super::PublishBoundary::RenamedActive {
+                    return Ok(());
+                }
+                let active_name =
+                    only_test_entry_with_prefix(&coordinator.path, super::ACTIVE_PREFIX);
+                if coordinator
+                    .dir
+                    .rename(
+                        &active_name,
+                        &coordinator.dir,
+                        "parked-round-five-published-root",
+                    )
+                    .is_err()
+                {
+                    return Ok(());
+                }
+                create_test_owned_directory_entry(&coordinator.dir, &active_name).unwrap();
+                replacement_installed.set(true);
+                Ok(())
+            },
+        );
+
+        match result {
+            Ok(root) => {
+                assert_eq!(
+                    super::directory_identity(&root.dir).unwrap(),
+                    super::directory_identity(&root.rename_handle).unwrap(),
+                    "publication returned a path handle from a different object"
+                );
+                assert!(
+                    !replacement_installed.get(),
+                    "publication returned a mixed ManagedRunRoot after replacement"
+                );
+            }
+            Err(error) => {
+                assert!(replacement_installed.get(), "unexpected failure: {error}");
+                assert!(
+                    matches!(error, super::WorkspaceError::InvalidPath { .. }),
+                    "replacement did not produce the typed hard-mismatch error: {error}"
+                );
+            }
         }
     }
 

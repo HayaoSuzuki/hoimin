@@ -1017,6 +1017,30 @@ mod tests {
     }
 
     #[test]
+    fn round_five_relative_rename_source_open_is_pinned_but_still_inspectable() {
+        let temporary = tempfile::tempdir().unwrap();
+        let parent =
+            cap_std::fs::Dir::open_ambient_dir(temporary.path(), cap_std::ambient_authority())
+                .unwrap();
+        parent.create_dir("source").unwrap();
+        let retained = open_directory_for_rename(&parent, OsStr::new("source")).unwrap();
+        let inspection = open_directory_shared(&parent, OsStr::new("source")).unwrap();
+
+        assert!(
+            open_directory_for_rename(&parent, OsStr::new("source")).is_err(),
+            "a retained rename-source capability admitted a second DELETE-capable open"
+        );
+        assert_eq!(
+            file_identity_io(&retained).unwrap(),
+            file_identity_io(&inspection).unwrap()
+        );
+
+        drop(inspection);
+        drop(retained);
+        open_directory_for_rename(&parent, OsStr::new("source")).unwrap();
+    }
+
+    #[test]
     fn retained_delete_handle_renames_with_an_inspection_handle_live() {
         let temporary = tempfile::tempdir().unwrap();
         let parent =

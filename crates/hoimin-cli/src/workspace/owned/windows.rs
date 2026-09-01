@@ -875,6 +875,119 @@ mod tests {
     }
 
     #[test]
+    fn round_five_native_directory_create_is_a_pinned_rename_capability() {
+        let temporary = tempfile::tempdir().unwrap();
+        let parent =
+            cap_std::fs::Dir::open_ambient_dir(temporary.path(), cap_std::ambient_authority())
+                .unwrap();
+        let source_path = temporary.path().join("pinned-directory");
+        let destination_path = temporary.path().join("moved-directory");
+        let retained =
+            super::create_relative_managed_directory(&parent, OsStr::new("pinned-directory"))
+                .unwrap();
+        let inspection = super::super::super::root::windows::open_directory_shared(
+            &parent,
+            OsStr::new("pinned-directory"),
+        )
+        .unwrap();
+
+        assert!(
+            std::fs::rename(&source_path, &destination_path).is_err(),
+            "retained native directory capability allowed an independent rename"
+        );
+        assert!(
+            std::fs::remove_dir(&source_path).is_err(),
+            "retained native directory capability allowed an independent delete"
+        );
+
+        drop(inspection);
+        drop(retained);
+        std::fs::rename(&source_path, &destination_path).unwrap();
+        std::fs::remove_dir(&destination_path).unwrap();
+    }
+
+    #[test]
+    fn round_five_native_protocol_file_create_keeps_delete_but_denies_delete_sharing() {
+        use std::io::Write as _;
+
+        let temporary = tempfile::tempdir().unwrap();
+        let parent =
+            cap_std::fs::Dir::open_ambient_dir(temporary.path(), cap_std::ambient_authority())
+                .unwrap();
+        let source_path = temporary.path().join("pinned-protocol-file");
+        let destination_path = temporary.path().join("moved-protocol-file");
+        let mut retained = super::create_relative_managed_file(
+            &parent,
+            OsStr::new("pinned-protocol-file"),
+            super::ManagedFileAccess::ReadWrite,
+        )
+        .unwrap();
+        retained.write_all(b"protocol").unwrap();
+        let inspection = super::super::super::root::windows::open_regular_file_shared(
+            &parent,
+            OsStr::new("pinned-protocol-file"),
+        )
+        .unwrap();
+
+        assert!(
+            std::fs::rename(&source_path, &destination_path).is_err(),
+            "retained native protocol-file capability allowed an independent rename"
+        );
+        assert!(
+            std::fs::remove_file(&source_path).is_err(),
+            "retained native protocol-file capability allowed an independent delete"
+        );
+
+        drop(inspection);
+        drop(retained);
+        std::fs::rename(&source_path, &destination_path).unwrap();
+        std::fs::remove_file(&destination_path).unwrap();
+    }
+
+    #[test]
+    fn round_five_created_handle_identity_failure_rolls_back_the_exact_empty_directory() {
+        let temporary = tempfile::tempdir().unwrap();
+        let parent =
+            cap_std::fs::Dir::open_ambient_dir(temporary.path(), cap_std::ambient_authority())
+                .unwrap();
+        let source_path = temporary.path().join("identity-failure-directory");
+        let replacement_path = temporary.path().join("replacement-attempt");
+        let replacement_was_blocked = std::cell::Cell::new(false);
+
+        let error = super::create_relative_managed_with_verifier(
+            &parent,
+            OsStr::new("identity-failure-directory"),
+            super::ManagedEntryKind::Directory,
+            |_, _, _| {
+                let replacement = std::fs::rename(&source_path, &replacement_path);
+                replacement_was_blocked.set(replacement.is_err());
+                if replacement.is_ok() {
+                    std::fs::rename(&replacement_path, &source_path).unwrap();
+                }
+                Err(io::Error::other("injected created-handle identity failure"))
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "injected created-handle identity failure"
+        );
+        assert!(
+            replacement_was_blocked.get(),
+            "the exact create handle did not pin the name during verification"
+        );
+        assert!(
+            !source_path.exists(),
+            "exact-handle rollback left the directory"
+        );
+        assert!(
+            !replacement_path.exists(),
+            "replacement attempt changed the name"
+        );
+    }
+
+    #[test]
     fn relative_managed_component_rejects_non_components_and_device_names() {
         let invalid = [
             OsString::from(""),
