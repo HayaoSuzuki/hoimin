@@ -1,32 +1,44 @@
 use std::ffi::{OsStr, c_void};
 use std::fs::File;
 use std::io;
-use std::mem::size_of;
+use std::mem::{size_of, zeroed};
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::fs::MetadataExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle};
 use std::ptr;
 
 use camino::Utf8Path;
+use windows_sys::Wdk::Foundation::OBJECT_ATTRIBUTES;
+use windows_sys::Wdk::Storage::FileSystem::{
+    FILE_CREATE, FILE_DIRECTORY_FILE, FILE_NON_DIRECTORY_FILE, FILE_OPEN_REPARSE_POINT,
+    FILE_SYNCHRONOUS_IO_NONALERT, NtCreateFile,
+};
 use windows_sys::Win32::Foundation::{
     CloseHandle, ERROR_ALREADY_EXISTS, ERROR_FILE_NOT_FOUND, ERROR_INSUFFICIENT_BUFFER,
-    ERROR_SUCCESS, GetLastError, HANDLE, INVALID_HANDLE_VALUE, LocalFree,
+    ERROR_SUCCESS, GetLastError, HANDLE, INVALID_HANDLE_VALUE, LocalFree, OBJ_CASE_INSENSITIVE,
+    RtlNtStatusToDosError, UNICODE_STRING,
 };
 use windows_sys::Win32::Security::Authorization::{
     ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, GetSecurityInfo,
     SDDL_REVISION_1, SE_FILE_OBJECT, SetSecurityInfo,
 };
+#[cfg(test)]
+use windows_sys::Win32::Security::GetSecurityDescriptorOwner;
 use windows_sys::Win32::Security::{
     ACL, DACL_SECURITY_INFORMATION, EqualSid, GetSecurityDescriptorControl,
-    GetSecurityDescriptorDacl, GetSecurityDescriptorOwner, GetTokenInformation,
-    OWNER_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, PSID, SE_DACL_PROTECTED,
-    SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER, TokenUser,
+    GetSecurityDescriptorDacl, GetTokenInformation, OWNER_SECURITY_INFORMATION,
+    PROTECTED_DACL_SECURITY_INFORMATION, PSID, SE_DACL_PROTECTED, SECURITY_ATTRIBUTES, TOKEN_QUERY,
+    TOKEN_USER, TokenUser,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    CreateDirectoryW, CreateFileW, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS,
-    FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
-    OPEN_EXISTING, READ_CONTROL, SYNCHRONIZE, WRITE_DAC,
+    CreateDirectoryW, CreateFileW, DELETE, FILE_ADD_FILE, FILE_ADD_SUBDIRECTORY,
+    FILE_ATTRIBUTE_REPARSE_POINT, FILE_DELETE_CHILD, FILE_DISPOSITION_INFO,
+    FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_LIST_DIRECTORY,
+    FILE_READ_ATTRIBUTES, FILE_READ_DATA, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    FILE_TRAVERSE, FILE_WRITE_ATTRIBUTES, FILE_WRITE_DATA, FileDispositionInfo, OPEN_EXISTING,
+    READ_CONTROL, SYNCHRONIZE, SetFileInformationByHandle, WRITE_DAC,
 };
+use windows_sys::Win32::System::IO::IO_STATUS_BLOCK;
 use windows_sys::Win32::System::Threading::{
     CreateEventW, GetCurrentProcess, OpenEventW, OpenProcessToken,
 };
@@ -194,6 +206,7 @@ impl SecurityDescriptor {
         Ok(dacl)
     }
 
+    #[cfg(test)]
     fn owner(&self) -> io::Result<PSID> {
         let mut owner = ptr::null_mut();
         let mut defaulted = 0;
@@ -392,6 +405,233 @@ fn secure_object(expected: &File, path: &Utf8Path, directory: bool) -> io::Resul
     Ok(())
 }
 
+#[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
+pub(super) enum ManagedFileAccess {
+    ReadWrite,
+    Write,
+}
+
+#[derive(Clone, Copy)]
+#[allow(dead_code)]
+enum ManagedEntryKind {
+    Directory,
+    File(ManagedFileAccess),
+}
+
+#[allow(dead_code)]
+pub(super) fn create_relative_managed_directory(
+    parent: &(impl AsRawHandle + ?Sized),
+    name: &OsStr,
+) -> io::Result<File> {
+    create_relative_managed(parent, name, ManagedEntryKind::Directory)
+}
+
+#[allow(dead_code)]
+pub(super) fn create_relative_managed_file(
+    parent: &(impl AsRawHandle + ?Sized),
+    name: &OsStr,
+    access: ManagedFileAccess,
+) -> io::Result<File> {
+    create_relative_managed(parent, name, ManagedEntryKind::File(access))
+}
+
+#[allow(dead_code)]
+fn encoded_component(name: &OsStr) -> io::Result<Vec<u16>> {
+    let encoded = name.encode_wide().collect::<Vec<_>>();
+    let dot = [u16::from(b'.')];
+    let dot_dot = [u16::from(b'.'), u16::from(b'.')];
+    if encoded.is_empty()
+        || encoded == dot
+        || encoded == dot_dot
+        || encoded
+            .last()
+            .is_some_and(|unit| matches!(*unit, 0x20 | 0x2e))
+        || encoded.iter().any(|unit| {
+            *unit < 0x20
+                || matches!(
+                    *unit,
+                    0x22 | 0x2a | 0x2f | 0x3a | 0x3c | 0x3e | 0x3f | 0x5c | 0x7c
+                )
+        })
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "managed object name is not one direct component",
+        ));
+    }
+    let text = String::from_utf16(&encoded).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "managed name is not valid UTF-16",
+        )
+    })?;
+    let basename = text.split('.').next().unwrap_or_default().to_uppercase();
+    let reserved = matches!(
+        basename.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || ["COM", "LPT"].iter().any(|prefix| {
+        basename.strip_prefix(prefix).is_some_and(|suffix| {
+            matches!(
+                suffix,
+                "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+            )
+        })
+    });
+    if reserved {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "managed object name is a reserved Windows device name",
+        ));
+    }
+    Ok(encoded)
+}
+
+#[allow(dead_code)]
+fn create_relative_managed(
+    parent: &(impl AsRawHandle + ?Sized),
+    name: &OsStr,
+    kind: ManagedEntryKind,
+) -> io::Result<File> {
+    create_relative_managed_with_verifier(parent, name, kind, verify_security)
+}
+
+#[allow(dead_code)]
+fn create_relative_managed_with_verifier(
+    parent: &(impl AsRawHandle + ?Sized),
+    name: &OsStr,
+    kind: ManagedEntryKind,
+    verifier: impl FnOnce(&File, &UserToken, *mut ACL) -> io::Result<()>,
+) -> io::Result<File> {
+    let token = UserToken::open()?;
+    let directory = matches!(kind, ManagedEntryKind::Directory);
+    let descriptor = SecurityDescriptor::for_user(&token, directory)?;
+    let expected_dacl = descriptor.dacl()?;
+    let mut encoded = encoded_component(name)?;
+    let byte_len = encoded
+        .len()
+        .checked_mul(size_of::<u16>())
+        .and_then(|value| u16::try_from(value).ok())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "managed name is too long"))?;
+    let unicode = UNICODE_STRING {
+        Length: byte_len,
+        MaximumLength: byte_len,
+        Buffer: encoded.as_mut_ptr(),
+    };
+    let attributes = OBJECT_ATTRIBUTES {
+        Length: u32::try_from(size_of::<OBJECT_ATTRIBUTES>())
+            .expect("OBJECT_ATTRIBUTES size fits u32"),
+        RootDirectory: parent.as_raw_handle() as HANDLE,
+        ObjectName: ptr::from_ref(&unicode),
+        Attributes: OBJ_CASE_INSENSITIVE,
+        SecurityDescriptor: descriptor.pointer().cast(),
+        SecurityQualityOfService: ptr::null_mut(),
+    };
+    let common = SYNCHRONIZE | READ_CONTROL | FILE_READ_ATTRIBUTES;
+    let (access, options) = match kind {
+        ManagedEntryKind::Directory => (
+            common
+                | DELETE
+                | FILE_LIST_DIRECTORY
+                | FILE_TRAVERSE
+                | FILE_ADD_FILE
+                | FILE_ADD_SUBDIRECTORY
+                | FILE_DELETE_CHILD
+                | FILE_WRITE_ATTRIBUTES,
+            FILE_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
+        ),
+        ManagedEntryKind::File(ManagedFileAccess::ReadWrite) => (
+            common | DELETE | FILE_READ_DATA | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES,
+            FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
+        ),
+        ManagedEntryKind::File(ManagedFileAccess::Write) => (
+            common | DELETE | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES,
+            FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
+        ),
+    };
+    let mut handle: HANDLE = ptr::null_mut();
+    let mut io_status: IO_STATUS_BLOCK = unsafe { zeroed() };
+    // SAFETY: all input pointers refer to live storage for the duration of this synchronous call.
+    let status = unsafe {
+        NtCreateFile(
+            &raw mut handle,
+            access,
+            &raw const attributes,
+            &raw mut io_status,
+            ptr::null(),
+            0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            FILE_CREATE,
+            options,
+            ptr::null(),
+            0,
+        )
+    };
+    if status < 0 {
+        return Err(io_error_from_ntstatus(status));
+    }
+    // SAFETY: successful NtCreateFile returns one newly owned kernel handle.
+    let file = unsafe { File::from_raw_handle(handle.cast()) };
+    const FILE_CREATED_INFORMATION: usize = 2;
+    if io_status.Information != FILE_CREATED_INFORMATION {
+        let primary = io::Error::new(
+            io::ErrorKind::InvalidData,
+            "exclusive managed create returned a non-created result",
+        );
+        return Err(error_after_created_rollback(&file, primary));
+    }
+    if let Err(primary) = verifier(&file, &token, expected_dacl) {
+        return Err(error_after_created_rollback(&file, primary));
+    }
+    Ok(file)
+}
+
+#[allow(dead_code)]
+fn io_error_from_ntstatus(status: i32) -> io::Error {
+    // SAFETY: RtlNtStatusToDosError accepts every NTSTATUS value.
+    let code = unsafe { RtlNtStatusToDosError(status) };
+    io::Error::from_raw_os_error(i32::try_from(code).unwrap_or(i32::MAX))
+}
+
+#[allow(dead_code)]
+fn rollback_created(file: &File) -> io::Result<()> {
+    let disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
+    // SAFETY: file is a live handle and the disposition buffer has FileDispositionInfo's size.
+    if unsafe {
+        SetFileInformationByHandle(
+            file.as_raw_handle() as HANDLE,
+            FileDispositionInfo,
+            (&raw const disposition).cast(),
+            u32::try_from(size_of::<FILE_DISPOSITION_INFO>())
+                .expect("FILE_DISPOSITION_INFO size fits u32"),
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[allow(dead_code)]
+fn error_after_created_rollback_with(
+    file: &File,
+    primary: io::Error,
+    rollback: impl FnOnce(&File) -> io::Result<()>,
+) -> io::Error {
+    match rollback(file) {
+        Ok(()) => primary,
+        Err(secondary) => io::Error::new(
+            primary.kind(),
+            format!("{primary}; secondary created-object rollback failure: {secondary}"),
+        ),
+    }
+}
+
+#[allow(dead_code)]
+fn error_after_created_rollback(file: &File, primary: io::Error) -> io::Error {
+    error_after_created_rollback_with(file, primary, rollback_created)
+}
+
 fn verify_owner(file: &(impl AsRawHandle + ?Sized), token: &UserToken) -> io::Result<()> {
     let mut owner = ptr::null_mut();
     let mut descriptor = ptr::null_mut();
@@ -498,6 +738,12 @@ pub(super) fn file_identity(file: &File) -> io::Result<(u64, u64)> {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        ffi::{OsStr, OsString},
+        io,
+        os::windows::ffi::OsStringExt,
+    };
+
     use uuid::Uuid;
 
     #[test]
@@ -525,6 +771,151 @@ mod tests {
                 windows_sys::Win32::Security::EqualSid(descriptor.owner().unwrap(), token.sid())
             },
             0
+        );
+    }
+
+    #[test]
+    fn relative_managed_creates_are_exclusive_and_owned_by_token_user() {
+        let temporary = tempfile::tempdir().unwrap();
+        let parent =
+            cap_std::fs::Dir::open_ambient_dir(temporary.path(), cap_std::ambient_authority())
+                .unwrap();
+
+        let directory =
+            super::create_relative_managed_directory(&parent, OsStr::new("managed-directory"))
+                .unwrap();
+        super::verify_current_user_owner(&directory).unwrap();
+
+        let file = super::create_relative_managed_file(
+            &parent,
+            OsStr::new("managed-file"),
+            super::ManagedFileAccess::ReadWrite,
+        )
+        .unwrap();
+        super::verify_current_user_owner(&file).unwrap();
+
+        let nested = super::create_relative_managed_file(
+            &directory,
+            OsStr::new("nested-protocol-file"),
+            super::ManagedFileAccess::Write,
+        )
+        .unwrap();
+        super::verify_current_user_owner(&nested).unwrap();
+
+        assert_eq!(
+            super::create_relative_managed_directory(&parent, OsStr::new("managed-directory"),)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::AlreadyExists,
+        );
+        assert_eq!(
+            super::create_relative_managed_file(
+                &parent,
+                OsStr::new("managed-file"),
+                super::ManagedFileAccess::ReadWrite,
+            )
+            .unwrap_err()
+            .kind(),
+            io::ErrorKind::AlreadyExists,
+        );
+        assert!(
+            super::create_relative_managed_file(
+                &parent,
+                OsStr::new("managed-directory"),
+                super::ManagedFileAccess::Write,
+            )
+            .is_err()
+        );
+        assert!(
+            super::create_relative_managed_directory(&parent, OsStr::new("managed-file")).is_err()
+        );
+        assert_eq!(
+            super::encoded_component(OsStr::new("../escape"))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidInput,
+        );
+
+        let link = temporary.path().join("managed-symlink");
+        if std::os::windows::fs::symlink_file("not-a-target", &link).is_ok() {
+            assert_eq!(
+                super::create_relative_managed_file(
+                    &parent,
+                    OsStr::new("managed-symlink"),
+                    super::ManagedFileAccess::Write,
+                )
+                .unwrap_err()
+                .kind(),
+                io::ErrorKind::AlreadyExists,
+            );
+        }
+    }
+
+    #[test]
+    fn relative_managed_component_rejects_non_components_and_device_names() {
+        let invalid = [
+            OsString::from(""),
+            OsString::from("."),
+            OsString::from(".."),
+            OsString::from("a/b"),
+            OsString::from("a\\b"),
+            OsString::from("name:stream"),
+            OsString::from("bad*name"),
+            OsString::from("trailing."),
+            OsString::from("NUL.txt"),
+            OsString::from("COM¹"),
+            OsString::from("CONOUT$.log"),
+            OsString::from_wide(&[b'a' as u16, 0, b'b' as u16]),
+        ];
+
+        for name in invalid {
+            assert_eq!(
+                super::encoded_component(&name).unwrap_err().kind(),
+                io::ErrorKind::InvalidInput,
+                "{name:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn relative_managed_verifier_failure_rolls_back_created_entries() {
+        let temporary = tempfile::tempdir().unwrap();
+        let parent =
+            cap_std::fs::Dir::open_ambient_dir(temporary.path(), cap_std::ambient_authority())
+                .unwrap();
+
+        for (name, kind) in [
+            ("rolled-back-directory", super::ManagedEntryKind::Directory),
+            (
+                "rolled-back-file",
+                super::ManagedEntryKind::File(super::ManagedFileAccess::Write),
+            ),
+        ] {
+            let error = super::create_relative_managed_with_verifier(
+                &parent,
+                OsStr::new(name),
+                kind,
+                |_, _, _| Err(io::Error::other("injected verification failure")),
+            )
+            .unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::Other);
+            assert!(!temporary.path().join(name).exists(), "{name}");
+        }
+    }
+
+    #[test]
+    fn created_rollback_error_keeps_primary_failure_first() {
+        let temporary = tempfile::NamedTempFile::new().unwrap();
+        let error = super::error_after_created_rollback_with(
+            temporary.as_file(),
+            io::Error::other("primary verification failure"),
+            |_| Err(io::Error::other("secondary rollback failure")),
+        );
+
+        assert_eq!(error.kind(), io::ErrorKind::Other);
+        assert_eq!(
+            error.to_string(),
+            "primary verification failure; secondary created-object rollback failure: secondary rollback failure",
         );
     }
 
