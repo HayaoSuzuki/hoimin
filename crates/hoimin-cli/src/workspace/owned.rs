@@ -1350,6 +1350,53 @@ mod tests {
         assert!(coordinator.dir.symlink_metadata(&deleting).is_err());
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn round_six_review_lease_delete_pin_can_clear_readonly_lease() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let lease = root.path().join(super::LEASE_FILE);
+        let mut permissions = std::fs::metadata(&lease).unwrap().permissions();
+        permissions.set_readonly(true);
+        std::fs::set_permissions(&lease, permissions).unwrap();
+
+        let record = root.cleanup(std::time::Duration::from_secs(5));
+
+        assert_eq!(
+            record.status,
+            hoimin_core::DiskCleanupStatus::Clean,
+            "{record:?}"
+        );
+        assert!(record.remaining_root.is_none(), "{record:?}");
+        assert!(!root.path().exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn round_six_review_complete_state_precedes_zero_budget_deferral() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let first = root.cleanup(std::time::Duration::from_secs(5));
+        assert_eq!(
+            first.status,
+            hoimin_core::DiskCleanupStatus::Clean,
+            "{first:?}"
+        );
+
+        let second = root.cleanup(std::time::Duration::ZERO);
+
+        assert_eq!(
+            second.status,
+            hoimin_core::DiskCleanupStatus::Clean,
+            "{second:?}"
+        );
+        assert!(second.remaining_root.is_none(), "{second:?}");
+    }
+
     #[test]
     fn owner_cleanup_defers_until_all_managed_child_handles_are_closed() {
         let parent = tempfile::tempdir().unwrap();
@@ -2083,6 +2130,26 @@ mod tests {
         let coordinator = ManagedRootCoordinator::open(parent).unwrap();
         let deleting = format!("{}{}", super::DELETING_PREFIX, uuid::Uuid::new_v4());
         coordinator.dir.create_dir(&deleting).unwrap();
+
+        let report = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
+
+        assert_eq!(report.reclaimed_roots, 1, "{report:?}");
+        assert_eq!(report.preserved_roots, 0, "{report:?}");
+        assert!(coordinator.dir.symlink_metadata(&deleting).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn round_six_review_candidate_delete_pin_can_clear_readonly_root() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let deleting = format!("{}{}", super::DELETING_PREFIX, uuid::Uuid::new_v4());
+        coordinator.dir.create_dir(&deleting).unwrap();
+        let deleting_path = coordinator.path.join(&deleting);
+        let mut permissions = std::fs::metadata(&deleting_path).unwrap().permissions();
+        permissions.set_readonly(true);
+        std::fs::set_permissions(&deleting_path, permissions).unwrap();
 
         let report = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
 
