@@ -6959,11 +6959,13 @@ mod tests {
 
     async fn context_with_worker() -> (
         tempfile::TempDir,
+        tempfile::TempDir,
         ShellContext<Vec<u8>, Vec<u8>>,
         MutationCandidate,
         CreateWorker,
     ) {
         let project = tempfile::tempdir().unwrap();
+        let managed_parent = tempfile::tempdir().unwrap();
         std::fs::create_dir(project.path().join("pkg")).unwrap();
         std::fs::write(project.path().join("pkg/a.py"), b"original\n").unwrap();
         let config = crate::cli::parse_config_from([
@@ -6978,9 +6980,14 @@ mod tests {
             OsString::from("unused-test-command"),
         ])
         .unwrap();
-        let mut context = ShellContext::new(&config, Vec::new(), Vec::new())
-            .await
-            .unwrap();
+        let mut context = ShellContext::new_in(
+            &config,
+            Vec::new(),
+            Vec::new(),
+            Utf8PathBuf::from_path_buf(managed_parent.path().to_path_buf()).unwrap(),
+        )
+        .await
+        .unwrap();
         // This fixture models an active run after the monitor-start boundary.
         context.commit_setup();
         let completed = context
@@ -7033,7 +7040,34 @@ mod tests {
         })
         .to_string();
         let retry = grant.create_worker(EffectId(5), 0).unwrap();
-        (project, context, candidate, retry)
+        (project, managed_parent, context, candidate, retry)
+    }
+
+    #[tokio::test]
+    async fn context_with_worker_fixtures_use_distinct_managed_parents() {
+        let (_first_project, _first_managed_parent, first, _first_candidate, _first_retry) =
+            context_with_worker().await;
+        let (_second_project, _second_managed_parent, second, _second_candidate, _second_retry) =
+            context_with_worker().await;
+        let first_parent = first
+            .spool_dir
+            .execution_root
+            .path()
+            .parent()
+            .expect("execution root has a managed parent")
+            .to_owned();
+        let second_parent = second
+            .spool_dir
+            .execution_root
+            .path()
+            .parent()
+            .expect("execution root has a managed parent")
+            .to_owned();
+
+        assert_ne!(
+            first_parent, second_parent,
+            "worker fixtures must not share a managed-root coordinator"
+        );
     }
 
     async fn wait_until_path_is_removed(path: &Utf8Path) {
@@ -7236,7 +7270,7 @@ mod tests {
 
     #[tokio::test]
     async fn blocking_effect_classification_covers_every_filesystem_variant() {
-        let (_project, _context, candidate, create) = context_with_worker().await;
+        let (_project, _managed_parent, _context, candidate, create) = context_with_worker().await;
         let read = RunEffect::ReadCandidate(hoimin_core::ReadCandidate {
             id: EffectId(31),
             worker: 0,
@@ -7293,7 +7327,8 @@ mod tests {
 
     #[tokio::test]
     async fn owned_cleanup_restores_workspace_only_when_completion_is_accepted() {
-        let (_project, mut context, _candidate, create) = context_with_worker().await;
+        let (_project, _managed_parent, mut context, _candidate, create) =
+            context_with_worker().await;
         let task = prepare_blocking_effect(
             &mut context,
             RunEffect::Cleanup(Cleanup {
@@ -7345,7 +7380,8 @@ mod tests {
 
     #[tokio::test]
     async fn expired_final_close_detaches_cleanup_without_extending_the_wait() {
-        let (_project, mut context, _candidate, _create) = context_with_worker().await;
+        let (_project, _managed_parent, mut context, _candidate, _create) =
+            context_with_worker().await;
         let worker_root = context.workspace().worker(0).unwrap().root().to_owned();
         let budget = ShutdownBudget::for_total_timeout_with_grace(
             tokio::time::Instant::now() - Duration::from_secs(1),
@@ -7371,7 +7407,8 @@ mod tests {
 
     #[tokio::test]
     async fn unsafe_final_close_never_detaches_or_removes_the_worker_workspace() {
-        let (_project, mut context, _candidate, _create) = context_with_worker().await;
+        let (_project, _managed_parent, mut context, _candidate, _create) =
+            context_with_worker().await;
         let worker_root = context.workspace().worker(0).unwrap().root().to_owned();
         let execution_root = Arc::clone(&context.spool_dir.execution_root);
         let delivery_root = Arc::clone(&context.spool_dir.delivery_root);
@@ -7402,23 +7439,25 @@ mod tests {
             tokio::time::Instant::now() + Duration::from_secs(2),
             Duration::ZERO,
         );
-        assert!(matches!(
-            cleanup_managed_root(execution_root, &cleanup_budget).await,
-            ManagedCleanupOutcome::Clean(_)
-        ));
+        let outcome = cleanup_managed_root(execution_root, &cleanup_budget).await;
+        assert!(
+            matches!(&outcome, ManagedCleanupOutcome::Clean(_)),
+            "{outcome:#?}"
+        );
         let cleanup_budget = ShutdownBudget::for_total_timeout_with_grace(
             tokio::time::Instant::now() + Duration::from_secs(2),
             Duration::ZERO,
         );
-        assert!(matches!(
-            cleanup_managed_root(delivery_root, &cleanup_budget).await,
-            ManagedCleanupOutcome::Clean(_)
-        ));
+        let outcome = cleanup_managed_root(delivery_root, &cleanup_budget).await;
+        assert!(
+            matches!(&outcome, ManagedCleanupOutcome::Clean(_)),
+            "{outcome:#?}"
+        );
     }
 
     #[tokio::test]
     async fn dropping_context_without_finalization_leaves_managed_workers_for_the_janitor() {
-        let (_project, context, _candidate, _create) = context_with_worker().await;
+        let (_project, _managed_parent, context, _candidate, _create) = context_with_worker().await;
         let worker_root = context.workspace().worker(0).unwrap().root().to_owned();
         let execution_root = Arc::clone(&context.spool_dir.execution_root);
         let delivery_root = Arc::clone(&context.spool_dir.delivery_root);
@@ -7433,18 +7472,20 @@ mod tests {
             tokio::time::Instant::now() + Duration::from_secs(2),
             Duration::ZERO,
         );
-        assert!(matches!(
-            cleanup_managed_root(execution_root, &cleanup_budget).await,
-            ManagedCleanupOutcome::Clean(_)
-        ));
+        let outcome = cleanup_managed_root(execution_root, &cleanup_budget).await;
+        assert!(
+            matches!(&outcome, ManagedCleanupOutcome::Clean(_)),
+            "{outcome:#?}"
+        );
         let cleanup_budget = ShutdownBudget::for_total_timeout_with_grace(
             tokio::time::Instant::now() + Duration::from_secs(2),
             Duration::ZERO,
         );
-        assert!(matches!(
-            cleanup_managed_root(delivery_root, &cleanup_budget).await,
-            ManagedCleanupOutcome::Clean(_)
-        ));
+        let outcome = cleanup_managed_root(delivery_root, &cleanup_budget).await;
+        assert!(
+            matches!(&outcome, ManagedCleanupOutcome::Clean(_)),
+            "{outcome:#?}"
+        );
     }
 
     #[tokio::test]
@@ -7558,7 +7599,8 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn successful_run_outer_close_uses_the_original_deadline_and_detaches_cleanup() {
-        let (project, mut context, _candidate, _create) = context_with_worker().await;
+        let (project, _managed_parent, mut context, _candidate, _create) =
+            context_with_worker().await;
         let worker_root = context.workspace().worker(0).unwrap().root().to_owned();
         let process = Arc::downgrade(&context.process);
         let run_deadline = tokio::time::Instant::now() + Duration::from_millis(20);
@@ -7772,7 +7814,8 @@ mod tests {
 
     #[tokio::test]
     async fn direct_workspace_effect_completes_before_returning_worker_access() {
-        let (_project, mut context, candidate, _retry) = context_with_worker().await;
+        let (_project, _managed_parent, mut context, candidate, _retry) =
+            context_with_worker().await;
 
         let event = execute_direct_io_effect(
             &mut context,
@@ -7797,7 +7840,8 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn shutdown_drain_accepts_owned_workspace_state_without_process_metrics() {
-        let (_project, mut context, candidate, _retry) = context_with_worker().await;
+        let (_project, _managed_parent, mut context, candidate, _retry) =
+            context_with_worker().await;
         let effect = RunEffect::ApplyMutation(ApplyMutation {
             id: EffectId(51),
             worker: 0,
@@ -7910,7 +7954,8 @@ mod tests {
 
     #[tokio::test]
     async fn shutdown_drain_expiry_accepts_buffered_workspace_and_process_metrics() {
-        let (_project, mut context, candidate, _retry) = context_with_worker().await;
+        let (_project, _managed_parent, mut context, candidate, _retry) =
+            context_with_worker().await;
         let task = prepare_blocking_effect(
             &mut context,
             RunEffect::ApplyMutation(ApplyMutation {
@@ -8316,11 +8361,7 @@ mod tests {
     async fn cancellation_released_inside_grace_finishes_orderly() {
         let project = tempfile::tempdir().unwrap();
         let config = paused_materialization_config(&project, "5s");
-        let (control, mut pause_controller) =
-            RunControl::with_materialization_pause_and_shutdown_grace(
-                0,
-                Duration::from_millis(300),
-            );
+        let (control, mut pause_controller) = RunControl::with_materialization_pause(0);
         let cancelling = control.clone();
         let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
         let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
@@ -8348,10 +8389,13 @@ mod tests {
         release_tx.send(()).unwrap();
         controller.await.unwrap();
 
-        let exit = tokio::time::timeout(Duration::from_secs(2), &mut run)
-            .await
-            .expect("released cancellation must finish inside grace")
-            .unwrap();
+        let exit = tokio::time::timeout(
+            SHUTDOWN_GRACE.saturating_add(Duration::from_secs(1)),
+            &mut run,
+        )
+        .await
+        .expect("released cancellation must finish inside grace")
+        .unwrap();
 
         assert_eq!(exit, 130);
     }
