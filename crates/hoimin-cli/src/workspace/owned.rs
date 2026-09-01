@@ -509,7 +509,7 @@ mod tests {
     }
 
     #[test]
-    fn owned_directory_metadata_failure_rolls_back_the_created_entry() {
+    fn owned_directory_metadata_failure_leaves_the_unverified_entry_untouched() {
         let parent = tempfile::tempdir().unwrap();
         let parent_dir =
             cap_std::fs::Dir::open_ambient_dir(parent.path(), cap_std::ambient_authority())
@@ -526,13 +526,65 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(error.kind(), std::io::ErrorKind::Other);
-        assert_eq!(error.to_string(), "injected directory metadata failure");
         assert_eq!(
+            error.to_string(),
+            "injected directory metadata failure; secondary created-directory rollback failure: bounded cleanup cannot proceed without the created directory identity; unverified name left untouched",
+        );
+        assert!(
             parent_dir
                 .symlink_metadata("metadata-failure-directory")
-                .unwrap_err()
-                .kind(),
-            std::io::ErrorKind::NotFound,
+                .unwrap()
+                .is_dir()
+        );
+    }
+
+    #[test]
+    fn owned_directory_metadata_failure_does_not_adopt_post_failure_name_as_created_identity() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent_dir =
+            cap_std::fs::Dir::open_ambient_dir(parent.path(), cap_std::ambient_authority())
+                .unwrap();
+        let name = "metadata-failure-replacement-directory";
+        let original_identity = std::cell::Cell::new(None);
+        let replacement_identity = std::cell::Cell::new(None);
+
+        let error = super::create_owned_directory_with(
+            &parent_dir,
+            name,
+            create_test_owned_directory_entry,
+            |parent, name| {
+                let original = super::metadata_identity(&parent.symlink_metadata(name).unwrap());
+                original_identity.set(Some(original));
+                parent.rename(name, parent, "parked-created-directory")?;
+                create_test_owned_directory_entry(parent, name)?;
+                let replacement = super::metadata_identity(&parent.symlink_metadata(name).unwrap());
+                assert_ne!(replacement, original);
+                replacement_identity.set(Some(replacement));
+                Err(std::io::Error::other("injected directory metadata failure"))
+            },
+            |parent, name| super::open_owned_directory(parent, name),
+            super::rollback_new_owned_directory,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::Other);
+        assert_eq!(
+            error.to_string(),
+            "injected directory metadata failure; secondary created-directory rollback failure: bounded cleanup cannot proceed without the created directory identity; unverified name left untouched",
+        );
+        assert_eq!(
+            Some(super::metadata_identity(
+                &parent_dir.symlink_metadata(name).unwrap()
+            )),
+            replacement_identity.get(),
+        );
+        assert_eq!(
+            Some(super::metadata_identity(
+                &parent_dir
+                    .symlink_metadata("parked-created-directory")
+                    .unwrap()
+            )),
+            original_identity.get(),
         );
     }
 
@@ -589,36 +641,6 @@ mod tests {
         assert!(
             parent_dir
                 .symlink_metadata("rollback-failure-directory")
-                .unwrap()
-                .is_dir()
-        );
-    }
-
-    #[test]
-    fn owned_directory_metadata_cleanup_failure_keeps_the_metadata_error_first() {
-        let parent = tempfile::tempdir().unwrap();
-        let parent_dir =
-            cap_std::fs::Dir::open_ambient_dir(parent.path(), cap_std::ambient_authority())
-                .unwrap();
-
-        let error = super::create_owned_directory_with(
-            &parent_dir,
-            "metadata-rollback-failure-directory",
-            create_test_owned_directory_entry,
-            |_, _| Err(std::io::Error::other("injected directory metadata failure")),
-            |parent, name| super::open_owned_directory(parent, name),
-            |_, _, _, _| Err(std::io::Error::other("injected cleanup failure")),
-        )
-        .unwrap_err();
-
-        assert_eq!(error.kind(), std::io::ErrorKind::Other);
-        assert_eq!(
-            error.to_string(),
-            "injected directory metadata failure; secondary created-directory rollback failure: injected cleanup failure",
-        );
-        assert!(
-            parent_dir
-                .symlink_metadata("metadata-rollback-failure-directory")
                 .unwrap()
                 .is_dir()
         );
@@ -2123,22 +2145,15 @@ fn error_after_created_directory_rollback_with(
     primary: std::io::Error,
     rollback: impl FnOnce(&cap_std::fs::Dir, &str, (u64, u64), Duration) -> std::io::Result<()>,
 ) -> std::io::Error {
-    let started = std::time::Instant::now();
-    let expected_identity = match expected_identity {
-        Some(identity) => Some(identity),
-        None => match acquire_new_owned_directory_rollback_identity(
-            parent,
-            name,
-            started,
-            OWNER_CLEANUP_BUDGET,
-        ) {
-            Ok(identity) => identity,
-            Err(secondary) => return created_directory_rollback_error(primary, secondary),
-        },
-    };
     let Some(expected_identity) = expected_identity else {
-        return primary;
+        return created_directory_rollback_error(
+            primary,
+            std::io::Error::other(
+                "bounded cleanup cannot proceed without the created directory identity; unverified name left untouched",
+            ),
+        );
     };
+    let started = std::time::Instant::now();
     let remaining = OWNER_CLEANUP_BUDGET.saturating_sub(started.elapsed());
     let cleanup = if remaining.is_zero() {
         Err(std::io::Error::new(
@@ -2152,36 +2167,6 @@ fn error_after_created_directory_rollback_with(
         Ok(()) => primary,
         Err(secondary) => created_directory_rollback_error(primary, secondary),
     }
-}
-
-#[cfg(any(unix, test))]
-fn acquire_new_owned_directory_rollback_identity(
-    parent: &cap_std::fs::Dir,
-    name: &str,
-    started: std::time::Instant,
-    budget: Duration,
-) -> std::io::Result<Option<(u64, u64)>> {
-    ensure_cleanup_deadline(started, budget)?;
-    let directory = match open_owned_directory(parent, name) {
-        Ok(directory) => directory,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error),
-    };
-    ensure_cleanup_deadline(started, budget)?;
-    let identity = directory_identity(&directory)?;
-    ensure_cleanup_deadline(started, budget)?;
-    let metadata = parent.symlink_metadata(name)?;
-    ensure_cleanup_deadline(started, budget)?;
-    if !metadata.is_dir()
-        || metadata.file_type().is_symlink()
-        || metadata_identity(&metadata) != identity
-    {
-        return Err(std::io::Error::other(
-            "new owned directory identity changed while preparing rollback",
-        ));
-    }
-    drop(directory);
-    Ok(Some(identity))
 }
 
 #[cfg(any(unix, test))]
