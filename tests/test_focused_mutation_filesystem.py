@@ -328,6 +328,7 @@ class FilesystemProtocolTests(unittest.TestCase):
         self.assertEqual(
             {name for name in FilesystemBackend.__dict__ if not name.startswith("_")},
             {
+                "directory_rename_requires_closed_descendants",
                 "open_root",
                 "create_secure_root",
                 "reopen_directory",

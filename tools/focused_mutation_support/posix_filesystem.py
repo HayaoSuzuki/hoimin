@@ -49,6 +49,7 @@ class _PosixResource:
     name: str | None
     access: FileAccess | None
     stream: _DirectoryStreamResource | None = None
+    deletion_started: bool = False
 
 
 def _directory_flags() -> int:
@@ -243,6 +244,16 @@ class _PosixEntries:
 
 
 class PosixFilesystemBackend:
+    @property
+    def directory_rename_requires_closed_descendants(self) -> bool:
+        return False
+
+    def _directory_creation_rollback_available(
+        self, directory: DirectoryCapability
+    ) -> bool:
+        self._resource(directory)
+        return False
+
     def __init__(self) -> None:
         self._stream_factory: Callable[[int], _DirectoryStreamResource] = (
             _NativeDirectoryStream
@@ -772,6 +783,23 @@ class PosixFilesystemBackend:
             return capability
         raise OSError("secure root entry did not stabilize")
 
+    def _prepare_secure_root_commit(
+        self, directory: DirectoryCapability
+    ) -> None:
+        resource = self._resource(directory)
+        if (
+            directory.kind is not EntryKind.DIRECTORY
+            or directory.security_domain is not SecurityDomain.MANAGED
+            or directory.share_policy is not SharePolicy.MUTATION
+            or resource.parent is None
+            or resource.name is None
+        ):
+            raise RuntimeError("secure root commit requires its relative capability")
+        del resource
+
+    def _commit_secure_root(self, directory: DirectoryCapability) -> None:
+        del directory
+
     def reopen_directory(
         self,
         directory: DirectoryCapability,
@@ -1179,19 +1207,22 @@ class PosixFilesystemBackend:
         name = resource.name
         assert parent is not None
         assert name is not None
-        source_parent_fd = self._source_namespace_fd(capability, resource)
-        current = self._entry_at_fd(parent, name, source_parent_fd)
-        if current is None:
-            raise FileNotFoundError(name)
-        if (
-            current.identity != capability.identity
-            or current.kind is not capability.kind
-        ):
-            raise OSError("delete target identity changed")
-        if capability.kind is EntryKind.DIRECTORY:
-            os.rmdir(name, dir_fd=source_parent_fd)
-        else:
-            os.unlink(name, dir_fd=source_parent_fd)
+        if not resource.deletion_started:
+            source_parent_fd = self._source_namespace_fd(capability, resource)
+            current = self._entry_at_fd(parent, name, source_parent_fd)
+            if current is None:
+                raise FileNotFoundError(name)
+            if (
+                current.identity != capability.identity
+                or current.kind is not capability.kind
+                or current.filesystem != capability.filesystem
+            ):
+                raise OSError("delete target identity changed")
+            if capability.kind is EntryKind.DIRECTORY:
+                os.rmdir(name, dir_fd=source_parent_fd)
+            else:
+                os.unlink(name, dir_fd=source_parent_fd)
+            resource.deletion_started = True
         capability.close()
         if self.entry(parent, name) is not None:
             raise OSError("deleted entry still resolves through its parent")

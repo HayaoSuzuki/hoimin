@@ -16,6 +16,7 @@ import struct
 import sys
 import threading
 import time
+from typing import TYPE_CHECKING, Any, cast
 import uuid
 import zlib
 
@@ -32,6 +33,20 @@ from .disk import (
     JANITOR_CLEANUP_SECONDS,
     JANITOR_SELECTION_SECONDS,
     OWNER_CLEANUP_SECONDS,
+)
+from .filesystem import (
+    CreateDisposition,
+    DirectoryCapability,
+    EntryKind,
+    FileAccess,
+    FileCapability,
+    FileIdentity,
+    FilesystemBackend,
+    FilesystemIdentity,
+    SecurityDomain,
+    SharePolicy,
+    default_filesystem_backend,
+    validate_component,
 )
 
 
@@ -98,8 +113,10 @@ class LeaseLock:
         else:
             import fcntl
 
-            mode = fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB)
-            fcntl.flock(self.fd, mode)
+            mode = fcntl.LOCK_EX | (  # type: ignore[attr-defined]
+                0 if blocking else fcntl.LOCK_NB  # type: ignore[attr-defined]
+            )
+            fcntl.flock(self.fd, mode)  # type: ignore[attr-defined]
         self.locked = True
 
     def release(self) -> None:
@@ -113,7 +130,9 @@ class LeaseLock:
         else:
             import fcntl
 
-            fcntl.flock(self.fd, fcntl.LOCK_UN)
+            fcntl.flock(  # type: ignore[attr-defined]
+                self.fd, fcntl.LOCK_UN  # type: ignore[attr-defined]
+            )
         self.locked = False
 
     def close(self) -> None:
@@ -121,25 +140,60 @@ class LeaseLock:
         if errors:
             raise OSError("; ".join(errors))
 
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except BaseException:
+            pass
+
 
 def _close_lease_lock_all(lock: LeaseLock, label: str) -> tuple[str, ...]:
     errors: list[str] = []
     descriptor = lock.fd
     try:
         lock.release()
-    except OSError as error:
-        errors.append(
-            f"{label} unlock failed: {type(error).__name__}: {error}"
-        )
-    lock.fd = -1
+    except BaseException as error:
+        errors.append(_bounded_secondary(f"{label} unlock failed", error))
     if descriptor >= 0:
         try:
             os.close(descriptor)
-        except OSError as error:
-            errors.append(
-                f"{label} close failed: {type(error).__name__}: {error}"
-            )
+        except BaseException as error:
+            errors.append(_bounded_secondary(f"{label} close failed", error))
+        else:
+            lock.fd = -1
+            lock.locked = False
     return tuple(errors)
+
+
+def _close_lease_lock_retry(
+    lock: LeaseLock, label: str
+) -> tuple[str, ...]:
+    errors: list[str] = []
+    for _attempt in range(2):
+        if lock.fd < 0:
+            break
+        errors.extend(_close_lease_lock_all(lock, label))
+    return tuple(errors)
+
+
+def _close_locked_coordinator_once(
+    lock: LeaseLock, label: str
+) -> tuple[str, ...]:
+    """Close a held coordinator descriptor without an unlock/close gap."""
+    if lock.fd < 0:
+        if lock.locked:
+            return (f"{label} close refused an inconsistent held lock",)
+        return ()
+    if not lock.locked:
+        return (f"{label} close requires a held lock",)
+    descriptor = lock.fd
+    try:
+        os.close(descriptor)
+    except BaseException as error:
+        return (_bounded_secondary(f"{label} close failed", error),)
+    lock.fd = -1
+    lock.locked = False
+    return ()
 
 
 def _close_descriptors_all(
@@ -182,6 +236,133 @@ def _exception_detail(error: BaseException) -> str:
     return "; ".join(parts)
 
 
+def _bounded_secondary(label: str, error: BaseException) -> str:
+    detail = f"{label}: {type(error).__name__}: {error}"
+    encoded = detail.encode("utf-8", errors="replace")
+    if len(encoded) <= MAX_DIAGNOSTIC_DETAIL_BYTES:
+        return detail
+    suffix = b"..."
+    return (encoded[: MAX_DIAGNOSTIC_DETAIL_BYTES - len(suffix)] + suffix).decode(
+        "utf-8", errors="ignore"
+    )
+
+
+def _close_capability_retry(
+    capability: FileCapability | DirectoryCapability,
+    label: str,
+) -> tuple[str, ...]:
+    errors: list[str] = []
+    for _attempt in range(2):
+        if not capability.is_open:
+            break
+        try:
+            capability.close()
+        except BaseException as error:
+            errors.append(_bounded_secondary(f"{label} close failed", error))
+        else:
+            break
+    return tuple(errors)
+
+
+def _close_capability_once(
+    capability: FileCapability | DirectoryCapability,
+    label: str,
+) -> tuple[str, ...]:
+    if not capability.is_open:
+        return ()
+    try:
+        capability.close()
+    except BaseException as error:
+        return (_bounded_secondary(f"{label} close failed", error),)
+    return ()
+
+
+class _OwnedDescriptor:
+    """A preallocated retryable owner for one detached CRT descriptor."""
+
+    def __init__(self) -> None:
+        self.fd = -1
+
+    def adopt(self, descriptor: int) -> None:
+        if self.fd >= 0 or descriptor < 0:
+            raise RuntimeError("descriptor owner cannot adopt this descriptor")
+        self.fd = descriptor
+
+    def detach(self) -> int:
+        if self.fd < 0:
+            raise RuntimeError("descriptor owner is empty")
+        descriptor = self.fd
+        self.fd = -1
+        return descriptor
+
+    def close_retry(self, label: str) -> tuple[str, ...]:
+        errors: list[str] = []
+        for _attempt in range(2):
+            if self.fd < 0:
+                break
+            errors.extend(self.close_once(label))
+        return tuple(errors)
+
+    def close_once(self, label: str) -> tuple[str, ...]:
+        if self.fd < 0:
+            return ()
+        descriptor = self.fd
+        try:
+            os.close(descriptor)
+        except BaseException as error:
+            return (_bounded_secondary(f"{label} close failed", error),)
+        self.fd = -1
+        return ()
+
+    def __del__(self) -> None:
+        if self.fd < 0:
+            return
+        try:
+            os.close(self.fd)
+        except BaseException:
+            return
+        self.fd = -1
+
+
+class _MarkerOwnerSlot:
+    __slots__ = ("capability", "descriptor", "lock")
+
+    def __init__(self) -> None:
+        self.capability: FileCapability | None = None
+        self.descriptor: _OwnedDescriptor | None = None
+        self.lock: LeaseLock | None = None
+
+    def has_open_owner(self) -> bool:
+        return (
+            self.capability is not None
+            and self.capability.is_open
+        ) or (
+            self.descriptor is not None
+            and self.descriptor.fd >= 0
+        ) or (
+            self.lock is not None
+            and self.lock.fd >= 0
+        )
+
+
+class _MarkerRollbackOwners:
+    __slots__ = ("lease", "heartbeat")
+
+    def __init__(self) -> None:
+        self.lease = _MarkerOwnerSlot()
+        self.heartbeat = _MarkerOwnerSlot()
+
+    def slot(self, name: str) -> _MarkerOwnerSlot:
+        if name == LEASE_FILE:
+            return self.lease
+        if name == HEARTBEAT_FILE:
+            return self.heartbeat
+        raise ValueError(f"unsupported managed marker owner: {name!r}")
+
+    def has_open_owner(self) -> bool:
+        return self.lease.has_open_owner() or self.heartbeat.has_open_owner()
+
+
 def _check_deadline(deadline: float, label: str) -> None:
     if time.monotonic() >= deadline:
         raise _DeadlineExceeded(f"{label} deadline exceeded")
@@ -222,10 +403,374 @@ def _marker(run_id: str, lease_id: str) -> dict[str, object]:
     }
 
 
-def _open_coordinator(
-    root: Path,
+def _encoded_marker(value: dict[str, object]) -> bytes:
+    encoded = (json.dumps(value, sort_keys=True) + "\n").encode("utf-8")
+    if len(encoded) > MARKER_CAPACITY:
+        raise ValueError("managed marker exceeds 64 KiB")
+    return encoded
+
+
+def _decode_marker(
+    encoded: bytes,
     *,
-    root_fd: int | None = None,
+    expected_run_id: str,
+    expected_lease_id: str | None,
+) -> dict[str, object]:
+    def exact_marker(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        if tuple(key for key, _value in pairs) != _MARKER_FIELDS:
+            raise ValueError("managed marker fields are not canonical")
+        return dict(pairs)
+
+    try:
+        value = json.loads(
+            encoded.decode("utf-8", errors="strict"),
+            object_pairs_hook=exact_marker,
+        )
+    except (UnicodeError, ValueError, json.JSONDecodeError) as error:
+        raise OSError("managed marker content is invalid") from error
+    if (
+        not isinstance(value, dict)
+        or type(value.get("schema_version")) is not int
+        or value.get("schema_version") != 1
+        or value.get("owner_kind") != OWNER_KIND
+        or not isinstance(value.get("run_id"), str)
+        or value.get("run_id") != expected_run_id
+        or not isinstance(value.get("lease_id"), str)
+        or (
+            expected_lease_id is not None
+            and value.get("lease_id") != expected_lease_id
+        )
+    ):
+        raise OSError("managed marker content does not match its owner")
+    try:
+        if str(uuid.UUID(value["run_id"])) != value["run_id"]:
+            raise ValueError
+        if str(uuid.UUID(value["lease_id"])) != value["lease_id"]:
+            raise ValueError
+    except (ValueError, TypeError, AttributeError) as error:
+        raise OSError("managed marker UUID is not canonical") from error
+    return value
+
+
+def _delete_exact_marker(
+    parent: DirectoryCapability,
+    name: str,
+    identity: FileIdentity,
+    backend: FilesystemBackend,
+) -> tuple[str, ...]:
+    errors: list[str] = []
+    current: FileCapability | DirectoryCapability | None = None
+    try:
+        current = backend.open_entry(parent, name, SharePolicy.PINNED)
+    except FileNotFoundError:
+        return ()
+    except BaseException as error:
+        return (
+            _bounded_secondary(f"managed marker rollback open failed for {name}", error),
+        )
+    if current.kind is not EntryKind.REGULAR or current.identity != identity:
+        errors.append(f"managed marker rollback preserved replacement for {name}")
+        errors.extend(
+            _close_capability_retry(current, f"managed marker replacement {name}")
+        )
+        return tuple(errors)
+    try:
+        backend.delete(current)
+    except BaseException as error:
+        errors.append(
+            _bounded_secondary(f"managed marker rollback delete failed for {name}", error)
+        )
+        if current.is_open:
+            errors.extend(
+                _close_capability_retry(current, f"managed marker rollback {name}")
+            )
+        if current.is_open:
+            return tuple(errors)
+    try:
+        remaining = backend.entry(parent, name)
+    except BaseException as error:
+        errors.append(
+            _bounded_secondary(
+                f"managed marker rollback absence check failed for {name}", error
+            )
+        )
+    else:
+        if remaining is not None:
+            errors.append(f"managed marker rollback left an entry for {name}")
+    return tuple(errors)
+
+
+def _delete_owned_directory(
+    parent: DirectoryCapability,
+    name: str,
+    directory: DirectoryCapability,
+    backend: FilesystemBackend,
+    *,
+    label: str,
+    close_already_attempted: bool = False,
+) -> tuple[str, ...]:
+    """Delete one exact owned directory without adopting a replacement."""
+    errors: list[str] = []
+    if not directory.created:
+        errors.append(
+            _bounded_secondary(
+                f"{label} rollback unavailable",
+                RuntimeError("directory capability was not created by this transaction"),
+            )
+        )
+        errors.extend(_close_capability_retry(directory, label))
+        return tuple(errors)
+    try:
+        rollback_available = backend._directory_creation_rollback_available(
+            directory
+        )
+    except BaseException as error:
+        errors.append(
+            _bounded_secondary(f"{label} rollback unavailable", error)
+        )
+        rollback_available = False
+    if not rollback_available:
+        if not errors:
+            errors.append(
+                _bounded_secondary(
+                    f"{label} rollback unavailable",
+                    RuntimeError(
+                        "directory creation identity was not atomically bound"
+                    ),
+                )
+            )
+        errors.extend(_close_capability_retry(directory, label))
+        return tuple(errors)
+    try:
+        backend.delete(directory)
+    except BaseException as error:
+        errors.append(_bounded_secondary(f"{label} failed", error))
+        if directory.is_open and not close_already_attempted:
+            errors.extend(_close_capability_once(directory, label))
+        if not directory.closed:
+            return tuple(errors)
+        try:
+            remaining = backend.entry(parent, name)
+        except BaseException as absence_error:
+            errors.append(
+                _bounded_secondary(
+                    f"{label} absence check failed", absence_error
+                )
+            )
+        else:
+            if remaining is not None:
+                errors.append(f"{label} left a same-name entry")
+    return tuple(errors)
+
+
+def _marker_result(
+    identity: FileIdentity, descriptor: int
+) -> tuple[FileIdentity, int]:
+    return identity, descriptor
+
+
+def _create_marker(
+    parent: DirectoryCapability,
+    name: str,
+    value: dict[str, object],
+    backend: FilesystemBackend,
+    *,
+    _owner_slot: _MarkerOwnerSlot | None = None,
+) -> tuple[FileIdentity, int]:
+    encoded = _encoded_marker(value)
+    marker: FileCapability | None = None
+    descriptor_owner = _OwnedDescriptor()
+    if _owner_slot is not None:
+        if (
+            _owner_slot.capability is not None
+            and _owner_slot.capability.is_open
+        ) or (
+            _owner_slot.descriptor is not None
+            and _owner_slot.descriptor.fd >= 0
+        ):
+            raise RuntimeError("managed marker owner slot is already occupied")
+        _owner_slot.descriptor = descriptor_owner
+    identity: FileIdentity | None = None
+    try:
+        marker = backend.open_file(
+            parent,
+            name,
+            access=FileAccess.READ_WRITE,
+            disposition=CreateDisposition.CREATE_NEW,
+            share_policy=SharePolicy.PINNED,
+        )
+        if _owner_slot is not None:
+            _owner_slot.capability = marker
+        identity = marker.identity
+        if marker.kind is not EntryKind.REGULAR:
+            raise OSError("managed marker is not a regular file")
+        backend.verify_managed_security(marker, repair_dacl=False)
+        descriptor_owner.adopt(
+            marker.detach_to_fd(os.O_RDWR | getattr(os, "O_BINARY", 0))
+        )
+        if _owner_slot is not None:
+            _owner_slot.capability = None
+        marker = None
+        offset = 0
+        while offset < len(encoded):
+            written = os.write(descriptor_owner.fd, encoded[offset:])
+            if written <= 0:
+                raise OSError("managed marker write made no progress")
+            offset += written
+        os.fsync(descriptor_owner.fd)
+        if os.fstat(descriptor_owner.fd).st_size != len(encoded):
+            raise OSError("managed marker write was incomplete")
+        assert identity is not None
+        descriptor = descriptor_owner.fd
+        result = _marker_result(identity, descriptor)
+        detached = descriptor_owner.detach()
+        assert detached == descriptor
+        if _owner_slot is not None:
+            _owner_slot.descriptor = None
+        return result
+    except BaseException as primary_error:
+        close_errors: list[str] = []
+        owner_closed = True
+        if marker is not None:
+            close_errors.extend(
+                _close_capability_retry(marker, f"managed marker {name}")
+            )
+            owner_closed = not marker.is_open
+            if owner_closed and _owner_slot is not None:
+                _owner_slot.capability = None
+        elif descriptor_owner.fd >= 0:
+            close_errors.extend(
+                descriptor_owner.close_retry(f"managed marker {name}")
+            )
+            owner_closed = descriptor_owner.fd < 0
+            if owner_closed and _owner_slot is not None:
+                _owner_slot.descriptor = None
+        for close_error in close_errors:
+            primary_error.add_note(close_error)
+        if identity is not None and owner_closed:
+            for rollback_error in _delete_exact_marker(
+                parent, name, identity, backend
+            ):
+                primary_error.add_note(rollback_error)
+        raise
+
+
+def _read_marker(
+    parent: DirectoryCapability,
+    name: str,
+    backend: FilesystemBackend,
+    *,
+    expected_run_id: str,
+    expected_lease_id: str | None = None,
+    deadline: float | None = None,
+    _owner_slot: _MarkerOwnerSlot | None = None,
+) -> tuple[FileIdentity, dict[str, object]] | None:
+    marker: FileCapability | None = None
+    descriptor_owner = _OwnedDescriptor()
+    completed = False
+    if _owner_slot is not None:
+        if (
+            _owner_slot.capability is not None
+            and _owner_slot.capability.is_open
+        ) or (
+            _owner_slot.descriptor is not None
+            and _owner_slot.descriptor.fd >= 0
+        ):
+            raise RuntimeError("managed marker owner slot is already occupied")
+        _owner_slot.descriptor = descriptor_owner
+    try:
+        try:
+            marker = backend.open_file(
+                parent,
+                name,
+                access=FileAccess.READ,
+                disposition=CreateDisposition.OPEN_EXISTING,
+                share_policy=SharePolicy.PINNED,
+            )
+            if _owner_slot is not None:
+                _owner_slot.capability = marker
+        except FileNotFoundError:
+            completed = True
+            return None
+        if deadline is not None:
+            _check_deadline(deadline, "managed marker read")
+        if marker.kind is not EntryKind.REGULAR:
+            raise OSError("managed marker is not a regular file")
+        identity = marker.identity
+        backend.verify_managed_security(marker, repair_dacl=False)
+        if deadline is not None:
+            _check_deadline(deadline, "managed marker read")
+        descriptor_owner.adopt(
+            marker.detach_to_fd(os.O_RDONLY | getattr(os, "O_BINARY", 0))
+        )
+        if _owner_slot is not None:
+            _owner_slot.capability = None
+        marker = None
+        if deadline is not None:
+            _check_deadline(deadline, "managed marker read")
+        chunks: list[bytes] = []
+        remaining = MARKER_CAPACITY + 1
+        while remaining:
+            chunk = os.read(descriptor_owner.fd, remaining)
+            if deadline is not None:
+                _check_deadline(deadline, "managed marker read")
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        encoded = b"".join(chunks)
+        if len(encoded) > MARKER_CAPACITY:
+            raise OSError("managed marker exceeds capacity")
+        value = _decode_marker(
+            encoded,
+            expected_run_id=expected_run_id,
+            expected_lease_id=expected_lease_id,
+        )
+        result = (identity, value)
+        completed = True
+        return result
+    except BaseException as primary_error:
+        close_errors: tuple[str, ...] = ()
+        if marker is not None:
+            close_errors = _close_capability_retry(
+                marker, f"managed marker read {name}"
+            )
+        elif descriptor_owner.fd >= 0:
+            close_errors = descriptor_owner.close_retry(
+                f"managed marker read {name}"
+            )
+        for close_error in close_errors:
+            primary_error.add_note(close_error)
+        if _owner_slot is not None:
+            if marker is not None and not marker.is_open:
+                _owner_slot.capability = None
+            if descriptor_owner.fd < 0:
+                _owner_slot.descriptor = None
+        raise
+    finally:
+        if completed:
+            success_close_errors: tuple[str, ...] = ()
+            if marker is not None:
+                success_close_errors = _close_capability_retry(
+                    marker, f"managed marker read {name}"
+                )
+            elif descriptor_owner.fd >= 0:
+                success_close_errors = descriptor_owner.close_retry(
+                    f"managed marker read {name}"
+                )
+            if success_close_errors:
+                raise OSError("; ".join(success_close_errors))
+            if _owner_slot is not None:
+                if marker is not None and not marker.is_open:
+                    _owner_slot.capability = None
+                if descriptor_owner.fd < 0:
+                    _owner_slot.descriptor = None
+
+
+def _open_coordinator(
+    root: DirectoryCapability,
+    backend: FilesystemBackend,
+    *,
     timeout: float = 5.0,
     deadline: float | None = None,
     monotonic: Callable[[], float] | None = None,
@@ -241,53 +786,50 @@ def _open_coordinator(
     _check_absolute_deadline(
         absolute_deadline, clock, "managed coordinator lock deadline"
     )
-    owned_root_fd = -1
-    fd = -1
+    coordinator: FileCapability | None = None
+    descriptor_owner = _OwnedDescriptor()
     try:
-        if root_fd is None:
-            owned_root_fd = os.open(root, _directory_flags())
-            root_fd = owned_root_fd
+        coordinator = backend.open_file(
+            root,
+            COORDINATOR_FILE,
+            access=FileAccess.READ_WRITE,
+            disposition=CreateDisposition.OPEN_OR_CREATE,
+            share_policy=SharePolicy.PINNED,
+        )
         _check_absolute_deadline(
             absolute_deadline, clock, "managed coordinator lock deadline"
         )
-        fd = os.open(
-            COORDINATOR_FILE,
-            os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0),
-            0o600,
-            dir_fd=root_fd,
+        if coordinator.kind is not EntryKind.REGULAR:
+            raise OSError("managed coordinator is not a regular file")
+        backend.verify_managed_security(coordinator, repair_dacl=True)
+        _check_absolute_deadline(
+            absolute_deadline, clock, "managed coordinator lock deadline"
         )
+        descriptor_owner.adopt(
+            coordinator.detach_to_fd(
+                os.O_RDWR | getattr(os, "O_BINARY", 0)
+            )
+        )
+        coordinator = None
         _check_absolute_deadline(
             absolute_deadline, clock, "managed coordinator lock deadline"
         )
     except BaseException as primary_error:
-        for close_error in _close_descriptors_all(
-            (
-                ("managed coordinator file", fd),
-                ("managed coordinator parent", owned_root_fd),
+        transfer_close_errors: list[str] = []
+        transfer_close_errors.extend(
+            descriptor_owner.close_retry("managed coordinator file")
+        )
+        if coordinator is not None:
+            transfer_close_errors.extend(
+                _close_capability_retry(coordinator, "managed coordinator")
             )
-        ):
+        for close_error in transfer_close_errors:
             primary_error.add_note(close_error)
         raise
-    if owned_root_fd >= 0:
-        parent_close_errors = _close_descriptors_all(
-            (("managed coordinator parent", owned_root_fd),)
-        )
-        if parent_close_errors:
-            close_failure = OSError("; ".join(parent_close_errors))
-            for close_error in _close_descriptors_all(
-                (("managed coordinator file", fd),)
-            ):
-                close_failure.add_note(close_error)
-            raise close_failure
     lock: LeaseLock | None = None
     try:
-        metadata = os.fstat(fd)
-        _check_absolute_deadline(
-            absolute_deadline, clock, "managed coordinator lock deadline"
-        )
-        if not stat.S_ISREG(metadata.st_mode):
-            raise OSError("managed coordinator is not a regular file")
-        lock = LeaseLock(fd)
+        lock = LeaseLock(-1)
+        lock.fd = descriptor_owner.detach()
         while True:
             _check_absolute_deadline(
                 absolute_deadline, clock, "managed coordinator lock deadline"
@@ -306,7 +848,7 @@ def _open_coordinator(
                     "managed coordinator lock deadline",
                 )
                 _initialize_or_validate_coordinator(
-                    fd,
+                    lock.fd,
                     deadline=absolute_deadline,
                     monotonic=clock,
                 )
@@ -317,20 +859,14 @@ def _open_coordinator(
             sleep(min(0.01, remaining))
     except BaseException as primary_error:
         if lock is not None:
-            close_errors = _close_lease_lock_all(
+            initialization_close_errors = _close_lease_lock_retry(
                 lock, "managed coordinator initialization"
             )
         else:
-            close_errors_list: list[str] = []
-            try:
-                os.close(fd)
-            except OSError as error:
-                close_errors_list.append(
-                    "managed coordinator initialization close failed: "
-                    f"{type(error).__name__}: {error}"
-                )
-            close_errors = tuple(close_errors_list)
-        for close_error in close_errors:
+            initialization_close_errors = descriptor_owner.close_retry(
+                "managed coordinator initialization"
+            )
+        for close_error in initialization_close_errors:
             primary_error.add_note(close_error)
         raise
 
@@ -392,6 +928,16 @@ def _decode_coordinator_slot(slot: bytes) -> tuple[int, str] | None:
     return struct.unpack_from("<Q", slot, 12)[0], cursor
 
 
+def _read_at(fd: int, size: int, offset: int) -> bytes:
+    os.lseek(fd, offset, os.SEEK_SET)
+    return os.read(fd, size)
+
+
+def _write_at(fd: int, value: bytes, offset: int) -> int:
+    os.lseek(fd, offset, os.SEEK_SET)
+    return os.write(fd, value)
+
+
 def _initialize_or_validate_coordinator(
     fd: int,
     *,
@@ -408,7 +954,9 @@ def _initialize_or_validate_coordinator(
         initial = _coordinator_slot(0, "")
         if deadline is not None:
             _check_absolute_deadline(deadline, clock, "coordinator deadline")
-        os.pwrite(fd, b"\0" + initial + initial, 0)
+        encoded = b"\0" + initial + initial
+        if _write_at(fd, encoded, 0) != len(encoded):
+            raise OSError("managed coordinator initialization was incomplete")
         if deadline is not None:
             _check_absolute_deadline(deadline, clock, "coordinator deadline")
         os.fsync(fd)
@@ -431,7 +979,7 @@ def _read_coordinator_state(
     clock = time.monotonic if monotonic is None else monotonic
     if deadline is not None:
         _check_absolute_deadline(deadline, clock, "coordinator deadline")
-    encoded = os.pread(fd, COORDINATOR_BYTES, 0)
+    encoded = _read_at(fd, COORDINATOR_BYTES, 0)
     if deadline is not None:
         _check_absolute_deadline(deadline, clock, "coordinator deadline")
     if len(encoded) != COORDINATOR_BYTES or encoded[0] != 0:
@@ -464,7 +1012,9 @@ def _persist_coordinator_cursor(
     generation = state.generation + 1
     slot = _coordinator_slot(generation, cursor)
     inactive_slot = 1 - state.active_slot
-    written = os.pwrite(fd, slot, 1 + inactive_slot * COORDINATOR_SLOT_BYTES)
+    written = _write_at(
+        fd, slot, 1 + inactive_slot * COORDINATOR_SLOT_BYTES
+    )
     if deadline is not None:
         _check_deadline(deadline, "janitor selection")
     if written != len(slot):
@@ -474,91 +1024,164 @@ def _persist_coordinator_cursor(
         _check_deadline(deadline, "janitor selection")
 
 
+def _rollback_created_managed_root(
+    root: DirectoryCapability,
+    parent: DirectoryCapability,
+    backend: FilesystemBackend,
+) -> tuple[str, ...]:
+    if not root.created:
+        return _close_capability_retry(root, "managed root")
+    errors: list[str] = []
+    try:
+        rollback_available = backend._directory_creation_rollback_available(root)
+    except BaseException as error:
+        errors.append(
+            _bounded_secondary("managed root rollback unavailable", error)
+        )
+        rollback_available = False
+    if not rollback_available:
+        if not errors:
+            errors.append(
+                _bounded_secondary(
+                    "managed root rollback unavailable",
+                    RuntimeError(
+                        "directory creation identity was not atomically bound"
+                    ),
+                )
+            )
+        errors.extend(_close_capability_retry(root, "managed root rollback"))
+        return tuple(errors)
+    for _attempt in range(2):
+        if not root.is_open:
+            break
+        try:
+            backend.delete(root)
+        except BaseException as error:
+            errors.append(
+                _bounded_secondary("managed root rollback failed", error)
+            )
+        else:
+            return tuple(errors)
+    if root.is_open:
+        errors.extend(_close_capability_retry(root, "managed root rollback"))
+    if root.is_open:
+        return tuple(errors)
+    try:
+        remaining = backend.entry(parent, MANAGED_DIRECTORY)
+    except BaseException as error:
+        errors.append(
+            _bounded_secondary(
+                "managed root rollback absence check failed", error
+            )
+        )
+    else:
+        if remaining is not None:
+            errors.append("managed root rollback left a same-name entry")
+    return tuple(errors)
+
+
 def _ensure_managed_root(
     parent: Path,
     *,
+    backend: FilesystemBackend | None = None,
     deadline: float | None = None,
     monotonic: Callable[[], float] | None = None,
-) -> tuple[Path, int]:
+) -> tuple[Path, DirectoryCapability]:
     clock = time.monotonic if monotonic is None else monotonic
+    selected_backend = (
+        default_filesystem_backend() if backend is None else backend
+    )
     root = parent / MANAGED_DIRECTORY
     if deadline is not None:
         _check_absolute_deadline(deadline, clock, "managed root deadline")
-    parent_fd = os.open(parent, _directory_flags())
+    parent_capability: DirectoryCapability | None = None
+    root_capability: DirectoryCapability | None = None
+    result: tuple[Path, DirectoryCapability] | None = None
     try:
-        if deadline is not None:
-            _check_absolute_deadline(deadline, clock, "managed root deadline")
-        try:
-            os.mkdir(MANAGED_DIRECTORY, mode=0o700, dir_fd=parent_fd)
-        except FileExistsError:
-            pass
-        if deadline is not None:
-            _check_absolute_deadline(deadline, clock, "managed root deadline")
-        root_fd = _open_directory_at(
-            parent_fd,
-            MANAGED_DIRECTORY,
-            deadline=deadline,
-            monotonic=clock,
+        parent_capability = selected_backend.open_root(
+            parent, SharePolicy.MUTATION, SecurityDomain.CALLER
         )
-        try:
-            if deadline is not None:
-                _check_absolute_deadline(deadline, clock, "managed root deadline")
-            identity = _directory_identity(root_fd)
-            if deadline is not None:
-                _check_absolute_deadline(deadline, clock, "managed root deadline")
-            if _entry_identity(parent_fd, MANAGED_DIRECTORY) != identity:
-                raise OSError("managed scratch root identity changed while opening")
-            if deadline is not None:
-                _check_absolute_deadline(deadline, clock, "managed root deadline")
-            metadata = os.fstat(root_fd)
-            if deadline is not None:
-                _check_absolute_deadline(deadline, clock, "managed root deadline")
-            if hasattr(os, "getuid") and metadata.st_uid != os.getuid():
-                raise PermissionError("managed scratch root is not owned by current user")
-            root_filesystem = _filesystem_identity(root_fd)
-            if deadline is not None:
-                _check_absolute_deadline(deadline, clock, "managed root deadline")
-            parent_filesystem = _filesystem_identity(parent_fd)
-            if root_filesystem != parent_filesystem:
-                raise OSError("managed scratch root crosses a filesystem boundary")
-            if deadline is not None:
-                _check_absolute_deadline(deadline, clock, "managed root deadline")
-            if os.name != "nt":
-                os.fchmod(root_fd, 0o700)
-                if deadline is not None:
-                    _check_absolute_deadline(deadline, clock, "managed root deadline")
-                if stat.S_IMODE(os.fstat(root_fd).st_mode) != 0o700:
-                    raise PermissionError("managed scratch root is not mode 0700")
-                if deadline is not None:
-                    _check_absolute_deadline(deadline, clock, "managed root deadline")
-            if _entry_identity(parent_fd, MANAGED_DIRECTORY) != identity:
-                raise OSError("managed scratch root identity changed after securing")
-            if deadline is not None:
-                _check_absolute_deadline(deadline, clock, "managed root deadline")
-        except BaseException as primary_error:
-            for close_error in _close_descriptors_all(
-                (("managed root", root_fd),)
-            ):
-                primary_error.add_note(close_error)
-            raise
-    except BaseException as primary_error:
-        for close_error in _close_descriptors_all(
-            (("managed root parent", parent_fd),)
+        if deadline is not None:
+            _check_absolute_deadline(deadline, clock, "managed root deadline")
+        root_capability = selected_backend.create_secure_root(
+            parent_capability, MANAGED_DIRECTORY
+        )
+        if deadline is not None:
+            _check_absolute_deadline(deadline, clock, "managed root deadline")
+        if (
+            root_capability.kind is not EntryKind.DIRECTORY
+            or root_capability.security_domain is not SecurityDomain.MANAGED
         ):
+            raise PermissionError("managed scratch root capability is invalid")
+        if root_capability.filesystem != parent_capability.filesystem:
+            raise OSError("managed scratch root crosses a filesystem boundary")
+        selected_backend.verify_managed_security(
+            root_capability, repair_dacl=True
+        )
+        if deadline is not None:
+            _check_absolute_deadline(deadline, clock, "managed root deadline")
+        current = selected_backend.entry(parent_capability, MANAGED_DIRECTORY)
+        if (
+            current is None
+            or current.kind is not EntryKind.DIRECTORY
+            or current.identity != root_capability.identity
+            or current.filesystem != root_capability.filesystem
+        ):
+            raise OSError("managed scratch root identity changed after securing")
+        if deadline is not None:
+            _check_absolute_deadline(deadline, clock, "managed root deadline")
+        selected_backend._prepare_secure_root_commit(root_capability)
+        result = (root, root_capability)
+    except BaseException as primary_error:
+        cleanup_errors: list[str] = []
+        if root_capability is not None:
+            if parent_capability is not None and parent_capability.is_open:
+                cleanup_errors.extend(
+                    _rollback_created_managed_root(
+                        root_capability,
+                        parent_capability,
+                        selected_backend,
+                    )
+                )
+            else:
+                cleanup_errors.extend(
+                    _close_capability_retry(root_capability, "managed root")
+                )
+        if parent_capability is not None:
+            cleanup_errors.extend(
+                _close_capability_retry(
+                    parent_capability, "managed root parent"
+                )
+            )
+        for close_error in cleanup_errors:
             primary_error.add_note(close_error)
         raise
-    parent_close_errors = _close_descriptors_all(
-        (("managed root parent", parent_fd),)
-    )
-    if parent_close_errors:
-        root_close_errors = _close_descriptors_all(
-            (("managed root", root_fd),)
+    assert parent_capability is not None
+    assert root_capability is not None
+    assert result is not None
+    try:
+        parent_capability.close()
+    except BaseException as primary_error:
+        cleanup_errors = list(
+            _rollback_created_managed_root(
+                root_capability,
+                parent_capability,
+                selected_backend,
+            )
         )
-        error = OSError("; ".join(parent_close_errors))
-        for close_error in root_close_errors:
-            error.add_note(close_error)
-        raise error
-    return root, root_fd
+        try:
+            parent_capability.close()
+        except BaseException as close_error:
+            cleanup_errors.append(
+                _bounded_secondary(
+                    "managed root parent close failed", close_error
+                )
+            )
+        for cleanup_error in cleanup_errors:
+            primary_error.add_note(cleanup_error)
+        raise
+    selected_backend._commit_secure_root(root_capability)
+    return result
 
 
 def _directory_flags() -> int:
@@ -680,6 +1303,7 @@ def _filesystem_identity(fd: int) -> tuple[int, int, int]:
 
 
 def _directory_path_from_capability(fd: int) -> Path:
+    value: str
     if sys.platform == "darwin":
         import fcntl
 
@@ -707,32 +1331,144 @@ def _entry_identity(parent_fd: int, name: str) -> tuple[int, int]:
     return metadata.st_dev, metadata.st_ino
 
 
+def _require_current_entry(
+    parent: DirectoryCapability,
+    name: str,
+    backend: FilesystemBackend,
+    *,
+    kind: EntryKind,
+    identity: FileIdentity,
+    filesystem: FilesystemIdentity,
+    label: str,
+) -> None:
+    current = backend.entry(parent, name)
+    if (
+        current is None
+        or current.kind is not kind
+        or current.identity != identity
+        or current.filesystem != filesystem
+    ):
+        raise OSError(f"{label} identity changed")
+
+
+def _open_owned_marker(
+    parent: DirectoryCapability,
+    name: str,
+    backend: FilesystemBackend,
+    *,
+    access: FileAccess,
+    identity: FileIdentity,
+    _owner_slot: _MarkerOwnerSlot | None = None,
+) -> FileCapability:
+    marker: FileCapability | None = None
+    if (
+        _owner_slot is not None
+        and _owner_slot.capability is not None
+        and _owner_slot.capability.is_open
+    ):
+        raise RuntimeError("managed marker capability slot is already occupied")
+    try:
+        marker = backend.open_file(
+            parent,
+            name,
+            access=access,
+            disposition=CreateDisposition.OPEN_EXISTING,
+            share_policy=SharePolicy.PINNED,
+        )
+        if _owner_slot is not None:
+            _owner_slot.capability = marker
+        if (
+            marker.kind is not EntryKind.REGULAR
+            or marker.identity != identity
+            or marker.filesystem != parent.filesystem
+        ):
+            raise OSError(f"managed marker identity changed for {name}")
+        backend.verify_managed_security(marker, repair_dacl=False)
+        _require_current_entry(
+            parent,
+            name,
+            backend,
+            kind=EntryKind.REGULAR,
+            identity=identity,
+            filesystem=parent.filesystem,
+            label=f"managed marker {name}",
+        )
+        return marker
+    except BaseException as primary_error:
+        if marker is not None:
+            for close_error in _close_capability_retry(
+                marker, f"managed marker {name}"
+            ):
+                primary_error.add_note(close_error)
+            if not marker.is_open and _owner_slot is not None:
+                _owner_slot.capability = None
+        raise
+
+
+def _read_locked_marker(
+    lock: LeaseLock,
+    *,
+    expected_run_id: str,
+    expected_lease_id: str,
+) -> dict[str, object]:
+    os.lseek(lock.fd, 0, os.SEEK_SET)
+    chunks: list[bytes] = []
+    remaining = MARKER_CAPACITY + 1
+    while remaining:
+        chunk = os.read(lock.fd, remaining)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    encoded = b"".join(chunks)
+    if len(encoded) > MARKER_CAPACITY:
+        raise OSError("managed marker exceeds capacity")
+    return _decode_marker(
+        encoded,
+        expected_run_id=expected_run_id,
+        expected_lease_id=expected_lease_id,
+    )
+
+
 class ManagedScratch:
+    if TYPE_CHECKING:
+        # Task 8 legacy methods still type-check against their pending raw-fd
+        # migration, but Task 7 never initializes or exposes these attributes.
+        _managed_root_fd: int
+        _root_fd: int
+        _heartbeat_fd: int
+
     def __init__(
         self,
         *,
+        backend: FilesystemBackend,
         managed_root: Path,
         path: Path,
         run_id: str,
         lease_id: str,
         lease: LeaseLock,
-        managed_root_fd: int,
-        root_fd: int,
-        root_identity: tuple[int, int],
-        heartbeat_fd: int = -1,
-        heartbeat_identity: tuple[int, int] | None = None,
+        managed_root_capability: DirectoryCapability,
+        root: DirectoryCapability,
+        heartbeat: FileCapability,
+        heartbeat_identity: FileIdentity,
     ) -> None:
+        self._backend = backend
         self.managed_root = managed_root
         self.path = path
         self.run_id = run_id
         self.lease_id = lease_id
-        self._lease = lease
-        self._managed_root_fd = managed_root_fd
-        self._root_fd = root_fd
-        self._root_identity = root_identity
-        self._heartbeat_fd = heartbeat_fd
+        self._lease: LeaseLock | None = lease
+        self._managed_root_capability: DirectoryCapability | None = (
+            managed_root_capability
+        )
+        self._root: DirectoryCapability | None = root
+        self._root_identity = root.identity
+        self._root_filesystem = root.filesystem
+        self._heartbeat: FileCapability | None = heartbeat
         self._heartbeat_identity = heartbeat_identity
-        self._children: dict[str, tuple[int, int]] = {}
+        self._children: dict[
+            str, tuple[FileIdentity, FilesystemIdentity]
+        ] = {}
         self._cleanup_ready = False
         self._registry_lock = threading.RLock()
         self._registry_generation = 0
@@ -746,193 +1482,560 @@ class ManagedScratch:
         run_id: str | None = None,
         stale_cleanup: list[ScratchCleanupRecord] | None = None,
         stale_diagnostics: list[JanitorDiagnostic] | None = None,
+        backend: FilesystemBackend | None = None,
+        _reclaimer: Callable[
+            [Path], list[ScratchCleanupRecord | JanitorDiagnostic]
+        ]
+        | None = None,
     ) -> "ManagedScratch":
-        managed_root, managed_root_fd = _ensure_managed_root(
-            parent.resolve(strict=True)
+        """Publish one run graph.
+
+        ``_reclaimer`` is a private Task 9 activation seam. Its production
+        default intentionally performs no stale-root reclamation until that
+        lifecycle is capability-backed.
+        """
+        selected_backend = (
+            default_filesystem_backend() if backend is None else backend
+        )
+        managed_root_capability: DirectoryCapability | None = None
+        managed_root, managed_root_capability = _ensure_managed_root(
+            parent.resolve(strict=True), backend=selected_backend
         )
         try:
             validate_reported_path(managed_root)
-            reclaimed = reclaim_abandoned(
-                managed_root, managed_root_fd=managed_root_fd
-            )
-            for item in reclaimed:
-                if isinstance(item, JanitorDiagnostic):
-                    if stale_diagnostics is not None:
-                        stale_diagnostics.append(item)
-                elif stale_cleanup is not None:
-                    stale_cleanup.append(item)
+            if _reclaimer is not None:
+                for item in _reclaimer(managed_root):
+                    if isinstance(item, JanitorDiagnostic):
+                        if stale_diagnostics is not None:
+                            stale_diagnostics.append(item)
+                    elif stale_cleanup is not None:
+                        stale_cleanup.append(item)
             run_id = str(uuid.uuid4()) if run_id is None else run_id
             if str(uuid.UUID(run_id)) != run_id:
                 raise ValueError("run ID must be a canonical UUID")
         except BaseException as primary_error:
-            for close_error in _close_descriptors_all(
-                (("managed scratch creation root", managed_root_fd),)
+            for close_error in _close_capability_retry(
+                managed_root_capability, "managed scratch creation root"
             ):
                 primary_error.add_note(close_error)
             raise
         try:
             coordinator: LeaseLock | None = _open_coordinator(
-                managed_root, root_fd=managed_root_fd
+                managed_root_capability, selected_backend
             )
         except BaseException as primary_error:
-            for close_error in _close_descriptors_all(
-                (("managed scratch creation root", managed_root_fd),)
+            for close_error in _close_capability_retry(
+                managed_root_capability, "managed scratch creation root"
             ):
                 primary_error.add_note(close_error)
             raise
-        lease_id = str(uuid.uuid4())
-        staging = managed_root / f".staging-{run_id}"
-        active = managed_root / f"run-{run_id}"
-        deleting = managed_root / f".deleting-{run_id}"
+        assert run_id is not None
+        lease_id: str | None = None
+        staging: Path | None = None
+        active: Path | None = None
+        deleting: Path | None = None
         lease: LeaseLock | None = None
-        staging_created = False
+        heartbeat: FileCapability | None = None
+        heartbeat_descriptor_owner: _OwnedDescriptor | None = None
+        marker_owners: _MarkerRollbackOwners | None = None
+        staging_capability: DirectoryCapability | None = None
+        lease_identity: FileIdentity | None = None
+        heartbeat_identity: FileIdentity | None = None
         published = False
-        root_fd = -1
-        root_identity: tuple[int, int] | None = None
-        heartbeat_fd = -1
+        scratch: ManagedScratch | None = None
+        heartbeat_descriptor_close_attempted = False
+        heartbeat_close_attempted = False
+        lease_close_attempted = False
         try:
+            lease_id = str(uuid.uuid4())
+            staging = managed_root / f".staging-{run_id}"
+            active = managed_root / f"run-{run_id}"
+            deleting = managed_root / f".deleting-{run_id}"
+            heartbeat_descriptor_owner = _OwnedDescriptor()
+            marker_owners = _MarkerRollbackOwners()
             validate_reported_path(staging)
             validate_reported_path(active)
             validate_reported_path(deleting)
-            os.mkdir(staging.name, mode=0o700, dir_fd=managed_root_fd)
-            staging_created = True
-            root_fd = _open_directory_at(managed_root_fd, staging.name)
-            root_identity = _directory_identity(root_fd)
-            marker = _marker(run_id, lease_id)
-            _write_marker_at(root_fd, LEASE_FILE, marker)
-            lease_fd = os.open(
-                LEASE_FILE,
-                os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
-                dir_fd=root_fd,
-            )
-            lease = LeaseLock(lease_fd)
-            lease.acquire(blocking=True)
-            _write_marker_at(root_fd, HEARTBEAT_FILE, marker)
-            heartbeat_fd = os.open(
-                HEARTBEAT_FILE,
-                os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
-                dir_fd=root_fd,
-            )
-            heartbeat_metadata = os.fstat(heartbeat_fd)
-            if not stat.S_ISREG(heartbeat_metadata.st_mode):
-                raise OSError("managed heartbeat is not a regular file")
-            heartbeat_identity = (
-                heartbeat_metadata.st_dev,
-                heartbeat_metadata.st_ino,
-            )
-            try:
-                os.stat(
-                    active.name,
-                    dir_fd=managed_root_fd,
-                    follow_symlinks=False,
-                )
-            except FileNotFoundError:
-                pass
-            else:
+            if selected_backend.entry(
+                managed_root_capability, active.name
+            ) is not None:
                 raise FileExistsError(
                     errno.EEXIST,
                     "managed active root already exists",
                     str(active),
                 )
-            os.rename(
+            if selected_backend.entry(
+                managed_root_capability, staging.name
+            ) is not None:
+                raise FileExistsError(
+                    errno.EEXIST,
+                    "managed staging root already exists",
+                    str(staging),
+                )
+            staging_capability = selected_backend.create_directory(
+                managed_root_capability,
                 staging.name,
+                SharePolicy.PINNED,
+            )
+            if (
+                staging_capability.kind is not EntryKind.DIRECTORY
+                or staging_capability.filesystem
+                != managed_root_capability.filesystem
+                or staging_capability.security_domain
+                is not SecurityDomain.MANAGED
+            ):
+                raise OSError("managed staging capability is invalid")
+            selected_backend.verify_managed_security(
+                staging_capability, repair_dacl=False
+            )
+            _require_current_entry(
+                managed_root_capability,
+                staging.name,
+                selected_backend,
+                kind=EntryKind.DIRECTORY,
+                identity=staging_capability.identity,
+                filesystem=staging_capability.filesystem,
+                label="managed staging root",
+            )
+            marker = _marker(run_id, lease_id)
+            lease = LeaseLock(-1)
+            marker_owners.lease.lock = lease
+            lease_identity, lease.fd = _create_marker(
+                staging_capability,
+                LEASE_FILE,
+                marker,
+                selected_backend,
+                _owner_slot=marker_owners.lease,
+            )
+            lease.acquire(blocking=True)
+            heartbeat_result = _create_marker(
+                staging_capability,
+                HEARTBEAT_FILE,
+                marker,
+                selected_backend,
+                _owner_slot=marker_owners.heartbeat,
+            )
+            heartbeat_identity = heartbeat_result[0]
+            marker_owners.heartbeat.descriptor = heartbeat_descriptor_owner
+            heartbeat_descriptor_owner.adopt(heartbeat_result[1])
+            heartbeat_descriptor_close_attempted = True
+            heartbeat_close_errors = heartbeat_descriptor_owner.close_once(
+                "managed heartbeat creation"
+            )
+            if heartbeat_close_errors:
+                raise OSError("; ".join(heartbeat_close_errors))
+            heartbeat = _open_owned_marker(
+                staging_capability,
+                HEARTBEAT_FILE,
+                selected_backend,
+                access=FileAccess.WRITE,
+                identity=heartbeat_identity,
+                _owner_slot=marker_owners.heartbeat,
+            )
+            if selected_backend.entry(
+                managed_root_capability, active.name
+            ) is not None:
+                raise FileExistsError(
+                    errno.EEXIST,
+                    "managed active root already exists",
+                    str(active),
+                )
+            if selected_backend.directory_rename_requires_closed_descendants:
+                heartbeat_close_attempted = True
+                heartbeat_close_errors = _close_capability_once(
+                    heartbeat, "managed heartbeat handoff"
+                )
+                if heartbeat_close_errors:
+                    raise OSError("; ".join(heartbeat_close_errors))
+                heartbeat = None
+                lease_close_attempted = True
+                lease_close_errors = _close_lease_lock_all(
+                    lease, "managed lease handoff"
+                )
+                if lease_close_errors:
+                    if lease.fd < 0:
+                        lease = None
+                    raise OSError("; ".join(lease_close_errors))
+                lease = None
+            selected_backend.rename(
+                staging_capability,
+                managed_root_capability,
                 active.name,
-                src_dir_fd=managed_root_fd,
-                dst_dir_fd=managed_root_fd,
+                replace=False,
             )
             published = True
-            if _entry_identity(managed_root_fd, active.name) != root_identity:
-                raise OSError("published managed root identity changed")
-            assert root_identity is not None
-            assert coordinator is not None
-            coordinator_errors = _close_lease_lock_all(
-                coordinator, "managed coordinator"
+            _require_current_entry(
+                managed_root_capability,
+                active.name,
+                selected_backend,
+                kind=EntryKind.DIRECTORY,
+                identity=staging_capability.identity,
+                filesystem=staging_capability.filesystem,
+                label="published managed root",
             )
-            coordinator = None
-            if coordinator_errors:
-                raise OSError("; ".join(coordinator_errors))
-            return cls(
+            if selected_backend.directory_rename_requires_closed_descendants:
+                lease_read = _read_marker(
+                    staging_capability,
+                    LEASE_FILE,
+                    selected_backend,
+                    expected_run_id=run_id,
+                    expected_lease_id=lease_id,
+                    _owner_slot=marker_owners.lease,
+                )
+                if lease_read is None or lease_read != (
+                    lease_identity,
+                    marker,
+                ):
+                    raise OSError("published managed lease changed")
+                heartbeat_read = _read_marker(
+                    staging_capability,
+                    HEARTBEAT_FILE,
+                    selected_backend,
+                    expected_run_id=run_id,
+                    expected_lease_id=lease_id,
+                    _owner_slot=marker_owners.heartbeat,
+                )
+                if heartbeat_read is None or heartbeat_read != (
+                    heartbeat_identity,
+                    marker,
+                ):
+                    raise OSError("published managed heartbeat changed")
+                lease = LeaseLock(-1)
+                lease_close_attempted = False
+                marker_owners.lease.lock = lease
+                lease_capability = _open_owned_marker(
+                    staging_capability,
+                    LEASE_FILE,
+                    selected_backend,
+                    access=FileAccess.READ_WRITE,
+                    identity=lease_identity,
+                    _owner_slot=marker_owners.lease,
+                )
+                try:
+                    lease.fd = lease_capability.detach_to_fd(
+                        os.O_RDWR | getattr(os, "O_BINARY", 0)
+                    )
+                    lease.acquire(blocking=True)
+                    if _read_locked_marker(
+                        lease,
+                        expected_run_id=run_id,
+                        expected_lease_id=lease_id,
+                    ) != marker:
+                        raise OSError("locked managed lease changed")
+                except BaseException as primary_error:
+                    if lease_capability.is_open:
+                        for close_error in _close_capability_retry(
+                            lease_capability, "published managed lease"
+                        ):
+                            primary_error.add_note(close_error)
+                    if lease.fd >= 0:
+                        lease_close_attempted = True
+                        for close_error in _close_lease_lock_all(
+                            lease, "published managed lease"
+                        ):
+                            primary_error.add_note(close_error)
+                    raise
+                heartbeat = _open_owned_marker(
+                    staging_capability,
+                    HEARTBEAT_FILE,
+                    selected_backend,
+                    access=FileAccess.WRITE,
+                    identity=heartbeat_identity,
+                    _owner_slot=marker_owners.heartbeat,
+                )
+                heartbeat_close_attempted = False
+            assert lease is not None
+            assert heartbeat is not None
+            assert lease_identity is not None
+            assert heartbeat_identity is not None
+            scratch = cls(
+                backend=selected_backend,
                 managed_root=managed_root,
                 path=active,
                 run_id=run_id,
                 lease_id=lease_id,
                 lease=lease,
-                managed_root_fd=managed_root_fd,
-                root_fd=root_fd,
-                root_identity=root_identity,
-                heartbeat_fd=heartbeat_fd,
+                managed_root_capability=managed_root_capability,
+                root=staging_capability,
+                heartbeat=heartbeat,
                 heartbeat_identity=heartbeat_identity,
             )
+            assert coordinator is not None
+            coordinator_errors = _close_locked_coordinator_once(
+                coordinator, "managed coordinator"
+            )
+            if coordinator_errors:
+                raise OSError("; ".join(coordinator_errors))
+            coordinator = None
+            return scratch
         except BaseException as primary_error:
             rollback_errors: list[str] = []
+            if scratch is not None:
+                scratch._lease = None
+                scratch._heartbeat = None
+                scratch._root = None
+                scratch._managed_root_capability = None
             if lease is not None:
-                rollback_errors.extend(
-                    _close_lease_lock_all(lease, "managed lease rollback")
-                )
-            rollback_name = active.name if published else staging.name
-            if root_fd >= 0:
-                for marker_name in (HEARTBEAT_FILE, LEASE_FILE):
-                    try:
-                        os.unlink(marker_name, dir_fd=root_fd)
-                    except FileNotFoundError:
-                        pass
-                    except OSError as error:
-                        rollback_errors.append(
-                            f"managed marker rollback failed for {marker_name}: "
-                            f"{type(error).__name__}: {error}"
+                if lease_close_attempted:
+                    rollback_errors.extend(
+                        _close_lease_lock_all(lease, "managed lease rollback")
+                    )
+                else:
+                    rollback_errors.extend(
+                        _close_lease_lock_retry(lease, "managed lease rollback")
+                    )
+                if lease.fd < 0:
+                    lease = None
+            if heartbeat is not None:
+                if heartbeat_close_attempted:
+                    rollback_errors.extend(
+                        _close_capability_once(
+                            heartbeat, "managed heartbeat rollback"
                         )
-            identity_safe = True
-            try:
-                if root_fd >= 0 and root_identity is not None and (
-                    _entry_identity(managed_root_fd, rollback_name)
-                    != root_identity
-                ):
-                    identity_safe = False
-                    rollback_errors.append(
-                        "constructor rollback root identity changed"
                     )
-            except FileNotFoundError:
-                identity_safe = False
-            except OSError as error:
-                identity_safe = False
+                else:
+                    rollback_errors.extend(
+                        _close_capability_retry(
+                            heartbeat, "managed heartbeat rollback"
+                        )
+                    )
+                if not heartbeat.is_open:
+                    heartbeat = None
+            if heartbeat_descriptor_owner is not None:
+                if heartbeat_descriptor_close_attempted:
+                    rollback_errors.extend(
+                        heartbeat_descriptor_owner.close_once(
+                            "managed heartbeat rollback"
+                        )
+                    )
+                else:
+                    rollback_errors.extend(
+                        heartbeat_descriptor_owner.close_retry(
+                            "managed heartbeat rollback"
+                        )
+                    )
+            marker_owner_open = (
+                marker_owners is not None
+                and marker_owners.has_open_owner()
+            ) or (
+                lease is not None and lease.fd >= 0
+            ) or (
+                heartbeat is not None and heartbeat.is_open
+            ) or (
+                heartbeat_descriptor_owner is not None
+                and heartbeat_descriptor_owner.fd >= 0
+            )
+            namespace_cleanup_unavailable_noted = False
+            if marker_owner_open:
                 rollback_errors.append(
-                    "constructor rollback identity check failed: "
-                    f"{type(error).__name__}: {error}"
+                    _bounded_secondary(
+                        "managed namespace cleanup unavailable",
+                        RuntimeError(
+                            "a marker owner remains open"
+                        ),
+                    )
                 )
-            if identity_safe and (staging_created or published):
-                try:
-                    os.rmdir(rollback_name, dir_fd=managed_root_fd)
-                except FileNotFoundError:
-                    pass
-                except OSError as error:
-                    rollback_errors.append(
-                        "constructor rollback root removal failed: "
-                        f"{type(error).__name__}: {error}"
-                    )
-            for label, descriptor in (
-                ("heartbeat", heartbeat_fd),
-                ("root", root_fd),
-                ("managed root", managed_root_fd),
+                namespace_cleanup_unavailable_noted = True
+            renamed_back = False
+            if (
+                published
+                and staging_capability is not None
+                and staging is not None
+                and not marker_owner_open
             ):
-                if descriptor < 0:
-                    continue
                 try:
-                    os.close(descriptor)
-                except OSError as error:
-                    rollback_errors.append(
-                        f"managed {label} rollback close failed: "
-                        f"{type(error).__name__}: {error}"
+                    selected_backend.rename(
+                        staging_capability,
+                        managed_root_capability,
+                        staging.name,
+                        replace=False,
                     )
+                    published = False
+                    renamed_back = True
+                except BaseException as error:
+                    rollback_errors.append(
+                        _bounded_secondary(
+                            "managed publication rename rollback failed", error
+                        )
+                    )
+            if (
+                renamed_back
+                and selected_backend.directory_rename_requires_closed_descendants
+                and staging_capability is not None
+                and lease_identity is not None
+                and heartbeat_identity is not None
+                and lease_id is not None
+                and marker_owners is not None
+                and not marker_owner_open
+            ):
+                restored_lease: LeaseLock | None = None
+                restored_heartbeat: FileCapability | None = None
+                try:
+                    lease_read = _read_marker(
+                        staging_capability,
+                        LEASE_FILE,
+                        selected_backend,
+                        expected_run_id=run_id,
+                        expected_lease_id=lease_id,
+                        _owner_slot=marker_owners.lease,
+                    )
+                    heartbeat_read = _read_marker(
+                        staging_capability,
+                        HEARTBEAT_FILE,
+                        selected_backend,
+                        expected_run_id=run_id,
+                        expected_lease_id=lease_id,
+                        _owner_slot=marker_owners.heartbeat,
+                    )
+                    if lease_read != (lease_identity, marker) or heartbeat_read != (
+                        heartbeat_identity,
+                        marker,
+                    ):
+                        raise OSError("managed publication restore content changed")
+                    restored_lease = LeaseLock(-1)
+                    marker_owners.lease.lock = restored_lease
+                    restored_capability = _open_owned_marker(
+                        staging_capability,
+                        LEASE_FILE,
+                        selected_backend,
+                        access=FileAccess.READ_WRITE,
+                        identity=lease_identity,
+                        _owner_slot=marker_owners.lease,
+                    )
+                    try:
+                        restored_lease.fd = restored_capability.detach_to_fd(
+                            os.O_RDWR | getattr(os, "O_BINARY", 0)
+                        )
+                    except BaseException as restore_error:
+                        for close_error in _close_capability_retry(
+                            restored_capability, "restored managed lease"
+                        ):
+                            restore_error.add_note(close_error)
+                        raise
+                    restored_lease.acquire(blocking=True)
+                    if _read_locked_marker(
+                        restored_lease,
+                        expected_run_id=run_id,
+                        expected_lease_id=lease_id,
+                    ) != marker:
+                        raise OSError("restored managed lease changed")
+                    restored_heartbeat = _open_owned_marker(
+                        staging_capability,
+                        HEARTBEAT_FILE,
+                        selected_backend,
+                        access=FileAccess.WRITE,
+                        identity=heartbeat_identity,
+                        _owner_slot=marker_owners.heartbeat,
+                    )
+                except BaseException as error:
+                    rollback_errors.append(
+                        _bounded_secondary(
+                            "managed publication owner restore failed", error
+                        )
+                    )
+                    rollback_errors.extend(
+                        getattr(error, "__notes__", ())
+                    )
+                finally:
+                    if restored_lease is not None:
+                        rollback_errors.extend(
+                            _close_lease_lock_retry(
+                                restored_lease, "restored managed lease"
+                            )
+                        )
+                    if restored_heartbeat is not None:
+                        rollback_errors.extend(
+                            _close_capability_retry(
+                                restored_heartbeat,
+                                "restored managed heartbeat",
+                            )
+                        )
+            marker_owner_open = marker_owner_open or (
+                marker_owners is not None
+                and marker_owners.has_open_owner()
+            ) or (
+                lease is not None and lease.fd >= 0
+            ) or (
+                heartbeat is not None and heartbeat.is_open
+            ) or (
+                heartbeat_descriptor_owner is not None
+                and heartbeat_descriptor_owner.fd >= 0
+            )
+            if marker_owner_open and not namespace_cleanup_unavailable_noted:
+                rollback_errors.append(
+                    _bounded_secondary(
+                        "managed namespace cleanup unavailable",
+                        RuntimeError("a marker owner remains open"),
+                    )
+                )
+                namespace_cleanup_unavailable_noted = True
+            if (
+                staging_capability is not None
+                and staging is not None
+                and active is not None
+            ):
+                if marker_owner_open:
+                    rollback_errors.extend(
+                        _close_capability_retry(
+                            staging_capability, "managed staging rollback"
+                        )
+                    )
+                else:
+                    if heartbeat_identity is not None:
+                        rollback_errors.extend(
+                            _delete_exact_marker(
+                                staging_capability,
+                                HEARTBEAT_FILE,
+                                heartbeat_identity,
+                                selected_backend,
+                            )
+                        )
+                    if lease_identity is not None:
+                        rollback_errors.extend(
+                            _delete_exact_marker(
+                                staging_capability,
+                                LEASE_FILE,
+                                lease_identity,
+                                selected_backend,
+                            )
+                        )
+                    rollback_errors.extend(
+                        _delete_owned_directory(
+                            managed_root_capability,
+                            active.name if published else staging.name,
+                            staging_capability,
+                            selected_backend,
+                            label="managed staging rollback",
+                        )
+                    )
+            elif staging_capability is not None:
+                rollback_errors.append(
+                    "managed staging rollback unavailable: creation state missing"
+                )
+                rollback_errors.extend(
+                    _close_capability_retry(
+                        staging_capability, "managed staging rollback"
+                    )
+                )
+            rollback_errors.extend(
+                _close_capability_retry(
+                    managed_root_capability, "managed root rollback"
+                )
+            )
             for rollback_error in rollback_errors:
                 primary_error.add_note(rollback_error)
             raise
         finally:
             if coordinator is not None:
                 active_error = sys.exc_info()[1]
-                coordinator_errors = _close_lease_lock_all(
+                coordinator_errors = _close_locked_coordinator_once(
                     coordinator, "managed coordinator"
                 )
-                if coordinator_errors and active_error is not None:
+                if coordinator.fd < 0:
+                    coordinator = None
+                if coordinator_errors:
+                    if active_error is None:
+                        raise OSError("; ".join(coordinator_errors))
                     for coordinator_error in coordinator_errors:
                         active_error.add_note(coordinator_error)
 
@@ -972,59 +2075,187 @@ class ManagedScratch:
             return child
 
     def _create_child_unlocked(self, name: str) -> Path:
-        if _CHILD_NAME.fullmatch(name) is None:
+        if _CHILD_NAME.fullmatch(name) is None or validate_component(name) != name:
             raise ValueError(f"invalid managed child name: {name!r}")
+        if name in self._children:
+            raise FileExistsError(name)
+        root = self._root
+        if root is None or not root.is_open:
+            raise OSError("managed run root capability is unavailable")
         child = self.path / name
         validate_reported_path(child)
         count = 0
-        scan_fd = _open_directory_at(self._root_fd, ".")
+        iterator = self._backend.entries(root)
         try:
-            with os.scandir(scan_fd) as iterator:
-                for entry in iterator:
-                    if entry.name.startswith("."):
-                        continue
-                    count += 1
-                    if count >= 100_000:
-                        raise OSError(
-                            "managed scratch direct-child limit reached"
+            for entry in iterator:
+                if entry.name.startswith("."):
+                    continue
+                count += 1
+                if count >= 100_000:
+                    raise OSError(
+                        "managed scratch direct-child limit reached"
+                    )
+        except BaseException as primary_error:
+            for _attempt in range(2):
+                try:
+                    iterator.close()
+                except BaseException as close_error:
+                    primary_error.add_note(
+                        _bounded_secondary(
+                            "managed child iterator close failed", close_error
                         )
-        finally:
-            os.close(scan_fd)
-        os.mkdir(name, mode=0o700, dir_fd=self._root_fd)
-        child_fd = -1
-        try:
-            child_fd = _open_directory_at(self._root_fd, name)
-            identity = _directory_identity(child_fd)
-            if _entry_identity(self._root_fd, name) != identity:
-                raise OSError("managed child identity changed while opening")
-            self._children[name] = identity
-        except BaseException:
-            if child_fd >= 0:
-                os.close(child_fd)
-            try:
-                os.rmdir(name, dir_fd=self._root_fd)
-            except OSError:
-                pass
+                    )
+                else:
+                    break
             raise
-        os.close(child_fd)
+        close_errors: list[str] = []
+        for _attempt in range(2):
+            try:
+                iterator.close()
+            except BaseException as close_error:
+                close_errors.append(
+                    _bounded_secondary(
+                        "managed child iterator close failed", close_error
+                    )
+                )
+            else:
+                break
+        if close_errors:
+            raise OSError("; ".join(close_errors))
+        child_capability: DirectoryCapability | None = None
+        try:
+            child_capability = self._backend.create_directory(
+                root, name, SharePolicy.PINNED
+            )
+            if (
+                child_capability.kind is not EntryKind.DIRECTORY
+                or child_capability.filesystem != root.filesystem
+                or child_capability.security_domain is not SecurityDomain.MANAGED
+            ):
+                raise OSError("managed child capability is invalid")
+            _require_current_entry(
+                root,
+                name,
+                self._backend,
+                kind=EntryKind.DIRECTORY,
+                identity=child_capability.identity,
+                filesystem=child_capability.filesystem,
+                label="managed child",
+            )
+            self._children[name] = (
+                child_capability.identity,
+                child_capability.filesystem,
+            )
+            child_capability.close()
+        except BaseException as primary_error:
+            self._children.pop(name, None)
+            if child_capability is not None and child_capability.is_open:
+                for rollback_error in _delete_owned_directory(
+                    root,
+                    name,
+                    child_capability,
+                    self._backend,
+                    label="managed child rollback",
+                    close_already_attempted=True,
+                ):
+                    primary_error.add_note(rollback_error)
+            raise
         return child
 
-    def refresh_heartbeat(self) -> None:
-        if self._heartbeat_fd < 0 or self._heartbeat_identity is None:
-            raise OSError("managed heartbeat capability is unavailable")
-        current = os.stat(
-            HEARTBEAT_FILE,
-            dir_fd=self._root_fd,
-            follow_symlinks=False,
-        )
-        opened = os.fstat(self._heartbeat_fd)
+    def open_child(
+        self,
+        name: str,
+        share_policy: SharePolicy,
+    ) -> DirectoryCapability:
+        if _CHILD_NAME.fullmatch(name) is None or validate_component(name) != name:
+            raise ValueError(f"invalid managed child name: {name!r}")
+        expected = self._children.get(name)
+        if expected is None:
+            raise OSError("managed child is not registered")
+        root = self._root
+        if root is None or not root.is_open:
+            raise OSError("managed run root capability is unavailable")
+        opened: DirectoryCapability | None = None
+        try:
+            opened = self._backend.open_directory(root, name, share_policy)
+            identity, filesystem = expected
+            if (
+                opened.kind is not EntryKind.DIRECTORY
+                or opened.identity != identity
+                or opened.filesystem != filesystem
+            ):
+                raise OSError("managed child identity changed")
+            _require_current_entry(
+                root,
+                name,
+                self._backend,
+                kind=EntryKind.DIRECTORY,
+                identity=identity,
+                filesystem=filesystem,
+                label="managed child",
+            )
+            return opened
+        except BaseException as primary_error:
+            if opened is not None:
+                for close_error in _close_capability_retry(
+                    opened, "managed child reopen"
+                ):
+                    primary_error.add_note(close_error)
+            raise
+
+    def reopen_for_meter(self) -> DirectoryCapability:
+        root = self._root
+        if root is None or not root.is_open:
+            raise OSError("managed run root capability is unavailable")
+        return self._backend.reopen_directory(root)
+
+    def refresh_heartbeat(
+        self,
+        *,
+        deadline: float | None = None,
+        monotonic: Callable[[], float] | None = None,
+    ) -> None:
+        heartbeat = self._heartbeat
+        root = self._root
         if (
-            not stat.S_ISREG(current.st_mode)
-            or (current.st_dev, current.st_ino) != self._heartbeat_identity
-            or (opened.st_dev, opened.st_ino) != self._heartbeat_identity
+            heartbeat is None
+            or not heartbeat.is_open
+            or root is None
+            or not root.is_open
         ):
-            raise OSError("heartbeat identity changed")
-        os.utime(self._heartbeat_fd)
+            raise OSError("managed heartbeat capability is unavailable")
+        clock = time.monotonic if monotonic is None else monotonic
+
+        def check_deadline() -> None:
+            if deadline is not None:
+                _check_absolute_deadline(
+                    deadline, clock, "managed heartbeat deadline"
+                )
+
+        _require_current_entry(
+            root,
+            HEARTBEAT_FILE,
+            self._backend,
+            kind=EntryKind.REGULAR,
+            identity=self._heartbeat_identity,
+            filesystem=root.filesystem,
+            label="heartbeat",
+        )
+        check_deadline()
+        self._backend.touch(heartbeat)
+        check_deadline()
+        self._backend.flush(heartbeat)
+        check_deadline()
+        _require_current_entry(
+            root,
+            HEARTBEAT_FILE,
+            self._backend,
+            kind=EntryKind.REGULAR,
+            identity=self._heartbeat_identity,
+            filesystem=root.filesystem,
+            label="heartbeat",
+        )
+        check_deadline()
 
     def remove_child(self, child: Path) -> ScratchCleanupRecord:
         with self._registry_lock:
@@ -1262,9 +2493,12 @@ class ManagedScratch:
         deleting = self.managed_root / f".deleting-{self.run_id}"
         validate_reported_path(deleting)
         try:
+            managed_root_capability = self._managed_root_capability
+            if managed_root_capability is None:
+                raise OSError("managed root capability is unavailable")
             coordinator = _open_coordinator(
-                self.managed_root,
-                root_fd=self._managed_root_fd,
+                managed_root_capability,
+                self._backend,
                 timeout=min(5.0, max(0.001, time_budget)),
                 deadline=absolute_deadline,
             )
@@ -1425,9 +2659,12 @@ class ManagedScratch:
                     remaining_root=validate_reported_path(deleting),
                 )
             try:
+                managed_root_capability = self._managed_root_capability
+                if managed_root_capability is None:
+                    raise OSError("managed root capability is unavailable")
                 tail_coordinator = _open_coordinator(
-                    self.managed_root,
-                    root_fd=self._managed_root_fd,
+                    managed_root_capability,
+                    self._backend,
                     timeout=min(5.0, max(0.001, remaining)),
                     deadline=absolute_deadline,
                 )
@@ -1764,29 +3001,33 @@ class ManagedScratch:
 
     def close_capabilities(self) -> tuple[str, ...]:
         errors: list[str] = []
-        errors.extend(_close_lease_lock_all(self._lease, "managed lease"))
+        lease = getattr(self, "_lease", None)
+        if lease is not None:
+            errors.extend(_close_lease_lock_all(lease, "managed lease"))
+            if lease.fd < 0:
+                self._lease = None
         for label, attribute in (
-            ("heartbeat", "_heartbeat_fd"),
-            ("root", "_root_fd"),
-            ("managed root", "_managed_root_fd"),
+            ("heartbeat", "_heartbeat"),
+            ("root", "_root"),
+            ("managed root", "_managed_root_capability"),
         ):
-            descriptor = getattr(self, attribute, -1)
-            setattr(self, attribute, -1)
-            if descriptor < 0:
+            capability = getattr(self, attribute, None)
+            if capability is None:
                 continue
             try:
-                os.close(descriptor)
-            except OSError as error:
+                capability.close()
+            except BaseException as error:
                 errors.append(
-                    f"managed {label} close failed: "
-                    f"{type(error).__name__}: {error}"
+                    _bounded_secondary(f"managed {label} close failed", error)
                 )
+            else:
+                setattr(self, attribute, None)
         return tuple(errors)
 
     def __del__(self) -> None:
         try:
             self.close_capabilities()
-        except (AttributeError, OSError):
+        except BaseException:
             pass
 
 
@@ -2134,7 +3375,7 @@ def _reclaim_empty_unleased_candidate(
         if not _directory_is_empty_at(candidate_fd, deadline=deadline):
             return None
         _check_deadline(deadline, "empty janitor")
-        coordinator = _open_coordinator(
+        coordinator = cast(Any, _open_coordinator)(
             managed_root,
             root_fd=managed_fd,
             timeout=max(0.001, min(5.0, deadline - time.monotonic())),
@@ -2267,10 +3508,12 @@ def reclaim_abandoned(
         janitor_deadline, janitor_started + JANITOR_SELECTION_SECONDS
     )
     if managed_root_fd is None:
-        verified_root, selection_root_fd = _ensure_managed_root(
+        verified_root, task9_root_owner = _ensure_managed_root(
             managed_root.parent.resolve(strict=True),
             deadline=selection_deadline,
         )
+        # Task 9 replaces this isolated legacy descriptor boundary.
+        selection_root_fd: int = cast(Any, task9_root_owner)
         if verified_root != managed_root.resolve(strict=True):
             os.close(selection_root_fd)
             raise OSError("janitor managed root path changed")
@@ -2286,7 +3529,7 @@ def reclaim_abandoned(
         selection_remaining = selection_deadline - time.monotonic()
         if selection_remaining <= 0:
             raise _DeadlineExceeded("janitor selection deadline exceeded")
-        coordinator = _open_coordinator(
+        coordinator = cast(Any, _open_coordinator)(
             managed_root,
             root_fd=selection_root_fd,
             timeout=selection_remaining,
@@ -2555,7 +3798,7 @@ def reclaim_abandoned(
             if time.monotonic() >= janitor_deadline:
                 break
             deleting = managed_root / f".deleting-{run_id}"
-            coordinator = _open_coordinator(
+            coordinator = cast(Any, _open_coordinator)(
                 managed_root,
                 root_fd=managed_root_fd,
                 timeout=min(
@@ -2607,7 +3850,7 @@ def reclaim_abandoned(
                             active_error.add_note(close_error)
                     else:
                         raise OSError("; ".join(coordinator_close_errors))
-            managed = ManagedScratch(
+            managed = cast(Any, ManagedScratch)(
                 managed_root=managed_root,
                 path=deleting,
                 run_id=run_id,
@@ -2994,7 +4237,7 @@ def _resume_deferred_cleanup_inner(
         ):
             return None
         _check_deadline(deadline, "deferred janitor")
-        managed = ManagedScratch(
+        managed = cast(Any, ManagedScratch)(
             managed_root=managed_root,
             path=managed_root / name,
             run_id=run_id,

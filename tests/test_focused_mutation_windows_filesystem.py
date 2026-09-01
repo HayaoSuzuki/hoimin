@@ -2111,6 +2111,94 @@ def _token_user_sid_for_tests() -> str:
             raise OSError(api.last_error(), "CloseHandle token failed")
 
 
+class _TOKEN_OWNER_FOR_TESTS(ctypes.Structure):
+    _fields_ = [("Owner", ctypes.c_void_p)]
+
+
+def _token_owner_sid_for_tests() -> str:
+    api = _WindowsApi()
+    token = windows_native.HANDLE()
+    if not api.OpenProcessToken(
+        api.GetCurrentProcess(),
+        windows_native.TOKEN_QUERY,
+        ctypes.byref(token),
+    ):
+        raise OSError(api.last_error(), "OpenProcessToken failed")
+    try:
+        needed = windows_native.ULONG()
+        first = api.GetTokenInformation(
+            token,
+            4,  # TOKEN_INFORMATION_CLASS::TokenOwner
+            None,
+            0,
+            ctypes.byref(needed),
+        )
+        if first or api.last_error() != windows_native.ERROR_INSUFFICIENT_BUFFER:
+            raise OSError("unexpected TOKEN_OWNER size-query result")
+        if needed.value == 0 or needed.value > windows_native._MAX_TOKEN_USER_BYTES:
+            raise OSError("invalid TOKEN_OWNER buffer size")
+        buffer = ctypes.create_string_buffer(int(needed.value))
+        if not api.GetTokenInformation(
+            token,
+            4,
+            buffer,
+            needed,
+            ctypes.byref(needed),
+        ):
+            raise OSError(api.last_error(), "GetTokenInformation failed")
+        token_owner = ctypes.cast(
+            buffer, ctypes.POINTER(_TOKEN_OWNER_FOR_TESTS)
+        ).contents
+        string_sid = ctypes.c_wchar_p()
+        if not api.ConvertSidToStringSidW(
+            token_owner.Owner, ctypes.byref(string_sid)
+        ):
+            raise OSError(api.last_error(), "ConvertSidToStringSidW failed")
+        try:
+            if not string_sid.value:
+                raise OSError("token owner SID conversion returned null")
+            return string_sid.value
+        finally:
+            if api.LocalFree(ctypes.cast(string_sid, ctypes.c_void_p)):
+                raise OSError(api.last_error(), "LocalFree SID string failed")
+    finally:
+        if not api.CloseHandle(token):
+            raise OSError(api.last_error(), "CloseHandle token failed")
+
+
+def _token_is_administrator_for_tests() -> bool:
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+    create_well_known_sid = advapi32.CreateWellKnownSid
+    create_well_known_sid.argtypes = (
+        ctypes.c_int,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_uint32),
+    )
+    create_well_known_sid.restype = ctypes.c_int
+    check_token_membership = advapi32.CheckTokenMembership
+    check_token_membership.argtypes = (
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_int),
+    )
+    check_token_membership.restype = ctypes.c_int
+
+    sid = ctypes.create_string_buffer(68)
+    sid_size = ctypes.c_uint32(len(sid))
+    if not create_well_known_sid(
+        26,  # WELL_KNOWN_SID_TYPE::WinBuiltinAdministratorsSid
+        None,
+        sid,
+        ctypes.byref(sid_size),
+    ):
+        raise OSError(ctypes.get_last_error(), "CreateWellKnownSid failed")
+    is_member = ctypes.c_int()
+    if not check_token_membership(None, sid, ctypes.byref(is_member)):
+        raise OSError(ctypes.get_last_error(), "CheckTokenMembership failed")
+    return bool(is_member.value)
+
+
 def _security_descriptor_bytes_for_tests(path: Path) -> bytes:
     api = _WindowsApi()
     owner = ctypes.c_void_p()
@@ -2622,6 +2710,62 @@ class WindowsSecurityTests(unittest.TestCase):
                 parent.close()
 
     @unittest.skipUnless(os.name == "nt", "requires Windows security APIs")
+    def test_managed_publication_uses_token_user_owner_for_every_object(
+        self,
+    ) -> None:
+        from tools.focused_mutation_support import lease as lease_module
+        from tools.focused_mutation_support.lease import ManagedScratch
+
+        backend = WindowsFilesystemBackend()
+        run_id = "00000000-0000-4000-8000-000000000704"
+        with tempfile.TemporaryDirectory() as raw:
+            with mock.patch.object(
+                lease_module, "reclaim_abandoned", return_value=[]
+            ):
+                scratch = ManagedScratch.create(
+                    Path(raw),
+                    run_id=run_id,
+                    backend=backend,
+                )
+            try:
+                token_user = _token_user_sid_for_tests()
+                token_owner = _token_owner_sid_for_tests()
+                objects = (
+                    (scratch.managed_root, True),
+                    (scratch.managed_root / ".hoimin-coordinator", False),
+                    (scratch.path, True),
+                    (scratch.path / ".hoimin-lease.json", False),
+                    (scratch.path / ".hoimin-heartbeat.json", False),
+                )
+                observed_owners: dict[Path, str] = {}
+                for path, is_directory in objects:
+                    with self.subTest(path=path):
+                        owner, control, dacl = _named_owner_dacl_for_tests(path)
+                        observed_owners[path] = owner
+                        self.assertEqual(owner, token_user)
+                        self.assertTrue(
+                            control & windows_native.SE_DACL_PROTECTED
+                        )
+                        self.assertEqual(
+                            dacl,
+                            _expected_managed_dacl_for_tests(
+                                token_user, directory=is_directory
+                            ),
+                        )
+
+                if (
+                    _token_is_administrator_for_tests()
+                    and token_owner != token_user
+                ):
+                    for path, owner in observed_owners.items():
+                        with self.subTest(
+                            path=path, invariant="not-token-owner"
+                        ):
+                            self.assertNotEqual(owner, token_owner)
+            finally:
+                self.assertEqual(scratch.close_capabilities(), ())
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows security APIs")
     def test_secure_root_and_managed_open_or_create_use_native_result(self) -> None:
         proxy = WindowsOpenTests._ApiProxy()
         backend = WindowsFilesystemBackend(api=proxy)
@@ -2866,6 +3010,9 @@ def _mutation_source(
     policy: SharePolicy = SharePolicy.PINNED,
     delete_authority: bool = True,
     kind: EntryKind = EntryKind.REGULAR,
+    security_domain: SecurityDomain = SecurityDomain.CALLER,
+    created: bool = False,
+    secure_root_creation: bool = False,
 ) -> FileCapability | DirectoryCapability:
     path_hint = (
         parent.path_hint / name
@@ -2879,6 +3026,7 @@ def _mutation_source(
         delete_authority,
         DELETE | windows_native.READ_CONTROL,
         _share_mode(policy),
+        secure_root_creation=secure_root_creation,
     )
     if kind is EntryKind.DIRECTORY:
         return DirectoryCapability(
@@ -2889,9 +3037,9 @@ def _mutation_source(
             filesystem=FilesystemIdentity(31, 255, 0x4006),
             logical_size=0,
             modified_ns=0,
-            security_domain=SecurityDomain.CALLER,
+            security_domain=security_domain,
             share_policy=policy,
-            created=False,
+            created=created,
             path_hint=path_hint,
         )
     return FileCapability(
@@ -2902,9 +3050,9 @@ def _mutation_source(
         filesystem=FilesystemIdentity(31, 255, 0x4006),
         logical_size=0,
         modified_ns=0,
-        security_domain=SecurityDomain.CALLER,
+        security_domain=security_domain,
         share_policy=policy,
-        created=False,
+        created=created,
         path_hint=path_hint,
     )
 
@@ -3233,6 +3381,148 @@ class WindowsMutationTests(unittest.TestCase):
             source.close()
             source_parent.close()
             destination_parent.close()
+
+    def test_delete_allows_only_created_secure_root_mutation_provenance(self) -> None:
+        api, backend, source_parent, destination_parent, ordinary = self._fixture()
+        ordinary.close()
+        source = _mutation_source(
+            backend,
+            source_parent,
+            policy=SharePolicy.MUTATION,
+            kind=EntryKind.DIRECTORY,
+            security_domain=SecurityDomain.MANAGED,
+            created=True,
+            secure_root_creation=True,
+        )
+        observations = iter((_mutation_entry(source, "source"), None))
+        with (
+            mock.patch.object(backend, "_metadata", return_value=_mutation_metadata(source)),
+            mock.patch.object(backend, "entry", side_effect=lambda *_: next(observations)),
+        ):
+            backend.delete(source)
+        self.assertTrue(source.closed)
+        self.assertEqual(len(api.disposition_calls), 1)
+        source_parent.close()
+        destination_parent.close()
+
+        for case in ("replacement", "existing", "managed-child", "caller"):
+            with self.subTest(case=case):
+                api, backend, source_parent, destination_parent, ordinary = self._fixture()
+                ordinary.close()
+                source = _mutation_source(
+                    backend,
+                    source_parent,
+                    policy=SharePolicy.MUTATION,
+                    kind=EntryKind.DIRECTORY,
+                    security_domain=(
+                        SecurityDomain.CALLER
+                        if case == "caller"
+                        else SecurityDomain.MANAGED
+                    ),
+                    created=case != "existing",
+                    secure_root_creation=case not in {"managed-child", "caller"},
+                )
+                observed = (
+                    windows_native.DirectoryEntry(
+                        "source",
+                        EntryKind.DIRECTORY,
+                        FileIdentity(31, 999),
+                        source.filesystem,
+                        0,
+                        0,
+                    )
+                    if case == "replacement"
+                    else _mutation_entry(source, "source")
+                )
+                with (
+                    mock.patch.object(
+                        backend,
+                        "_metadata",
+                        return_value=_mutation_metadata(source),
+                    ) as metadata,
+                    mock.patch.object(backend, "entry", return_value=observed) as entry,
+                    self.assertRaises((OSError, RuntimeError)),
+                ):
+                    backend.delete(source)
+                self.assertEqual(api.disposition_calls, [])
+                if case == "replacement":
+                    metadata.assert_called_once()
+                    entry.assert_called_once()
+                    self.assertTrue(
+                        backend._resource(source).secure_root_creation
+                    )
+                    observations = iter(
+                        (_mutation_entry(source, "source"), None)
+                    )
+                    with (
+                        mock.patch.object(
+                            backend,
+                            "_metadata",
+                            return_value=_mutation_metadata(source),
+                        ),
+                        mock.patch.object(
+                            backend,
+                            "entry",
+                            side_effect=lambda *_: next(observations),
+                        ),
+                    ):
+                        backend.delete(source)
+                    self.assertTrue(source.closed)
+                    self.assertEqual(len(api.disposition_calls), 1)
+                else:
+                    metadata.assert_not_called()
+                    entry.assert_not_called()
+                    source.close()
+                source_parent.close()
+                destination_parent.close()
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows native mutation")
+    def test_native_secure_root_delete_exception_is_exact_and_non_reusable(
+        self,
+    ) -> None:
+        backend = WindowsFilesystemBackend()
+        with tempfile.TemporaryDirectory() as raw:
+            parent_path = Path(raw)
+            parent = backend.open_root(parent_path, SharePolicy.MUTATION)
+            try:
+                created = backend.create_secure_root(parent, "created")
+                self.assertTrue(created.created)
+                backend.delete(created)
+                self.assertFalse((parent_path / "created").exists())
+
+                existing = backend.create_secure_root(parent, "existing")
+                existing.close()
+                reopened = backend.create_secure_root(parent, "existing")
+                self.assertFalse(reopened.created)
+                with self.assertRaises(RuntimeError):
+                    backend.delete(reopened)
+                self.assertTrue((parent_path / "existing").is_dir())
+                reopened.close()
+                (parent_path / "existing").rmdir()
+
+                original = backend.create_secure_root(parent, "original")
+                (parent_path / "original").rename(parent_path / "displaced")
+                (parent_path / "original").mkdir()
+                with self.assertRaisesRegex(OSError, "identity changed"):
+                    backend.delete(original)
+                self.assertTrue((parent_path / "displaced").is_dir())
+                self.assertTrue((parent_path / "original").is_dir())
+                original.close()
+                (parent_path / "original").rmdir()
+                (parent_path / "displaced").rmdir()
+
+                managed = backend.create_secure_root(parent, "managed")
+                child = backend.create_directory(
+                    managed, "child", SharePolicy.MUTATION
+                )
+                with self.assertRaises(RuntimeError):
+                    backend.delete(child)
+                self.assertTrue((parent_path / "managed" / "child").is_dir())
+                child.close()
+                (parent_path / "managed" / "child").rmdir()
+                backend.delete(managed)
+            finally:
+                parent.close()
 
     def test_touch_and_flush_use_same_regular_handle_and_recheck_identity(self) -> None:
         api, backend, source_parent, destination_parent, source = self._fixture()

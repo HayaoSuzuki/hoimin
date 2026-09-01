@@ -7,7 +7,7 @@ import re
 import struct
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from .filesystem import (
     CreateDisposition,
@@ -1026,6 +1026,7 @@ class _WindowsResource:
     share_mode: int = 0
     disposition_set: bool = False
     rollback_state: _CreatedRollbackState | None = None
+    secure_root_creation: bool = False
 
 
 class _OpenCollision(Exception):
@@ -1035,6 +1036,22 @@ class _OpenCollision(Exception):
 
 
 class WindowsFilesystemBackend:
+    @property
+    def directory_rename_requires_closed_descendants(self) -> bool:
+        return True
+
+    def _directory_creation_rollback_available(
+        self, directory: DirectoryCapability
+    ) -> bool:
+        resource = self._resource(directory)
+        return (
+            directory.created
+            and directory.kind is EntryKind.DIRECTORY
+            and resource.parent is not None
+            and resource.name is not None
+            and resource.delete_authority
+        )
+
     def __init__(
         self,
         *,
@@ -1704,6 +1721,7 @@ class WindowsFilesystemBackend:
         path_hint: Path,
         actual_access: int,
         final_access: int,
+        secure_root_creation: bool = False,
     ) -> DirectoryCapability:
         owned_access = (
             actual_access if information == FILE_CREATED else final_access
@@ -1715,6 +1733,7 @@ class WindowsFilesystemBackend:
             bool(owned_access & DELETE),
             owned_access,
             _share_mode(share_policy),
+            secure_root_creation=secure_root_creation,
         )
         try:
             self._pending_directory_resources[resource.handle] = resource
@@ -2648,7 +2667,31 @@ class WindowsFilesystemBackend:
             path_hint=parent.path_hint / name,
             actual_access=actual_access,
             final_access=desired_access,
+            secure_root_creation=created,
         )
+
+    def _prepare_secure_root_commit(
+        self, directory: DirectoryCapability
+    ) -> None:
+        resource = self._resource(directory)
+        if (
+            directory.kind is not EntryKind.DIRECTORY
+            or directory.security_domain is not SecurityDomain.MANAGED
+            or directory.share_policy is not SharePolicy.MUTATION
+            or resource.parent is None
+            or resource.name is None
+        ):
+            raise RuntimeError("secure root commit requires its relative capability")
+        if not directory.created:
+            if resource.secure_root_creation:
+                raise RuntimeError("existing secure root has creation provenance")
+            return
+        if not resource.secure_root_creation:
+            raise RuntimeError("created secure root has no rollback provenance")
+
+    def _commit_secure_root(self, directory: DirectoryCapability) -> None:
+        resource = cast(_WindowsResource, directory._resource)
+        resource.secure_root_creation = False
 
     def entries(self, parent: DirectoryCapability) -> DirectoryIterator:
         reopened = self.reopen_directory(parent)
@@ -2768,10 +2811,23 @@ class WindowsFilesystemBackend:
         self,
         capability: FileCapability | DirectoryCapability,
         operation: str,
+        *,
+        allow_created_secure_root: bool = False,
     ) -> tuple[_WindowsResource, DirectoryCapability, str]:
-        if capability.share_policy is not SharePolicy.PINNED:
-            raise RuntimeError(f"Windows {operation} requires a PINNED capability")
         resource = self._resource(capability)
+        created_secure_root = (
+            allow_created_secure_root
+            and isinstance(capability, DirectoryCapability)
+            and capability.created
+            and capability.security_domain is SecurityDomain.MANAGED
+            and capability.share_policy is SharePolicy.MUTATION
+            and resource.secure_root_creation
+        )
+        if (
+            capability.share_policy is not SharePolicy.PINNED
+            and not created_secure_root
+        ):
+            raise RuntimeError(f"Windows {operation} requires a PINNED capability")
         if not resource.delete_authority:
             raise RuntimeError(f"Windows {operation} requires native DELETE authority")
         if resource.parent is None or resource.name is None:
@@ -2875,7 +2931,7 @@ class WindowsFilesystemBackend:
 
     def delete(self, capability: FileCapability | DirectoryCapability) -> None:
         resource, parent, name = self._relative_mutation_resource(
-            capability, "delete"
+            capability, "delete", allow_created_secure_root=True
         )
         if not resource.disposition_set:
             self._revalidate_mutation_source(

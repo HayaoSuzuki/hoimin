@@ -280,6 +280,16 @@ class DirectoryIterator(Protocol):
 
 
 class FilesystemBackend(Protocol):
+    @property
+    def directory_rename_requires_closed_descendants(self) -> bool:
+        return False
+
+    def _directory_creation_rollback_available(
+        self, directory: DirectoryCapability
+    ) -> bool:
+        """Return whether a created directory is atomically bound to its handle."""
+        raise NotImplementedError
+
     def open_root(
         self,
         path: Path,
@@ -291,6 +301,16 @@ class FilesystemBackend(Protocol):
     def create_secure_root(
         self, parent: DirectoryCapability, name: str
     ) -> DirectoryCapability:
+        raise NotImplementedError
+
+    def _commit_secure_root(self, directory: DirectoryCapability) -> None:
+        """Disarm rollback-only authority after managed-root handoff."""
+        raise NotImplementedError
+
+    def _prepare_secure_root_commit(
+        self, directory: DirectoryCapability
+    ) -> None:
+        """Validate a later non-failing secure-root commit transition."""
         raise NotImplementedError
 
     def reopen_directory(

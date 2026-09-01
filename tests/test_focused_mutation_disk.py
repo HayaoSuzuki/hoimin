@@ -13,7 +13,7 @@ import time
 import unittest
 import uuid
 from unittest import mock
-from typing import cast
+from typing import BinaryIO, cast
 import zlib
 
 from tools.focused_mutation import Options, _parser, options_from_arguments
@@ -59,6 +59,7 @@ from tools.focused_mutation_support.lease import (
     LeaseLock,
     ScratchCleanupRecord,
     ScratchCleanupStatus,
+    _OwnedDescriptor,
     _bound_cleanup_records,
     _close_lease_lock_all,
     _open_coordinator,
@@ -767,6 +768,19 @@ class _RecordingFilesystemBackend(FilesystemBackend):
     ) -> DirectoryCapability:
         raise AssertionError("recording backend does not create secure roots")
 
+    def _prepare_secure_root_commit(
+        self, directory: DirectoryCapability
+    ) -> None:
+        raise AssertionError("recording backend does not commit secure roots")
+
+    def _directory_creation_rollback_available(
+        self, directory: DirectoryCapability
+    ) -> bool:
+        raise AssertionError("recording backend does not create directories")
+
+    def _commit_secure_root(self, directory: DirectoryCapability) -> None:
+        raise AssertionError("recording backend does not commit secure roots")
+
     def create_directory(
         self,
         parent: DirectoryCapability,
@@ -920,6 +934,2879 @@ class _RecordingFilesystemBackend(FilesystemBackend):
         repair_dacl: bool,
     ) -> None:
         raise AssertionError("recording backend has no managed security")
+
+
+class _ManagedRecordedNode:
+    def __init__(
+        self,
+        identity: FileIdentity,
+        filesystem: FilesystemIdentity,
+        *,
+        kind: EntryKind,
+        security_domain: SecurityDomain,
+        parent: "_ManagedRecordedNode | None" = None,
+        name: str = "",
+        backing: BinaryIO | None = None,
+    ) -> None:
+        self.identity = identity
+        self.filesystem = filesystem
+        self.kind = kind
+        self.security_domain = security_domain
+        self.parent = parent
+        self.name = name
+        self.backing = backing
+        self.children: dict[str, _ManagedRecordedNode] = {}
+
+    def evidence(self) -> DirectoryEntry:
+        size = 0
+        if self.backing is not None:
+            size = os.fstat(self.backing.fileno()).st_size
+        return DirectoryEntry(
+            self.name,
+            self.kind,
+            self.identity,
+            self.filesystem,
+            size,
+            0,
+        )
+
+
+class _ManagedRecordedResource:
+    def __init__(
+        self,
+        node: _ManagedRecordedNode,
+        *,
+        descriptor: int = -1,
+        secure_root_creation: bool = False,
+    ) -> None:
+        self.node = node
+        self.descriptor = descriptor
+        self.close_failures = 0
+        self.closed = False
+        self.secure_root_creation = secure_root_creation
+
+
+class _ManagedRecordedIterator:
+    def __init__(
+        self,
+        backend: "_ManagedRecordingBackend",
+        directory: DirectoryCapability,
+    ) -> None:
+        self._backend = backend
+        self._directory = directory
+        resource = backend._resource(directory)
+        self._entries = iter(tuple(resource.node.children.values()))
+        self._failure = backend.iterator_failure
+        backend.iterator_failure = None
+        self._closed = False
+
+    @property
+    def directory(self) -> DirectoryCapability:
+        return self._directory
+
+    def __iter__(self) -> "_ManagedRecordedIterator":
+        return self
+
+    def __next__(self) -> DirectoryEntry:
+        if self._closed:
+            raise StopIteration
+        if self._failure is not None:
+            failure = self._failure
+            self._failure = None
+            raise failure
+        try:
+            return next(self._entries).evidence()
+        except StopIteration:
+            self.close()
+            raise
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._directory.close()
+        self._closed = True
+
+
+class _ManagedRecordingBackend(FilesystemBackend):
+    """Backend-neutral managed-publication oracle with real detached fds."""
+
+    _filesystem = FilesystemIdentity(0xA11CE, 255, 0x4006)
+
+    def __init__(
+        self,
+        parent_path: Path,
+        *,
+        rename_requires_closed_descendants: bool,
+    ) -> None:
+        self.parent_path = parent_path
+        self._rename_requires_closed_descendants = (
+            rename_requires_closed_descendants
+        )
+        self._next_identity = 100
+        self.events: list[str] = []
+        self.live_resources: set[_ManagedRecordedResource] = set()
+        self.detached: dict[int, _ManagedRecordedNode] = {}
+        self.backings: list[BinaryIO] = []
+        self.failures: dict[str, BaseException] = {}
+        self.after_event: Callable[[str], None] = lambda _event: None
+        self.iterator_failure: BaseException | None = None
+        self.coordinator: LeaseLock | None = None
+        self.last_parent_capability: DirectoryCapability | None = None
+        self.parent = self._new_node(
+            EntryKind.DIRECTORY,
+            SecurityDomain.CALLER,
+            parent=None,
+            name=parent_path.name,
+        )
+
+    @property
+    def directory_rename_requires_closed_descendants(self) -> bool:
+        return self._rename_requires_closed_descendants
+
+    def _emit(self, event: str) -> None:
+        self.events.append(event)
+        failure = self.failures.pop(event, None)
+        if failure is not None:
+            raise failure
+        self.after_event(event)
+
+    def _new_node(
+        self,
+        kind: EntryKind,
+        security_domain: SecurityDomain,
+        *,
+        parent: _ManagedRecordedNode | None,
+        name: str,
+    ) -> _ManagedRecordedNode:
+        self._next_identity += 1
+        backing: BinaryIO | None = None
+        if kind is EntryKind.REGULAR:
+            self._prune_detached()
+            backing = cast(BinaryIO, tempfile.TemporaryFile())
+            self.backings.append(backing)
+        node = _ManagedRecordedNode(
+            FileIdentity(self._filesystem.volume, self._next_identity),
+            self._filesystem,
+            kind=kind,
+            security_domain=security_domain,
+            parent=parent,
+            name=name,
+            backing=backing,
+        )
+        if parent is not None:
+            parent.children[name] = node
+        return node
+
+    @staticmethod
+    def _path(node: _ManagedRecordedNode) -> Path:
+        components: list[str] = []
+        current: _ManagedRecordedNode | None = node
+        while current is not None:
+            components.append(current.name)
+            current = current.parent
+        return Path("C:/recorded").joinpath(*reversed(components))
+
+    def _resource(
+        self, capability: DirectoryCapability | FileCapability
+    ) -> _ManagedRecordedResource:
+        resource = capability._resource_for(self)
+        if not isinstance(resource, _ManagedRecordedResource):
+            raise RuntimeError("invalid managed recording resource")
+        return resource
+
+    def _directory_capability(
+        self,
+        node: _ManagedRecordedNode,
+        *,
+        share_policy: SharePolicy,
+        created: bool,
+        secure_root_creation: bool = False,
+    ) -> DirectoryCapability:
+        resource = _ManagedRecordedResource(
+            node, secure_root_creation=secure_root_creation
+        )
+        self.live_resources.add(resource)
+        return DirectoryCapability(
+            self,
+            resource,
+            identity=node.identity,
+            filesystem=node.filesystem,
+            kind=EntryKind.DIRECTORY,
+            logical_size=0,
+            modified_ns=0,
+            security_domain=node.security_domain,
+            share_policy=share_policy,
+            created=created,
+            path_hint=self._path(node),
+        )
+
+    def _file_capability(
+        self,
+        node: _ManagedRecordedNode,
+        *,
+        share_policy: SharePolicy,
+        created: bool,
+    ) -> FileCapability:
+        if node.backing is None:
+            raise RuntimeError("recorded regular file has no backing descriptor")
+        self._prune_detached()
+        descriptor = os.dup(node.backing.fileno())
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        resource = _ManagedRecordedResource(node, descriptor=descriptor)
+        self.live_resources.add(resource)
+        return FileCapability(
+            self,
+            resource,
+            identity=node.identity,
+            filesystem=node.filesystem,
+            kind=EntryKind.REGULAR,
+            logical_size=os.fstat(descriptor).st_size,
+            modified_ns=0,
+            security_domain=node.security_domain,
+            share_policy=share_policy,
+            created=created,
+            path_hint=self._path(node),
+        )
+
+    def close_resource(self, value: object) -> None:
+        if not isinstance(value, _ManagedRecordedResource) or value.closed:
+            raise RuntimeError("managed recording resource is not open")
+        self._emit(f"close:{value.node.name}")
+        if value.close_failures:
+            value.close_failures -= 1
+            raise OSError(f"injected close failure for {value.node.name}")
+        if value.descriptor >= 0:
+            os.close(value.descriptor)
+            value.descriptor = -1
+        value.closed = True
+        self.live_resources.discard(value)
+
+    def detach_file_resource(self, value: object, flags: int) -> int:
+        del flags
+        if not isinstance(value, _ManagedRecordedResource):
+            raise RuntimeError("invalid managed recording resource")
+        if value.descriptor < 0 or value.closed:
+            raise RuntimeError("managed recording file is not detachable")
+        descriptor = value.descriptor
+        value.descriptor = -1
+        value.closed = True
+        self.live_resources.discard(value)
+        self.detached[descriptor] = value.node
+        self._emit(f"detach:{value.node.name}")
+        return descriptor
+
+    def open_root(
+        self,
+        path: Path,
+        share_policy: SharePolicy,
+        security_domain: SecurityDomain = SecurityDomain.CALLER,
+    ) -> DirectoryCapability:
+        if path != self.parent_path:
+            raise FileNotFoundError(path)
+        if security_domain is not SecurityDomain.CALLER:
+            raise AssertionError("parent root must remain caller-owned")
+        self._emit(f"open-parent:{share_policy.value}")
+        capability = self._directory_capability(
+            self.parent, share_policy=share_policy, created=False
+        )
+        self.last_parent_capability = capability
+        return capability
+
+    def create_secure_root(
+        self, parent: DirectoryCapability, name: str
+    ) -> DirectoryCapability:
+        parent_node = self._resource(parent).node
+        self._emit(f"create-secure-root:{name}")
+        node = parent_node.children.get(name)
+        created = node is None
+        if node is None:
+            node = self._new_node(
+                EntryKind.DIRECTORY,
+                SecurityDomain.MANAGED,
+                parent=parent_node,
+                name=name,
+            )
+        if node.kind is not EntryKind.DIRECTORY:
+            raise OSError("secure root is not a directory")
+        return self._directory_capability(
+            node,
+            share_policy=SharePolicy.MUTATION,
+            created=created,
+            secure_root_creation=created,
+        )
+
+    def _prepare_secure_root_commit(
+        self, directory: DirectoryCapability
+    ) -> None:
+        resource = self._resource(directory)
+        if (
+            directory.kind is not EntryKind.DIRECTORY
+            or directory.security_domain is not SecurityDomain.MANAGED
+            or directory.share_policy is not SharePolicy.MUTATION
+            or resource.node.parent is None
+        ):
+            raise RuntimeError("recorded secure root commit is invalid")
+        if not directory.created:
+            if resource.secure_root_creation:
+                raise RuntimeError("recorded existing root has creation provenance")
+            return
+        if not resource.secure_root_creation:
+            raise RuntimeError("recorded created root has no rollback provenance")
+
+    def _directory_creation_rollback_available(
+        self, directory: DirectoryCapability
+    ) -> bool:
+        resource = self._resource(directory)
+        node = resource.node
+        parent = node.parent
+        return (
+            directory.created
+            and directory.kind is EntryKind.DIRECTORY
+            and parent is not None
+            and parent.children.get(node.name) is node
+        )
+
+    def _commit_secure_root(self, directory: DirectoryCapability) -> None:
+        resource = cast(_ManagedRecordedResource, directory._resource)
+        resource.secure_root_creation = False
+        self.events.append(f"commit-secure-root:{resource.node.name}")
+
+    def reopen_directory(
+        self,
+        directory: DirectoryCapability,
+        share_policy: SharePolicy | None = None,
+    ) -> DirectoryCapability:
+        self._emit(
+            "reopen-directory:"
+            + ("preserve" if share_policy is None else share_policy.value)
+        )
+        node = self._resource(directory).node
+        return self._directory_capability(
+            node,
+            share_policy=(
+                directory.share_policy if share_policy is None else share_policy
+            ),
+            created=False,
+        )
+
+    def open_directory(
+        self,
+        parent: DirectoryCapability,
+        name: str,
+        share_policy: SharePolicy,
+    ) -> DirectoryCapability:
+        self._emit(f"open-directory:{name}:{share_policy.value}")
+        node = self._resource(parent).node.children.get(name)
+        if node is None:
+            raise FileNotFoundError(name)
+        if node.kind is not EntryKind.DIRECTORY:
+            raise OSError("recorded entry is not a directory")
+        return self._directory_capability(
+            node, share_policy=share_policy, created=False
+        )
+
+    def create_directory(
+        self,
+        parent: DirectoryCapability,
+        name: str,
+        share_policy: SharePolicy,
+    ) -> DirectoryCapability:
+        self._emit(f"create-directory:{name}:{share_policy.value}")
+        parent_node = self._resource(parent).node
+        if name in parent_node.children:
+            raise FileExistsError(name)
+        node = self._new_node(
+            EntryKind.DIRECTORY,
+            parent.security_domain,
+            parent=parent_node,
+            name=name,
+        )
+        return self._directory_capability(
+            node, share_policy=share_policy, created=True
+        )
+
+    def open_file(
+        self,
+        parent: DirectoryCapability,
+        name: str,
+        *,
+        access: FileAccess,
+        disposition: CreateDisposition,
+        share_policy: SharePolicy = SharePolicy.MUTATION,
+    ) -> FileCapability:
+        parent_node = self._resource(parent).node
+        self._emit(
+            f"{disposition.value}:{name}:{access.value}:{share_policy.value}"
+        )
+        node = parent_node.children.get(name)
+        created = False
+        if disposition is CreateDisposition.CREATE_NEW:
+            if node is not None:
+                raise FileExistsError(name)
+            node = self._new_node(
+                EntryKind.REGULAR,
+                parent.security_domain,
+                parent=parent_node,
+                name=name,
+            )
+            created = True
+        elif disposition is CreateDisposition.OPEN_OR_CREATE and node is None:
+            node = self._new_node(
+                EntryKind.REGULAR,
+                parent.security_domain,
+                parent=parent_node,
+                name=name,
+            )
+            created = True
+        elif node is None:
+            raise FileNotFoundError(name)
+        if node.kind is not EntryKind.REGULAR:
+            raise OSError("recorded entry is not a regular file")
+        return self._file_capability(
+            node, share_policy=share_policy, created=created
+        )
+
+    def open_entry(
+        self,
+        parent: DirectoryCapability,
+        name: str,
+        share_policy: SharePolicy,
+    ) -> FileCapability | DirectoryCapability:
+        self._emit(f"open-entry:{name}:{share_policy.value}")
+        node = self._resource(parent).node.children.get(name)
+        if node is None:
+            raise FileNotFoundError(name)
+        if node.kind is EntryKind.DIRECTORY:
+            return self._directory_capability(
+                node, share_policy=share_policy, created=False
+            )
+        return self._file_capability(
+            node, share_policy=share_policy, created=False
+        )
+
+    def entry(
+        self, parent: DirectoryCapability, name: str
+    ) -> DirectoryEntry | None:
+        self._emit(f"entry:{name}")
+        node = self._resource(parent).node.children.get(name)
+        return None if node is None else node.evidence()
+
+    def entries(self, parent: DirectoryCapability) -> _ManagedRecordedIterator:
+        return _ManagedRecordedIterator(self, self.reopen_directory(parent))
+
+    def entries_owned(
+        self, parent: DirectoryCapability
+    ) -> _ManagedRecordedIterator:
+        moved = parent._move_for(self)
+        return _ManagedRecordedIterator(self, moved)
+
+    @staticmethod
+    def _is_descendant(
+        node: _ManagedRecordedNode, parent: _ManagedRecordedNode
+    ) -> bool:
+        current: _ManagedRecordedNode | None = node.parent
+        while current is not None:
+            if current is parent:
+                return True
+            current = current.parent
+        return False
+
+    def rename(
+        self,
+        source: FileCapability | DirectoryCapability,
+        destination_parent: DirectoryCapability,
+        destination_name: str,
+        *,
+        replace: bool,
+    ) -> None:
+        source_resource = self._resource(source)
+        node = source_resource.node
+        destination_node = self._resource(destination_parent).node
+        self._emit(f"rename:{node.name}->{destination_name}:{replace}")
+        coordinator = self.coordinator
+        if coordinator is None or not coordinator.locked:
+            raise AssertionError("coordinator was not locked through rename")
+        if self.directory_rename_requires_closed_descendants:
+            for resource in self.live_resources:
+                if resource is source_resource:
+                    continue
+                if self._is_descendant(resource.node, node):
+                    raise AssertionError(
+                        f"descendant capability remained open: {resource.node.name}"
+                    )
+            for descriptor, descendant in self.detached.items():
+                if not self._is_descendant(descendant, node):
+                    continue
+                try:
+                    os.fstat(descriptor)
+                except OSError:
+                    continue
+                raise AssertionError(
+                    f"descendant descriptor remained open: {descendant.name}"
+                )
+        if not replace and destination_name in destination_node.children:
+            raise FileExistsError(destination_name)
+        old_parent = node.parent
+        if old_parent is None or old_parent.children.get(node.name) is not node:
+            raise OSError("rename source identity changed")
+        del old_parent.children[node.name]
+        node.parent = destination_node
+        node.name = destination_name
+        destination_node.children[destination_name] = node
+        source._path_hint = self._path(node)
+
+    def delete(
+        self, capability: FileCapability | DirectoryCapability
+    ) -> None:
+        resource = self._resource(capability)
+        created_secure_root = (
+            isinstance(capability, DirectoryCapability)
+            and capability.created
+            and capability.security_domain is SecurityDomain.MANAGED
+            and capability.share_policy is SharePolicy.MUTATION
+            and resource.secure_root_creation
+        )
+        if (
+            capability.share_policy is not SharePolicy.PINNED
+            and not created_secure_root
+        ):
+            raise RuntimeError("recorded delete requires exact mutation authority")
+        node = resource.node
+        self._emit(f"delete:{node.name}")
+        if node.kind is EntryKind.DIRECTORY and node.children:
+            raise OSError("recorded directory is not empty")
+        parent = node.parent
+        if parent is None or parent.children.get(node.name) is not node:
+            raise OSError("delete target identity changed")
+        del parent.children[node.name]
+        capability.close()
+
+    def available_bytes(self, directory: DirectoryCapability) -> int:
+        self._resource(directory)
+        return 1_000_000
+
+    def allocation_unit(self, directory: DirectoryCapability) -> int:
+        self._resource(directory)
+        return 4_096
+
+    def touch(self, file: FileCapability) -> None:
+        resource = self._resource(file)
+        self._emit(f"touch:{resource.node.name}")
+
+    def flush(self, file: FileCapability) -> None:
+        resource = self._resource(file)
+        self._emit(f"flush:{resource.node.name}")
+        os.fsync(resource.descriptor)
+
+    def final_path(self, directory: DirectoryCapability) -> Path:
+        return self._path(self._resource(directory).node)
+
+    def verify_managed_security(
+        self,
+        capability: FileCapability | DirectoryCapability,
+        *,
+        repair_dacl: bool,
+    ) -> None:
+        resource = self._resource(capability)
+        if capability.security_domain is not SecurityDomain.MANAGED:
+            raise PermissionError("recorded capability is not managed")
+        self._emit(
+            f"verify-managed:{resource.node.name}:repair={str(repair_dacl).lower()}"
+        )
+
+    def close_backings(self) -> None:
+        self._prune_detached()
+        for descriptor in tuple(self.detached):
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+            self.detached.pop(descriptor, None)
+        for backing in self.backings:
+            try:
+                backing.close()
+            except OSError:
+                pass
+
+    def _prune_detached(self) -> None:
+        for descriptor in tuple(self.detached):
+            try:
+                os.fstat(descriptor)
+            except OSError:
+                self.detached.pop(descriptor, None)
+
+
+class ManagedPublicationCapabilityTests(unittest.TestCase):
+    run_id = "00000000-0000-4000-8000-000000000701"
+
+    def _backend(
+        self, *, rename_requires_closed_descendants: bool
+    ) -> _ManagedRecordingBackend:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        backend = _ManagedRecordingBackend(
+            Path(temporary.name).resolve(),
+            rename_requires_closed_descendants=(
+                rename_requires_closed_descendants
+            ),
+        )
+        self.addCleanup(backend.close_backings)
+        return backend
+
+    def _create(
+        self,
+        backend: _ManagedRecordingBackend,
+        *,
+        acquire_failure_call: int | None = None,
+        lease_allocation_failure_call: int | None = None,
+        allocated_locks: list[LeaseLock] | None = None,
+    ) -> ManagedScratch:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_open_coordinator"],
+        )
+        real_open_coordinator = lease_module._open_coordinator
+        real_acquire = LeaseLock.acquire
+
+        def observe_coordinator(*args: object, **kwargs: object) -> LeaseLock:
+            coordinator = real_open_coordinator(*args, **kwargs)
+            backend.coordinator = coordinator
+            return coordinator
+
+        acquire_calls = 0
+        allocation_calls = 0
+
+        def allocate_effect(descriptor: int) -> LeaseLock:
+            nonlocal allocation_calls
+            allocation_calls += 1
+            if allocation_calls == lease_allocation_failure_call:
+                raise MemoryError("injected lease owner allocation failure")
+            lock = LeaseLock(descriptor)
+            if allocated_locks is not None:
+                allocated_locks.append(lock)
+            return lock
+
+        def acquire_effect(lock: LeaseLock, *, blocking: bool) -> None:
+            nonlocal acquire_calls
+            acquire_calls += 1
+            if acquire_calls == acquire_failure_call:
+                raise OSError("injected lease relock failure")
+            real_acquire(lock, blocking=blocking)
+
+        with (
+            mock.patch.object(
+                lease_module,
+                "reclaim_abandoned",
+                return_value=[],
+            ),
+            mock.patch.object(
+                lease_module,
+                "_open_coordinator",
+                side_effect=observe_coordinator,
+            ),
+            mock.patch.object(
+                LeaseLock,
+                "acquire",
+                autospec=True,
+                side_effect=acquire_effect,
+            ),
+            mock.patch.object(
+                lease_module,
+                "LeaseLock",
+                side_effect=allocate_effect,
+            ),
+        ):
+            scratch = ManagedScratch.create(
+                backend.parent_path,
+                run_id=self.run_id,
+                backend=backend,
+            )
+        self.addCleanup(scratch.close_capabilities)
+        return scratch
+
+    @staticmethod
+    def _managed_node(
+        backend: _ManagedRecordingBackend,
+    ) -> _ManagedRecordedNode:
+        return backend.parent.children["hoimin-focused-v1"]
+
+    def test_backends_expose_only_the_semantic_directory_rename_feature(
+        self,
+    ) -> None:
+        from tools.focused_mutation_support.posix_filesystem import (
+            PosixFilesystemBackend,
+        )
+        from tools.focused_mutation_support.windows_filesystem import (
+            WindowsFilesystemBackend,
+        )
+
+        self.assertFalse(
+            PosixFilesystemBackend().directory_rename_requires_closed_descendants
+        )
+        self.assertTrue(
+            WindowsFilesystemBackend().directory_rename_requires_closed_descendants
+        )
+
+    def test_posix_created_secure_root_has_no_destructive_delete_exception(
+        self,
+    ) -> None:
+        from tools.focused_mutation_support import posix_filesystem as posix_module
+        from tools.focused_mutation_support.posix_filesystem import (
+            PosixFilesystemBackend,
+            _PosixResource,
+        )
+
+        backend = PosixFilesystemBackend()
+        filesystem = FilesystemIdentity(71)
+        parent = DirectoryCapability(
+            backend,
+            _PosixResource(901, None, None, None),
+            identity=FileIdentity(71, 10),
+            filesystem=filesystem,
+            kind=EntryKind.DIRECTORY,
+            logical_size=0,
+            modified_ns=0,
+            security_domain=SecurityDomain.CALLER,
+            share_policy=SharePolicy.MUTATION,
+            created=False,
+            path_hint=Path("/recorded-parent"),
+        )
+        created_root = DirectoryCapability(
+            backend,
+            _PosixResource(902, parent, "managed", None),
+            identity=FileIdentity(71, 20),
+            filesystem=filesystem,
+            kind=EntryKind.DIRECTORY,
+            logical_size=0,
+            modified_ns=0,
+            security_domain=SecurityDomain.MANAGED,
+            share_policy=SharePolicy.MUTATION,
+            created=True,
+            path_hint=Path("/recorded-parent/managed"),
+        )
+        with (
+            mock.patch.object(posix_module.os, "stat") as observe,
+            mock.patch.object(posix_module.os, "rmdir") as rmdir,
+            mock.patch.object(posix_module.os, "close"),
+            self.assertRaises(ValueError),
+        ):
+            backend.delete(created_root)
+        self.assertFalse(
+            backend._directory_creation_rollback_available(created_root)
+        )
+        observe.assert_not_called()
+        rmdir.assert_not_called()
+        self.assertTrue(created_root.is_open)
+        with mock.patch.object(posix_module.os, "close"):
+            created_root.close()
+            parent.close()
+
+    def _assert_posix_unbound_directory_rollback_is_non_destructive(
+        self,
+        *,
+        role: str,
+        secure_root: bool,
+    ) -> None:
+        from tools.focused_mutation_support import posix_filesystem as posix_module
+        from tools.focused_mutation_support import lease as lease_module
+        from tools.focused_mutation_support.posix_filesystem import (
+            PosixFilesystemBackend,
+            _PosixResource,
+        )
+
+        backend = PosixFilesystemBackend()
+        filesystem = FilesystemIdentity(81)
+        parent = DirectoryCapability(
+            backend,
+            _PosixResource(911, None, None, None),
+            identity=FileIdentity(81, 10),
+            filesystem=filesystem,
+            kind=EntryKind.DIRECTORY,
+            logical_size=0,
+            modified_ns=0,
+            security_domain=(
+                SecurityDomain.CALLER
+                if secure_root
+                else SecurityDomain.MANAGED
+            ),
+            share_policy=SharePolicy.MUTATION,
+            created=False,
+            path_hint=Path("/recorded-parent"),
+        )
+        name = "hoimin-focused-v1" if secure_root else role
+        replacement = DirectoryEntry(
+            name,
+            EntryKind.DIRECTORY,
+            FileIdentity(81, 999),
+            filesystem,
+            0,
+            0,
+        )
+        namespace = {name: replacement}
+
+        def finish_created(
+            owner: DirectoryCapability,
+            component: str,
+            expected: DirectoryEntry,
+            share_policy: SharePolicy,
+            *,
+            security_domain: SecurityDomain,
+            verify_security: bool,
+        ) -> DirectoryCapability:
+            del verify_security
+            return DirectoryCapability(
+                backend,
+                _PosixResource(912, owner, component, None),
+                identity=expected.identity,
+                filesystem=expected.filesystem,
+                kind=EntryKind.DIRECTORY,
+                logical_size=0,
+                modified_ns=0,
+                security_domain=security_domain,
+                share_policy=share_policy,
+                created=True,
+                path_hint=owner.path_hint / component,
+            )
+
+        def remove_replacement(component: str, *, dir_fd: int) -> None:
+            self.assertEqual(dir_fd, 911)
+            namespace.pop(component)
+
+        with (
+            mock.patch.object(posix_module.os, "mkdir") as mkdir,
+            mock.patch.object(posix_module.os, "close"),
+            mock.patch.object(
+                backend,
+                "entry",
+                side_effect=lambda _parent, component: namespace.get(component),
+            ) as entry,
+            mock.patch.object(
+                backend,
+                "_entry_at_fd",
+                side_effect=lambda _parent, component, _fd: namespace.get(
+                    component
+                ),
+            ) as entry_at_fd,
+            mock.patch.object(
+                backend,
+                "_finish_created_directory",
+                side_effect=finish_created,
+            ),
+            mock.patch.object(
+                posix_module.os,
+                "rmdir",
+                side_effect=remove_replacement,
+            ) as rmdir,
+        ):
+            if secure_root:
+                directory = backend.create_secure_root(parent, name)
+            else:
+                directory = backend.create_directory(
+                    parent, name, SharePolicy.PINNED
+                )
+            primary = OSError(f"injected {role} post-create primary")
+            if secure_root:
+                rollback_errors = lease_module._rollback_created_managed_root(
+                    directory, parent, backend
+                )
+            else:
+                rollback_errors = lease_module._delete_owned_directory(
+                    parent,
+                    name,
+                    directory,
+                    backend,
+                    label=f"managed {role} rollback",
+                )
+            for rollback_error in rollback_errors:
+                primary.add_note(rollback_error)
+            parent.close()
+
+        self.assertEqual(str(primary), f"injected {role} post-create primary")
+        notes = tuple(getattr(primary, "__notes__", ()))
+        self.assertEqual(
+            sum("rollback unavailable" in note for note in notes), 1
+        )
+        self.assertTrue(
+            all(len(note.encode("utf-8")) <= 1_024 for note in notes)
+        )
+        self.assertIs(namespace[name], replacement)
+        mkdir.assert_called_once()
+        rmdir.assert_not_called()
+        entry_at_fd.assert_not_called()
+        self.assertEqual(entry.call_count, 1)
+
+    def test_posix_unbound_secure_root_rollback_preserves_replacement(
+        self,
+    ) -> None:
+        self._assert_posix_unbound_directory_rollback_is_non_destructive(
+            role="secure root", secure_root=True
+        )
+
+    def test_posix_unbound_staging_rollback_preserves_replacement(self) -> None:
+        self._assert_posix_unbound_directory_rollback_is_non_destructive(
+            role="staging", secure_root=False
+        )
+
+    def test_posix_unbound_child_rollback_preserves_replacement(self) -> None:
+        self._assert_posix_unbound_directory_rollback_is_non_destructive(
+            role="child", secure_root=False
+        )
+
+    def test_successful_managed_root_handoff_disarms_rollback_exception(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_ensure_managed_root"],
+        )
+        backend = self._backend(rename_requires_closed_descendants=False)
+
+        root_path, managed = lease_module._ensure_managed_root(
+            backend.parent_path,
+            backend=backend,
+        )
+
+        self.assertEqual(root_path, backend.parent_path / "hoimin-focused-v1")
+        with self.assertRaises(RuntimeError):
+            backend.delete(managed)
+        self.assertIn("hoimin-focused-v1", backend.parent.children)
+        parent_close = f"close:{backend.parent.name}"
+        parent_close_index = backend.events.index(parent_close)
+        self.assertEqual(
+            backend.events[parent_close_index:],
+            [parent_close, "commit-secure-root:hoimin-focused-v1"],
+        )
+        managed.close()
+
+    def test_parent_close_failure_rolls_back_before_one_parent_retry(self) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_ensure_managed_root"],
+        )
+        for persistent in (False, True):
+            with self.subTest(persistent=persistent):
+                backend = self._backend(
+                    rename_requires_closed_descendants=False
+                )
+                armed = False
+                replacement: _ManagedRecordedNode | None = None
+                parent_close_event = f"close:{backend.parent.name}"
+
+                def inject_parent_close(event: str) -> None:
+                    nonlocal armed, replacement
+                    if event == "entry:hoimin-focused-v1" and not armed:
+                        armed = True
+                        for resource in backend.live_resources:
+                            if resource.node is backend.parent:
+                                resource.close_failures = 2 if persistent else 1
+                    if (
+                        persistent
+                        and event == parent_close_event
+                        and replacement is None
+                    ):
+                        original = backend.parent.children.pop(
+                            "hoimin-focused-v1"
+                        )
+                        backend.parent.children["displaced-original"] = original
+                        replacement = backend._new_node(
+                            EntryKind.DIRECTORY,
+                            SecurityDomain.MANAGED,
+                            parent=backend.parent,
+                            name="hoimin-focused-v1",
+                        )
+
+                backend.after_event = inject_parent_close
+                with self.assertRaisesRegex(
+                    OSError, "injected close failure"
+                ) as caught:
+                    lease_module._ensure_managed_root(
+                        backend.parent_path,
+                        backend=backend,
+                    )
+
+                self.assertEqual(
+                    backend.events.count(parent_close_event),
+                    2,
+                )
+                notes: tuple[str, ...] = tuple(
+                    getattr(caught.exception, "__notes__", ())
+                )
+                self.assertTrue(
+                    all(len(note.encode("utf-8")) <= 1_024 for note in notes)
+                )
+                if persistent:
+                    self.assertIs(
+                        backend.parent.children["hoimin-focused-v1"],
+                        replacement,
+                    )
+                    self.assertIn("displaced-original", backend.parent.children)
+                    self.assertTrue(
+                        any("rollback unavailable" in note for note in notes)
+                    )
+                    self.assertTrue(
+                        any("parent close failed" in note for note in notes)
+                    )
+                    self.assertNotIn(
+                        "delete:hoimin-focused-v1", backend.events
+                    )
+                else:
+                    self.assertNotIn(
+                        "hoimin-focused-v1", backend.parent.children
+                    )
+                    self.assertEqual(len(backend.live_resources), 0)
+                retained_parent = backend.last_parent_capability
+                assert retained_parent is not None
+                if retained_parent.is_open:
+                    retained_parent.close()
+
+    def test_bootstrap_graph_is_capability_relative_and_coordinator_serialized(
+        self,
+    ) -> None:
+        for requires_close in (False, True):
+            with self.subTest(requires_close=requires_close):
+                backend = self._backend(
+                    rename_requires_closed_descendants=requires_close
+                )
+                coordinator_checked_events: list[str] = []
+
+                def require_coordinator(event: str) -> None:
+                    if event.startswith(("rename:", "entry:run-")):
+                        coordinator = backend.coordinator
+                        self.assertIsNotNone(coordinator)
+                        assert coordinator is not None
+                        self.assertTrue(coordinator.locked)
+                        coordinator_checked_events.append(event)
+
+                backend.after_event = require_coordinator
+                scratch = self._create(backend)
+
+                expected_order = [
+                    "open-parent:mutation",
+                    "create-secure-root:hoimin-focused-v1",
+                    "verify-managed:hoimin-focused-v1:repair=true",
+                    "open_or_create:.hoimin-coordinator:read_write:pinned",
+                    "verify-managed:.hoimin-coordinator:repair=true",
+                    "detach:.hoimin-coordinator",
+                    f"create-directory:.staging-{self.run_id}:pinned",
+                    f"verify-managed:.staging-{self.run_id}:repair=false",
+                    "create_new:.hoimin-lease.json:read_write:pinned",
+                    "verify-managed:.hoimin-lease.json:repair=false",
+                    "create_new:.hoimin-heartbeat.json:read_write:pinned",
+                    "verify-managed:.hoimin-heartbeat.json:repair=false",
+                    f"rename:.staging-{self.run_id}->run-{self.run_id}:False",
+                    f"entry:run-{self.run_id}",
+                ]
+                cursor = 0
+                for expected in expected_order:
+                    cursor = backend.events.index(expected, cursor) + 1
+
+                self.assertTrue(coordinator_checked_events)
+                self.assertIsNotNone(backend.coordinator)
+                assert backend.coordinator is not None
+                self.assertFalse(backend.coordinator.locked)
+                self.assertEqual(backend.coordinator.fd, -1)
+                self.assertIsInstance(scratch._managed_root_capability, DirectoryCapability)
+                self.assertIsInstance(scratch._root, DirectoryCapability)
+                self.assertIsInstance(scratch._heartbeat, FileCapability)
+                lease = scratch._lease
+                managed_root_capability = scratch._managed_root_capability
+                root = scratch._root
+                heartbeat = scratch._heartbeat
+                assert lease is not None
+                assert managed_root_capability is not None
+                assert root is not None
+                assert heartbeat is not None
+                self.assertTrue(lease.locked)
+                self.assertTrue(managed_root_capability.is_open)
+                self.assertTrue(root.is_open)
+                self.assertTrue(heartbeat.is_open)
+                self.assertTrue(lease.fd >= 0)
+                self.assertNotIn("open-parent:pinned", backend.events)
+
+                self.assertEqual(scratch.close_capabilities(), ())
+                self.assertEqual(len(backend.live_resources), 0)
+
+    def test_constructor_prechecks_active_and_never_calls_namespace_rename(
+        self,
+    ) -> None:
+        backend = self._backend(rename_requires_closed_descendants=False)
+        managed = backend._new_node(
+            EntryKind.DIRECTORY,
+            SecurityDomain.MANAGED,
+            parent=backend.parent,
+            name="hoimin-focused-v1",
+        )
+        active_name = f"run-{self.run_id}"
+        active = backend._new_node(
+            EntryKind.DIRECTORY,
+            SecurityDomain.MANAGED,
+            parent=managed,
+            name=active_name,
+        )
+        original_identity = active.identity
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["reclaim_abandoned"],
+        )
+
+        with (
+            mock.patch.object(lease_module, "reclaim_abandoned", return_value=[]),
+            self.assertRaises(FileExistsError),
+        ):
+            ManagedScratch.create(
+                backend.parent_path,
+                run_id=self.run_id,
+                backend=backend,
+            )
+
+        self.assertEqual(managed.children[active_name].identity, original_identity)
+        self.assertFalse(any(event.startswith("rename:") for event in backend.events))
+        self.assertNotIn(f".staging-{self.run_id}", managed.children)
+        self.assertEqual(len(backend.live_resources), 0)
+
+    def test_marker_failure_rolls_back_only_the_exact_created_identity(self) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_create_marker"],
+        )
+        for replacement in (False, True):
+            with self.subTest(replacement=replacement):
+                backend = self._backend(
+                    rename_requires_closed_descendants=False
+                )
+                parent = backend.open_root(
+                    backend.parent_path, SharePolicy.MUTATION
+                )
+                managed = backend.create_secure_root(parent, "hoimin-focused-v1")
+                parent.close()
+                marker_name = ".hoimin-lease.json"
+                marker_value = {
+                    "schema_version": 1,
+                    "run_id": self.run_id,
+                    "owner_kind": "focused_python",
+                    "lease_id": "00000000-0000-4000-8000-000000000702",
+                }
+                replacement_node: _ManagedRecordedNode | None = None
+
+                def fail_verification(event: str) -> None:
+                    nonlocal replacement_node
+                    if event != f"verify-managed:{marker_name}:repair=false":
+                        return
+                    if replacement:
+                        managed_node = backend._resource(managed).node
+                        original = managed_node.children.pop(marker_name)
+                        original.name = f"{marker_name}.original"
+                        managed_node.children[original.name] = original
+                        replacement_node = backend._new_node(
+                            EntryKind.REGULAR,
+                            SecurityDomain.MANAGED,
+                            parent=managed_node,
+                            name=marker_name,
+                        )
+                    raise OSError("injected marker verification failure")
+
+                backend.after_event = fail_verification
+                with self.assertRaisesRegex(OSError, "verification failure"):
+                    lease_module._create_marker(
+                        managed,
+                        marker_name,
+                        marker_value,
+                        backend,
+                    )
+
+                current = backend._resource(managed).node.children.get(marker_name)
+                if replacement:
+                    self.assertIs(current, replacement_node)
+                else:
+                    self.assertIsNone(current)
+                self.assertEqual(len(backend.live_resources), 1)
+                managed.close()
+
+    def test_marker_result_allocation_precedes_descriptor_handoff(self) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_create_marker"],
+        )
+        backend = self._backend(rename_requires_closed_descendants=False)
+        parent = backend.open_root(backend.parent_path, SharePolicy.MUTATION)
+        managed = backend.create_secure_root(parent, "hoimin-focused-v1")
+        parent.close()
+        marker_name = ".hoimin-lease.json"
+
+        with (
+            mock.patch.object(
+                lease_module,
+                "_marker_result",
+                side_effect=MemoryError("injected marker result allocation failure"),
+            ),
+            self.assertRaisesRegex(MemoryError, "result allocation failure"),
+        ):
+            lease_module._create_marker(
+                managed,
+                marker_name,
+                {
+                    "schema_version": 1,
+                    "run_id": self.run_id,
+                    "owner_kind": "focused_python",
+                    "lease_id": "00000000-0000-4000-8000-000000000708",
+                },
+                backend,
+            )
+
+        self.assertNotIn(
+            marker_name, backend._resource(managed).node.children
+        )
+        for descriptor in backend.detached:
+            with self.assertRaises(OSError):
+                os.fstat(descriptor)
+        self.assertEqual(len(backend.live_resources), 1)
+        managed.close()
+
+    def test_marker_read_returns_none_only_for_absence_and_rejects_overflow(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_create_marker", "_read_marker"],
+        )
+        backend = self._backend(rename_requires_closed_descendants=False)
+        parent = backend.open_root(backend.parent_path, SharePolicy.MUTATION)
+        managed = backend.create_secure_root(parent, "hoimin-focused-v1")
+        parent.close()
+        lease_id = "00000000-0000-4000-8000-000000000703"
+        value = {
+            "schema_version": 1,
+            "run_id": self.run_id,
+            "owner_kind": "focused_python",
+            "lease_id": lease_id,
+        }
+        identity, descriptor = lease_module._create_marker(
+            managed,
+            ".hoimin-lease.json",
+            value,
+            backend,
+        )
+        os.close(descriptor)
+
+        self.assertIsNone(
+            lease_module._read_marker(
+                managed,
+                ".hoimin-heartbeat.json",
+                backend,
+                expected_run_id=self.run_id,
+                expected_lease_id=lease_id,
+            )
+        )
+        self.assertEqual(
+            lease_module._read_marker(
+                managed,
+                ".hoimin-lease.json",
+                backend,
+                expected_run_id=self.run_id,
+                expected_lease_id=lease_id,
+            ),
+            (identity, value),
+        )
+
+        node = backend._resource(managed).node.children[".hoimin-lease.json"]
+        assert node.backing is not None
+        node.backing.seek(0)
+        node.backing.truncate(0)
+        node.backing.write(b"x" * (lease_module.MARKER_CAPACITY + 1))
+        node.backing.flush()
+        with self.assertRaisesRegex(OSError, "capacity"):
+            lease_module._read_marker(
+                managed,
+                ".hoimin-lease.json",
+                backend,
+                expected_run_id=self.run_id,
+                expected_lease_id=lease_id,
+            )
+        managed.close()
+
+    def test_marker_fd_close_precedes_rollback_and_retries_same_owner(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_create_marker"],
+        )
+        value = {
+            "schema_version": 1,
+            "run_id": self.run_id,
+            "owner_kind": "focused_python",
+            "lease_id": "00000000-0000-4000-8000-000000000705",
+        }
+        for close_failures in (1, 2):
+            with self.subTest(close_failures=close_failures):
+                backend = self._backend(
+                    rename_requires_closed_descendants=False
+                )
+                parent = backend.open_root(
+                    backend.parent_path, SharePolicy.MUTATION
+                )
+                managed = backend.create_secure_root(
+                    parent, "hoimin-focused-v1"
+                )
+                parent.close()
+                timeline: list[str] = []
+                real_close = lease_module.os.close
+                close_calls = 0
+
+                def fail_write(_fd: int, _value: bytes) -> int:
+                    timeline.append("write")
+                    raise OSError("injected marker write failure")
+
+                def close_with_failures(descriptor: int) -> None:
+                    nonlocal close_calls
+                    close_calls += 1
+                    timeline.append(f"close:{close_calls}")
+                    if close_calls <= close_failures:
+                        raise OSError("injected marker close failure")
+                    real_close(descriptor)
+
+                backend.after_event = timeline.append
+                with (
+                    mock.patch.object(
+                        lease_module.os, "write", side_effect=fail_write
+                    ),
+                    mock.patch.object(
+                        lease_module.os,
+                        "close",
+                        side_effect=close_with_failures,
+                    ),
+                    self.assertRaisesRegex(
+                        OSError, "marker write failure"
+                    ) as caught,
+                ):
+                    lease_module._create_marker(
+                        managed,
+                        ".hoimin-lease.json",
+                        value,
+                        backend,
+                    )
+
+                self.assertGreaterEqual(close_calls, 2)
+                self.assertTrue(
+                    all(
+                        len(note.encode("utf-8")) <= 1_024
+                        for note in getattr(caught.exception, "__notes__", ())
+                    )
+                )
+                marker = backend._resource(managed).node.children.get(
+                    ".hoimin-lease.json"
+                )
+                if close_failures == 1:
+                    self.assertIsNone(marker)
+                    self.assertGreater(
+                        timeline.index(
+                            "open-entry:.hoimin-lease.json:pinned"
+                        ),
+                        timeline.index("close:2"),
+                    )
+                else:
+                    self.assertIsNotNone(marker)
+                    self.assertNotIn(
+                        "open-entry:.hoimin-lease.json:pinned", timeline
+                    )
+                    self.assertFalse(
+                        any(event.startswith("delete:") for event in timeline)
+                    )
+                managed.close()
+
+    def test_marker_cleanup_baseexception_stays_secondary_to_primary(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_create_marker"],
+        )
+        backend = self._backend(rename_requires_closed_descendants=False)
+        parent = backend.open_root(backend.parent_path, SharePolicy.MUTATION)
+        managed = backend.create_secure_root(parent, "hoimin-focused-v1")
+        parent.close()
+        marker_name = ".hoimin-lease.json"
+        backend.failures[f"close:{marker_name}"] = MemoryError(
+            "injected cleanup allocation failure"
+        )
+
+        def fail_verification(event: str) -> None:
+            if event == f"verify-managed:{marker_name}:repair=false":
+                raise OSError("injected verification primary")
+
+        backend.after_event = fail_verification
+        with self.assertRaisesRegex(
+            OSError, "verification primary"
+        ) as caught:
+            lease_module._create_marker(
+                managed,
+                marker_name,
+                {
+                    "schema_version": 1,
+                    "run_id": self.run_id,
+                    "owner_kind": "focused_python",
+                    "lease_id": "00000000-0000-4000-8000-000000000706",
+                },
+                backend,
+            )
+
+        notes = getattr(caught.exception, "__notes__", ())
+        self.assertTrue(any("MemoryError" in note for note in notes))
+        self.assertTrue(
+            all(len(note.encode("utf-8")) <= 1_024 for note in notes)
+        )
+        self.assertNotIn(
+            marker_name, backend._resource(managed).node.children
+        )
+        managed.close()
+
+    def test_marker_delete_waits_for_consuming_close_before_absence_check(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_create_marker", "_delete_exact_marker"],
+        )
+        backend = self._backend(rename_requires_closed_descendants=False)
+        parent = backend.open_root(backend.parent_path, SharePolicy.MUTATION)
+        managed = backend.create_secure_root(parent, "hoimin-focused-v1")
+        parent.close()
+        marker_name = ".hoimin-lease.json"
+        identity, descriptor = lease_module._create_marker(
+            managed,
+            marker_name,
+            {
+                "schema_version": 1,
+                "run_id": self.run_id,
+                "owner_kind": "focused_python",
+                "lease_id": "00000000-0000-4000-8000-000000000707",
+            },
+            backend,
+        )
+        os.close(descriptor)
+        marker_node = backend._resource(managed).node.children[marker_name]
+
+        close_attempts = 0
+
+        def fail_consuming_close(event: str) -> None:
+            nonlocal close_attempts
+            if event != f"close:{marker_name}":
+                return
+            close_attempts += 1
+            if close_attempts > 3:
+                return
+            for resource in backend.live_resources:
+                if resource.node is marker_node:
+                    resource.close_failures = 1
+
+        backend.after_event = fail_consuming_close
+        start = len(backend.events)
+        errors = lease_module._delete_exact_marker(
+            managed,
+            marker_name,
+            identity,
+            backend,
+        )
+
+        cleanup_events = backend.events[start:]
+        self.assertTrue(any("close failed" in error for error in errors))
+        self.assertNotIn(f"entry:{marker_name}", cleanup_events)
+        managed.close()
+
+    def test_windows_handoff_failures_unpublish_and_release_every_owner(self) -> None:
+        stages = (
+            "lease-read",
+            "lease-content",
+            "lease-reopen",
+            "lease-relock",
+            "heartbeat-reopen",
+            "post-rename-root-identity",
+        )
+        for stage in stages:
+            with self.subTest(stage=stage):
+                backend = self._backend(
+                    rename_requires_closed_descendants=True
+                )
+                event_counts: dict[str, int] = {}
+
+                def inject_event(event: str) -> None:
+                    event_counts[event] = event_counts.get(event, 0) + 1
+                    if stage == "lease-read" and event == (
+                        "open_existing:.hoimin-lease.json:read:pinned"
+                    ):
+                        raise OSError("injected lease read failure")
+                    if stage == "lease-content" and event == (
+                        "open_existing:.hoimin-lease.json:read:pinned"
+                    ):
+                        managed = self._managed_node(backend)
+                        active = managed.children[f"run-{self.run_id}"]
+                        lease = active.children[".hoimin-lease.json"]
+                        assert lease.backing is not None
+                        lease.backing.seek(0)
+                        lease.backing.truncate(0)
+                        lease.backing.write(b"{}\n")
+                        lease.backing.flush()
+                    if stage == "lease-reopen" and event == (
+                        "open_existing:.hoimin-lease.json:read_write:pinned"
+                    ):
+                        raise OSError("injected lease reopen failure")
+                    if stage == "heartbeat-reopen" and event == (
+                        "open_existing:.hoimin-heartbeat.json:write:pinned"
+                    ) and event_counts[event] == 2:
+                        raise OSError("injected heartbeat reopen failure")
+                    if stage == "post-rename-root-identity" and event == (
+                        f"entry:run-{self.run_id}"
+                    ):
+                        raise OSError("injected root identity failure")
+
+                backend.after_event = inject_event
+                with self.assertRaises(OSError):
+                    self._create(
+                        backend,
+                        acquire_failure_call=(
+                            3 if stage == "lease-relock" else None
+                        ),
+                    )
+
+                managed = self._managed_node(backend)
+                self.assertFalse(
+                    any(
+                        name.startswith(("run-", ".staging-", ".deleting-"))
+                        for name in managed.children
+                    )
+                )
+                self.assertEqual(
+                    set(managed.children), {".hoimin-coordinator"}
+                )
+                coordinator = backend.coordinator
+                self.assertIsNotNone(coordinator)
+                assert coordinator is not None
+                self.assertEqual(coordinator.fd, -1)
+                self.assertFalse(coordinator.locked)
+                self.assertEqual(len(backend.live_resources), 0)
+                for descriptor in backend.detached:
+                    with self.assertRaises(OSError):
+                        os.fstat(descriptor)
+
+    def test_windows_pre_rename_close_failures_retry_once_and_retain_owner(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_close_locked_coordinator_once"],
+        )
+        active_name = f"run-{self.run_id}"
+        staging_name = f".staging-{self.run_id}"
+        for boundary in ("heartbeat", "lease"):
+            for persistent in (False, True):
+                with self.subTest(boundary=boundary, persistent=persistent):
+                    backend = self._backend(
+                        rename_requires_closed_descendants=True
+                    )
+                    allocated_locks: list[LeaseLock] = []
+                    close_attempts = 0
+                    target_descriptor: int | None = None
+                    target_heartbeat: _ManagedRecordedResource | None = None
+                    retained_heartbeat_capabilities: list[FileCapability] = []
+                    replacement: _ManagedRecordedNode | None = None
+                    rollback_lock_states: list[bool] = []
+                    rollback_started = False
+                    owner_unavailable = False
+                    namespace_after_owner_unavailable: list[str] = []
+                    real_close_resource = backend.close_resource
+                    real_open_file = backend.open_file
+                    real_close_descriptor = lease_module.os.close
+                    real_close_coordinator = (
+                        lease_module._close_locked_coordinator_once
+                    )
+
+                    def install_replacement() -> None:
+                        nonlocal replacement
+                        if replacement is not None:
+                            return
+                        replacement = backend._new_node(
+                            EntryKind.DIRECTORY,
+                            SecurityDomain.MANAGED,
+                            parent=self._managed_node(backend),
+                            name=active_name,
+                        )
+
+                    def close_resource(value: object) -> None:
+                        nonlocal close_attempts, target_heartbeat
+                        nonlocal rollback_started, owner_unavailable
+                        if (
+                            boundary == "heartbeat"
+                            and isinstance(value, _ManagedRecordedResource)
+                            and value.node.name == ".hoimin-heartbeat.json"
+                        ):
+                            if target_heartbeat is None:
+                                target_heartbeat = value
+                            if value is target_heartbeat:
+                                close_attempts += 1
+                                rollback_started = True
+                                install_replacement()
+                                if persistent and close_attempts == 2:
+                                    owner_unavailable = True
+                                if persistent or close_attempts == 1:
+                                    value.close_failures = 1
+                        real_close_resource(value)
+
+                    def open_file(
+                        parent: DirectoryCapability,
+                        name: str,
+                        *,
+                        access: FileAccess,
+                        disposition: CreateDisposition,
+                        share_policy: SharePolicy = SharePolicy.MUTATION,
+                    ) -> FileCapability:
+                        capability = real_open_file(
+                            parent,
+                            name,
+                            access=access,
+                            disposition=disposition,
+                            share_policy=share_policy,
+                        )
+                        if (
+                            boundary == "heartbeat"
+                            and name == ".hoimin-heartbeat.json"
+                            and access is FileAccess.WRITE
+                            and disposition is CreateDisposition.OPEN_EXISTING
+                        ):
+                            retained_heartbeat_capabilities.append(capability)
+                        return capability
+
+                    def close_descriptor(descriptor: int) -> None:
+                        nonlocal close_attempts, target_descriptor
+                        nonlocal rollback_started, owner_unavailable
+                        managed_lock = next(
+                            (
+                                lock
+                                for lock in allocated_locks
+                                if lock is not backend.coordinator
+                                and lock.fd == descriptor
+                            ),
+                            None,
+                        )
+                        if (
+                            boundary == "lease"
+                            and managed_lock is not None
+                            and (
+                                descriptor == target_descriptor
+                                or target_descriptor is None
+                            )
+                        ):
+                            target_descriptor = descriptor
+                            close_attempts += 1
+                            rollback_started = True
+                            install_replacement()
+                            if persistent and close_attempts == 2:
+                                owner_unavailable = True
+                            if persistent or close_attempts == 1:
+                                raise OSError("injected managed lease close failure")
+                        real_close_descriptor(descriptor)
+
+                    def observe_rollback(event: str) -> None:
+                        if rollback_started and event.startswith(
+                            ("close:", "delete:", "entry:", "open-entry:")
+                        ):
+                            coordinator = backend.coordinator
+                            rollback_lock_states.append(
+                                coordinator is not None and coordinator.locked
+                            )
+                        if owner_unavailable and event.startswith(
+                            ("rename:", "delete:", "entry:", "open-entry:")
+                        ):
+                            namespace_after_owner_unavailable.append(event)
+
+                    def close_coordinator(
+                        lock: LeaseLock, label: str
+                    ) -> tuple[str, ...]:
+                        errors = real_close_coordinator(lock, label)
+                        if lock is backend.coordinator and lock.fd < 0:
+                            backend.events.append("close-coordinator-lock")
+                        return errors
+
+                    def close_retained_owners() -> None:
+                        for capability in retained_heartbeat_capabilities:
+                            if capability.is_open:
+                                capability.close()
+                        for lock in allocated_locks:
+                            if lock.fd >= 0:
+                                lock.close()
+
+                    backend.after_event = observe_rollback
+                    self.addCleanup(close_retained_owners)
+                    with (
+                        mock.patch.object(
+                            backend,
+                            "close_resource",
+                            side_effect=close_resource,
+                        ),
+                        mock.patch.object(
+                            backend,
+                            "open_file",
+                            side_effect=open_file,
+                        ),
+                        mock.patch.object(
+                            lease_module.os,
+                            "close",
+                            side_effect=close_descriptor,
+                        ),
+                        mock.patch.object(
+                            lease_module,
+                            "_close_locked_coordinator_once",
+                            side_effect=close_coordinator,
+                        ),
+                        self.assertRaisesRegex(
+                            OSError, "close failure"
+                        ) as caught,
+                    ):
+                        self._create(
+                            backend,
+                            allocated_locks=allocated_locks,
+                        )
+
+                    self.assertEqual(close_attempts, 2)
+                    self.assertTrue(rollback_lock_states)
+                    self.assertTrue(all(rollback_lock_states))
+                    self.assertEqual(
+                        backend.events[-1], "close-coordinator-lock"
+                    )
+                    self.assertFalse(
+                        any(
+                            event.startswith(f"rename:{staging_name}->")
+                            for event in backend.events
+                        )
+                    )
+                    managed = self._managed_node(backend)
+                    self.assertIs(managed.children[active_name], replacement)
+                    if persistent:
+                        self.assertEqual(
+                            namespace_after_owner_unavailable, []
+                        )
+                        staging = managed.children[staging_name]
+                        retained_marker = (
+                            ".hoimin-heartbeat.json"
+                            if boundary == "heartbeat"
+                            else ".hoimin-lease.json"
+                        )
+                        self.assertEqual(
+                            set(staging.children),
+                            {
+                                ".hoimin-lease.json",
+                                ".hoimin-heartbeat.json",
+                            },
+                        )
+                        self.assertTrue(
+                            sum(
+                                "cleanup unavailable" in note
+                                for note in getattr(
+                                    caught.exception, "__notes__", ()
+                                )
+                            )
+                            == 1
+                        )
+                    else:
+                        self.assertNotIn(staging_name, managed.children)
+                    coordinator = backend.coordinator
+                    self.assertIsNotNone(coordinator)
+                    assert coordinator is not None
+                    self.assertEqual(coordinator.fd, -1)
+                    self.assertFalse(coordinator.locked)
+                    if boundary == "heartbeat" and persistent:
+                        self.assertIsNotNone(target_heartbeat)
+                        assert target_heartbeat is not None
+                        self.assertFalse(target_heartbeat.closed)
+                        self.assertEqual(
+                            backend.live_resources, {target_heartbeat}
+                        )
+                    else:
+                        self.assertEqual(len(backend.live_resources), 0)
+                    managed_lease_locks = [
+                        lock
+                        for lock in allocated_locks
+                        if lock is not coordinator
+                    ]
+                    if boundary == "lease" and persistent:
+                        self.assertEqual(
+                            sum(lock.fd >= 0 for lock in managed_lease_locks),
+                            1,
+                        )
+                    else:
+                        self.assertTrue(
+                            all(lock.fd < 0 for lock in managed_lease_locks)
+                        )
+
+    def test_windows_handoff_allocates_lease_owner_before_opening_capability(
+        self,
+    ) -> None:
+        backend = self._backend(rename_requires_closed_descendants=True)
+
+        with self.assertRaisesRegex(MemoryError, "owner allocation failure"):
+            self._create(backend, lease_allocation_failure_call=3)
+
+        lease_reopens = [
+            index
+            for index, event in enumerate(backend.events)
+            if event == "open_existing:.hoimin-lease.json:read_write:pinned"
+        ]
+        self.assertEqual(len(lease_reopens), 1)
+        rename_back = backend.events.index(
+            f"rename:run-{self.run_id}->.staging-{self.run_id}:False"
+        )
+        self.assertGreater(lease_reopens[0], rename_back)
+        self.assertEqual(len(backend.live_resources), 0)
+
+    def test_windows_restore_allocates_lease_owner_before_reopen(self) -> None:
+        backend = self._backend(rename_requires_closed_descendants=True)
+        heartbeat_reopens = 0
+
+        def fail_published_heartbeat_reopen(event: str) -> None:
+            nonlocal heartbeat_reopens
+            if event != "open_existing:.hoimin-heartbeat.json:write:pinned":
+                return
+            heartbeat_reopens += 1
+            if heartbeat_reopens == 2:
+                raise OSError("injected heartbeat reopen primary")
+
+        backend.after_event = fail_published_heartbeat_reopen
+        with self.assertRaisesRegex(
+            OSError, "heartbeat reopen primary"
+        ) as caught:
+            self._create(backend, lease_allocation_failure_call=4)
+
+        self.assertEqual(
+            backend.events.count(
+                "open_existing:.hoimin-lease.json:read_write:pinned"
+            ),
+            1,
+        )
+        self.assertTrue(
+            any(
+                "MemoryError" in note
+                for note in getattr(caught.exception, "__notes__", ())
+            )
+        )
+
+    def test_windows_restored_owner_close_failure_blocks_namespace_cleanup(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_close_locked_coordinator_once"],
+        )
+        active_name = f"run-{self.run_id}"
+        staging_name = f".staging-{self.run_id}"
+        for boundary in ("lease", "heartbeat"):
+            with self.subTest(boundary=boundary):
+                backend = self._backend(rename_requires_closed_descendants=True)
+                allocated_locks: list[LeaseLock] = []
+                retained_capabilities: list[FileCapability] = []
+                event_counts: dict[str, int] = {}
+                close_attempts = 0
+                restore_started = False
+                rollback_started = False
+                owner_unavailable = False
+                replacement: _ManagedRecordedNode | None = None
+                target_heartbeat: _ManagedRecordedResource | None = None
+                target_descriptor: int | None = None
+                rollback_lock_states: list[bool] = []
+                namespace_after_owner_failure: list[str] = []
+                real_open_file = backend.open_file
+                real_close_resource = backend.close_resource
+                real_close_descriptor = lease_module.os.close
+                real_close_coordinator = (
+                    lease_module._close_locked_coordinator_once
+                )
+
+                def inject_primary_and_observe(event: str) -> None:
+                    nonlocal restore_started, rollback_started, replacement
+                    event_counts[event] = event_counts.get(event, 0) + 1
+                    if event == (
+                        "open_existing:.hoimin-heartbeat.json:write:pinned"
+                    ) and event_counts[event] == 2:
+                        rollback_started = True
+                        raise OSError("injected published heartbeat reopen failure")
+                    if event == (
+                        "open_existing:.hoimin-lease.json:read:pinned"
+                    ) and event_counts[event] == 2:
+                        restore_started = True
+                        managed = self._managed_node(backend)
+                        replacement = backend._new_node(
+                            EntryKind.DIRECTORY,
+                            SecurityDomain.MANAGED,
+                            parent=managed,
+                            name=active_name,
+                        )
+                    if rollback_started and event.startswith(
+                        ("close:", "delete:", "entry:", "open-entry:")
+                    ):
+                        coordinator = backend.coordinator
+                        rollback_lock_states.append(
+                            coordinator is not None and coordinator.locked
+                        )
+                    if owner_unavailable and event.startswith(
+                        ("rename:", "delete:", "entry:", "open-entry:")
+                    ):
+                        namespace_after_owner_failure.append(event)
+
+                def open_file(
+                    parent: DirectoryCapability,
+                    name: str,
+                    *,
+                    access: FileAccess,
+                    disposition: CreateDisposition,
+                    share_policy: SharePolicy = SharePolicy.MUTATION,
+                ) -> FileCapability:
+                    nonlocal target_heartbeat
+                    capability = real_open_file(
+                        parent,
+                        name,
+                        access=access,
+                        disposition=disposition,
+                        share_policy=share_policy,
+                    )
+                    if (
+                        restore_started
+                        and name == ".hoimin-heartbeat.json"
+                        and access is FileAccess.WRITE
+                        and disposition is CreateDisposition.OPEN_EXISTING
+                    ):
+                        retained_capabilities.append(capability)
+                        target_heartbeat = backend._resource(capability)
+                    return capability
+
+                def close_resource(value: object) -> None:
+                    nonlocal close_attempts, owner_unavailable
+                    if boundary == "heartbeat" and value is target_heartbeat:
+                        close_attempts += 1
+                        if close_attempts == 2:
+                            owner_unavailable = True
+                        assert isinstance(value, _ManagedRecordedResource)
+                        value.close_failures = 1
+                    real_close_resource(value)
+
+                def close_descriptor(descriptor: int) -> None:
+                    nonlocal close_attempts
+                    nonlocal target_descriptor, owner_unavailable
+                    managed_lock = next(
+                        (
+                            lock
+                            for lock in allocated_locks
+                            if restore_started
+                            and lock is not backend.coordinator
+                            and lock.fd == descriptor
+                        ),
+                        None,
+                    )
+                    if boundary == "lease" and managed_lock is not None:
+                        if target_descriptor is None:
+                            target_descriptor = descriptor
+                        if descriptor == target_descriptor:
+                            close_attempts += 1
+                            if close_attempts == 2:
+                                owner_unavailable = True
+                            raise OSError(
+                                "injected restored lease close failure"
+                            )
+                    real_close_descriptor(descriptor)
+
+                def close_coordinator(
+                    lock: LeaseLock, label: str
+                ) -> tuple[str, ...]:
+                    errors = real_close_coordinator(lock, label)
+                    if lock is backend.coordinator and lock.fd < 0:
+                        backend.events.append("close-coordinator-lock")
+                    return errors
+
+                def close_retained_owners() -> None:
+                    for capability in retained_capabilities:
+                        if capability.is_open:
+                            capability.close()
+                    for lock in allocated_locks:
+                        if lock.fd >= 0:
+                            lock.close()
+
+                backend.after_event = inject_primary_and_observe
+                self.addCleanup(close_retained_owners)
+                with (
+                    mock.patch.object(
+                        backend, "open_file", side_effect=open_file
+                    ),
+                    mock.patch.object(
+                        backend, "close_resource", side_effect=close_resource
+                    ),
+                    mock.patch.object(
+                        lease_module.os,
+                        "close",
+                        side_effect=close_descriptor,
+                    ),
+                    mock.patch.object(
+                        lease_module,
+                        "_close_locked_coordinator_once",
+                        side_effect=close_coordinator,
+                    ),
+                    self.assertRaisesRegex(
+                        OSError, "published heartbeat reopen failure"
+                    ) as caught,
+                ):
+                    self._create(
+                        backend,
+                        allocated_locks=allocated_locks,
+                    )
+
+                self.assertEqual(close_attempts, 2)
+                self.assertEqual(namespace_after_owner_failure, [])
+                managed = self._managed_node(backend)
+                self.assertIs(managed.children[active_name], replacement)
+                staging = managed.children[staging_name]
+                self.assertEqual(
+                    set(staging.children),
+                    {".hoimin-lease.json", ".hoimin-heartbeat.json"},
+                )
+                self.assertTrue(rollback_lock_states)
+                self.assertTrue(all(rollback_lock_states))
+                self.assertEqual(
+                    backend.events[-1], "close-coordinator-lock"
+                )
+                self.assertTrue(
+                    sum(
+                        "cleanup unavailable" in note
+                        for note in getattr(caught.exception, "__notes__", ())
+                    )
+                    == 1
+                )
+                coordinator = backend.coordinator
+                self.assertIsNotNone(coordinator)
+                assert coordinator is not None
+                if boundary == "lease":
+                    self.assertEqual(
+                        sum(
+                            lock.fd >= 0
+                            for lock in allocated_locks
+                            if lock is not coordinator
+                        ),
+                        1,
+                    )
+                else:
+                    self.assertIsNotNone(target_heartbeat)
+                    assert target_heartbeat is not None
+                    self.assertFalse(target_heartbeat.closed)
+
+    def test_hidden_helper_owner_blocks_marker_and_staging_rollback(self) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_OwnedDescriptor", "_close_locked_coordinator_once"],
+        )
+        active_name = f"run-{self.run_id}"
+        staging_name = f".staging-{self.run_id}"
+        lease_name = ".hoimin-lease.json"
+        for stage in ("create-capability", "read-descriptor", "lease-capability"):
+            with self.subTest(stage=stage):
+                backend = self._backend(rename_requires_closed_descendants=True)
+                allocated_locks: list[LeaseLock] = []
+                descriptor_owners: list[_OwnedDescriptor] = []
+                retained_capabilities: list[FileCapability] = []
+                target_resource: _ManagedRecordedResource | None = None
+                target_descriptor: int | None = None
+                close_attempts = 0
+                rollback_started = False
+                owner_unavailable = False
+                replacement: _ManagedRecordedNode | None = None
+                rollback_lock_states: list[bool] = []
+                namespace_after_owner_failure: list[str] = []
+                real_owned_descriptor = _OwnedDescriptor
+                real_open_file = backend.open_file
+                real_close_resource = backend.close_resource
+                real_detach_resource = backend.detach_file_resource
+                real_read = lease_module.os.read
+                real_close_descriptor = lease_module.os.close
+                real_close_coordinator = (
+                    lease_module._close_locked_coordinator_once
+                )
+
+                def allocate_descriptor_owner() -> _OwnedDescriptor:
+                    owner = real_owned_descriptor()
+                    descriptor_owners.append(owner)
+                    return owner
+
+                def maybe_install_replacement() -> None:
+                    nonlocal replacement
+                    if stage != "create-capability":
+                        return
+                    managed = backend.parent.children.get("hoimin-focused-v1")
+                    if managed is None:
+                        return
+                    if replacement is None and active_name not in managed.children:
+                        replacement = backend._new_node(
+                            EntryKind.DIRECTORY,
+                            SecurityDomain.MANAGED,
+                            parent=managed,
+                            name=active_name,
+                        )
+
+                def observe_and_inject(event: str) -> None:
+                    nonlocal rollback_started
+                    if (
+                        stage == "create-capability"
+                        and not rollback_started
+                        and event == f"verify-managed:{lease_name}:repair=false"
+                    ):
+                        rollback_started = True
+                        maybe_install_replacement()
+                        raise OSError("injected marker creation verification")
+                    if rollback_started:
+                        maybe_install_replacement()
+                    if rollback_started and event.startswith(
+                        ("close:", "delete:", "entry:", "open-entry:")
+                    ):
+                        coordinator = backend.coordinator
+                        rollback_lock_states.append(
+                            coordinator is not None and coordinator.locked
+                        )
+                    if owner_unavailable and event.startswith(
+                        ("rename:", "delete:", "entry:", "open-entry:")
+                    ):
+                        namespace_after_owner_failure.append(event)
+
+                def open_file(
+                    parent: DirectoryCapability,
+                    name: str,
+                    *,
+                    access: FileAccess,
+                    disposition: CreateDisposition,
+                    share_policy: SharePolicy = SharePolicy.MUTATION,
+                ) -> FileCapability:
+                    nonlocal target_resource
+                    capability = real_open_file(
+                        parent,
+                        name,
+                        access=access,
+                        disposition=disposition,
+                        share_policy=share_policy,
+                    )
+                    is_target = (
+                        stage == "create-capability"
+                        and name == lease_name
+                        and disposition is CreateDisposition.CREATE_NEW
+                    ) or (
+                        stage == "lease-capability"
+                        and name == lease_name
+                        and access is FileAccess.READ_WRITE
+                        and disposition is CreateDisposition.OPEN_EXISTING
+                    )
+                    if is_target:
+                        retained_capabilities.append(capability)
+                        target_resource = backend._resource(capability)
+                    return capability
+
+                def close_resource(value: object) -> None:
+                    nonlocal close_attempts, owner_unavailable
+                    if value is target_resource:
+                        close_attempts += 1
+                        if close_attempts == 2:
+                            owner_unavailable = True
+                        assert isinstance(value, _ManagedRecordedResource)
+                        value.close_failures = 1
+                    real_close_resource(value)
+
+                def detach_resource(value: object, flags: int) -> int:
+                    nonlocal rollback_started
+                    if stage == "lease-capability" and value is target_resource:
+                        rollback_started = True
+                        raise OSError("injected published lease detach failure")
+                    return real_detach_resource(value, flags)
+
+                def read_descriptor(descriptor: int, size: int) -> bytes:
+                    nonlocal rollback_started, target_descriptor
+                    node = backend.detached.get(descriptor)
+                    if (
+                        stage == "read-descriptor"
+                        and target_descriptor is None
+                        and node is not None
+                        and node.name == lease_name
+                    ):
+                        target_descriptor = descriptor
+                        rollback_started = True
+                        raise OSError("injected marker read failure")
+                    return real_read(descriptor, size)
+
+                def close_descriptor(descriptor: int) -> None:
+                    nonlocal close_attempts, owner_unavailable
+                    if descriptor == target_descriptor:
+                        close_attempts += 1
+                        if close_attempts == 2:
+                            owner_unavailable = True
+                        raise OSError("injected marker descriptor close failure")
+                    real_close_descriptor(descriptor)
+
+                def close_coordinator(
+                    lock: LeaseLock, label: str
+                ) -> tuple[str, ...]:
+                    errors = real_close_coordinator(lock, label)
+                    if lock is backend.coordinator and lock.fd < 0:
+                        backend.events.append("close-coordinator-lock")
+                    return errors
+
+                def close_retained_owners() -> None:
+                    for capability in retained_capabilities:
+                        if capability.is_open:
+                            capability.close()
+                    for owner in descriptor_owners:
+                        if owner.fd >= 0:
+                            owner.close_once("test retained marker")
+                    for lock in allocated_locks:
+                        if lock.fd >= 0:
+                            lock.close()
+
+                backend.after_event = observe_and_inject
+                self.addCleanup(close_retained_owners)
+                with (
+                    mock.patch.object(
+                        lease_module,
+                        "_OwnedDescriptor",
+                        side_effect=allocate_descriptor_owner,
+                    ),
+                    mock.patch.object(
+                        backend, "open_file", side_effect=open_file
+                    ),
+                    mock.patch.object(
+                        backend, "close_resource", side_effect=close_resource
+                    ),
+                    mock.patch.object(
+                        backend,
+                        "detach_file_resource",
+                        side_effect=detach_resource,
+                    ),
+                    mock.patch.object(
+                        lease_module.os, "read", side_effect=read_descriptor
+                    ),
+                    mock.patch.object(
+                        lease_module.os,
+                        "close",
+                        side_effect=close_descriptor,
+                    ),
+                    mock.patch.object(
+                        lease_module,
+                        "_close_locked_coordinator_once",
+                        side_effect=close_coordinator,
+                    ),
+                    self.assertRaises(OSError) as caught,
+                ):
+                    self._create(
+                        backend,
+                        allocated_locks=allocated_locks,
+                    )
+
+                self.assertEqual(close_attempts, 2)
+                self.assertEqual(namespace_after_owner_failure, [])
+                managed = self._managed_node(backend)
+                if stage == "create-capability":
+                    self.assertIs(managed.children[active_name], replacement)
+                    retained_root = managed.children[staging_name]
+                    self.assertEqual(set(retained_root.children), {lease_name})
+                else:
+                    self.assertIsNone(replacement)
+                    self.assertNotIn(staging_name, managed.children)
+                    retained_root = managed.children[active_name]
+                    self.assertEqual(
+                        set(retained_root.children),
+                        {lease_name, ".hoimin-heartbeat.json"},
+                    )
+                self.assertTrue(rollback_lock_states)
+                self.assertTrue(all(rollback_lock_states))
+                self.assertEqual(
+                    backend.events[-1], "close-coordinator-lock"
+                )
+                self.assertTrue(
+                    sum(
+                        "cleanup unavailable" in note
+                        for note in getattr(caught.exception, "__notes__", ())
+                    )
+                    == 1
+                )
+                if stage == "read-descriptor":
+                    retained_descriptors = [
+                        owner
+                        for owner in descriptor_owners
+                        if owner.fd >= 0
+                    ]
+                    self.assertEqual(len(retained_descriptors), 1)
+                else:
+                    self.assertIsNotNone(target_resource)
+                    assert target_resource is not None
+                    self.assertFalse(target_resource.closed)
+
+    def test_staging_rollback_checks_absence_only_after_owner_close(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_close_locked_coordinator_once"],
+        )
+        staging_name = f".staging-{self.run_id}"
+        for close_failures in (1, 2):
+            with self.subTest(close_failures=close_failures):
+                backend = self._backend(
+                    rename_requires_closed_descendants=False
+                )
+                staging_resource: _ManagedRecordedResource | None = None
+                retained_staging: list[DirectoryCapability] = []
+                real_create_directory = backend.create_directory
+
+                def create_directory(
+                    parent: DirectoryCapability,
+                    name: str,
+                    share_policy: SharePolicy,
+                ) -> DirectoryCapability:
+                    capability = real_create_directory(
+                        parent, name, share_policy
+                    )
+                    if name == staging_name:
+                        retained_staging.append(capability)
+                    return capability
+
+                def close_retained_staging() -> None:
+                    for capability in retained_staging:
+                        if capability.is_open:
+                            capability.close()
+
+                self.addCleanup(close_retained_staging)
+
+                def fail_staging_verification(event: str) -> None:
+                    nonlocal staging_resource
+                    if event == f"delete:{staging_name}":
+                        staging_resource = next(
+                            resource
+                            for resource in backend.live_resources
+                            if resource.node.name == staging_name
+                        )
+                        staging_resource.close_failures = close_failures
+                    if event == (
+                        f"verify-managed:{staging_name}:repair=false"
+                    ):
+                        raise OSError("injected staging verification primary")
+
+                backend.after_event = fail_staging_verification
+                real_close_all = lease_module._close_locked_coordinator_once
+
+                def close_and_observe(
+                    lock: LeaseLock, label: str
+                ) -> tuple[str, ...]:
+                    errors = real_close_all(lock, label)
+                    if lock is backend.coordinator and lock.fd < 0:
+                        backend.events.append("close-coordinator-lock")
+                    return errors
+
+                with (
+                    mock.patch.object(
+                        lease_module,
+                        "_close_locked_coordinator_once",
+                        side_effect=close_and_observe,
+                    ),
+                    mock.patch.object(
+                        backend,
+                        "create_directory",
+                        side_effect=create_directory,
+                    ),
+                    self.assertRaisesRegex(
+                        OSError, "staging verification primary"
+                    ),
+                ):
+                    self._create(backend)
+
+                delete_index = backend.events.index(f"delete:{staging_name}")
+                rollback_events = backend.events[delete_index:]
+                expected_absence_checks = 1 if close_failures == 1 else 0
+                self.assertEqual(
+                    rollback_events.count(f"entry:{staging_name}"),
+                    expected_absence_checks,
+                )
+                self.assertEqual(
+                    rollback_events.count(f"close:{staging_name}"), 2
+                )
+                if close_failures == 1:
+                    self.assertLess(
+                        rollback_events.index("close:hoimin-focused-v1"),
+                        rollback_events.index("close-coordinator-lock"),
+                    )
+                    self.assertEqual(
+                        rollback_events[-1], "close-coordinator-lock"
+                    )
+                    self.assertIsNotNone(staging_resource)
+                    assert staging_resource is not None
+                    self.assertTrue(staging_resource.closed)
+                else:
+                    self.assertIsNotNone(staging_resource)
+                    assert staging_resource is not None
+                    self.assertFalse(staging_resource.closed)
+
+    def test_directory_rollback_never_deletes_a_non_created_capability(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_delete_owned_directory"],
+        )
+        backend = self._backend(rename_requires_closed_descendants=False)
+        parent = backend.open_root(backend.parent_path, SharePolicy.MUTATION)
+        initial = backend.create_directory(parent, "existing", SharePolicy.PINNED)
+        initial.close()
+        existing = backend.open_directory(parent, "existing", SharePolicy.PINNED)
+        backend.events.clear()
+
+        errors = lease_module._delete_owned_directory(
+            parent,
+            "existing",
+            existing,
+            backend,
+            label="managed staging rollback",
+        )
+
+        self.assertEqual(
+            sum("rollback unavailable" in error for error in errors), 1
+        )
+        self.assertTrue(existing.closed)
+        self.assertIn("existing", backend.parent.children)
+        self.assertFalse(
+            any(
+                event.startswith(("delete:", "entry:"))
+                for event in backend.events
+            )
+        )
+        parent.close()
+
+    def test_post_coordinator_allocation_failure_closes_every_owner_in_order(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_close_locked_coordinator_once"],
+        )
+        backend = self._backend(rename_requires_closed_descendants=False)
+        real_close = lease_module._close_locked_coordinator_once
+        root_close_lock_states: list[bool] = []
+
+        def observe_root_cleanup(event: str) -> None:
+            if event == "close:hoimin-focused-v1":
+                coordinator = backend.coordinator
+                root_close_lock_states.append(
+                    coordinator is not None and coordinator.locked
+                )
+
+        def close_and_observe(lock: LeaseLock, label: str) -> tuple[str, ...]:
+            errors = real_close(lock, label)
+            if lock is backend.coordinator and lock.fd < 0:
+                backend.events.append("close-coordinator-lock")
+            return errors
+
+        def close_leaked_coordinator() -> None:
+            coordinator = backend.coordinator
+            if coordinator is not None and coordinator.fd >= 0:
+                coordinator.close()
+
+        backend.after_event = observe_root_cleanup
+        self.addCleanup(close_leaked_coordinator)
+        with (
+            mock.patch.object(
+                lease_module.uuid,
+                "uuid4",
+                side_effect=MemoryError("injected post-coordinator allocation"),
+            ),
+            mock.patch.object(
+                lease_module,
+                "_close_locked_coordinator_once",
+                side_effect=close_and_observe,
+            ),
+            self.assertRaisesRegex(
+                MemoryError, "post-coordinator allocation"
+            ),
+        ):
+            self._create(backend)
+
+        self.assertEqual(root_close_lock_states, [True])
+        root_close = backend.events.index("close:hoimin-focused-v1")
+        coordinator_close = backend.events.index("close-coordinator-lock")
+        self.assertLess(root_close, coordinator_close)
+        self.assertEqual(backend.events[-1], "close-coordinator-lock")
+        coordinator = backend.coordinator
+        self.assertIsNotNone(coordinator)
+        assert coordinator is not None
+        self.assertEqual(coordinator.fd, -1)
+        self.assertFalse(coordinator.locked)
+        self.assertEqual(len(backend.live_resources), 0)
+
+    def test_marker_owner_registry_precedes_transaction_helper_acquisition(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_MarkerRollbackOwners"],
+        )
+        backend = self._backend(rename_requires_closed_descendants=False)
+        real_close = lease_module._close_locked_coordinator_once
+
+        def close_and_observe(lock: LeaseLock, label: str) -> tuple[str, ...]:
+            errors = real_close(lock, label)
+            if lock is backend.coordinator and lock.fd < 0:
+                backend.events.append("close-coordinator-lock")
+            return errors
+
+        with (
+            mock.patch.object(
+                lease_module,
+                "_MarkerRollbackOwners",
+                side_effect=MemoryError("injected owner registry allocation"),
+            ),
+            mock.patch.object(
+                lease_module,
+                "_close_locked_coordinator_once",
+                side_effect=close_and_observe,
+            ),
+            self.assertRaisesRegex(
+                MemoryError, "owner registry allocation"
+            ),
+        ):
+            self._create(backend)
+
+        self.assertFalse(
+            any(
+                event.startswith(
+                    (
+                        f"entry:run-{self.run_id}",
+                        f"entry:.staging-{self.run_id}",
+                        f"create-directory:.staging-{self.run_id}",
+                        "create_new:.hoimin-",
+                    )
+                )
+                for event in backend.events
+            )
+        )
+        self.assertEqual(
+            backend.events[-2:],
+            ["close:hoimin-focused-v1", "close-coordinator-lock"],
+        )
+        self.assertEqual(len(backend.live_resources), 0)
+
+    def test_coordinator_close_retries_only_after_locked_rollback(self) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_close_locked_coordinator_once"],
+        )
+        for persistent in (False, True):
+            with self.subTest(persistent=persistent):
+                backend = self._backend(
+                    rename_requires_closed_descendants=True
+                )
+                real_close = lease_module.os.close
+                coordinator_close_calls = 0
+                coordinator_close_lock_states: list[bool] = []
+                rollback_lock_states: list[bool] = []
+
+                def fail_coordinator_close(descriptor: int) -> None:
+                    nonlocal coordinator_close_calls
+                    coordinator = backend.coordinator
+                    if coordinator is None or descriptor != coordinator.fd:
+                        real_close(descriptor)
+                        return
+                    coordinator_close_calls += 1
+                    coordinator_close_lock_states.append(coordinator.locked)
+                    backend.events.append(
+                        f"close-coordinator-lock:{coordinator_close_calls}"
+                    )
+                    if coordinator_close_calls == 1 or persistent:
+                        raise OSError(
+                            "injected coordinator close failure "
+                            f"{coordinator_close_calls}"
+                        )
+                    real_close(descriptor)
+
+                def observe_rollback_lock(event: str) -> None:
+                    if event.startswith(
+                        ("rename:run-", "open-entry:", "delete:")
+                    ):
+                        coordinator = backend.coordinator
+                        rollback_lock_states.append(
+                            coordinator is not None and coordinator.locked
+                        )
+
+                backend.after_event = observe_rollback_lock
+                with (
+                    mock.patch.object(
+                        lease_module.os,
+                        "close",
+                        side_effect=fail_coordinator_close,
+                    ),
+                    self.assertRaisesRegex(
+                        OSError, "coordinator close failure 1"
+                    ) as caught,
+                ):
+                    self._create(backend)
+
+                self.assertEqual(coordinator_close_calls, 2)
+                self.assertEqual(
+                    coordinator_close_lock_states, [True, True]
+                )
+                first_close = backend.events.index("close-coordinator-lock:1")
+                second_close = backend.events.index("close-coordinator-lock:2")
+                rename_back = backend.events.index(
+                    f"rename:run-{self.run_id}->.staging-{self.run_id}:False"
+                )
+                self.assertLess(first_close, rename_back)
+                self.assertGreater(second_close, rename_back)
+                self.assertTrue(rollback_lock_states)
+                self.assertTrue(all(rollback_lock_states))
+                self.assertEqual(
+                    backend.events[-1], "close-coordinator-lock:2"
+                )
+                notes: tuple[str, ...] = tuple(
+                    getattr(caught.exception, "__notes__", ())
+                )
+                self.assertTrue(
+                    all(len(note.encode("utf-8")) <= 1_024 for note in notes)
+                )
+                if persistent:
+                    self.assertIn("close failure 2", notes[-1])
+                else:
+                    self.assertFalse(
+                        any("close failure 2" in note for note in notes)
+                    )
+                self.assertEqual(
+                    set(self._managed_node(backend).children),
+                    {".hoimin-coordinator"},
+                    f"notes={notes!r}; tail={backend.events[-30:]!r}",
+                )
+                self.assertEqual(len(backend.live_resources), 0)
+                coordinator = backend.coordinator
+                assert coordinator is not None
+                if persistent:
+                    descriptor = coordinator.fd
+                    self.assertGreaterEqual(descriptor, 0)
+                    backend.coordinator = None
+                    del coordinator
+                    gc.collect()
+                    try:
+                        with self.assertRaises(OSError):
+                            os.fstat(descriptor)
+                    finally:
+                        try:
+                            os.close(descriptor)
+                        except OSError:
+                            pass
+                else:
+                    self.assertEqual(coordinator.fd, -1)
+
+    def test_locked_coordinator_close_refuses_an_unlocked_descriptor(self) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_close_locked_coordinator_once"],
+        )
+        backing = tempfile.TemporaryFile()
+        self.addCleanup(backing.close)
+        descriptor = os.dup(backing.fileno())
+        lock = LeaseLock(descriptor)
+
+        errors = lease_module._close_locked_coordinator_once(
+            lock, "managed coordinator"
+        )
+
+        self.assertTrue(any("held lock" in error for error in errors))
+        self.assertEqual(lock.fd, descriptor)
+        self.assertFalse(lock.locked)
+        os.fstat(descriptor)
+        os.close(descriptor)
+        lock.fd = -1
+
+    def test_child_rollback_checks_absence_only_after_owner_close(self) -> None:
+        child_name = "candidate-0001"
+        for close_failures in (1, 2):
+            with self.subTest(close_failures=close_failures):
+                backend = self._backend(
+                    rename_requires_closed_descendants=False
+                )
+                scratch = self._create(backend)
+                child_resource: _ManagedRecordedResource | None = None
+                retained_children: list[DirectoryCapability] = []
+                armed = False
+                real_create_directory = backend.create_directory
+
+                def create_directory(
+                    parent: DirectoryCapability,
+                    name: str,
+                    share_policy: SharePolicy,
+                ) -> DirectoryCapability:
+                    capability = real_create_directory(
+                        parent, name, share_policy
+                    )
+                    if name == child_name:
+                        retained_children.append(capability)
+                    return capability
+
+                def close_retained_children() -> None:
+                    for capability in retained_children:
+                        if capability.is_open:
+                            capability.close()
+
+                self.addCleanup(close_retained_children)
+
+                def arm_child_close(event: str) -> None:
+                    nonlocal armed, child_resource
+                    if event != f"entry:{child_name}" or armed:
+                        return
+                    armed = True
+                    child_resource = next(
+                        resource
+                        for resource in backend.live_resources
+                        if resource.node.name == child_name
+                    )
+                    child_resource.close_failures = close_failures
+
+                backend.after_event = arm_child_close
+                start = len(backend.events)
+                with (
+                    mock.patch.object(
+                        backend,
+                        "create_directory",
+                        side_effect=create_directory,
+                    ),
+                    self.assertRaisesRegex(OSError, "injected close failure"),
+                ):
+                    scratch.create_child(child_name)
+
+                rollback_events = backend.events[start:]
+                self.assertEqual(
+                    rollback_events.count(f"entry:{child_name}"),
+                    1,
+                )
+                self.assertEqual(
+                    rollback_events.count(f"close:{child_name}"), 2
+                )
+                self.assertIsNotNone(child_resource)
+                assert child_resource is not None
+                if close_failures == 1:
+                    self.assertTrue(child_resource.closed)
+                else:
+                    self.assertFalse(child_resource.closed)
+
+    def test_child_meter_heartbeat_and_close_preserve_structural_ownership(
+        self,
+    ) -> None:
+        backend = self._backend(rename_requires_closed_descendants=False)
+        scratch = self._create(backend)
+
+        child_path = scratch.create_child("candidate-0001")
+        self.assertEqual(child_path, scratch.path / "candidate-0001")
+        self.assertIn(
+            "create-directory:candidate-0001:pinned", backend.events
+        )
+        child = scratch.open_child("candidate-0001", SharePolicy.SCAN)
+        self.assertTrue(child.is_open)
+        child.close()
+        meter = scratch.reopen_for_meter()
+        self.assertTrue(meter.is_open)
+        meter.close()
+        self.assertIn("reopen-directory:preserve", backend.events)
+
+        root = scratch._root
+        assert root is not None
+        root_node = backend._resource(root).node
+        original = root_node.children.pop(".hoimin-heartbeat.json")
+        original.name = ".hoimin-heartbeat.original"
+        root_node.children[original.name] = original
+        backend._new_node(
+            EntryKind.REGULAR,
+            SecurityDomain.MANAGED,
+            parent=root_node,
+            name=".hoimin-heartbeat.json",
+        )
+        touch_count = backend.events.count("touch:.hoimin-heartbeat.json")
+        with self.assertRaisesRegex(OSError, "heartbeat identity"):
+            scratch.refresh_heartbeat()
+        self.assertEqual(
+            backend.events.count("touch:.hoimin-heartbeat.json"), touch_count
+        )
+
+        heartbeat = scratch._heartbeat
+        assert heartbeat is not None
+        heartbeat_resource = backend._resource(heartbeat)
+        heartbeat_resource.close_failures = 1
+        first_errors = scratch.close_capabilities()
+        self.assertTrue(any("heartbeat" in error for error in first_errors))
+        self.assertIs(scratch._heartbeat, heartbeat)
+        self.assertTrue(heartbeat.is_open)
+        self.assertIsNone(scratch._lease)
+        self.assertIsNone(scratch._root)
+        self.assertIsNone(scratch._managed_root_capability)
+        self.assertEqual(scratch.close_capabilities(), ())
+        self.assertIsNone(scratch._heartbeat)
+
+    def test_child_iterator_cleanup_preserves_iteration_primary(self) -> None:
+        backend = self._backend(rename_requires_closed_descendants=False)
+        scratch = self._create(backend)
+        backend.iterator_failure = ValueError("injected iteration primary")
+        backend.failures[f"close:run-{self.run_id}"] = MemoryError(
+            "injected iterator close failure"
+        )
+
+        with self.assertRaisesRegex(
+            ValueError, "iteration primary"
+        ) as caught:
+            scratch.create_child("candidate-0001")
+
+        notes = getattr(caught.exception, "__notes__", ())
+        self.assertTrue(any("MemoryError" in note for note in notes))
+        root = scratch._root
+        assert root is not None
+        self.assertNotIn(
+            "candidate-0001", backend._resource(root).node.children
+        )
+        self.assertEqual(len(backend.live_resources), 3)
+
+    def test_child_replacement_is_rejected_and_deadline_stops_before_flush(
+        self,
+    ) -> None:
+        backend = self._backend(rename_requires_closed_descendants=False)
+        scratch = self._create(backend)
+        scratch.create_child("candidate-0001")
+        root = scratch._root
+        assert root is not None
+        root_node = backend._resource(root).node
+        original = root_node.children.pop("candidate-0001")
+        original.name = "candidate-original"
+        root_node.children[original.name] = original
+        replacement = backend._new_node(
+            EntryKind.DIRECTORY,
+            SecurityDomain.MANAGED,
+            parent=root_node,
+            name="candidate-0001",
+        )
+        with self.assertRaisesRegex(OSError, "child identity"):
+            scratch.open_child("candidate-0001", SharePolicy.SCAN)
+        self.assertIs(root_node.children["candidate-0001"], replacement)
+
+        before_flush = backend.events.count("flush:.hoimin-heartbeat.json")
+        with self.assertRaisesRegex(TimeoutError, "heartbeat"):
+            scratch.refresh_heartbeat(
+                deadline=5.0,
+                monotonic=mock.Mock(side_effect=[0.0, 6.0]),
+            )
+        self.assertIn("touch:.hoimin-heartbeat.json", backend.events)
+        self.assertEqual(
+            backend.events.count("flush:.hoimin-heartbeat.json"), before_flush
+        )
+
+    def test_finalizer_performs_close_only(self) -> None:
+        backend = self._backend(rename_requires_closed_descendants=False)
+        scratch = self._create(backend)
+        before = len(backend.events)
+
+        scratch.__del__()
+
+        tail = backend.events[before:]
+        self.assertTrue(tail)
+        self.assertTrue(all(event.startswith("close:") for event in tail))
+        self.assertFalse(any(event.startswith("rename:") for event in tail))
+        self.assertFalse(any(event.startswith("delete:") for event in tail))
 
 
 class AnchoredDiskGuardTests(unittest.TestCase):
@@ -2576,6 +5463,66 @@ class AnchoredDiskGuardTests(unittest.TestCase):
 
 
 class ManagedScratchTests(unittest.TestCase):
+    def _task7_backend(
+        self, *, rename_requires_closed_descendants: bool = False
+    ) -> _ManagedRecordingBackend:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        backend = _ManagedRecordingBackend(
+            Path(temporary.name).resolve(),
+            rename_requires_closed_descendants=(
+                rename_requires_closed_descendants
+            ),
+        )
+        self.addCleanup(backend.close_backings)
+        return backend
+
+    def _task7_create(
+        self,
+        backend: _ManagedRecordingBackend,
+        *,
+        run_id: str,
+    ) -> ManagedScratch:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_open_coordinator"],
+        )
+        real_open_coordinator = lease_module._open_coordinator
+
+        def observe_coordinator(*args: object, **kwargs: object) -> LeaseLock:
+            coordinator = real_open_coordinator(*args, **kwargs)
+            backend.coordinator = coordinator
+            return coordinator
+
+        with (
+            mock.patch.object(
+                lease_module, "reclaim_abandoned", return_value=[]
+            ),
+            mock.patch.object(
+                lease_module,
+                "_open_coordinator",
+                side_effect=observe_coordinator,
+            ),
+        ):
+            scratch = ManagedScratch.create(
+                backend.parent_path,
+                run_id=run_id,
+                backend=backend,
+            )
+        self.addCleanup(scratch.close_capabilities)
+        return scratch
+
+    @staticmethod
+    def _task7_managed_root(
+        backend: _ManagedRecordingBackend,
+    ) -> DirectoryCapability:
+        parent = backend.open_root(
+            backend.parent_path, SharePolicy.MUTATION
+        )
+        managed = backend.create_secure_root(parent, "hoimin-focused-v1")
+        parent.close()
+        return managed
+
     def test_exact_absolute_deadline_is_expired(self) -> None:
         lease_module = __import__(
             "tools.focused_mutation_support.lease",
@@ -2588,37 +5535,30 @@ class ManagedScratchTests(unittest.TestCase):
             )
 
     def test_managed_root_stops_between_filesystem_identity_queries(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["_ensure_managed_root"],
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_ensure_managed_root"],
+        )
+        backend = self._task7_backend()
+        clock = [0.0]
+
+        def cross_after_root_creation(event: str) -> None:
+            if event == "create-secure-root:hoimin-focused-v1":
+                clock[0] = 6.0
+
+        backend.after_event = cross_after_root_creation
+        with self.assertRaisesRegex(TimeoutError, "managed root deadline"):
+            lease_module._ensure_managed_root(
+                backend.parent_path,
+                backend=backend,
+                deadline=5.0,
+                monotonic=lambda: clock[0],
             )
-            real_identity = lease_module._filesystem_identity
-            crossed = False
-            identity_calls = 0
 
-            def crossing_identity(fd: int) -> tuple[int, int, int]:
-                nonlocal crossed, identity_calls
-                identity_calls += 1
-                value = real_identity(fd)
-                crossed = True
-                return value
-
-            with (
-                mock.patch.object(
-                    lease_module,
-                    "_filesystem_identity",
-                    side_effect=crossing_identity,
-                ),
-                self.assertRaisesRegex(TimeoutError, "managed root deadline"),
-            ):
-                lease_module._ensure_managed_root(
-                    Path(directory),
-                    deadline=5.0,
-                    monotonic=lambda: 6.0 if crossed else 0.0,
-                )
-
-            self.assertEqual(identity_calls, 1)
+        self.assertNotIn(
+            "verify-managed:hoimin-focused-v1:repair=true", backend.events
+        )
+        self.assertEqual(len(backend.live_resources), 0)
 
     def test_directory_reopen_stops_between_identity_queries(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2664,7 +5604,9 @@ class ManagedScratchTests(unittest.TestCase):
             )
             real_validate = lease_module.validate_reported_path
             real_write_marker = lease_module._write_marker_at
-            real_close_all = lease_module._close_lease_lock_all
+            real_close_coordinator = (
+                lease_module._close_locked_coordinator_once
+            )
             coordinator_closes: list[str] = []
 
             def reject_active(path: Path) -> str:
@@ -2674,7 +5616,7 @@ class ManagedScratchTests(unittest.TestCase):
 
             def observe_close(lock: LeaseLock, label: str) -> tuple[str, ...]:
                 coordinator_closes.append(label)
-                return real_close_all(lock, label)
+                return real_close_coordinator(lock, label)
 
             with (
                 mock.patch(
@@ -2686,7 +5628,8 @@ class ManagedScratchTests(unittest.TestCase):
                     wraps=real_write_marker,
                 ) as write_marker,
                 mock.patch(
-                    "tools.focused_mutation_support.lease._close_lease_lock_all",
+                    "tools.focused_mutation_support.lease."
+                    "_close_locked_coordinator_once",
                     side_effect=observe_close,
                 ),
                 self.assertRaisesRegex(ValueError, "active report path"),
@@ -2750,6 +5693,7 @@ class ManagedScratchTests(unittest.TestCase):
                 scratch.create_child("candidate-0001")
 
             self.assertFalse((scratch.path / "candidate-0001").exists())
+            self.assertEqual(scratch.close_capabilities(), ())
 
     def test_cleanup_validates_deleting_report_path_before_rename(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2797,32 +5741,28 @@ class ManagedScratchTests(unittest.TestCase):
             validate_reported_path(Path("/tmp/unsafe\npath"))
 
     def test_coordinator_validation_preserves_primary_and_attempts_fd_close(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            parent = Path(directory)
-            seed = ManagedScratch.create(parent)
-            managed = seed.managed_root
-            seed.mark_cleanup_ready()
-            self.assertEqual(seed.cleanup().status, ScratchCleanupStatus.CLEAN)
+        backend = self._task7_backend()
+        managed = self._task7_managed_root(backend)
+        with (
+            mock.patch(
+                "tools.focused_mutation_support.lease._initialize_or_validate_coordinator",
+                side_effect=ValueError("injected validation failure"),
+            ),
+            mock.patch.object(
+                LeaseLock,
+                "release",
+                side_effect=OSError("injected unlock failure"),
+            ),
+            self.assertRaisesRegex(
+                ValueError, "validation failure"
+            ) as caught,
+        ):
+            _open_coordinator(managed, backend)
 
-            with (
-                mock.patch(
-                    "tools.focused_mutation_support.lease._initialize_or_validate_coordinator",
-                    side_effect=ValueError("injected validation failure"),
-                ),
-                mock.patch.object(
-                    LeaseLock,
-                    "release",
-                    side_effect=OSError("injected unlock failure"),
-                ),
-                self.assertRaisesRegex(
-                    ValueError, "validation failure"
-                ) as caught,
-            ):
-                _open_coordinator(managed)
-
-            self.assertTrue(
-                any("unlock failed" in note for note in caught.exception.__notes__)
-            )
+        self.assertTrue(
+            any("unlock failed" in note for note in caught.exception.__notes__)
+        )
+        managed.close()
     def test_lease_close_always_attempts_fd_close_after_unlock_failure(self) -> None:
         with tempfile.TemporaryFile() as stream:
             descriptor = os.dup(stream.fileno())
@@ -2989,40 +5929,43 @@ class ManagedScratchTests(unittest.TestCase):
         )
 
     def test_bootstrap_swap_cannot_chmod_or_open_replacement_target(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            parent = Path(directory)
-            managed = parent / "hoimin-focused-v1"
-            managed.mkdir(mode=0o700)
-            moved = parent / "managed-original"
-            outside = parent / "outside"
-            outside.mkdir(mode=0o755)
-            outside_mode = stat.S_IMODE(outside.stat().st_mode)
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["_open_directory_at"],
+        backend = self._task7_backend()
+        original = backend._new_node(
+            EntryKind.DIRECTORY,
+            SecurityDomain.MANAGED,
+            parent=backend.parent,
+            name="hoimin-focused-v1",
+        )
+        replacement: _ManagedRecordedNode | None = None
+
+        def swap_after_security(event: str) -> None:
+            nonlocal replacement
+            if event != "verify-managed:hoimin-focused-v1:repair=true":
+                return
+            backend.parent.children.pop("hoimin-focused-v1")
+            original.name = "managed-original"
+            backend.parent.children[original.name] = original
+            replacement = backend._new_node(
+                EntryKind.DIRECTORY,
+                SecurityDomain.MANAGED,
+                parent=backend.parent,
+                name="hoimin-focused-v1",
             )
-            real_open = lease_module._open_directory_at
-            swapped = False
 
-            def swap_after_open(
-                parent_fd: int, name: str, **kwargs: object
-            ) -> int:
-                nonlocal swapped
-                descriptor = real_open(parent_fd, name, **kwargs)
-                if name == "hoimin-focused-v1" and not swapped:
-                    managed.rename(moved)
-                    managed.symlink_to(outside, target_is_directory=True)
-                    swapped = True
-                return descriptor
+        backend.after_event = swap_after_security
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_ensure_managed_root"],
+        )
+        with self.assertRaisesRegex(OSError, "identity changed"):
+            lease_module._ensure_managed_root(
+                backend.parent_path, backend=backend
+            )
 
-            with mock.patch(
-                "tools.focused_mutation_support.lease._open_directory_at",
-                side_effect=swap_after_open,
-            ), self.assertRaises(OSError):
-                ManagedScratch.create(parent)
-
-            self.assertTrue(swapped)
-            self.assertEqual(stat.S_IMODE(outside.stat().st_mode), outside_mode)
+        self.assertIs(
+            backend.parent.children["hoimin-focused-v1"], replacement
+        )
+        self.assertEqual(len(backend.live_resources), 0)
 
     def test_janitor_keeps_selected_root_capability_after_path_replacement(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -3066,24 +6009,29 @@ class ManagedScratchTests(unittest.TestCase):
             )
 
     def test_zero_progress_lease_marker_write_rolls_back_staging(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            parent = Path(directory)
-            with (
-                mock.patch(
-                    "tools.focused_mutation_support.lease.os.write",
-                    return_value=0,
-                ),
-                self.assertRaisesRegex(OSError, "made no progress"),
-            ):
-                ManagedScratch.create(parent)
-
-            managed = parent / "hoimin-focused-v1"
-            self.assertFalse(
-                any(
-                    child.name.startswith(("run-", ".staging-", ".deleting-"))
-                    for child in managed.iterdir()
-                )
+        backend = self._task7_backend()
+        managed = self._task7_managed_root(backend)
+        coordinator = _open_coordinator(managed, backend)
+        coordinator.close()
+        managed.close()
+        with (
+            mock.patch(
+                "tools.focused_mutation_support.lease.os.write",
+                return_value=0,
+            ),
+            self.assertRaisesRegex(OSError, "made no progress"),
+        ):
+            ManagedScratch.create(
+                backend.parent_path,
+                run_id="00000000-0000-4000-8000-000000000716",
+                backend=backend,
             )
+
+        managed_node = backend.parent.children["hoimin-focused-v1"]
+        self.assertEqual(
+            set(managed_node.children), {".hoimin-coordinator"}
+        )
+        self.assertEqual(len(backend.live_resources), 0)
 
     def test_report_freeze_blocks_child_registration_and_detects_later_change(
         self,
@@ -3098,15 +6046,8 @@ class ManagedScratchTests(unittest.TestCase):
 
             child = scratch.create_child("candidate-0001")
             self.assertFalse(scratch.registry_generation_is(generation))
-            self.assertEqual(
-                scratch.remove_child(child).status,
-                ScratchCleanupStatus.CLEAN,
-            )
-            scratch.mark_cleanup_ready()
-            self.assertEqual(
-                scratch.cleanup().status,
-                ScratchCleanupStatus.CLEAN,
-            )
+            self.assertEqual(child, scratch.path / "candidate-0001")
+            self.assertEqual(scratch.close_capabilities(), ())
 
     def test_coordinator_uses_fixed_dual_crc_slots(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -3123,143 +6064,117 @@ class ManagedScratchTests(unittest.TestCase):
                 int.from_bytes(slot[508:512], "little"),
                 zlib.crc32(slot[:508]) & 0xFFFF_FFFF,
             )
-            scratch.mark_cleanup_ready()
-            self.assertEqual(
-                scratch.cleanup().status,
-                ScratchCleanupStatus.CLEAN,
-            )
+            self.assertEqual(scratch.close_capabilities(), ())
 
     def test_coordinator_contention_has_a_bounded_deadline(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            managed = Path(directory)
-            with (
-                mock.patch(
-                    "tools.focused_mutation_support.lease.LeaseLock.acquire",
-                    side_effect=BlockingIOError("busy"),
-                ),
-                self.assertRaisesRegex(TimeoutError, "coordinator lock"),
-            ):
-                _open_coordinator(managed, timeout=0.01)
+        backend = self._task7_backend()
+        managed = self._task7_managed_root(backend)
+        with (
+            mock.patch(
+                "tools.focused_mutation_support.lease.LeaseLock.acquire",
+                side_effect=BlockingIOError("busy"),
+            ),
+            self.assertRaisesRegex(TimeoutError, "coordinator lock"),
+        ):
+            _open_coordinator(managed, backend, timeout=0.01)
+        managed.close()
 
     def test_coordinator_uses_shorter_timeout_than_total_deadline(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            managed = Path(directory)
-            now = 0.0
+        backend = self._task7_backend()
+        managed = self._task7_managed_root(backend)
+        now = 0.0
 
-            def clock() -> float:
-                return now
+        def clock() -> float:
+            return now
 
-            def advance(seconds: float) -> None:
-                nonlocal now
-                now += seconds
+        def advance(seconds: float) -> None:
+            nonlocal now
+            now += seconds
 
-            with (
-                mock.patch(
-                    "tools.focused_mutation_support.lease.LeaseLock.acquire",
-                    side_effect=BlockingIOError("busy"),
-                ),
-                self.assertRaisesRegex(TimeoutError, "coordinator lock"),
-            ):
-                _open_coordinator(
-                    managed,
-                    timeout=0.02,
-                    deadline=0.2,
-                    monotonic=clock,
-                    sleep=advance,
-                )
+        with (
+            mock.patch(
+                "tools.focused_mutation_support.lease.LeaseLock.acquire",
+                side_effect=BlockingIOError("busy"),
+            ),
+            self.assertRaisesRegex(TimeoutError, "coordinator lock"),
+        ):
+            _open_coordinator(
+                managed,
+                backend,
+                timeout=0.02,
+                deadline=0.2,
+                monotonic=clock,
+                sleep=advance,
+            )
 
-            self.assertLessEqual(now, 0.021)
+        self.assertLessEqual(now, 0.021)
+        managed.close()
 
     def test_coordinator_does_not_initialize_after_absolute_deadline(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            managed = Path(directory)
-            root_fd = os.open(
-                managed, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        backend = self._task7_backend()
+        managed = self._task7_managed_root(backend)
+        with self.assertRaisesRegex(TimeoutError, "deadline"):
+            _open_coordinator(
+                managed,
+                backend,
+                deadline=5.0,
+                monotonic=mock.Mock(side_effect=[0.0, 6.0]),
             )
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["_open_coordinator"],
-            )
-            try:
-                with (
-                    mock.patch.object(
-                        lease_module.os,
-                        "fstat",
-                        wraps=lease_module.os.fstat,
-                    ) as fstat,
-                    self.assertRaisesRegex(TimeoutError, "deadline"),
-                ):
-                    _open_coordinator(
-                        managed,
-                        root_fd=root_fd,
-                        deadline=5.0,
-                        monotonic=mock.Mock(side_effect=[0.0, 6.0]),
-                    )
-                fstat.assert_not_called()
-            finally:
-                os.close(root_fd)
+        self.assertNotIn(
+            "verify-managed:.hoimin-coordinator:repair=true",
+            backend.events,
+        )
+        managed.close()
 
     def test_coordinator_parent_close_failure_also_closes_coordinator_fd(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            managed = Path(directory)
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["_open_coordinator"],
-            )
-            real_open = lease_module.os.open
-            real_close = lease_module.os.close
-            opened: list[int] = []
+        backend = self._task7_backend()
+        managed = self._task7_managed_root(backend)
 
-            def record_open(*args: object, **kwargs: object) -> int:
-                descriptor = real_open(*args, **kwargs)  # type: ignore[arg-type]
-                opened.append(descriptor)
-                return descriptor
+        def fail_after_open(event: str) -> None:
+            if event == "verify-managed:.hoimin-coordinator:repair=true":
+                resource = next(
+                    resource
+                    for resource in backend.live_resources
+                    if resource.node.name == ".hoimin-coordinator"
+                )
+                resource.close_failures = 1
+                raise OSError("injected coordinator verification failure")
 
-            def close_parent_then_fail(descriptor: int) -> None:
-                real_close(descriptor)
-                if opened and descriptor == opened[0]:
-                    raise OSError("injected coordinator parent close failure")
+        backend.after_event = fail_after_open
+        with self.assertRaisesRegex(OSError, "verification failure") as caught:
+            _open_coordinator(managed, backend)
 
-            with (
-                mock.patch.object(lease_module.os, "open", side_effect=record_open),
-                mock.patch.object(
-                    lease_module.os,
-                    "close",
-                    side_effect=close_parent_then_fail,
-                ),
-                self.assertRaisesRegex(OSError, "parent close failure"),
-            ):
-                _open_coordinator(managed)
-
-            self.assertEqual(len(opened), 2)
-            for descriptor in opened:
-                with self.assertRaises(OSError):
-                    os.fstat(descriptor)
+        self.assertTrue(
+            any("close failed" in note for note in caught.exception.__notes__)
+        )
+        self.assertEqual(len(backend.live_resources), 1)
+        managed.close()
 
     def test_managed_root_bootstrap_stops_after_mkdir_crosses_deadline(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["_ensure_managed_root"],
+        backend = self._task7_backend()
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_ensure_managed_root"],
+        )
+        clock = [0.0]
+        backend.after_event = lambda event: clock.__setitem__(
+            0, 6.0
+        ) if event.startswith("create-secure-root:") else None
+        with self.assertRaisesRegex(TimeoutError, "deadline"):
+            lease_module._ensure_managed_root(
+                backend.parent_path,
+                backend=backend,
+                deadline=5.0,
+                monotonic=lambda: clock[0],
             )
-            with (
-                mock.patch.object(
-                    lease_module,
-                    "_open_directory_at",
-                    wraps=lease_module._open_directory_at,
-                ) as open_directory,
-                self.assertRaisesRegex(TimeoutError, "deadline"),
-            ):
-                lease_module._ensure_managed_root(
-                    Path(directory),
-                    deadline=5.0,
-                    monotonic=mock.Mock(side_effect=[0.0, 0.0, 6.0]),
-                )
-            open_directory.assert_not_called()
+        self.assertFalse(
+            any(event.startswith("verify-managed:") for event in backend.events)
+        )
+        self.assertEqual(len(backend.live_resources), 0)
 
     def test_selection_timeout_keeps_descriptor_close_failure_secondary(
         self,
@@ -3393,143 +6308,157 @@ class ManagedScratchTests(unittest.TestCase):
             self.assertIn("injected candidate lease close failure", detail)
 
     def test_invalid_run_id_releases_coordinator_lock(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            parent = Path(directory)
-            with self.assertRaises(ValueError):
-                ManagedScratch.create(parent, run_id="not-a-uuid")
-
-            coordinator = _open_coordinator(
-                parent / "hoimin-focused-v1",
-                timeout=0.01,
+        backend = self._task7_backend()
+        with self.assertRaises(ValueError):
+            ManagedScratch.create(
+                backend.parent_path,
+                run_id="not-a-uuid",
+                backend=backend,
             )
-            coordinator.close()
+
+        managed = self._task7_managed_root(backend)
+        coordinator = _open_coordinator(
+            managed,
+            backend,
+            timeout=0.01,
+        )
+        coordinator.close()
+        managed.close()
 
     def test_invalid_run_id_preserves_managed_root_close_secondary(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["_close_descriptors_all"],
+        backend = self._task7_backend()
+        backend.failures["close:hoimin-focused-v1"] = OSError(
+            "injected managed root close failure"
+        )
+        with self.assertRaises(ValueError) as caught:
+            ManagedScratch.create(
+                backend.parent_path,
+                run_id="not-a-uuid",
+                backend=backend,
             )
-            real_close_all = lease_module._close_descriptors_all
 
-            def close_with_secondary(
-                descriptors: tuple[tuple[str, int], ...],
-            ) -> tuple[str, ...]:
-                errors = real_close_all(descriptors)
-                if any(
-                    label == "managed scratch creation root"
-                    for label, _descriptor in descriptors
-                ):
-                    return (*errors, "injected managed root close failure")
-                return errors
-
-            with (
-                mock.patch.object(
-                    lease_module,
-                    "_close_descriptors_all",
-                    side_effect=close_with_secondary,
-                ),
-                self.assertRaises(ValueError) as caught,
-            ):
-                ManagedScratch.create(Path(directory), run_id="not-a-uuid")
-
-            self.assertTrue(
-                any(
-                    "managed root close failure" in note
-                    for note in getattr(caught.exception, "__notes__", ())
-                )
+        self.assertTrue(
+            any(
+                "managed root close failure" in note
+                for note in getattr(caught.exception, "__notes__", ())
             )
+        )
+        self.assertEqual(len(backend.live_resources), 0)
 
     def test_constructor_failure_after_lease_publication_rolls_back_staging(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            parent = Path(directory)
-            original = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["_write_marker_at"],
-            )._write_marker_at
-            calls = 0
+        backend = self._task7_backend()
+        run_id = "00000000-0000-4000-8000-000000000010"
+        backend.failures[
+            "create_new:.hoimin-heartbeat.json:read_write:pinned"
+        ] = OSError("injected heartbeat failure")
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["reclaim_abandoned"],
+        )
 
-            def fail_heartbeat(
-                directory_fd: int,
-                name: str,
-                value: dict[str, object],
-            ) -> None:
-                nonlocal calls
-                calls += 1
-                if calls == 2:
-                    raise OSError("injected heartbeat failure")
-                original(directory_fd, name, value)
-
-            with (
-                mock.patch(
-                    "tools.focused_mutation_support.lease._write_marker_at",
-                    side_effect=fail_heartbeat,
-                ),
-                self.assertRaisesRegex(OSError, "heartbeat failure"),
-            ):
-                ManagedScratch.create(
-                    parent,
-                    run_id="00000000-0000-4000-8000-000000000010",
-                )
-
-            managed = parent / "hoimin-focused-v1"
-            self.assertEqual(
-                sorted(path.name for path in managed.iterdir()),
-                [".hoimin-coordinator"],
+        with (
+            mock.patch.object(
+                lease_module, "reclaim_abandoned", return_value=[]
+            ),
+            self.assertRaisesRegex(OSError, "heartbeat failure"),
+        ):
+            ManagedScratch.create(
+                backend.parent_path,
+                run_id=run_id,
+                backend=backend,
             )
 
+        managed = backend.parent.children["hoimin-focused-v1"]
+        self.assertEqual(set(managed.children), {".hoimin-coordinator"})
+        self.assertEqual(len(backend.live_resources), 0)
+
     def test_constructor_preserves_preexisting_empty_staging(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            parent = Path(directory)
-            seed = ManagedScratch.create(parent)
-            managed = seed.managed_root
-            seed.mark_cleanup_ready()
-            self.assertEqual(seed.cleanup().status, ScratchCleanupStatus.CLEAN)
-            run_id = "00000000-0000-4000-8000-000000000113"
-            staging = managed / f".staging-{run_id}"
-            staging.mkdir(mode=0o700)
+        backend = self._task7_backend()
+        managed = backend._new_node(
+            EntryKind.DIRECTORY,
+            SecurityDomain.MANAGED,
+            parent=backend.parent,
+            name="hoimin-focused-v1",
+        )
+        run_id = "00000000-0000-4000-8000-000000000113"
+        staging_name = f".staging-{run_id}"
+        staging = backend._new_node(
+            EntryKind.DIRECTORY,
+            SecurityDomain.MANAGED,
+            parent=managed,
+            name=staging_name,
+        )
 
-            with self.assertRaises(FileExistsError):
-                ManagedScratch.create(parent, run_id=run_id)
+        with self.assertRaises(FileExistsError):
+            ManagedScratch.create(
+                backend.parent_path,
+                run_id=run_id,
+                backend=backend,
+            )
 
-            self.assertTrue(staging.is_dir())
+        self.assertIs(managed.children[staging_name], staging)
+        self.assertEqual(len(backend.live_resources), 0)
 
     def test_constructor_never_replaces_preexisting_empty_active(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            parent = Path(directory)
-            seed = ManagedScratch.create(parent)
-            managed = seed.managed_root
-            seed.mark_cleanup_ready()
-            self.assertEqual(seed.cleanup().status, ScratchCleanupStatus.CLEAN)
-            run_id = "00000000-0000-4000-8000-000000000114"
-            active = managed / f"run-{run_id}"
-            active.mkdir(mode=0o700)
-            identity = (active.stat().st_dev, active.stat().st_ino)
+        backend = self._task7_backend()
+        managed = backend._new_node(
+            EntryKind.DIRECTORY,
+            SecurityDomain.MANAGED,
+            parent=backend.parent,
+            name="hoimin-focused-v1",
+        )
+        run_id = "00000000-0000-4000-8000-000000000114"
+        active_name = f"run-{run_id}"
+        active = backend._new_node(
+            EntryKind.DIRECTORY,
+            SecurityDomain.MANAGED,
+            parent=managed,
+            name=active_name,
+        )
+        identity = active.identity
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["reclaim_abandoned"],
+        )
 
-            with self.assertRaises(FileExistsError):
-                ManagedScratch.create(parent, run_id=run_id)
+        with (
+            mock.patch.object(
+                lease_module, "reclaim_abandoned", return_value=[]
+            ),
+            self.assertRaises(FileExistsError),
+        ):
+            ManagedScratch.create(
+                backend.parent_path,
+                run_id=run_id,
+                backend=backend,
+            )
 
-            self.assertEqual((active.stat().st_dev, active.stat().st_ino), identity)
-            self.assertFalse((managed / f".staging-{run_id}").exists())
+        self.assertEqual(managed.children[active_name].identity, identity)
+        self.assertNotIn(f".staging-{run_id}", managed.children)
+        self.assertFalse(any(event.startswith("rename:") for event in backend.events))
+        self.assertEqual(len(backend.live_resources), 0)
 
     def test_coordinator_close_failure_after_publish_rolls_back_active_root(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             parent = Path(directory)
             lease_module = __import__(
                 "tools.focused_mutation_support.lease",
-                fromlist=["_close_lease_lock_all"],
+                fromlist=["_close_locked_coordinator_once"],
             )
-            real_close_all = lease_module._close_lease_lock_all
+            real_close_coordinator = (
+                lease_module._close_locked_coordinator_once
+            )
 
             def fail_coordinator(lock: LeaseLock, label: str) -> tuple[str, ...]:
-                errors = real_close_all(lock, label)
+                errors = real_close_coordinator(lock, label)
                 if label == "managed coordinator":
                     return (*errors, "injected coordinator close failure")
                 return errors
 
             with (
                 mock.patch(
-                    "tools.focused_mutation_support.lease._close_lease_lock_all",
+                    "tools.focused_mutation_support.lease."
+                    "_close_locked_coordinator_once",
                     side_effect=fail_coordinator,
                 ),
                 self.assertRaisesRegex(OSError, "coordinator close failure"),
@@ -6177,18 +9106,32 @@ class ManagedScratchTests(unittest.TestCase):
             scratch.close_capabilities()
 
     def test_heartbeat_refresh_refuses_replaced_marker(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            heartbeat = scratch.path / ".hoimin-heartbeat.json"
-            moved = scratch.path / ".hoimin-heartbeat.original"
-            heartbeat.rename(moved)
-            heartbeat.write_text("replacement", encoding="utf-8")
-            replacement_mtime = heartbeat.stat().st_mtime_ns
+        backend = self._task7_backend()
+        scratch = self._task7_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000715",
+        )
+        root_capability = scratch._root
+        assert root_capability is not None
+        root = backend._resource(root_capability).node
+        heartbeat = root.children.pop(".hoimin-heartbeat.json")
+        heartbeat.name = ".hoimin-heartbeat.original"
+        root.children[heartbeat.name] = heartbeat
+        replacement = backend._new_node(
+            EntryKind.REGULAR,
+            SecurityDomain.MANAGED,
+            parent=root,
+            name=".hoimin-heartbeat.json",
+        )
+        touches = backend.events.count("touch:.hoimin-heartbeat.json")
 
-            with self.assertRaisesRegex(OSError, "heartbeat identity changed"):
-                scratch.refresh_heartbeat()
+        with self.assertRaisesRegex(OSError, "heartbeat identity changed"):
+            scratch.refresh_heartbeat()
 
-            self.assertEqual(heartbeat.stat().st_mtime_ns, replacement_mtime)
+        self.assertIs(root.children[".hoimin-heartbeat.json"], replacement)
+        self.assertEqual(
+            backend.events.count("touch:.hoimin-heartbeat.json"), touches
+        )
 
     def test_retention_preserves_exact_validated_root(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -6212,7 +9155,9 @@ class ManagedScratchTests(unittest.TestCase):
             retained = scratch.path
             scratch.mark_cleanup_ready()
             scratch.retain()
-            scratch._lease.release()
+            lease = scratch._lease
+            assert lease is not None
+            lease.release()
 
             records = reclaim_abandoned(scratch.managed_root)
 
@@ -6848,7 +9793,9 @@ class OwnedOutputTests(unittest.TestCase):
             scratch = ManagedScratch.create(Path(directory))
             leased = scratch.path
             managed = scratch.managed_root
-            lease_fd = scratch._lease.fd
+            lease = scratch._lease
+            assert lease is not None
+            lease_fd = lease.fd
             scratch.mark_cleanup_ready()
 
             scratch.__del__()
