@@ -418,12 +418,12 @@ fn record_notification(state: &mut RunState, message: u32, pid: u32, job_is_empt
                     .map(|root| root.id),
             );
         }
-        JOB_OBJECT_MSG_EXIT_PROCESS | JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS
-            if let Some(index) = state.active.iter().position(|root| root.pid == pid) =>
-        {
-            let root = state.active.remove(index);
-            if root.signal.is_some() {
-                state.exited_roots.insert(root.id);
+        JOB_OBJECT_MSG_EXIT_PROCESS | JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS => {
+            if let Some(index) = state.active.iter().position(|root| root.pid == pid) {
+                let root = state.active.remove(index);
+                if root.signal.is_some() {
+                    state.exited_roots.insert(root.id);
+                }
             }
         }
         _ => {}
