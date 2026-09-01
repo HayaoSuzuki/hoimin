@@ -721,6 +721,8 @@ class _RecordingFilesystemBackend(FilesystemBackend):
             selected = events.pop(0)
             if isinstance(selected, BaseException):
                 raise selected
+            if isinstance(selected, (DirectoryCapability, FileCapability)):
+                return cast(DirectoryCapability, selected)
             assert isinstance(selected, _RecordedNode)
             node = selected
         else:
@@ -1360,6 +1362,97 @@ class AnchoredDiskGuardTests(unittest.TestCase):
         assert failure.message is not None
         self.assertIn("injected capability close failure", failure.message)
         self.assertEqual(backend.active_resources, 1)
+
+    def test_rejected_exact_path_owner_gets_a_final_cleanup_attempt(self) -> None:
+        path = Path("C:/recorded/owned")
+        exact_path = Path("C:/recorded/exact")
+        cases = (
+            ("owner", "disk root capability owner does not match backend"),
+            ("kind", "disk root capability kind is not a directory"),
+            ("path", "disk root capability path does not match MeterRoot"),
+        )
+        for case, primary_message in cases:
+            with self.subTest(case=case):
+                backend = _RecordingFilesystemBackend()
+                retained = self._node()
+                backend.register(path, retained)
+                invalid: DirectoryCapability | FileCapability
+                if case == "owner":
+                    invalid_backend = _RecordingFilesystemBackend()
+                    invalid = invalid_backend.directory_capability(
+                        self._node(filesystem=retained.filesystem),
+                        exact_path,
+                        close_failures=1,
+                    )
+                elif case == "kind":
+                    invalid_backend = backend
+                    invalid_node = self._node(
+                        filesystem=retained.filesystem,
+                        kind=EntryKind.REGULAR,
+                    )
+                    backend.close_failures[invalid_node.identity] = 1
+                    invalid = backend.file_capability(invalid_node, exact_path)
+                else:
+                    invalid_backend = backend
+                    invalid = backend.directory_capability(
+                        self._node(filesystem=retained.filesystem),
+                        Path("C:/recorded/wrong"),
+                        close_failures=1,
+                    )
+                backend.open_root_events[exact_path] = [invalid]
+                guard, _ = self._recording_guard(
+                    path,
+                    retained,
+                    backend=backend,
+                    meter_root=MeterRoot(
+                        path,
+                        charge_owned_bytes=False,
+                        enforcement=f"capacity_only:{case}",
+                        exact_path=exact_path,
+                    ),
+                )
+                self.addCleanup(guard.close)
+                self.addCleanup(invalid.close)
+
+                failure = guard.sample()
+
+                self.assertIsNotNone(failure)
+                assert failure is not None
+                self.assertEqual(failure.reason, DiskStopReason.MEASUREMENT_FAILED)
+                assert failure.message is not None
+                self.assertTrue(
+                    failure.message.startswith(
+                        f"RuntimeError: {primary_message}"
+                    )
+                )
+                self.assertEqual(
+                    failure.message.count("filesystem capability close failed"),
+                    1,
+                )
+                self.assertIn("injected capability close failure", failure.message)
+                self.assertLessEqual(len(failure.message.encode("utf-8")), 1_024)
+                self.assertEqual(
+                    (
+                        invalid.closed,
+                        invalid_backend.operations.count("capability.close"),
+                        invalid_backend.closed_identities.count(invalid.identity),
+                        backend.active_resources,
+                        invalid_backend.active_resources,
+                    ),
+                    (
+                        True,
+                        2,
+                        1,
+                        1,
+                        1 if invalid_backend is backend else 0,
+                    ),
+                )
+                self.assertEqual(guard.close(), ())
+                self.assertEqual(backend.active_resources, 0)
+                self.assertEqual(
+                    invalid_backend.closed_identities.count(invalid.identity),
+                    1,
+                )
 
     def test_exact_path_replacement_and_later_disappearance_are_typed(self) -> None:
         path = Path("C:/recorded/owned")

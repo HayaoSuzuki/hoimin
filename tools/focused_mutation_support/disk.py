@@ -1407,13 +1407,11 @@ class DiskGuard:
                                     opened,
                                     (DirectoryCapability, FileCapability),
                                 ):
-                                    try:
-                                        opened.close()
-                                    except BaseException as close_error:
-                                        _add_close_note(
-                                            validation_error,
-                                            close_error,
-                                        )
+                                    _close_capability_after_error(
+                                        opened,
+                                        validation_error,
+                                        check_deadline=check_deadline,
+                                    )
                                 raise
                             check_deadline()
                             exact_identity = transient.identity
