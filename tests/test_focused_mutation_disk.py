@@ -1,4 +1,5 @@
 from pathlib import Path
+import argparse
 from contextlib import contextmanager
 from collections.abc import Callable
 import gc
@@ -12,9 +13,10 @@ import time
 import unittest
 import uuid
 from unittest import mock
+from typing import cast
 import zlib
 
-from tools.focused_mutation import _parser, options_from_arguments
+from tools.focused_mutation import Options, _parser, options_from_arguments
 from tools.focused_mutation_support.disk import (
     MAX_COMMAND_LOG_BYTES,
     MAX_LOG_BYTES,
@@ -32,8 +34,22 @@ from tools.focused_mutation_support.disk import (
     DiskStopReason,
     DISK_MEASUREMENT_FAILED,
     apply_disk_lifecycle_event,
+    canonical_scratch_root,
     evaluate_disk_policy,
     parse_byte_size,
+)
+from tools.focused_mutation_support.filesystem import (
+    CreateDisposition,
+    DirectoryCapability,
+    DirectoryEntry,
+    EntryKind,
+    FileAccess,
+    FileCapability,
+    FileIdentity,
+    FilesystemBackend,
+    FilesystemIdentity,
+    SecurityDomain,
+    SharePolicy,
 )
 from tools.focused_mutation_support.runner import CommandDiskStopped, CommandRunner
 from tools.focused_mutation_support.model import RunRecord
@@ -55,16 +71,38 @@ from tools.focused_mutation_support.mutation import (
     read_bounded_regular_tail,
 )
 from tools.focused_mutation_support.store import (
+    BoundedTextWriter,
     OwnedOutput,
     ReportTooLarge,
     RunStore,
 )
 
 
+def _cleanup_records_only(
+    records: list[ScratchCleanupRecord | JanitorDiagnostic],
+) -> list[ScratchCleanupRecord]:
+    assert all(isinstance(record, ScratchCleanupRecord) for record in records)
+    return cast(list[ScratchCleanupRecord], records)
+
+
+def _write_text(text: str) -> Callable[[BoundedTextWriter], None]:
+    def write(writer: BoundedTextWriter) -> None:
+        writer.write(text)
+
+    return write
+
+
 class DiskPolicyParserTests(unittest.TestCase):
+    def options(self, namespace: argparse.Namespace) -> Options:
+        parser_os = mock.Mock(wraps=os)
+        parser_os.name = "posix"
+        parser_os.path = os.path
+        with mock.patch("tools.focused_mutation.os", parser_os):
+            return options_from_arguments(namespace, Path("/repo"))
+
     def parse(self, *arguments: str) -> DiskPolicy:
         namespace = _parser().parse_args(["--output", "/tmp/out", *arguments])
-        return options_from_arguments(namespace, Path("/repo")).disk_policy
+        return self.options(namespace).disk_policy
 
     def test_exact_disk_safety_defaults(self) -> None:
         policy = self.parse()
@@ -132,6 +170,10 @@ class DiskPolicyParserTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "scratch root"):
                 self.parse("--scratch-root", str(file_path))
 
+    @unittest.skipIf(
+        os.name == "nt",
+        "Task 8 OwnedOutput activation and symlink policy are intentionally unmigrated",
+    )
     def test_cli_preserves_output_symlink_for_no_follow_rejection(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -143,7 +185,7 @@ class DiskPolicyParserTests(unittest.TestCase):
                 ["--output", str(output), "--min-free-space", "1"]
             )
 
-            options = options_from_arguments(namespace, Path("/repo"))
+            options = self.options(namespace)
 
             self.assertEqual(options.output, output.absolute())
             self.assertNotEqual(options.output, target)
@@ -173,13 +215,13 @@ class DiskPolicyParserTests(unittest.TestCase):
             too_many.extend(["--file", f"file-{index}.rs"])
         with self.assertRaisesRegex(ValueError, "selectors exceed 1000"):
             namespace = _parser().parse_args(too_many)
-            options_from_arguments(namespace, Path("/repo"))
+            self.options(namespace)
 
         namespace = _parser().parse_args(
             ["--output", "/tmp/out", "--symbol", "x" * (16 * 1024 + 1)]
         )
         with self.assertRaisesRegex(ValueError, "selector exceeds 16 KiB"):
-            options_from_arguments(namespace, Path("/repo"))
+            self.options(namespace)
 
 
 class DiskPolicyDecisionTests(unittest.TestCase):
@@ -195,10 +237,12 @@ class DiskPolicyDecisionTests(unittest.TestCase):
         size = evaluate_disk_policy(
             self.policy(), DiskObservation(owned_bytes=100, available_bytes=21)
         )
+        assert size is not None
         self.assertEqual(size.reason, DiskStopReason.WORKSPACE_SIZE_EXCEEDED)
         reserve = evaluate_disk_policy(
             self.policy(), DiskObservation(owned_bytes=100, available_bytes=20)
         )
+        assert reserve is not None
         self.assertEqual(reserve.reason, DiskStopReason.FILESYSTEM_RESERVE_REACHED)
         self.assertEqual(
             [item.reason for item in reserve.secondary],
@@ -314,6 +358,7 @@ class DiskPolicyDecisionTests(unittest.TestCase):
         event = DiskLifecycleEvent.observation(self.policy(), value)
         self.assertTrue(apply_disk_lifecycle_event(threshold, event))
         self.assertTrue(apply_disk_lifecycle_event(threshold, event))
+        assert threshold.stop is not None
         self.assertEqual(len(threshold.stop.secondary), 1)
         self.assertEqual(threshold.secondary, [])
 
@@ -440,394 +485,1500 @@ class BoundedCommandDrainTests(unittest.TestCase):
             self.assertTrue(tail.endswith(b"TAIL"))
 
 
+class _RecordedNode:
+    def __init__(
+        self,
+        identity: FileIdentity,
+        filesystem: FilesystemIdentity,
+        *,
+        kind: EntryKind = EntryKind.DIRECTORY,
+        logical_size: int = 0,
+    ) -> None:
+        self.identity = identity
+        self.filesystem = filesystem
+        self.kind = kind
+        self.logical_size = logical_size
+        self.children: dict[str, _RecordedNode] = {}
+
+    def add(self, name: str, node: "_RecordedNode") -> "_RecordedNode":
+        self.children[name] = node
+        return node
+
+    def evidence(self, name: str) -> DirectoryEntry:
+        return DirectoryEntry(
+            name=name,
+            kind=self.kind,
+            identity=self.identity,
+            filesystem=self.filesystem,
+            logical_size=self.logical_size,
+            modified_ns=0,
+        )
+
+
+class _RecordedResource:
+    def __init__(
+        self,
+        node: _RecordedNode,
+        path_hint: Path,
+        *,
+        close_failures: int = 0,
+    ) -> None:
+        self.node = node
+        self.path_hint = path_hint
+        self.close_failures = close_failures
+        self.closed = False
+        self.walker_owned = False
+
+
+class _RecordedIterator:
+    def __init__(
+        self,
+        backend: "_RecordingFilesystemBackend",
+        directory: DirectoryCapability,
+        entries: list[tuple[str, _RecordedNode]],
+        *,
+        fail_after: int | None,
+        virtual_entry: _RecordedNode | None = None,
+        virtual_count: int = 0,
+    ) -> None:
+        self._backend = backend
+        self._directory = directory
+        self._entries = entries
+        self._index = 0
+        self._fail_after = fail_after
+        self._virtual_entry = virtual_entry
+        self._virtual_count = virtual_count
+        self._closed = False
+
+    @property
+    def directory(self) -> DirectoryCapability:
+        return self._directory
+
+    def __iter__(self) -> "_RecordedIterator":
+        return self
+
+    def __next__(self) -> DirectoryEntry:
+        self._backend.operations.append("iterator.next")
+        if self._closed:
+            raise StopIteration
+        if self._fail_after is not None and self._index == self._fail_after:
+            error = OSError("injected iteration failure")
+            try:
+                self.close()
+            except BaseException as close_error:
+                error.add_note(f"recording iterator cleanup failed: {close_error}")
+            raise error
+        if self._virtual_entry is not None and self._index < self._virtual_count:
+            name = f"entry-{self._index}"
+            self._index += 1
+            result = self._virtual_entry.evidence(name)
+            self._backend.after_iterator_next()
+            return result
+        if self._index == len(self._entries) + self._virtual_count:
+            self.close()
+            raise StopIteration
+        name, node = self._entries[self._index - self._virtual_count]
+        self._index += 1
+        result = node.evidence(name)
+        self._backend.after_iterator_next()
+        return result
+
+    def close(self) -> None:
+        self._backend.operations.append("iterator.close")
+        if self._closed:
+            return
+        self._directory.close()
+        self._closed = True
+
+
+class _RecordingFilesystemBackend(FilesystemBackend):
+    def __init__(self) -> None:
+        self.roots: dict[Path, _RecordedNode] = {}
+        self.open_root_events: dict[Path, list[object]] = {}
+        self.close_failures: dict[FileIdentity, int] = {}
+        self.iterator_fail_after: dict[FileIdentity, int] = {}
+        self.virtual_entries: dict[FileIdentity, tuple[_RecordedNode, int]] = {}
+        self.iterator_construction_errors: dict[FileIdentity, BaseException] = {}
+        self.before_open: Callable[
+            [DirectoryCapability, str, EntryKind], None
+        ] = lambda _parent, _name, _kind: None
+        self.after_reopen: Callable[[], None] = lambda: None
+        self.after_entries_owned: Callable[[], None] = lambda: None
+        self.after_iterator_next: Callable[[], None] = lambda: None
+        self.after_available: Callable[[], None] = lambda: None
+        self.open_overrides: dict[tuple[EntryKind, str], _RecordedNode] = {}
+        self.available: dict[FilesystemIdentity, int] = {}
+        self.units: dict[FilesystemIdentity, int] = {}
+        self.available_error: BaseException | None = None
+        self.allocation_error: BaseException | None = None
+        self.operations: list[str] = []
+        self.open_root_calls: list[Path] = []
+        self.available_calls: list[DirectoryCapability] = []
+        self.allocation_calls: list[DirectoryCapability] = []
+        self.active_resources = 0
+        self.max_active_resources = 0
+        self.walker_resources = 0
+        self.max_walker_resources = 0
+        self.closed_identities: list[FileIdentity] = []
+        self.issued_iterators: list[_RecordedIterator] = []
+
+    def register(self, path: Path, node: _RecordedNode) -> None:
+        self.roots[path] = node
+        self.available.setdefault(node.filesystem, 1_000_000)
+        self.units.setdefault(node.filesystem, 1)
+
+    def _resource(
+        self, capability: DirectoryCapability | FileCapability
+    ) -> _RecordedResource:
+        resource = capability._resource_for(self)
+        if not isinstance(resource, _RecordedResource):
+            raise RuntimeError("invalid recording filesystem resource")
+        return resource
+
+    def _record_open(self, resource: _RecordedResource) -> None:
+        self.active_resources += 1
+        self.max_active_resources = max(
+            self.max_active_resources, self.active_resources
+        )
+
+    def directory_capability(
+        self,
+        node: _RecordedNode,
+        path_hint: Path,
+        *,
+        close_failures: int | None = None,
+    ) -> DirectoryCapability:
+        resource = _RecordedResource(
+            node,
+            path_hint,
+            close_failures=(
+                self.close_failures.get(node.identity, 0)
+                if close_failures is None
+                else close_failures
+            ),
+        )
+        self._record_open(resource)
+        return DirectoryCapability(
+            self,
+            resource,
+            identity=node.identity,
+            filesystem=node.filesystem,
+            kind=EntryKind.DIRECTORY,
+            logical_size=node.logical_size,
+            modified_ns=0,
+            security_domain=SecurityDomain.CALLER,
+            share_policy=SharePolicy.SCAN,
+            created=False,
+            path_hint=path_hint,
+        )
+
+    def file_capability(
+        self, node: _RecordedNode, path_hint: Path
+    ) -> FileCapability:
+        resource = _RecordedResource(
+            node,
+            path_hint,
+            close_failures=self.close_failures.get(node.identity, 0),
+        )
+        self._record_open(resource)
+        return FileCapability(
+            self,
+            resource,
+            identity=node.identity,
+            filesystem=node.filesystem,
+            kind=node.kind,
+            logical_size=node.logical_size,
+            modified_ns=0,
+            security_domain=SecurityDomain.CALLER,
+            share_policy=SharePolicy.SCAN,
+            created=False,
+            path_hint=path_hint,
+        )
+
+    def close_resource(self, value: object) -> None:
+        self.operations.append("capability.close")
+        if not isinstance(value, _RecordedResource) or value.closed:
+            raise RuntimeError("recording resource is not open")
+        if value.close_failures:
+            value.close_failures -= 1
+            raise OSError("injected capability close failure")
+        value.closed = True
+        self.active_resources -= 1
+        if value.walker_owned:
+            self.walker_resources -= 1
+        self.closed_identities.append(value.node.identity)
+
+    def open_root(
+        self,
+        path: Path,
+        share_policy: SharePolicy,
+        security_domain: SecurityDomain = SecurityDomain.CALLER,
+    ) -> DirectoryCapability:
+        self.operations.append("open_root")
+        self.open_root_calls.append(path)
+        events = self.open_root_events.get(path)
+        if events:
+            selected = events.pop(0)
+            if isinstance(selected, BaseException):
+                raise selected
+            assert isinstance(selected, _RecordedNode)
+            node = selected
+        else:
+            try:
+                node = self.roots[path]
+            except KeyError as error:
+                raise FileNotFoundError(path) from error
+        return self.directory_capability(node, path)
+
+    def reopen_directory(
+        self,
+        directory: DirectoryCapability,
+        share_policy: SharePolicy | None = None,
+    ) -> DirectoryCapability:
+        self.operations.append("reopen_directory")
+        resource = self._resource(directory)
+        reopened = self.directory_capability(resource.node, directory.path_hint)
+        self.after_reopen()
+        return reopened
+
+    def open_directory(
+        self,
+        parent: DirectoryCapability,
+        name: str,
+        share_policy: SharePolicy,
+    ) -> DirectoryCapability:
+        self.operations.append("open_directory")
+        self.before_open(parent, name, EntryKind.DIRECTORY)
+        resource = self._resource(parent)
+        child = self.open_overrides.get((EntryKind.DIRECTORY, name))
+        if child is None:
+            try:
+                child = resource.node.children[name]
+            except KeyError as error:
+                raise FileNotFoundError(name) from error
+        return self.directory_capability(child, parent.path_hint / name)
+
+    def create_secure_root(
+        self,
+        parent: DirectoryCapability,
+        name: str,
+    ) -> DirectoryCapability:
+        raise AssertionError("recording backend does not create secure roots")
+
+    def create_directory(
+        self,
+        parent: DirectoryCapability,
+        name: str,
+        share_policy: SharePolicy,
+    ) -> DirectoryCapability:
+        raise AssertionError("recording backend does not create directories")
+
+    def open_file(
+        self,
+        parent: DirectoryCapability,
+        name: str,
+        *,
+        access: FileAccess,
+        disposition: CreateDisposition,
+        share_policy: SharePolicy = SharePolicy.MUTATION,
+    ) -> FileCapability:
+        self.operations.append("open_file")
+        self.before_open(parent, name, EntryKind.REGULAR)
+        resource = self._resource(parent)
+        child = self.open_overrides.get((EntryKind.REGULAR, name))
+        if child is None:
+            try:
+                child = resource.node.children[name]
+            except KeyError as error:
+                raise FileNotFoundError(name) from error
+        return self.file_capability(child, parent.path_hint / name)
+
+    def open_entry(
+        self,
+        parent: DirectoryCapability,
+        name: str,
+        share_policy: SharePolicy,
+    ) -> FileCapability | DirectoryCapability:
+        resource = self._resource(parent)
+        child = resource.node.children[name]
+        if child.kind is EntryKind.DIRECTORY:
+            return self.directory_capability(child, parent.path_hint / name)
+        return self.file_capability(child, parent.path_hint / name)
+
+    def entry(
+        self,
+        parent: DirectoryCapability,
+        name: str,
+    ) -> DirectoryEntry | None:
+        resource = self._resource(parent)
+        child = resource.node.children.get(name)
+        return None if child is None else child.evidence(name)
+
+    def entries_owned(self, parent: DirectoryCapability) -> _RecordedIterator:
+        self.operations.append("entries_owned")
+        source_resource = self._resource(parent)
+        moved = parent._move_for(self)
+        resource = self._resource(moved)
+        construction_error = self.iterator_construction_errors.get(
+            resource.node.identity
+        )
+        if construction_error is not None:
+            try:
+                moved.close()
+            except BaseException as close_error:
+                construction_error.add_note(
+                    f"recording iterator cleanup failed: {close_error}"
+                )
+                if moved.is_open:
+                    try:
+                        moved.close()
+                    except BaseException as retry_error:
+                        construction_error.add_note(
+                            "recording iterator final cleanup failed: "
+                            f"{retry_error}"
+                        )
+            raise construction_error
+        source_resource.walker_owned = True
+        self.walker_resources += 1
+        self.max_walker_resources = max(
+            self.max_walker_resources, self.walker_resources
+        )
+        virtual_entry, virtual_count = self.virtual_entries.get(
+            resource.node.identity,
+            (None, 0),
+        )
+        iterator = _RecordedIterator(
+            self,
+            moved,
+            list(resource.node.children.items()),
+            fail_after=self.iterator_fail_after.get(resource.node.identity),
+            virtual_entry=virtual_entry,
+            virtual_count=virtual_count,
+        )
+        self.issued_iterators.append(iterator)
+        self.after_entries_owned()
+        return iterator
+
+    def entries(self, parent: DirectoryCapability) -> _RecordedIterator:
+        reopened = self.reopen_directory(parent)
+        try:
+            return self.entries_owned(reopened)
+        except BaseException:
+            if reopened.is_open:
+                reopened.close()
+            raise
+
+    def available_bytes(self, directory: DirectoryCapability) -> int:
+        self.operations.append("available_bytes")
+        self._resource(directory)
+        self.available_calls.append(directory)
+        if self.available_error is not None:
+            raise self.available_error
+        result = self.available[directory.filesystem]
+        self.after_available()
+        return result
+
+    def allocation_unit(self, directory: DirectoryCapability) -> int:
+        self.operations.append("allocation_unit")
+        self._resource(directory)
+        self.allocation_calls.append(directory)
+        if self.allocation_error is not None:
+            raise self.allocation_error
+        return self.units[directory.filesystem]
+
+    def rename(
+        self,
+        source: FileCapability | DirectoryCapability,
+        destination_parent: DirectoryCapability,
+        destination_name: str,
+        *,
+        replace: bool,
+    ) -> None:
+        raise AssertionError("recording backend does not rename")
+
+    def delete(
+        self,
+        capability: FileCapability | DirectoryCapability,
+    ) -> None:
+        raise AssertionError("recording backend does not delete")
+
+    def touch(self, file: FileCapability) -> None:
+        raise AssertionError("recording backend does not touch")
+
+    def flush(self, file: FileCapability) -> None:
+        raise AssertionError("recording backend does not flush")
+
+    def final_path(self, directory: DirectoryCapability) -> Path:
+        return directory.path_hint
+
+    def verify_managed_security(
+        self,
+        capability: FileCapability | DirectoryCapability,
+        *,
+        repair_dacl: bool,
+    ) -> None:
+        raise AssertionError("recording backend has no managed security")
+
+
 class AnchoredDiskGuardTests(unittest.TestCase):
-    @unittest.skipIf(os.name == "nt", "POSIX descriptor walker only")
+    def setUp(self) -> None:
+        self._identity_counter = 0
+
+    def _node(
+        self,
+        *,
+        filesystem: FilesystemIdentity | None = None,
+        kind: EntryKind = EntryKind.DIRECTORY,
+        logical_size: int = 0,
+        identity: FileIdentity | None = None,
+    ) -> _RecordedNode:
+        selected_filesystem = filesystem or FilesystemIdentity(17, 19, 23)
+        self._identity_counter += 1
+        selected_identity = identity or FileIdentity(
+            selected_filesystem.volume,
+            self._identity_counter,
+        )
+        return _RecordedNode(
+            selected_identity,
+            selected_filesystem,
+            kind=kind,
+            logical_size=logical_size,
+        )
+
+    def _policy(
+        self,
+        root: Path,
+        *,
+        max_disk_bytes: int = 1_000_000,
+        min_free_bytes: int = 1,
+    ) -> DiskPolicy:
+        with mock.patch(
+            "tools.focused_mutation_support.disk.canonical_scratch_root",
+            return_value=root,
+        ):
+            return DiskPolicy(
+                max_disk_bytes=max_disk_bytes,
+                min_free_bytes=min_free_bytes,
+                scratch_root=root,
+            )
+
+    def _recording_guard(
+        self,
+        path: Path,
+        node: _RecordedNode,
+        *,
+        backend: _RecordingFilesystemBackend | None = None,
+        meter_root: MeterRoot | None = None,
+        monotonic: Callable[[], float] = lambda: 0.0,
+        max_disk_bytes: int = 1_000_000,
+        min_free_bytes: int = 1,
+    ) -> tuple[DiskGuard, _RecordingFilesystemBackend]:
+        selected = backend or _RecordingFilesystemBackend()
+        selected.register(path, node)
+        guard = DiskGuard(
+            self._policy(
+                path,
+                max_disk_bytes=max_disk_bytes,
+                min_free_bytes=min_free_bytes,
+            ),
+            [meter_root or MeterRoot(path, enforcement="owned:test")],
+            monotonic=monotonic,
+            backend=selected,
+        )
+        return guard, selected
+
+    def _reservation_guard(
+        self,
+        observation: DiskObservation,
+        *,
+        max_disk_bytes: int = 1_000,
+        min_free_bytes: int = 10,
+    ) -> tuple[
+        DiskGuard,
+        _RecordingFilesystemBackend,
+        DirectoryCapability,
+    ]:
+        path = Path("C:/recorded/owned")
+        filesystem = FilesystemIdentity(47, 53, 59)
+        root = self._node(filesystem=filesystem)
+        backend = _RecordingFilesystemBackend()
+        guard, _ = self._recording_guard(
+            path,
+            root,
+            backend=backend,
+            max_disk_bytes=max_disk_bytes,
+            min_free_bytes=min_free_bytes,
+        )
+        guard.observations.append(observation)
+        borrowed = backend.directory_capability(
+            self._node(filesystem=filesystem),
+            Path("C:/recorded/spool"),
+        )
+        self.addCleanup(borrowed.close)
+        self.addCleanup(guard.close)
+        return guard, backend, borrowed
+
+    def test_canonical_validation_uses_selected_backend_and_never_statvfs(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw).resolve()
+            backend = _RecordingFilesystemBackend()
+            backend.register(root, self._node())
+
+            with mock.patch.object(
+                os,
+                "statvfs",
+                side_effect=AssertionError("raw POSIX capacity call"),
+                create=True,
+            ):
+                selected = canonical_scratch_root(root, backend=backend)
+
+            self.assertEqual(selected, root)
+            self.assertEqual(backend.open_root_calls, [root])
+            self.assertEqual(len(backend.available_calls), 1)
+            self.assertEqual(backend.active_resources, 0)
+
+    def test_canonical_validation_keeps_capacity_primary_and_close_note(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw).resolve()
+            backend = _RecordingFilesystemBackend()
+            node = self._node()
+            backend.register(root, node)
+            backend.available_error = OSError("injected capacity primary")
+            backend.close_failures[node.identity] = 1
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "scratch root free space cannot be queried",
+            ) as caught:
+                canonical_scratch_root(root, backend=backend)
+
+            self.assertIn("injected capacity primary", str(caught.exception))
+            self.assertTrue(
+                any(
+                    "close" in note and "injected capability close failure" in note
+                    for note in getattr(caught.exception, "__notes__", ())
+                )
+            )
+            self.assertEqual(backend.active_resources, 0)
+
+    def test_canonical_close_retry_failure_is_bounded_secondary(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw).resolve()
+            backend = _RecordingFilesystemBackend()
+            node = self._node()
+            backend.register(root, node)
+            backend.available_error = OSError("injected capacity primary")
+            backend.close_failures[node.identity] = 2
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "injected capacity primary",
+            ) as caught:
+                canonical_scratch_root(root, backend=backend)
+
+            notes = getattr(caught.exception, "__notes__", ())
+            self.assertEqual(len(notes), 2)
+            self.assertTrue(all(len(note.encode("utf-8")) <= 512 for note in notes))
+            self.assertEqual(backend.operations.count("capability.close"), 2)
+            backend.available_calls[0].close()
+            self.assertEqual(backend.active_resources, 0)
+
+    def test_canonical_non_directory_is_classified_by_selected_backend(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = (Path(raw) / "not-a-directory").resolve()
+            root.write_text("payload", encoding="utf-8")
+            backend = _RecordingFilesystemBackend()
+            backend.open_root_events[root] = [NotADirectoryError(root)]
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "scratch root is not a directory",
+            ):
+                canonical_scratch_root(root, backend=backend)
+
+            self.assertEqual(backend.open_root_calls, [root])
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows filesystem backend")
+    def test_windows_canonical_non_directory_keeps_public_error(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "not-a-directory"
+            path.write_text("payload", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "scratch root is not a directory",
+            ):
+                canonical_scratch_root(path)
+
+    def test_factory_is_called_once_and_retains_replaced_root_object(self) -> None:
+        path = Path("C:/recorded/owned")
+        backend = _RecordingFilesystemBackend()
+        original = self._node()
+        original.add(
+            "payload",
+            self._node(kind=EntryKind.REGULAR, logical_size=4),
+        )
+        replacement = self._node()
+        replacement.add(
+            "replacement",
+            self._node(kind=EntryKind.REGULAR, logical_size=100),
+        )
+        backend.register(path, original)
+        factory_calls = 0
+
+        def factory() -> DirectoryCapability:
+            nonlocal factory_calls
+            factory_calls += 1
+            return backend.directory_capability(original, path)
+
+        guard = DiskGuard(
+            self._policy(path),
+            [
+                MeterRoot(
+                    path,
+                    enforcement="owned:test",
+                    capability_factory=factory,
+                )
+            ],
+            backend=backend,
+        )
+        backend.roots[path] = replacement
+
+        self.assertIsNone(guard.sample())
+        self.assertEqual(guard.observations[-1].owned_bytes, 4)
+        self.assertEqual(factory_calls, 1)
+        self.assertEqual(backend.open_root_calls, [])
+        self.assertEqual(guard.close(), ())
+        self.assertEqual(backend.closed_identities.count(original.identity), 2)
+        self.assertEqual(backend.active_resources, 0)
+
+    def test_factory_capability_validation_rolls_back_every_owner(self) -> None:
+        path = Path("C:/recorded/owned")
+        backend = _RecordingFilesystemBackend()
+        first_node = self._node()
+        invalid_node = self._node()
+        first = backend.directory_capability(first_node, path)
+        invalid = backend.directory_capability(
+            invalid_node,
+            Path("C:/recorded/wrong"),
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "path"):
+            DiskGuard(
+                self._policy(path),
+                [
+                    MeterRoot(path, capability_factory=lambda: first),
+                    MeterRoot(path, capability_factory=lambda: invalid),
+                ],
+                backend=backend,
+            )
+
+        self.assertTrue(first.closed)
+        self.assertTrue(invalid.closed)
+        self.assertEqual(backend.active_resources, 0)
+
+    def test_constructor_rollback_finally_retries_each_failed_close(self) -> None:
+        path = Path("C:/recorded/owned")
+        backend = _RecordingFilesystemBackend()
+        first = backend.directory_capability(
+            self._node(),
+            path,
+            close_failures=1,
+        )
+        invalid = backend.directory_capability(
+            self._node(),
+            Path("C:/recorded/wrong"),
+            close_failures=1,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "path") as caught:
+            DiskGuard(
+                self._policy(path),
+                [
+                    MeterRoot(path, capability_factory=lambda: first),
+                    MeterRoot(path, capability_factory=lambda: invalid),
+                ],
+                backend=backend,
+            )
+
+        self.assertTrue(first.closed)
+        self.assertTrue(invalid.closed)
+        self.assertEqual(backend.active_resources, 0)
+        self.assertEqual(len(getattr(caught.exception, "__notes__", ())), 2)
+
+    def test_constructor_state_registration_failure_closes_new_owner(self) -> None:
+        path = Path("C:/recorded/owned")
+        backend = _RecordingFilesystemBackend()
+        capability = backend.directory_capability(self._node(), path)
+
+        with (
+            mock.patch(
+                "tools.focused_mutation_support.disk._RootCapabilityState",
+                side_effect=MemoryError("injected state allocation failure"),
+            ),
+            self.assertRaisesRegex(MemoryError, "state allocation failure"),
+        ):
+            DiskGuard(
+                self._policy(path),
+                [MeterRoot(path, capability_factory=lambda: capability)],
+                backend=backend,
+            )
+
+        self.assertTrue(capability.closed)
+        self.assertEqual(backend.active_resources, 0)
+
+    def test_acquisition_error_state_failure_rolls_back_prior_owner(self) -> None:
+        first_path = Path("C:/recorded/first")
+        missing_path = Path("C:/recorded/missing")
+        backend = _RecordingFilesystemBackend()
+        backend.register(first_path, self._node())
+        disk_module = __import__(
+            "tools.focused_mutation_support.disk",
+            fromlist=["_RootCapabilityState"],
+        )
+        real_state = disk_module._RootCapabilityState
+        calls = 0
+
+        def allocate_state(*args: object, **kwargs: object) -> object:
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise MemoryError("injected error-state allocation failure")
+            return real_state(*args, **kwargs)
+
+        with (
+            mock.patch(
+                "tools.focused_mutation_support.disk._RootCapabilityState",
+                side_effect=allocate_state,
+            ),
+            self.assertRaisesRegex(MemoryError, "error-state allocation failure"),
+        ):
+            DiskGuard(
+                self._policy(first_path),
+                [MeterRoot(first_path), MeterRoot(missing_path)],
+                backend=backend,
+            )
+
+        self.assertEqual(backend.active_resources, 0)
+
+    def test_factory_rejects_wrong_owner_closed_and_non_directory_before_sample(
+        self,
+    ) -> None:
+        path = Path("C:/recorded/owned")
+        for case in ("owner", "closed", "kind"):
+            with self.subTest(case=case):
+                backend = _RecordingFilesystemBackend()
+                node = self._node()
+                if case == "owner":
+                    other = _RecordingFilesystemBackend()
+                    capability: object = other.directory_capability(node, path)
+                elif case == "closed":
+                    capability = backend.directory_capability(node, path)
+                    capability.close()
+                else:
+                    file_node = self._node(
+                        kind=EntryKind.REGULAR,
+                        logical_size=1,
+                    )
+                    capability = backend.file_capability(file_node, path)
+
+                def factory() -> DirectoryCapability:
+                    return cast(DirectoryCapability, capability)
+
+                with self.assertRaisesRegex(RuntimeError, case):
+                    DiskGuard(
+                        self._policy(path),
+                        [
+                            MeterRoot(
+                                path,
+                                capability_factory=factory,
+                            )
+                        ],
+                        backend=backend,
+                    )
+
+                if isinstance(capability, (DirectoryCapability, FileCapability)):
+                    self.assertFalse(capability.is_open)
+
+    def test_exact_path_missing_then_records_and_closes_transient_owner(self) -> None:
+        path = Path("C:/recorded/owned")
+        exact_path = Path("C:/recorded/exact")
+        backend = _RecordingFilesystemBackend()
+        retained = self._node()
+        exact = self._node(filesystem=retained.filesystem)
+        backend.register(path, retained)
+        backend.open_root_events[exact_path] = [FileNotFoundError(exact_path), exact]
+        guard, _ = self._recording_guard(
+            path,
+            retained,
+            backend=backend,
+            meter_root=MeterRoot(
+                path,
+                charge_owned_bytes=False,
+                enforcement="capacity_only:test",
+                exact_path=exact_path,
+            ),
+        )
+
+        self.assertIsNone(guard.sample())
+        self.assertIsNone(guard.sample())
+        self.assertEqual(backend.open_root_calls, [path, exact_path, exact_path])
+        self.assertEqual(backend.closed_identities.count(exact.identity), 1)
+        self.assertEqual(backend.active_resources, 1)
+        self.assertEqual(guard.close(), ())
+
+    def test_exact_path_close_failure_gets_a_final_cleanup_attempt(self) -> None:
+        path = Path("C:/recorded/owned")
+        exact_path = Path("C:/recorded/exact")
+        backend = _RecordingFilesystemBackend()
+        retained = self._node()
+        exact = self._node(filesystem=retained.filesystem)
+        backend.register(path, retained)
+        backend.open_root_events[exact_path] = [exact]
+        backend.close_failures[exact.identity] = 1
+        guard, _ = self._recording_guard(
+            path,
+            retained,
+            backend=backend,
+            meter_root=MeterRoot(
+                path,
+                charge_owned_bytes=False,
+                enforcement="capacity_only:test",
+                exact_path=exact_path,
+            ),
+        )
+        self.addCleanup(guard.close)
+
+        failure = guard.sample()
+
+        self.assertIsNotNone(failure)
+        assert failure is not None
+        assert failure.message is not None
+        self.assertIn("injected capability close failure", failure.message)
+        self.assertEqual(backend.active_resources, 1)
+
+    def test_exact_path_replacement_and_later_disappearance_are_typed(self) -> None:
+        path = Path("C:/recorded/owned")
+        exact_path = Path("C:/recorded/exact")
+        for case in ("replacement", "disappearance"):
+            with self.subTest(case=case):
+                backend = _RecordingFilesystemBackend()
+                retained = self._node()
+                exact = self._node(filesystem=retained.filesystem)
+                backend.register(path, retained)
+                events: list[object] = [exact]
+                if case == "replacement":
+                    events.append(self._node(filesystem=retained.filesystem))
+                else:
+                    events.append(FileNotFoundError(exact_path))
+                backend.open_root_events[exact_path] = events
+                guard, _ = self._recording_guard(
+                    path,
+                    retained,
+                    backend=backend,
+                    meter_root=MeterRoot(
+                        path,
+                        charge_owned_bytes=False,
+                        enforcement=f"capacity_only:{case}",
+                        exact_path=exact_path,
+                    ),
+                )
+                self.addCleanup(guard.close)
+
+                self.assertIsNone(guard.sample())
+                failure = guard.sample()
+
+                self.assertIsNotNone(failure)
+                assert failure is not None
+                self.assertEqual(failure.reason, DiskStopReason.MEASUREMENT_FAILED)
+                assert failure.message is not None
+                self.assertIn(f"capacity_only:{case}", failure.message)
+
+    def test_generic_dfs_deduplicates_hard_links_and_capacity(self) -> None:
+        filesystem = FilesystemIdentity(31, 37, 41)
+        backend = _RecordingFilesystemBackend()
+        first_path = Path("C:/recorded/first")
+        second_path = Path("C:/recorded/second")
+        first_root = self._node(filesystem=filesystem)
+        second_root = self._node(filesystem=filesystem)
+        payload = self._node(
+            filesystem=filesystem,
+            kind=EntryKind.REGULAR,
+            logical_size=32,
+        )
+        first_root.add("payload", payload)
+        second_root.add("payload-link", payload)
+        backend.register(first_path, first_root)
+        backend.register(second_path, second_root)
+        guard = DiskGuard(
+            self._policy(first_path),
+            [
+                MeterRoot(first_path, enforcement="owned:first"),
+                MeterRoot(second_path, enforcement="owned:second"),
+            ],
+            backend=backend,
+        )
+        self.addCleanup(guard.close)
+
+        self.assertIsNone(guard.sample())
+
+        observation = guard.observations[-1]
+        self.assertEqual(observation.owned_bytes, 32)
+        self.assertEqual(len(observation.identity_bytes), 1)
+        self.assertEqual(len(backend.available_calls), 1)
+        self.assertEqual(
+            observation.root_owned_bytes,
+            {"owned:first": 32, "owned:second": 0},
+        )
+
+    def test_generic_dfs_ignores_only_vanished_child_and_skips_unfollowable(
+        self,
+    ) -> None:
+        path = Path("C:/recorded/owned")
+        root = self._node()
+        vanished = self._node(kind=EntryKind.REGULAR, logical_size=5)
+        root.add("vanished", vanished)
+        root.add("link", self._node(kind=EntryKind.REPARSE))
+        root.add("device", self._node(kind=EntryKind.OTHER))
+        backend = _RecordingFilesystemBackend()
+
+        def vanish(
+            _parent: DirectoryCapability,
+            name: str,
+            _kind: EntryKind,
+        ) -> None:
+            if name == "vanished":
+                root.children.pop(name, None)
+
+        backend.before_open = vanish
+        guard, _ = self._recording_guard(path, root, backend=backend)
+        self.addCleanup(guard.close)
+
+        self.assertIsNone(guard.sample())
+        self.assertEqual(guard.observations[-1].owned_bytes, 0)
+        self.assertEqual(backend.operations.count("open_file"), 1)
+        self.assertEqual(backend.operations.count("open_directory"), 0)
+
+    def test_generic_dfs_rejects_opened_identity_kind_and_filesystem_changes(
+        self,
+    ) -> None:
+        path = Path("C:/recorded/owned")
+        for case in ("identity", "kind", "filesystem"):
+            with self.subTest(case=case):
+                root = self._node()
+                original = self._node(
+                    kind=(
+                        EntryKind.REGULAR
+                        if case in {"identity", "kind"}
+                        else EntryKind.DIRECTORY
+                    ),
+                    logical_size=7,
+                )
+                root.add("child", original)
+                backend = _RecordingFilesystemBackend()
+
+                def replace_child(
+                    _parent: DirectoryCapability,
+                    name: str,
+                    _kind: EntryKind,
+                    *,
+                    selected: str = case,
+                ) -> None:
+                    if selected == "kind":
+                        backend.open_overrides[(EntryKind.REGULAR, name)] = (
+                            self._node(kind=EntryKind.REPARSE)
+                        )
+                    elif selected == "filesystem":
+                        backend.open_overrides[(EntryKind.DIRECTORY, name)] = (
+                            self._node(filesystem=FilesystemIdentity(43))
+                        )
+                    else:
+                        backend.open_overrides[(EntryKind.REGULAR, name)] = (
+                            self._node(
+                                kind=EntryKind.REGULAR,
+                                logical_size=7,
+                            )
+                        )
+
+                backend.before_open = replace_child
+                guard, _ = self._recording_guard(path, root, backend=backend)
+                self.addCleanup(guard.close)
+
+                failure = guard.sample()
+
+                self.assertIsNotNone(failure)
+                assert failure is not None
+                self.assertEqual(failure.reason, DiskStopReason.MEASUREMENT_FAILED)
+                self.assertEqual(backend.active_resources, 1)
+
+    def test_entry_limit_accepts_exact_boundary_and_rejects_next(self) -> None:
+        path = Path("C:/recorded/owned")
+        for count, stopped in ((250_000, False), (250_001, True)):
+            with self.subTest(count=count):
+                root = self._node()
+                virtual = self._node(kind=EntryKind.REPARSE)
+                backend = _RecordingFilesystemBackend()
+                backend.virtual_entries[root.identity] = (virtual, count)
+                guard, _ = self._recording_guard(path, root, backend=backend)
+                self.addCleanup(guard.close)
+
+                failure = guard.sample()
+
+                if stopped:
+                    self.assertIsNotNone(failure)
+                    assert failure is not None
+                    assert failure.message is not None
+                    self.assertIn("250000", failure.message)
+                else:
+                    self.assertIsNone(failure)
+
+    def test_depth_boundary_has_129_walker_and_130_total_capabilities(self) -> None:
+        path = Path("C:/recorded/owned")
+        for child_count, stopped in ((128, False), (129, True)):
+            with self.subTest(child_count=child_count):
+                root = self._node()
+                current = root
+                for index in range(child_count):
+                    child = self._node()
+                    current.add(f"d{index}", child)
+                    current = child
+                backend = _RecordingFilesystemBackend()
+                guard, _ = self._recording_guard(path, root, backend=backend)
+                self.addCleanup(guard.close)
+
+                failure = guard.sample()
+
+                if stopped:
+                    self.assertIsNotNone(failure)
+                    assert failure is not None
+                    assert failure.message is not None
+                    self.assertIn("depth exceeds 128", failure.message)
+                else:
+                    self.assertIsNone(failure)
+                self.assertEqual(backend.max_walker_resources, 129)
+                self.assertEqual(backend.max_active_resources, 130)
+                self.assertEqual(backend.active_resources, 1)
+
+    def test_deadline_after_child_open_prevents_iterator_transfer(self) -> None:
+        path = Path("C:/recorded/owned")
+        root = self._node()
+        root.add("child", self._node())
+        backend = _RecordingFilesystemBackend()
+        backend.close_failures[root.children["child"].identity] = 1
+        clock = [0.0]
+
+        def expire(
+            _parent: DirectoryCapability,
+            _name: str,
+            _kind: EntryKind,
+        ) -> None:
+            clock[0] = 5.0
+
+        backend.before_open = expire
+        guard, _ = self._recording_guard(
+            path,
+            root,
+            backend=backend,
+            monotonic=lambda: clock[0],
+        )
+        self.addCleanup(guard.close)
+
+        failure = guard.sample()
+
+        self.assertIsNotNone(failure)
+        assert failure is not None
+        assert failure.message is not None
+        self.assertIn("exceeded five seconds", failure.message)
+        self.assertEqual(backend.operations.count("entries_owned"), 1)
+        self.assertEqual(backend.active_resources, 1)
+
+    def test_deadline_after_root_reopen_retries_the_untransferred_owner(self) -> None:
+        path = Path("C:/recorded/owned")
+        root = self._node()
+        backend = _RecordingFilesystemBackend()
+        clock = [0.0]
+        guard, _ = self._recording_guard(
+            path,
+            root,
+            backend=backend,
+            monotonic=lambda: clock[0],
+        )
+        backend.close_failures[root.identity] = 1
+        backend.after_reopen = lambda: clock.__setitem__(0, 5.0)
+        self.addCleanup(guard.close)
+
+        failure = guard.sample()
+
+        self.assertIsNotNone(failure)
+        self.assertEqual(backend.active_resources, 1)
+
+    def test_child_iterator_construction_failure_retries_transferred_owner(
+        self,
+    ) -> None:
+        path = Path("C:/recorded/owned")
+        root = self._node()
+        child = self._node()
+        root.add("child", child)
+        backend = _RecordingFilesystemBackend()
+        backend.iterator_construction_errors[child.identity] = OSError(
+            "injected child iterator construction failure"
+        )
+        backend.close_failures[child.identity] = 1
+        guard, _ = self._recording_guard(path, root, backend=backend)
+        self.addCleanup(guard.close)
+
+        failure = guard.sample()
+
+        self.assertIsNotNone(failure)
+        assert failure is not None
+        assert failure.message is not None
+        self.assertIn("child iterator construction failure", failure.message)
+        self.assertEqual(backend.active_resources, 1)
+        self.assertEqual(backend.walker_resources, 0)
+
+    def test_deadline_after_iterator_transfer_unwinds_the_new_owner(self) -> None:
+        path = Path("C:/recorded/owned")
+        root = self._node()
+        backend = _RecordingFilesystemBackend()
+        clock = [0.0]
+        backend.after_entries_owned = lambda: clock.__setitem__(0, 5.0)
+        guard, _ = self._recording_guard(
+            path,
+            root,
+            backend=backend,
+            monotonic=lambda: clock[0],
+        )
+        self.addCleanup(guard.close)
+
+        failure = guard.sample()
+
+        self.assertIsNotNone(failure)
+        assert failure is not None
+        assert failure.message is not None
+        self.assertIn("exceeded five seconds", failure.message)
+        self.assertEqual(backend.walker_resources, 0)
+        self.assertEqual(backend.active_resources, 1)
+
+    def test_frame_registration_failure_closes_the_transferred_iterator(
+        self,
+    ) -> None:
+        path = Path("C:/recorded/owned")
+        root = self._node()
+        backend = _RecordingFilesystemBackend()
+        guard, _ = self._recording_guard(path, root, backend=backend)
+        self.addCleanup(guard.close)
+
+        with mock.patch(
+            "tools.focused_mutation_support.disk._MeterFrame",
+            side_effect=MemoryError("injected frame allocation failure"),
+        ):
+            failure = guard.sample()
+
+        self.assertIsNotNone(failure)
+        self.assertEqual(backend.walker_resources, 0)
+        self.assertEqual(backend.active_resources, 1)
+
+    def test_iterator_construction_and_unwind_close_failures_do_not_leak(
+        self,
+    ) -> None:
+        path = Path("C:/recorded/owned")
+        for case in ("construction", "iteration"):
+            with self.subTest(case=case):
+                root = self._node()
+                backend = _RecordingFilesystemBackend()
+                guard, _ = self._recording_guard(path, root, backend=backend)
+                if case == "construction":
+                    backend.iterator_construction_errors[root.identity] = OSError(
+                        "injected iterator construction failure"
+                    )
+                else:
+                    backend.iterator_fail_after[root.identity] = 0
+                    backend.close_failures[root.identity] = 1
+                self.addCleanup(guard.close)
+
+                failure = guard.sample()
+
+                self.assertIsNotNone(failure)
+                assert failure is not None
+                expected = (
+                    "injected iterator construction failure"
+                    if case == "construction"
+                    else "injected iteration failure"
+                )
+                assert failure.message is not None
+                self.assertIn(expected, failure.message)
+                self.assertEqual(backend.active_resources, 1)
+                self.assertEqual(backend.walker_resources, 0)
+
+    def test_regular_file_close_failure_gets_a_final_cleanup_attempt(self) -> None:
+        path = Path("C:/recorded/owned")
+        root = self._node()
+        payload = self._node(kind=EntryKind.REGULAR, logical_size=1)
+        root.add("payload", payload)
+        backend = _RecordingFilesystemBackend()
+        backend.close_failures[payload.identity] = 1
+        guard, _ = self._recording_guard(path, root, backend=backend)
+        self.addCleanup(guard.close)
+
+        failure = guard.sample()
+
+        self.assertIsNotNone(failure)
+        assert failure is not None
+        assert failure.message is not None
+        self.assertIn("injected capability close failure", failure.message)
+        self.assertEqual(backend.active_resources, 1)
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows capacity API")
+    def test_windows_guard_samples_a_real_root(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "payload").write_bytes(b"1234")
+            guard = DiskGuard(
+                DiskPolicy(
+                    max_disk_bytes=1024,
+                    min_free_bytes=1,
+                    scratch_root=root,
+                ),
+                [MeterRoot(root, enforcement="owned:test")],
+            )
+
+            self.assertIsNone(guard.sample())
+            self.assertEqual(guard.observations[-1].owned_bytes, 4)
+            self.assertEqual(guard.close(), ())
+
     def test_directory_stream_checks_deadline_immediately_after_readdir(
         self,
     ) -> None:
-        disk_module = __import__(
-            "tools.focused_mutation_support.disk",
-            fromlist=["_DirectoryStream"],
+        path = Path("C:/recorded/owned")
+        root = self._node()
+        root.add("payload", self._node(kind=EntryKind.REGULAR, logical_size=1))
+        backend = _RecordingFilesystemBackend()
+        clock = [0.0]
+        backend.after_iterator_next = lambda: clock.__setitem__(0, 5.0)
+        guard, _ = self._recording_guard(
+            path,
+            root,
+            backend=backend,
+            monotonic=lambda: clock[0],
         )
-        stream = object.__new__(disk_module._DirectoryStream)
-        stream._ctypes = mock.Mock()
-        stream._libc = mock.Mock()
-        stream._libc.readdir.return_value = 1
-        stream._pointer = 2
+        self.addCleanup(guard.close)
 
-        def expired() -> None:
-            raise disk_module.DiskMeasurementError(
-                "owned scratch scan exceeded five seconds"
-            )
+        failure = guard.sample()
 
-        with self.assertRaisesRegex(
-            disk_module.DiskMeasurementError,
-            "exceeded five seconds",
-        ):
-            stream.next_name(check_deadline=expired)
+        self.assertIsNotNone(failure)
+        assert failure is not None
+        assert failure.message is not None
+        self.assertIn("exceeded five seconds", failure.message)
+        self.assertNotIn("open_file", backend.operations)
 
-        stream._libc.readdir.assert_called_once_with(stream._pointer)
-        stream._ctypes.string_at.assert_not_called()
-
-    @unittest.skipIf(os.name == "nt", "POSIX descriptor walker only")
     def test_expired_measurement_stops_before_root_stat(self) -> None:
-        disk_module = __import__(
-            "tools.focused_mutation_support.disk",
-            fromlist=["_measure_fd"],
+        path = Path("C:/recorded/owned")
+        root = self._node()
+        backend = _RecordingFilesystemBackend()
+        ticks = iter((0.0, 5.0, 5.0, 5.0))
+        guard, _ = self._recording_guard(
+            path,
+            root,
+            backend=backend,
+            monotonic=lambda: next(ticks, 5.0),
         )
-        with tempfile.TemporaryDirectory() as directory:
-            root_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
-            try:
-                with (
-                    mock.patch.object(
-                        disk_module.os,
-                        "fstat",
-                        side_effect=AssertionError(
-                            "root stat started after measurement deadline"
-                        ),
-                    ),
-                    self.assertRaisesRegex(
-                        disk_module.DiskMeasurementError,
-                        "exceeded five seconds",
-                    ),
-                ):
-                    disk_module._measure_fd(
-                        root_fd,
-                        monotonic=lambda: 5.0,
-                        started=0.0,
-                        identities=set(),
-                        identity_bytes={},
-                    )
-            finally:
-                os.close(root_fd)
+        self.addCleanup(guard.close)
 
-    @unittest.skipIf(os.name == "nt", "POSIX descriptor walker only")
+        failure = guard.sample()
+
+        self.assertIsNotNone(failure)
+        assert failure is not None
+        assert failure.message is not None
+        self.assertIn("exceeded five seconds", failure.message)
+        self.assertEqual(backend.available_calls, [])
+        self.assertNotIn("reopen_directory", backend.operations)
+
     def test_measurement_does_not_stat_after_readdir_crosses_deadline(self) -> None:
-        disk_module = __import__(
-            "tools.focused_mutation_support.disk",
-            fromlist=["_DirectoryStream", "_measure_fd"],
-        )
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / "payload").write_bytes(b"payload")
-            root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
-            clock = mock.Mock(return_value=0.0)
-            real_next = disk_module._DirectoryStream.next_name
+        self.test_directory_stream_checks_deadline_immediately_after_readdir()
 
-            def crossing_next(
-                stream: object,
-                *,
-                check_deadline: Callable[[], None],
-            ) -> str | None:
-                selected = real_next(stream, check_deadline=check_deadline)
-                clock.return_value = 5.0
-                return selected
-
-            try:
-                with (
-                    mock.patch.object(
-                        disk_module._DirectoryStream,
-                        "next_name",
-                        crossing_next,
-                    ),
-                    mock.patch.object(
-                        disk_module.os,
-                        "stat",
-                        side_effect=AssertionError(
-                            "stat started after measurement deadline"
-                        ),
-                    ),
-                    self.assertRaisesRegex(
-                        disk_module.DiskMeasurementError,
-                        "exceeded five seconds",
-                    ),
-                ):
-                    disk_module._measure_fd(
-                        root_fd,
-                        monotonic=clock,
-                        started=0.0,
-                        identities=set(),
-                        identity_bytes={},
-                    )
-            finally:
-                os.close(root_fd)
-
-    @unittest.skipIf(os.name == "nt", "POSIX descriptor walker only")
     def test_capacity_query_crossing_deadline_stops_before_tree_scan(self) -> None:
-        disk_module = __import__(
-            "tools.focused_mutation_support.disk",
-            fromlist=["_measure_fd"],
+        path = Path("C:/recorded/owned")
+        root = self._node()
+        backend = _RecordingFilesystemBackend()
+        clock = [0.0]
+        backend.after_available = lambda: clock.__setitem__(0, 5.0)
+        guard, _ = self._recording_guard(
+            path,
+            root,
+            backend=backend,
+            monotonic=lambda: clock[0],
         )
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            clock = mock.Mock(return_value=0.0)
-            guard = DiskGuard(
-                DiskPolicy(
-                    max_disk_bytes=8 * 1024**3,
-                    min_free_bytes=1,
-                    scratch_root=root,
-                ),
-                [MeterRoot(root, enforcement="owned:test")],
-                monotonic=clock,
-            )
-            self.addCleanup(guard.close)
-            real_fstatvfs = os.fstatvfs
+        self.addCleanup(guard.close)
 
-            def crossing_capacity(fd: int) -> object:
-                result = real_fstatvfs(fd)
-                clock.return_value = 5.0
-                return result
+        failure = guard.sample()
 
-            with (
-                mock.patch.object(
-                    disk_module.os,
-                    "fstatvfs",
-                    side_effect=crossing_capacity,
-                ),
-                mock.patch.object(
-                    disk_module,
-                    "_measure_fd",
-                    side_effect=AssertionError(
-                        "tree scan started after capacity query crossed deadline"
-                    ),
-                ),
-            ):
-                failure = guard.sample()
-
-            self.assertIsNotNone(failure)
-            assert failure is not None
-            self.assertEqual(failure.reason, DiskStopReason.MEASUREMENT_FAILED)
-            self.assertIn("exceeded five seconds", failure.message)
+        self.assertIsNotNone(failure)
+        assert failure is not None
+        self.assertEqual(failure.reason, DiskStopReason.MEASUREMENT_FAILED)
+        assert failure.message is not None
+        self.assertIn("exceeded five seconds", failure.message)
+        self.assertNotIn("reopen_directory", backend.operations)
 
     def test_depth_failure_identifies_a_bounded_relative_prefix(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            nested = root / "diagnostic-anchor"
-            nested.mkdir()
-            for index in range(129):
-                nested /= f"d{index}"
-                nested.mkdir()
-            guard = DiskGuard(
-                DiskPolicy(
-                    max_disk_bytes=8 * 1024**3,
-                    min_free_bytes=1,
-                    scratch_root=root,
-                ),
-                [MeterRoot(root, enforcement="owned:test")],
-            )
-            self.addCleanup(guard.close)
+        path = Path("C:/recorded/owned")
+        root = self._node()
+        current = self._node()
+        root.add("diagnostic-anchor", current)
+        for index in range(129):
+            child = self._node()
+            current.add(f"d{index}", child)
+            current = child
+        guard, _backend = self._recording_guard(path, root)
+        self.addCleanup(guard.close)
 
-            failure = guard.sample()
+        failure = guard.sample()
 
-            self.assertIsNotNone(failure)
-            assert failure is not None
-            self.assertEqual(failure.reason, DiskStopReason.MEASUREMENT_FAILED)
-            self.assertIn("diagnostic-anchor/d0/d1", failure.message)
-            self.assertLessEqual(len(failure.message.encode("utf-8")), 1_024)
+        self.assertIsNotNone(failure)
+        assert failure is not None
+        self.assertEqual(failure.reason, DiskStopReason.MEASUREMENT_FAILED)
+        assert failure.message is not None
+        self.assertIn("diagnostic-anchor/d0/d1", failure.message)
+        self.assertLessEqual(len(failure.message.encode("utf-8")), 1_024)
 
     def test_reserved_spool_bytes_trip_owned_limit_before_write(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            guard = DiskGuard(
-                DiskPolicy(
-                    max_disk_bytes=100,
-                    min_free_bytes=10,
-                    scratch_root=root,
-                ),
-                [MeterRoot(root, enforcement="owned:test")],
-            )
-            self.addCleanup(guard.close)
-            guard.observations.append(
-                DiskObservation(owned_bytes=90, available_bytes=1_000)
-            )
+        guard, backend, borrowed = self._reservation_guard(
+            DiskObservation(owned_bytes=90, available_bytes=1_000),
+            max_disk_bytes=100,
+        )
+        backend.available[borrowed.filesystem] = 1_000
+        backend.units[borrowed.filesystem] = 1
 
-            disk_module = __import__(
-                "tools.focused_mutation_support.disk",
-                fromlist=["_filesystem_identity"],
-            )
-            with (
-                mock.patch.object(
-                    disk_module,
-                    "_filesystem_identity",
-                    return_value=(1, 2, 3),
-                ),
-                mock.patch.object(
-                    disk_module.os,
-                    "fstatvfs",
-                    return_value=mock.Mock(f_bavail=1_000, f_frsize=1),
-                ),
-            ):
-                failure = guard.reserve_additional_bytes(
-                    10, filesystem_fd=guard._root_capabilities[0][1]
-                )
+        failure = guard.reserve_additional_bytes(10, filesystem=borrowed)
 
-            self.assertIsNotNone(failure)
-            assert failure is not None
-            self.assertEqual(
-                failure.reason, DiskStopReason.WORKSPACE_SIZE_EXCEEDED
-            )
-            self.assertEqual(failure.observation.owned_bytes, 100)
+        self.assertIsNotNone(failure)
+        assert failure is not None
+        self.assertEqual(failure.reason, DiskStopReason.WORKSPACE_SIZE_EXCEEDED)
+        assert failure.observation is not None
+        self.assertEqual(failure.observation.owned_bytes, 100)
+        self.assertTrue(borrowed.is_open)
 
     def test_reserved_spool_bytes_trip_free_space_reserve_before_write(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            guard = DiskGuard(
-                DiskPolicy(
-                    max_disk_bytes=1_000,
-                    min_free_bytes=10,
-                    scratch_root=root,
-                ),
-                [MeterRoot(root, enforcement="owned:test")],
-            )
-            self.addCleanup(guard.close)
-            guard.observations.append(
-                DiskObservation(owned_bytes=0, available_bytes=20)
-            )
+        guard, backend, borrowed = self._reservation_guard(
+            DiskObservation(owned_bytes=0, available_bytes=20)
+        )
+        backend.available[borrowed.filesystem] = 20
+        backend.units[borrowed.filesystem] = 1
 
-            disk_module = __import__(
-                "tools.focused_mutation_support.disk",
-                fromlist=["_filesystem_identity"],
-            )
-            with (
-                mock.patch.object(
-                    disk_module,
-                    "_filesystem_identity",
-                    return_value=(1, 2, 3),
-                ),
-                mock.patch.object(
-                    disk_module.os,
-                    "fstatvfs",
-                    return_value=mock.Mock(f_bavail=20, f_frsize=1),
-                ),
-            ):
-                failure = guard.reserve_additional_bytes(
-                    10, filesystem_fd=guard._root_capabilities[0][1]
-                )
+        failure = guard.reserve_additional_bytes(10, filesystem=borrowed)
 
-            self.assertIsNotNone(failure)
-            assert failure is not None
-            self.assertEqual(
-                failure.reason, DiskStopReason.FILESYSTEM_RESERVE_REACHED
-            )
-            self.assertEqual(failure.observation.available_bytes, 7)
+        self.assertIsNotNone(failure)
+        assert failure is not None
+        self.assertEqual(failure.reason, DiskStopReason.FILESYSTEM_RESERVE_REACHED)
+        assert failure.observation is not None
+        self.assertEqual(failure.observation.available_bytes, 7)
 
     def test_spool_reservation_includes_block_and_metadata_overhead(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            guard = DiskGuard(
-                DiskPolicy(
-                    max_disk_bytes=1_000,
-                    min_free_bytes=10,
-                    scratch_root=root,
-                ),
-                [MeterRoot(root, enforcement="owned:test")],
-            )
-            self.addCleanup(guard.close)
-            guard.observations.append(
-                DiskObservation(owned_bytes=0, available_bytes=16_388)
-            )
-            disk_module = __import__(
-                "tools.focused_mutation_support.disk",
-                fromlist=["_filesystem_identity"],
-            )
-            with (
-                mock.patch.object(
-                    disk_module,
-                    "_filesystem_identity",
-                    return_value=(1, 2, 3),
-                ),
-                mock.patch.object(
-                    disk_module.os,
-                    "fstatvfs",
-                    return_value=mock.Mock(f_bavail=4, f_frsize=4_096),
-                ),
-            ):
-                failure = guard.reserve_additional_bytes(
-                    1, filesystem_fd=guard._root_capabilities[0][1]
-                )
+        guard, backend, borrowed = self._reservation_guard(
+            DiskObservation(owned_bytes=0, available_bytes=16_388)
+        )
+        backend.available[borrowed.filesystem] = 16_384
+        backend.units[borrowed.filesystem] = 4_096
 
-            self.assertIsNotNone(failure)
-            assert failure is not None
-            self.assertEqual(
-                failure.reason, DiskStopReason.FILESYSTEM_RESERVE_REACHED
-            )
-            self.assertEqual(failure.observation.available_bytes, 0)
+        failure = guard.reserve_additional_bytes(1, filesystem=borrowed)
+
+        self.assertIsNotNone(failure)
+        assert failure is not None
+        self.assertEqual(failure.reason, DiskStopReason.FILESYSTEM_RESERVE_REACHED)
+        assert failure.observation is not None
+        self.assertEqual(failure.observation.available_bytes, 0)
 
     def test_spool_reservation_debits_only_its_own_filesystem(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            guard = DiskGuard(
-                DiskPolicy(
-                    max_disk_bytes=1_000,
-                    min_free_bytes=10,
-                    scratch_root=root,
-                ),
-                [MeterRoot(root, enforcement="owned:test")],
+        guard, backend, borrowed = self._reservation_guard(
+            DiskObservation(
+                owned_bytes=0,
+                available_bytes=11,
+                filesystem_available_bytes={
+                    "1:1:1": 11,
+                    "47:53:59": 1_000,
+                },
             )
-            self.addCleanup(guard.close)
-            guard.observations.append(
-                DiskObservation(
-                    owned_bytes=0,
-                    available_bytes=11,
-                    filesystem_available_bytes={"1:1:1": 11, "2:2:2": 1_000},
-                )
-            )
-            disk_module = __import__(
-                "tools.focused_mutation_support.disk",
-                fromlist=["_filesystem_identity"],
-            )
-            with (
-                mock.patch.object(
-                    disk_module,
-                    "_filesystem_identity",
-                    return_value=(2, 2, 2),
-                ),
-                mock.patch.object(
-                    disk_module.os,
-                    "fstatvfs",
-                    return_value=mock.Mock(f_bavail=1_000, f_frsize=1),
-                ),
-            ):
-                failure = guard.reserve_additional_bytes(
-                    2, filesystem_fd=guard._root_capabilities[0][1]
-                )
+        )
+        backend.available[borrowed.filesystem] = 1_000
+        backend.units[borrowed.filesystem] = 1
 
-            self.assertIsNone(failure)
+        failure = guard.reserve_additional_bytes(2, filesystem=borrowed)
+
+        self.assertIsNone(failure)
 
     def test_spool_capacity_query_failure_is_typed_measurement_stop(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            guard = DiskGuard(
-                DiskPolicy(
-                    max_disk_bytes=1_000,
-                    min_free_bytes=10,
-                    scratch_root=root,
-                ),
-                [MeterRoot(root, enforcement="owned:test")],
-            )
-            self.addCleanup(guard.close)
-            guard.observations.append(
-                DiskObservation(owned_bytes=0, available_bytes=1_000)
-            )
-            disk_module = __import__(
-                "tools.focused_mutation_support.disk",
-                fromlist=["_filesystem_identity"],
-            )
-            with mock.patch.object(
-                disk_module.os,
-                "fstatvfs",
-                side_effect=OSError("injected spool capacity failure"),
-            ):
-                failure = guard.reserve_additional_bytes(
-                    1, filesystem_fd=guard._root_capabilities[0][1]
-                )
+        guard, backend, borrowed = self._reservation_guard(
+            DiskObservation(owned_bytes=0, available_bytes=1_000)
+        )
+        backend.available_error = OSError("injected spool capacity failure")
 
-            self.assertIsNotNone(failure)
-            assert failure is not None
-            self.assertEqual(failure.reason, DiskStopReason.MEASUREMENT_FAILED)
-            self.assertIn("spool capacity failure", failure.message)
+        failure = guard.reserve_additional_bytes(1, filesystem=borrowed)
+
+        self.assertIsNotNone(failure)
+        assert failure is not None
+        self.assertEqual(failure.reason, DiskStopReason.MEASUREMENT_FAILED)
+        assert failure.message is not None
+        self.assertIn("spool capacity failure", failure.message)
+
+    def test_spool_reservation_validates_borrowed_owner_open_and_unit(self) -> None:
+        for case in ("owner", "closed", "unit"):
+            with self.subTest(case=case):
+                guard, backend, borrowed = self._reservation_guard(
+                    DiskObservation(owned_bytes=0, available_bytes=1_000)
+                )
+                selected = borrowed
+                if case == "owner":
+                    other = _RecordingFilesystemBackend()
+                    selected = other.directory_capability(
+                        self._node(filesystem=borrowed.filesystem),
+                        Path("C:/recorded/foreign"),
+                    )
+                    self.addCleanup(selected.close)
+                elif case == "closed":
+                    selected.close()
+                else:
+                    backend.units[borrowed.filesystem] = 0
+
+                if case in {"owner", "closed"}:
+                    with self.assertRaises((RuntimeError, ValueError)):
+                        guard.reserve_additional_bytes(1, filesystem=selected)
+                    self.assertEqual(backend.available_calls, [])
+                    self.assertEqual(backend.allocation_calls, [])
+                else:
+                    failure = guard.reserve_additional_bytes(
+                        1,
+                        filesystem=selected,
+                    )
+                    self.assertIsNotNone(failure)
+                    assert failure is not None
+                    self.assertEqual(
+                        failure.reason,
+                        DiskStopReason.MEASUREMENT_FAILED,
+                    )
+
+    def test_spool_reservation_sticky_failure_precedes_capability_access(self) -> None:
+        guard, backend, borrowed = self._reservation_guard(
+            DiskObservation(owned_bytes=0, available_bytes=1_000)
+        )
+        sticky = DiskFailure(
+            code=DISK_MEASUREMENT_FAILED,
+            reason=DiskStopReason.MEASUREMENT_FAILED,
+            message="sticky",
+        )
+        guard.failure = sticky
+        borrowed.close()
+
+        self.assertIs(
+            guard.reserve_additional_bytes(1, filesystem=borrowed),
+            sticky,
+        )
+        self.assertEqual(backend.available_calls, [])
+        self.assertEqual(backend.allocation_calls, [])
 
     def test_only_latest_observation_retains_inode_provenance(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -852,8 +2003,12 @@ class AnchoredDiskGuardTests(unittest.TestCase):
             self.assertEqual(guard.observations[0].root_owned_identities, {})
             self.assertTrue(guard.observations[1].identity_bytes)
             self.assertIsNotNone(guard.failure)
-            self.assertIsNotNone(guard.failure.observation)
-            self.assertEqual(guard.failure.observation.identity_bytes, {})
+            failure = guard.failure
+            assert failure is not None
+            self.assertIsNotNone(failure.observation)
+            observation = failure.observation
+            assert observation is not None
+            self.assertEqual(observation.identity_bytes, {})
 
     def test_later_measurement_failure_is_exposed_after_sticky_threshold(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -872,79 +2027,75 @@ class AnchoredDiskGuardTests(unittest.TestCase):
 
             first = guard.sample()
             with mock.patch(
-                "tools.focused_mutation_support.disk._measure_fd",
+                "tools.focused_mutation_support.disk._measure_capability",
                 side_effect=OSError("injected later scan failure"),
             ):
                 sticky = guard.sample()
 
             self.assertIs(sticky, first)
             self.assertIsNotNone(guard.latest_failure)
+            latest_failure = guard.latest_failure
+            assert latest_failure is not None
             self.assertEqual(
-                guard.latest_failure.reason,
+                latest_failure.reason,
                 DiskStopReason.MEASUREMENT_FAILED,
             )
-            self.assertIn("later scan failure", guard.latest_failure.message)
+            assert latest_failure.message is not None
+            self.assertIn("later scan failure", latest_failure.message)
 
     def test_join_timeout_keeps_scratch_lease_until_monitor_exits(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            parent = Path(directory)
-            scratch = ManagedScratch.create(parent)
-            scratch.mark_cleanup_ready()
-            managed_root = scratch.managed_root
-            leased_path = scratch.path
-            entered = threading.Event()
-            release = threading.Event()
-            guard = DiskGuard(
-                DiskPolicy(
-                    max_disk_bytes=1024 * 1024,
-                    min_free_bytes=1,
-                    sample_interval_seconds=0.001,
-                    scratch_root=parent,
-                ),
-                [MeterRoot(leased_path)],
-                heartbeat=scratch.refresh_heartbeat,
+        path = Path("C:/recorded/leased")
+        backend = _RecordingFilesystemBackend()
+        node = self._node()
+        backend.available[node.filesystem] = 1_000_000
+        backend.units[node.filesystem] = 1
+        retained = backend.directory_capability(node, path)
+        with mock.patch(
+            "tools.focused_mutation_support.disk.canonical_scratch_root",
+            return_value=path,
+        ):
+            policy = DiskPolicy(
+                max_disk_bytes=1024 * 1024,
+                min_free_bytes=1,
+                sample_interval_seconds=0.001,
+                scratch_root=path,
             )
-            original_sample = guard.sample
-            calls = 0
+        guard = DiskGuard(
+            policy,
+            [MeterRoot(path, capability_factory=lambda: retained)],
+            backend=backend,
+        )
+        entered = threading.Event()
+        release = threading.Event()
+        original_sample = guard.sample
+        calls = 0
 
-            def blocking_sample() -> DiskFailure | None:
-                nonlocal calls
-                calls += 1
-                if calls > 1:
-                    entered.set()
-                    release.wait(timeout=2.0)
-                return original_sample()
+        def blocking_sample() -> DiskFailure | None:
+            nonlocal calls
+            calls += 1
+            if calls > 1:
+                entered.set()
+                release.wait(timeout=2.0)
+            return original_sample()
 
-            with mock.patch.object(guard, "sample", side_effect=blocking_sample):
-                guard.start()
-                self.assertTrue(entered.wait(timeout=1.0))
-                self.assertFalse(guard.stop_and_join(timeout=0.01))
-                del scratch
-                self.assertEqual(reclaim_abandoned(managed_root), [])
-                self.assertTrue(leased_path.is_dir())
-                release.set()
-                assert guard._thread is not None
-                guard._thread.join(timeout=2.0)
-                self.assertFalse(guard._thread.is_alive())
+        with mock.patch.object(guard, "sample", side_effect=blocking_sample):
+            guard.start()
+            self.assertTrue(entered.wait(timeout=1.0))
+            self.assertFalse(guard.stop_and_join(timeout=0.01))
+            self.assertTrue(retained.is_open)
+            release.set()
+            assert guard._thread is not None
+            guard._thread.join(timeout=2.0)
+            self.assertFalse(guard._thread.is_alive())
 
-            del blocking_sample
-            del original_sample
-            del guard
-            gc.collect()
-            records = reclaim_abandoned(managed_root)
-            self.assertTrue(
-                any(
-                    item.status is ScratchCleanupStatus.CLEAN
-                    for item in records
-                )
-            )
-            self.assertFalse(leased_path.exists())
+        self.assertTrue(retained.closed)
+        self.assertEqual(backend.active_resources, 0)
 
     @unittest.skipIf(os.name == "nt", "surrogateescape names are POSIX-specific")
     def test_invalid_utf8_name_is_measured_without_stopping_monitor(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+            root_fd = os.open(root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
             try:
                 try:
                     file_fd = os.open(
@@ -978,7 +2129,7 @@ class AnchoredDiskGuardTests(unittest.TestCase):
                 [MeterRoot(root)],
             )
             with mock.patch(
-                "tools.focused_mutation_support.disk._measure_fd",
+                "tools.focused_mutation_support.disk._measure_capability",
                 side_effect=UnicodeEncodeError("utf-8", "\udcff", 0, 1, "bad"),
             ):
                 failure = guard.sample()
@@ -989,29 +2140,57 @@ class AnchoredDiskGuardTests(unittest.TestCase):
             guard.close()
 
     def test_capability_close_failure_is_recorded_without_short_circuit(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            guard = DiskGuard(
-                DiskPolicy(
-                    max_disk_bytes=1024 * 1024,
-                    min_free_bytes=1,
-                    scratch_root=root,
-                ),
-                [MeterRoot(root)],
-            )
-            descriptor = guard._root_capabilities[0][1]
-            assert descriptor is not None
-            real_close = os.close
-            try:
-                with mock.patch(
-                    "tools.focused_mutation_support.disk.os.close",
-                    side_effect=OSError("injected close failure"),
-                ):
-                    errors = guard.close()
-                self.assertEqual(len(errors), 1)
-                self.assertIn("injected close failure", errors[0])
-            finally:
-                real_close(descriptor)
+        first_path = Path("C:/recorded/first")
+        second_path = Path("C:/recorded/second")
+        backend = _RecordingFilesystemBackend()
+        first = backend.directory_capability(
+            self._node(),
+            first_path,
+            close_failures=1,
+        )
+        second = backend.directory_capability(self._node(), second_path)
+        guard = DiskGuard(
+            self._policy(first_path),
+            [
+                MeterRoot(first_path, capability_factory=lambda: first),
+                MeterRoot(second_path, capability_factory=lambda: second),
+            ],
+            backend=backend,
+        )
+
+        errors = guard.close()
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("injected capability close failure", errors[0])
+        self.assertTrue(first.is_open)
+        self.assertTrue(second.closed)
+        self.assertEqual(backend.active_resources, 1)
+
+        guard.close()
+
+        self.assertTrue(first.closed)
+        self.assertEqual(backend.active_resources, 0)
+
+    def test_probe_close_retries_duplicate_and_bounds_retry_failure(self) -> None:
+        path = Path("C:/recorded/owned")
+        for close_failures, expected_errors, expected_active in (
+            (1, 1, 1),
+            (2, 2, 1),
+        ):
+            with self.subTest(close_failures=close_failures):
+                backend = _RecordingFilesystemBackend()
+                root = self._node()
+                guard, _ = self._recording_guard(path, root, backend=backend)
+                backend.close_failures[root.identity] = close_failures
+
+                errors = guard.probe_close()
+
+                self.assertEqual(len(errors), expected_errors)
+                self.assertTrue(
+                    all(len(error.encode("utf-8")) <= 512 for error in errors)
+                )
+                self.assertEqual(backend.active_resources, expected_active)
+                guard.close()
 
     def test_hard_links_across_owned_roots_are_counted_once(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1151,8 +2330,40 @@ class AnchoredDiskGuardTests(unittest.TestCase):
                 [MeterRoot(missing)],
             )
             failure = guard.sample()
+            assert failure is not None
             self.assertEqual(failure.reason, DiskStopReason.MEASUREMENT_FAILED)
 
+    def test_backend_neutral_preflight_stops_before_external_launch(self) -> None:
+        path = Path("C:/recorded/owned")
+        root = self._node()
+        root.add(
+            "payload",
+            self._node(kind=EntryKind.REGULAR, logical_size=2),
+        )
+        guard, _backend = self._recording_guard(
+            path,
+            root,
+            max_disk_bytes=2,
+        )
+        self.addCleanup(guard.close)
+        launch = mock.Mock()
+
+        failure = guard.sample()
+        if failure is None:
+            launch()
+
+        self.assertIsNotNone(failure)
+        assert failure is not None
+        self.assertEqual(
+            failure.reason,
+            DiskStopReason.WORKSPACE_SIZE_EXCEEDED,
+        )
+        launch.assert_not_called()
+
+    @unittest.skipIf(
+        os.name == "nt",
+        "Task 8-10 RunStore activation is intentionally unmigrated on Windows",
+    )
     def test_preflight_stop_happens_before_child_launch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1183,6 +2394,50 @@ class AnchoredDiskGuardTests(unittest.TestCase):
             )
             self.assertFalse((root / "must-not-exist").exists())
 
+    def test_backend_neutral_periodic_sample_records_size_stop(self) -> None:
+        path = Path("C:/recorded/owned")
+        root = self._node()
+        backend = _RecordingFilesystemBackend()
+        backend.available[root.filesystem] = 1_000_000
+        backend.units[root.filesystem] = 1
+        retained = backend.directory_capability(root, path)
+        with mock.patch(
+            "tools.focused_mutation_support.disk.canonical_scratch_root",
+            return_value=path,
+        ):
+            policy = DiskPolicy(
+                max_disk_bytes=2,
+                min_free_bytes=1,
+                sample_interval_seconds=0.001,
+                scratch_root=path,
+            )
+        guard = DiskGuard(
+            policy,
+            [MeterRoot(path, capability_factory=lambda: retained)],
+            backend=backend,
+        )
+        guard.start()
+        root.add(
+            "payload",
+            self._node(kind=EntryKind.REGULAR, logical_size=2),
+        )
+        deadline = time.monotonic() + 1.0
+        while guard.failure is None and time.monotonic() < deadline:
+            threading.Event().wait(0.001)
+
+        self.assertIsNotNone(guard.failure)
+        assert guard.failure is not None
+        self.assertEqual(
+            guard.failure.reason,
+            DiskStopReason.WORKSPACE_SIZE_EXCEEDED,
+        )
+        self.assertTrue(guard.stop_and_join(1.0))
+        self.assertTrue(retained.closed)
+
+    @unittest.skipIf(
+        os.name == "nt",
+        "Task 8-10 RunStore activation is intentionally unmigrated on Windows",
+    )
     def test_periodic_size_stop_terminates_and_reaps_the_command(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1622,7 +2877,7 @@ class ManagedScratchTests(unittest.TestCase):
                 os.fstat(descriptor)
 
     def test_janitor_diagnostics_are_bounded_with_omitted_count(self) -> None:
-        records = [
+        records: list[ScratchCleanupRecord | JanitorDiagnostic] = [
             ScratchCleanupRecord(
                 ScratchCleanupStatus.FAILED,
                 0,
@@ -1711,7 +2966,10 @@ class ManagedScratchTests(unittest.TestCase):
             self.assertEqual((replacement / "sentinel").read_text(), "keep")
             self.assertFalse((moved / candidate.name).exists())
             self.assertTrue(
-                any(item.status is ScratchCleanupStatus.CLEAN for item in records)
+                any(
+                    item.status is ScratchCleanupStatus.CLEAN
+                    for item in _cleanup_records_only(records)
+                )
             )
 
     def test_zero_progress_lease_marker_write_rolls_back_staging(self) -> None:
@@ -1822,7 +3080,9 @@ class ManagedScratchTests(unittest.TestCase):
     def test_coordinator_does_not_initialize_after_absolute_deadline(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             managed = Path(directory)
-            root_fd = os.open(managed, os.O_RDONLY | os.O_DIRECTORY)
+            root_fd = os.open(
+                managed, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+            )
             lease_module = __import__(
                 "tools.focused_mutation_support.lease",
                 fromlist=["_open_coordinator"],
@@ -2216,7 +3476,7 @@ class ManagedScratchTests(unittest.TestCase):
             records = reclaim_abandoned(scratch.managed_root)
 
             self.assertEqual(
-                [record.status for record in records],
+                [record.status for record in _cleanup_records_only(records)],
                 [ScratchCleanupStatus.CLEAN],
             )
             self.assertFalse(abandoned.exists())
@@ -2809,9 +4069,11 @@ class ManagedScratchTests(unittest.TestCase):
                 records = reclaim_abandoned(managed, now=24 * 60 * 60 + 1.0)
 
             self.assertEqual(len(records), 1)
-            self.assertEqual(records[0].status, ScratchCleanupStatus.CLEAN)
-            self.assertIsNone(records[0].remaining_root)
-            self.assertIn("empty coordinator close failure", records[0].details[0])
+            record = records[0]
+            assert isinstance(record, ScratchCleanupRecord)
+            self.assertEqual(record.status, ScratchCleanupStatus.CLEAN)
+            self.assertIsNone(record.remaining_root)
+            self.assertIn("empty coordinator close failure", record.details[0])
             self.assertFalse(candidate.exists())
 
     def test_empty_janitor_early_exit_preserves_coordinator_close_error(
@@ -2929,7 +4191,9 @@ class ManagedScratchTests(unittest.TestCase):
 
             self.assertEqual(len(records), 2)
             self.assertIsInstance(records[0], JanitorDiagnostic)
-            self.assertEqual(records[1].status, ScratchCleanupStatus.CLEAN)
+            record = records[1]
+            assert isinstance(record, ScratchCleanupRecord)
+            self.assertEqual(record.status, ScratchCleanupStatus.CLEAN)
             self.assertIn("cursor", records[0].details[0])
             self.assertFalse(candidate.exists())
 
@@ -2991,7 +4255,7 @@ class ManagedScratchTests(unittest.TestCase):
             records = reclaim_abandoned(managed)
 
             self.assertEqual(
-                [record.status for record in records],
+                [record.status for record in _cleanup_records_only(records)],
                 [ScratchCleanupStatus.CLEAN],
             )
             self.assertFalse(deleting.exists())
@@ -3037,7 +4301,7 @@ class ManagedScratchTests(unittest.TestCase):
             )
 
             self.assertEqual(
-                [record.status for record in records],
+                [record.status for record in _cleanup_records_only(records)],
                 [ScratchCleanupStatus.CLEAN],
             )
             self.assertFalse(staging.exists())
@@ -3075,7 +4339,7 @@ class ManagedScratchTests(unittest.TestCase):
             records = reclaim_abandoned(scratch.managed_root)
 
             self.assertEqual(
-                [record.status for record in records],
+                [record.status for record in _cleanup_records_only(records)],
                 [ScratchCleanupStatus.CLEAN],
             )
             self.assertFalse(deleting.exists())
@@ -3095,7 +4359,7 @@ class ManagedScratchTests(unittest.TestCase):
             records = reclaim_abandoned(managed, now=24 * 60 * 60 + 2.0)
 
             self.assertEqual(
-                [record.status for record in records],
+                [record.status for record in _cleanup_records_only(records)],
                 [ScratchCleanupStatus.CLEAN],
             )
             self.assertFalse(old.exists())
@@ -3235,7 +4499,7 @@ class ManagedScratchTests(unittest.TestCase):
                 ],
             )
             self.assertEqual(
-                [record.status for record in records],
+                [record.status for record in _cleanup_records_only(records)],
                 [ScratchCleanupStatus.CLEAN, ScratchCleanupStatus.CLEAN],
             )
 
@@ -3327,7 +4591,7 @@ class ManagedScratchTests(unittest.TestCase):
             real_open_coordinator = lease_module._open_coordinator
             real_unlink = lease_module.os.unlink
             janitor_acquired = threading.Event()
-            janitor_records: list[ScratchCleanupRecord] = []
+            janitor_records: list[ScratchCleanupRecord | JanitorDiagnostic] = []
             janitor: threading.Thread | None = None
             janitor_acquired_during_unlink = False
 
@@ -4130,7 +5394,7 @@ class ManagedScratchTests(unittest.TestCase):
 
                 def __next__(self) -> os.DirEntry[str]:
                     nonlocal crossed
-                    entry = next(self.inner)  # type: ignore[arg-type]
+                    entry = next(self.inner)  # type: ignore[call-overload]
                     crossed = True
                     return entry
 
@@ -5039,12 +6303,12 @@ class OwnedOutputTests(unittest.TestCase):
             try:
                 owner.write_atomic(
                     "json",
-                    lambda writer: writer.write("{}\n"),
+                    _write_text("{}\n"),
                 )
                 with self.assertRaisesRegex(ValueError, "report kind"):
                     owner.write_atomic(
                         "../sentinel",
-                        lambda writer: writer.write("overwritten"),
+                        _write_text("overwritten"),
                     )
 
                 self.assertEqual(
@@ -5083,7 +6347,7 @@ class OwnedOutputTests(unittest.TestCase):
                     ) as caught,
                 ):
                     owner.write_atomic(
-                        "json", lambda writer: writer.write("new")
+                        "json", _write_text("new")
                     )
 
                 self.assertTrue(
@@ -5303,7 +6567,7 @@ class OwnedOutputTests(unittest.TestCase):
             with self.assertRaisesRegex(OSError, "identity changed"):
                 owner.write_atomic(
                     "json",
-                    lambda writer: writer.write("{}\n"),
+                    _write_text("{}\n"),
                 )
 
             self.assertFalse((replacement / "run.json").exists())
@@ -5433,7 +6697,7 @@ class OwnedOutputTests(unittest.TestCase):
             with self.assertRaises(ReportTooLarge):
                 owner.write_atomic(
                     "json",
-                    lambda writer: writer.write("x" * 1025),
+                    _write_text("x" * 1025),
                     capacity=1024,
                 )
 
@@ -5456,7 +6720,7 @@ class OwnedOutputTests(unittest.TestCase):
             with self.assertRaisesRegex(ReportTooLarge, "post-flush"):
                 owner.write_atomic(
                     "json",
-                    lambda writer: writer.write("new"),
+                    _write_text("new"),
                     after_flush=lambda _written: (_ for _ in ()).throw(
                         ReportTooLarge("post-flush reserve reached")
                     ),
@@ -5477,7 +6741,12 @@ class OwnedOutputTests(unittest.TestCase):
             scratch.__del__()
             self.assertTrue(leased.is_dir())
             self.assertEqual(
-                [record.status for record in reclaim_abandoned(managed)],
+                [
+                    record.status
+                    for record in _cleanup_records_only(
+                        reclaim_abandoned(managed)
+                    )
+                ],
                 [ScratchCleanupStatus.CLEAN],
             )
 
@@ -5495,7 +6764,12 @@ class OwnedOutputTests(unittest.TestCase):
                 os.fstat(lease_fd)
             self.assertTrue(leased.is_dir())
             self.assertEqual(
-                [record.status for record in reclaim_abandoned(managed)],
+                [
+                    record.status
+                    for record in _cleanup_records_only(
+                        reclaim_abandoned(managed)
+                    )
+                ],
                 [ScratchCleanupStatus.CLEAN],
             )
 

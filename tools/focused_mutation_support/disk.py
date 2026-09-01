@@ -2,15 +2,26 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
-import os
 from pathlib import Path
 import re
 import tempfile
-import stat
 import threading
 import time
-import sys
 from collections.abc import Callable, Iterable
+
+from .filesystem import (
+    CreateDisposition,
+    DirectoryCapability,
+    DirectoryIterator,
+    EntryKind,
+    FileAccess,
+    FileCapability,
+    FileIdentity,
+    FilesystemBackend,
+    FilesystemIdentity,
+    SharePolicy,
+    default_filesystem_backend,
+)
 
 
 MIB = 1024**2
@@ -66,18 +77,75 @@ def parse_byte_size(value: str) -> int:
     return count * multiplier
 
 
-def canonical_scratch_root(value: Path | None) -> Path:
+def _bounded_secondary(value: str) -> str:
+    return (
+        value.encode("utf-8", errors="backslashreplace")[:512]
+        .decode("utf-8", errors="ignore")
+    )
+
+
+def _add_close_note(primary: BaseException, error: BaseException) -> None:
+    primary.add_note(
+        _bounded_secondary(f"filesystem capability close failed: {error}")
+    )
+
+
+def _add_deadline_note(primary: BaseException, error: BaseException) -> None:
+    primary.add_note(
+        _bounded_secondary(f"post-close deadline check failed: {error}")
+    )
+
+
+def canonical_scratch_root(
+    value: Path | None,
+    *,
+    backend: FilesystemBackend | None = None,
+) -> Path:
     root = Path(tempfile.gettempdir()) if value is None else value
     try:
         canonical = root.resolve(strict=True)
     except OSError as error:
         raise ValueError(f"scratch root cannot be canonicalized: {root}: {error}") from error
-    if not canonical.is_dir():
-        raise ValueError(f"scratch root is not a directory: {canonical}")
+    selected = default_filesystem_backend() if backend is None else backend
+    capability: DirectoryCapability | None = None
+    primary: BaseException | None = None
     try:
-        os.statvfs(canonical)
-    except OSError as error:
-        raise ValueError(f"scratch root free space cannot be queried: {canonical}: {error}") from error
+        capability = selected.open_root(canonical, SharePolicy.SCAN)
+        if capability.kind is not EntryKind.DIRECTORY:
+            raise NotADirectoryError(canonical)
+        selected.available_bytes(capability)
+    except BaseException as error:
+        if isinstance(error, NotADirectoryError):
+            primary = ValueError(f"scratch root is not a directory: {canonical}")
+            primary.__cause__ = error
+        elif isinstance(error, Exception):
+            primary = ValueError(
+                f"scratch root free space cannot be queried: {canonical}: {error}"
+            )
+            primary.__cause__ = error
+        else:
+            primary = error
+    finally:
+        if capability is not None:
+            try:
+                capability.close()
+            except BaseException as close_error:
+                if primary is None:
+                    primary = ValueError(
+                        "scratch root free space cannot be queried: "
+                        f"{canonical}: {close_error}"
+                    )
+                    primary.__cause__ = close_error
+                else:
+                    _add_close_note(primary, close_error)
+                if capability.is_open:
+                    try:
+                        capability.close()
+                    except BaseException as retry_error:
+                        assert primary is not None
+                        _add_close_note(primary, retry_error)
+    if primary is not None:
+        raise primary
     return canonical
 
 
@@ -699,250 +767,193 @@ class MeterRoot:
     charge_owned_bytes: bool = True
     enforcement: str = "owned"
     exact_path: Path | None = None
+    capability_factory: Callable[[], DirectoryCapability] | None = None
 
 
 class DiskMeasurementError(RuntimeError):
     pass
 
 
-def _open_directory(path: Path) -> int:
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-    flags |= getattr(os, "O_NOFOLLOW", 0)
-    return os.open(path, flags)
+@dataclass(slots=True)
+class _RootCapabilityState:
+    root: MeterRoot
+    capability: DirectoryCapability | None
+    acquisition_error: str | None
+    retained_identity: FileIdentity | None
+    exact_identity: FileIdentity | None
 
 
-def _open_child_directory(parent_fd: int, name: str) -> int:
-    flags = (
-        os.O_RDONLY
-        | getattr(os, "O_DIRECTORY", 0)
-        | getattr(os, "O_NOFOLLOW", 0)
+@dataclass(slots=True)
+class _MeterFrame:
+    iterator: DirectoryIterator
+    path_parts: tuple[str, ...]
+
+
+def _bounded_depth_message(path_parts: tuple[str, ...]) -> str:
+    relative = "/".join(path_parts)
+    bounded = (
+        relative.encode("utf-8", errors="backslashreplace")[:768]
+        .decode("utf-8", errors="ignore")
     )
-    if not sys.platform.startswith("linux"):
-        return os.open(name, flags, dir_fd=parent_fd)
-    import ctypes
-
-    class OpenHow(ctypes.Structure):
-        _fields_ = [
-            ("flags", ctypes.c_uint64),
-            ("mode", ctypes.c_uint64),
-            ("resolve", ctypes.c_uint64),
-        ]
-
-    encoded = os.fsencode(name)
-    if b"/" in encoded or encoded in {b"", b".", b".."}:
-        raise DiskMeasurementError("meter component is not a direct child")
-    how = OpenHow(
-        flags=flags | getattr(os, "O_CLOEXEC", 0),
-        mode=0,
-        resolve=0x01 | 0x02 | 0x04 | 0x08,
-    )
-    libc = ctypes.CDLL(None, use_errno=True)
-    result = libc.syscall(
-        437,
-        parent_fd,
-        ctypes.c_char_p(encoded),
-        ctypes.byref(how),
-        ctypes.sizeof(how),
-    )
-    if result < 0:
-        error_number = ctypes.get_errno()
-        raise OSError(error_number, os.strerror(error_number), name)
-    return int(result)
+    return f"owned scratch depth exceeds {MAX_TREE_DEPTH} below {bounded}"
 
 
-def _open_child_regular(parent_fd: int, name: str) -> int:
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-    if not sys.platform.startswith("linux"):
-        return os.open(name, flags, dir_fd=parent_fd)
-    import ctypes
-
-    class OpenHow(ctypes.Structure):
-        _fields_ = [
-            ("flags", ctypes.c_uint64),
-            ("mode", ctypes.c_uint64),
-            ("resolve", ctypes.c_uint64),
-        ]
-
-    encoded = os.fsencode(name)
-    if b"/" in encoded or encoded in {b"", b".", b".."}:
-        raise DiskMeasurementError("meter component is not a direct child")
-    how = OpenHow(
-        flags=flags | getattr(os, "O_CLOEXEC", 0),
-        mode=0,
-        resolve=0x01 | 0x02 | 0x04 | 0x08,
-    )
-    libc = ctypes.CDLL(None, use_errno=True)
-    result = libc.syscall(
-        437,
-        parent_fd,
-        ctypes.c_char_p(encoded),
-        ctypes.byref(how),
-        ctypes.sizeof(how),
-    )
-    if result < 0:
-        error_number = ctypes.get_errno()
-        raise OSError(error_number, os.strerror(error_number), name)
-    return int(result)
+def _validate_root_capability(
+    capability: object,
+    backend: FilesystemBackend,
+    expected_path: Path,
+) -> DirectoryCapability:
+    if not isinstance(capability, DirectoryCapability):
+        raise RuntimeError("disk root capability kind is not a directory")
+    if not capability.owned_by(backend):
+        raise RuntimeError("disk root capability owner does not match backend")
+    if not capability.is_open:
+        raise RuntimeError("disk root capability is closed")
+    if capability.kind is not EntryKind.DIRECTORY:
+        raise RuntimeError("disk root capability kind is not a real directory")
+    if capability.path_hint != expected_path:
+        raise RuntimeError("disk root capability path does not match MeterRoot")
+    return capability
 
 
-def _reopen_same_directory(
-    fd: int,
-    *,
-    check_deadline: Callable[[], None],
-) -> int:
-    flags = (
-        os.O_RDONLY
-        | getattr(os, "O_DIRECTORY", 0)
-        | getattr(os, "O_NOFOLLOW", 0)
-    )
-    reopened = os.open(".", flags, dir_fd=fd)
-    try:
-        check_deadline()
-        original = os.fstat(fd)
-        check_deadline()
-        current = os.fstat(reopened)
-        check_deadline()
-        if (original.st_dev, original.st_ino) != (
-            current.st_dev,
-            current.st_ino,
-        ):
-            raise DiskMeasurementError(
-                "owned root identity changed while reopening"
-            )
-        return reopened
-    except BaseException:
-        os.close(reopened)
-        raise
-
-
-def _filesystem_identity(
-    fd: int,
+def _close_capability_after_error(
+    capability: DirectoryCapability | FileCapability | None,
+    primary: BaseException,
     *,
     check_deadline: Callable[[], None] | None = None,
-) -> tuple[int, int, int]:
-    metadata = os.fstat(fd)
-    if check_deadline is not None:
-        check_deadline()
-    if sys.platform != "darwin":
-        return metadata.st_dev, 0, 0
-    import ctypes
-    import struct
+) -> None:
+    if capability is None or not capability.is_open:
+        return
+    try:
+        capability.close()
+    except BaseException as close_error:
+        _add_close_note(primary, close_error)
+        if capability.is_open:
+            try:
+                capability.close()
+            except BaseException as retry_error:
+                _add_close_note(primary, retry_error)
+            else:
+                if check_deadline is not None:
+                    try:
+                        check_deadline()
+                    except BaseException as deadline_error:
+                        _add_deadline_note(primary, deadline_error)
+    else:
+        if check_deadline is not None:
+            try:
+                check_deadline()
+            except BaseException as deadline_error:
+                _add_deadline_note(primary, deadline_error)
 
-    value = ctypes.create_string_buffer(4_096)
-    libc = ctypes.CDLL(None, use_errno=True)
-    if libc.fstatfs(fd, ctypes.byref(value)) != 0:
-        error_number = ctypes.get_errno()
-        raise OSError(error_number, os.strerror(error_number))
-    if check_deadline is not None:
-        check_deadline()
-    first, second = struct.unpack_from("=ii", value.raw, 48)
-    return metadata.st_dev, first, second
 
-
-class _DirectoryStream:
-    """One-FD, handle-relative directory stream for bounded DFS."""
-
-    def __init__(self, fd: int) -> None:
-        import ctypes
-
-        self._ctypes = ctypes
-        self._libc = ctypes.CDLL(None, use_errno=True)
-        self._libc.fdopendir.argtypes = (ctypes.c_int,)
-        self._libc.fdopendir.restype = ctypes.c_void_p
-        self._libc.readdir.argtypes = (ctypes.c_void_p,)
-        self._libc.readdir.restype = ctypes.c_void_p
-        self._libc.dirfd.argtypes = (ctypes.c_void_p,)
-        self._libc.dirfd.restype = ctypes.c_int
-        self._libc.closedir.argtypes = (ctypes.c_void_p,)
-        self._libc.closedir.restype = ctypes.c_int
-        pointer = self._libc.fdopendir(fd)
-        if not pointer:
-            error_number = ctypes.get_errno()
-            os.close(fd)
-            raise OSError(error_number, os.strerror(error_number))
-        self._pointer = pointer
-
-    @property
-    def fd(self) -> int:
-        value = self._libc.dirfd(self._pointer)
-        if value < 0:
-            error_number = self._ctypes.get_errno()
-            raise OSError(error_number, os.strerror(error_number))
-        return int(value)
-
-    def next_name(
-        self,
-        *,
-        check_deadline: Callable[[], None],
-    ) -> str | None:
-        while True:
-            self._ctypes.set_errno(0)
-            pointer = self._libc.readdir(self._pointer)
+def _close_iterator_after_error(
+    iterator: DirectoryIterator,
+    primary: BaseException,
+    *,
+    check_deadline: Callable[[], None],
+) -> None:
+    try:
+        iterator.close()
+    except BaseException as close_error:
+        _add_close_note(primary, close_error)
+        try:
+            iterator.close()
+        except BaseException as retry_error:
+            _add_close_note(primary, retry_error)
+        else:
+            try:
+                check_deadline()
+            except BaseException as deadline_error:
+                _add_deadline_note(primary, deadline_error)
+    else:
+        try:
             check_deadline()
-            if not pointer:
-                error_number = self._ctypes.get_errno()
-                if error_number:
-                    raise OSError(error_number, os.strerror(error_number))
-                return None
-            name_offset = 21 if sys.platform == "darwin" else 19
-            encoded = self._ctypes.string_at(pointer + name_offset)
-            name = os.fsdecode(encoded)
-            if name not in {".", ".."}:
-                return name
-
-    def close(self) -> None:
-        pointer = self._pointer
-        if not pointer:
-            return
-        self._pointer = None
-        if self._libc.closedir(pointer) != 0:
-            error_number = self._ctypes.get_errno()
-            raise OSError(error_number, os.strerror(error_number))
+        except BaseException as deadline_error:
+            _add_deadline_note(primary, deadline_error)
 
 
-def _measure_fd(
-    root_fd: int,
+def _as_measurement_error(primary: BaseException) -> BaseException:
+    if isinstance(primary, DiskMeasurementError):
+        return primary
+    if not isinstance(primary, Exception):
+        return primary
+    error = DiskMeasurementError(f"{type(primary).__name__}: {primary}")
+    for note in getattr(primary, "__notes__", ()):
+        error.add_note(_bounded_secondary(note))
+    error.__cause__ = primary
+    return error
+
+
+def _measure_capability(
+    backend: FilesystemBackend,
+    root: DirectoryCapability,
     *,
     monotonic: Callable[[], float],
     started: float,
-    identities: set[tuple[int, int]],
+    identities: set[FileIdentity],
     identity_bytes: dict[tuple[int, int], int],
 ) -> tuple[int, int]:
     def check_deadline() -> None:
         if monotonic() - started >= MAX_SCAN_SECONDS:
             raise DiskMeasurementError("owned scratch scan exceeded five seconds")
 
-    check_deadline()
-    root_stat = os.fstat(root_fd)
-    check_deadline()
-    root_filesystem = _filesystem_identity(
-        root_fd,
-        check_deadline=check_deadline,
-    )
     entries = 0
     owned_bytes = 0
     conservative_entries = 0
-
-    root_stream = _DirectoryStream(
-        _reopen_same_directory(root_fd, check_deadline=check_deadline)
-    )
+    stack: list[_MeterFrame] = []
+    primary: BaseException | None = None
     try:
         check_deadline()
-    except BaseException:
-        root_stream.close()
-        raise
-    stack: list[tuple[_DirectoryStream, tuple[str, ...]]] = [(root_stream, ())]
-    try:
+        reopened = backend.reopen_directory(root, SharePolicy.SCAN)
+        try:
+            check_deadline()
+            if (
+                reopened.identity != root.identity
+                or reopened.filesystem != root.filesystem
+                or reopened.kind is not EntryKind.DIRECTORY
+            ):
+                raise DiskMeasurementError(
+                    "owned root identity changed while reopening"
+                )
+            try:
+                iterator = backend.entries_owned(reopened)
+            except BaseException as error:
+                _close_capability_after_error(
+                    reopened,
+                    error,
+                    check_deadline=check_deadline,
+                )
+                raise
+            try:
+                stack.append(_MeterFrame(iterator, ()))
+            except BaseException as error:
+                _close_iterator_after_error(
+                    iterator,
+                    error,
+                    check_deadline=check_deadline,
+                )
+                raise
+            check_deadline()
+        except BaseException as error:
+            _close_capability_after_error(
+                reopened,
+                error,
+                check_deadline=check_deadline,
+            )
+            raise
         while stack:
             check_deadline()
-            current, path_prefix = stack[-1]
-            selected = current.next_name(check_deadline=check_deadline)
-            check_deadline()
-            if selected is None:
-                current.close()
+            current = stack[-1]
+            try:
+                entry = next(current.iterator)
+            except StopIteration:
+                check_deadline()
+                current.iterator.close()
                 check_deadline()
                 stack.pop()
                 continue
+            check_deadline()
             entries += 1
             if entries > MAX_TREE_ENTRIES:
                 raise DiskMeasurementError(
@@ -950,117 +961,177 @@ def _measure_fd(
                 )
             if entries % 256 == 0:
                 check_deadline()
-            try:
-                metadata_result = os.stat(
-                    selected,
-                    dir_fd=current.fd,
-                    follow_symlinks=False,
+            if (
+                entry.identity.volume <= 0
+                or entry.identity.file <= 0
+                or entry.filesystem.volume <= 0
+                or entry.logical_size < 0
+            ):
+                raise DiskMeasurementError(
+                    "owned scratch enumeration returned malformed metadata"
                 )
-            except FileNotFoundError:
-                check_deadline()
+            if entry.kind in {EntryKind.REPARSE, EntryKind.OTHER}:
                 continue
-            check_deadline()
-            metadata = metadata_result
-            mode = metadata.st_mode
-            if stat.S_ISLNK(mode):
-                continue
-            if stat.S_ISDIR(mode):
+            if entry.kind is EntryKind.DIRECTORY:
                 child_depth = len(stack)
+                next_parts = (*current.path_parts, entry.name)
                 if child_depth > MAX_TREE_DEPTH:
-                    relative = "/".join((*path_prefix, selected))
-                    bounded = (
-                        relative.encode("utf-8", errors="backslashreplace")[:768]
-                        .decode("utf-8", errors="ignore")
-                    )
-                    raise DiskMeasurementError(
-                        f"owned scratch depth exceeds {MAX_TREE_DEPTH} below {bounded}"
-                    )
-                if metadata.st_dev != root_stat.st_dev:
+                    raise DiskMeasurementError(_bounded_depth_message(next_parts))
+                if entry.filesystem != root.filesystem:
                     raise DiskMeasurementError(
                         "owned scratch scan refuses to cross a filesystem boundary"
                     )
+                child: DirectoryCapability | None = None
                 try:
-                    child_fd = _open_child_directory(current.fd, selected)
+                    child = backend.open_directory(
+                        current.iterator.directory,
+                        entry.name,
+                        SharePolicy.SCAN,
+                    )
                 except FileNotFoundError:
                     check_deadline()
                     continue
                 try:
                     check_deadline()
-                    opened = os.fstat(child_fd)
+                    if (
+                        child.identity != entry.identity
+                        or child.kind is not EntryKind.DIRECTORY
+                    ):
+                        raise DiskMeasurementError(
+                            "owned scratch directory identity or kind changed while opening"
+                        )
+                    if (
+                        child.filesystem != entry.filesystem
+                        or child.filesystem != root.filesystem
+                    ):
+                        raise DiskMeasurementError(
+                            "owned scratch scan refuses to cross a filesystem boundary"
+                        )
+                    try:
+                        child_iterator = backend.entries_owned(child)
+                    except BaseException as error:
+                        _close_capability_after_error(
+                            child,
+                            error,
+                            check_deadline=check_deadline,
+                        )
+                        raise
+                    try:
+                        stack.append(
+                            _MeterFrame(child_iterator, next_parts[:8])
+                        )
+                    except BaseException as error:
+                        _close_iterator_after_error(
+                            child_iterator,
+                            error,
+                            check_deadline=check_deadline,
+                        )
+                        raise
                     check_deadline()
-                except BaseException:
-                    os.close(child_fd)
-                    raise
-                if (opened.st_dev, opened.st_ino) != (
-                    metadata.st_dev,
-                    metadata.st_ino,
-                ):
-                    os.close(child_fd)
-                    raise DiskMeasurementError(
-                        "owned scratch directory identity changed while opening"
-                    )
-                try:
-                    child_filesystem = _filesystem_identity(
-                        child_fd,
+                except BaseException as error:
+                    _close_capability_after_error(
+                        child,
+                        error,
                         check_deadline=check_deadline,
                     )
-                except BaseException:
-                    os.close(child_fd)
                     raise
-                if child_filesystem != root_filesystem:
-                    os.close(child_fd)
-                    raise DiskMeasurementError(
-                        "owned scratch scan refuses to cross a filesystem boundary"
-                    )
-                child_stream = _DirectoryStream(child_fd)
-                try:
-                    check_deadline()
-                except BaseException:
-                    child_stream.close()
-                    raise
-                stack.append((child_stream, (*path_prefix, selected)[:8]))
                 continue
-            if stat.S_ISREG(mode):
+            if entry.kind is EntryKind.REGULAR:
+                opened_file: FileCapability | None = None
                 try:
-                    file_fd = _open_child_regular(current.fd, selected)
+                    opened_file = backend.open_file(
+                        current.iterator.directory,
+                        entry.name,
+                        access=FileAccess.READ,
+                        disposition=CreateDisposition.OPEN_EXISTING,
+                        share_policy=SharePolicy.SCAN,
+                    )
                 except FileNotFoundError:
                     check_deadline()
                     continue
+                file_primary: BaseException | None = None
                 try:
                     check_deadline()
-                    opened = os.fstat(file_fd)
-                    check_deadline()
-                finally:
-                    os.close(file_fd)
-                check_deadline()
-                if not stat.S_ISREG(opened.st_mode) or (
-                    opened.st_dev,
-                    opened.st_ino,
-                ) != (metadata.st_dev, metadata.st_ino):
-                    raise DiskMeasurementError(
-                        "owned scratch file identity changed while opening"
-                    )
-                identity = (opened.st_dev, opened.st_ino)
-                if opened.st_dev and opened.st_ino and identity in identities:
-                    continue
-                if opened.st_dev and opened.st_ino:
-                    if len(identities) >= MAX_TREE_ENTRIES:
+                    if (
+                        opened_file.identity != entry.identity
+                        or opened_file.filesystem != entry.filesystem
+                        or opened_file.kind is not EntryKind.REGULAR
+                    ):
                         raise DiskMeasurementError(
-                            "owned hard-link identity set exceeds entry limit"
+                            "owned scratch file identity, filesystem, or kind changed while opening"
                         )
-                    identities.add(identity)
-                    identity_bytes[identity] = opened.st_size
+                    identity = opened_file.identity
+                    size = opened_file.logical_size
+                except BaseException as error:
+                    file_primary = error
+                try:
+                    opened_file.close()
+                except BaseException as close_error:
+                    if file_primary is None:
+                        file_primary = close_error
+                    else:
+                        _add_close_note(file_primary, close_error)
+                    if opened_file.is_open:
+                        try:
+                            opened_file.close()
+                        except BaseException as retry_error:
+                            assert file_primary is not None
+                            _add_close_note(file_primary, retry_error)
+                        else:
+                            try:
+                                check_deadline()
+                            except BaseException as deadline_error:
+                                assert file_primary is not None
+                                _add_deadline_note(
+                                    file_primary,
+                                    deadline_error,
+                                )
                 else:
-                    conservative_entries += 1
-                owned_bytes += opened.st_size
+                    try:
+                        check_deadline()
+                    except BaseException as deadline_error:
+                        if file_primary is None:
+                            file_primary = deadline_error
+                        else:
+                            file_primary.add_note(
+                                _bounded_secondary(str(deadline_error))
+                            )
+                if file_primary is not None:
+                    raise file_primary
+                if identity in identities:
+                    continue
+                if len(identities) >= MAX_TREE_ENTRIES:
+                    raise DiskMeasurementError(
+                        "owned hard-link identity set exceeds entry limit"
+                    )
+                identities.add(identity)
+                identity_bytes[(identity.volume, identity.file)] = size
+                owned_bytes += size
                 if owned_bytes < 0:
                     raise DiskMeasurementError("owned byte count overflow")
+    except BaseException as error:
+        primary = error
     finally:
         while stack:
             try:
-                stack.pop()[0].close()
-            except OSError:
-                pass
+                frame = stack[-1]
+                frame.iterator.close()
+                check_deadline()
+            except BaseException as close_error:
+                if primary is None:
+                    primary = close_error
+                else:
+                    _add_close_note(primary, close_error)
+                try:
+                    frame.iterator.close()
+                    check_deadline()
+                except BaseException as retry_error:
+                    assert primary is not None
+                    _add_close_note(primary, retry_error)
+            finally:
+                stack.pop()
+    if primary is not None:
+        raise _as_measurement_error(primary)
     return owned_bytes, conservative_entries
 
 
@@ -1072,10 +1143,14 @@ class DiskGuard:
         *,
         monotonic: Callable[[], float] = time.monotonic,
         heartbeat: Callable[[], None] | None = None,
+        backend: FilesystemBackend | None = None,
     ) -> None:
         self.policy = policy
         self.roots = list(roots)
         self._monotonic = monotonic
+        self._backend = (
+            default_filesystem_backend() if backend is None else backend
+        )
         self._heartbeat = heartbeat
         self._last_heartbeat: float | None = None
         self._lock = threading.Lock()
@@ -1092,27 +1167,77 @@ class DiskGuard:
         self.failure: DiskFailure | None = None
         self.latest_failure: DiskFailure | None = None
         self.close_errors: list[str] = []
-        self._root_capabilities: list[tuple[MeterRoot, int | None, str | None]] = []
-        self._root_identities: list[tuple[int, int] | None] = []
-        self._exact_identities: list[tuple[int, int] | None] = []
+        self._root_states: list[_RootCapabilityState] = []
         for root in self.roots:
-            try:
-                descriptor = _open_directory(root.path)
-            except OSError as error:
-                self._root_capabilities.append(
-                    (root, None, f"{type(error).__name__}: {error}")
-                )
-                self._root_identities.append(None)
-                self._exact_identities.append(None)
+            acquired: object | None = None
+            factory = root.capability_factory
+            if factory is None:
+                try:
+                    acquired = self._backend.open_root(
+                        root.path,
+                        SharePolicy.SCAN,
+                    )
+                except OSError as error:
+                    try:
+                        state = _RootCapabilityState(
+                            root=root,
+                            capability=None,
+                            acquisition_error=(
+                                f"{type(error).__name__}: {error}"
+                            ),
+                            retained_identity=None,
+                            exact_identity=None,
+                        )
+                        self._root_states.append(state)
+                    except BaseException as primary_error:
+                        self._rollback_constructor_capabilities(primary_error)
+                        raise
+                    continue
             else:
-                self._root_capabilities.append((root, descriptor, None))
-                metadata = os.fstat(descriptor)
-                self._root_identities.append((metadata.st_dev, metadata.st_ino))
-                self._exact_identities.append(
-                    (metadata.st_dev, metadata.st_ino)
-                    if root.exact_path == root.path
-                    else None
+                try:
+                    acquired = factory()
+                except BaseException as primary_error:
+                    self._rollback_constructor_capabilities(primary_error)
+                    raise
+            try:
+                capability = _validate_root_capability(
+                    acquired,
+                    self._backend,
+                    root.path,
                 )
+            except BaseException as primary_error:
+                if isinstance(acquired, (DirectoryCapability, FileCapability)):
+                    _close_capability_after_error(acquired, primary_error)
+                self._rollback_constructor_capabilities(primary_error)
+                raise
+            try:
+                state = _RootCapabilityState(
+                    root=root,
+                    capability=capability,
+                    acquisition_error=None,
+                    retained_identity=capability.identity,
+                    exact_identity=(
+                        capability.identity
+                        if root.exact_path == root.path
+                        else None
+                    ),
+                )
+                self._root_states.append(state)
+            except BaseException as primary_error:
+                _close_capability_after_error(capability, primary_error)
+                self._rollback_constructor_capabilities(primary_error)
+                raise
+
+    def _rollback_constructor_capabilities(
+        self,
+        primary_error: BaseException,
+    ) -> None:
+        for state in reversed(self._root_states):
+            capability = state.capability
+            if capability is None or not capability.is_open:
+                continue
+            _close_capability_after_error(capability, primary_error)
+        self._root_states.clear()
 
     def sample(self) -> DiskFailure | None:
         with self._sample_lock:
@@ -1122,7 +1247,7 @@ class DiskGuard:
         self,
         additional_bytes: int,
         *,
-        filesystem_fd: int,
+        filesystem: DirectoryCapability,
     ) -> DiskFailure | None:
         """Fail before a bounded write would cross either disk threshold."""
         if additional_bytes < 0:
@@ -1138,16 +1263,23 @@ class DiskGuard:
                     message="disk write reservation has no successful observation",
                 )
             else:
+                if not filesystem.owned_by(self._backend):
+                    raise RuntimeError(
+                        "reservation filesystem capability belongs to another backend"
+                    )
+                if not filesystem.is_open:
+                    raise RuntimeError(
+                        "reservation filesystem capability is not open"
+                    )
                 try:
-                    filesystem = _filesystem_identity(filesystem_fd)
-                    values = os.fstatvfs(filesystem_fd)
-                    fragment_size = values.f_frsize
-                    if fragment_size <= 0 or values.f_bavail < 0:
+                    filesystem_identity = filesystem.filesystem
+                    actual_available = self._backend.available_bytes(filesystem)
+                    fragment_size = self._backend.allocation_unit(filesystem)
+                    if fragment_size <= 0 or actual_available < 0:
                         raise DiskMeasurementError(
                             "command spool filesystem reported invalid capacity"
                         )
-                    actual_available = values.f_bavail * fragment_size
-                except (OSError, DiskMeasurementError) as error:
+                except Exception as error:
                     failure = DiskFailure(
                         code=DISK_MEASUREMENT_FAILED,
                         reason=DiskStopReason.MEASUREMENT_FAILED,
@@ -1158,7 +1290,11 @@ class DiskGuard:
                     )
                 else:
                     base = self.observations[-1]
-                    filesystem_key = ":".join(str(item) for item in filesystem)
+                    filesystem_key = (
+                        f"{filesystem_identity.volume}:"
+                        f"{filesystem_identity.discriminator_a}:"
+                        f"{filesystem_identity.discriminator_b}"
+                    )
                     projected_available = dict(
                         base.filesystem_available_bytes
                     )
@@ -1217,7 +1353,7 @@ class DiskGuard:
         owned = 0
         root_owned: dict[str, int] = {}
         conservative_entries = 0
-        available: dict[tuple[int, int, int], int] = {}
+        available: dict[FilesystemIdentity, int] = {}
         try:
             check_deadline()
             now = self._monotonic()
@@ -1228,81 +1364,86 @@ class DiskGuard:
                 self._heartbeat()
                 check_deadline()
                 self._last_heartbeat = now
-            identities: set[tuple[int, int]] = set()
+            identities: set[FileIdentity] = set()
             identity_bytes: dict[tuple[int, int], int] = {}
             root_owned_identities: dict[
                 str, frozenset[tuple[int, int]]
             ] = {}
-            for index, (root, fd, open_error) in enumerate(self._root_capabilities):
+            for state in self._root_states:
                 check_deadline()
-                if fd is None:
+                root = state.root
+                capability = state.capability
+                if capability is None:
                     raise DiskMeasurementError(
                         f"disk root capability unavailable for {root.enforcement}: "
-                        f"{open_error}"
+                        f"{state.acquisition_error}"
                     )
-                capacity_fd = fd
-                transient_fd = -1
+                capacity_capability = capability
+                transient: DirectoryCapability | None = None
+                root_primary: BaseException | None = None
                 try:
                     if root.exact_path is not None:
-                        verification_fd = _open_directory(root.path)
                         try:
-                            check_deadline()
-                            verification = os.fstat(verification_fd)
-                            check_deadline()
-                            if (verification.st_dev, verification.st_ino) != (
-                                self._root_identities[index]
-                            ):
-                                raise DiskMeasurementError(
-                                    "disk root path identity changed for "
-                                    f"{root.enforcement}"
-                                )
-                        finally:
-                            os.close(verification_fd)
-                        check_deadline()
-                        try:
-                            transient_fd = _open_directory(root.exact_path)
+                            opened = self._backend.open_root(
+                                root.exact_path,
+                                SharePolicy.SCAN,
+                            )
                         except FileNotFoundError:
                             check_deadline()
-                            if self._exact_identities[index] is not None:
+                            if state.exact_identity is not None:
                                 raise DiskMeasurementError(
                                     "exact disk root disappeared for "
                                     f"{root.enforcement}"
                                 )
-                            transient_fd = -1
                         else:
+                            try:
+                                transient = _validate_root_capability(
+                                    opened,
+                                    self._backend,
+                                    root.exact_path,
+                                )
+                            except BaseException as validation_error:
+                                if isinstance(
+                                    opened,
+                                    (DirectoryCapability, FileCapability),
+                                ):
+                                    try:
+                                        opened.close()
+                                    except BaseException as close_error:
+                                        _add_close_note(
+                                            validation_error,
+                                            close_error,
+                                        )
+                                raise
                             check_deadline()
-                            exact_metadata = os.fstat(transient_fd)
-                            check_deadline()
-                            exact_identity = (
-                                exact_metadata.st_dev,
-                                exact_metadata.st_ino,
-                            )
-                            expected_exact = self._exact_identities[index]
+                            exact_identity = transient.identity
+                            expected_exact = state.exact_identity
                             if expected_exact is None:
-                                self._exact_identities[index] = exact_identity
+                                state.exact_identity = exact_identity
                             elif exact_identity != expected_exact:
-                                os.close(transient_fd)
-                                transient_fd = -1
                                 raise DiskMeasurementError(
                                     "exact disk root identity changed for "
                                     f"{root.enforcement}"
                                 )
-                            capacity_fd = transient_fd
-                    check_deadline()
-                    filesystem = _filesystem_identity(
-                        capacity_fd,
-                        check_deadline=check_deadline,
-                    )
+                            capacity_capability = transient
+                    filesystem = capacity_capability.filesystem
                     if filesystem not in available:
-                        values = os.fstatvfs(capacity_fd)
+                        free = self._backend.available_bytes(
+                            capacity_capability
+                        )
                         check_deadline()
-                        available[filesystem] = values.f_bavail * values.f_frsize
+                        if free < 0:
+                            raise DiskMeasurementError(
+                                "filesystem reported negative available bytes"
+                            )
+                        available[filesystem] = free
                     if root.charge_owned_bytes:
                         check_deadline()
                         before = owned
                         identities_before = set(identities)
-                        measured, conservative = _measure_fd(
-                            fd,
+                        measured, conservative = _measure_capability(
+                            self._backend,
+                            capability,
                             monotonic=self._monotonic,
                             started=started,
                             identities=identities,
@@ -1317,12 +1458,53 @@ class DiskGuard:
                         )
                         root_owned_identities[root.enforcement] = frozenset(
                             set(root_owned_identities.get(root.enforcement, ()))
-                            | (identities - identities_before)
+                            | {
+                                (identity.volume, identity.file)
+                                for identity in identities - identities_before
+                            }
                         )
                         conservative_entries += conservative
+                except BaseException as error:
+                    root_primary = error
                 finally:
-                    if transient_fd >= 0:
-                        os.close(transient_fd)
+                    if transient is not None and transient.is_open:
+                        try:
+                            transient.close()
+                        except BaseException as close_error:
+                            if root_primary is None:
+                                root_primary = close_error
+                            else:
+                                _add_close_note(root_primary, close_error)
+                            if transient.is_open:
+                                try:
+                                    transient.close()
+                                except BaseException as retry_error:
+                                    assert root_primary is not None
+                                    _add_close_note(
+                                        root_primary,
+                                        retry_error,
+                                    )
+                                else:
+                                    try:
+                                        check_deadline()
+                                    except BaseException as deadline_error:
+                                        assert root_primary is not None
+                                        _add_deadline_note(
+                                            root_primary,
+                                            deadline_error,
+                                        )
+                        else:
+                            try:
+                                check_deadline()
+                            except BaseException as deadline_error:
+                                if root_primary is None:
+                                    root_primary = deadline_error
+                                else:
+                                    root_primary.add_note(
+                                        _bounded_secondary(str(deadline_error))
+                                    )
+                if root_primary is not None:
+                    raise _as_measurement_error(root_primary)
                 check_deadline()
             if not available:
                 raise DiskMeasurementError("disk guard has no capacity roots")
@@ -1332,20 +1514,28 @@ class DiskGuard:
                 measured_in_seconds=self._monotonic() - started,
                 conservative_entries=conservative_entries,
                 filesystem_available_bytes={
-                    f"{device}:{first}:{second}": free
-                    for (device, first, second), free in available.items()
+                    (
+                        f"{filesystem.volume}:"
+                        f"{filesystem.discriminator_a}:"
+                        f"{filesystem.discriminator_b}"
+                    ): free
+                    for filesystem, free in available.items()
                 },
                 root_owned_bytes=root_owned,
                 identity_bytes=identity_bytes,
                 root_owned_identities=root_owned_identities,
             )
             failure = evaluate_disk_policy(self.policy, observation)
-        except (OSError, UnicodeError, DiskMeasurementError) as error:
+        except Exception as error:
             observation = None
+            notes = " ".join(
+                f"[{_bounded_secondary(note)}]"
+                for note in getattr(error, "__notes__", ())
+            )
             failure = DiskFailure(
                 code=DISK_MEASUREMENT_FAILED,
                 reason=DiskStopReason.MEASUREMENT_FAILED,
-                message=str(error),
+                message=(f"{error} {notes}".rstrip()),
             )
         with self._lock:
             self.latest_failure = failure
@@ -1448,25 +1638,33 @@ class DiskGuard:
 
     def probe_close(self) -> tuple[str, ...]:
         errors: list[str] = []
-        for root, fd, _error in self._root_capabilities:
-            if fd is None:
+        for state in self._root_states:
+            capability = state.capability
+            if capability is None:
                 continue
-            duplicate = -1
+            duplicate: DirectoryCapability | None = None
             try:
-                duplicate = os.dup(fd)
-                os.close(duplicate)
-                duplicate = -1
-            except OSError as error:
+                duplicate = self._backend.reopen_directory(capability)
+                duplicate.close()
+            except Exception as error:
                 errors.append(
-                    f"{root.enforcement} capability close probe failed: "
-                    f"{type(error).__name__}: {error}"
+                    _bounded_secondary(
+                        f"{state.root.enforcement} capability close probe failed: "
+                        f"{type(error).__name__}: {error}"
+                    )
                 )
             finally:
-                if duplicate >= 0:
+                if duplicate is not None and duplicate.is_open:
                     try:
-                        os.close(duplicate)
-                    except OSError:
-                        pass
+                        duplicate.close()
+                    except Exception as retry_error:
+                        errors.append(
+                            _bounded_secondary(
+                                f"{state.root.enforcement} capability close probe "
+                                f"retry failed: {type(retry_error).__name__}: "
+                                f"{retry_error}"
+                            )
+                        )
         return tuple(errors)
 
     def close(self) -> tuple[str, ...]:
@@ -1475,14 +1673,17 @@ class DiskGuard:
         return self._close_capabilities()
 
     def _close_capabilities(self) -> tuple[str, ...]:
-        for index, (root, fd, error) in enumerate(self._root_capabilities):
-            if fd is not None:
-                try:
-                    os.close(fd)
-                except OSError as close_error:
-                    self.close_errors.append(
-                        f"{root.enforcement} capability close failed: "
-                        f"{type(close_error).__name__}: {close_error}"
-                    )
-                self._root_capabilities[index] = (root, None, error or "closed")
+        for state in self._root_states:
+            capability = state.capability
+            if capability is None:
+                continue
+            try:
+                capability.close()
+            except Exception as close_error:
+                self.close_errors.append(
+                    f"{state.root.enforcement} capability close failed: "
+                    f"{type(close_error).__name__}: {close_error}"
+                )
+            else:
+                state.capability = None
         return tuple(self.close_errors)

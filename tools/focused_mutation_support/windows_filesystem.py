@@ -2129,6 +2129,8 @@ class WindowsFilesystemBackend:
             self._raise_last_error("open filesystem root", path)
         try:
             metadata = self._metadata(handle, path)
+            if metadata.kind is not EntryKind.DIRECTORY:
+                raise NotADirectoryError(path)
             self._validate_metadata(
                 metadata,
                 parent=None,

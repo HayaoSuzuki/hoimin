@@ -1070,6 +1070,8 @@ class PosixFilesystemBackend:
             return _PosixEntries(self, moved)
         except BaseException as primary_error:
             _add_close_note(primary_error, moved.close)
+            if moved.is_open:
+                _add_close_note(primary_error, moved.close)
             raise
 
     def _require_pinned_relative(
@@ -1127,6 +1129,8 @@ class PosixFilesystemBackend:
         resource = self._require_pinned_relative(source)
         source_parent = resource.parent
         source_name = resource.name
+        assert source_parent is not None
+        assert source_name is not None
         source_parent_fd = self._source_namespace_fd(source, resource)
         current = self._entry_at_fd(
             source_parent,
@@ -1173,6 +1177,8 @@ class PosixFilesystemBackend:
         resource = self._require_pinned_relative(capability)
         parent = resource.parent
         name = resource.name
+        assert parent is not None
+        assert name is not None
         source_parent_fd = self._source_namespace_fd(capability, resource)
         current = self._entry_at_fd(parent, name, source_parent_fd)
         if current is None:
@@ -1191,13 +1197,19 @@ class PosixFilesystemBackend:
             raise OSError("deleted entry still resolves through its parent")
 
     def available_bytes(self, directory: DirectoryCapability) -> int:
-        value = os.fstatvfs(self._directory_fd(directory))
+        fstatvfs = getattr(os, "fstatvfs", None)
+        if fstatvfs is None:
+            raise OSError("fstatvfs is unavailable")
+        value = fstatvfs(self._directory_fd(directory))
         if value.f_frsize <= 0 or value.f_bavail < 0:
             raise OSError("filesystem returned invalid capacity metadata")
         return value.f_frsize * value.f_bavail
 
     def allocation_unit(self, directory: DirectoryCapability) -> int:
-        value = os.fstatvfs(self._directory_fd(directory))
+        fstatvfs = getattr(os, "fstatvfs", None)
+        if fstatvfs is None:
+            raise OSError("fstatvfs is unavailable")
+        value = fstatvfs(self._directory_fd(directory))
         if value.f_frsize <= 0:
             raise OSError("filesystem returned an invalid allocation unit")
         return value.f_frsize
@@ -1216,6 +1228,7 @@ class PosixFilesystemBackend:
 
     def final_path(self, directory: DirectoryCapability) -> Path:
         descriptor = self._directory_fd(directory)
+        value: str
         if sys.platform == "darwin":
             import fcntl
 
