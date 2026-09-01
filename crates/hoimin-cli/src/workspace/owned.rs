@@ -600,6 +600,26 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn round_five_managed_child_cleanup_succeeds_after_pinned_creation_handoff() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let child = root.create_child("round-five-cleanup-").unwrap();
+        let child_name = child.path().file_name().unwrap();
+        let working_identity = super::directory_identity(child.dir.as_ref().unwrap()).unwrap();
+        let namespace_identity =
+            super::metadata_identity(&root.dir.symlink_metadata(child_name).unwrap());
+        assert_eq!(working_identity, namespace_identity);
+        std::fs::write(child.path().join("payload"), b"payload").unwrap();
+
+        child.cleanup().unwrap();
+
+        assert!(root.dir.symlink_metadata(child_name).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn round_five_published_markers_are_pinned_but_allow_intended_concurrent_opens() {
         let parent = tempfile::tempdir().unwrap();
         let parent = Utf8Path::from_path(parent.path()).unwrap();
@@ -614,7 +634,21 @@ mod tests {
             std::ffi::OsStr::new(super::LEASE_FILE),
         )
         .unwrap();
-        assert!(super::read_marker_file(&lease_reader).is_some());
+        let (retained_lease_identity, retained_lease_len) = {
+            let lease = root.lease.lock().unwrap();
+            let lease = lease.as_deref().unwrap();
+            (
+                super::file_identity(lease).unwrap(),
+                lease.metadata().unwrap().len(),
+            )
+        };
+        let lease_metadata = lease_reader.metadata().unwrap();
+        assert!(lease_metadata.is_file());
+        assert_eq!(lease_metadata.len(), retained_lease_len);
+        assert_eq!(
+            super::file_identity(&lease_reader).unwrap(),
+            retained_lease_identity
+        );
         assert!(fs2::FileExt::try_lock_exclusive(&lease_reader).is_err());
         let heartbeat_updater = super::super::root::windows::open_regular_file_for_update_shared(
             &root.dir,
@@ -704,7 +738,7 @@ mod tests {
             Err(error) => {
                 assert!(replacement_installed.get(), "unexpected failure: {error}");
                 assert!(
-                    matches!(error, super::WorkspaceError::InvalidPath { .. }),
+                    matches!(&error, super::WorkspaceError::InvalidPath { .. }),
                     "replacement did not produce the typed hard-mismatch error: {error}"
                 );
             }
@@ -2439,6 +2473,7 @@ fn create_owned_directory_with(
     rollback: impl FnOnce(&cap_std::fs::Dir, &str, (u64, u64), Duration) -> std::io::Result<()>,
 ) -> std::io::Result<cap_std::fs::Dir> {
     create(parent, name)?;
+    let rollback_deadline = std::time::Instant::now() + OWNER_CLEANUP_BUDGET;
     let mut expected_identity = None;
     let result: std::io::Result<cap_std::fs::Dir> = (|| {
         let metadata = inspect(parent, name)?;
@@ -2464,10 +2499,39 @@ fn create_owned_directory_with(
             parent,
             name,
             expected_identity,
+            rollback_deadline,
             primary,
             rollback,
         )),
     }
+}
+
+fn error_after_new_directory_rollback_with<E>(
+    primary: E,
+    deadline: std::time::Instant,
+    now: impl FnOnce() -> std::time::Instant,
+    rollback: impl FnOnce(Duration) -> std::io::Result<()>,
+    append_secondary: impl FnOnce(E, std::io::Error) -> E,
+) -> E {
+    let remaining = deadline.saturating_duration_since(now());
+    let cleanup = if remaining.is_zero() {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "new-directory rollback deadline exhausted before cleanup",
+        ))
+    } else {
+        rollback(remaining)
+    };
+    match cleanup {
+        Ok(()) => primary,
+        Err(secondary) => append_secondary(primary, secondary),
+    }
+}
+
+fn created_directory_identity_unavailable() -> std::io::Error {
+    std::io::Error::other(
+        "bounded cleanup cannot proceed without the created directory identity; unverified name left untouched",
+    )
 }
 
 #[cfg(any(unix, test))]
@@ -2475,31 +2539,20 @@ fn error_after_created_directory_rollback_with(
     parent: &cap_std::fs::Dir,
     name: &str,
     expected_identity: Option<(u64, u64)>,
+    rollback_deadline: std::time::Instant,
     primary: std::io::Error,
     rollback: impl FnOnce(&cap_std::fs::Dir, &str, (u64, u64), Duration) -> std::io::Result<()>,
 ) -> std::io::Error {
-    let Some(expected_identity) = expected_identity else {
-        return created_directory_rollback_error(
-            &primary,
-            &std::io::Error::other(
-                "bounded cleanup cannot proceed without the created directory identity; unverified name left untouched",
-            ),
-        );
-    };
-    let started = std::time::Instant::now();
-    let remaining = OWNER_CLEANUP_BUDGET.saturating_sub(started.elapsed());
-    let cleanup = if remaining.is_zero() {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::TimedOut,
-            "created-directory rollback budget exhausted before removal",
-        ))
-    } else {
-        rollback(parent, name, expected_identity, remaining)
-    };
-    match cleanup {
-        Ok(()) => primary,
-        Err(secondary) => created_directory_rollback_error(&primary, &secondary),
-    }
+    error_after_new_directory_rollback_with(
+        primary,
+        rollback_deadline,
+        std::time::Instant::now,
+        |remaining| match expected_identity {
+            Some(expected_identity) => rollback(parent, name, expected_identity, remaining),
+            None => Err(created_directory_identity_unavailable()),
+        },
+        |primary, secondary| created_directory_rollback_error(&primary, &secondary),
+    )
 }
 
 #[cfg(any(unix, test))]
@@ -2513,7 +2566,6 @@ fn created_directory_rollback_error(
     )
 }
 
-#[cfg(any(unix, test))]
 fn rollback_new_owned_directory(
     parent: &cap_std::fs::Dir,
     name: &str,
@@ -2529,6 +2581,87 @@ fn rollback_new_owned_directory(
             "bounded cleanup did not remove the newly created directory",
         ))
     }
+}
+
+fn append_workspace_new_directory_rollback_error(
+    primary: WorkspaceError,
+    fallback_path: &Utf8Path,
+    secondary: std::io::Error,
+) -> WorkspaceError {
+    match primary {
+        WorkspaceError::Io {
+            operation,
+            path,
+            message,
+        } => WorkspaceError::Io {
+            operation,
+            path,
+            message: format!("{message}; secondary new-directory rollback failure: {secondary}"),
+        },
+        primary => WorkspaceError::io(
+            "construct managed directory",
+            fallback_path,
+            format!("{primary}; secondary new-directory rollback failure: {secondary}"),
+        ),
+    }
+}
+
+fn error_after_identity_bound_new_directory_rollback(
+    parent: &cap_std::fs::Dir,
+    name: &str,
+    expected_identity: (u64, u64),
+    rollback_deadline: std::time::Instant,
+    path: &Utf8Path,
+    primary: WorkspaceError,
+) -> WorkspaceError {
+    error_after_new_directory_rollback_with(
+        primary,
+        rollback_deadline,
+        std::time::Instant::now,
+        |remaining| rollback_new_owned_directory(parent, name, expected_identity, remaining),
+        |primary, secondary| {
+            append_workspace_new_directory_rollback_error(primary, path, secondary)
+        },
+    )
+}
+
+fn error_after_unpublished_directory_failure(
+    parent: &cap_std::fs::Dir,
+    name: &str,
+    directory: cap_std::fs::Dir,
+    expected_identity: Option<(u64, u64)>,
+    rollback_deadline: std::time::Instant,
+    path: &Utf8Path,
+    primary: WorkspaceError,
+) -> WorkspaceError {
+    #[cfg(windows)]
+    if expected_identity.is_none() {
+        return error_after_new_directory_rollback_with(
+            primary,
+            rollback_deadline,
+            std::time::Instant::now,
+            |_remaining| windows::rollback_created(&directory),
+            |primary, secondary| {
+                append_workspace_new_directory_rollback_error(primary, path, secondary)
+            },
+        );
+    }
+
+    drop(directory);
+    error_after_new_directory_rollback_with(
+        primary,
+        rollback_deadline,
+        std::time::Instant::now,
+        |remaining| match expected_identity {
+            Some(expected_identity) => {
+                rollback_new_owned_directory(parent, name, expected_identity, remaining)
+            }
+            None => Err(created_directory_identity_unavailable()),
+        },
+        |primary, secondary| {
+            append_workspace_new_directory_rollback_error(primary, path, secondary)
+        },
+    )
 }
 
 #[cfg(windows)]
@@ -3306,56 +3439,25 @@ enum ChildCreationBoundary {
     Opened,
 }
 
-#[cfg_attr(unix, derive(Clone, Copy))]
 struct StagingPublication<'a> {
     name: &'a str,
     path: &'a Utf8Path,
     run_id: &'a str,
     owner: OwnerKind,
-    dir: &'a cap_std::fs::Dir,
+    dir: cap_std::fs::Dir,
     #[cfg(windows)]
     rename_handle: cap_std::fs::Dir,
 }
 
-struct NewDirectoryRollback<'a> {
-    parent: &'a cap_std::fs::Dir,
-    name: &'a str,
-    expected_identity: Option<(u64, u64)>,
-    armed: bool,
-}
-
-impl NewDirectoryRollback<'_> {
-    fn expect_identity(&mut self, identity: (u64, u64)) {
-        self.expected_identity = Some(identity);
-    }
-
-    fn disarm(&mut self) {
-        self.armed = false;
-    }
-}
-
-impl Drop for NewDirectoryRollback<'_> {
-    fn drop(&mut self) {
-        if !self.armed {
-            return;
-        }
-        let expected_identity = self.expected_identity.or_else(|| {
-            self.parent
-                .symlink_metadata(self.name)
-                .ok()
-                .filter(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
-                .map(|metadata| metadata_identity(&metadata))
-        });
-        let Some(expected_identity) = expected_identity else {
-            return;
-        };
-        let _ = remove_claimed_tree_bounded(
-            self.parent,
-            self.name,
-            Some(expected_identity),
-            OWNER_CLEANUP_BUDGET,
-        );
-    }
+struct PreRenamePublication<'a> {
+    lease: File,
+    heartbeat: File,
+    publish_guard: CoordinatorLockGuard<'a>,
+    staging_identity: (u64, u64),
+    #[cfg(windows)]
+    marker_evidence: (MarkerEvidence, MarkerEvidence),
+    #[cfg(windows)]
+    mutation_barrier: windows::RootMutationBarrier,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3422,6 +3524,15 @@ impl ManagedRunRoot {
         owner: OwnerKind,
         publish_hook: &impl Fn(PublishBoundary) -> Result<(), WorkspaceError>,
     ) -> Result<Self, WorkspaceError> {
+        Self::create_with_hooks(coordinator, owner, publish_hook, &directory_identity)
+    }
+
+    fn create_with_hooks(
+        coordinator: &ManagedRootCoordinator,
+        owner: OwnerKind,
+        publish_hook: &impl Fn(PublishBoundary) -> Result<(), WorkspaceError>,
+        created_identity: &impl Fn(&cap_std::fs::Dir) -> std::io::Result<(u64, u64)>,
+    ) -> Result<Self, WorkspaceError> {
         let initialization_guard = CoordinatorLockGuard::acquire_until(
             coordinator,
             std::time::Instant::now() + JANITOR_SELECTION_BUDGET,
@@ -3431,50 +3542,78 @@ impl ManagedRunRoot {
         let staging_path = coordinator.path.join(&staging_name);
         let staging_dir = create_owned_directory(&coordinator.dir, &staging_name)
             .map_err(|error| WorkspaceError::io("create staging root", &coordinator.path, error))?;
-        let mut staging_rollback = NewDirectoryRollback {
-            parent: &coordinator.dir,
-            name: &staging_name,
-            expected_identity: None,
-            armed: true,
-        };
-        let staging_identity = directory_identity(&staging_dir)
-            .map_err(|error| WorkspaceError::io("identify staging root", &staging_path, error))?;
-        staging_rollback.expect_identity(staging_identity);
-        publish_hook(PublishBoundary::StagingCreated)?;
+        let rollback_deadline = std::time::Instant::now() + OWNER_CLEANUP_BUDGET;
+        let mut staging_identity = None;
         #[cfg(windows)]
-        let staging_rename_handle = staging_dir;
-        #[cfg(windows)]
-        let staging_dir = staging_rename_handle.try_clone().map_err(|error| {
-            WorkspaceError::io("clone staging root capability", &staging_path, error)
-        })?;
-        publish_hook(PublishBoundary::StagingOpened)?;
-        let opened_staging_identity = directory_identity(&staging_dir)
-            .map_err(|error| WorkspaceError::io("identify staging root", &staging_path, error))?;
-        if opened_staging_identity != staging_identity {
-            return Err(WorkspaceError::InvalidPath { path: staging_path });
+        let mut staging_work_dir = None;
+        let preparation = (|| -> Result<(), WorkspaceError> {
+            let identity = created_identity(&staging_dir).map_err(|error| {
+                WorkspaceError::io("identify staging root", &staging_path, error)
+            })?;
+            staging_identity = Some(identity);
+            publish_hook(PublishBoundary::StagingCreated)?;
+            #[cfg(windows)]
+            {
+                staging_work_dir = Some(staging_dir.try_clone().map_err(|error| {
+                    WorkspaceError::io("clone staging root capability", &staging_path, error)
+                })?);
+            }
+            publish_hook(PublishBoundary::StagingOpened)?;
+            #[cfg(unix)]
+            let opened_staging_identity = directory_identity(&staging_dir);
+            #[cfg(windows)]
+            let opened_staging_identity = directory_identity(
+                staging_work_dir
+                    .as_ref()
+                    .expect("Windows staging work capability was cloned"),
+            );
+            let opened_staging_identity = opened_staging_identity.map_err(|error| {
+                WorkspaceError::io("identify staging root", &staging_path, error)
+            })?;
+            if opened_staging_identity != identity {
+                return Err(WorkspaceError::InvalidPath {
+                    path: staging_path.clone(),
+                });
+            }
+            Ok(())
+        })();
+        if let Err(primary) = preparation {
+            #[cfg(windows)]
+            drop(staging_work_dir.take());
+            return Err(error_after_unpublished_directory_failure(
+                &coordinator.dir,
+                &staging_name,
+                staging_dir,
+                staging_identity,
+                rollback_deadline,
+                &staging_path,
+                primary,
+            ));
         }
+        let staging_identity = staging_identity.expect("staging preparation captured its identity");
+        #[cfg(windows)]
+        let staging_work_dir =
+            staging_work_dir.expect("Windows staging work capability was cloned");
         let publication = StagingPublication {
             name: &staging_name,
             path: &staging_path,
             run_id: &run_id,
             owner,
-            dir: &staging_dir,
+            #[cfg(unix)]
+            dir: staging_dir,
             #[cfg(windows)]
-            rename_handle: staging_rename_handle,
+            dir: staging_work_dir,
+            #[cfg(windows)]
+            rename_handle: staging_dir,
         };
-        let result =
-            Self::publish_staging(coordinator, publication, initialization_guard, publish_hook);
-        if result.is_err() {
-            let _ = remove_claimed_tree_bounded(
-                &coordinator.dir,
-                &staging_name,
-                Some(staging_identity),
-                OWNER_CLEANUP_BUDGET,
-            );
-        } else {
-            staging_rollback.disarm();
-        }
-        result
+        Self::publish_staging(
+            coordinator,
+            publication,
+            initialization_guard,
+            rollback_deadline,
+            staging_identity,
+            publish_hook,
+        )
     }
 
     #[allow(
@@ -3485,6 +3624,8 @@ impl ManagedRunRoot {
         coordinator: &ManagedRootCoordinator,
         publication: StagingPublication<'_>,
         initialization_guard: CoordinatorLockGuard<'_>,
+        rollback_deadline: std::time::Instant,
+        staging_identity: (u64, u64),
         publish_hook: &impl Fn(PublishBoundary) -> Result<(), WorkspaceError>,
     ) -> Result<Self, WorkspaceError> {
         let StagingPublication {
@@ -3496,70 +3637,113 @@ impl ManagedRunRoot {
             #[cfg(windows)]
             rename_handle,
         } = publication;
-        #[cfg(windows)]
-        let mutation_barrier = windows::RootMutationBarrier::create(run_id).map_err(|error| {
-            WorkspaceError::io("create managed-root mutation barrier", staging_path, error)
-        })?;
-        let marker = LeaseMarker {
-            schema: LEASE_SCHEMA,
-            run_id: run_id.to_owned(),
-            created_unix_seconds: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_err(|error| WorkspaceError::io("read system time", staging_path, error))?
-                .as_secs(),
-            owner,
-        };
-        let lease_path = staging_path.join(LEASE_FILE);
-        let mut lease = create_owned_file(staging_dir, LEASE_FILE, OwnedFileAccess::ReadWrite)
-            .map_err(|error| WorkspaceError::io("create lease marker", &lease_path, error))?;
-        serde_json::to_writer(&mut lease, &marker)
-            .map_err(|error| WorkspaceError::io("write lease marker", &lease_path, error))?;
-        lease
-            .write_all(b"\n")
-            .map_err(|error| WorkspaceError::io("write lease marker", &lease_path, error))?;
-        lease
-            .sync_all()
-            .map_err(|error| WorkspaceError::io("flush lease marker", &lease_path, error))?;
-        FileExt::try_lock_exclusive(&lease)
-            .map_err(|error| WorkspaceError::io("lock lease marker", &lease_path, error))?;
-        let heartbeat_path = staging_path.join(HEARTBEAT_FILE);
-        let mut heartbeat = create_owned_file(staging_dir, HEARTBEAT_FILE, OwnedFileAccess::Write)
-            .map_err(|error| {
-                WorkspaceError::io("create heartbeat marker", &heartbeat_path, error)
-            })?;
-        serde_json::to_writer(&mut heartbeat, &marker).map_err(|error| {
-            WorkspaceError::io("write heartbeat marker", &heartbeat_path, error)
-        })?;
-        heartbeat.write_all(b"\n").map_err(|error| {
-            WorkspaceError::io("write heartbeat marker", &heartbeat_path, error)
-        })?;
-        heartbeat.sync_all().map_err(|error| {
-            WorkspaceError::io("flush heartbeat marker", &heartbeat_path, error)
-        })?;
-        #[cfg(windows)]
-        let publication_marker_evidence = (
-            MarkerEvidence {
-                identity: file_identity(&lease).map_err(|error| {
-                    WorkspaceError::io("identify lease marker", &lease_path, error)
-                })?,
-                marker: marker.clone(),
-            },
-            MarkerEvidence {
-                identity: file_identity(&heartbeat).map_err(|error| {
-                    WorkspaceError::io("identify heartbeat marker", &heartbeat_path, error)
-                })?,
-                marker: marker.clone(),
-            },
-        );
-        initialization_guard.unlock(&coordinator.path)?;
-
         let active_name = format!("{ACTIVE_PREFIX}{run_id}");
-        let publish_guard = CoordinatorLockGuard::acquire_until(
-            coordinator,
-            std::time::Instant::now() + JANITOR_SELECTION_BUDGET,
-        )?;
-        let staging_identity = directory_identity(staging_dir)
-            .map_err(|error| WorkspaceError::io("identify staging root", staging_path, error))?;
+        let pre_rename = (|| -> Result<PreRenamePublication<'_>, WorkspaceError> {
+            #[cfg(windows)]
+            let mutation_barrier =
+                windows::RootMutationBarrier::create(run_id).map_err(|error| {
+                    WorkspaceError::io("create managed-root mutation barrier", staging_path, error)
+                })?;
+            let marker = LeaseMarker {
+                schema: LEASE_SCHEMA,
+                run_id: run_id.to_owned(),
+                created_unix_seconds: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map_err(|error| WorkspaceError::io("read system time", staging_path, error))?
+                    .as_secs(),
+                owner,
+            };
+            let lease_path = staging_path.join(LEASE_FILE);
+            let mut lease = create_owned_file(&staging_dir, LEASE_FILE, OwnedFileAccess::ReadWrite)
+                .map_err(|error| WorkspaceError::io("create lease marker", &lease_path, error))?;
+            serde_json::to_writer(&mut lease, &marker)
+                .map_err(|error| WorkspaceError::io("write lease marker", &lease_path, error))?;
+            lease
+                .write_all(b"\n")
+                .map_err(|error| WorkspaceError::io("write lease marker", &lease_path, error))?;
+            lease
+                .sync_all()
+                .map_err(|error| WorkspaceError::io("flush lease marker", &lease_path, error))?;
+            FileExt::try_lock_exclusive(&lease)
+                .map_err(|error| WorkspaceError::io("lock lease marker", &lease_path, error))?;
+            let heartbeat_path = staging_path.join(HEARTBEAT_FILE);
+            let mut heartbeat =
+                create_owned_file(&staging_dir, HEARTBEAT_FILE, OwnedFileAccess::Write).map_err(
+                    |error| WorkspaceError::io("create heartbeat marker", &heartbeat_path, error),
+                )?;
+            serde_json::to_writer(&mut heartbeat, &marker).map_err(|error| {
+                WorkspaceError::io("write heartbeat marker", &heartbeat_path, error)
+            })?;
+            heartbeat.write_all(b"\n").map_err(|error| {
+                WorkspaceError::io("write heartbeat marker", &heartbeat_path, error)
+            })?;
+            heartbeat.sync_all().map_err(|error| {
+                WorkspaceError::io("flush heartbeat marker", &heartbeat_path, error)
+            })?;
+            #[cfg(windows)]
+            let marker_evidence = (
+                MarkerEvidence {
+                    identity: file_identity(&lease).map_err(|error| {
+                        WorkspaceError::io("identify lease marker", &lease_path, error)
+                    })?,
+                    marker: marker.clone(),
+                },
+                MarkerEvidence {
+                    identity: file_identity(&heartbeat).map_err(|error| {
+                        WorkspaceError::io("identify heartbeat marker", &heartbeat_path, error)
+                    })?,
+                    marker: marker.clone(),
+                },
+            );
+            initialization_guard.unlock(&coordinator.path)?;
+            let publish_guard = CoordinatorLockGuard::acquire_until(
+                coordinator,
+                std::time::Instant::now() + JANITOR_SELECTION_BUDGET,
+            )?;
+            let observed_identity = directory_identity(&staging_dir).map_err(|error| {
+                WorkspaceError::io("identify staging root", staging_path, error)
+            })?;
+            if observed_identity != staging_identity {
+                return Err(WorkspaceError::InvalidPath {
+                    path: staging_path.to_owned(),
+                });
+            }
+            Ok(PreRenamePublication {
+                lease,
+                heartbeat,
+                publish_guard,
+                staging_identity,
+                #[cfg(windows)]
+                marker_evidence,
+                #[cfg(windows)]
+                mutation_barrier,
+            })
+        })();
+        let PreRenamePublication {
+            lease,
+            heartbeat,
+            publish_guard,
+            staging_identity,
+            #[cfg(windows)]
+                marker_evidence: publication_marker_evidence,
+            #[cfg(windows)]
+            mutation_barrier,
+        } = match pre_rename {
+            Ok(pre_rename) => pre_rename,
+            Err(primary) => {
+                drop(staging_dir);
+                #[cfg(windows)]
+                drop(rename_handle);
+                return Err(error_after_identity_bound_new_directory_rollback(
+                    &coordinator.dir,
+                    staging_name,
+                    staging_identity,
+                    rollback_deadline,
+                    staging_path,
+                    primary,
+                ));
+            }
+        };
         #[cfg(windows)]
         {
             drop(lease);
@@ -3581,37 +3765,84 @@ impl ManagedRunRoot {
             staging_identity,
         )
         .map_err(|error| WorkspaceError::io("publish managed root", staging_path, error));
-        publish?;
+        if let Err(primary) = publish {
+            drop(publish_guard);
+            #[cfg(unix)]
+            {
+                drop(lease);
+                drop(heartbeat);
+            }
+            drop(staging_dir);
+            #[cfg(windows)]
+            {
+                drop(rename_handle);
+                drop(mutation_barrier);
+            }
+            return Err(error_after_identity_bound_new_directory_rollback(
+                &coordinator.dir,
+                staging_name,
+                staging_identity,
+                rollback_deadline,
+                staging_path,
+                primary,
+            ));
+        }
         #[cfg(windows)]
         if let Err(error) = publish_hook(PublishBoundary::RenamedActive) {
-            rollback_closed_published_root(
+            let restored = rollback_closed_published_root(
                 coordinator,
                 staging_name,
                 &active_name,
-                staging_dir,
+                &staging_dir,
                 &rename_handle,
                 staging_identity,
                 &publication_marker_evidence.0,
             );
+            if restored {
+                drop(staging_dir);
+                drop(rename_handle);
+                drop(mutation_barrier);
+                return Err(error_after_identity_bound_new_directory_rollback(
+                    &coordinator.dir,
+                    staging_name,
+                    staging_identity,
+                    rollback_deadline,
+                    staging_path,
+                    error,
+                ));
+            }
             return Err(error);
         }
         #[cfg(windows)]
         let (lease, heartbeat) = match reopen_published_markers(
-            staging_dir,
+            &staging_dir,
             &publication_marker_evidence,
             &coordinator.path.join(&active_name),
         ) {
             Ok(markers) => markers,
             Err(error) => {
-                rollback_closed_published_root(
+                let restored = rollback_closed_published_root(
                     coordinator,
                     staging_name,
                     &active_name,
-                    staging_dir,
+                    &staging_dir,
                     &rename_handle,
                     staging_identity,
                     &publication_marker_evidence.0,
                 );
+                if restored {
+                    drop(staging_dir);
+                    drop(rename_handle);
+                    drop(mutation_barrier);
+                    return Err(error_after_identity_bound_new_directory_rollback(
+                        &coordinator.dir,
+                        staging_name,
+                        staging_identity,
+                        rollback_deadline,
+                        staging_path,
+                        error,
+                    ));
+                }
                 return Err(error);
             }
         };
@@ -3622,7 +3853,7 @@ impl ManagedRunRoot {
                 &active_name,
                 run_id,
                 owner,
-                staging_dir,
+                &staging_dir,
                 &lease,
             );
             return Err(error);
@@ -3634,7 +3865,7 @@ impl ManagedRunRoot {
                 &active_name,
                 run_id,
                 owner,
-                staging_dir,
+                &staging_dir,
                 &lease,
             );
             return Err(error);
@@ -3648,19 +3879,46 @@ impl ManagedRunRoot {
                     &active_name,
                     run_id,
                     owner,
-                    staging_dir,
+                    &staging_dir,
                     &lease,
                 );
                 return Err(WorkspaceError::io("open published root", &path, error));
             }
         };
+        let active_identity = match directory_identity(&dir) {
+            Ok(identity) => identity,
+            Err(error) => {
+                drop(dir);
+                rollback_published_root(
+                    coordinator,
+                    &active_name,
+                    run_id,
+                    owner,
+                    &staging_dir,
+                    &lease,
+                );
+                return Err(WorkspaceError::io("identify published root", &path, error));
+            }
+        };
+        if active_identity != staging_identity {
+            drop(dir);
+            rollback_published_root(
+                coordinator,
+                &active_name,
+                run_id,
+                owner,
+                &staging_dir,
+                &lease,
+            );
+            return Err(WorkspaceError::InvalidPath { path });
+        }
         if let Err(error) = publish_hook(PublishBoundary::ActiveOpened) {
             rollback_published_root(
                 coordinator,
                 &active_name,
                 run_id,
                 owner,
-                staging_dir,
+                &staging_dir,
                 &lease,
             );
             return Err(error);
@@ -3673,7 +3931,7 @@ impl ManagedRunRoot {
                     &active_name,
                     run_id,
                     owner,
-                    staging_dir,
+                    &staging_dir,
                     &lease,
                 );
                 return Err(WorkspaceError::io(
@@ -3689,7 +3947,7 @@ impl ManagedRunRoot {
                 &active_name,
                 run_id,
                 owner,
-                staging_dir,
+                &staging_dir,
                 &lease,
             );
             return Err(error);
@@ -3702,7 +3960,7 @@ impl ManagedRunRoot {
                     &active_name,
                     run_id,
                     owner,
-                    staging_dir,
+                    &staging_dir,
                     &lease,
                 );
                 return Err(WorkspaceError::io(
@@ -3718,7 +3976,7 @@ impl ManagedRunRoot {
                 &active_name,
                 run_id,
                 owner,
-                staging_dir,
+                &staging_dir,
                 &lease,
             );
             return Err(error);
@@ -3804,6 +4062,15 @@ impl ManagedRunRoot {
         prefix: &str,
         creation_hook: &impl Fn(ChildCreationBoundary) -> Result<(), WorkspaceError>,
     ) -> Result<ManagedChild, WorkspaceError> {
+        self.create_child_with_hooks(prefix, creation_hook, &directory_identity)
+    }
+
+    fn create_child_with_hooks(
+        &self,
+        prefix: &str,
+        creation_hook: &impl Fn(ChildCreationBoundary) -> Result<(), WorkspaceError>,
+        created_identity: &impl Fn(&cap_std::fs::Dir) -> std::io::Result<(u64, u64)>,
+    ) -> Result<ManagedChild, WorkspaceError> {
         if !valid_child_prefix(prefix) {
             return Err(WorkspaceError::InvalidPath {
                 path: Utf8PathBuf::from(prefix),
@@ -3839,51 +4106,90 @@ impl ManagedRunRoot {
         let path = self.path.join(&name);
         let dir = create_owned_directory(&self.dir, &name)
             .map_err(|error| WorkspaceError::io("create managed child", &self.path, error))?;
-        let mut child_rollback = NewDirectoryRollback {
-            parent: &self.dir,
-            name: &name,
-            expected_identity: None,
-            armed: true,
-        };
-        let child_identity = directory_identity(&dir)
-            .map_err(|error| WorkspaceError::io("identify managed child", &path, error))?;
-        child_rollback.expect_identity(child_identity);
-        creation_hook(ChildCreationBoundary::Created)?;
-        let child_metadata = self
-            .dir
-            .symlink_metadata(&name)
-            .map_err(|error| WorkspaceError::io("inspect managed child", &path, error))?;
-        if !child_metadata.is_dir() || child_metadata.file_type().is_symlink() {
-            return Err(WorkspaceError::InvalidPath { path });
-        }
-        if metadata_identity(&child_metadata) != child_identity {
-            return Err(WorkspaceError::InvalidPath { path });
-        }
-        creation_hook(ChildCreationBoundary::Opened)?;
-        let opened_child_identity = directory_identity(&dir)
-            .map_err(|error| WorkspaceError::io("identify managed child", &path, error))?;
-        if opened_child_identity != child_identity {
-            return Err(WorkspaceError::InvalidPath { path });
-        }
-        let lease = self
-            .lease
-            .lock()
-            .map_err(|_| WorkspaceError::StatePoisoned)?
-            .as_ref()
-            .map(Arc::clone)
-            .ok_or_else(|| {
-                WorkspaceError::io(
-                    "create managed child",
-                    &self.path,
-                    "managed root lease is unavailable",
+        let rollback_deadline = std::time::Instant::now() + OWNER_CLEANUP_BUDGET;
+        let mut child_identity = None;
+        #[cfg(windows)]
+        let mut shared_dir = None;
+        let construction = (|| -> Result<(Arc<File>, u64), WorkspaceError> {
+            let identity = created_identity(&dir)
+                .map_err(|error| WorkspaceError::io("identify managed child", &path, error))?;
+            child_identity = Some(identity);
+            creation_hook(ChildCreationBoundary::Created)?;
+            let child_metadata = self
+                .dir
+                .symlink_metadata(&name)
+                .map_err(|error| WorkspaceError::io("inspect managed child", &path, error))?;
+            if !child_metadata.is_dir() || child_metadata.file_type().is_symlink() {
+                return Err(WorkspaceError::InvalidPath { path: path.clone() });
+            }
+            if metadata_identity(&child_metadata) != identity {
+                return Err(WorkspaceError::InvalidPath { path: path.clone() });
+            }
+            creation_hook(ChildCreationBoundary::Opened)?;
+            let opened_child_identity = directory_identity(&dir)
+                .map_err(|error| WorkspaceError::io("identify managed child", &path, error))?;
+            if opened_child_identity != identity {
+                return Err(WorkspaceError::InvalidPath { path: path.clone() });
+            }
+            #[cfg(windows)]
+            {
+                shared_dir = Some(open_owned_directory(&self.dir, &name).map_err(|error| {
+                    WorkspaceError::io("open managed child working directory", &path, error)
+                })?);
+                let shared_identity = directory_identity(
+                    shared_dir
+                        .as_ref()
+                        .expect("managed child shared directory was opened"),
                 )
-            })?;
-        lifecycle.live_children = lifecycle
-            .live_children
-            .checked_add(1)
-            .ok_or(WorkspaceError::CopySizeOverflow)?;
-        child_rollback.disarm();
-        drop(child_rollback);
+                .map_err(|error| {
+                    WorkspaceError::io("identify managed child working directory", &path, error)
+                })?;
+                if shared_identity != identity {
+                    return Err(WorkspaceError::InvalidPath { path: path.clone() });
+                }
+            }
+            let lease = self
+                .lease
+                .lock()
+                .map_err(|_| WorkspaceError::StatePoisoned)?
+                .as_ref()
+                .map(Arc::clone)
+                .ok_or_else(|| {
+                    WorkspaceError::io(
+                        "create managed child",
+                        &self.path,
+                        "managed root lease is unavailable",
+                    )
+                })?;
+            let next_live_children = lifecycle
+                .live_children
+                .checked_add(1)
+                .ok_or(WorkspaceError::CopySizeOverflow)?;
+            Ok((lease, next_live_children))
+        })();
+        let (lease, next_live_children) = match construction {
+            Ok(constructed) => constructed,
+            Err(primary) => {
+                #[cfg(windows)]
+                drop(shared_dir.take());
+                return Err(error_after_unpublished_directory_failure(
+                    &self.dir,
+                    &name,
+                    dir,
+                    child_identity,
+                    rollback_deadline,
+                    &path,
+                    primary,
+                ));
+            }
+        };
+        lifecycle.live_children = next_live_children;
+        #[cfg(windows)]
+        let dir = {
+            let shared_dir = shared_dir.expect("managed child shared directory passed validation");
+            drop(dir);
+            shared_dir
+        };
         Ok(ManagedChild {
             path,
             dir: Some(dir),
@@ -4736,7 +5042,7 @@ fn rollback_closed_published_root(
     rename_handle: &cap_std::fs::Dir,
     expected_root_identity: (u64, u64),
     lease_evidence: &MarkerEvidence,
-) {
+) -> bool {
     // No descendant handle owned by this process is live here, so first restore the unpublished
     // staging name. If another same-user actor prevents that rename, leave identity-bound
     // cleanup evidence on the anchored directory for the next serialized janitor pass.
@@ -4748,7 +5054,7 @@ fn rollback_closed_published_root(
     )
     .is_ok()
     {
-        return;
+        return true;
     }
     let published_path = coordinator.path.join(active_name);
     let marker = &lease_evidence.marker;
@@ -4759,6 +5065,7 @@ fn rollback_closed_published_root(
         marker.owner,
         lease_evidence.identity,
     );
+    false
 }
 
 fn rollback_published_root(
@@ -5349,7 +5656,7 @@ fn reopen_locked_lease(
 ) -> Result<File, WorkspaceError> {
     let lease_path = path.join(LEASE_FILE);
     let lease =
-        super::root::windows::open_regular_file_shared(dir, std::ffi::OsStr::new(LEASE_FILE))
+        super::root::windows::open_regular_file_pinned(dir, std::ffi::OsStr::new(LEASE_FILE))
             .map_err(|error| WorkspaceError::io("reopen workspace lease", &lease_path, error))?;
     verify_current_user_owned_file(&lease)
         .map_err(|error| WorkspaceError::io("verify workspace lease owner", &lease_path, error))?;
@@ -5374,7 +5681,7 @@ fn reopen_heartbeat(
     path: &Utf8Path,
 ) -> Result<File, WorkspaceError> {
     let heartbeat_path = path.join(HEARTBEAT_FILE);
-    let heartbeat = super::root::windows::open_regular_file_for_update_shared(
+    let heartbeat = super::root::windows::open_regular_file_for_update_pinned(
         dir,
         std::ffi::OsStr::new(HEARTBEAT_FILE),
     )

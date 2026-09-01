@@ -231,6 +231,21 @@ pub(crate) fn remove_entry_io_checked_with_guard(
     mark_delete_by_handle(&file)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum NativeSharePolicy {
+    Shared,
+    Pinned,
+}
+
+impl NativeSharePolicy {
+    pub(crate) const fn access(self) -> u32 {
+        match self {
+            Self::Shared => FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            Self::Pinned => FILE_SHARE_READ | FILE_SHARE_WRITE,
+        }
+    }
+}
+
 pub(crate) fn open_directory_shared(
     parent: &(impl AsRawHandle + ?Sized),
     name: &OsStr,
@@ -239,6 +254,7 @@ pub(crate) fn open_directory_shared(
         parent,
         name,
         SYNCHRONIZE | READ_CONTROL | FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY,
+        NativeSharePolicy::Shared,
     )
 }
 
@@ -250,6 +266,7 @@ pub(crate) fn open_directory_for_rename(
         parent,
         name,
         DELETE | SYNCHRONIZE | READ_CONTROL | FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY,
+        NativeSharePolicy::Pinned,
     )
 }
 
@@ -257,12 +274,14 @@ fn open_directory_with_access(
     parent: &(impl AsRawHandle + ?Sized),
     name: &OsStr,
     desired_access: u32,
+    share_policy: NativeSharePolicy,
 ) -> io::Result<File> {
-    let file = open_relative_shared(
+    let file = open_relative(
         parent,
         name,
         desired_access,
         FILE_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
+        share_policy,
     )?;
     let metadata = file.metadata()?;
     if !metadata.is_dir() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
@@ -277,11 +296,12 @@ pub(crate) fn open_entry_shared(
     parent: &(impl AsRawHandle + ?Sized),
     name: &OsStr,
 ) -> io::Result<File> {
-    open_relative_shared(
+    open_relative(
         parent,
         name,
         SYNCHRONIZE | READ_CONTROL | FILE_READ_ATTRIBUTES,
         FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
+        NativeSharePolicy::Shared,
     )
 }
 
@@ -289,11 +309,12 @@ pub(crate) fn open_regular_file_shared(
     parent: &(impl AsRawHandle + ?Sized),
     name: &OsStr,
 ) -> io::Result<File> {
-    let file = open_relative_shared(
+    let file = open_relative(
         parent,
         name,
         SYNCHRONIZE | READ_CONTROL | FILE_READ_ATTRIBUTES | FILE_READ_DATA,
         FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
+        NativeSharePolicy::Shared,
     )?;
     let metadata = file.metadata()?;
     if !metadata.is_file() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
@@ -302,15 +323,53 @@ pub(crate) fn open_regular_file_shared(
     Ok(file)
 }
 
+#[cfg(test)]
 pub(crate) fn open_regular_file_for_update_shared(
     parent: &(impl AsRawHandle + ?Sized),
     name: &OsStr,
 ) -> io::Result<File> {
-    let file = open_relative_shared(
+    let file = open_relative(
         parent,
         name,
         SYNCHRONIZE | READ_CONTROL | FILE_READ_ATTRIBUTES | FILE_READ_DATA | FILE_WRITE_ATTRIBUTES,
         FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
+        NativeSharePolicy::Shared,
+    )?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(io::Error::other("managed entry is not a regular file"));
+    }
+    Ok(file)
+}
+
+pub(crate) fn open_regular_file_pinned(
+    parent: &(impl AsRawHandle + ?Sized),
+    name: &OsStr,
+) -> io::Result<File> {
+    let file = open_relative(
+        parent,
+        name,
+        SYNCHRONIZE | READ_CONTROL | FILE_READ_ATTRIBUTES | FILE_READ_DATA,
+        FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
+        NativeSharePolicy::Pinned,
+    )?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(io::Error::other("managed entry is not a regular file"));
+    }
+    Ok(file)
+}
+
+pub(crate) fn open_regular_file_for_update_pinned(
+    parent: &(impl AsRawHandle + ?Sized),
+    name: &OsStr,
+) -> io::Result<File> {
+    let file = open_relative(
+        parent,
+        name,
+        SYNCHRONIZE | READ_CONTROL | FILE_READ_ATTRIBUTES | FILE_READ_DATA | FILE_WRITE_ATTRIBUTES,
+        FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
+        NativeSharePolicy::Pinned,
     )?;
     let metadata = file.metadata()?;
     if !metadata.is_file() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
@@ -434,11 +493,12 @@ fn supported_volume_serial(file: &(impl AsRawHandle + ?Sized)) -> io::Result<u32
     Ok(volume_serial)
 }
 
-fn open_relative_shared(
+fn open_relative(
     parent: &(impl AsRawHandle + ?Sized),
     name: &OsStr,
     desired_access: u32,
     create_options: u32,
+    share_policy: NativeSharePolicy,
 ) -> io::Result<File> {
     if !windows_final_name_units_are_valid(&encode_final_name(name)) {
         return Err(io::Error::new(
@@ -477,7 +537,7 @@ fn open_relative_shared(
             ptr::from_mut(&mut io_status),
             ptr::null(),
             0,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            share_policy.access(),
             FILE_OPEN,
             create_options,
             ptr::null(),
@@ -743,7 +803,7 @@ fn open_final_handle(
             ptr::from_mut(&mut io_status),
             ptr::null(),
             0,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            NativeSharePolicy::Shared.access(),
             match operation.create_disposition() {
                 WindowsCreateDisposition::Open => FILE_OPEN,
                 WindowsCreateDisposition::OpenIf => FILE_OPEN_IF,

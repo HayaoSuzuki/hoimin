@@ -34,14 +34,16 @@ use windows_sys::Win32::Storage::FileSystem::{
     CreateDirectoryW, CreateFileW, DELETE, FILE_ADD_FILE, FILE_ADD_SUBDIRECTORY,
     FILE_ATTRIBUTE_REPARSE_POINT, FILE_DELETE_CHILD, FILE_DISPOSITION_INFO,
     FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_LIST_DIRECTORY,
-    FILE_READ_ATTRIBUTES, FILE_READ_DATA, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
-    FILE_TRAVERSE, FILE_WRITE_ATTRIBUTES, FILE_WRITE_DATA, FileDispositionInfo, OPEN_EXISTING,
-    READ_CONTROL, SYNCHRONIZE, SetFileInformationByHandle, WRITE_DAC,
+    FILE_READ_ATTRIBUTES, FILE_READ_DATA, FILE_TRAVERSE, FILE_WRITE_ATTRIBUTES, FILE_WRITE_DATA,
+    FileDispositionInfo, OPEN_EXISTING, READ_CONTROL, SYNCHRONIZE, SetFileInformationByHandle,
+    WRITE_DAC,
 };
 use windows_sys::Win32::System::IO::IO_STATUS_BLOCK;
 use windows_sys::Win32::System::Threading::{
     CreateEventW, GetCurrentProcess, OpenEventW, OpenProcessToken,
 };
+
+use super::super::root::windows::NativeSharePolicy;
 
 struct LocalMemory(*mut c_void);
 
@@ -355,7 +357,7 @@ fn secure_object(expected: &File, path: &Utf8Path, directory: bool) -> io::Resul
         CreateFileW(
             wide.as_ptr(),
             READ_CONTROL | WRITE_DAC,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            NativeSharePolicy::Shared.access(),
             ptr::null(),
             OPEN_EXISTING,
             flags,
@@ -584,7 +586,7 @@ fn create_relative_managed_with_verifier(
             &raw mut io_status,
             ptr::null(),
             0,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            NativeSharePolicy::Pinned.access(),
             FILE_CREATE,
             options,
             ptr::null(),
@@ -617,7 +619,7 @@ fn io_error_from_ntstatus(status: i32) -> io::Error {
 }
 
 #[allow(dead_code)]
-fn rollback_created(file: &File) -> io::Result<()> {
+pub(super) fn rollback_created(file: &(impl AsRawHandle + ?Sized)) -> io::Result<()> {
     let disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
     // SAFETY: file is a live handle and the disposition buffer has FileDispositionInfo's size.
     if unsafe {
@@ -652,7 +654,7 @@ fn error_after_created_rollback_with(
 
 #[allow(dead_code)]
 fn error_after_created_rollback(file: &File, primary: io::Error) -> io::Error {
-    error_after_created_rollback_with(file, primary, rollback_created)
+    error_after_created_rollback_with(file, primary, |file| rollback_created(file))
 }
 
 fn verify_owner(file: &(impl AsRawHandle + ?Sized), token: &UserToken) -> io::Result<()> {
