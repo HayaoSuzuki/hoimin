@@ -12,6 +12,8 @@ use hoimin_core::{
 };
 use serde::{Deserialize, Serialize};
 
+const TEST_MIN_FREE_SPACE: &str = "1B";
+
 #[derive(Clone, Default)]
 struct SharedWriter(Arc<Mutex<WriterState>>);
 
@@ -692,6 +694,8 @@ fn normalize_documented_command(command: &[String], root: &Path, python: &Path) 
             "32".to_owned(),
             "--total-timeout".to_owned(),
             "30s".to_owned(),
+            "--min-free-space".to_owned(),
+            TEST_MIN_FREE_SPACE.to_owned(),
             "--allow-best-effort-memory".to_owned(),
         ],
     );

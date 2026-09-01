@@ -12,6 +12,8 @@ use hoimin_core::{
     VerificationSelectionScope,
 };
 
+const TEST_MIN_FREE_SPACE: &str = "1B";
+
 #[test]
 fn cli_entrypoint_future_keeps_large_run_state_out_of_line() {
     let mut stdout = Vec::new();
@@ -100,6 +102,8 @@ async fn oversized_runtime_timeouts_are_rejected_before_project_execution() {
         let args = vec![
             OsString::from("hoimin"),
             OsString::from("run"),
+            OsString::from("--min-free-space"),
+            OsString::from(TEST_MIN_FREE_SPACE),
             OsString::from("--root"),
             root.as_os_str().to_owned(),
             OsString::from("--file"),
@@ -423,6 +427,8 @@ async fn real_binary_json_report_and_diagnostic_use_separate_streams() {
 
     let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
         .arg("run")
+        .arg("--min-free-space")
+        .arg(TEST_MIN_FREE_SPACE)
         .arg("--root")
         .arg(project.path())
         .arg("--source")
@@ -698,6 +704,8 @@ async fn joinset_and_completion_queue_stay_bounded_across_many_mutants() {
     let config = hoimin_cli::cli::parse_config_from([
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         project.path().as_os_str().to_owned(),
         OsString::from("--source"),
@@ -979,6 +987,8 @@ async fn fingerprint_include_unmatched_fails_before_creating_session() {
     let args = [
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         root.as_os_str().to_owned(),
         OsString::from("--source"),
@@ -1020,6 +1030,8 @@ async fn fingerprint_file_missing_fails_before_creating_session() {
     let args = [
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         root.as_os_str().to_owned(),
         OsString::from("--file"),
@@ -1130,6 +1142,8 @@ async fn shell_context_construction_performs_no_project_io() {
     let config = hoimin_cli::cli::parse_config_from([
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         missing_root.as_os_str().to_owned(),
         OsString::from("--source"),
@@ -1819,6 +1833,8 @@ async fn injected_ctrl_c_finishes_incomplete_or_defers_when_tree_quiescence_is_u
     let config = hoimin_cli::cli::parse_config_from([
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         project.path().as_os_str().to_owned(),
         OsString::from("--source"),
@@ -2198,6 +2214,8 @@ async fn serial_output_that_requests_stop_is_accepted_before_cancellation() {
     let args = [
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         project.path().as_os_str().to_owned(),
         OsString::from("--source"),
@@ -2275,6 +2293,8 @@ async fn failed_mutant_started_output_prevents_process_start() {
     let args = [
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         root.as_os_str().to_owned(),
         OsString::from("--source"),
@@ -2321,6 +2341,8 @@ async fn worker_pythonpath_rewrites_an_original_src_root_to_the_mutated_copy() {
     let python = python_executable();
     let args = [
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         root.as_os_str().to_owned(),
         OsString::from("--source"),
@@ -2448,6 +2470,8 @@ async fn run_missing_explicit_candidate(
     let config = hoimin_cli::cli::parse_config_from([
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         project.as_os_str().to_owned(),
         OsString::from("--file"),
@@ -2501,6 +2525,8 @@ async fn run_type_checker(checker: &Path, expected_status: &str) -> FixtureRun {
     let mut args = vec![
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         root.as_os_str().to_owned(),
         OsString::from("--source"),
@@ -2557,6 +2583,8 @@ async fn run_fixture_options_extra_with_format(
     let mut args = vec![
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         root.as_os_str().to_owned(),
         OsString::from("--source"),
@@ -2786,6 +2814,8 @@ fn real_cli_session_args(
 ) -> Vec<OsString> {
     let mut args = vec![
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         root.as_os_str().to_owned(),
         OsString::from("--source"),
@@ -2880,6 +2910,8 @@ async fn run_focused_profile(
     let mut args = vec![
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         root.as_os_str().to_owned(),
         OsString::from("--source"),
@@ -2964,6 +2996,8 @@ async fn run_project_with_session_options(
     let mut args = vec![
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         root.as_os_str().to_owned(),
         OsString::from("--source"),
@@ -3026,6 +3060,8 @@ async fn run_project_options(
     let mut args = vec![
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         root.as_os_str().to_owned(),
         OsString::from("--source"),
@@ -3298,6 +3334,8 @@ fn spawn_interrupt_fixture(
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
     command
         .arg("run")
+        .arg("--min-free-space")
+        .arg(TEST_MIN_FREE_SPACE)
         .arg("--root")
         .arg(project)
         .arg("--source")

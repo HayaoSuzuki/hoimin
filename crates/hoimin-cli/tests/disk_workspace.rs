@@ -57,6 +57,8 @@ async fn planned_snapshot_and_worker_bytes_stop_at_the_exact_limit() {
             OsString::from("1"),
             OsString::from("--max-workspace-size"),
             OsString::from("10B"),
+            OsString::from("--min-free-space"),
+            OsString::from("1B"),
             OsString::from("--allow-best-effort-memory"),
             OsString::from("--"),
             OsString::from("touch"),

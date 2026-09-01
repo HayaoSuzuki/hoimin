@@ -23,6 +23,8 @@ use proptest::prelude::*;
 use serde_json::{Value, json};
 use tokio::io::AsyncReadExt;
 
+const TEST_MIN_FREE_SPACE: &str = "1B";
+
 fn original_schema_v2_report() -> PathBuf {
     repo_root().join("crates/hoimin-cli/tests/golden/reports/schema-v2-original.json")
 }
@@ -1659,6 +1661,8 @@ fn real_binary_command(project: &Path, test_command: &str) -> tokio::process::Co
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
     command
         .arg("run")
+        .arg("--min-free-space")
+        .arg(TEST_MIN_FREE_SPACE)
         .arg("--root")
         .arg(project)
         .arg("--source")
