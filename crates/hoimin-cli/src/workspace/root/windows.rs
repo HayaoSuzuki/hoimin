@@ -173,20 +173,7 @@ pub(crate) fn remove_entry_io_with_guard(
     }
     before_next_operation()?;
     let file = open_final_handle(parent, name, WindowsFinalOperation::RemoveEntry)?;
-    before_next_operation()?;
-    let mut permissions = file.metadata()?.permissions();
-    before_next_operation()?;
-    if permissions.readonly() {
-        #[allow(
-            clippy::permissions_set_readonly_false,
-            reason = "Windows Permissions toggles only the FILE_ATTRIBUTE_READONLY bit"
-        )]
-        permissions.set_readonly(false);
-        file.set_permissions(permissions)?;
-        before_next_operation()?;
-    }
-    before_next_operation()?;
-    mark_delete_by_handle(&file)
+    remove_open_entry_io_with_guard(&file, before_next_operation)
 }
 
 pub(crate) fn remove_entry_io_checked(
@@ -215,6 +202,13 @@ pub(crate) fn remove_entry_io_checked_with_guard(
     if file_identity_io(&file)? != expected_identity {
         return Err(io::Error::other("remove target identity changed"));
     }
+    remove_open_entry_io_with_guard(&file, before_next_operation)
+}
+
+pub(crate) fn remove_open_entry_io_with_guard(
+    file: &File,
+    before_next_operation: &impl Fn() -> io::Result<()>,
+) -> io::Result<()> {
     before_next_operation()?;
     let mut permissions = file.metadata()?.permissions();
     before_next_operation()?;
@@ -342,14 +336,14 @@ pub(crate) fn open_regular_file_for_update_shared(
     Ok(file)
 }
 
-pub(crate) fn open_regular_file_pinned(
+pub(crate) fn open_regular_file_for_update_pinned(
     parent: &(impl AsRawHandle + ?Sized),
     name: &OsStr,
 ) -> io::Result<File> {
     let file = open_relative(
         parent,
         name,
-        SYNCHRONIZE | READ_CONTROL | FILE_READ_ATTRIBUTES | FILE_READ_DATA,
+        SYNCHRONIZE | READ_CONTROL | FILE_READ_ATTRIBUTES | FILE_READ_DATA | FILE_WRITE_ATTRIBUTES,
         FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
         NativeSharePolicy::Pinned,
     )?;
@@ -360,14 +354,14 @@ pub(crate) fn open_regular_file_pinned(
     Ok(file)
 }
 
-pub(crate) fn open_regular_file_for_update_pinned(
+pub(crate) fn open_regular_file_for_delete_pinned(
     parent: &(impl AsRawHandle + ?Sized),
     name: &OsStr,
 ) -> io::Result<File> {
     let file = open_relative(
         parent,
         name,
-        SYNCHRONIZE | READ_CONTROL | FILE_READ_ATTRIBUTES | FILE_READ_DATA | FILE_WRITE_ATTRIBUTES,
+        DELETE | SYNCHRONIZE | READ_CONTROL | FILE_READ_ATTRIBUTES | FILE_READ_DATA,
         FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
         NativeSharePolicy::Pinned,
     )?;
@@ -803,7 +797,7 @@ fn open_final_handle(
             ptr::from_mut(&mut io_status),
             ptr::null(),
             0,
-            NativeSharePolicy::Shared.access(),
+            final_operation_share_policy(operation).access(),
             match operation.create_disposition() {
                 WindowsCreateDisposition::Open => FILE_OPEN,
                 WindowsCreateDisposition::OpenIf => FILE_OPEN_IF,
@@ -818,6 +812,19 @@ fn open_final_handle(
     }
     // SAFETY: successful `NtCreateFile` returns one newly owned kernel handle.
     Ok(unsafe { File::from_raw_handle(handle.cast()) })
+}
+
+const fn final_operation_share_policy(operation: WindowsFinalOperation) -> NativeSharePolicy {
+    match operation {
+        WindowsFinalOperation::Remove | WindowsFinalOperation::RemoveEntry => {
+            NativeSharePolicy::Pinned
+        }
+        WindowsFinalOperation::InspectForWrite
+        | WindowsFinalOperation::InspectMutation
+        | WindowsFinalOperation::WriteMutation
+        | WindowsFinalOperation::Read
+        | WindowsFinalOperation::Write => NativeSharePolicy::Shared,
+    }
 }
 
 const fn create_options(operation: WindowsFinalOperation) -> u32 {

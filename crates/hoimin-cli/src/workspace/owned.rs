@@ -661,10 +661,11 @@ mod tests {
         let parent = Utf8Path::from_path(parent.path()).unwrap();
         let coordinator = ManagedRootCoordinator::open(parent).unwrap();
         let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let rename_handle = root.rename_handle.lock().unwrap();
 
         assert_eq!(
             super::directory_identity(&root.dir).unwrap(),
-            super::directory_identity(&root.rename_handle).unwrap()
+            super::directory_identity(rename_handle.as_ref().unwrap()).unwrap()
         );
     }
 
@@ -704,9 +705,10 @@ mod tests {
 
         match result {
             Ok(root) => {
+                let rename_handle = root.rename_handle.lock().unwrap();
                 assert_eq!(
                     super::directory_identity(&root.dir).unwrap(),
-                    super::directory_identity(&root.rename_handle).unwrap(),
+                    super::directory_identity(rename_handle.as_ref().unwrap()).unwrap(),
                     "publication returned a path handle from a different object"
                 );
                 assert!(
@@ -2119,6 +2121,7 @@ use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -3446,8 +3449,11 @@ pub(crate) struct ManagedRunRoot {
     lease: Mutex<Option<Arc<File>>>,
     heartbeat: Mutex<Option<File>>,
     lifecycle: Arc<Mutex<RootLifecycle>>,
+    namespace: AtomicU8,
     #[cfg(windows)]
-    rename_handle: cap_std::fs::Dir,
+    rename_handle: Mutex<Option<cap_std::fs::Dir>>,
+    #[cfg(windows)]
+    cleanup_lease_evidence: MarkerEvidence,
     #[cfg(windows)]
     _mutation_barrier: windows::RootMutationBarrier,
 }
@@ -3457,6 +3463,29 @@ struct RootLifecycle {
     cleanup_started: bool,
     cleanup_ready: bool,
     live_children: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+enum NamespaceLifecycle {
+    Active = 0,
+    Deleting = 1,
+    Complete = 2,
+}
+
+impl NamespaceLifecycle {
+    fn load(state: &AtomicU8) -> Self {
+        match state.load(Ordering::Acquire) {
+            0 => Self::Active,
+            1 => Self::Deleting,
+            2 => Self::Complete,
+            _ => unreachable!("managed namespace lifecycle has an invalid value"),
+        }
+    }
+
+    fn store(self, state: &AtomicU8) {
+        state.store(self as u8, Ordering::Release);
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -4028,8 +4057,11 @@ impl ManagedRunRoot {
             lease: Mutex::new(Some(Arc::new(lease))),
             heartbeat: Mutex::new(Some(heartbeat)),
             lifecycle: Arc::new(Mutex::new(RootLifecycle::default())),
+            namespace: AtomicU8::new(NamespaceLifecycle::Active as u8),
             #[cfg(windows)]
-            rename_handle,
+            rename_handle: Mutex::new(Some(rename_handle)),
+            #[cfg(windows)]
+            cleanup_lease_evidence: publication_marker_evidence.0,
             #[cfg(windows)]
             _mutation_barrier: mutation_barrier,
         })
@@ -4347,6 +4379,26 @@ impl ManagedRunRoot {
             }
         };
         #[cfg(windows)]
+        let rename_slot = match self.rename_handle.lock() {
+            Ok(slot) => slot,
+            Err(_) => {
+                *lease_slot = lease.take().map(Arc::new);
+                return Err(WorkspaceError::StatePoisoned);
+            }
+        };
+        #[cfg(windows)]
+        let rename_handle = match rename_slot.as_ref() {
+            Some(handle) => handle,
+            None => {
+                *lease_slot = lease.take().map(Arc::new);
+                return Err(WorkspaceError::io(
+                    "claim managed workspace",
+                    &self.path,
+                    "managed root deletion capability is unavailable",
+                ));
+            }
+        };
+        #[cfg(windows)]
         let Ok(mut heartbeat_slot) = self.heartbeat.lock() else {
             *lease_slot = lease.take().map(Arc::new);
             return Err(WorkspaceError::StatePoisoned);
@@ -4366,6 +4418,7 @@ impl ManagedRunRoot {
         };
         #[cfg(windows)]
         drop(heartbeat_slot.take());
+        let records_deleting_state = deleting_name == format!("{DELETING_PREFIX}{}", self.run_id);
 
         let claim = claim_managed_child(
             parent,
@@ -4375,13 +4428,19 @@ impl ManagedRunRoot {
             self.owner,
             &self.dir,
             #[cfg(windows)]
-            &self.rename_handle,
+            rename_handle,
             &mut lease,
+            &|| {
+                if records_deleting_state {
+                    NamespaceLifecycle::Deleting.store(&self.namespace);
+                }
+            },
             before_next_operation,
         );
         *lease_slot = lease.map(Arc::new);
         #[cfg(windows)]
-        if !matches!(&claim, Ok(ClaimResult::Claimed | ClaimResult::Absent))
+        if NamespaceLifecycle::load(&self.namespace) == NamespaceLifecycle::Active
+            && !matches!(&claim, Ok(ClaimResult::Claimed | ClaimResult::Absent))
             && let Some(evidence) = heartbeat_evidence.as_ref()
         {
             match reopen_heartbeat(&self.dir, evidence, &self.path) {
@@ -4401,6 +4460,140 @@ impl ManagedRunRoot {
             }
         }
         claim
+    }
+
+    #[cfg(windows)]
+    fn deleting_root_capability_was_consumed(
+        &self,
+        deleting_name: &str,
+    ) -> Result<bool, WorkspaceError> {
+        let root = self
+            .rename_handle
+            .lock()
+            .map_err(|_| WorkspaceError::StatePoisoned)?;
+        if root.is_some() {
+            return Ok(false);
+        }
+        match self.coordinator_dir.symlink_metadata(deleting_name) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(true),
+            Err(error) => Err(WorkspaceError::io(
+                "verify consumed managed-root deletion capability",
+                &self.path,
+                error,
+            )),
+            Ok(_) => Err(WorkspaceError::io(
+                "resume managed workspace cleanup",
+                &self.path,
+                "deleting root remains after its exact deletion capability was consumed",
+            )),
+        }
+    }
+
+    #[cfg(windows)]
+    fn restore_missing_deleting_lease(&self, deleting_name: &str) -> Result<(), WorkspaceError> {
+        let mut lease = self
+            .lease
+            .lock()
+            .map_err(|_| WorkspaceError::StatePoisoned)?;
+        if lease.is_some() {
+            return Ok(());
+        }
+        match self.dir.symlink_metadata(LEASE_FILE) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(WorkspaceError::io(
+                "inspect deleting workspace lease",
+                self.path.parent().unwrap().join(deleting_name),
+                error,
+            )),
+            Ok(_) => {
+                let reopened = reopen_locked_lease(
+                    &self.dir,
+                    &self.cleanup_lease_evidence,
+                    &self.path.parent().unwrap().join(deleting_name),
+                )?;
+                *lease = Some(Arc::new(reopened));
+                Ok(())
+            }
+        }
+    }
+
+    fn take_owner_cleanup_capabilities(&self) -> Result<CleanupCapabilities, WorkspaceError> {
+        let mut lease_slot = self
+            .lease
+            .lock()
+            .map_err(|_| WorkspaceError::StatePoisoned)?;
+        let lease_guard = match lease_slot.take() {
+            Some(lease) => match Arc::try_unwrap(lease) {
+                Ok(lease) => Some(lease),
+                Err(shared) => {
+                    *lease_slot = Some(shared);
+                    return Err(WorkspaceError::io(
+                        "resume managed workspace cleanup",
+                        &self.path,
+                        "managed root still has a shared lease guard",
+                    ));
+                }
+            },
+            None => None,
+        };
+        #[cfg(windows)]
+        {
+            let mut root_slot = match self.rename_handle.lock() {
+                Ok(root) => root,
+                Err(_) => {
+                    *lease_slot = lease_guard.map(Arc::new);
+                    return Err(WorkspaceError::StatePoisoned);
+                }
+            };
+            let Some(root_pin) = root_slot.take() else {
+                *lease_slot = lease_guard.map(Arc::new);
+                return Err(WorkspaceError::io(
+                    "resume managed workspace cleanup",
+                    &self.path,
+                    "managed root deletion capability is unavailable",
+                ));
+            };
+            let Some(lease_guard) = lease_guard else {
+                if self.dir.symlink_metadata(LEASE_FILE).is_ok() {
+                    *root_slot = Some(root_pin);
+                    return Err(WorkspaceError::io(
+                        "resume managed workspace cleanup",
+                        &self.path,
+                        "managed lease deletion capability is unavailable",
+                    ));
+                }
+                return Ok(CleanupCapabilities {
+                    lease_guard: None,
+                    root_pin: Some(root_pin),
+                    exact_root: true,
+                });
+            };
+            return Ok(CleanupCapabilities::claimed(root_pin, lease_guard));
+        }
+        #[cfg(unix)]
+        {
+            Ok(CleanupCapabilities::with_lease(lease_guard))
+        }
+    }
+
+    fn restore_owner_cleanup_capabilities(&self, mut capabilities: CleanupCapabilities) {
+        if let Some(lease) = capabilities.lease_guard.take() {
+            let mut slot = self
+                .lease
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            debug_assert!(slot.is_none());
+            *slot = Some(Arc::new(lease));
+        }
+        #[cfg(windows)]
+        if let Some(root) = capabilities.root_pin.take() {
+            let mut slot = self
+                .rename_handle
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            debug_assert!(slot.is_none());
+            *slot = Some(root);
+        }
     }
 
     #[allow(
@@ -4434,6 +4627,13 @@ impl ManagedRunRoot {
             ));
             return record;
         }
+        let active_name = format!("{ACTIVE_PREFIX}{}", self.run_id);
+        let deleting_name = format!("{DELETING_PREFIX}{}", self.run_id);
+        if NamespaceLifecycle::load(&self.namespace) == NamespaceLifecycle::Complete {
+            record.status = DiskCleanupStatus::Clean;
+            record.remaining_root = None;
+            return record;
+        }
         let expected_root_identity = match directory_identity(&self.dir) {
             Ok(identity) => identity,
             Err(error) => {
@@ -4441,96 +4641,134 @@ impl ManagedRunRoot {
                 return record;
             }
         };
-        let local_guard = match self.coordinator_local_lock.try_lock() {
-            Ok(guard) => guard,
-            Err(std::sync::TryLockError::WouldBlock) => {
-                record.status = DiskCleanupStatus::Deferred;
-                record.push_detail("coordinator process lock is busy".to_owned());
-                return record;
-            }
-            Err(std::sync::TryLockError::Poisoned(_)) => {
-                record.push_detail("coordinator process lock is poisoned".to_owned());
-                return record;
-            }
-        };
-        if let Err(error) = FileExt::try_lock_exclusive(&self.coordinator_file) {
-            if lock_error_is_busy(&error) {
-                record.status = DiskCleanupStatus::Deferred;
-            }
-            record.push_detail(format!("coordinator lock failed: {error}"));
-            return record;
-        }
-        let active_name = format!("{ACTIVE_PREFIX}{}", self.run_id);
-        let deleting_name = format!("{DELETING_PREFIX}{}", self.run_id);
-        let claim_deadline_expired = std::cell::Cell::new(false);
-        let claim = self.claim_with_handle_handoff(
-            &self.coordinator_dir,
-            &active_name,
-            &deleting_name,
-            &|| {
-                if started.elapsed() < budget {
-                    Ok(())
-                } else {
-                    claim_deadline_expired.set(true);
-                    Err(WorkspaceError::io(
-                        "claim managed workspace",
-                        &self.path,
-                        std::io::Error::new(
-                            std::io::ErrorKind::TimedOut,
-                            "owner cleanup deadline exceeded before claim",
-                        ),
-                    ))
+        if NamespaceLifecycle::load(&self.namespace) == NamespaceLifecycle::Active {
+            let local_guard = match self.coordinator_local_lock.try_lock() {
+                Ok(guard) => guard,
+                Err(std::sync::TryLockError::WouldBlock) => {
+                    record.status = DiskCleanupStatus::Deferred;
+                    record.push_detail("coordinator process lock is busy".to_owned());
+                    return record;
                 }
-            },
-        );
-        let unlock = FileExt::unlock(&self.coordinator_file);
-        if let Err(error) = unlock {
-            if claim == Ok(ClaimResult::Claimed) {
-                record.remaining_root = Some(
-                    self.path
-                        .parent()
-                        .expect("managed run has parent")
-                        .join(&deleting_name),
-                );
+                Err(std::sync::TryLockError::Poisoned(_)) => {
+                    record.push_detail("coordinator process lock is poisoned".to_owned());
+                    return record;
+                }
+            };
+            if let Err(error) = FileExt::try_lock_exclusive(&self.coordinator_file) {
+                if lock_error_is_busy(&error) {
+                    record.status = DiskCleanupStatus::Deferred;
+                }
+                record.push_detail(format!("coordinator lock failed: {error}"));
+                return record;
             }
-            record.push_detail(format!("coordinator unlock failed: {error}"));
+            let claim_deadline_expired = std::cell::Cell::new(false);
+            let claim = self.claim_with_handle_handoff(
+                &self.coordinator_dir,
+                &active_name,
+                &deleting_name,
+                &|| {
+                    if started.elapsed() < budget {
+                        Ok(())
+                    } else {
+                        claim_deadline_expired.set(true);
+                        Err(WorkspaceError::io(
+                            "claim managed workspace",
+                            &self.path,
+                            std::io::Error::new(
+                                std::io::ErrorKind::TimedOut,
+                                "owner cleanup deadline exceeded before claim",
+                            ),
+                        ))
+                    }
+                },
+            );
+            let unlock = FileExt::unlock(&self.coordinator_file);
+            if let Err(error) = unlock {
+                if NamespaceLifecycle::load(&self.namespace) == NamespaceLifecycle::Deleting {
+                    record.remaining_root = Some(
+                        self.path
+                            .parent()
+                            .expect("managed run has parent")
+                            .join(&deleting_name),
+                    );
+                }
+                record.push_detail(format!("coordinator unlock failed: {error}"));
+                return record;
+            }
+            drop(local_guard);
+            match claim {
+                Ok(ClaimResult::Absent) => {
+                    NamespaceLifecycle::Complete.store(&self.namespace);
+                    record.status = DiskCleanupStatus::Clean;
+                    record.remaining_root = None;
+                    return record;
+                }
+                Ok(ClaimResult::Claimed) => {}
+                Err(error) => {
+                    if claim_deadline_expired.get() {
+                        record.status = DiskCleanupStatus::Deferred;
+                    }
+                    if NamespaceLifecycle::load(&self.namespace) == NamespaceLifecycle::Deleting {
+                        record.remaining_root = Some(
+                            self.path
+                                .parent()
+                                .expect("managed run has parent")
+                                .join(&deleting_name),
+                        );
+                    }
+                    record.push_detail(error.to_string());
+                    return record;
+                }
+            }
+        }
+        record.remaining_root = Some(
+            self.path
+                .parent()
+                .expect("managed run has parent")
+                .join(&deleting_name),
+        );
+        if started.elapsed() >= budget {
+            record.status = DiskCleanupStatus::Deferred;
             return record;
         }
-        drop(local_guard);
-        match claim {
-            Ok(ClaimResult::Absent) => {
+        #[cfg(windows)]
+        match self.deleting_root_capability_was_consumed(&deleting_name) {
+            Ok(true) => {
+                NamespaceLifecycle::Complete.store(&self.namespace);
                 record.status = DiskCleanupStatus::Clean;
                 record.remaining_root = None;
                 return record;
             }
-            Ok(ClaimResult::Claimed) => {}
+            Ok(false) => {}
             Err(error) => {
-                if claim_deadline_expired.get() {
-                    record.status = DiskCleanupStatus::Deferred;
-                }
                 record.push_detail(error.to_string());
                 return record;
             }
         }
-        if started.elapsed() >= budget {
-            record.status = DiskCleanupStatus::Deferred;
-            record.remaining_root = Some(
-                self.path
-                    .parent()
-                    .expect("managed run has parent")
-                    .join(&deleting_name),
-            );
+        #[cfg(windows)]
+        if let Err(error) = self.restore_missing_deleting_lease(&deleting_name) {
+            record.push_detail(error.to_string());
             return record;
         }
-        match remove_claimed_tree_bounded(
+        let mut capabilities = match self.take_owner_cleanup_capabilities() {
+            Ok(capabilities) => capabilities,
+            Err(error) => {
+                record.push_detail(error.to_string());
+                return record;
+            }
+        };
+        let removal = remove_claimed_tree_bounded_with_capabilities(
             &self.coordinator_dir,
             &deleting_name,
             Some(expected_root_identity),
             budget.saturating_sub(started.elapsed()),
-        ) {
+            &mut capabilities,
+        );
+        match removal {
             Ok(slice)
                 if slice.complete && entry_is_absent(&self.coordinator_dir, &deleting_name) =>
             {
+                NamespaceLifecycle::Complete.store(&self.namespace);
                 record.status = DiskCleanupStatus::Clean;
                 record.examined_entries = slice.examined;
                 record.removed_entries = slice.removed;
@@ -4540,28 +4778,27 @@ impl ManagedRunRoot {
                 record.status = DiskCleanupStatus::Deferred;
                 record.examined_entries = slice.examined;
                 record.removed_entries = slice.removed;
-                record.remaining_root = Some(
-                    self.path
-                        .parent()
-                        .expect("managed run has parent")
-                        .join(&deleting_name),
-                );
+                self.restore_owner_cleanup_capabilities(capabilities);
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                record.status = DiskCleanupStatus::Clean;
-                record.remaining_root = None;
+                if entry_is_absent(&self.coordinator_dir, &deleting_name) {
+                    NamespaceLifecycle::Complete.store(&self.namespace);
+                    record.status = DiskCleanupStatus::Clean;
+                    record.remaining_root = None;
+                } else {
+                    record.push_detail(error.to_string());
+                    self.restore_owner_cleanup_capabilities(capabilities);
+                }
             }
             Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {
                 record.status = DiskCleanupStatus::Deferred;
                 record.push_detail(error.to_string());
-                record.remaining_root = Some(
-                    self.path
-                        .parent()
-                        .expect("managed run has parent")
-                        .join(&deleting_name),
-                );
+                self.restore_owner_cleanup_capabilities(capabilities);
             }
-            Err(error) => record.push_detail(error.to_string()),
+            Err(error) => {
+                record.push_detail(error.to_string());
+                self.restore_owner_cleanup_capabilities(capabilities);
+            }
         }
         record
     }
@@ -4765,6 +5002,7 @@ impl ManagedRunRoot {
                 let removal = remove_empty_unmarked_directory(
                     &coordinator.dir,
                     name,
+                    candidate,
                     candidate_identity,
                     cleanup_started,
                     JANITOR_CLEANUP_BUDGET,
@@ -4862,6 +5100,7 @@ impl ManagedRunRoot {
                 #[cfg(windows)]
                 &candidate,
                 &mut lease,
+                &|| {},
                 &|| {
                     if cleanup_started.elapsed() < JANITOR_CLEANUP_BUDGET {
                         Ok(())
@@ -4895,13 +5134,20 @@ impl ManagedRunRoot {
                 );
                 continue;
             };
+            #[cfg(windows)]
+            let capabilities = CleanupCapabilities::claimed(candidate, lease);
+            #[cfg(unix)]
+            let capabilities = {
+                drop(candidate);
+                CleanupCapabilities::with_lease(Some(lease))
+            };
             record_or_queue_reclaim_removal(
                 &mut report,
                 &mut pending_cleanup,
                 coordinator,
                 &deleting_name,
                 candidate_identity,
-                lease,
+                capabilities,
                 cleanup_started,
             );
         }
@@ -4912,7 +5158,7 @@ impl ManagedRunRoot {
                 if cleanup_started.elapsed() >= JANITOR_CLEANUP_BUDGET {
                     break;
                 }
-                let Some(pending) = pending_cleanup.pop_front() else {
+                let Some(mut pending) = pending_cleanup.pop_front() else {
                     break;
                 };
                 match reclaim_removal(
@@ -4920,6 +5166,7 @@ impl ManagedRunRoot {
                     &pending.deleting_name,
                     pending.expected_identity,
                     cleanup_started,
+                    &mut pending.capabilities,
                 ) {
                     ReclaimRemoval::Complete => {
                         report.reclaimed_roots += 1;
@@ -4985,7 +5232,7 @@ enum ReclaimRemoval {
 struct PendingCleanup {
     deleting_name: String,
     expected_identity: (u64, u64),
-    _lease_guard: File,
+    capabilities: CleanupCapabilities,
 }
 
 fn record_or_queue_reclaim_removal(
@@ -4994,7 +5241,7 @@ fn record_or_queue_reclaim_removal(
     coordinator: &ManagedRootCoordinator,
     deleting_name: &str,
     expected_identity: (u64, u64),
-    lease_guard: File,
+    mut capabilities: CleanupCapabilities,
     cleanup_started: std::time::Instant,
 ) {
     match reclaim_removal(
@@ -5002,13 +5249,14 @@ fn record_or_queue_reclaim_removal(
         deleting_name,
         expected_identity,
         cleanup_started,
+        &mut capabilities,
     ) {
         ReclaimRemoval::Complete => report.reclaimed_roots += 1,
         ReclaimRemoval::Deferred { .. } => {
             pending_cleanup.push_back(PendingCleanup {
                 deleting_name: deleting_name.to_owned(),
                 expected_identity,
-                _lease_guard: lease_guard,
+                capabilities,
             });
         }
         ReclaimRemoval::Failed(error) => {
@@ -5026,12 +5274,14 @@ fn reclaim_removal(
     deleting_name: &str,
     expected_identity: (u64, u64),
     cleanup_started: std::time::Instant,
+    capabilities: &mut CleanupCapabilities,
 ) -> ReclaimRemoval {
-    match remove_claimed_tree_slice(
+    match remove_claimed_tree_slice_with_capabilities(
         &coordinator.dir,
         deleting_name,
         Some(expected_identity),
         JANITOR_CLEANUP_BUDGET.saturating_sub(cleanup_started.elapsed()),
+        capabilities,
     ) {
         Ok(slice) if slice.complete => match coordinator.dir.symlink_metadata(deleting_name) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => ReclaimRemoval::Complete,
@@ -5149,6 +5399,7 @@ fn rollback_published_root(
             owner,
             expected_dir,
             &mut expected_lease,
+            &|| {},
             &|| Ok(()),
         );
         let unlock = guard.unlock(&coordinator.path);
@@ -5375,12 +5626,11 @@ enum ClaimResult {
 fn remove_empty_unmarked_directory(
     parent: &cap_std::fs::Dir,
     name: &str,
+    candidate: cap_std::fs::Dir,
     expected_identity: (u64, u64),
     started: std::time::Instant,
     budget: Duration,
 ) -> std::io::Result<()> {
-    ensure_cleanup_deadline(started, budget)?;
-    let candidate = open_owned_directory(parent, name)?;
     ensure_cleanup_deadline(started, budget)?;
     if directory_identity(&candidate)? != expected_identity || !staging_is_empty(&candidate) {
         return Err(std::io::Error::other(
@@ -5388,14 +5638,33 @@ fn remove_empty_unmarked_directory(
         ));
     }
     ensure_cleanup_deadline(started, budget)?;
-    remove_cleanup_directory_checked(
-        parent,
-        std::ffi::OsStr::new(name),
-        Utf8Path::new(name),
-        expected_identity,
-        started,
-        budget,
-    )
+    #[cfg(unix)]
+    {
+        drop(candidate);
+        remove_cleanup_directory_checked(
+            parent,
+            std::ffi::OsStr::new(name),
+            Utf8Path::new(name),
+            expected_identity,
+            started,
+            budget,
+        )
+    }
+    #[cfg(windows)]
+    {
+        let candidate = candidate.into_std_file();
+        super::root::windows::remove_open_entry_io_with_guard(&candidate, &|| {
+            ensure_cleanup_deadline(started, budget)
+        })?;
+        drop(candidate);
+        match parent.symlink_metadata(name) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error),
+            Ok(_) => Err(std::io::Error::other(
+                "empty deleting root remains after exact-handle removal",
+            )),
+        }
+    }
 }
 
 #[allow(
@@ -5412,6 +5681,7 @@ fn claim_managed_child(
     expected_dir: &cap_std::fs::Dir,
     #[cfg(windows)] rename_handle: &cap_std::fs::Dir,
     expected_lease: &mut Option<File>,
+    on_deleting: &impl Fn(),
     before_next_operation: &impl Fn() -> Result<(), WorkspaceError>,
 ) -> Result<ClaimResult, WorkspaceError> {
     before_next_operation()?;
@@ -5554,12 +5824,20 @@ fn claim_managed_child(
                     }
                 }
             }
-            *expected_lease = Some(reopen_locked_lease(
-                &candidate,
-                &expected_lease_evidence,
-                Utf8Path::new(deleting_name),
-            )?);
         }
+        on_deleting();
+    } else {
+        on_deleting();
+        #[cfg(windows)]
+        drop(expected_lease.take());
+    }
+    #[cfg(windows)]
+    {
+        *expected_lease = Some(reopen_locked_lease(
+            &candidate,
+            &expected_lease_evidence,
+            Utf8Path::new(deleting_name),
+        )?);
     }
     Ok(ClaimResult::Claimed)
 }
@@ -5691,9 +5969,11 @@ fn reopen_locked_lease(
     path: &Utf8Path,
 ) -> Result<File, WorkspaceError> {
     let lease_path = path.join(LEASE_FILE);
-    let lease =
-        super::root::windows::open_regular_file_pinned(dir, std::ffi::OsStr::new(LEASE_FILE))
-            .map_err(|error| WorkspaceError::io("reopen workspace lease", &lease_path, error))?;
+    let lease = super::root::windows::open_regular_file_for_delete_pinned(
+        dir,
+        std::ffi::OsStr::new(LEASE_FILE),
+    )
+    .map_err(|error| WorkspaceError::io("reopen workspace lease", &lease_path, error))?;
     verify_current_user_owned_file(&lease)
         .map_err(|error| WorkspaceError::io("verify workspace lease owner", &lease_path, error))?;
     if file_identity(&lease)
@@ -5916,6 +6196,34 @@ struct RemovalSlice {
     removed: u64,
 }
 
+#[derive(Default)]
+struct CleanupCapabilities {
+    lease_guard: Option<File>,
+    #[cfg(windows)]
+    root_pin: Option<cap_std::fs::Dir>,
+    #[cfg(windows)]
+    exact_root: bool,
+}
+
+impl CleanupCapabilities {
+    #[cfg(unix)]
+    fn with_lease(lease_guard: Option<File>) -> Self {
+        Self {
+            lease_guard,
+            ..Self::default()
+        }
+    }
+
+    #[cfg(windows)]
+    fn claimed(root_pin: cap_std::fs::Dir, lease_guard: File) -> Self {
+        Self {
+            lease_guard: Some(lease_guard),
+            root_pin: Some(root_pin),
+            exact_root: true,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 enum CleanupEntry {
     Directory((u64, u64)),
@@ -5957,11 +6265,12 @@ fn inspect_cleanup_entry(
     }
 }
 
-fn remove_claimed_tree_slice(
+fn remove_claimed_tree_slice_with_capabilities(
     parent: &cap_std::fs::Dir,
     name: &str,
     expected_root_identity: Option<(u64, u64)>,
     budget: Duration,
+    capabilities: &mut CleanupCapabilities,
 ) -> std::io::Result<RemovalSlice> {
     let started = std::time::Instant::now();
     let slice_budget = budget.min(MAX_CLEANUP_SLICE_DURATION);
@@ -5983,13 +6292,14 @@ fn remove_claimed_tree_slice(
                 removed,
             });
         }
-        let progress = match remove_one_claimed_entry(
+        let progress = match remove_one_claimed_entry_with_capabilities(
             parent,
             name,
             expected_root_identity,
             u64::try_from(MAX_CLEANUP_SLICE_ENTRIES).expect("fixed limit") - examined,
             started,
             slice_budget,
+            capabilities,
         ) {
             Ok(progress) => progress,
             Err(error) if error.kind() == std::io::ErrorKind::TimedOut && removed != 0 => {
@@ -6017,6 +6327,7 @@ fn remove_claimed_tree_slice(
     }
 }
 
+#[cfg(all(test, unix))]
 #[allow(
     clippy::too_many_lines,
     reason = "single-step deletion keeps every identity and cooperative-bound check adjacent"
@@ -6029,12 +6340,37 @@ fn remove_one_claimed_entry(
     started: std::time::Instant,
     budget: Duration,
 ) -> std::io::Result<RemovalSlice> {
-    let mut current = match open_cleanup_directory(
+    remove_one_claimed_entry_with_capabilities(
+        parent,
+        root_name,
+        expected_root_identity,
+        max_examined,
+        started,
+        budget,
+        &mut CleanupCapabilities::default(),
+    )
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "single-step deletion keeps every identity and cooperative-bound check adjacent"
+)]
+fn remove_one_claimed_entry_with_capabilities(
+    parent: &cap_std::fs::Dir,
+    root_name: &str,
+    expected_root_identity: Option<(u64, u64)>,
+    max_examined: u64,
+    started: std::time::Instant,
+    budget: Duration,
+    capabilities: &mut CleanupCapabilities,
+) -> std::io::Result<RemovalSlice> {
+    let mut current = match open_cleanup_root(
         parent,
         std::ffi::OsStr::new(root_name),
         expected_root_identity,
         started,
         budget,
+        capabilities,
     ) {
         Ok(root) => root,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -6092,7 +6428,8 @@ fn remove_one_claimed_entry(
         ensure_cleanup_deadline(started, budget)?;
         let Some(entry) = entry else {
             let Some((leaf_name, leaf_identity)) = components.pop() else {
-                let marker_progress = remove_root_control_markers(&current, started, budget)?;
+                let marker_progress =
+                    remove_root_control_markers(&current, started, budget, capabilities)?;
                 if marker_progress.deferred {
                     if marker_progress.removed == 0 {
                         return Err(std::io::Error::new(
@@ -6114,13 +6451,14 @@ fn remove_one_claimed_entry(
                     });
                 }
                 drop(current);
-                remove_cleanup_directory_checked(
+                remove_cleanup_root_checked(
                     parent,
                     std::ffi::OsStr::new(root_name),
                     Utf8Path::new(root_name),
                     root_identity,
                     started,
                     budget,
+                    capabilities,
                 )?;
                 return Ok(RemovalSlice {
                     complete: true,
@@ -6210,6 +6548,7 @@ fn remove_root_control_markers(
     root: &cap_std::fs::Dir,
     started: std::time::Instant,
     budget: Duration,
+    capabilities: &mut CleanupCapabilities,
 ) -> std::io::Result<ControlMarkerProgress> {
     let mut removed = 0_u64;
     for marker in [RETAIN_FILE, HEARTBEAT_FILE, CLEANUP_READY_FILE, LEASE_FILE] {
@@ -6220,9 +6559,21 @@ fn remove_root_control_markers(
             });
         }
         let marker_name = std::ffi::OsStr::new(marker);
+        #[cfg(windows)]
+        if marker == LEASE_FILE && capabilities.exact_root {
+            if remove_pinned_cleanup_lease(root, started, budget, capabilities)? {
+                removed = removed.saturating_add(1);
+            }
+            continue;
+        }
         let marker_identity = match cleanup_entry_identity_if_owned(root, marker_name) {
             Ok(identity) => identity,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                if marker == LEASE_FILE {
+                    drop(capabilities.lease_guard.take());
+                }
+                continue;
+            }
             Err(error) => return Err(error),
         };
         match remove_cleanup_entry_checked(
@@ -6233,8 +6584,17 @@ fn remove_root_control_markers(
             started,
             budget,
         ) {
-            Ok(()) => removed = removed.saturating_add(1),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Ok(()) => {
+                if marker == LEASE_FILE {
+                    drop(capabilities.lease_guard.take());
+                }
+                removed = removed.saturating_add(1);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                if marker == LEASE_FILE {
+                    drop(capabilities.lease_guard.take());
+                }
+            }
             Err(error) => return Err(error),
         }
     }
@@ -6242,6 +6602,58 @@ fn remove_root_control_markers(
         removed,
         deferred: false,
     })
+}
+
+#[cfg(windows)]
+fn remove_pinned_cleanup_lease(
+    root: &cap_std::fs::Dir,
+    started: std::time::Instant,
+    budget: Duration,
+    capabilities: &mut CleanupCapabilities,
+) -> std::io::Result<bool> {
+    ensure_cleanup_deadline(started, budget)?;
+    let canonical_identity =
+        match cleanup_entry_identity_if_owned(root, std::ffi::OsStr::new(LEASE_FILE)) {
+            Ok(identity) => identity,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                drop(capabilities.lease_guard.take());
+                return Ok(false);
+            }
+            Err(error) => return Err(error),
+        };
+    let lease = capabilities.lease_guard.take().ok_or_else(|| {
+        std::io::Error::other(
+            "claimed cleanup lease remains after its exact deletion capability was consumed",
+        )
+    })?;
+    let validation = (|| {
+        ensure_cleanup_deadline(started, budget)?;
+        verify_current_user_owned_file(&lease)?;
+        if file_identity(&lease)? != canonical_identity {
+            return Err(std::io::Error::other(
+                "claimed cleanup lease capability changed identity before removal",
+            ));
+        }
+        Ok(())
+    })();
+    if let Err(error) = validation {
+        capabilities.lease_guard = Some(lease);
+        return Err(error);
+    }
+    if let Err(error) = super::root::windows::remove_open_entry_io_with_guard(&lease, &|| {
+        ensure_cleanup_deadline(started, budget)
+    }) {
+        capabilities.lease_guard = Some(lease);
+        return Err(error);
+    }
+    drop(lease);
+    match root.symlink_metadata(LEASE_FILE) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(true),
+        Err(error) => Err(error),
+        Ok(_) => Err(std::io::Error::other(
+            "claimed cleanup lease remains after exact-handle removal",
+        )),
+    }
 }
 
 #[cfg(unix)]
@@ -6332,6 +6744,46 @@ fn reopen_cleanup_parent(
         current = child;
     }
     Ok(current)
+}
+
+fn open_cleanup_root(
+    parent: &cap_std::fs::Dir,
+    name: &std::ffi::OsStr,
+    expected_identity: Option<(u64, u64)>,
+    started: std::time::Instant,
+    budget: Duration,
+    capabilities: &CleanupCapabilities,
+) -> std::io::Result<cap_std::fs::Dir> {
+    #[cfg(windows)]
+    if capabilities.exact_root {
+        let root = match capabilities.root_pin.as_ref() {
+            Some(root) => root,
+            None => {
+                return match parent.symlink_metadata(name) {
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => Err(error),
+                    Err(error) => Err(error),
+                    Ok(_) => Err(std::io::Error::other(
+                        "claimed cleanup root remains after its exact deletion capability was consumed",
+                    )),
+                };
+            }
+        };
+        ensure_cleanup_deadline(started, budget)?;
+        let owner_verifier = root.try_clone()?.into_std_file();
+        windows::verify_current_user_owner(&owner_verifier)?;
+        drop(owner_verifier);
+        let identity = directory_identity(root)?;
+        if expected_identity.is_some_and(|expected| expected != identity) {
+            return Err(std::io::Error::other(
+                "claimed cleanup root capability changed identity",
+            ));
+        }
+        ensure_cleanup_deadline(started, budget)?;
+        return root.try_clone();
+    }
+    #[cfg(unix)]
+    let _ = capabilities;
+    open_cleanup_directory(parent, name, expected_identity, started, budget)
 }
 
 #[cfg(unix)]
@@ -6594,6 +7046,70 @@ fn remove_cleanup_entry_checked(
     )
 }
 
+fn remove_cleanup_root_checked(
+    parent: &cap_std::fs::Dir,
+    name: &std::ffi::OsStr,
+    logical_path: &Utf8Path,
+    expected_identity: (u64, u64),
+    started: std::time::Instant,
+    budget: Duration,
+    capabilities: &mut CleanupCapabilities,
+) -> std::io::Result<()> {
+    #[cfg(windows)]
+    if capabilities.exact_root {
+        ensure_cleanup_deadline(started, budget)?;
+        let root = capabilities.root_pin.take().ok_or_else(|| {
+            std::io::Error::other("claimed cleanup root deletion capability is unavailable")
+        })?;
+        let owner_verification = root
+            .try_clone()
+            .map(cap_std::fs::Dir::into_std_file)
+            .and_then(|file| windows::verify_current_user_owner(&file));
+        if let Err(error) = owner_verification {
+            capabilities.root_pin = Some(root);
+            return Err(error);
+        }
+        match directory_identity(&root) {
+            Ok(identity) if identity == expected_identity => {}
+            Ok(_) => {
+                capabilities.root_pin = Some(root);
+                return Err(std::io::Error::other(
+                    "claimed cleanup root capability changed identity before removal",
+                ));
+            }
+            Err(error) => {
+                capabilities.root_pin = Some(root);
+                return Err(error);
+            }
+        }
+        let root = root.into_std_file();
+        if let Err(error) = super::root::windows::remove_open_entry_io_with_guard(&root, &|| {
+            ensure_cleanup_deadline(started, budget)
+        }) {
+            capabilities.root_pin = Some(cap_std::fs::Dir::from_std_file(root));
+            return Err(error);
+        }
+        drop(root);
+        return match parent.symlink_metadata(name) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error),
+            Ok(_) => Err(std::io::Error::other(
+                "claimed cleanup root remains after exact-handle removal",
+            )),
+        };
+    }
+    #[cfg(unix)]
+    let _ = capabilities;
+    remove_cleanup_directory_checked(
+        parent,
+        name,
+        logical_path,
+        expected_identity,
+        started,
+        budget,
+    )
+}
+
 fn metadata_identity(metadata: &cap_std::fs::Metadata) -> (u64, u64) {
     use cap_fs_ext::MetadataExt;
 
@@ -6654,6 +7170,22 @@ fn remove_claimed_tree_bounded(
     expected_root_identity: Option<(u64, u64)>,
     budget: Duration,
 ) -> std::io::Result<RemovalSlice> {
+    remove_claimed_tree_bounded_with_capabilities(
+        parent,
+        name,
+        expected_root_identity,
+        budget,
+        &mut CleanupCapabilities::default(),
+    )
+}
+
+fn remove_claimed_tree_bounded_with_capabilities(
+    parent: &cap_std::fs::Dir,
+    name: &str,
+    expected_root_identity: Option<(u64, u64)>,
+    budget: Duration,
+    capabilities: &mut CleanupCapabilities,
+) -> std::io::Result<RemovalSlice> {
     let started = std::time::Instant::now();
     let mut total = RemovalSlice {
         complete: false,
@@ -6661,11 +7193,12 @@ fn remove_claimed_tree_bounded(
         removed: 0,
     };
     while started.elapsed() < budget {
-        let slice = remove_claimed_tree_slice(
+        let slice = remove_claimed_tree_slice_with_capabilities(
             parent,
             name,
             expected_root_identity,
             budget.saturating_sub(started.elapsed()),
+            capabilities,
         )?;
         total.examined = total.examined.saturating_add(slice.examined);
         total.removed = total.removed.saturating_add(slice.removed);
