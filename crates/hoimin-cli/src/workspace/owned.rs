@@ -2166,6 +2166,9 @@ mod tests {
         let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
         let active = format!("{}{}", super::ACTIVE_PREFIX, root.run_id);
         let staging = format!("{}{}", super::STAGING_PREFIX, root.run_id);
+        // A crash closes the process-owned heartbeat capability before the janitor observes
+        // the lease-only staging state.
+        drop(root.heartbeat.lock().unwrap().take());
         root.dir.remove_file(super::HEARTBEAT_FILE).unwrap();
         drop(root);
         coordinator
