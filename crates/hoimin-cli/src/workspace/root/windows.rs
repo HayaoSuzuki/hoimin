@@ -222,7 +222,7 @@ pub(crate) fn remove_open_entry_io_with_guard(
         before_next_operation()?;
     }
     before_next_operation()?;
-    mark_delete_by_handle(&file)
+    mark_delete_by_handle(file)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

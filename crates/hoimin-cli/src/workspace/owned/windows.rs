@@ -654,7 +654,7 @@ fn error_after_created_rollback_with(
 
 #[allow(dead_code)]
 fn error_after_created_rollback(file: &File, primary: io::Error) -> io::Error {
-    error_after_created_rollback_with(file, primary, |file| rollback_created(file))
+    error_after_created_rollback_with(file, primary, rollback_created)
 }
 
 fn verify_owner(file: &(impl AsRawHandle + ?Sized), token: &UserToken) -> io::Result<()> {

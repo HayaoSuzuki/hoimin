@@ -2692,7 +2692,7 @@ fn rollback_new_owned_directory(
 fn append_workspace_new_directory_rollback_error(
     primary: WorkspaceError,
     fallback_path: &Utf8Path,
-    secondary: std::io::Error,
+    secondary: &std::io::Error,
 ) -> WorkspaceError {
     match primary {
         WorkspaceError::Io {
@@ -2726,7 +2726,7 @@ fn error_after_identity_bound_new_directory_rollback(
         std::time::Instant::now,
         |remaining| rollback_new_owned_directory(parent, name, expected_identity, remaining),
         |primary, secondary| {
-            append_workspace_new_directory_rollback_error(primary, path, secondary)
+            append_workspace_new_directory_rollback_error(primary, path, &secondary)
         },
     )
 }
@@ -2748,7 +2748,7 @@ fn error_after_unpublished_directory_failure(
             std::time::Instant::now,
             |_remaining| windows::rollback_created(&directory),
             |primary, secondary| {
-                append_workspace_new_directory_rollback_error(primary, path, secondary)
+                append_workspace_new_directory_rollback_error(primary, path, &secondary)
             },
         );
     }
@@ -2765,7 +2765,7 @@ fn error_after_unpublished_directory_failure(
             None => Err(created_directory_identity_unavailable()),
         },
         |primary, secondary| {
-            append_workspace_new_directory_rollback_error(primary, path, secondary)
+            append_workspace_new_directory_rollback_error(primary, path, &secondary)
         },
     )
 }
@@ -4200,6 +4200,10 @@ impl ManagedRunRoot {
         self.create_child_with_hooks(prefix, creation_hook, &directory_identity)
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "exact child capability validation and identity-bound rollback ordering stay adjacent"
+    )]
     fn create_child_with_hooks(
         &self,
         prefix: &str,
@@ -4416,6 +4420,10 @@ impl ManagedRunRoot {
             .map_err(|error| WorkspaceError::io("refresh workspace heartbeat", &self.path, error))
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "exact root and lease handoff, lifecycle recording, and error restoration stay adjacent"
+    )]
     fn claim_with_handle_handoff(
         &self,
         parent: &cap_std::fs::Dir,
@@ -4446,24 +4454,18 @@ impl ManagedRunRoot {
             }
         };
         #[cfg(windows)]
-        let rename_slot = match self.rename_handle.lock() {
-            Ok(slot) => slot,
-            Err(_) => {
-                *lease_slot = lease.take().map(Arc::new);
-                return Err(WorkspaceError::StatePoisoned);
-            }
+        let Ok(rename_slot) = self.rename_handle.lock() else {
+            *lease_slot = lease.take().map(Arc::new);
+            return Err(WorkspaceError::StatePoisoned);
         };
         #[cfg(windows)]
-        let rename_handle = match rename_slot.as_ref() {
-            Some(handle) => handle,
-            None => {
-                *lease_slot = lease.take().map(Arc::new);
-                return Err(WorkspaceError::io(
-                    "claim managed workspace",
-                    &self.path,
-                    "managed root deletion capability is unavailable",
-                ));
-            }
+        let Some(rename_handle) = rename_slot.as_ref() else {
+            *lease_slot = lease.take().map(Arc::new);
+            return Err(WorkspaceError::io(
+                "claim managed workspace",
+                &self.path,
+                "managed root deletion capability is unavailable",
+            ));
         };
         #[cfg(windows)]
         let Ok(mut heartbeat_slot) = self.heartbeat.lock() else {
@@ -4605,12 +4607,9 @@ impl ManagedRunRoot {
         };
         #[cfg(windows)]
         {
-            let mut root_slot = match self.rename_handle.lock() {
-                Ok(root) => root,
-                Err(_) => {
-                    *lease_slot = lease_guard.map(Arc::new);
-                    return Err(WorkspaceError::StatePoisoned);
-                }
+            let Ok(mut root_slot) = self.rename_handle.lock() else {
+                *lease_slot = lease_guard.map(Arc::new);
+                return Err(WorkspaceError::StatePoisoned);
             };
             let Some(root_pin) = root_slot.take() else {
                 *lease_slot = lease_guard.map(Arc::new);
@@ -4635,7 +4634,7 @@ impl ManagedRunRoot {
                     exact_root: true,
                 });
             };
-            return Ok(CleanupCapabilities::claimed(root_pin, lease_guard));
+            Ok(CleanupCapabilities::claimed(root_pin, lease_guard))
         }
         #[cfg(unix)]
         {
@@ -5834,7 +5833,11 @@ fn claim_managed_child(
     }
     before_next_operation()?;
     drop(candidate_lease);
-    if claimed_name != deleting_name {
+    if claimed_name == deleting_name {
+        on_deleting();
+        #[cfg(windows)]
+        drop(expected_lease.take());
+    } else {
         before_next_operation()?;
         #[cfg(windows)]
         drop(expected_lease.take());
@@ -5893,10 +5896,6 @@ fn claim_managed_child(
             }
         }
         on_deleting();
-    } else {
-        on_deleting();
-        #[cfg(windows)]
-        drop(expected_lease.take());
     }
     #[cfg(windows)]
     {
@@ -6823,17 +6822,14 @@ fn open_cleanup_root(
 ) -> std::io::Result<cap_std::fs::Dir> {
     #[cfg(windows)]
     if capabilities.exact_root {
-        let root = match capabilities.root_pin.as_ref() {
-            Some(root) => root,
-            None => {
-                return match parent.symlink_metadata(name) {
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => Err(error),
-                    Err(error) => Err(error),
-                    Ok(_) => Err(std::io::Error::other(
-                        "claimed cleanup root remains after its exact deletion capability was consumed",
-                    )),
-                };
-            }
+        let Some(root) = capabilities.root_pin.as_ref() else {
+            return match parent.symlink_metadata(name) {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Err(error),
+                Err(error) => Err(error),
+                Ok(_) => Err(std::io::Error::other(
+                    "claimed cleanup root remains after its exact deletion capability was consumed",
+                )),
+            };
         };
         ensure_cleanup_deadline(started, budget)?;
         let owner_verifier = root.try_clone()?.into_std_file();
