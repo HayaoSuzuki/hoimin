@@ -376,13 +376,40 @@ fn secure_object(expected: &File, path: &Utf8Path, directory: bool) -> io::Resul
     }
 
     let token = UserToken::open()?;
-    verify_owner(&secured, &token)?;
     let expected_descriptor = SecurityDescriptor::for_user(&token, directory)?;
     let expected_dacl = expected_descriptor.dacl()?;
-    // SAFETY: secured has READ_CONTROL|WRITE_DAC and expected_dacl belongs to a live descriptor.
+    repair_existing_dacl(&secured, &token, expected_dacl)?;
+    if file_identity(&secured)? != file_identity(expected)? {
+        return Err(io::Error::other(
+            "managed object identity changed while securing it",
+        ));
+    }
+    Ok(())
+}
+
+fn repair_existing_policy(
+    verify: impl FnOnce() -> io::Result<()>,
+    repair: impl FnOnce() -> io::Result<()>,
+) -> io::Result<()> {
+    verify()?;
+    repair()
+}
+
+fn repair_existing_dacl(file: &File, token: &UserToken, expected_dacl: *mut ACL) -> io::Result<()> {
+    repair_existing_policy(
+        || verify_owner(file, token),
+        || {
+            set_protected_dacl(file, expected_dacl)?;
+            verify_security(file, token, expected_dacl)
+        },
+    )
+}
+
+fn set_protected_dacl(file: &File, expected_dacl: *mut ACL) -> io::Result<()> {
+    // SAFETY: file has READ_CONTROL|WRITE_DAC and expected_dacl belongs to a live descriptor.
     let status = unsafe {
         SetSecurityInfo(
-            secured.as_raw_handle() as HANDLE,
+            file.as_raw_handle() as HANDLE,
             SE_FILE_OBJECT,
             DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
             ptr::null_mut(),
@@ -391,18 +418,13 @@ fn secure_object(expected: &File, path: &Utf8Path, directory: bool) -> io::Resul
             ptr::null(),
         )
     };
-    if status != ERROR_SUCCESS {
-        return Err(io::Error::from_raw_os_error(
+    if status == ERROR_SUCCESS {
+        Ok(())
+    } else {
+        Err(io::Error::from_raw_os_error(
             i32::try_from(status).unwrap_or(i32::MAX),
-        ));
+        ))
     }
-    verify_security(&secured, &token, expected_dacl)?;
-    if file_identity(&secured)? != file_identity(expected)? {
-        return Err(io::Error::other(
-            "managed object identity changed while securing it",
-        ));
-    }
-    Ok(())
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -503,6 +525,8 @@ fn create_relative_managed_with_verifier(
     kind: ManagedEntryKind,
     verifier: impl FnOnce(&File, &UserToken, *mut ACL) -> io::Result<()>,
 ) -> io::Result<File> {
+    const FILE_CREATED_INFORMATION: usize = 2;
+
     let token = UserToken::open()?;
     let directory = matches!(kind, ManagedEntryKind::Directory);
     let descriptor = SecurityDescriptor::for_user(&token, directory)?;
@@ -572,7 +596,6 @@ fn create_relative_managed_with_verifier(
     }
     // SAFETY: successful NtCreateFile returns one newly owned kernel handle.
     let file = unsafe { File::from_raw_handle(handle.cast()) };
-    const FILE_CREATED_INFORMATION: usize = 2;
     if io_status.Information != FILE_CREATED_INFORMATION {
         let primary = io::Error::new(
             io::ErrorKind::InvalidData,
@@ -865,7 +888,7 @@ mod tests {
             OsString::from("NUL.txt"),
             OsString::from("COM¹"),
             OsString::from("CONOUT$.log"),
-            OsString::from_wide(&[b'a' as u16, 0, b'b' as u16]),
+            OsString::from_wide(&[u16::from(b'a'), 0, u16::from(b'b')]),
         ];
 
         for name in invalid {
@@ -875,6 +898,57 @@ mod tests {
                 "{name:?}",
             );
         }
+    }
+
+    #[test]
+    fn relative_managed_wrappers_reject_invalid_names_without_changing_real_parent() {
+        let temporary = tempfile::tempdir().unwrap();
+        std::fs::write(temporary.path().join("sentinel"), b"unchanged").unwrap();
+        let parent =
+            cap_std::fs::Dir::open_ambient_dir(temporary.path(), cap_std::ambient_authority())
+                .unwrap();
+        let before = std::fs::read_dir(temporary.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+
+        for name in [
+            OsString::from(""),
+            OsString::from(".."),
+            OsString::from("a/b"),
+            OsString::from("a\\b"),
+            OsString::from("name:stream"),
+            OsString::from("NUL.txt"),
+        ] {
+            assert_eq!(
+                super::create_relative_managed_directory(&parent, &name)
+                    .unwrap_err()
+                    .kind(),
+                io::ErrorKind::InvalidInput,
+                "directory wrapper accepted {name:?}",
+            );
+            assert_eq!(
+                super::create_relative_managed_file(
+                    &parent,
+                    &name,
+                    super::ManagedFileAccess::Write,
+                )
+                .unwrap_err()
+                .kind(),
+                io::ErrorKind::InvalidInput,
+                "file wrapper accepted {name:?}",
+            );
+        }
+
+        let after = std::fs::read_dir(temporary.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+        assert_eq!(after, before);
+        assert_eq!(
+            std::fs::read(temporary.path().join("sentinel")).unwrap(),
+            b"unchanged",
+        );
     }
 
     #[test]
@@ -917,6 +991,25 @@ mod tests {
             error.to_string(),
             "primary verification failure; secondary created-object rollback failure: secondary rollback failure",
         );
+    }
+
+    #[test]
+    fn existing_owner_mismatch_prevents_dacl_repair() {
+        let mut dacl_writes = 0;
+        let result = super::repair_existing_policy(
+            || {
+                Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "owner mismatch",
+                ))
+            },
+            || {
+                dacl_writes += 1;
+                Ok(())
+            },
+        );
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+        assert_eq!(dacl_writes, 0);
     }
 
     #[test]

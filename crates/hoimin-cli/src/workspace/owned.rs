@@ -4,6 +4,8 @@ mod tests {
     #[cfg(unix)]
     use camino::Utf8PathBuf;
 
+    #[cfg(windows)]
+    use super::{CLEANUP_READY_FILE, RETAIN_FILE};
     use super::{
         COORDINATOR_FILE, MANAGED_DIR, MAX_MANAGED_CHILDREN, ManagedRootCoordinator,
         ManagedRunRoot, OwnerKind, ensure_direct_child_capacity,
@@ -32,6 +34,57 @@ mod tests {
             std::io::ErrorKind::PermissionDenied,
             "hard lock failure",
         )));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn every_windows_protocol_object_is_owned_by_the_token_user() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        super::windows::verify_current_user_owner(&coordinator.file).unwrap();
+
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        super::windows::verify_current_user_owner(root.lease.lock().unwrap().as_deref().unwrap())
+            .unwrap();
+        super::windows::verify_current_user_owner(root.heartbeat.lock().unwrap().as_ref().unwrap())
+            .unwrap();
+
+        let child = root.create_child("owner-check-").unwrap();
+        let child_file = child
+            .dir
+            .as_ref()
+            .unwrap()
+            .try_clone()
+            .unwrap()
+            .into_std_file();
+        super::windows::verify_current_user_owner(&child_file).unwrap();
+
+        root.retain().unwrap();
+        let retained = crate::workspace::root::windows::open_regular_file_shared(
+            &root.dir,
+            std::ffi::OsStr::new(RETAIN_FILE),
+        )
+        .unwrap();
+        super::windows::verify_current_user_owner(&retained).unwrap();
+
+        {
+            let lease = root.lease.lock().unwrap();
+            super::write_cleanup_ready_marker(
+                &root.dir,
+                &root.path,
+                &root.run_id,
+                root.owner,
+                lease.as_deref().unwrap(),
+            )
+            .unwrap();
+        }
+        let cleanup_ready = crate::workspace::root::windows::open_regular_file_shared(
+            &root.dir,
+            std::ffi::OsStr::new(CLEANUP_READY_FILE),
+        )
+        .unwrap();
+        super::windows::verify_current_user_owner(&cleanup_ready).unwrap();
     }
 
     #[cfg(target_os = "linux")]
@@ -393,6 +446,78 @@ mod tests {
                 crc32fast::hash(&slot[..508])
             );
         }
+    }
+
+    #[test]
+    fn owned_create_helpers_are_exclusive_and_apply_platform_policy() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent_dir =
+            cap_std::fs::Dir::open_ambient_dir(parent.path(), cap_std::ambient_authority())
+                .unwrap();
+
+        let directory = super::create_owned_directory(&parent_dir, "owned-directory").unwrap();
+        let file =
+            super::create_owned_file(&parent_dir, "owned-file", super::OwnedFileAccess::ReadWrite)
+                .unwrap();
+        assert_eq!(
+            super::create_owned_directory(&parent_dir, "owned-directory")
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::AlreadyExists,
+        );
+        assert_eq!(
+            super::create_owned_file(&parent_dir, "owned-file", super::OwnedFileAccess::Write,)
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::AlreadyExists,
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            assert_eq!(
+                directory.metadata(".").unwrap().permissions().mode() & 0o777,
+                0o700,
+            );
+            assert_eq!(file.metadata().unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        #[cfg(windows)]
+        {
+            let directory = directory.into_std_file();
+            super::windows::verify_current_user_owner(&directory).unwrap();
+            super::windows::verify_current_user_owner(&file).unwrap();
+        }
+    }
+
+    #[test]
+    fn initialize_new_coordinator_writes_valid_unlocked_fixed_layout() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent_path = Utf8Path::from_path(parent.path()).unwrap();
+        let parent_dir =
+            cap_std::fs::Dir::open_ambient_dir(parent.path(), cap_std::ambient_authority())
+                .unwrap();
+        let coordinator_path = parent_path.join("new-coordinator");
+        let file = super::create_owned_file(
+            &parent_dir,
+            "new-coordinator",
+            super::OwnedFileAccess::ReadWrite,
+        )
+        .unwrap();
+        let identity = super::file_identity(&file).unwrap();
+
+        let file = super::initialize_new_coordinator(
+            &parent_dir,
+            file,
+            identity,
+            &coordinator_path,
+            std::time::Instant::now() + std::time::Duration::from_secs(5),
+        )
+        .unwrap();
+
+        assert_eq!(file.metadata().unwrap().len(), 1_025);
+        fs2::FileExt::try_lock_exclusive(&file).unwrap();
+        fs2::FileExt::unlock(&file).unwrap();
     }
 
     #[cfg(unix)]
@@ -1757,6 +1882,62 @@ fn create_managed_root_entry(_parent: &cap_std::fs::Dir, path: &Utf8Path) -> std
     windows::create_managed_directory(path)
 }
 
+#[derive(Clone, Copy)]
+enum OwnedFileAccess {
+    ReadWrite,
+    Write,
+}
+
+#[cfg(unix)]
+fn create_owned_directory(
+    parent: &cap_std::fs::Dir,
+    name: &str,
+) -> std::io::Result<cap_std::fs::Dir> {
+    rustix::fs::mkdirat(parent, name, rustix::fs::Mode::from_raw_mode(0o700))
+        .map_err(std::io::Error::from)?;
+    open_owned_directory(parent, name)
+}
+
+#[cfg(windows)]
+fn create_owned_directory(
+    parent: &cap_std::fs::Dir,
+    name: &str,
+) -> std::io::Result<cap_std::fs::Dir> {
+    let file = windows::create_relative_managed_directory(parent, std::ffi::OsStr::new(name))?;
+    Ok(cap_std::fs::Dir::from_std_file(file))
+}
+
+#[cfg(unix)]
+fn create_owned_file(
+    parent: &cap_std::fs::Dir,
+    name: &str,
+    access: OwnedFileAccess,
+) -> std::io::Result<File> {
+    let mut options = cap_std::fs::OpenOptions::new();
+    options.create_new(true).write(true);
+    if matches!(access, OwnedFileAccess::ReadWrite) {
+        options.read(true);
+    }
+    configure_no_follow(&mut options);
+    configure_secure_create(&mut options);
+    parent
+        .open_with(name, &options)
+        .map(cap_std::fs::File::into_std)
+}
+
+#[cfg(windows)]
+fn create_owned_file(
+    parent: &cap_std::fs::Dir,
+    name: &str,
+    access: OwnedFileAccess,
+) -> std::io::Result<File> {
+    let access = match access {
+        OwnedFileAccess::ReadWrite => windows::ManagedFileAccess::ReadWrite,
+        OwnedFileAccess::Write => windows::ManagedFileAccess::Write,
+    };
+    windows::create_relative_managed_file(parent, std::ffi::OsStr::new(name), access)
+}
+
 #[cfg(target_os = "linux")]
 fn open_owned_directory(
     parent: &cap_std::fs::Dir,
@@ -1946,53 +2127,13 @@ fn initialize_coordinator(
     deadline: std::time::Instant,
 ) -> Result<File, WorkspaceError> {
     let coordinator_path = managed_path.join(COORDINATOR_FILE);
-    let mut create = cap_std::fs::OpenOptions::new();
-    create.create_new(true).read(true).write(true);
-    configure_secure_create(&mut create);
     ensure_bootstrap_deadline(deadline, &coordinator_path, "create coordinator")?;
-    match dir.open_with(COORDINATOR_FILE, &create) {
+    match create_owned_file(dir, COORDINATOR_FILE, OwnedFileAccess::ReadWrite) {
         Ok(file) => {
-            let mut file = file.into_std();
             let identity = file_identity(&file).map_err(|error| {
                 WorkspaceError::io("identify new coordinator", &coordinator_path, error)
             })?;
-            let initialized = (|| {
-                ensure_bootstrap_deadline(deadline, &coordinator_path, "create coordinator")?;
-                lock_file_until(&file, deadline, &coordinator_path)?;
-                ensure_bootstrap_deadline(deadline, &coordinator_path, "initialize coordinator")?;
-                let bytes = initial_coordinator_bytes();
-                file.write_all(&bytes).map_err(|error| {
-                    WorkspaceError::io("initialize coordinator", &coordinator_path, error)
-                })?;
-                ensure_bootstrap_deadline(deadline, &coordinator_path, "initialize coordinator")?;
-                file.sync_all().map_err(|error| {
-                    WorkspaceError::io("flush coordinator", &coordinator_path, error)
-                })?;
-                ensure_bootstrap_deadline(deadline, &coordinator_path, "flush coordinator")?;
-                secure_coordinator_file(&file, &coordinator_path)?;
-                ensure_bootstrap_deadline(deadline, &coordinator_path, "secure coordinator")?;
-                validate_coordinator_file(&mut file, &coordinator_path)?;
-                ensure_bootstrap_deadline(deadline, &coordinator_path, "validate coordinator")?;
-                FileExt::unlock(&file).map_err(|error| {
-                    WorkspaceError::io("unlock coordinator", &coordinator_path, error)
-                })?;
-                ensure_bootstrap_deadline(deadline, &coordinator_path, "unlock coordinator")
-            })();
-            match initialized {
-                Ok(()) => Ok(file),
-                Err(error) => {
-                    let _ = FileExt::unlock(&file);
-                    drop(file);
-                    if let Err(cleanup) = remove_new_coordinator_if_identity(dir, identity) {
-                        return Err(WorkspaceError::io(
-                            "rollback coordinator initialization",
-                            &coordinator_path,
-                            format!("{error}; rollback failed: {cleanup}"),
-                        ));
-                    }
-                    Err(error)
-                }
-            }
+            initialize_new_coordinator(dir, file, identity, &coordinator_path, deadline)
         }
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
             open_initialized_coordinator_until(dir, &coordinator_path, deadline)
@@ -2002,6 +2143,50 @@ fn initialize_coordinator(
             &coordinator_path,
             error,
         )),
+    }
+}
+
+fn initialize_new_coordinator(
+    dir: &cap_std::fs::Dir,
+    mut file: File,
+    identity: (u64, u64),
+    coordinator_path: &Utf8Path,
+    deadline: std::time::Instant,
+) -> Result<File, WorkspaceError> {
+    let initialized = (|| {
+        ensure_bootstrap_deadline(deadline, coordinator_path, "create coordinator")?;
+        lock_file_until(&file, deadline, coordinator_path)?;
+        ensure_bootstrap_deadline(deadline, coordinator_path, "initialize coordinator")?;
+        let bytes = initial_coordinator_bytes();
+        file.write_all(&bytes).map_err(|error| {
+            WorkspaceError::io("initialize coordinator", coordinator_path, error)
+        })?;
+        ensure_bootstrap_deadline(deadline, coordinator_path, "initialize coordinator")?;
+        file.sync_all()
+            .map_err(|error| WorkspaceError::io("flush coordinator", coordinator_path, error))?;
+        ensure_bootstrap_deadline(deadline, coordinator_path, "flush coordinator")?;
+        secure_coordinator_file(&file, coordinator_path)?;
+        ensure_bootstrap_deadline(deadline, coordinator_path, "secure coordinator")?;
+        validate_coordinator_file(&mut file, coordinator_path)?;
+        ensure_bootstrap_deadline(deadline, coordinator_path, "validate coordinator")?;
+        FileExt::unlock(&file)
+            .map_err(|error| WorkspaceError::io("unlock coordinator", coordinator_path, error))?;
+        ensure_bootstrap_deadline(deadline, coordinator_path, "unlock coordinator")
+    })();
+    match initialized {
+        Ok(()) => Ok(file),
+        Err(error) => {
+            let _ = FileExt::unlock(&file);
+            drop(file);
+            if let Err(cleanup) = remove_new_coordinator_if_identity(dir, identity) {
+                return Err(WorkspaceError::io(
+                    "rollback coordinator initialization",
+                    coordinator_path,
+                    format!("{error}; rollback failed: {cleanup}"),
+                ));
+            }
+            Err(error)
+        }
     }
 }
 
@@ -2195,9 +2380,6 @@ fn configure_secure_create(options: &mut cap_std::fs::OpenOptions) {
     use cap_std::fs::OpenOptionsExt;
     options.mode(0o600);
 }
-
-#[cfg(windows)]
-fn configure_secure_create(_options: &mut cap_std::fs::OpenOptions) {}
 
 #[cfg(windows)]
 fn configure_no_follow(options: &mut cap_std::fs::OpenOptions) {
@@ -2613,39 +2795,25 @@ impl ManagedRunRoot {
         )?;
         let run_id = uuid::Uuid::new_v4().to_string();
         let staging_name = format!("{STAGING_PREFIX}{run_id}");
-        coordinator
-            .dir
-            .create_dir(&staging_name)
-            .map_err(|error| WorkspaceError::io("create staging root", &coordinator.path, error))?;
         let staging_path = coordinator.path.join(&staging_name);
+        let staging_dir = create_owned_directory(&coordinator.dir, &staging_name)
+            .map_err(|error| WorkspaceError::io("create staging root", &coordinator.path, error))?;
         let mut staging_rollback = NewDirectoryRollback {
             parent: &coordinator.dir,
             name: &staging_name,
             expected_identity: None,
             armed: true,
         };
-        let staging_metadata = coordinator
-            .dir
-            .symlink_metadata(&staging_name)
-            .map_err(|error| WorkspaceError::io("inspect staging root", &staging_path, error))?;
-        if !staging_metadata.is_dir() || staging_metadata.file_type().is_symlink() {
-            return Err(WorkspaceError::InvalidPath { path: staging_path });
-        }
-        let staging_identity = metadata_identity(&staging_metadata);
+        let staging_identity = directory_identity(&staging_dir)
+            .map_err(|error| WorkspaceError::io("identify staging root", &staging_path, error))?;
         staging_rollback.expect_identity(staging_identity);
         publish_hook(PublishBoundary::StagingCreated)?;
         #[cfg(windows)]
-        let staging_rename_handle =
-            open_owned_directory_for_rename(&coordinator.dir, &staging_name).map_err(|error| {
-                WorkspaceError::io("open staging root for rename", &staging_path, error)
-            })?;
+        let staging_rename_handle = staging_dir;
         #[cfg(windows)]
         let staging_dir = staging_rename_handle.try_clone().map_err(|error| {
             WorkspaceError::io("clone staging root capability", &staging_path, error)
         })?;
-        #[cfg(unix)]
-        let staging_dir = open_owned_directory(&coordinator.dir, &staging_name)
-            .map_err(|error| WorkspaceError::io("open staging root", &staging_path, error))?;
         publish_hook(PublishBoundary::StagingOpened)?;
         let opened_staging_identity = directory_identity(&staging_dir)
             .map_err(|error| WorkspaceError::io("identify staging root", &staging_path, error))?;
@@ -2709,13 +2877,8 @@ impl ManagedRunRoot {
             owner,
         };
         let lease_path = staging_path.join(LEASE_FILE);
-        let mut lease_options = cap_std::fs::OpenOptions::new();
-        lease_options.create_new(true).read(true).write(true);
-        configure_no_follow(&mut lease_options);
-        let mut lease = staging_dir
-            .open_with(LEASE_FILE, &lease_options)
-            .map_err(|error| WorkspaceError::io("create lease marker", &lease_path, error))?
-            .into_std();
+        let mut lease = create_owned_file(staging_dir, LEASE_FILE, OwnedFileAccess::ReadWrite)
+            .map_err(|error| WorkspaceError::io("create lease marker", &lease_path, error))?;
         serde_json::to_writer(&mut lease, &marker)
             .map_err(|error| WorkspaceError::io("write lease marker", &lease_path, error))?;
         lease
@@ -2727,13 +2890,10 @@ impl ManagedRunRoot {
         FileExt::try_lock_exclusive(&lease)
             .map_err(|error| WorkspaceError::io("lock lease marker", &lease_path, error))?;
         let heartbeat_path = staging_path.join(HEARTBEAT_FILE);
-        let mut heartbeat_options = cap_std::fs::OpenOptions::new();
-        heartbeat_options.create_new(true).write(true);
-        configure_no_follow(&mut heartbeat_options);
-        let mut heartbeat = staging_dir
-            .open_with(HEARTBEAT_FILE, &heartbeat_options)
-            .map_err(|error| WorkspaceError::io("create heartbeat marker", &heartbeat_path, error))?
-            .into_std();
+        let mut heartbeat = create_owned_file(staging_dir, HEARTBEAT_FILE, OwnedFileAccess::Write)
+            .map_err(|error| {
+                WorkspaceError::io("create heartbeat marker", &heartbeat_path, error)
+            })?;
         serde_json::to_writer(&mut heartbeat, &marker).map_err(|error| {
             WorkspaceError::io("write heartbeat marker", &heartbeat_path, error)
         })?;
@@ -3043,16 +3203,18 @@ impl ManagedRunRoot {
             ensure_direct_child_capacity(child_count)?;
         }
         let name = format!("{prefix}{}", uuid::Uuid::new_v4());
-        self.dir
-            .create_dir(&name)
-            .map_err(|error| WorkspaceError::io("create managed child", &self.path, error))?;
         let path = self.path.join(&name);
+        let dir = create_owned_directory(&self.dir, &name)
+            .map_err(|error| WorkspaceError::io("create managed child", &self.path, error))?;
         let mut child_rollback = NewDirectoryRollback {
             parent: &self.dir,
             name: &name,
             expected_identity: None,
             armed: true,
         };
+        let child_identity = directory_identity(&dir)
+            .map_err(|error| WorkspaceError::io("identify managed child", &path, error))?;
+        child_rollback.expect_identity(child_identity);
         creation_hook(ChildCreationBoundary::Created)?;
         let child_metadata = self
             .dir
@@ -3061,10 +3223,9 @@ impl ManagedRunRoot {
         if !child_metadata.is_dir() || child_metadata.file_type().is_symlink() {
             return Err(WorkspaceError::InvalidPath { path });
         }
-        let child_identity = metadata_identity(&child_metadata);
-        child_rollback.expect_identity(child_identity);
-        let dir = open_owned_directory(&self.dir, &name)
-            .map_err(|error| WorkspaceError::io("open managed child", &path, error))?;
+        if metadata_identity(&child_metadata) != child_identity {
+            return Err(WorkspaceError::InvalidPath { path });
+        }
         creation_hook(ChildCreationBoundary::Opened)?;
         let opened_child_identity = directory_identity(&dir)
             .map_err(|error| WorkspaceError::io("identify managed child", &path, error))?;
@@ -3151,11 +3312,7 @@ impl ManagedRunRoot {
 
     fn write_json_marker(&self, name: &str, marker: &impl Serialize) -> Result<(), WorkspaceError> {
         let marker_path = self.path.join(name);
-        let mut options = cap_std::fs::OpenOptions::new();
-        options.create_new(true).write(true);
-        let mut file = self
-            .dir
-            .open_with(name, &options)
+        let mut file = create_owned_file(&self.dir, name, OwnedFileAccess::Write)
             .map_err(|error| WorkspaceError::io("create workspace marker", &marker_path, error))?;
         serde_json::to_writer(&mut file, &marker)
             .map_err(|error| WorkspaceError::io("write workspace marker", &marker_path, error))?;
@@ -4097,11 +4254,7 @@ fn write_cleanup_ready_marker_for_identity(
             ));
         }
     }
-    let mut options = cap_std::fs::OpenOptions::new();
-    options.create_new(true).write(true);
-    configure_no_follow(&mut options);
-    let mut file = dir
-        .open_with(CLEANUP_READY_FILE, &options)
+    let mut file = create_owned_file(dir, CLEANUP_READY_FILE, OwnedFileAccess::Write)
         .map_err(|error| WorkspaceError::io("create workspace marker", &marker_path, error))?;
     serde_json::to_writer(&mut file, &marker)
         .map_err(|error| WorkspaceError::io("write workspace marker", &marker_path, error))?;
