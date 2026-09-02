@@ -6142,6 +6142,7 @@ class _DeferredEmptyPendingCell:
         "filesystem",
         "removed_after",
         "primary_error",
+        "verification_error",
     )
 
     def __init__(self) -> None:
@@ -6160,6 +6161,7 @@ class _DeferredEmptyPendingCell:
         self.filesystem: FilesystemIdentity | None = None
         self.removed_after = 0
         self.primary_error: BaseException | None = None
+        self.verification_error: BaseException | None = None
 
     def clear(self) -> None:
         if self.owner is not None and self.owner.is_open:
@@ -6178,6 +6180,7 @@ class _DeferredEmptyPendingCell:
         self.filesystem = None
         self.removed_after = 0
         self.primary_error = None
+        self.verification_error = None
 
 
 class _DeferredEmptyReservation:
@@ -6306,15 +6309,52 @@ class _DeferredEmptyPendingRegistry:
             pending.clear()
 
     @staticmethod
-    def _deferred_record(cell: _DeferredEmptyPendingCell) -> ScratchCleanupRecord:
-        details = (
-            ()
-            if cell.primary_error is None
-            else (
-                _bounded_janitor_detail(
-                    _exception_detail(cell.primary_error)
-                ),
+    def _error_details(
+        primary_error: BaseException | None,
+        verification_error: BaseException | None,
+        terminal_detail: str | None = None,
+    ) -> tuple[str, ...]:
+        primary_detail = (
+            None
+            if primary_error is None
+            else _bounded_janitor_detail(_exception_detail(primary_error))
+        )
+        verification_detail = (
+            None
+            if verification_error is None
+            else _bounded_janitor_detail(
+                _exception_detail(verification_error)
             )
+        )
+        if verification_detail == primary_detail:
+            verification_detail = None
+        bounded_terminal = (
+            None
+            if terminal_detail is None
+            else _bounded_janitor_detail(terminal_detail)
+        )
+        if bounded_terminal in (primary_detail, verification_detail):
+            bounded_terminal = None
+        if primary_detail is None:
+            if verification_detail is None:
+                return () if bounded_terminal is None else (bounded_terminal,)
+            if bounded_terminal is None:
+                return (verification_detail,)
+            return (verification_detail, bounded_terminal)
+        if verification_detail is None:
+            if bounded_terminal is None:
+                return (primary_detail,)
+            return (primary_detail, bounded_terminal)
+        if bounded_terminal is None:
+            return (primary_detail, verification_detail)
+        return (primary_detail, verification_detail, bounded_terminal)
+
+    @classmethod
+    def _deferred_record(
+        cls, cell: _DeferredEmptyPendingCell
+    ) -> ScratchCleanupRecord:
+        details = cls._error_details(
+            cell.primary_error, cell.verification_error
         )
         return ScratchCleanupRecord(
             ScratchCleanupStatus.DEFERRED,
@@ -6335,6 +6375,18 @@ class _DeferredEmptyPendingRegistry:
                 raise RuntimeError("deferred empty evidence is unavailable")
             if cell.primary_error is None:
                 cell.primary_error = error
+
+    def set_verification_error(
+        self,
+        reservation: _DeferredEmptyReservation,
+        error: BaseException,
+    ) -> None:
+        with self._lock:
+            cell = self._matching_cell_locked(reservation)
+            if cell is None or not cell.active:
+                raise RuntimeError("deferred empty evidence is unavailable")
+            if cell.verification_error is None:
+                cell.verification_error = error
 
     def close_owner_retry(
         self, reservation: _DeferredEmptyReservation
@@ -6369,6 +6421,7 @@ class _DeferredEmptyPendingRegistry:
             removed_after = cell.removed_after
             managed_root = cell.managed_root
             primary_error = cell.primary_error
+            verification_error = cell.verification_error
         if identity is None or filesystem is None or managed_root is None:
             with self._lock:
                 current = self._matching_cell_locked(reservation)
@@ -6381,54 +6434,47 @@ class _DeferredEmptyPendingRegistry:
                 reservation, managed_root_capability, name
             )
             _check_deadline(deadline, "deferred empty pending absence")
-            primary_detail = (
-                None
-                if primary_error is None
-                else _bounded_janitor_detail(
-                    _exception_detail(primary_error)
-                )
-            )
             if remaining is None:
                 record = ScratchCleanupRecord(
                     ScratchCleanupStatus.CLEAN,
                     0,
                     removed_after,
-                    () if primary_detail is None else (primary_detail,),
+                    self._error_details(
+                        primary_error, verification_error
+                    ),
                 )
             elif (
                 remaining.identity == identity
                 and remaining.filesystem == filesystem
             ):
-                failed_detail = _bounded_janitor_detail(
-                    "empty candidate deletion did not commit"
-                )
                 record = ScratchCleanupRecord(
                     ScratchCleanupStatus.FAILED,
                     0,
                     0,
-                    (
-                        (failed_detail,)
-                        if primary_detail is None
-                        else (primary_detail, failed_detail)
+                    self._error_details(
+                        primary_error,
+                        verification_error,
+                        "empty candidate deletion did not commit",
                     ),
                     validate_reported_path(managed_root / name),
                 )
             else:
-                replacement_detail = _bounded_janitor_detail(
-                    "empty candidate replacement preserved after removal"
-                )
                 record = ScratchCleanupRecord(
                     ScratchCleanupStatus.FAILED,
                     0,
                     removed_after,
-                    (
-                        (replacement_detail,)
-                        if primary_detail is None
-                        else (primary_detail, replacement_detail)
+                    self._error_details(
+                        primary_error,
+                        verification_error,
+                        "empty candidate replacement preserved after removal",
                     ),
                     validate_reported_path(managed_root / name),
                 )
             return record, name
+        except (_DeadlineExceeded, OSError) as error:
+            self.set_verification_error(reservation, error)
+            self.cancel_resolution(reservation)
+            raise
         except BaseException:
             self.cancel_resolution(reservation)
             raise
@@ -6467,6 +6513,28 @@ class _DeferredEmptyPendingRegistry:
                 raise RuntimeError("deferred empty evidence is unavailable")
             return self._deferred_record(cell)
 
+    def verification_failure_reserved(
+        self, reservation: _DeferredEmptyReservation
+    ) -> ScratchCleanupRecord:
+        with self._lock:
+            cell = self._matching_cell_locked(reservation)
+            if cell is None or not cell.active:
+                raise RuntimeError("deferred empty evidence is unavailable")
+            primary_error = cell.primary_error
+            verification_error = cell.verification_error
+            removed_after = cell.removed_after
+        return ScratchCleanupRecord(
+            (
+                ScratchCleanupStatus.FAILED
+                if primary_error is not None
+                else ScratchCleanupStatus.DEFERRED
+            ),
+            0,
+            0 if primary_error is not None else removed_after,
+            self._error_details(primary_error, verification_error),
+            remaining_root=None,
+        )
+
     def cancel_resolution(
         self, reservation: _DeferredEmptyReservation
     ) -> None:
@@ -6494,7 +6562,7 @@ class _DeferredEmptyPendingRegistry:
         skip_names: _FixedJanitorNameSkips,
         *,
         deadline: float,
-    ) -> None:
+    ) -> bool:
         for cell in self._cells:
             with self._lock:
                 if (
@@ -6518,7 +6586,6 @@ class _DeferredEmptyPendingRegistry:
                     deferred = None
                     resolve = True
                 name = cell.name
-                removed_after = cell.removed_after
             if not resolve:
                 record_ledger.add(cast(ScratchCleanupRecord, deferred))
                 continue
@@ -6530,13 +6597,10 @@ class _DeferredEmptyPendingRegistry:
                 )
             except (_DeadlineExceeded, OSError) as error:
                 record_ledger.add(
-                    ScratchCleanupRecord(
-                        ScratchCleanupStatus.DEFERRED,
-                        0,
-                        removed_after,
-                        (_bounded_janitor_detail(_exception_detail(error)),),
-                    )
+                    self.verification_failure_reserved(reservation)
                 )
+                if isinstance(error, _DeadlineExceeded):
+                    return True
                 continue
             try:
                 index = record_ledger.add(record)
@@ -6548,6 +6612,7 @@ class _DeferredEmptyPendingRegistry:
                 continue
             self.accept_resolution(reservation)
             skip_names.add(prepared_name)
+        return False
 
     def blocks_candidate(
         self,
@@ -7091,11 +7156,16 @@ def _finalize_empty_janitor_pending(
         return _DEFERRED_EMPTY_PENDING.deferred_reserved(
             reservation
         )
-    return _DEFERRED_EMPTY_PENDING.prepare_reserved(
-        reservation,
-        managed_root_capability,
-        deadline=deadline,
-    )
+    try:
+        return _DEFERRED_EMPTY_PENDING.prepare_reserved(
+            reservation,
+            managed_root_capability,
+            deadline=deadline,
+        )
+    except (_DeadlineExceeded, OSError):
+        return _DEFERRED_EMPTY_PENDING.verification_failure_reserved(
+            reservation
+        )
 
 
 def _bounded_candidate_entries(
@@ -7891,21 +7961,26 @@ def reclaim_abandoned(
                 coordinator.fd, deadline=selection_deadline
             )
             _check_deadline(selection_deadline, "janitor selection")
-            _DEFERRED_EMPTY_PENDING.resolve_matching(
-                selected_backend,
-                managed_root,
-                root,
-                record_ledger,
-                pending_skip_names,
-                deadline=selection_deadline,
+            pending_deadline_exhausted = (
+                _DEFERRED_EMPTY_PENDING.resolve_matching(
+                    selected_backend,
+                    managed_root,
+                    root,
+                    record_ledger,
+                    pending_skip_names,
+                    deadline=selection_deadline,
+                )
             )
-            candidates, _examined = _select_janitor_candidates(
-                root,
-                selected_backend,
-                cursor=state.cursor,
-                deadline=selection_deadline,
-                record_ledger=record_ledger,
-            )
+            if pending_deadline_exhausted:
+                candidates: list[_JanitorCandidate] = []
+            else:
+                candidates, _examined = _select_janitor_candidates(
+                    root,
+                    selected_backend,
+                    cursor=state.cursor,
+                    deadline=selection_deadline,
+                    record_ledger=record_ledger,
+                )
             if candidates:
                 try:
                     _persist_coordinator_cursor(

@@ -10937,6 +10937,633 @@ class ManagedScratchTests(unittest.TestCase):
         self.assertNotIn(f"delete:{candidate.name}", resume_operations)
         self.assertEqual(len(backend.live_resources), 0)
 
+    def test_task9_pending_verification_keeps_operational_primary(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=[
+                "_DEFERRED_EMPTY_PENDING",
+                "_JanitorCandidate",
+                "_reclaim_empty_unleased_candidate",
+            ],
+        )
+        registry = lease_module._DEFERRED_EMPTY_PENDING
+        cases = (
+            ("public", "entry-error", "absence"),
+            ("public", "deadline-after-entry", "replacement"),
+            ("direct", "entry-error", "replacement"),
+            ("direct", "deadline-after-entry", "absence"),
+        )
+        for call_path, verification, outcome in cases:
+            with self.subTest(
+                call_path=call_path,
+                verification=verification,
+                outcome=outcome,
+            ):
+                backend = self._task8_backend()
+                managed_capability = self._task7_managed_root(backend)
+                later_managed = backend.reopen_directory(
+                    managed_capability, SharePolicy.MUTATION
+                )
+                managed = backend._resource(managed_capability).node
+                run_id = (
+                    "00000000-0000-4000-8000-000000000942"
+                    if verification == "entry-error"
+                    else "00000000-0000-4000-8000-000000000943"
+                )
+                candidate = self._task9_add_candidate(
+                    backend,
+                    managed,
+                    run_id=run_id,
+                    prefix=".deleting-",
+                    lease=False,
+                    heartbeat=False,
+                )
+                real_entry = backend.entry
+                real_close_resource = backend.close_resource
+                real_clock = time.monotonic
+                pending_resource: _ManagedRecordedResource | None = None
+                pending_owner: DirectoryCapability | None = None
+                replacement: _ManagedRecordedNode | None = None
+                delete_committed = False
+                verification_injected = False
+                deadline_crossed = False
+                entry_failure = OSError(
+                    "injected deferred entry verification"
+                )
+
+                def delete_then_first_close_fails(
+                    capability: FileCapability | DirectoryCapability,
+                ) -> None:
+                    nonlocal pending_owner, pending_resource
+                    assert isinstance(capability, DirectoryCapability)
+                    backend._cleanup_operation(f"delete:{candidate.name}")
+                    pending_owner = capability
+                    pending_resource = backend._resource(capability)
+                    pending_resource.close_failures = 1
+                    capability.close()
+
+                def close_and_commit(value: object) -> None:
+                    nonlocal delete_committed, replacement
+                    real_close_resource(value)
+                    if (
+                        pending_resource is None
+                        or value is not pending_resource
+                        or not pending_resource.closed
+                    ):
+                        return
+                    parent = candidate.parent
+                    if (
+                        parent is not None
+                        and parent.children.get(candidate.name) is candidate
+                    ):
+                        del parent.children[candidate.name]
+                    if outcome == "replacement":
+                        replacement = backend._new_node(
+                            EntryKind.DIRECTORY,
+                            SecurityDomain.MANAGED,
+                            parent=managed,
+                            name=candidate.name,
+                        )
+                        backend._new_node(
+                            EntryKind.REGULAR,
+                            SecurityDomain.MANAGED,
+                            parent=replacement,
+                            name="sentinel",
+                        )
+                    delete_committed = True
+
+                def fail_verification_entry(
+                    parent: DirectoryCapability, name: str
+                ) -> DirectoryEntry | None:
+                    nonlocal deadline_crossed, verification_injected
+                    if (
+                        delete_committed
+                        and not verification_injected
+                        and name == candidate.name
+                    ):
+                        verification_injected = True
+                        if verification == "entry-error":
+                            backend._cleanup_operation(f"entry:{name}")
+                            raise entry_failure
+                        remaining = real_entry(parent, name)
+                        deadline_crossed = True
+                        return remaining
+                    return real_entry(parent, name)
+
+                def deadline_clock() -> float:
+                    if deadline_crossed:
+                        return real_clock() + 60.0
+                    return real_clock()
+
+                first_value: (
+                    ScratchCleanupRecord
+                    | list[ScratchCleanupRecord | JanitorDiagnostic]
+                    | None
+                ) = None
+                escaped: BaseException | None = None
+                with (
+                    mock.patch.object(
+                        backend,
+                        "delete",
+                        side_effect=delete_then_first_close_fails,
+                    ),
+                    mock.patch.object(
+                        backend,
+                        "close_resource",
+                        side_effect=close_and_commit,
+                    ),
+                    mock.patch.object(
+                        backend,
+                        "entry",
+                        side_effect=fail_verification_entry,
+                    ),
+                    mock.patch.object(
+                        lease_module.time,
+                        "monotonic",
+                        side_effect=deadline_clock,
+                    ),
+                ):
+                    try:
+                        if call_path == "public":
+                            first_value = reclaim_abandoned(
+                                managed_capability.path_hint,
+                                backend=backend,
+                                managed_root_capability=managed_capability,
+                            )
+                        else:
+                            opened = backend.open_directory(
+                                managed_capability,
+                                candidate.name,
+                                SharePolicy.PINNED,
+                            )
+                            selected = lease_module._JanitorCandidate(
+                                candidate.name,
+                                candidate.identity,
+                                candidate.filesystem,
+                                run_id,
+                                candidate.modified_ns,
+                            )
+                            first_value = (
+                                lease_module._reclaim_empty_unleased_candidate(
+                                    managed_capability.path_hint,
+                                    managed_capability,
+                                    opened,
+                                    selected,
+                                    backend,
+                                    current_time=time.time(),
+                                    deadline=real_clock() + 5.0,
+                                )
+                            )
+                    except BaseException as error:
+                        escaped = error
+
+                if isinstance(first_value, list):
+                    first_cleanup = _cleanup_records_only(first_value)
+                    first_record = (
+                        first_cleanup[0] if len(first_cleanup) == 1 else None
+                    )
+                elif isinstance(first_value, ScratchCleanupRecord):
+                    first_record = first_value
+                else:
+                    first_record = None
+                first_status = (
+                    None if first_record is None else first_record.status
+                )
+                first_removed = (
+                    None
+                    if first_record is None
+                    else first_record.removed_entries
+                )
+                first_details = (
+                    () if first_record is None else first_record.details
+                )
+                expected_primary = (
+                    "OSError: injected close failure for "
+                    f"{candidate.name}"
+                )
+                expected_verification = (
+                    "OSError: injected deferred entry verification"
+                    if verification == "entry-error"
+                    else (
+                        "_DeadlineExceeded: deferred empty pending absence "
+                        "deadline exceeded"
+                    )
+                )
+                with registry._lock:
+                    matching = [
+                        cell
+                        for cell in registry._cells
+                        if (
+                            cell.active
+                            and cell.backend is backend
+                            and cell.name == candidate.name
+                        )
+                    ]
+                    evidence_active = len(matching) == 1
+                    primary_retained = (
+                        evidence_active
+                        and matching[0].primary_error is not None
+                        and (
+                            f"{type(matching[0].primary_error).__name__}: "
+                            f"{matching[0].primary_error}"
+                        )
+                        == expected_primary
+                    )
+                    verification_retained = (
+                        evidence_active
+                        and getattr(
+                            matching[0], "verification_error", None
+                        )
+                        is not None
+                        and (
+                            f"{type(matching[0].verification_error).__name__}: "
+                            f"{matching[0].verification_error}"
+                        )
+                        == expected_verification
+                    )
+                    owner_evidence_retained = (
+                        evidence_active
+                        and matching[0].owner is pending_owner
+                        and matching[0].owner is not None
+                        and not matching[0].owner.is_open
+                        and matching[0].identity == candidate.identity
+                        and matching[0].filesystem == candidate.filesystem
+                        and matching[0].removed_after == 1
+                    )
+                first_operations = list(backend.cleanup_operations)
+                delete_index = max(
+                    index
+                    for index, operation in enumerate(first_operations)
+                    if operation == f"delete:{candidate.name}"
+                )
+                first_resolution_operations = first_operations[
+                    delete_index + 1 :
+                ]
+                if managed_capability.is_open:
+                    managed_capability.close()
+                retry_start = len(backend.cleanup_operations)
+                retry_records = reclaim_abandoned(
+                    later_managed.path_hint,
+                    backend=backend,
+                    managed_root_capability=later_managed,
+                )
+                retry_operations = backend.cleanup_operations[retry_start:]
+                retry_cleanup = _cleanup_records_only(retry_records)
+                retry_record = (
+                    retry_cleanup[0] if len(retry_cleanup) == 1 else None
+                )
+                retry_details = (
+                    () if retry_record is None else retry_record.details
+                )
+                expected_retry_details = (
+                    (expected_primary, expected_verification)
+                    if outcome == "absence"
+                    else (
+                        expected_primary,
+                        expected_verification,
+                        "empty candidate replacement preserved after removal",
+                    )
+                )
+                with registry._lock:
+                    remaining_cells = [
+                        cell
+                        for cell in registry._cells
+                        if cell.reserved and cell.backend is backend
+                    ]
+                    for cell in remaining_cells:
+                        if not cell.owner or not cell.owner.is_open:
+                            cell.clear()
+
+                self.assertIsNone(escaped)
+                self.assertTrue(verification_injected)
+                self.assertTrue(evidence_active)
+                self.assertTrue(primary_retained)
+                self.assertTrue(verification_retained)
+                self.assertTrue(owner_evidence_retained)
+                self.assertEqual(first_status, ScratchCleanupStatus.FAILED)
+                self.assertEqual(first_removed, 0)
+                self.assertEqual(
+                    first_details,
+                    (expected_primary, expected_verification),
+                )
+                self.assertEqual(first_details.count(expected_primary), 1)
+                self.assertEqual(
+                    first_details.count(expected_verification), 1
+                )
+                self.assertTrue(
+                    all(
+                        len(detail.encode("utf-8"))
+                        <= MAX_DIAGNOSTIC_DETAIL_BYTES
+                        for detail in first_details
+                    )
+                )
+                self.assertEqual(
+                    first_resolution_operations.count(
+                        f"entry:{candidate.name}"
+                    ),
+                    1,
+                )
+                self.assertNotIn(
+                    f"open_directory:{candidate.name}",
+                    first_resolution_operations,
+                )
+                self.assertNotIn(
+                    f"delete:{candidate.name}",
+                    first_resolution_operations,
+                )
+                self.assertEqual(len(retry_cleanup), 1, retry_records)
+                assert retry_record is not None
+                self.assertEqual(
+                    retry_record.status,
+                    (
+                        ScratchCleanupStatus.CLEAN
+                        if outcome == "absence"
+                        else ScratchCleanupStatus.FAILED
+                    ),
+                )
+                self.assertEqual(retry_record.removed_entries, 1)
+                self.assertEqual(retry_details, expected_retry_details)
+                self.assertEqual(retry_details.count(expected_primary), 1)
+                self.assertEqual(
+                    retry_details.count(expected_verification), 1
+                )
+                self.assertEqual(
+                    retry_operations.count(f"entry:{candidate.name}"), 1
+                )
+                self.assertNotIn(
+                    f"open_directory:{candidate.name}", retry_operations
+                )
+                self.assertNotIn(
+                    f"delete:{candidate.name}", retry_operations
+                )
+                self.assertEqual(remaining_cells, [])
+                if replacement is not None:
+                    self.assertIs(managed.children[candidate.name], replacement)
+                    self.assertIn("sentinel", replacement.children)
+                self.assertEqual(len(backend.live_resources), 0)
+
+    def test_task9_cross_call_verification_failure_keeps_pending_history(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_DEFERRED_EMPTY_PENDING"],
+        )
+        registry = lease_module._DEFERRED_EMPTY_PENDING
+        cases = (
+            ("entry-error", "absence"),
+            ("deadline-after-entry", "replacement"),
+        )
+        for verification, outcome in cases:
+            with self.subTest(verification=verification, outcome=outcome):
+                backend = self._task8_backend()
+                managed_capability = self._task7_managed_root(backend)
+                verification_managed = backend.reopen_directory(
+                    managed_capability, SharePolicy.MUTATION
+                )
+                retry_managed = backend.reopen_directory(
+                    managed_capability, SharePolicy.MUTATION
+                )
+                managed = backend._resource(managed_capability).node
+                run_id = (
+                    "00000000-0000-4000-8000-000000000944"
+                    if verification == "entry-error"
+                    else "00000000-0000-4000-8000-000000000945"
+                )
+                candidate = self._task9_add_candidate(
+                    backend,
+                    managed,
+                    run_id=run_id,
+                    prefix=".deleting-",
+                    lease=False,
+                    heartbeat=False,
+                )
+                real_close_resource = backend.close_resource
+                real_entry = backend.entry
+                real_clock = time.monotonic
+                pending_owner: DirectoryCapability | None = None
+                pending_resource: _ManagedRecordedResource | None = None
+                replacement: _ManagedRecordedNode | None = None
+                delete_committed = False
+                verification_injected = False
+                deadline_crossed = False
+
+                def delete_with_live_owner(
+                    capability: FileCapability | DirectoryCapability,
+                ) -> None:
+                    nonlocal pending_owner, pending_resource
+                    assert isinstance(capability, DirectoryCapability)
+                    backend._cleanup_operation(f"delete:{candidate.name}")
+                    pending_owner = capability
+                    pending_resource = backend._resource(capability)
+                    pending_resource.close_failures = 2
+                    capability.close()
+
+                def close_and_commit(value: object) -> None:
+                    nonlocal delete_committed, replacement
+                    real_close_resource(value)
+                    if (
+                        pending_resource is None
+                        or value is not pending_resource
+                        or not pending_resource.closed
+                    ):
+                        return
+                    parent = candidate.parent
+                    if (
+                        parent is not None
+                        and parent.children.get(candidate.name) is candidate
+                    ):
+                        del parent.children[candidate.name]
+                    if outcome == "replacement":
+                        replacement = backend._new_node(
+                            EntryKind.DIRECTORY,
+                            SecurityDomain.MANAGED,
+                            parent=managed,
+                            name=candidate.name,
+                        )
+                        backend._new_node(
+                            EntryKind.REGULAR,
+                            SecurityDomain.MANAGED,
+                            parent=replacement,
+                            name="sentinel",
+                        )
+                    delete_committed = True
+
+                with (
+                    mock.patch.object(
+                        backend, "delete", side_effect=delete_with_live_owner
+                    ),
+                    mock.patch.object(
+                        backend,
+                        "close_resource",
+                        side_effect=close_and_commit,
+                    ),
+                ):
+                    first = reclaim_abandoned(
+                        managed_capability.path_hint,
+                        backend=backend,
+                        managed_root_capability=managed_capability,
+                    )
+                    assert pending_owner is not None
+                    pending_owner.close()
+
+                def fail_deferred_entry(
+                    parent: DirectoryCapability, name: str
+                ) -> DirectoryEntry | None:
+                    nonlocal deadline_crossed, verification_injected
+                    if not verification_injected and name == candidate.name:
+                        verification_injected = True
+                        if verification == "entry-error":
+                            backend._cleanup_operation(f"entry:{name}")
+                            raise OSError(
+                                "injected cross-call entry verification"
+                            )
+                        remaining = real_entry(parent, name)
+                        deadline_crossed = True
+                        return remaining
+                    return real_entry(parent, name)
+
+                def deadline_clock() -> float:
+                    if deadline_crossed:
+                        return real_clock() + 60.0
+                    return real_clock()
+
+                verification_start = len(backend.cleanup_operations)
+                with (
+                    mock.patch.object(
+                        backend, "entry", side_effect=fail_deferred_entry
+                    ),
+                    mock.patch.object(
+                        lease_module.time,
+                        "monotonic",
+                        side_effect=deadline_clock,
+                    ),
+                ):
+                    failed_verification = reclaim_abandoned(
+                        verification_managed.path_hint,
+                        backend=backend,
+                        managed_root_capability=verification_managed,
+                    )
+                verification_operations = backend.cleanup_operations[
+                    verification_start:
+                ]
+                expected_primary = (
+                    "OSError: injected close failure for "
+                    f"{candidate.name}"
+                )
+                expected_verification = (
+                    "OSError: injected cross-call entry verification"
+                    if verification == "entry-error"
+                    else (
+                        "_DeadlineExceeded: deferred empty pending absence "
+                        "deadline exceeded"
+                    )
+                )
+                failed_cleanup = _cleanup_records_only(failed_verification)
+                with registry._lock:
+                    active_cells = [
+                        cell
+                        for cell in registry._cells
+                        if (
+                            cell.active
+                            and cell.backend is backend
+                            and cell.name == candidate.name
+                        )
+                    ]
+                    history_retained = (
+                        len(active_cells) == 1
+                        and active_cells[0].primary_error is not None
+                        and active_cells[0].verification_error is not None
+                        and not active_cells[0].resolving
+                    )
+
+                retry_start = len(backend.cleanup_operations)
+                retry = reclaim_abandoned(
+                    retry_managed.path_hint,
+                    backend=backend,
+                    managed_root_capability=retry_managed,
+                )
+                retry_operations = backend.cleanup_operations[retry_start:]
+                retry_cleanup = _cleanup_records_only(retry)
+                expected_retry_details = (
+                    (expected_primary, expected_verification)
+                    if outcome == "absence"
+                    else (
+                        expected_primary,
+                        expected_verification,
+                        "empty candidate replacement preserved after removal",
+                    )
+                )
+                with registry._lock:
+                    remaining_cells = [
+                        cell
+                        for cell in registry._cells
+                        if cell.reserved and cell.backend is backend
+                    ]
+                    for cell in remaining_cells:
+                        if not cell.owner or not cell.owner.is_open:
+                            cell.clear()
+
+                first_cleanup = _cleanup_records_only(first)
+                self.assertEqual(len(first_cleanup), 1, first)
+                self.assertEqual(
+                    first_cleanup[0].status, ScratchCleanupStatus.DEFERRED
+                )
+                self.assertTrue(delete_committed)
+                self.assertTrue(verification_injected)
+                self.assertEqual(len(failed_cleanup), 1, failed_verification)
+                self.assertEqual(
+                    failed_cleanup[0].status, ScratchCleanupStatus.FAILED
+                )
+                self.assertEqual(failed_cleanup[0].removed_entries, 0)
+                self.assertEqual(
+                    failed_cleanup[0].details,
+                    (expected_primary, expected_verification),
+                )
+                self.assertTrue(history_retained)
+                self.assertEqual(
+                    verification_operations.count(
+                        f"entry:{candidate.name}"
+                    ),
+                    1,
+                )
+                self.assertNotIn(
+                    f"open_directory:{candidate.name}",
+                    verification_operations,
+                )
+                self.assertNotIn(
+                    f"delete:{candidate.name}", verification_operations
+                )
+                self.assertEqual(len(retry_cleanup), 1, retry)
+                self.assertEqual(retry_cleanup[0].removed_entries, 1)
+                self.assertEqual(
+                    retry_cleanup[0].status,
+                    (
+                        ScratchCleanupStatus.CLEAN
+                        if outcome == "absence"
+                        else ScratchCleanupStatus.FAILED
+                    ),
+                )
+                self.assertEqual(
+                    retry_cleanup[0].details, expected_retry_details
+                )
+                self.assertEqual(
+                    retry_operations.count(f"entry:{candidate.name}"), 1
+                )
+                self.assertNotIn(
+                    f"open_directory:{candidate.name}", retry_operations
+                )
+                self.assertNotIn(
+                    f"delete:{candidate.name}", retry_operations
+                )
+                self.assertEqual(remaining_cells, [])
+                if replacement is not None:
+                    self.assertIs(managed.children[candidate.name], replacement)
+                    self.assertIn("sentinel", replacement.children)
+                self.assertEqual(len(backend.live_resources), 0)
+
     def test_task9_closed_pending_resolves_replacement_without_retargeting(
         self,
     ) -> None:
