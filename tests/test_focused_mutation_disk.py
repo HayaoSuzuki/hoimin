@@ -21,6 +21,8 @@ import zlib
 from tools.focused_mutation import Options, _parser, options_from_arguments
 from tools.focused_mutation_support.disk import (
     MAX_COMMAND_LOG_BYTES,
+    MAX_DIAGNOSTIC_DETAIL_BYTES,
+    MAX_DIAGNOSTIC_DETAILS,
     MAX_LOG_BYTES,
     CleanupOutcome,
     ComponentState,
@@ -10977,6 +10979,436 @@ class ManagedScratchTests(unittest.TestCase):
         self.assertIn(f"entry:{deleting_name}", retry)
         self.assertNotIn(f"open_directory:{deleting_name}", retry)
         self.assertNotIn(f"delete:{deleting_name}", retry)
+
+    def test_task8_windows_pending_control_marker_retry_is_absence_only(
+        self,
+    ) -> None:
+        for index, marker_name in enumerate(
+            (
+                ".hoimin-heartbeat.json",
+                ".hoimin-lease.json",
+            )
+        ):
+            with self.subTest(marker_name=marker_name):
+                backend = self._task8_backend(
+                    rename_requires_closed_descendants=True
+                )
+                scratch = self._task8_create(
+                    backend,
+                    run_id=(
+                        "00000000-0000-4000-8000-"
+                        f"{870 + index:012d}"
+                    ),
+                )
+                real_delete = backend.delete
+                injected = False
+
+                def fail_after_consuming_marker(
+                    capability: FileCapability | DirectoryCapability,
+                ) -> None:
+                    nonlocal injected
+                    node = backend._resource(capability).node
+                    real_delete(capability)
+                    if node.name == marker_name and not injected:
+                        injected = True
+                        raise OSError(
+                            "injected control-marker post-consume failure"
+                        )
+
+                with mock.patch.object(
+                    backend,
+                    "delete",
+                    side_effect=fail_after_consuming_marker,
+                ):
+                    first = self._task8_cleanup(scratch, backend)
+                    retry_start = len(backend.cleanup_operations)
+                    second = self._task8_cleanup(scratch, backend)
+
+                self.assertTrue(injected)
+                self.assertEqual(
+                    first.status, ScratchCleanupStatus.FAILED, first
+                )
+                self.assertEqual(
+                    second.status, ScratchCleanupStatus.CLEAN, second
+                )
+                retry = backend.cleanup_operations[retry_start:]
+                self.assertIn(f"entry:{marker_name}", retry)
+                self.assertNotIn(f"open_file:{marker_name}", retry)
+                self.assertNotIn(f"open_entry:{marker_name}", retry)
+                self.assertNotIn(f"delete:{marker_name}", retry)
+
+    def test_task8_windows_removed_control_marker_retry_skips_restore(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_CleanupOwnerGraph"],
+        )
+        graph_type = lease_module._CleanupOwnerGraph
+        real_mark_removed = graph_type.mark_marker_removed
+        for index, marker_name in enumerate(
+            (
+                ".hoimin-heartbeat.json",
+                ".hoimin-lease.json",
+            )
+        ):
+            with self.subTest(marker_name=marker_name):
+                backend = self._task8_backend(
+                    rename_requires_closed_descendants=True
+                )
+                scratch = self._task8_create(
+                    backend,
+                    run_id=(
+                        "00000000-0000-4000-8000-"
+                        f"{872 + index:012d}"
+                    ),
+                )
+                clock = [0.0]
+                crossed = False
+
+                def cross_after_removed(
+                    graph: object, removed_name: str
+                ) -> None:
+                    nonlocal crossed
+                    real_mark_removed(graph, removed_name)
+                    if removed_name == marker_name and not crossed:
+                        crossed = True
+                        clock[0] = 60.0
+
+                with (
+                    mock.patch(
+                        "tools.focused_mutation_support.lease.time.monotonic",
+                        side_effect=lambda: clock[0],
+                    ),
+                    mock.patch.object(
+                        graph_type,
+                        "mark_marker_removed",
+                        autospec=True,
+                        side_effect=cross_after_removed,
+                    ),
+                ):
+                    first = self._task8_cleanup(scratch, backend)
+                    retry_start = len(backend.cleanup_operations)
+                    clock[0] = 0.0
+                    second = self._task8_cleanup(scratch, backend)
+
+                self.assertTrue(crossed)
+                self.assertEqual(
+                    first.status, ScratchCleanupStatus.DEFERRED, first
+                )
+                self.assertEqual(
+                    second.status, ScratchCleanupStatus.CLEAN, second
+                )
+                retry = backend.cleanup_operations[retry_start:]
+                self.assertNotIn(f"entry:{marker_name}", retry)
+                self.assertNotIn(f"open_file:{marker_name}", retry)
+                self.assertNotIn(f"open_entry:{marker_name}", retry)
+                self.assertNotIn(f"delete:{marker_name}", retry)
+
+    def test_task8_child_pending_retry_preserves_removed_count(self) -> None:
+        for index, replacement_expected in enumerate((False, True)):
+            with self.subTest(replacement=replacement_expected):
+                backend = self._task8_backend()
+                scratch = self._task8_create(
+                    backend,
+                    run_id=(
+                        "00000000-0000-4000-8000-"
+                        f"{874 + index:012d}"
+                    ),
+                )
+                child_path = scratch.create_child("candidate-0001")
+                root = self._task8_root_node(backend, scratch)
+                original = root.children[child_path.name]
+                real_delete = backend.delete
+                injected = False
+                replacement: _ManagedRecordedNode | None = None
+
+                def fail_after_consuming_child(
+                    capability: FileCapability | DirectoryCapability,
+                ) -> None:
+                    nonlocal injected, replacement
+                    node = backend._resource(capability).node
+                    real_delete(capability)
+                    if node is original and not injected:
+                        injected = True
+                        if replacement_expected:
+                            replacement = (
+                                self._task8_same_identity_replacement(
+                                    backend, original
+                                )
+                            )
+                            self._task8_add_payload(
+                                backend, replacement, "sentinel"
+                            )
+                        raise OSError(
+                            "injected child post-consume count failure"
+                        )
+
+                with mock.patch.object(
+                    backend,
+                    "delete",
+                    side_effect=fail_after_consuming_child,
+                ):
+                    first = scratch.remove_child(child_path)
+                    retry_start = len(backend.cleanup_operations)
+                    second = scratch.remove_child(child_path)
+
+                self.assertTrue(injected)
+                self.assertEqual(
+                    first.status, ScratchCleanupStatus.FAILED, first
+                )
+                self.assertEqual(first.removed_entries, 1, first)
+                self.assertEqual(
+                    second.status,
+                    (
+                        ScratchCleanupStatus.FAILED
+                        if replacement_expected
+                        else ScratchCleanupStatus.CLEAN
+                    ),
+                    second,
+                )
+                self.assertEqual(second.removed_entries, 1, second)
+                retry = backend.cleanup_operations[retry_start:]
+                self.assertEqual(
+                    retry.count(f"entry:{child_path.name}"), 1, retry
+                )
+                self.assertNotIn(f"open_directory:{child_path.name}", retry)
+                self.assertNotIn(f"delete:{child_path.name}", retry)
+                if replacement_expected:
+                    assert replacement is not None
+                    self.assertIs(root.children[child_path.name], replacement)
+                    self.assertIn("sentinel", replacement.children)
+
+    def test_task8_root_pending_retry_preserves_removed_count(self) -> None:
+        for index, replacement_expected in enumerate((False, True)):
+            with self.subTest(replacement=replacement_expected):
+                backend = self._task8_backend()
+                scratch = self._task8_create(
+                    backend,
+                    run_id=(
+                        "00000000-0000-4000-8000-"
+                        f"{876 + index:012d}"
+                    ),
+                )
+                original = self._task8_root_node(backend, scratch)
+                deleting_name = f".deleting-{scratch.run_id}"
+                real_delete = backend.delete
+                injected = False
+                replacement: _ManagedRecordedNode | None = None
+
+                def fail_after_consuming_root(
+                    capability: FileCapability | DirectoryCapability,
+                ) -> None:
+                    nonlocal injected, replacement
+                    node = backend._resource(capability).node
+                    real_delete(capability)
+                    if node is original and not injected:
+                        injected = True
+                        if replacement_expected:
+                            replacement = (
+                                self._task8_same_identity_replacement(
+                                    backend, original
+                                )
+                            )
+                            self._task8_add_payload(
+                                backend, replacement, "sentinel"
+                            )
+                        raise OSError(
+                            "injected root post-consume count failure"
+                        )
+
+                with mock.patch.object(
+                    backend,
+                    "delete",
+                    side_effect=fail_after_consuming_root,
+                ):
+                    first = self._task8_cleanup(scratch, backend)
+                    retry_start = len(backend.cleanup_operations)
+                    second = self._task8_cleanup(scratch, backend)
+
+                self.assertTrue(injected)
+                self.assertEqual(
+                    first.status, ScratchCleanupStatus.FAILED, first
+                )
+                self.assertEqual(first.removed_entries, 3, first)
+                self.assertEqual(
+                    second.status,
+                    (
+                        ScratchCleanupStatus.FAILED
+                        if replacement_expected
+                        else ScratchCleanupStatus.CLEAN
+                    ),
+                    second,
+                )
+                self.assertEqual(second.removed_entries, 3, second)
+                retry = backend.cleanup_operations[retry_start:]
+                self.assertEqual(
+                    retry.count(f"entry:{deleting_name}"), 1, retry
+                )
+                self.assertNotIn(f"open_directory:{deleting_name}", retry)
+                self.assertNotIn(f"delete:{deleting_name}", retry)
+                if replacement_expected:
+                    assert replacement is not None
+                    managed = backend.parent.children["hoimin-focused-v1"]
+                    self.assertIs(
+                        managed.children[deleting_name], replacement
+                    )
+                    self.assertIn("sentinel", replacement.children)
+
+    def test_task8_marker_helper_close_note_reaches_cleanup_record(
+        self,
+    ) -> None:
+        backend = self._task8_backend(
+            rename_requires_closed_descendants=True
+        )
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000878",
+        )
+        backend.close_failures_by_identity[scratch._lease_identity] = 1
+        backend.failures[
+            "verify-managed:.hoimin-lease.json:repair=false"
+        ] = OSError("injected marker-read primary")
+
+        cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertIn("injected marker-read primary", cleanup.details[0])
+        joined = "; ".join(cleanup.details[1:])
+        self.assertEqual(
+            joined.count("injected close failure for .hoimin-lease.json"),
+            1,
+            cleanup,
+        )
+        self.assertTrue(
+            all(
+                len(detail.encode("utf-8"))
+                <= MAX_DIAGNOSTIC_DETAIL_BYTES
+                for detail in cleanup.details
+            ),
+            cleanup,
+        )
+        self.assertEqual(cleanup.omitted_detail_count, 0, cleanup)
+
+    def test_task8_walker_helper_close_note_reaches_cleanup_record(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000879",
+        )
+        root = self._task8_root_node(backend, scratch)
+        payload = self._task8_add_payload(backend, root, "payload")
+        backend.close_failures_by_identity[payload.identity] = 1
+        real_delete = backend.delete
+        primary = OSError("injected walker delete primary")
+        close_note = (
+            "cleanup entry payload close failed: OSError: "
+            "injected close failure for payload"
+        )
+        primary.add_note(close_note)
+
+        def fail_payload_delete(
+            capability: FileCapability | DirectoryCapability,
+        ) -> None:
+            if capability.identity == payload.identity:
+                raise primary
+            real_delete(capability)
+
+        with mock.patch.object(
+            backend, "delete", side_effect=fail_payload_delete
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertIn("injected walker delete primary", cleanup.details[0])
+        self.assertEqual(cleanup.details[1:].count(close_note), 1, cleanup)
+        self.assertTrue(
+            all(
+                len(detail.encode("utf-8"))
+                <= MAX_DIAGNOSTIC_DETAIL_BYTES
+                for detail in cleanup.details
+            ),
+            cleanup,
+        )
+        self.assertEqual(cleanup.omitted_detail_count, 0, cleanup)
+
+    def test_task8_initial_coordinator_helper_close_note_reaches_cleanup_record(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000880",
+        )
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_bounded_secondary"],
+        )
+        managed = backend.parent.children["hoimin-focused-v1"]
+        coordinator = managed.children[".hoimin-coordinator"]
+        primary = OSError("injected initial coordinator primary")
+        long_note = "raw overlong coordinator note: " + (
+            "x" * (MAX_DIAGNOSTIC_DETAIL_BYTES * 2)
+        )
+        close_error = OSError(
+            "y" * (MAX_DIAGNOSTIC_DETAIL_BYTES * 2)
+        )
+        close_note = lease_module._bounded_secondary(
+            "managed coordinator close failed", close_error
+        )
+        primary.add_note(long_note)
+        primary.add_note(close_note)
+        for note_index in range(MAX_DIAGNOSTIC_DETAILS - 2):
+            primary.add_note(f"coordinator secondary {note_index:03d}")
+        primary.add_note("coordinator omitted secondary 0")
+        primary.add_note("coordinator omitted secondary 1")
+        backend.failures[
+            "verify-managed:.hoimin-coordinator:repair=true"
+        ] = primary
+        real_close_resource = backend.close_resource
+        close_attempts = 0
+
+        def fail_first_coordinator_close(resource: object) -> None:
+            nonlocal close_attempts
+            if (
+                isinstance(resource, _ManagedRecordedResource)
+                and resource.node is coordinator
+            ):
+                close_attempts += 1
+                if close_attempts == 1:
+                    raise close_error
+            real_close_resource(resource)
+
+        with mock.patch.object(
+            backend,
+            "close_resource",
+            side_effect=fail_first_coordinator_close,
+        ):
+            cleanup = self._task8_cleanup_with_real_coordinator(
+                scratch, backend, []
+            )
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertEqual(close_attempts, 2)
+        self.assertIn(
+            "injected initial coordinator primary", cleanup.details[0]
+        )
+        self.assertEqual(cleanup.details[1:].count(close_note), 1, cleanup)
+        self.assertEqual(
+            len(cleanup.details), MAX_DIAGNOSTIC_DETAILS + 1, cleanup
+        )
+        self.assertEqual(cleanup.omitted_detail_count, 2, cleanup)
+        self.assertTrue(
+            all(
+                len(detail.encode("utf-8"))
+                <= MAX_DIAGNOSTIC_DETAIL_BYTES
+                for detail in cleanup.details
+            ),
+            cleanup,
+        )
+        self.assertTrue(cleanup.details[1].endswith("..."), cleanup)
 
     def test_task8_tail_host_error_stays_failed_when_report_crosses_deadline(
         self,
