@@ -79,6 +79,7 @@ class _CapabilityState(StrEnum):
 
 class _Capability:
     __slots__ = (
+        "_close_attempts",
         "_created",
         "_filesystem",
         "_identity",
@@ -112,6 +113,7 @@ class _Capability:
     ) -> None:
         self._state = _CapabilityState.CLOSED
         self._resource = None
+        self._close_attempts = 0
         if identity.volume <= 0 or identity.file <= 0:
             raise ValueError("file identity values must be nonzero")
         if filesystem.volume <= 0:
@@ -198,6 +200,7 @@ class _Capability:
     def close(self) -> None:
         if self._state is not _CapabilityState.OPEN:
             return
+        self._close_attempts += 1
         self._owner.close_resource(self._resource)  # type: ignore[attr-defined]
         self._state = _CapabilityState.CLOSED
         self._resource = None
@@ -256,6 +259,7 @@ class DirectoryCapability(_Capability):
             created=self._created,
             path_hint=self._path_hint,
         )
+        replacement._close_attempts = self._close_attempts
         self._state = _CapabilityState.TRANSFERRED
         self._resource = None
         return replacement

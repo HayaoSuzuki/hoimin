@@ -247,14 +247,21 @@ def _bounded_secondary(label: str, error: BaseException) -> str:
     )
 
 
-def _close_capability_retry(
+_CAPABILITY_CLOSE_ATTEMPT_LIMIT = 2
+
+
+def _close_capability_with_budget(
     capability: FileCapability | DirectoryCapability,
     label: str,
+    *,
+    maximum_new_attempts: int,
 ) -> tuple[str, ...]:
     errors: list[str] = []
-    for _attempt in range(2):
-        if not capability.is_open:
-            break
+    target_attempts = min(
+        _CAPABILITY_CLOSE_ATTEMPT_LIMIT,
+        capability._close_attempts + maximum_new_attempts,
+    )
+    while capability.is_open and capability._close_attempts < target_attempts:
         try:
             capability.close()
         except BaseException as error:
@@ -264,17 +271,26 @@ def _close_capability_retry(
     return tuple(errors)
 
 
+def _close_capability_retry(
+    capability: FileCapability | DirectoryCapability,
+    label: str,
+) -> tuple[str, ...]:
+    return _close_capability_with_budget(
+        capability,
+        label,
+        maximum_new_attempts=_CAPABILITY_CLOSE_ATTEMPT_LIMIT,
+    )
+
+
 def _close_capability_once(
     capability: FileCapability | DirectoryCapability,
     label: str,
 ) -> tuple[str, ...]:
-    if not capability.is_open:
-        return ()
-    try:
-        capability.close()
-    except BaseException as error:
-        return (_bounded_secondary(f"{label} close failed", error),)
-    return ()
+    return _close_capability_with_budget(
+        capability,
+        label,
+        maximum_new_attempts=1,
+    )
 
 
 class _OwnedDescriptor:
@@ -328,7 +344,7 @@ class _MarkerOwnerSlot:
     __slots__ = ("capability", "descriptor", "lock")
 
     def __init__(self) -> None:
-        self.capability: FileCapability | None = None
+        self.capability: FileCapability | DirectoryCapability | None = None
         self.descriptor: _OwnedDescriptor | None = None
         self.lock: LeaseLock | None = None
 
@@ -457,6 +473,8 @@ def _delete_exact_marker(
     name: str,
     identity: FileIdentity,
     backend: FilesystemBackend,
+    *,
+    _owner_slot: _MarkerOwnerSlot | None = None,
 ) -> tuple[str, ...]:
     errors: list[str] = []
     current: FileCapability | DirectoryCapability | None = None
@@ -468,11 +486,25 @@ def _delete_exact_marker(
         return (
             _bounded_secondary(f"managed marker rollback open failed for {name}", error),
         )
+    if _owner_slot is not None:
+        if (
+            _owner_slot.capability is not None
+            and _owner_slot.capability.is_open
+        ):
+            errors.extend(
+                _close_capability_retry(
+                    current, f"managed marker unregistered rollback {name}"
+                )
+            )
+            return tuple(errors)
+        _owner_slot.capability = current
     if current.kind is not EntryKind.REGULAR or current.identity != identity:
         errors.append(f"managed marker rollback preserved replacement for {name}")
         errors.extend(
             _close_capability_retry(current, f"managed marker replacement {name}")
         )
+        if not current.is_open and _owner_slot is not None:
+            _owner_slot.capability = None
         return tuple(errors)
     try:
         backend.delete(current)
@@ -480,12 +512,14 @@ def _delete_exact_marker(
         errors.append(
             _bounded_secondary(f"managed marker rollback delete failed for {name}", error)
         )
-        if current.is_open:
-            errors.extend(
-                _close_capability_retry(current, f"managed marker rollback {name}")
-            )
-        if current.is_open:
-            return tuple(errors)
+    if current.is_open:
+        errors.extend(
+            _close_capability_retry(current, f"managed marker rollback {name}")
+        )
+    if current.is_open:
+        return tuple(errors)
+    if _owner_slot is not None:
+        _owner_slot.capability = None
     try:
         remaining = backend.entry(parent, name)
     except BaseException as error:
@@ -507,7 +541,6 @@ def _delete_owned_directory(
     backend: FilesystemBackend,
     *,
     label: str,
-    close_already_attempted: bool = False,
 ) -> tuple[str, ...]:
     """Delete one exact owned directory without adopting a replacement."""
     errors: list[str] = []
@@ -541,14 +574,25 @@ def _delete_owned_directory(
             )
         errors.extend(_close_capability_retry(directory, label))
         return tuple(errors)
+    if directory._close_attempts >= _CAPABILITY_CLOSE_ATTEMPT_LIMIT:
+        errors.append(
+            _bounded_secondary(
+                f"{label} rollback unavailable",
+                RuntimeError("capability close attempt budget is exhausted"),
+            )
+        )
+        return tuple(errors)
+    delete_failed = False
     try:
         backend.delete(directory)
     except BaseException as error:
+        delete_failed = True
         errors.append(_bounded_secondary(f"{label} failed", error))
-        if directory.is_open and not close_already_attempted:
-            errors.extend(_close_capability_once(directory, label))
-        if not directory.closed:
-            return tuple(errors)
+    if directory.is_open:
+        errors.extend(_close_capability_retry(directory, label))
+    if directory.is_open:
+        return tuple(errors)
+    if delete_failed:
         try:
             remaining = backend.entry(parent, name)
         except BaseException as absence_error:
@@ -649,7 +693,11 @@ def _create_marker(
             primary_error.add_note(close_error)
         if identity is not None and owner_closed:
             for rollback_error in _delete_exact_marker(
-                parent, name, identity, backend
+                parent,
+                name,
+                identity,
+                backend,
+                _owner_slot=_owner_slot,
             ):
                 primary_error.add_note(rollback_error)
         raise
@@ -1051,32 +1099,38 @@ def _rollback_created_managed_root(
             )
         errors.extend(_close_capability_retry(root, "managed root rollback"))
         return tuple(errors)
-    for _attempt in range(2):
-        if not root.is_open:
-            break
-        try:
-            backend.delete(root)
-        except BaseException as error:
-            errors.append(
-                _bounded_secondary("managed root rollback failed", error)
+    if root._close_attempts >= _CAPABILITY_CLOSE_ATTEMPT_LIMIT:
+        errors.append(
+            _bounded_secondary(
+                "managed root rollback unavailable",
+                RuntimeError("capability close attempt budget is exhausted"),
             )
-        else:
-            return tuple(errors)
+        )
+        return tuple(errors)
+    delete_failed = False
+    try:
+        backend.delete(root)
+    except BaseException as error:
+        delete_failed = True
+        errors.append(
+            _bounded_secondary("managed root rollback failed", error)
+        )
     if root.is_open:
         errors.extend(_close_capability_retry(root, "managed root rollback"))
     if root.is_open:
         return tuple(errors)
-    try:
-        remaining = backend.entry(parent, MANAGED_DIRECTORY)
-    except BaseException as error:
-        errors.append(
-            _bounded_secondary(
-                "managed root rollback absence check failed", error
+    if delete_failed:
+        try:
+            remaining = backend.entry(parent, MANAGED_DIRECTORY)
+        except BaseException as error:
+            errors.append(
+                _bounded_secondary(
+                    "managed root rollback absence check failed", error
+                )
             )
-        )
-    else:
-        if remaining is not None:
-            errors.append("managed root rollback left a same-name entry")
+        else:
+            if remaining is not None:
+                errors.append("managed root rollback left a same-name entry")
     return tuple(errors)
 
 
@@ -1988,26 +2042,62 @@ class ManagedScratch:
                                 HEARTBEAT_FILE,
                                 heartbeat_identity,
                                 selected_backend,
+                                _owner_slot=(
+                                    None
+                                    if marker_owners is None
+                                    else marker_owners.heartbeat
+                                ),
                             )
                         )
-                    if lease_identity is not None:
+                        marker_owner_open = (
+                            marker_owners is not None
+                            and marker_owners.has_open_owner()
+                        )
+                    if not marker_owner_open and lease_identity is not None:
                         rollback_errors.extend(
                             _delete_exact_marker(
                                 staging_capability,
                                 LEASE_FILE,
                                 lease_identity,
                                 selected_backend,
+                                _owner_slot=(
+                                    None
+                                    if marker_owners is None
+                                    else marker_owners.lease
+                                ),
                             )
                         )
-                    rollback_errors.extend(
-                        _delete_owned_directory(
-                            managed_root_capability,
-                            active.name if published else staging.name,
-                            staging_capability,
-                            selected_backend,
-                            label="managed staging rollback",
+                        marker_owner_open = (
+                            marker_owners is not None
+                            and marker_owners.has_open_owner()
                         )
-                    )
+                    if marker_owner_open:
+                        if not namespace_cleanup_unavailable_noted:
+                            rollback_errors.append(
+                                _bounded_secondary(
+                                    "managed namespace cleanup unavailable",
+                                    RuntimeError(
+                                        "a marker owner remains open"
+                                    ),
+                                )
+                            )
+                            namespace_cleanup_unavailable_noted = True
+                        rollback_errors.extend(
+                            _close_capability_retry(
+                                staging_capability,
+                                "managed staging rollback",
+                            )
+                        )
+                    else:
+                        rollback_errors.extend(
+                            _delete_owned_directory(
+                                managed_root_capability,
+                                active.name if published else staging.name,
+                                staging_capability,
+                                selected_backend,
+                                label="managed staging rollback",
+                            )
+                        )
             elif staging_capability is not None:
                 rollback_errors.append(
                     "managed staging rollback unavailable: creation state missing"
@@ -2156,7 +2246,6 @@ class ManagedScratch:
                     child_capability,
                     self._backend,
                     label="managed child rollback",
-                    close_already_attempted=True,
                 ):
                     primary_error.add_note(rollback_error)
             raise
