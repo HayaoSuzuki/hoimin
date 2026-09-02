@@ -1,7 +1,7 @@
 from pathlib import Path
 import argparse
 import errno
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from collections.abc import Callable
 import gc
 import inspect
@@ -7816,7 +7816,19 @@ class ManagedScratchTests(unittest.TestCase):
             "tools.focused_mutation_support.lease",
             fromlist=["_read_coordinator_state", "_close_capability_retry"],
         )
+        real_read_state = lease_module._read_coordinator_state
         real_close_retry = lease_module._close_capability_retry
+        real_close_lock_retry = lease_module._close_lease_lock_retry
+        read_calls = 0
+
+        def fail_second_read(*args: object, **kwargs: object) -> object:
+            nonlocal read_calls
+            read_calls += 1
+            if read_calls == 2:
+                raise lease_module._DeadlineExceeded(
+                    "injected selection deadline"
+                )
+            return real_read_state(*args, **kwargs)
 
         def close_with_secondary(
             capability: DirectoryCapability | FileCapability,
@@ -7827,18 +7839,30 @@ class ManagedScratchTests(unittest.TestCase):
                 return (*errors, "injected selection root close failure")
             return errors
 
+        def close_lock_with_secondary(
+            lock: LeaseLock,
+            label: str,
+        ) -> tuple[str, ...]:
+            errors = real_close_lock_retry(lock, label)
+            if label == "janitor selection coordinator":
+                return (*errors, "injected selection coordinator close failure")
+            return errors
+
         with (
             mock.patch.object(
                 lease_module,
                 "_read_coordinator_state",
-                side_effect=lease_module._DeadlineExceeded(
-                    "injected selection deadline"
-                ),
+                side_effect=fail_second_read,
             ),
             mock.patch.object(
                 lease_module,
                 "_close_capability_retry",
                 side_effect=close_with_secondary,
+            ),
+            mock.patch.object(
+                lease_module,
+                "_close_lease_lock_retry",
+                side_effect=close_lock_with_secondary,
             ),
             self.assertRaisesRegex(
                 TimeoutError, "injected selection deadline"
@@ -7850,11 +7874,27 @@ class ManagedScratchTests(unittest.TestCase):
                 managed_root_capability=managed_capability,
             )
 
-        self.assertTrue(
-            any(
-                "injected selection root close failure" in note
-                for note in getattr(caught.exception, "__notes__", ())
-            )
+        self.assertEqual(read_calls, 2)
+        notes = getattr(caught.exception, "__notes__", ())
+        self.assertEqual(
+            sum("selection coordinator close failure" in note for note in notes),
+            1,
+        )
+        self.assertEqual(
+            sum("selection root close failure" in note for note in notes),
+            1,
+        )
+        self.assertLess(
+            next(
+                index
+                for index, note in enumerate(notes)
+                if "selection coordinator close failure" in note
+            ),
+            next(
+                index
+                for index, note in enumerate(notes)
+                if "selection root close failure" in note
+            ),
         )
         self.assertEqual(len(backend.live_resources), 0)
 
@@ -9143,6 +9183,806 @@ class ManagedScratchTests(unittest.TestCase):
             [record.status for record in _cleanup_records_only(records)],
             [ScratchCleanupStatus.CLEAN, ScratchCleanupStatus.CLEAN],
         )
+
+    def test_task9_empty_delete_tracks_committed_absence_and_replacement(
+        self,
+    ) -> None:
+        for replacement_after_delete in (False, True):
+            with self.subTest(replacement=replacement_after_delete):
+                backend = self._task8_backend()
+                managed_capability = self._task7_managed_root(backend)
+                managed = backend._resource(managed_capability).node
+                run_id = (
+                    "00000000-0000-4000-8000-000000000901"
+                    if replacement_after_delete
+                    else "00000000-0000-4000-8000-000000000900"
+                )
+                original = self._task9_add_candidate(
+                    backend,
+                    managed,
+                    run_id=run_id,
+                    prefix=".deleting-",
+                    lease=False,
+                    heartbeat=False,
+                )
+                replacement: _ManagedRecordedNode | None = None
+                close_count_before_delete = -1
+
+                def delete_then_fail_close(
+                    capability: FileCapability | DirectoryCapability,
+                ) -> None:
+                    nonlocal close_count_before_delete, replacement
+                    close_count_before_delete = backend.close_counts.get(
+                        original.identity, 0
+                    )
+                    resource = backend._resource(capability)
+                    node = resource.node
+                    parent = node.parent
+                    assert parent is not None
+                    self.assertIs(parent.children.pop(node.name), node)
+                    if replacement_after_delete:
+                        replacement = backend._new_node(
+                            EntryKind.DIRECTORY,
+                            SecurityDomain.MANAGED,
+                            parent=parent,
+                            name=node.name,
+                        )
+                        backend._new_node(
+                            EntryKind.REGULAR,
+                            SecurityDomain.MANAGED,
+                            parent=replacement,
+                            name="sentinel",
+                        )
+                    resource.close_failures = 1
+                    capability.close()
+
+                with mock.patch.object(
+                    backend, "delete", side_effect=delete_then_fail_close
+                ):
+                    records = reclaim_abandoned(
+                        managed_capability.path_hint,
+                        backend=backend,
+                        managed_root_capability=managed_capability,
+                    )
+
+                cleanup = _cleanup_records_only(records)
+                self.assertEqual(len(cleanup), 1, records)
+                expected_status = (
+                    ScratchCleanupStatus.FAILED
+                    if replacement_after_delete
+                    else ScratchCleanupStatus.CLEAN
+                )
+                self.assertEqual(cleanup[0].status, expected_status, cleanup[0])
+                self.assertEqual(cleanup[0].removed_entries, 1)
+                self.assertEqual(
+                    backend.close_counts.get(original.identity, 0)
+                    - close_count_before_delete,
+                    2,
+                )
+                if replacement_after_delete:
+                    assert replacement is not None
+                    self.assertIs(managed.children[original.name], replacement)
+                    self.assertIn("sentinel", replacement.children)
+                else:
+                    self.assertNotIn(original.name, managed.children)
+                self.assertEqual(len(backend.live_resources), 0)
+
+    def test_task9_empty_delete_deadline_defers_without_reopening_target(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        managed_capability = self._task7_managed_root(backend)
+        managed = backend._resource(managed_capability).node
+        original = self._task9_add_candidate(
+            backend,
+            managed,
+            run_id="00000000-0000-4000-8000-000000000902",
+            prefix=".deleting-",
+            lease=False,
+            heartbeat=False,
+        )
+        clock = [0.0]
+        crossed_at = -1
+        close_count_before_delete = -1
+
+        def delete_then_cross_deadline(
+            capability: FileCapability | DirectoryCapability,
+        ) -> None:
+            nonlocal close_count_before_delete, crossed_at
+            close_count_before_delete = backend.close_counts.get(
+                original.identity, 0
+            )
+            resource = backend._resource(capability)
+            node = resource.node
+            parent = node.parent
+            assert parent is not None
+            self.assertIs(parent.children.pop(node.name), node)
+            resource.close_failures = 1
+            clock[0] = 31.0
+            crossed_at = len(backend.cleanup_operations)
+            capability.close()
+
+        with (
+            mock.patch.object(
+                backend, "delete", side_effect=delete_then_cross_deadline
+            ),
+            mock.patch(
+                "tools.focused_mutation_support.lease.time.monotonic",
+                side_effect=lambda: clock[0],
+            ),
+        ):
+            records = reclaim_abandoned(
+                managed_capability.path_hint,
+                backend=backend,
+                managed_root_capability=managed_capability,
+            )
+
+        cleanup = _cleanup_records_only(records)
+        self.assertEqual(len(cleanup), 1, records)
+        self.assertEqual(cleanup[0].status, ScratchCleanupStatus.DEFERRED)
+        self.assertEqual(cleanup[0].removed_entries, 1)
+        self.assertNotIn(original.name, managed.children)
+        self.assertGreaterEqual(crossed_at, 0)
+        self.assertFalse(
+            any(
+                operation
+                in {
+                    f"entry:{original.name}",
+                    f"open_directory:{original.name}",
+                    f"delete:{original.name}",
+                }
+                for operation in backend.cleanup_operations[crossed_at:]
+            ),
+            backend.cleanup_operations[crossed_at:],
+        )
+        self.assertEqual(
+            backend.close_counts.get(original.identity, 0)
+            - close_count_before_delete,
+            2,
+        )
+        self.assertEqual(len(backend.live_resources), 0)
+
+    def test_task9_preallocates_lease_owners_before_candidate_open(self) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_JanitorCandidate", "_janitor_candidate_record"],
+        )
+        for owner_kind in ("descriptor", "lease"):
+            with self.subTest(owner=owner_kind):
+                backend = self._task8_backend()
+                managed_capability = self._task7_managed_root(backend)
+                managed = backend._resource(managed_capability).node
+                run_id = (
+                    "00000000-0000-4000-8000-000000000903"
+                    if owner_kind == "descriptor"
+                    else "00000000-0000-4000-8000-000000000904"
+                )
+                candidate = self._task9_add_candidate(
+                    backend, managed, run_id=run_id, retained=True
+                )
+                selected = lease_module._JanitorCandidate(
+                    candidate.name,
+                    candidate.identity,
+                    candidate.filesystem,
+                    run_id,
+                    candidate.modified_ns,
+                )
+                candidate_opened = False
+                real_descriptor = lease_module._OwnedDescriptor
+                real_lock = lease_module.LeaseLock
+
+                def note_candidate_open(operation: str) -> None:
+                    nonlocal candidate_opened
+                    if operation == f"open_directory:{candidate.name}":
+                        candidate_opened = True
+
+                def allocate_descriptor() -> _OwnedDescriptor:
+                    if candidate_opened and owner_kind == "descriptor":
+                        raise MemoryError(
+                            "descriptor owner allocated after candidate open"
+                        )
+                    return real_descriptor()
+
+                def allocate_lock(descriptor: int) -> LeaseLock:
+                    if candidate_opened and owner_kind == "lease":
+                        raise MemoryError(
+                            "lease owner allocated after candidate open"
+                        )
+                    return real_lock(descriptor)
+
+                backend.after_cleanup_operation = note_candidate_open
+                escaped_detail: str | None = None
+                try:
+                    with (
+                        mock.patch.object(
+                            lease_module,
+                            "_OwnedDescriptor",
+                            side_effect=allocate_descriptor,
+                        ),
+                        mock.patch.object(
+                            lease_module,
+                            "LeaseLock",
+                            side_effect=allocate_lock,
+                        ),
+                    ):
+                        lease_module._janitor_candidate_record(
+                            managed_capability.path_hint,
+                            managed_capability,
+                            selected,
+                            backend,
+                            current_time=24 * 60 * 60 + 1.0,
+                            deadline=time.monotonic() + 30.0,
+                        )
+                except BaseException as error:
+                    escaped_detail = f"{type(error).__name__}: {error}"
+                    error.__traceback__ = None
+                finally:
+                    if managed_capability.is_open:
+                        managed_capability.close()
+                    gc.collect()
+                self.assertIsNone(escaped_detail, escaped_detail)
+
+    def test_task9_windows_handoff_does_not_allocate_lock_after_rename(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["LeaseLock"],
+        )
+        backend = self._task8_backend(
+            rename_requires_closed_descendants=True
+        )
+        managed_capability = self._task7_managed_root(backend)
+        managed = backend._resource(managed_capability).node
+        run_id = "00000000-0000-4000-8000-000000000905"
+        self._task9_add_candidate(backend, managed, run_id=run_id, ready=True)
+        real_lock = lease_module.LeaseLock
+        renamed = False
+
+        def note_rename(operation: str) -> None:
+            nonlocal renamed
+            if operation.startswith("rename:"):
+                renamed = True
+
+        def allocate_lock(descriptor: int) -> LeaseLock:
+            if renamed and descriptor >= 0:
+                raise MemoryError("lease lock allocated after claim rename")
+            return real_lock(descriptor)
+
+        backend.after_cleanup_operation = note_rename
+        escaped_detail: str | None = None
+        try:
+            with mock.patch.object(
+                lease_module, "LeaseLock", side_effect=allocate_lock
+            ):
+                reclaim_abandoned(
+                    managed_capability.path_hint,
+                    backend=backend,
+                    managed_root_capability=managed_capability,
+                )
+        except BaseException as error:
+            escaped_detail = f"{type(error).__name__}: {error}"
+            error.__traceback__ = None
+        finally:
+            for descriptor in tuple(backend.detached):
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+                backend.detached.pop(descriptor, None)
+            if managed_capability.is_open:
+                managed_capability.close()
+            gc.collect()
+        self.assertIsNone(escaped_detail, escaped_detail)
+
+    def test_task9_result_allocation_failures_dispose_acquired_owners(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_JanitorRecordLedger", "ManagedScratch"],
+        )
+        for failure_point in ("managed-result", "record-ledger"):
+            with self.subTest(failure_point=failure_point):
+                backend = self._task8_backend(
+                    rename_requires_closed_descendants=True
+                )
+                managed_capability = self._task7_managed_root(backend)
+                managed = backend._resource(managed_capability).node
+                run_id = (
+                    "00000000-0000-4000-8000-000000000923"
+                    if failure_point == "managed-result"
+                    else "00000000-0000-4000-8000-000000000924"
+                )
+                self._task9_add_candidate(
+                    backend, managed, run_id=run_id, ready=True
+                )
+                real_add = lease_module._JanitorRecordLedger.add
+
+                def fail_record_add(
+                    ledger: object,
+                    record: ScratchCleanupRecord | JanitorDiagnostic,
+                ) -> int | None:
+                    if isinstance(record, ScratchCleanupRecord):
+                        raise MemoryError("injected record ledger allocation")
+                    return real_add(ledger, record)
+
+                managed_patch = (
+                    mock.patch.object(
+                        lease_module,
+                        "ManagedScratch",
+                        side_effect=MemoryError(
+                            "injected managed result allocation"
+                        ),
+                    )
+                    if failure_point == "managed-result"
+                    else nullcontext()
+                )
+                record_patch = (
+                    mock.patch.object(
+                        lease_module._JanitorRecordLedger,
+                        "add",
+                        autospec=True,
+                        side_effect=fail_record_add,
+                    )
+                    if failure_point == "record-ledger"
+                    else nullcontext()
+                )
+                expected = (
+                    "managed result allocation"
+                    if failure_point == "managed-result"
+                    else "record ledger allocation"
+                )
+                with (
+                    managed_patch,
+                    record_patch,
+                    self.assertRaisesRegex(MemoryError, expected),
+                ):
+                    reclaim_abandoned(
+                        managed_capability.path_hint,
+                        backend=backend,
+                        managed_root_capability=managed_capability,
+                    )
+
+                gc.collect()
+                self.assertEqual(len(backend.live_resources), 0)
+
+    def test_task9_handoff_retains_transient_close_details_once(self) -> None:
+        backend = self._task8_backend(
+            rename_requires_closed_descendants=True
+        )
+        managed_capability = self._task7_managed_root(backend)
+        managed = backend._resource(managed_capability).node
+        run_id = "00000000-0000-4000-8000-000000000906"
+        self._task9_add_candidate(backend, managed, run_id=run_id, ready=True)
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_close_capability_retry", "_close_lease_lock_retry"],
+        )
+        real_capability_close = lease_module._close_capability_retry
+        real_lock_close = lease_module._close_lease_lock_retry
+
+        def close_capability_with_detail(
+            capability: DirectoryCapability | FileCapability,
+            label: str,
+        ) -> tuple[str, ...]:
+            details = real_capability_close(capability, label)
+            if label == "janitor pre-handoff root":
+                return (*details, "injected transient root close")
+            return details
+
+        def close_lock_with_detail(
+            lock: LeaseLock,
+            label: str,
+        ) -> tuple[str, ...]:
+            details = real_lock_close(lock, label)
+            if label == "janitor candidate lease handoff":
+                return (*details, "injected transient lease close")
+            return details
+
+        with (
+            mock.patch.object(
+                lease_module,
+                "_close_capability_retry",
+                side_effect=close_capability_with_detail,
+            ),
+            mock.patch.object(
+                lease_module,
+                "_close_lease_lock_retry",
+                side_effect=close_lock_with_detail,
+            ),
+        ):
+            records = reclaim_abandoned(
+                managed_capability.path_hint,
+                backend=backend,
+                managed_root_capability=managed_capability,
+            )
+
+        cleanup = _cleanup_records_only(records)
+        self.assertEqual(len(cleanup), 1, records)
+        joined = "; ".join(cleanup[0].details)
+        self.assertEqual(joined.count("transient lease close"), 1)
+        self.assertEqual(joined.count("transient root close"), 1)
+        self.assertEqual(len(backend.live_resources), 0)
+
+    def test_task9_persistent_descendant_close_stops_claim_and_closes_coordinator_last(
+        self,
+    ) -> None:
+        backend = self._task8_backend(
+            rename_requires_closed_descendants=True
+        )
+        managed_capability = self._task7_managed_root(backend)
+        managed = backend._resource(managed_capability).node
+        run_id = "00000000-0000-4000-8000-000000000907"
+        original = self._task9_add_candidate(
+            backend, managed, run_id=run_id, ready=True
+        )
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_close_lease_lock_retry", "os"],
+        )
+        real_acquire = LeaseLock.acquire
+        real_close = os.close
+        real_close_retry = lease_module._close_lease_lock_retry
+        candidate_lock: LeaseLock | None = None
+        close_attempts = 0
+        disposal_order: list[str] = []
+
+        def capture_candidate_lock(
+            lock: LeaseLock, *, blocking: bool
+        ) -> None:
+            nonlocal candidate_lock
+            real_acquire(lock, blocking=blocking)
+            node = backend.detached.get(lock.fd)
+            if node is not None and node.name == ".hoimin-lease.json":
+                candidate_lock = lock
+
+        def fail_candidate_close(descriptor: int) -> None:
+            nonlocal close_attempts
+            if candidate_lock is not None and descriptor == candidate_lock.fd:
+                close_attempts += 1
+                raise OSError(
+                    f"injected persistent janitor lease close {close_attempts}"
+                )
+            real_close(descriptor)
+
+        def observe_disposal(
+            lock: LeaseLock,
+            label: str,
+        ) -> tuple[str, ...]:
+            details = real_close_retry(lock, label)
+            if label.startswith("janitor"):
+                disposal_order.append(label)
+            return details
+
+        with (
+            mock.patch.object(
+                LeaseLock,
+                "acquire",
+                autospec=True,
+                side_effect=capture_candidate_lock,
+            ),
+            mock.patch.object(
+                lease_module.os, "close", side_effect=fail_candidate_close
+            ),
+            mock.patch.object(
+                lease_module,
+                "_close_lease_lock_retry",
+                side_effect=observe_disposal,
+            ),
+        ):
+            records = reclaim_abandoned(
+                managed_capability.path_hint,
+                backend=backend,
+                managed_root_capability=managed_capability,
+            )
+
+        cleanup = _cleanup_records_only(records)
+        self.assertEqual(len(cleanup), 1, records)
+        self.assertEqual(cleanup[0].status, ScratchCleanupStatus.FAILED)
+        self.assertEqual(close_attempts, 2)
+        joined = "; ".join(cleanup[0].details)
+        self.assertEqual(joined.count("persistent janitor lease close 1"), 1)
+        self.assertEqual(joined.count("persistent janitor lease close 2"), 1)
+        self.assertFalse(
+            any(
+                operation.startswith("rename:")
+                for operation in backend.cleanup_operations
+            ),
+            backend.cleanup_operations,
+        )
+        self.assertIn(original.name, managed.children)
+        self.assertEqual(disposal_order[-1], "janitor claim coordinator")
+        assert candidate_lock is not None
+        candidate_lock.__del__()
+        self.assertEqual(candidate_lock.fd, -1)
+        self.assertEqual(len(backend.live_resources), 0)
+
+    def test_task9_selection_reports_canonical_non_directory_entries_once(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        managed_capability = self._task7_managed_root(backend)
+        managed = backend._resource(managed_capability).node
+        kinds = (EntryKind.REGULAR, EntryKind.REPARSE, EntryKind.OTHER)
+        names: list[str] = []
+        for offset, kind in enumerate(kinds):
+            run_id = f"00000000-0000-4000-8000-{910 + offset:012d}"
+            name = f".deleting-{run_id}"
+            names.append(name)
+            backend._new_node(
+                kind,
+                SecurityDomain.MANAGED,
+                parent=managed,
+                name=name,
+            )
+        cross_run_id = "00000000-0000-4000-8000-000000000913"
+        cross = self._task9_add_candidate(
+            backend,
+            managed,
+            run_id=cross_run_id,
+            prefix=".deleting-",
+            lease=False,
+            heartbeat=False,
+        )
+        cross.filesystem = FilesystemIdentity(cross.filesystem.volume + 1)
+        names.append(cross.name)
+
+        records = reclaim_abandoned(
+            managed_capability.path_hint,
+            backend=backend,
+            managed_root_capability=managed_capability,
+        )
+
+        diagnostics = [
+            record for record in records if isinstance(record, JanitorDiagnostic)
+        ]
+        self.assertEqual(len(diagnostics), 4, records)
+        joined = "\n".join(
+            detail for record in diagnostics for detail in record.details
+        )
+        for name in names:
+            self.assertEqual(joined.count(name), 1, joined)
+            self.assertNotIn(f"open_directory:{name}", backend.cleanup_operations)
+            self.assertNotIn(f"delete:{name}", backend.cleanup_operations)
+        self.assertEqual(len(backend.live_resources), 0)
+
+    def test_task9_record_ledger_bounds_peak_at_add_time(self) -> None:
+        backend = self._task8_backend()
+        managed_capability = self._task7_managed_root(backend)
+        managed = backend._resource(managed_capability).node
+        for number in range(256):
+            run_id = f"00000000-0000-4000-8000-{20_000 + number:012d}"
+            self._task9_add_candidate(
+                backend,
+                managed,
+                run_id=run_id,
+                lease=False,
+                heartbeat=False,
+            )
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_bound_cleanup_records", "_janitor_candidate_record"],
+        )
+        real_bound = lease_module._bound_cleanup_records
+        peak_details = 0
+        peak_records = 0
+
+        def candidate_record(*_args: object, **_kwargs: object) -> JanitorDiagnostic:
+            return JanitorDiagnostic(
+                tuple(f"candidate-detail-{index}" for index in range(256))
+            )
+
+        def observe_prebound(
+            records: list[ScratchCleanupRecord | JanitorDiagnostic],
+        ) -> list[ScratchCleanupRecord | JanitorDiagnostic]:
+            nonlocal peak_details, peak_records
+            peak_details = max(
+                peak_details, sum(len(record.details) for record in records)
+            )
+            peak_records = max(peak_records, len(records))
+            return real_bound(records)
+
+        with (
+            mock.patch.object(
+                lease_module,
+                "_janitor_candidate_record",
+                side_effect=candidate_record,
+            ),
+            mock.patch.object(
+                lease_module,
+                "_bound_cleanup_records",
+                side_effect=observe_prebound,
+            ),
+        ):
+            records = reclaim_abandoned(
+                managed_capability.path_hint,
+                backend=backend,
+                managed_root_capability=managed_capability,
+            )
+
+        self.assertLessEqual(peak_records, 256)
+        self.assertLessEqual(peak_details, MAX_DIAGNOSTIC_DETAILS)
+        self.assertEqual(sum(len(record.details) for record in records), 256)
+        self.assertEqual(
+            sum(record.omitted_detail_count for record in records),
+            256 * 255,
+        )
+        self.assertEqual(len(backend.live_resources), 0)
+
+    def test_task9_revalidates_postclaim_marker_content_and_identity(
+        self,
+    ) -> None:
+        for mutation in (
+            "heartbeat-content",
+            "ready-replacement",
+            "retain-appearance",
+        ):
+            with self.subTest(mutation=mutation):
+                backend = self._task8_backend(
+                    rename_requires_closed_descendants=True
+                )
+                managed_capability = self._task7_managed_root(backend)
+                managed = backend._resource(managed_capability).node
+                run_id = (
+                    "00000000-0000-4000-8000-000000000920"
+                    if mutation == "heartbeat-content"
+                    else (
+                        "00000000-0000-4000-8000-000000000921"
+                        if mutation == "ready-replacement"
+                        else "00000000-0000-4000-8000-000000000925"
+                    )
+                )
+                root = self._task9_add_candidate(
+                    backend, managed, run_id=run_id, ready=True
+                )
+                real_rename = backend.rename
+                replacement: _ManagedRecordedNode | None = None
+
+                def mutate_after_claim(
+                    source: FileCapability | DirectoryCapability,
+                    destination_parent: DirectoryCapability,
+                    destination_name: str,
+                    *,
+                    replace: bool,
+                ) -> None:
+                    nonlocal replacement
+                    real_rename(
+                        source,
+                        destination_parent,
+                        destination_name,
+                        replace=replace,
+                    )
+                    if mutation == "heartbeat-content":
+                        marker = root.children[".hoimin-heartbeat.json"]
+                        assert marker.backing is not None
+                        marker.backing.seek(0)
+                        marker.backing.truncate()
+                        marker.backing.write(b"{}\n")
+                        marker.backing.flush()
+                    elif mutation == "ready-replacement":
+                        original = root.children.pop(
+                            ".hoimin-cleanup-ready.json"
+                        )
+                        original.name = ".hoimin-cleanup-ready.original"
+                        root.children[original.name] = original
+                        replacement = self._task9_add_marker(
+                            backend,
+                            root,
+                            ".hoimin-cleanup-ready.json",
+                            run_id,
+                            str(uuid.uuid4()),
+                        )
+                    else:
+                        replacement = self._task9_add_marker(
+                            backend,
+                            root,
+                            ".hoimin-retain.json",
+                            run_id,
+                            str(uuid.uuid4()),
+                        )
+
+                with (
+                    mock.patch.object(
+                        backend, "rename", side_effect=mutate_after_claim
+                    ),
+                    mock.patch.object(
+                        ManagedScratch,
+                        "cleanup",
+                        return_value=ScratchCleanupRecord(
+                            ScratchCleanupStatus.CLEAN, 0, 0
+                        ),
+                    ) as cleanup,
+                ):
+                    records = reclaim_abandoned(
+                        managed_capability.path_hint,
+                        backend=backend,
+                        managed_root_capability=managed_capability,
+                    )
+
+                cleanup.assert_not_called()
+                failures = _cleanup_records_only(records)
+                self.assertEqual(len(failures), 1, records)
+                self.assertEqual(
+                    failures[0].status, ScratchCleanupStatus.FAILED
+                )
+                self.assertIn("marker", "; ".join(failures[0].details))
+                if replacement is not None:
+                    replacement_name = (
+                        ".hoimin-cleanup-ready.json"
+                        if mutation == "ready-replacement"
+                        else ".hoimin-retain.json"
+                    )
+                    self.assertIs(root.children[replacement_name], replacement)
+                self.assertFalse(
+                    any(
+                        operation.startswith("delete:")
+                        for operation in backend.cleanup_operations
+                    ),
+                    backend.cleanup_operations,
+                )
+                self.assertEqual(len(backend.live_resources), 0)
+
+    def test_task9_postclaim_rebind_stops_at_shared_absolute_deadline(
+        self,
+    ) -> None:
+        backend = self._task8_backend(
+            rename_requires_closed_descendants=True
+        )
+        managed_capability = self._task7_managed_root(backend)
+        managed = backend._resource(managed_capability).node
+        run_id = "00000000-0000-4000-8000-000000000922"
+        self._task9_add_candidate(backend, managed, run_id=run_id, ready=True)
+        clock = [0.0]
+        heartbeat_opens = 0
+        crossed_at = -1
+
+        def cross_on_rebind(event: str) -> None:
+            nonlocal crossed_at, heartbeat_opens
+            if event == "open_existing:.hoimin-heartbeat.json:read:pinned":
+                heartbeat_opens += 1
+                if heartbeat_opens == 2:
+                    clock[0] = 31.0
+                    crossed_at = len(backend.events)
+
+        backend.after_event = cross_on_rebind
+        with (
+            mock.patch(
+                "tools.focused_mutation_support.lease.time.monotonic",
+                side_effect=lambda: clock[0],
+            ),
+            mock.patch.object(ManagedScratch, "cleanup") as cleanup,
+        ):
+            records = reclaim_abandoned(
+                managed_capability.path_hint,
+                backend=backend,
+                managed_root_capability=managed_capability,
+            )
+
+        cleanup.assert_not_called()
+        self.assertGreaterEqual(crossed_at, 0)
+        after_deadline = backend.events[crossed_at:]
+        self.assertFalse(
+            any(
+                event.startswith(
+                    (
+                        "verify-managed:.hoimin-heartbeat.json",
+                        "reopen-directory:mutation",
+                    )
+                )
+                for event in after_deadline
+            ),
+            after_deadline,
+        )
+        self.assertTrue(
+            any(
+                isinstance(record, JanitorDiagnostic)
+                and "deadline" in "; ".join(record.details)
+                for record in records
+            ),
+            records,
+        )
+        self.assertEqual(len(backend.live_resources), 0)
 
     def test_task8_posix_claim_handoff_uses_capability_authority(self) -> None:
         backend = self._task8_backend()
