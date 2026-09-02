@@ -4770,7 +4770,7 @@ class _FixedDetailLedger:
         self._items[self.count] = detail
         self.count += 1
 
-    def add_many(self, details: tuple[str, ...]) -> None:
+    def add_many(self, details: tuple[str, ...] | list[str]) -> None:
         for detail_index, detail in enumerate(details):
             bounded_detail = _bounded_diagnostic_detail(detail)
             duplicate = False
@@ -4822,8 +4822,7 @@ def _record_cleanup_exception_notes(
     notes = getattr(error, "__notes__", None)
     if notes is None:
         return
-    for note in cast(list[str], notes):
-        ledger.add(note)
+    ledger.add_many(cast(list[str], notes))
 
 
 def _cleanup_record_details(
@@ -5102,10 +5101,13 @@ def _remove_payload(
         if exhausted():
             raise _DeadlineExceeded(f"{label} deadline reached")
 
-    def retain_continuing_details(details: tuple[str, ...]) -> None:
+    def retain_or_transport_details(
+        details: tuple[str, ...],
+    ) -> tuple[str, ...]:
         if owner_graph is None:
-            return
+            return details
         owner_graph.details.add_many(details)
+        return ()
 
     def close_or_block(
         owner: FileCapability | DirectoryCapability,
@@ -5113,8 +5115,8 @@ def _remove_payload(
         message: str,
     ) -> tuple[str, ...]:
         errors = _close_cleanup_capability(owner, label)
-        retain_continuing_details(errors)
-        _raise_cleanup_blocked(message, (owner,), errors)
+        transport = retain_or_transport_details(errors)
+        _raise_cleanup_blocked(message, (owner,), transport)
         return errors
 
     def open_cursor(
@@ -5155,30 +5157,32 @@ def _remove_payload(
                     close_errors = _close_cleanup_capability(
                         child, "cleanup cursor child"
                     )
+                    transport = retain_or_transport_details(close_errors)
                     if child.is_open:
                         raise _CleanupOwnershipBlocked(
                             "cleanup cursor child owner remains open",
                             (child,),
-                            close_errors,
+                            transport,
                             primary=primary_error,
                         ) from primary_error
                     if owner_graph is not None:
                         owner_graph.walker_child.owner = None
-                    for detail in close_errors:
+                    for detail in transport:
                         primary_error.add_note(detail)
                     raise
                 parent_errors = _close_cleanup_capability(
                     current, "cleanup cursor parent"
                 )
-                retain_continuing_details(parent_errors)
+                parent_transport = retain_or_transport_details(parent_errors)
                 if current.is_open:
                     child_errors = _close_cleanup_capability(
                         child, "cleanup cursor child"
                     )
+                    child_transport = retain_or_transport_details(child_errors)
                     _raise_cleanup_blocked(
                         "cleanup cursor parent remains open",
                         (current, child),
-                        (*parent_errors, *child_errors),
+                        (*parent_transport, *child_transport),
                     )
                 if owner_graph is not None:
                     owner_graph.walker_current.owner = child
@@ -5192,6 +5196,9 @@ def _remove_payload(
                 cursor_close_errors = _close_cleanup_capability(
                     current, "cleanup cursor"
                 )
+            cursor_transport = retain_or_transport_details(
+                cursor_close_errors
+            )
             if owner_graph is not None and not current.is_open:
                 owner_graph.walker_current.owner = None
             if isinstance(primary_error, _CleanupOwnershipBlocked):
@@ -5201,17 +5208,17 @@ def _remove_payload(
                 raise _CleanupOwnershipBlocked(
                     str(primary_error),
                     tuple(owners),
-                    (*primary_error.details, *cursor_close_errors),
+                    (*primary_error.details, *cursor_transport),
                     primary=primary_error.primary,
                 ) from primary_error
             if current.is_open:
                 raise _CleanupOwnershipBlocked(
                     "cleanup cursor owner remains open",
                     (current,),
-                    cursor_close_errors,
+                    cursor_transport,
                     primary=primary_error,
                 ) from primary_error
-            for detail in cursor_close_errors:
+            for detail in cursor_transport:
                 primary_error.add_note(detail)
             raise
 
@@ -5343,7 +5350,7 @@ def _remove_payload(
                     current = None
                     return complete
 
-                retain_continuing_details(close_errors)
+                completed_transport = retain_or_transport_details(close_errors)
                 completed = cursor.components[-1]
                 parent_components = cursor.components[:-1]
                 parent = open_cursor(None, parent_components)
@@ -5412,7 +5419,9 @@ def _remove_payload(
                     completed_blocked: list[
                         FileCapability | DirectoryCapability
                     ] = []
-                    completed_close_details: list[str] = list(close_errors)
+                    completed_close_details: list[str] = list(
+                        completed_transport
+                    )
                     blocked_message = "cleanup owner remains open"
                     blocked_primary: BaseException | None = primary_error
                     if isinstance(primary_error, _CleanupOwnershipBlocked):
@@ -5424,7 +5433,9 @@ def _remove_payload(
                         child_errors = _close_cleanup_capability(
                             child, "cleanup completed directory"
                         )
-                        completed_close_details.extend(child_errors)
+                        completed_close_details.extend(
+                            retain_or_transport_details(child_errors)
+                        )
                         if child.is_open and child not in completed_blocked:
                             completed_blocked.append(child)
                     elif owner_graph is not None:
@@ -5433,7 +5444,9 @@ def _remove_payload(
                         parent_errors = _close_cleanup_capability(
                             parent, "cleanup completed directory parent"
                         )
-                        completed_close_details.extend(parent_errors)
+                        completed_close_details.extend(
+                            retain_or_transport_details(parent_errors)
+                        )
                         if parent.is_open and parent not in completed_blocked:
                             completed_blocked.append(parent)
                     elif owner_graph is not None:
@@ -5451,12 +5464,12 @@ def _remove_payload(
                 parent_errors = _close_cleanup_capability(
                     parent, "cleanup completed directory parent"
                 )
-                retain_continuing_details(parent_errors)
+                parent_transport = retain_or_transport_details(parent_errors)
                 if parent.is_open:
                     raise _CleanupOwnershipBlocked(
                         "cleanup parent owner remains open",
                         (parent,),
-                        parent_errors,
+                        parent_transport,
                     )
                 if owner_graph is not None:
                     owner_graph.walker_parent.owner = None
@@ -5468,9 +5481,7 @@ def _remove_payload(
                         removed,
                         False,
                         deferred_cursor,
-                        details=(
-                            close_errors if owner_graph is None else ()
-                        ),
+                        details=completed_transport,
                     )
                 current = open_cursor(None, cursor.components)
                 if owner_graph is not None:
@@ -5522,14 +5533,15 @@ def _remove_payload(
                     close_errors = _close_cleanup_capability(
                         child, "cleanup directory"
                     )
+                    transport = retain_or_transport_details(close_errors)
                     if child.is_open:
                         raise _CleanupOwnershipBlocked(
                             "cleanup directory owner remains open",
                             (child,),
-                            close_errors,
+                            transport,
                             primary=primary_error,
                         ) from primary_error
-                    for detail in close_errors:
+                    for detail in transport:
                         primary_error.add_note(detail)
                     raise
                 parent_errors = _close_cleanup_iterator(
@@ -5552,7 +5564,7 @@ def _remove_payload(
                         ),
                         details=(*parent_errors, *child_errors),
                     )
-                retain_continuing_details(parent_errors)
+                retain_or_transport_details(parent_errors)
                 if owner_graph is not None:
                     owner_graph.walker_iterator.owner = None
                 iterator = None
@@ -5617,14 +5629,15 @@ def _remove_payload(
                     close_errors = _close_cleanup_capability(
                         opened, f"cleanup entry {entry.name}"
                     )
+                    transport = retain_or_transport_details(close_errors)
                     if opened.is_open:
                         raise _CleanupOwnershipBlocked(
                             "cleanup entry owner remains open",
                             (opened,),
-                            close_errors,
+                            transport,
                             primary=primary_error,
                         ) from primary_error
-                    for detail in close_errors:
+                    for detail in transport:
                         primary_error.add_note(detail)
                 if owner_graph is not None and not opened.is_open:
                     owner_graph.walker_entry.owner = None
@@ -5671,16 +5684,22 @@ def _remove_payload(
         blocked: list[FileCapability | DirectoryCapability] = []
         close_details: list[str] = []
         if iterator is not None:
+            iterator_errors = _close_cleanup_iterator(
+                iterator, "cleanup iterator"
+            )
             close_details.extend(
-                _close_cleanup_iterator(iterator, "cleanup iterator")
+                retain_or_transport_details(iterator_errors)
             )
             if iterator.directory.is_open:
                 blocked.append(iterator.directory)
             elif owner_graph is not None:
                 owner_graph.walker_iterator.owner = None
         if current is not None and current.is_open:
+            current_errors = _close_cleanup_capability(
+                current, "cleanup current"
+            )
             close_details.extend(
-                _close_cleanup_capability(current, "cleanup current")
+                retain_or_transport_details(current_errors)
             )
             if current.is_open:
                 blocked.append(current)

@@ -11861,6 +11861,194 @@ class ManagedScratchTests(unittest.TestCase):
         )
         self.assertNotIn(child.name, scratch._children)
 
+    def test_task8_full_ledger_operational_failure_ingests_close_once(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000891",
+        )
+        root = self._task8_root_node(backend, scratch)
+        level = self._task8_add_payload(
+            backend, root, "level", kind=EntryKind.DIRECTORY
+        )
+        backend.iterator_auto_close = False
+        backend.iterator_close_failures_by_identity[level.identity] = 1
+        graph = scratch._ensure_cleanup_graph()
+        for detail_index in range(MAX_DIAGNOSTIC_DETAILS):
+            graph.details.add(f"preexisting detail {detail_index:03d}")
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_FixedDetailLedger", "_bounded_diagnostic_detail"],
+        )
+        ledger_type = lease_module._FixedDetailLedger
+        real_add = ledger_type.add
+        close_detail = (
+            "cleanup completed iterator close failed: OSError: "
+            "injected close failure for level"
+        )
+        close_detail_adds = 0
+        real_delete = backend.delete
+
+        def record_add(ledger: object, detail: str) -> None:
+            nonlocal close_detail_adds
+            if lease_module._bounded_diagnostic_detail(detail) == close_detail:
+                close_detail_adds += 1
+            real_add(ledger, detail)
+
+        def fail_completed_directory_delete(
+            capability: FileCapability | DirectoryCapability,
+        ) -> None:
+            if capability.identity == level.identity:
+                raise OSError("injected saturated directory delete primary")
+            real_delete(capability)
+
+        with (
+            mock.patch.object(
+                ledger_type,
+                "add",
+                autospec=True,
+                side_effect=record_add,
+            ),
+            mock.patch.object(
+                backend,
+                "delete",
+                side_effect=fail_completed_directory_delete,
+            ),
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertIn("saturated directory delete primary", cleanup.details[0])
+        self.assertEqual(len(cleanup.details), MAX_DIAGNOSTIC_DETAILS)
+        self.assertNotIn(close_detail, cleanup.details)
+        self.assertEqual(close_detail_adds, 1)
+        self.assertEqual(cleanup.omitted_detail_count, 2, cleanup)
+
+    def test_task8_full_ledger_blocked_failure_ingests_close_once(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000892",
+        )
+        root = self._task8_root_node(backend, scratch)
+        level = self._task8_add_payload(
+            backend, root, "level", kind=EntryKind.DIRECTORY
+        )
+        backend.iterator_auto_close = False
+        backend.iterator_close_failures_by_identity[level.identity] = 1
+        backend.close_failures_by_identity[level.identity] = 2
+        graph = scratch._ensure_cleanup_graph()
+        for detail_index in range(MAX_DIAGNOSTIC_DETAILS):
+            graph.details.add(f"preexisting detail {detail_index:03d}")
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_FixedDetailLedger", "_bounded_diagnostic_detail"],
+        )
+        ledger_type = lease_module._FixedDetailLedger
+        real_add = ledger_type.add
+        added_details: list[str] = []
+        continuing_detail = (
+            "cleanup completed iterator close failed: OSError: "
+            "injected close failure for level"
+        )
+        owner_close_detail = (
+            "cleanup completed directory close failed: OSError: "
+            "injected close failure for level"
+        )
+        blocked_detail = "cleanup owner remains open"
+        unavailable_detail = (
+            "managed namespace cleanup unavailable: RuntimeError: "
+            "an owned capability remains open"
+        )
+
+        def record_add(ledger: object, detail: str) -> None:
+            bounded = lease_module._bounded_diagnostic_detail(detail)
+            added_details.append(bounded)
+            real_add(ledger, detail)
+
+        with mock.patch.object(
+            ledger_type,
+            "add",
+            autospec=True,
+            side_effect=record_add,
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertEqual(
+            cleanup.details[0],
+            "cleanup failed: OSError: injected close failure for level",
+        )
+        self.assertEqual(len(cleanup.details), MAX_DIAGNOSTIC_DETAILS)
+        for detail in (
+            continuing_detail,
+            owner_close_detail,
+            blocked_detail,
+            unavailable_detail,
+        ):
+            with self.subTest(detail=detail):
+                self.assertEqual(added_details.count(detail), 1, added_details)
+                self.assertNotIn(detail, cleanup.details)
+        self.assertEqual(cleanup.omitted_detail_count, 5, cleanup)
+        retained = [
+            owner
+            for owner in scratch._cleanup_owned_capabilities
+            if owner.is_open and owner.identity == level.identity
+        ]
+        self.assertEqual(len(retained), 1, retained)
+        self.assertEqual(retained[0]._close_attempts, 2)
+
+    def test_task8_full_ledger_dedupes_identical_exception_notes(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000893",
+        )
+        graph = scratch._ensure_cleanup_graph()
+        for detail_index in range(MAX_DIAGNOSTIC_DETAILS):
+            graph.details.add(f"preexisting detail {detail_index:03d}")
+        duplicate_note = "injected duplicate saturated exception note"
+        failure = OSError("injected duplicate-note primary")
+        failure.add_note(duplicate_note)
+        failure.add_note(duplicate_note)
+        backend.iterator_failure = failure
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_FixedDetailLedger", "_bounded_diagnostic_detail"],
+        )
+        ledger_type = lease_module._FixedDetailLedger
+        real_add = ledger_type.add
+        note_adds = 0
+
+        def record_add(ledger: object, detail: str) -> None:
+            nonlocal note_adds
+            if lease_module._bounded_diagnostic_detail(detail) == duplicate_note:
+                note_adds += 1
+            real_add(ledger, detail)
+
+        with mock.patch.object(
+            ledger_type,
+            "add",
+            autospec=True,
+            side_effect=record_add,
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertEqual(
+            cleanup.details[0], "OSError: injected duplicate-note primary"
+        )
+        self.assertEqual(len(cleanup.details), MAX_DIAGNOSTIC_DETAILS)
+        self.assertNotIn(duplicate_note, cleanup.details)
+        self.assertEqual(note_adds, 1)
+        self.assertEqual(cleanup.omitted_detail_count, 2, cleanup)
+
     def test_task8_tail_host_error_stays_failed_when_report_crosses_deadline(
         self,
     ) -> None:
