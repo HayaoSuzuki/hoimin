@@ -11659,6 +11659,208 @@ class ManagedScratchTests(unittest.TestCase):
         )
         self.assertTrue(cleanup.details[1].endswith("..."), cleanup)
 
+    def test_task8_full_ledger_counts_continuing_close_omission_once(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000887",
+        )
+        child = scratch.create_child("candidate-0001")
+        root = self._task8_root_node(backend, scratch)
+        child_node = root.children[child.name]
+        completed = self._task8_add_payload(
+            backend, child_node, "empty", kind=EntryKind.DIRECTORY
+        )
+        backend.iterator_auto_close = False
+        backend.iterator_close_failures_by_identity[completed.identity] = 1
+        graph = scratch._ensure_cleanup_graph()
+        for detail_index in range(MAX_DIAGNOSTIC_DETAILS):
+            graph.details.add(f"preexisting detail {detail_index:03d}")
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_FixedDetailLedger", "_bounded_diagnostic_detail"],
+        )
+        ledger_type = lease_module._FixedDetailLedger
+        real_add = ledger_type.add
+        close_detail = (
+            "cleanup completed iterator close failed: OSError: "
+            "injected close failure for empty"
+        )
+        close_detail_adds = 0
+        clock = [0.0]
+
+        def record_add(ledger: object, detail: str) -> None:
+            nonlocal close_detail_adds
+            if lease_module._bounded_diagnostic_detail(detail) == close_detail:
+                close_detail_adds += 1
+            real_add(ledger, detail)
+
+        def cross_after_completed_delete(operation: str) -> None:
+            if operation == "delete:empty":
+                clock[0] = 60.0
+
+        backend.after_cleanup_operation = cross_after_completed_delete
+        with (
+            mock.patch.object(
+                ledger_type,
+                "add",
+                autospec=True,
+                side_effect=record_add,
+            ),
+            mock.patch(
+                "tools.focused_mutation_support.lease.time.monotonic",
+                side_effect=lambda: clock[0],
+            ),
+        ):
+            cleanup = scratch.remove_child(child)
+
+        self.assertEqual(
+            cleanup.status, ScratchCleanupStatus.DEFERRED, cleanup
+        )
+        self.assertEqual(
+            cleanup.details[0], "managed child cleanup deadline reached"
+        )
+        self.assertEqual(len(cleanup.details), MAX_DIAGNOSTIC_DETAILS)
+        self.assertNotIn(close_detail, cleanup.details)
+        self.assertEqual(close_detail_adds, 1)
+        self.assertEqual(cleanup.omitted_detail_count, 2, cleanup)
+
+    def test_task8_child_pending_retry_preserves_traversal_details(
+        self,
+    ) -> None:
+        for index, replacement_expected in enumerate((False, True)):
+            with self.subTest(replacement=replacement_expected):
+                backend = self._task8_backend()
+                scratch = self._task8_create(
+                    backend,
+                    run_id=(
+                        "00000000-0000-4000-8000-"
+                        f"{888 + index:012d}"
+                    ),
+                )
+                child = scratch.create_child("candidate-0001")
+                root = self._task8_root_node(backend, scratch)
+                original = root.children[child.name]
+                backend.iterator_auto_close = False
+                backend.iterator_close_failures_by_identity[
+                    original.identity
+                ] = 1
+                real_delete = backend.delete
+                replacement: _ManagedRecordedNode | None = None
+
+                def fail_after_consuming_child(
+                    capability: FileCapability | DirectoryCapability,
+                ) -> None:
+                    nonlocal replacement
+                    node = backend._resource(capability).node
+                    real_delete(capability)
+                    if node is original:
+                        if replacement_expected:
+                            replacement = self._task8_same_identity_replacement(
+                                backend, original
+                            )
+                            self._task8_add_payload(
+                                backend, replacement, "sentinel"
+                            )
+                        raise OSError(
+                            "injected child post-consume detail failure"
+                        )
+
+                with mock.patch.object(
+                    backend,
+                    "delete",
+                    side_effect=fail_after_consuming_child,
+                ):
+                    first = scratch.remove_child(child)
+                    retry_start = len(backend.cleanup_operations)
+                    second = scratch.remove_child(child)
+
+                close_detail = (
+                    "cleanup completed iterator close failed: OSError: "
+                    f"injected close failure for {child.name}"
+                )
+                self.assertEqual(
+                    first.status, ScratchCleanupStatus.FAILED, first
+                )
+                self.assertEqual(first.removed_entries, 1, first)
+                self.assertEqual(first.details[1:].count(close_detail), 1, first)
+                self.assertEqual(
+                    second.status,
+                    (
+                        ScratchCleanupStatus.FAILED
+                        if replacement_expected
+                        else ScratchCleanupStatus.CLEAN
+                    ),
+                    second,
+                )
+                self.assertEqual(second.removed_entries, 1, second)
+                self.assertEqual(second.omitted_detail_count, 0, second)
+                if replacement_expected:
+                    self.assertEqual(
+                        second.details[0],
+                        "managed child was replaced after exact removal",
+                    )
+                    self.assertEqual(
+                        second.details[1:].count(close_detail), 1, second
+                    )
+                    assert replacement is not None
+                    self.assertIs(root.children[child.name], replacement)
+                    self.assertIn("sentinel", replacement.children)
+                else:
+                    self.assertEqual(second.details, (close_detail,), second)
+                retry = backend.cleanup_operations[retry_start:]
+                self.assertEqual(
+                    retry.count(f"entry:{child.name}"), 1, retry
+                )
+                self.assertNotIn(f"open_directory:{child.name}", retry)
+                self.assertNotIn(f"delete:{child.name}", retry)
+
+    def test_task8_child_pending_retry_preserves_consumed_owner_close_detail(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000890",
+        )
+        child = scratch.create_child("candidate-0001")
+        root = self._task8_root_node(backend, scratch)
+        state = scratch._children[child.name]
+        identity = state.identity
+        filesystem = state.filesystem
+        assert identity is not None
+        assert filesystem is not None
+        backend.close_failures_by_identity[identity] = 1
+        consumed_owner = scratch.open_child(child.name, SharePolicy.PINNED)
+        state.root_owner.owner = consumed_owner
+        state.pending_absence.arm(
+            scope="child",
+            name=child.name,
+            identity=identity,
+            filesystem=filesystem,
+            removed_after=1,
+        )
+        state.pending_absence.commit()
+        del root.children[child.name]
+        baseline_close_count = backend.close_counts.get(identity, 0)
+
+        cleanup = scratch.remove_child(child)
+
+        close_detail = (
+            "managed child consumed owner close failed: OSError: "
+            f"injected close failure for {child.name}"
+        )
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.CLEAN, cleanup)
+        self.assertEqual(cleanup.removed_entries, 1, cleanup)
+        self.assertEqual(cleanup.details, (close_detail,), cleanup)
+        self.assertEqual(cleanup.omitted_detail_count, 0, cleanup)
+        self.assertEqual(
+            backend.close_counts.get(identity, 0) - baseline_close_count, 2
+        )
+        self.assertNotIn(child.name, scratch._children)
+
     def test_task8_tail_host_error_stays_failed_when_report_crosses_deadline(
         self,
     ) -> None:

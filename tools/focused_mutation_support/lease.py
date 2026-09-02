@@ -2780,8 +2780,7 @@ class ManagedScratch:
             "managed namespace cleanup unavailable",
             RuntimeError("an owned capability remains open"),
         )
-        for detail in details:
-            graph.details.add(detail)
+        graph.details.add_many(details)
         graph.details.add(bounded)
         self._close_cleanup_graph(retry=True)
         lease = self._lease
@@ -2886,13 +2885,13 @@ class ManagedScratch:
                     close_errors = _close_cleanup_capability(
                         child_owner, "managed child consumed owner"
                     )
+                    graph.details.add_many(close_errors)
                     if child_owner.is_open:
                         return self._namespace_cleanup_unavailable(
                             "managed child consumed owner remains open",
                             examined=examined,
                             removed=removed,
                             owners=(child_owner,),
-                            details=close_errors,
                         )
                     expected.root_owner.owner = None
                     child_owner = None
@@ -2904,13 +2903,21 @@ class ManagedScratch:
                         ScratchCleanupStatus.FAILED,
                         examined,
                         removed,
-                        ("managed child was replaced after exact removal",),
+                        _cleanup_record_details(
+                            graph.details,
+                            "managed child was replaced after exact removal",
+                        ),
                         validate_reported_path(self.path),
+                        graph.details.omitted,
                     )
                 expected.pending_absence.clear()
                 self._children.pop(child.name, None)
                 return ScratchCleanupRecord(
-                    ScratchCleanupStatus.CLEAN, examined, removed
+                    ScratchCleanupStatus.CLEAN,
+                    examined,
+                    removed,
+                    graph.details.details(),
+                    omitted_detail_count=graph.details.omitted,
                 )
 
             if child_owner is None and not cursor.components:
@@ -2992,8 +2999,6 @@ class ManagedScratch:
                 removed = result.removed_entries
                 cursor = result.cursor
                 expected.cursor = cursor
-                for detail in result.details:
-                    graph.details.add(detail)
                 if result.blocked_owners:
                     return self._namespace_cleanup_unavailable(
                         "managed child cleanup owner remains open",
@@ -3002,6 +3007,7 @@ class ManagedScratch:
                         owners=result.blocked_owners,
                         details=result.details,
                     )
+                graph.details.add_many(result.details)
                 if result.complete:
                     break
                 if time.monotonic() >= absolute_deadline:
@@ -3060,13 +3066,13 @@ class ManagedScratch:
                 close_errors = _close_cleanup_capability(
                     child_owner, "managed child"
                 )
+                graph.details.add_many(close_errors)
                 if child_owner.is_open:
                     return self._namespace_cleanup_unavailable(
                         "managed child owner remains open after delete",
                         examined=examined,
                         removed=removed,
                         owners=(child_owner,),
-                        details=close_errors,
                     )
             removed = removed_after
             child_owner = None
@@ -3895,8 +3901,6 @@ class ManagedScratch:
                 examined = result.examined_entries
                 removed = result.removed_entries
                 cursor = result.cursor
-                for detail in result.details:
-                    graph.details.add(detail)
                 if result.blocked_owners:
                     return self._namespace_cleanup_unavailable(
                         "managed payload cleanup owner remains open",
@@ -3905,6 +3909,7 @@ class ManagedScratch:
                         owners=result.blocked_owners,
                         details=result.details,
                     )
+                graph.details.add_many(result.details)
                 if result.complete:
                     break
                 if time.monotonic() >= absolute_deadline:
@@ -4765,6 +4770,20 @@ class _FixedDetailLedger:
         self._items[self.count] = detail
         self.count += 1
 
+    def add_many(self, details: tuple[str, ...]) -> None:
+        for detail_index, detail in enumerate(details):
+            bounded_detail = _bounded_diagnostic_detail(detail)
+            duplicate = False
+            for prior_index in range(detail_index):
+                if (
+                    _bounded_diagnostic_detail(details[prior_index])
+                    == bounded_detail
+                ):
+                    duplicate = True
+                    break
+            if not duplicate:
+                self.add(bounded_detail)
+
     def reserve_primary(self, primary: str) -> str:
         bounded_primary = _bounded_diagnostic_detail(primary)
         allowed_secondary = max(0, len(self._items) - 1)
@@ -4815,8 +4834,7 @@ def _cleanup_record_details(
     secondary: tuple[str, ...] = (),
 ) -> tuple[str, ...]:
     _record_cleanup_exception_notes(ledger, error)
-    for detail in secondary:
-        ledger.add(detail)
+    ledger.add_many(secondary)
     bounded_primary = ledger.reserve_primary(primary)
     return (
         bounded_primary,
@@ -5087,8 +5105,7 @@ def _remove_payload(
     def retain_continuing_details(details: tuple[str, ...]) -> None:
         if owner_graph is None:
             return
-        for detail in details:
-            owner_graph.details.add(detail)
+        owner_graph.details.add_many(details)
 
     def close_or_block(
         owner: FileCapability | DirectoryCapability,
@@ -5451,7 +5468,9 @@ def _remove_payload(
                         removed,
                         False,
                         deferred_cursor,
-                        details=close_errors,
+                        details=(
+                            close_errors if owner_graph is None else ()
+                        ),
                     )
                 current = open_cursor(None, cursor.components)
                 if owner_graph is not None:
