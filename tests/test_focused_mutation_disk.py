@@ -42,6 +42,7 @@ from tools.focused_mutation_support.filesystem import (
     CreateDisposition,
     DirectoryCapability,
     DirectoryEntry,
+    DirectoryIterator,
     EntryKind,
     FileAccess,
     FileCapability,
@@ -1397,7 +1398,7 @@ class _ManagedRecordingBackend(FilesystemBackend):
 
     def entries_owned(
         self, parent: DirectoryCapability
-    ) -> _ManagedRecordedIterator:
+    ) -> DirectoryIterator:
         moved = parent._move_for(self)
         return _ManagedRecordedIterator(self, moved)
 
@@ -1535,6 +1536,250 @@ class _ManagedRecordingBackend(FilesystemBackend):
                 os.fstat(descriptor)
             except OSError:
                 self.detached.pop(descriptor, None)
+
+
+class _Task8ManagedIterator:
+    def __init__(
+        self,
+        backend: "_Task8ManagedRecordingBackend",
+        directory: DirectoryCapability,
+    ) -> None:
+        self._backend = backend
+        self._directory = directory
+        node = backend._resource(directory).node
+        self._name = node.name
+        self._entries = tuple(node.children.values())
+        self._index = 0
+        self._virtual_count = backend.virtual_entry_counts.get(node.identity, 0)
+        self._closed = False
+
+    @property
+    def directory(self) -> DirectoryCapability:
+        return self._directory
+
+    def __iter__(self) -> "_Task8ManagedIterator":
+        return self
+
+    def __next__(self) -> DirectoryEntry:
+        self._backend._cleanup_operation(f"iterator.next:{self._name}")
+        if self._closed:
+            raise StopIteration
+        if self._index < self._virtual_count:
+            index = self._index
+            self._index += 1
+            return DirectoryEntry(
+                f"virtual-{index:05d}",
+                EntryKind.REGULAR,
+                FileIdentity(
+                    self._backend._filesystem.volume,
+                    1_000_000 + index,
+                ),
+                self._backend._filesystem,
+                0,
+                0,
+            )
+        concrete_index = self._index - self._virtual_count
+        if concrete_index >= len(self._entries):
+            self.close()
+            raise StopIteration
+        self._index += 1
+        return self._entries[concrete_index].evidence()
+
+    def close(self) -> None:
+        self._backend._cleanup_operation(f"iterator.close:{self._name}")
+        if self._closed:
+            return
+        self._directory.close()
+        self._closed = True
+
+
+class _Task8CoordinatorLease(LeaseLock):
+    """Deterministic in-memory coordinator for Task 8 recording tests."""
+
+    def __init__(self, gate: threading.Lock) -> None:
+        super().__init__(os.open(os.devnull, os.O_RDONLY))
+        self._gate = gate
+        self.locked = True
+
+    def release(self) -> None:
+        if not self.locked:
+            return
+        self._gate.release()
+        self.locked = False
+
+
+class _Task8ManagedRecordingBackend(_ManagedRecordingBackend):
+    """Capability cleanup oracle kept separate from Task 7 event fixtures."""
+
+    def __init__(
+        self,
+        parent_path: Path,
+        *,
+        rename_requires_closed_descendants: bool,
+    ) -> None:
+        super().__init__(
+            parent_path,
+            rename_requires_closed_descendants=(
+                rename_requires_closed_descendants
+            ),
+        )
+        self.cleanup_operations: list[str] = []
+        self.before_cleanup_operation: Callable[[str], None] = (
+            lambda _operation: None
+        )
+        self.after_cleanup_operation: Callable[[str], None] = (
+            lambda _operation: None
+        )
+        self.virtual_entry_counts: dict[FileIdentity, int] = {}
+        self.close_failures_by_identity: dict[FileIdentity, int] = {}
+        self.close_counts: dict[FileIdentity, int] = {}
+        self.track_directory_resources = False
+        self.max_directory_resources = 0
+        self.coordinator_gate = threading.Lock()
+
+    def _cleanup_operation(self, operation: str) -> None:
+        self.before_cleanup_operation(operation)
+        self.cleanup_operations.append(operation)
+        self.after_cleanup_operation(operation)
+
+    def _record_directory_resources(self) -> None:
+        if not self.track_directory_resources:
+            return
+        count = sum(
+            1
+            for resource in self.live_resources
+            if not resource.closed
+            and resource.node.kind is EntryKind.DIRECTORY
+        )
+        self.max_directory_resources = max(
+            self.max_directory_resources, count
+        )
+
+    def _directory_capability(
+        self,
+        node: _ManagedRecordedNode,
+        *,
+        share_policy: SharePolicy,
+        created: bool,
+        secure_root_creation: bool = False,
+    ) -> DirectoryCapability:
+        capability = super()._directory_capability(
+            node,
+            share_policy=share_policy,
+            created=created,
+            secure_root_creation=secure_root_creation,
+        )
+        self._resource(capability).close_failures = (
+            self.close_failures_by_identity.get(node.identity, 0)
+        )
+        self._record_directory_resources()
+        return capability
+
+    def _file_capability(
+        self,
+        node: _ManagedRecordedNode,
+        *,
+        share_policy: SharePolicy,
+        created: bool,
+    ) -> FileCapability:
+        capability = super()._file_capability(
+            node,
+            share_policy=share_policy,
+            created=created,
+        )
+        self._resource(capability).close_failures = (
+            self.close_failures_by_identity.get(node.identity, 0)
+        )
+        return capability
+
+    def close_resource(self, value: object) -> None:
+        if isinstance(value, _ManagedRecordedResource):
+            identity = value.node.identity
+            self.close_counts[identity] = self.close_counts.get(identity, 0) + 1
+            self._cleanup_operation(f"close:{value.node.name}")
+        super().close_resource(value)
+        self._record_directory_resources()
+
+    def open_directory(
+        self,
+        parent: DirectoryCapability,
+        name: str,
+        share_policy: SharePolicy,
+    ) -> DirectoryCapability:
+        self._cleanup_operation(f"open_directory:{name}")
+        return super().open_directory(parent, name, share_policy)
+
+    def open_file(
+        self,
+        parent: DirectoryCapability,
+        name: str,
+        *,
+        access: FileAccess,
+        disposition: CreateDisposition,
+        share_policy: SharePolicy = SharePolicy.MUTATION,
+    ) -> FileCapability:
+        self._cleanup_operation(f"open_file:{name}")
+        return super().open_file(
+            parent,
+            name,
+            access=access,
+            disposition=disposition,
+            share_policy=share_policy,
+        )
+
+    def open_entry(
+        self,
+        parent: DirectoryCapability,
+        name: str,
+        share_policy: SharePolicy,
+    ) -> FileCapability | DirectoryCapability:
+        self._cleanup_operation(f"open_entry:{name}")
+        if name.startswith("virtual-"):
+            raise FileNotFoundError(name)
+        return super().open_entry(parent, name, share_policy)
+
+    def entry(
+        self, parent: DirectoryCapability, name: str
+    ) -> DirectoryEntry | None:
+        self._cleanup_operation(f"entry:{name}")
+        return super().entry(parent, name)
+
+    def entries_owned(
+        self, parent: DirectoryCapability
+    ) -> _Task8ManagedIterator:
+        self._cleanup_operation("entries_owned")
+        moved = parent._move_for(self)
+        iterator = _Task8ManagedIterator(self, moved)
+        self._record_directory_resources()
+        return iterator
+
+    def rename(
+        self,
+        source: FileCapability | DirectoryCapability,
+        destination_parent: DirectoryCapability,
+        destination_name: str,
+        *,
+        replace: bool,
+    ) -> None:
+        source_name = self._resource(source).node.name
+        self._cleanup_operation(f"rename:{source_name}->{destination_name}")
+        super().rename(
+            source,
+            destination_parent,
+            destination_name,
+            replace=replace,
+        )
+
+    def delete(
+        self, capability: FileCapability | DirectoryCapability
+    ) -> None:
+        name = self._resource(capability).node.name
+        self._cleanup_operation(f"delete:{name}")
+        super().delete(capability)
+
+    def final_path(self, directory: DirectoryCapability) -> Path:
+        self._cleanup_operation("final_path")
+        return super().final_path(directory)
 
 
 class ManagedPublicationCapabilityTests(unittest.TestCase):
@@ -6510,6 +6755,153 @@ class ManagedScratchTests(unittest.TestCase):
         self.addCleanup(scratch.close_capabilities)
         return scratch
 
+    def _task8_backend(
+        self, *, rename_requires_closed_descendants: bool = False
+    ) -> _Task8ManagedRecordingBackend:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        backend = _Task8ManagedRecordingBackend(
+            Path(temporary.name).resolve(),
+            rename_requires_closed_descendants=(
+                rename_requires_closed_descendants
+            ),
+        )
+        self.addCleanup(backend.close_backings)
+        return backend
+
+    def _task8_create(
+        self,
+        backend: _Task8ManagedRecordingBackend,
+        *,
+        run_id: str = "00000000-0000-4000-8000-000000000801",
+    ) -> ManagedScratch:
+        scratch = self._task7_create(backend, run_id=run_id)
+        backend.cleanup_operations.clear()
+        backend.close_counts.clear()
+        backend.track_directory_resources = True
+        backend.max_directory_resources = sum(
+            1
+            for resource in backend.live_resources
+            if not resource.closed
+            and resource.node.kind is EntryKind.DIRECTORY
+        )
+        self.addCleanup(
+            setattr,
+            backend,
+            "after_cleanup_operation",
+            lambda _operation: None,
+        )
+        self.addCleanup(
+            setattr,
+            backend,
+            "before_cleanup_operation",
+            lambda _operation: None,
+        )
+        return scratch
+
+    @staticmethod
+    def _task8_root_node(
+        backend: _Task8ManagedRecordingBackend,
+        scratch: ManagedScratch,
+    ) -> _ManagedRecordedNode:
+        root = scratch._root
+        assert root is not None
+        return backend._resource(root).node
+
+    @staticmethod
+    def _task8_add_payload(
+        backend: _Task8ManagedRecordingBackend,
+        parent: _ManagedRecordedNode,
+        name: str,
+        *,
+        kind: EntryKind = EntryKind.REGULAR,
+    ) -> _ManagedRecordedNode:
+        return backend._new_node(
+            kind,
+            SecurityDomain.MANAGED,
+            parent=parent,
+            name=name,
+        )
+
+    @staticmethod
+    def _task8_cleanup(
+        scratch: ManagedScratch,
+        backend: _Task8ManagedRecordingBackend,
+        *,
+        time_budget: float = 60.0,
+    ) -> ScratchCleanupRecord:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_DeadlineExceeded", "_open_coordinator"],
+        )
+
+        def observe_coordinator(*args: object, **kwargs: object) -> LeaseLock:
+            del args
+            timeout = float(cast(float, kwargs.get("timeout", 5.0)))
+            deadline = cast(float | None, kwargs.get("deadline"))
+            wait = timeout
+            if deadline is not None:
+                wait = min(wait, max(0.0, deadline - time.monotonic()))
+            if not backend.coordinator_gate.acquire(timeout=wait):
+                raise lease_module._DeadlineExceeded(
+                    "managed coordinator lock timed out"
+                )
+            coordinator = _Task8CoordinatorLease(
+                backend.coordinator_gate
+            )
+            backend.coordinator = coordinator
+            return coordinator
+
+        with mock.patch.object(
+            lease_module,
+            "_open_coordinator",
+            side_effect=observe_coordinator,
+        ):
+            try:
+                return scratch.cleanup(time_budget=time_budget)
+            except BaseException:
+                coordinator = backend.coordinator
+                if coordinator is not None:
+                    try:
+                        coordinator.close()
+                    except BaseException:
+                        pass
+                raise
+
+    @staticmethod
+    def _task8_native_cleanup(
+        scratch: ManagedScratch,
+        *,
+        time_budget: float = 60.0,
+    ) -> ScratchCleanupRecord:
+        """Close a leaked coordinator only when an expected RED escapes."""
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_open_coordinator"],
+        )
+        delegate = lease_module._open_coordinator
+        opened: list[LeaseLock] = []
+
+        def track_coordinator(*args: object, **kwargs: object) -> LeaseLock:
+            coordinator = delegate(*args, **kwargs)
+            opened.append(coordinator)
+            return coordinator
+
+        with mock.patch.object(
+            lease_module,
+            "_open_coordinator",
+            side_effect=track_coordinator,
+        ):
+            try:
+                return scratch.cleanup(time_budget=time_budget)
+            except BaseException:
+                for coordinator in opened:
+                    try:
+                        coordinator.close()
+                    except BaseException:
+                        pass
+                raise
+
     @staticmethod
     def _task7_managed_root(
         backend: _ManagedRecordingBackend,
@@ -8523,6 +8915,506 @@ class ManagedScratchTests(unittest.TestCase):
                 [ScratchCleanupStatus.CLEAN, ScratchCleanupStatus.CLEAN],
             )
 
+    def test_task8_posix_claim_handoff_uses_capability_authority(self) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(backend)
+        active_name = scratch.path.name
+        deleting_name = f".deleting-{scratch.run_id}"
+
+        cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.CLEAN, cleanup)
+        self.assertIn(
+            f"rename:{active_name}->{deleting_name}",
+            backend.cleanup_operations,
+        )
+        self.assertNotIn(active_name, backend.parent.children)
+        managed = backend.parent.children["hoimin-focused-v1"]
+        self.assertNotIn(deleting_name, managed.children)
+        self.assertLessEqual(backend.max_directory_resources, 3)
+
+    def test_task8_windows_claim_handoff_closes_and_reopens_descendants(
+        self,
+    ) -> None:
+        backend = self._task8_backend(
+            rename_requires_closed_descendants=True
+        )
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000802",
+        )
+        active_name = scratch.path.name
+        deleting_name = f".deleting-{scratch.run_id}"
+        event_start = len(backend.events)
+
+        cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.CLEAN, cleanup)
+        events = backend.events[event_start:]
+        heartbeat_close = events.index("close:.hoimin-heartbeat.json")
+        rename = events.index(
+            f"rename:{active_name}->{deleting_name}:False"
+        )
+        lease_reopen = next(
+            index
+            for index, event in enumerate(events)
+            if index > rename
+            and event.startswith("open_existing:.hoimin-lease.json:")
+        )
+        lease_detach = events.index("detach:.hoimin-lease.json", rename)
+        heartbeat_reopen = next(
+            index
+            for index, event in enumerate(events)
+            if index > rename
+            and event.startswith("open_existing:.hoimin-heartbeat.json:")
+        )
+        self.assertLess(heartbeat_close, rename)
+        self.assertLess(rename, lease_reopen)
+        self.assertLess(lease_reopen, lease_detach)
+        self.assertLess(lease_detach, heartbeat_reopen)
+        self.assertLessEqual(backend.max_directory_resources, 3)
+
+    def test_task8_persistent_descendant_close_stops_namespace_mutation(
+        self,
+    ) -> None:
+        backend = self._task8_backend(
+            rename_requires_closed_descendants=True
+        )
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000803",
+        )
+        heartbeat = scratch._heartbeat
+        assert heartbeat is not None
+        backend._resource(heartbeat).close_failures = 2
+
+        cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertEqual(backend.close_counts[heartbeat.identity], 2)
+        second_close = max(
+            index
+            for index, operation in enumerate(backend.cleanup_operations)
+            if operation == "close:.hoimin-heartbeat.json"
+        )
+        unsafe_suffix = backend.cleanup_operations[second_close + 1 :]
+        self.assertFalse(
+            any(
+                operation.startswith(("rename:", "delete:", "open_entry:"))
+                for operation in unsafe_suffix
+            ),
+            unsafe_suffix,
+        )
+        self.assertEqual(
+            "; ".join(cleanup.details).count(
+                "managed namespace cleanup unavailable"
+            ),
+            1,
+        )
+
+    def test_task8_payload_resume_reopens_validated_cursor(self) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000804",
+        )
+        root = self._task8_root_node(backend, scratch)
+        level = self._task8_add_payload(
+            backend, root, "level", kind=EntryKind.DIRECTORY
+        )
+        self._task8_add_payload(backend, level, "payload")
+        clock = [0.0]
+        crossed = False
+
+        def cross_inside_child(operation: str) -> None:
+            nonlocal crossed
+            if operation == "iterator.next:level" and not crossed:
+                crossed = True
+                clock[0] = 5.0
+
+        backend.after_cleanup_operation = cross_inside_child
+        with mock.patch(
+            "tools.focused_mutation_support.lease.time.monotonic",
+            side_effect=lambda: clock[0],
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.CLEAN, cleanup)
+        self.assertTrue(crossed)
+        self.assertGreaterEqual(
+            backend.cleanup_operations.count("open_directory:level"), 2
+        )
+        self.assertGreaterEqual(
+            backend.cleanup_operations.count("entries_owned"), 3
+        )
+        self.assertLessEqual(backend.max_directory_resources, 3)
+
+    def test_task8_entry_limit_accepts_50000_and_defers_before_50001(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000811",
+        )
+        root = scratch._root
+        anchor = scratch._managed_root_capability
+        assert root is not None
+        assert anchor is not None
+        root_node = backend._resource(root).node
+        root_identity = root.identity
+        backend.virtual_entry_counts[root.identity] = 50_001
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_CleanupCursor", "_remove_payload"],
+        )
+
+        result = lease_module._remove_payload(
+            backend,
+            anchor,
+            root,
+            root_name=scratch.path.name,
+            root_identity=scratch._root_identity,
+            root_filesystem=scratch._root_filesystem,
+            cursor=lease_module._CleanupCursor(),
+            started=0.0,
+            absolute_deadline=60.0,
+            examined=0,
+            removed=0,
+            monotonic=lambda: 0.0,
+        )
+        scratch._root = None
+
+        self.assertFalse(result.complete)
+        self.assertEqual(result.examined_entries, 50_000)
+        self.assertEqual(result.removed_entries, 0)
+        self.assertEqual(
+            sum(
+                operation.startswith("iterator.next:")
+                for operation in backend.cleanup_operations
+            ),
+            50_000,
+        )
+        self.assertLessEqual(backend.max_directory_resources, 3)
+
+        backend.virtual_entry_counts[root_identity] = 0
+        payload = self._task8_add_payload(backend, root_node, "after-slice")
+        resumed = lease_module._remove_payload(
+            backend,
+            anchor,
+            None,
+            root_name=scratch.path.name,
+            root_identity=scratch._root_identity,
+            root_filesystem=scratch._root_filesystem,
+            cursor=result.cursor,
+            started=0.0,
+            absolute_deadline=60.0,
+            examined=result.examined_entries,
+            removed=result.removed_entries,
+            monotonic=lambda: 0.0,
+        )
+        scratch._root = resumed.root
+
+        self.assertTrue(resumed.complete)
+        self.assertEqual(resumed.examined_entries, 50_001)
+        self.assertEqual(resumed.removed_entries, 1)
+        self.assertNotIn(payload.name, root_node.children)
+
+    def test_task8_depth_and_cursor_boundaries_are_exact(self) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=[
+                "_CleanupComponent",
+                "_CleanupCursor",
+                "_validate_cleanup_cursor",
+            ],
+        )
+        component = lease_module._CleanupComponent(
+            "d",
+            FileIdentity(1, 1),
+            FilesystemIdentity(1, 2, 3),
+        )
+        exact_depth = lease_module._CleanupCursor(
+            (component,) * 4_096
+        )
+        too_deep = lease_module._CleanupCursor((component,) * 4_097)
+        with mock.patch.object(
+            lease_module, "MAX_CLEANUP_CURSOR_BYTES", 1_000_000
+        ):
+            lease_module._validate_cleanup_cursor(exact_depth)
+            with self.assertRaisesRegex(OSError, "depth exceeds 4096"):
+                lease_module._validate_cleanup_cursor(too_deep)
+
+        one_component = lease_module._CleanupCursor((component,))
+        exact_cursor_bytes = len(one_component.encode())
+        with mock.patch.object(
+            lease_module,
+            "MAX_CLEANUP_CURSOR_BYTES",
+            exact_cursor_bytes,
+        ):
+            lease_module._validate_cleanup_cursor(one_component)
+        with mock.patch.object(
+            lease_module,
+            "MAX_CLEANUP_CURSOR_BYTES",
+            exact_cursor_bytes - 1,
+        ):
+            with self.assertRaisesRegex(OSError, "cursor exceeds"):
+                lease_module._validate_cleanup_cursor(one_component)
+
+    def test_task8_replacement_before_consuming_delete_is_preserved(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000805",
+        )
+        child_path = scratch.create_child("candidate-0001")
+        root = self._task8_root_node(backend, scratch)
+        child = root.children[child_path.name]
+        original = self._task8_add_payload(backend, child, "payload")
+        replacement: _ManagedRecordedNode | None = None
+
+        def replace_before_delete(operation: str) -> None:
+            nonlocal replacement
+            if operation != "delete:payload" or replacement is not None:
+                return
+            self.assertIs(child.children["payload"], original)
+            del child.children["payload"]
+            replacement = self._task8_add_payload(
+                backend, child, "payload"
+            )
+
+        backend.before_cleanup_operation = replace_before_delete
+        cleanup = scratch.remove_child(child_path)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        assert replacement is not None
+        self.assertIs(child.children["payload"], replacement)
+        self.assertNotEqual(replacement.identity, original.identity)
+
+    def test_task8_close_failure_uses_two_lifetime_attempts(self) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000806",
+        )
+        child_path = scratch.create_child("candidate-0001")
+        root = self._task8_root_node(backend, scratch)
+        child = root.children[child_path.name]
+        payload = self._task8_add_payload(backend, child, "payload")
+        backend.close_failures_by_identity[payload.identity] = 2
+
+        cleanup = scratch.remove_child(child_path)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertEqual(backend.close_counts[payload.identity], 2)
+        self.assertEqual(
+            "; ".join(cleanup.details).count(
+                "managed namespace cleanup unavailable"
+            ),
+            1,
+        )
+
+    def test_task8_completed_directory_close_preserves_absence_primary(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000831",
+        )
+        root = self._task8_root_node(backend, scratch)
+        level = self._task8_add_payload(
+            backend, root, "level", kind=EntryKind.DIRECTORY
+        )
+        self._task8_add_payload(
+            backend, level, "empty", kind=EntryKind.DIRECTORY
+        )
+
+        def fail_absence_and_arm_parent(operation: str) -> None:
+            if operation != "entry:empty":
+                return
+            parents = [
+                resource
+                for resource in backend.live_resources
+                if not resource.closed and resource.node is level
+            ]
+            self.assertEqual(len(parents), 1, parents)
+            parents[0].close_failures = 2
+            raise OSError("injected completed-directory absence primary")
+
+        backend.before_cleanup_operation = fail_absence_and_arm_parent
+        cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertIn(
+            "completed-directory absence primary", cleanup.details[0]
+        )
+        retained = [
+            owner
+            for owner in scratch._cleanup_owned_capabilities
+            if owner.is_open and owner.identity == level.identity
+        ]
+        self.assertEqual(len(retained), 1, retained)
+        self.assertEqual(retained[0]._close_attempts, 2)
+        close_indices = [
+            index
+            for index, operation in enumerate(backend.cleanup_operations)
+            if operation == "close:level"
+        ]
+        self.assertGreaterEqual(len(close_indices), 3, close_indices)
+        unsafe_suffix = backend.cleanup_operations[close_indices[-1] + 1 :]
+        self.assertFalse(
+            any(
+                operation.startswith(
+                    (
+                        "rename:",
+                        "delete:",
+                        "entry:",
+                        "open_entry:",
+                        "open_directory:",
+                        "entries_owned",
+                        "iterator.next:",
+                    )
+                )
+                for operation in unsafe_suffix
+            ),
+            unsafe_suffix,
+        )
+        self.assertEqual(
+            "; ".join(cleanup.details).count(
+                "managed namespace cleanup unavailable"
+            ),
+            1,
+        )
+
+    def test_task8_deadline_stops_before_next_backend_operation(self) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000807",
+        )
+        clock = [0.0]
+        active_name = scratch.path.name
+
+        def cross_after_identity(operation: str) -> None:
+            if operation == f"entry:{active_name}":
+                clock[0] = 60.0
+
+        backend.after_cleanup_operation = cross_after_identity
+        with mock.patch(
+            "tools.focused_mutation_support.lease.time.monotonic",
+            side_effect=lambda: clock[0],
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED, cleanup)
+        self.assertFalse(
+            any(
+                operation.startswith("rename:")
+                for operation in backend.cleanup_operations
+            )
+        )
+
+    def test_task8_host_timeout_remains_failed_after_clock_crosses(self) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000808",
+        )
+        active_name = scratch.path.name
+        clock = [0.0]
+        backend.failures[f"entry:{active_name}"] = TimeoutError(
+            "filesystem ETIMEDOUT"
+        )
+
+        def cross_during_identity(operation: str) -> None:
+            if operation == f"entry:{active_name}":
+                clock[0] = 60.0
+
+        backend.after_cleanup_operation = cross_during_identity
+        with mock.patch(
+            "tools.focused_mutation_support.lease.time.monotonic",
+            side_effect=lambda: clock[0],
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertIn("ETIMEDOUT", "; ".join(cleanup.details))
+
+    def test_task8_absence_is_checked_only_after_owner_close(self) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000809",
+        )
+        deleting_name = f".deleting-{scratch.run_id}"
+
+        cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.CLEAN, cleanup)
+        delete_index = max(
+            index
+            for index, operation in enumerate(backend.cleanup_operations)
+            if operation == f"delete:{deleting_name}"
+        )
+        close_index = next(
+            index
+            for index, operation in enumerate(backend.cleanup_operations)
+            if index > delete_index
+            and operation == f"close:{deleting_name}"
+        )
+        absence_index = next(
+            index
+            for index, operation in enumerate(backend.cleanup_operations)
+            if index > close_index
+            and operation == f"entry:{deleting_name}"
+        )
+        self.assertLess(delete_index, close_index)
+        self.assertLess(close_index, absence_index)
+
+    def test_task8_child_and_root_cleanup_close_every_owner(self) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000810",
+        )
+        child = scratch.create_child("candidate-0001")
+        root = self._task8_root_node(backend, scratch)
+        child_node = root.children[child.name]
+        payload = self._task8_add_payload(backend, child_node, "payload")
+        root_owner = scratch._root
+        assert root_owner is not None
+        cleanup_ready = backend.open_file(
+            root_owner,
+            ".hoimin-cleanup-ready.json",
+            access=FileAccess.WRITE,
+            disposition=CreateDisposition.CREATE_NEW,
+            share_policy=SharePolicy.MUTATION,
+        )
+        cleanup_ready.close()
+
+        child_cleanup = scratch.remove_child(child)
+        root_cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(
+            child_cleanup.status, ScratchCleanupStatus.CLEAN, child_cleanup
+        )
+        self.assertEqual(
+            root_cleanup.status, ScratchCleanupStatus.CLEAN, root_cleanup
+        )
+        self.assertGreaterEqual(backend.close_counts[payload.identity], 1)
+        marker_delete = backend.cleanup_operations.index(
+            "delete:.hoimin-cleanup-ready.json"
+        )
+        root_delete = backend.cleanup_operations.index(
+            f"delete:.deleting-{scratch.run_id}"
+        )
+        self.assertLess(marker_delete, root_delete)
+        self.assertEqual(len(backend.live_resources), 0)
+        self.assertLessEqual(backend.max_directory_resources, 3)
+
     def test_cleanup_removes_only_the_leased_root(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             parent = Path(directory)
@@ -8532,9 +9424,11 @@ class ManagedScratchTests(unittest.TestCase):
             child = scratch.create_child("candidate-0001")
             (child / "payload").write_bytes(b"payload")
             leased = scratch.path
-            scratch.mark_cleanup_ready()
 
-            cleanup = scratch.cleanup()
+            try:
+                cleanup = self._task8_native_cleanup(scratch)
+            finally:
+                scratch.close_capabilities()
 
             self.assertEqual(cleanup.status, ScratchCleanupStatus.CLEAN)
             self.assertIsNone(cleanup.remaining_root)
@@ -8547,7 +9441,6 @@ class ManagedScratchTests(unittest.TestCase):
             active = scratch.path
             deleting = active.with_name(f".deleting-{scratch.run_id}")
             deleting.mkdir(mode=0o700)
-            scratch.mark_cleanup_ready()
 
             cleanup = scratch.cleanup()
 
@@ -8561,108 +9454,85 @@ class ManagedScratchTests(unittest.TestCase):
     def test_cleanup_does_not_claim_after_identity_check_crosses_deadline(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            active = scratch.path
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["_entry_identity"],
-            )
-            real_identity = lease_module._entry_identity
-            identity_checked = False
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000812",
+        )
+        active = scratch.path
+        clock = [0.0]
 
-            def cross_deadline(parent_fd: int, name: str) -> tuple[int, int]:
-                nonlocal identity_checked
-                identity = real_identity(parent_fd, name)
-                if name == active.name:
-                    identity_checked = True
-                return identity
+        def cross_deadline(operation: str) -> None:
+            if operation == f"entry:{active.name}":
+                clock[0] = 60.0
 
-            with (
-                mock.patch(
-                    "tools.focused_mutation_support.lease._entry_identity",
-                    side_effect=cross_deadline,
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease.time.monotonic",
-                    side_effect=lambda: 61.0 if identity_checked else 0.0,
-                ),
-            ):
-                cleanup = scratch.cleanup(time_budget=60.0)
+        backend.after_cleanup_operation = cross_deadline
+        with mock.patch(
+            "tools.focused_mutation_support.lease.time.monotonic",
+            side_effect=lambda: clock[0],
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
 
-            self.assertEqual(
-                cleanup.status, ScratchCleanupStatus.DEFERRED, cleanup
+        self.assertEqual(
+            cleanup.status, ScratchCleanupStatus.DEFERRED, cleanup
+        )
+        self.assertEqual(cleanup.remaining_root, str(active))
+        self.assertFalse(
+            any(
+                operation.startswith("rename:")
+                for operation in backend.cleanup_operations
             )
-            self.assertEqual(cleanup.remaining_root, str(active))
-            self.assertTrue(active.is_dir())
-            self.assertFalse(
-                active.with_name(f".deleting-{scratch.run_id}").exists()
-            )
-            scratch.close_capabilities()
+        )
 
     def test_cleanup_serializes_lease_unlink_through_root_absence(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            scratch.mark_cleanup_ready()
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["_open_coordinator"],
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000813",
+        )
+        managed = scratch._managed_root_capability
+        assert managed is not None
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_open_coordinator"],
+        )
+        acquired = threading.Event()
+        contender: threading.Thread | None = None
+        acquired_during_delete = False
+
+        def contend() -> None:
+            coordinator = lease_module._open_coordinator(
+                managed,
+                backend,
+                timeout=2.0,
+                deadline=time.monotonic() + 2.0,
             )
-            real_open_coordinator = lease_module._open_coordinator
-            real_unlink = lease_module.os.unlink
-            janitor_acquired = threading.Event()
-            janitor_records: list[ScratchCleanupRecord | JanitorDiagnostic] = []
-            janitor: threading.Thread | None = None
-            janitor_acquired_during_unlink = False
+            acquired.set()
+            _close_lease_lock_all(coordinator, "cleanup contender")
 
-            def observe_coordinator(*args: object, **kwargs: object) -> LeaseLock:
-                coordinator = real_open_coordinator(*args, **kwargs)
-                if threading.current_thread().name == "cleanup-tail-janitor":
-                    janitor_acquired.set()
-                return coordinator
+        def race_lease_delete(operation: str) -> None:
+            nonlocal contender, acquired_during_delete
+            if operation != "delete:.hoimin-lease.json" or contender is not None:
+                return
+            contender = threading.Thread(target=contend)
+            contender.start()
+            acquired_during_delete = acquired.wait(0.1)
 
-            def race_lease_unlink(
-                name: str,
-                *args: object,
-                **kwargs: object,
-            ) -> None:
-                nonlocal janitor, janitor_acquired_during_unlink
-                if name == ".hoimin-lease.json" and janitor is None:
-                    janitor = threading.Thread(
-                        target=lambda: janitor_records.extend(
-                            reclaim_abandoned(scratch.managed_root)
-                        ),
-                        name="cleanup-tail-janitor",
-                    )
-                    janitor.start()
-                    janitor_acquired_during_unlink = janitor_acquired.wait(0.2)
-                real_unlink(name, *args, **kwargs)
+        backend.before_cleanup_operation = race_lease_delete
+        cleanup = self._task8_cleanup(scratch, backend)
 
-            with (
-                mock.patch(
-                    "tools.focused_mutation_support.lease._open_coordinator",
-                    side_effect=observe_coordinator,
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease.os.unlink",
-                    side_effect=race_lease_unlink,
-                ),
-            ):
-                cleanup = scratch.cleanup()
-
-            assert janitor is not None
-            janitor.join(2.0)
-            self.assertFalse(janitor.is_alive())
-            self.assertFalse(janitor_acquired_during_unlink)
-            self.assertEqual(cleanup.status, ScratchCleanupStatus.CLEAN)
-            self.assertIsNone(cleanup.remaining_root)
-            self.assertFalse(scratch.path.exists())
+        assert contender is not None
+        contender.join(2.0)
+        self.assertFalse(contender.is_alive())
+        self.assertFalse(acquired_during_delete)
+        self.assertTrue(acquired.is_set())
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.CLEAN, cleanup)
+        self.assertIsNone(cleanup.remaining_root)
 
     def test_cleanup_absence_stays_clean_when_capability_close_fails(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             scratch = ManagedScratch.create(Path(directory))
             leased = scratch.path
-            scratch.mark_cleanup_ready()
 
             with mock.patch.object(
                 scratch,
@@ -8678,74 +9548,200 @@ class ManagedScratchTests(unittest.TestCase):
             scratch.close_capabilities()
 
     def test_cleanup_of_deep_tree_keeps_only_three_directory_handles(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            child = scratch.create_child("candidate-0001")
-            current = child
-            for index in range(129):
-                current = current / f"d{index:03d}"
-                current.mkdir()
-            (current / "payload").write_bytes(b"payload")
-            observed: list[int] = []
-
-            with mock.patch(
-                "tools.focused_mutation_support.lease._cleanup_handle_observer",
-                side_effect=observed.append,
-            ):
-                cleanup = scratch.remove_child(child)
-
-            self.assertEqual(cleanup.status, ScratchCleanupStatus.CLEAN)
-            self.assertLessEqual(max(observed), 3)
-            scratch.mark_cleanup_ready()
-            self.assertEqual(
-                scratch.cleanup().status,
-                ScratchCleanupStatus.CLEAN,
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000811",
+        )
+        root = self._task8_root_node(backend, scratch)
+        current = root
+        for index in range(129):
+            current = self._task8_add_payload(
+                backend,
+                current,
+                f"d{index:03d}",
+                kind=EntryKind.DIRECTORY,
             )
+        self._task8_add_payload(backend, current, "payload")
+        backend.cleanup_operations.clear()
+        backend.max_directory_resources = sum(
+            1
+            for resource in backend.live_resources
+            if not resource.closed
+            and resource.node.kind is EntryKind.DIRECTORY
+        )
+
+        cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.CLEAN, cleanup)
+        self.assertLessEqual(backend.max_directory_resources, 3)
 
     def test_cleanup_refuses_replacement_root_with_same_managed_name(self) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000812",
+        )
+        original = self._task8_root_node(backend, scratch)
+        managed = original.parent
+        assert managed is not None
+        active_name = original.name
+        moved_name = f"{active_name}.moved"
+        del managed.children[active_name]
+        original.name = moved_name
+        managed.children[moved_name] = original
+        replacement = self._task8_add_payload(
+            backend,
+            managed,
+            active_name,
+            kind=EntryKind.DIRECTORY,
+        )
+        sentinel = self._task8_add_payload(backend, replacement, "sentinel")
+        backend.cleanup_operations.clear()
+
+        cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertEqual(
+            cleanup.remaining_root,
+            str(scratch.path.with_name(moved_name)),
+        )
+        self.assertIs(managed.children[active_name], replacement)
+        self.assertIs(replacement.children["sentinel"], sentinel)
+        self.assertIs(managed.children[moved_name], original)
+
+    def test_cleanup_root_mismatch_stays_failed_without_report_recovery(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000832",
+        )
+        original = self._task8_root_node(backend, scratch)
+        managed = original.parent
+        assert managed is not None
+        active_name = original.name
+        del managed.children[active_name]
+        original.name = f"{active_name}.moved"
+        managed.children[original.name] = original
+        replacement = self._task8_add_payload(
+            backend,
+            managed,
+            active_name,
+            kind=EntryKind.DIRECTORY,
+        )
+        sentinel = self._task8_add_payload(backend, replacement, "sentinel")
+        backend.cleanup_operations.clear()
+
+        with mock.patch.object(
+            backend,
+            "final_path",
+            side_effect=OSError("injected report-only recovery failure"),
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertIsNone(cleanup.remaining_root)
+        self.assertIn("identity changed", cleanup.details[0])
+        self.assertIn("report-only recovery failure", "; ".join(cleanup.details))
+        self.assertIs(managed.children[active_name], replacement)
+        self.assertIs(replacement.children["sentinel"], sentinel)
+        self.assertFalse(
+            any(
+                operation.startswith(("rename:", "delete:"))
+                for operation in backend.cleanup_operations
+            )
+        )
+
+    def test_task8_native_root_replacement_before_delete_survives(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            original = scratch.path
-            moved = original.with_name(f"{original.name}.moved")
-            original.rename(moved)
-            original.mkdir()
-            sentinel = original / "sentinel"
-            sentinel.write_text("keep", encoding="utf-8")
+            scratch = ManagedScratch.create(
+                Path(directory),
+                run_id="00000000-0000-4000-8000-000000000814",
+            )
+            backend = scratch._backend
+            real_delete = backend.delete
+            injected = False
+            sentinel: Path | None = None
 
-            cleanup = scratch.cleanup()
+            def replace_root_before_delete(
+                capability: FileCapability | DirectoryCapability,
+            ) -> None:
+                nonlocal injected, sentinel
+                if (
+                    not injected
+                    and isinstance(capability, DirectoryCapability)
+                    and capability.identity == scratch._root_identity
+                ):
+                    parent = scratch._managed_root_capability
+                    assert parent is not None and parent.is_open
+                    claimed = backend.final_path(capability)
+                    backend.rename(
+                        capability,
+                        parent,
+                        f"{claimed.name}.original",
+                        replace=False,
+                    )
+                    replacement = backend.create_directory(
+                        parent,
+                        claimed.name,
+                        SharePolicy.MUTATION,
+                    )
+                    replacement.close()
+                    sentinel = claimed / "sentinel"
+                    sentinel.write_text("keep", encoding="utf-8")
+                    injected = True
+                real_delete(capability)
 
-            self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED)
-            self.assertEqual(cleanup.remaining_root, str(moved))
-            self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep")
-            self.assertTrue(moved.is_dir())
+            try:
+                with mock.patch.object(
+                    backend,
+                    "delete",
+                    side_effect=replace_root_before_delete,
+                ):
+                    cleanup = self._task8_native_cleanup(scratch)
+
+                self.assertTrue(injected)
+                self.assertEqual(
+                    cleanup.status, ScratchCleanupStatus.FAILED, cleanup
+                )
+                assert sentinel is not None
+                self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep")
+            finally:
+                scratch.close_capabilities()
 
     def test_cleanup_recovers_owned_path_from_pinned_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             scratch = ManagedScratch.create(Path(directory))
             original = scratch.path
             moved = original.with_name(f"{original.name}.moved")
-            original.rename(moved)
-            original.mkdir()
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["os"],
+            root = scratch._root
+            managed = scratch._managed_root_capability
+            heartbeat = scratch._heartbeat
+            lease = scratch._lease
+            assert root is not None
+            assert managed is not None
+            assert heartbeat is not None
+            assert lease is not None
+            heartbeat.close()
+            scratch._heartbeat = None
+            self.assertEqual(
+                _close_lease_lock_all(lease, "path recovery fixture lease"),
+                (),
             )
-            real_stat = lease_module.os.stat
-
-            def fail_moved_lookup(
-                path: object,
-                *args: object,
-                **kwargs: object,
-            ) -> os.stat_result:
-                if path == moved.name:
-                    raise OSError("injected identity lookup failure")
-                return real_stat(path, *args, **kwargs)
-
-            with mock.patch(
-                "tools.focused_mutation_support.lease.os.stat",
-                side_effect=fail_moved_lookup,
-            ):
+            scratch._lease = None
+            scratch._backend.rename(
+                root, managed, moved.name, replace=False
+            )
+            replacement = scratch._backend.create_directory(
+                managed, original.name, SharePolicy.MUTATION
+            )
+            replacement.close()
+            try:
                 cleanup = scratch.cleanup()
+            finally:
+                scratch.close_capabilities()
 
             self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED)
             self.assertEqual(cleanup.remaining_root, str(moved))
@@ -8759,24 +9755,25 @@ class ManagedScratchTests(unittest.TestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             scratch = ManagedScratch.create(Path(directory))
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["_entry_identity"],
-            )
-            real_identity = lease_module._entry_identity
+            backend = scratch._backend
+            real_entry = backend.entry
 
-            def fail_owned_entry(parent_fd: int, name: str) -> tuple[int, int]:
+            def fail_owned_entry(
+                parent: DirectoryCapability, name: str
+            ) -> DirectoryEntry | None:
                 if name == scratch.path.name:
                     raise OSError("injected owned-entry lookup failure")
-                return real_identity(parent_fd, name)
+                return real_entry(parent, name)
 
             with (
-                mock.patch(
-                    "tools.focused_mutation_support.lease._entry_identity",
+                mock.patch.object(
+                    backend,
+                    "entry",
                     side_effect=fail_owned_entry,
                 ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease._directory_path_from_capability",
+                mock.patch.object(
+                    backend,
+                    "final_path",
                     side_effect=OSError("injected path recovery failure"),
                 ),
             ):
@@ -8787,516 +9784,456 @@ class ManagedScratchTests(unittest.TestCase):
             self.assertIn("lookup failed", "; ".join(cleanup.details))
             scratch.close_capabilities()
 
-    def test_unlinked_pinned_root_is_reported_clean_not_as_deleted_path(
+    def test_missing_named_root_is_failed_before_exact_delete(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            for marker in (
-                ".hoimin-heartbeat.json",
-                ".hoimin-lease.json",
-            ):
-                os.unlink(marker, dir_fd=scratch._root_fd)
-            os.rmdir(scratch.path.name, dir_fd=scratch._managed_root_fd)
-            deleted_alias = scratch.path.with_name(
-                f"{scratch.path.name} (deleted)"
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000814",
+        )
+        managed = backend.parent.children["hoimin-focused-v1"]
+        del managed.children[scratch.path.name]
+
+        cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertEqual(cleanup.remaining_root, str(scratch.path))
+        self.assertFalse(
+            any(
+                operation.startswith(("rename:", "delete:"))
+                for operation in backend.cleanup_operations
             )
-
-            with (
-                mock.patch(
-                    "tools.focused_mutation_support.lease._directory_path_from_capability",
-                    return_value=deleted_alias,
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease.os.fstat",
-                    return_value=mock.Mock(st_nlink=0),
-                ),
-            ):
-                cleanup = scratch._failed("injected post-unlink failure")
-
-            self.assertEqual(cleanup.status, ScratchCleanupStatus.CLEAN)
-            self.assertIsNone(cleanup.remaining_root)
-            self.assertIn("absent", "; ".join(cleanup.details))
+        )
 
     def test_cleanup_tail_lookup_error_does_not_report_unvalidated_path(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            scratch.mark_cleanup_ready()
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["_entry_identity"],
-            )
-            real_identity = lease_module._entry_identity
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000815",
+        )
+        deleting_name = f".deleting-{scratch.run_id}"
+        real_entry = backend.entry
+        deleting_checks = 0
 
-            def fail_deleting_entry(
-                parent_fd: int, name: str
-            ) -> tuple[int, int]:
-                if name.startswith(".deleting-"):
+        def fail_tail_entry(
+            parent: DirectoryCapability, name: str
+        ) -> DirectoryEntry | None:
+            nonlocal deleting_checks
+            if name == deleting_name:
+                deleting_checks += 1
+                if deleting_checks >= 3:
                     raise OSError("injected deleting-entry lookup failure")
-                return real_identity(parent_fd, name)
+            return real_entry(parent, name)
 
-            with (
-                mock.patch(
-                    "tools.focused_mutation_support.lease._entry_identity",
-                    side_effect=fail_deleting_entry,
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease._directory_path_from_capability",
-                    side_effect=OSError("injected path recovery failure"),
-                ),
-            ):
-                cleanup = scratch.cleanup()
+        with (
+            mock.patch.object(backend, "entry", side_effect=fail_tail_entry),
+            mock.patch.object(
+                backend,
+                "final_path",
+                side_effect=OSError("injected path recovery failure"),
+            ),
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
 
-            self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED)
-            self.assertIsNone(cleanup.remaining_root)
-            self.assertIn("lookup failed", "; ".join(cleanup.details))
-            scratch.close_capabilities()
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertIsNone(cleanup.remaining_root)
+        self.assertIn(
+            "injected deleting-entry lookup failure",
+            "; ".join(cleanup.details),
+        )
 
     def test_post_rmdir_stat_error_never_reports_deleted_path_as_failed(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            scratch.mark_cleanup_ready()
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["os"],
-            )
-            real_rmdir = lease_module.os.rmdir
-            real_stat = lease_module.os.stat
-            removed = False
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000816",
+        )
+        deleting_name = f".deleting-{scratch.run_id}"
+        real_entry = backend.entry
+        real_delete = backend.delete
+        root_deleted = False
 
-            def mark_removed(
-                path: object, *args: object, **kwargs: object
-            ) -> None:
-                nonlocal removed
-                real_rmdir(path, *args, **kwargs)
-                if str(path).startswith(".deleting-"):
-                    removed = True
+        def observe_exact_delete(
+            capability: FileCapability | DirectoryCapability,
+        ) -> None:
+            nonlocal root_deleted
+            real_delete(capability)
+            if capability.identity == scratch._root_identity:
+                root_deleted = True
 
-            def fail_post_remove_stat(
-                path: object, *args: object, **kwargs: object
-            ) -> os.stat_result:
-                if removed and str(path).startswith(".deleting-"):
-                    raise OSError("injected post-rmdir lookup failure")
-                return real_stat(path, *args, **kwargs)
+        def fail_after_exact_delete(
+            parent: DirectoryCapability, name: str
+        ) -> DirectoryEntry | None:
+            if root_deleted and name == deleting_name:
+                raise OSError("injected post-delete lookup failure")
+            return real_entry(parent, name)
 
-            with (
-                mock.patch(
-                    "tools.focused_mutation_support.lease.os.rmdir",
-                    side_effect=mark_removed,
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease.os.stat",
-                    side_effect=fail_post_remove_stat,
-                ),
-            ):
-                cleanup = scratch.cleanup()
+        with (
+            mock.patch.object(
+                backend, "delete", side_effect=observe_exact_delete
+            ),
+            mock.patch.object(
+                backend, "entry", side_effect=fail_after_exact_delete
+            ),
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
 
-            self.assertNotEqual(cleanup.status, ScratchCleanupStatus.FAILED)
-            self.assertIsNone(cleanup.remaining_root)
-            self.assertFalse(scratch.path.exists())
-            scratch.close_capabilities()
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertIsNone(cleanup.remaining_root, cleanup)
+        self.assertIn(
+            "injected post-delete lookup failure",
+            "; ".join(cleanup.details),
+        )
 
-    def test_cleanup_stops_after_chmod_crosses_deadline(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            child = scratch.create_child("payload")
-            (child / "file").write_bytes(b"payload")
-            scratch.mark_cleanup_ready()
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["os"],
-            )
-            real_fchmod = lease_module.os.fchmod
-            real_scandir = lease_module.os.scandir
-            crossed = False
+    def test_cleanup_stops_after_entry_open_crosses_deadline(self) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000817",
+        )
+        root = self._task8_root_node(backend, scratch)
+        self._task8_add_payload(backend, root, "payload")
+        clock = [0.0]
 
-            def cross_during_chmod(fd: int, mode: int) -> None:
-                nonlocal crossed
-                real_fchmod(fd, mode)
-                crossed = True
+        def cross_after_open(operation: str) -> None:
+            if operation == "open_entry:payload":
+                clock[0] = 60.0
 
-            def forbid_post_deadline_scan(*args: object, **kwargs: object) -> object:
-                if crossed:
-                    raise AssertionError("scandir started after cleanup deadline")
-                return real_scandir(*args, **kwargs)
+        backend.after_cleanup_operation = cross_after_open
+        with mock.patch(
+            "tools.focused_mutation_support.lease.time.monotonic",
+            side_effect=lambda: clock[0],
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
 
-            with (
-                mock.patch(
-                    "tools.focused_mutation_support.lease.os.fchmod",
-                    side_effect=cross_during_chmod,
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease.time.monotonic",
-                    side_effect=lambda: 61.0 if crossed else 0.0,
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease.os.scandir",
-                    side_effect=forbid_post_deadline_scan,
-                ),
-            ):
-                cleanup = scratch.cleanup(time_budget=60.0)
+        self.assertEqual(
+            cleanup.status, ScratchCleanupStatus.DEFERRED, cleanup
+        )
+        self.assertNotIn("delete:payload", backend.cleanup_operations)
 
-            self.assertEqual(
-                cleanup.status, ScratchCleanupStatus.DEFERRED, cleanup
-            )
-            self.assertTrue(scratch.path.is_dir())
-            scratch.close_capabilities()
+    def test_task8_deferred_owner_cleanup_reopens_saved_cursor(self) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000833",
+        )
+        root = self._task8_root_node(backend, scratch)
+        payload = self._task8_add_payload(backend, root, "payload")
+        clock = [0.0]
 
-    def test_cleanup_stops_after_scandir_construction_crosses_deadline(
+        def cross_after_open(operation: str) -> None:
+            if operation == "open_entry:payload":
+                clock[0] = 60.0
+
+        backend.after_cleanup_operation = cross_after_open
+        with mock.patch(
+            "tools.focused_mutation_support.lease.time.monotonic",
+            side_effect=lambda: clock[0],
+        ):
+            first = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(first.status, ScratchCleanupStatus.DEFERRED, first)
+        self.assertIsNone(scratch._root)
+        self.assertIsNotNone(scratch._cleanup_cursor)
+        self.assertIn(payload.name, root.children)
+
+        backend.before_cleanup_operation = lambda _operation: None
+        backend.after_cleanup_operation = lambda _operation: None
+        clock[0] = 0.0
+        with mock.patch(
+            "tools.focused_mutation_support.lease.time.monotonic",
+            side_effect=lambda: clock[0],
+        ):
+            resumed = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(resumed.status, ScratchCleanupStatus.CLEAN, resumed)
+        self.assertNotIn(payload.name, root.children)
+        self.assertIsNone(scratch._cleanup_cursor)
+        self.assertEqual(len(backend.live_resources), 0)
+
+    def test_cleanup_stops_after_iterator_construction_crosses_deadline(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            child = scratch.create_child("payload")
-            (child / "file").write_bytes(b"payload")
-            scratch.mark_cleanup_ready()
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["os"],
-            )
-            real_scandir = lease_module.os.scandir
-            crossed = False
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000818",
+        )
+        root = self._task8_root_node(backend, scratch)
+        self._task8_add_payload(backend, root, "payload")
+        clock = [0.0]
 
-            class DeadlineCrossingIterator:
-                def __init__(self, inner: object) -> None:
-                    self.inner = inner
+        def cross_after_iterator(operation: str) -> None:
+            if operation == "entries_owned":
+                clock[0] = 60.0
 
-                def __next__(self) -> os.DirEntry[str]:
-                    raise AssertionError("readdir started after cleanup deadline")
+        def forbid_next(operation: str) -> None:
+            if clock[0] >= 60.0 and operation.startswith("iterator.next:"):
+                raise AssertionError(
+                    "iterator next started after cleanup deadline"
+                )
 
-                def close(self) -> None:
-                    self.inner.close()  # type: ignore[attr-defined]
+        backend.after_cleanup_operation = cross_after_iterator
+        backend.before_cleanup_operation = forbid_next
+        with mock.patch(
+            "tools.focused_mutation_support.lease.time.monotonic",
+            side_effect=lambda: clock[0],
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
 
-            def cross_during_scandir(
-                *args: object, **kwargs: object
-            ) -> DeadlineCrossingIterator:
-                nonlocal crossed
-                inner = real_scandir(*args, **kwargs)
-                crossed = True
-                return DeadlineCrossingIterator(inner)
-
-            with (
-                mock.patch(
-                    "tools.focused_mutation_support.lease.os.scandir",
-                    side_effect=cross_during_scandir,
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease.time.monotonic",
-                    side_effect=lambda: 61.0 if crossed else 0.0,
-                ),
-            ):
-                cleanup = scratch.cleanup(time_budget=60.0)
-
-            self.assertEqual(
-                cleanup.status, ScratchCleanupStatus.DEFERRED, cleanup
-            )
-            self.assertTrue(scratch.path.is_dir())
-            scratch.close_capabilities()
+        self.assertEqual(
+            cleanup.status, ScratchCleanupStatus.DEFERRED, cleanup
+        )
 
     def test_remove_payload_preexpired_budget_does_not_start_filesystem_io(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["_remove_payload"],
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000819",
+        )
+        root = scratch._root
+        anchor = scratch._managed_root_capability
+        assert root is not None
+        assert anchor is not None
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_CleanupCursor", "_remove_payload"],
+        )
+        backend.before_cleanup_operation = lambda operation: (_ for _ in ()).throw(
+            AssertionError(f"filesystem operation started: {operation}")
+        )
+
+        result = lease_module._remove_payload(
+            backend,
+            anchor,
+            root,
+            root_name=scratch.path.name,
+            root_identity=scratch._root_identity,
+            root_filesystem=scratch._root_filesystem,
+            cursor=lease_module._CleanupCursor(),
+            started=0.0,
+            absolute_deadline=1.0,
+            examined=0,
+            removed=0,
+            monotonic=lambda: 1.0,
+        )
+
+        self.assertFalse(result.complete)
+        self.assertEqual(result.examined_entries, 0)
+        self.assertEqual(result.removed_entries, 0)
+
+    def test_remove_payload_stops_after_iterator_transfer_crosses_deadline(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000820",
+        )
+        root = scratch._root
+        anchor = scratch._managed_root_capability
+        assert root is not None
+        assert anchor is not None
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_CleanupCursor", "_remove_payload"],
+        )
+        clock = [0.0]
+        backend.after_cleanup_operation = lambda operation: clock.__setitem__(
+            0, 1.0 if operation == "entries_owned" else clock[0]
+        )
+        backend.before_cleanup_operation = lambda operation: (
+            (_ for _ in ()).throw(
+                AssertionError("iterator next started after deadline")
             )
+            if clock[0] >= 1.0 and operation.startswith("iterator.next:")
+            else None
+        )
 
-            with (
-                mock.patch(
-                    "tools.focused_mutation_support.lease.time.monotonic",
-                    return_value=2.0,
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease.os.fstat",
-                    side_effect=AssertionError(
-                        "fstat started after cleanup deadline"
-                    ),
-                ),
-            ):
-                examined, removed, complete = lease_module._remove_payload(
-                    scratch._root_fd,
-                    started=0.0,
-                    absolute_deadline=1.0,
-                    examined=0,
-                    removed=0,
-                )
+        result = lease_module._remove_payload(
+            backend,
+            anchor,
+            root,
+            root_name=scratch.path.name,
+            root_identity=scratch._root_identity,
+            root_filesystem=scratch._root_filesystem,
+            cursor=lease_module._CleanupCursor(),
+            started=0.0,
+            absolute_deadline=1.0,
+            examined=0,
+            removed=0,
+            monotonic=lambda: clock[0],
+        )
+        scratch._root = None
 
-            self.assertEqual((examined, removed, complete), (0, 0, False))
-            scratch.close_capabilities()
-
-    def test_remove_payload_stops_after_root_stat_crosses_deadline(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["_remove_payload"],
-            )
-            real_fstat = lease_module.os.fstat
-            crossed = False
-
-            def cross_during_fstat(fd: int) -> os.stat_result:
-                nonlocal crossed
-                result = real_fstat(fd)
-                crossed = True
-                return result
-
-            with (
-                mock.patch(
-                    "tools.focused_mutation_support.lease.time.monotonic",
-                    side_effect=lambda: 2.0 if crossed else 0.0,
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease.os.fstat",
-                    side_effect=cross_during_fstat,
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease._filesystem_identity",
-                    side_effect=AssertionError(
-                        "filesystem identity started after cleanup deadline"
-                    ),
-                ),
-            ):
-                examined, removed, complete = lease_module._remove_payload(
-                    scratch._root_fd,
-                    started=0.0,
-                    absolute_deadline=1.0,
-                    examined=0,
-                    removed=0,
-                )
-
-            self.assertEqual((examined, removed, complete), (0, 0, False))
-            scratch.close_capabilities()
+        self.assertFalse(result.complete)
+        self.assertEqual(result.examined_entries, 0)
 
     def test_remove_payload_propagates_filesystem_timeout_before_deadline(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            child = scratch.create_child("candidate-0001")
-            (child / "nested").mkdir()
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["_open_directory_at"],
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000821",
+        )
+        root_node = self._task8_root_node(backend, scratch)
+        self._task8_add_payload(
+            backend, root_node, "nested", kind=EntryKind.DIRECTORY
+        )
+        root = scratch._root
+        anchor = scratch._managed_root_capability
+        assert root is not None
+        assert anchor is not None
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_CleanupCursor", "_remove_payload"],
+        )
+        clock = [0.0]
+
+        def timeout_while_opening(operation: str) -> None:
+            if operation == "open_directory:nested":
+                clock[0] = 60.0
+                raise TimeoutError("filesystem ETIMEDOUT")
+
+        backend.before_cleanup_operation = timeout_while_opening
+        with self.assertRaisesRegex(TimeoutError, "ETIMEDOUT"):
+            lease_module._remove_payload(
+                backend,
+                anchor,
+                root,
+                root_name=scratch.path.name,
+                root_identity=scratch._root_identity,
+                root_filesystem=scratch._root_filesystem,
+                cursor=lease_module._CleanupCursor(),
+                started=0.0,
+                absolute_deadline=60.0,
+                examined=0,
+                removed=0,
+                monotonic=lambda: clock[0],
             )
-            real_open = lease_module._open_directory_at
-            open_calls = 0
-            crossed = False
-
-            def timeout_while_opening_child(
-                parent_fd: int,
-                name: str,
-                **kwargs: object,
-            ) -> int:
-                nonlocal open_calls, crossed
-                open_calls += 1
-                if open_calls == 2:
-                    crossed = True
-                    raise TimeoutError("filesystem ETIMEDOUT")
-                return real_open(parent_fd, name, **kwargs)
-
-            with (
-                mock.patch.object(
-                    lease_module,
-                    "_open_directory_at",
-                    side_effect=timeout_while_opening_child,
-                ),
-                mock.patch.object(
-                    lease_module.time,
-                    "monotonic",
-                    side_effect=lambda: 61.0 if crossed else 0.0,
-                ),
-            ):
-                with self.assertRaisesRegex(TimeoutError, "ETIMEDOUT"):
-                    lease_module._remove_payload(
-                        scratch._root_fd,
-                        started=0.0,
-                        absolute_deadline=60.0,
-                        examined=0,
-                        removed=0,
-                    )
-
-            scratch.close_capabilities()
 
     def test_remove_payload_reopen_stops_after_identity_crosses_deadline(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            child = scratch.create_child("empty-child")
-            (child / "nested").mkdir()
-            child_identity = (child.stat().st_dev, child.stat().st_ino)
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["_remove_payload"],
-            )
-            real_identity = lease_module._directory_identity
-            real_filesystem = lease_module._filesystem_identity
-            child_identity_checks = 0
-            crossed = False
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000822",
+        )
+        root_node = self._task8_root_node(backend, scratch)
+        nested = self._task8_add_payload(
+            backend, root_node, "nested", kind=EntryKind.DIRECTORY
+        )
+        self._task8_add_payload(backend, nested, "payload")
+        clock = [0.0]
 
-            def cross_on_reopened_child(fd: int) -> tuple[int, int]:
-                nonlocal child_identity_checks, crossed
-                identity = real_identity(fd)
-                if identity == child_identity:
-                    child_identity_checks += 1
-                    if child_identity_checks == 2:
-                        crossed = True
-                return identity
+        def cross_after_open(operation: str) -> None:
+            if operation == "open_directory:nested":
+                clock[0] = 60.0
 
-            def forbid_post_deadline_filesystem(fd: int) -> tuple[int, int, int]:
-                if crossed:
-                    raise AssertionError(
-                        "filesystem identity started after cleanup deadline"
-                    )
-                return real_filesystem(fd)
-
-            with (
-                mock.patch(
-                    "tools.focused_mutation_support.lease._directory_identity",
-                    side_effect=cross_on_reopened_child,
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease._filesystem_identity",
-                    side_effect=forbid_post_deadline_filesystem,
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease.time.monotonic",
-                    side_effect=lambda: 61.0 if crossed else 0.0,
-                ),
+        def forbid_transfer(operation: str) -> None:
+            if (
+                clock[0] >= 60.0
+                and operation == "entries_owned"
+                and backend.cleanup_operations.count("entries_owned") >= 1
             ):
-                examined, removed, complete = lease_module._remove_payload(
-                    scratch._root_fd,
-                    started=0.0,
-                    absolute_deadline=60.0,
-                    examined=0,
-                    removed=0,
+                raise AssertionError(
+                    "iterator transfer started after cleanup deadline"
                 )
 
-            self.assertFalse(complete)
-            self.assertGreaterEqual(examined, 1)
-            self.assertEqual(removed, 0)
-            scratch.close_capabilities()
+        backend.after_cleanup_operation = cross_after_open
+        backend.before_cleanup_operation = forbid_transfer
+        with mock.patch(
+            "tools.focused_mutation_support.lease.time.monotonic",
+            side_effect=lambda: clock[0],
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
 
-    def test_owned_root_search_stops_before_readdir_after_deadline(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            original = scratch.path
-            moved = original.with_name(f"{original.name}.moved")
-            original.rename(moved)
-            original.mkdir()
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["os"],
-            )
-            real_scandir = lease_module.os.scandir
-            crossed = False
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED, cleanup)
+        self.assertGreaterEqual(cleanup.examined_entries, 1)
+        self.assertEqual(cleanup.removed_entries, 0)
 
-            class DeadlineCrossingIterator:
-                def __init__(self, inner: object) -> None:
-                    self.inner = inner
-
-                def __next__(self) -> os.DirEntry[str]:
-                    raise AssertionError(
-                        "owned-root readdir started after cleanup deadline"
-                    )
-
-                def close(self) -> None:
-                    self.inner.close()  # type: ignore[attr-defined]
-
-            def cross_during_scandir(
-                *args: object, **kwargs: object
-            ) -> DeadlineCrossingIterator:
-                nonlocal crossed
-                inner = real_scandir(*args, **kwargs)
-                crossed = True
-                return DeadlineCrossingIterator(inner)
-
-            with (
-                mock.patch(
-                    "tools.focused_mutation_support.lease._directory_path_from_capability",
-                    side_effect=OSError("injected path recovery failure"),
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease.os.scandir",
-                    side_effect=cross_during_scandir,
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease.time.monotonic",
-                    side_effect=lambda: 61.0 if crossed else 0.0,
-                ),
-            ):
-                cleanup = scratch.cleanup(time_budget=60.0)
-
-            self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED)
-            self.assertIsNone(cleanup.remaining_root)
-            self.assertIn("deadline", "; ".join(cleanup.details))
-            scratch.close_capabilities()
-
-    def test_owned_root_search_stops_after_namespace_open_crosses_deadline(
+    def test_owned_root_report_recovery_stops_after_final_path_deadline(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            original = scratch.path
-            moved = original.with_name(f"{original.name}.moved")
-            original.rename(moved)
-            original.mkdir()
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["_open_directory_at"],
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000823",
+        )
+        managed = backend.parent.children["hoimin-focused-v1"]
+        active_name = scratch.path.name
+        root = managed.children.pop(active_name)
+        moved_name = f"{active_name}.moved"
+        root.name = moved_name
+        managed.children[moved_name] = root
+        self._task8_add_payload(
+            backend, managed, active_name, kind=EntryKind.DIRECTORY
+        )
+        clock = [0.0]
+
+        def cross_after_final_path(operation: str) -> None:
+            if operation == "final_path":
+                clock[0] = 60.0
+
+        backend.after_cleanup_operation = cross_after_final_path
+        with mock.patch(
+            "tools.focused_mutation_support.lease.time.monotonic",
+            side_effect=lambda: clock[0],
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertIsNone(cleanup.remaining_root)
+        self.assertNotIn(f"entry:{moved_name}", backend.cleanup_operations)
+        self.assertIn("deadline", "; ".join(cleanup.details))
+
+    def test_owned_root_report_recovery_stops_after_evidence_lookup_deadline(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000824",
+        )
+        managed = backend.parent.children["hoimin-focused-v1"]
+        active_name = scratch.path.name
+        root = managed.children.pop(active_name)
+        moved_name = f"{active_name}.moved"
+        root.name = moved_name
+        managed.children[moved_name] = root
+        self._task8_add_payload(
+            backend, managed, active_name, kind=EntryKind.DIRECTORY
+        )
+        clock = [0.0]
+
+        def cross_after_evidence(operation: str) -> None:
+            if operation == f"entry:{moved_name}":
+                clock[0] = 60.0
+
+        backend.after_cleanup_operation = cross_after_evidence
+        with mock.patch(
+            "tools.focused_mutation_support.lease.time.monotonic",
+            side_effect=lambda: clock[0],
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertIsNone(cleanup.remaining_root)
+        self.assertFalse(
+            any(
+                operation.startswith(("rename:", "delete:"))
+                for operation in backend.cleanup_operations
             )
-            real_open = lease_module._open_directory_at
-            crossed = False
-
-            def cross_during_namespace_open(
-                parent_fd: int,
-                name: str,
-                *,
-                deadline: float | None = None,
-                monotonic: Callable[[], float] | None = None,
-            ) -> int:
-                nonlocal crossed
-                fd = real_open(
-                    parent_fd,
-                    name,
-                    deadline=deadline,
-                    monotonic=monotonic,
-                )
-                if name == ".":
-                    crossed = True
-                return fd
-
-            with (
-                mock.patch(
-                    "tools.focused_mutation_support.lease._directory_path_from_capability",
-                    side_effect=OSError("injected path recovery failure"),
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease._open_directory_at",
-                    side_effect=cross_during_namespace_open,
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease.time.monotonic",
-                    side_effect=lambda: 61.0 if crossed else 0.0,
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease.os.scandir",
-                    side_effect=AssertionError(
-                        "scandir started after cleanup deadline"
-                    ),
-                ),
-            ):
-                cleanup = scratch.cleanup(time_budget=60.0)
-
-            self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED)
-            self.assertIsNone(cleanup.remaining_root)
-            scratch.close_capabilities()
+        )
 
     def test_empty_janitor_verifies_rmdir_before_reporting_clean(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -9393,197 +10330,137 @@ class ManagedScratchTests(unittest.TestCase):
             self.assertIsInstance(result, JanitorDiagnostic)
             self.assertTrue(candidate.is_dir())
 
-    def test_owned_root_search_stops_after_readdir_crosses_deadline(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            original = scratch.path
-            moved = original.with_name(f"{original.name}.moved")
-            original.rename(moved)
-            original.mkdir()
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["os"],
+    def test_owned_root_recovery_never_scans_managed_namespace(self) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000825",
+        )
+        managed = backend.parent.children["hoimin-focused-v1"]
+        active_name = scratch.path.name
+        root = managed.children.pop(active_name)
+        root.name = f"{active_name}.moved"
+        managed.children[root.name] = root
+        replacement = self._task8_add_payload(
+            backend, managed, active_name, kind=EntryKind.DIRECTORY
+        )
+
+        cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertIs(managed.children[active_name], replacement)
+        self.assertNotIn("entries_owned", backend.cleanup_operations)
+        self.assertFalse(
+            any(
+                operation.startswith(("rename:", "delete:"))
+                for operation in backend.cleanup_operations
             )
-            real_scandir = lease_module.os.scandir
-            real_stat = lease_module.os.stat
-            crossed = False
-
-            class CrossingIterator:
-                def __init__(self, inner: object) -> None:
-                    self.inner = inner
-
-                def __next__(self) -> os.DirEntry[str]:
-                    nonlocal crossed
-                    entry = next(self.inner)  # type: ignore[call-overload]
-                    crossed = True
-                    return entry
-
-                def close(self) -> None:
-                    self.inner.close()  # type: ignore[attr-defined]
-
-            def crossing_scandir(
-                *args: object, **kwargs: object
-            ) -> CrossingIterator:
-                return CrossingIterator(real_scandir(*args, **kwargs))
-
-            def forbid_post_deadline_stat(
-                *args: object, **kwargs: object
-            ) -> os.stat_result:
-                if crossed:
-                    raise AssertionError("stat started after cleanup deadline")
-                return real_stat(*args, **kwargs)
-
-            with (
-                mock.patch(
-                    "tools.focused_mutation_support.lease._directory_path_from_capability",
-                    side_effect=OSError("injected path recovery failure"),
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease.os.scandir",
-                    side_effect=crossing_scandir,
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease.os.stat",
-                    side_effect=forbid_post_deadline_stat,
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease.time.monotonic",
-                    side_effect=lambda: 61.0 if crossed else 0.0,
-                ),
-            ):
-                cleanup = scratch.cleanup(time_budget=60.0)
-
-            self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED)
-            self.assertIsNone(cleanup.remaining_root)
-            scratch.close_capabilities()
+        )
 
     def test_cleanup_reports_deleting_path_after_post_rename_verification_failure(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            original = scratch.path
-            deleting = original.with_name(f".deleting-{scratch.run_id}")
-            real_identity = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["_entry_identity"],
-            )._entry_identity
-            checked_active = False
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000826",
+        )
+        deleting = scratch.path.with_name(f".deleting-{scratch.run_id}")
+        real_entry = backend.entry
+        renamed = False
 
-            def mismatch_after_rename(parent_fd: int, name: str) -> tuple[int, int]:
-                nonlocal checked_active
-                identity = real_identity(parent_fd, name)
-                if name == original.name:
-                    checked_active = True
-                if name == deleting.name and checked_active:
-                    return identity[0], identity[1] + 1
-                return identity
+        def note_rename(operation: str) -> None:
+            nonlocal renamed
+            if operation.startswith("rename:"):
+                renamed = True
 
-            with mock.patch(
-                "tools.focused_mutation_support.lease._entry_identity",
-                side_effect=mismatch_after_rename,
-            ):
-                cleanup = scratch.cleanup()
+        def mismatch_after_rename(
+            parent: DirectoryCapability, name: str
+        ) -> DirectoryEntry | None:
+            entry = real_entry(parent, name)
+            if renamed and name == deleting.name and entry is not None:
+                return DirectoryEntry(
+                    entry.name,
+                    entry.kind,
+                    FileIdentity(entry.identity.volume, entry.identity.file + 1),
+                    entry.filesystem,
+                    entry.logical_size,
+                    entry.modified_ns,
+                )
+            return entry
 
-            self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED)
-            self.assertEqual(cleanup.remaining_root, str(deleting))
-            self.assertEqual(scratch.path, deleting)
-            self.assertTrue(deleting.is_dir())
-            scratch.close_capabilities()
+        backend.after_cleanup_operation = note_rename
+        with mock.patch.object(
+            backend, "entry", side_effect=mismatch_after_rename
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertEqual(cleanup.remaining_root, str(deleting))
+        self.assertEqual(scratch.path, deleting)
+        managed = backend.parent.children["hoimin-focused-v1"]
+        self.assertIn(deleting.name, managed.children)
 
     def test_cleanup_stops_after_claim_rename_crosses_deadline(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            deleting = scratch.path.with_name(f".deleting-{scratch.run_id}")
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["os", "_entry_identity"],
-            )
-            real_rename = lease_module.os.rename
-            real_identity = lease_module._entry_identity
-            crossed = False
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000827",
+        )
+        deleting = scratch.path.with_name(f".deleting-{scratch.run_id}")
+        clock = [0.0]
 
-            def crossing_rename(*args: object, **kwargs: object) -> None:
-                nonlocal crossed
-                real_rename(*args, **kwargs)  # type: ignore[arg-type]
-                crossed = True
+        def cross_during_rename(operation: str) -> None:
+            if operation.startswith("rename:"):
+                clock[0] = 60.0
 
-            def forbid_post_deadline_identity(
-                parent_fd: int, name: str
-            ) -> tuple[int, int]:
-                if crossed:
-                    raise AssertionError(
-                        "identity started after cleanup deadline"
-                    )
-                return real_identity(parent_fd, name)
+        def forbid_post_deadline(operation: str) -> None:
+            if clock[0] >= 60.0 and operation.startswith("entry:"):
+                raise AssertionError(
+                    "entry lookup started after cleanup deadline"
+                )
 
-            with (
-                mock.patch.object(
-                    lease_module.os, "rename", side_effect=crossing_rename
-                ),
-                mock.patch.object(
-                    lease_module,
-                    "_entry_identity",
-                    side_effect=forbid_post_deadline_identity,
-                ),
-                mock.patch.object(
-                    lease_module.time,
-                    "monotonic",
-                    side_effect=lambda: 61.0 if crossed else 0.0,
-                ),
-            ):
-                cleanup = scratch.cleanup(time_budget=60.0)
+        backend.after_cleanup_operation = cross_during_rename
+        backend.before_cleanup_operation = forbid_post_deadline
+        with mock.patch(
+            "tools.focused_mutation_support.lease.time.monotonic",
+            side_effect=lambda: clock[0],
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
 
-            self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED)
-            self.assertEqual(cleanup.remaining_root, str(deleting))
-            scratch.close_capabilities()
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED, cleanup)
+        self.assertEqual(cleanup.remaining_root, str(deleting))
+        self.assertEqual(scratch.path, deleting)
 
     def test_cleanup_stops_after_root_rmdir_crosses_deadline(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            scratch.mark_cleanup_ready()
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease", fromlist=["os"]
-            )
-            real_rmdir = lease_module.os.rmdir
-            real_stat = lease_module.os.stat
-            crossed = False
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000828",
+        )
+        deleting_name = f".deleting-{scratch.run_id}"
+        clock = [0.0]
 
-            def crossing_rmdir(
-                path: object, *args: object, **kwargs: object
-            ) -> None:
-                nonlocal crossed
-                real_rmdir(path, *args, **kwargs)  # type: ignore[arg-type]
-                if str(path).startswith(".deleting-"):
-                    crossed = True
+        def cross_during_delete(operation: str) -> None:
+            if operation == f"delete:{deleting_name}":
+                clock[0] = 60.0
 
-            def forbid_post_deadline_stat(
-                *args: object, **kwargs: object
-            ) -> os.stat_result:
-                if crossed:
-                    raise AssertionError("stat started after cleanup deadline")
-                return real_stat(*args, **kwargs)  # type: ignore[arg-type]
+        def forbid_absence(operation: str) -> None:
+            if clock[0] >= 60.0 and operation == f"entry:{deleting_name}":
+                raise AssertionError(
+                    "absence verification started after cleanup deadline"
+                )
 
-            with (
-                mock.patch.object(
-                    lease_module.os, "rmdir", side_effect=crossing_rmdir
-                ),
-                mock.patch.object(
-                    lease_module.os,
-                    "stat",
-                    side_effect=forbid_post_deadline_stat,
-                ),
-                mock.patch.object(
-                    lease_module.time,
-                    "monotonic",
-                    side_effect=lambda: 61.0 if crossed else 0.0,
-                ),
-            ):
-                cleanup = scratch.cleanup(time_budget=60.0)
+        backend.after_cleanup_operation = cross_during_delete
+        backend.before_cleanup_operation = forbid_absence
+        with mock.patch(
+            "tools.focused_mutation_support.lease.time.monotonic",
+            side_effect=lambda: clock[0],
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
 
-            self.assertEqual(cleanup.status, ScratchCleanupStatus.CLEAN)
-            self.assertIsNone(cleanup.remaining_root)
-            scratch.close_capabilities()
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED, cleanup)
+        self.assertIsNone(cleanup.remaining_root)
 
     def test_marker_deadline_keeps_close_failure_secondary(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -9651,6 +10528,7 @@ class ManagedScratchTests(unittest.TestCase):
             self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED)
             self.assertEqual(cleanup.remaining_root, str(scratch.path))
             self.assertTrue(scratch.path.is_dir())
+            scratch.close_capabilities()
 
     def test_cleanup_coordinator_filesystem_timeout_is_failed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -9731,377 +10609,344 @@ class ManagedScratchTests(unittest.TestCase):
     def test_cleanup_tail_preserves_primary_and_coordinator_close_secondary(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            scratch.mark_cleanup_ready()
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["_entry_identity", "_close_lease_lock_all"],
-            )
-            real_identity = lease_module._entry_identity
-            real_close_all = lease_module._close_lease_lock_all
-            deleting_checks = 0
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000829",
+        )
+        real_delete = backend.delete
+        failed_root_owner: DirectoryCapability | None = None
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_close_lease_lock_all"],
+        )
+        real_close_all = lease_module._close_lease_lock_all
 
-            def fail_tail_identity(parent_fd: int, name: str) -> tuple[int, int]:
-                nonlocal deleting_checks
-                identity = real_identity(parent_fd, name)
-                if name.startswith(".deleting-"):
-                    deleting_checks += 1
-                    if deleting_checks == 2:
-                        return identity[0], identity[1] + 1
-                return identity
+        def fail_tail_identity(
+            capability: FileCapability | DirectoryCapability,
+        ) -> None:
+            nonlocal failed_root_owner
+            if capability.identity == scratch._root_identity:
+                assert isinstance(capability, DirectoryCapability)
+                failed_root_owner = capability
+                raise OSError("managed root identity changed during tail delete")
+            real_delete(capability)
 
-            def fail_tail_close(
-                lock: LeaseLock,
-                label: str,
-            ) -> tuple[str, ...]:
-                errors = real_close_all(lock, label)
-                if label == "cleanup coordinator":
-                    return (*errors, "injected tail coordinator close failure")
-                return errors
+        def fail_tail_close(
+            lock: LeaseLock,
+            label: str,
+        ) -> tuple[str, ...]:
+            errors = real_close_all(lock, label)
+            if label == "cleanup coordinator":
+                return (*errors, "injected tail coordinator close failure")
+            return errors
 
-            with (
-                mock.patch(
-                    "tools.focused_mutation_support.lease._entry_identity",
-                    side_effect=fail_tail_identity,
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease._close_lease_lock_all",
-                    side_effect=fail_tail_close,
-                ),
-            ):
-                cleanup = scratch.cleanup()
+        with (
+            mock.patch.object(
+                backend, "delete", side_effect=fail_tail_identity
+            ),
+            mock.patch.object(
+                lease_module,
+                "_close_lease_lock_all",
+                side_effect=fail_tail_close,
+            ),
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
 
-            self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED)
-            self.assertIn("identity changed", "; ".join(cleanup.details))
-            self.assertIn(
-                "tail coordinator close failure", "; ".join(cleanup.details)
-            )
-            self.assertEqual(cleanup.remaining_root, str(scratch.path))
-            scratch.close_capabilities()
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertIn("identity changed", "; ".join(cleanup.details))
+        self.assertIn(
+            "tail coordinator close failure", "; ".join(cleanup.details)
+        )
+        self.assertEqual(cleanup.remaining_root, str(scratch.path))
+        assert failed_root_owner is not None
+        self.assertFalse(failed_root_owner.is_open)
+        self.assertIsNone(scratch._root)
 
     def test_cleanup_does_not_claim_root_after_total_deadline(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            coordinator = LeaseLock(os.open(os.devnull, os.O_RDONLY))
-            first_tick = iter([0.0])
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000830",
+        )
+        coordinator = LeaseLock(os.open(os.devnull, os.O_RDONLY))
+        coordinator.locked = True
+        first_tick = iter([0.0])
 
-            with (
-                mock.patch(
-                    "tools.focused_mutation_support.lease.time.monotonic",
-                    side_effect=lambda: next(first_tick, 2.0),
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease._open_coordinator",
-                    return_value=coordinator,
-                ),
-                mock.patch(
-                    "tools.focused_mutation_support.lease.os.rename"
-                ) as rename,
-            ):
-                cleanup = scratch.cleanup(time_budget=1.0)
+        with (
+            mock.patch(
+                "tools.focused_mutation_support.lease.time.monotonic",
+                side_effect=lambda: next(first_tick, 1.0),
+            ),
+            mock.patch(
+                "tools.focused_mutation_support.lease._open_coordinator",
+                return_value=coordinator,
+            ),
+            mock.patch.object(backend, "rename") as rename,
+        ):
+            cleanup = scratch.cleanup(time_budget=1.0)
 
-            self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED)
-            rename.assert_not_called()
-            self.assertEqual(coordinator.fd, -1)
-            self.assertTrue(scratch.path.is_dir())
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED, cleanup)
+        rename.assert_not_called()
+        self.assertEqual(coordinator.fd, -1)
 
     def test_remove_child_refuses_replacement_with_same_child_name(self) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000813",
+        )
+        child = scratch.create_child("candidate-0001")
+        root = self._task8_root_node(backend, scratch)
+        original = root.children.pop(child.name)
+        original.name = "candidate-original"
+        root.children[original.name] = original
+        replacement = self._task8_add_payload(
+            backend,
+            root,
+            child.name,
+            kind=EntryKind.DIRECTORY,
+        )
+        sentinel = self._task8_add_payload(backend, replacement, "sentinel")
+        backend.cleanup_operations.clear()
+
+        cleanup = scratch.remove_child(child)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertIs(root.children[child.name], replacement)
+        self.assertIs(replacement.children["sentinel"], sentinel)
+        self.assertIs(root.children[original.name], original)
+
+    def test_task8_native_child_replacement_before_delete_survives(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
+            scratch = ManagedScratch.create(
+                Path(directory),
+                run_id="00000000-0000-4000-8000-000000000815",
+            )
             child = scratch.create_child("candidate-0001")
-            moved = child.with_name("candidate-original")
-            child.rename(moved)
-            child.mkdir()
-            sentinel = child / "sentinel"
-            sentinel.write_text("keep", encoding="utf-8")
+            child_identity, _child_filesystem = scratch._children[child.name]
+            backend = scratch._backend
+            real_delete = backend.delete
+            injected = False
+            sentinel: Path | None = None
 
-            cleanup = scratch.remove_child(child)
+            def replace_child_before_delete(
+                capability: FileCapability | DirectoryCapability,
+            ) -> None:
+                nonlocal injected, sentinel
+                if (
+                    not injected
+                    and isinstance(capability, DirectoryCapability)
+                    and capability.identity == child_identity
+                ):
+                    parent = scratch._root
+                    assert parent is not None and parent.is_open
+                    backend.rename(
+                        capability,
+                        parent,
+                        "candidate-original",
+                        replace=False,
+                    )
+                    replacement = backend.create_directory(
+                        parent,
+                        child.name,
+                        SharePolicy.MUTATION,
+                    )
+                    replacement.close()
+                    sentinel = child / "sentinel"
+                    sentinel.write_text("keep", encoding="utf-8")
+                    injected = True
+                real_delete(capability)
 
-            self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED)
-            self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep")
-            self.assertTrue(moved.is_dir())
+            try:
+                with mock.patch.object(
+                    backend,
+                    "delete",
+                    side_effect=replace_child_before_delete,
+                ):
+                    cleanup = scratch.remove_child(child)
+
+                self.assertTrue(injected)
+                self.assertEqual(
+                    cleanup.status, ScratchCleanupStatus.FAILED, cleanup
+                )
+                assert sentinel is not None
+                self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep")
+            finally:
+                scratch.close_capabilities()
 
     def test_remove_child_stops_after_open_vanishes_at_deadline(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            child = scratch.create_child("candidate-0001")
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["_open_directory_at", "_entry_identity"],
-            )
-            real_open = lease_module._open_directory_at
-            real_identity = lease_module._entry_identity
-            crossed = False
+        backend = self._task8_backend()
+        scratch = self._task8_create(backend)
+        child = scratch.create_child("candidate-0001")
+        root = self._task8_root_node(backend, scratch)
+        clock = [0.0]
+        backend.cleanup_operations.clear()
 
-            def vanish_during_open(
-                parent_fd: int,
-                name: str,
-                **kwargs: object,
-            ) -> int:
-                nonlocal crossed
-                if name == child.name:
-                    crossed = True
-                    raise FileNotFoundError(name)
-                return real_open(parent_fd, name, **kwargs)
-
-            def forbid_recovery_identity(
-                parent_fd: int, name: str
-            ) -> tuple[int, int]:
-                if crossed:
-                    raise AssertionError(
-                        "child identity recovery started after deadline"
-                    )
-                return real_identity(parent_fd, name)
-
-            with (
-                mock.patch.object(
-                    lease_module,
-                    "_open_directory_at",
-                    side_effect=vanish_during_open,
-                ),
-                mock.patch.object(
-                    lease_module,
-                    "_entry_identity",
-                    side_effect=forbid_recovery_identity,
-                ),
-                mock.patch.object(
-                    lease_module.time,
-                    "monotonic",
-                    side_effect=lambda: 61.0 if crossed else 0.0,
-                ),
+        def vanish_during_open(operation: str) -> None:
+            if operation == f"open_directory:{child.name}":
+                del root.children[child.name]
+                clock[0] = 61.0
+                raise FileNotFoundError(child.name)
+            if clock[0] >= 60.0 and operation.startswith(
+                ("entry:", "open_", "entries_owned", "final_path")
             ):
-                cleanup = scratch.remove_child(child)
+                raise AssertionError(
+                    "namespace recovery started after cleanup deadline"
+                )
 
-            self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED)
-            self.assertEqual(cleanup.remaining_root, str(scratch.path))
-            scratch.close_capabilities()
+        backend.before_cleanup_operation = vanish_during_open
+        with mock.patch(
+            "tools.focused_mutation_support.lease.time.monotonic",
+            side_effect=lambda: clock[0],
+        ):
+            try:
+                cleanup = scratch.remove_child(child)
+            finally:
+                scratch.close_capabilities()
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED)
+        self.assertEqual(cleanup.remaining_root, str(scratch.path))
 
     def test_remove_child_classifies_open_deadline_as_deferred(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            child = scratch.create_child("candidate-0001")
+        backend = self._task8_backend()
+        scratch = self._task8_create(backend)
+        child = scratch.create_child("candidate-0001")
+        clock = [0.0]
+        backend.cleanup_operations.clear()
 
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["_open_directory_at"],
-            )
-            clock_calls = 0
+        def cross_after_open(operation: str) -> None:
+            if operation == f"open_directory:{child.name}":
+                clock[0] = 61.0
 
-            def cross_deadline_after_open() -> float:
-                nonlocal clock_calls
-                clock_calls += 1
-                return 61.0 if clock_calls >= 3 else 0.0
+        backend.after_cleanup_operation = cross_after_open
+        with mock.patch(
+            "tools.focused_mutation_support.lease.time.monotonic",
+            side_effect=lambda: clock[0],
+        ):
+            cleanup = scratch.remove_child(child)
 
-            with (
-                mock.patch.object(
-                    lease_module,
-                    "_open_directory_at",
-                    side_effect=lease_module._DeadlineExceeded(
-                        "injected directory post-open deadline"
-                    ),
-                ),
-                mock.patch.object(
-                    lease_module.time,
-                    "monotonic",
-                    side_effect=cross_deadline_after_open,
-                ),
-            ):
-                cleanup = scratch.remove_child(child)
-
-            self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED)
-            self.assertEqual(cleanup.remaining_root, str(scratch.path))
-            self.assertIn("post-open deadline", cleanup.details[0])
-            scratch.close_capabilities()
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED)
+        self.assertEqual(cleanup.remaining_root, str(scratch.path))
+        self.assertNotIn("entries_owned", backend.cleanup_operations)
 
     def test_remove_child_classifies_filesystem_timeout_before_deadline_as_failed(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            child = scratch.create_child("candidate-0001")
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["_open_directory_at"],
-            )
+        backend = self._task8_backend()
+        scratch = self._task8_create(backend)
+        child = scratch.create_child("candidate-0001")
+        backend.cleanup_operations.clear()
 
-            with (
-                mock.patch.object(
-                    lease_module,
-                    "_open_directory_at",
-                    side_effect=TimeoutError("filesystem ETIMEDOUT"),
-                ),
-                mock.patch.object(
-                    lease_module.time,
-                    "monotonic",
-                    return_value=0.0,
-                ),
-            ):
-                cleanup = scratch.remove_child(child)
+        def timeout_while_opening(operation: str) -> None:
+            if operation == f"open_directory:{child.name}":
+                raise TimeoutError("filesystem ETIMEDOUT")
 
-            self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED)
-            self.assertEqual(cleanup.remaining_root, str(scratch.path))
-            self.assertIn("ETIMEDOUT", cleanup.details[0])
-            scratch.close_capabilities()
+        backend.before_cleanup_operation = timeout_while_opening
+        with mock.patch(
+            "tools.focused_mutation_support.lease.time.monotonic",
+            return_value=0.0,
+        ):
+            cleanup = scratch.remove_child(child)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED)
+        self.assertEqual(cleanup.remaining_root, str(scratch.path))
+        self.assertIn("ETIMEDOUT", cleanup.details[0])
 
     def test_remove_child_keeps_filesystem_timeout_failed_after_deadline_crossing(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            child = scratch.create_child("candidate-0001")
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["_open_directory_at"],
-            )
-            clock_calls = 0
+        backend = self._task8_backend()
+        scratch = self._task8_create(backend)
+        child = scratch.create_child("candidate-0001")
+        clock = [0.0]
+        backend.cleanup_operations.clear()
 
-            def cross_deadline_during_filesystem_timeout() -> float:
-                nonlocal clock_calls
-                clock_calls += 1
-                return 61.0 if clock_calls >= 3 else 0.0
+        def timeout_after_crossing(operation: str) -> None:
+            if operation == f"open_directory:{child.name}":
+                clock[0] = 61.0
+                raise TimeoutError("filesystem ETIMEDOUT")
 
-            with (
-                mock.patch.object(
-                    lease_module,
-                    "_open_directory_at",
-                    side_effect=TimeoutError("filesystem ETIMEDOUT"),
-                ),
-                mock.patch.object(
-                    lease_module.time,
-                    "monotonic",
-                    side_effect=cross_deadline_during_filesystem_timeout,
-                ),
-            ):
-                cleanup = scratch.remove_child(child)
+        backend.before_cleanup_operation = timeout_after_crossing
+        with mock.patch(
+            "tools.focused_mutation_support.lease.time.monotonic",
+            side_effect=lambda: clock[0],
+        ):
+            cleanup = scratch.remove_child(child)
 
-            self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED)
-            self.assertEqual(cleanup.remaining_root, str(scratch.path))
-            self.assertIn("ETIMEDOUT", cleanup.details[0])
-            scratch.close_capabilities()
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED)
+        self.assertEqual(cleanup.remaining_root, str(scratch.path))
+        self.assertIn("ETIMEDOUT", cleanup.details[0])
 
     def test_remove_child_stops_when_recovery_identity_crosses_deadline(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            child = scratch.create_child("candidate-0001")
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease",
-                fromlist=["_open_directory_at", "_entry_identity"],
-            )
-            real_identity = lease_module._entry_identity
-            identity_calls = 0
-            crossed = False
+        backend = self._task8_backend()
+        scratch = self._task8_create(backend)
+        child = scratch.create_child("candidate-0001")
+        clock = [0.0]
+        entry_calls = 0
+        backend.cleanup_operations.clear()
 
-            def vanish_during_open(
-                _parent_fd: int,
-                name: str,
-                **_kwargs: object,
-            ) -> int:
-                raise FileNotFoundError(name)
+        def vanish_and_cross_during_recovery(operation: str) -> None:
+            nonlocal entry_calls
+            if operation == f"open_directory:{child.name}":
+                raise FileNotFoundError(child.name)
+            if operation == f"entry:{child.name}":
+                entry_calls += 1
+                if entry_calls == 2:
+                    clock[0] = 61.0
+            if clock[0] >= 60.0 and operation == "final_path":
+                raise AssertionError(
+                    "root report recovery started after cleanup deadline"
+                )
 
-            def crossing_recovery_identity(
-                parent_fd: int, name: str
-            ) -> tuple[int, int]:
-                nonlocal identity_calls, crossed
-                identity_calls += 1
-                identity = real_identity(parent_fd, name)
-                if identity_calls == 2:
-                    crossed = True
-                return identity
+        backend.after_cleanup_operation = vanish_and_cross_during_recovery
+        with mock.patch(
+            "tools.focused_mutation_support.lease.time.monotonic",
+            side_effect=lambda: clock[0],
+        ):
+            cleanup = scratch.remove_child(child)
 
-            def forbid_root_recovery(*_args: object, **_kwargs: object) -> str:
-                if crossed:
-                    raise AssertionError(
-                        "root recovery started after child identity deadline"
-                    )
-                raise AssertionError("unexpected root recovery")
-
-            with (
-                mock.patch.object(
-                    lease_module,
-                    "_open_directory_at",
-                    side_effect=vanish_during_open,
-                ),
-                mock.patch.object(
-                    lease_module,
-                    "_entry_identity",
-                    side_effect=crossing_recovery_identity,
-                ),
-                mock.patch.object(
-                    lease_module,
-                    "_directory_path_from_capability",
-                    side_effect=forbid_root_recovery,
-                ),
-                mock.patch.object(
-                    lease_module.time,
-                    "monotonic",
-                    side_effect=lambda: 61.0 if crossed else 0.0,
-                ),
-            ):
-                cleanup = scratch.remove_child(child)
-
-            self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED)
-            self.assertEqual(cleanup.remaining_root, str(scratch.path))
-            scratch.close_capabilities()
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED)
+        self.assertEqual(cleanup.remaining_root, str(scratch.path))
 
     def test_remove_child_stops_when_post_rmdir_stat_crosses_deadline(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            scratch = ManagedScratch.create(Path(directory))
-            child = scratch.create_child("candidate-0001")
-            lease_module = __import__(
-                "tools.focused_mutation_support.lease", fromlist=["os"]
-            )
-            real_stat = lease_module.os.stat
-            rmdir_called = False
-            crossed = False
+        backend = self._task8_backend()
+        scratch = self._task8_create(backend)
+        child = scratch.create_child("candidate-0001")
+        clock = [0.0]
+        backend.cleanup_operations.clear()
 
-            def no_op_rmdir(*_args: object, **_kwargs: object) -> None:
-                nonlocal rmdir_called
-                rmdir_called = True
+        def no_op_delete(
+            capability: FileCapability | DirectoryCapability,
+        ) -> None:
+            name = backend._resource(capability).node.name
+            backend._cleanup_operation(f"delete:{name}")
+            clock[0] = 61.0
 
-            def crossing_stat(
-                *args: object, **kwargs: object
-            ) -> os.stat_result:
-                nonlocal crossed
-                result = real_stat(*args, **kwargs)  # type: ignore[arg-type]
-                if rmdir_called:
-                    crossed = True
-                return result
-
-            def forbid_root_recovery(*_args: object, **_kwargs: object) -> str:
-                if crossed:
-                    raise AssertionError(
-                        "root recovery started after post-rmdir deadline"
-                    )
-                raise AssertionError("unexpected root recovery")
-
-            with (
-                mock.patch.object(
-                    lease_module.os, "rmdir", side_effect=no_op_rmdir
-                ),
-                mock.patch.object(
-                    lease_module.os, "stat", side_effect=crossing_stat
-                ),
-                mock.patch.object(
-                    lease_module,
-                    "_directory_path_from_capability",
-                    side_effect=forbid_root_recovery,
-                ),
-                mock.patch.object(
-                    lease_module.time,
-                    "monotonic",
-                    side_effect=lambda: 61.0 if crossed else 0.0,
-                ),
+        def forbid_post_deadline_recovery(operation: str) -> None:
+            if clock[0] >= 60.0 and operation.startswith(
+                ("entry:", "open_", "entries_owned", "final_path")
             ):
-                cleanup = scratch.remove_child(child)
+                raise AssertionError(
+                    "recovery started after consuming-delete deadline"
+                )
 
-            self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED)
-            self.assertEqual(cleanup.remaining_root, str(scratch.path))
-            scratch.close_capabilities()
+        backend.before_cleanup_operation = forbid_post_deadline_recovery
+        with (
+            mock.patch.object(backend, "delete", side_effect=no_op_delete),
+            mock.patch(
+                "tools.focused_mutation_support.lease.time.monotonic",
+                side_effect=lambda: clock[0],
+            ),
+        ):
+            cleanup = scratch.remove_child(child)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED)
+        self.assertEqual(cleanup.remaining_root, str(scratch.path))
 
     def test_heartbeat_refresh_refuses_replaced_marker(self) -> None:
         backend = self._task7_backend()
@@ -10232,15 +11077,14 @@ class ManagedScratchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             scratch = ManagedScratch.create(Path(directory))
             (scratch.path / "payload").write_text("payload", encoding="utf-8")
-            scratch.mark_cleanup_ready()
             lease_module = __import__(
                 "tools.focused_mutation_support.lease",
-                fromlist=["_open_coordinator", "_open_directory_at"],
+                fromlist=["_open_coordinator", "_remove_payload"],
             )
             real_coordinator = lease_module._open_coordinator
-            real_open = lease_module._open_directory_at
+            real_remove_payload = lease_module._remove_payload
             coordinator_deadlines: list[float | None] = []
-            directory_deadlines: list[float | None] = []
+            payload_deadlines: list[float] = []
 
             def observe_coordinator(
                 *args: object, **kwargs: object
@@ -10248,30 +11092,40 @@ class ManagedScratchTests(unittest.TestCase):
                 coordinator_deadlines.append(kwargs.get("deadline"))  # type: ignore[arg-type]
                 return real_coordinator(*args, **kwargs)
 
-            def observe_open(
+            def observe_payload(
                 *args: object, **kwargs: object
-            ) -> int:
-                directory_deadlines.append(kwargs.get("deadline"))  # type: ignore[arg-type]
-                return real_open(*args, **kwargs)
+            ) -> object:
+                payload_deadlines.append(
+                    cast(float, kwargs["absolute_deadline"])
+                )
+                return real_remove_payload(*args, **kwargs)
 
-            with (
-                mock.patch.object(
-                    lease_module,
-                    "_open_coordinator",
-                    side_effect=observe_coordinator,
-                ),
-                mock.patch.object(
-                    lease_module,
-                    "_open_directory_at",
-                    side_effect=observe_open,
-                ),
-            ):
-                cleanup = scratch.cleanup()
+            try:
+                with (
+                    mock.patch.object(
+                        lease_module,
+                        "_open_coordinator",
+                        side_effect=observe_coordinator,
+                    ),
+                    mock.patch.object(
+                        lease_module,
+                        "_remove_payload",
+                        side_effect=observe_payload,
+                    ),
+                ):
+                    cleanup = self._task8_native_cleanup(scratch)
+            finally:
+                scratch.close_capabilities()
 
             self.assertEqual(cleanup.status, ScratchCleanupStatus.CLEAN)
             self.assertGreaterEqual(len(coordinator_deadlines), 2)
             self.assertTrue(all(item is not None for item in coordinator_deadlines))
-            self.assertTrue(all(item is not None for item in directory_deadlines))
+            self.assertGreaterEqual(len(payload_deadlines), 1)
+            expected = coordinator_deadlines[0]
+            self.assertTrue(
+                all(item == expected for item in coordinator_deadlines)
+            )
+            self.assertTrue(all(item == expected for item in payload_deadlines))
 
     def test_janitor_propagates_one_absolute_deadline_to_all_helpers(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

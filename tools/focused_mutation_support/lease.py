@@ -37,6 +37,8 @@ from .disk import (
 from .filesystem import (
     CreateDisposition,
     DirectoryCapability,
+    DirectoryEntry,
+    DirectoryIterator,
     EntryKind,
     FileAccess,
     FileCapability,
@@ -1486,8 +1488,8 @@ def _read_locked_marker(
 
 class ManagedScratch:
     if TYPE_CHECKING:
-        # Task 8 legacy methods still type-check against their pending raw-fd
-        # migration, but Task 7 never initializes or exposes these attributes.
+        # Task 9 legacy janitor helpers still type-check against their pending
+        # raw-fd migration; current-owner cleanup never initializes these.
         _managed_root_fd: int
         _root_fd: int
         _heartbeat_fd: int
@@ -1501,6 +1503,7 @@ class ManagedScratch:
         run_id: str,
         lease_id: str,
         lease: LeaseLock,
+        lease_identity: FileIdentity,
         managed_root_capability: DirectoryCapability,
         root: DirectoryCapability,
         heartbeat: FileCapability,
@@ -1512,6 +1515,7 @@ class ManagedScratch:
         self.run_id = run_id
         self.lease_id = lease_id
         self._lease: LeaseLock | None = lease
+        self._lease_identity = lease_identity
         self._managed_root_capability: DirectoryCapability | None = (
             managed_root_capability
         )
@@ -1527,6 +1531,15 @@ class ManagedScratch:
         self._registry_lock = threading.RLock()
         self._registry_generation = 0
         self._registry_frozen = False
+        self._cleanup_owned_capabilities: list[
+            FileCapability | DirectoryCapability
+        ] = []
+        self._cleanup_consumed_root_name: str | None = None
+        self._cleanup_consumed_children: set[str] = set()
+        self._cleanup_consumed_markers: set[str] = set()
+        self._cleanup_cursor: _CleanupCursor | None = None
+        self._cleanup_child_cursors: dict[str, _CleanupCursor] = {}
+        self._cleanup_child_roots: dict[str, DirectoryCapability] = {}
 
     @classmethod
     def create(
@@ -1809,6 +1822,7 @@ class ManagedScratch:
                 run_id=run_id,
                 lease_id=lease_id,
                 lease=lease,
+                lease_identity=lease_identity,
                 managed_root_capability=managed_root_capability,
                 root=staging_capability,
                 heartbeat=heartbeat,
@@ -2354,170 +2368,335 @@ class ManagedScratch:
             self._registry_generation += 1
             return record
 
+    def _namespace_cleanup_unavailable(
+        self,
+        message: str,
+        *,
+        examined: int,
+        removed: int,
+        owners: tuple[FileCapability | DirectoryCapability, ...] = (),
+        details: tuple[str, ...] = (),
+    ) -> ScratchCleanupRecord:
+        for owner in owners:
+            if owner.is_open and owner not in self._cleanup_owned_capabilities:
+                self._cleanup_owned_capabilities.append(owner)
+        bounded = _bounded_secondary(
+            "managed namespace cleanup unavailable",
+            RuntimeError("an owned capability remains open"),
+        )
+        close_details: list[str] = []
+        lease = self._lease
+        if lease is not None:
+            close_details.extend(
+                _close_lease_lock_retry(lease, "managed lease")
+            )
+            if lease.fd < 0:
+                self._lease = None
+        for label, attribute in (
+            ("heartbeat", "_heartbeat"),
+            ("root", "_root"),
+            ("managed root", "_managed_root_capability"),
+        ):
+            capability = cast(
+                FileCapability | DirectoryCapability | None,
+                getattr(self, attribute),
+            )
+            if capability is None:
+                continue
+            close_details.extend(
+                _close_capability_retry(capability, f"managed {label}")
+            )
+            if not capability.is_open:
+                setattr(self, attribute, None)
+        return ScratchCleanupRecord(
+            ScratchCleanupStatus.FAILED,
+            examined,
+            removed,
+            (message, *details, bounded, *close_details),
+            validate_reported_path(self.path),
+        )
+
     def _remove_child_unlocked(self, child: Path) -> ScratchCleanupRecord:
         if child.parent != self.path or _CHILD_NAME.fullmatch(child.name) is None:
             return self._failed("cleanup target is not a direct managed child")
-        expected_identity = self._children.get(child.name)
-        if expected_identity is None:
+        expected = self._children.get(child.name)
+        if expected is None:
             return self._failed("cleanup target is not an owned managed child")
         started = time.monotonic()
-        deadline = started + OWNER_CLEANUP_SECONDS
-        child_fd = -1
-        try:
-            current_identity = _entry_identity(self._root_fd, child.name)
-            if time.monotonic() >= deadline:
-                return ScratchCleanupRecord(
-                    ScratchCleanupStatus.DEFERRED,
-                    0,
-                    0,
-                    remaining_root=validate_reported_path(self.path),
-                )
-            if current_identity != expected_identity:
-                return self._failed(
-                    "managed child identity changed", deadline
-                )
-            child_fd = _open_directory_at(
-                self._root_fd, child.name, deadline=deadline
-            )
-            opened_identity = _directory_identity(child_fd)
-            if time.monotonic() >= deadline:
-                return ScratchCleanupRecord(
-                    ScratchCleanupStatus.DEFERRED,
-                    0,
-                    0,
-                    remaining_root=validate_reported_path(self.path),
-                )
-            if opened_identity != expected_identity:
-                return self._failed(
-                    "managed child identity changed while opening", deadline
-                )
-            examined, removed, complete = _remove_payload(
-                child_fd,
-                started=started,
-                absolute_deadline=deadline,
-                examined=0,
-                removed=0,
-            )
-            if not complete:
-                return ScratchCleanupRecord(
-                    ScratchCleanupStatus.DEFERRED,
-                    examined,
-                    removed,
-                    remaining_root=validate_reported_path(self.path),
-                )
-            if time.monotonic() >= deadline:
-                return ScratchCleanupRecord(
-                    ScratchCleanupStatus.DEFERRED,
-                    examined,
-                    removed,
-                    remaining_root=validate_reported_path(self.path),
-                )
-            current_identity = _entry_identity(self._root_fd, child.name)
-            if time.monotonic() >= deadline:
-                return ScratchCleanupRecord(
-                    ScratchCleanupStatus.DEFERRED,
-                    examined,
-                    removed,
-                    remaining_root=validate_reported_path(self.path),
-                )
-            if current_identity != expected_identity:
-                return self._failed(
-                    "managed child identity changed before removal", deadline
-                )
-            os.rmdir(child.name, dir_fd=self._root_fd)
-            if time.monotonic() >= deadline:
-                self._children.pop(child.name, None)
-                return ScratchCleanupRecord(
-                    ScratchCleanupStatus.CLEAN,
-                    examined,
-                    removed + 1,
-                )
-            try:
-                os.stat(
-                    child.name,
-                    dir_fd=self._root_fd,
-                    follow_symlinks=False,
-                )
-            except FileNotFoundError:
-                pass
-            else:
-                if time.monotonic() >= deadline:
-                    return ScratchCleanupRecord(
-                        ScratchCleanupStatus.DEFERRED,
-                        examined,
-                        removed,
-                        ("managed child recovery deadline reached",),
-                        validate_reported_path(self.path),
-                    )
-                return self._failed(
-                    "managed child remains after removal", deadline
-                )
-            self._children.pop(child.name, None)
-            return ScratchCleanupRecord(
-                ScratchCleanupStatus.CLEAN,
-                examined,
-                removed + 1,
-            )
-        except _DeadlineExceeded as error:
-            return ScratchCleanupRecord(
-                ScratchCleanupStatus.DEFERRED,
-                0,
-                0,
-                (f"{type(error).__name__}: {error}",),
-                validate_reported_path(self.path),
-            )
-        except FileNotFoundError:
-            if time.monotonic() >= deadline:
-                return ScratchCleanupRecord(
-                    ScratchCleanupStatus.DEFERRED,
-                    0,
-                    0,
-                    ("managed child recovery deadline reached",),
-                    validate_reported_path(self.path),
-                )
-            try:
-                _recovered_identity = _entry_identity(
-                    self._root_fd, child.name
-                )
-            except FileNotFoundError:
-                self._children.pop(child.name, None)
-                return ScratchCleanupRecord(ScratchCleanupStatus.CLEAN, 0, 0)
-            except OSError as error:
-                if time.monotonic() >= deadline:
-                    return ScratchCleanupRecord(
-                        ScratchCleanupStatus.DEFERRED,
-                        0,
-                        0,
-                        ("managed child recovery deadline reached",),
-                        validate_reported_path(self.path),
-                    )
-                return self._failed(
-                    f"managed child absence verification failed: {error}",
-                    deadline,
-                )
-            if time.monotonic() >= deadline:
-                return ScratchCleanupRecord(
-                    ScratchCleanupStatus.DEFERRED,
-                    0,
-                    0,
-                    ("managed child recovery deadline reached",),
-                    validate_reported_path(self.path),
-                )
-            return self._failed(
-                "managed child traversal entry vanished while root remains",
-                deadline,
-            )
-        except OSError as error:
+        absolute_deadline = started + OWNER_CLEANUP_SECONDS
+        examined = 0
+        removed = 0
+        root = self._root
+        if root is None or not root.is_open:
             return ScratchCleanupRecord(
                 ScratchCleanupStatus.FAILED,
                 0,
                 0,
+                ("managed run root capability is unavailable",),
+                validate_reported_path(self.path),
+            )
+
+        def deferred(*details: str) -> ScratchCleanupRecord:
+            return ScratchCleanupRecord(
+                ScratchCleanupStatus.DEFERRED,
+                examined,
+                removed,
+                tuple(details),
+                validate_reported_path(self.path),
+            )
+
+        def check(label: str) -> None:
+            _check_absolute_deadline(
+                absolute_deadline, time.monotonic, label
+            )
+
+        child_owner = self._cleanup_child_roots.pop(child.name, None)
+        cursor = self._cleanup_child_cursors.pop(
+            child.name, _CleanupCursor()
+        )
+        try:
+            if child.name in self._cleanup_consumed_children:
+                check("managed child absence")
+                remaining = self._backend.entry(root, child.name)
+                check("managed child absence")
+                if remaining is not None:
+                    return ScratchCleanupRecord(
+                        ScratchCleanupStatus.FAILED,
+                        0,
+                        0,
+                        ("managed child was replaced after exact removal",),
+                        validate_reported_path(self.path),
+                    )
+                self._cleanup_consumed_children.discard(child.name)
+                self._children.pop(child.name, None)
+                return ScratchCleanupRecord(ScratchCleanupStatus.CLEAN, 0, 0)
+
+            if child_owner is None and not cursor.components:
+                check("managed child entry lookup")
+                current = self._backend.entry(root, child.name)
+                check("managed child entry lookup")
+                expected_identity, expected_filesystem = expected
+                if current is None:
+                    return ScratchCleanupRecord(
+                        ScratchCleanupStatus.FAILED,
+                        0,
+                        0,
+                        ("managed child is missing before exact removal",),
+                        validate_reported_path(self.path),
+                    )
+                if (
+                    current.kind is not EntryKind.DIRECTORY
+                    or current.identity != expected_identity
+                    or current.filesystem != expected_filesystem
+                ):
+                    return ScratchCleanupRecord(
+                        ScratchCleanupStatus.FAILED,
+                        0,
+                        0,
+                        ("managed child identity changed",),
+                        validate_reported_path(self.path),
+                    )
+                check("managed child open")
+                child_owner = self._backend.open_directory(
+                    root, child.name, SharePolicy.PINNED
+                )
+                try:
+                    _validate_cleanup_directory(
+                        child_owner,
+                        _CleanupComponent(
+                            child.name,
+                            expected_identity,
+                            expected_filesystem,
+                        ),
+                        label="managed child",
+                    )
+                    check("managed child open")
+                except BaseException as primary_error:
+                    close_errors = _close_cleanup_capability(
+                        child_owner, "managed child"
+                    )
+                    if child_owner.is_open:
+                        raise _CleanupOwnershipBlocked(
+                            "managed child owner remains open",
+                            (child_owner,),
+                            close_errors,
+                            primary=primary_error,
+                        ) from primary_error
+                    for detail in close_errors:
+                        primary_error.add_note(detail)
+                    raise
+
+            expected_identity, expected_filesystem = expected
+            while True:
+                slice_started = time.monotonic()
+                before = (examined, removed, cursor)
+                result = _remove_payload(
+                    self._backend,
+                    root,
+                    child_owner,
+                    root_name=child.name,
+                    root_identity=expected_identity,
+                    root_filesystem=expected_filesystem,
+                    cursor=cursor,
+                    started=slice_started,
+                    absolute_deadline=absolute_deadline,
+                    examined=examined,
+                    removed=removed,
+                )
+                child_owner = result.root
+                examined = result.examined_entries
+                removed = result.removed_entries
+                cursor = result.cursor
+                if result.blocked_owners:
+                    return self._namespace_cleanup_unavailable(
+                        "managed child cleanup owner remains open",
+                        examined=examined,
+                        removed=removed,
+                        owners=result.blocked_owners,
+                        details=result.details,
+                    )
+                if result.complete:
+                    break
+                if time.monotonic() >= absolute_deadline:
+                    self._cleanup_child_cursors[child.name] = cursor
+                    if child_owner is not None:
+                        self._cleanup_child_roots[child.name] = child_owner
+                    return deferred("managed child cleanup deadline reached")
+                if (
+                    (examined, removed, cursor) == before
+                ):
+                    return ScratchCleanupRecord(
+                        ScratchCleanupStatus.FAILED,
+                        examined,
+                        removed,
+                        ("managed child cleanup slice made no progress",),
+                        validate_reported_path(self.path),
+                    )
+
+            assert child_owner is not None
+            check("managed child delete")
+            try:
+                self._backend.delete(child_owner)
+            except BaseException as primary_error:
+                close_errors = _close_cleanup_capability(
+                    child_owner, "managed child"
+                )
+                if child_owner.is_open:
+                    return self._namespace_cleanup_unavailable(
+                        f"managed child delete failed: {primary_error}",
+                        examined=examined,
+                        removed=removed,
+                        owners=(child_owner,),
+                        details=close_errors,
+                    )
+                for detail in close_errors:
+                    primary_error.add_note(detail)
+                raise
+            if child_owner.is_open:
+                close_errors = _close_cleanup_capability(
+                    child_owner, "managed child"
+                )
+                if child_owner.is_open:
+                    return self._namespace_cleanup_unavailable(
+                        "managed child owner remains open after delete",
+                        examined=examined,
+                        removed=removed,
+                        owners=(child_owner,),
+                        details=close_errors,
+                    )
+            removed += 1
+            child_owner = None
+            self._cleanup_consumed_children.add(child.name)
+            if time.monotonic() >= absolute_deadline:
+                return deferred("managed child absence deadline reached")
+            check("managed child absence")
+            remaining = self._backend.entry(root, child.name)
+            check("managed child absence")
+            if remaining is not None:
+                return ScratchCleanupRecord(
+                    ScratchCleanupStatus.FAILED,
+                    examined,
+                    removed,
+                    ("managed child was replaced after exact removal",),
+                    validate_reported_path(self.path),
+                )
+            self._cleanup_consumed_children.discard(child.name)
+            self._children.pop(child.name, None)
+            return ScratchCleanupRecord(
+                ScratchCleanupStatus.CLEAN, examined, removed
+            )
+        except _DeadlineExceeded as error:
+            if child_owner is not None and child_owner.is_open:
+                self._cleanup_child_roots[child.name] = child_owner
+            self._cleanup_child_cursors[child.name] = cursor
+            return ScratchCleanupRecord(
+                ScratchCleanupStatus.DEFERRED,
+                examined,
+                removed,
                 (f"{type(error).__name__}: {error}",),
                 validate_reported_path(self.path),
             )
-        finally:
-            if child_fd >= 0:
-                os.close(child_fd)
+        except _CleanupOwnershipBlocked as error:
+            primary, blocked_details = _cleanup_blocked_report(error)
+            return self._namespace_cleanup_unavailable(
+                primary,
+                examined=examined,
+                removed=removed,
+                owners=error.owners,
+                details=blocked_details,
+            )
+        except FileNotFoundError as error:
+            if time.monotonic() >= absolute_deadline:
+                return deferred("managed child recovery deadline reached")
+            try:
+                check("managed child recovery evidence")
+                recovered = self._backend.entry(root, child.name)
+                check("managed child recovery evidence")
+            except _DeadlineExceeded:
+                return deferred("managed child recovery deadline reached")
+            except OSError as recovery_error:
+                return ScratchCleanupRecord(
+                    ScratchCleanupStatus.FAILED,
+                    examined,
+                    removed,
+                    (
+                        "managed child recovery evidence failed: "
+                        f"{type(recovery_error).__name__}: {recovery_error}",
+                    ),
+                    validate_reported_path(self.path),
+                )
+            return ScratchCleanupRecord(
+                ScratchCleanupStatus.FAILED,
+                examined,
+                removed,
+                (
+                    "managed child traversal entry vanished"
+                    if recovered is None
+                    else "managed child traversal entry changed while opening",
+                    f"{type(error).__name__}: {error}",
+                ),
+                validate_reported_path(self.path),
+            )
+        except BaseException as error:
+            if child_owner is not None and child_owner.is_open:
+                close_errors = _close_cleanup_capability(
+                    child_owner, "managed child"
+                )
+                if child_owner.is_open:
+                    return self._namespace_cleanup_unavailable(
+                        f"managed child cleanup failed: {type(error).__name__}: {error}",
+                        examined=examined,
+                        removed=removed,
+                        owners=(child_owner,),
+                        details=close_errors,
+                    )
+            return ScratchCleanupRecord(
+                ScratchCleanupStatus.FAILED,
+                examined,
+                removed,
+                (f"{type(error).__name__}: {error}",),
+                validate_reported_path(self.path),
+            )
 
     def mark_cleanup_ready(self) -> None:
         if self._cleanup_ready:
@@ -2581,10 +2760,106 @@ class ManagedScratch:
         absolute_deadline = started + time_budget
         deleting = self.managed_root / f".deleting-{self.run_id}"
         validate_reported_path(deleting)
+        examined = 0
+        removed = 0
+
+        def deferred(*details: str) -> ScratchCleanupRecord:
+            return ScratchCleanupRecord(
+                ScratchCleanupStatus.DEFERRED,
+                examined,
+                removed,
+                tuple(details),
+                remaining_root=(
+                    None
+                    if self._cleanup_consumed_root_name is not None
+                    else validate_reported_path(self.path)
+                ),
+            )
+
+        def check(label: str) -> None:
+            _check_absolute_deadline(
+                absolute_deadline, time.monotonic, label
+            )
+
+        managed_root_capability = self._managed_root_capability
+        if (
+            managed_root_capability is None
+            or not managed_root_capability.is_open
+        ):
+            return ScratchCleanupRecord(
+                ScratchCleanupStatus.FAILED,
+                0,
+                0,
+                ("managed root capability is unavailable",),
+                validate_reported_path(self.path),
+            )
+
+        def close_coordinator(
+            coordinator: LeaseLock, label: str
+        ) -> tuple[str, ...]:
+            return _close_lease_lock_all(coordinator, label)
+
+        def pin_claimed_root() -> None:
+            old_root = self._root
+            if old_root is not None and old_root.is_open and (
+                old_root.share_policy is SharePolicy.PINNED
+            ):
+                return
+            if old_root is not None and not old_root.is_open:
+                raise OSError("managed claimed root capability is unavailable")
+            check("cleanup pinned root open")
+            pinned_root = self._backend.open_directory(
+                managed_root_capability,
+                deleting.name,
+                SharePolicy.PINNED,
+            )
+            try:
+                _validate_cleanup_directory(
+                    pinned_root,
+                    _CleanupComponent(
+                        deleting.name,
+                        self._root_identity,
+                        self._root_filesystem,
+                    ),
+                    label="managed claimed root",
+                )
+                check("cleanup pinned root validation")
+            except BaseException as primary_error:
+                close_errors = _close_capability_retry(
+                    pinned_root, "managed claimed root"
+                )
+                if pinned_root.is_open:
+                    raise _CleanupOwnershipBlocked(
+                        "managed claimed root owner remains open",
+                        (pinned_root,),
+                        close_errors,
+                        primary=primary_error,
+                    ) from primary_error
+                for detail in close_errors:
+                    primary_error.add_note(detail)
+                raise
+            if old_root is None:
+                self._root = pinned_root
+                return
+            old_errors = _close_capability_retry(
+                old_root, "managed claimed root handoff"
+            )
+            if old_root.is_open:
+                pinned_errors = _close_capability_retry(
+                    pinned_root, "managed pinned root"
+                )
+                raise _CleanupOwnershipBlocked(
+                    "managed root cleanup handoff failed",
+                    tuple(
+                        owner
+                        for owner in (old_root, pinned_root)
+                        if owner.is_open
+                    ),
+                    (*old_errors, *pinned_errors),
+                )
+            self._root = pinned_root
+
         try:
-            managed_root_capability = self._managed_root_capability
-            if managed_root_capability is None:
-                raise OSError("managed root capability is unavailable")
             coordinator = _open_coordinator(
                 managed_root_capability,
                 self._backend,
@@ -2609,86 +2884,267 @@ class ManagedScratch:
             )
         claim_record: ScratchCleanupRecord | None = None
         try:
-            if time.monotonic() >= absolute_deadline:
+            check("cleanup claim")
+            if self._cleanup_consumed_root_name is not None:
+                consumed_name = self._cleanup_consumed_root_name
+                check("cleanup root absence")
+                remaining_entry = self._backend.entry(
+                    managed_root_capability, consumed_name
+                )
+                check("cleanup root absence")
+                if remaining_entry is None:
+                    self._cleanup_consumed_root_name = None
+                    close_errors = close_coordinator(
+                        coordinator, "cleanup claim coordinator"
+                    )
+                    return ScratchCleanupRecord(
+                        ScratchCleanupStatus.CLEAN,
+                        0,
+                        0,
+                        (*close_errors, *self.close_capabilities()),
+                    )
                 claim_record = ScratchCleanupRecord(
-                    ScratchCleanupStatus.DEFERRED,
+                    ScratchCleanupStatus.FAILED,
                     0,
                     0,
-                    remaining_root=validate_reported_path(self.path),
+                    ("managed root was replaced after exact removal",),
                 )
             else:
-                match = _RUN_NAME.fullmatch(self.path.name)
-                if match is None or match.group(1) != self.run_id:
-                    claim_record = self._failed(
-                        "managed root name changed", absolute_deadline
-                    )
-                elif (
-                    _entry_identity(self._managed_root_fd, self.path.name)
-                    != self._root_identity
+                root = self._root
+                resume_without_root = (
+                    self._cleanup_cursor is not None
+                    and self.path.name == deleting.name
+                    and root is None
+                )
+                if (
+                    (root is None or not root.is_open)
+                    and not resume_without_root
                 ):
-                    claim_record = self._failed(
-                        "managed root identity changed", absolute_deadline
-                    )
-                elif time.monotonic() >= absolute_deadline:
                     claim_record = ScratchCleanupRecord(
-                        ScratchCleanupStatus.DEFERRED,
+                        ScratchCleanupStatus.FAILED,
                         0,
                         0,
-                        remaining_root=validate_reported_path(self.path),
+                        ("managed run root capability is unavailable",),
+                        validate_reported_path(self.path),
                     )
-                elif self.path != deleting:
-                    try:
-                        os.stat(
-                            deleting.name,
-                            dir_fd=self._managed_root_fd,
-                            follow_symlinks=False,
+                else:
+                    active_name = f"run-{self.run_id}"
+                    if self.path.name not in {active_name, deleting.name}:
+                        claim_record = self._failed_precondition(
+                            "managed root name changed", absolute_deadline
                         )
-                    except FileNotFoundError:
-                        if time.monotonic() >= absolute_deadline:
-                            claim_record = ScratchCleanupRecord(
-                                ScratchCleanupStatus.DEFERRED,
-                                0,
-                                0,
-                                remaining_root=validate_reported_path(self.path),
-                            )
-                        else:
-                            os.rename(
-                                self.path.name,
-                                deleting.name,
-                                src_dir_fd=self._managed_root_fd,
-                                dst_dir_fd=self._managed_root_fd,
-                            )
-                            self.path = deleting
-                            if time.monotonic() >= absolute_deadline:
-                                claim_record = ScratchCleanupRecord(
-                                    ScratchCleanupStatus.DEFERRED,
-                                    0,
-                                    0,
-                                    remaining_root=validate_reported_path(
-                                        deleting
-                                    ),
-                                )
-                            elif (
-                                _entry_identity(
-                                    self._managed_root_fd, deleting.name
-                                )
-                                != self._root_identity
-                            ):
-                                claim_record = self._failed(
-                                    "managed root identity changed while claiming cleanup",
-                                    absolute_deadline,
-                                )
                     else:
-                        claim_record = self._failed(
+                        check("cleanup root evidence")
+                        current = self._backend.entry(
+                            managed_root_capability, self.path.name
+                        )
+                        check("cleanup root evidence")
+                        if current is None:
+                            claim_record = ScratchCleanupRecord(
+                                ScratchCleanupStatus.FAILED,
+                                0,
+                                0,
+                                ("managed root is missing before exact removal",),
+                                validate_reported_path(self.path),
+                            )
+                        elif (
+                            current.kind is not EntryKind.DIRECTORY
+                            or current.identity != self._root_identity
+                            or current.filesystem != self._root_filesystem
+                        ):
+                            claim_record = self._failed_precondition(
+                                "managed root identity changed",
+                                absolute_deadline,
+                            )
+
+                if claim_record is None and self.path.name == active_name:
+                    check("cleanup destination evidence")
+                    destination = self._backend.entry(
+                        managed_root_capability, deleting.name
+                    )
+                    check("cleanup destination evidence")
+                    if destination is not None:
+                        claim_record = self._failed_precondition(
                             "managed deleting destination already exists",
                             absolute_deadline,
                         )
-        except OSError as error:
-            claim_record = self._failed(
-                f"cleanup claim failed: {type(error).__name__}: {error}",
-                absolute_deadline,
+
+                if (
+                    claim_record is None
+                    and self.path.name == active_name
+                    and self._backend.directory_rename_requires_closed_descendants
+                ):
+                    heartbeat = self._heartbeat
+                    if heartbeat is not None:
+                        heartbeat_errors = _close_capability_retry(
+                            heartbeat, "managed heartbeat cleanup handoff"
+                        )
+                        if heartbeat.is_open:
+                            close_coordinator(
+                                coordinator, "cleanup claim coordinator"
+                            )
+                            return self._namespace_cleanup_unavailable(
+                                "managed heartbeat cleanup handoff failed",
+                                examined=0,
+                                removed=0,
+                                owners=(heartbeat,),
+                                details=heartbeat_errors,
+                            )
+                        self._heartbeat = None
+                    lease = self._lease
+                    if lease is not None:
+                        lease_errors = _close_lease_lock_retry(
+                            lease, "managed lease cleanup handoff"
+                        )
+                        if lease.fd >= 0:
+                            close_coordinator(
+                                coordinator, "cleanup claim coordinator"
+                            )
+                            return self._namespace_cleanup_unavailable(
+                                "managed lease cleanup handoff failed",
+                                examined=0,
+                                removed=0,
+                                details=lease_errors,
+                            )
+                        self._lease = None
+
+                if claim_record is None and self.path.name == active_name:
+                    check("cleanup root rename")
+                    assert self._root is not None
+                    self._backend.rename(
+                        self._root,
+                        managed_root_capability,
+                        deleting.name,
+                        replace=False,
+                    )
+                    self.path = deleting
+                    if time.monotonic() >= absolute_deadline:
+                        claim_record = deferred(
+                            "cleanup claim deadline reached after rename"
+                        )
+
+                if claim_record is None:
+                    check("cleanup claimed root evidence")
+                    claimed = self._backend.entry(
+                        managed_root_capability, deleting.name
+                    )
+                    check("cleanup claimed root evidence")
+                    if (
+                        claimed is None
+                        or claimed.kind is not EntryKind.DIRECTORY
+                        or claimed.identity != self._root_identity
+                        or claimed.filesystem != self._root_filesystem
+                    ):
+                        claim_record = ScratchCleanupRecord(
+                            ScratchCleanupStatus.FAILED,
+                            0,
+                            0,
+                            (
+                                "managed root identity changed while "
+                                "claiming cleanup",
+                            ),
+                            validate_reported_path(self.path),
+                        )
+
+                if (
+                    claim_record is None
+                    and self._backend.directory_rename_requires_closed_descendants
+                    and (self._lease is None or self._heartbeat is None)
+                ):
+                    assert self._root is not None
+                    marker = _marker(self.run_id, self.lease_id)
+                    check("cleanup lease verification")
+                    lease_read = _read_marker(
+                        self._root,
+                        LEASE_FILE,
+                        self._backend,
+                        expected_run_id=self.run_id,
+                        expected_lease_id=self.lease_id,
+                        deadline=absolute_deadline,
+                    )
+                    check("cleanup heartbeat verification")
+                    heartbeat_read = _read_marker(
+                        self._root,
+                        HEARTBEAT_FILE,
+                        self._backend,
+                        expected_run_id=self.run_id,
+                        expected_lease_id=self.lease_id,
+                        deadline=absolute_deadline,
+                    )
+                    if lease_read != (self._lease_identity, marker):
+                        raise OSError("managed cleanup lease changed")
+                    if heartbeat_read != (self._heartbeat_identity, marker):
+                        raise OSError("managed cleanup heartbeat changed")
+                    pin_claimed_root()
+                    check("cleanup lease reopen")
+                    lease_capability = _open_owned_marker(
+                        self._root,
+                        LEASE_FILE,
+                        self._backend,
+                        access=FileAccess.READ_WRITE,
+                        identity=self._lease_identity,
+                    )
+                    restored_lease = LeaseLock(-1)
+                    try:
+                        restored_lease.fd = lease_capability.detach_to_fd(
+                            os.O_RDWR | getattr(os, "O_BINARY", 0)
+                        )
+                        restored_lease.acquire(blocking=False)
+                        if _read_locked_marker(
+                            restored_lease,
+                            expected_run_id=self.run_id,
+                            expected_lease_id=self.lease_id,
+                        ) != marker:
+                            raise OSError("locked managed cleanup lease changed")
+                    except BaseException as primary_error:
+                        if lease_capability.is_open:
+                            for detail in _close_capability_retry(
+                                lease_capability, "managed cleanup lease"
+                            ):
+                                primary_error.add_note(detail)
+                        for detail in _close_lease_lock_retry(
+                            restored_lease, "managed cleanup lease"
+                        ):
+                            primary_error.add_note(detail)
+                        raise
+                    self._lease = restored_lease
+                    check("cleanup heartbeat reopen")
+                    self._heartbeat = _open_owned_marker(
+                        self._root,
+                        HEARTBEAT_FILE,
+                        self._backend,
+                        access=FileAccess.WRITE,
+                        identity=self._heartbeat_identity,
+                    )
+
+                if claim_record is None:
+                    pin_claimed_root()
+        except _CleanupOwnershipBlocked as error:
+            primary, blocked_details = _cleanup_blocked_report(error)
+            close_coordinator(coordinator, "cleanup claim coordinator")
+            return self._namespace_cleanup_unavailable(
+                primary,
+                examined=0,
+                removed=0,
+                owners=error.owners,
+                details=blocked_details,
             )
-        coordinator_errors = _close_lease_lock_all(
+        except _DeadlineExceeded as error:
+            claim_record = deferred(f"{type(error).__name__}: {error}")
+        except BaseException as error:
+            message = (
+                f"cleanup claim failed: {type(error).__name__}: {error}"
+            )
+            if time.monotonic() >= absolute_deadline:
+                claim_record = ScratchCleanupRecord(
+                    ScratchCleanupStatus.FAILED,
+                    0,
+                    0,
+                    (message,),
+                )
+            else:
+                claim_record = self._failed(message, absolute_deadline)
+        coordinator_errors = close_coordinator(
             coordinator, "cleanup claim coordinator"
         )
         if coordinator_errors:
@@ -2708,30 +3164,51 @@ class ManagedScratch:
                 )
         if claim_record is not None:
             return claim_record
-        examined = 0
-        removed = 0
-        details: list[str] = []
+
+        cursor = self._cleanup_cursor or _CleanupCursor()
+        root_owner = self._root
+        self._root = None
         try:
             while True:
-                slice_examined, slice_removed, complete = _remove_payload(
-                    self._root_fd,
+                before = (examined, removed, cursor)
+                result = _remove_payload(
+                    self._backend,
+                    managed_root_capability,
+                    root_owner,
+                    root_name=deleting.name,
+                    root_identity=self._root_identity,
+                    root_filesystem=self._root_filesystem,
+                    cursor=cursor,
                     started=time.monotonic(),
                     absolute_deadline=absolute_deadline,
-                    examined=0,
-                    removed=0,
+                    examined=examined,
+                    removed=removed,
                 )
-                examined += slice_examined
-                removed += slice_removed
-                if complete:
+                root_owner = result.root
+                examined = result.examined_entries
+                removed = result.removed_entries
+                cursor = result.cursor
+                if result.blocked_owners:
+                    return self._namespace_cleanup_unavailable(
+                        "managed payload cleanup owner remains open",
+                        examined=examined,
+                        removed=removed,
+                        owners=result.blocked_owners,
+                        details=result.details,
+                    )
+                if result.complete:
                     break
                 if time.monotonic() >= absolute_deadline:
+                    self._cleanup_cursor = cursor
+                    if root_owner is not None:
+                        self._root = root_owner
                     return ScratchCleanupRecord(
                         ScratchCleanupStatus.DEFERRED,
                         examined,
                         removed,
                         remaining_root=validate_reported_path(deleting),
                     )
-                if slice_examined == 0 and slice_removed == 0:
+                if (examined, removed, cursor) == before:
                     return ScratchCleanupRecord(
                         ScratchCleanupStatus.FAILED,
                         examined,
@@ -2739,6 +3216,9 @@ class ManagedScratch:
                         ("cleanup slice made no progress",),
                         validate_reported_path(deleting),
                     )
+            self._cleanup_cursor = None
+            assert root_owner is not None
+            self._root = root_owner
             remaining = absolute_deadline - time.monotonic()
             if remaining <= 0:
                 return ScratchCleanupRecord(
@@ -2748,11 +3228,11 @@ class ManagedScratch:
                     remaining_root=validate_reported_path(deleting),
                 )
             try:
-                managed_root_capability = self._managed_root_capability
-                if managed_root_capability is None:
+                tail_managed_root_capability = self._managed_root_capability
+                if tail_managed_root_capability is None:
                     raise OSError("managed root capability is unavailable")
                 tail_coordinator = _open_coordinator(
-                    managed_root_capability,
+                    tail_managed_root_capability,
                     self._backend,
                     timeout=min(5.0, max(0.001, remaining)),
                     deadline=absolute_deadline,
@@ -2775,77 +3255,238 @@ class ManagedScratch:
                 )
             tail_record: ScratchCleanupRecord | None = None
             try:
-                for marker in (
+                for marker_name in (
                     RETAIN_FILE,
                     HEARTBEAT_FILE,
                     CLEANUP_READY_FILE,
                     LEASE_FILE,
                 ):
+                    if (
+                        marker_name == HEARTBEAT_FILE
+                        and self._heartbeat is not None
+                    ):
+                        marker_errors = _close_capability_retry(
+                            self._heartbeat, "managed heartbeat cleanup"
+                        )
+                        if self._heartbeat.is_open:
+                            close_coordinator(
+                                tail_coordinator, "cleanup coordinator"
+                            )
+                            return self._namespace_cleanup_unavailable(
+                                "managed heartbeat owner remains open",
+                                examined=examined,
+                                removed=removed,
+                                owners=(self._heartbeat,),
+                                details=marker_errors,
+                            )
+                        self._heartbeat = None
+                    if marker_name == LEASE_FILE and self._lease is not None:
+                        lease_errors = _close_lease_lock_retry(
+                            self._lease, "managed lease cleanup"
+                        )
+                        if self._lease.fd >= 0:
+                            close_coordinator(
+                                tail_coordinator, "cleanup coordinator"
+                            )
+                            return self._namespace_cleanup_unavailable(
+                                "managed lease owner remains open",
+                                examined=examined,
+                                removed=removed,
+                                details=lease_errors,
+                            )
+                        self._lease = None
+                    check("cleanup marker open")
+                    if marker_name in self._cleanup_consumed_markers:
+                        remaining_marker = self._backend.entry(
+                            root_owner, marker_name
+                        )
+                        check("cleanup marker absence")
+                        if remaining_marker is not None:
+                            raise OSError(
+                                "managed marker "
+                                f"{marker_name} was replaced after removal"
+                            )
+                        self._cleanup_consumed_markers.discard(marker_name)
+                        continue
+                    try:
+                        marker_owner = self._backend.open_entry(
+                            root_owner, marker_name, SharePolicy.PINNED
+                        )
+                    except FileNotFoundError:
+                        if marker_name in {HEARTBEAT_FILE, LEASE_FILE}:
+                            raise OSError(
+                                "managed marker "
+                                f"{marker_name} is missing before removal"
+                            )
+                        continue
+                    expected_identity = (
+                        self._heartbeat_identity
+                        if marker_name == HEARTBEAT_FILE
+                        else self._lease_identity
+                        if marker_name == LEASE_FILE
+                        else marker_owner.identity
+                    )
+                    try:
+                        if (
+                            marker_owner.kind is not EntryKind.REGULAR
+                            or marker_owner.identity != expected_identity
+                            or marker_owner.filesystem != self._root_filesystem
+                        ):
+                            raise OSError(
+                                f"managed marker {marker_name} identity changed"
+                            )
+                        check("cleanup marker delete")
+                        self._backend.delete(marker_owner)
+                        if marker_owner.is_open:
+                            marker_errors = _close_capability_retry(
+                                marker_owner, f"managed marker {marker_name}"
+                            )
+                            if marker_owner.is_open:
+                                close_coordinator(
+                                    tail_coordinator, "cleanup coordinator"
+                                )
+                                return self._namespace_cleanup_unavailable(
+                                    "managed marker "
+                                    f"{marker_name} owner remains open",
+                                    examined=examined,
+                                    removed=removed,
+                                    owners=(marker_owner,),
+                                    details=marker_errors,
+                                )
+                    except BaseException as primary_error:
+                        if marker_owner.is_open:
+                            marker_errors = _close_capability_retry(
+                                marker_owner, f"managed marker {marker_name}"
+                            )
+                            if marker_owner.is_open:
+                                raise _CleanupOwnershipBlocked(
+                                    "managed marker "
+                                    f"{marker_name} owner remains open",
+                                    (marker_owner,),
+                                    marker_errors,
+                                    primary=primary_error,
+                                ) from primary_error
+                            for detail in marker_errors:
+                                primary_error.add_note(detail)
+                        raise
+                    removed += 1
+                    self._cleanup_consumed_markers.add(marker_name)
                     if time.monotonic() >= absolute_deadline:
-                        tail_record = ScratchCleanupRecord(
-                            ScratchCleanupStatus.DEFERRED,
-                            examined,
-                            removed,
-                            remaining_root=validate_reported_path(deleting),
+                        tail_record = deferred(
+                            "cleanup marker absence deadline reached"
                         )
                         break
-                    try:
-                        os.unlink(marker, dir_fd=self._root_fd)
-                        removed += 1
-                    except FileNotFoundError:
-                        pass
-                if tail_record is None and time.monotonic() >= absolute_deadline:
-                    tail_record = ScratchCleanupRecord(
-                        ScratchCleanupStatus.DEFERRED,
-                        examined,
-                        removed,
-                        remaining_root=validate_reported_path(deleting),
+                    check("cleanup marker absence")
+                    remaining_marker = self._backend.entry(
+                        root_owner, marker_name
                     )
-                if tail_record is None and (
-                    _entry_identity(self._managed_root_fd, deleting.name)
-                    != self._root_identity
-                ):
-                    tail_record = self._failed(
-                        "managed root identity changed before removal",
-                        absolute_deadline,
-                    )
-                if tail_record is None and time.monotonic() >= absolute_deadline:
-                    tail_record = ScratchCleanupRecord(
-                        ScratchCleanupStatus.DEFERRED,
-                        examined,
-                        removed,
-                        remaining_root=validate_reported_path(deleting),
-                    )
+                    check("cleanup marker absence")
+                    if remaining_marker is not None:
+                        raise OSError(
+                            "managed marker "
+                            f"{marker_name} was replaced after removal"
+                        )
+                    self._cleanup_consumed_markers.discard(marker_name)
+
                 if tail_record is None:
-                    os.rmdir(deleting.name, dir_fd=self._managed_root_fd)
+                    check("cleanup root delete")
+                    self._backend.delete(root_owner)
+                    if root_owner.is_open:
+                        root_errors = _close_capability_retry(
+                            root_owner, "managed root cleanup"
+                        )
+                        if root_owner.is_open:
+                            close_coordinator(
+                                tail_coordinator, "cleanup coordinator"
+                            )
+                            return self._namespace_cleanup_unavailable(
+                                "managed root owner remains open",
+                                examined=examined,
+                                removed=removed,
+                                owners=(root_owner,),
+                                details=root_errors,
+                            )
+                    self._root = None
+                    root_owner = None
                     removed += 1
-                    if time.monotonic() < absolute_deadline:
-                        try:
-                            os.stat(
-                                deleting.name,
-                                dir_fd=self._managed_root_fd,
-                                follow_symlinks=False,
+                    self._cleanup_consumed_root_name = deleting.name
+                    if time.monotonic() >= absolute_deadline:
+                        tail_record = deferred(
+                            "cleanup root absence deadline reached"
+                        )
+                    else:
+                        check("cleanup root absence")
+                        remaining_root = self._backend.entry(
+                            tail_managed_root_capability, deleting.name
+                        )
+                        check("cleanup root absence")
+                        if remaining_root is not None:
+                            tail_record = ScratchCleanupRecord(
+                                ScratchCleanupStatus.FAILED,
+                                examined,
+                                removed,
+                                ("managed root was replaced after exact removal",),
                             )
-                        except FileNotFoundError:
-                            pass
                         else:
-                            tail_record = self._failed(
-                                "managed root remains after removal",
-                                absolute_deadline,
-                            )
-            except OSError as error:
-                recovered = self._failed(
-                    f"cleanup tail failed: {type(error).__name__}: {error}",
-                    absolute_deadline,
+                            self._cleanup_consumed_root_name = None
+            except _DeadlineExceeded as error:
+                tail_record = deferred(f"{type(error).__name__}: {error}")
+            except _CleanupOwnershipBlocked as error:
+                primary, blocked_details = _cleanup_blocked_report(error)
+                close_coordinator(
+                    tail_coordinator, "cleanup coordinator"
                 )
+                return self._namespace_cleanup_unavailable(
+                    primary,
+                    examined=examined,
+                    removed=removed,
+                    owners=error.owners,
+                    details=blocked_details,
+                )
+            except BaseException as error:
+                message = (
+                    f"cleanup tail failed: {type(error).__name__}: {error}"
+                )
+                if self._cleanup_consumed_root_name is not None:
+                    tail_record = ScratchCleanupRecord(
+                        ScratchCleanupStatus.FAILED,
+                        examined,
+                        removed,
+                        (message,),
+                    )
+                else:
+                    recovered = self._failed(message, absolute_deadline)
+                    tail_record = replace(
+                        recovered,
+                        examined_entries=examined,
+                        removed_entries=removed,
+                    )
+                root_close_errors: tuple[str, ...] = ()
+                if root_owner is not None and root_owner.is_open:
+                    root_close_errors = _close_capability_retry(
+                        root_owner, "managed root cleanup failure"
+                    )
+                    if root_owner.is_open:
+                        raise _CleanupOwnershipBlocked(
+                            "managed root cleanup failure owner remains open",
+                            (root_owner,),
+                            root_close_errors,
+                            primary=error,
+                        ) from error
+                    self._root = None
+                    root_owner = None
                 tail_record = replace(
-                    recovered,
-                    examined_entries=examined,
-                    removed_entries=removed,
+                    tail_record,
+                    details=(*tail_record.details, *root_close_errors),
+                    remaining_root=tail_record.remaining_root,
                 )
             finally:
-                tail_close_errors = _close_lease_lock_all(
-                    tail_coordinator, "cleanup coordinator"
+                tail_close_errors = (
+                    ()
+                    if tail_coordinator.fd < 0
+                    else close_coordinator(
+                        tail_coordinator, "cleanup coordinator"
+                    )
                 )
             if tail_record is not None:
                 return replace(
@@ -2863,13 +3504,23 @@ class ManagedScratch:
                 removed,
                 close_errors,
             )
-        except OSError as error:
-            details.append(f"{type(error).__name__}: {error}")
+        except _CleanupOwnershipBlocked as error:
+            primary, blocked_details = _cleanup_blocked_report(error)
+            return self._namespace_cleanup_unavailable(
+                primary,
+                examined=examined,
+                removed=removed,
+                owners=error.owners,
+                details=blocked_details,
+            )
+        except BaseException as error:
+            if root_owner is not None and root_owner.is_open:
+                self._root = root_owner
             return ScratchCleanupRecord(
                 ScratchCleanupStatus.FAILED,
                 examined,
                 removed,
-                tuple(details),
+                (f"{type(error).__name__}: {error}",),
                 validate_reported_path(deleting),
             )
 
@@ -2883,175 +3534,51 @@ class ManagedScratch:
             )
 
         if expired():
-            return None, False, ("owned root identity search deadline reached",)
+            return None, False, ("owned root report deadline reached",)
+        root = self._root
+        anchor = self._managed_root_capability
+        if root is None or not root.is_open:
+            return None, False, ("owned root capability is unavailable",)
+        if anchor is None or not anchor.is_open:
+            return None, False, ("managed root capability is unavailable",)
         try:
-            if (
-                _entry_identity(self._managed_root_fd, self.path.name)
-                == self._root_identity
-            ):
-                return self.path, False, ()
-        except FileNotFoundError:
-            pass
-        except OSError as error:
-            return None, False, (
-                "owned root expected-path lookup failed: "
-                f"{type(error).__name__}: {error}",
-            )
-        if expired():
-            return None, False, ("owned root identity search deadline reached",)
-        try:
-            linked = os.fstat(self._root_fd).st_nlink
-        except OSError as error:
-            return None, False, (
-                "owned root link-state lookup failed: "
-                f"{type(error).__name__}: {error}",
-            )
-        if expired():
-            return None, False, ("owned root identity search deadline reached",)
-        if linked == 0:
-            return None, True, ()
-        try:
-            capability_path = _directory_path_from_capability(self._root_fd)
+            capability_path = self._backend.final_path(root)
             validate_reported_path(capability_path)
-        except (OSError, UnicodeError, ValueError):
-            capability_path = None
+        except (OSError, UnicodeError, ValueError) as error:
+            return None, False, (
+                "owned root final-path lookup failed: "
+                f"{type(error).__name__}: {error}",
+            )
         if expired():
-            return None, False, ("owned root identity search deadline reached",)
+            return None, False, ("owned root report deadline reached",)
+        try:
+            reported_name = validate_component(capability_path.name)
+            reported_path = self.managed_root / reported_name
+            validate_reported_path(reported_path)
+        except (UnicodeError, ValueError) as error:
+            return None, False, (
+                "owned root final-path component is invalid: "
+                f"{type(error).__name__}: {error}",
+            )
+        try:
+            evidence = self._backend.entry(anchor, reported_name)
+        except OSError as error:
+            return None, False, (
+                "owned root evidence lookup failed: "
+                f"{type(error).__name__}: {error}",
+            )
+        if expired():
+            return None, False, ("owned root report deadline reached",)
         if (
-            capability_path is not None
-            and capability_path.parent == self.managed_root
+            evidence is not None
+            and evidence.kind is EntryKind.DIRECTORY
+            and evidence.identity == self._root_identity
+            and evidence.filesystem == self._root_filesystem
         ):
-            if expired():
-                return None, False, (
-                    "owned root identity search deadline reached",
-                )
-            recovered_fd = -1
-            try:
-                recovered_fd = _open_directory_at(
-                    self._managed_root_fd,
-                    capability_path.name,
-                    deadline=absolute_deadline,
-                )
-            except FileNotFoundError:
-                pass
-            except OSError as error:
-                return None, False, (
-                    "owned root recovered-path open failed: "
-                    f"{type(error).__name__}: {error}",
-                )
-            else:
-                try:
-                    if expired():
-                        return None, False, (
-                            "owned root identity search deadline reached",
-                        )
-                    recovered_identity = _directory_identity(recovered_fd)
-                    if expired():
-                        return None, False, (
-                            "owned root identity search deadline reached",
-                        )
-                    recovered_filesystem = _filesystem_identity(recovered_fd)
-                    if expired():
-                        return None, False, (
-                            "owned root identity search deadline reached",
-                        )
-                    root_filesystem = _filesystem_identity(self._root_fd)
-                    if expired():
-                        return None, False, (
-                            "owned root identity search deadline reached",
-                        )
-                    if (
-                        recovered_identity == self._root_identity
-                        and recovered_filesystem == root_filesystem
-                    ):
-                        self.path = capability_path
-                        return capability_path, False, ()
-                finally:
-                    os.close(recovered_fd)
-        try:
-            scan_fd = _open_directory_at(
-                self._managed_root_fd,
-                ".",
-                deadline=absolute_deadline,
-            )
-        except OSError as error:
-            return None, False, (
-                "owned root namespace open failed: "
-                f"{type(error).__name__}: {error}",
-            )
-        try:
-            if expired():
-                return None, False, (
-                    "owned root identity search deadline reached",
-                )
-            iterator = os.scandir(scan_fd)
-            try:
-                if expired():
-                    return None, False, (
-                        "owned root identity search deadline reached",
-                    )
-                index = 0
-                while True:
-                    if expired():
-                        return None, False, (
-                            "owned root identity search deadline reached",
-                        )
-                    try:
-                        entry = next(iterator)
-                    except StopIteration:
-                        break
-                    if expired():
-                        return None, False, (
-                            "owned root identity search deadline reached",
-                        )
-                    index += 1
-                    if index > 100_000:
-                        return None, False, (
-                            "managed root identity search exceeds 100000 entries",
-                        )
-                    try:
-                        metadata = os.stat(
-                            entry.name,
-                            dir_fd=self._managed_root_fd,
-                            follow_symlinks=False,
-                        )
-                    except FileNotFoundError:
-                        continue
-                    except OSError as error:
-                        return None, False, (
-                            "owned root namespace lookup failed: "
-                            f"{type(error).__name__}: {error}",
-                        )
-                    if expired():
-                        return None, False, (
-                            "owned root identity search deadline reached",
-                        )
-                    if (
-                        stat.S_ISDIR(metadata.st_mode)
-                        and (metadata.st_dev, metadata.st_ino)
-                        == self._root_identity
-                    ):
-                        candidate = self.managed_root / entry.name
-                        validate_reported_path(candidate)
-                        self.path = candidate
-                        return candidate, False, ()
-            finally:
-                iterator.close()
-        finally:
-            os.close(scan_fd)
-        if expired():
-            return None, False, ("owned root identity search deadline reached",)
-        try:
-            linked = os.fstat(self._root_fd).st_nlink
-        except OSError as error:
-            return None, False, (
-                "owned root link-state lookup failed: "
-                f"{type(error).__name__}: {error}",
-            )
-        if linked == 0:
-            return None, True, ()
+            self.path = reported_path
+            return reported_path, False, ()
         return None, False, (
-            "owned root remains linked outside the verified managed namespace",
+            "owned root final-path evidence does not match its capability",
         )
 
     def _failed(
@@ -3060,19 +3587,7 @@ class ManagedScratch:
         remaining, proven_absent, lookup_details = self._owned_root_path(
             absolute_deadline
         )
-        if proven_absent:
-            close_errors = self.close_capabilities()
-            return ScratchCleanupRecord(
-                ScratchCleanupStatus.CLEAN,
-                0,
-                0,
-                (
-                    message,
-                    "owned root is absent from the managed namespace",
-                    *lookup_details,
-                    *close_errors,
-                ),
-            )
+        del proven_absent
         if remaining is None:
             return ScratchCleanupRecord(
                 ScratchCleanupStatus.DEFERRED,
@@ -3088,8 +3603,44 @@ class ManagedScratch:
             validate_reported_path(remaining),
         )
 
+    def _failed_precondition(
+        self, message: str, absolute_deadline: float | None = None
+    ) -> ScratchCleanupRecord:
+        remaining, proven_absent, lookup_details = self._owned_root_path(
+            absolute_deadline
+        )
+        del proven_absent
+        return ScratchCleanupRecord(
+            ScratchCleanupStatus.FAILED,
+            0,
+            0,
+            (message, *lookup_details),
+            (
+                None
+                if remaining is None
+                else validate_reported_path(remaining)
+            ),
+        )
+
     def close_capabilities(self) -> tuple[str, ...]:
         errors: list[str] = []
+        retained_cleanup_owners: list[
+            FileCapability | DirectoryCapability
+        ] = []
+        cleanup_owners = [
+            *self._cleanup_owned_capabilities,
+            *self._cleanup_child_roots.values(),
+        ]
+        self._cleanup_child_roots.clear()
+        for owner in cleanup_owners:
+            if not owner.is_open:
+                continue
+            errors.extend(
+                _close_capability_once(owner, "managed cleanup owner")
+            )
+            if owner.is_open and owner not in retained_cleanup_owners:
+                retained_cleanup_owners.append(owner)
+        self._cleanup_owned_capabilities = retained_cleanup_owners
         lease = getattr(self, "_lease", None)
         if lease is not None:
             errors.extend(_close_lease_lock_all(lease, "managed lease"))
@@ -3103,13 +3654,10 @@ class ManagedScratch:
             capability = getattr(self, attribute, None)
             if capability is None:
                 continue
-            try:
-                capability.close()
-            except BaseException as error:
-                errors.append(
-                    _bounded_secondary(f"managed {label} close failed", error)
-                )
-            else:
+            errors.extend(
+                _close_capability_once(capability, f"managed {label}")
+            )
+            if not capability.is_open:
                 setattr(self, attribute, None)
         return tuple(errors)
 
@@ -3120,242 +3668,637 @@ class ManagedScratch:
             pass
 
 
-def _remove_payload(
-    root_capability: int,
+@dataclass(frozen=True, slots=True)
+class _CleanupComponent:
+    name: str
+    identity: FileIdentity
+    filesystem: FilesystemIdentity
+
+    def encoded_value(self) -> list[str | int]:
+        return [
+            self.name,
+            self.identity.volume,
+            self.identity.file,
+            self.filesystem.volume,
+            self.filesystem.discriminator_a,
+            self.filesystem.discriminator_b,
+        ]
+
+
+@dataclass(frozen=True, slots=True)
+class _CleanupCursor:
+    components: tuple[_CleanupComponent, ...] = ()
+    pending_absence: _CleanupComponent | None = None
+
+    def encode(self) -> bytes:
+        value = {
+            "components": [item.encoded_value() for item in self.components],
+            "pending_absence": (
+                None
+                if self.pending_absence is None
+                else self.pending_absence.encoded_value()
+            ),
+        }
+        return json.dumps(
+            value,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+
+
+@dataclass(frozen=True, slots=True)
+class _CleanupSlice:
+    examined_entries: int
+    removed_entries: int
+    complete: bool
+    cursor: _CleanupCursor
+    root: DirectoryCapability | None = None
+    blocked_owners: tuple[FileCapability | DirectoryCapability, ...] = ()
+    details: tuple[str, ...] = ()
+
+
+class _CleanupOwnershipBlocked(OSError):
+    def __init__(
+        self,
+        message: str,
+        owners: tuple[FileCapability | DirectoryCapability, ...],
+        details: tuple[str, ...],
+        *,
+        primary: BaseException | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.owners = owners
+        self.details = details
+        self.primary = primary
+
+
+def _cleanup_blocked_report(
+    error: _CleanupOwnershipBlocked,
+) -> tuple[str, tuple[str, ...]]:
+    if error.primary is None:
+        return str(error), error.details
+    return (
+        _bounded_secondary("cleanup failed", error.primary),
+        (str(error), *error.details),
+    )
+
+
+def _validate_cleanup_cursor(cursor: _CleanupCursor) -> None:
+    if len(cursor.components) > MAX_CLEANUP_DEPTH:
+        raise OSError(f"cleanup depth exceeds {MAX_CLEANUP_DEPTH}")
+    for component in (
+        *cursor.components,
+        *((cursor.pending_absence,) if cursor.pending_absence is not None else ()),
+    ):
+        if validate_component(component.name) != component.name:
+            raise OSError("cleanup cursor contains an invalid component")
+        if component.identity.volume <= 0 or component.identity.file <= 0:
+            raise OSError("cleanup cursor contains an invalid identity")
+        if component.filesystem.volume <= 0:
+            raise OSError("cleanup cursor contains an invalid filesystem")
+    if len(cursor.encode()) > MAX_CLEANUP_CURSOR_BYTES:
+        raise OSError(
+            f"cleanup cursor exceeds {MAX_CLEANUP_CURSOR_BYTES} encoded bytes"
+        )
+
+
+def _cleanup_observe_directories(count: int) -> None:
+    if count > MAX_CLEANUP_OPEN_DIRECTORIES:
+        raise OSError(
+            "cleanup directory handle limit exceeded: "
+            f"{count} > {MAX_CLEANUP_OPEN_DIRECTORIES}"
+        )
+    _cleanup_handle_observer(count)
+
+
+def _close_cleanup_capability(
+    capability: FileCapability | DirectoryCapability,
+    label: str,
+) -> tuple[str, ...]:
+    return _close_capability_retry(capability, label)
+
+
+def _close_cleanup_iterator(
+    iterator: DirectoryIterator,
+    label: str,
+) -> tuple[str, ...]:
+    errors: list[str] = []
+    directory = iterator.directory
+    while (
+        directory.is_open
+        and directory._close_attempts < _CAPABILITY_CLOSE_ATTEMPT_LIMIT
+    ):
+        try:
+            iterator.close()
+        except BaseException as error:
+            errors.append(_bounded_secondary(f"{label} close failed", error))
+        else:
+            break
+    return tuple(errors)
+
+
+def _raise_cleanup_blocked(
+    message: str,
+    owners: tuple[FileCapability | DirectoryCapability, ...],
+    details: tuple[str, ...],
+) -> None:
+    live = tuple(owner for owner in owners if owner.is_open)
+    if live:
+        raise _CleanupOwnershipBlocked(message, live, details)
+
+
+def _validate_cleanup_directory(
+    directory: DirectoryCapability,
+    component: _CleanupComponent,
     *,
+    label: str,
+) -> None:
+    if (
+        directory.kind is not EntryKind.DIRECTORY
+        or directory.identity != component.identity
+        or directory.filesystem != component.filesystem
+    ):
+        raise OSError(f"{label} identity changed")
+
+
+def _remove_payload(
+    backend: FilesystemBackend,
+    anchor: DirectoryCapability,
+    root: DirectoryCapability | None,
+    *,
+    root_name: str,
+    root_identity: FileIdentity,
+    root_filesystem: FilesystemIdentity,
+    cursor: _CleanupCursor,
     started: float,
     absolute_deadline: float,
     examined: int,
     removed: int,
-) -> tuple[int, int, bool]:
+    monotonic: Callable[[], float] | None = None,
+) -> _CleanupSlice:
+    """Remove one bounded payload slice using only exact capabilities."""
+    _validate_cleanup_cursor(cursor)
+    clock = time.monotonic if monotonic is None else monotonic
     control = {LEASE_FILE, HEARTBEAT_FILE, CLEANUP_READY_FILE, RETAIN_FILE}
-    if time.monotonic() >= absolute_deadline:
-        return examined, removed, False
-    root_metadata = os.fstat(root_capability)
-    if time.monotonic() >= absolute_deadline:
-        return examined, removed, False
-    root_identity = (root_metadata.st_dev, root_metadata.st_ino)
-    if time.monotonic() >= absolute_deadline:
-        return examined, removed, False
-    root_filesystem = _filesystem_identity(root_capability)
-    if time.monotonic() >= absolute_deadline:
-        return examined, removed, False
-    components: list[tuple[str, tuple[int, int]]] = []
-    operation_deadline = min(
-        absolute_deadline, started + MAX_CLEANUP_SLICE_SECONDS
-    )
+    slice_examined = examined
 
     def exhausted() -> bool:
+        now = clock()
         return (
-            examined >= MAX_CLEANUP_SLICE_ENTRIES
-            or time.monotonic() - started >= MAX_CLEANUP_SLICE_SECONDS
-            or time.monotonic() >= absolute_deadline
+            examined - slice_examined >= MAX_CLEANUP_SLICE_ENTRIES
+            or now - started >= MAX_CLEANUP_SLICE_SECONDS
+            or now >= absolute_deadline
         )
 
-    def observe(count: int) -> None:
-        if count > MAX_CLEANUP_OPEN_DIRECTORIES:
-            raise OSError(
-                "cleanup directory handle limit exceeded: "
-                f"{count} > {MAX_CLEANUP_OPEN_DIRECTORIES}"
-            )
-        _cleanup_handle_observer(count)
-
-    def reopen_current() -> int:
+    def require_operation(label: str) -> None:
         if exhausted():
-            raise _DeadlineExceeded("cleanup slice deadline reached")
-        current_fd = _open_directory_at(
-            root_capability, ".", deadline=operation_deadline
+            raise _DeadlineExceeded(f"{label} deadline reached")
+
+    def close_or_block(
+        owner: FileCapability | DirectoryCapability,
+        label: str,
+        message: str,
+    ) -> tuple[str, ...]:
+        errors = _close_cleanup_capability(owner, label)
+        _raise_cleanup_blocked(message, (owner,), errors)
+        return errors
+
+    def open_cursor(
+        supplied_root: DirectoryCapability | None,
+        components: tuple[_CleanupComponent, ...],
+    ) -> DirectoryCapability:
+        require_operation("cleanup cursor reopen")
+        current = supplied_root
+        if current is None:
+            current = backend.open_directory(
+                anchor, root_name, SharePolicy.PINNED
+            )
+        _cleanup_observe_directories(2)
+        root_component = _CleanupComponent(
+            root_name, root_identity, root_filesystem
         )
-        observe(2)
         try:
-            if exhausted():
-                raise _DeadlineExceeded("cleanup slice deadline reached")
-            if _directory_identity(current_fd) != root_identity:
-                raise OSError("cleanup root identity changed while reopening")
-            if exhausted():
-                raise _DeadlineExceeded("cleanup slice deadline reached")
-            for name, expected_identity in components:
-                if exhausted():
-                    raise _DeadlineExceeded("cleanup slice deadline reached")
-                child_fd = _open_directory_at(
-                    current_fd, name, deadline=operation_deadline
+            _validate_cleanup_directory(
+                current, root_component, label="cleanup root"
+            )
+            require_operation("cleanup cursor validation")
+            for component in components:
+                require_operation("cleanup cursor reopen")
+                child = backend.open_directory(
+                    current, component.name, SharePolicy.PINNED
                 )
-                observe(3)
+                _cleanup_observe_directories(3)
                 try:
-                    if exhausted():
-                        raise _DeadlineExceeded("cleanup slice deadline reached")
-                    if _directory_identity(child_fd) != expected_identity:
-                        raise OSError(
-                            "cleanup cursor identity changed while reopening"
-                        )
-                    if exhausted():
-                        raise _DeadlineExceeded("cleanup slice deadline reached")
-                    if _filesystem_identity(child_fd) != root_filesystem:
-                        raise OSError(
-                            "cleanup cursor crossed a filesystem boundary"
-                        )
-                    if exhausted():
-                        raise _DeadlineExceeded("cleanup slice deadline reached")
-                except BaseException:
-                    os.close(child_fd)
+                    _validate_cleanup_directory(
+                        child, component, label="cleanup cursor"
+                    )
+                    require_operation("cleanup cursor validation")
+                except BaseException as primary_error:
+                    close_errors = _close_cleanup_capability(
+                        child, "cleanup cursor child"
+                    )
+                    if child.is_open:
+                        raise _CleanupOwnershipBlocked(
+                            "cleanup cursor child owner remains open",
+                            (child,),
+                            close_errors,
+                            primary=primary_error,
+                        ) from primary_error
+                    for detail in close_errors:
+                        primary_error.add_note(detail)
                     raise
-                os.close(current_fd)
-                current_fd = child_fd
-                observe(2)
-            return current_fd
-        except BaseException:
-            os.close(current_fd)
+                parent_errors = _close_cleanup_capability(
+                    current, "cleanup cursor parent"
+                )
+                if current.is_open:
+                    child_errors = _close_cleanup_capability(
+                        child, "cleanup cursor child"
+                    )
+                    _raise_cleanup_blocked(
+                        "cleanup cursor parent remains open",
+                        (current, child),
+                        (*parent_errors, *child_errors),
+                    )
+                current = child
+                _cleanup_observe_directories(2)
+            return current
+        except BaseException as primary_error:
+            cursor_close_errors: tuple[str, ...] = ()
+            if current.is_open:
+                cursor_close_errors = _close_cleanup_capability(
+                    current, "cleanup cursor"
+                )
+            if isinstance(primary_error, _CleanupOwnershipBlocked):
+                owners = list(primary_error.owners)
+                if current.is_open and current not in owners:
+                    owners.append(current)
+                raise _CleanupOwnershipBlocked(
+                    str(primary_error),
+                    tuple(owners),
+                    (*primary_error.details, *cursor_close_errors),
+                    primary=primary_error.primary,
+                ) from primary_error
+            if current.is_open:
+                raise _CleanupOwnershipBlocked(
+                    "cleanup cursor owner remains open",
+                    (current,),
+                    cursor_close_errors,
+                    primary=primary_error,
+                ) from primary_error
+            for detail in cursor_close_errors:
+                primary_error.add_note(detail)
             raise
 
-    current_fd = reopen_current()
-    try:
-        while True:
-            if exhausted():
-                return examined, removed, False
-            if os.name != "nt":
-                os.fchmod(current_fd, 0o700)
-            if exhausted():
-                return examined, removed, False
-            selected: tuple[str, os.stat_result] | None = None
-            iterator = os.scandir(current_fd)
-            try:
-                observe(3)
-                if exhausted():
-                    return examined, removed, False
-                while True:
-                    if exhausted():
-                        return examined, removed, False
-                    try:
-                        entry = next(iterator)
-                    except StopIteration:
-                        break
-                    if not components and entry.name in control:
-                        continue
-                    if exhausted():
-                        return examined, removed, False
-                    try:
-                        metadata = os.stat(
-                            entry.name,
-                            dir_fd=current_fd,
-                            follow_symlinks=False,
-                        )
-                    except FileNotFoundError:
-                        continue
-                    if exhausted():
-                        return examined, removed, False
-                    selected = (entry.name, metadata)
-                    break
-            finally:
-                iterator.close()
-            observe(2)
+    def finish_iterator(
+        iterator: DirectoryIterator,
+        next_cursor: _CleanupCursor,
+    ) -> _CleanupSlice:
+        errors = _close_cleanup_iterator(iterator, "cleanup iterator")
+        directory = iterator.directory
+        if directory.is_open:
+            return _CleanupSlice(
+                examined,
+                removed,
+                False,
+                next_cursor,
+                blocked_owners=(directory,),
+                details=errors,
+            )
+        return _CleanupSlice(examined, removed, False, next_cursor)
 
-            if selected is None:
-                if not components:
-                    return examined, removed, True
-                child_name, child_identity = components.pop()
-                os.close(current_fd)
-                current_fd = -1
-                observe(1)
-                current_fd = reopen_current()
-                if exhausted():
-                    return examined, removed, False
-                try:
-                    current_identity = _entry_identity(current_fd, child_name)
+    if exhausted():
+        return _CleanupSlice(examined, removed, False, cursor, root=root)
+
+    current: DirectoryCapability | None = None
+    iterator: DirectoryIterator | None = None
+    try:
+        current = open_cursor(root, cursor.components)
+        root = None
+        if cursor.pending_absence is not None:
+            require_operation("cleanup pending absence")
+            remaining = backend.entry(
+                current, cursor.pending_absence.name
+            )
+            require_operation("cleanup pending absence")
+            if remaining is not None:
+                raise OSError(
+                    "cleanup preserved a same-name replacement after removal"
+                )
+            cursor = _CleanupCursor(cursor.components)
+
+        require_operation("cleanup iterator construction")
+        iterator = backend.entries_owned(current)
+        current = None
+        _cleanup_observe_directories(2)
+        if exhausted():
+            return finish_iterator(iterator, cursor)
+
+        while True:
+            require_operation("cleanup enumeration")
+            try:
+                entry = next(iterator)
+            except StopIteration:
+                close_errors = _close_cleanup_iterator(
+                    iterator, "cleanup completed iterator"
+                )
+                directory_owner = iterator.directory
+                if directory_owner.is_open:
+                    return _CleanupSlice(
+                        examined,
+                        removed,
+                        False,
+                        cursor,
+                        blocked_owners=(directory_owner,),
+                        details=close_errors,
+                    )
+                iterator = None
+                if not cursor.components:
                     if exhausted():
-                        return examined, removed, False
-                    if current_identity != child_identity:
-                        raise OSError(
-                            "cleanup directory identity changed before removal"
+                        return _CleanupSlice(
+                            examined, removed, False, cursor
                         )
+                    current = open_cursor(None, ())
+                    complete = _CleanupSlice(
+                        examined,
+                        removed,
+                        True,
+                        _CleanupCursor(),
+                        root=current,
+                    )
+                    current = None
+                    return complete
+
+                completed = cursor.components[-1]
+                parent_components = cursor.components[:-1]
+                parent = open_cursor(None, parent_components)
+                child: DirectoryCapability | None = None
+                deferred_cursor: _CleanupCursor | None = None
+                try:
+                    require_operation("cleanup completed directory reopen")
+                    child = backend.open_directory(
+                        parent, completed.name, SharePolicy.PINNED
+                    )
+                    _cleanup_observe_directories(3)
+                    _validate_cleanup_directory(
+                        child,
+                        completed,
+                        label="cleanup completed directory",
+                    )
+                    require_operation("cleanup completed directory delete")
+                    backend.delete(child)
+                    if child.is_open:
+                        close_or_block(
+                            child,
+                            "cleanup completed directory",
+                            "cleanup directory owner remains open",
+                        )
+                    removed += 1
+                    next_cursor = _CleanupCursor(
+                        parent_components, completed
+                    )
+                    if exhausted():
+                        deferred_cursor = next_cursor
+                    else:
+                        require_operation("cleanup directory absence")
+                        remaining = backend.entry(parent, completed.name)
+                        require_operation("cleanup directory absence")
+                        if remaining is not None:
+                            raise OSError(
+                                "cleanup preserved a same-name directory replacement"
+                            )
+                        cursor = _CleanupCursor(parent_components)
+                except BaseException as primary_error:
+                    completed_blocked: list[
+                        FileCapability | DirectoryCapability
+                    ] = []
+                    completed_close_details: list[str] = []
+                    blocked_message = "cleanup owner remains open"
+                    blocked_primary: BaseException | None = primary_error
+                    if isinstance(primary_error, _CleanupOwnershipBlocked):
+                        completed_blocked.extend(primary_error.owners)
+                        completed_close_details.extend(primary_error.details)
+                        blocked_message = str(primary_error)
+                        blocked_primary = primary_error.primary
+                    if child is not None and child.is_open:
+                        child_errors = _close_cleanup_capability(
+                            child, "cleanup completed directory"
+                        )
+                        completed_close_details.extend(child_errors)
+                        if child.is_open and child not in completed_blocked:
+                            completed_blocked.append(child)
+                    if parent.is_open:
+                        parent_errors = _close_cleanup_capability(
+                            parent, "cleanup completed directory parent"
+                        )
+                        completed_close_details.extend(parent_errors)
+                        if parent.is_open and parent not in completed_blocked:
+                            completed_blocked.append(parent)
+                    if completed_blocked:
+                        raise _CleanupOwnershipBlocked(
+                            blocked_message,
+                            tuple(completed_blocked),
+                            tuple(completed_close_details),
+                            primary=blocked_primary,
+                        ) from primary_error
+                    for detail in completed_close_details:
+                        primary_error.add_note(detail)
+                    raise
+                parent_errors = _close_cleanup_capability(
+                    parent, "cleanup completed directory parent"
+                )
+                if parent.is_open:
+                    raise _CleanupOwnershipBlocked(
+                        "cleanup parent owner remains open",
+                        (parent,),
+                        parent_errors,
+                    )
+                if deferred_cursor is not None:
+                    return _CleanupSlice(
+                        examined, removed, False, deferred_cursor
+                    )
+                current = open_cursor(None, cursor.components)
+                require_operation("cleanup iterator construction")
+                iterator = backend.entries_owned(current)
+                current = None
+                _cleanup_observe_directories(2)
+                continue
+
+            if not cursor.components and entry.name in control:
+                continue
+            examined += 1
+            if exhausted():
+                return finish_iterator(iterator, cursor)
+
+            component = _CleanupComponent(
+                entry.name, entry.identity, entry.filesystem
+            )
+            if entry.filesystem != root_filesystem:
+                raise OSError("cleanup refuses to cross a filesystem boundary")
+
+            if entry.kind is EntryKind.DIRECTORY:
+                next_cursor = _CleanupCursor(
+                    (*cursor.components, component)
+                )
+                _validate_cleanup_cursor(next_cursor)
+                require_operation("cleanup directory open")
+                try:
+                    child = backend.open_directory(
+                        iterator.directory,
+                        entry.name,
+                        SharePolicy.PINNED,
+                    )
                 except FileNotFoundError:
                     continue
-                if exhausted():
-                    return examined, removed, False
-                os.rmdir(child_name, dir_fd=current_fd)
-                removed += 1
-                continue
-
-            name, metadata = selected
-            examined += 1
-            if stat.S_ISDIR(metadata.st_mode) and not stat.S_ISLNK(metadata.st_mode):
-                child_depth = len(components) + 1
-                if child_depth > MAX_CLEANUP_DEPTH:
-                    raise OSError(f"cleanup depth exceeds {MAX_CLEANUP_DEPTH}")
-                cursor_bytes = sum(
-                    len(os.fsencode(component)) + 1
-                    for component, _ in components
-                ) + len(os.fsencode(name)) + 1
-                if cursor_bytes > MAX_CLEANUP_CURSOR_BYTES:
-                    raise OSError(
-                        "cleanup cursor exceeds "
-                        f"{MAX_CLEANUP_CURSOR_BYTES} encoded bytes"
+                _cleanup_observe_directories(3)
+                try:
+                    _validate_cleanup_directory(
+                        child, component, label="cleanup directory"
                     )
-                if metadata.st_dev != root_metadata.st_dev:
-                    raise OSError("cleanup refuses to cross a filesystem boundary")
-                if exhausted():
-                    return examined, removed, False
-                child_fd = _open_directory_at(
-                    current_fd, name, deadline=operation_deadline
+                    require_operation("cleanup directory validation")
+                except BaseException as primary_error:
+                    close_errors = _close_cleanup_capability(
+                        child, "cleanup directory"
+                    )
+                    if child.is_open:
+                        raise _CleanupOwnershipBlocked(
+                            "cleanup directory owner remains open",
+                            (child,),
+                            close_errors,
+                            primary=primary_error,
+                        ) from primary_error
+                    for detail in close_errors:
+                        primary_error.add_note(detail)
+                    raise
+                parent_errors = _close_cleanup_iterator(
+                    iterator, "cleanup parent iterator"
                 )
-                observe(3)
-                if exhausted():
-                    os.close(child_fd)
-                    return examined, removed, False
-                opened_identity = _directory_identity(child_fd)
-                if exhausted():
-                    os.close(child_fd)
-                    return examined, removed, False
-                if opened_identity != (metadata.st_dev, metadata.st_ino):
-                    os.close(child_fd)
-                    raise OSError(
-                        "cleanup directory identity changed while opening"
+                parent = iterator.directory
+                if parent.is_open:
+                    child_errors = _close_cleanup_capability(
+                        child, "cleanup directory"
                     )
-                if _filesystem_identity(child_fd) != root_filesystem:
-                    os.close(child_fd)
-                    raise OSError(
-                        "cleanup refuses to cross a filesystem boundary"
+                    return _CleanupSlice(
+                        examined,
+                        removed,
+                        False,
+                        cursor,
+                        blocked_owners=tuple(
+                            owner
+                            for owner in (parent, child)
+                            if owner.is_open
+                        ),
+                        details=(*parent_errors, *child_errors),
                     )
-                if exhausted():
-                    os.close(child_fd)
-                    return examined, removed, False
-                if os.name != "nt":
-                    os.fchmod(child_fd, 0o700)
-                if exhausted():
-                    os.close(child_fd)
-                    return examined, removed, False
-                components.append((name, opened_identity))
-                os.close(current_fd)
-                current_fd = child_fd
-                observe(2)
+                iterator = None
+                cursor = next_cursor
+                current = child
+                require_operation("cleanup iterator construction")
+                iterator = backend.entries_owned(current)
+                current = None
+                _cleanup_observe_directories(2)
                 continue
 
-            if exhausted():
-                return examined, removed, False
+            require_operation("cleanup entry open")
             try:
-                current = os.stat(
-                    name,
-                    dir_fd=current_fd,
-                    follow_symlinks=False,
+                opened = backend.open_entry(
+                    iterator.directory, entry.name, SharePolicy.PINNED
                 )
             except FileNotFoundError:
                 continue
+            try:
+                if (
+                    opened.kind is not entry.kind
+                    or opened.identity != entry.identity
+                    or opened.filesystem != entry.filesystem
+                ):
+                    raise OSError("cleanup entry identity changed while opening")
+                require_operation("cleanup entry delete")
+                backend.delete(opened)
+                if opened.is_open:
+                    close_or_block(
+                        opened,
+                        f"cleanup entry {entry.name}",
+                        "cleanup entry owner remains open",
+                    )
+                removed += 1
+            except BaseException as primary_error:
+                if opened.is_open:
+                    close_errors = _close_cleanup_capability(
+                        opened, f"cleanup entry {entry.name}"
+                    )
+                    if opened.is_open:
+                        raise _CleanupOwnershipBlocked(
+                            "cleanup entry owner remains open",
+                            (opened,),
+                            close_errors,
+                            primary=primary_error,
+                        ) from primary_error
+                    for detail in close_errors:
+                        primary_error.add_note(detail)
+                raise
+
+            pending = _CleanupCursor(cursor.components, component)
             if exhausted():
-                return examined, removed, False
-            if (current.st_dev, current.st_ino, current.st_mode) != (
-                metadata.st_dev,
-                metadata.st_ino,
-                metadata.st_mode,
-            ):
-                raise OSError("cleanup entry identity changed before removal")
-            if exhausted():
-                return examined, removed, False
-            os.unlink(name, dir_fd=current_fd)
-            removed += 1
+                return finish_iterator(iterator, pending)
+            require_operation("cleanup entry absence")
+            remaining = backend.entry(iterator.directory, entry.name)
+            require_operation("cleanup entry absence")
+            if remaining is not None:
+                raise OSError(
+                    "cleanup preserved a same-name replacement after removal"
+                )
     except _DeadlineExceeded:
-        return examined, removed, False
-    finally:
-        if current_fd >= 0:
-            os.close(current_fd)
+        if iterator is not None:
+            return finish_iterator(iterator, cursor)
+        if current is not None:
+            errors = _close_cleanup_capability(current, "cleanup current")
+            if current.is_open:
+                return _CleanupSlice(
+                    examined,
+                    removed,
+                    False,
+                    cursor,
+                    blocked_owners=(current,),
+                    details=errors,
+                )
+        return _CleanupSlice(examined, removed, False, cursor)
+    except BaseException as primary_error:
+        blocked: list[FileCapability | DirectoryCapability] = []
+        close_details: list[str] = []
+        if iterator is not None:
+            close_details.extend(
+                _close_cleanup_iterator(iterator, "cleanup iterator")
+            )
+            if iterator.directory.is_open:
+                blocked.append(iterator.directory)
+        if current is not None and current.is_open:
+            close_details.extend(
+                _close_cleanup_capability(current, "cleanup current")
+            )
+            if current.is_open:
+                blocked.append(current)
+        if isinstance(primary_error, _CleanupOwnershipBlocked):
+            owners = list(primary_error.owners)
+            for owner in blocked:
+                if owner not in owners:
+                    owners.append(owner)
+            raise _CleanupOwnershipBlocked(
+                str(primary_error),
+                tuple(owners),
+                (*primary_error.details, *close_details),
+                primary=primary_error.primary,
+            ) from primary_error
+        if blocked:
+            raise _CleanupOwnershipBlocked(
+                "cleanup owner remains open",
+                tuple(blocked),
+                tuple(close_details),
+                primary=primary_error,
+            ) from primary_error
+        for detail in close_details:
+            primary_error.add_note(detail)
+        raise
 
 
 def _cleanup_handle_observer(_open_directories: int) -> None:
