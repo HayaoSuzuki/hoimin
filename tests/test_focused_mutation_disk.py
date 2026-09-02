@@ -9957,6 +9957,7 @@ class ManagedScratchTests(unittest.TestCase):
             pending_owner = capability
             pending_resource = backend._resource(capability)
             pending_resource.close_failures = 2
+            capability.close()
 
         def close_and_commit(value: object) -> None:
             real_close_resource(value)
@@ -9992,15 +9993,27 @@ class ManagedScratchTests(unittest.TestCase):
             close_attempts_before_external = pending_owner._close_attempts
             owner_open_before_external = pending_owner.is_open
 
-            live_retry_start = len(backend.cleanup_operations)
-            still_live = reclaim_abandoned(
-                live_managed.path_hint,
-                backend=backend,
-                managed_root_capability=live_managed,
-            )
-            live_retry_operations = backend.cleanup_operations[live_retry_start:]
-            attempts_after_live_retry = pending_owner._close_attempts
+            if first_status is ScratchCleanupStatus.DEFERRED:
+                live_retry_start = len(backend.cleanup_operations)
+                still_live = reclaim_abandoned(
+                    live_managed.path_hint,
+                    backend=backend,
+                    managed_root_capability=live_managed,
+                )
+                live_retry_operations = backend.cleanup_operations[
+                    live_retry_start:
+                ]
+                attempts_after_live_retry = pending_owner._close_attempts
+            else:
+                still_live = first
+                live_retry_operations = []
+                attempts_after_live_retry = pending_owner._close_attempts
+                live_managed.close()
+            owner_close_start = len(backend.cleanup_operations)
             pending_owner.close()
+            owner_close_operations = backend.cleanup_operations[
+                owner_close_start:
+            ]
             self.assertNotIn(candidate.name, managed.children)
             retry_start = len(backend.cleanup_operations)
             second = reclaim_abandoned(
@@ -10016,6 +10029,9 @@ class ManagedScratchTests(unittest.TestCase):
         self.assertTrue(owner_open_before_external)
         self.assertEqual(close_attempts_before_external, 2)
         self.assertEqual(attempts_after_live_retry, 2)
+        self.assertEqual(
+            owner_close_operations, [f"close:{candidate.name}"]
+        )
         self.assertNotIn(f"entry:{candidate.name}", first_suffix)
         self.assertFalse(
             any(
@@ -10039,6 +10055,455 @@ class ManagedScratchTests(unittest.TestCase):
         self.assertEqual(retry_operations.count(f"entry:{candidate.name}"), 1)
         self.assertNotIn(f"open_directory:{candidate.name}", retry_operations)
         self.assertNotIn(f"delete:{candidate.name}", retry_operations)
+        self.assertEqual(len(backend.live_resources), 0)
+
+    def test_task9_pending_resolution_allocation_failure_keeps_evidence(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=[
+                "_DEFERRED_EMPTY_PENDING",
+                "_dispose_janitor_candidate_coordinator",
+            ],
+        )
+        real_record_type = lease_module.ScratchCleanupRecord
+        for outcome in ("absence", "replacement"):
+            with self.subTest(outcome=outcome):
+                backend = self._task8_backend()
+                managed_capability = self._task7_managed_root(backend)
+                later_managed = backend.reopen_directory(
+                    managed_capability, SharePolicy.MUTATION
+                )
+                managed = backend._resource(managed_capability).node
+                run_id = (
+                    "00000000-0000-4000-8000-000000000935"
+                    if outcome == "absence"
+                    else "00000000-0000-4000-8000-000000000936"
+                )
+                original = self._task9_add_candidate(
+                    backend,
+                    managed,
+                    run_id=run_id,
+                    prefix=".deleting-",
+                    lease=False,
+                    heartbeat=False,
+                )
+                real_delete = backend.delete
+                real_validate = lease_module.validate_reported_path
+                real_dispose = (
+                    lease_module._dispose_janitor_candidate_coordinator
+                )
+                opened_coordinators: list[LeaseLock] = []
+                dispose_calls = 0
+                replacement: _ManagedRecordedNode | None = None
+
+                def delete_then_replace(
+                    capability: FileCapability | DirectoryCapability,
+                ) -> None:
+                    nonlocal replacement
+                    real_delete(capability)
+                    if outcome == "replacement":
+                        replacement = backend._new_node(
+                            EntryKind.DIRECTORY,
+                            SecurityDomain.MANAGED,
+                            parent=managed,
+                            name=original.name,
+                        )
+                        backend._new_node(
+                            EntryKind.REGULAR,
+                            SecurityDomain.MANAGED,
+                            parent=replacement,
+                            name="sentinel",
+                        )
+
+                def observe_coordinator(
+                    *args: object, **kwargs: object
+                ) -> LeaseLock:
+                    coordinator = real_open_coordinator(*args, **kwargs)
+                    opened_coordinators.append(coordinator)
+                    return coordinator
+
+                def observe_dispose(owners: object) -> None:
+                    nonlocal dispose_calls
+                    dispose_calls += 1
+                    real_dispose(owners)
+
+                class _FailingRecordMeta(type):
+                    def __instancecheck__(
+                        cls, instance: object
+                    ) -> bool:
+                        del cls
+                        return isinstance(instance, real_record_type)
+
+                    def __call__(
+                        cls, *args: object, **kwargs: object
+                    ) -> ScratchCleanupRecord:
+                        del cls
+                        status = args[0] if args else kwargs.get("status")
+                        removed = (
+                            args[2]
+                            if len(args) > 2
+                            else kwargs.get("removed_entries", 0)
+                        )
+                        if (
+                            outcome == "absence"
+                            and status is ScratchCleanupStatus.CLEAN
+                            and removed == 1
+                        ):
+                            raise MemoryError(
+                                "injected absence result allocation"
+                            )
+                        return real_record_type(*args, **kwargs)
+
+                class _FailingScratchCleanupRecord(
+                    metaclass=_FailingRecordMeta
+                ):
+                    pass
+
+                def fail_replacement_path(path: Path) -> Path:
+                    if outcome == "replacement" and path.name == original.name:
+                        raise MemoryError(
+                            "injected replacement path allocation"
+                        )
+                    return real_validate(path)
+
+                real_open_coordinator = lease_module._open_coordinator
+                with (
+                    mock.patch.object(
+                        backend,
+                        "delete",
+                        side_effect=delete_then_replace,
+                    ),
+                    mock.patch.object(
+                        lease_module,
+                        "_open_coordinator",
+                        side_effect=observe_coordinator,
+                    ),
+                    mock.patch.object(
+                        lease_module,
+                        "_dispose_janitor_candidate_coordinator",
+                        side_effect=observe_dispose,
+                    ),
+                    mock.patch.object(
+                        lease_module,
+                        "ScratchCleanupRecord",
+                        _FailingScratchCleanupRecord,
+                    ),
+                    mock.patch.object(
+                        lease_module,
+                        "validate_reported_path",
+                        side_effect=fail_replacement_path,
+                    ),
+                    self.assertRaisesRegex(
+                        MemoryError,
+                        "injected (absence result|replacement path) allocation",
+                    ),
+                ):
+                    reclaim_abandoned(
+                        managed_capability.path_hint,
+                        backend=backend,
+                        managed_root_capability=managed_capability,
+                    )
+
+                registry = lease_module._DEFERRED_EMPTY_PENDING
+                with registry._lock:
+                    matching = [
+                        cell
+                        for cell in registry._cells
+                        if cell.reserved and cell.backend is backend
+                    ]
+                    active_after_failure = [cell.active for cell in matching]
+                    resolving_after_failure = [
+                        cell.resolving for cell in matching
+                    ]
+                coordinator_closed = all(
+                    coordinator.fd < 0 for coordinator in opened_coordinators
+                )
+                if not coordinator_closed:
+                    for coordinator in opened_coordinators:
+                        if coordinator.fd >= 0:
+                            coordinator.close()
+
+                retry_start = len(backend.cleanup_operations)
+                records = reclaim_abandoned(
+                    later_managed.path_hint,
+                    backend=backend,
+                    managed_root_capability=later_managed,
+                )
+                retry_operations = backend.cleanup_operations[retry_start:]
+                cleanup = _cleanup_records_only(records)
+                with registry._lock:
+                    remaining = [
+                        cell
+                        for cell in registry._cells
+                        if cell.reserved and cell.backend is backend
+                    ]
+                    for cell in remaining:
+                        if not cell.active:
+                            cell.clear()
+
+                reusable_capability = backend._directory_capability(
+                    managed,
+                    share_policy=SharePolicy.MUTATION,
+                    created=False,
+                )
+                reservation_type = getattr(
+                    lease_module, "_DeferredEmptyReservation", None
+                )
+                if reservation_type is None:
+                    reusable = registry.reserve(
+                        backend,
+                        reusable_capability.path_hint,
+                        reusable_capability,
+                    )
+                    reusable_ok = reusable is not None
+                else:
+                    reusable = reservation_type()
+                    reusable_ok = registry.reserve(
+                        reusable,
+                        backend,
+                        reusable_capability.path_hint,
+                        reusable_capability,
+                    )
+                if reusable_ok:
+                    registry.release(reusable)
+                reusable_capability.close()
+
+                self.assertEqual(active_after_failure, [True])
+                self.assertEqual(resolving_after_failure, [False])
+                self.assertEqual(dispose_calls, 1)
+                self.assertTrue(coordinator_closed)
+                self.assertEqual(len(cleanup), 1, records)
+                self.assertEqual(
+                    cleanup[0].status,
+                    (
+                        ScratchCleanupStatus.CLEAN
+                        if outcome == "absence"
+                        else ScratchCleanupStatus.FAILED
+                    ),
+                )
+                self.assertEqual(cleanup[0].removed_entries, 1)
+                self.assertEqual(
+                    retry_operations.count(f"entry:{original.name}"), 1
+                )
+                self.assertNotIn(
+                    f"open_directory:{original.name}", retry_operations
+                )
+                self.assertNotIn(
+                    f"delete:{original.name}", retry_operations
+                )
+                self.assertEqual(remaining, [])
+                self.assertTrue(reusable_ok)
+                if replacement is not None:
+                    self.assertIs(
+                        managed.children[original.name], replacement
+                    )
+                    self.assertIn("sentinel", replacement.children)
+                self.assertEqual(len(backend.live_resources), 0)
+
+    def test_task9_pending_registry_token_prevents_aba_resume(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_DEFERRED_EMPTY_PENDING"],
+        )
+        registry = lease_module._DEFERRED_EMPTY_PENDING
+        backend = self._task8_backend()
+        managed_capability = self._task7_managed_root(backend)
+        worker_managed = backend.reopen_directory(
+            managed_capability, SharePolicy.MUTATION
+        )
+        reservation_capability = backend.reopen_directory(
+            managed_capability, SharePolicy.MUTATION
+        )
+        managed = backend._resource(managed_capability).node
+        candidate = self._task9_add_candidate(
+            backend,
+            managed,
+            run_id="00000000-0000-4000-8000-000000000937",
+            prefix=".deleting-",
+            lease=False,
+            heartbeat=False,
+        )
+        real_close_resource = backend.close_resource
+        pending_owner: DirectoryCapability | None = None
+        pending_resource: _ManagedRecordedResource | None = None
+        delete_started = False
+        released = threading.Event()
+        reused = threading.Event()
+        old_handle: object | None = None
+        new_handle: object | None = None
+        new_reserved_after_stale_release = False
+        new_reserved_after_old_is_active = False
+        old_active_after_reuse = True
+        original_records: list[
+            list[ScratchCleanupRecord | JanitorDiagnostic]
+        ] = []
+        original_errors: list[BaseException] = []
+        real_release = registry.release
+
+        def arm_delete(
+            capability: FileCapability | DirectoryCapability,
+        ) -> None:
+            nonlocal delete_started, pending_owner, pending_resource
+            assert isinstance(capability, DirectoryCapability)
+            backend._cleanup_operation(f"delete:{candidate.name}")
+            delete_started = True
+            pending_owner = capability
+            pending_resource = backend._resource(capability)
+            pending_resource.close_failures = 2
+
+        def close_and_commit(value: object) -> None:
+            real_close_resource(value)
+            if (
+                pending_resource is not None
+                and value is pending_resource
+                and pending_resource.closed
+                and delete_started
+            ):
+                parent = candidate.parent
+                if (
+                    parent is not None
+                    and parent.children.get(candidate.name) is candidate
+                ):
+                    del parent.children[candidate.name]
+
+        def handle_reserved(handle: object) -> bool:
+            checker = getattr(registry, "is_reserved", None)
+            if checker is not None:
+                return bool(checker(handle))
+            return bool(getattr(handle, "reserved"))
+
+        def handle_active(handle: object) -> bool:
+            checker = getattr(registry, "is_active", None)
+            if checker is not None:
+                return bool(checker(handle))
+            return bool(getattr(handle, "active"))
+
+        def pause_old_release(
+            registry_instance: object, handle: object
+        ) -> None:
+            self.assertIs(registry_instance, registry)
+            nonlocal old_handle
+            nonlocal new_reserved_after_stale_release
+            nonlocal new_reserved_after_old_is_active
+            nonlocal old_active_after_reuse
+            if old_handle is not None:
+                real_release(handle)
+                return
+            old_handle = handle
+            real_release(handle)
+            released.set()
+            if not reused.wait(10.0):
+                raise AssertionError("ABA replacement reservation timed out")
+            real_release(handle)
+            assert new_handle is not None
+            new_reserved_after_stale_release = handle_reserved(new_handle)
+            old_active_after_reuse = handle_active(handle)
+            new_reserved_after_old_is_active = handle_reserved(new_handle)
+
+        def run_original() -> None:
+            try:
+                original_records.append(
+                    reclaim_abandoned(
+                        managed_capability.path_hint,
+                        backend=backend,
+                        managed_root_capability=managed_capability,
+                    )
+                )
+            except BaseException as error:
+                original_errors.append(error)
+
+        thread = threading.Thread(target=run_original)
+        real_resume_boundary = 0
+        worker_records: list[ScratchCleanupRecord | JanitorDiagnostic] = []
+        try:
+            with (
+                mock.patch.object(backend, "delete", side_effect=arm_delete),
+                mock.patch.object(
+                    backend, "close_resource", side_effect=close_and_commit
+                ),
+                mock.patch.object(
+                    type(registry),
+                    "release",
+                    autospec=True,
+                    side_effect=pause_old_release,
+                ),
+            ):
+                thread.start()
+                self.assertTrue(
+                    released.wait(10.0), "old reservation release timed out"
+                )
+                assert pending_owner is not None
+                self.assertEqual(pending_owner._close_attempts, 2)
+                owner_close_start = len(backend.cleanup_operations)
+                pending_owner.close()
+                owner_close_operations = backend.cleanup_operations[
+                    owner_close_start:
+                ]
+                worker_records = reclaim_abandoned(
+                    worker_managed.path_hint,
+                    backend=backend,
+                    managed_root_capability=worker_managed,
+                )
+                reservation_type = getattr(
+                    lease_module, "_DeferredEmptyReservation", None
+                )
+                if reservation_type is None:
+                    new_handle = registry.reserve(
+                        backend,
+                        reservation_capability.path_hint,
+                        reservation_capability,
+                    )
+                    new_reserved = new_handle is not None
+                else:
+                    new_handle = reservation_type()
+                    new_reserved = registry.reserve(
+                        new_handle,
+                        backend,
+                        reservation_capability.path_hint,
+                        reservation_capability,
+                    )
+                self.assertTrue(new_reserved)
+                real_resume_boundary = len(backend.cleanup_operations)
+                reused.set()
+                thread.join(10.0)
+        finally:
+            reused.set()
+            if thread.ident is not None:
+                thread.join(10.0)
+            if new_handle is not None:
+                real_release(new_handle)
+            if reservation_capability.is_open:
+                reservation_capability.close()
+
+        resume_operations = backend.cleanup_operations[real_resume_boundary:]
+        worker_cleanup = _cleanup_records_only(worker_records)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(original_errors, [])
+        self.assertEqual(
+            owner_close_operations, [f"close:{candidate.name}"]
+        )
+        self.assertEqual(len(worker_cleanup), 1, worker_records)
+        self.assertEqual(worker_cleanup[0].status, ScratchCleanupStatus.CLEAN)
+        self.assertEqual(worker_cleanup[0].removed_entries, 1)
+        self.assertEqual(len(original_records), 1)
+        original_cleanup = _cleanup_records_only(original_records[0])
+        self.assertEqual(len(original_cleanup), 1, original_records)
+        self.assertEqual(
+            original_cleanup[0].status, ScratchCleanupStatus.DEFERRED
+        )
+        self.assertIsNot(old_handle, new_handle)
+        self.assertTrue(getattr(old_handle, "transferred", False))
+        self.assertFalse(old_active_after_reuse)
+        self.assertTrue(new_reserved_after_stale_release)
+        self.assertTrue(new_reserved_after_old_is_active)
+        self.assertNotIn(
+            f"open_directory:{candidate.name}", resume_operations
+        )
+        self.assertNotIn(f"delete:{candidate.name}", resume_operations)
         self.assertEqual(len(backend.live_resources), 0)
 
     def test_task9_closed_pending_resolves_replacement_without_retargeting(
@@ -10066,12 +10531,14 @@ class ManagedScratchTests(unittest.TestCase):
                     lease=False,
                     heartbeat=False,
                 )
-                cell = lease_module._DEFERRED_EMPTY_PENDING.reserve(
+                reservation = lease_module._DeferredEmptyReservation()
+                reserved = lease_module._DEFERRED_EMPTY_PENDING.reserve(
+                    reservation,
                     backend,
                     managed_capability.path_hint,
                     managed_capability,
                 )
-                self.assertIsNotNone(cell)
+                self.assertTrue(reserved)
                 pending = lease_module._PendingAbsenceCell()
                 pending.arm(
                     scope="root",
@@ -10097,7 +10564,7 @@ class ManagedScratchTests(unittest.TestCase):
                         name="sentinel",
                     )
                 lease_module._DEFERRED_EMPTY_PENDING.activate(
-                    cell, None, pending
+                    reservation, None, pending
                 )
                 operation_start = len(backend.cleanup_operations)
 
@@ -10147,13 +10614,15 @@ class ManagedScratchTests(unittest.TestCase):
         )
         reservations = []
         for _index in range(lease_module.MAX_RECLAIM_CANDIDATES):
-            cell = lease_module._DEFERRED_EMPTY_PENDING.reserve(
+            reservation = lease_module._DeferredEmptyReservation()
+            reserved = lease_module._DEFERRED_EMPTY_PENDING.reserve(
+                reservation,
                 backend,
                 managed_capability.path_hint,
                 managed_capability,
             )
-            self.assertIsNotNone(cell)
-            reservations.append(cell)
+            self.assertTrue(reserved)
+            reservations.append(reservation)
         try:
             records = reclaim_abandoned(
                 managed_capability.path_hint,
@@ -10161,8 +10630,8 @@ class ManagedScratchTests(unittest.TestCase):
                 managed_root_capability=managed_capability,
             )
         finally:
-            for cell in reservations:
-                lease_module._DEFERRED_EMPTY_PENDING.release(cell)
+            for reservation in reservations:
+                lease_module._DEFERRED_EMPTY_PENDING.release(reservation)
 
         joined = "; ".join(
             detail for record in records for detail in record.details
@@ -10197,10 +10666,14 @@ class ManagedScratchTests(unittest.TestCase):
             heartbeat=False,
         )
         self.assertIs(managed.children.pop(original.name), original)
-        cell = lease_module._DEFERRED_EMPTY_PENDING.reserve(
-            backend, managed_capability.path_hint, managed_capability
+        reservation = lease_module._DeferredEmptyReservation()
+        reserved = lease_module._DEFERRED_EMPTY_PENDING.reserve(
+            reservation,
+            backend,
+            managed_capability.path_hint,
+            managed_capability,
         )
-        self.assertIsNotNone(cell)
+        self.assertTrue(reserved)
         pending = lease_module._PendingAbsenceCell()
         pending.arm(
             scope="root",
@@ -10210,7 +10683,9 @@ class ManagedScratchTests(unittest.TestCase):
             removed_after=1,
         )
         pending.commit()
-        lease_module._DEFERRED_EMPTY_PENDING.activate(cell, None, pending)
+        lease_module._DEFERRED_EMPTY_PENDING.activate(
+            reservation, None, pending
+        )
         real_add = lease_module._JanitorRecordLedger.add
         failed = False
 
@@ -10241,8 +10716,12 @@ class ManagedScratchTests(unittest.TestCase):
             )
 
         self.assertTrue(failed)
-        self.assertTrue(cell.active)
-        self.assertFalse(cell.resolving)
+        self.assertTrue(
+            lease_module._DEFERRED_EMPTY_PENDING.is_active(reservation)
+        )
+        self.assertFalse(
+            lease_module._DEFERRED_EMPTY_PENDING.is_resolving(reservation)
+        )
         retry_start = len(backend.cleanup_operations)
         records = reclaim_abandoned(
             later_managed.path_hint,
@@ -10258,7 +10737,9 @@ class ManagedScratchTests(unittest.TestCase):
         self.assertEqual(retry_operations.count(f"entry:{original.name}"), 1)
         self.assertNotIn(f"open_directory:{original.name}", retry_operations)
         self.assertNotIn(f"delete:{original.name}", retry_operations)
-        self.assertFalse(cell.active)
+        self.assertFalse(
+            lease_module._DEFERRED_EMPTY_PENDING.is_active(reservation)
+        )
         self.assertEqual(len(backend.live_resources), 0)
 
     def test_task9_revalidates_postclaim_marker_content_and_identity(

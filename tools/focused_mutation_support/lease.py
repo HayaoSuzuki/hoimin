@@ -6130,6 +6130,8 @@ class _DeferredEmptyPendingCell:
         "reserved",
         "active",
         "resolving",
+        "reservation",
+        "generation",
         "backend",
         "managed_root",
         "managed_identity",
@@ -6145,6 +6147,8 @@ class _DeferredEmptyPendingCell:
         self.reserved = False
         self.active = False
         self.resolving = False
+        self.reservation: _DeferredEmptyReservation | None = None
+        self.generation = 0
         self.backend: FilesystemBackend | None = None
         self.managed_root: Path | None = None
         self.managed_identity: FileIdentity | None = None
@@ -6161,6 +6165,7 @@ class _DeferredEmptyPendingCell:
         self.reserved = False
         self.active = False
         self.resolving = False
+        self.reservation = None
         self.backend = None
         self.managed_root = None
         self.managed_identity = None
@@ -6169,6 +6174,21 @@ class _DeferredEmptyPendingCell:
         self.name = ""
         self.identity = None
         self.filesystem = None
+        self.removed_after = 0
+
+
+class _DeferredEmptyReservation:
+    __slots__ = (
+        "cell_index",
+        "generation",
+        "transferred",
+        "removed_after",
+    )
+
+    def __init__(self) -> None:
+        self.cell_index = -1
+        self.generation = 0
+        self.transferred = False
         self.removed_after = 0
 
 
@@ -6184,42 +6204,82 @@ class _DeferredEmptyPendingRegistry:
 
     def reserve(
         self,
+        reservation: _DeferredEmptyReservation,
         backend: FilesystemBackend,
         managed_root: Path,
         managed_root_capability: DirectoryCapability,
-    ) -> _DeferredEmptyPendingCell | None:
+    ) -> bool:
+        if reservation.cell_index >= 0 or reservation.transferred:
+            raise RuntimeError("deferred empty reservation is not fresh")
         with self._lock:
-            for cell in self._cells:
+            for index, cell in enumerate(self._cells):
                 if cell.reserved:
                     continue
+                cell.generation += 1
                 cell.reserved = True
+                cell.reservation = reservation
                 cell.backend = backend
                 cell.managed_root = managed_root
                 cell.managed_identity = managed_root_capability.identity
                 cell.managed_filesystem = managed_root_capability.filesystem
-                return cell
-        return None
+                reservation.cell_index = index
+                reservation.generation = cell.generation
+                return True
+        return False
 
-    def release(self, cell: _DeferredEmptyPendingCell) -> None:
+    def _matching_cell_locked(
+        self, reservation: _DeferredEmptyReservation
+    ) -> _DeferredEmptyPendingCell | None:
+        index = reservation.cell_index
+        if index < 0 or index >= len(self._cells):
+            return None
+        cell = self._cells[index]
+        if (
+            not cell.reserved
+            or cell.reservation is not reservation
+            or cell.generation != reservation.generation
+        ):
+            return None
+        return cell
+
+    def release(self, reservation: _DeferredEmptyReservation) -> None:
         with self._lock:
+            cell = self._matching_cell_locked(reservation)
+            if cell is None:
+                return
             if cell.active:
                 return
             cell.clear()
 
+    def is_active(self, reservation: _DeferredEmptyReservation) -> bool:
+        with self._lock:
+            cell = self._matching_cell_locked(reservation)
+            return cell is not None and cell.active
+
+    def is_reserved(self, reservation: _DeferredEmptyReservation) -> bool:
+        with self._lock:
+            return self._matching_cell_locked(reservation) is not None
+
+    def is_resolving(self, reservation: _DeferredEmptyReservation) -> bool:
+        with self._lock:
+            cell = self._matching_cell_locked(reservation)
+            return cell is not None and cell.resolving
+
     def activate(
         self,
-        cell: _DeferredEmptyPendingCell,
+        reservation: _DeferredEmptyReservation,
         owner: DirectoryCapability | None,
         pending: _PendingAbsenceCell,
     ) -> None:
-        if not pending.armed or not pending.committed:
-            raise RuntimeError("deferred empty evidence is not committed")
+        if not pending.armed:
+            raise RuntimeError("deferred empty evidence is not armed")
         identity = pending.identity
         filesystem = pending.filesystem
         if identity is None or filesystem is None:
             raise RuntimeError("deferred empty evidence is incomplete")
         with self._lock:
-            if not cell.reserved or cell.active:
+            cell = self._matching_cell_locked(reservation)
+            if cell is None or cell.active:
                 raise RuntimeError("deferred empty registry cell is unavailable")
             cell.owner = owner
             cell.name = pending.name
@@ -6227,6 +6287,8 @@ class _DeferredEmptyPendingRegistry:
             cell.filesystem = filesystem
             cell.removed_after = pending.removed_after
             cell.active = True
+            reservation.transferred = True
+            reservation.removed_after = pending.removed_after
             pending.clear()
 
     @staticmethod
@@ -6237,6 +6299,108 @@ class _DeferredEmptyPendingRegistry:
             cell.removed_after,
             remaining_root=None,
         )
+
+    def _prepare_resolution(
+        self,
+        reservation: _DeferredEmptyReservation,
+        managed_root_capability: DirectoryCapability,
+        *,
+        deadline: float,
+    ) -> tuple[ScratchCleanupRecord, str]:
+        with self._lock:
+            cell = self._matching_cell_locked(reservation)
+            if cell is None or not cell.active or cell.resolving:
+                raise RuntimeError("deferred empty evidence is unavailable")
+            owner = cell.owner
+            if owner is not None and owner.is_open:
+                raise RuntimeError("deferred empty owner is still live")
+            cell.resolving = True
+            name = cell.name
+            identity = cell.identity
+            filesystem = cell.filesystem
+            removed_after = cell.removed_after
+            managed_root = cell.managed_root
+        if identity is None or filesystem is None or managed_root is None:
+            with self._lock:
+                current = self._matching_cell_locked(reservation)
+                if current is not None:
+                    current.resolving = False
+            raise RuntimeError("deferred empty evidence is incomplete")
+        try:
+            _check_deadline(deadline, "deferred empty pending absence")
+            remaining = self._backend_entry(
+                reservation, managed_root_capability, name
+            )
+            _check_deadline(deadline, "deferred empty pending absence")
+            if remaining is None:
+                record = ScratchCleanupRecord(
+                    ScratchCleanupStatus.CLEAN, 0, removed_after
+                )
+            elif (
+                remaining.identity == identity
+                and remaining.filesystem == filesystem
+            ):
+                record = _janitor_failure(
+                    "empty candidate deletion did not commit",
+                    managed_root / name,
+                )
+            else:
+                record = ScratchCleanupRecord(
+                    ScratchCleanupStatus.FAILED,
+                    0,
+                    removed_after,
+                    (_bounded_janitor_detail(
+                        "empty candidate replacement preserved after removal"
+                    ),),
+                    validate_reported_path(managed_root / name),
+                )
+            return record, name
+        except BaseException:
+            self.cancel_resolution(reservation)
+            raise
+
+    def _backend_entry(
+        self,
+        reservation: _DeferredEmptyReservation,
+        managed_root_capability: DirectoryCapability,
+        name: str,
+    ) -> DirectoryEntry | None:
+        with self._lock:
+            cell = self._matching_cell_locked(reservation)
+            if cell is None or cell.backend is None:
+                raise RuntimeError("deferred empty backend is unavailable")
+            backend = cell.backend
+        return backend.entry(managed_root_capability, name)
+
+    def prepare_reserved(
+        self,
+        reservation: _DeferredEmptyReservation,
+        managed_root_capability: DirectoryCapability,
+        *,
+        deadline: float,
+    ) -> ScratchCleanupRecord:
+        record, _name = self._prepare_resolution(
+            reservation, managed_root_capability, deadline=deadline
+        )
+        return record
+
+    def cancel_resolution(
+        self, reservation: _DeferredEmptyReservation
+    ) -> None:
+        with self._lock:
+            cell = self._matching_cell_locked(reservation)
+            if cell is not None and cell.active:
+                cell.resolving = False
+
+    def accept_resolution(
+        self, reservation: _DeferredEmptyReservation
+    ) -> bool:
+        with self._lock:
+            cell = self._matching_cell_locked(reservation)
+            if cell is None or not cell.active or not cell.resolving:
+                return False
+            cell.clear()
+            return True
 
     def resolve_matching(
         self,
@@ -6261,27 +6425,27 @@ class _DeferredEmptyPendingRegistry:
                 ):
                     continue
                 owner = cell.owner
+                reservation = cell.reservation
+                if reservation is None:
+                    raise RuntimeError("deferred empty reservation is missing")
                 if owner is not None and owner.is_open:
                     deferred = self._deferred_record(cell)
                     resolve = False
                 else:
-                    cell.resolving = True
                     deferred = None
                     resolve = True
                 name = cell.name
-                identity = cell.identity
-                filesystem = cell.filesystem
                 removed_after = cell.removed_after
             if not resolve:
                 record_ledger.add(cast(ScratchCleanupRecord, deferred))
                 continue
             try:
-                _check_deadline(deadline, "deferred empty pending absence")
-                remaining = backend.entry(managed_root_capability, name)
-                _check_deadline(deadline, "deferred empty pending absence")
+                record, prepared_name = self._prepare_resolution(
+                    reservation,
+                    managed_root_capability,
+                    deadline=deadline,
+                )
             except (_DeadlineExceeded, OSError) as error:
-                with self._lock:
-                    cell.resolving = False
                 record_ledger.add(
                     ScratchCleanupRecord(
                         ScratchCleanupStatus.DEFERRED,
@@ -6292,36 +6456,15 @@ class _DeferredEmptyPendingRegistry:
                 )
                 continue
             try:
-                if remaining is None:
-                    record: ScratchCleanupRecord = ScratchCleanupRecord(
-                        ScratchCleanupStatus.CLEAN, 0, removed_after
-                    )
-                elif (
-                    remaining.identity == identity
-                    and remaining.filesystem == filesystem
-                ):
-                    record = _janitor_failure(
-                        "empty candidate deletion did not commit",
-                        managed_root / name,
-                    )
-                else:
-                    record = ScratchCleanupRecord(
-                        ScratchCleanupStatus.FAILED,
-                        0,
-                        removed_after,
-                        (_bounded_janitor_detail(
-                            "empty candidate replacement preserved after removal"
-                        ),),
-                        validate_reported_path(managed_root / name),
-                    )
-                skip_names.add(name)
-                record_ledger.add(record)
+                index = record_ledger.add(record)
             except BaseException:
-                with self._lock:
-                    cell.resolving = False
+                self.cancel_resolution(reservation)
                 raise
-            with self._lock:
-                cell.clear()
+            if index is None:
+                self.cancel_resolution(reservation)
+                continue
+            self.accept_resolution(reservation)
+            skip_names.add(prepared_name)
 
     def blocks_candidate(
         self,
@@ -6365,6 +6508,7 @@ class _JanitorCandidateOwners:
         "pending_absence",
         "cleanup_registry",
         "cleanup_graph",
+        "empty_reservation",
         "transferred",
     )
 
@@ -6386,6 +6530,7 @@ class _JanitorCandidateOwners:
         self.pending_absence = _PendingAbsenceCell()
         self.cleanup_registry = _FixedOwnerRegistry()
         self.cleanup_graph = _CleanupOwnerGraph(self.cleanup_registry)
+        self.empty_reservation = _DeferredEmptyReservation()
         self.transferred = False
 
 
@@ -6610,10 +6755,10 @@ def _reclaim_empty_unleased_candidate(
             deadline=deadline,
             owners=local_owners,
         )
-    pending_state = _DEFERRED_EMPTY_PENDING.reserve(
-        backend, managed_root, managed_root_capability
-    )
-    if pending_state is None:
+    reservation = local_owners.empty_reservation
+    if not _DEFERRED_EMPTY_PENDING.reserve(
+        reservation, backend, managed_root, managed_root_capability
+    ):
         return _janitor_diagnostic("janitor pending owner registry is full")
     result: ScratchCleanupRecord | JanitorDiagnostic | None = None
     local_owners.root.owner = candidate
@@ -6629,19 +6774,27 @@ def _reclaim_empty_unleased_candidate(
             owners=local_owners,
         )
     finally:
-        _dispose_janitor_candidate_owners(local_owners)
-        result = _finalize_empty_janitor_pending(
-            managed_root,
-            managed_root_capability,
-            backend,
-            local_owners,
-            pending_state,
-            result,
-            deadline=deadline,
-        )
-        _dispose_janitor_candidate_coordinator(local_owners)
-        _DEFERRED_EMPTY_PENDING.release(pending_state)
-    return _attach_janitor_details(result, local_owners.details)
+        try:
+            _dispose_janitor_candidate_owners(local_owners)
+            result = _finalize_empty_janitor_pending(
+                managed_root_capability,
+                local_owners,
+                reservation,
+                result,
+                deadline=deadline,
+            )
+        finally:
+            try:
+                _dispose_janitor_candidate_coordinator(local_owners)
+            finally:
+                _DEFERRED_EMPTY_PENDING.release(reservation)
+    try:
+        attached = _attach_janitor_details(result, local_owners.details)
+    except BaseException:
+        _DEFERRED_EMPTY_PENDING.cancel_resolution(reservation)
+        raise
+    _DEFERRED_EMPTY_PENDING.accept_resolution(reservation)
+    return attached
 
 
 def _bound_cleanup_records(
@@ -6800,60 +6953,10 @@ def _dispose_janitor_candidate_coordinator(
         )
 
 
-def _resolve_empty_janitor_pending(
-    managed_root: Path,
-    managed_root_capability: DirectoryCapability,
-    backend: FilesystemBackend,
-    pending: _PendingAbsenceCell,
-    result: ScratchCleanupRecord | JanitorDiagnostic | None,
-    *,
-    deadline: float,
-) -> ScratchCleanupRecord | JanitorDiagnostic | None:
-    if not pending.armed:
-        return result
-    if time.monotonic() >= deadline:
-        return ScratchCleanupRecord(
-            ScratchCleanupStatus.DEFERRED,
-            0,
-            pending.removed_after,
-            remaining_root=None,
-        )
-    _check_deadline(deadline, "empty janitor pending absence")
-    remaining = backend.entry(managed_root_capability, pending.name)
-    _check_deadline(deadline, "empty janitor pending absence")
-    if remaining is None:
-        pending.clear()
-        return ScratchCleanupRecord(
-            ScratchCleanupStatus.CLEAN, 0, pending.removed_after or 1
-        )
-    reported = managed_root / pending.name
-    if (
-        remaining.identity == pending.identity
-        and remaining.filesystem == pending.filesystem
-    ):
-        pending.clear()
-        return _janitor_failure(
-            "empty candidate deletion did not commit", reported
-        )
-    removed_after = pending.removed_after
-    pending.clear()
-    return ScratchCleanupRecord(
-        ScratchCleanupStatus.FAILED,
-        0,
-        removed_after,
-        (_bounded_janitor_detail(
-            "empty candidate replacement preserved after removal"
-        ),),
-        validate_reported_path(reported),
-    )
-
-
 def _finalize_empty_janitor_pending(
-    managed_root: Path,
     managed_root_capability: DirectoryCapability,
-    backend: FilesystemBackend,
     owners: _JanitorCandidateOwners,
-    pending_state: _DeferredEmptyPendingCell,
+    reservation: _DeferredEmptyReservation,
     result: ScratchCleanupRecord | JanitorDiagnostic | None,
     *,
     deadline: float,
@@ -6865,21 +6968,17 @@ def _finalize_empty_janitor_pending(
     ):
         raise RuntimeError("deferred empty root owner is not a directory")
     root = root_owner
-    if pending.armed and not pending.committed and (
-        root is None or not root.is_open
-    ):
-        pending.commit()
-    if pending.armed and pending.committed and (
-        (root is not None and root.is_open) or time.monotonic() >= deadline
-    ):
-        _DEFERRED_EMPTY_PENDING.activate(pending_state, root, pending)
-        owners.root.owner = None
+    if not pending.armed:
+        return result
+    _DEFERRED_EMPTY_PENDING.activate(reservation, root, pending)
+    owners.root.owner = None
+    if (root is not None and root.is_open) or time.monotonic() >= deadline:
         if isinstance(result, ScratchCleanupRecord):
             return replace(
                 result,
                 status=ScratchCleanupStatus.DEFERRED,
                 removed_entries=max(
-                    result.removed_entries, pending_state.removed_after
+                    result.removed_entries, reservation.removed_after
                 ),
                 remaining_root=None,
             )
@@ -6887,7 +6986,7 @@ def _finalize_empty_janitor_pending(
             return ScratchCleanupRecord(
                 ScratchCleanupStatus.DEFERRED,
                 0,
-                pending_state.removed_after,
+                reservation.removed_after,
                 result.details,
                 None,
                 result.omitted_detail_count,
@@ -6895,15 +6994,12 @@ def _finalize_empty_janitor_pending(
         return ScratchCleanupRecord(
             ScratchCleanupStatus.DEFERRED,
             0,
-            pending_state.removed_after,
+            reservation.removed_after,
             remaining_root=None,
         )
-    return _resolve_empty_janitor_pending(
-        managed_root,
+    return _DEFERRED_EMPTY_PENDING.prepare_reserved(
+        reservation,
         managed_root_capability,
-        backend,
-        pending,
-        result,
         deadline=deadline,
     )
 
@@ -7563,10 +7659,11 @@ def _janitor_candidate_record(
     | None
 ):
     """Run one candidate slice and attach every owner-disposal diagnostic."""
-    pending_state = _DEFERRED_EMPTY_PENDING.reserve(
-        backend, managed_root, managed_root_capability
-    )
-    if pending_state is None:
+    owners = _JanitorCandidateOwners()
+    reservation = owners.empty_reservation
+    if not _DEFERRED_EMPTY_PENDING.reserve(
+        reservation, backend, managed_root, managed_root_capability
+    ):
         full_result = _janitor_diagnostic(
             "janitor pending owner registry is full"
         )
@@ -7575,10 +7672,8 @@ def _janitor_candidate_record(
         return _JanitorStoredRecord(
             _record_ledger.add(full_result), None, False
         )
-    owners: _JanitorCandidateOwners | None = None
     result: ScratchCleanupRecord | JanitorDiagnostic | None = None
     try:
-        owners = _JanitorCandidateOwners()
         result = _janitor_candidate_record_inner(
             managed_root,
             managed_root_capability,
@@ -7589,38 +7684,54 @@ def _janitor_candidate_record(
             owners=owners,
         )
     finally:
-        if owners is not None and not owners.transferred:
-            _dispose_janitor_candidate_owners(owners)
-            result = _finalize_empty_janitor_pending(
-                managed_root,
-                managed_root_capability,
-                backend,
-                owners,
-                pending_state,
-                result,
-                deadline=deadline,
-            )
-        if owners is not None:
-            _dispose_janitor_candidate_coordinator(owners)
-        _DEFERRED_EMPTY_PENDING.release(pending_state)
-    if owners is None:
-        return result
+        try:
+            if not owners.transferred:
+                _dispose_janitor_candidate_owners(owners)
+                result = _finalize_empty_janitor_pending(
+                    managed_root_capability,
+                    owners,
+                    reservation,
+                    result,
+                    deadline=deadline,
+                )
+        finally:
+            try:
+                _dispose_janitor_candidate_coordinator(owners)
+            finally:
+                _DEFERRED_EMPTY_PENDING.release(reservation)
     if _record_ledger is None:
-        return _attach_janitor_details(result, owners.details)
+        try:
+            attached = _attach_janitor_details(result, owners.details)
+        except BaseException:
+            _DEFERRED_EMPTY_PENDING.cancel_resolution(reservation)
+            raise
+        _DEFERRED_EMPTY_PENDING.accept_resolution(reservation)
+        return attached
     if result is None:
         if owners.details.count == 0 and owners.details.omitted == 0:
-            return _JanitorStoredRecord(None, None, pending_state.active)
+            return _JanitorStoredRecord(
+                None, None, reservation.transferred
+            )
         result = JanitorDiagnostic(())
     status = result.status if isinstance(result, ScratchCleanupRecord) else None
-    index: int | None
-    if _replace_index is not None and isinstance(result, ScratchCleanupRecord):
-        _record_ledger.replace_with_resume(
-            _replace_index, result, owners.details
-        )
-        index = _replace_index
+    try:
+        if _replace_index is not None and isinstance(
+            result, ScratchCleanupRecord
+        ):
+            _record_ledger.replace_with_resume(
+                _replace_index, result, owners.details
+            )
+            index: int | None = _replace_index
+        else:
+            index = _record_ledger.add(result, owners.details)
+    except BaseException:
+        _DEFERRED_EMPTY_PENDING.cancel_resolution(reservation)
+        raise
+    if index is None:
+        _DEFERRED_EMPTY_PENDING.cancel_resolution(reservation)
     else:
-        index = _record_ledger.add(result, owners.details)
-    return _JanitorStoredRecord(index, status, pending_state.active)
+        _DEFERRED_EMPTY_PENDING.accept_resolution(reservation)
+    return _JanitorStoredRecord(index, status, reservation.transferred)
 
 
 def reclaim_abandoned(
