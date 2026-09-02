@@ -2887,6 +2887,14 @@ class ManagedPublicationCapabilityTests(unittest.TestCase):
         )
         active_name = f"run-{self.run_id}"
         staging_name = f".staging-{self.run_id}"
+        retained_owner_sets: list[
+            tuple[
+                str,
+                bool,
+                list[FileCapability],
+                list[LeaseLock],
+            ]
+        ] = []
         for boundary in ("heartbeat", "lease"):
             for persistent in (False, True):
                 with self.subTest(boundary=boundary, persistent=persistent):
@@ -2898,6 +2906,14 @@ class ManagedPublicationCapabilityTests(unittest.TestCase):
                     target_descriptor: int | None = None
                     target_heartbeat: _ManagedRecordedResource | None = None
                     retained_heartbeat_capabilities: list[FileCapability] = []
+                    retained_owner_sets.append(
+                        (
+                            boundary,
+                            persistent,
+                            retained_heartbeat_capabilities,
+                            allocated_locks,
+                        )
+                    )
                     replacement: _ManagedRecordedNode | None = None
                     rollback_lock_states: list[bool] = []
                     rollback_started = False
@@ -3016,16 +3032,23 @@ class ManagedPublicationCapabilityTests(unittest.TestCase):
                             backend.events.append("close-coordinator-lock")
                         return errors
 
-                    def close_retained_owners() -> None:
-                        for capability in retained_heartbeat_capabilities:
+                    def close_retained_owners(
+                        capabilities: list[FileCapability],
+                        locks: list[LeaseLock],
+                    ) -> None:
+                        for capability in capabilities:
                             if capability.is_open:
                                 capability.close()
-                        for lock in allocated_locks:
+                        for lock in locks:
                             if lock.fd >= 0:
                                 lock.close()
 
                     backend.after_event = observe_rollback
-                    self.addCleanup(close_retained_owners)
+                    self.addCleanup(
+                        close_retained_owners,
+                        retained_heartbeat_capabilities,
+                        allocated_locks,
+                    )
                     with (
                         mock.patch.object(
                             backend,
@@ -3127,6 +3150,17 @@ class ManagedPublicationCapabilityTests(unittest.TestCase):
                             all(lock.fd < 0 for lock in managed_lease_locks)
                         )
 
+        self.doCleanups()
+        for boundary, persistent, capabilities, locks in retained_owner_sets:
+            with self.subTest(
+                cleanup_boundary=boundary,
+                cleanup_persistent=persistent,
+            ):
+                self.assertTrue(
+                    all(not capability.is_open for capability in capabilities)
+                )
+                self.assertTrue(all(lock.fd < 0 for lock in locks))
+
     def test_windows_handoff_allocates_lease_owner_before_opening_capability(
         self,
     ) -> None:
@@ -3187,11 +3221,17 @@ class ManagedPublicationCapabilityTests(unittest.TestCase):
         )
         active_name = f"run-{self.run_id}"
         staging_name = f".staging-{self.run_id}"
+        retained_owner_sets: list[
+            tuple[str, list[FileCapability], list[LeaseLock]]
+        ] = []
         for boundary in ("lease", "heartbeat"):
             with self.subTest(boundary=boundary):
                 backend = self._backend(rename_requires_closed_descendants=True)
                 allocated_locks: list[LeaseLock] = []
                 retained_capabilities: list[FileCapability] = []
+                retained_owner_sets.append(
+                    (boundary, retained_capabilities, allocated_locks)
+                )
                 event_counts: dict[str, int] = {}
                 close_attempts = 0
                 restore_started = False
@@ -3309,16 +3349,23 @@ class ManagedPublicationCapabilityTests(unittest.TestCase):
                         backend.events.append("close-coordinator-lock")
                     return errors
 
-                def close_retained_owners() -> None:
-                    for capability in retained_capabilities:
+                def close_retained_owners(
+                    capabilities: list[FileCapability],
+                    locks: list[LeaseLock],
+                ) -> None:
+                    for capability in capabilities:
                         if capability.is_open:
                             capability.close()
-                    for lock in allocated_locks:
+                    for lock in locks:
                         if lock.fd >= 0:
                             lock.close()
 
                 backend.after_event = inject_primary_and_observe
-                self.addCleanup(close_retained_owners)
+                self.addCleanup(
+                    close_retained_owners,
+                    retained_capabilities,
+                    allocated_locks,
+                )
                 with (
                     mock.patch.object(
                         backend, "open_file", side_effect=open_file
@@ -3383,6 +3430,14 @@ class ManagedPublicationCapabilityTests(unittest.TestCase):
                     assert target_heartbeat is not None
                     self.assertFalse(target_heartbeat.closed)
 
+        self.doCleanups()
+        for boundary, capabilities, locks in retained_owner_sets:
+            with self.subTest(cleanup_boundary=boundary):
+                self.assertTrue(
+                    all(not capability.is_open for capability in capabilities)
+                )
+                self.assertTrue(all(lock.fd < 0 for lock in locks))
+
     def test_hidden_helper_owner_blocks_marker_and_staging_rollback(self) -> None:
         lease_module = __import__(
             "tools.focused_mutation_support.lease",
@@ -3391,12 +3446,28 @@ class ManagedPublicationCapabilityTests(unittest.TestCase):
         active_name = f"run-{self.run_id}"
         staging_name = f".staging-{self.run_id}"
         lease_name = ".hoimin-lease.json"
+        retained_owner_sets: list[
+            tuple[
+                str,
+                list[FileCapability],
+                list[_OwnedDescriptor],
+                list[LeaseLock],
+            ]
+        ] = []
         for stage in ("create-capability", "read-descriptor", "lease-capability"):
             with self.subTest(stage=stage):
                 backend = self._backend(rename_requires_closed_descendants=True)
                 allocated_locks: list[LeaseLock] = []
                 descriptor_owners: list[_OwnedDescriptor] = []
                 retained_capabilities: list[FileCapability] = []
+                retained_owner_sets.append(
+                    (
+                        stage,
+                        retained_capabilities,
+                        descriptor_owners,
+                        allocated_locks,
+                    )
+                )
                 target_resource: _ManagedRecordedResource | None = None
                 target_descriptor: int | None = None
                 close_attempts = 0
@@ -3538,19 +3609,28 @@ class ManagedPublicationCapabilityTests(unittest.TestCase):
                         backend.events.append("close-coordinator-lock")
                     return errors
 
-                def close_retained_owners() -> None:
-                    for capability in retained_capabilities:
+                def close_retained_owners(
+                    capabilities: list[FileCapability],
+                    owners: list[_OwnedDescriptor],
+                    locks: list[LeaseLock],
+                ) -> None:
+                    for capability in capabilities:
                         if capability.is_open:
                             capability.close()
-                    for owner in descriptor_owners:
+                    for owner in owners:
                         if owner.fd >= 0:
                             owner.close_once("test retained marker")
-                    for lock in allocated_locks:
+                    for lock in locks:
                         if lock.fd >= 0:
                             lock.close()
 
                 backend.after_event = observe_and_inject
-                self.addCleanup(close_retained_owners)
+                self.addCleanup(
+                    close_retained_owners,
+                    retained_capabilities,
+                    descriptor_owners,
+                    allocated_locks,
+                )
                 with (
                     mock.patch.object(
                         lease_module,
@@ -3626,6 +3706,15 @@ class ManagedPublicationCapabilityTests(unittest.TestCase):
                     self.assertIsNotNone(target_resource)
                     assert target_resource is not None
                     self.assertFalse(target_resource.closed)
+
+        self.doCleanups()
+        for stage, capabilities, descriptors, locks in retained_owner_sets:
+            with self.subTest(cleanup_stage=stage):
+                self.assertTrue(
+                    all(not capability.is_open for capability in capabilities)
+                )
+                self.assertTrue(all(owner.fd < 0 for owner in descriptors))
+                self.assertTrue(all(lock.fd < 0 for lock in locks))
 
     def test_staging_rollback_checks_absence_only_after_owner_close(
         self,
