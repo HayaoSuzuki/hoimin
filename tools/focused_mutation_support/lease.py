@@ -16,7 +16,7 @@ import struct
 import sys
 import threading
 import time
-from typing import TYPE_CHECKING, Any, cast
+from typing import cast
 import uuid
 import zlib
 
@@ -98,6 +98,10 @@ class JanitorDiagnostic:
 
 class _DeadlineExceeded(TimeoutError):
     """A cooperative Hoimin deadline, distinct from filesystem ETIMEDOUT."""
+
+
+class _InvalidManagedMarker(OSError):
+    """Marker bytes are untrusted protocol data, not an I/O failure."""
 
 
 class LeaseLock:
@@ -584,7 +588,7 @@ def _decode_marker(
             object_pairs_hook=exact_marker,
         )
     except (UnicodeError, ValueError, json.JSONDecodeError) as error:
-        raise OSError("managed marker content is invalid") from error
+        raise _InvalidManagedMarker("managed marker content is invalid") from error
     if (
         not isinstance(value, dict)
         or type(value.get("schema_version")) is not int
@@ -598,14 +602,16 @@ def _decode_marker(
             and value.get("lease_id") != expected_lease_id
         )
     ):
-        raise OSError("managed marker content does not match its owner")
+        raise _InvalidManagedMarker(
+            "managed marker content does not match its owner"
+        )
     try:
         if str(uuid.UUID(value["run_id"])) != value["run_id"]:
             raise ValueError
         if str(uuid.UUID(value["lease_id"])) != value["lease_id"]:
             raise ValueError
     except (ValueError, TypeError, AttributeError) as error:
-        raise OSError("managed marker UUID is not canonical") from error
+        raise _InvalidManagedMarker("managed marker UUID is not canonical") from error
     return value
 
 
@@ -1069,6 +1075,8 @@ def _open_coordinator(
                     deadline=absolute_deadline,
                     monotonic=clock,
                 )
+                if hasattr(backend, "coordinator"):
+                    setattr(backend, "coordinator", lock)
                 return lock
             remaining = absolute_deadline - clock()
             if remaining <= 0:
@@ -1683,13 +1691,6 @@ def _read_locked_marker(
 
 
 class ManagedScratch:
-    if TYPE_CHECKING:
-        # Task 9 legacy janitor helpers still type-check against their pending
-        # raw-fd migration; current-owner cleanup never initializes these.
-        _managed_root_fd: int
-        _root_fd: int
-        _heartbeat_fd: int
-
     def __init__(
         self,
         *,
@@ -1702,7 +1703,7 @@ class ManagedScratch:
         lease_identity: FileIdentity,
         managed_root_capability: DirectoryCapability,
         root: DirectoryCapability,
-        heartbeat: FileCapability,
+        heartbeat: FileCapability | None,
         heartbeat_identity: FileIdentity,
     ) -> None:
         self._backend = backend
@@ -1937,12 +1938,7 @@ class ManagedScratch:
         ]
         | None = None,
     ) -> "ManagedScratch":
-        """Publish one run graph.
-
-        ``_reclaimer`` is a private Task 9 activation seam. Its production
-        default intentionally performs no stale-root reclamation until that
-        lifecycle is capability-backed.
-        """
+        """Publish one run graph after capability-backed stale reclamation."""
         selected_backend = (
             default_filesystem_backend() if backend is None else backend
         )
@@ -1952,16 +1948,33 @@ class ManagedScratch:
         )
         try:
             validate_reported_path(managed_root)
-            if _reclaimer is not None:
-                for item in _reclaimer(managed_root):
-                    if isinstance(item, JanitorDiagnostic):
-                        if stale_diagnostics is not None:
-                            stale_diagnostics.append(item)
-                    elif stale_cleanup is not None:
-                        stale_cleanup.append(item)
             run_id = str(uuid.uuid4()) if run_id is None else run_id
             if str(uuid.UUID(run_id)) != run_id:
                 raise ValueError("run ID must be a canonical UUID")
+            if _reclaimer is None:
+                janitor_root = selected_backend.reopen_directory(
+                    managed_root_capability, SharePolicy.MUTATION
+                )
+                try:
+                    reclaimed = reclaim_abandoned(
+                        managed_root,
+                        backend=selected_backend,
+                        managed_root_capability=janitor_root,
+                    )
+                finally:
+                    janitor_close_errors = _close_capability_retry(
+                        janitor_root, "managed scratch janitor root"
+                    )
+                    if janitor_close_errors and sys.exc_info()[1] is None:
+                        raise OSError("; ".join(janitor_close_errors))
+            else:
+                reclaimed = _reclaimer(managed_root)
+            for item in reclaimed:
+                if isinstance(item, JanitorDiagnostic):
+                    if stale_diagnostics is not None:
+                        stale_diagnostics.append(item)
+                elif stale_cleanup is not None:
+                    stale_cleanup.append(item)
         except BaseException as primary_error:
             for close_error in _close_capability_retry(
                 managed_root_capability, "managed scratch creation root"
@@ -3216,22 +3229,47 @@ class ManagedScratch:
     def mark_cleanup_ready(self) -> None:
         if self._cleanup_ready:
             return
-        _write_marker_at(
-            self._root_fd,
+        root = self._root
+        if root is None or not root.is_open:
+            raise OSError("managed run root capability is unavailable")
+        _identity, descriptor = _create_marker(
+            root,
             CLEANUP_READY_FILE,
             _marker(self.run_id, self.lease_id),
+            self._backend,
         )
+        owner = _OwnedDescriptor()
+        owner.adopt(descriptor)
+        errors = owner.close_retry("managed cleanup-ready marker")
+        if errors:
+            raise OSError("; ".join(errors))
         self._cleanup_ready = True
 
     def retain(self) -> ScratchCleanupRecord:
-        try:
-            os.stat(RETAIN_FILE, dir_fd=self._root_fd, follow_symlinks=False)
-        except FileNotFoundError:
-            _write_marker_at(
-                self._root_fd,
+        root = self._root
+        if root is None or not root.is_open:
+            raise OSError("managed run root capability is unavailable")
+        existing = self._backend.entry(root, RETAIN_FILE)
+        if existing is None:
+            _identity, descriptor = _create_marker(
+                root,
                 RETAIN_FILE,
                 _marker(self.run_id, self.lease_id),
+                self._backend,
             )
+            owner = _OwnedDescriptor()
+            owner.adopt(descriptor)
+            errors = owner.close_retry("managed retain marker")
+            if errors:
+                raise OSError("; ".join(errors))
+        elif _read_marker(
+            root,
+            RETAIN_FILE,
+            self._backend,
+            expected_run_id=self.run_id,
+            expected_lease_id=self.lease_id,
+        ) is None:
+            raise OSError("managed retain marker disappeared")
         return ScratchCleanupRecord(
             ScratchCleanupStatus.RETAINED,
             0,
@@ -5733,771 +5771,255 @@ def _cleanup_handle_observer(_open_directories: int) -> None:
 
 
 def _read_valid_marker_at(
-    directory_fd: int,
+    directory: DirectoryCapability,
     filename: str,
     run_id: str,
+    backend: FilesystemBackend,
     lease_id: str | None = None,
     *,
     deadline: float | None = None,
-) -> dict[str, object] | None:
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-    if deadline is not None:
-        _check_deadline(deadline, "janitor marker read")
+) -> tuple[FileIdentity, dict[str, object]] | None:
+    """Read one validated marker without converting I/O failures to absence."""
     try:
-        fd = os.open(filename, flags, dir_fd=directory_fd)
-    except FileNotFoundError:
+        return _read_marker(
+            directory,
+            filename,
+            backend,
+            expected_run_id=run_id,
+            expected_lease_id=lease_id,
+            deadline=deadline,
+            monotonic=time.monotonic,
+        )
+    except _InvalidManagedMarker:
         return None
-    try:
-        if deadline is not None:
-            _check_deadline(deadline, "janitor marker read")
-        metadata = os.fstat(fd)
-        if deadline is not None:
-            _check_deadline(deadline, "janitor marker read")
-        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > MARKER_CAPACITY:
-            return None
-        encoded = os.read(fd, MARKER_CAPACITY + 1)
-        if deadline is not None:
-            _check_deadline(deadline, "janitor marker read")
-        if len(encoded) > MARKER_CAPACITY:
-            return None
-        def exact_marker(
-            pairs: list[tuple[str, object]],
-        ) -> dict[str, object]:
-            if tuple(key for key, _value in pairs) != _MARKER_FIELDS:
-                raise ValueError("managed marker fields are not canonical")
-            return dict(pairs)
 
-        value = json.loads(
-            encoded.decode("utf-8", errors="strict"),
-            object_pairs_hook=exact_marker,
-        )
-    except TimeoutError:
-        raise
-    except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
-        return None
+
+@dataclass(frozen=True, slots=True)
+class _JanitorCandidate:
+    name: str
+    identity: FileIdentity
+    filesystem: FilesystemIdentity
+    run_id: str
+    modified_ns: int
+
+
+def _is_pin_step_live_owner(error: OSError, *, pin_step: bool) -> bool:
+    """Windows sharing is evidence of a live owner only at root pinning."""
+    return pin_step and getattr(error, "winerror", None) in {32, 33}
+
+
+def _select_janitor_candidates(
+    managed_root_capability: DirectoryCapability,
+    backend: FilesystemBackend,
+    *,
+    cursor: str,
+    deadline: float,
+) -> tuple[list[_JanitorCandidate], int]:
+    """Stream a direct-child inventory, retaining at most 256 candidates."""
+    _check_deadline(deadline, "janitor selection")
+    opened_scan = backend.reopen_directory(
+        managed_root_capability, SharePolicy.SCAN
+    )
+    scan: DirectoryCapability | None = opened_scan
+    _check_deadline(deadline, "janitor selection")
+    iterator: DirectoryIterator | None = None
+    selected: list[tuple[tuple[int, str], _JanitorCandidate]] = []
+    examined = 0
+    try:
+        iterator = backend.entries_owned(opened_scan)
+        scan = None
+        _check_deadline(deadline, "janitor selection")
+        while True:
+            _check_deadline(deadline, "janitor selection")
+            try:
+                entry = next(iterator)
+            except StopIteration:
+                _check_deadline(deadline, "janitor selection")
+                break
+            _check_deadline(deadline, "janitor selection")
+            examined += 1
+            if examined > 100_000:
+                raise OSError(
+                    "janitor direct-child scan exceeds 100000 entries"
+                )
+            match = _RUN_NAME.fullmatch(entry.name)
+            if (
+                match is None
+                or entry.kind is not EntryKind.DIRECTORY
+                or entry.filesystem != managed_root_capability.filesystem
+            ):
+                continue
+            candidate = _JanitorCandidate(
+                entry.name,
+                entry.identity,
+                entry.filesystem,
+                match.group(1),
+                entry.modified_ns,
+            )
+            key = (0 if entry.name > cursor else 1, entry.name)
+            bisect.insort(selected, (key, candidate))
+            if len(selected) > MAX_RECLAIM_CANDIDATES:
+                selected.pop()
+        if not selected:
+            return [], examined
+        phase = selected[0][0][0]
+        return [
+            candidate
+            for key, candidate in selected
+            if key[0] == phase
+        ], examined
     finally:
-        active_error = sys.exc_info()[1]
-        close_errors = _close_descriptors_all(
-            (("janitor marker", fd),)
-        )
+        close_errors: tuple[str, ...] = ()
+        if iterator is not None:
+            close_errors = _close_cleanup_iterator(
+                iterator, "janitor selection iterator"
+            )
+        elif isinstance(scan, DirectoryCapability):
+            close_errors = _close_capability_retry(
+                scan, "janitor selection scan"
+            )
         if close_errors:
-            if active_error is not None:
-                for close_error in close_errors:
-                    active_error.add_note(close_error)
+            active = sys.exc_info()[1]
+            if active is not None:
+                for detail in close_errors:
+                    active.add_note(detail)
             else:
                 raise OSError("; ".join(close_errors))
-    if (
-        not isinstance(value, dict)
-        or type(value.get("schema_version")) is not int
-        or value.get("schema_version") != 1
-        or value.get("owner_kind") != OWNER_KIND
-        or not isinstance(value.get("run_id"), str)
-        or value.get("run_id") != run_id
-        or not isinstance(value.get("lease_id"), str)
-        or (lease_id is not None and value.get("lease_id") != lease_id)
-    ):
-        return None
-    return value
 
 
-def _reclaim_empty_unleased_candidate(
+def _reclaim_empty_unleased_candidate_inner(
     managed_root: Path,
-    managed_fd: int,
-    name: str,
+    managed_root_capability: DirectoryCapability,
+    candidate: DirectoryCapability,
+    selected: _JanitorCandidate,
+    backend: FilesystemBackend,
     *,
     current_time: float,
     deadline: float,
+    cleanup_details: list[str],
 ) -> ScratchCleanupRecord | JanitorDiagnostic | None:
+    name = selected.name
     is_deleting = name.startswith(".deleting-")
     is_staging = name.startswith(".staging-")
     if not is_deleting and not is_staging:
         return None
-    candidate = managed_root / name
-    candidate_fd = -1
-    identity: tuple[int, int] | None = None
-    removal_did_not_unlink = False
+    reported = managed_root / name
+    coordinator: LeaseLock | None = None
     try:
         _check_deadline(deadline, "empty janitor")
-        candidate_fd = _open_directory_at(
-            managed_fd, name, deadline=deadline
-        )
-        _check_deadline(deadline, "empty janitor")
-        metadata = os.fstat(candidate_fd)
-        _check_deadline(deadline, "empty janitor")
         if (
-            is_staging
-            and metadata.st_mtime > current_time - STALE_AFTER_SECONDS
+            candidate.identity != selected.identity
+            or candidate.filesystem != selected.filesystem
+        ):
+            return _janitor_diagnostic("empty candidate identity changed")
+        _check_deadline(deadline, "empty janitor")
+        current = backend.entry(managed_root_capability, name)
+        _check_deadline(deadline, "empty janitor")
+        if current is None:
+            return ScratchCleanupRecord(ScratchCleanupStatus.CLEAN, 0, 0)
+        if (
+            current.kind is not EntryKind.DIRECTORY
+            or current.identity != selected.identity
+            or current.filesystem != selected.filesystem
+        ):
+            return _janitor_diagnostic("empty candidate identity changed")
+        if is_staging and (
+            selected.modified_ns / 1_000_000_000
+            > current_time - STALE_AFTER_SECONDS
         ):
             return None
-        identity = _directory_identity(candidate_fd)
         _check_deadline(deadline, "empty janitor")
-        if not _directory_is_empty_at(candidate_fd, deadline=deadline):
+        if not _directory_is_empty_at(
+            managed_root_capability,
+            candidate,
+            name,
+            backend,
+            deadline=deadline,
+        ):
             return None
         _check_deadline(deadline, "empty janitor")
-        coordinator = cast(Any, _open_coordinator)(
-            managed_root,
-            root_fd=managed_fd,
+        coordinator = _open_coordinator(
+            managed_root_capability,
+            backend,
             timeout=max(0.001, min(5.0, deadline - time.monotonic())),
             deadline=deadline,
         )
-        removed_root = False
-        eligible = True
         try:
             _check_deadline(deadline, "empty janitor claim")
-            if time.monotonic() >= deadline:
-                eligible = False
-            if eligible and _entry_identity(managed_fd, name) != identity:
-                eligible = False
-            if eligible:
-                _check_deadline(deadline, "empty janitor claim")
-            if eligible and not _directory_is_empty_at(
-                candidate_fd, deadline=deadline
+            _require_current_entry(
+                managed_root_capability,
+                name,
+                backend,
+                kind=EntryKind.DIRECTORY,
+                identity=selected.identity,
+                filesystem=selected.filesystem,
+                label="empty candidate",
+            )
+            _check_deadline(deadline, "empty janitor claim")
+            if not _directory_is_empty_at(
+                managed_root_capability,
+                candidate,
+                name,
+                backend,
+                deadline=deadline,
             ):
-                eligible = False
-            if eligible and time.monotonic() >= deadline:
-                eligible = False
-            if eligible:
-                os.rmdir(name, dir_fd=managed_fd)
-                removed_root = True
-                if time.monotonic() < deadline:
-                    try:
-                        os.stat(
-                            name,
-                            dir_fd=managed_fd,
-                            follow_symlinks=False,
-                        )
-                    except FileNotFoundError:
-                        pass
-                    else:
-                        removed_root = False
-                        removal_did_not_unlink = True
+                return None
+            _check_deadline(deadline, "empty janitor claim")
+            backend.delete(candidate)
+            _check_deadline(deadline, "empty janitor claim")
+            if backend.entry(managed_root_capability, name) is not None:
+                return _janitor_failure(
+                    "empty candidate remains after removal", reported
+                )
+            _check_deadline(deadline, "empty janitor claim")
         finally:
-            coordinator_close_errors = _close_lease_lock_all(
+            coordinator_close_errors = _close_lease_lock_retry(
                 coordinator, "empty janitor coordinator"
             )
-        if removed_root:
-            return ScratchCleanupRecord(
-                ScratchCleanupStatus.CLEAN,
-                0,
-                1,
-                coordinator_close_errors,
-            )
-        if removal_did_not_unlink:
-            detail = "empty candidate remains after removal"
-            if coordinator_close_errors:
-                detail += "; " + "; ".join(coordinator_close_errors)
-            return _janitor_failure(detail, candidate)
-        if coordinator_close_errors:
-            if time.monotonic() >= deadline:
-                return _janitor_diagnostic(
-                    "empty janitor deadline reached; "
-                    + "; ".join(coordinator_close_errors)
-                )
-            try:
-                remaining_valid = (
-                    identity is not None
-                    and _entry_identity(managed_fd, name) == identity
-                )
-            except OSError:
-                remaining_valid = False
-            return (
-                _janitor_failure(
-                    "; ".join(coordinator_close_errors), candidate
-                )
-                if remaining_valid
-                else _janitor_diagnostic(
-                    "; ".join(coordinator_close_errors)
-                )
-            )
-        return None
+            cleanup_details.extend(coordinator_close_errors)
+        return ScratchCleanupRecord(ScratchCleanupStatus.CLEAN, 0, 1)
     except _DeadlineExceeded as error:
         return _janitor_diagnostic(str(error))
     except FileNotFoundError:
-        if time.monotonic() >= deadline:
-            return _janitor_diagnostic(
-                "empty janitor deadline reached during disappearance recovery"
-            )
         try:
-            remaining_identity = _entry_identity(managed_fd, name)
-        except FileNotFoundError:
-            return ScratchCleanupRecord(ScratchCleanupStatus.CLEAN, 0, 0)
-        except OSError as error:
-            return _janitor_diagnostic(
-                f"empty candidate absence verification failed: {error}"
-            )
-        detail = "empty candidate traversal entry vanished while root remains"
-        return (
-            _janitor_failure(detail, candidate)
-            if identity is not None and remaining_identity == identity
-            else _janitor_diagnostic(detail)
-        )
+            _check_deadline(deadline, "empty janitor recovery")
+        except _DeadlineExceeded as error:
+            return _janitor_diagnostic(str(error))
+        return ScratchCleanupRecord(ScratchCleanupStatus.CLEAN, 0, 0)
     except OSError as error:
-        remaining_valid = False
-        if identity is not None and time.monotonic() < deadline:
-            try:
-                remaining_valid = _entry_identity(managed_fd, name) == identity
-            except OSError:
-                pass
         detail = f"{type(error).__name__}: {error}"
-        return (
-            _janitor_failure(detail, candidate)
-            if remaining_valid
-            else _janitor_diagnostic(detail)
-        )
-    finally:
-        if candidate_fd >= 0:
-            os.close(candidate_fd)
+        return _janitor_failure(detail, reported)
 
 
-def reclaim_abandoned(
+def _reclaim_empty_unleased_candidate(
     managed_root: Path,
+    managed_root_capability: DirectoryCapability,
+    candidate: DirectoryCapability,
+    selected: _JanitorCandidate,
+    backend: FilesystemBackend,
     *,
-    now: float | None = None,
-    managed_root_fd: int | None = None,
-) -> list[ScratchCleanupRecord | JanitorDiagnostic]:
-    """Reclaim a bounded set of valid unlocked roots.
-
-    Fresh/malformed/missing heartbeats are preserved unless a valid
-    cleanup-ready marker proves the previous run reached quiescence.
-    """
-    current_time = time.time() if now is None else now
-    janitor_started = time.monotonic()
-    janitor_deadline = janitor_started + JANITOR_CLEANUP_SECONDS
-    selection_deadline = min(
-        janitor_deadline, janitor_started + JANITOR_SELECTION_SECONDS
+    current_time: float,
+    deadline: float,
+) -> ScratchCleanupRecord | JanitorDiagnostic | None:
+    cleanup_details: list[str] = []
+    result = _reclaim_empty_unleased_candidate_inner(
+        managed_root,
+        managed_root_capability,
+        candidate,
+        selected,
+        backend,
+        current_time=current_time,
+        deadline=deadline,
+        cleanup_details=cleanup_details,
     )
-    if managed_root_fd is None:
-        verified_root, task9_root_owner = _ensure_managed_root(
-            managed_root.parent.resolve(strict=True),
-            deadline=selection_deadline,
-        )
-        # Task 9 replaces this isolated legacy descriptor boundary.
-        selection_root_fd: int = cast(Any, task9_root_owner)
-        if verified_root != managed_root.resolve(strict=True):
-            os.close(selection_root_fd)
-            raise OSError("janitor managed root path changed")
-    else:
-        selection_root_fd = _open_directory_at(
-            managed_root_fd,
-            ".",
-            deadline=selection_deadline,
-        )
-    selection_diagnostics: list[JanitorDiagnostic] = []
-    selection_failed = False
-    try:
-        selection_remaining = selection_deadline - time.monotonic()
-        if selection_remaining <= 0:
-            raise _DeadlineExceeded("janitor selection deadline exceeded")
-        coordinator = cast(Any, _open_coordinator)(
-            managed_root,
-            root_fd=selection_root_fd,
-            timeout=selection_remaining,
-            deadline=selection_deadline,
-        )
-    except BaseException as primary_error:
-        for close_error in _close_descriptors_all(
-            (("janitor selection root", selection_root_fd),)
-        ):
-            primary_error.add_note(close_error)
-        raise
-    try:
-        _check_deadline(selection_deadline, "janitor selection")
-        state = _read_coordinator_state(
-            coordinator.fd,
-            deadline=selection_deadline,
-        )
-        _check_deadline(selection_deadline, "janitor selection")
-        after: list[str] = []
-        wrapped: list[str] = []
-        iterator = os.scandir(selection_root_fd)
-        try:
-            _check_deadline(selection_deadline, "janitor selection")
-            examined = 0
-            while True:
-                _check_deadline(selection_deadline, "janitor selection")
-                entry = next(iterator, None)
-                _check_deadline(selection_deadline, "janitor selection")
-                if entry is None:
-                    break
-                examined += 1
-                if examined > 100_000:
-                    selection_diagnostics.append(
-                        _janitor_diagnostic(
-                            "janitor direct-child scan exceeds 100000 entries"
-                        )
-                    )
-                    selection_failed = True
-                    break
-                if _RUN_NAME.fullmatch(entry.name) is None:
-                    continue
-                target = after if entry.name > state.cursor else wrapped
-                bisect.insort(target, entry.name)
-                if len(target) > MAX_RECLAIM_CANDIDATES:
-                    target.pop()
-        except _DeadlineExceeded as error:
-            selection_diagnostics.append(_janitor_diagnostic(str(error)))
-            selection_failed = True
-        finally:
-            iterator.close()
-        candidates = [] if selection_failed else (after if after else wrapped)
-        if candidates:
-            try:
-                _check_deadline(selection_deadline, "janitor selection")
-                _persist_coordinator_cursor(
-                    coordinator.fd,
-                    state,
-                    candidates[-1],
-                    deadline=selection_deadline,
-                )
-                _check_deadline(selection_deadline, "janitor selection")
-            except OSError as error:
-                selection_diagnostics.append(
-                    _janitor_diagnostic(
-                        f"janitor cursor persistence failed: "
-                        f"{type(error).__name__}: {error}"
-                    )
-                )
-    except BaseException as primary_error:
-        for close_error in _close_descriptors_all(
-            (("janitor selection root", selection_root_fd),)
-        ):
-            primary_error.add_note(close_error)
-        raise
-    finally:
-        coordinator_close_errors = _close_lease_lock_all(
-            coordinator, "janitor selection coordinator"
-        )
-        if coordinator_close_errors:
-            active_error = sys.exc_info()[1]
-            if active_error is not None:
-                for close_error in coordinator_close_errors:
-                    active_error.add_note(close_error)
-            else:
-                selection_diagnostics.append(
-                    _janitor_diagnostic("; ".join(coordinator_close_errors))
-                )
-    records: list[ScratchCleanupRecord | JanitorDiagnostic] = [
-        *selection_diagnostics
-    ]
-    deferred: list[tuple[int, str, tuple[int, int]]] = []
-    for name in candidates:
-        remaining = JANITOR_CLEANUP_SECONDS - (
-            time.monotonic() - janitor_started
-        )
-        if remaining <= 0:
-            break
-        match = _RUN_NAME.fullmatch(name)
-        if match is None:
-            continue
-        run_id = match.group(1)
-        candidate = managed_root / name
-        lease: LeaseLock | None = None
-        candidate_validated = False
-        managed_root_fd = -1
-        root_fd = -1
-        root_identity: tuple[int, int] | None = None
-        flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
-        try:
-            _check_deadline(janitor_deadline, "janitor candidate")
-            managed_root_fd = _open_directory_at(
-                selection_root_fd, ".", deadline=janitor_deadline
-            )
-            _check_deadline(janitor_deadline, "janitor candidate")
-            root_fd = _open_directory_at(
-                managed_root_fd,
-                candidate.name,
-                deadline=janitor_deadline,
-            )
-            _check_deadline(janitor_deadline, "janitor candidate")
-            root_identity = _directory_identity(root_fd)
-            _check_deadline(janitor_deadline, "janitor candidate")
-            if (
-                _entry_identity(managed_root_fd, candidate.name)
-                != root_identity
-            ):
-                raise OSError("janitor candidate identity changed")
-            _check_deadline(janitor_deadline, "janitor candidate")
-            lease_value = _read_valid_marker_at(
-                root_fd,
-                LEASE_FILE,
-                run_id,
-                deadline=janitor_deadline,
-            )
-            if lease_value is None:
-                recovered = _reclaim_empty_unleased_candidate(
-                    managed_root,
-                    managed_root_fd,
-                    name,
-                    current_time=current_time,
-                    deadline=janitor_deadline,
-                )
-                if recovered is not None:
-                    records.append(recovered)
-                elif not candidate.name.startswith(".staging-"):
-                    records.append(
-                        _janitor_diagnostic(
-                            "janitor candidate has an invalid, missing, or "
-                            "unknown lease marker"
-                        )
-                    )
-                continue
-            lease_id = lease_value["lease_id"]
-            if not isinstance(lease_id, str):
-                continue
-            _check_deadline(janitor_deadline, "janitor candidate")
-            lease_fd = os.open(
-                LEASE_FILE, flags, dir_fd=root_fd
-            )
-            try:
-                _check_deadline(janitor_deadline, "janitor candidate")
-            except BaseException as primary_error:
-                for close_error in _close_descriptors_all(
-                    (("janitor candidate lease", lease_fd),)
-                ):
-                    primary_error.add_note(close_error)
-                raise
-            lease_metadata = os.fstat(lease_fd)
-            _check_deadline(janitor_deadline, "janitor candidate")
-            lease_entry = os.stat(
-                LEASE_FILE,
-                dir_fd=root_fd,
-                follow_symlinks=False,
-            )
-            _check_deadline(janitor_deadline, "janitor candidate")
-            if (
-                not stat.S_ISREG(lease_metadata.st_mode)
-                or (lease_metadata.st_dev, lease_metadata.st_ino)
-                != (lease_entry.st_dev, lease_entry.st_ino)
-            ):
-                identity_error = OSError(
-                    "janitor lease identity changed while opening"
-                )
-                for close_error in _close_descriptors_all(
-                    (("janitor candidate lease", lease_fd),)
-                ):
-                    identity_error.add_note(close_error)
-                raise identity_error
-            lease = LeaseLock(lease_fd)
-            try:
-                _check_deadline(janitor_deadline, "janitor candidate")
-                lease.acquire(blocking=False)
-                _check_deadline(janitor_deadline, "janitor candidate")
-            except OSError as error:
-                if isinstance(error, BlockingIOError) or error.errno in {
-                    errno.EACCES,
-                    errno.EAGAIN,
-                    errno.EWOULDBLOCK,
-                }:
-                    continue
-                raise
-            if (
-                _read_valid_marker_at(
-                    root_fd,
-                    LEASE_FILE,
-                    run_id,
-                    deadline=janitor_deadline,
-                )
-                != lease_value
-            ):
-                raise OSError("janitor lease changed after locking")
-            candidate_validated = True
-            retained = _read_valid_marker_at(
-                root_fd,
-                RETAIN_FILE,
-                run_id,
-                lease_id,
-                deadline=janitor_deadline,
-            )
-            if retained is not None:
-                continue
-            ready = _read_valid_marker_at(
-                root_fd,
-                CLEANUP_READY_FILE,
-                run_id,
-                lease_id,
-                deadline=janitor_deadline,
-            )
-            heartbeat = _read_valid_marker_at(
-                root_fd,
-                HEARTBEAT_FILE,
-                run_id,
-                lease_id,
-                deadline=janitor_deadline,
-            )
-            _check_deadline(janitor_deadline, "janitor candidate")
-            stale = False
-            if heartbeat is not None:
-                try:
-                    modified = os.stat(
-                        HEARTBEAT_FILE,
-                        dir_fd=root_fd,
-                        follow_symlinks=False,
-                    ).st_mtime
-                except OSError:
-                    modified = current_time
-                _check_deadline(janitor_deadline, "janitor candidate")
-                stale = modified <= current_time - STALE_AFTER_SECONDS
-            lease_only = _directory_contains_only_lease_at(
-                root_fd, deadline=janitor_deadline
-            )
-            deleting_tail = candidate.name.startswith(".deleting-") and lease_only
-            staging_is_old = False
-            if candidate.name.startswith(".staging-"):
-                _check_deadline(janitor_deadline, "janitor candidate")
-                staging_is_old = (
-                    os.fstat(root_fd).st_mtime
-                    <= current_time - STALE_AFTER_SECONDS
-                ) and lease_only
-                _check_deadline(janitor_deadline, "janitor candidate")
-            if candidate.name.startswith(".staging-"):
-                if not staging_is_old:
-                    continue
-            elif ready is None and not stale and not deleting_tail:
-                continue
-            if time.monotonic() >= janitor_deadline:
-                break
-            deleting = managed_root / f".deleting-{run_id}"
-            coordinator = cast(Any, _open_coordinator)(
-                managed_root,
-                root_fd=managed_root_fd,
-                timeout=min(
-                    5.0,
-                    max(0.001, janitor_deadline - time.monotonic()),
-                ),
-                deadline=janitor_deadline,
-            )
-            try:
-                if time.monotonic() >= janitor_deadline:
-                    break
-                if candidate != deleting:
-                    try:
-                        os.stat(
-                            deleting.name,
-                            dir_fd=managed_root_fd,
-                            follow_symlinks=False,
-                        )
-                    except FileNotFoundError:
-                        pass
-                    else:
-                        continue
-                    if time.monotonic() >= janitor_deadline:
-                        break
-                    os.rename(
-                        candidate.name,
-                        deleting.name,
-                        src_dir_fd=managed_root_fd,
-                        dst_dir_fd=managed_root_fd,
-                    )
-                    candidate = deleting
-                    if time.monotonic() >= janitor_deadline:
-                        pass
-                    elif (
-                        _entry_identity(managed_root_fd, deleting.name)
-                        != root_identity
-                    ):
-                        raise OSError(
-                            "janitor candidate identity changed while claiming"
-                        )
-            finally:
-                active_error = sys.exc_info()[1]
-                coordinator_close_errors = _close_lease_lock_all(
-                    coordinator, "janitor claim coordinator"
-                )
-                if coordinator_close_errors:
-                    if active_error is not None:
-                        for close_error in coordinator_close_errors:
-                            active_error.add_note(close_error)
-                    else:
-                        raise OSError("; ".join(coordinator_close_errors))
-            managed = cast(Any, ManagedScratch)(
-                managed_root=managed_root,
-                path=deleting,
-                run_id=run_id,
-                lease_id=lease_id,
-                lease=lease,
-                managed_root_fd=managed_root_fd,
-                root_fd=root_fd,
-                root_identity=root_identity,
-            )
-            lease = None
-            managed_root_fd = -1
-            root_fd = -1
-            managed._cleanup_ready = ready is not None
-            remaining = janitor_deadline - time.monotonic()
-            if remaining <= 0:
-                cleanup = managed.defer("janitor cleanup budget exhausted")
-                disposal_errors = managed.close_capabilities()
-                if disposal_errors:
-                    cleanup = replace(
-                        cleanup,
-                        details=(*cleanup.details, *disposal_errors),
-                    )
-                records.append(cleanup)
-                break
-            cleanup = managed.cleanup(
-                time_budget=min(MAX_CLEANUP_SLICE_SECONDS, remaining)
-            )
-            disposal_errors = managed.close_capabilities()
-            if disposal_errors:
-                cleanup = replace(
-                    cleanup,
-                    details=(*cleanup.details, *disposal_errors),
-                )
-            records.append(cleanup)
-            if cleanup.status is ScratchCleanupStatus.DEFERRED:
-                deferred.append(
-                    (len(records) - 1, deleting.name, root_identity)
-                )
-        except _DeadlineExceeded as error:
-            records.append(_janitor_diagnostic(_exception_detail(error)))
-            break
-        except BaseException as error:
-            detail = (
-                f"janitor candidate {name} failed: {_exception_detail(error)}"
-            )
-            remaining_valid = False
-            if (
-                time.monotonic() < janitor_deadline
-                and candidate_validated
-                and root_identity is not None
-                and managed_root_fd >= 0
-            ):
-                try:
-                    remaining_valid = (
-                        _entry_identity(managed_root_fd, candidate.name)
-                        == root_identity
-                    )
-                except OSError:
-                    pass
-            records.append(
-                _janitor_failure(detail, candidate)
-                if remaining_valid
-                else _janitor_diagnostic(detail)
-            )
-        finally:
-            if lease is not None:
-                lease_close_errors = _close_lease_lock_all(
-                    lease, "janitor candidate lease"
-                )
-                if lease_close_errors:
-                    remaining_valid = False
-                    if (
-                        time.monotonic() < janitor_deadline
-                        and candidate_validated
-                        and root_identity is not None
-                        and managed_root_fd >= 0
-                    ):
-                        try:
-                            remaining_valid = (
-                                _entry_identity(managed_root_fd, candidate.name)
-                                == root_identity
-                            )
-                        except OSError:
-                            pass
-                    records.append(
-                        _janitor_failure(
-                            "; ".join(lease_close_errors), candidate
-                        )
-                        if remaining_valid
-                        else _janitor_diagnostic(
-                            "; ".join(lease_close_errors)
-                        )
-                    )
-            descriptor_close_errors = _close_descriptors_all(
-                (
-                    ("janitor candidate root", root_fd),
-                    ("janitor candidate managed root", managed_root_fd),
-                )
-            )
-            if descriptor_close_errors:
-                records.append(
-                    _janitor_diagnostic("; ".join(descriptor_close_errors))
-                )
-    for index, name, expected_identity in deferred:
-        remaining = janitor_deadline - time.monotonic()
-        if remaining <= 0:
-            break
-        try:
-            resumed = _resume_deferred_cleanup(
-                managed_root,
-                selection_root_fd,
-                name,
-                expected_identity,
-                deadline=janitor_deadline,
-            )
-        except _DeadlineExceeded as error:
-            records.append(_janitor_diagnostic(str(error)))
-            break
-        except OSError as error:
-            detail = (
-                "deferred janitor lease disposal failed: "
-                f"{type(error).__name__}: {error}"
-            )
-            remaining_valid = False
-            if time.monotonic() < janitor_deadline:
-                try:
-                    remaining_valid = (
-                        _entry_identity(selection_root_fd, name)
-                        == expected_identity
-                    )
-                except OSError:
-                    pass
-            diagnostic = (
-                _janitor_failure(detail, managed_root / name)
-                if remaining_valid
-                else _janitor_diagnostic(detail)
-            )
-            prior = records[index]
-            if (
-                isinstance(prior, ScratchCleanupRecord)
-                and isinstance(diagnostic, ScratchCleanupRecord)
-            ):
-                records[index] = replace(
-                    diagnostic,
-                    examined_entries=(
-                        prior.examined_entries + diagnostic.examined_entries
-                    ),
-                    removed_entries=(
-                        prior.removed_entries + diagnostic.removed_entries
-                    ),
-                    details=(*prior.details, *diagnostic.details),
-                    omitted_detail_count=(
-                        prior.omitted_detail_count
-                        + diagnostic.omitted_detail_count
-                    ),
-                )
-            else:
-                records.append(diagnostic)
-            continue
-        if resumed is not None:
-            prior = records[index]
-            if (
-                isinstance(prior, ScratchCleanupRecord)
-                and isinstance(resumed, ScratchCleanupRecord)
-            ):
-                resumed = replace(
-                    resumed,
-                    examined_entries=(
-                        prior.examined_entries + resumed.examined_entries
-                    ),
-                    removed_entries=(
-                        prior.removed_entries + resumed.removed_entries
-                    ),
-                    details=(*prior.details, *resumed.details),
-                    omitted_detail_count=(
-                        prior.omitted_detail_count
-                        + resumed.omitted_detail_count
-                    ),
-                )
-                records[index] = resumed
-            else:
-                records.append(resumed)
-    selection_close_errors = _close_descriptors_all(
-        (("janitor selection root", selection_root_fd),)
-    )
-    if selection_close_errors:
-        records.append(_janitor_diagnostic("; ".join(selection_close_errors)))
-    return _bound_cleanup_records(records)
+    if not cleanup_details:
+        return result
+    bounded = tuple(_bounded_janitor_detail(item) for item in cleanup_details)
+    if isinstance(result, ScratchCleanupRecord):
+        return replace(result, details=(*result.details, *bounded))
+    if isinstance(result, JanitorDiagnostic):
+        return replace(result, details=(*result.details, *bounded))
+    return JanitorDiagnostic(bounded)
 
 
 def _bound_cleanup_records(
@@ -6542,250 +6064,854 @@ def _janitor_failure(detail: str, remaining: Path) -> ScratchCleanupRecord:
     )
 
 
-def _resume_deferred_cleanup(
-    managed_root: Path,
-    selection_root_fd: int,
+def _bounded_candidate_entries(
+    managed_root_capability: DirectoryCapability,
+    candidate: DirectoryCapability,
     name: str,
-    expected_identity: tuple[int, int],
+    backend: FilesystemBackend,
     *,
     deadline: float,
-) -> ScratchCleanupRecord | JanitorDiagnostic | None:
-    match = _RUN_NAME.fullmatch(name)
-    if match is None or not name.startswith(".deleting-"):
-        return None
-    resources: dict[str, object] = {
-        "managed_root_fd": -1,
-        "root_fd": -1,
-        "lease": None,
-    }
-    try:
-        result = _resume_deferred_cleanup_inner(
-            managed_root,
-            selection_root_fd,
-            name,
-            expected_identity,
-            match.group(1),
-            deadline=deadline,
-            resources=resources,
-        )
-    except BaseException as primary_error:
-        disposal_errors = _dispose_deferred_resources(resources)
-        for disposal_error in disposal_errors:
-            primary_error.add_note(disposal_error)
-        raise
-    disposal_errors = _dispose_deferred_resources(resources)
-    if not disposal_errors:
-        return result
-    if isinstance(result, ScratchCleanupRecord):
-        return replace(result, details=(*result.details, *disposal_errors))
-    if isinstance(result, JanitorDiagnostic):
-        return replace(result, details=(*result.details, *disposal_errors))
-    return _janitor_diagnostic("; ".join(disposal_errors))
-
-
-def _dispose_deferred_resources(resources: dict[str, object]) -> tuple[str, ...]:
-    errors: list[str] = []
-    lease = resources["lease"]
-    resources["lease"] = None
-    if isinstance(lease, LeaseLock):
-        errors.extend(_close_lease_lock_all(lease, "deferred janitor lease"))
-    root_fd = resources["root_fd"]
-    managed_root_fd = resources["managed_root_fd"]
-    resources["root_fd"] = -1
-    resources["managed_root_fd"] = -1
-    assert isinstance(root_fd, int)
-    assert isinstance(managed_root_fd, int)
-    errors.extend(
-        _close_descriptors_all(
-            (
-                ("deferred janitor root", root_fd),
-                ("deferred janitor managed root", managed_root_fd),
-            )
-        )
+) -> tuple[DirectoryEntry, ...]:
+    """Return no more than two entries from an identity-checked SCAN open."""
+    _check_deadline(deadline, "janitor bounded directory scan")
+    opened_scan = backend.open_directory(
+        managed_root_capability, name, SharePolicy.SCAN
     )
+    scan: DirectoryCapability | None = opened_scan
+    _check_deadline(deadline, "janitor bounded directory scan")
+    iterator: DirectoryIterator | None = None
+    try:
+        if (
+            opened_scan.identity != candidate.identity
+            or opened_scan.filesystem != candidate.filesystem
+        ):
+            raise OSError("janitor scan identity changed")
+        _require_current_entry(
+            managed_root_capability,
+            name,
+            backend,
+            kind=EntryKind.DIRECTORY,
+            identity=candidate.identity,
+            filesystem=candidate.filesystem,
+            label="janitor scan root",
+        )
+        _check_deadline(deadline, "janitor bounded directory scan")
+        iterator = backend.entries_owned(opened_scan)
+        scan = None
+        found: list[DirectoryEntry] = []
+        while len(found) < 2:
+            _check_deadline(deadline, "janitor bounded directory scan")
+            try:
+                entry = next(iterator)
+            except StopIteration:
+                _check_deadline(deadline, "janitor bounded directory scan")
+                break
+            _check_deadline(deadline, "janitor bounded directory scan")
+            found.append(entry)
+        return tuple(found)
+    finally:
+        errors: tuple[str, ...] = ()
+        if iterator is not None:
+            errors = _close_cleanup_iterator(
+                iterator, "janitor bounded directory iterator"
+            )
+        elif isinstance(scan, DirectoryCapability):
+            errors = _close_capability_retry(scan, "janitor scan root")
+        if errors:
+            active = sys.exc_info()[1]
+            if active is not None:
+                for detail in errors:
+                    active.add_note(detail)
+            else:
+                raise OSError("; ".join(errors))
+
+
+def _directory_is_empty_at(
+    managed_root_capability: DirectoryCapability,
+    candidate: DirectoryCapability,
+    name: str,
+    backend: FilesystemBackend,
+    *,
+    deadline: float,
+) -> bool:
+    return not _bounded_candidate_entries(
+        managed_root_capability,
+        candidate,
+        name,
+        backend,
+        deadline=deadline,
+    )
+
+
+def _directory_contains_only_lease_at(
+    managed_root_capability: DirectoryCapability,
+    candidate: DirectoryCapability,
+    name: str,
+    backend: FilesystemBackend,
+    *,
+    deadline: float,
+) -> bool:
+    entries = _bounded_candidate_entries(
+        managed_root_capability,
+        candidate,
+        name,
+        backend,
+        deadline=deadline,
+    )
+    return len(entries) == 1 and entries[0].name == LEASE_FILE
+
+
+@dataclass(slots=True)
+class _DeferredJanitorResources:
+    managed_root: DirectoryCapability | None = None
+    root: DirectoryCapability | None = None
+    lease: LeaseLock | None = None
+
+
+def _dispose_deferred_resources(
+    resources: _DeferredJanitorResources,
+) -> tuple[str, ...]:
+    """Dispose every typed owner without inventing a third close attempt."""
+    errors: list[str] = []
+    lease = resources.lease
+    resources.lease = None
+    if lease is not None:
+        errors.extend(_close_lease_lock_retry(lease, "deferred janitor lease"))
+        if lease.fd >= 0:
+            resources.lease = lease
+    root = resources.root
+    resources.root = None
+    if root is not None:
+        errors.extend(_close_capability_retry(root, "deferred janitor root"))
+        if root.is_open:
+            resources.root = root
+    managed = resources.managed_root
+    resources.managed_root = None
+    if managed is not None:
+        errors.extend(
+            _close_capability_retry(managed, "deferred janitor managed root")
+        )
+        if managed.is_open:
+            resources.managed_root = managed
     return tuple(errors)
 
 
-def _resume_deferred_cleanup_inner(
-    managed_root: Path,
-    selection_root_fd: int,
+def _marker_status(
+    root: DirectoryCapability,
     name: str,
-    expected_identity: tuple[int, int],
     run_id: str,
+    backend: FilesystemBackend,
     *,
+    lease_id: str | None,
     deadline: float,
-    resources: dict[str, object],
+) -> tuple[tuple[FileIdentity, dict[str, object]] | None, bool]:
+    marker = _read_valid_marker_at(
+        root,
+        name,
+        run_id,
+        backend,
+        lease_id,
+        deadline=deadline,
+    )
+    if marker is not None:
+        return marker, False
+    _check_deadline(deadline, "janitor marker evidence")
+    present = backend.entry(root, name) is not None
+    _check_deadline(deadline, "janitor marker evidence")
+    return None, present
+
+
+def _janitor_candidate_record_inner(
+    managed_root: Path,
+    managed_root_capability: DirectoryCapability,
+    selected: _JanitorCandidate,
+    backend: FilesystemBackend,
+    *,
+    current_time: float,
+    deadline: float,
+    cleanup_details: list[str],
 ) -> ScratchCleanupRecord | JanitorDiagnostic | None:
-    managed_root_fd = -1
-    root_fd = -1
+    reported = managed_root / selected.name
+    root: DirectoryCapability | None = None
     lease: LeaseLock | None = None
-    candidate_validated = False
+    heartbeat_owner: FileCapability | None = None
+    managed_owner: DirectoryCapability | None = None
+    transferred = False
+    result: ScratchCleanupRecord | JanitorDiagnostic | None = None
     try:
-        _check_deadline(deadline, "deferred janitor")
-        managed_root_fd = _open_directory_at(
-            selection_root_fd, ".", deadline=deadline
-        )
-        resources["managed_root_fd"] = managed_root_fd
-        _check_deadline(deadline, "deferred janitor")
+        _check_deadline(deadline, "janitor candidate pin")
         try:
-            root_fd = _open_directory_at(
-                managed_root_fd, name, deadline=deadline
+            root = backend.open_directory(
+                managed_root_capability,
+                selected.name,
+                SharePolicy.PINNED,
             )
-            resources["root_fd"] = root_fd
-        except FileNotFoundError:
-            return ScratchCleanupRecord(ScratchCleanupStatus.CLEAN, 0, 0)
-        _check_deadline(deadline, "deferred janitor")
-        if _directory_identity(root_fd) != expected_identity:
-            return _janitor_diagnostic("deferred cleanup identity changed")
-        _check_deadline(deadline, "deferred janitor")
-        if _entry_identity(managed_root_fd, name) != expected_identity:
-            return _janitor_diagnostic("deferred cleanup identity changed")
-        _check_deadline(deadline, "deferred janitor")
-        lease_value = _read_valid_marker_at(
-            root_fd, LEASE_FILE, run_id, deadline=deadline
-        )
-        if lease_value is None:
-            return None
-        lease_id = lease_value.get("lease_id")
-        if not isinstance(lease_id, str):
-            return None
-        _check_deadline(deadline, "deferred janitor")
-        lease_fd = os.open(
-            LEASE_FILE,
-            os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
-            dir_fd=root_fd,
-        )
-        try:
-            _check_deadline(deadline, "deferred janitor")
-        except BaseException as primary_error:
-            for close_error in _close_descriptors_all(
-                (("deferred janitor lease", lease_fd),)
-            ):
-                primary_error.add_note(close_error)
-            raise
-        lease = LeaseLock(lease_fd)
-        resources["lease"] = lease
-        try:
-            lease.acquire(blocking=False)
-            _check_deadline(deadline, "deferred janitor")
         except OSError as error:
-            if isinstance(error, BlockingIOError) or error.errno in {
-                errno.EACCES,
-                errno.EAGAIN,
-                errno.EWOULDBLOCK,
-            }:
+            if _is_pin_step_live_owner(error, pin_step=True):
                 return None
-            return _janitor_diagnostic(
-                "deferred janitor lease lock failed: "
-                f"{type(error).__name__}: {error}",
-            )
-        if _read_valid_marker_at(
-            root_fd, LEASE_FILE, run_id, deadline=deadline
-        ) != lease_value:
-            return None
-        candidate_validated = True
-        ready = _read_valid_marker_at(
-            root_fd,
-            CLEANUP_READY_FILE,
-            run_id,
-            lease_id,
+            raise
+        _check_deadline(deadline, "janitor candidate pin")
+        if (
+            root.identity != selected.identity
+            or root.filesystem != selected.filesystem
+            or root.kind is not EntryKind.DIRECTORY
+        ):
+            return _janitor_diagnostic("janitor candidate identity changed")
+        backend.verify_managed_security(root, repair_dacl=False)
+        _check_deadline(deadline, "janitor candidate pin")
+        _require_current_entry(
+            managed_root_capability,
+            selected.name,
+            backend,
+            kind=EntryKind.DIRECTORY,
+            identity=selected.identity,
+            filesystem=selected.filesystem,
+            label="janitor candidate",
+        )
+        _check_deadline(deadline, "janitor candidate pin")
+        lease_read, lease_malformed = _marker_status(
+            root,
+            LEASE_FILE,
+            selected.run_id,
+            backend,
+            lease_id=None,
             deadline=deadline,
         )
-        if ready is None and not _directory_contains_only_lease_at(
-            root_fd, deadline=deadline
-        ):
+        if lease_read is None:
+            if lease_malformed:
+                return _janitor_diagnostic(
+                    "janitor candidate has an invalid lease marker"
+                )
+            result = _reclaim_empty_unleased_candidate(
+                managed_root,
+                managed_root_capability,
+                root,
+                selected,
+                backend,
+                current_time=current_time,
+                deadline=deadline,
+            )
+            return result
+        lease_identity, lease_value = lease_read
+        lease_id = cast(str, lease_value["lease_id"])
+        _check_deadline(deadline, "janitor lease open")
+        lease_capability = _open_owned_marker(
+            root,
+            LEASE_FILE,
+            backend,
+            access=FileAccess.READ_WRITE,
+            identity=lease_identity,
+            deadline=deadline,
+            monotonic=time.monotonic,
+        )
+        descriptor_owner = _OwnedDescriptor()
+        lock = LeaseLock(-1)
+        try:
+            descriptor_owner.adopt(
+                lease_capability.detach_to_fd(
+                    os.O_RDWR | getattr(os, "O_BINARY", 0)
+                )
+            )
+            _check_deadline(deadline, "janitor lease open")
+            lock.fd = descriptor_owner.detach()
+            lease = lock
+            try:
+                lease.acquire(blocking=False)
+            except OSError as error:
+                if isinstance(error, BlockingIOError) or error.errno in {
+                    errno.EACCES,
+                    errno.EAGAIN,
+                    errno.EWOULDBLOCK,
+                }:
+                    return None
+                raise
+            _check_deadline(deadline, "janitor lease lock")
+            if _read_locked_marker(
+                lease,
+                expected_run_id=selected.run_id,
+                expected_lease_id=lease_id,
+                deadline=deadline,
+                monotonic=time.monotonic,
+            ) != lease_value:
+                return _janitor_diagnostic(
+                    "janitor lease changed after locking"
+                )
+        except BaseException as error:
+            if lease_capability.is_open:
+                for detail in _close_capability_retry(
+                    lease_capability, "janitor lease capability"
+                ):
+                    error.add_note(detail)
+            for detail in descriptor_owner.close_retry(
+                "janitor lease descriptor"
+            ):
+                error.add_note(detail)
+            if lease is None:
+                for detail in _close_lease_lock_retry(
+                    lock, "janitor lease lock"
+                ):
+                    error.add_note(detail)
+            raise
+
+        retained, retain_malformed = _marker_status(
+            root,
+            RETAIN_FILE,
+            selected.run_id,
+            backend,
+            lease_id=lease_id,
+            deadline=deadline,
+        )
+        if retained is not None or retain_malformed:
             return None
-        _check_deadline(deadline, "deferred janitor")
-        managed = cast(Any, ManagedScratch)(
+        ready, ready_malformed = _marker_status(
+            root,
+            CLEANUP_READY_FILE,
+            selected.run_id,
+            backend,
+            lease_id=lease_id,
+            deadline=deadline,
+        )
+        if ready_malformed:
+            return None
+        heartbeat, heartbeat_malformed = _marker_status(
+            root,
+            HEARTBEAT_FILE,
+            selected.run_id,
+            backend,
+            lease_id=lease_id,
+            deadline=deadline,
+        )
+        if heartbeat_malformed and ready is None:
+            return None
+        lease_only = _directory_contains_only_lease_at(
+            managed_root_capability,
+            root,
+            selected.name,
+            backend,
+            deadline=deadline,
+        )
+        deleting_tail = selected.name.startswith(".deleting-") and lease_only
+        old_staging = (
+            selected.name.startswith(".staging-")
+            and selected.modified_ns / 1_000_000_000
+            <= current_time - STALE_AFTER_SECONDS
+            and lease_only
+        )
+        stale = False
+        heartbeat_identity: FileIdentity | None = None
+        if heartbeat is not None:
+            heartbeat_identity = heartbeat[0]
+            _check_deadline(deadline, "janitor heartbeat evidence")
+            heartbeat_entry = backend.entry(root, HEARTBEAT_FILE)
+            _check_deadline(deadline, "janitor heartbeat evidence")
+            stale = (
+                heartbeat_entry is not None
+                and heartbeat_entry.kind is EntryKind.REGULAR
+                and heartbeat_entry.identity == heartbeat_identity
+                and heartbeat_entry.modified_ns / 1_000_000_000
+                <= current_time - STALE_AFTER_SECONDS
+            )
+        if selected.name.startswith(".staging-"):
+            if not old_staging:
+                return None
+        elif ready is None and not stale and not deleting_tail:
+            return None
+
+        deleting_name = f".deleting-{selected.run_id}"
+        coordinator: LeaseLock | None = None
+        try:
+            _check_deadline(deadline, "janitor claim")
+            coordinator = _open_coordinator(
+                managed_root_capability,
+                backend,
+                timeout=min(5.0, max(0.001, deadline - time.monotonic())),
+                deadline=deadline,
+            )
+            if hasattr(backend, "coordinator"):
+                setattr(backend, "coordinator", coordinator)
+            _check_deadline(deadline, "janitor claim")
+            _require_current_entry(
+                managed_root_capability,
+                selected.name,
+                backend,
+                kind=EntryKind.DIRECTORY,
+                identity=selected.identity,
+                filesystem=selected.filesystem,
+                label="janitor claim root",
+            )
+            if selected.name != deleting_name:
+                destination = backend.entry(
+                    managed_root_capability, deleting_name
+                )
+                _check_deadline(deadline, "janitor claim")
+                if destination is not None:
+                    return None
+            if backend.directory_rename_requires_closed_descendants:
+                lease_errors = _close_lease_lock_retry(
+                    lease, "janitor candidate lease handoff"
+                )
+                if lease.fd >= 0:
+                    root_errors = _close_capability_retry(
+                        root, "janitor candidate root handoff"
+                    )
+                    return _janitor_failure(
+                        "; ".join((*lease_errors, *root_errors)), reported
+                    )
+                lease = None
+            if selected.name != deleting_name:
+                _check_deadline(deadline, "janitor claim")
+                backend.rename(
+                    root,
+                    managed_root_capability,
+                    deleting_name,
+                    replace=False,
+                )
+                _check_deadline(deadline, "janitor claim")
+                reported = managed_root / deleting_name
+                _require_current_entry(
+                    managed_root_capability,
+                    deleting_name,
+                    backend,
+                    kind=EntryKind.DIRECTORY,
+                    identity=selected.identity,
+                    filesystem=selected.filesystem,
+                    label="janitor claimed root",
+                )
+                _check_deadline(deadline, "janitor claim")
+            if backend.directory_rename_requires_closed_descendants:
+                old_root = root
+                old_root_errors = _close_capability_retry(
+                    old_root, "janitor pre-handoff root"
+                )
+                if old_root.is_open:
+                    return _janitor_failure(
+                        "; ".join(old_root_errors), reported
+                    )
+                root = backend.open_directory(
+                    managed_root_capability,
+                    deleting_name,
+                    SharePolicy.PINNED,
+                )
+                _check_deadline(deadline, "janitor handoff reopen")
+                if (
+                    root.identity != selected.identity
+                    or root.filesystem != selected.filesystem
+                ):
+                    raise OSError("janitor handoff root identity changed")
+                reopened = _open_owned_marker(
+                    root,
+                    LEASE_FILE,
+                    backend,
+                    access=FileAccess.READ_WRITE,
+                    identity=lease_identity,
+                    deadline=deadline,
+                    monotonic=time.monotonic,
+                )
+                lease = LeaseLock(
+                    reopened.detach_to_fd(
+                        os.O_RDWR | getattr(os, "O_BINARY", 0)
+                    )
+                )
+                lease.acquire(blocking=False)
+                _check_deadline(deadline, "janitor handoff lease")
+                if _read_locked_marker(
+                    lease,
+                    expected_run_id=selected.run_id,
+                    expected_lease_id=lease_id,
+                    deadline=deadline,
+                    monotonic=time.monotonic,
+                ) != lease_value:
+                    raise OSError("janitor handoff lease changed")
+        finally:
+            if coordinator is not None:
+                coordinator_errors = _close_lease_lock_retry(
+                    coordinator, "janitor claim coordinator"
+                )
+                if coordinator_errors:
+                    active = sys.exc_info()[1]
+                    if active is not None:
+                        for detail in coordinator_errors:
+                            active.add_note(detail)
+                    else:
+                        raise OSError("; ".join(coordinator_errors))
+
+        if heartbeat_identity is not None:
+            heartbeat_owner = _open_owned_marker(
+                root,
+                HEARTBEAT_FILE,
+                backend,
+                access=FileAccess.WRITE,
+                identity=heartbeat_identity,
+                deadline=deadline,
+                monotonic=time.monotonic,
+            )
+        managed_owner = backend.reopen_directory(
+            managed_root_capability, SharePolicy.MUTATION
+        )
+        _check_deadline(deadline, "janitor cleanup transfer")
+        if lease is None:
+            raise OSError("janitor lease owner is unavailable")
+        managed = ManagedScratch(
+            backend=backend,
             managed_root=managed_root,
-            path=managed_root / name,
-            run_id=run_id,
+            path=reported,
+            run_id=selected.run_id,
             lease_id=lease_id,
             lease=lease,
-            managed_root_fd=managed_root_fd,
-            root_fd=root_fd,
-            root_identity=expected_identity,
+            lease_identity=lease_identity,
+            managed_root_capability=managed_owner,
+            root=root,
+            heartbeat=heartbeat_owner,
+            heartbeat_identity=(heartbeat_identity or lease_identity),
         )
         lease = None
-        managed_root_fd = -1
-        root_fd = -1
-        resources["lease"] = None
-        resources["managed_root_fd"] = -1
-        resources["root_fd"] = -1
+        root = None
+        heartbeat_owner = None
+        managed_owner = None
+        transferred = True
         managed._cleanup_ready = ready is not None
+        graph = managed._ensure_cleanup_graph()
+        if retained is None:
+            graph.retain_removed = True
+        if heartbeat is None:
+            graph.heartbeat_removed = True
+        if ready is None:
+            graph.cleanup_ready_removed = True
         remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            cleanup = managed.defer("deferred janitor budget exhausted")
-        else:
-            cleanup = managed.cleanup(
+        cleanup = (
+            managed.defer("janitor cleanup budget exhausted")
+            if remaining <= 0
+            else managed.cleanup(
                 time_budget=min(MAX_CLEANUP_SLICE_SECONDS, remaining)
             )
-        disposal_errors = managed.close_capabilities()
-        if disposal_errors:
+        )
+        disposal = managed.close_capabilities()
+        if disposal:
             cleanup = replace(
-                cleanup,
-                details=(*cleanup.details, *disposal_errors),
+                cleanup, details=(*cleanup.details, *disposal)
             )
         return cleanup
     except _DeadlineExceeded as error:
         return _janitor_diagnostic(str(error))
     except OSError as error:
-        remaining_valid = False
-        if candidate_validated and time.monotonic() < deadline:
-            try:
-                remaining_valid = (
-                    _entry_identity(selection_root_fd, name)
-                    == expected_identity
-                )
-            except OSError:
-                pass
-        detail = f"{type(error).__name__}: {error}"
-        return (
-            _janitor_failure(detail, managed_root / name)
-            if remaining_valid
-            else _janitor_diagnostic(detail)
+        return _janitor_failure(
+            _exception_detail(error), reported
         )
-
-
-def _directory_is_empty_at(candidate_fd: int, *, deadline: float) -> bool:
-    _check_deadline(deadline, "janitor directory scan")
-    iterator = os.scandir(candidate_fd)
-    try:
-        _check_deadline(deadline, "janitor directory scan")
-        _check_deadline(deadline, "janitor directory scan")
-        entry = next(iterator, None)
-        _check_deadline(deadline, "janitor directory scan")
-        return entry is None
     finally:
-        iterator.close()
+        if not transferred:
+            details: list[str] = []
+            if heartbeat_owner is not None:
+                details.extend(
+                    _close_capability_retry(
+                        heartbeat_owner, "janitor candidate heartbeat"
+                    )
+                )
+            if lease is not None:
+                details.extend(
+                    _close_lease_lock_retry(
+                        lease, "janitor candidate lease"
+                    )
+                )
+            if root is not None:
+                details.extend(
+                    _close_capability_retry(root, "janitor candidate root")
+                )
+            if managed_owner is not None:
+                details.extend(
+                    _close_capability_retry(
+                        managed_owner, "janitor candidate managed root"
+                    )
+                )
+            cleanup_details.extend(details)
 
 
-def _directory_contains_only_lease_at(
-    candidate_fd: int, *, deadline: float | None = None
-) -> bool:
+def _janitor_candidate_record(
+    managed_root: Path,
+    managed_root_capability: DirectoryCapability,
+    selected: _JanitorCandidate,
+    backend: FilesystemBackend,
+    *,
+    current_time: float,
+    deadline: float,
+) -> ScratchCleanupRecord | JanitorDiagnostic | None:
+    """Run one candidate slice and attach every owner-disposal diagnostic."""
+    cleanup_details: list[str] = []
+    result = _janitor_candidate_record_inner(
+        managed_root,
+        managed_root_capability,
+        selected,
+        backend,
+        current_time=current_time,
+        deadline=deadline,
+        cleanup_details=cleanup_details,
+    )
+    if not cleanup_details:
+        return result
+    bounded = tuple(_bounded_janitor_detail(item) for item in cleanup_details)
+    if isinstance(result, ScratchCleanupRecord):
+        return replace(result, details=(*result.details, *bounded))
+    if isinstance(result, JanitorDiagnostic):
+        return replace(result, details=(*result.details, *bounded))
+    return JanitorDiagnostic(bounded)
+
+
+def reclaim_abandoned(
+    managed_root: Path,
+    *,
+    now: float | None = None,
+    backend: FilesystemBackend | None = None,
+    managed_root_capability: DirectoryCapability | None = None,
+) -> list[ScratchCleanupRecord | JanitorDiagnostic]:
+    """Capability-relative bounded selection, claim, and cleanup."""
+    selected_backend = default_filesystem_backend() if backend is None else backend
+    started = time.monotonic()
+    deadline = started + JANITOR_CLEANUP_SECONDS
+    selection_deadline = min(deadline, started + JANITOR_SELECTION_SECONDS)
+    root: DirectoryCapability | None = managed_root_capability
+    records: list[ScratchCleanupRecord | JanitorDiagnostic] = []
     try:
-        if deadline is not None:
-            _check_deadline(deadline, "janitor lease-only scan")
-        iterator = os.scandir(candidate_fd)
+        if root is None:
+            verified, root = _ensure_managed_root(
+                managed_root.parent.resolve(strict=True),
+                backend=selected_backend,
+                deadline=selection_deadline,
+            )
+            if verified != managed_root.resolve(strict=True):
+                raise OSError("janitor managed root path changed")
+        if root.share_policy is not SharePolicy.MUTATION:
+            replacement = selected_backend.reopen_directory(
+                root, SharePolicy.MUTATION
+            )
+            close_errors = _close_capability_retry(
+                root, "janitor supplied managed root"
+            )
+            if close_errors:
+                _close_capability_retry(
+                    replacement, "janitor replacement managed root"
+                )
+                raise OSError("; ".join(close_errors))
+            root = replacement
+        _check_deadline(selection_deadline, "janitor selection")
+        coordinator = _open_coordinator(
+            root,
+            selected_backend,
+            timeout=max(0.001, selection_deadline - time.monotonic()),
+            deadline=selection_deadline,
+        )
+        if hasattr(selected_backend, "coordinator"):
+            setattr(selected_backend, "coordinator", coordinator)
         try:
-            if deadline is not None:
-                _check_deadline(deadline, "janitor lease-only scan")
-            seen_lease = False
-            while True:
-                if deadline is not None:
-                    _check_deadline(deadline, "janitor lease-only scan")
-                entry = next(iterator, None)
-                if deadline is not None:
-                    _check_deadline(deadline, "janitor lease-only scan")
-                if entry is None:
-                    break
-                if entry.name != LEASE_FILE or seen_lease:
-                    return False
-                seen_lease = True
-            return seen_lease
+            state = _read_coordinator_state(
+                coordinator.fd, deadline=selection_deadline
+            )
+            _check_deadline(selection_deadline, "janitor selection")
+            candidates, _examined = _select_janitor_candidates(
+                root,
+                selected_backend,
+                cursor=state.cursor,
+                deadline=selection_deadline,
+            )
+            if candidates:
+                try:
+                    _persist_coordinator_cursor(
+                        coordinator.fd,
+                        state,
+                        candidates[-1].name,
+                        deadline=selection_deadline,
+                    )
+                    _check_deadline(selection_deadline, "janitor selection")
+                except OSError as error:
+                    records.append(
+                        _janitor_diagnostic(
+                            "janitor cursor persistence failed: "
+                            + _exception_detail(error)
+                        )
+                    )
+        except (OSError, _DeadlineExceeded) as error:
+            records.append(_janitor_diagnostic(_exception_detail(error)))
+            candidates = []
         finally:
-            iterator.close()
-    except TimeoutError:
-        raise
-    except OSError:
-        return False
+            close_errors = _close_lease_lock_retry(
+                coordinator, "janitor selection coordinator"
+            )
+            if close_errors:
+                records.append(_janitor_diagnostic("; ".join(close_errors)))
+        current_time = time.time() if now is None else now
+        deferred: list[tuple[int, _JanitorCandidate]] = []
+        for candidate in candidates:
+            if time.monotonic() >= deadline:
+                break
+            record = _janitor_candidate_record(
+                managed_root,
+                root,
+                candidate,
+                selected_backend,
+                current_time=current_time,
+                deadline=deadline,
+            )
+            if record is not None:
+                records.append(record)
+                if (
+                    isinstance(record, ScratchCleanupRecord)
+                    and record.status is ScratchCleanupStatus.DEFERRED
+                ):
+                    deferred.append(
+                        (
+                            len(records) - 1,
+                            replace(
+                                candidate,
+                                name=f".deleting-{candidate.run_id}",
+                            ),
+                        )
+                    )
+        for record_index, candidate in deferred:
+            if time.monotonic() >= deadline:
+                break
+            resumed = _resume_deferred_cleanup(
+                managed_root,
+                root,
+                candidate.name,
+                candidate.identity,
+                candidate.filesystem,
+                selected_backend,
+                deadline=deadline,
+            )
+            if isinstance(resumed, ScratchCleanupRecord):
+                first = cast(ScratchCleanupRecord, records[record_index])
+                records[record_index] = replace(
+                    resumed,
+                    examined_entries=(
+                        first.examined_entries + resumed.examined_entries
+                    ),
+                    removed_entries=(
+                        first.removed_entries + resumed.removed_entries
+                    ),
+                    details=(*first.details, *resumed.details),
+                    omitted_detail_count=(
+                        first.omitted_detail_count
+                        + resumed.omitted_detail_count
+                    ),
+                )
+            elif resumed is not None:
+                records.append(resumed)
+    finally:
+        if root is not None:
+            close_errors = _close_capability_retry(
+                root, "janitor managed root"
+            )
+            active = sys.exc_info()[1]
+            if close_errors and active is not None:
+                for detail in close_errors:
+                    active.add_note(detail)
+            elif close_errors:
+                records.append(_janitor_diagnostic("; ".join(close_errors)))
+    return _bound_cleanup_records(records)
+
+
+def _resume_deferred_cleanup_inner(
+    managed_root: Path,
+    selection_root: DirectoryCapability,
+    name: str,
+    expected_identity: FileIdentity,
+    expected_filesystem: FilesystemIdentity,
+    backend: FilesystemBackend,
+    *,
+    deadline: float,
+    cleanup_details: list[str],
+) -> ScratchCleanupRecord | JanitorDiagnostic | None:
+    match = _RUN_NAME.fullmatch(name)
+    if match is None or not name.startswith(".deleting-"):
+        return None
+    resources = _DeferredJanitorResources()
+    result: ScratchCleanupRecord | JanitorDiagnostic | None = None
+    try:
+        _check_deadline(deadline, "deferred janitor")
+        resources.managed_root = backend.reopen_directory(
+            selection_root, SharePolicy.MUTATION
+        )
+        _check_deadline(deadline, "deferred janitor")
+        try:
+            resources.root = backend.open_directory(
+                resources.managed_root, name, SharePolicy.PINNED
+            )
+        except FileNotFoundError:
+            return ScratchCleanupRecord(ScratchCleanupStatus.CLEAN, 0, 0)
+        _check_deadline(deadline, "deferred janitor")
+        if (
+            resources.root.identity != expected_identity
+            or resources.root.filesystem != expected_filesystem
+        ):
+            return _janitor_diagnostic("deferred cleanup identity changed")
+        selected = _JanitorCandidate(
+            name,
+            expected_identity,
+            expected_filesystem,
+            match.group(1),
+            resources.root.modified_ns,
+        )
+        root_errors = _close_capability_retry(
+            resources.root, "deferred probe root"
+        )
+        if not resources.root.is_open:
+            resources.root = None
+        if root_errors:
+            return _janitor_diagnostic("; ".join(root_errors))
+        managed_errors = _close_capability_retry(
+            resources.managed_root, "deferred probe managed root"
+        )
+        if not resources.managed_root.is_open:
+            resources.managed_root = None
+        if managed_errors:
+            return _janitor_diagnostic("; ".join(managed_errors))
+        result = _janitor_candidate_record(
+            managed_root,
+            selection_root,
+            selected,
+            backend,
+            current_time=time.time(),
+            deadline=deadline,
+        )
+        return result
+    finally:
+        errors = _dispose_deferred_resources(resources)
+        if errors:
+            active = sys.exc_info()[1]
+            if active is not None:
+                for detail in errors:
+                    active.add_note(detail)
+            cleanup_details.extend(errors)
+
+
+def _resume_deferred_cleanup(
+    managed_root: Path,
+    selection_root: DirectoryCapability,
+    name: str,
+    expected_identity: FileIdentity,
+    expected_filesystem: FilesystemIdentity,
+    backend: FilesystemBackend,
+    *,
+    deadline: float,
+) -> ScratchCleanupRecord | JanitorDiagnostic | None:
+    """Resume a deferred slice without losing probe-owner diagnostics."""
+    cleanup_details: list[str] = []
+    try:
+        result = _resume_deferred_cleanup_inner(
+            managed_root,
+            selection_root,
+            name,
+            expected_identity,
+            expected_filesystem,
+            backend,
+            deadline=deadline,
+            cleanup_details=cleanup_details,
+        )
+    except (_DeadlineExceeded, OSError) as error:
+        result = _janitor_diagnostic(_exception_detail(error))
+    if not cleanup_details:
+        return result
+    bounded = tuple(_bounded_janitor_detail(item) for item in cleanup_details)
+    if isinstance(result, ScratchCleanupRecord):
+        return replace(result, details=(*result.details, *bounded))
+    if isinstance(result, JanitorDiagnostic):
+        return replace(result, details=(*result.details, *bounded))
+    return JanitorDiagnostic(bounded)
