@@ -5849,14 +5849,30 @@ class _FixedJanitorCandidates:
 
 
 class _JanitorRecordLedger:
-    __slots__ = ("_records", "_record_count", "_detail_count")
+    __slots__ = (
+        "_records",
+        "_record_count",
+        "_detail_cells",
+        "_detail_record_indices",
+        "_detail_cell_count",
+        "_detail_count",
+        "_omitted_counts",
+    )
 
     def __init__(self) -> None:
         self._records: list[
             ScratchCleanupRecord | JanitorDiagnostic | None
         ] = [None] * MAX_RECLAIM_CANDIDATES
         self._record_count = 0
+        self._detail_cells: list[str | None] = (
+            [None] * MAX_DIAGNOSTIC_DETAILS
+        )
+        self._detail_record_indices: list[int] = (
+            [-1] * MAX_DIAGNOSTIC_DETAILS
+        )
+        self._detail_cell_count = 0
         self._detail_count = 0
+        self._omitted_counts: list[int] = [0] * MAX_RECLAIM_CANDIDATES
 
     def __len__(self) -> int:
         return self._record_count
@@ -5871,57 +5887,123 @@ class _JanitorRecordLedger:
             self._records[index],
         )
 
+    def _add_omitted(self, index: int, count: int) -> None:
+        if count <= 0:
+            return
+        self._omitted_counts[index] += count
+
+    def _record_contains(self, index: int, detail: str) -> bool:
+        record = cast(
+            ScratchCleanupRecord | JanitorDiagnostic, self._records[index]
+        )
+        for current in record.details:
+            if current == detail:
+                return True
+        for cell_index in range(self._detail_cell_count):
+            if (
+                self._detail_record_indices[cell_index] == index
+                and self._detail_cells[cell_index] == detail
+            ):
+                return True
+        return False
+
+    def _consume_detail(self, index: int, detail: str) -> None:
+        bounded = _bounded_janitor_detail(detail)
+        if self._record_contains(index, bounded):
+            return
+        if self._detail_count >= MAX_DIAGNOSTIC_DETAILS:
+            self._add_omitted(index, 1)
+            return
+        self._detail_cells[self._detail_cell_count] = bounded
+        self._detail_record_indices[self._detail_cell_count] = index
+        self._detail_cell_count += 1
+        self._detail_count += 1
+
+    @staticmethod
+    def _can_reuse_details(
+        details: tuple[str, ...], available: int
+    ) -> bool:
+        if len(details) > available:
+            return False
+        for index, detail in enumerate(details):
+            if _bounded_janitor_detail(detail) != detail:
+                return False
+            for prior_index in range(index):
+                if details[prior_index] == detail:
+                    return False
+        return True
+
+    def _charge_dropped_record(
+        self,
+        record: ScratchCleanupRecord | JanitorDiagnostic,
+        secondary: _FixedDetailLedger | None,
+    ) -> None:
+        if self._record_count == 0:
+            return
+        unique = 0
+        for index, detail in enumerate(record.details):
+            bounded = _bounded_janitor_detail(detail)
+            if all(
+                _bounded_janitor_detail(record.details[prior]) != bounded
+                for prior in range(index)
+            ):
+                unique += 1
+        if secondary is not None:
+            for detail_index in range(secondary.count):
+                detail = cast(str, secondary._items[detail_index])
+                duplicate = any(
+                    _bounded_janitor_detail(item) == detail
+                    for item in record.details
+                )
+                if not duplicate:
+                    unique += 1
+            unique += secondary.omitted
+            secondary.reset()
+        self._add_omitted(
+            self._record_count - 1,
+            record.omitted_detail_count + unique,
+        )
+
     def add(
-        self, record: ScratchCleanupRecord | JanitorDiagnostic
+        self,
+        record: ScratchCleanupRecord | JanitorDiagnostic,
+        secondary: _FixedDetailLedger | None = None,
     ) -> int | None:
         if self._record_count >= len(self._records):
-            last_index = self._record_count - 1
-            last = cast(
-                ScratchCleanupRecord | JanitorDiagnostic,
-                self._records[last_index],
-            )
-            self._records[last_index] = replace(
-                last,
-                omitted_detail_count=(
-                    last.omitted_detail_count
-                    + record.omitted_detail_count
-                    + len(record.details)
-                ),
-            )
+            self._charge_dropped_record(record, secondary)
             return None
-        available = max(0, MAX_DIAGNOSTIC_DETAILS - self._detail_count)
-        kept = tuple(
-            _bounded_janitor_detail(record.details[index])
-            for index in range(min(len(record.details), available))
-        )
-        omitted = len(record.details) - len(kept)
-        bounded = replace(
-            record,
-            details=kept,
-            omitted_detail_count=record.omitted_detail_count + omitted,
-        )
-        self._records[self._record_count] = bounded
-        self._detail_count += len(kept)
+        index = self._record_count
+        available = MAX_DIAGNOSTIC_DETAILS - self._detail_count
+        reuse = self._can_reuse_details(record.details, available)
+        self._records[index] = record if reuse else replace(record, details=())
         self._record_count += 1
-        return self._record_count - 1
+        if reuse:
+            self._detail_count += len(record.details)
+        else:
+            for detail in record.details:
+                self._consume_detail(index, detail)
+        if secondary is not None:
+            self.add_secondary(index, secondary)
+        return index
 
     def replace_with_resume(
         self,
         index: int,
         resumed: ScratchCleanupRecord,
+        secondary: _FixedDetailLedger | None = None,
     ) -> None:
         first = cast(ScratchCleanupRecord, self[index])
-        available = max(0, MAX_DIAGNOSTIC_DETAILS - self._detail_count)
-        keep_count = min(len(resumed.details), available)
-        appended = tuple(
-            _bounded_janitor_detail(resumed.details[item_index])
-            for item_index in range(keep_count)
+        has_cells = any(
+            self._detail_record_indices[cell_index] == index
+            for cell_index in range(self._detail_cell_count)
         )
-        combined = tuple(
-            first.details[item_index]
-            if item_index < len(first.details)
-            else appended[item_index - len(first.details)]
-            for item_index in range(len(first.details) + len(appended))
+        reuse_resumed = (
+            not first.details
+            and not has_cells
+            and self._can_reuse_details(
+                resumed.details,
+                MAX_DIAGNOSTIC_DETAILS - self._detail_count,
+            )
         )
         self._records[index] = replace(
             resumed,
@@ -5929,21 +6011,76 @@ class _JanitorRecordLedger:
                 first.examined_entries + resumed.examined_entries
             ),
             removed_entries=first.removed_entries + resumed.removed_entries,
-            details=combined,
+            details=resumed.details if reuse_resumed else first.details,
             omitted_detail_count=(
-                first.omitted_detail_count
-                + resumed.omitted_detail_count
-                + len(resumed.details)
-                - keep_count
+                first.omitted_detail_count + resumed.omitted_detail_count
             ),
         )
-        self._detail_count += keep_count
+        if reuse_resumed:
+            self._detail_count += len(resumed.details)
+        else:
+            for detail in resumed.details:
+                self._consume_detail(index, detail)
+        if secondary is not None:
+            self.add_secondary(index, secondary)
+
+    def add_secondary(
+        self, index: int, secondary: _FixedDetailLedger
+    ) -> None:
+        for detail_index in range(secondary.count):
+            detail = cast(str, secondary._items[detail_index])
+            self._consume_detail(index, detail)
+            secondary._items[detail_index] = None
+        self._add_omitted(index, secondary.omitted)
+        secondary.count = 0
+        secondary.omitted = 0
 
     def records(self) -> list[ScratchCleanupRecord | JanitorDiagnostic]:
-        return [
-            cast(ScratchCleanupRecord | JanitorDiagnostic, self._records[index])
-            for index in range(self._record_count)
-        ]
+        records: list[ScratchCleanupRecord | JanitorDiagnostic] = []
+        for index in range(self._record_count):
+            record = cast(
+                ScratchCleanupRecord | JanitorDiagnostic, self._records[index]
+            )
+            added_count = 0
+            for cell_index in range(self._detail_cell_count):
+                if self._detail_record_indices[cell_index] == index:
+                    added_count += 1
+            if added_count == 0:
+                if self._omitted_counts[index] == 0:
+                    records.append(record)
+                else:
+                    records.append(
+                        replace(
+                            record,
+                            omitted_detail_count=(
+                                record.omitted_detail_count
+                                + self._omitted_counts[index]
+                            ),
+                        )
+                    )
+                continue
+            details = tuple(self._record_details(index, record))
+            records.append(
+                replace(
+                    record,
+                    details=details,
+                    omitted_detail_count=(
+                        record.omitted_detail_count
+                        + self._omitted_counts[index]
+                    ),
+                )
+            )
+        return records
+
+    def _record_details(
+        self,
+        index: int,
+        record: ScratchCleanupRecord | JanitorDiagnostic,
+    ) -> Iterator[str]:
+        yield from record.details
+        for cell_index in range(self._detail_cell_count):
+            if self._detail_record_indices[cell_index] == index:
+                yield cast(str, self._detail_cells[cell_index])
 
 
 class _FixedDeferredJanitorCandidates:
@@ -5966,6 +6103,247 @@ class _FixedDeferredJanitorCandidates:
             cast(tuple[int, _JanitorCandidate], self._items[index])
             for index in range(self.count)
         )
+
+
+class _FixedJanitorNameSkips:
+    __slots__ = ("_names", "count")
+
+    def __init__(self) -> None:
+        self._names: list[str | None] = [None] * MAX_RECLAIM_CANDIDATES
+        self.count = 0
+
+    def add(self, name: str) -> None:
+        for index in range(self.count):
+            if self._names[index] == name:
+                return
+        if self.count >= len(self._names):
+            return
+        self._names[self.count] = name
+        self.count += 1
+
+    def contains(self, name: str) -> bool:
+        return any(self._names[index] == name for index in range(self.count))
+
+
+class _DeferredEmptyPendingCell:
+    __slots__ = (
+        "reserved",
+        "active",
+        "resolving",
+        "backend",
+        "managed_root",
+        "managed_identity",
+        "managed_filesystem",
+        "owner",
+        "name",
+        "identity",
+        "filesystem",
+        "removed_after",
+    )
+
+    def __init__(self) -> None:
+        self.reserved = False
+        self.active = False
+        self.resolving = False
+        self.backend: FilesystemBackend | None = None
+        self.managed_root: Path | None = None
+        self.managed_identity: FileIdentity | None = None
+        self.managed_filesystem: FilesystemIdentity | None = None
+        self.owner: DirectoryCapability | None = None
+        self.name = ""
+        self.identity: FileIdentity | None = None
+        self.filesystem: FilesystemIdentity | None = None
+        self.removed_after = 0
+
+    def clear(self) -> None:
+        if self.owner is not None and self.owner.is_open:
+            raise RuntimeError("cannot discard a live deferred empty owner")
+        self.reserved = False
+        self.active = False
+        self.resolving = False
+        self.backend = None
+        self.managed_root = None
+        self.managed_identity = None
+        self.managed_filesystem = None
+        self.owner = None
+        self.name = ""
+        self.identity = None
+        self.filesystem = None
+        self.removed_after = 0
+
+
+class _DeferredEmptyPendingRegistry:
+    __slots__ = ("_cells", "_lock")
+
+    def __init__(self) -> None:
+        self._cells = [
+            _DeferredEmptyPendingCell()
+            for _index in range(MAX_RECLAIM_CANDIDATES)
+        ]
+        self._lock = threading.Lock()
+
+    def reserve(
+        self,
+        backend: FilesystemBackend,
+        managed_root: Path,
+        managed_root_capability: DirectoryCapability,
+    ) -> _DeferredEmptyPendingCell | None:
+        with self._lock:
+            for cell in self._cells:
+                if cell.reserved:
+                    continue
+                cell.reserved = True
+                cell.backend = backend
+                cell.managed_root = managed_root
+                cell.managed_identity = managed_root_capability.identity
+                cell.managed_filesystem = managed_root_capability.filesystem
+                return cell
+        return None
+
+    def release(self, cell: _DeferredEmptyPendingCell) -> None:
+        with self._lock:
+            if cell.active:
+                return
+            cell.clear()
+
+    def activate(
+        self,
+        cell: _DeferredEmptyPendingCell,
+        owner: DirectoryCapability | None,
+        pending: _PendingAbsenceCell,
+    ) -> None:
+        if not pending.armed or not pending.committed:
+            raise RuntimeError("deferred empty evidence is not committed")
+        identity = pending.identity
+        filesystem = pending.filesystem
+        if identity is None or filesystem is None:
+            raise RuntimeError("deferred empty evidence is incomplete")
+        with self._lock:
+            if not cell.reserved or cell.active:
+                raise RuntimeError("deferred empty registry cell is unavailable")
+            cell.owner = owner
+            cell.name = pending.name
+            cell.identity = identity
+            cell.filesystem = filesystem
+            cell.removed_after = pending.removed_after
+            cell.active = True
+            pending.clear()
+
+    @staticmethod
+    def _deferred_record(cell: _DeferredEmptyPendingCell) -> ScratchCleanupRecord:
+        return ScratchCleanupRecord(
+            ScratchCleanupStatus.DEFERRED,
+            0,
+            cell.removed_after,
+            remaining_root=None,
+        )
+
+    def resolve_matching(
+        self,
+        backend: FilesystemBackend,
+        managed_root: Path,
+        managed_root_capability: DirectoryCapability,
+        record_ledger: _JanitorRecordLedger,
+        skip_names: _FixedJanitorNameSkips,
+        *,
+        deadline: float,
+    ) -> None:
+        for cell in self._cells:
+            with self._lock:
+                if (
+                    not cell.active
+                    or cell.resolving
+                    or cell.backend is not backend
+                    or cell.managed_root != managed_root
+                    or cell.managed_identity != managed_root_capability.identity
+                    or cell.managed_filesystem
+                    != managed_root_capability.filesystem
+                ):
+                    continue
+                owner = cell.owner
+                if owner is not None and owner.is_open:
+                    deferred = self._deferred_record(cell)
+                    resolve = False
+                else:
+                    cell.resolving = True
+                    deferred = None
+                    resolve = True
+                name = cell.name
+                identity = cell.identity
+                filesystem = cell.filesystem
+                removed_after = cell.removed_after
+            if not resolve:
+                record_ledger.add(cast(ScratchCleanupRecord, deferred))
+                continue
+            try:
+                _check_deadline(deadline, "deferred empty pending absence")
+                remaining = backend.entry(managed_root_capability, name)
+                _check_deadline(deadline, "deferred empty pending absence")
+            except (_DeadlineExceeded, OSError) as error:
+                with self._lock:
+                    cell.resolving = False
+                record_ledger.add(
+                    ScratchCleanupRecord(
+                        ScratchCleanupStatus.DEFERRED,
+                        0,
+                        removed_after,
+                        (_bounded_janitor_detail(_exception_detail(error)),),
+                    )
+                )
+                continue
+            try:
+                if remaining is None:
+                    record: ScratchCleanupRecord = ScratchCleanupRecord(
+                        ScratchCleanupStatus.CLEAN, 0, removed_after
+                    )
+                elif (
+                    remaining.identity == identity
+                    and remaining.filesystem == filesystem
+                ):
+                    record = _janitor_failure(
+                        "empty candidate deletion did not commit",
+                        managed_root / name,
+                    )
+                else:
+                    record = ScratchCleanupRecord(
+                        ScratchCleanupStatus.FAILED,
+                        0,
+                        removed_after,
+                        (_bounded_janitor_detail(
+                            "empty candidate replacement preserved after removal"
+                        ),),
+                        validate_reported_path(managed_root / name),
+                    )
+                skip_names.add(name)
+                record_ledger.add(record)
+            except BaseException:
+                with self._lock:
+                    cell.resolving = False
+                raise
+            with self._lock:
+                cell.clear()
+
+    def blocks_candidate(
+        self,
+        backend: FilesystemBackend,
+        managed_root: Path,
+        managed_root_capability: DirectoryCapability,
+        candidate: _JanitorCandidate,
+    ) -> bool:
+        with self._lock:
+            return any(
+                cell.active
+                and cell.backend is backend
+                and cell.managed_root == managed_root
+                and cell.managed_identity == managed_root_capability.identity
+                and cell.managed_filesystem
+                == managed_root_capability.filesystem
+                and cell.name == candidate.name
+                for cell in self._cells
+            )
+
+
+_DEFERRED_EMPTY_PENDING = _DeferredEmptyPendingRegistry()
 
 
 class _JanitorCandidateOwners:
@@ -6191,16 +6569,11 @@ def _reclaim_empty_unleased_candidate_inner(
             else:
                 owners.pending_absence.commit()
             _check_deadline(deadline, "empty janitor claim")
-            remaining_entry = backend.entry(managed_root_capability, name)
-            _check_deadline(deadline, "empty janitor claim")
-            if remaining_entry is not None:
-                return _janitor_failure(
-                    "empty candidate remains after removal", reported
-                )
-            owners.pending_absence.clear()
         finally:
             del coordinator
-        return ScratchCleanupRecord(ScratchCleanupStatus.CLEAN, 0, 1)
+        return ScratchCleanupRecord(
+            ScratchCleanupStatus.DEFERRED, 0, 1, remaining_root=None
+        )
     except _DeadlineExceeded as error:
         return _janitor_diagnostic(str(error))
     except FileNotFoundError:
@@ -6226,28 +6599,48 @@ def _reclaim_empty_unleased_candidate(
     owners: _JanitorCandidateOwners | None = None,
 ) -> ScratchCleanupRecord | JanitorDiagnostic | None:
     local_owners = _JanitorCandidateOwners() if owners is None else owners
-    result = _reclaim_empty_unleased_candidate_inner(
-        managed_root,
-        managed_root_capability,
-        candidate,
-        selected,
-        backend,
-        current_time=current_time,
-        deadline=deadline,
-        owners=local_owners,
-    )
     if owners is not None:
-        return result
-    _dispose_janitor_candidate_owners(local_owners)
-    result = _resolve_empty_janitor_pending(
-        managed_root,
-        managed_root_capability,
-        backend,
-        local_owners.pending_absence,
-        result,
-        deadline=deadline,
+        return _reclaim_empty_unleased_candidate_inner(
+            managed_root,
+            managed_root_capability,
+            candidate,
+            selected,
+            backend,
+            current_time=current_time,
+            deadline=deadline,
+            owners=local_owners,
+        )
+    pending_state = _DEFERRED_EMPTY_PENDING.reserve(
+        backend, managed_root, managed_root_capability
     )
-    _dispose_janitor_candidate_coordinator(local_owners)
+    if pending_state is None:
+        return _janitor_diagnostic("janitor pending owner registry is full")
+    result: ScratchCleanupRecord | JanitorDiagnostic | None = None
+    local_owners.root.owner = candidate
+    try:
+        result = _reclaim_empty_unleased_candidate_inner(
+            managed_root,
+            managed_root_capability,
+            candidate,
+            selected,
+            backend,
+            current_time=current_time,
+            deadline=deadline,
+            owners=local_owners,
+        )
+    finally:
+        _dispose_janitor_candidate_owners(local_owners)
+        result = _finalize_empty_janitor_pending(
+            managed_root,
+            managed_root_capability,
+            backend,
+            local_owners,
+            pending_state,
+            result,
+            deadline=deadline,
+        )
+        _dispose_janitor_candidate_coordinator(local_owners)
+        _DEFERRED_EMPTY_PENDING.release(pending_state)
     return _attach_janitor_details(result, local_owners.details)
 
 
@@ -6298,34 +6691,12 @@ def _attach_janitor_details(
     ledger: _FixedDetailLedger,
 ) -> ScratchCleanupRecord | JanitorDiagnostic | None:
     if result is None:
-        details = ledger.details()
-        return None if not details else JanitorDiagnostic(details, ledger.omitted)
-    original = result.details
-    if original:
-        secondary = ledger.details()
-        if secondary:
-            prior_omitted = ledger.omitted
-            primary = _bounded_janitor_detail(
-                f"{original[0]}; {secondary[0]}"
-            )
-            ledger.reset()
-            ledger.add_many(original[1:])
-            ledger.add_many(secondary[1:])
-            ledger.omitted += prior_omitted
-            tail = ledger.details()
-            details = tuple(
-                primary if index == 0 else tail[index - 1]
-                for index in range(len(tail) + 1)
-            )
-        else:
-            details = original
-    else:
-        details = ledger.details()
-    return replace(
-        result,
-        details=details,
-        omitted_detail_count=result.omitted_detail_count + ledger.omitted,
-    )
+        if ledger.count == 0 and ledger.omitted == 0:
+            return None
+        result = JanitorDiagnostic(())
+    combined = _JanitorRecordLedger()
+    combined.add(result, ledger)
+    return combined.records()[0]
 
 
 def _dispose_janitor_candidate_owners(
@@ -6474,6 +6845,66 @@ def _resolve_empty_janitor_pending(
             "empty candidate replacement preserved after removal"
         ),),
         validate_reported_path(reported),
+    )
+
+
+def _finalize_empty_janitor_pending(
+    managed_root: Path,
+    managed_root_capability: DirectoryCapability,
+    backend: FilesystemBackend,
+    owners: _JanitorCandidateOwners,
+    pending_state: _DeferredEmptyPendingCell,
+    result: ScratchCleanupRecord | JanitorDiagnostic | None,
+    *,
+    deadline: float,
+) -> ScratchCleanupRecord | JanitorDiagnostic | None:
+    pending = owners.pending_absence
+    root_owner = owners.root.owner
+    if root_owner is not None and not isinstance(
+        root_owner, DirectoryCapability
+    ):
+        raise RuntimeError("deferred empty root owner is not a directory")
+    root = root_owner
+    if pending.armed and not pending.committed and (
+        root is None or not root.is_open
+    ):
+        pending.commit()
+    if pending.armed and pending.committed and (
+        (root is not None and root.is_open) or time.monotonic() >= deadline
+    ):
+        _DEFERRED_EMPTY_PENDING.activate(pending_state, root, pending)
+        owners.root.owner = None
+        if isinstance(result, ScratchCleanupRecord):
+            return replace(
+                result,
+                status=ScratchCleanupStatus.DEFERRED,
+                removed_entries=max(
+                    result.removed_entries, pending_state.removed_after
+                ),
+                remaining_root=None,
+            )
+        if isinstance(result, JanitorDiagnostic):
+            return ScratchCleanupRecord(
+                ScratchCleanupStatus.DEFERRED,
+                0,
+                pending_state.removed_after,
+                result.details,
+                None,
+                result.omitted_detail_count,
+            )
+        return ScratchCleanupRecord(
+            ScratchCleanupStatus.DEFERRED,
+            0,
+            pending_state.removed_after,
+            remaining_root=None,
+        )
+    return _resolve_empty_janitor_pending(
+        managed_root,
+        managed_root_capability,
+        backend,
+        pending,
+        result,
+        deadline=deadline,
     )
 
 
@@ -7108,6 +7539,13 @@ def _janitor_candidate_record_inner(
         del root
 
 
+@dataclass(frozen=True, slots=True)
+class _JanitorStoredRecord:
+    index: int | None
+    status: ScratchCleanupStatus | None
+    pending_empty: bool
+
+
 def _janitor_candidate_record(
     managed_root: Path,
     managed_root_capability: DirectoryCapability,
@@ -7116,11 +7554,31 @@ def _janitor_candidate_record(
     *,
     current_time: float,
     deadline: float,
-) -> ScratchCleanupRecord | JanitorDiagnostic | None:
+    _record_ledger: _JanitorRecordLedger | None = None,
+    _replace_index: int | None = None,
+) -> (
+    ScratchCleanupRecord
+    | JanitorDiagnostic
+    | _JanitorStoredRecord
+    | None
+):
     """Run one candidate slice and attach every owner-disposal diagnostic."""
-    owners = _JanitorCandidateOwners()
+    pending_state = _DEFERRED_EMPTY_PENDING.reserve(
+        backend, managed_root, managed_root_capability
+    )
+    if pending_state is None:
+        full_result = _janitor_diagnostic(
+            "janitor pending owner registry is full"
+        )
+        if _record_ledger is None:
+            return full_result
+        return _JanitorStoredRecord(
+            _record_ledger.add(full_result), None, False
+        )
+    owners: _JanitorCandidateOwners | None = None
     result: ScratchCleanupRecord | JanitorDiagnostic | None = None
     try:
+        owners = _JanitorCandidateOwners()
         result = _janitor_candidate_record_inner(
             managed_root,
             managed_root_capability,
@@ -7131,18 +7589,38 @@ def _janitor_candidate_record(
             owners=owners,
         )
     finally:
-        if not owners.transferred:
+        if owners is not None and not owners.transferred:
             _dispose_janitor_candidate_owners(owners)
-            result = _resolve_empty_janitor_pending(
+            result = _finalize_empty_janitor_pending(
                 managed_root,
                 managed_root_capability,
                 backend,
-                owners.pending_absence,
+                owners,
+                pending_state,
                 result,
                 deadline=deadline,
             )
-        _dispose_janitor_candidate_coordinator(owners)
-    return _attach_janitor_details(result, owners.details)
+        if owners is not None:
+            _dispose_janitor_candidate_coordinator(owners)
+        _DEFERRED_EMPTY_PENDING.release(pending_state)
+    if owners is None:
+        return result
+    if _record_ledger is None:
+        return _attach_janitor_details(result, owners.details)
+    if result is None:
+        if owners.details.count == 0 and owners.details.omitted == 0:
+            return _JanitorStoredRecord(None, None, pending_state.active)
+        result = JanitorDiagnostic(())
+    status = result.status if isinstance(result, ScratchCleanupRecord) else None
+    index: int | None
+    if _replace_index is not None and isinstance(result, ScratchCleanupRecord):
+        _record_ledger.replace_with_resume(
+            _replace_index, result, owners.details
+        )
+        index = _replace_index
+    else:
+        index = _record_ledger.add(result, owners.details)
+    return _JanitorStoredRecord(index, status, pending_state.active)
 
 
 def reclaim_abandoned(
@@ -7159,6 +7637,7 @@ def reclaim_abandoned(
     selection_deadline = min(deadline, started + JANITOR_SELECTION_SECONDS)
     root: DirectoryCapability | None = managed_root_capability
     record_ledger = _JanitorRecordLedger()
+    pending_skip_names = _FixedJanitorNameSkips()
     selection_coordinator_slot = _CoordinatorOwnerSlot()
     try:
         if root is None:
@@ -7203,6 +7682,14 @@ def reclaim_abandoned(
                 coordinator.fd, deadline=selection_deadline
             )
             _check_deadline(selection_deadline, "janitor selection")
+            _DEFERRED_EMPTY_PENDING.resolve_matching(
+                selected_backend,
+                managed_root,
+                root,
+                record_ledger,
+                pending_skip_names,
+                deadline=selection_deadline,
+            )
             candidates, _examined = _select_janitor_candidates(
                 root,
                 selected_backend,
@@ -7249,6 +7736,12 @@ def reclaim_abandoned(
         for candidate in candidates:
             if time.monotonic() >= deadline:
                 break
+            if pending_skip_names.contains(candidate.name):
+                continue
+            if _DEFERRED_EMPTY_PENDING.blocks_candidate(
+                selected_backend, managed_root, root, candidate
+            ):
+                continue
             record = _janitor_candidate_record(
                 managed_root,
                 root,
@@ -7256,8 +7749,22 @@ def reclaim_abandoned(
                 selected_backend,
                 current_time=current_time,
                 deadline=deadline,
+                _record_ledger=record_ledger,
             )
-            if record is not None:
+            if isinstance(record, _JanitorStoredRecord):
+                if (
+                    record.index is not None
+                    and record.status is ScratchCleanupStatus.DEFERRED
+                    and not record.pending_empty
+                ):
+                    deferred.add(
+                        record.index,
+                        replace(
+                            candidate,
+                            name=f".deleting-{candidate.run_id}",
+                        ),
+                    )
+            elif record is not None:
                 record_index = record_ledger.add(record)
                 if (
                     record_index is not None
@@ -7282,10 +7789,19 @@ def reclaim_abandoned(
                 candidate.filesystem,
                 selected_backend,
                 deadline=deadline,
+                _record_ledger=record_ledger,
+                _record_index=record_index,
             )
-            if isinstance(resumed, ScratchCleanupRecord):
-                record_ledger.replace_with_resume(record_index, resumed)
-            elif resumed is not None:
+            if isinstance(resumed, (ScratchCleanupRecord, JanitorDiagnostic)):
+                # Compatibility for injected/private helpers that do not use
+                # the shared ledger path.
+                if isinstance(resumed, ScratchCleanupRecord):
+                    record_ledger.replace_with_resume(record_index, resumed)
+                else:
+                    record_ledger.add(resumed)
+            elif resumed is not None and not isinstance(
+                resumed, _JanitorStoredRecord
+            ):
                 record_ledger.add(resumed)
     finally:
         if root is not None:
@@ -7305,7 +7821,7 @@ def reclaim_abandoned(
                         )
                     )
                 )
-    return _bound_cleanup_records(record_ledger.records())
+    return record_ledger.records()
 
 
 def _resume_deferred_cleanup_inner(
@@ -7318,12 +7834,24 @@ def _resume_deferred_cleanup_inner(
     *,
     deadline: float,
     detail_ledger: _FixedDetailLedger,
-) -> ScratchCleanupRecord | JanitorDiagnostic | None:
+    record_ledger: _JanitorRecordLedger | None = None,
+    record_index: int | None = None,
+) -> (
+    ScratchCleanupRecord
+    | JanitorDiagnostic
+    | _JanitorStoredRecord
+    | None
+):
     match = _RUN_NAME.fullmatch(name)
     if match is None or not name.startswith(".deleting-"):
         return None
     resources = _DeferredJanitorResources()
-    result: ScratchCleanupRecord | JanitorDiagnostic | None = None
+    result: (
+        ScratchCleanupRecord
+        | JanitorDiagnostic
+        | _JanitorStoredRecord
+        | None
+    ) = None
     try:
         _check_deadline(deadline, "deferred janitor")
         resources.managed_root = backend.reopen_directory(
@@ -7376,16 +7904,18 @@ def _resume_deferred_cleanup_inner(
             backend,
             current_time=time.time(),
             deadline=deadline,
+            _record_ledger=record_ledger,
+            _replace_index=record_index,
         )
         return result
     finally:
         _dispose_deferred_resources(resources, detail_ledger)
-        details = detail_ledger.details()
-        if details:
-            active = sys.exc_info()[1]
-            if active is not None:
-                for detail in details:
-                    active.add_note(detail)
+        active = sys.exc_info()[1]
+        if active is not None:
+            for detail_index in range(detail_ledger.count):
+                active.add_note(
+                    cast(str, detail_ledger._items[detail_index])
+                )
 
 
 def _resume_deferred_cleanup(
@@ -7397,7 +7927,14 @@ def _resume_deferred_cleanup(
     backend: FilesystemBackend,
     *,
     deadline: float,
-) -> ScratchCleanupRecord | JanitorDiagnostic | None:
+    _record_ledger: _JanitorRecordLedger | None = None,
+    _record_index: int | None = None,
+) -> (
+    ScratchCleanupRecord
+    | JanitorDiagnostic
+    | _JanitorStoredRecord
+    | None
+):
     """Resume a deferred slice without losing probe-owner diagnostics."""
     detail_ledger = _FixedDetailLedger()
     try:
@@ -7410,7 +7947,38 @@ def _resume_deferred_cleanup(
             backend,
             deadline=deadline,
             detail_ledger=detail_ledger,
+            record_ledger=_record_ledger,
+            record_index=_record_index,
         )
     except (_DeadlineExceeded, OSError) as error:
         result = _janitor_diagnostic(_exception_detail(error))
+    if _record_ledger is not None:
+        if isinstance(result, _JanitorStoredRecord):
+            if result.index is not None:
+                _record_ledger.add_secondary(result.index, detail_ledger)
+            elif detail_ledger.count or detail_ledger.omitted:
+                result = _JanitorStoredRecord(
+                    _record_ledger.add(JanitorDiagnostic(()), detail_ledger),
+                    None,
+                    result.pending_empty,
+                )
+            return result
+        if result is None:
+            if detail_ledger.count == 0 and detail_ledger.omitted == 0:
+                return _JanitorStoredRecord(None, None, False)
+            result = JanitorDiagnostic(())
+        if isinstance(result, ScratchCleanupRecord) and _record_index is not None:
+            _record_ledger.replace_with_resume(
+                _record_index, result, detail_ledger
+            )
+            return _JanitorStoredRecord(
+                _record_index, result.status, False
+            )
+        return _JanitorStoredRecord(
+            _record_ledger.add(result, detail_ledger),
+            result.status if isinstance(result, ScratchCleanupRecord) else None,
+            False,
+        )
+    if isinstance(result, _JanitorStoredRecord):
+        raise RuntimeError("standalone deferred cleanup stored a ledger record")
     return _attach_janitor_details(result, detail_ledger)

@@ -8825,7 +8825,15 @@ class ManagedScratchTests(unittest.TestCase):
         self.assertEqual(len(records), 1)
         self.assertIsInstance(records[0], ScratchCleanupRecord)
         self.assertIn("identity changed", records[0].details[0])
-        self.assertIn("claim close failure", records[0].details[0])
+        self.assertEqual(
+            "; ".join(records[0].details).count("claim close failure"), 1
+        )
+        self.assertTrue(
+            any(
+                "claim close failure" in detail
+                for detail in records[0].details[1:]
+            )
+        )
         self.assertIs(managed.children[f".deleting-{run_id}"], replacement)
         self.assertIn(".hoimin-lease.json", original.children)
         cleanup.assert_not_called()
@@ -9272,6 +9280,9 @@ class ManagedScratchTests(unittest.TestCase):
     ) -> None:
         backend = self._task8_backend()
         managed_capability = self._task7_managed_root(backend)
+        later_managed = backend.reopen_directory(
+            managed_capability, SharePolicy.MUTATION
+        )
         managed = backend._resource(managed_capability).node
         original = self._task9_add_candidate(
             backend,
@@ -9316,11 +9327,22 @@ class ManagedScratchTests(unittest.TestCase):
                 backend=backend,
                 managed_root_capability=managed_capability,
             )
+            clock[0] = 0.0
+            retry_start = len(backend.cleanup_operations)
+            resumed = reclaim_abandoned(
+                later_managed.path_hint,
+                backend=backend,
+                managed_root_capability=later_managed,
+            )
 
         cleanup = _cleanup_records_only(records)
         self.assertEqual(len(cleanup), 1, records)
         self.assertEqual(cleanup[0].status, ScratchCleanupStatus.DEFERRED)
         self.assertEqual(cleanup[0].removed_entries, 1)
+        resumed_cleanup = _cleanup_records_only(resumed)
+        self.assertEqual(len(resumed_cleanup), 1, resumed)
+        self.assertEqual(resumed_cleanup[0].status, ScratchCleanupStatus.CLEAN)
+        self.assertEqual(resumed_cleanup[0].removed_entries, 1)
         self.assertNotIn(original.name, managed.children)
         self.assertGreaterEqual(crossed_at, 0)
         self.assertFalse(
@@ -9331,10 +9353,16 @@ class ManagedScratchTests(unittest.TestCase):
                     f"open_directory:{original.name}",
                     f"delete:{original.name}",
                 }
-                for operation in backend.cleanup_operations[crossed_at:]
+                for operation in backend.cleanup_operations[
+                    crossed_at:retry_start
+                ]
             ),
-            backend.cleanup_operations[crossed_at:],
+            backend.cleanup_operations[crossed_at:retry_start],
         )
+        retry_operations = backend.cleanup_operations[retry_start:]
+        self.assertEqual(retry_operations.count(f"entry:{original.name}"), 1)
+        self.assertNotIn(f"open_directory:{original.name}", retry_operations)
+        self.assertNotIn(f"delete:{original.name}", retry_operations)
         self.assertEqual(
             backend.close_counts.get(original.identity, 0)
             - close_count_before_delete,
@@ -9502,10 +9530,11 @@ class ManagedScratchTests(unittest.TestCase):
                 def fail_record_add(
                     ledger: object,
                     record: ScratchCleanupRecord | JanitorDiagnostic,
+                    secondary: object | None = None,
                 ) -> int | None:
                     if isinstance(record, ScratchCleanupRecord):
                         raise MemoryError("injected record ledger allocation")
-                    return real_add(ledger, record)
+                    return real_add(ledger, record, secondary)
 
                 managed_patch = (
                     mock.patch.object(
@@ -9762,26 +9791,48 @@ class ManagedScratchTests(unittest.TestCase):
             )
         lease_module = __import__(
             "tools.focused_mutation_support.lease",
-            fromlist=["_bound_cleanup_records", "_janitor_candidate_record"],
+            fromlist=["_JanitorRecordLedger", "_janitor_candidate_record"],
         )
-        real_bound = lease_module._bound_cleanup_records
+        real_add = lease_module._JanitorRecordLedger.add
         peak_details = 0
         peak_records = 0
+        first_source_details: tuple[str, ...] | None = None
 
         def candidate_record(*_args: object, **_kwargs: object) -> JanitorDiagnostic:
+            nonlocal first_source_details
+            details = tuple(
+                f"candidate-detail-{index}" for index in range(256)
+            )
+            if first_source_details is None:
+                first_source_details = details
             return JanitorDiagnostic(
-                tuple(f"candidate-detail-{index}" for index in range(256))
+                details
             )
 
-        def observe_prebound(
-            records: list[ScratchCleanupRecord | JanitorDiagnostic],
-        ) -> list[ScratchCleanupRecord | JanitorDiagnostic]:
+        def observe_add(
+            ledger: object,
+            record: ScratchCleanupRecord | JanitorDiagnostic,
+        ) -> int | None:
             nonlocal peak_details, peak_records
-            peak_details = max(
-                peak_details, sum(len(record.details) for record in records)
+            result = real_add(ledger, record)
+            ledger_records = cast(
+                list[ScratchCleanupRecord | JanitorDiagnostic | None],
+                getattr(ledger, "_records"),
             )
-            peak_records = max(peak_records, len(records))
-            return real_bound(records)
+            record_count = cast(int, getattr(ledger, "_record_count"))
+            retained_records = tuple(
+                item
+                for item in ledger_records[:record_count]
+                if item is not None
+            )
+            detail_cells = getattr(ledger, "_detail_cells", ())
+            peak_details = max(
+                peak_details,
+                sum(len(item.details) for item in retained_records)
+                + sum(item is not None for item in detail_cells),
+            )
+            peak_records = max(peak_records, len(retained_records))
+            return result
 
         with (
             mock.patch.object(
@@ -9790,9 +9841,10 @@ class ManagedScratchTests(unittest.TestCase):
                 side_effect=candidate_record,
             ),
             mock.patch.object(
-                lease_module,
-                "_bound_cleanup_records",
-                side_effect=observe_prebound,
+                lease_module._JanitorRecordLedger,
+                "add",
+                autospec=True,
+                side_effect=observe_add,
             ),
         ):
             records = reclaim_abandoned(
@@ -9803,11 +9855,410 @@ class ManagedScratchTests(unittest.TestCase):
 
         self.assertLessEqual(peak_records, 256)
         self.assertLessEqual(peak_details, MAX_DIAGNOSTIC_DETAILS)
+        self.assertIsNotNone(first_source_details)
+        self.assertIs(records[0].details, first_source_details)
         self.assertEqual(sum(len(record.details) for record in records), 256)
         self.assertEqual(
             sum(record.omitted_detail_count for record in records),
             256 * 255,
         )
+        self.assertEqual(len(backend.live_resources), 0)
+
+    def test_task9_record_ledger_deduplicates_before_retaining_cells(self) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_JanitorRecordLedger"],
+        )
+        ledger = lease_module._JanitorRecordLedger()
+        repeated = tuple("duplicate detail" for _index in range(256))
+
+        ledger.add(JanitorDiagnostic(repeated))
+        records = ledger.records()
+
+        self.assertEqual(records[0].details, ("duplicate detail",))
+        self.assertEqual(records[0].omitted_detail_count, 0)
+        detail_cells = getattr(ledger, "_detail_cells", ())
+        retained = sum(item is not None for item in detail_cells)
+        retained += sum(
+            len(item.details)
+            for item in ledger._records[: ledger._record_count]
+            if item is not None
+        )
+        self.assertEqual(retained, 1)
+
+    def test_task9_keeps_primary_and_owner_details_separate_and_unique(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_FixedDetailLedger", "_attach_janitor_details"],
+        )
+        near_limit_primary = "p" * (MAX_DIAGNOSTIC_DETAIL_BYTES - 1)
+        close_detail = "candidate root close evidence"
+        ledger = lease_module._FixedDetailLedger()
+        ledger.add(close_detail)
+        result = lease_module._attach_janitor_details(
+            JanitorDiagnostic((near_limit_primary,)), ledger
+        )
+
+        self.assertIsInstance(result, JanitorDiagnostic)
+        assert isinstance(result, JanitorDiagnostic)
+        self.assertEqual(result.details[0], near_limit_primary)
+        self.assertEqual(result.details[1:], (close_detail,))
+        self.assertEqual(result.omitted_detail_count, 0)
+
+        duplicate_ledger = lease_module._FixedDetailLedger()
+        duplicate_ledger.add("duplicate detail")
+        duplicate_ledger.add("owner-only detail")
+        duplicate = lease_module._attach_janitor_details(
+            JanitorDiagnostic(("primary detail", "duplicate detail")),
+            duplicate_ledger,
+        )
+        self.assertIsInstance(duplicate, JanitorDiagnostic)
+        assert isinstance(duplicate, JanitorDiagnostic)
+        self.assertEqual(
+            duplicate.details,
+            ("primary detail", "duplicate detail", "owner-only detail"),
+        )
+        self.assertEqual(duplicate.omitted_detail_count, 0)
+
+    def test_task9_empty_delete_pending_waits_for_external_owner_close(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        managed_capability = self._task7_managed_root(backend)
+        live_managed = backend.reopen_directory(
+            managed_capability, SharePolicy.MUTATION
+        )
+        later_managed = backend.reopen_directory(
+            managed_capability, SharePolicy.MUTATION
+        )
+        managed = backend._resource(managed_capability).node
+        run_id = "00000000-0000-4000-8000-000000000930"
+        candidate = self._task9_add_candidate(
+            backend,
+            managed,
+            run_id=run_id,
+            prefix=".staging-",
+            lease=False,
+            heartbeat=False,
+        )
+        real_close_resource = backend.close_resource
+        pending_owner: DirectoryCapability | None = None
+        pending_resource: _ManagedRecordedResource | None = None
+        delete_started = False
+
+        def arm_delete(capability: FileCapability | DirectoryCapability) -> None:
+            nonlocal delete_started, pending_owner, pending_resource
+            self.assertIsInstance(capability, DirectoryCapability)
+            assert isinstance(capability, DirectoryCapability)
+            backend._cleanup_operation(f"delete:{candidate.name}")
+            delete_started = True
+            pending_owner = capability
+            pending_resource = backend._resource(capability)
+            pending_resource.close_failures = 2
+
+        def close_and_commit(value: object) -> None:
+            real_close_resource(value)
+            if (
+                pending_resource is not None
+                and value is pending_resource
+                and pending_resource.closed
+                and delete_started
+            ):
+                parent = candidate.parent
+                if parent is not None and parent.children.get(candidate.name) is candidate:
+                    del parent.children[candidate.name]
+
+        with (
+            mock.patch.object(backend, "delete", side_effect=arm_delete),
+            mock.patch.object(
+                backend, "close_resource", side_effect=close_and_commit
+            ),
+        ):
+            first = reclaim_abandoned(
+                managed_capability.path_hint,
+                backend=backend,
+                managed_root_capability=managed_capability,
+            )
+            self.assertTrue(delete_started)
+            assert pending_owner is not None
+            delete_index = backend.cleanup_operations.index(
+                f"delete:{candidate.name}"
+            )
+            first_suffix = backend.cleanup_operations[delete_index + 1 :]
+            first_cleanup = _cleanup_records_only(first)
+            first_status = first_cleanup[0].status
+            close_attempts_before_external = pending_owner._close_attempts
+            owner_open_before_external = pending_owner.is_open
+
+            live_retry_start = len(backend.cleanup_operations)
+            still_live = reclaim_abandoned(
+                live_managed.path_hint,
+                backend=backend,
+                managed_root_capability=live_managed,
+            )
+            live_retry_operations = backend.cleanup_operations[live_retry_start:]
+            attempts_after_live_retry = pending_owner._close_attempts
+            pending_owner.close()
+            self.assertNotIn(candidate.name, managed.children)
+            retry_start = len(backend.cleanup_operations)
+            second = reclaim_abandoned(
+                later_managed.path_hint,
+                backend=backend,
+                managed_root_capability=later_managed,
+            )
+            retry_operations = backend.cleanup_operations[retry_start:]
+
+        second_cleanup = _cleanup_records_only(second)
+        live_cleanup = _cleanup_records_only(still_live)
+        self.assertEqual(first_status, ScratchCleanupStatus.DEFERRED, first)
+        self.assertTrue(owner_open_before_external)
+        self.assertEqual(close_attempts_before_external, 2)
+        self.assertEqual(attempts_after_live_retry, 2)
+        self.assertNotIn(f"entry:{candidate.name}", first_suffix)
+        self.assertFalse(
+            any(
+                operation.startswith(
+                    (f"open_directory:{candidate.name}", f"delete:{candidate.name}")
+                )
+                for operation in first_suffix
+            ),
+            first_suffix,
+        )
+        self.assertEqual(len(live_cleanup), 1, still_live)
+        self.assertEqual(live_cleanup[0].status, ScratchCleanupStatus.DEFERRED)
+        self.assertNotIn(f"entry:{candidate.name}", live_retry_operations)
+        self.assertNotIn(
+            f"open_directory:{candidate.name}", live_retry_operations
+        )
+        self.assertNotIn(f"delete:{candidate.name}", live_retry_operations)
+        self.assertEqual(len(second_cleanup), 1, second)
+        self.assertEqual(second_cleanup[0].status, ScratchCleanupStatus.CLEAN)
+        self.assertEqual(second_cleanup[0].removed_entries, 1)
+        self.assertEqual(retry_operations.count(f"entry:{candidate.name}"), 1)
+        self.assertNotIn(f"open_directory:{candidate.name}", retry_operations)
+        self.assertNotIn(f"delete:{candidate.name}", retry_operations)
+        self.assertEqual(len(backend.live_resources), 0)
+
+    def test_task9_closed_pending_resolves_replacement_without_retargeting(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_DEFERRED_EMPTY_PENDING", "_PendingAbsenceCell"],
+        )
+        for outcome in ("same-identity", "replacement"):
+            with self.subTest(outcome=outcome):
+                backend = self._task8_backend()
+                managed_capability = self._task7_managed_root(backend)
+                managed = backend._resource(managed_capability).node
+                run_id = (
+                    "00000000-0000-4000-8000-000000000931"
+                    if outcome == "same-identity"
+                    else "00000000-0000-4000-8000-000000000932"
+                )
+                original = self._task9_add_candidate(
+                    backend,
+                    managed,
+                    run_id=run_id,
+                    prefix=".deleting-",
+                    lease=False,
+                    heartbeat=False,
+                )
+                cell = lease_module._DEFERRED_EMPTY_PENDING.reserve(
+                    backend,
+                    managed_capability.path_hint,
+                    managed_capability,
+                )
+                self.assertIsNotNone(cell)
+                pending = lease_module._PendingAbsenceCell()
+                pending.arm(
+                    scope="root",
+                    name=original.name,
+                    identity=original.identity,
+                    filesystem=original.filesystem,
+                    removed_after=1,
+                )
+                pending.commit()
+                replacement: _ManagedRecordedNode | None = None
+                if outcome == "replacement":
+                    self.assertIs(managed.children.pop(original.name), original)
+                    replacement = backend._new_node(
+                        EntryKind.DIRECTORY,
+                        SecurityDomain.MANAGED,
+                        parent=managed,
+                        name=original.name,
+                    )
+                    backend._new_node(
+                        EntryKind.REGULAR,
+                        SecurityDomain.MANAGED,
+                        parent=replacement,
+                        name="sentinel",
+                    )
+                lease_module._DEFERRED_EMPTY_PENDING.activate(
+                    cell, None, pending
+                )
+                operation_start = len(backend.cleanup_operations)
+
+                records = reclaim_abandoned(
+                    managed_capability.path_hint,
+                    backend=backend,
+                    managed_root_capability=managed_capability,
+                )
+
+                operations = backend.cleanup_operations[operation_start:]
+                cleanup = _cleanup_records_only(records)
+                self.assertEqual(len(cleanup), 1, records)
+                self.assertEqual(cleanup[0].status, ScratchCleanupStatus.FAILED)
+                self.assertEqual(
+                    cleanup[0].removed_entries,
+                    0 if outcome == "same-identity" else 1,
+                )
+                self.assertEqual(operations.count(f"entry:{original.name}"), 1)
+                self.assertNotIn(
+                    f"open_directory:{original.name}", operations
+                )
+                self.assertNotIn(f"delete:{original.name}", operations)
+                if replacement is not None:
+                    self.assertIs(managed.children[original.name], replacement)
+                    self.assertIn("sentinel", replacement.children)
+                else:
+                    self.assertIs(managed.children[original.name], original)
+                self.assertEqual(len(backend.live_resources), 0)
+
+    def test_task9_full_pending_registry_stops_before_candidate_open(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_DEFERRED_EMPTY_PENDING"],
+        )
+        backend = self._task8_backend()
+        managed_capability = self._task7_managed_root(backend)
+        managed = backend._resource(managed_capability).node
+        candidate = self._task9_add_candidate(
+            backend,
+            managed,
+            run_id="00000000-0000-4000-8000-000000000933",
+            prefix=".staging-",
+            lease=False,
+            heartbeat=False,
+        )
+        reservations = []
+        for _index in range(lease_module.MAX_RECLAIM_CANDIDATES):
+            cell = lease_module._DEFERRED_EMPTY_PENDING.reserve(
+                backend,
+                managed_capability.path_hint,
+                managed_capability,
+            )
+            self.assertIsNotNone(cell)
+            reservations.append(cell)
+        try:
+            records = reclaim_abandoned(
+                managed_capability.path_hint,
+                backend=backend,
+                managed_root_capability=managed_capability,
+            )
+        finally:
+            for cell in reservations:
+                lease_module._DEFERRED_EMPTY_PENDING.release(cell)
+
+        joined = "; ".join(
+            detail for record in records for detail in record.details
+        )
+        self.assertIn("pending owner registry is full", joined)
+        self.assertNotIn(
+            f"open_directory:{candidate.name}", backend.cleanup_operations
+        )
+        self.assertNotIn(f"delete:{candidate.name}", backend.cleanup_operations)
+        self.assertIn(candidate.name, managed.children)
+        self.assertEqual(len(backend.live_resources), 0)
+
+    def test_task9_pending_result_allocation_keeps_registry_evidence(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_DEFERRED_EMPTY_PENDING", "_JanitorRecordLedger"],
+        )
+        backend = self._task8_backend()
+        managed_capability = self._task7_managed_root(backend)
+        later_managed = backend.reopen_directory(
+            managed_capability, SharePolicy.MUTATION
+        )
+        managed = backend._resource(managed_capability).node
+        original = self._task9_add_candidate(
+            backend,
+            managed,
+            run_id="00000000-0000-4000-8000-000000000934",
+            prefix=".deleting-",
+            lease=False,
+            heartbeat=False,
+        )
+        self.assertIs(managed.children.pop(original.name), original)
+        cell = lease_module._DEFERRED_EMPTY_PENDING.reserve(
+            backend, managed_capability.path_hint, managed_capability
+        )
+        self.assertIsNotNone(cell)
+        pending = lease_module._PendingAbsenceCell()
+        pending.arm(
+            scope="root",
+            name=original.name,
+            identity=original.identity,
+            filesystem=original.filesystem,
+            removed_after=1,
+        )
+        pending.commit()
+        lease_module._DEFERRED_EMPTY_PENDING.activate(cell, None, pending)
+        real_add = lease_module._JanitorRecordLedger.add
+        failed = False
+
+        def fail_first_result(
+            ledger: object,
+            record: ScratchCleanupRecord | JanitorDiagnostic,
+            secondary: object | None = None,
+        ) -> int | None:
+            nonlocal failed
+            if not failed and isinstance(record, ScratchCleanupRecord):
+                failed = True
+                raise MemoryError("injected pending result allocation")
+            return real_add(ledger, record, secondary)
+
+        with (
+            mock.patch.object(
+                lease_module._JanitorRecordLedger,
+                "add",
+                autospec=True,
+                side_effect=fail_first_result,
+            ),
+            self.assertRaisesRegex(MemoryError, "pending result allocation"),
+        ):
+            reclaim_abandoned(
+                managed_capability.path_hint,
+                backend=backend,
+                managed_root_capability=managed_capability,
+            )
+
+        self.assertTrue(failed)
+        self.assertTrue(cell.active)
+        self.assertFalse(cell.resolving)
+        retry_start = len(backend.cleanup_operations)
+        records = reclaim_abandoned(
+            later_managed.path_hint,
+            backend=backend,
+            managed_root_capability=later_managed,
+        )
+
+        cleanup = _cleanup_records_only(records)
+        retry_operations = backend.cleanup_operations[retry_start:]
+        self.assertEqual(len(cleanup), 1, records)
+        self.assertEqual(cleanup[0].status, ScratchCleanupStatus.CLEAN)
+        self.assertEqual(cleanup[0].removed_entries, 1)
+        self.assertEqual(retry_operations.count(f"entry:{original.name}"), 1)
+        self.assertNotIn(f"open_directory:{original.name}", retry_operations)
+        self.assertNotIn(f"delete:{original.name}", retry_operations)
+        self.assertFalse(cell.active)
         self.assertEqual(len(backend.live_resources), 0)
 
     def test_task9_revalidates_postclaim_marker_content_and_identity(
