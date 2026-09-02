@@ -104,6 +104,39 @@ class LeaseLock:
     def __init__(self, fd: int) -> None:
         self.fd = fd
         self.locked = False
+        self._close_attempts = 0
+        self._close_detail_0: str | None = None
+        self._close_detail_1: str | None = None
+        self._close_detail_count = 0
+        self._finalizer_attempted = False
+
+    @property
+    def _close_details(self) -> tuple[str, ...]:
+        if self._close_detail_count == 0:
+            return ()
+        if self._close_detail_count == 1:
+            assert self._close_detail_0 is not None
+            return (self._close_detail_0,)
+        assert self._close_detail_0 is not None
+        assert self._close_detail_1 is not None
+        return (self._close_detail_0, self._close_detail_1)
+
+    def _record_close_detail(self, detail: str) -> None:
+        if self._close_detail_count == 0:
+            self._close_detail_0 = detail
+            self._close_detail_count = 1
+        elif self._close_detail_count == 1:
+            self._close_detail_1 = detail
+            self._close_detail_count = 2
+
+    def _prepare_reuse(self) -> None:
+        if self.fd >= 0 or self.locked:
+            raise RuntimeError("live lease lock cannot be reused")
+        self._close_attempts = 0
+        self._close_detail_0 = None
+        self._close_detail_1 = None
+        self._close_detail_count = 0
+        self._finalizer_attempted = False
 
     def acquire(self, *, blocking: bool) -> None:
         if os.name == "nt":
@@ -143,39 +176,49 @@ class LeaseLock:
             raise OSError("; ".join(errors))
 
     def __del__(self) -> None:
+        if self.fd < 0 or self._finalizer_attempted:
+            return
+        self._finalizer_attempted = True
+        descriptor = self.fd
+        self._close_attempts += 1
         try:
-            self.close()
+            os.close(descriptor)
         except BaseException:
-            pass
+            return
+        self.fd = -1
+        self.locked = False
 
 
 def _close_lease_lock_all(lock: LeaseLock, label: str) -> tuple[str, ...]:
-    errors: list[str] = []
+    if lock.fd < 0 or lock._close_attempts >= 2:
+        return lock._close_details
     descriptor = lock.fd
     try:
         lock.release()
     except BaseException as error:
-        errors.append(_bounded_secondary(f"{label} unlock failed", error))
+        lock._record_close_detail(
+            _bounded_secondary(f"{label} unlock failed", error)
+        )
     if descriptor >= 0:
+        lock._close_attempts += 1
         try:
             os.close(descriptor)
         except BaseException as error:
-            errors.append(_bounded_secondary(f"{label} close failed", error))
+            lock._record_close_detail(
+                _bounded_secondary(f"{label} close failed", error)
+            )
         else:
             lock.fd = -1
             lock.locked = False
-    return tuple(errors)
+    return lock._close_details
 
 
 def _close_lease_lock_retry(
     lock: LeaseLock, label: str
 ) -> tuple[str, ...]:
-    errors: list[str] = []
-    for _attempt in range(2):
-        if lock.fd < 0:
-            break
-        errors.extend(_close_lease_lock_all(lock, label))
-    return tuple(errors)
+    while lock.fd >= 0 and lock._close_attempts < 2:
+        _close_lease_lock_all(lock, label)
+    return lock._close_details
 
 
 def _close_locked_coordinator_once(
@@ -185,17 +228,23 @@ def _close_locked_coordinator_once(
     if lock.fd < 0:
         if lock.locked:
             return (f"{label} close refused an inconsistent held lock",)
-        return ()
+        return lock._close_details
     if not lock.locked:
         return (f"{label} close requires a held lock",)
+    if lock._close_attempts >= 2:
+        return lock._close_details
     descriptor = lock.fd
+    lock._close_attempts += 1
     try:
         os.close(descriptor)
     except BaseException as error:
-        return (_bounded_secondary(f"{label} close failed", error),)
+        lock._record_close_detail(
+            _bounded_secondary(f"{label} close failed", error)
+        )
+        return lock._close_details
     lock.fd = -1
     lock.locked = False
-    return ()
+    return lock._close_details
 
 
 def _close_descriptors_all(
@@ -300,10 +349,44 @@ class _OwnedDescriptor:
 
     def __init__(self) -> None:
         self.fd = -1
+        self._close_attempts = 0
+        self._close_detail_0: str | None = None
+        self._close_detail_1: str | None = None
+        self._close_detail_count = 0
+        self._finalizer_attempted = False
+
+    @property
+    def _close_details(self) -> tuple[str, ...]:
+        if self._close_detail_count == 0:
+            return ()
+        if self._close_detail_count == 1:
+            assert self._close_detail_0 is not None
+            return (self._close_detail_0,)
+        assert self._close_detail_0 is not None
+        assert self._close_detail_1 is not None
+        return (self._close_detail_0, self._close_detail_1)
+
+    def _record_close_detail(self, detail: str) -> None:
+        if self._close_detail_count == 0:
+            self._close_detail_0 = detail
+            self._close_detail_count = 1
+        elif self._close_detail_count == 1:
+            self._close_detail_1 = detail
+            self._close_detail_count = 2
+
+    def _prepare_reuse(self) -> None:
+        if self.fd >= 0:
+            raise RuntimeError("live descriptor owner cannot be reused")
+        self._close_attempts = 0
+        self._close_detail_0 = None
+        self._close_detail_1 = None
+        self._close_detail_count = 0
+        self._finalizer_attempted = False
 
     def adopt(self, descriptor: int) -> None:
         if self.fd >= 0 or descriptor < 0:
             raise RuntimeError("descriptor owner cannot adopt this descriptor")
+        self._prepare_reuse()
         self.fd = descriptor
 
     def detach(self) -> int:
@@ -314,41 +397,70 @@ class _OwnedDescriptor:
         return descriptor
 
     def close_retry(self, label: str) -> tuple[str, ...]:
-        errors: list[str] = []
-        for _attempt in range(2):
-            if self.fd < 0:
-                break
-            errors.extend(self.close_once(label))
-        return tuple(errors)
+        while self.fd >= 0 and self._close_attempts < 2:
+            self.close_once(label)
+        return self._close_details
 
     def close_once(self, label: str) -> tuple[str, ...]:
-        if self.fd < 0:
-            return ()
+        if self.fd < 0 or self._close_attempts >= 2:
+            return self._close_details
         descriptor = self.fd
+        self._close_attempts += 1
         try:
             os.close(descriptor)
         except BaseException as error:
-            return (_bounded_secondary(f"{label} close failed", error),)
+            self._record_close_detail(
+                _bounded_secondary(f"{label} close failed", error)
+            )
+            return self._close_details
         self.fd = -1
-        return ()
+        return self._close_details
 
     def __del__(self) -> None:
-        if self.fd < 0:
+        if self.fd < 0 or self._finalizer_attempted:
             return
+        self._finalizer_attempted = True
+        descriptor = self.fd
+        self._close_attempts += 1
         try:
-            os.close(self.fd)
+            os.close(descriptor)
         except BaseException:
             return
         self.fd = -1
 
 
 class _MarkerOwnerSlot:
-    __slots__ = ("capability", "descriptor", "lock")
+    __slots__ = ("capability", "descriptor", "lock", "fixed")
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        fixed: bool = False,
+        with_lock: bool = False,
+    ) -> None:
         self.capability: FileCapability | DirectoryCapability | None = None
-        self.descriptor: _OwnedDescriptor | None = None
-        self.lock: LeaseLock | None = None
+        self.descriptor: _OwnedDescriptor | None = (
+            _OwnedDescriptor() if fixed else None
+        )
+        self.lock: LeaseLock | None = (
+            LeaseLock(-1) if with_lock else None
+        )
+        self.fixed = fixed
+
+    def descriptor_owner(self) -> _OwnedDescriptor:
+        descriptor = self.descriptor
+        if descriptor is None:
+            descriptor = _OwnedDescriptor()
+            self.descriptor = descriptor
+        return descriptor
+
+    def clear_descriptor_if_empty(self) -> None:
+        if (
+            not self.fixed
+            and self.descriptor is not None
+            and self.descriptor.fd < 0
+        ):
+            self.descriptor = None
 
     def has_open_owner(self) -> bool:
         return (
@@ -361,6 +473,28 @@ class _MarkerOwnerSlot:
             self.lock is not None
             and self.lock.fd >= 0
         )
+
+
+class _CoordinatorOwnerSlot:
+    __slots__ = ("capability", "descriptor", "lock")
+
+    def __init__(self) -> None:
+        self.capability: FileCapability | None = None
+        self.descriptor = _OwnedDescriptor()
+        self.lock = LeaseLock(-1)
+
+    def prepare(self) -> None:
+        if self.capability is not None and self.capability.is_open:
+            raise RuntimeError("coordinator capability slot is occupied")
+        if self.descriptor.fd >= 0 or self.lock.fd >= 0:
+            raise RuntimeError("coordinator owner slot is occupied")
+        self.capability = None
+        self.lock._prepare_reuse()
+
+    def has_open_owner(self) -> bool:
+        return (
+            self.capability is not None and self.capability.is_open
+        ) or self.descriptor.fd >= 0 or self.lock.fd >= 0
 
 
 class _MarkerRollbackOwners:
@@ -713,11 +847,24 @@ def _read_marker(
     expected_run_id: str,
     expected_lease_id: str | None = None,
     deadline: float | None = None,
+    monotonic: Callable[[], float] | None = None,
     _owner_slot: _MarkerOwnerSlot | None = None,
 ) -> tuple[FileIdentity, dict[str, object]] | None:
     marker: FileCapability | None = None
-    descriptor_owner = _OwnedDescriptor()
+    descriptor_owner = (
+        _OwnedDescriptor()
+        if _owner_slot is None
+        else _owner_slot.descriptor_owner()
+    )
     completed = False
+    clock = time.monotonic if monotonic is None else monotonic
+
+    def check() -> None:
+        if deadline is not None:
+            _check_absolute_deadline(
+                deadline, clock, "managed marker read deadline"
+            )
+
     if _owner_slot is not None:
         if (
             _owner_slot.capability is not None
@@ -727,8 +874,8 @@ def _read_marker(
             and _owner_slot.descriptor.fd >= 0
         ):
             raise RuntimeError("managed marker owner slot is already occupied")
-        _owner_slot.descriptor = descriptor_owner
     try:
+        check()
         try:
             marker = backend.open_file(
                 parent,
@@ -740,30 +887,29 @@ def _read_marker(
             if _owner_slot is not None:
                 _owner_slot.capability = marker
         except FileNotFoundError:
+            check()
             completed = True
             return None
-        if deadline is not None:
-            _check_deadline(deadline, "managed marker read")
+        check()
         if marker.kind is not EntryKind.REGULAR:
             raise OSError("managed marker is not a regular file")
         identity = marker.identity
+        check()
         backend.verify_managed_security(marker, repair_dacl=False)
-        if deadline is not None:
-            _check_deadline(deadline, "managed marker read")
+        check()
         descriptor_owner.adopt(
             marker.detach_to_fd(os.O_RDONLY | getattr(os, "O_BINARY", 0))
         )
         if _owner_slot is not None:
             _owner_slot.capability = None
         marker = None
-        if deadline is not None:
-            _check_deadline(deadline, "managed marker read")
+        check()
         chunks: list[bytes] = []
         remaining = MARKER_CAPACITY + 1
         while remaining:
+            check()
             chunk = os.read(descriptor_owner.fd, remaining)
-            if deadline is not None:
-                _check_deadline(deadline, "managed marker read")
+            check()
             if not chunk:
                 break
             chunks.append(chunk)
@@ -795,7 +941,7 @@ def _read_marker(
             if marker is not None and not marker.is_open:
                 _owner_slot.capability = None
             if descriptor_owner.fd < 0:
-                _owner_slot.descriptor = None
+                _owner_slot.clear_descriptor_if_empty()
         raise
     finally:
         if completed:
@@ -814,7 +960,7 @@ def _read_marker(
                 if marker is not None and not marker.is_open:
                     _owner_slot.capability = None
                 if descriptor_owner.fd < 0:
-                    _owner_slot.descriptor = None
+                    _owner_slot.clear_descriptor_if_empty()
 
 
 def _open_coordinator(
@@ -825,6 +971,7 @@ def _open_coordinator(
     deadline: float | None = None,
     monotonic: Callable[[], float] | None = None,
     sleep: Callable[[float], None] = time.sleep,
+    _owner_slot: _CoordinatorOwnerSlot | None = None,
 ) -> LeaseLock:
     clock = time.monotonic if monotonic is None else monotonic
     timeout_deadline = clock() + timeout
@@ -836,8 +983,14 @@ def _open_coordinator(
     _check_absolute_deadline(
         absolute_deadline, clock, "managed coordinator lock deadline"
     )
+    if _owner_slot is not None:
+        _owner_slot.prepare()
     coordinator: FileCapability | None = None
-    descriptor_owner = _OwnedDescriptor()
+    descriptor_owner = (
+        _OwnedDescriptor()
+        if _owner_slot is None
+        else _owner_slot.descriptor
+    )
     try:
         coordinator = backend.open_file(
             root,
@@ -846,6 +999,8 @@ def _open_coordinator(
             disposition=CreateDisposition.OPEN_OR_CREATE,
             share_policy=SharePolicy.PINNED,
         )
+        if _owner_slot is not None:
+            _owner_slot.capability = coordinator
         _check_absolute_deadline(
             absolute_deadline, clock, "managed coordinator lock deadline"
         )
@@ -861,6 +1016,8 @@ def _open_coordinator(
             )
         )
         coordinator = None
+        if _owner_slot is not None:
+            _owner_slot.capability = None
         _check_absolute_deadline(
             absolute_deadline, clock, "managed coordinator lock deadline"
         )
@@ -873,12 +1030,17 @@ def _open_coordinator(
             transfer_close_errors.extend(
                 _close_capability_retry(coordinator, "managed coordinator")
             )
+            if not coordinator.is_open and _owner_slot is not None:
+                _owner_slot.capability = None
         for close_error in transfer_close_errors:
             primary_error.add_note(close_error)
         raise
-    lock: LeaseLock | None = None
+    lock: LeaseLock | None = (
+        None if _owner_slot is None else _owner_slot.lock
+    )
     try:
-        lock = LeaseLock(-1)
+        if lock is None:
+            lock = LeaseLock(-1)
         lock.fd = descriptor_owner.detach()
         while True:
             _check_absolute_deadline(
@@ -1414,9 +1576,19 @@ def _open_owned_marker(
     *,
     access: FileAccess,
     identity: FileIdentity,
+    deadline: float | None = None,
+    monotonic: Callable[[], float] | None = None,
     _owner_slot: _MarkerOwnerSlot | None = None,
 ) -> FileCapability:
     marker: FileCapability | None = None
+    clock = time.monotonic if monotonic is None else monotonic
+
+    def check() -> None:
+        if deadline is not None:
+            _check_absolute_deadline(
+                deadline, clock, "managed marker reopen deadline"
+            )
+
     if (
         _owner_slot is not None
         and _owner_slot.capability is not None
@@ -1424,6 +1596,7 @@ def _open_owned_marker(
     ):
         raise RuntimeError("managed marker capability slot is already occupied")
     try:
+        check()
         marker = backend.open_file(
             parent,
             name,
@@ -1433,13 +1606,16 @@ def _open_owned_marker(
         )
         if _owner_slot is not None:
             _owner_slot.capability = marker
+        check()
         if (
             marker.kind is not EntryKind.REGULAR
             or marker.identity != identity
             or marker.filesystem != parent.filesystem
         ):
             raise OSError(f"managed marker identity changed for {name}")
+        check()
         backend.verify_managed_security(marker, repair_dacl=False)
+        check()
         _require_current_entry(
             parent,
             name,
@@ -1449,6 +1625,7 @@ def _open_owned_marker(
             filesystem=parent.filesystem,
             label=f"managed marker {name}",
         )
+        check()
         return marker
     except BaseException as primary_error:
         if marker is not None:
@@ -1466,12 +1643,26 @@ def _read_locked_marker(
     *,
     expected_run_id: str,
     expected_lease_id: str,
+    deadline: float | None = None,
+    monotonic: Callable[[], float] | None = None,
 ) -> dict[str, object]:
+    clock = time.monotonic if monotonic is None else monotonic
+
+    def check() -> None:
+        if deadline is not None:
+            _check_absolute_deadline(
+                deadline, clock, "locked marker read deadline"
+            )
+
+    check()
     os.lseek(lock.fd, 0, os.SEEK_SET)
+    check()
     chunks: list[bytes] = []
     remaining = MARKER_CAPACITY + 1
     while remaining:
+        check()
         chunk = os.read(lock.fd, remaining)
+        check()
         if not chunk:
             break
         chunks.append(chunk)
@@ -1524,22 +1715,208 @@ class ManagedScratch:
         self._root_filesystem = root.filesystem
         self._heartbeat: FileCapability | None = heartbeat
         self._heartbeat_identity = heartbeat_identity
-        self._children: dict[
-            str, tuple[FileIdentity, FilesystemIdentity]
-        ] = {}
+        self._children: dict[str, _ChildCleanupState] = {}
         self._cleanup_ready = False
         self._registry_lock = threading.RLock()
         self._registry_generation = 0
         self._registry_frozen = False
-        self._cleanup_owned_capabilities: list[
-            FileCapability | DirectoryCapability
-        ] = []
-        self._cleanup_consumed_root_name: str | None = None
-        self._cleanup_consumed_children: set[str] = set()
-        self._cleanup_consumed_markers: set[str] = set()
+        self._cleanup_owned_capabilities: (
+            _FixedOwnerRegistry
+            | list[FileCapability | DirectoryCapability]
+        ) = _FixedOwnerRegistry()
+        self._cleanup_graph: _CleanupOwnerGraph | None = None
         self._cleanup_cursor: _CleanupCursor | None = None
-        self._cleanup_child_cursors: dict[str, _CleanupCursor] = {}
-        self._cleanup_child_roots: dict[str, DirectoryCapability] = {}
+
+    def _ensure_cleanup_graph(self) -> _CleanupOwnerGraph:
+        graph = self._cleanup_graph
+        if graph is not None:
+            return graph
+        registry = self._cleanup_owned_capabilities
+        fixed_registry = (
+            registry
+            if isinstance(registry, _FixedOwnerRegistry)
+            else _FixedOwnerRegistry()
+        )
+        graph = _CleanupOwnerGraph(fixed_registry)
+        self._cleanup_graph = graph
+        return graph
+
+    def _close_cleanup_graph(
+        self,
+        *,
+        retry: bool,
+        attempted: set[int] | None = None,
+    ) -> tuple[str, ...]:
+        graph = self._cleanup_graph
+        if graph is None:
+            return ()
+        errors: list[str] = []
+        seen_capabilities: set[int] = set()
+        seen_locks: set[int] = set()
+
+        def close_capability(
+            owner: FileCapability | DirectoryCapability | None,
+            label: str,
+        ) -> None:
+            if owner is None or not owner.is_open:
+                return
+            identity = id(owner)
+            if identity in seen_capabilities:
+                return
+            seen_capabilities.add(identity)
+            if attempted is not None:
+                attempted.add(identity)
+            errors.extend(
+                _close_capability_retry(owner, label)
+                if retry
+                else _close_capability_once(owner, label)
+            )
+
+        def close_lock(lock: LeaseLock | None, label: str) -> None:
+            if lock is None or lock.fd < 0:
+                return
+            identity = id(lock)
+            if identity in seen_locks:
+                return
+            seen_locks.add(identity)
+            if attempted is not None:
+                attempted.add(identity)
+            errors.extend(
+                _close_lease_lock_retry(lock, label)
+                if retry
+                else _close_lease_lock_all(lock, label)
+            )
+
+        iterator = graph.walker_iterator.owner
+        if iterator is not None:
+            directory = iterator.directory
+            identity = id(directory)
+            seen_capabilities.add(identity)
+            if attempted is not None:
+                attempted.add(identity)
+            if retry:
+                errors.extend(
+                    _close_cleanup_iterator(iterator, "cleanup iterator owner")
+                )
+            elif (
+                directory.is_open
+                and directory._close_attempts
+                < _CAPABILITY_CLOSE_ATTEMPT_LIMIT
+            ):
+                try:
+                    iterator.close()
+                except BaseException as error:
+                    errors.append(
+                        _bounded_secondary(
+                            "cleanup iterator owner close failed", error
+                        )
+                    )
+            if not directory.is_open:
+                graph.walker_iterator.owner = None
+
+        for capability_slot in graph.capability_slots():
+            close_capability(
+                capability_slot.owner, "managed cleanup graph owner"
+            )
+            if (
+                capability_slot.owner is not None
+                and not capability_slot.owner.is_open
+            ):
+                capability_slot.owner = None
+        for marker_slot in graph.marker_slots():
+            close_capability(
+                marker_slot.capability, "managed marker graph owner"
+            )
+            if (
+                marker_slot.capability is not None
+                and not marker_slot.capability.is_open
+            ):
+                marker_slot.capability = None
+            descriptor = marker_slot.descriptor
+            if descriptor is not None and descriptor.fd >= 0:
+                errors.extend(
+                    descriptor.close_retry("managed marker graph descriptor")
+                    if retry
+                    else descriptor.close_once(
+                        "managed marker graph descriptor"
+                    )
+                )
+            close_lock(marker_slot.lock, "managed marker graph lock")
+        for coordinator_slot in (
+            graph.claim_coordinator,
+            graph.tail_coordinator,
+        ):
+            close_capability(
+                coordinator_slot.capability,
+                "managed coordinator graph capability",
+            )
+            if (
+                coordinator_slot.capability is not None
+                and not coordinator_slot.capability.is_open
+            ):
+                coordinator_slot.capability = None
+            if coordinator_slot.descriptor.fd >= 0:
+                errors.extend(
+                    coordinator_slot.descriptor.close_retry(
+                        "managed coordinator graph descriptor"
+                    )
+                    if retry
+                    else coordinator_slot.descriptor.close_once(
+                        "managed coordinator graph descriptor"
+                    )
+                )
+            close_lock(
+                coordinator_slot.lock, "managed coordinator graph lock"
+            )
+        for owner in graph.blocked:
+            close_capability(owner, "managed blocked cleanup owner")
+        graph.blocked.clear_closed()
+        for detail in errors:
+            graph.details.add(detail)
+        return tuple(errors)
+
+    def _cleanup_graph_has_blocked_owner(self) -> bool:
+        graph = self._cleanup_graph
+        if graph is None:
+            return False
+        if any(owner.is_open for owner in graph.blocked):
+            return True
+        if graph.walker_iterator.owner is not None and (
+            graph.walker_iterator.owner.directory.is_open
+        ):
+            return True
+        if any(
+            slot.owner is not None and slot.owner.is_open
+            for slot in graph.capability_slots()
+        ):
+            return True
+        if graph.claim_coordinator.has_open_owner():
+            return True
+        if graph.tail_coordinator.has_open_owner():
+            return True
+        if graph.lease_read.has_open_owner():
+            return True
+        if graph.heartbeat_read.has_open_owner():
+            return True
+        if (
+            graph.restored_lease.capability is not None
+            and graph.restored_lease.capability.is_open
+        ) or (
+            graph.restored_lease.descriptor is not None
+            and graph.restored_lease.descriptor.fd >= 0
+        ) or (
+            graph.restored_lease.lock is not None
+            and graph.restored_lease.lock.fd >= 0
+            and graph.restored_lease.lock is not self._lease
+        ):
+            return True
+        if (
+            graph.restored_heartbeat.capability is not None
+            and graph.restored_heartbeat.capability.is_open
+            and graph.restored_heartbeat.capability is not self._heartbeat
+        ):
+            return True
+        return False
 
     @classmethod
     def create(
@@ -2226,11 +2603,16 @@ class ManagedScratch:
                 break
         if close_errors:
             raise OSError("; ".join(close_errors))
+        state = _ChildCleanupState()
+        self._children[name] = state
         child_capability: DirectoryCapability | None = None
         try:
             child_capability = self._backend.create_directory(
                 root, name, SharePolicy.PINNED
             )
+            state.root_owner.owner = child_capability
+            state.identity = child_capability.identity
+            state.filesystem = child_capability.filesystem
             if (
                 child_capability.kind is not EntryKind.DIRECTORY
                 or child_capability.filesystem != root.filesystem
@@ -2246,13 +2628,9 @@ class ManagedScratch:
                 filesystem=child_capability.filesystem,
                 label="managed child",
             )
-            self._children[name] = (
-                child_capability.identity,
-                child_capability.filesystem,
-            )
             child_capability.close()
+            state.root_owner.owner = None
         except BaseException as primary_error:
-            self._children.pop(name, None)
             if child_capability is not None and child_capability.is_open:
                 for rollback_error in _delete_owned_directory(
                     root,
@@ -2262,6 +2640,10 @@ class ManagedScratch:
                     label="managed child rollback",
                 ):
                     primary_error.add_note(rollback_error)
+            if child_capability is None or not child_capability.is_open:
+                state.root_owner.owner = None
+                if self._children.get(name) is state:
+                    self._children.pop(name, None)
             raise
         return child
 
@@ -2281,7 +2663,10 @@ class ManagedScratch:
         opened: DirectoryCapability | None = None
         try:
             opened = self._backend.open_directory(root, name, share_policy)
-            identity, filesystem = expected
+            identity = expected.identity
+            filesystem = expected.filesystem
+            if identity is None or filesystem is None:
+                raise OSError("managed child registration is incomplete")
             if (
                 opened.kind is not EntryKind.DIRECTORY
                 or opened.identity != identity
@@ -2377,19 +2762,27 @@ class ManagedScratch:
         owners: tuple[FileCapability | DirectoryCapability, ...] = (),
         details: tuple[str, ...] = (),
     ) -> ScratchCleanupRecord:
+        graph = self._cleanup_graph
+        if graph is None:
+            raise RuntimeError("cleanup owner graph is unavailable")
         for owner in owners:
-            if owner.is_open and owner not in self._cleanup_owned_capabilities:
-                self._cleanup_owned_capabilities.append(owner)
+            if owner.is_open:
+                graph.blocked.retain(owner)
+                registry = self._cleanup_owned_capabilities
+                if isinstance(registry, _FixedOwnerRegistry):
+                    registry.retain(owner)
         bounded = _bounded_secondary(
             "managed namespace cleanup unavailable",
             RuntimeError("an owned capability remains open"),
         )
-        close_details: list[str] = []
+        for detail in details:
+            graph.details.add(detail)
+        graph.details.add(bounded)
+        self._close_cleanup_graph(retry=True)
         lease = self._lease
         if lease is not None:
-            close_details.extend(
-                _close_lease_lock_retry(lease, "managed lease")
-            )
+            for detail in _close_lease_lock_retry(lease, "managed lease"):
+                graph.details.add(detail)
             if lease.fd < 0:
                 self._lease = None
         for label, attribute in (
@@ -2403,17 +2796,19 @@ class ManagedScratch:
             )
             if capability is None:
                 continue
-            close_details.extend(
-                _close_capability_retry(capability, f"managed {label}")
-            )
+            for detail in _close_capability_retry(
+                capability, f"managed {label}"
+            ):
+                graph.details.add(detail)
             if not capability.is_open:
                 setattr(self, attribute, None)
         return ScratchCleanupRecord(
             ScratchCleanupStatus.FAILED,
             examined,
             removed,
-            (message, *details, bounded, *close_details),
+            (message, *graph.details.details()),
             validate_reported_path(self.path),
+            graph.details.omitted,
         )
 
     def _remove_child_unlocked(self, child: Path) -> ScratchCleanupRecord:
@@ -2422,6 +2817,13 @@ class ManagedScratch:
         expected = self._children.get(child.name)
         if expected is None:
             return self._failed("cleanup target is not an owned managed child")
+        graph = self._ensure_cleanup_graph()
+        if self._cleanup_graph_has_blocked_owner():
+            return self._namespace_cleanup_unavailable(
+                "managed child cleanup owner remains open",
+                examined=0,
+                removed=0,
+            )
         started = time.monotonic()
         absolute_deadline = started + OWNER_CLEANUP_SECONDS
         examined = 0
@@ -2450,12 +2852,39 @@ class ManagedScratch:
                 absolute_deadline, time.monotonic, label
             )
 
-        child_owner = self._cleanup_child_roots.pop(child.name, None)
-        cursor = self._cleanup_child_cursors.pop(
-            child.name, _CleanupCursor()
+        expected_identity = expected.identity
+        expected_filesystem = expected.filesystem
+        if expected_identity is None or expected_filesystem is None:
+            return ScratchCleanupRecord(
+                ScratchCleanupStatus.FAILED,
+                0,
+                0,
+                ("managed child registration is incomplete",),
+                validate_reported_path(self.path),
+            )
+        child_owner = cast(
+            DirectoryCapability | None, expected.root_owner.owner
         )
+        cursor = expected.cursor
         try:
-            if child.name in self._cleanup_consumed_children:
+            if expected.pending_absence.committed:
+                removed = max(
+                    removed, expected.pending_absence.removed_after
+                )
+                if child_owner is not None and child_owner.is_open:
+                    close_errors = _close_cleanup_capability(
+                        child_owner, "managed child consumed owner"
+                    )
+                    if child_owner.is_open:
+                        return self._namespace_cleanup_unavailable(
+                            "managed child consumed owner remains open",
+                            examined=examined,
+                            removed=removed,
+                            owners=(child_owner,),
+                            details=close_errors,
+                        )
+                    expected.root_owner.owner = None
+                    child_owner = None
                 check("managed child absence")
                 remaining = self._backend.entry(root, child.name)
                 check("managed child absence")
@@ -2467,7 +2896,7 @@ class ManagedScratch:
                         ("managed child was replaced after exact removal",),
                         validate_reported_path(self.path),
                     )
-                self._cleanup_consumed_children.discard(child.name)
+                expected.pending_absence.clear()
                 self._children.pop(child.name, None)
                 return ScratchCleanupRecord(ScratchCleanupStatus.CLEAN, 0, 0)
 
@@ -2475,7 +2904,6 @@ class ManagedScratch:
                 check("managed child entry lookup")
                 current = self._backend.entry(root, child.name)
                 check("managed child entry lookup")
-                expected_identity, expected_filesystem = expected
                 if current is None:
                     return ScratchCleanupRecord(
                         ScratchCleanupStatus.FAILED,
@@ -2500,6 +2928,7 @@ class ManagedScratch:
                 child_owner = self._backend.open_directory(
                     root, child.name, SharePolicy.PINNED
                 )
+                expected.root_owner.owner = child_owner
                 try:
                     _validate_cleanup_directory(
                         child_owner,
@@ -2526,7 +2955,6 @@ class ManagedScratch:
                         primary_error.add_note(detail)
                     raise
 
-            expected_identity, expected_filesystem = expected
             while True:
                 slice_started = time.monotonic()
                 before = (examined, removed, cursor)
@@ -2542,11 +2970,15 @@ class ManagedScratch:
                     absolute_deadline=absolute_deadline,
                     examined=examined,
                     removed=removed,
+                    owner_graph=graph,
+                    pending_absence=expected.pending_absence,
                 )
                 child_owner = result.root
+                expected.root_owner.owner = child_owner
                 examined = result.examined_entries
                 removed = result.removed_entries
                 cursor = result.cursor
+                expected.cursor = cursor
                 if result.blocked_owners:
                     return self._namespace_cleanup_unavailable(
                         "managed child cleanup owner remains open",
@@ -2558,9 +2990,6 @@ class ManagedScratch:
                 if result.complete:
                     break
                 if time.monotonic() >= absolute_deadline:
-                    self._cleanup_child_cursors[child.name] = cursor
-                    if child_owner is not None:
-                        self._cleanup_child_roots[child.name] = child_owner
                     return deferred("managed child cleanup deadline reached")
                 if (
                     (examined, removed, cursor) == before
@@ -2575,9 +3004,22 @@ class ManagedScratch:
 
             assert child_owner is not None
             check("managed child delete")
+            removed_after = removed + 1
+            expected.pending_absence.arm(
+                scope="child",
+                name=child.name,
+                identity=expected_identity,
+                filesystem=expected_filesystem,
+                removed_after=removed_after,
+            )
             try:
                 self._backend.delete(child_owner)
             except BaseException as primary_error:
+                if child_owner.is_open:
+                    expected.pending_absence.clear()
+                else:
+                    expected.pending_absence.commit()
+                    removed = removed_after
                 close_errors = _close_cleanup_capability(
                     child_owner, "managed child"
                 )
@@ -2592,6 +3034,9 @@ class ManagedScratch:
                 for detail in close_errors:
                     primary_error.add_note(detail)
                 raise
+            else:
+                expected.pending_absence.commit()
+                removed = removed_after
             if child_owner.is_open:
                 close_errors = _close_cleanup_capability(
                     child_owner, "managed child"
@@ -2604,9 +3049,9 @@ class ManagedScratch:
                         owners=(child_owner,),
                         details=close_errors,
                     )
-            removed += 1
+            removed = removed_after
             child_owner = None
-            self._cleanup_consumed_children.add(child.name)
+            expected.root_owner.owner = None
             if time.monotonic() >= absolute_deadline:
                 return deferred("managed child absence deadline reached")
             check("managed child absence")
@@ -2620,15 +3065,15 @@ class ManagedScratch:
                     ("managed child was replaced after exact removal",),
                     validate_reported_path(self.path),
                 )
-            self._cleanup_consumed_children.discard(child.name)
+            expected.pending_absence.clear()
             self._children.pop(child.name, None)
             return ScratchCleanupRecord(
                 ScratchCleanupStatus.CLEAN, examined, removed
             )
         except _DeadlineExceeded as error:
             if child_owner is not None and child_owner.is_open:
-                self._cleanup_child_roots[child.name] = child_owner
-            self._cleanup_child_cursors[child.name] = cursor
+                expected.root_owner.owner = child_owner
+            expected.cursor = cursor
             return ScratchCleanupRecord(
                 ScratchCleanupStatus.DEFERRED,
                 examined,
@@ -2637,6 +3082,17 @@ class ManagedScratch:
                 validate_reported_path(self.path),
             )
         except _CleanupOwnershipBlocked as error:
+            if (
+                expected.pending_absence.committed
+                and expected.pending_absence.scope
+                in {"payload", "directory"}
+            ):
+                expected.cursor = _CleanupCursor(
+                    expected.pending_absence.parent_components
+                )
+                removed = max(
+                    removed, expected.pending_absence.removed_after
+                )
             primary, blocked_details = _cleanup_blocked_report(error)
             return self._namespace_cleanup_unavailable(
                 primary,
@@ -2756,6 +3212,13 @@ class ManagedScratch:
         *,
         time_budget: float,
     ) -> ScratchCleanupRecord:
+        graph = self._ensure_cleanup_graph()
+        if self._cleanup_graph_has_blocked_owner():
+            return self._namespace_cleanup_unavailable(
+                "managed cleanup owner remains open",
+                examined=0,
+                removed=0,
+            )
         started = time.monotonic()
         absolute_deadline = started + time_budget
         deleting = self.managed_root / f".deleting-{self.run_id}"
@@ -2771,7 +3234,8 @@ class ManagedScratch:
                 tuple(details),
                 remaining_root=(
                     None
-                    if self._cleanup_consumed_root_name is not None
+                    if graph.pending_absence.committed
+                    and graph.pending_absence.scope == "root"
                     else validate_reported_path(self.path)
                 ),
             )
@@ -2797,7 +3261,7 @@ class ManagedScratch:
         def close_coordinator(
             coordinator: LeaseLock, label: str
         ) -> tuple[str, ...]:
-            return _close_lease_lock_all(coordinator, label)
+            return _close_lease_lock_retry(coordinator, label)
 
         def pin_claimed_root() -> None:
             old_root = self._root
@@ -2813,6 +3277,7 @@ class ManagedScratch:
                 deleting.name,
                 SharePolicy.PINNED,
             )
+            graph.walker_current.owner = pinned_root
             try:
                 _validate_cleanup_directory(
                     pinned_root,
@@ -2828,6 +3293,8 @@ class ManagedScratch:
                 close_errors = _close_capability_retry(
                     pinned_root, "managed claimed root"
                 )
+                if not pinned_root.is_open:
+                    graph.walker_current.owner = None
                 if pinned_root.is_open:
                     raise _CleanupOwnershipBlocked(
                         "managed claimed root owner remains open",
@@ -2840,6 +3307,7 @@ class ManagedScratch:
                 raise
             if old_root is None:
                 self._root = pinned_root
+                graph.walker_current.owner = None
                 return
             old_errors = _close_capability_retry(
                 old_root, "managed claimed root handoff"
@@ -2848,6 +3316,8 @@ class ManagedScratch:
                 pinned_errors = _close_capability_retry(
                     pinned_root, "managed pinned root"
                 )
+                if not pinned_root.is_open:
+                    graph.walker_current.owner = None
                 raise _CleanupOwnershipBlocked(
                     "managed root cleanup handoff failed",
                     tuple(
@@ -2858,6 +3328,7 @@ class ManagedScratch:
                     (*old_errors, *pinned_errors),
                 )
             self._root = pinned_root
+            graph.walker_current.owner = None
 
         try:
             coordinator = _open_coordinator(
@@ -2865,6 +3336,7 @@ class ManagedScratch:
                 self._backend,
                 timeout=min(5.0, max(0.001, time_budget)),
                 deadline=absolute_deadline,
+                _owner_slot=graph.claim_coordinator,
             )
         except _DeadlineExceeded as error:
             return ScratchCleanupRecord(
@@ -2885,15 +3357,25 @@ class ManagedScratch:
         claim_record: ScratchCleanupRecord | None = None
         try:
             check("cleanup claim")
-            if self._cleanup_consumed_root_name is not None:
-                consumed_name = self._cleanup_consumed_root_name
+            root_pending = graph.pending_absence
+            if (
+                root_pending.committed
+                and root_pending.scope == "root"
+            ):
+                if root_pending.committed:
+                    removed = max(removed, root_pending.removed_after)
+                consumed_name = root_pending.name
                 check("cleanup root absence")
                 remaining_entry = self._backend.entry(
                     managed_root_capability, consumed_name
                 )
                 check("cleanup root absence")
                 if remaining_entry is None:
-                    self._cleanup_consumed_root_name = None
+                    if (
+                        root_pending.committed
+                        and root_pending.scope == "root"
+                    ):
+                        root_pending.clear()
                     close_errors = close_coordinator(
                         coordinator, "cleanup claim coordinator"
                     )
@@ -2979,6 +3461,8 @@ class ManagedScratch:
                         heartbeat_errors = _close_capability_retry(
                             heartbeat, "managed heartbeat cleanup handoff"
                         )
+                        for detail in heartbeat_errors:
+                            graph.details.add(detail)
                         if heartbeat.is_open:
                             close_coordinator(
                                 coordinator, "cleanup claim coordinator"
@@ -2996,6 +3480,8 @@ class ManagedScratch:
                         lease_errors = _close_lease_lock_retry(
                             lease, "managed lease cleanup handoff"
                         )
+                        for detail in lease_errors:
+                            graph.details.add(detail)
                         if lease.fd >= 0:
                             close_coordinator(
                                 coordinator, "cleanup claim coordinator"
@@ -3053,69 +3539,140 @@ class ManagedScratch:
                 ):
                     assert self._root is not None
                     marker = _marker(self.run_id, self.lease_id)
-                    check("cleanup lease verification")
-                    lease_read = _read_marker(
-                        self._root,
-                        LEASE_FILE,
-                        self._backend,
-                        expected_run_id=self.run_id,
-                        expected_lease_id=self.lease_id,
-                        deadline=absolute_deadline,
-                    )
-                    check("cleanup heartbeat verification")
-                    heartbeat_read = _read_marker(
-                        self._root,
-                        HEARTBEAT_FILE,
-                        self._backend,
-                        expected_run_id=self.run_id,
-                        expected_lease_id=self.lease_id,
-                        deadline=absolute_deadline,
-                    )
-                    if lease_read != (self._lease_identity, marker):
-                        raise OSError("managed cleanup lease changed")
-                    if heartbeat_read != (self._heartbeat_identity, marker):
-                        raise OSError("managed cleanup heartbeat changed")
                     pin_claimed_root()
-                    check("cleanup lease reopen")
-                    lease_capability = _open_owned_marker(
-                        self._root,
-                        LEASE_FILE,
-                        self._backend,
-                        access=FileAccess.READ_WRITE,
-                        identity=self._lease_identity,
-                    )
-                    restored_lease = LeaseLock(-1)
-                    try:
-                        restored_lease.fd = lease_capability.detach_to_fd(
-                            os.O_RDWR | getattr(os, "O_BINARY", 0)
-                        )
-                        restored_lease.acquire(blocking=False)
-                        if _read_locked_marker(
-                            restored_lease,
+                    live_lease = self._lease
+                    if live_lease is not None and live_lease.fd < 0:
+                        self._lease = None
+                        live_lease = None
+                    if live_lease is None:
+                        check("cleanup lease verification")
+                        lease_read = _read_marker(
+                            self._root,
+                            LEASE_FILE,
+                            self._backend,
                             expected_run_id=self.run_id,
                             expected_lease_id=self.lease_id,
-                        ) != marker:
-                            raise OSError("locked managed cleanup lease changed")
-                    except BaseException as primary_error:
-                        if lease_capability.is_open:
-                            for detail in _close_capability_retry(
-                                lease_capability, "managed cleanup lease"
+                            deadline=absolute_deadline,
+                            monotonic=time.monotonic,
+                            _owner_slot=graph.lease_read,
+                        )
+                        if lease_read != (self._lease_identity, marker):
+                            raise OSError("managed cleanup lease changed")
+                        lease_slot = graph.restored_lease
+                        restored_lease = lease_slot.lock
+                        assert restored_lease is not None
+                        restored_lease._prepare_reuse()
+                        check("cleanup lease reopen")
+                        lease_capability = _open_owned_marker(
+                            self._root,
+                            LEASE_FILE,
+                            self._backend,
+                            access=FileAccess.READ_WRITE,
+                            identity=self._lease_identity,
+                            deadline=absolute_deadline,
+                            monotonic=time.monotonic,
+                            _owner_slot=lease_slot,
+                        )
+                        descriptor_owner = lease_slot.descriptor_owner()
+                        try:
+                            descriptor_owner.adopt(
+                                lease_capability.detach_to_fd(
+                                    os.O_RDWR
+                                    | getattr(os, "O_BINARY", 0)
+                                )
+                            )
+                            lease_slot.capability = None
+                            check("cleanup lease detach")
+                            restored_lease.fd = descriptor_owner.detach()
+                            restored_lease.acquire(blocking=False)
+                            check("cleanup lease lock")
+                            if _read_locked_marker(
+                                restored_lease,
+                                expected_run_id=self.run_id,
+                                expected_lease_id=self.lease_id,
+                                deadline=absolute_deadline,
+                                monotonic=time.monotonic,
+                            ) != marker:
+                                raise OSError(
+                                    "locked managed cleanup lease changed"
+                                )
+                        except BaseException as primary_error:
+                            if lease_capability.is_open:
+                                for detail in _close_capability_retry(
+                                    lease_capability,
+                                    "managed cleanup lease",
+                                ):
+                                    primary_error.add_note(detail)
+                            if descriptor_owner.fd >= 0:
+                                for detail in descriptor_owner.close_retry(
+                                    "managed cleanup lease"
+                                ):
+                                    primary_error.add_note(detail)
+                            for detail in _close_lease_lock_retry(
+                                restored_lease, "managed cleanup lease"
                             ):
                                 primary_error.add_note(detail)
-                        for detail in _close_lease_lock_retry(
-                            restored_lease, "managed cleanup lease"
+                            raise
+                        self._lease = restored_lease
+                    else:
+                        check("cleanup live lease validation")
+                        if _read_locked_marker(
+                            live_lease,
+                            expected_run_id=self.run_id,
+                            expected_lease_id=self.lease_id,
+                            deadline=absolute_deadline,
+                            monotonic=time.monotonic,
+                        ) != marker:
+                            raise OSError("locked managed cleanup lease changed")
+
+                    live_heartbeat = self._heartbeat
+                    if (
+                        live_heartbeat is not None
+                        and not live_heartbeat.is_open
+                    ):
+                        self._heartbeat = None
+                        live_heartbeat = None
+                    if live_heartbeat is None:
+                        check("cleanup heartbeat verification")
+                        heartbeat_read = _read_marker(
+                            self._root,
+                            HEARTBEAT_FILE,
+                            self._backend,
+                            expected_run_id=self.run_id,
+                            expected_lease_id=self.lease_id,
+                            deadline=absolute_deadline,
+                            monotonic=time.monotonic,
+                            _owner_slot=graph.heartbeat_read,
+                        )
+                        if heartbeat_read != (
+                            self._heartbeat_identity,
+                            marker,
                         ):
-                            primary_error.add_note(detail)
-                        raise
-                    self._lease = restored_lease
-                    check("cleanup heartbeat reopen")
-                    self._heartbeat = _open_owned_marker(
-                        self._root,
-                        HEARTBEAT_FILE,
-                        self._backend,
-                        access=FileAccess.WRITE,
-                        identity=self._heartbeat_identity,
-                    )
+                            raise OSError("managed cleanup heartbeat changed")
+                        check("cleanup heartbeat reopen")
+                        live_heartbeat = _open_owned_marker(
+                            self._root,
+                            HEARTBEAT_FILE,
+                            self._backend,
+                            access=FileAccess.WRITE,
+                            identity=self._heartbeat_identity,
+                            deadline=absolute_deadline,
+                            monotonic=time.monotonic,
+                            _owner_slot=graph.restored_heartbeat,
+                        )
+                        self._heartbeat = live_heartbeat
+                    else:
+                        check("cleanup live heartbeat validation")
+                        _require_current_entry(
+                            self._root,
+                            HEARTBEAT_FILE,
+                            self._backend,
+                            kind=EntryKind.REGULAR,
+                            identity=self._heartbeat_identity,
+                            filesystem=self._root_filesystem,
+                            label="managed cleanup heartbeat",
+                        )
+                        check("cleanup live heartbeat validation")
 
                 if claim_record is None:
                     pin_claimed_root()
@@ -3143,25 +3700,61 @@ class ManagedScratch:
                     (message,),
                 )
             else:
-                claim_record = self._failed(message, absolute_deadline)
+                claim_record = self._failed_precondition(
+                    message, absolute_deadline
+                )
         coordinator_errors = close_coordinator(
             coordinator, "cleanup claim coordinator"
         )
-        if coordinator_errors:
-            if claim_record is None:
-                claim_record = ScratchCleanupRecord(
-                    ScratchCleanupStatus.FAILED,
-                    0,
-                    0,
-                    coordinator_errors,
-                    validate_reported_path(self.path),
-                )
-            else:
-                claim_record = replace(
-                    claim_record,
-                    details=(*claim_record.details, *coordinator_errors),
-                    remaining_root=claim_record.remaining_root,
-                )
+        for detail in coordinator_errors:
+            graph.details.add(detail)
+        claim_owner_blocked = (
+            graph.claim_coordinator.has_open_owner()
+            or graph.lease_read.has_open_owner()
+            or graph.heartbeat_read.has_open_owner()
+            or (
+                graph.restored_lease.capability is not None
+                and graph.restored_lease.capability.is_open
+            )
+            or (
+                graph.restored_lease.descriptor is not None
+                and graph.restored_lease.descriptor.fd >= 0
+            )
+            or (
+                graph.restored_lease.lock is not None
+                and graph.restored_lease.lock.fd >= 0
+                and graph.restored_lease.lock is not self._lease
+            )
+            or (
+                graph.restored_heartbeat.capability is not None
+                and graph.restored_heartbeat.capability.is_open
+                and graph.restored_heartbeat.capability
+                is not self._heartbeat
+            )
+        )
+        if claim_owner_blocked:
+            return self._namespace_cleanup_unavailable(
+                (
+                    "managed cleanup claim owner remains open"
+                    if claim_record is None
+                    else claim_record.details[0]
+                ),
+                examined=0,
+                removed=0,
+                details=(
+                    *(
+                        ()
+                        if claim_record is None
+                        else claim_record.details[1:]
+                    ),
+                ),
+            )
+        if claim_record is not None and coordinator_errors:
+            claim_record = replace(
+                claim_record,
+                details=(*claim_record.details, *coordinator_errors),
+                remaining_root=claim_record.remaining_root,
+            )
         if claim_record is not None:
             return claim_record
 
@@ -3183,6 +3776,8 @@ class ManagedScratch:
                     absolute_deadline=absolute_deadline,
                     examined=examined,
                     removed=removed,
+                    owner_graph=graph,
+                    pending_absence=graph.pending_absence,
                 )
                 root_owner = result.root
                 examined = result.examined_entries
@@ -3236,6 +3831,7 @@ class ManagedScratch:
                     self._backend,
                     timeout=min(5.0, max(0.001, remaining)),
                     deadline=absolute_deadline,
+                    _owner_slot=graph.tail_coordinator,
                 )
             except _DeadlineExceeded as error:
                 return ScratchCleanupRecord(
@@ -3254,6 +3850,7 @@ class ManagedScratch:
                     validate_reported_path(deleting),
                 )
             tail_record: ScratchCleanupRecord | None = None
+            root_delete_started = False
             try:
                 for marker_name in (
                     RETAIN_FILE,
@@ -3268,6 +3865,8 @@ class ManagedScratch:
                         marker_errors = _close_capability_retry(
                             self._heartbeat, "managed heartbeat cleanup"
                         )
+                        for detail in marker_errors:
+                            graph.details.add(detail)
                         if self._heartbeat.is_open:
                             close_coordinator(
                                 tail_coordinator, "cleanup coordinator"
@@ -3284,6 +3883,8 @@ class ManagedScratch:
                         lease_errors = _close_lease_lock_retry(
                             self._lease, "managed lease cleanup"
                         )
+                        for detail in lease_errors:
+                            graph.details.add(detail)
                         if self._lease.fd >= 0:
                             close_coordinator(
                                 tail_coordinator, "cleanup coordinator"
@@ -3295,8 +3896,19 @@ class ManagedScratch:
                                 details=lease_errors,
                             )
                         self._lease = None
+                    if graph.marker_removed(marker_name):
+                        continue
                     check("cleanup marker open")
-                    if marker_name in self._cleanup_consumed_markers:
+                    marker_pending = graph.pending_absence
+                    if (
+                        marker_pending.committed
+                        and marker_pending.scope == "marker"
+                        and marker_pending.name == marker_name
+                    ):
+                        if marker_pending.committed:
+                            removed = max(
+                                removed, marker_pending.removed_after
+                            )
                         remaining_marker = self._backend.entry(
                             root_owner, marker_name
                         )
@@ -3306,12 +3918,19 @@ class ManagedScratch:
                                 "managed marker "
                                 f"{marker_name} was replaced after removal"
                             )
-                        self._cleanup_consumed_markers.discard(marker_name)
+                        if (
+                            marker_pending.committed
+                            and marker_pending.scope == "marker"
+                            and marker_pending.name == marker_name
+                        ):
+                            marker_pending.clear()
+                        graph.mark_marker_removed(marker_name)
                         continue
                     try:
                         marker_owner = self._backend.open_entry(
                             root_owner, marker_name, SharePolicy.PINNED
                         )
+                        graph.tail_marker.owner = marker_owner
                     except FileNotFoundError:
                         if marker_name in {HEARTBEAT_FILE, LEASE_FILE}:
                             raise OSError(
@@ -3336,7 +3955,26 @@ class ManagedScratch:
                                 f"managed marker {marker_name} identity changed"
                             )
                         check("cleanup marker delete")
-                        self._backend.delete(marker_owner)
+                        removed_after = removed + 1
+                        graph.pending_absence.arm(
+                            scope="marker",
+                            name=marker_name,
+                            identity=marker_owner.identity,
+                            filesystem=marker_owner.filesystem,
+                            removed_after=removed_after,
+                        )
+                        try:
+                            self._backend.delete(marker_owner)
+                        except BaseException:
+                            if marker_owner.is_open:
+                                graph.pending_absence.clear()
+                            else:
+                                graph.pending_absence.commit()
+                                removed = removed_after
+                            raise
+                        else:
+                            graph.pending_absence.commit()
+                            removed = removed_after
                         if marker_owner.is_open:
                             marker_errors = _close_capability_retry(
                                 marker_owner, f"managed marker {marker_name}"
@@ -3353,6 +3991,8 @@ class ManagedScratch:
                                     owners=(marker_owner,),
                                     details=marker_errors,
                                 )
+                        if not marker_owner.is_open:
+                            graph.tail_marker.owner = None
                     except BaseException as primary_error:
                         if marker_owner.is_open:
                             marker_errors = _close_capability_retry(
@@ -3368,9 +4008,10 @@ class ManagedScratch:
                                 ) from primary_error
                             for detail in marker_errors:
                                 primary_error.add_note(detail)
+                        else:
+                            graph.tail_marker.owner = None
                         raise
-                    removed += 1
-                    self._cleanup_consumed_markers.add(marker_name)
+                    removed = removed_after
                     if time.monotonic() >= absolute_deadline:
                         tail_record = deferred(
                             "cleanup marker absence deadline reached"
@@ -3386,11 +4027,32 @@ class ManagedScratch:
                             "managed marker "
                             f"{marker_name} was replaced after removal"
                         )
-                    self._cleanup_consumed_markers.discard(marker_name)
+                    graph.pending_absence.clear()
+                    graph.mark_marker_removed(marker_name)
 
                 if tail_record is None:
                     check("cleanup root delete")
-                    self._backend.delete(root_owner)
+                    removed_after = removed + 1
+                    graph.pending_absence.arm(
+                        scope="root",
+                        name=deleting.name,
+                        identity=self._root_identity,
+                        filesystem=self._root_filesystem,
+                        removed_after=removed_after,
+                    )
+                    root_delete_started = True
+                    try:
+                        self._backend.delete(root_owner)
+                    except BaseException:
+                        if root_owner.is_open:
+                            graph.pending_absence.clear()
+                        else:
+                            graph.pending_absence.commit()
+                            removed = removed_after
+                        raise
+                    else:
+                        graph.pending_absence.commit()
+                        removed = removed_after
                     if root_owner.is_open:
                         root_errors = _close_capability_retry(
                             root_owner, "managed root cleanup"
@@ -3408,8 +4070,7 @@ class ManagedScratch:
                             )
                     self._root = None
                     root_owner = None
-                    removed += 1
-                    self._cleanup_consumed_root_name = deleting.name
+                    removed = removed_after
                     if time.monotonic() >= absolute_deadline:
                         tail_record = deferred(
                             "cleanup root absence deadline reached"
@@ -3428,7 +4089,7 @@ class ManagedScratch:
                                 ("managed root was replaced after exact removal",),
                             )
                         else:
-                            self._cleanup_consumed_root_name = None
+                            graph.pending_absence.clear()
             except _DeadlineExceeded as error:
                 tail_record = deferred(f"{type(error).__name__}: {error}")
             except _CleanupOwnershipBlocked as error:
@@ -3447,34 +4108,31 @@ class ManagedScratch:
                 message = (
                     f"cleanup tail failed: {type(error).__name__}: {error}"
                 )
-                if self._cleanup_consumed_root_name is not None:
-                    tail_record = ScratchCleanupRecord(
-                        ScratchCleanupStatus.FAILED,
-                        examined,
-                        removed,
-                        (message,),
-                    )
-                else:
-                    recovered = self._failed(message, absolute_deadline)
-                    tail_record = replace(
-                        recovered,
-                        examined_entries=examined,
-                        removed_entries=removed,
-                    )
+                recovered = self._failed_precondition(
+                    message, absolute_deadline
+                )
+                tail_record = replace(
+                    recovered,
+                    examined_entries=examined,
+                    removed_entries=removed,
+                )
                 root_close_errors: tuple[str, ...] = ()
-                if root_owner is not None and root_owner.is_open:
-                    root_close_errors = _close_capability_retry(
-                        root_owner, "managed root cleanup failure"
-                    )
-                    if root_owner.is_open:
-                        raise _CleanupOwnershipBlocked(
-                            "managed root cleanup failure owner remains open",
-                            (root_owner,),
-                            root_close_errors,
-                            primary=error,
-                        ) from error
+                if root_delete_started:
+                    if root_owner is not None and root_owner.is_open:
+                        root_close_errors = _close_capability_retry(
+                            root_owner, "managed root cleanup failure"
+                        )
+                        if root_owner.is_open:
+                            raise _CleanupOwnershipBlocked(
+                                "managed root cleanup failure owner remains open",
+                                (root_owner,),
+                                root_close_errors,
+                                primary=error,
+                            ) from error
                     self._root = None
                     root_owner = None
+                elif root_owner is not None and root_owner.is_open:
+                    self._root = root_owner
                 tail_record = replace(
                     tail_record,
                     details=(*tail_record.details, *root_close_errors),
@@ -3488,6 +4146,17 @@ class ManagedScratch:
                         tail_coordinator, "cleanup coordinator"
                     )
                 )
+            for detail in tail_close_errors:
+                graph.details.add(detail)
+            if graph.tail_coordinator.has_open_owner():
+                return self._namespace_cleanup_unavailable(
+                    "managed cleanup coordinator owner remains open",
+                    examined=examined,
+                    removed=removed,
+                    details=(
+                        () if tail_record is None else tail_record.details
+                    ),
+                )
             if tail_record is not None:
                 return replace(
                     tail_record,
@@ -3495,7 +4164,7 @@ class ManagedScratch:
                     remaining_root=tail_record.remaining_root,
                 )
             close_errors = (
-                *tail_close_errors,
+                *graph.details.details(),
                 *self.close_capabilities(),
             )
             return ScratchCleanupRecord(
@@ -3505,6 +4174,17 @@ class ManagedScratch:
                 close_errors,
             )
         except _CleanupOwnershipBlocked as error:
+            if (
+                graph.pending_absence.committed
+                and graph.pending_absence.scope
+                in {"payload", "directory"}
+            ):
+                self._cleanup_cursor = _CleanupCursor(
+                    graph.pending_absence.parent_components
+                )
+                removed = max(
+                    removed, graph.pending_absence.removed_after
+                )
             primary, blocked_details = _cleanup_blocked_report(error)
             return self._namespace_cleanup_unavailable(
                 primary,
@@ -3514,6 +4194,17 @@ class ManagedScratch:
                 details=blocked_details,
             )
         except BaseException as error:
+            if (
+                graph.pending_absence.committed
+                and graph.pending_absence.scope
+                in {"payload", "directory"}
+            ):
+                self._cleanup_cursor = _CleanupCursor(
+                    graph.pending_absence.parent_components
+                )
+                removed = max(
+                    removed, graph.pending_absence.removed_after
+                )
             if root_owner is not None and root_owner.is_open:
                 self._root = root_owner
             return ScratchCleanupRecord(
@@ -3624,26 +4315,44 @@ class ManagedScratch:
 
     def close_capabilities(self) -> tuple[str, ...]:
         errors: list[str] = []
-        retained_cleanup_owners: list[
-            FileCapability | DirectoryCapability
-        ] = []
-        cleanup_owners = [
-            *self._cleanup_owned_capabilities,
-            *self._cleanup_child_roots.values(),
-        ]
-        self._cleanup_child_roots.clear()
-        for owner in cleanup_owners:
+        attempted: set[int] = set()
+        errors.extend(
+            self._close_cleanup_graph(
+                retry=False,
+                attempted=attempted,
+            )
+        )
+        registry = self._cleanup_owned_capabilities
+        for owner in registry:
             if not owner.is_open:
                 continue
+            if id(owner) in attempted:
+                continue
+            attempted.add(id(owner))
             errors.extend(
                 _close_capability_once(owner, "managed cleanup owner")
             )
-            if owner.is_open and owner not in retained_cleanup_owners:
-                retained_cleanup_owners.append(owner)
-        self._cleanup_owned_capabilities = retained_cleanup_owners
+        if isinstance(registry, _FixedOwnerRegistry):
+            registry.clear_closed()
+        for state in self._children.values():
+            child_owner = state.root_owner.owner
+            if child_owner is None or not child_owner.is_open:
+                continue
+            if id(child_owner) in attempted:
+                continue
+            attempted.add(id(child_owner))
+            errors.extend(
+                _close_capability_once(
+                    child_owner, "managed child cleanup owner"
+                )
+            )
+            if not child_owner.is_open:
+                state.root_owner.owner = None
         lease = getattr(self, "_lease", None)
         if lease is not None:
-            errors.extend(_close_lease_lock_all(lease, "managed lease"))
+            if id(lease) not in attempted:
+                attempted.add(id(lease))
+                errors.extend(_close_lease_lock_all(lease, "managed lease"))
             if lease.fd < 0:
                 self._lease = None
         for label, attribute in (
@@ -3654,6 +4363,11 @@ class ManagedScratch:
             capability = getattr(self, attribute, None)
             if capability is None:
                 continue
+            if id(capability) in attempted:
+                if not capability.is_open:
+                    setattr(self, attribute, None)
+                continue
+            attempted.add(id(capability))
             errors.extend(
                 _close_capability_once(capability, f"managed {label}")
             )
@@ -3666,6 +4380,40 @@ class ManagedScratch:
             self.close_capabilities()
         except BaseException:
             pass
+        graph = getattr(self, "_cleanup_graph", None)
+        if graph is not None:
+            graph.walker_iterator.owner = None
+            for slot in graph.capability_slots():
+                slot.owner = None
+            for slot in graph.marker_slots():
+                slot.capability = None
+                slot.descriptor = None
+                slot.lock = None
+            for slot in (
+                graph.claim_coordinator,
+                graph.tail_coordinator,
+            ):
+                slot.capability = None
+                del slot.descriptor
+                del slot.lock
+            graph.blocked.clear_all()
+            self._cleanup_graph = None
+        registry = getattr(self, "_cleanup_owned_capabilities", ())
+        if isinstance(registry, _FixedOwnerRegistry):
+            registry.clear_all()
+        elif isinstance(registry, list):
+            registry.clear()
+        children = getattr(self, "_children", {})
+        for state in children.values():
+            state.root_owner.owner = None
+        children.clear()
+        for attribute in (
+            "_lease",
+            "_heartbeat",
+            "_root",
+            "_managed_root_capability",
+        ):
+            setattr(self, attribute, None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -3716,6 +4464,267 @@ class _CleanupSlice:
     root: DirectoryCapability | None = None
     blocked_owners: tuple[FileCapability | DirectoryCapability, ...] = ()
     details: tuple[str, ...] = ()
+
+
+class _CapabilityOwnerSlot:
+    __slots__ = ("owner",)
+
+    def __init__(self) -> None:
+        self.owner: FileCapability | DirectoryCapability | None = None
+
+
+class _IteratorOwnerSlot:
+    __slots__ = ("owner",)
+
+    def __init__(self) -> None:
+        self.owner: DirectoryIterator | None = None
+
+
+class _PendingAbsenceCell:
+    __slots__ = (
+        "armed",
+        "committed",
+        "scope",
+        "name",
+        "identity",
+        "filesystem",
+        "parent_components",
+        "removed_after",
+    )
+
+    def __init__(self) -> None:
+        self.armed = False
+        self.committed = False
+        self.scope = ""
+        self.name = ""
+        self.identity: FileIdentity | None = None
+        self.filesystem: FilesystemIdentity | None = None
+        self.parent_components: tuple[_CleanupComponent, ...] = ()
+        self.removed_after = 0
+
+    def arm(
+        self,
+        *,
+        scope: str,
+        name: str,
+        identity: FileIdentity,
+        filesystem: FilesystemIdentity,
+        parent_components: tuple[_CleanupComponent, ...] = (),
+        removed_after: int,
+    ) -> None:
+        if self.armed:
+            if (
+                self.scope == scope
+                and self.name == name
+                and self.identity == identity
+                and self.filesystem == filesystem
+                and self.parent_components == parent_components
+                and self.removed_after == removed_after
+            ):
+                return
+            raise RuntimeError("pending absence cell is already armed")
+        self.scope = scope
+        self.name = name
+        self.identity = identity
+        self.filesystem = filesystem
+        self.parent_components = parent_components
+        self.removed_after = removed_after
+        self.committed = False
+        self.armed = True
+
+    def commit(self) -> None:
+        if not self.armed:
+            raise RuntimeError("pending absence cell is not armed")
+        self.committed = True
+
+    def clear(self) -> None:
+        self.armed = False
+        self.committed = False
+        self.scope = ""
+        self.name = ""
+        self.identity = None
+        self.filesystem = None
+        self.parent_components = ()
+        self.removed_after = 0
+
+
+class _FixedOwnerRegistry:
+    __slots__ = ("_owners",)
+
+    def __init__(self, capacity: int = 16) -> None:
+        self._owners: list[
+            FileCapability | DirectoryCapability | None
+        ] = [None] * capacity
+
+    def __iter__(self) -> Iterator[FileCapability | DirectoryCapability]:
+        return (
+            owner for owner in self._owners if owner is not None
+        )
+
+    def retain(
+        self, owner: FileCapability | DirectoryCapability
+    ) -> bool:
+        first_empty = -1
+        for index, current in enumerate(self._owners):
+            if current is owner:
+                return True
+            if current is None and first_empty < 0:
+                first_empty = index
+        if first_empty < 0:
+            return False
+        self._owners[first_empty] = owner
+        return True
+
+    def clear_closed(self) -> None:
+        for index, owner in enumerate(self._owners):
+            if owner is not None and not owner.is_open:
+                self._owners[index] = None
+
+    def clear_all(self) -> None:
+        for index in range(len(self._owners)):
+            self._owners[index] = None
+
+
+class _FixedDetailLedger:
+    __slots__ = ("_items", "count", "omitted")
+
+    def __init__(self) -> None:
+        self._items: list[str | None] = [None] * MAX_DIAGNOSTIC_DETAILS
+        self.count = 0
+        self.omitted = 0
+
+    def reset(self) -> None:
+        for index in range(self.count):
+            self._items[index] = None
+        self.count = 0
+        self.omitted = 0
+
+    def add(self, detail: str) -> None:
+        for index in range(self.count):
+            if self._items[index] == detail:
+                return
+        if self.count >= len(self._items):
+            self.omitted += 1
+            return
+        self._items[self.count] = detail
+        self.count += 1
+
+    def details(self) -> tuple[str, ...]:
+        return tuple(
+            cast(str, self._items[index]) for index in range(self.count)
+        )
+
+
+class _ChildCleanupState:
+    __slots__ = (
+        "identity",
+        "filesystem",
+        "cursor",
+        "root_owner",
+        "pending_absence",
+    )
+
+    def __init__(self) -> None:
+        self.identity: FileIdentity | None = None
+        self.filesystem: FilesystemIdentity | None = None
+        self.cursor = _CleanupCursor()
+        self.root_owner = _CapabilityOwnerSlot()
+        self.pending_absence = _PendingAbsenceCell()
+
+    def __iter__(self) -> Iterator[FileIdentity | FilesystemIdentity]:
+        identity = self.identity
+        filesystem = self.filesystem
+        if identity is None or filesystem is None:
+            raise RuntimeError("managed child registration is incomplete")
+        yield identity
+        yield filesystem
+
+
+class _CleanupOwnerGraph:
+    __slots__ = (
+        "claim_coordinator",
+        "tail_coordinator",
+        "lease_read",
+        "heartbeat_read",
+        "restored_lease",
+        "restored_heartbeat",
+        "tail_marker",
+        "walker_current",
+        "walker_parent",
+        "walker_child",
+        "walker_entry",
+        "walker_iterator",
+        "blocked",
+        "pending_absence",
+        "details",
+        "retain_removed",
+        "heartbeat_removed",
+        "cleanup_ready_removed",
+        "lease_removed",
+    )
+
+    def __init__(self, blocked: _FixedOwnerRegistry) -> None:
+        self.claim_coordinator = _CoordinatorOwnerSlot()
+        self.tail_coordinator = _CoordinatorOwnerSlot()
+        self.lease_read = _MarkerOwnerSlot(fixed=True)
+        self.heartbeat_read = _MarkerOwnerSlot(fixed=True)
+        self.restored_lease = _MarkerOwnerSlot(
+            fixed=True, with_lock=True
+        )
+        self.restored_heartbeat = _MarkerOwnerSlot(fixed=True)
+        self.tail_marker = _CapabilityOwnerSlot()
+        self.walker_current = _CapabilityOwnerSlot()
+        self.walker_parent = _CapabilityOwnerSlot()
+        self.walker_child = _CapabilityOwnerSlot()
+        self.walker_entry = _CapabilityOwnerSlot()
+        self.walker_iterator = _IteratorOwnerSlot()
+        self.blocked = blocked
+        self.pending_absence = _PendingAbsenceCell()
+        self.details = _FixedDetailLedger()
+        self.retain_removed = False
+        self.heartbeat_removed = False
+        self.cleanup_ready_removed = False
+        self.lease_removed = False
+
+    def capability_slots(self) -> tuple[_CapabilityOwnerSlot, ...]:
+        return (
+            self.tail_marker,
+            self.walker_current,
+            self.walker_parent,
+            self.walker_child,
+            self.walker_entry,
+        )
+
+    def marker_slots(self) -> tuple[_MarkerOwnerSlot, ...]:
+        return (
+            self.lease_read,
+            self.heartbeat_read,
+            self.restored_lease,
+            self.restored_heartbeat,
+        )
+
+    def marker_removed(self, name: str) -> bool:
+        if name == RETAIN_FILE:
+            return self.retain_removed
+        if name == HEARTBEAT_FILE:
+            return self.heartbeat_removed
+        if name == CLEANUP_READY_FILE:
+            return self.cleanup_ready_removed
+        if name == LEASE_FILE:
+            return self.lease_removed
+        raise ValueError(f"unsupported cleanup marker: {name!r}")
+
+    def mark_marker_removed(self, name: str) -> None:
+        if name == RETAIN_FILE:
+            self.retain_removed = True
+        elif name == HEARTBEAT_FILE:
+            self.heartbeat_removed = True
+        elif name == CLEANUP_READY_FILE:
+            self.cleanup_ready_removed = True
+        elif name == LEASE_FILE:
+            self.lease_removed = True
+        else:
+            raise ValueError(f"unsupported cleanup marker: {name!r}")
 
 
 class _CleanupOwnershipBlocked(OSError):
@@ -3836,10 +4845,17 @@ def _remove_payload(
     examined: int,
     removed: int,
     monotonic: Callable[[], float] | None = None,
+    owner_graph: _CleanupOwnerGraph | None = None,
+    pending_absence: _PendingAbsenceCell | None = None,
 ) -> _CleanupSlice:
     """Remove one bounded payload slice using only exact capabilities."""
     _validate_cleanup_cursor(cursor)
     clock = time.monotonic if monotonic is None else monotonic
+    pending_cell = (
+        _PendingAbsenceCell()
+        if pending_absence is None
+        else pending_absence
+    )
     control = {LEASE_FILE, HEARTBEAT_FILE, CLEANUP_READY_FILE, RETAIN_FILE}
     slice_examined = examined
 
@@ -3874,6 +4890,8 @@ def _remove_payload(
             current = backend.open_directory(
                 anchor, root_name, SharePolicy.PINNED
             )
+        if owner_graph is not None:
+            owner_graph.walker_current.owner = current
         _cleanup_observe_directories(2)
         root_component = _CleanupComponent(
             root_name, root_identity, root_filesystem
@@ -3888,6 +4906,8 @@ def _remove_payload(
                 child = backend.open_directory(
                     current, component.name, SharePolicy.PINNED
                 )
+                if owner_graph is not None:
+                    owner_graph.walker_child.owner = child
                 _cleanup_observe_directories(3)
                 try:
                     _validate_cleanup_directory(
@@ -3905,6 +4925,8 @@ def _remove_payload(
                             close_errors,
                             primary=primary_error,
                         ) from primary_error
+                    if owner_graph is not None:
+                        owner_graph.walker_child.owner = None
                     for detail in close_errors:
                         primary_error.add_note(detail)
                     raise
@@ -3920,6 +4942,9 @@ def _remove_payload(
                         (current, child),
                         (*parent_errors, *child_errors),
                     )
+                if owner_graph is not None:
+                    owner_graph.walker_current.owner = child
+                    owner_graph.walker_child.owner = None
                 current = child
                 _cleanup_observe_directories(2)
             return current
@@ -3929,6 +4954,8 @@ def _remove_payload(
                 cursor_close_errors = _close_cleanup_capability(
                     current, "cleanup cursor"
                 )
+            if owner_graph is not None and not current.is_open:
+                owner_graph.walker_current.owner = None
             if isinstance(primary_error, _CleanupOwnershipBlocked):
                 owners = list(primary_error.owners)
                 if current.is_open and current not in owners:
@@ -3956,6 +4983,8 @@ def _remove_payload(
     ) -> _CleanupSlice:
         errors = _close_cleanup_iterator(iterator, "cleanup iterator")
         directory = iterator.directory
+        if owner_graph is not None and not directory.is_open:
+            owner_graph.walker_iterator.owner = None
         if directory.is_open:
             return _CleanupSlice(
                 examined,
@@ -3968,13 +4997,44 @@ def _remove_payload(
         return _CleanupSlice(examined, removed, False, next_cursor)
 
     if exhausted():
-        return _CleanupSlice(examined, removed, False, cursor, root=root)
+        if owner_graph is not None:
+            owner_graph.walker_current.owner = root
+        deferred = _CleanupSlice(
+            examined, removed, False, cursor, root=root
+        )
+        if owner_graph is not None:
+            owner_graph.walker_current.owner = None
+        return deferred
 
     current: DirectoryCapability | None = None
     iterator: DirectoryIterator | None = None
     try:
-        current = open_cursor(root, cursor.components)
+        if pending_cell.armed and not pending_cell.committed:
+            pending_cell.clear()
+        resume_components = cursor.components
+        if (
+            pending_cell.committed
+            and pending_cell.scope in {"payload", "directory"}
+        ):
+            removed = max(removed, pending_cell.removed_after)
+            resume_components = pending_cell.parent_components
+        current = open_cursor(root, resume_components)
+        if owner_graph is not None:
+            owner_graph.walker_current.owner = current
         root = None
+        if (
+            pending_cell.committed
+            and pending_cell.scope in {"payload", "directory"}
+        ):
+            require_operation("cleanup pending absence")
+            remaining = backend.entry(current, pending_cell.name)
+            require_operation("cleanup pending absence")
+            if remaining is not None:
+                raise OSError(
+                    "cleanup preserved a same-name replacement after removal"
+                )
+            pending_cell.clear()
+            cursor = _CleanupCursor(resume_components)
         if cursor.pending_absence is not None:
             require_operation("cleanup pending absence")
             remaining = backend.entry(
@@ -3989,6 +5049,9 @@ def _remove_payload(
 
         require_operation("cleanup iterator construction")
         iterator = backend.entries_owned(current)
+        if owner_graph is not None:
+            owner_graph.walker_iterator.owner = iterator
+            owner_graph.walker_current.owner = None
         current = None
         _cleanup_observe_directories(2)
         if exhausted():
@@ -4026,12 +5089,16 @@ def _remove_payload(
                         _CleanupCursor(),
                         root=current,
                     )
+                    if owner_graph is not None:
+                        owner_graph.walker_current.owner = None
                     current = None
                     return complete
 
                 completed = cursor.components[-1]
                 parent_components = cursor.components[:-1]
                 parent = open_cursor(None, parent_components)
+                if owner_graph is not None:
+                    owner_graph.walker_parent.owner = parent
                 child: DirectoryCapability | None = None
                 deferred_cursor: _CleanupCursor | None = None
                 try:
@@ -4039,6 +5106,8 @@ def _remove_payload(
                     child = backend.open_directory(
                         parent, completed.name, SharePolicy.PINNED
                     )
+                    if owner_graph is not None:
+                        owner_graph.walker_child.owner = child
                     _cleanup_observe_directories(3)
                     _validate_cleanup_directory(
                         child,
@@ -4046,14 +5115,34 @@ def _remove_payload(
                         label="cleanup completed directory",
                     )
                     require_operation("cleanup completed directory delete")
-                    backend.delete(child)
+                    removed_after = removed + 1
+                    pending_cell.arm(
+                        scope="directory",
+                        name=completed.name,
+                        identity=completed.identity,
+                        filesystem=completed.filesystem,
+                        parent_components=parent_components,
+                        removed_after=removed_after,
+                    )
+                    try:
+                        backend.delete(child)
+                    except BaseException:
+                        if child.is_open:
+                            pending_cell.clear()
+                        else:
+                            pending_cell.commit()
+                            removed = removed_after
+                        raise
+                    else:
+                        pending_cell.commit()
+                        removed = removed_after
                     if child.is_open:
                         close_or_block(
                             child,
                             "cleanup completed directory",
                             "cleanup directory owner remains open",
                         )
-                    removed += 1
+                    removed = removed_after
                     next_cursor = _CleanupCursor(
                         parent_components, completed
                     )
@@ -4067,6 +5156,7 @@ def _remove_payload(
                             raise OSError(
                                 "cleanup preserved a same-name directory replacement"
                             )
+                        pending_cell.clear()
                         cursor = _CleanupCursor(parent_components)
                 except BaseException as primary_error:
                     completed_blocked: list[
@@ -4087,6 +5177,8 @@ def _remove_payload(
                         completed_close_details.extend(child_errors)
                         if child.is_open and child not in completed_blocked:
                             completed_blocked.append(child)
+                    elif owner_graph is not None:
+                        owner_graph.walker_child.owner = None
                     if parent.is_open:
                         parent_errors = _close_cleanup_capability(
                             parent, "cleanup completed directory parent"
@@ -4094,6 +5186,8 @@ def _remove_payload(
                         completed_close_details.extend(parent_errors)
                         if parent.is_open and parent not in completed_blocked:
                             completed_blocked.append(parent)
+                    elif owner_graph is not None:
+                        owner_graph.walker_parent.owner = None
                     if completed_blocked:
                         raise _CleanupOwnershipBlocked(
                             blocked_message,
@@ -4113,13 +5207,22 @@ def _remove_payload(
                         (parent,),
                         parent_errors,
                     )
+                if owner_graph is not None:
+                    owner_graph.walker_parent.owner = None
+                    if child is not None and not child.is_open:
+                        owner_graph.walker_child.owner = None
                 if deferred_cursor is not None:
                     return _CleanupSlice(
                         examined, removed, False, deferred_cursor
                     )
                 current = open_cursor(None, cursor.components)
+                if owner_graph is not None:
+                    owner_graph.walker_current.owner = current
                 require_operation("cleanup iterator construction")
                 iterator = backend.entries_owned(current)
+                if owner_graph is not None:
+                    owner_graph.walker_iterator.owner = iterator
+                    owner_graph.walker_current.owner = None
                 current = None
                 _cleanup_observe_directories(2)
                 continue
@@ -4148,6 +5251,8 @@ def _remove_payload(
                         entry.name,
                         SharePolicy.PINNED,
                     )
+                    if owner_graph is not None:
+                        owner_graph.walker_child.owner = child
                 except FileNotFoundError:
                     continue
                 _cleanup_observe_directories(3)
@@ -4190,11 +5295,16 @@ def _remove_payload(
                         ),
                         details=(*parent_errors, *child_errors),
                     )
+                if owner_graph is not None:
+                    owner_graph.walker_iterator.owner = None
                 iterator = None
                 cursor = next_cursor
                 current = child
                 require_operation("cleanup iterator construction")
                 iterator = backend.entries_owned(current)
+                if owner_graph is not None:
+                    owner_graph.walker_iterator.owner = iterator
+                    owner_graph.walker_child.owner = None
                 current = None
                 _cleanup_observe_directories(2)
                 continue
@@ -4204,6 +5314,8 @@ def _remove_payload(
                 opened = backend.open_entry(
                     iterator.directory, entry.name, SharePolicy.PINNED
                 )
+                if owner_graph is not None:
+                    owner_graph.walker_entry.owner = opened
             except FileNotFoundError:
                 continue
             try:
@@ -4214,14 +5326,34 @@ def _remove_payload(
                 ):
                     raise OSError("cleanup entry identity changed while opening")
                 require_operation("cleanup entry delete")
-                backend.delete(opened)
+                removed_after = removed + 1
+                pending_cell.arm(
+                    scope="payload",
+                    name=component.name,
+                    identity=component.identity,
+                    filesystem=component.filesystem,
+                    parent_components=cursor.components,
+                    removed_after=removed_after,
+                )
+                try:
+                    backend.delete(opened)
+                except BaseException:
+                    if opened.is_open:
+                        pending_cell.clear()
+                    else:
+                        pending_cell.commit()
+                        removed = removed_after
+                    raise
+                else:
+                    pending_cell.commit()
+                    removed = removed_after
                 if opened.is_open:
                     close_or_block(
                         opened,
                         f"cleanup entry {entry.name}",
                         "cleanup entry owner remains open",
                     )
-                removed += 1
+                removed = removed_after
             except BaseException as primary_error:
                 if opened.is_open:
                     close_errors = _close_cleanup_capability(
@@ -4236,7 +5368,11 @@ def _remove_payload(
                         ) from primary_error
                     for detail in close_errors:
                         primary_error.add_note(detail)
+                if owner_graph is not None and not opened.is_open:
+                    owner_graph.walker_entry.owner = None
                 raise
+            if owner_graph is not None:
+                owner_graph.walker_entry.owner = None
 
             pending = _CleanupCursor(cursor.components, component)
             if exhausted():
@@ -4248,6 +5384,7 @@ def _remove_payload(
                 raise OSError(
                     "cleanup preserved a same-name replacement after removal"
                 )
+            pending_cell.clear()
     except _DeadlineExceeded:
         if iterator is not None:
             return finish_iterator(iterator, cursor)
@@ -4272,12 +5409,16 @@ def _remove_payload(
             )
             if iterator.directory.is_open:
                 blocked.append(iterator.directory)
+            elif owner_graph is not None:
+                owner_graph.walker_iterator.owner = None
         if current is not None and current.is_open:
             close_details.extend(
                 _close_cleanup_capability(current, "cleanup current")
             )
             if current.is_open:
                 blocked.append(current)
+            elif owner_graph is not None:
+                owner_graph.walker_current.owner = None
         if isinstance(primary_error, _CleanupOwnershipBlocked):
             owners = list(primary_error.owners)
             for owner in blocked:

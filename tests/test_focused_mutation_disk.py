@@ -3,6 +3,7 @@ import argparse
 from contextlib import contextmanager
 from collections.abc import Callable
 import gc
+import inspect
 import json
 import os
 import stat
@@ -10,10 +11,11 @@ import sys
 import tempfile
 import threading
 import time
+from types import ModuleType
 import unittest
 import uuid
 from unittest import mock
-from typing import BinaryIO, cast
+from typing import BinaryIO, Protocol, cast
 import zlib
 
 from tools.focused_mutation import Options, _parser, options_from_arguments
@@ -79,6 +81,10 @@ from tools.focused_mutation_support.store import (
     ReportTooLarge,
     RunStore,
 )
+
+
+class _WindowsJunctionHelper(Protocol):
+    def _junction(self, link: Path, target: Path) -> None: ...
 
 
 def _cleanup_records_only(
@@ -1149,11 +1155,17 @@ class _ManagedRecordingBackend(FilesystemBackend):
         share_policy: SharePolicy,
         created: bool,
     ) -> FileCapability:
-        if node.backing is None:
-            raise RuntimeError("recorded regular file has no backing descriptor")
-        self._prune_detached()
-        descriptor = os.dup(node.backing.fileno())
-        os.lseek(descriptor, 0, os.SEEK_SET)
+        descriptor = -1
+        if node.kind is EntryKind.REGULAR:
+            if node.backing is None:
+                raise RuntimeError(
+                    "recorded regular file has no backing descriptor"
+                )
+            self._prune_detached()
+            descriptor = os.dup(node.backing.fileno())
+            os.lseek(descriptor, 0, os.SEEK_SET)
+        elif node.kind not in {EntryKind.REPARSE, EntryKind.OTHER}:
+            raise RuntimeError("recorded file capability has an invalid kind")
         resource = _ManagedRecordedResource(node, descriptor=descriptor)
         self.live_resources.add(resource)
         return FileCapability(
@@ -1161,8 +1173,10 @@ class _ManagedRecordingBackend(FilesystemBackend):
             resource,
             identity=node.identity,
             filesystem=node.filesystem,
-            kind=EntryKind.REGULAR,
-            logical_size=os.fstat(descriptor).st_size,
+            kind=node.kind,
+            logical_size=(
+                os.fstat(descriptor).st_size if descriptor >= 0 else 0
+            ),
             modified_ns=0,
             security_domain=node.security_domain,
             share_policy=share_policy,
@@ -3283,10 +3297,10 @@ class ManagedPublicationCapabilityTests(unittest.TestCase):
                     ) -> None:
                         for capability in capabilities:
                             if capability.is_open:
-                                capability.close()
+                                capability.__del__()
                         for lock in locks:
                             if lock.fd >= 0:
-                                lock.close()
+                                lock.__del__()
 
                     backend.after_event = observe_rollback
                     self.addCleanup(
@@ -3600,10 +3614,10 @@ class ManagedPublicationCapabilityTests(unittest.TestCase):
                 ) -> None:
                     for capability in capabilities:
                         if capability.is_open:
-                            capability.close()
+                            capability.__del__()
                     for lock in locks:
                         if lock.fd >= 0:
-                            lock.close()
+                            lock.__del__()
 
                 backend.after_event = inject_primary_and_observe
                 self.addCleanup(
@@ -3861,13 +3875,13 @@ class ManagedPublicationCapabilityTests(unittest.TestCase):
                 ) -> None:
                     for capability in capabilities:
                         if capability.is_open:
-                            capability.close()
+                            capability.__del__()
                     for owner in owners:
                         if owner.fd >= 0:
-                            owner.close_once("test retained marker")
+                            owner.__del__()
                     for lock in locks:
                         if lock.fd >= 0:
-                            lock.close()
+                            lock.__del__()
 
                 backend.after_event = observe_and_inject
                 self.addCleanup(
@@ -6903,6 +6917,53 @@ class ManagedScratchTests(unittest.TestCase):
                 raise
 
     @staticmethod
+    def _task8_cleanup_with_real_coordinator(
+        scratch: ManagedScratch,
+        backend: _Task8ManagedRecordingBackend,
+        opened: list[LeaseLock],
+        *,
+        time_budget: float = 60.0,
+    ) -> ScratchCleanupRecord:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_open_coordinator"],
+        )
+        delegate = lease_module._open_coordinator
+
+        def track_coordinator(*args: object, **kwargs: object) -> LeaseLock:
+            coordinator = delegate(*args, **kwargs)
+            opened.append(coordinator)
+            backend.coordinator = coordinator
+            return coordinator
+
+        with mock.patch.object(
+            lease_module,
+            "_open_coordinator",
+            side_effect=track_coordinator,
+        ):
+            return scratch.cleanup(time_budget=time_budget)
+
+    @staticmethod
+    def _task8_same_identity_replacement(
+        backend: _Task8ManagedRecordingBackend,
+        original: _ManagedRecordedNode,
+        *,
+        kind: EntryKind | None = None,
+    ) -> _ManagedRecordedNode:
+        parent = original.parent
+        if parent is None:
+            raise AssertionError("replacement target has no parent")
+        name = original.name
+        replacement = backend._new_node(
+            original.kind if kind is None else kind,
+            SecurityDomain.MANAGED,
+            parent=parent,
+            name=name,
+        )
+        replacement.identity = original.identity
+        return replacement
+
+    @staticmethod
     def _task7_managed_root(
         backend: _ManagedRecordingBackend,
     ) -> DirectoryCapability:
@@ -8974,6 +9035,42 @@ class ManagedScratchTests(unittest.TestCase):
         self.assertLess(lease_detach, heartbeat_reopen)
         self.assertLessEqual(backend.max_directory_resources, 3)
 
+    def test_task8_windows_partial_restore_reuses_live_lease_on_retry(
+        self,
+    ) -> None:
+        backend = self._task8_backend(
+            rename_requires_closed_descendants=True
+        )
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000833",
+        )
+        heartbeat_reopen = (
+            "open_existing:.hoimin-heartbeat.json:write:pinned"
+        )
+        lease_reopen = "open_existing:.hoimin-lease.json:read_write:pinned"
+        backend.failures[heartbeat_reopen] = OSError(
+            "injected heartbeat owner reopen failure"
+        )
+        initial_reopen_count = backend.events.count(lease_reopen)
+
+        first = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(first.status, ScratchCleanupStatus.FAILED, first)
+        restored_lease = scratch._lease
+        self.assertIsNotNone(restored_lease)
+        assert restored_lease is not None
+        self.assertGreaterEqual(restored_lease.fd, 0)
+        self.assertIsNone(scratch._heartbeat)
+        first_reopen_count = backend.events.count(lease_reopen)
+        self.assertEqual(first_reopen_count - initial_reopen_count, 1)
+
+        second = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(second.status, ScratchCleanupStatus.CLEAN, second)
+        self.assertEqual(backend.events.count(lease_reopen), first_reopen_count)
+        self.assertEqual(restored_lease.fd, -1)
+
     def test_task8_persistent_descendant_close_stops_namespace_mutation(
         self,
     ) -> None:
@@ -9216,6 +9313,1009 @@ class ManagedScratchTests(unittest.TestCase):
             1,
         )
 
+    def test_task8_lease_close_budget_is_shared_across_cleanup_paths(
+        self,
+    ) -> None:
+        backend = self._task8_backend(
+            rename_requires_closed_descendants=True
+        )
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000843",
+        )
+        lease = scratch._lease
+        assert lease is not None
+        target = lease.fd
+        real_close = os.close
+        attempts = 0
+        after_second_operation = 0
+
+        def fail_target_close(descriptor: int) -> None:
+            nonlocal attempts, after_second_operation
+            if descriptor == target:
+                attempts += 1
+                if attempts == 2:
+                    after_second_operation = len(backend.cleanup_operations)
+                raise OSError(f"injected lease close failure {attempts}")
+            real_close(descriptor)
+
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["os"],
+        )
+        with mock.patch.object(
+            lease_module.os, "close", side_effect=fail_target_close
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
+            attempts_after_cleanup = attempts
+            scratch.close_capabilities()
+            attempts_after_public_close = attempts
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertEqual(attempts_after_cleanup, 2)
+        self.assertEqual(attempts_after_public_close, 2)
+        self.assertIs(scratch._lease, lease)
+        self.assertEqual(lease.fd, target)
+        joined = "; ".join(cleanup.details)
+        self.assertIn("lease close failure 1", joined)
+        self.assertIn("lease close failure 2", joined)
+        self.assertEqual(
+            joined.count("managed namespace cleanup unavailable"), 1
+        )
+        unsafe = backend.cleanup_operations[after_second_operation:]
+        self.assertFalse(
+            any(
+                operation.startswith(
+                    ("rename:", "delete:", "entry:", "open_entry:")
+                )
+                for operation in unsafe
+            ),
+            unsafe,
+        )
+
+        lease.__del__()
+        self.assertEqual(lease.fd, -1)
+        with self.assertRaises(OSError):
+            os.fstat(target)
+
+    def test_lease_public_close_spends_one_remaining_attempt_with_details(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000862",
+        )
+        lease = scratch._lease
+        assert lease is not None
+        descriptor = lease.fd
+        real_close = os.close
+        attempts = 0
+
+        def transient_close(target: int) -> None:
+            nonlocal attempts
+            if target == descriptor:
+                attempts += 1
+                if attempts == 1:
+                    raise OSError("injected first public lease close failure")
+            real_close(target)
+
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["os"],
+        )
+        with mock.patch.object(
+            lease_module.os, "close", side_effect=transient_close
+        ):
+            scratch.close_capabilities()
+            self.assertEqual(attempts, 1)
+            self.assertIs(scratch._lease, lease)
+            self.assertEqual(lease.fd, descriptor)
+
+            scratch.close_capabilities()
+
+        self.assertEqual(attempts, 2)
+        self.assertIsNone(scratch._lease)
+        self.assertEqual(lease.fd, -1)
+        self.assertTrue(hasattr(lease, "_close_attempts"))
+        self.assertEqual(getattr(lease, "_close_attempts"), 2)
+        self.assertTrue(hasattr(lease, "_close_details"))
+        details = cast(tuple[str, ...], getattr(lease, "_close_details"))
+        self.assertIn("first public lease close failure", "; ".join(details))
+
+    def test_task8_transient_lease_close_detail_survives_success(self) -> None:
+        backend = self._task8_backend(
+            rename_requires_closed_descendants=True
+        )
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000844",
+        )
+        lease = scratch._lease
+        assert lease is not None
+        target = lease.fd
+        real_close = os.close
+        attempts = 0
+
+        def transient_close(descriptor: int) -> None:
+            nonlocal attempts
+            if descriptor == target and lease.fd == target:
+                attempts += 1
+                if attempts == 1:
+                    raise OSError("injected transient lease close failure")
+            real_close(descriptor)
+
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["os"],
+        )
+        with mock.patch.object(
+            lease_module.os, "close", side_effect=transient_close
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.CLEAN, cleanup)
+        self.assertEqual(attempts, 2)
+        self.assertIn(
+            "transient lease close failure", "; ".join(cleanup.details)
+        )
+
+    def test_task8_owned_descriptor_budget_and_finalizer_are_separate(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_OwnedDescriptor"],
+        )
+        read_descriptor, write_descriptor = os.pipe()
+        owner = lease_module._OwnedDescriptor()
+        owner.adopt(read_descriptor)
+        real_close = os.close
+        attempts = 0
+
+        def fail_owned_descriptor_close(descriptor: int) -> None:
+            nonlocal attempts
+            if descriptor == read_descriptor:
+                attempts += 1
+                raise OSError(
+                    f"injected owned descriptor close failure {attempts}"
+                )
+            real_close(descriptor)
+
+        try:
+            with mock.patch.object(
+                lease_module.os,
+                "close",
+                side_effect=fail_owned_descriptor_close,
+            ):
+                transaction_details = owner.close_retry(
+                    "managed test descriptor"
+                )
+                attempts_after_transaction = attempts
+                public_details = owner.close_once("managed test descriptor")
+                attempts_after_public = attempts
+
+            self.assertEqual(attempts_after_transaction, 2)
+            self.assertEqual(attempts_after_public, 2)
+            self.assertEqual(
+                getattr(owner, "_close_attempts", None), 2
+            )
+            self.assertEqual(public_details, transaction_details)
+            joined = "; ".join(public_details)
+            self.assertIn("owned descriptor close failure 1", joined)
+            self.assertIn("owned descriptor close failure 2", joined)
+            self.assertNotIn("owned descriptor close failure 3", joined)
+
+            owner.__del__()
+            self.assertEqual(getattr(owner, "_close_attempts", None), 3)
+            self.assertEqual(owner.fd, -1)
+            with self.assertRaises(OSError):
+                os.fstat(read_descriptor)
+        finally:
+            for descriptor in (read_descriptor, write_descriptor):
+                try:
+                    real_close(descriptor)
+                except OSError:
+                    pass
+
+    def test_task8_public_close_dedupes_iterator_directory_attempts(
+        self,
+    ) -> None:
+        class AliasedIterator:
+            def __init__(self, directory: DirectoryCapability) -> None:
+                self.directory = directory
+                self.close_callbacks = 0
+
+            def __iter__(self) -> DirectoryIterator:
+                return self
+
+            def __next__(self) -> DirectoryEntry:
+                raise StopIteration
+
+            def close(self) -> None:
+                self.close_callbacks += 1
+                self.directory.close()
+
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000867",
+        )
+        child = scratch.create_child("candidate-0001")
+        state = scratch._children[child.name]
+        identity = state.identity
+        assert identity is not None
+        backend.close_failures_by_identity[identity] = 3
+        owner = scratch.open_child(child.name, SharePolicy.PINNED)
+        resource = backend._resource(owner)
+        iterator = AliasedIterator(owner)
+        graph = scratch._ensure_cleanup_graph()
+        graph.walker_iterator.owner = iterator
+        self.assertTrue(graph.blocked.retain(owner))
+
+        scratch.close_capabilities()
+        attempts_after_first = owner._close_attempts
+        callbacks_after_first = iterator.close_callbacks
+        scratch.close_capabilities()
+        attempts_after_second = owner._close_attempts
+        callbacks_after_second = iterator.close_callbacks
+        scratch.close_capabilities()
+        attempts_after_third = owner._close_attempts
+        callbacks_after_third = iterator.close_callbacks
+
+        self.assertEqual(attempts_after_first, 1)
+        self.assertEqual(callbacks_after_first, 1)
+        self.assertEqual(attempts_after_second, 2)
+        self.assertEqual(callbacks_after_second, 2)
+        self.assertEqual(attempts_after_third, 2)
+        self.assertEqual(callbacks_after_third, 2)
+        self.assertTrue(owner.is_open)
+        resource.close_failures = 0
+        del owner
+        del iterator
+        scratch.__del__()
+        self.assertTrue(resource.closed)
+
+    def test_task8_capability_finalizer_has_one_post_budget_attempt(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000868",
+        )
+        child = scratch.create_child("candidate-0001")
+        state = scratch._children[child.name]
+        identity = state.identity
+        assert identity is not None
+        backend.close_failures_by_identity[identity] = 8
+        owner = scratch.open_child(child.name, SharePolicy.PINNED)
+        resource = backend._resource(owner)
+        baseline = backend.close_counts.get(identity, 0)
+        graph = scratch._ensure_cleanup_graph()
+        graph.walker_entry.owner = owner
+        self.assertTrue(graph.blocked.retain(owner))
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_close_capability_retry"],
+        )
+        lease_module._close_capability_retry(owner, "managed finalizer test")
+        self.assertEqual(backend.close_counts.get(identity, 0) - baseline, 2)
+
+        scratch.__del__()
+        graph.walker_entry.owner = None
+        for index in range(len(graph.blocked._owners)):
+            graph.blocked._owners[index] = None
+        del owner
+        gc.collect()
+
+        self.assertEqual(backend.close_counts.get(identity, 0) - baseline, 3)
+        self.assertFalse(resource.closed)
+        resource.close_failures = 0
+        backend.close_resource(resource)
+
+    def test_task8_descriptor_finalizers_do_not_repeat_after_failure(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_OwnedDescriptor", "_close_lease_lock_retry"],
+        )
+        for owner_kind in ("lease", "descriptor"):
+            with self.subTest(owner_kind=owner_kind):
+                read_descriptor, write_descriptor = os.pipe()
+                owner: LeaseLock | _OwnedDescriptor
+                if owner_kind == "lease":
+                    owner = LeaseLock(read_descriptor)
+                else:
+                    owner = _OwnedDescriptor()
+                    owner.adopt(read_descriptor)
+                real_close = os.close
+                actual_calls = 0
+
+                def fail_finalizer_close(descriptor: int) -> None:
+                    nonlocal actual_calls
+                    if descriptor == read_descriptor:
+                        actual_calls += 1
+                        raise OSError(
+                            f"injected {owner_kind} finalizer failure"
+                        )
+                    real_close(descriptor)
+
+                try:
+                    with mock.patch.object(
+                        lease_module.os,
+                        "close",
+                        side_effect=fail_finalizer_close,
+                    ):
+                        if isinstance(owner, LeaseLock):
+                            lease_module._close_lease_lock_retry(
+                                owner, "managed finalizer test"
+                            )
+                        else:
+                            owner.close_retry("managed finalizer test")
+                        attempts_after_transaction = actual_calls
+                        owner.__del__()
+                        attempts_after_finalizer = actual_calls
+                        owner.__del__()
+                        attempts_after_repeat = actual_calls
+
+                    self.assertEqual(attempts_after_transaction, 2)
+                    self.assertEqual(attempts_after_finalizer, 3)
+                    self.assertEqual(attempts_after_repeat, 3)
+                    self.assertEqual(owner._close_attempts, 3)
+                finally:
+                    try:
+                        real_close(read_descriptor)
+                    except OSError:
+                        pass
+                    owner.fd = -1
+                    try:
+                        real_close(write_descriptor)
+                    except OSError:
+                        pass
+
+    def test_task8_preallocates_restore_lock_before_namespace_mutation(
+        self,
+    ) -> None:
+        backend = self._task8_backend(
+            rename_requires_closed_descendants=True
+        )
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000845",
+        )
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["LeaseLock"],
+        )
+        real_lock = lease_module.LeaseLock
+        namespace_started = False
+        allocations_before_namespace = 0
+
+        def note_operation(_operation: str) -> None:
+            nonlocal namespace_started
+            namespace_started = True
+
+        def allocate_lock(descriptor: int) -> LeaseLock:
+            nonlocal allocations_before_namespace
+            if namespace_started:
+                raise MemoryError(
+                    "lease owner allocation occurred after namespace work"
+                )
+            allocations_before_namespace += 1
+            return real_lock(descriptor)
+
+        backend.before_cleanup_operation = note_operation
+        with mock.patch.object(
+            lease_module, "LeaseLock", side_effect=allocate_lock
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertGreater(allocations_before_namespace, 0)
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.CLEAN, cleanup)
+
+    def test_task8_marker_read_close_failure_retains_owner_after_budget(
+        self,
+    ) -> None:
+        backend = self._task8_backend(
+            rename_requires_closed_descendants=True
+        )
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000846",
+        )
+        backend.close_failures_by_identity[scratch._lease_identity] = 3
+        backend.failures[
+            "verify-managed:.hoimin-lease.json:repair=false"
+        ] = OSError("injected marker verification failure")
+
+        cleanup = self._task8_cleanup(scratch, backend)
+        attempts_after_cleanup = backend.close_counts.get(
+            scratch._lease_identity, 0
+        )
+        scratch.close_capabilities()
+        attempts_after_public_close = backend.close_counts.get(
+            scratch._lease_identity, 0
+        )
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertEqual(attempts_after_cleanup, 2)
+        self.assertEqual(attempts_after_public_close, 2)
+        self.assertEqual(
+            "; ".join(cleanup.details).count(
+                "managed namespace cleanup unavailable"
+            ),
+            1,
+        )
+        retained_resources = [
+            resource
+            for resource in backend.live_resources
+            if not resource.closed
+            and resource.node.identity == scratch._lease_identity
+        ]
+        def close_retained_marker_resources() -> None:
+            for resource in retained_resources:
+                resource.close_failures = 0
+            scratch.__del__()
+            for resource in retained_resources:
+                if not resource.closed:
+                    backend.close_resource(resource)
+
+        self.addCleanup(close_retained_marker_resources)
+        self.assertEqual(len(retained_resources), 1, retained_resources)
+        for resource in retained_resources:
+            resource.close_failures = 0
+        scratch.__del__()
+        gc.collect()
+        self.assertTrue(
+            all(resource.closed for resource in retained_resources),
+            retained_resources,
+        )
+
+    def test_task8_walker_owner_registration_never_allocates_after_failure(
+        self,
+    ) -> None:
+        class FailingOwnerRegistry(
+            list[FileCapability | DirectoryCapability]
+        ):
+            def append(
+                self, value: FileCapability | DirectoryCapability
+            ) -> None:
+                del value
+                raise MemoryError("injected owner registry allocation failure")
+
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000847",
+        )
+        root = self._task8_root_node(backend, scratch)
+        payload = self._task8_add_payload(backend, root, "payload")
+        backend.close_failures_by_identity[payload.identity] = 3
+        scratch._cleanup_owned_capabilities = FailingOwnerRegistry()
+
+        def close_fixture_resources() -> None:
+            for resource in tuple(backend.live_resources):
+                resource.close_failures = 0
+            scratch.__del__()
+            for resource in tuple(backend.live_resources):
+                if not resource.closed:
+                    backend.close_resource(resource)
+
+        self.addCleanup(close_fixture_resources)
+        try:
+            cleanup = self._task8_cleanup(scratch, backend)
+        except MemoryError as error:
+            self.fail(f"cleanup allocated while retaining an owner: {error}")
+        attempts_after_cleanup = backend.close_counts.get(payload.identity, 0)
+        scratch.close_capabilities()
+        attempts_after_public_close = backend.close_counts.get(
+            payload.identity, 0
+        )
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertEqual(attempts_after_cleanup, 2)
+        self.assertEqual(attempts_after_public_close, 2)
+        retained_resources = [
+            resource
+            for resource in backend.live_resources
+            if not resource.closed and resource.node.identity == payload.identity
+        ]
+        self.assertEqual(len(retained_resources), 1, retained_resources)
+        for resource in retained_resources:
+            resource.close_failures = 0
+        scratch.__del__()
+        self.assertTrue(
+            all(resource.closed for resource in retained_resources),
+            retained_resources,
+        )
+
+    def test_task8_preallocates_real_coordinator_lock_before_open(self) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000848",
+        )
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["LeaseLock"],
+        )
+        real_lock = lease_module.LeaseLock
+        operation_started = False
+        allocations_before_operation = 0
+        opened: list[LeaseLock] = []
+
+        def note_operation(_operation: str) -> None:
+            nonlocal operation_started
+            operation_started = True
+
+        def allocate_lock(descriptor: int) -> LeaseLock:
+            nonlocal allocations_before_operation
+            if operation_started:
+                raise MemoryError(
+                    "coordinator owner allocation occurred after open"
+                )
+            allocations_before_operation += 1
+            return real_lock(descriptor)
+
+        def acquire_fixture(
+            lock: LeaseLock, *, blocking: bool
+        ) -> None:
+            del blocking
+            lock.locked = True
+
+        backend.before_cleanup_operation = note_operation
+        self.addCleanup(scratch.__del__)
+        with (
+            mock.patch.object(
+                lease_module, "LeaseLock", side_effect=allocate_lock
+            ),
+            mock.patch.object(
+                LeaseLock,
+                "acquire",
+                autospec=True,
+                side_effect=acquire_fixture,
+            ),
+        ):
+            try:
+                cleanup = self._task8_cleanup_with_real_coordinator(
+                    scratch, backend, opened
+                )
+            except MemoryError as error:
+                self.fail(
+                    "coordinator owner allocation followed namespace open: "
+                    f"{error}"
+                )
+
+        self.assertGreater(allocations_before_operation, 0)
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.CLEAN, cleanup)
+
+    def test_task8_real_coordinator_close_failure_retains_owner(self) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000849",
+        )
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["os"],
+        )
+        real_close = os.close
+        opened: list[LeaseLock] = []
+        close_attempts = 0
+
+        def acquire_fixture(
+            lock: LeaseLock, *, blocking: bool
+        ) -> None:
+            del blocking
+            lock.locked = True
+
+        def fail_coordinator_close(descriptor: int) -> None:
+            nonlocal close_attempts
+            if opened and descriptor == opened[0].fd:
+                close_attempts += 1
+                raise OSError(
+                    f"injected coordinator close failure {close_attempts}"
+                )
+            real_close(descriptor)
+
+        with (
+            mock.patch.object(
+                lease_module.os,
+                "close",
+                side_effect=fail_coordinator_close,
+            ),
+            mock.patch.object(
+                LeaseLock,
+                "acquire",
+                autospec=True,
+                side_effect=acquire_fixture,
+            ),
+        ):
+            cleanup = self._task8_cleanup_with_real_coordinator(
+                scratch, backend, opened
+            )
+            attempts_after_cleanup = close_attempts
+            scratch.close_capabilities()
+            attempts_after_public_close = close_attempts
+
+        self.assertEqual(len(opened), 1, (opened, cleanup))
+        coordinator = opened[0]
+
+        def close_coordinator_fixture() -> None:
+            backend.coordinator = None
+            coordinator.__del__()
+            if coordinator.fd >= 0:
+                real_close(coordinator.fd)
+                coordinator.fd = -1
+                coordinator.locked = False
+
+        self.addCleanup(close_coordinator_fixture)
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertEqual(attempts_after_cleanup, 2)
+        self.assertEqual(attempts_after_public_close, 2)
+        self.assertGreaterEqual(coordinator.fd, 0)
+        joined = "; ".join(cleanup.details)
+        self.assertIn("coordinator close failure 1", joined)
+        self.assertIn("coordinator close failure 2", joined)
+        self.assertEqual(
+            joined.count("managed namespace cleanup unavailable"), 1
+        )
+
+    def test_task8_claimed_root_is_slotted_before_validation_failure(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000863",
+        )
+        root = scratch._root
+        assert root is not None
+        root._share_policy = SharePolicy.MUTATION
+        backend.close_failures_by_identity[scratch._root_identity] = 3
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_validate_cleanup_directory"],
+        )
+        real_validate = lease_module._validate_cleanup_directory
+        slot_registered = False
+
+        def fail_claimed_root_validation(
+            directory: DirectoryCapability,
+            component: object,
+            *,
+            label: str,
+        ) -> None:
+            nonlocal slot_registered
+            if label != "managed claimed root":
+                real_validate(directory, component, label=label)
+                return
+            graph = scratch._cleanup_graph
+            assert graph is not None
+            slot_registered = graph.walker_current.owner is directory
+            raise OSError("injected claimed-root validation failure")
+
+        with mock.patch.object(
+            lease_module,
+            "_validate_cleanup_directory",
+            side_effect=fail_claimed_root_validation,
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertTrue(slot_registered)
+        graph = scratch._cleanup_graph
+        assert graph is not None
+        retained = [
+            owner
+            for owner in graph.blocked
+            if owner.identity == scratch._root_identity and owner.is_open
+        ]
+        self.assertEqual(len(retained), 1, retained)
+        claimed_root = retained[0]
+        self.assertEqual(claimed_root._close_attempts, 2)
+        scratch.close_capabilities()
+        self.assertEqual(claimed_root._close_attempts, 2)
+        resource = backend._resource(claimed_root)
+        resource.close_failures = 0
+        del claimed_root
+        retained.clear()
+        scratch.__del__()
+        gc.collect()
+        self.assertTrue(resource.closed)
+
+    def test_task8_preassignment_restored_lock_blocks_namespace_retry(
+        self,
+    ) -> None:
+        backend = self._task8_backend(
+            rename_requires_closed_descendants=True
+        )
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000864",
+        )
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_read_locked_marker"],
+        )
+        real_close = os.close
+        close_attempts = 0
+
+        def fail_restored_lock_close(descriptor: int) -> None:
+            nonlocal close_attempts
+            graph = scratch._cleanup_graph
+            restored = None if graph is None else graph.restored_lease.lock
+            if (
+                restored is not None
+                and restored is not scratch._lease
+                and restored.fd == descriptor
+            ):
+                close_attempts += 1
+                raise OSError(
+                    f"injected restored lease close failure {close_attempts}"
+                )
+            real_close(descriptor)
+
+        with (
+            mock.patch.object(
+                lease_module,
+                "_read_locked_marker",
+                side_effect=OSError(
+                    "injected restored lease validation failure"
+                ),
+            ),
+            mock.patch.object(
+                lease_module.os,
+                "close",
+                side_effect=fail_restored_lock_close,
+            ),
+        ):
+            first = self._task8_cleanup(scratch, backend)
+            first_boundary = len(backend.cleanup_operations)
+            attempts_after_first = close_attempts
+            second = self._task8_cleanup(scratch, backend)
+            attempts_after_second = close_attempts
+
+        self.assertEqual(first.status, ScratchCleanupStatus.FAILED, first)
+        self.assertEqual(second.status, ScratchCleanupStatus.FAILED, second)
+        self.assertIsNone(scratch._lease)
+        self.assertEqual(attempts_after_first, 2)
+        self.assertEqual(attempts_after_second, 2)
+        unsafe = backend.cleanup_operations[first_boundary:]
+        self.assertFalse(
+            any(
+                operation.startswith(
+                    ("rename:", "delete:", "entry:", "open_")
+                )
+                for operation in unsafe
+            ),
+            unsafe,
+        )
+        graph = scratch._cleanup_graph
+        assert graph is not None
+        restored = graph.restored_lease.lock
+        assert restored is not None
+        self.assertGreaterEqual(restored.fd, 0)
+        restored_descriptor = restored.fd
+        del restored
+        scratch.__del__()
+        gc.collect()
+        with self.assertRaises(OSError):
+            os.fstat(restored_descriptor)
+
+    def test_task8_transient_coordinator_close_detail_keeps_clean_status(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000865",
+        )
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["os"],
+        )
+        real_close = os.close
+        opened: list[LeaseLock] = []
+        close_attempts = 0
+
+        def acquire_fixture(
+            lock: LeaseLock, *, blocking: bool
+        ) -> None:
+            del blocking
+            lock.locked = True
+
+        def transient_coordinator_close(descriptor: int) -> None:
+            nonlocal close_attempts
+            if opened and descriptor == opened[0].fd:
+                close_attempts += 1
+                if close_attempts == 1:
+                    raise OSError(
+                        "injected transient coordinator close failure"
+                    )
+            real_close(descriptor)
+
+        with (
+            mock.patch.object(
+                lease_module.os,
+                "close",
+                side_effect=transient_coordinator_close,
+            ),
+            mock.patch.object(
+                LeaseLock,
+                "acquire",
+                autospec=True,
+                side_effect=acquire_fixture,
+            ),
+        ):
+            cleanup = self._task8_cleanup_with_real_coordinator(
+                scratch, backend, opened
+            )
+
+        backend.coordinator = None
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.CLEAN, cleanup)
+        self.assertEqual(close_attempts, 2)
+        self.assertEqual(len(opened), 2, opened)
+        self.assertEqual(
+            "; ".join(cleanup.details).count(
+                "injected transient coordinator close failure"
+            ),
+            1,
+        )
+
+    def test_task8_exhausted_tail_coordinator_is_failed_and_stops_retry(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000866",
+        )
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["os"],
+        )
+        real_close = os.close
+        opened: list[LeaseLock] = []
+        close_attempts = 0
+
+        def acquire_fixture(
+            lock: LeaseLock, *, blocking: bool
+        ) -> None:
+            del blocking
+            lock.locked = True
+
+        def fail_tail_coordinator_close(descriptor: int) -> None:
+            nonlocal close_attempts
+            if len(opened) >= 2 and descriptor == opened[1].fd:
+                close_attempts += 1
+                raise OSError(
+                    f"injected tail coordinator close failure {close_attempts}"
+                )
+            real_close(descriptor)
+
+        with (
+            mock.patch.object(
+                lease_module.os,
+                "close",
+                side_effect=fail_tail_coordinator_close,
+            ),
+            mock.patch.object(
+                LeaseLock,
+                "acquire",
+                autospec=True,
+                side_effect=acquire_fixture,
+            ),
+        ):
+            first = self._task8_cleanup_with_real_coordinator(
+                scratch, backend, opened
+            )
+            first_boundary = len(backend.cleanup_operations)
+            attempts_after_first = close_attempts
+            second = self._task8_cleanup_with_real_coordinator(
+                scratch, backend, opened
+            )
+            attempts_after_second = close_attempts
+
+        self.assertEqual(len(opened), 2, (opened, first, second))
+        tail = opened[1]
+        self.assertEqual(first.status, ScratchCleanupStatus.FAILED, first)
+        self.assertEqual(second.status, ScratchCleanupStatus.FAILED, second)
+        self.assertEqual(attempts_after_first, 2)
+        self.assertEqual(attempts_after_second, 2)
+        self.assertGreaterEqual(tail.fd, 0)
+        self.assertEqual(
+            "; ".join(first.details).count(
+                "managed namespace cleanup unavailable"
+            ),
+            1,
+        )
+        unsafe = backend.cleanup_operations[first_boundary:]
+        self.assertFalse(
+            any(
+                operation.startswith(
+                    ("rename:", "delete:", "entry:", "open_")
+                )
+                for operation in unsafe
+            ),
+            unsafe,
+        )
+        backend.coordinator = None
+        tail.__del__()
+        self.assertEqual(tail.fd, -1)
+
+    def test_task8_child_cleanup_state_is_registered_before_creation(
+        self,
+    ) -> None:
+        class RecordingRegistry(dict[str, object]):
+            def __init__(self, timeline: list[str]) -> None:
+                super().__init__()
+                self._timeline = timeline
+
+            def __setitem__(self, key: str, value: object) -> None:
+                self._timeline.append(f"register:{key}")
+                super().__setitem__(key, value)
+
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000850",
+        )
+        timeline: list[str] = []
+        registry = RecordingRegistry(timeline)
+        setattr(scratch, "_children", registry)
+
+        def record_creation(event: str) -> None:
+            if event.startswith("create-directory:candidate-0001:"):
+                timeline.append("create:candidate-0001")
+
+        backend.after_event = record_creation
+        child = scratch.create_child("candidate-0001")
+
+        self.assertEqual(child.name, "candidate-0001")
+        self.assertLess(
+            timeline.index("register:candidate-0001"),
+            timeline.index("create:candidate-0001"),
+        )
+        state = registry[child.name]
+        for attribute in (
+            "identity",
+            "filesystem",
+            "cursor",
+            "root_owner",
+            "pending_absence",
+        ):
+            with self.subTest(attribute=attribute):
+                self.assertTrue(hasattr(state, attribute), state)
+
+        failing_backend = self._task8_backend()
+        failing_scratch = self._task8_create(
+            failing_backend,
+            run_id="00000000-0000-4000-8000-000000000851",
+        )
+
+        class FailingRegistry(RecordingRegistry):
+            def __setitem__(self, key: str, value: object) -> None:
+                del key, value
+                raise MemoryError("injected child-state registry allocation")
+
+        failing_timeline: list[str] = []
+        setattr(
+            failing_scratch,
+            "_children",
+            FailingRegistry(failing_timeline),
+        )
+        with self.assertRaisesRegex(MemoryError, "registry allocation"):
+            failing_scratch.create_child("candidate-0002")
+        self.assertFalse(
+            any(
+                event.startswith("create-directory:candidate-0002:")
+                for event in failing_backend.events
+            )
+        )
+
     def test_task8_completed_directory_close_preserves_absence_primary(
         self,
     ) -> None:
@@ -9317,6 +10417,252 @@ class ManagedScratchTests(unittest.TestCase):
             )
         )
 
+    def test_task8_open_owned_marker_checks_deadline_between_operations(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=[
+                "_DeadlineExceeded",
+                "_MarkerOwnerSlot",
+                "_open_owned_marker",
+            ],
+        )
+        parameters = inspect.signature(
+            lease_module._open_owned_marker
+        ).parameters
+        self.assertIn("deadline", parameters)
+        self.assertIn("monotonic", parameters)
+        cases = (
+            (
+                "open_existing:.hoimin-heartbeat.json:write:pinned",
+                "verify-managed:.hoimin-heartbeat.json:repair=false",
+            ),
+            (
+                "verify-managed:.hoimin-heartbeat.json:repair=false",
+                "entry:.hoimin-heartbeat.json",
+            ),
+            ("entry:.hoimin-heartbeat.json", None),
+        )
+        for index, (crossing_event, forbidden_event) in enumerate(cases):
+            with self.subTest(crossing_event=crossing_event):
+                backend = self._task8_backend()
+                scratch = self._task8_create(
+                    backend,
+                    run_id=(
+                        "00000000-0000-4000-8000-"
+                        f"{852 + index:012d}"
+                    ),
+                )
+                root = scratch._root
+                assert root is not None
+                clock = [0.0]
+                start = len(backend.events)
+
+                def cross_after_operation(event: str) -> None:
+                    if event == crossing_event:
+                        clock[0] = 1.0
+
+                backend.after_event = cross_after_operation
+                slot = lease_module._MarkerOwnerSlot()
+                with self.assertRaises(lease_module._DeadlineExceeded):
+                    lease_module._open_owned_marker(
+                        root,
+                        ".hoimin-heartbeat.json",
+                        backend,
+                        access=FileAccess.WRITE,
+                        identity=scratch._heartbeat_identity,
+                        deadline=1.0,
+                        monotonic=lambda: clock[0],
+                        _owner_slot=slot,
+                    )
+
+                suffix = backend.events[start:]
+                self.assertIn(crossing_event, suffix)
+                if forbidden_event is not None:
+                    crossing_index = suffix.index(crossing_event)
+                    self.assertNotIn(
+                        forbidden_event, suffix[crossing_index + 1 :]
+                    )
+                self.assertFalse(slot.has_open_owner())
+
+    def test_task8_locked_marker_read_checks_deadline_between_operations(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=[
+                "_DeadlineExceeded",
+                "_encoded_marker",
+                "_marker",
+                "_read_locked_marker",
+            ],
+        )
+        parameters = inspect.signature(
+            lease_module._read_locked_marker
+        ).parameters
+        self.assertIn("deadline", parameters)
+        self.assertIn("monotonic", parameters)
+        run_id = "00000000-0000-4000-8000-000000000855"
+        lease_id = "00000000-0000-4000-8000-000000000856"
+        encoded = lease_module._encoded_marker(
+            lease_module._marker(run_id, lease_id)
+        )
+
+        for crossing in ("lseek", "read"):
+            with self.subTest(crossing=crossing):
+                with tempfile.TemporaryFile() as stream:
+                    stream.write(encoded)
+                    stream.flush()
+                    descriptor = os.dup(stream.fileno())
+                    lock = LeaseLock(descriptor)
+                    clock = [0.0]
+                    read_calls = 0
+                    real_lseek = os.lseek
+                    real_read = os.read
+
+                    def crossing_lseek(
+                        target: int, offset: int, whence: int
+                    ) -> int:
+                        result = real_lseek(target, offset, whence)
+                        if target == descriptor and crossing == "lseek":
+                            clock[0] = 1.0
+                        return result
+
+                    def crossing_read(target: int, size: int) -> bytes:
+                        nonlocal read_calls
+                        if target == descriptor:
+                            read_calls += 1
+                            if crossing == "lseek":
+                                raise AssertionError(
+                                    "marker read started after deadline"
+                                )
+                        result = real_read(target, size)
+                        if target == descriptor and crossing == "read":
+                            clock[0] = 1.0
+                        return result
+
+                    with (
+                        mock.patch.object(
+                            lease_module.os,
+                            "lseek",
+                            side_effect=crossing_lseek,
+                        ),
+                        mock.patch.object(
+                            lease_module.os,
+                            "read",
+                            side_effect=crossing_read,
+                        ),
+                    ):
+                        with self.assertRaises(
+                            lease_module._DeadlineExceeded
+                        ):
+                            lease_module._read_locked_marker(
+                                lock,
+                                expected_run_id=run_id,
+                                expected_lease_id=lease_id,
+                                deadline=1.0,
+                                monotonic=lambda: clock[0],
+                            )
+
+                    self.assertEqual(
+                        read_calls, 0 if crossing == "lseek" else 1
+                    )
+                    self.assertEqual(
+                        _close_lease_lock_all(lock, "deadline fixture"), ()
+                    )
+
+    def test_task8_windows_restore_stops_before_lock_after_detach_deadline(
+        self,
+    ) -> None:
+        backend = self._task8_backend(
+            rename_requires_closed_descendants=True
+        )
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000857",
+        )
+        clock = [0.0]
+        detach_count = 0
+
+        def cross_after_detach(event: str) -> None:
+            nonlocal detach_count
+            if event != "detach:.hoimin-lease.json":
+                return
+            detach_count += 1
+            if detach_count == 2:
+                clock[0] = 60.0
+
+        def forbid_lock(
+            _lock: LeaseLock, *, blocking: bool
+        ) -> None:
+            del blocking
+            raise AssertionError("lease lock started after deadline")
+
+        backend.after_event = cross_after_detach
+        with (
+            mock.patch(
+                "tools.focused_mutation_support.lease.time.monotonic",
+                side_effect=lambda: clock[0],
+            ),
+            mock.patch.object(
+                LeaseLock,
+                "acquire",
+                autospec=True,
+                side_effect=forbid_lock,
+            ) as acquire,
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED, cleanup)
+        acquire.assert_not_called()
+
+    def test_task8_windows_restore_stops_before_read_after_lock_deadline(
+        self,
+    ) -> None:
+        backend = self._task8_backend(
+            rename_requires_closed_descendants=True
+        )
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000858",
+        )
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_read_locked_marker"],
+        )
+        clock = [0.0]
+        real_acquire = LeaseLock.acquire
+
+        def cross_after_lock(lock: LeaseLock, *, blocking: bool) -> None:
+            real_acquire(lock, blocking=blocking)
+            clock[0] = 60.0
+
+        def forbid_read(*_args: object, **_kwargs: object) -> object:
+            raise AssertionError("locked marker read started after deadline")
+
+        with (
+            mock.patch(
+                "tools.focused_mutation_support.lease.time.monotonic",
+                side_effect=lambda: clock[0],
+            ),
+            mock.patch.object(
+                LeaseLock,
+                "acquire",
+                autospec=True,
+                side_effect=cross_after_lock,
+            ),
+            mock.patch.object(
+                lease_module,
+                "_read_locked_marker",
+                side_effect=forbid_read,
+            ) as locked_read,
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED, cleanup)
+        locked_read.assert_not_called()
+
     def test_task8_host_timeout_remains_failed_after_clock_crosses(self) -> None:
         backend = self._task8_backend()
         scratch = self._task8_create(
@@ -9374,6 +10720,302 @@ class ManagedScratchTests(unittest.TestCase):
         self.assertLess(delete_index, close_index)
         self.assertLess(close_index, absence_index)
 
+    def test_task8_post_consume_payload_replacement_is_absence_only(
+        self,
+    ) -> None:
+        for index, kind in enumerate(
+            (EntryKind.REGULAR, EntryKind.REPARSE, EntryKind.OTHER),
+            start=1,
+        ):
+            with self.subTest(kind=kind):
+                backend = self._task8_backend()
+                scratch = self._task8_create(
+                    backend,
+                    run_id=(
+                        "00000000-0000-4000-8000-"
+                        f"{834 + index:012d}"
+                    ),
+                )
+                root = self._task8_root_node(backend, scratch)
+                original = self._task8_add_payload(
+                    backend, root, "payload", kind=kind
+                )
+                real_delete = backend.delete
+                replacement: _ManagedRecordedNode | None = None
+
+                def fail_after_consuming_delete(
+                    capability: FileCapability | DirectoryCapability,
+                ) -> None:
+                    nonlocal replacement
+                    node = backend._resource(capability).node
+                    real_delete(capability)
+                    if node is original and replacement is None:
+                        replacement = self._task8_same_identity_replacement(
+                            backend, original
+                        )
+                        raise OSError(
+                            "injected payload post-consume absence failure"
+                        )
+
+                with mock.patch.object(
+                    backend,
+                    "delete",
+                    side_effect=fail_after_consuming_delete,
+                ):
+                    first = self._task8_cleanup(scratch, backend)
+                    retry_start = len(backend.cleanup_operations)
+                    second = self._task8_cleanup(scratch, backend)
+
+                self.assertEqual(
+                    first.status, ScratchCleanupStatus.FAILED, first
+                )
+                self.assertEqual(
+                    second.status, ScratchCleanupStatus.FAILED, second
+                )
+                assert replacement is not None
+                self.assertIs(root.children["payload"], replacement)
+                retry = backend.cleanup_operations[retry_start:]
+                self.assertIn("entry:payload", retry)
+                self.assertNotIn("open_entry:payload", retry)
+                self.assertNotIn("delete:payload", retry)
+
+    def test_task8_post_consume_completed_directory_is_absence_only(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000838",
+        )
+        root = self._task8_root_node(backend, scratch)
+        original = self._task8_add_payload(
+            backend, root, "empty", kind=EntryKind.DIRECTORY
+        )
+        real_delete = backend.delete
+        replacement: _ManagedRecordedNode | None = None
+        sentinel: _ManagedRecordedNode | None = None
+
+        def fail_after_consuming_delete(
+            capability: FileCapability | DirectoryCapability,
+        ) -> None:
+            nonlocal replacement, sentinel
+            node = backend._resource(capability).node
+            real_delete(capability)
+            if node is original and replacement is None:
+                replacement = self._task8_same_identity_replacement(
+                    backend, original
+                )
+                sentinel = self._task8_add_payload(
+                    backend, replacement, "sentinel"
+                )
+                raise OSError(
+                    "injected directory post-consume absence failure"
+                )
+
+        with mock.patch.object(
+            backend, "delete", side_effect=fail_after_consuming_delete
+        ):
+            first = self._task8_cleanup(scratch, backend)
+            retry_start = len(backend.cleanup_operations)
+            second = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(first.status, ScratchCleanupStatus.FAILED, first)
+        self.assertEqual(second.status, ScratchCleanupStatus.FAILED, second)
+        assert replacement is not None
+        assert sentinel is not None
+        self.assertIs(root.children["empty"], replacement)
+        self.assertIs(replacement.children["sentinel"], sentinel)
+        retry = backend.cleanup_operations[retry_start:]
+        self.assertIn("entry:empty", retry)
+        self.assertNotIn("open_directory:empty", retry)
+        self.assertNotIn("delete:empty", retry)
+
+    def test_task8_post_consume_child_root_is_absence_only(self) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000839",
+        )
+        child_path = scratch.create_child("candidate-0001")
+        root = self._task8_root_node(backend, scratch)
+        original = root.children[child_path.name]
+        real_delete = backend.delete
+        replacement: _ManagedRecordedNode | None = None
+        sentinel: _ManagedRecordedNode | None = None
+
+        def fail_after_consuming_delete(
+            capability: FileCapability | DirectoryCapability,
+        ) -> None:
+            nonlocal replacement, sentinel
+            node = backend._resource(capability).node
+            real_delete(capability)
+            if node is original and replacement is None:
+                replacement = self._task8_same_identity_replacement(
+                    backend, original
+                )
+                sentinel = self._task8_add_payload(
+                    backend, replacement, "sentinel"
+                )
+                raise OSError(
+                    "injected child-root post-consume absence failure"
+                )
+
+        with mock.patch.object(
+            backend, "delete", side_effect=fail_after_consuming_delete
+        ):
+            first = scratch.remove_child(child_path)
+            retry_start = len(backend.cleanup_operations)
+            second = scratch.remove_child(child_path)
+
+        self.assertEqual(first.status, ScratchCleanupStatus.FAILED, first)
+        self.assertEqual(second.status, ScratchCleanupStatus.FAILED, second)
+        assert replacement is not None
+        assert sentinel is not None
+        self.assertIs(root.children[child_path.name], replacement)
+        self.assertIs(replacement.children["sentinel"], sentinel)
+        retry = backend.cleanup_operations[retry_start:]
+        self.assertIn(f"entry:{child_path.name}", retry)
+        self.assertNotIn(f"open_directory:{child_path.name}", retry)
+        self.assertNotIn(f"delete:{child_path.name}", retry)
+
+    def test_task8_post_consume_tail_marker_is_absence_only(self) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000840",
+        )
+        root_owner = scratch._root
+        assert root_owner is not None
+        marker_name = ".hoimin-cleanup-ready.json"
+        marker_owner = backend.open_file(
+            root_owner,
+            marker_name,
+            access=FileAccess.WRITE,
+            disposition=CreateDisposition.CREATE_NEW,
+            share_policy=SharePolicy.MUTATION,
+        )
+        marker_owner.close()
+        root = self._task8_root_node(backend, scratch)
+        original = root.children[marker_name]
+        real_delete = backend.delete
+        replacement: _ManagedRecordedNode | None = None
+
+        def fail_after_consuming_delete(
+            capability: FileCapability | DirectoryCapability,
+        ) -> None:
+            nonlocal replacement
+            node = backend._resource(capability).node
+            real_delete(capability)
+            if node is original and replacement is None:
+                replacement = self._task8_same_identity_replacement(
+                    backend, original
+                )
+                raise OSError(
+                    "injected marker post-consume absence failure"
+                )
+
+        with mock.patch.object(
+            backend, "delete", side_effect=fail_after_consuming_delete
+        ):
+            first = self._task8_cleanup(scratch, backend)
+            retry_start = len(backend.cleanup_operations)
+            second = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(first.status, ScratchCleanupStatus.FAILED, first)
+        self.assertEqual(second.status, ScratchCleanupStatus.FAILED, second)
+        assert replacement is not None
+        self.assertIs(root.children[marker_name], replacement)
+        retry = backend.cleanup_operations[retry_start:]
+        self.assertIn(f"entry:{marker_name}", retry)
+        self.assertNotIn(f"open_entry:{marker_name}", retry)
+        self.assertNotIn(f"delete:{marker_name}", retry)
+
+    def test_task8_post_consume_run_root_failure_stays_failed(self) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000841",
+        )
+        original = self._task8_root_node(backend, scratch)
+        deleting_name = f".deleting-{scratch.run_id}"
+        real_delete = backend.delete
+        replacement: _ManagedRecordedNode | None = None
+        sentinel: _ManagedRecordedNode | None = None
+
+        def fail_after_consuming_delete(
+            capability: FileCapability | DirectoryCapability,
+        ) -> None:
+            nonlocal replacement, sentinel
+            node = backend._resource(capability).node
+            real_delete(capability)
+            if node is original and replacement is None:
+                replacement = self._task8_same_identity_replacement(
+                    backend, original
+                )
+                sentinel = self._task8_add_payload(
+                    backend, replacement, "sentinel"
+                )
+                raise OSError(
+                    "injected run-root post-consume absence failure"
+                )
+
+        with mock.patch.object(
+            backend, "delete", side_effect=fail_after_consuming_delete
+        ):
+            first = self._task8_cleanup(scratch, backend)
+            retry_start = len(backend.cleanup_operations)
+            second = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(first.status, ScratchCleanupStatus.FAILED, first)
+        self.assertEqual(second.status, ScratchCleanupStatus.FAILED, second)
+        managed = backend.parent.children["hoimin-focused-v1"]
+        assert replacement is not None
+        assert sentinel is not None
+        self.assertIs(managed.children[deleting_name], replacement)
+        self.assertIs(replacement.children["sentinel"], sentinel)
+        retry = backend.cleanup_operations[retry_start:]
+        self.assertIn(f"entry:{deleting_name}", retry)
+        self.assertNotIn(f"open_directory:{deleting_name}", retry)
+        self.assertNotIn(f"delete:{deleting_name}", retry)
+
+    def test_task8_tail_host_error_stays_failed_when_report_crosses_deadline(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000842",
+        )
+        clock = [0.0]
+        real_delete = backend.delete
+
+        def fail_root_delete(
+            capability: FileCapability | DirectoryCapability,
+        ) -> None:
+            if capability.identity == scratch._root_identity:
+                raise TimeoutError("filesystem ETIMEDOUT during root delete")
+            real_delete(capability)
+
+        def cross_during_report(operation: str) -> None:
+            if operation == "final_path":
+                clock[0] = 60.0
+
+        backend.after_cleanup_operation = cross_during_report
+        with (
+            mock.patch.object(
+                backend, "delete", side_effect=fail_root_delete
+            ),
+            mock.patch(
+                "tools.focused_mutation_support.lease.time.monotonic",
+                side_effect=lambda: clock[0],
+            ),
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertIn("ETIMEDOUT", cleanup.details[0])
+        self.assertIn("deadline", "; ".join(cleanup.details))
+
     def test_task8_child_and_root_cleanup_close_every_owner(self) -> None:
         backend = self._task8_backend()
         scratch = self._task8_create(
@@ -9414,6 +11056,77 @@ class ManagedScratchTests(unittest.TestCase):
         self.assertLess(marker_delete, root_delete)
         self.assertEqual(len(backend.live_resources), 0)
         self.assertLessEqual(backend.max_directory_resources, 3)
+
+    def test_task8_recording_cleanup_deletes_reparse_and_other_exactly(
+        self,
+    ) -> None:
+        for index, kind in enumerate(
+            (EntryKind.REPARSE, EntryKind.OTHER), start=1
+        ):
+            with self.subTest(kind=kind):
+                backend = self._task8_backend()
+                scratch = self._task8_create(
+                    backend,
+                    run_id=(
+                        "00000000-0000-4000-8000-"
+                        f"{858 + index:012d}"
+                    ),
+                )
+                root = self._task8_root_node(backend, scratch)
+                name = f"payload-{kind.value}"
+                payload = self._task8_add_payload(
+                    backend, root, name, kind=kind
+                )
+
+                cleanup = self._task8_cleanup(scratch, backend)
+
+                self.assertEqual(
+                    cleanup.status, ScratchCleanupStatus.CLEAN, cleanup
+                )
+                self.assertNotIn(name, root.children)
+                self.assertIn(f"open_entry:{name}", backend.cleanup_operations)
+                self.assertIn(f"delete:{name}", backend.cleanup_operations)
+                self.assertGreaterEqual(
+                    backend.close_counts.get(payload.identity, 0), 1
+                )
+
+    def test_task8_native_link_or_junction_cleanup_preserves_target_sentinel(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            target = parent / "external-target"
+            target.mkdir()
+            sentinel = target / "sentinel"
+            sentinel.write_text("keep", encoding="utf-8")
+            scratch = ManagedScratch.create(
+                parent,
+                run_id="00000000-0000-4000-8000-000000000861",
+            )
+            child = scratch.create_child("candidate-0001")
+            link = child / "external-link"
+            if os.name == "nt":
+                windows_tests: ModuleType = __import__(
+                    "tests.test_focused_mutation_windows_filesystem",
+                    fromlist=["WindowsEnumerationTests"],
+                )
+                helper_type = cast(
+                    type[_WindowsJunctionHelper],
+                    getattr(windows_tests, "WindowsEnumerationTests"),
+                )
+                helper_type()._junction(link, target)
+            else:
+                link.symlink_to(target, target_is_directory=True)
+
+            try:
+                cleanup = self._task8_native_cleanup(scratch)
+            finally:
+                scratch.close_capabilities()
+
+            self.assertEqual(cleanup.status, ScratchCleanupStatus.CLEAN, cleanup)
+            self.assertFalse(link.exists())
+            self.assertTrue(target.is_dir())
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep")
 
     def test_cleanup_removes_only_the_leased_root(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -9779,7 +11492,7 @@ class ManagedScratchTests(unittest.TestCase):
             ):
                 cleanup = scratch.cleanup()
 
-            self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED)
+            self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED)
             self.assertIsNone(cleanup.remaining_root)
             self.assertIn("lookup failed", "; ".join(cleanup.details))
             scratch.close_capabilities()
@@ -10581,30 +12294,61 @@ class ManagedScratchTests(unittest.TestCase):
             scratch = ManagedScratch.create(Path(directory))
             lease_module = __import__(
                 "tools.focused_mutation_support.lease",
-                fromlist=["_close_lease_lock_all"],
+                fromlist=["_open_coordinator"],
             )
-            real_close_all = lease_module._close_lease_lock_all
+            real_open = lease_module._open_coordinator
+            real_close = os.close
+            opened: list[LeaseLock] = []
+            close_attempts = 0
 
-            def fail_claim_close(
-                lock: LeaseLock,
-                label: str,
-            ) -> tuple[str, ...]:
-                errors = real_close_all(lock, label)
-                if label == "cleanup claim coordinator":
-                    return (*errors, "injected claim coordinator close failure")
-                return errors
+            def track_coordinator(
+                *args: object, **kwargs: object
+            ) -> LeaseLock:
+                coordinator = real_open(*args, **kwargs)
+                opened.append(coordinator)
+                return coordinator
 
-            with mock.patch(
-                "tools.focused_mutation_support.lease._close_lease_lock_all",
-                side_effect=fail_claim_close,
+            def fail_claim_close(descriptor: int) -> None:
+                nonlocal close_attempts
+                if opened and descriptor == opened[0].fd:
+                    close_attempts += 1
+                    raise OSError(
+                        "injected claim coordinator close failure "
+                        f"{close_attempts}"
+                    )
+                real_close(descriptor)
+
+            with (
+                mock.patch.object(
+                    lease_module,
+                    "_open_coordinator",
+                    side_effect=track_coordinator,
+                ),
+                mock.patch.object(
+                    lease_module.os,
+                    "close",
+                    side_effect=fail_claim_close,
+                ),
             ):
                 cleanup = scratch.cleanup()
 
-            self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED)
-            self.assertEqual(cleanup.remaining_root, str(scratch.path))
-            self.assertTrue(scratch.path.is_dir())
-            self.assertIn("claim coordinator close failure", cleanup.details[0])
-            scratch.close_capabilities()
+            try:
+                self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED)
+                self.assertEqual(cleanup.remaining_root, str(scratch.path))
+                self.assertTrue(scratch.path.is_dir())
+                self.assertEqual(close_attempts, 2)
+                joined = "; ".join(cleanup.details)
+                self.assertIn("claim coordinator close failure 1", joined)
+                self.assertIn("claim coordinator close failure 2", joined)
+                self.assertEqual(
+                    joined.count("managed namespace cleanup unavailable"), 1
+                )
+                scratch.close_capabilities()
+                self.assertEqual(close_attempts, 2)
+            finally:
+                for coordinator in opened:
+                    coordinator.__del__()
+                scratch.__del__()
 
     def test_cleanup_tail_preserves_primary_and_coordinator_close_secondary(
         self,
@@ -10618,50 +12362,120 @@ class ManagedScratchTests(unittest.TestCase):
         failed_root_owner: DirectoryCapability | None = None
         lease_module = __import__(
             "tools.focused_mutation_support.lease",
-            fromlist=["_close_lease_lock_all"],
+            fromlist=["os"],
         )
-        real_close_all = lease_module._close_lease_lock_all
+        real_close = os.close
+        tail_delete_started = False
+        tail_close_attempts = 0
 
         def fail_tail_identity(
             capability: FileCapability | DirectoryCapability,
         ) -> None:
-            nonlocal failed_root_owner
+            nonlocal failed_root_owner, tail_delete_started
             if capability.identity == scratch._root_identity:
                 assert isinstance(capability, DirectoryCapability)
                 failed_root_owner = capability
+                tail_delete_started = True
                 raise OSError("managed root identity changed during tail delete")
             real_delete(capability)
 
-        def fail_tail_close(
-            lock: LeaseLock,
-            label: str,
-        ) -> tuple[str, ...]:
-            errors = real_close_all(lock, label)
-            if label == "cleanup coordinator":
-                return (*errors, "injected tail coordinator close failure")
-            return errors
+        def fail_tail_close(descriptor: int) -> None:
+            nonlocal tail_close_attempts
+            coordinator = backend.coordinator
+            if (
+                tail_delete_started
+                and coordinator is not None
+                and descriptor == coordinator.fd
+            ):
+                tail_close_attempts += 1
+                if tail_close_attempts == 1:
+                    raise OSError(
+                        "injected tail coordinator close failure"
+                    )
+            real_close(descriptor)
 
         with (
             mock.patch.object(
                 backend, "delete", side_effect=fail_tail_identity
             ),
             mock.patch.object(
-                lease_module,
-                "_close_lease_lock_all",
+                lease_module.os,
+                "close",
                 side_effect=fail_tail_close,
             ),
         ):
             cleanup = self._task8_cleanup(scratch, backend)
 
         self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertIn("identity changed", cleanup.details[0])
         self.assertIn("identity changed", "; ".join(cleanup.details))
         self.assertIn(
             "tail coordinator close failure", "; ".join(cleanup.details)
         )
+        self.assertEqual(tail_close_attempts, 2)
         self.assertEqual(cleanup.remaining_root, str(scratch.path))
         assert failed_root_owner is not None
         self.assertFalse(failed_root_owner.is_open)
         self.assertIsNone(scratch._root)
+
+    def test_task8_tail_delete_failure_retains_persistent_root_owner(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000867",
+        )
+        root_identity = scratch._root_identity
+        backend.close_failures_by_identity[root_identity] = 3
+        real_delete = backend.delete
+        failed_root_owner: DirectoryCapability | None = None
+
+        def fail_root_delete(
+            capability: FileCapability | DirectoryCapability,
+        ) -> None:
+            nonlocal failed_root_owner
+            if capability.identity == root_identity:
+                assert isinstance(capability, DirectoryCapability)
+                failed_root_owner = capability
+                raise OSError("injected tail root delete primary")
+            real_delete(capability)
+
+        with mock.patch.object(
+            backend, "delete", side_effect=fail_root_delete
+        ):
+            first = self._task8_cleanup(scratch, backend)
+            boundary = len(backend.cleanup_operations)
+            second = self._task8_cleanup(scratch, backend)
+
+        self.assertEqual(first.status, ScratchCleanupStatus.FAILED, first)
+        self.assertIn("tail root delete primary", first.details[0])
+        assert failed_root_owner is not None
+        self.assertEqual(failed_root_owner._close_attempts, 2)
+        self.assertTrue(failed_root_owner.is_open)
+        self.assertIs(scratch._root, failed_root_owner)
+        self.assertEqual(second.status, ScratchCleanupStatus.FAILED, second)
+        self.assertFalse(
+            any(
+                operation.startswith(
+                    ("entry:", "open_", "rename:", "delete:")
+                )
+                for operation in backend.cleanup_operations[boundary:]
+            ),
+            backend.cleanup_operations[boundary:],
+        )
+        self.assertEqual(
+            "; ".join(second.details).count(
+                "managed namespace cleanup unavailable"
+            ),
+            1,
+        )
+        resource = backend._resource(failed_root_owner)
+        resource.close_failures = 0
+        del failed_root_owner
+        scratch.__del__()
+        gc.collect()
+        self.assertTrue(resource.closed)
 
     def test_cleanup_does_not_claim_root_after_total_deadline(self) -> None:
         backend = self._task8_backend()
