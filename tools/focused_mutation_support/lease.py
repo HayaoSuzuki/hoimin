@@ -6125,6 +6125,22 @@ class _FixedJanitorNameSkips:
         return any(self._names[index] == name for index in range(self.count))
 
 
+class _DeferredVerificationDetailCell:
+    __slots__ = ("reservation", "generation", "detail", "next_index")
+
+    def __init__(self) -> None:
+        self.reservation: _DeferredEmptyReservation | None = None
+        self.generation = 0
+        self.detail: str | None = None
+        self.next_index = -1
+
+    def clear(self) -> None:
+        self.reservation = None
+        self.generation = 0
+        self.detail = None
+        self.next_index = -1
+
+
 class _DeferredEmptyPendingCell:
     __slots__ = (
         "reserved",
@@ -6142,7 +6158,10 @@ class _DeferredEmptyPendingCell:
         "filesystem",
         "removed_after",
         "primary_error",
-        "verification_error",
+        "verification_head",
+        "verification_tail",
+        "verification_count",
+        "verification_omitted_count",
     )
 
     def __init__(self) -> None:
@@ -6161,11 +6180,16 @@ class _DeferredEmptyPendingCell:
         self.filesystem: FilesystemIdentity | None = None
         self.removed_after = 0
         self.primary_error: BaseException | None = None
-        self.verification_error: BaseException | None = None
+        self.verification_head = -1
+        self.verification_tail = -1
+        self.verification_count = 0
+        self.verification_omitted_count = 0
 
     def clear(self) -> None:
         if self.owner is not None and self.owner.is_open:
             raise RuntimeError("cannot discard a live deferred empty owner")
+        if self.verification_count != 0 or self.verification_head >= 0:
+            raise RuntimeError("cannot discard retained verification details")
         self.reserved = False
         self.active = False
         self.resolving = False
@@ -6180,7 +6204,10 @@ class _DeferredEmptyPendingCell:
         self.filesystem = None
         self.removed_after = 0
         self.primary_error = None
-        self.verification_error = None
+        self.verification_head = -1
+        self.verification_tail = -1
+        self.verification_count = 0
+        self.verification_omitted_count = 0
 
 
 class _DeferredEmptyReservation:
@@ -6189,6 +6216,7 @@ class _DeferredEmptyReservation:
         "generation",
         "transferred",
         "removed_after",
+        "current_verification_detail",
     )
 
     def __init__(self) -> None:
@@ -6196,10 +6224,17 @@ class _DeferredEmptyReservation:
         self.generation = 0
         self.transferred = False
         self.removed_after = 0
+        self.current_verification_detail: str | None = None
 
 
 class _DeferredEmptyPendingRegistry:
-    __slots__ = ("_cells", "_lock")
+    __slots__ = (
+        "_cells",
+        "_lock",
+        "_verification_details",
+        "_verification_detail_count",
+        "_verification_free_head",
+    )
 
     def __init__(self) -> None:
         self._cells = [
@@ -6207,6 +6242,16 @@ class _DeferredEmptyPendingRegistry:
             for _index in range(MAX_RECLAIM_CANDIDATES)
         ]
         self._lock = threading.Lock()
+        self._verification_details = [
+            _DeferredVerificationDetailCell()
+            for _index in range(MAX_DIAGNOSTIC_DETAILS)
+        ]
+        for index in range(len(self._verification_details) - 1):
+            self._verification_details[index].next_index = index + 1
+        self._verification_detail_count = 0
+        self._verification_free_head = (
+            0 if self._verification_details else -1
+        )
 
     def reserve(
         self,
@@ -6255,6 +6300,7 @@ class _DeferredEmptyPendingRegistry:
                 return
             if cell.active:
                 return
+            self._release_verification_locked(cell, reservation)
             cell.clear()
 
     def is_active(self, reservation: _DeferredEmptyReservation) -> bool:
@@ -6308,53 +6354,224 @@ class _DeferredEmptyPendingRegistry:
             reservation.removed_after = pending.removed_after
             pending.clear()
 
+    def _verification_contains_locked(
+        self,
+        cell: _DeferredEmptyPendingCell,
+        reservation: _DeferredEmptyReservation,
+        detail: str,
+    ) -> bool:
+        index = cell.verification_head
+        seen = 0
+        while index >= 0:
+            if seen >= cell.verification_count:
+                raise RuntimeError("deferred verification chain is cyclic")
+            item = self._verification_details[index]
+            if (
+                item.reservation is not reservation
+                or item.generation != reservation.generation
+                or item.detail is None
+            ):
+                raise RuntimeError("deferred verification chain is stale")
+            if item.detail == detail:
+                return True
+            index = item.next_index
+            seen += 1
+        if seen != cell.verification_count:
+            raise RuntimeError("deferred verification chain is incomplete")
+        return False
+
+    def _append_verification_locked(
+        self,
+        cell: _DeferredEmptyPendingCell,
+        reservation: _DeferredEmptyReservation,
+        detail: str,
+    ) -> bool:
+        if self._verification_detail_count >= len(
+            self._verification_details
+        ):
+            return False
+        free_index = self._verification_free_head
+        if free_index < 0:
+            raise RuntimeError("deferred verification pool is inconsistent")
+        if cell.verification_tail < 0:
+            if cell.verification_head >= 0 or cell.verification_count != 0:
+                raise RuntimeError("deferred verification head is inconsistent")
+        else:
+            tail = self._verification_details[cell.verification_tail]
+            if (
+                tail.reservation is not reservation
+                or tail.generation != reservation.generation
+                or tail.next_index >= 0
+            ):
+                raise RuntimeError("deferred verification tail is stale")
+        item = self._verification_details[free_index]
+        if item.reservation is not None or item.detail is not None:
+            raise RuntimeError("deferred verification free list is stale")
+        self._verification_free_head = item.next_index
+        item.reservation = reservation
+        item.generation = reservation.generation
+        item.detail = detail
+        item.next_index = -1
+        if cell.verification_tail < 0:
+            cell.verification_head = free_index
+        else:
+            tail = self._verification_details[cell.verification_tail]
+            tail.next_index = free_index
+        cell.verification_tail = free_index
+        cell.verification_count += 1
+        self._verification_detail_count += 1
+        return True
+
+    def _release_verification_locked(
+        self,
+        cell: _DeferredEmptyPendingCell,
+        reservation: _DeferredEmptyReservation,
+    ) -> None:
+        index = cell.verification_head
+        seen = 0
+        while index >= 0:
+            if seen >= cell.verification_count:
+                raise RuntimeError("deferred verification chain is cyclic")
+            item = self._verification_details[index]
+            if (
+                item.reservation is not reservation
+                or item.generation != reservation.generation
+                or item.detail is None
+            ):
+                raise RuntimeError("deferred verification chain is stale")
+            next_index = item.next_index
+            item.clear()
+            item.next_index = self._verification_free_head
+            self._verification_free_head = index
+            self._verification_detail_count -= 1
+            index = next_index
+            seen += 1
+        if seen != cell.verification_count:
+            raise RuntimeError("deferred verification chain is incomplete")
+        cell.verification_head = -1
+        cell.verification_tail = -1
+        cell.verification_count = 0
+
     @staticmethod
-    def _error_details(
-        primary_error: BaseException | None,
-        verification_error: BaseException | None,
+    def _add_materialized_detail(
+        items: list[str | None], count: int, detail: str
+    ) -> tuple[int, bool]:
+        for index in range(count):
+            if items[index] == detail:
+                return count, False
+        if count >= len(items):
+            return count, False
+        items[count] = detail
+        return count + 1, True
+
+    @staticmethod
+    def _materialized_contains(
+        items: list[str | None], count: int, detail: str
+    ) -> bool:
+        for index in range(count):
+            if items[index] == detail:
+                return True
+        return False
+
+    def _materialize_details_locked(
+        self,
+        cell: _DeferredEmptyPendingCell,
+        reservation: _DeferredEmptyReservation,
         terminal_detail: str | None = None,
-    ) -> tuple[str, ...]:
-        primary_detail = (
-            None
-            if primary_error is None
-            else _bounded_janitor_detail(_exception_detail(primary_error))
-        )
-        verification_detail = (
-            None
-            if verification_error is None
-            else _bounded_janitor_detail(
-                _exception_detail(verification_error)
+    ) -> tuple[tuple[str, ...], int]:
+        items: list[str | None] = [None] * MAX_DIAGNOSTIC_DETAILS
+        count = 0
+        omitted = cell.verification_omitted_count
+        if cell.primary_error is not None:
+            try:
+                primary_detail = _bounded_janitor_detail(
+                    _exception_detail(cell.primary_error)
+                )
+            except BaseException:
+                primary_detail = "OSError: operational detail unavailable"
+                omitted += 1
+            count, _added = self._add_materialized_detail(
+                items, count, primary_detail
+            )
+        current_detail = reservation.current_verification_detail
+        try:
+            bounded_terminal = (
+                None
+                if terminal_detail is None
+                else _bounded_janitor_detail(terminal_detail)
+            )
+        except BaseException:
+            bounded_terminal = "janitor terminal detail unavailable"
+            omitted += 1
+        reserved = 0
+        if (
+            current_detail is not None
+            and not self._materialized_contains(
+                items, count, current_detail
+            )
+        ):
+            reserved += 1
+        terminal_in_chain = (
+            bounded_terminal is not None
+            and self._verification_contains_locked(
+                cell, reservation, bounded_terminal
             )
         )
-        if verification_detail == primary_detail:
-            verification_detail = None
-        bounded_terminal = (
-            None
-            if terminal_detail is None
-            else _bounded_janitor_detail(terminal_detail)
+        if (
+            bounded_terminal is not None
+            and not self._materialized_contains(
+                items, count, bounded_terminal
+            )
+            and bounded_terminal != current_detail
+            and not terminal_in_chain
+        ):
+            reserved += 1
+        pool_limit = len(items) - reserved
+        index = cell.verification_head
+        seen = 0
+        while index >= 0:
+            if seen >= cell.verification_count:
+                raise RuntimeError("deferred verification chain is cyclic")
+            item = self._verification_details[index]
+            if (
+                item.reservation is not reservation
+                or item.generation != reservation.generation
+                or item.detail is None
+            ):
+                raise RuntimeError("deferred verification chain is stale")
+            if not self._materialized_contains(
+                items, count, item.detail
+            ):
+                if count < pool_limit:
+                    count, _added = self._add_materialized_detail(
+                        items, count, item.detail
+                    )
+                else:
+                    omitted += 1
+            index = item.next_index
+            seen += 1
+        if seen != cell.verification_count:
+            raise RuntimeError("deferred verification chain is incomplete")
+        if current_detail is not None:
+            count, _added = self._add_materialized_detail(
+                items, count, current_detail
+            )
+        if bounded_terminal is not None:
+            count, _added = self._add_materialized_detail(
+                items, count, bounded_terminal
+            )
+        return (
+            tuple(cast(str, items[index]) for index in range(count)),
+            omitted,
         )
-        if bounded_terminal in (primary_detail, verification_detail):
-            bounded_terminal = None
-        if primary_detail is None:
-            if verification_detail is None:
-                return () if bounded_terminal is None else (bounded_terminal,)
-            if bounded_terminal is None:
-                return (verification_detail,)
-            return (verification_detail, bounded_terminal)
-        if verification_detail is None:
-            if bounded_terminal is None:
-                return (primary_detail,)
-            return (primary_detail, bounded_terminal)
-        if bounded_terminal is None:
-            return (primary_detail, verification_detail)
-        return (primary_detail, verification_detail, bounded_terminal)
 
-    @classmethod
     def _deferred_record(
-        cls, cell: _DeferredEmptyPendingCell
+        self,
+        cell: _DeferredEmptyPendingCell,
+        reservation: _DeferredEmptyReservation,
     ) -> ScratchCleanupRecord:
-        details = cls._error_details(
-            cell.primary_error, cell.verification_error
+        details, omitted = self._materialize_details_locked(
+            cell, reservation
         )
         return ScratchCleanupRecord(
             ScratchCleanupStatus.DEFERRED,
@@ -6362,6 +6579,7 @@ class _DeferredEmptyPendingRegistry:
             cell.removed_after,
             details,
             remaining_root=None,
+            omitted_detail_count=omitted,
         )
 
     def set_primary_error(
@@ -6376,17 +6594,67 @@ class _DeferredEmptyPendingRegistry:
             if cell.primary_error is None:
                 cell.primary_error = error
 
-    def set_verification_error(
+    def remember_verification_error(
         self,
         reservation: _DeferredEmptyReservation,
         error: BaseException,
     ) -> None:
+        fallback = (
+            "_DeadlineExceeded: verification detail unavailable"
+            if isinstance(error, _DeadlineExceeded)
+            else "OSError: verification detail unavailable"
+        )
+        detail_unavailable = False
+        try:
+            detail = _bounded_janitor_detail(_exception_detail(error))
+        except BaseException:
+            detail = fallback
+            detail_unavailable = True
         with self._lock:
             cell = self._matching_cell_locked(reservation)
             if cell is None or not cell.active:
                 raise RuntimeError("deferred empty evidence is unavailable")
-            if cell.verification_error is None:
-                cell.verification_error = error
+            reservation.current_verification_detail = None
+            primary_detail: str | None = None
+            if cell.primary_error is not None:
+                try:
+                    primary_detail = _bounded_janitor_detail(
+                        _exception_detail(cell.primary_error)
+                    )
+                except BaseException:
+                    pass
+            if detail_unavailable:
+                cell.verification_omitted_count += 1
+            if (
+                detail == primary_detail
+                or self._verification_contains_locked(
+                    cell, reservation, detail
+                )
+            ):
+                cell.resolving = False
+                return
+            if self._append_verification_locked(
+                cell, reservation, detail
+            ):
+                cell.resolving = False
+                return
+            if not detail_unavailable:
+                cell.verification_omitted_count += 1
+            reservation.current_verification_detail = detail
+            cell.resolving = False
+
+    def _materialize_reserved_details(
+        self,
+        reservation: _DeferredEmptyReservation,
+        terminal_detail: str | None = None,
+    ) -> tuple[tuple[str, ...], int]:
+        with self._lock:
+            cell = self._matching_cell_locked(reservation)
+            if cell is None or not cell.active:
+                raise RuntimeError("deferred empty evidence is unavailable")
+            return self._materialize_details_locked(
+                cell, reservation, terminal_detail
+            )
 
     def close_owner_retry(
         self, reservation: _DeferredEmptyReservation
@@ -6420,8 +6688,6 @@ class _DeferredEmptyPendingRegistry:
             filesystem = cell.filesystem
             removed_after = cell.removed_after
             managed_root = cell.managed_root
-            primary_error = cell.primary_error
-            verification_error = cell.verification_error
         if identity is None or filesystem is None or managed_root is None:
             with self._lock:
                 current = self._matching_cell_locked(reservation)
@@ -6435,45 +6701,50 @@ class _DeferredEmptyPendingRegistry:
             )
             _check_deadline(deadline, "deferred empty pending absence")
             if remaining is None:
+                details, omitted = self._materialize_reserved_details(
+                    reservation
+                )
                 record = ScratchCleanupRecord(
                     ScratchCleanupStatus.CLEAN,
                     0,
                     removed_after,
-                    self._error_details(
-                        primary_error, verification_error
-                    ),
+                    details,
+                    omitted_detail_count=omitted,
                 )
             elif (
                 remaining.identity == identity
                 and remaining.filesystem == filesystem
             ):
+                remaining_root = validate_reported_path(managed_root / name)
+                details, omitted = self._materialize_reserved_details(
+                    reservation,
+                    "empty candidate deletion did not commit",
+                )
                 record = ScratchCleanupRecord(
                     ScratchCleanupStatus.FAILED,
                     0,
                     0,
-                    self._error_details(
-                        primary_error,
-                        verification_error,
-                        "empty candidate deletion did not commit",
-                    ),
-                    validate_reported_path(managed_root / name),
+                    details,
+                    remaining_root,
+                    omitted_detail_count=omitted,
                 )
             else:
+                remaining_root = validate_reported_path(managed_root / name)
+                details, omitted = self._materialize_reserved_details(
+                    reservation,
+                    "empty candidate replacement preserved after removal",
+                )
                 record = ScratchCleanupRecord(
                     ScratchCleanupStatus.FAILED,
                     0,
                     removed_after,
-                    self._error_details(
-                        primary_error,
-                        verification_error,
-                        "empty candidate replacement preserved after removal",
-                    ),
-                    validate_reported_path(managed_root / name),
+                    details,
+                    remaining_root,
+                    omitted_detail_count=omitted,
                 )
             return record, name
         except (_DeadlineExceeded, OSError) as error:
-            self.set_verification_error(reservation, error)
-            self.cancel_resolution(reservation)
+            self.remember_verification_error(reservation, error)
             raise
         except BaseException:
             self.cancel_resolution(reservation)
@@ -6511,7 +6782,7 @@ class _DeferredEmptyPendingRegistry:
             cell = self._matching_cell_locked(reservation)
             if cell is None or not cell.active:
                 raise RuntimeError("deferred empty evidence is unavailable")
-            return self._deferred_record(cell)
+            return self._deferred_record(cell, reservation)
 
     def verification_failure_reserved(
         self, reservation: _DeferredEmptyReservation
@@ -6521,19 +6792,24 @@ class _DeferredEmptyPendingRegistry:
             if cell is None or not cell.active:
                 raise RuntimeError("deferred empty evidence is unavailable")
             primary_error = cell.primary_error
-            verification_error = cell.verification_error
             removed_after = cell.removed_after
-        return ScratchCleanupRecord(
-            (
-                ScratchCleanupStatus.FAILED
-                if primary_error is not None
-                else ScratchCleanupStatus.DEFERRED
-            ),
-            0,
-            0 if primary_error is not None else removed_after,
-            self._error_details(primary_error, verification_error),
-            remaining_root=None,
-        )
+            details, omitted = self._materialize_details_locked(
+                cell, reservation
+            )
+            record = ScratchCleanupRecord(
+                (
+                    ScratchCleanupStatus.FAILED
+                    if primary_error is not None
+                    else ScratchCleanupStatus.DEFERRED
+                ),
+                0,
+                0 if primary_error is not None else removed_after,
+                details,
+                remaining_root=None,
+                omitted_detail_count=omitted,
+            )
+            reservation.current_verification_detail = None
+            return record
 
     def cancel_resolution(
         self, reservation: _DeferredEmptyReservation
@@ -6550,6 +6826,7 @@ class _DeferredEmptyPendingRegistry:
             cell = self._matching_cell_locked(reservation)
             if cell is None or not cell.active or not cell.resolving:
                 return False
+            self._release_verification_locked(cell, reservation)
             cell.clear()
             return True
 
@@ -6580,7 +6857,7 @@ class _DeferredEmptyPendingRegistry:
                 if reservation is None:
                     raise RuntimeError("deferred empty reservation is missing")
                 if owner is not None and owner.is_open:
-                    deferred = self._deferred_record(cell)
+                    deferred = self._deferred_record(cell, reservation)
                     resolve = False
                 else:
                     deferred = None

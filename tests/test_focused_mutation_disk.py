@@ -11171,17 +11171,22 @@ class ManagedScratchTests(unittest.TestCase):
                         )
                         == expected_primary
                     )
+                    retained_verification_details: list[str] = []
+                    if evidence_active:
+                        detail_index = matching[0].verification_head
+                        while detail_index >= 0:
+                            detail_cell = registry._verification_details[
+                                detail_index
+                            ]
+                            assert detail_cell.detail is not None
+                            retained_verification_details.append(
+                                detail_cell.detail
+                            )
+                            detail_index = detail_cell.next_index
                     verification_retained = (
                         evidence_active
-                        and getattr(
-                            matching[0], "verification_error", None
-                        )
-                        is not None
-                        and (
-                            f"{type(matching[0].verification_error).__name__}: "
-                            f"{matching[0].verification_error}"
-                        )
-                        == expected_verification
+                        and retained_verification_details
+                        == [expected_verification]
                     )
                     owner_evidence_retained = (
                         evidence_active
@@ -11472,10 +11477,20 @@ class ManagedScratchTests(unittest.TestCase):
                             and cell.name == candidate.name
                         )
                     ]
+                    retained_history: list[str] = []
+                    if len(active_cells) == 1:
+                        detail_index = active_cells[0].verification_head
+                        while detail_index >= 0:
+                            detail_cell = registry._verification_details[
+                                detail_index
+                            ]
+                            assert detail_cell.detail is not None
+                            retained_history.append(detail_cell.detail)
+                            detail_index = detail_cell.next_index
                     history_retained = (
                         len(active_cells) == 1
                         and active_cells[0].primary_error is not None
-                        and active_cells[0].verification_error is not None
+                        and retained_history == [expected_verification]
                         and not active_cells[0].resolving
                     )
 
@@ -11563,6 +11578,597 @@ class ManagedScratchTests(unittest.TestCase):
                     self.assertIs(managed.children[candidate.name], replacement)
                     self.assertIn("sentinel", replacement.children)
                 self.assertEqual(len(backend.live_resources), 0)
+
+    def test_task9_verification_history_is_globally_bounded_and_ordered(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_DEFERRED_EMPTY_PENDING"],
+        )
+        registry = lease_module._DEFERRED_EMPTY_PENDING
+        real_clock = time.monotonic
+        for outcome in ("absence", "replacement"):
+            with self.subTest(outcome=outcome):
+                backend = self._task8_backend()
+                managed_capability = self._task7_managed_root(backend)
+                managed = backend._resource(managed_capability).node
+                call_capabilities = [
+                    backend.reopen_directory(
+                        managed_capability, SharePolicy.MUTATION
+                    )
+                    for _index in range(4)
+                ]
+                target = self._task9_add_candidate(
+                    backend,
+                    managed,
+                    run_id="00000000-0000-4000-8000-000000000001",
+                    prefix=".deleting-",
+                    lease=False,
+                    heartbeat=False,
+                )
+                for suffix in range(2, MAX_DIAGNOSTIC_DETAILS):
+                    self._task9_add_candidate(
+                        backend,
+                        managed,
+                        run_id=(
+                            "00000000-0000-4000-8000-"
+                            f"{suffix:012d}"
+                        ),
+                        prefix=".deleting-",
+                        lease=False,
+                        heartbeat=False,
+                    )
+                real_entry = backend.entry
+                real_close_resource = backend.close_resource
+                pending_nodes: dict[int, _ManagedRecordedNode] = {}
+                removed_names: set[str] = set()
+
+                def delete_then_close_fails_once(
+                    capability: FileCapability | DirectoryCapability,
+                ) -> None:
+                    assert isinstance(capability, DirectoryCapability)
+                    resource = backend._resource(capability)
+                    backend._cleanup_operation(
+                        f"delete:{resource.node.name}"
+                    )
+                    pending_nodes[id(resource)] = resource.node
+                    resource.close_failures = 1
+                    capability.close()
+
+                def close_and_commit(value: object) -> None:
+                    real_close_resource(value)
+                    if not isinstance(value, _ManagedRecordedResource):
+                        return
+                    node = pending_nodes.get(id(value))
+                    if node is None or not value.closed:
+                        return
+                    parent = node.parent
+                    if (
+                        parent is not None
+                        and parent.children.get(node.name) is node
+                    ):
+                        del parent.children[node.name]
+                    removed_names.add(node.name)
+
+                def fail_initial_verification(
+                    parent: DirectoryCapability, name: str
+                ) -> DirectoryEntry | None:
+                    if name not in removed_names:
+                        return real_entry(parent, name)
+                    backend._cleanup_operation(f"entry:{name}")
+                    if name == target.name:
+                        raise OSError("history-A")
+                    raise OSError(f"filler-{name}")
+
+                with (
+                    mock.patch.object(
+                        backend,
+                        "delete",
+                        side_effect=delete_then_close_fails_once,
+                    ),
+                    mock.patch.object(
+                        backend,
+                        "close_resource",
+                        side_effect=close_and_commit,
+                    ),
+                    mock.patch.object(
+                        backend,
+                        "entry",
+                        side_effect=fail_initial_verification,
+                    ),
+                ):
+                    initial = reclaim_abandoned(
+                        managed_capability.path_hint,
+                        backend=backend,
+                        managed_root_capability=managed_capability,
+                    )
+
+                expected_primary = (
+                    "OSError: injected close failure for " f"{target.name}"
+                )
+                expected_a = "OSError: history-A"
+                expected_b = (
+                    "_DeadlineExceeded: deferred empty pending absence "
+                    "deadline exceeded"
+                )
+                expected_c = "OSError: history-C"
+
+                def verify_again(
+                    capability: DirectoryCapability,
+                    verification: str,
+                ) -> tuple[
+                    list[ScratchCleanupRecord | JanitorDiagnostic],
+                    list[str],
+                ]:
+                    deadline_crossed = False
+
+                    def fail_target_entry(
+                        parent: DirectoryCapability, name: str
+                    ) -> DirectoryEntry | None:
+                        nonlocal deadline_crossed
+                        if name != target.name:
+                            return real_entry(parent, name)
+                        if verification == "deadline":
+                            remaining = real_entry(parent, name)
+                            deadline_crossed = True
+                            return remaining
+                        backend._cleanup_operation(f"entry:{name}")
+                        raise OSError(verification)
+
+                    def deadline_clock() -> float:
+                        if deadline_crossed:
+                            return real_clock() + 60.0
+                        return real_clock()
+
+                    started = len(backend.cleanup_operations)
+                    with (
+                        mock.patch.object(
+                            backend,
+                            "entry",
+                            side_effect=fail_target_entry,
+                        ),
+                        mock.patch.object(
+                            lease_module.time,
+                            "monotonic",
+                            side_effect=deadline_clock,
+                        ),
+                    ):
+                        records = reclaim_abandoned(
+                            capability.path_hint,
+                            backend=backend,
+                            managed_root_capability=capability,
+                        )
+                    return records, backend.cleanup_operations[started:]
+
+                deadline_records, deadline_operations = verify_again(
+                    call_capabilities[0], "deadline"
+                )
+                with registry._lock:
+                    pool_after_b = getattr(
+                        registry, "_verification_detail_count", -1
+                    )
+                    target_cells = [
+                        cell
+                        for cell in registry._cells
+                        if (
+                            cell.active
+                            and cell.backend is backend
+                            and cell.name == target.name
+                        )
+                    ]
+                    omitted_after_b = (
+                        getattr(
+                            target_cells[0],
+                            "verification_omitted_count",
+                            -1,
+                        )
+                        if len(target_cells) == 1
+                        else -1
+                    )
+                    target_chain_indices: set[int] = set()
+                    target_chain_valid = len(target_cells) == 1
+                    if target_chain_valid:
+                        detail_index = target_cells[0].verification_head
+                        while detail_index >= 0:
+                            if detail_index in target_chain_indices:
+                                target_chain_valid = False
+                                break
+                            target_chain_indices.add(detail_index)
+                            detail_cell = registry._verification_details[
+                                detail_index
+                            ]
+                            if (
+                                detail_cell.reservation
+                                is not target_cells[0].reservation
+                                or detail_cell.generation
+                                != target_cells[0].generation
+                            ):
+                                target_chain_valid = False
+                                break
+                            detail_index = detail_cell.next_index
+                    free_head_after_b = registry._verification_free_head
+
+                duplicate_records, duplicate_operations = verify_again(
+                    call_capabilities[1], "deadline"
+                )
+                with registry._lock:
+                    pool_after_duplicate = getattr(
+                        registry, "_verification_detail_count", -1
+                    )
+                    omitted_after_duplicate = (
+                        getattr(
+                            target_cells[0],
+                            "verification_omitted_count",
+                            -1,
+                        )
+                        if len(target_cells) == 1
+                        else -1
+                    )
+
+                saturated_records, saturated_operations = verify_again(
+                    call_capabilities[2], "history-C"
+                )
+                with registry._lock:
+                    omitted_after_c = (
+                        getattr(
+                            target_cells[0],
+                            "verification_omitted_count",
+                            -1,
+                        )
+                        if len(target_cells) == 1
+                        else -1
+                    )
+
+                replacement: _ManagedRecordedNode | None = None
+                if outcome == "replacement":
+                    replacement = backend._new_node(
+                        EntryKind.DIRECTORY,
+                        SecurityDomain.MANAGED,
+                        parent=managed,
+                        name=target.name,
+                    )
+                    backend._new_node(
+                        EntryKind.REGULAR,
+                        SecurityDomain.MANAGED,
+                        parent=replacement,
+                        name="sentinel",
+                    )
+                terminal_start = len(backend.cleanup_operations)
+                terminal_records = reclaim_abandoned(
+                    call_capabilities[3].path_hint,
+                    backend=backend,
+                    managed_root_capability=call_capabilities[3],
+                )
+                terminal_operations = backend.cleanup_operations[
+                    terminal_start:
+                ]
+
+                def target_record(
+                    records: list[
+                        ScratchCleanupRecord | JanitorDiagnostic
+                    ],
+                ) -> ScratchCleanupRecord | None:
+                    return next(
+                        (
+                            record
+                            for record in _cleanup_records_only(records)
+                            if expected_primary in record.details
+                        ),
+                        None,
+                    )
+
+                initial_target = target_record(initial)
+                deadline_target = target_record(deadline_records)
+                duplicate_target = target_record(duplicate_records)
+                saturated_target = target_record(saturated_records)
+                terminal_target = target_record(terminal_records)
+                expected_terminal = (
+                    (expected_primary, expected_a, expected_b)
+                    if outcome == "absence"
+                    else (
+                        expected_primary,
+                        expected_a,
+                        expected_b,
+                        "empty candidate replacement preserved after removal",
+                    )
+                )
+
+                self.assertIsNotNone(initial_target)
+                assert initial_target is not None
+                self.assertEqual(
+                    initial_target.details, (expected_primary, expected_a)
+                )
+                self.assertIsNotNone(deadline_target)
+                assert deadline_target is not None
+                self.assertEqual(
+                    deadline_target.details,
+                    (expected_primary, expected_a, expected_b),
+                )
+                self.assertEqual(deadline_target.omitted_detail_count, 0)
+                self.assertEqual(
+                    deadline_operations.count(f"entry:{target.name}"), 1
+                )
+                self.assertNotIn(
+                    f"open_directory:{target.name}", deadline_operations
+                )
+                self.assertNotIn(
+                    f"delete:{target.name}", deadline_operations
+                )
+                self.assertEqual(
+                    pool_after_b, MAX_DIAGNOSTIC_DETAILS
+                )
+                self.assertEqual(free_head_after_b, -1)
+                self.assertTrue(target_chain_valid)
+                self.assertEqual(len(target_chain_indices), 2)
+                self.assertEqual(omitted_after_b, 0)
+                self.assertIsNotNone(duplicate_target)
+                assert duplicate_target is not None
+                self.assertEqual(
+                    duplicate_target.details,
+                    (expected_primary, expected_a, expected_b),
+                )
+                self.assertEqual(
+                    duplicate_target.omitted_detail_count, 0
+                )
+                self.assertEqual(pool_after_duplicate, pool_after_b)
+                self.assertEqual(omitted_after_duplicate, omitted_after_b)
+                self.assertEqual(
+                    duplicate_operations.count(f"entry:{target.name}"), 1
+                )
+                self.assertIsNotNone(saturated_target)
+                assert saturated_target is not None
+                self.assertEqual(
+                    saturated_target.details,
+                    (expected_primary, expected_a, expected_b, expected_c),
+                )
+                self.assertEqual(
+                    saturated_target.omitted_detail_count, 1
+                )
+                self.assertEqual(omitted_after_c, 1)
+                self.assertEqual(
+                    saturated_operations.count(f"entry:{target.name}"), 1
+                )
+                self.assertNotIn(
+                    f"open_directory:{target.name}", saturated_operations
+                )
+                self.assertNotIn(
+                    f"delete:{target.name}", saturated_operations
+                )
+                self.assertIsNotNone(terminal_target)
+                assert terminal_target is not None
+                self.assertEqual(terminal_target.details, expected_terminal)
+                self.assertEqual(terminal_target.omitted_detail_count, 1)
+                self.assertEqual(terminal_target.removed_entries, 1)
+                self.assertEqual(
+                    terminal_target.status,
+                    (
+                        ScratchCleanupStatus.CLEAN
+                        if outcome == "absence"
+                        else ScratchCleanupStatus.FAILED
+                    ),
+                )
+                self.assertEqual(
+                    terminal_operations.count(f"entry:{target.name}"), 1
+                )
+                self.assertNotIn(
+                    f"open_directory:{target.name}", terminal_operations
+                )
+                self.assertNotIn(
+                    f"delete:{target.name}", terminal_operations
+                )
+                with registry._lock:
+                    self.assertFalse(
+                        any(
+                            cell.reserved and cell.backend is backend
+                            for cell in registry._cells
+                        )
+                    )
+                    self.assertEqual(
+                        registry._verification_detail_count, 0
+                    )
+                    free_indices: set[int] = set()
+                    free_index = registry._verification_free_head
+                    while free_index >= 0:
+                        self.assertNotIn(free_index, free_indices)
+                        free_indices.add(free_index)
+                        free_cell = registry._verification_details[free_index]
+                        self.assertIsNone(free_cell.reservation)
+                        self.assertIsNone(free_cell.detail)
+                        free_index = free_cell.next_index
+                    self.assertEqual(
+                        len(free_indices), MAX_DIAGNOSTIC_DETAILS
+                    )
+                if replacement is not None:
+                    self.assertIs(managed.children[target.name], replacement)
+                    self.assertIn("sentinel", replacement.children)
+                self.assertEqual(len(backend.live_resources), 0)
+
+    def test_task9_verification_bounding_failure_keeps_typed_fallback(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_DEFERRED_EMPTY_PENDING"],
+        )
+        registry = lease_module._DEFERRED_EMPTY_PENDING
+        backend = self._task8_backend()
+        managed_capability = self._task7_managed_root(backend)
+        retry_managed = backend.reopen_directory(
+            managed_capability, SharePolicy.MUTATION
+        )
+        managed = backend._resource(managed_capability).node
+        candidate = self._task9_add_candidate(
+            backend,
+            managed,
+            run_id="00000000-0000-4000-8000-000000000946",
+            prefix=".deleting-",
+            lease=False,
+            heartbeat=False,
+        )
+        real_close_resource = backend.close_resource
+        real_entry = backend.entry
+        real_bound = lease_module._bounded_janitor_detail
+        pending_resource: _ManagedRecordedResource | None = None
+        delete_committed = False
+        verification_injected = False
+
+        def delete_then_first_close_fails(
+            capability: FileCapability | DirectoryCapability,
+        ) -> None:
+            nonlocal pending_resource
+            assert isinstance(capability, DirectoryCapability)
+            backend._cleanup_operation(f"delete:{candidate.name}")
+            pending_resource = backend._resource(capability)
+            pending_resource.close_failures = 1
+            capability.close()
+
+        def close_and_commit(value: object) -> None:
+            nonlocal delete_committed
+            real_close_resource(value)
+            if (
+                pending_resource is None
+                or value is not pending_resource
+                or not pending_resource.closed
+            ):
+                return
+            parent = candidate.parent
+            if (
+                parent is not None
+                and parent.children.get(candidate.name) is candidate
+            ):
+                del parent.children[candidate.name]
+            delete_committed = True
+
+        def fail_verification_entry(
+            parent: DirectoryCapability, name: str
+        ) -> DirectoryEntry | None:
+            nonlocal verification_injected
+            if (
+                delete_committed
+                and not verification_injected
+                and name == candidate.name
+            ):
+                verification_injected = True
+                backend._cleanup_operation(f"entry:{name}")
+                raise OSError("history-bound-failure")
+            return real_entry(parent, name)
+
+        def fail_verification_bound(detail: str) -> str:
+            if "history-bound-failure" in detail:
+                raise MemoryError("injected verification bounding failure")
+            return real_bound(detail)
+
+        first: list[ScratchCleanupRecord | JanitorDiagnostic] | None = None
+        escaped: BaseException | None = None
+        with (
+            mock.patch.object(
+                backend,
+                "delete",
+                side_effect=delete_then_first_close_fails,
+            ),
+            mock.patch.object(
+                backend,
+                "close_resource",
+                side_effect=close_and_commit,
+            ),
+            mock.patch.object(
+                backend,
+                "entry",
+                side_effect=fail_verification_entry,
+            ),
+            mock.patch.object(
+                lease_module,
+                "_bounded_janitor_detail",
+                side_effect=fail_verification_bound,
+            ),
+        ):
+            try:
+                first = reclaim_abandoned(
+                    managed_capability.path_hint,
+                    backend=backend,
+                    managed_root_capability=managed_capability,
+                )
+            except BaseException as error:
+                escaped = error
+
+        expected_primary = (
+            "OSError: injected close failure for " f"{candidate.name}"
+        )
+        expected_fallback = "OSError: verification detail unavailable"
+        first_cleanup = [] if first is None else _cleanup_records_only(first)
+        with registry._lock:
+            cells = [
+                cell
+                for cell in registry._cells
+                if (
+                    cell.active
+                    and cell.backend is backend
+                    and cell.name == candidate.name
+                )
+            ]
+            evidence_active = len(cells) == 1 and not cells[0].resolving
+            omitted_retained = (
+                getattr(
+                    cells[0], "verification_omitted_count", -1
+                )
+                if len(cells) == 1
+                else -1
+            )
+            pool_count = getattr(
+                registry, "_verification_detail_count", -1
+            )
+
+        retry_start = len(backend.cleanup_operations)
+        retry = reclaim_abandoned(
+            retry_managed.path_hint,
+            backend=backend,
+            managed_root_capability=retry_managed,
+        )
+        retry_operations = backend.cleanup_operations[retry_start:]
+        retry_cleanup = _cleanup_records_only(retry)
+        with registry._lock:
+            remaining_cells = [
+                cell
+                for cell in registry._cells
+                if cell.reserved and cell.backend is backend
+            ]
+            for cell in remaining_cells:
+                if not cell.owner or not cell.owner.is_open:
+                    cell.clear()
+            remaining_pool_details = registry._verification_detail_count
+
+        self.assertIsNone(escaped)
+        self.assertTrue(verification_injected)
+        self.assertTrue(evidence_active)
+        self.assertEqual(omitted_retained, 1)
+        self.assertEqual(pool_count, 1)
+        self.assertEqual(len(first_cleanup), 1, first)
+        self.assertEqual(first_cleanup[0].status, ScratchCleanupStatus.FAILED)
+        self.assertEqual(first_cleanup[0].removed_entries, 0)
+        self.assertEqual(
+            first_cleanup[0].details,
+            (expected_primary, expected_fallback),
+        )
+        self.assertEqual(first_cleanup[0].omitted_detail_count, 1)
+        self.assertEqual(len(retry_cleanup), 1, retry)
+        self.assertEqual(retry_cleanup[0].status, ScratchCleanupStatus.CLEAN)
+        self.assertEqual(retry_cleanup[0].removed_entries, 1)
+        self.assertEqual(
+            retry_cleanup[0].details,
+            (expected_primary, expected_fallback),
+        )
+        self.assertEqual(retry_cleanup[0].omitted_detail_count, 1)
+        self.assertEqual(
+            retry_operations.count(f"entry:{candidate.name}"), 1
+        )
+        self.assertNotIn(
+            f"open_directory:{candidate.name}", retry_operations
+        )
+        self.assertNotIn(f"delete:{candidate.name}", retry_operations)
+        self.assertEqual(remaining_cells, [])
+        self.assertEqual(remaining_pool_details, 0)
+        self.assertEqual(len(backend.live_resources), 0)
 
     def test_task9_closed_pending_resolves_replacement_without_retargeting(
         self,
