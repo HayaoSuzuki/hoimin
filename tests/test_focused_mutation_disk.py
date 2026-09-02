@@ -56,6 +56,7 @@ from tools.focused_mutation_support.filesystem import (
     FilesystemIdentity,
     SecurityDomain,
     SharePolicy,
+    default_filesystem_backend,
 )
 from tools.focused_mutation_support.runner import CommandDiskStopped, CommandRunner
 from tools.focused_mutation_support.model import RunRecord
@@ -1557,6 +1558,44 @@ class _ManagedRecordingBackend(FilesystemBackend):
                 os.fstat(descriptor)
             except OSError:
                 self.detached.pop(descriptor, None)
+
+
+class _Task10RecordingBackend(_ManagedRecordingBackend):
+    """Capability backend whose rename contract is suitable for caller output."""
+
+    def __init__(self, root: Path) -> None:
+        super().__init__(
+            root,
+            rename_requires_closed_descendants=False,
+        )
+
+    def rename(
+        self,
+        source: FileCapability | DirectoryCapability,
+        destination_parent: DirectoryCapability,
+        destination_name: str,
+        *,
+        replace: bool,
+    ) -> None:
+        source_resource = self._resource(source)
+        node = source_resource.node
+        destination_node = self._resource(destination_parent).node
+        self._emit(f"rename:{node.name}->{destination_name}:{replace}")
+        if source.share_policy is not SharePolicy.PINNED:
+            raise RuntimeError("output rename source was not pinned")
+        old_parent = node.parent
+        if old_parent is None or old_parent.children.get(node.name) is not node:
+            raise OSError("output rename source identity changed")
+        existing = destination_node.children.get(destination_name)
+        if existing is not None and not replace:
+            raise FileExistsError(destination_name)
+        if existing is not None:
+            existing.parent = None
+        del old_parent.children[node.name]
+        node.parent = destination_node
+        node.name = destination_name
+        destination_node.children[destination_name] = node
+        source._path_hint = self._path(node)
 
 
 class _Task8ManagedIterator:
@@ -17909,6 +17948,950 @@ class ManagedScratchTests(unittest.TestCase):
 
 
 class OwnedOutputTests(unittest.TestCase):
+    def _task10_owner(
+        self,
+        output: Path,
+        run_id: str,
+        backend: FilesystemBackend,
+        *,
+        min_free_bytes: int | None = None,
+    ) -> OwnedOutput:
+        try:
+            return OwnedOutput.create(
+                output,
+                run_id,
+                min_free_bytes=min_free_bytes,
+                backend=backend,
+            )
+        except TypeError as error:
+            self.fail(f"capability-backed OwnedOutput API is missing: {error}")
+
+    def test_task10_output_marker_and_reports_inherit_caller_domain(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            output.mkdir()
+            backend = _Task10RecordingBackend(output)
+            owner = self._task10_owner(
+                output,
+                "00000000-0000-4000-8000-000000000201",
+                backend,
+            )
+            self.addCleanup(backend.close_backings)
+            try:
+                marker = backend.parent.children[".hoimin-output-owner"]
+                self.assertIs(marker.security_domain, SecurityDomain.CALLER)
+                self.assertIs(owner._directory.security_domain, SecurityDomain.CALLER)
+                self.assertIs(owner._directory.share_policy, SharePolicy.PINNED)
+
+                owner.write_atomic("json", _write_text("{}\n"))
+
+                report = backend.parent.children["run.json"]
+                self.assertIs(report.security_domain, SecurityDomain.CALLER)
+                self.assertTrue(
+                    any(
+                        event
+                        == "create_new:.hoimin-output-00000000-0000-4000-8000-000000000201-json.tmp:write:pinned"
+                        for event in backend.events
+                    )
+                )
+                self.assertFalse(
+                    any(event.startswith("verify-managed:") for event in backend.events)
+                )
+            finally:
+                owner.close(remove_marker=True)
+
+    def test_task10_atomic_report_renames_only_original_temporary_identity(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            output.mkdir()
+            backend = _Task10RecordingBackend(output)
+            owner = self._task10_owner(
+                output,
+                "00000000-0000-4000-8000-000000000202",
+                backend,
+            )
+            self.addCleanup(backend.close_backings)
+            temporary = (
+                ".hoimin-output-00000000-0000-4000-8000-000000000202-json.tmp"
+            )
+            replacement: _ManagedRecordedNode | None = None
+
+            def replace_before_fdopen(
+                descriptor: int,
+                *args: object,
+                **kwargs: object,
+            ) -> object:
+                del descriptor, args, kwargs
+                nonlocal replacement
+                replacement = backend._new_node(
+                    EntryKind.REGULAR,
+                    SecurityDomain.CALLER,
+                    parent=backend.parent,
+                    name=temporary,
+                )
+                raise ValueError("injected report fdopen failure")
+
+            try:
+                with (
+                    mock.patch(
+                        "tools.focused_mutation_support.store.os.fdopen",
+                        side_effect=replace_before_fdopen,
+                    ),
+                    self.assertRaisesRegex(ValueError, "fdopen failure"),
+                ):
+                    owner.write_atomic("json", _write_text("new"))
+                self.assertIs(backend.parent.children.get(temporary), replacement)
+                self.assertFalse(any(event == f"delete:{temporary}" for event in backend.events))
+            finally:
+                backend.parent.children.pop(temporary, None)
+                owner.close(remove_marker=True)
+
+    def test_task10_output_root_and_marker_failure_matrix_releases_owners(
+        self,
+    ) -> None:
+        run_id = "00000000-0000-4000-8000-000000000211"
+        for stage in ("root-allocation", "marker-allocation", "marker-detach"):
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory) / "output"
+                output.mkdir()
+                backend = _Task10RecordingBackend(output)
+                self.addCleanup(backend.close_backings)
+                if stage == "root-allocation":
+                    backend.failures["open-parent:pinned"] = OSError(
+                        "injected output-root allocation failure"
+                    )
+                    context = nullcontext()
+                elif stage == "marker-allocation":
+                    backend.failures[
+                        "create_new:.hoimin-output-owner:read_write:pinned"
+                    ] = OSError("injected marker allocation failure")
+                    context = nullcontext()
+                else:
+                    real_detach = FileCapability.detach_to_fd
+
+                    def fail_marker_detach(
+                        capability: FileCapability, flags: int
+                    ) -> int:
+                        if capability.path_hint.name == ".hoimin-output-owner":
+                            raise OSError("injected marker detach failure")
+                        return real_detach(capability, flags)
+
+                    context = mock.patch.object(
+                        FileCapability,
+                        "detach_to_fd",
+                        fail_marker_detach,
+                    )
+
+                with context, self.assertRaisesRegex(OSError, "injected"):
+                    self._task10_owner(output, run_id, backend)
+
+                self.assertEqual(len(backend.live_resources), 0)
+                self.assertNotIn(".hoimin-output-owner", backend.parent.children)
+
+    def test_task10_report_temporary_failure_matrix_rolls_back_exact_identity(
+        self,
+    ) -> None:
+        run_id = "00000000-0000-4000-8000-000000000212"
+        temporary = f".hoimin-output-{run_id}-json.tmp"
+        for stage in ("allocation", "detach", "fdopen"):
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory) / "output"
+                output.mkdir()
+                backend = _Task10RecordingBackend(output)
+                self.addCleanup(backend.close_backings)
+                owner = self._task10_owner(output, run_id, backend)
+                if stage == "allocation":
+                    backend.failures[
+                        f"create_new:{temporary}:write:pinned"
+                    ] = OSError("injected report allocation failure")
+                    context = nullcontext()
+                elif stage == "detach":
+                    real_detach = FileCapability.detach_to_fd
+
+                    def fail_report_detach(
+                        capability: FileCapability, flags: int
+                    ) -> int:
+                        if capability.path_hint.name == temporary:
+                            raise OSError("injected report detach failure")
+                        return real_detach(capability, flags)
+
+                    context = mock.patch.object(
+                        FileCapability,
+                        "detach_to_fd",
+                        fail_report_detach,
+                    )
+                else:
+                    context = mock.patch(
+                        "tools.focused_mutation_support.store.os.fdopen",
+                        side_effect=OSError("injected report fdopen failure"),
+                    )
+                try:
+                    with context, self.assertRaisesRegex(OSError, "injected"):
+                        owner.write_atomic("json", _write_text("partial"))
+                    self.assertNotIn(temporary, backend.parent.children)
+                    self.assertEqual(
+                        owner._directory._close_attempts,
+                        0,
+                        "report rollback must retain the output-root owner",
+                    )
+                finally:
+                    owner.close(remove_marker=True)
+
+    def test_task10_report_rollback_checks_absence_after_consuming_close(
+        self,
+    ) -> None:
+        run_id = "00000000-0000-4000-8000-000000000213"
+        temporary = f".hoimin-output-{run_id}-json.tmp"
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            output.mkdir()
+            backend = _Task10RecordingBackend(output)
+            self.addCleanup(backend.close_backings)
+            owner = self._task10_owner(output, run_id, backend)
+            real_open_entry = backend.open_entry
+
+            def fail_first_delete_close(
+                parent: DirectoryCapability,
+                name: str,
+                share_policy: SharePolicy,
+            ) -> FileCapability | DirectoryCapability:
+                capability = real_open_entry(parent, name, share_policy)
+                if name == temporary:
+                    backend._resource(capability).close_failures = 1
+                return capability
+
+            try:
+                with (
+                    mock.patch.object(
+                        backend,
+                        "open_entry",
+                        side_effect=fail_first_delete_close,
+                    ),
+                    self.assertRaisesRegex(ValueError, "primary report failure") as caught,
+                ):
+                    owner.write_atomic(
+                        "json",
+                        _write_text("partial"),
+                        after_flush=lambda _written: (_ for _ in ()).throw(
+                            ValueError("primary report failure")
+                        ),
+                    )
+                tail = backend.events[backend.events.index(f"delete:{temporary}") :]
+                self.assertEqual(
+                    tail[:4],
+                    [
+                        f"delete:{temporary}",
+                        f"close:{temporary}",
+                        f"close:{temporary}",
+                        f"entry:{temporary}",
+                    ],
+                )
+                self.assertNotIn(temporary, backend.parent.children)
+                self.assertTrue(
+                    any("close failure" in note for note in caught.exception.__notes__)
+                )
+            finally:
+                owner.close(remove_marker=True)
+
+    def test_task10_report_stream_close_retries_before_rollback(self) -> None:
+        run_id = "00000000-0000-4000-8000-000000000217"
+        temporary = f".hoimin-output-{run_id}-json.tmp"
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            output.mkdir()
+            backend = _Task10RecordingBackend(output)
+            self.addCleanup(backend.close_backings)
+            owner = self._task10_owner(output, run_id, backend)
+            real_fdopen = os.fdopen
+            wrappers: list[object] = []
+
+            class FailOnceCloseStream:
+                def __init__(self, descriptor: int) -> None:
+                    self.stream = real_fdopen(descriptor, "wb", closefd=True)
+                    self.close_calls = 0
+
+                @property
+                def closed(self) -> bool:
+                    return self.stream.closed
+
+                def __enter__(self) -> "FailOnceCloseStream":
+                    return self
+
+                def __exit__(self, *args: object) -> None:
+                    del args
+                    self.close()
+
+                def write(self, value: bytes) -> int:
+                    return self.stream.write(value)
+
+                def flush(self) -> None:
+                    self.stream.flush()
+
+                def fileno(self) -> int:
+                    return self.stream.fileno()
+
+                def close(self) -> None:
+                    self.close_calls += 1
+                    if self.close_calls == 1:
+                        raise OSError("injected report stream close failure")
+                    self.stream.close()
+
+            def wrap_fdopen(
+                descriptor: int,
+                mode: str,
+                *,
+                closefd: bool,
+            ) -> object:
+                self.assertEqual((mode, closefd), ("wb", True))
+                wrapper = FailOnceCloseStream(descriptor)
+                wrappers.append(wrapper)
+                return wrapper
+
+            try:
+                with (
+                    mock.patch(
+                        "tools.focused_mutation_support.store.os.fdopen",
+                        side_effect=wrap_fdopen,
+                    ),
+                    self.assertRaisesRegex(OSError, "stream close failure"),
+                ):
+                    owner.write_atomic("json", _write_text("partial"))
+                self.assertEqual(len(wrappers), 1)
+                wrapper = wrappers[0]
+                self.assertEqual(wrapper.close_calls, 2)  # type: ignore[attr-defined]
+                self.assertTrue(wrapper.closed)  # type: ignore[attr-defined]
+                self.assertNotIn(temporary, backend.parent.children)
+            finally:
+                for wrapper in wrappers:
+                    if not wrapper.closed:  # type: ignore[attr-defined]
+                        wrapper.close()  # type: ignore[attr-defined]
+                owner.close(remove_marker=True)
+
+    def test_task10_recovery_deletes_only_canonical_temporary_by_capability(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            output.mkdir()
+            backend = _Task10RecordingBackend(output)
+            self.addCleanup(backend.close_backings)
+            old_run = "00000000-0000-4000-8000-000000000203"
+            previous = self._task10_owner(output, old_run, backend)
+            temporary = f".hoimin-output-{old_run}-json.tmp"
+            temporary_capability = backend.open_file(
+                previous._directory,
+                temporary,
+                access=FileAccess.WRITE,
+                disposition=CreateDisposition.CREATE_NEW,
+                share_policy=SharePolicy.PINNED,
+            )
+            descriptor = temporary_capability.detach_to_fd(
+                os.O_WRONLY | getattr(os, "O_BINARY", 0)
+            )
+            os.write(descriptor, b"partial")
+            os.close(descriptor)
+            previous.close()
+
+            current = self._task10_owner(
+                output,
+                "00000000-0000-4000-8000-000000000204",
+                backend,
+            )
+            try:
+                self.assertEqual(current.recovered_temporary_count, 1)
+                self.assertNotIn(temporary, backend.parent.children)
+                self.assertIn(
+                    f"open-entry:{temporary}:pinned",
+                    backend.events,
+                )
+                self.assertIn(f"delete:{temporary}", backend.events)
+            finally:
+                current.close(remove_marker=True)
+
+    def test_task10_recovery_enforces_inventory_and_marker_byte_bounds(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            output.mkdir()
+            backend = _Task10RecordingBackend(output)
+            self.addCleanup(backend.close_backings)
+            for index in range(1_001):
+                backend._new_node(
+                    EntryKind.REGULAR,
+                    SecurityDomain.CALLER,
+                    parent=backend.parent,
+                    name=f"entry-{index:04d}",
+                )
+            with self.assertRaisesRegex(ValueError, "more than 1000"):
+                self._task10_owner(
+                    output,
+                    "00000000-0000-4000-8000-000000000214",
+                    backend,
+                )
+            self.assertEqual(len(backend.parent.children), 1_001)
+            self.assertEqual(len(backend.live_resources), 0)
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            first = OwnedOutput.create(
+                output, "00000000-0000-4000-8000-000000000215"
+            )
+            first.close()
+            marker = output / ".hoimin-output-owner"
+            marker.write_bytes(b"{" + b"x" * (64 * 1024) + b"}")
+            with self.assertRaisesRegex(ValueError, "empty"):
+                OwnedOutput.create(
+                    output, "00000000-0000-4000-8000-000000000216"
+                )
+            self.assertGreater(marker.stat().st_size, 64 * 1024)
+
+    def test_task10_recovery_checks_absence_after_consuming_close(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            output.mkdir()
+            backend = _Task10RecordingBackend(output)
+            self.addCleanup(backend.close_backings)
+            old_run = "00000000-0000-4000-8000-000000000218"
+            previous = self._task10_owner(output, old_run, backend)
+            temporary = f".hoimin-output-{old_run}-json.tmp"
+            file = backend.open_file(
+                previous._directory,
+                temporary,
+                access=FileAccess.WRITE,
+                disposition=CreateDisposition.CREATE_NEW,
+                share_policy=SharePolicy.PINNED,
+            )
+            descriptor = file.detach_to_fd(
+                os.O_WRONLY | getattr(os, "O_BINARY", 0)
+            )
+            os.close(descriptor)
+            previous.close()
+            real_open_entry = backend.open_entry
+
+            def fail_first_delete_close(
+                parent: DirectoryCapability,
+                name: str,
+                share_policy: SharePolicy,
+            ) -> FileCapability | DirectoryCapability:
+                capability = real_open_entry(parent, name, share_policy)
+                if name == temporary:
+                    backend._resource(capability).close_failures = 1
+                return capability
+
+            with (
+                mock.patch.object(
+                    backend,
+                    "open_entry",
+                    side_effect=fail_first_delete_close,
+                ),
+                self.assertRaisesRegex(OSError, "close failure"),
+            ):
+                self._task10_owner(
+                    output,
+                    "00000000-0000-4000-8000-000000000219",
+                    backend,
+                )
+            tail = backend.events[backend.events.index(f"delete:{temporary}") :]
+            self.assertEqual(
+                tail[:4],
+                [
+                    f"delete:{temporary}",
+                    f"close:{temporary}",
+                    f"close:{temporary}",
+                    f"entry:{temporary}",
+                ],
+            )
+            self.assertNotIn(temporary, backend.parent.children)
+            self.assertIn(".hoimin-output-owner", backend.parent.children)
+            self.assertEqual(len(backend.live_resources), 0)
+
+    def test_task10_command_spools_are_managed_exclusive_and_token_owned(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            backend = _Task10RecordingBackend(root)
+            self.addCleanup(backend.close_backings)
+            parent = backend.open_root(root, SharePolicy.MUTATION)
+            managed = backend.create_secure_root(parent, "managed")
+            command_root = backend.create_directory(
+                managed,
+                "commands",
+                SharePolicy.MUTATION,
+            )
+            parent.close()
+            managed.close()
+            try:
+                store = RunStore(
+                    root / "output",
+                    command_root=command_root.path_hint,
+                    command_root_capability=command_root,
+                    backend=backend,
+                )
+            except TypeError as error:
+                command_root.close()
+                self.fail(f"capability-backed RunStore API is missing: {error}")
+
+            paths = store.command_paths(1, "managed")
+            with paths.open_writer("stdout") as stream:
+                stream.write(b"payload")
+            self.assertEqual(paths.read("stdout", 7), (b"payload", 7))
+            self.assertIs(paths.root.security_domain, SecurityDomain.MANAGED)
+            self.assertIn(
+                "create_new:0001-managed.stdout:write:pinned",
+                backend.events,
+            )
+            self.assertFalse(
+                any(
+                    event.startswith("verify-managed:0001-managed.stdout")
+                    for event in backend.events
+                )
+            )
+            active_errors = store.close_command_root()
+            self.assertTrue(
+                any("command spool root still active" in item for item in active_errors)
+            )
+            self.assertEqual(paths.discard(), ())
+            self.assertEqual(store.close_command_root(), active_errors)
+
+    def test_task10_command_root_token_is_generation_safe_and_close_retryable(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            backend = _Task10RecordingBackend(root)
+            self.addCleanup(backend.close_backings)
+            parent = backend.open_root(root, SharePolicy.MUTATION)
+            managed = backend.create_secure_root(parent, "managed")
+            command_root = backend.create_directory(
+                managed,
+                "commands",
+                SharePolicy.MUTATION,
+            )
+            parent.close()
+            managed.close()
+            try:
+                store = RunStore(
+                    root / "output",
+                    command_root=command_root.path_hint,
+                    command_root_capability=command_root,
+                    backend=backend,
+                )
+            except TypeError as error:
+                command_root.close()
+                self.fail(f"capability-backed RunStore API is missing: {error}")
+            first = store.command_paths(1, "first")
+            stale_release = first._release_root
+            stale_token = first._root_token
+            backend._resource(first.root).close_failures = 1
+
+            first_errors = first.close()
+            self.assertEqual(first.root._close_attempts, 1)
+            self.assertTrue(first.root.is_open)
+            self.assertTrue(any("close failed" in item for item in first_errors))
+            first_active_errors = store.close_command_root()
+            self.assertTrue(
+                any("command spool root still active" in item for item in first_active_errors)
+            )
+            self.assertEqual(first.close(), first_errors)
+            self.assertFalse(first.root.is_open)
+
+            second = store.command_paths(2, "second")
+            stale_release(stale_token)
+            second_active_errors = store.close_command_root()
+            self.assertEqual(second_active_errors, first_active_errors)
+            self.assertEqual(second.close(), ())
+            self.assertEqual(store.close_command_root(), first_active_errors)
+
+    def test_task10_command_duplicate_construction_failure_rolls_back_token(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            backend = _Task10RecordingBackend(root)
+            self.addCleanup(backend.close_backings)
+            parent = backend.open_root(root, SharePolicy.MUTATION)
+            managed = backend.create_secure_root(parent, "managed")
+            command_root = backend.create_directory(
+                managed, "commands", SharePolicy.MUTATION
+            )
+            parent.close()
+            managed.close()
+            store = RunStore(
+                root / "output",
+                command_root=command_root.path_hint,
+                command_root_capability=command_root,
+                backend=backend,
+            )
+            backend.failures["reopen-directory:preserve"] = OSError(
+                "injected duplicate allocation failure"
+            )
+            with self.assertRaisesRegex(OSError, "duplicate allocation"):
+                store.command_paths(1, "duplicate")
+            self.assertEqual(store._live_root_tokens, set())
+            self.assertEqual(store.close_command_root(), ())
+
+    def test_task10_command_root_rejects_caller_or_nonmutation_authority(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for authority in ("caller-mutation", "managed-pinned"):
+                with self.subTest(authority=authority):
+                    backend = _Task10RecordingBackend(root)
+                    self.addCleanup(backend.close_backings)
+                    parent = backend.open_root(root, SharePolicy.MUTATION)
+                    if authority == "caller-mutation":
+                        candidate = parent
+                    else:
+                        managed = backend.create_secure_root(parent, "managed")
+                        candidate = backend.reopen_directory(
+                            managed, SharePolicy.PINNED
+                        )
+                        managed.close()
+                        parent.close()
+                    with self.assertRaisesRegex(OSError, "capability is invalid"):
+                        RunStore(
+                            root / "output",
+                            command_root=candidate.path_hint,
+                            command_root_capability=candidate,
+                            backend=backend,
+                        )
+                    self.assertFalse(candidate.is_open)
+                    self.assertEqual(len(backend.live_resources), 0)
+
+    def test_task10_command_writer_failure_matrix_rolls_back_exact_identity(
+        self,
+    ) -> None:
+        for stage in ("allocation", "detach", "fdopen"):
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                backend = _Task10RecordingBackend(root)
+                self.addCleanup(backend.close_backings)
+                parent = backend.open_root(root, SharePolicy.MUTATION)
+                managed = backend.create_secure_root(parent, "managed")
+                command_root = backend.create_directory(
+                    managed, "commands", SharePolicy.MUTATION
+                )
+                command_node = backend._resource(command_root).node
+                parent.close()
+                managed.close()
+                store = RunStore(
+                    root / "output",
+                    command_root=command_root.path_hint,
+                    command_root_capability=command_root,
+                    backend=backend,
+                )
+                paths = store.command_paths(1, stage)
+                name = paths.stdout_name
+                if stage == "allocation":
+                    backend.failures[f"create_new:{name}:write:pinned"] = OSError(
+                        "injected spool allocation failure"
+                    )
+                    context = nullcontext()
+                elif stage == "detach":
+                    real_detach = FileCapability.detach_to_fd
+
+                    def fail_spool_detach(
+                        capability: FileCapability, flags: int
+                    ) -> int:
+                        if capability.path_hint.name == name:
+                            raise OSError("injected spool detach failure")
+                        return real_detach(capability, flags)
+
+                    context = mock.patch.object(
+                        FileCapability,
+                        "detach_to_fd",
+                        fail_spool_detach,
+                    )
+                else:
+                    context = mock.patch(
+                        "tools.focused_mutation_support.store.os.fdopen",
+                        side_effect=OSError("injected spool fdopen failure"),
+                    )
+                with context, self.assertRaisesRegex(OSError, "injected"):
+                    paths.open_writer("stdout")
+                self.assertNotIn(name, command_node.children)
+                self.assertEqual(paths.close(), ())
+                self.assertEqual(store.close_command_root(), ())
+
+    def test_task10_command_discard_checks_absence_after_consuming_close(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            backend = _Task10RecordingBackend(root)
+            self.addCleanup(backend.close_backings)
+            parent = backend.open_root(root, SharePolicy.MUTATION)
+            managed = backend.create_secure_root(parent, "managed")
+            command_root = backend.create_directory(
+                managed, "commands", SharePolicy.MUTATION
+            )
+            parent.close()
+            managed.close()
+            store = RunStore(
+                root / "output",
+                command_root=command_root.path_hint,
+                command_root_capability=command_root,
+                backend=backend,
+            )
+            paths = store.command_paths(1, "consume")
+            with paths.open_writer("stdout") as stream:
+                stream.write(b"payload")
+            name = paths.stdout_name
+            real_open_entry = backend.open_entry
+
+            def fail_first_delete_close(
+                parent_capability: DirectoryCapability,
+                child_name: str,
+                share_policy: SharePolicy,
+            ) -> FileCapability | DirectoryCapability:
+                capability = real_open_entry(
+                    parent_capability, child_name, share_policy
+                )
+                if child_name == name:
+                    backend._resource(capability).close_failures = 1
+                return capability
+
+            with mock.patch.object(
+                backend,
+                "open_entry",
+                side_effect=fail_first_delete_close,
+            ):
+                errors = paths.discard()
+            tail = backend.events[backend.events.index(f"delete:{name}") :]
+            self.assertEqual(
+                tail[:4],
+                [
+                    f"delete:{name}",
+                    f"close:{name}",
+                    f"close:{name}",
+                    f"entry:{name}",
+                ],
+            )
+            self.assertTrue(any("close failure" in detail for detail in errors))
+            self.assertNotIn(name, paths._spool_identities)
+            self.assertEqual(store.close_command_root(), ())
+
+    def test_task10_command_discard_checks_absence_after_open_owner_return(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            backend = _Task10RecordingBackend(root)
+            self.addCleanup(backend.close_backings)
+            parent = backend.open_root(root, SharePolicy.MUTATION)
+            managed = backend.create_secure_root(parent, "managed")
+            command_root = backend.create_directory(
+                managed, "commands", SharePolicy.MUTATION
+            )
+            parent.close()
+            managed.close()
+            store = RunStore(
+                root / "output",
+                command_root=command_root.path_hint,
+                command_root_capability=command_root,
+                backend=backend,
+            )
+            paths = store.command_paths(1, "open-return")
+            with paths.open_writer("stdout") as stream:
+                stream.write(b"payload")
+            name = paths.stdout_name
+
+            def consume_without_close(
+                capability: FileCapability | DirectoryCapability,
+            ) -> None:
+                resource = backend._resource(capability)
+                node = resource.node
+                assert node.parent is not None
+                del node.parent.children[node.name]
+                backend.events.append(f"delete-open:{node.name}")
+
+            with mock.patch.object(
+                backend,
+                "delete",
+                side_effect=consume_without_close,
+            ):
+                errors = paths.discard()
+            tail = backend.events[backend.events.index(f"delete-open:{name}") :]
+            self.assertEqual(
+                tail[:3],
+                [f"delete-open:{name}", f"close:{name}", f"entry:{name}"],
+            )
+            self.assertEqual(errors, ())
+            self.assertNotIn(name, paths._spool_identities)
+            self.assertEqual(store.close_command_root(), ())
+
+    def test_task10_command_diagnostics_are_utf8_byte_bounded(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            backend = _Task10RecordingBackend(root)
+            self.addCleanup(backend.close_backings)
+            parent = backend.open_root(root, SharePolicy.MUTATION)
+            managed = backend.create_secure_root(parent, "managed")
+            command_root = backend.create_directory(
+                managed, "commands", SharePolicy.MUTATION
+            )
+            command_node = backend._resource(command_root).node
+            parent.close()
+            managed.close()
+            store = RunStore(
+                root / "output",
+                command_root=command_root.path_hint,
+                command_root_capability=command_root,
+                backend=backend,
+            )
+            paths = store.command_paths(1, "x" * 5_000)
+            with paths.open_writer("stdout") as stream:
+                stream.write(b"payload")
+            original = command_node.children[paths.stdout_name]
+            replacement = backend._new_node(
+                EntryKind.REGULAR,
+                SecurityDomain.MANAGED,
+                parent=command_node,
+                name=paths.stdout_name,
+            )
+            try:
+                errors = paths.discard()
+                self.assertTrue(any("refused replacement" in item for item in errors))
+                self.assertLessEqual(len(errors), MAX_DIAGNOSTIC_DETAILS)
+                self.assertTrue(
+                    all(
+                        len(item.encode("utf-8")) <= MAX_DIAGNOSTIC_DETAIL_BYTES
+                        for item in errors
+                    )
+                )
+                self.assertIs(command_node.children[paths.stdout_name], replacement)
+            finally:
+                command_node.children.pop(paths.stdout_name, None)
+                if original.backing is not None:
+                    original.backing.close()
+                store.close_command_root()
+
+    def test_task10_command_reader_failure_matrix_retains_identity(self) -> None:
+        for stage in ("allocation", "detach", "descriptor-close"):
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                backend = _Task10RecordingBackend(root)
+                self.addCleanup(backend.close_backings)
+                parent = backend.open_root(root, SharePolicy.MUTATION)
+                managed = backend.create_secure_root(parent, "managed")
+                command_root = backend.create_directory(
+                    managed, "commands", SharePolicy.MUTATION
+                )
+                parent.close()
+                managed.close()
+                store = RunStore(
+                    root / "output",
+                    command_root=command_root.path_hint,
+                    command_root_capability=command_root,
+                    backend=backend,
+                )
+                paths = store.command_paths(1, stage)
+                with paths.open_writer("stdout") as stream:
+                    stream.write(b"payload")
+                name = paths.stdout_name
+                identity = paths._spool_identities[name]
+                target_descriptor = -1
+                close_calls = 0
+                real_detach = FileCapability.detach_to_fd
+                real_close = os.close
+
+                def reader_detach(
+                    capability: FileCapability, flags: int
+                ) -> int:
+                    nonlocal target_descriptor
+                    if capability.path_hint.name == name:
+                        if stage == "detach":
+                            raise OSError("injected reader detach failure")
+                        descriptor = real_detach(capability, flags)
+                        target_descriptor = descriptor
+                        return descriptor
+                    return real_detach(capability, flags)
+
+                def close_descriptor(descriptor: int) -> None:
+                    nonlocal close_calls
+                    if stage == "descriptor-close" and descriptor == target_descriptor:
+                        close_calls += 1
+                        raise OSError("injected reader descriptor close failure")
+                    real_close(descriptor)
+
+                if stage == "allocation":
+                    backend.failures[
+                        f"open_existing:{name}:read:pinned"
+                    ] = OSError("injected reader allocation failure")
+                try:
+                    with (
+                        mock.patch.object(
+                            FileCapability,
+                            "detach_to_fd",
+                            reader_detach,
+                        ),
+                        mock.patch(
+                            "tools.focused_mutation_support.store.os.close",
+                            side_effect=close_descriptor,
+                        ),
+                        self.assertRaisesRegex(OSError, "injected|reader close failed"),
+                    ):
+                        paths.read("stdout", 7)
+                    self.assertEqual(paths._spool_identities[name], identity)
+                    if stage == "descriptor-close":
+                        self.assertEqual(
+                            len(
+                                [
+                                    detail
+                                    for detail in paths.capability_errors
+                                    if "reader close failed" in detail
+                                ]
+                            ),
+                            1,
+                            "duplicate bounded diagnostics are retained once",
+                        )
+                        self.assertEqual(
+                            close_calls,
+                            3,
+                            "two explicit attempts plus one owner finalizer",
+                        )
+                finally:
+                    if target_descriptor >= 0:
+                        try:
+                            real_close(target_descriptor)
+                        except OSError:
+                            pass
+                    self.assertEqual(paths.discard(), tuple(paths.capability_errors))
+                    self.assertNotIn(name, paths._spool_identities)
+                    self.assertEqual(
+                        store.close_command_root(),
+                        tuple(store._command_capability_errors),
+                    )
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows sharing and ACL APIs")
+    def test_output_root_is_pinned_without_rewriting_caller_acl(self) -> None:
+        from tests.test_focused_mutation_windows_filesystem import (
+            _security_descriptor_bytes_for_tests,
+        )
+        from tools.focused_mutation_support.windows_filesystem import (
+            WindowsFilesystemBackend,
+        )
+
+        backend = WindowsFilesystemBackend()
+        with tempfile.TemporaryDirectory() as raw:
+            output = Path(raw) / "output"
+            output.mkdir()
+            before = _security_descriptor_bytes_for_tests(output)
+            owner = self._task10_owner(
+                output,
+                str(uuid.uuid4()),
+                backend,
+            )
+            try:
+                with self.assertRaises(OSError):
+                    output.rename(Path(raw) / "replacement")
+                self.assertEqual(_security_descriptor_bytes_for_tests(output), before)
+            finally:
+                owner.close(remove_marker=True)
+
     def test_atomic_report_kind_selects_its_fixed_destination(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "output"
@@ -17935,19 +18918,35 @@ class OwnedOutputTests(unittest.TestCase):
             finally:
                 owner.close(remove_marker=True)
 
-    @unittest.skipIf(os.name == "nt", "descriptor close injection is Unix-specific")
     def test_atomic_report_rollback_attempts_unlink_after_fd_close_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "output"
+            output.mkdir()
             run_id = "00000000-0000-4000-8000-000000000112"
-            owner = OwnedOutput.create(output, run_id)
-            opened: list[int] = []
+            backend = _Task10RecordingBackend(output)
+            self.addCleanup(backend.close_backings)
+            owner = self._task10_owner(output, run_id, backend)
+            target_descriptor = -1
+            close_calls = 0
+            target_descriptor_open = True
             real_close = os.close
 
             def fail_fdopen(fd: int, *args: object, **kwargs: object) -> object:
                 del args, kwargs
-                opened.append(fd)
+                nonlocal target_descriptor
+                target_descriptor = fd
                 raise ValueError("injected report primary")
+
+            def fail_first_descriptor_close(fd: int) -> None:
+                nonlocal close_calls, target_descriptor_open
+                if fd == target_descriptor and target_descriptor_open:
+                    close_calls += 1
+                    if close_calls == 1:
+                        raise OSError("injected temporary close failure")
+                    real_close(fd)
+                    target_descriptor_open = False
+                    return
+                real_close(fd)
 
             try:
                 with (
@@ -17957,7 +18956,7 @@ class OwnedOutputTests(unittest.TestCase):
                     ),
                     mock.patch(
                         "tools.focused_mutation_support.store.os.close",
-                        side_effect=OSError("injected temporary close failure"),
+                        side_effect=fail_first_descriptor_close,
                     ),
                     self.assertRaisesRegex(
                         ValueError, "report primary"
@@ -17973,35 +18972,72 @@ class OwnedOutputTests(unittest.TestCase):
                         for note in caught.exception.__notes__
                     )
                 )
-                self.assertFalse(
-                    (output / f".hoimin-output-{run_id}-json.tmp").exists()
+                self.assertEqual(close_calls, 2)
+                self.assertNotIn(
+                    f".hoimin-output-{run_id}-json.tmp",
+                    backend.parent.children,
                 )
             finally:
-                for descriptor in opened:
+                if target_descriptor >= 0:
                     try:
-                        real_close(descriptor)
+                        real_close(target_descriptor)
                     except OSError:
                         pass
                 owner.close(remove_marker=True)
 
-    @unittest.skipIf(os.name == "nt", "unlink-open-marker semantics are Unix-specific")
     def test_constructor_rollback_attempts_all_closes_after_close_errors(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "output"
-            opened: list[int] = []
-            real_open = os.open
+            output.mkdir()
+            backend = _Task10RecordingBackend(output)
+            self.addCleanup(backend.close_backings)
+            marker_descriptor = -1
+            marker_close_calls = 0
+            marker_descriptor_open = True
+            real_detach = FileCapability.detach_to_fd
             real_close = os.close
+            real_open_root = backend.open_root
 
-            def record_open(*args: object, **kwargs: object) -> int:
-                descriptor = real_open(*args, **kwargs)  # type: ignore[arg-type]
-                opened.append(descriptor)
+            def record_marker_detach(
+                capability: FileCapability, flags: int
+            ) -> int:
+                nonlocal marker_descriptor
+                descriptor = real_detach(capability, flags)
+                if capability.path_hint.name == ".hoimin-output-owner":
+                    marker_descriptor = descriptor
                 return descriptor
+
+            def fail_first_marker_close(descriptor: int) -> None:
+                nonlocal marker_close_calls, marker_descriptor_open
+                if descriptor == marker_descriptor and marker_descriptor_open:
+                    marker_close_calls += 1
+                    if marker_close_calls == 1:
+                        raise OSError("injected marker rollback close failure")
+                    real_close(descriptor)
+                    marker_descriptor_open = False
+                    return
+                real_close(descriptor)
+
+            def open_root_with_close_failure(
+                path: Path,
+                share_policy: SharePolicy,
+                security_domain: SecurityDomain = SecurityDomain.CALLER,
+            ) -> DirectoryCapability:
+                capability = real_open_root(path, share_policy, security_domain)
+                backend._resource(capability).close_failures = 1
+                return capability
 
             try:
                 with (
-                    mock.patch(
-                        "tools.focused_mutation_support.store.os.open",
-                        side_effect=record_open,
+                    mock.patch.object(
+                        backend,
+                        "open_root",
+                        side_effect=open_root_with_close_failure,
+                    ),
+                    mock.patch.object(
+                        FileCapability,
+                        "detach_to_fd",
+                        record_marker_detach,
                     ),
                     mock.patch(
                         "tools.focused_mutation_support.store.os.write",
@@ -18009,20 +19045,24 @@ class OwnedOutputTests(unittest.TestCase):
                     ),
                     mock.patch(
                         "tools.focused_mutation_support.store.os.close",
-                        side_effect=OSError("injected rollback close failure"),
+                        side_effect=fail_first_marker_close,
                     ),
                     self.assertRaisesRegex(OSError, "made no progress") as caught,
                 ):
                     OwnedOutput.create(
-                        output, "00000000-0000-4000-8000-000000000094"
+                        output,
+                        "00000000-0000-4000-8000-000000000094",
+                        backend=backend,
                     )
 
                 self.assertGreaterEqual(len(caught.exception.__notes__), 2)
-                self.assertFalse((output / ".hoimin-output-owner").exists())
+                self.assertEqual(marker_close_calls, 2)
+                self.assertNotIn(".hoimin-output-owner", backend.parent.children)
+                self.assertEqual(len(backend.live_resources), 0)
             finally:
-                for descriptor in opened:
+                if marker_descriptor >= 0:
                     try:
-                        real_close(descriptor)
+                        real_close(marker_descriptor)
                     except OSError:
                         pass
 
@@ -18054,11 +19094,15 @@ class OwnedOutputTests(unittest.TestCase):
     def test_output_close_attempts_directory_after_marker_close_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "output"
-            owner = OwnedOutput.create(
-                output, "00000000-0000-4000-8000-000000000097"
+            output.mkdir()
+            backend = _Task10RecordingBackend(output)
+            self.addCleanup(backend.close_backings)
+            owner = self._task10_owner(
+                output,
+                "00000000-0000-4000-8000-000000000097",
+                backend,
             )
-            marker_fd = owner._marker_fd
-            directory_fd = owner._directory_fd
+            marker_fd = owner._marker_lock.fd
             real_close = os.close
 
             def close_with_marker_failure(fd: int) -> None:
@@ -18073,10 +19117,12 @@ class OwnedOutputTests(unittest.TestCase):
                 ):
                     errors = owner.close(remove_marker=True)
                 self.assertTrue(any("marker close" in item for item in errors))
-                with self.assertRaises(OSError):
-                    os.fstat(directory_fd)
+                self.assertTrue(owner._marker_lock.fd >= 0)
+                self.assertFalse(owner._directory.is_open)
             finally:
                 real_close(marker_fd)
+                owner._marker_lock.fd = -1
+                owner._marker_lock.locked = False
 
     def test_zero_progress_output_marker_write_leaves_no_owner(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -18161,12 +19207,13 @@ class OwnedOutputTests(unittest.TestCase):
             first = OwnedOutput.create(
                 output, "00000000-0000-4000-8000-000000000001"
             )
-            self.addCleanup(first.close)
-
-            with self.assertRaises((FileExistsError, ValueError, OSError)):
-                OwnedOutput.create(
-                    output, "00000000-0000-4000-8000-000000000002"
-                )
+            try:
+                with self.assertRaises((FileExistsError, ValueError, OSError)):
+                    OwnedOutput.create(
+                        output, "00000000-0000-4000-8000-000000000002"
+                    )
+            finally:
+                first.close(remove_marker=True)
 
     def test_path_replacement_cannot_redirect_atomic_report(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -18178,19 +19225,24 @@ class OwnedOutputTests(unittest.TestCase):
                 output, "00000000-0000-4000-8000-000000000003"
             )
             moved = parent / "moved"
-            output.rename(moved)
-            output.symlink_to(replacement, target_is_directory=True)
-
-            with self.assertRaisesRegex(OSError, "identity changed"):
-                owner.write_atomic(
-                    "json",
-                    _write_text("{}\n"),
-                )
-
-            self.assertFalse((replacement / "run.json").exists())
-            output.unlink()
-            moved.rename(output)
-            owner.close(remove_marker=True)
+            try:
+                if os.name == "nt":
+                    with self.assertRaises(OSError):
+                        output.rename(moved)
+                    owner.write_atomic("json", _write_text("{}\n"))
+                else:
+                    output.rename(moved)
+                    output.symlink_to(replacement, target_is_directory=True)
+                    with self.assertRaisesRegex(OSError, "identity changed"):
+                        owner.write_atomic(
+                            "json",
+                            _write_text("{}\n"),
+                        )
+                    output.unlink()
+                    moved.rename(output)
+                self.assertFalse((replacement / "run.json").exists())
+            finally:
+                owner.close(remove_marker=True)
 
     def test_abandoned_deterministic_temporary_is_recovered(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -18219,12 +19271,13 @@ class OwnedOutputTests(unittest.TestCase):
             temporary = output / f".hoimin-output-{old_run}-json.tmp"
             temporary.write_text("partial", encoding="utf-8")
             previous.close()
-            capacity = mock.Mock(f_bavail=100, f_frsize=1)
+            backend = default_filesystem_backend()
 
             with (
-                mock.patch(
-                    "tools.focused_mutation_support.store.os.fstatvfs",
-                    return_value=capacity,
+                mock.patch.object(
+                    backend,
+                    "available_bytes",
+                    return_value=100,
                 ),
                 self.assertRaisesRegex(ValueError, "reserve"),
             ):
@@ -18232,6 +19285,7 @@ class OwnedOutputTests(unittest.TestCase):
                     output,
                     "00000000-0000-4000-8000-000000000015",
                     min_free_bytes=100,
+                    backend=backend,
                 )
 
             self.assertFalse(temporary.exists())

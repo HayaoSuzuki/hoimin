@@ -7,12 +7,12 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Any
+from typing import Any, BinaryIO
 
 from .model import CommandRecord
 from .disk import DiskFailure, MAX_COMMAND_LOG_BYTES, MAX_LOG_BYTES
 from .store import RunStore
-from .lease import validate_reported_path
+from .lease import _OwnedDescriptor, validate_reported_path
 from .windows_file import probe_delete_access
 
 
@@ -314,16 +314,33 @@ class CommandRunner:
             stderr_path=str(paths.stderr),
             _spool=paths,
         )
+
+        def discard_paths(primary_error: BaseException | None = None) -> None:
+            spool_errors = paths.discard()
+            record.cleanup_errors.extend(
+                detail for detail in spool_errors if detail not in record.cleanup_errors
+            )
+            if primary_error is not None:
+                existing = tuple(getattr(primary_error, "__notes__", ()))
+                for detail in spool_errors:
+                    if detail not in existing:
+                        primary_error.add_note(detail)
+                        existing = (*existing, detail)
+
         if disk_guard is not None:
             preflight = getattr(disk_guard, "sample", None)
             if preflight is None:
-                raise TypeError("disk_guard must provide sample()")
+                error = TypeError("disk_guard must provide sample()")
+                discard_paths(error)
+                raise error
             failure = preflight()
             if failure is not None:
                 record.disk_stop_code = failure.code
+                discard_paths()
                 raise CommandDiskStopped(record, failure)
         if self.interrupted:
             record.interrupted = True
+            discard_paths()
             raise CommandInterrupted(record)
         effective_environment = os.environ.copy()
         effective_environment.update(self._extra_env)
@@ -338,26 +355,84 @@ class CommandRunner:
         ) = None
         disk_failure: DiskFailure | None = None
         lifecycle_failure: ProcessLifecycleError | None = None
-        stdout_read_fd, stdout_write_fd = os.pipe()
-        stderr_read_fd, stderr_write_fd = os.pipe()
-        stdout_read = os.fdopen(stdout_read_fd, "rb", buffering=0)
-        stderr_read = os.fdopen(stderr_read_fd, "rb", buffering=0)
-        stdout_write = os.fdopen(stdout_write_fd, "wb", buffering=0)
-        stderr_write = os.fdopen(stderr_write_fd, "wb", buffering=0)
-        stdout_capture = _BoundedCapture((max_log_bytes + 1) // 2)
-        stderr_capture = _BoundedCapture(max_log_bytes // 2)
-        stdout_thread = threading.Thread(
-            target=stdout_capture.drain,
-            args=(stdout_read,),
-            name=f"focused-stdout-{sequence}",
-            daemon=True,
-        )
-        stderr_thread = threading.Thread(
-            target=stderr_capture.drain,
-            args=(stderr_read,),
-            name=f"focused-stderr-{sequence}",
-            daemon=True,
-        )
+        stdout_read_owner = _OwnedDescriptor()
+        stdout_write_owner = _OwnedDescriptor()
+        stderr_read_owner = _OwnedDescriptor()
+        stderr_write_owner = _OwnedDescriptor()
+        stdout_read: BinaryIO | None = None
+        stderr_read: BinaryIO | None = None
+        stdout_write: BinaryIO | None = None
+        stderr_write: BinaryIO | None = None
+        try:
+            stdout_read_fd, stdout_write_fd = os.pipe()
+            stdout_read_owner.adopt(stdout_read_fd)
+            stdout_write_owner.adopt(stdout_write_fd)
+            stderr_read_fd, stderr_write_fd = os.pipe()
+            stderr_read_owner.adopt(stderr_read_fd)
+            stderr_write_owner.adopt(stderr_write_fd)
+            stdout_read = os.fdopen(
+                stdout_read_owner.fd, "rb", buffering=0
+            )
+            stdout_read_owner.detach()
+            stderr_read = os.fdopen(
+                stderr_read_owner.fd, "rb", buffering=0
+            )
+            stderr_read_owner.detach()
+            stdout_write = os.fdopen(
+                stdout_write_owner.fd, "wb", buffering=0
+            )
+            stdout_write_owner.detach()
+            stderr_write = os.fdopen(
+                stderr_write_owner.fd, "wb", buffering=0
+            )
+            stderr_write_owner.detach()
+            stdout_capture = _BoundedCapture((max_log_bytes + 1) // 2)
+            stderr_capture = _BoundedCapture(max_log_bytes // 2)
+            stdout_thread = threading.Thread(
+                target=stdout_capture.drain,
+                args=(stdout_read,),
+                name=f"focused-stdout-{sequence}",
+                daemon=True,
+            )
+            stderr_thread = threading.Thread(
+                target=stderr_capture.drain,
+                args=(stderr_read,),
+                name=f"focused-stderr-{sequence}",
+                daemon=True,
+            )
+        except BaseException as primary_error:
+            setup_errors: list[str] = []
+            for stream_name, stream in (
+                ("stdout pipe reader", stdout_read),
+                ("stderr pipe reader", stderr_read),
+                ("stdout pipe writer", stdout_write),
+                ("stderr pipe writer", stderr_write),
+            ):
+                attempts = 0
+                while stream is not None and not stream.closed and attempts < 2:
+                    attempts += 1
+                    try:
+                        stream.close()
+                    except BaseException as close_error:
+                        setup_errors.append(
+                            f"{stream_name} close failed: "
+                            f"{type(close_error).__name__}: {close_error}"
+                        )
+            for label, owner in (
+                ("stdout pipe reader", stdout_read_owner),
+                ("stderr pipe reader", stderr_read_owner),
+                ("stdout pipe writer", stdout_write_owner),
+                ("stderr pipe writer", stderr_write_owner),
+            ):
+                setup_errors.extend(owner.close_retry(label))
+            for detail in setup_errors:
+                primary_error.add_note(detail)
+            discard_paths(primary_error)
+            raise
+        assert stdout_read is not None
+        assert stderr_read is not None
+        assert stdout_write is not None
+        assert stderr_write is not None
         drain_failed = False
         try:
             if self.interrupted:
@@ -468,6 +543,9 @@ class CommandRunner:
                     self._record_lifecycle_error(record, error)
                     lifecycle_failure = error
             self._complete(record, process, started)
+        except BaseException as primary_error:
+            discard_paths(primary_error)
+            raise
         finally:
             for stream_name, writer in (
                 ("stdout", stdout_write),
@@ -503,16 +581,22 @@ class CommandRunner:
         if drain_failed:
             self._cleanup_unsafe = "output drain did not settle"
         if drain_failed and lifecycle_failure is not None:
+            discard_paths()
             raise CommandLifecycleFailed(record, lifecycle_failure) from None
         if drain_failed:
             if outcome is CommandTimedOut:
+                discard_paths()
                 raise CommandTimedOut(record) from None
             if outcome is CommandInterrupted:
+                discard_paths()
                 raise CommandInterrupted(record) from None
             if outcome is CommandDiskStopped:
                 if disk_failure is None:
+                    discard_paths()
                     raise RuntimeError("disk stop lost its failure evidence")
+                discard_paths()
                 raise CommandDiskStopped(record, disk_failure) from None
+            discard_paths()
             raise CommandDrainFailed(record)
 
         record.stdout_observed_bytes = stdout_capture.observed
@@ -545,7 +629,7 @@ class CommandRunner:
                     disk_guard, "reserve_additional_bytes"
                 )(
                     retained_bytes,
-                    filesystem_fd=paths.root_fd,
+                    filesystem=paths.root,
                 )
             if post_drain_failure is not None:
                 if disk_failure is None:
@@ -586,27 +670,28 @@ class CommandRunner:
                 record.cleanup_errors.extend(paths.discard())
                 if outcome in {None, CommandTimedOut} and lifecycle_failure is None:
                     outcome = CommandDiskStopped
-        try:
-            cleanup_errors = self._log_cleanup((paths.stdout, paths.stderr))
-        except Exception as error:
-            record.cleanup_errors.append(
-                "log cleanup callback failed: "
-                f"{type(error).__name__}: {error}"
-            )
-            if self._has_custom_log_cleanup:
-                try:
-                    fallback_errors = self._default_log_cleanup(
-                        (paths.stdout, paths.stderr)
-                    )
-                except Exception as fallback_error:
-                    record.cleanup_errors.append(
-                        "default log cleanup failed: "
-                        f"{type(fallback_error).__name__}: {fallback_error}"
-                    )
-                else:
-                    record.cleanup_errors.extend(fallback_errors)
-        else:
-            record.cleanup_errors.extend(cleanup_errors)
+        if materialized and disk_failure is None:
+            try:
+                cleanup_errors = self._log_cleanup((paths.stdout, paths.stderr))
+            except Exception as error:
+                record.cleanup_errors.append(
+                    "log cleanup callback failed: "
+                    f"{type(error).__name__}: {error}"
+                )
+                if self._has_custom_log_cleanup:
+                    try:
+                        fallback_errors = self._default_log_cleanup(
+                            (paths.stdout, paths.stderr)
+                        )
+                    except Exception as fallback_error:
+                        record.cleanup_errors.append(
+                            "default log cleanup failed: "
+                            f"{type(fallback_error).__name__}: {fallback_error}"
+                        )
+                    else:
+                        record.cleanup_errors.extend(fallback_errors)
+            else:
+                record.cleanup_errors.extend(cleanup_errors)
         if outcome is CommandTimedOut:
             raise CommandTimedOut(record) from None
         if outcome is CommandInterrupted:

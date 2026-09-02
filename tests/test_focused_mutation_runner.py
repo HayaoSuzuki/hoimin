@@ -19,6 +19,8 @@ from tools.focused_mutation_support.disk import (
     DiskFailure,
     DiskStopReason,
 )
+from tools.focused_mutation_support.filesystem import SharePolicy
+from tools.focused_mutation_support.lease import ManagedScratch, ScratchCleanupStatus
 from tools.focused_mutation_support.runner import (
     CommandDrainFailed,
     CommandDiskStopped,
@@ -30,7 +32,7 @@ from tools.focused_mutation_support.runner import (
     terminate_windows_process_tree,
     wait_for_log_release,
 )
-from tools.focused_mutation_support.store import RunStore
+from tools.focused_mutation_support.store import CommandPaths, RunStore
 from tools.focused_mutation_support.windows_file import (
     WindowsHandle,
     probe_delete_access,
@@ -664,6 +666,35 @@ class RunnerTests(unittest.TestCase):
             **keyword_arguments,
         )
 
+    def task10_store(self) -> tuple[RunStore, ManagedScratch]:
+        root = Path(self.temporary.name)
+        scratch_parent = root / "scratch"
+        scratch_parent.mkdir(exist_ok=True)
+        scratch = ManagedScratch.create(scratch_parent)
+        command_root = scratch.create_child("commands")
+        capability = scratch.open_child("commands", SharePolicy.MUTATION)
+        try:
+            store = RunStore(
+                self.output,
+                command_root=command_root,
+                command_root_capability=capability,
+            )
+        except TypeError as error:
+            capability.close()
+            scratch.mark_cleanup_ready()
+            scratch.cleanup()
+            scratch.close_capabilities()
+            self.fail(f"capability-backed RunStore API is missing: {error}")
+        return store, scratch
+
+    def close_task10_store(self, store: RunStore, scratch: ManagedScratch) -> None:
+        errors = store.close_command_root()
+        self.assertEqual(errors, ())
+        scratch.mark_cleanup_ready()
+        cleanup = scratch.cleanup()
+        self.assertIs(cleanup.status, ScratchCleanupStatus.CLEAN)
+        self.assertEqual(scratch.close_capabilities(), ())
+
     def stdout(self, record: CommandRecord) -> str:
         return Path(record.stdout_path).read_text()
 
@@ -694,29 +725,29 @@ class RunnerTests(unittest.TestCase):
 
     def test_command_spool_refuses_precreated_stdout_symlink(self) -> None:
         root = Path(self.temporary.name)
-        commands = root / "pinned-commands"
-        commands.mkdir()
+        store, scratch = self.task10_store()
+        commands = store.commands
         sentinel = root / "sentinel"
         sentinel.write_text("outside", encoding="utf-8")
-        store = RunStore(self.output, command_root=commands)
         runner = CommandRunner(store)
-        script = (
-            "import os, pathlib, sys\n"
-            "commands = pathlib.Path(sys.argv[1])\n"
-            "os.symlink(sys.argv[2], commands / '0001-swap.stdout')\n"
-            "print('captured')\n"
-        )
+        precreated = commands / "0001-swap.stdout"
+        try:
+            os.symlink(sentinel, precreated)
+        except OSError:
+            os.link(sentinel, precreated)
 
-        with self.assertRaises(OSError):
-            runner.run(
-                [sys.executable, "-c", script, str(commands), str(sentinel)],
-                cwd=root,
-                timeout=5.0,
-                label="swap",
-            )
+        try:
+            with self.assertRaises(OSError):
+                runner.run(
+                    [sys.executable, "-c", "print('captured')"],
+                    cwd=root,
+                    timeout=5.0,
+                    label="swap",
+                )
 
-        self.assertEqual(sentinel.read_text(encoding="utf-8"), "outside")
-        store.close_command_root()
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "outside")
+        finally:
+            self.close_task10_store(store, scratch)
 
     def test_command_spool_paths_are_validated_before_writer_creation(self) -> None:
         store_module = __import__(
@@ -748,12 +779,11 @@ class RunnerTests(unittest.TestCase):
 
     def test_command_spool_stays_on_pinned_directory_after_path_swap(self) -> None:
         root = Path(self.temporary.name)
-        commands = root / "pinned-commands"
-        commands.mkdir()
-        moved = root / "pinned-commands-moved"
+        store, scratch = self.task10_store()
+        commands = store.commands
+        moved = commands.with_name("commands-moved")
         sentinel = root / "sentinel"
         sentinel.write_text("outside", encoding="utf-8")
-        store = RunStore(self.output, command_root=commands)
         runner = CommandRunner(store)
         script = (
             "import os, pathlib, sys\n"
@@ -761,36 +791,45 @@ class RunnerTests(unittest.TestCase):
             "moved = pathlib.Path(sys.argv[2])\n"
             "commands.rename(moved)\n"
             "commands.mkdir()\n"
-            "os.symlink(sys.argv[3], commands / '0001-directory-swap.stdout')\n"
+            "os.link(sys.argv[3], commands / '0001-directory-swap.stdout')\n"
             "print('captured')\n"
         )
 
-        record = runner.run(
-            [
-                sys.executable,
-                "-c",
-                script,
-                str(commands),
-                str(moved),
-                str(sentinel),
-            ],
-            cwd=root,
-            timeout=5.0,
-            label="directory-swap",
-        )
+        try:
+            record = runner.run(
+                [
+                    sys.executable,
+                    "-c",
+                    script,
+                    str(commands),
+                    str(moved),
+                    str(sentinel),
+                ],
+                cwd=root,
+                timeout=5.0,
+                label="directory-swap",
+            )
 
-        self.assertEqual(record.exit_code, 0)
-        self.assertEqual(sentinel.read_text(encoding="utf-8"), "outside")
-        self.assertEqual(
-            (moved / "0001-directory-swap.stdout").read_text(), "captured\n"
-        )
-        store.close_command_root()
+            self.assertEqual(record.exit_code, 0)
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "outside")
+            self.assertEqual(
+                (moved / "0001-directory-swap.stdout").read_text(), "captured\n"
+            )
+            spool = record._spool
+            self.assertIsInstance(spool, CommandPaths)
+            assert isinstance(spool, CommandPaths)
+            self.assertEqual(spool.discard(), ())
+            for child in commands.iterdir():
+                child.unlink()
+            commands.rmdir()
+            moved.rename(commands)
+        finally:
+            self.close_task10_store(store, scratch)
 
     def test_second_spool_failure_removes_first_and_blocks_cleanup(self) -> None:
         root = Path(self.temporary.name)
-        commands = root / "pinned-commands"
-        commands.mkdir()
-        store = RunStore(self.output, command_root=commands)
+        store, scratch = self.task10_store()
+        commands = store.commands
         runner = CommandRunner(store)
         real_open_writer = __import__(
             "tools.focused_mutation_support.store",
@@ -802,24 +841,26 @@ class RunnerTests(unittest.TestCase):
                 raise OSError("injected stderr spool open failure")
             return real_open_writer(paths, stream_name)
 
-        with (
-            mock.patch(
-                "tools.focused_mutation_support.store.CommandPaths.open_writer",
-                autospec=True,
-                side_effect=fail_stderr,
-            ),
-            self.assertRaisesRegex(OSError, "stderr spool"),
-        ):
-            runner.run(
-                [sys.executable, "-c", "print('captured')"],
-                cwd=root,
-                timeout=5.0,
-                label="two-spools",
-            )
+        try:
+            with (
+                mock.patch(
+                    "tools.focused_mutation_support.store.CommandPaths.open_writer",
+                    autospec=True,
+                    side_effect=fail_stderr,
+                ),
+                self.assertRaisesRegex(OSError, "stderr spool"),
+            ):
+                runner.run(
+                    [sys.executable, "-c", "print('captured')"],
+                    cwd=root,
+                    timeout=5.0,
+                    label="two-spools",
+                )
 
-        self.assertFalse((commands / "0001-two-spools.stdout").exists())
-        self.assertFalse(runner.output_drain_safe)
-        store.close_command_root()
+            self.assertFalse((commands / "0001-two-spools.stdout").exists())
+            self.assertFalse(runner.output_drain_safe)
+        finally:
+            self.close_task10_store(store, scratch)
 
     def test_windows_tree_terminator_rejects_nonzero_exit(self) -> None:
         run = mock.Mock(
@@ -1325,7 +1366,7 @@ class RunnerTests(unittest.TestCase):
 
         with self.assertRaises(CommandDiskStopped) as caught:
             runner.run(
-                [str(self.fake), "payload"],
+                [sys.executable, str(self.fake), "payload"],
                 cwd=self.work,
                 timeout=5.0,
                 label="spool-reserve",
@@ -1336,6 +1377,138 @@ class RunnerTests(unittest.TestCase):
         self.assertIs(caught.exception.failure, failure)
         self.assertFalse(Path(caught.exception.record.stdout_path).exists())
         self.assertFalse(Path(caught.exception.record.stderr_path).exists())
+
+    def test_task10_reservation_uses_command_root_capability(self) -> None:
+        store, scratch = self.task10_store()
+        runner = CommandRunner(store)
+        failure = DiskFailure(
+            code="filesystem.reserve.reached",
+            reason=DiskStopReason.FILESYSTEM_RESERVE_REACHED,
+        )
+        guard = mock.Mock(failure=None)
+        guard.sample.return_value = None
+        guard.reserve_additional_bytes.return_value = failure
+
+        try:
+            with self.assertRaises(CommandDiskStopped) as caught:
+                runner.run(
+                    [sys.executable, str(self.fake), "payload"],
+                    cwd=self.work,
+                    timeout=5.0,
+                    label="capability-reserve",
+                    disk_guard=guard,
+                )
+            spool = caught.exception.record._spool
+            self.assertIsInstance(spool, CommandPaths)
+            assert isinstance(spool, CommandPaths)
+            reservation = guard.reserve_additional_bytes.call_args
+            self.assertEqual(reservation.kwargs, {"filesystem": spool.root})
+            self.assertGreater(reservation.args[0], 0)
+            self.assertFalse(spool.root.is_open)
+        finally:
+            self.close_task10_store(store, scratch)
+
+    def test_task10_preflight_stop_discards_and_releases_command_duplicate(
+        self,
+    ) -> None:
+        store, scratch = self.task10_store()
+        runner = CommandRunner(store)
+        failure = DiskFailure(
+            code="workspace.size.exceeded",
+            reason=DiskStopReason.WORKSPACE_SIZE_EXCEEDED,
+        )
+        guard = mock.Mock(failure=failure)
+        guard.sample.return_value = failure
+
+        try:
+            with self.assertRaises(CommandDiskStopped) as caught:
+                runner.run(
+                    [str(self.fake)],
+                    cwd=self.work,
+                    timeout=5.0,
+                    label="preflight-capability",
+                    disk_guard=guard,
+                )
+            spool = caught.exception.record._spool
+            self.assertIsInstance(spool, CommandPaths)
+            assert isinstance(spool, CommandPaths)
+            self.assertFalse(spool.root.is_open)
+            self.assertEqual(store.close_command_root(), ())
+        finally:
+            self.close_task10_store(store, scratch)
+
+    def test_task10_pipe_setup_failure_releases_spool_and_descriptors(self) -> None:
+        for stage in ("first-pipe", "second-pipe", "fdopen"):
+            with self.subTest(stage=stage):
+                store, scratch = self.task10_store()
+                runner = CommandRunner(store)
+                created_descriptors: list[int] = []
+                captured_paths: list[CommandPaths] = []
+                real_pipe = os.pipe
+                real_fdopen = os.fdopen
+                real_command_paths = store.command_paths
+                pipe_calls = 0
+
+                def capture_paths(sequence: int, label: str) -> CommandPaths:
+                    paths = real_command_paths(sequence, label)
+                    captured_paths.append(paths)
+                    return paths
+
+                def staged_pipe() -> tuple[int, int]:
+                    nonlocal pipe_calls
+                    pipe_calls += 1
+                    if stage == "first-pipe" or (
+                        stage == "second-pipe" and pipe_calls == 2
+                    ):
+                        raise OSError(f"injected {stage} allocation failure")
+                    descriptors = real_pipe()
+                    created_descriptors.extend(descriptors)
+                    return descriptors
+
+                def staged_fdopen(*args: object, **kwargs: object) -> BinaryIO:
+                    if stage == "fdopen":
+                        raise OSError("injected fdopen setup failure")
+                    return real_fdopen(*args, **kwargs)  # type: ignore[arg-type]
+
+                try:
+                    with (
+                        mock.patch.object(
+                            store,
+                            "command_paths",
+                            side_effect=capture_paths,
+                        ),
+                        mock.patch(
+                            "tools.focused_mutation_support.runner.os.pipe",
+                            side_effect=staged_pipe,
+                        ),
+                        mock.patch(
+                            "tools.focused_mutation_support.runner.os.fdopen",
+                            side_effect=staged_fdopen,
+                        ),
+                        self.assertRaisesRegex(OSError, "injected"),
+                    ):
+                        runner.run(
+                            [sys.executable, "-c", "pass"],
+                            cwd=self.work,
+                            timeout=5.0,
+                            label=f"setup-{stage}",
+                        )
+
+                    self.assertEqual(len(captured_paths), 1)
+                    self.assertFalse(captured_paths[0].root.is_open)
+                    self.assertEqual(store.close_command_root(), ())
+                    for descriptor in created_descriptors:
+                        with self.assertRaises(OSError):
+                            os.fstat(descriptor)
+                finally:
+                    for descriptor in created_descriptors:
+                        try:
+                            os.close(descriptor)
+                        except OSError:
+                            pass
+                    if captured_paths and captured_paths[0].root.is_open:
+                        captured_paths[0].close()
+                    self.close_task10_store(store, scratch)
 
     def test_post_drain_disk_stop_wins_over_command_timeout(self) -> None:
         runner = self.runner()
@@ -1349,7 +1522,7 @@ class RunnerTests(unittest.TestCase):
 
         with self.assertRaises(CommandDiskStopped) as caught:
             runner.run(
-                [str(self.fake), "--sleep"],
+                [sys.executable, str(self.fake), "--sleep"],
                 cwd=self.work,
                 timeout=0.01,
                 label="timeout-spool-reserve",
@@ -1414,7 +1587,7 @@ class RunnerTests(unittest.TestCase):
 
         with self.assertRaises(CommandDiskStopped) as caught:
             runner.run(
-                [str(self.fake), "payload"],
+                [sys.executable, str(self.fake), "payload"],
                 cwd=self.work,
                 timeout=5.0,
                 label="post-write-disk-stop",
@@ -1448,7 +1621,7 @@ class RunnerTests(unittest.TestCase):
             self.assertRaises(CommandDiskStopped) as caught,
         ):
             runner.run(
-                [str(self.fake)],
+                [sys.executable, str(self.fake)],
                 cwd=self.work,
                 timeout=5.0,
                 label="drain-and-disk-stop",
@@ -1500,14 +1673,17 @@ class RunnerTests(unittest.TestCase):
             any(
                 "spool descriptor close failure" in note
                 for note in getattr(caught.exception, "__notes__", ())
-            )
+            ),
+            repr(getattr(caught.exception, "__notes__", ())),
         )
         self.assertTrue(
             any(
                 "spool descriptor close failure" in detail
-                for detail in self.store.close_command_root()
+                for detail in paths.capability_errors
             )
         )
+        paths.discard()
+        self.store.close_command_root()
 
     @unittest.skipUnless(os.name == "nt", "requires Windows handle inheritance")
     def test_windows_timeout_terminates_inherited_handle_descendant(self) -> None:
@@ -1755,6 +1931,7 @@ class RunnerTests(unittest.TestCase):
         finally:
             releaser.join(timeout=2.0)
 
+    @unittest.skipIf(os.name == "nt", "requires POSIX process groups")
     def test_completed_process_quiesce_error_blocks_cleanup(self) -> None:
         runner = self.runner()
         with mock.patch.object(
@@ -1774,6 +1951,7 @@ class RunnerTests(unittest.TestCase):
             any("permission denied" in item for item in record.cleanup_errors)
         )
 
+    @unittest.skipIf(os.name == "nt", "requires POSIX process groups")
     def test_lifecycle_failure_with_unsettled_drain_never_materializes_spool(
         self,
     ) -> None:
@@ -1803,6 +1981,7 @@ class RunnerTests(unittest.TestCase):
         write_to.assert_not_called()
         self.assertFalse(runner.cleanup_safe)
 
+    @unittest.skipIf(os.name == "nt", "requires POSIX process groups")
     def test_posix_permission_error_is_a_process_lifecycle_error(self) -> None:
         process = mock.Mock(spec=subprocess.Popen)
         process.pid = 12345

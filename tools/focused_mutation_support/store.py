@@ -1,42 +1,110 @@
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass
 from contextlib import AbstractContextManager, nullcontext
 import json
 import os
 from pathlib import Path
 import re
-import stat
 import sys
 import uuid
 from collections.abc import Callable
 from typing import BinaryIO
 
 from .model import RunRecord
-from .disk import DiskFailure, DiskObservation, DiskPolicy, MAX_REPORT_BYTES
-from .lease import validate_reported_path
+from .disk import (
+    DiskFailure,
+    DiskObservation,
+    DiskPolicy,
+    MAX_DIAGNOSTIC_DETAIL_BYTES,
+    MAX_DIAGNOSTIC_DETAILS,
+    MAX_REPORT_BYTES,
+)
+from .filesystem import (
+    CreateDisposition,
+    DirectoryCapability,
+    EntryKind,
+    FileAccess,
+    FileCapability,
+    FileIdentity,
+    FilesystemBackend,
+    SecurityDomain,
+    SharePolicy,
+    default_filesystem_backend,
+)
+from .lease import (
+    LeaseLock,
+    _OwnedDescriptor,
+    _close_capability_once,
+    _close_capability_retry,
+    _close_lease_lock_all,
+    _close_lease_lock_retry,
+    validate_reported_path,
+)
 
 
 class ReportTooLarge(OSError):
     pass
 
 
-def _close_descriptor_preserving_primary(
-    descriptor: int,
-    label: str,
-    capability_errors: list[str] | None = None,
-) -> None:
-    primary_error = sys.exception()
-    try:
-        os.close(descriptor)
-    except OSError as close_error:
-        detail = (
-            f"{label} close failed: "
-            f"{type(close_error).__name__}: {close_error}"
-        )
-        if capability_errors is not None:
-            capability_errors.append(detail)
-        if primary_error is None:
-            raise OSError(detail) from close_error
-        primary_error.add_note(detail)
+def _bounded_detail(value: str) -> str:
+    encoded = value.encode("utf-8", errors="replace")
+    if len(encoded) <= MAX_DIAGNOSTIC_DETAIL_BYTES:
+        return value
+    suffix = b"...[truncated]"
+    return (encoded[: MAX_DIAGNOSTIC_DETAIL_BYTES - len(suffix)] + suffix).decode(
+        "utf-8", errors="ignore"
+    )
+
+
+def _bounded_capability_detail(label: str, error: BaseException) -> str:
+    return _bounded_detail(f"{label}: {type(error).__name__}: {error}")
+
+
+def _append_capability_error(errors: list[str], detail: str) -> None:
+    detail = _bounded_detail(detail)
+    if detail in errors or len(errors) >= MAX_DIAGNOSTIC_DETAILS:
+        return
+    errors.append(detail)
+
+
+def _attach_secondary(primary: BaseException, details: tuple[str, ...]) -> None:
+    existing = tuple(getattr(primary, "__notes__", ()))
+    for detail in details:
+        if detail not in existing:
+            primary.add_note(detail)
+            existing = (*existing, detail)
+
+
+class _OwnedBinaryStream:
+    """A fixed-slot CRT stream owner with Task 7's explicit close budget."""
+
+    def __init__(self) -> None:
+        self.stream: BinaryIO | None = None
+        self.close_attempts = 0
+        self.close_errors: list[str] = []
+
+    def adopt(self, stream: BinaryIO) -> None:
+        if self.stream is not None:
+            raise RuntimeError("binary stream owner is already occupied")
+        self.stream = stream
+
+    def close_retry(self, label: str) -> tuple[str, ...]:
+        stream = self.stream
+        while (
+            stream is not None
+            and not stream.closed
+            and self.close_attempts < 2
+        ):
+            self.close_attempts += 1
+            try:
+                stream.close()
+            except BaseException as error:
+                _append_capability_error(
+                    self.close_errors,
+                    _bounded_capability_detail(f"{label} close failed", error),
+                )
+        if stream is not None and stream.closed:
+            self.stream = None
+        return tuple(self.close_errors)
 
 
 class BoundedTextWriter:
@@ -91,10 +159,16 @@ def _json_default(value: object) -> object:
 class CommandPaths:
     stdout: Path
     stderr: Path
-    root_fd: int
+    root: DirectoryCapability
     stdout_name: str
     stderr_name: str
-    capability_errors: list[str]
+    backend: FilesystemBackend
+    _root_token: int
+    _release_root: Callable[[int], None] = field(repr=False, compare=False)
+    _spool_identities: dict[str, FileIdentity] = field(
+        default_factory=dict, repr=False, compare=False
+    )
+    capability_errors: list[str] = field(default_factory=list)
 
     def _name(self, stream_name: str) -> str:
         if stream_name == "stdout":
@@ -105,58 +179,99 @@ class CommandPaths:
 
     def open_writer(self, stream_name: str) -> BinaryIO:
         name = self._name(stream_name)
-        descriptor = os.open(
-            name,
-            os.O_WRONLY
-            | os.O_CREAT
-            | os.O_EXCL
-            | getattr(os, "O_NOFOLLOW", 0),
-            0o600,
-            dir_fd=self.root_fd,
-        )
+        if name in self._spool_identities:
+            raise RuntimeError(f"command spool identity already exists: {name}")
+        if len(self._spool_identities) >= 2:
+            raise RuntimeError("command spool identity registry is full")
+        capability: FileCapability | None = None
+        descriptor = _OwnedDescriptor()
+        identity: FileIdentity | None = None
         try:
-            metadata = os.fstat(descriptor)
-            if not stat.S_ISREG(metadata.st_mode):
-                raise OSError(f"command spool is not a regular file: {name}")
-            return os.fdopen(descriptor, "wb", closefd=True)
-        except BaseException:
-            _close_descriptor_preserving_primary(
-                descriptor,
-                "command spool writer",
-                self.capability_errors,
+            capability = self.backend.open_file(
+                self.root,
+                name,
+                access=FileAccess.WRITE,
+                disposition=CreateDisposition.CREATE_NEW,
+                share_policy=SharePolicy.PINNED,
             )
+            identity = capability.identity
+            self._spool_identities[name] = identity
+            if capability.kind is not EntryKind.REGULAR:
+                raise OSError(f"command spool is not a regular file: {name}")
+            descriptor.adopt(
+                capability.detach_to_fd(
+                    os.O_WRONLY | getattr(os, "O_BINARY", 0)
+                )
+            )
+            stream = os.fdopen(descriptor.fd, "wb", closefd=True)
+            descriptor.detach()
+            return stream
+        except BaseException as primary_error:
+            details: list[str] = []
+            if capability is not None and capability.is_open:
+                details.extend(
+                    _close_capability_retry(capability, "command spool writer")
+                )
+            details.extend(descriptor.close_retry("command spool writer"))
+            if identity is not None:
+                details.extend(self._discard_one(name, identity))
+            for detail in details:
+                _append_capability_error(self.capability_errors, detail)
+            _attach_secondary(primary_error, tuple(details))
             raise
 
     def available_bytes(self) -> int:
-        values = os.fstatvfs(self.root_fd)
-        return values.f_bavail * values.f_frsize
+        return self.backend.available_bytes(self.root)
 
     def read(self, stream_name: str, capacity: int, *, tail: bool = False) -> tuple[bytes, int]:
         if capacity < 0:
             raise ValueError("command spool capacity cannot be negative")
         name = self._name(stream_name)
-        descriptor = os.open(
-            name,
-            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
-            dir_fd=self.root_fd,
-        )
+        identity = self._spool_identities.get(name)
+        if identity is None:
+            raise OSError(f"command spool has no recorded identity: {name}")
+        capability: FileCapability | None = None
+        descriptor = _OwnedDescriptor()
         try:
-            metadata = os.fstat(descriptor)
-            if not stat.S_ISREG(metadata.st_mode):
+            evidence = self.backend.entry(self.root, name)
+            if (
+                evidence is None
+                or evidence.kind is not EntryKind.REGULAR
+                or evidence.identity != identity
+                or evidence.filesystem != self.root.filesystem
+            ):
+                raise OSError(f"command spool identity changed: {name}")
+            capability = self.backend.open_file(
+                self.root,
+                name,
+                access=FileAccess.READ,
+                disposition=CreateDisposition.OPEN_EXISTING,
+                share_policy=SharePolicy.PINNED,
+            )
+            if capability.kind is not EntryKind.REGULAR:
                 raise OSError(f"command spool is not a regular file: {name}")
-            observed = metadata.st_size
+            if capability.identity != identity:
+                raise OSError(f"command spool identity changed: {name}")
+            observed = capability.logical_size
+            descriptor.adopt(
+                capability.detach_to_fd(
+                    os.O_RDONLY | getattr(os, "O_BINARY", 0)
+                )
+            )
             if not tail and observed > capacity:
                 raise ValueError(
                     f"bounded command spool exceeds {capacity} bytes: {name}"
                 )
             if tail:
-                os.lseek(descriptor, max(0, observed - capacity), os.SEEK_SET)
+                os.lseek(descriptor.fd, max(0, observed - capacity), os.SEEK_SET)
                 limit = min(observed, capacity)
             else:
                 limit = capacity + 1
             value = bytearray()
             while len(value) < limit:
-                chunk = os.read(descriptor, min(64 * 1024, limit - len(value)))
+                chunk = os.read(
+                    descriptor.fd, min(64 * 1024, limit - len(value))
+                )
                 if not chunk:
                     break
                 value.extend(chunk)
@@ -165,37 +280,127 @@ class CommandPaths:
                     f"bounded command spool exceeds {capacity} bytes: {name}"
                 )
             return bytes(value), observed
+        except BaseException as primary_error:
+            details: list[str] = []
+            if capability is not None and capability.is_open:
+                details.extend(_close_capability_retry(capability, "command spool reader"))
+            details.extend(descriptor.close_retry("command spool reader"))
+            for detail in details:
+                _append_capability_error(self.capability_errors, detail)
+            _attach_secondary(primary_error, tuple(details))
+            raise
         finally:
-            _close_descriptor_preserving_primary(
-                descriptor,
-                "command spool reader",
-                self.capability_errors,
+            if sys.exception() is None:
+                close_details = descriptor.close_retry("command spool reader")
+                for detail in close_details:
+                    _append_capability_error(self.capability_errors, detail)
+                if descriptor.fd >= 0:
+                    raise OSError("command spool reader close failed")
+
+    def _discard_one(self, name: str, identity: FileIdentity) -> tuple[str, ...]:
+        errors: list[str] = []
+        capability: FileCapability | DirectoryCapability | None = None
+        try:
+            evidence = self.backend.entry(self.root, name)
+        except BaseException as error:
+            errors.append(_bounded_capability_detail("command spool lookup failed", error))
+            return tuple(errors)
+        if evidence is None:
+            self._spool_identities.pop(name, None)
+            return ()
+        if (
+            evidence.kind is not EntryKind.REGULAR
+            or evidence.identity != identity
+            or evidence.filesystem != self.root.filesystem
+        ):
+            errors.append(
+                _bounded_detail(
+                    f"command spool cleanup refused replacement: {name}"
+                )
             )
+            return tuple(errors)
+        try:
+            capability = self.backend.open_entry(
+                self.root, name, SharePolicy.PINNED
+            )
+            if (
+                capability.kind is not EntryKind.REGULAR
+                or capability.identity != identity
+                or capability.filesystem != self.root.filesystem
+            ):
+                raise OSError(f"command spool identity changed before delete: {name}")
+            self.backend.delete(capability)
+            if capability.is_open:
+                errors.extend(
+                    _close_capability_retry(capability, "command spool delete")
+                )
+                if capability.is_open:
+                    return tuple(errors)
+            remaining = self.backend.entry(self.root, name)
+            if remaining is not None:
+                errors.append(
+                    _bounded_detail(
+                        f"command spool cleanup failed: path remains: {name}"
+                    )
+                )
+            else:
+                self._spool_identities.pop(name, None)
+        except BaseException as error:
+            errors.append(_bounded_capability_detail("command spool cleanup failed", error))
+            if capability is not None and capability.is_open:
+                errors.extend(
+                    _close_capability_retry(capability, "command spool cleanup")
+                )
+            if capability is not None and not capability.is_open:
+                try:
+                    remaining = self.backend.entry(self.root, name)
+                except BaseException as absence_error:
+                    errors.append(
+                        _bounded_capability_detail(
+                            "command spool absence verification failed",
+                            absence_error,
+                        )
+                    )
+                else:
+                    if remaining is None:
+                        self._spool_identities.pop(name, None)
+                    else:
+                        errors.append(
+                            _bounded_detail(
+                                f"command spool cleanup failed: path remains: {name}"
+                            )
+                        )
+        return tuple(errors)
 
     def discard(self) -> tuple[str, ...]:
         errors: list[str] = []
-        for name in (self.stdout_name, self.stderr_name):
-            try:
-                os.unlink(name, dir_fd=self.root_fd)
-            except FileNotFoundError:
-                pass
-            except OSError as error:
-                errors.append(
-                    "command spool cleanup failed: "
-                    f"{type(error).__name__}: {error}"
-                )
-            try:
-                os.stat(name, dir_fd=self.root_fd, follow_symlinks=False)
-            except FileNotFoundError:
-                pass
-            except OSError as error:
-                errors.append(
-                    "command spool absence verification failed: "
-                    f"{type(error).__name__}: {error}"
-                )
-            else:
-                errors.append(f"command spool cleanup failed: path remains: {name}")
-        return tuple(errors)
+        try:
+            for name in (self.stdout_name, self.stderr_name):
+                identity = self._spool_identities.get(name)
+                if identity is not None:
+                    errors.extend(self._discard_one(name, identity))
+        finally:
+            errors.extend(self.close())
+        for detail in errors:
+            _append_capability_error(self.capability_errors, detail)
+        return tuple(self.capability_errors)
+
+    def close(self) -> tuple[str, ...]:
+        if not self.root.is_open:
+            self._release_root(self._root_token)
+            return tuple(self.capability_errors)
+        details = _close_capability_once(self.root, "command spool root")
+        for detail in details:
+            _append_capability_error(self.capability_errors, detail)
+        if not self.root.is_open:
+            self._release_root(self._root_token)
+        return tuple(self.capability_errors)
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except BaseException:
+            pass
 
 
 OUTPUT_OWNER_FILE = ".hoimin-output-owner"
@@ -208,22 +413,93 @@ _OUTPUT_MARKER_FIELDS = (
 )
 
 
+def _delete_exact_child(
+    parent: DirectoryCapability,
+    name: str,
+    identity: FileIdentity,
+    backend: FilesystemBackend,
+    label: str,
+) -> tuple[str, ...]:
+    errors: list[str] = []
+    capability: FileCapability | DirectoryCapability | None = None
+    try:
+        evidence = backend.entry(parent, name)
+    except BaseException as error:
+        return (_bounded_capability_detail(f"{label} lookup failed", error),)
+    if evidence is None:
+        return ()
+    if (
+        evidence.kind is not EntryKind.REGULAR
+        or evidence.identity != identity
+        or evidence.filesystem != parent.filesystem
+    ):
+        return (
+            _bounded_detail(f"{label} refused a same-name replacement: {name}"),
+        )
+    try:
+        capability = backend.open_entry(parent, name, SharePolicy.PINNED)
+        if (
+            capability.kind is not EntryKind.REGULAR
+            or capability.identity != identity
+            or capability.filesystem != parent.filesystem
+        ):
+            raise OSError(f"{label} identity changed before delete: {name}")
+        backend.delete(capability)
+        if capability.is_open:
+            errors.extend(_close_capability_retry(capability, label))
+            if capability.is_open:
+                return tuple(errors)
+        remaining = backend.entry(parent, name)
+        if remaining is not None:
+            errors.append(
+                _bounded_detail(
+                    f"{label} absence verification failed: {name} remains"
+                )
+            )
+    except BaseException as error:
+        errors.append(_bounded_capability_detail(f"{label} failed", error))
+        if capability is not None and capability.is_open:
+            errors.extend(_close_capability_retry(capability, label))
+        if capability is not None and not capability.is_open:
+            try:
+                remaining = backend.entry(parent, name)
+            except BaseException as absence_error:
+                errors.append(
+                    _bounded_capability_detail(
+                        f"{label} absence verification failed",
+                        absence_error,
+                    )
+                )
+            else:
+                if remaining is not None:
+                    errors.append(
+                        _bounded_detail(
+                            f"{label} absence verification failed: {name} remains"
+                        )
+                    )
+    return tuple(errors)
+
+
 class OwnedOutput:
     def __init__(
         self,
         path: Path,
         run_id: str,
-        directory_fd: int,
-        marker_fd: int,
+        directory: DirectoryCapability,
+        marker_lock: LeaseLock,
+        marker_identity: FileIdentity,
+        backend: FilesystemBackend,
         *,
         recovered_temporary_count: int = 0,
     ) -> None:
         self.path = path
         self.run_id = run_id
-        self._directory_fd = directory_fd
-        self._marker_fd = marker_fd
-        metadata = os.fstat(directory_fd)
-        self._identity = (metadata.st_dev, metadata.st_ino)
+        self._directory = directory
+        self._marker_lock = marker_lock
+        self._marker_identity = marker_identity
+        self._backend = backend
+        self._identity = directory.identity
+        self._filesystem = directory.filesystem
         self.recovered_temporary_count = recovered_temporary_count
         self.close_errors: list[str] = []
 
@@ -234,6 +510,7 @@ class OwnedOutput:
         run_id: str,
         *,
         min_free_bytes: int | None = None,
+        backend: FilesystemBackend | None = None,
     ) -> "OwnedOutput":
         raw_path = os.fspath(path)
         try:
@@ -245,141 +522,178 @@ class OwnedOutput:
             raise ValueError("output path is not strict UTF-8") from error
         if max(len(encoded_path), len(escaped_path)) > 16 * 1024:
             raise ValueError("output path exceeds 16 KiB encoded bytes")
+        path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        selected_backend = default_filesystem_backend() if backend is None else backend
+        directory: DirectoryCapability | None = None
+        marker: FileCapability | None = None
+        marker_descriptor = _OwnedDescriptor()
+        marker_lock = LeaseLock(-1)
+        marker_identity: FileIdentity | None = None
         try:
-            path.mkdir(mode=0o700, parents=True)
-        except FileExistsError:
-            pass
-        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-        flags |= getattr(os, "O_NOFOLLOW", 0)
-        directory_fd = os.open(path, flags)
-        marker_fd = -1
-        try:
-            metadata = os.fstat(directory_fd)
-            if not stat.S_ISDIR(metadata.st_mode):
+            directory = selected_backend.open_root(
+                path, SharePolicy.PINNED, SecurityDomain.CALLER
+            )
+            if (
+                directory.kind is not EntryKind.DIRECTORY
+                or directory.security_domain is not SecurityDomain.CALLER
+            ):
                 raise ValueError("output path is not a real directory")
-            recovered = _recover_abandoned_output(directory_fd)
-            if _bounded_output_names(directory_fd):
+            recovered = _recover_abandoned_output(directory, selected_backend)
+            if _bounded_output_names(directory, selected_backend):
                 raise ValueError("output path must be empty before startup")
             if min_free_bytes is not None:
-                capacity = os.fstatvfs(directory_fd)
-                available = capacity.f_bavail * capacity.f_frsize
+                available = selected_backend.available_bytes(directory)
                 if available <= min_free_bytes:
                     raise ValueError(
                         "filesystem reserve reached before output ownership"
                     )
-            marker_fd = os.open(
+            marker = selected_backend.open_file(
+                directory,
                 OUTPUT_OWNER_FILE,
-                os.O_RDWR | os.O_CREAT | os.O_EXCL,
-                0o600,
-                dir_fd=directory_fd,
+                access=FileAccess.READ_WRITE,
+                disposition=CreateDisposition.CREATE_NEW,
+                share_policy=SharePolicy.PINNED,
             )
+            marker_identity = marker.identity
             encoded = (
                 json.dumps(
                     {
                         "schema_version": 1,
                         "run_id": run_id,
                         "owner_kind": "focused_python",
-                        "output_device": metadata.st_dev,
-                        "output_inode": metadata.st_ino,
+                        "output_device": directory.identity.volume,
+                        "output_inode": directory.identity.file,
                     },
                     sort_keys=True,
                 )
                 + "\n"
             ).encode("utf-8")
+            marker_descriptor.adopt(
+                marker.detach_to_fd(os.O_RDWR | getattr(os, "O_BINARY", 0))
+            )
             offset = 0
             while offset < len(encoded):
-                written = os.write(marker_fd, encoded[offset:])
+                written = os.write(marker_descriptor.fd, encoded[offset:])
                 if written <= 0:
                     raise OSError("output owner marker write made no progress")
                 offset += written
-            if os.fstat(marker_fd).st_size != len(encoded):
+            if os.fstat(marker_descriptor.fd).st_size != len(encoded):
                 raise OSError("output owner marker write was incomplete")
-            os.fsync(marker_fd)
-            if os.name == "nt":
-                import msvcrt
-
-                os.lseek(marker_fd, 0, os.SEEK_SET)
-                msvcrt.locking(marker_fd, msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
-            else:
-                import fcntl
-
-                fcntl.flock(marker_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            os.fsync(marker_descriptor.fd)
+            marker_lock._prepare_reuse()
+            marker_lock.fd = marker_descriptor.detach()
+            marker_lock.acquire(blocking=False)
             return cls(
-                path.resolve(strict=True),
+                path,
                 run_id,
-                directory_fd,
-                marker_fd,
+                directory,
+                marker_lock,
+                marker_identity,
+                selected_backend,
                 recovered_temporary_count=recovered,
             )
         except BaseException as primary_error:
             rollback_errors: list[str] = []
-            if marker_fd >= 0:
-                try:
-                    os.close(marker_fd)
-                except OSError as error:
-                    rollback_errors.append(
-                        "output marker rollback close failed: "
-                        f"{type(error).__name__}: {error}"
-                    )
-                try:
-                    os.unlink(OUTPUT_OWNER_FILE, dir_fd=directory_fd)
-                except OSError as error:
-                    rollback_errors.append(
-                        "output marker rollback unlink failed: "
-                        f"{type(error).__name__}: {error}"
-                    )
-            try:
-                os.close(directory_fd)
-            except OSError as error:
-                rollback_errors.append(
-                    "output directory rollback close failed: "
-                    f"{type(error).__name__}: {error}"
+            if marker is not None and marker.is_open:
+                rollback_errors.extend(
+                    _close_capability_retry(marker, "output marker rollback")
                 )
-            for rollback_error in rollback_errors:
-                primary_error.add_note(rollback_error)
+            rollback_errors.extend(
+                marker_descriptor.close_retry("output marker rollback")
+            )
+            if marker_lock.fd >= 0:
+                rollback_errors.extend(
+                    _close_lease_lock_retry(marker_lock, "output marker rollback")
+                )
+            if (
+                directory is not None
+                and directory.is_open
+                and marker_identity is not None
+                and marker_lock.fd < 0
+                and marker_descriptor.fd < 0
+                and (marker is None or not marker.is_open)
+            ):
+                rollback_errors.extend(
+                    _delete_exact_child(
+                        directory,
+                        OUTPUT_OWNER_FILE,
+                        marker_identity,
+                        selected_backend,
+                        "output marker rollback",
+                    )
+                )
+            if directory is not None and directory.is_open:
+                rollback_errors.extend(
+                    _close_capability_retry(directory, "output directory rollback")
+                )
+            _attach_secondary(primary_error, tuple(rollback_errors))
             raise
 
     def _verify(self) -> None:
-        current = os.stat(self.path, follow_symlinks=False)
-        opened = os.fstat(self._directory_fd)
-        if not stat.S_ISDIR(current.st_mode) or (
-            current.st_dev,
-            current.st_ino,
-        ) != self._identity or (opened.st_dev, opened.st_ino) != self._identity:
+        if (
+            not self._directory.is_open
+            or not self._directory.owned_by(self._backend)
+            or self._directory.identity != self._identity
+            or self._directory.filesystem != self._filesystem
+        ):
             raise OSError("output directory identity changed")
+        verifier: DirectoryCapability | None = None
+        try:
+            verifier = self._backend.open_root(
+                self.path, SharePolicy.PINNED, SecurityDomain.CALLER
+            )
+            if (
+                verifier.kind is not EntryKind.DIRECTORY
+                or verifier.identity != self._identity
+                or verifier.filesystem != self._filesystem
+                or verifier.security_domain is not SecurityDomain.CALLER
+            ):
+                raise OSError("output directory identity changed")
+        except BaseException as primary_error:
+            if verifier is not None and verifier.is_open:
+                _attach_secondary(
+                    primary_error,
+                    _close_capability_retry(verifier, "output verifier"),
+                )
+            raise
+        assert verifier is not None
+        verifier_errors = _close_capability_retry(verifier, "output verifier")
+        if verifier.is_open:
+            raise OSError("; ".join(verifier_errors) or "output verifier close failed")
+        marker = self._backend.entry(self._directory, OUTPUT_OWNER_FILE)
+        if (
+            marker is None
+            or marker.kind is not EntryKind.REGULAR
+            or marker.identity != self._marker_identity
+            or marker.filesystem != self._filesystem
+        ):
+            raise OSError("output owner marker identity changed")
 
     def available_bytes(self) -> int:
         self._verify()
-        value = os.fstatvfs(self._directory_fd)
-        return value.f_bavail * value.f_frsize
+        return self._backend.available_bytes(self._directory)
+
+    def reopen_for_meter(self) -> DirectoryCapability:
+        self._verify()
+        return self._backend.reopen_directory(self._directory)
 
     def post_flush_available_bytes(self) -> int:
         return self.available_bytes()
 
     def probe_close(self) -> tuple[str, ...]:
-        errors: list[str] = []
-        for label, descriptor in (
-            ("output marker", self._marker_fd),
-            ("output directory", self._directory_fd),
-        ):
-            if descriptor < 0:
-                continue
-            duplicate = -1
-            try:
-                duplicate = os.dup(descriptor)
-                os.close(duplicate)
-                duplicate = -1
-            except OSError as error:
-                errors.append(
-                    f"{label} close probe failed: {type(error).__name__}: {error}"
+        if not self._directory.is_open:
+            return ()
+        duplicate: DirectoryCapability | None = None
+        try:
+            duplicate = self._backend.reopen_directory(self._directory)
+            return _close_capability_once(duplicate, "output directory close probe")
+        except BaseException as error:
+            details = [_bounded_capability_detail("output directory close probe failed", error)]
+            if duplicate is not None and duplicate.is_open:
+                details.extend(
+                    _close_capability_retry(duplicate, "output directory close probe")
                 )
-            finally:
-                if duplicate >= 0:
-                    try:
-                        os.close(duplicate)
-                    except OSError:
-                        pass
-        return tuple(errors)
+            return tuple(details)
 
     def write_atomic(
         self,
@@ -397,111 +711,149 @@ class OwnedOutput:
         except KeyError as error:
             raise ValueError(f"unsupported report kind: {kind!r}") from error
         temporary = f".hoimin-output-{self.run_id}-{kind}.tmp"
-        fd = os.open(
-            temporary,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-            0o600,
-            dir_fd=self._directory_fd,
-        )
+        capability: FileCapability | DirectoryCapability | None = None
+        descriptor = _OwnedDescriptor()
+        temporary_identity: FileIdentity | None = None
+        stream_owner = _OwnedBinaryStream()
         try:
-            binary_stream = os.fdopen(fd, "wb", closefd=True)
-            fd = -1
-            with binary_stream as binary:
+            opened = self._backend.open_file(
+                self._directory,
+                temporary,
+                access=FileAccess.WRITE,
+                disposition=CreateDisposition.CREATE_NEW,
+                share_policy=SharePolicy.PINNED,
+            )
+            capability = opened
+            temporary_identity = opened.identity
+            if opened.kind is not EntryKind.REGULAR:
+                raise OSError("report temporary is not a regular file")
+            descriptor.adopt(
+                opened.detach_to_fd(os.O_WRONLY | getattr(os, "O_BINARY", 0))
+            )
+            stream_owner.adopt(os.fdopen(descriptor.fd, "wb", closefd=True))
+            descriptor.detach()
+            binary_stream = stream_owner.stream
+            assert binary_stream is not None
+            try:
                 stream = BoundedTextWriter(
-                    binary,
+                    binary_stream,
                     capacity=capacity,
                     before_chunk=before_chunk,
                 )
                 write(stream)
                 stream.flush()
-                os.fsync(binary.fileno())
+                os.fsync(binary_stream.fileno())
+            except BaseException as primary_error:
+                _attach_secondary(
+                    primary_error,
+                    stream_owner.close_retry("report temporary stream"),
+                )
+                raise
+            stream_close_errors = stream_owner.close_retry(
+                "report temporary stream"
+            )
+            if stream_close_errors:
+                raise OSError("; ".join(stream_close_errors))
             self._verify()
             if after_flush is not None:
                 after_flush(stream.written_bytes)
             self._verify()
-            os.replace(
-                temporary,
-                destination,
-                src_dir_fd=self._directory_fd,
-                dst_dir_fd=self._directory_fd,
+            evidence = self._backend.entry(self._directory, temporary)
+            if (
+                evidence is None
+                or evidence.kind is not EntryKind.REGULAR
+                or evidence.identity != temporary_identity
+                or evidence.filesystem != self._filesystem
+            ):
+                raise OSError("report temporary identity changed after flush")
+            capability = self._backend.open_entry(
+                self._directory, temporary, SharePolicy.PINNED
             )
-            os.fsync(self._directory_fd)
+            if (
+                capability.kind is not EntryKind.REGULAR
+                or capability.identity != temporary_identity
+                or capability.filesystem != self._filesystem
+            ):
+                raise OSError("report temporary identity changed before replacement")
+            self._backend.rename(
+                capability,
+                self._directory,
+                destination,
+                replace=True,
+            )
+            close_errors = _close_capability_retry(
+                capability, "report temporary after replacement"
+            )
+            if capability.is_open:
+                raise OSError("; ".join(close_errors) or "report source close failed")
+            capability = None
             self._verify()
+            installed = self._backend.entry(self._directory, destination)
+            if (
+                installed is None
+                or installed.kind is not EntryKind.REGULAR
+                or installed.identity != temporary_identity
+                or installed.filesystem != self._filesystem
+            ):
+                raise OSError("atomic report destination identity changed")
         except BaseException as primary_error:
             rollback_errors: list[str] = []
-            if fd >= 0:
-                try:
-                    os.close(fd)
-                except OSError as error:
-                    rollback_errors.append(
-                        "report temporary close failed: "
-                        f"{type(error).__name__}: {error}"
-                    )
-            try:
-                os.unlink(temporary, dir_fd=self._directory_fd)
-            except FileNotFoundError:
-                pass
-            except OSError as error:
-                rollback_errors.append(
-                    "report temporary unlink failed: "
-                    f"{type(error).__name__}: {error}"
+            rollback_errors.extend(
+                stream_owner.close_retry("report temporary stream")
+            )
+            if capability is not None and capability.is_open:
+                rollback_errors.extend(
+                    _close_capability_retry(capability, "report temporary")
                 )
-            for rollback_error in rollback_errors:
-                primary_error.add_note(rollback_error)
+            rollback_errors.extend(descriptor.close_retry("report temporary"))
+            if (
+                temporary_identity is not None
+                and descriptor.fd < 0
+                and (capability is None or not capability.is_open)
+                and self._directory.is_open
+            ):
+                rollback_errors.extend(
+                    _delete_exact_child(
+                        self._directory,
+                        temporary,
+                        temporary_identity,
+                        self._backend,
+                        "report temporary rollback",
+                    )
+                )
+            _attach_secondary(primary_error, tuple(rollback_errors))
             raise
 
     def close(self, *, remove_marker: bool = False) -> tuple[str, ...]:
-        if self._marker_fd < 0 and self._directory_fd < 0:
+        if self._marker_lock.fd < 0 and not self._directory.is_open:
             return tuple(self.close_errors)
         self.release_marker(remove_marker=remove_marker)
         self.close_directory()
         return tuple(self.close_errors)
 
     def release_marker(self, *, remove_marker: bool = False) -> tuple[str, ...]:
-        marker_fd = self._marker_fd
-        self._marker_fd = -1
-        if marker_fd >= 0:
-            try:
-                if os.name == "nt":
-                    import msvcrt
-
-                    os.lseek(marker_fd, 0, os.SEEK_SET)
-                    msvcrt.locking(marker_fd, msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
-                else:
-                    import fcntl
-
-                    fcntl.flock(marker_fd, fcntl.LOCK_UN)
-            except OSError as error:
-                self.close_errors.append(
-                    f"output marker unlock failed: {type(error).__name__}: {error}"
+        for detail in _close_lease_lock_all(self._marker_lock, "output marker"):
+            _append_capability_error(self.close_errors, detail)
+        if remove_marker and self._directory.is_open:
+            if self._marker_lock.fd >= 0:
+                _append_capability_error(
+                    self.close_errors,
+                    "output marker removal unavailable while marker owner is live",
                 )
-            try:
-                os.close(marker_fd)
-            except OSError as error:
-                self.close_errors.append(
-                    f"output marker close failed: {type(error).__name__}: {error}"
-                )
-        if remove_marker and self._directory_fd >= 0:
-            try:
-                os.unlink(OUTPUT_OWNER_FILE, dir_fd=self._directory_fd)
-            except FileNotFoundError:
-                pass
-            except OSError as error:
-                self.close_errors.append(
-                    f"output marker removal failed: {type(error).__name__}: {error}"
-                )
+            else:
+                for detail in _delete_exact_child(
+                    self._directory,
+                    OUTPUT_OWNER_FILE,
+                    self._marker_identity,
+                    self._backend,
+                    "output marker removal",
+                ):
+                    _append_capability_error(self.close_errors, detail)
         return tuple(self.close_errors)
 
     def close_directory(self) -> tuple[str, ...]:
-        directory_fd = self._directory_fd
-        self._directory_fd = -1
-        if directory_fd >= 0:
-            try:
-                os.close(directory_fd)
-            except OSError as error:
-                self.close_errors.append(
-                    f"output directory close failed: {type(error).__name__}: {error}"
-                )
+        for detail in _close_capability_once(self._directory, "output directory"):
+            _append_capability_error(self.close_errors, detail)
         return tuple(self.close_errors)
 
     def __del__(self) -> None:
@@ -511,30 +863,61 @@ class OwnedOutput:
             pass
 
 
-def _bounded_output_names(directory_fd: int) -> list[str]:
+def _bounded_output_names(
+    directory: DirectoryCapability,
+    backend: FilesystemBackend,
+) -> list[str]:
     names: list[str] = []
-    with os.scandir(directory_fd) as iterator:
+    iterator = backend.entries(directory)
+    try:
         for entry in iterator:
             names.append(entry.name)
             if len(names) > 1_000:
                 raise ValueError("output directory contains more than 1000 entries")
+    finally:
+        iterator.close()
     return names
 
 
-def _recover_abandoned_output(directory_fd: int) -> int:
-    names = _bounded_output_names(directory_fd)
+def _recover_abandoned_output(
+    directory: DirectoryCapability,
+    backend: FilesystemBackend,
+) -> int:
+    names = _bounded_output_names(directory, backend)
     if not names:
         return 0
     if OUTPUT_OWNER_FILE not in names:
         return 0
-    flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
-    marker_fd = os.open(OUTPUT_OWNER_FILE, flags, dir_fd=directory_fd)
-    locked = False
+    marker: FileCapability | None = None
+    marker_descriptor = _OwnedDescriptor()
+    marker_lock = LeaseLock(-1)
+    marker_identity: FileIdentity | None = None
+    primary: BaseException | None = None
     try:
-        metadata = os.fstat(marker_fd)
-        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 64 * 1024:
+        evidence = backend.entry(directory, OUTPUT_OWNER_FILE)
+        if evidence is None or evidence.kind is not EntryKind.REGULAR:
             return 0
-        encoded = os.read(marker_fd, 64 * 1024 + 1)
+        marker_identity = evidence.identity
+        marker = backend.open_file(
+            directory,
+            OUTPUT_OWNER_FILE,
+            access=FileAccess.READ_WRITE,
+            disposition=CreateDisposition.OPEN_EXISTING,
+            share_policy=SharePolicy.PINNED,
+        )
+        if marker.identity != marker_identity or marker.kind is not EntryKind.REGULAR:
+            return 0
+        marker_descriptor.adopt(
+            marker.detach_to_fd(os.O_RDWR | getattr(os, "O_BINARY", 0))
+        )
+        marker_lock._prepare_reuse()
+        marker_lock.fd = marker_descriptor.detach()
+        try:
+            marker_lock.acquire(blocking=False)
+        except OSError:
+            return 0
+        os.lseek(marker_lock.fd, 0, os.SEEK_SET)
+        encoded = os.read(marker_lock.fd, 64 * 1024 + 1)
         if len(encoded) > 64 * 1024:
             return 0
         def exact_output_marker(
@@ -561,28 +944,11 @@ def _recover_abandoned_output(directory_fd: int) -> int:
             or type(value.get("output_inode")) is not int
         ):
             return 0
-        output_metadata = os.fstat(directory_fd)
         if (
-            value.get("output_device") != output_metadata.st_dev
-            or value.get("output_inode") != output_metadata.st_ino
+            value.get("output_device") != directory.identity.volume
+            or value.get("output_inode") != directory.identity.file
         ):
             return 0
-        if os.name == "nt":
-            import msvcrt
-
-            os.lseek(marker_fd, 0, os.SEEK_SET)
-            try:
-                msvcrt.locking(marker_fd, msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
-            except OSError:
-                return 0
-        else:
-            import fcntl
-
-            try:
-                fcntl.flock(marker_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                return 0
-        locked = True
         run_id = value["run_id"]
         try:
             if str(uuid.UUID(run_id)) != run_id:
@@ -598,55 +964,55 @@ def _recover_abandoned_output(directory_fd: int) -> int:
             return 0
         removed = 0
         for name in sorted(allowed - {OUTPUT_OWNER_FILE}):
-            try:
-                temporary = os.stat(
-                    name,
-                    dir_fd=directory_fd,
-                    follow_symlinks=False,
-                )
-            except FileNotFoundError:
+            temporary = backend.entry(directory, name)
+            if temporary is None:
                 continue
-            if not stat.S_ISREG(temporary.st_mode):
+            if temporary.kind is not EntryKind.REGULAR:
                 return 0
-            os.unlink(name, dir_fd=directory_fd)
+            deletion_errors = _delete_exact_child(
+                directory,
+                name,
+                temporary.identity,
+                backend,
+                "output recovery temporary",
+            )
+            if deletion_errors:
+                raise OSError("; ".join(deletion_errors))
             removed += 1
-        os.unlink(OUTPUT_OWNER_FILE, dir_fd=directory_fd)
-        os.fsync(directory_fd)
+        marker_close_errors = _close_lease_lock_retry(
+            marker_lock, "output recovery marker"
+        )
+        if marker_lock.fd >= 0:
+            raise OSError("; ".join(marker_close_errors) or "output recovery marker close failed")
+        assert marker_identity is not None
+        marker_delete_errors = _delete_exact_child(
+            directory,
+            OUTPUT_OWNER_FILE,
+            marker_identity,
+            backend,
+            "output recovery marker",
+        )
+        if marker_delete_errors:
+            raise OSError("; ".join(marker_delete_errors))
+        for name in allowed:
+            if backend.entry(directory, name) is not None:
+                raise OSError(f"output recovery absence verification failed: {name}")
         return removed
+    except BaseException as error:
+        primary = error
+        raise
     finally:
-        close_errors: list[OSError] = []
-        if locked:
-            try:
-                if os.name == "nt":
-                    import msvcrt
-
-                    os.lseek(marker_fd, 0, os.SEEK_SET)
-                    msvcrt.locking(marker_fd, msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
-                else:
-                    import fcntl
-
-                    fcntl.flock(marker_fd, fcntl.LOCK_UN)
-            except OSError as error:
-                close_errors.append(error)
-        try:
-            os.close(marker_fd)
-        except OSError as error:
-            close_errors.append(error)
-        if close_errors:
-            active_error = sys.exc_info()[1]
-            details = [
-                "output recovery capability finalization failed: "
-                f"{type(error).__name__}: {error}"
-                for error in close_errors
-            ]
-            if active_error is not None:
-                for detail in details:
-                    active_error.add_note(detail)
+        details: list[str] = []
+        if marker is not None and marker.is_open:
+            details.extend(_close_capability_retry(marker, "output recovery marker"))
+        details.extend(marker_descriptor.close_retry("output recovery marker"))
+        if marker_lock.fd >= 0:
+            details.extend(_close_lease_lock_retry(marker_lock, "output recovery marker"))
+        if details:
+            if primary is not None:
+                _attach_secondary(primary, tuple(details))
             else:
-                first = close_errors[0]
-                for detail in details[1:]:
-                    first.add_note(detail)
-                raise first
+                raise OSError("; ".join(details))
 
 
 class RunStore:
@@ -655,22 +1021,56 @@ class RunStore:
         output: Path | OwnedOutput,
         *,
         command_root: Path | None = None,
+        command_root_capability: DirectoryCapability | None = None,
+        backend: FilesystemBackend | None = None,
     ) -> None:
+        if (command_root is None) != (command_root_capability is None):
+            if command_root_capability is not None and command_root_capability.is_open:
+                _close_capability_retry(
+                    command_root_capability, "command spool directory rollback"
+                )
+            raise ValueError(
+                "command_root and command_root_capability must be provided together"
+            )
         self.owned_output = output if isinstance(output, OwnedOutput) else None
         self.output = output.path if isinstance(output, OwnedOutput) else output
+        self._backend = (
+            output._backend
+            if isinstance(output, OwnedOutput) and backend is None
+            else default_filesystem_backend() if backend is None else backend
+        )
         self.commands = (
             self.output / "commands" if command_root is None else command_root
         )
-        self._command_root_fd = -1
+        self._command_root = command_root_capability
+        self._command_root_is_authoritative = command_root_capability is not None
+        self._next_root_token = 1
+        self._live_root_tokens: set[int] = set()
         self._command_capability_errors: list[str] = []
-        if command_root is not None:
-            self._ensure_command_root()
-        self._report_policy: DiskPolicy | None = None
-        self._report_sample: Callable[[], tuple[DiskFailure | None, DiskObservation | None]] | None = None
-        self._report_freeze: (
-            Callable[[], AbstractContextManager[Callable[[], bool]]] | None
-        ) = None
-        self._report_cancelled: Callable[[], bool] | None = None
+        try:
+            if command_root_capability is not None:
+                self._validate_command_root(
+                    command_root_capability, require_managed=True
+                )
+            self._report_policy: DiskPolicy | None = None
+            self._report_sample: Callable[
+                [], tuple[DiskFailure | None, DiskObservation | None]
+            ] | None = None
+            self._report_freeze: (
+                Callable[[], AbstractContextManager[Callable[[], bool]]] | None
+            ) = None
+            self._report_cancelled: Callable[[], bool] | None = None
+        except BaseException as primary_error:
+            if command_root_capability is not None and command_root_capability.is_open:
+                _attach_secondary(
+                    primary_error,
+                    _close_capability_retry(
+                        command_root_capability,
+                        "command spool directory rollback",
+                    ),
+                )
+            self._command_root = None
+            raise
 
     def configure_report_guard(
         self,
@@ -800,7 +1200,7 @@ class RunStore:
         temporary.replace(destination)
 
     def command_paths(self, sequence: int, label: str) -> CommandPaths:
-        root_fd = self._ensure_command_root()
+        root = self._ensure_command_root()
         safe_label = re.sub(r"[^A-Za-z0-9_.-]+", "-", label).strip(".-") or "command"
         stem = f"{sequence:04d}-{safe_label}"
         stdout_name = f"{stem}.stdout"
@@ -809,50 +1209,99 @@ class RunStore:
         stderr = self.commands / stderr_name
         validate_reported_path(stdout)
         validate_reported_path(stderr)
-        return CommandPaths(
-            stdout=stdout,
-            stderr=stderr,
-            root_fd=root_fd,
-            stdout_name=stdout_name,
-            stderr_name=stderr_name,
-            capability_errors=self._command_capability_errors,
-        )
-
-    def _ensure_command_root(self) -> int:
-        if self._command_root_fd >= 0:
-            return self._command_root_fd
-        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-        flags |= getattr(os, "O_NOFOLLOW", 0)
-        descriptor = os.open(self.commands, flags)
+        duplicate: DirectoryCapability | None = None
+        token = self._next_root_token
+        self._next_root_token += 1
         try:
-            opened = os.fstat(descriptor)
-            current = os.stat(self.commands, follow_symlinks=False)
-            if not stat.S_ISDIR(opened.st_mode) or (
-                opened.st_dev,
-                opened.st_ino,
-            ) != (current.st_dev, current.st_ino):
-                raise OSError("command spool directory identity changed")
-        except BaseException:
-            os.close(descriptor)
+            duplicate = self._backend.reopen_directory(root)
+            self._live_root_tokens.add(token)
+            return CommandPaths(
+                stdout=stdout,
+                stderr=stderr,
+                root=duplicate,
+                stdout_name=stdout_name,
+                stderr_name=stderr_name,
+                backend=self._backend,
+                _root_token=token,
+                _release_root=self._release_command_root,
+            )
+        except BaseException as primary_error:
+            self._live_root_tokens.discard(token)
+            if duplicate is not None and duplicate.is_open:
+                _attach_secondary(
+                    primary_error,
+                    _close_capability_retry(
+                        duplicate, "command spool duplicate rollback"
+                    ),
+                )
             raise
-        self._command_root_fd = descriptor
-        return descriptor
+
+    def _validate_command_root(
+        self,
+        root: DirectoryCapability,
+        *,
+        require_managed: bool,
+    ) -> None:
+        if (
+            not root.owned_by(self._backend)
+            or not root.is_open
+            or root.kind is not EntryKind.DIRECTORY
+            or root.share_policy is not SharePolicy.MUTATION
+            or root.path_hint != self.commands
+            or (
+                require_managed
+                and root.security_domain is not SecurityDomain.MANAGED
+            )
+        ):
+            raise OSError("command spool directory capability is invalid")
+        if root.filesystem.volume <= 0:
+            raise OSError("command spool directory filesystem is invalid")
+
+    def _ensure_command_root(self) -> DirectoryCapability:
+        if self._command_root is not None:
+            self._validate_command_root(
+                self._command_root,
+                require_managed=self._command_root_is_authoritative,
+            )
+            return self._command_root
+        self.commands.mkdir(parents=True, exist_ok=True)
+        capability: DirectoryCapability | None = None
+        try:
+            capability = self._backend.open_root(
+                self.commands, SharePolicy.MUTATION, SecurityDomain.CALLER
+            )
+            self._command_root = capability
+            self._validate_command_root(capability, require_managed=False)
+        except BaseException as primary_error:
+            if capability is not None and capability.is_open:
+                _attach_secondary(
+                    primary_error,
+                    _close_capability_retry(
+                        capability, "command spool directory rollback"
+                    ),
+                )
+            self._command_root = None
+            raise
+        return capability
+
+    def _release_command_root(self, token: int) -> None:
+        self._live_root_tokens.discard(token)
 
     def close_command_root(self) -> tuple[str, ...]:
-        errors = list(self._command_capability_errors)
-        self._command_capability_errors.clear()
-        descriptor = self._command_root_fd
-        self._command_root_fd = -1
-        if descriptor < 0:
-            return tuple(errors)
-        try:
-            os.close(descriptor)
-        except OSError as error:
-            errors.append(
-                "command spool directory close failed: "
-                f"{type(error).__name__}: {error}"
+        if self._live_root_tokens:
+            _append_capability_error(
+                self._command_capability_errors,
+                "command spool root still active",
             )
-        return tuple(errors)
+            return tuple(self._command_capability_errors)
+        root = self._command_root
+        if root is None:
+            return tuple(self._command_capability_errors)
+        for detail in _close_capability_once(root, "command spool directory"):
+            _append_capability_error(self._command_capability_errors, detail)
+        if not root.is_open:
+            self._command_root = None
+        return tuple(self._command_capability_errors)
 
     def __del__(self) -> None:
         try:
