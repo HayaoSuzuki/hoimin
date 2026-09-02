@@ -2844,12 +2844,18 @@ class ManagedScratch:
             )
 
         def deferred(*details: str) -> ScratchCleanupRecord:
+            primary = details[0]
             return ScratchCleanupRecord(
                 ScratchCleanupStatus.DEFERRED,
                 examined,
                 removed,
-                tuple(details),
+                _cleanup_record_details(
+                    graph.details,
+                    primary,
+                    secondary=tuple(details[1:]),
+                ),
                 validate_reported_path(self.path),
+                graph.details.omitted,
             )
 
         def check(label: str) -> None:
@@ -2986,6 +2992,8 @@ class ManagedScratch:
                 removed = result.removed_entries
                 cursor = result.cursor
                 expected.cursor = cursor
+                for detail in result.details:
+                    graph.details.add(detail)
                 if result.blocked_owners:
                     return self._namespace_cleanup_unavailable(
                         "managed child cleanup owner remains open",
@@ -3005,8 +3013,12 @@ class ManagedScratch:
                         ScratchCleanupStatus.FAILED,
                         examined,
                         removed,
-                        ("managed child cleanup slice made no progress",),
+                        _cleanup_record_details(
+                            graph.details,
+                            "managed child cleanup slice made no progress",
+                        ),
                         validate_reported_path(self.path),
+                        graph.details.omitted,
                     )
 
             assert child_owner is not None
@@ -3069,13 +3081,21 @@ class ManagedScratch:
                     ScratchCleanupStatus.FAILED,
                     examined,
                     removed,
-                    ("managed child was replaced after exact removal",),
+                    _cleanup_record_details(
+                        graph.details,
+                        "managed child was replaced after exact removal",
+                    ),
                     validate_reported_path(self.path),
+                    graph.details.omitted,
                 )
             expected.pending_absence.clear()
             self._children.pop(child.name, None)
             return ScratchCleanupRecord(
-                ScratchCleanupStatus.CLEAN, examined, removed
+                ScratchCleanupStatus.CLEAN,
+                examined,
+                removed,
+                graph.details.details(),
+                omitted_detail_count=graph.details.omitted,
             )
         except _DeadlineExceeded as error:
             if child_owner is not None and child_owner.is_open:
@@ -3115,13 +3135,17 @@ class ManagedScratch:
                 details=blocked_details,
             )
         except FileNotFoundError as error:
+            _record_cleanup_exception_notes(graph.details, error)
             if time.monotonic() >= absolute_deadline:
                 return deferred("managed child recovery deadline reached")
             try:
                 check("managed child recovery evidence")
                 recovered = self._backend.entry(root, child.name)
                 check("managed child recovery evidence")
-            except _DeadlineExceeded:
+            except _DeadlineExceeded as recovery_deadline:
+                _record_cleanup_exception_notes(
+                    graph.details, recovery_deadline
+                )
                 return deferred("managed child recovery deadline reached")
             except OSError as recovery_error:
                 return ScratchCleanupRecord(
@@ -3256,17 +3280,23 @@ class ManagedScratch:
         removed = 0
 
         def deferred(*details: str) -> ScratchCleanupRecord:
+            primary = details[0]
             return ScratchCleanupRecord(
                 ScratchCleanupStatus.DEFERRED,
                 examined,
                 removed,
-                tuple(details),
+                _cleanup_record_details(
+                    graph.details,
+                    primary,
+                    secondary=tuple(details[1:]),
+                ),
                 remaining_root=(
                     None
                     if graph.pending_absence.committed
                     and graph.pending_absence.scope == "root"
                     else validate_reported_path(self.path)
                 ),
+                omitted_detail_count=graph.details.omitted,
             )
 
         def check(label: str) -> None:
@@ -3865,6 +3895,8 @@ class ManagedScratch:
                 examined = result.examined_entries
                 removed = result.removed_entries
                 cursor = result.cursor
+                for detail in result.details:
+                    graph.details.add(detail)
                 if result.blocked_owners:
                     return self._namespace_cleanup_unavailable(
                         "managed payload cleanup owner remains open",
@@ -3883,15 +3915,21 @@ class ManagedScratch:
                         ScratchCleanupStatus.DEFERRED,
                         examined,
                         removed,
+                        graph.details.details(),
                         remaining_root=validate_reported_path(deleting),
+                        omitted_detail_count=graph.details.omitted,
                     )
                 if (examined, removed, cursor) == before:
                     return ScratchCleanupRecord(
                         ScratchCleanupStatus.FAILED,
                         examined,
                         removed,
-                        ("cleanup slice made no progress",),
+                        _cleanup_record_details(
+                            graph.details,
+                            "cleanup slice made no progress",
+                        ),
                         validate_reported_path(deleting),
+                        graph.details.omitted,
                     )
             self._cleanup_cursor = None
             assert root_owner is not None
@@ -3902,7 +3940,9 @@ class ManagedScratch:
                     ScratchCleanupStatus.DEFERRED,
                     examined,
                     removed,
+                    graph.details.details(),
                     remaining_root=validate_reported_path(deleting),
+                    omitted_detail_count=graph.details.omitted,
                 )
             try:
                 tail_managed_root_capability = self._managed_root_capability
@@ -4725,6 +4765,29 @@ class _FixedDetailLedger:
         self._items[self.count] = detail
         self.count += 1
 
+    def reserve_primary(self, primary: str) -> str:
+        bounded_primary = _bounded_diagnostic_detail(primary)
+        allowed_secondary = max(0, len(self._items) - 1)
+        original_count = self.count
+        write_index = 0
+        secondary_count = 0
+        for read_index in range(original_count):
+            detail = cast(str, self._items[read_index])
+            if detail == bounded_primary:
+                self._items[write_index] = detail
+                write_index += 1
+                continue
+            if secondary_count >= allowed_secondary:
+                self.omitted += 1
+                continue
+            self._items[write_index] = detail
+            write_index += 1
+            secondary_count += 1
+        for clear_index in range(write_index, original_count):
+            self._items[clear_index] = None
+        self.count = write_index
+        return bounded_primary
+
     def details(self) -> tuple[str, ...]:
         return tuple(
             cast(str, self._items[index]) for index in range(self.count)
@@ -4751,10 +4814,10 @@ def _cleanup_record_details(
     error: BaseException | None = None,
     secondary: tuple[str, ...] = (),
 ) -> tuple[str, ...]:
-    bounded_primary = _bounded_diagnostic_detail(primary)
     _record_cleanup_exception_notes(ledger, error)
     for detail in secondary:
         ledger.add(detail)
+    bounded_primary = ledger.reserve_primary(primary)
     return (
         bounded_primary,
         *(
@@ -5021,12 +5084,19 @@ def _remove_payload(
         if exhausted():
             raise _DeadlineExceeded(f"{label} deadline reached")
 
+    def retain_continuing_details(details: tuple[str, ...]) -> None:
+        if owner_graph is None:
+            return
+        for detail in details:
+            owner_graph.details.add(detail)
+
     def close_or_block(
         owner: FileCapability | DirectoryCapability,
         label: str,
         message: str,
     ) -> tuple[str, ...]:
         errors = _close_cleanup_capability(owner, label)
+        retain_continuing_details(errors)
         _raise_cleanup_blocked(message, (owner,), errors)
         return errors
 
@@ -5083,6 +5153,7 @@ def _remove_payload(
                 parent_errors = _close_cleanup_capability(
                     current, "cleanup cursor parent"
                 )
+                retain_continuing_details(parent_errors)
                 if current.is_open:
                     child_errors = _close_cleanup_capability(
                         child, "cleanup cursor child"
@@ -5144,7 +5215,13 @@ def _remove_payload(
                 blocked_owners=(directory,),
                 details=errors,
             )
-        return _CleanupSlice(examined, removed, False, next_cursor)
+        return _CleanupSlice(
+            examined,
+            removed,
+            False,
+            next_cursor,
+            details=errors,
+        )
 
     if exhausted():
         if owner_graph is not None:
@@ -5229,7 +5306,11 @@ def _remove_payload(
                 if not cursor.components:
                     if exhausted():
                         return _CleanupSlice(
-                            examined, removed, False, cursor
+                            examined,
+                            removed,
+                            False,
+                            cursor,
+                            details=close_errors,
                         )
                     current = open_cursor(None, ())
                     complete = _CleanupSlice(
@@ -5238,12 +5319,14 @@ def _remove_payload(
                         True,
                         _CleanupCursor(),
                         root=current,
+                        details=close_errors,
                     )
                     if owner_graph is not None:
                         owner_graph.walker_current.owner = None
                     current = None
                     return complete
 
+                retain_continuing_details(close_errors)
                 completed = cursor.components[-1]
                 parent_components = cursor.components[:-1]
                 parent = open_cursor(None, parent_components)
@@ -5312,7 +5395,7 @@ def _remove_payload(
                     completed_blocked: list[
                         FileCapability | DirectoryCapability
                     ] = []
-                    completed_close_details: list[str] = []
+                    completed_close_details: list[str] = list(close_errors)
                     blocked_message = "cleanup owner remains open"
                     blocked_primary: BaseException | None = primary_error
                     if isinstance(primary_error, _CleanupOwnershipBlocked):
@@ -5351,6 +5434,7 @@ def _remove_payload(
                 parent_errors = _close_cleanup_capability(
                     parent, "cleanup completed directory parent"
                 )
+                retain_continuing_details(parent_errors)
                 if parent.is_open:
                     raise _CleanupOwnershipBlocked(
                         "cleanup parent owner remains open",
@@ -5363,7 +5447,11 @@ def _remove_payload(
                         owner_graph.walker_child.owner = None
                 if deferred_cursor is not None:
                     return _CleanupSlice(
-                        examined, removed, False, deferred_cursor
+                        examined,
+                        removed,
+                        False,
+                        deferred_cursor,
+                        details=close_errors,
                     )
                 current = open_cursor(None, cursor.components)
                 if owner_graph is not None:
@@ -5445,6 +5533,7 @@ def _remove_payload(
                         ),
                         details=(*parent_errors, *child_errors),
                     )
+                retain_continuing_details(parent_errors)
                 if owner_graph is not None:
                     owner_graph.walker_iterator.owner = None
                 iterator = None
@@ -5538,8 +5627,11 @@ def _remove_payload(
     except _DeadlineExceeded:
         if iterator is not None:
             return finish_iterator(iterator, cursor)
+        current_errors: tuple[str, ...] = ()
         if current is not None:
-            errors = _close_cleanup_capability(current, "cleanup current")
+            current_errors = _close_cleanup_capability(
+                current, "cleanup current"
+            )
             if current.is_open:
                 return _CleanupSlice(
                     examined,
@@ -5547,9 +5639,15 @@ def _remove_payload(
                     False,
                     cursor,
                     blocked_owners=(current,),
-                    details=errors,
+                    details=current_errors,
                 )
-        return _CleanupSlice(examined, removed, False, cursor)
+        return _CleanupSlice(
+            examined,
+            removed,
+            False,
+            cursor,
+            details=current_errors,
+        )
     except BaseException as primary_error:
         blocked: list[FileCapability | DirectoryCapability] = []
         close_details: list[str] = []

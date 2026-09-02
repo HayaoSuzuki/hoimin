@@ -1562,11 +1562,19 @@ class _Task8ManagedIterator:
     ) -> None:
         self._backend = backend
         self._directory = directory
-        node = backend._resource(directory).node
+        resource = backend._resource(directory)
+        node = resource.node
         self._name = node.name
         self._entries = tuple(node.children.values())
         self._index = 0
         self._virtual_count = backend.virtual_entry_counts.get(node.identity, 0)
+        self._failure = backend.iterator_failure
+        backend.iterator_failure = None
+        resource.close_failures = (
+            backend.iterator_close_failures_by_identity.get(
+                node.identity, resource.close_failures
+            )
+        )
         self._closed = False
 
     @property
@@ -1580,6 +1588,10 @@ class _Task8ManagedIterator:
         self._backend._cleanup_operation(f"iterator.next:{self._name}")
         if self._closed:
             raise StopIteration
+        if self._failure is not None:
+            failure = self._failure
+            self._failure = None
+            raise failure
         if self._index < self._virtual_count:
             index = self._index
             self._index += 1
@@ -1596,7 +1608,8 @@ class _Task8ManagedIterator:
             )
         concrete_index = self._index - self._virtual_count
         if concrete_index >= len(self._entries):
-            self.close()
+            if self._backend.iterator_auto_close:
+                self.close()
             raise StopIteration
         self._index += 1
         return self._entries[concrete_index].evidence()
@@ -1648,6 +1661,10 @@ class _Task8ManagedRecordingBackend(_ManagedRecordingBackend):
         )
         self.virtual_entry_counts: dict[FileIdentity, int] = {}
         self.close_failures_by_identity: dict[FileIdentity, int] = {}
+        self.iterator_close_failures_by_identity: dict[
+            FileIdentity, int
+        ] = {}
+        self.iterator_auto_close = True
         self.close_counts: dict[FileIdentity, int] = {}
         self.track_directory_resources = False
         self.max_directory_resources = 0
@@ -11255,6 +11272,234 @@ class ManagedScratchTests(unittest.TestCase):
                     )
                     self.assertIn("sentinel", replacement.children)
 
+    def test_task8_bounded_iterator_close_detail_reaches_deferred_record(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000881",
+        )
+        root = self._task8_root_node(backend, scratch)
+        backend.iterator_auto_close = False
+        backend.iterator_close_failures_by_identity[root.identity] = 1
+        clock = [0.0]
+
+        def cross_after_iterator_open(operation: str) -> None:
+            if operation == "entries_owned":
+                clock[0] = 60.0
+
+        backend.after_cleanup_operation = cross_after_iterator_open
+        with mock.patch(
+            "tools.focused_mutation_support.lease.time.monotonic",
+            side_effect=lambda: clock[0],
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
+
+        close_detail = (
+            "cleanup iterator close failed: OSError: "
+            f"injected close failure for .deleting-{scratch.run_id}"
+        )
+        self.assertEqual(
+            cleanup.status, ScratchCleanupStatus.DEFERRED, cleanup
+        )
+        self.assertEqual(cleanup.details.count(close_detail), 1, cleanup)
+
+    def test_task8_normal_iterator_exhaustion_close_detail_reaches_root_record(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000882",
+        )
+        root = self._task8_root_node(backend, scratch)
+        backend.iterator_auto_close = False
+        backend.iterator_close_failures_by_identity[root.identity] = 1
+
+        cleanup = self._task8_cleanup(scratch, backend)
+
+        close_detail = (
+            "cleanup completed iterator close failed: OSError: "
+            f"injected close failure for .deleting-{scratch.run_id}"
+        )
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.CLEAN, cleanup)
+        self.assertEqual(cleanup.details.count(close_detail), 1, cleanup)
+
+    def test_task8_normal_iterator_exhaustion_close_detail_reaches_child_record(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000883",
+        )
+        child = scratch.create_child("candidate-0001")
+        root = self._task8_root_node(backend, scratch)
+        child_node = root.children[child.name]
+        backend.iterator_auto_close = False
+        backend.iterator_close_failures_by_identity[child_node.identity] = 1
+
+        cleanup = scratch.remove_child(child)
+
+        close_detail = (
+            "cleanup completed iterator close failed: OSError: "
+            f"injected close failure for {child.name}"
+        )
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.CLEAN, cleanup)
+        self.assertEqual(cleanup.details.count(close_detail), 1, cleanup)
+
+    def test_task8_iterator_operational_failure_keeps_transient_close_secondary(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000884",
+        )
+        root = self._task8_root_node(backend, scratch)
+        level = self._task8_add_payload(
+            backend, root, "level", kind=EntryKind.DIRECTORY
+        )
+        backend.iterator_auto_close = False
+        backend.iterator_close_failures_by_identity[level.identity] = 1
+        real_delete = backend.delete
+
+        def fail_completed_directory_delete(
+            capability: FileCapability | DirectoryCapability,
+        ) -> None:
+            if capability.identity == level.identity:
+                raise OSError("injected completed-directory delete primary")
+            real_delete(capability)
+
+        with mock.patch.object(
+            backend,
+            "delete",
+            side_effect=fail_completed_directory_delete,
+        ):
+            cleanup = self._task8_cleanup(scratch, backend)
+
+        close_detail = (
+            "cleanup completed iterator close failed: OSError: "
+            "injected close failure for level"
+        )
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertIn(
+            "injected completed-directory delete primary",
+            cleanup.details[0],
+        )
+        self.assertEqual(cleanup.details[1:].count(close_detail), 1, cleanup)
+
+    def test_task8_child_recovery_deadline_keeps_original_close_note(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000885",
+        )
+        child = scratch.create_child("candidate-0001")
+        root = self._task8_root_node(backend, scratch)
+        child_node = root.children[child.name]
+        backend.close_failures_by_identity[child_node.identity] = 1
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_validate_cleanup_directory"],
+        )
+        real_validate = lease_module._validate_cleanup_directory
+        vanished = FileNotFoundError("injected child validation vanished")
+        clock = [0.0]
+
+        def fail_managed_child_validation(
+            *args: object, **kwargs: object
+        ) -> None:
+            if kwargs.get("label") == "managed child":
+                raise vanished
+            real_validate(*args, **kwargs)
+
+        def cross_during_child_close(operation: str) -> None:
+            if operation == f"close:{child.name}":
+                clock[0] = 60.0
+
+        backend.after_cleanup_operation = cross_during_child_close
+        with (
+            mock.patch.object(
+                lease_module,
+                "_validate_cleanup_directory",
+                side_effect=fail_managed_child_validation,
+            ),
+            mock.patch(
+                "tools.focused_mutation_support.lease.time.monotonic",
+                side_effect=lambda: clock[0],
+            ),
+        ):
+            cleanup = scratch.remove_child(child)
+
+        close_detail = (
+            "managed child close failed: OSError: "
+            f"injected close failure for {child.name}"
+        )
+        self.assertEqual(
+            cleanup.status, ScratchCleanupStatus.DEFERRED, cleanup
+        )
+        self.assertEqual(
+            cleanup.details[0], "managed child recovery deadline reached"
+        )
+        self.assertEqual(cleanup.details[1:].count(close_detail), 1, cleanup)
+
+    def test_task8_child_recovery_error_keeps_original_close_note(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000886",
+        )
+        child = scratch.create_child("candidate-0001")
+        root = self._task8_root_node(backend, scratch)
+        child_node = root.children[child.name]
+        backend.close_failures_by_identity[child_node.identity] = 1
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_validate_cleanup_directory"],
+        )
+        real_validate = lease_module._validate_cleanup_directory
+        vanished = FileNotFoundError("injected child validation vanished")
+        entry_calls = 0
+
+        def fail_managed_child_validation(
+            *args: object, **kwargs: object
+        ) -> None:
+            if kwargs.get("label") == "managed child":
+                raise vanished
+            real_validate(*args, **kwargs)
+
+        def fail_recovery_evidence(operation: str) -> None:
+            nonlocal entry_calls
+            if operation != f"entry:{child.name}":
+                return
+            entry_calls += 1
+            if entry_calls == 2:
+                raise OSError("injected child recovery evidence failure")
+
+        backend.before_cleanup_operation = fail_recovery_evidence
+        with mock.patch.object(
+            lease_module,
+            "_validate_cleanup_directory",
+            side_effect=fail_managed_child_validation,
+        ):
+            cleanup = scratch.remove_child(child)
+
+        close_detail = (
+            "managed child close failed: OSError: "
+            f"injected close failure for {child.name}"
+        )
+        self.assertEqual(cleanup.status, ScratchCleanupStatus.FAILED, cleanup)
+        self.assertIn(
+            "injected child recovery evidence failure", cleanup.details[0]
+        )
+        self.assertEqual(cleanup.details[1:].count(close_detail), 1, cleanup)
+
     def test_task8_marker_helper_close_note_reaches_cleanup_record(
         self,
     ) -> None:
@@ -11397,9 +11642,13 @@ class ManagedScratchTests(unittest.TestCase):
         )
         self.assertEqual(cleanup.details[1:].count(close_note), 1, cleanup)
         self.assertEqual(
-            len(cleanup.details), MAX_DIAGNOSTIC_DETAILS + 1, cleanup
+            len(cleanup.details), MAX_DIAGNOSTIC_DETAILS, cleanup
         )
-        self.assertEqual(cleanup.omitted_detail_count, 2, cleanup)
+        self.assertEqual(cleanup.omitted_detail_count, 3, cleanup)
+        self.assertNotIn("coordinator secondary 253", cleanup.details)
+        self.assertNotIn("coordinator omitted secondary 0", cleanup.details)
+        self.assertNotIn("coordinator omitted secondary 1", cleanup.details)
+        self.assertEqual(cleanup.details[-1], "coordinator secondary 252")
         self.assertTrue(
             all(
                 len(detail.encode("utf-8"))
