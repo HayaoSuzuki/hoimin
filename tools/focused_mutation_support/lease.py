@@ -6141,6 +6141,7 @@ class _DeferredEmptyPendingCell:
         "identity",
         "filesystem",
         "removed_after",
+        "primary_error",
     )
 
     def __init__(self) -> None:
@@ -6158,6 +6159,7 @@ class _DeferredEmptyPendingCell:
         self.identity: FileIdentity | None = None
         self.filesystem: FilesystemIdentity | None = None
         self.removed_after = 0
+        self.primary_error: BaseException | None = None
 
     def clear(self) -> None:
         if self.owner is not None and self.owner.is_open:
@@ -6175,6 +6177,7 @@ class _DeferredEmptyPendingCell:
         self.identity = None
         self.filesystem = None
         self.removed_after = 0
+        self.primary_error = None
 
 
 class _DeferredEmptyReservation:
@@ -6265,11 +6268,21 @@ class _DeferredEmptyPendingRegistry:
             cell = self._matching_cell_locked(reservation)
             return cell is not None and cell.resolving
 
+    def owner_is_open(
+        self, reservation: _DeferredEmptyReservation
+    ) -> bool:
+        with self._lock:
+            cell = self._matching_cell_locked(reservation)
+            if cell is None or not cell.active:
+                raise RuntimeError("deferred empty evidence is unavailable")
+            return cell.owner is not None and cell.owner.is_open
+
     def activate(
         self,
         reservation: _DeferredEmptyReservation,
         owner: DirectoryCapability | None,
         pending: _PendingAbsenceCell,
+        primary_error: BaseException | None = None,
     ) -> None:
         if not pending.armed:
             raise RuntimeError("deferred empty evidence is not armed")
@@ -6286,6 +6299,7 @@ class _DeferredEmptyPendingRegistry:
             cell.identity = identity
             cell.filesystem = filesystem
             cell.removed_after = pending.removed_after
+            cell.primary_error = primary_error
             cell.active = True
             reservation.transferred = True
             reservation.removed_after = pending.removed_after
@@ -6293,12 +6307,46 @@ class _DeferredEmptyPendingRegistry:
 
     @staticmethod
     def _deferred_record(cell: _DeferredEmptyPendingCell) -> ScratchCleanupRecord:
+        details = (
+            ()
+            if cell.primary_error is None
+            else (
+                _bounded_janitor_detail(
+                    _exception_detail(cell.primary_error)
+                ),
+            )
+        )
         return ScratchCleanupRecord(
             ScratchCleanupStatus.DEFERRED,
             0,
             cell.removed_after,
+            details,
             remaining_root=None,
         )
+
+    def set_primary_error(
+        self,
+        reservation: _DeferredEmptyReservation,
+        error: BaseException,
+    ) -> None:
+        with self._lock:
+            cell = self._matching_cell_locked(reservation)
+            if cell is None or not cell.active:
+                raise RuntimeError("deferred empty evidence is unavailable")
+            if cell.primary_error is None:
+                cell.primary_error = error
+
+    def close_owner_retry(
+        self, reservation: _DeferredEmptyReservation
+    ) -> tuple[str, ...]:
+        with self._lock:
+            cell = self._matching_cell_locked(reservation)
+            if cell is None or not cell.active:
+                raise RuntimeError("deferred empty evidence is unavailable")
+            owner = cell.owner
+        if owner is None:
+            return ()
+        return _close_capability_retry(owner, "janitor candidate root")
 
     def _prepare_resolution(
         self,
@@ -6320,6 +6368,7 @@ class _DeferredEmptyPendingRegistry:
             filesystem = cell.filesystem
             removed_after = cell.removed_after
             managed_root = cell.managed_root
+            primary_error = cell.primary_error
         if identity is None or filesystem is None or managed_root is None:
             with self._lock:
                 current = self._matching_cell_locked(reservation)
@@ -6332,26 +6381,51 @@ class _DeferredEmptyPendingRegistry:
                 reservation, managed_root_capability, name
             )
             _check_deadline(deadline, "deferred empty pending absence")
+            primary_detail = (
+                None
+                if primary_error is None
+                else _bounded_janitor_detail(
+                    _exception_detail(primary_error)
+                )
+            )
             if remaining is None:
                 record = ScratchCleanupRecord(
-                    ScratchCleanupStatus.CLEAN, 0, removed_after
+                    ScratchCleanupStatus.CLEAN,
+                    0,
+                    removed_after,
+                    () if primary_detail is None else (primary_detail,),
                 )
             elif (
                 remaining.identity == identity
                 and remaining.filesystem == filesystem
             ):
-                record = _janitor_failure(
-                    "empty candidate deletion did not commit",
-                    managed_root / name,
+                failed_detail = _bounded_janitor_detail(
+                    "empty candidate deletion did not commit"
+                )
+                record = ScratchCleanupRecord(
+                    ScratchCleanupStatus.FAILED,
+                    0,
+                    0,
+                    (
+                        (failed_detail,)
+                        if primary_detail is None
+                        else (primary_detail, failed_detail)
+                    ),
+                    validate_reported_path(managed_root / name),
                 )
             else:
+                replacement_detail = _bounded_janitor_detail(
+                    "empty candidate replacement preserved after removal"
+                )
                 record = ScratchCleanupRecord(
                     ScratchCleanupStatus.FAILED,
                     0,
                     removed_after,
-                    (_bounded_janitor_detail(
-                        "empty candidate replacement preserved after removal"
-                    ),),
+                    (
+                        (replacement_detail,)
+                        if primary_detail is None
+                        else (primary_detail, replacement_detail)
+                    ),
                     validate_reported_path(managed_root / name),
                 )
             return record, name
@@ -6383,6 +6457,15 @@ class _DeferredEmptyPendingRegistry:
             reservation, managed_root_capability, deadline=deadline
         )
         return record
+
+    def deferred_reserved(
+        self, reservation: _DeferredEmptyReservation
+    ) -> ScratchCleanupRecord:
+        with self._lock:
+            cell = self._matching_cell_locked(reservation)
+            if cell is None or not cell.active:
+                raise RuntimeError("deferred empty evidence is unavailable")
+            return self._deferred_record(cell)
 
     def cancel_resolution(
         self, reservation: _DeferredEmptyReservation
@@ -6532,6 +6615,25 @@ class _JanitorCandidateOwners:
         self.cleanup_graph = _CleanupOwnerGraph(self.cleanup_registry)
         self.empty_reservation = _DeferredEmptyReservation()
         self.transferred = False
+
+
+def _transfer_empty_janitor_pending(
+    owners: _JanitorCandidateOwners,
+) -> None:
+    reservation = owners.empty_reservation
+    if reservation.transferred or not owners.pending_absence.armed:
+        return
+    root_owner = owners.root.owner
+    if root_owner is not None and not isinstance(
+        root_owner, DirectoryCapability
+    ):
+        raise RuntimeError("deferred empty root owner is not a directory")
+    _DEFERRED_EMPTY_PENDING.activate(
+        reservation,
+        root_owner,
+        owners.pending_absence,
+    )
+    owners.root.owner = None
 
 
 def _is_pin_step_live_owner(error: OSError, *, pin_step: bool) -> bool:
@@ -6705,29 +6807,36 @@ def _reclaim_empty_unleased_candidate_inner(
                 filesystem=selected.filesystem,
                 removed_after=1,
             )
-            try:
-                backend.delete(candidate)
-            except BaseException:
-                if not candidate.is_open:
-                    owners.pending_absence.commit()
-                raise
-            else:
-                owners.pending_absence.commit()
+            _transfer_empty_janitor_pending(owners)
+            backend.delete(candidate)
             _check_deadline(deadline, "empty janitor claim")
         finally:
             del coordinator
-        return ScratchCleanupRecord(
-            ScratchCleanupStatus.DEFERRED, 0, 1, remaining_root=None
-        )
+        return None
     except _DeadlineExceeded as error:
+        if owners.empty_reservation.transferred:
+            _DEFERRED_EMPTY_PENDING.set_primary_error(
+                owners.empty_reservation, error
+            )
+            return None
         return _janitor_diagnostic(str(error))
-    except FileNotFoundError:
+    except FileNotFoundError as error:
+        if owners.empty_reservation.transferred:
+            _DEFERRED_EMPTY_PENDING.set_primary_error(
+                owners.empty_reservation, error
+            )
+            return None
         try:
             _check_deadline(deadline, "empty janitor recovery")
         except _DeadlineExceeded as error:
             return _janitor_diagnostic(str(error))
         return ScratchCleanupRecord(ScratchCleanupStatus.CLEAN, 0, 0)
     except OSError as error:
+        if owners.empty_reservation.transferred:
+            _DEFERRED_EMPTY_PENDING.set_primary_error(
+                owners.empty_reservation, error
+            )
+            return None
         detail = f"{type(error).__name__}: {error}"
         return _janitor_failure(detail, reported)
 
@@ -6774,15 +6883,19 @@ def _reclaim_empty_unleased_candidate(
             owners=local_owners,
         )
     finally:
+        active_error = sys.exc_info()[1]
         try:
-            _dispose_janitor_candidate_owners(local_owners)
-            result = _finalize_empty_janitor_pending(
-                managed_root_capability,
-                local_owners,
-                reservation,
-                result,
-                deadline=deadline,
+            _transfer_empty_janitor_pending(local_owners)
+            _dispose_janitor_candidate_owners(
+                local_owners, reservation
             )
+            if active_error is None:
+                result = _finalize_empty_janitor_pending(
+                    managed_root_capability,
+                    reservation,
+                    result,
+                    deadline=deadline,
+                )
         finally:
             try:
                 _dispose_janitor_candidate_coordinator(local_owners)
@@ -6854,6 +6967,7 @@ def _attach_janitor_details(
 
 def _dispose_janitor_candidate_owners(
     owners: _JanitorCandidateOwners,
+    empty_reservation: _DeferredEmptyReservation | None = None,
 ) -> None:
     for label, slot in (
         ("lease read", owners.lease_read),
@@ -6900,14 +7014,22 @@ def _dispose_janitor_candidate_owners(
         owners.details.add_many(
             _close_lease_lock_retry(lease, "janitor candidate lease")
         )
-    root = owners.root.owner
-    owners.root.owner = None
-    if root is not None:
+    if (
+        empty_reservation is not None
+        and empty_reservation.transferred
+    ):
         owners.details.add_many(
-            _close_capability_retry(root, "janitor candidate root")
+            _DEFERRED_EMPTY_PENDING.close_owner_retry(empty_reservation)
         )
-        if root.is_open:
-            owners.root.owner = root
+    else:
+        root = owners.root.owner
+        owners.root.owner = None
+        if root is not None:
+            owners.details.add_many(
+                _close_capability_retry(root, "janitor candidate root")
+            )
+            if root.is_open:
+                owners.root.owner = root
     managed = owners.managed_root.owner
     owners.managed_root.owner = None
     if managed is not None:
@@ -6955,47 +7077,19 @@ def _dispose_janitor_candidate_coordinator(
 
 def _finalize_empty_janitor_pending(
     managed_root_capability: DirectoryCapability,
-    owners: _JanitorCandidateOwners,
     reservation: _DeferredEmptyReservation,
     result: ScratchCleanupRecord | JanitorDiagnostic | None,
     *,
     deadline: float,
 ) -> ScratchCleanupRecord | JanitorDiagnostic | None:
-    pending = owners.pending_absence
-    root_owner = owners.root.owner
-    if root_owner is not None and not isinstance(
-        root_owner, DirectoryCapability
-    ):
-        raise RuntimeError("deferred empty root owner is not a directory")
-    root = root_owner
-    if not pending.armed:
+    if not reservation.transferred:
         return result
-    _DEFERRED_EMPTY_PENDING.activate(reservation, root, pending)
-    owners.root.owner = None
-    if (root is not None and root.is_open) or time.monotonic() >= deadline:
-        if isinstance(result, ScratchCleanupRecord):
-            return replace(
-                result,
-                status=ScratchCleanupStatus.DEFERRED,
-                removed_entries=max(
-                    result.removed_entries, reservation.removed_after
-                ),
-                remaining_root=None,
-            )
-        if isinstance(result, JanitorDiagnostic):
-            return ScratchCleanupRecord(
-                ScratchCleanupStatus.DEFERRED,
-                0,
-                reservation.removed_after,
-                result.details,
-                None,
-                result.omitted_detail_count,
-            )
-        return ScratchCleanupRecord(
-            ScratchCleanupStatus.DEFERRED,
-            0,
-            reservation.removed_after,
-            remaining_root=None,
+    if (
+        _DEFERRED_EMPTY_PENDING.owner_is_open(reservation)
+        or time.monotonic() >= deadline
+    ):
+        return _DEFERRED_EMPTY_PENDING.deferred_reserved(
+            reservation
         )
     return _DEFERRED_EMPTY_PENDING.prepare_reserved(
         reservation,
@@ -7684,16 +7778,20 @@ def _janitor_candidate_record(
             owners=owners,
         )
     finally:
+        active_error = sys.exc_info()[1]
         try:
             if not owners.transferred:
-                _dispose_janitor_candidate_owners(owners)
-                result = _finalize_empty_janitor_pending(
-                    managed_root_capability,
-                    owners,
-                    reservation,
-                    result,
-                    deadline=deadline,
+                _transfer_empty_janitor_pending(owners)
+                _dispose_janitor_candidate_owners(
+                    owners, reservation
                 )
+                if active_error is None:
+                    result = _finalize_empty_janitor_pending(
+                        managed_root_capability,
+                        reservation,
+                        result,
+                        deadline=deadline,
+                    )
         finally:
             try:
                 _dispose_janitor_candidate_coordinator(owners)

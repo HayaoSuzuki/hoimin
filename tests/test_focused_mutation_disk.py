@@ -10302,6 +10302,437 @@ class ManagedScratchTests(unittest.TestCase):
                     self.assertIn("sentinel", replacement.children)
                 self.assertEqual(len(backend.live_resources), 0)
 
+    def test_task9_empty_delete_preserves_first_close_error_after_retry(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=[
+                "_JanitorCandidate",
+                "_reclaim_empty_unleased_candidate",
+            ],
+        )
+        for call_path in ("public", "direct"):
+            for outcome in ("absence", "replacement"):
+                with self.subTest(call_path=call_path, outcome=outcome):
+                    backend = self._task8_backend()
+                    managed_capability = self._task7_managed_root(backend)
+                    managed = backend._resource(managed_capability).node
+                    run_id = (
+                        "00000000-0000-4000-8000-000000000938"
+                        if outcome == "absence"
+                        else "00000000-0000-4000-8000-000000000939"
+                    )
+                    candidate = self._task9_add_candidate(
+                        backend,
+                        managed,
+                        run_id=run_id,
+                        prefix=".deleting-",
+                        lease=False,
+                        heartbeat=False,
+                    )
+                    real_close_resource = backend.close_resource
+                    pending_owner: DirectoryCapability | None = None
+                    pending_resource: _ManagedRecordedResource | None = None
+                    replacement: _ManagedRecordedNode | None = None
+
+                    def delete_then_first_close_fails(
+                        capability: FileCapability | DirectoryCapability,
+                    ) -> None:
+                        nonlocal pending_owner, pending_resource
+                        assert isinstance(capability, DirectoryCapability)
+                        backend._cleanup_operation(f"delete:{candidate.name}")
+                        pending_owner = capability
+                        pending_resource = backend._resource(capability)
+                        pending_resource.close_failures = 1
+                        capability.close()
+
+                    def close_and_commit(value: object) -> None:
+                        nonlocal replacement
+                        real_close_resource(value)
+                        if (
+                            pending_resource is None
+                            or value is not pending_resource
+                            or not pending_resource.closed
+                        ):
+                            return
+                        parent = candidate.parent
+                        if (
+                            parent is not None
+                            and parent.children.get(candidate.name)
+                            is candidate
+                        ):
+                            del parent.children[candidate.name]
+                        if outcome == "replacement":
+                            replacement = backend._new_node(
+                                EntryKind.DIRECTORY,
+                                SecurityDomain.MANAGED,
+                                parent=managed,
+                                name=candidate.name,
+                            )
+                            backend._new_node(
+                                EntryKind.REGULAR,
+                                SecurityDomain.MANAGED,
+                                parent=replacement,
+                                name="sentinel",
+                            )
+
+                    with (
+                        mock.patch.object(
+                            backend,
+                            "delete",
+                            side_effect=delete_then_first_close_fails,
+                        ),
+                        mock.patch.object(
+                            backend,
+                            "close_resource",
+                            side_effect=close_and_commit,
+                        ),
+                    ):
+                        if call_path == "public":
+                            records = reclaim_abandoned(
+                                managed_capability.path_hint,
+                                backend=backend,
+                                managed_root_capability=managed_capability,
+                            )
+                            cleanup = _cleanup_records_only(records)
+                            self.assertEqual(len(cleanup), 1, records)
+                            record = cleanup[0]
+                        else:
+                            opened = backend.open_directory(
+                                managed_capability,
+                                candidate.name,
+                                SharePolicy.PINNED,
+                            )
+                            selected = lease_module._JanitorCandidate(
+                                candidate.name,
+                                candidate.identity,
+                                candidate.filesystem,
+                                run_id,
+                                candidate.modified_ns,
+                            )
+                            direct = (
+                                lease_module._reclaim_empty_unleased_candidate(
+                                    managed_capability.path_hint,
+                                    managed_capability,
+                                    opened,
+                                    selected,
+                                    backend,
+                                    current_time=time.time(),
+                                    deadline=time.monotonic() + 5.0,
+                                )
+                            )
+                            self.assertIsInstance(
+                                direct, ScratchCleanupRecord
+                            )
+                            assert isinstance(direct, ScratchCleanupRecord)
+                            record = direct
+
+                    assert pending_owner is not None
+                    delete_index = backend.cleanup_operations.index(
+                        f"delete:{candidate.name}"
+                    )
+                    resolution_operations = backend.cleanup_operations[
+                        delete_index + 1 :
+                    ]
+                    expected_first = (
+                        "OSError: injected close failure for "
+                        f"{candidate.name}"
+                    )
+                    expected_status = (
+                        ScratchCleanupStatus.CLEAN
+                        if outcome == "absence"
+                        else ScratchCleanupStatus.FAILED
+                    )
+                    self.assertEqual(record.status, expected_status)
+                    self.assertEqual(record.removed_entries, 1)
+                    expected_details = (
+                        (expected_first,)
+                        if outcome == "absence"
+                        else (
+                            expected_first,
+                            "empty candidate replacement preserved after removal",
+                        )
+                    )
+                    self.assertEqual(record.details, expected_details)
+                    self.assertEqual(
+                        record.details.count(expected_first), 1
+                    )
+                    if outcome == "replacement":
+                        assert replacement is not None
+                        self.assertIs(
+                            managed.children[candidate.name], replacement
+                        )
+                        self.assertIn("sentinel", replacement.children)
+                    else:
+                        self.assertNotIn(candidate.name, managed.children)
+                    self.assertEqual(pending_owner._close_attempts, 2)
+                    self.assertEqual(
+                        resolution_operations.count(
+                            f"entry:{candidate.name}"
+                        ),
+                        1,
+                    )
+                    if managed_capability.is_open:
+                        managed_capability.close()
+                    self.assertEqual(len(backend.live_resources), 0)
+
+    def test_task9_armed_empty_owner_transfers_before_fallible_disposal(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=[
+                "_DEFERRED_EMPTY_PENDING",
+                "_JanitorCandidate",
+                "_reclaim_empty_unleased_candidate",
+            ],
+        )
+        registry = lease_module._DEFERRED_EMPTY_PENDING
+
+        class _InjectedDisposalAbort(BaseException):
+            pass
+
+        for call_path in ("public", "direct"):
+            for injection in ("close-helper", "detail-bounding"):
+                with self.subTest(call_path=call_path, injection=injection):
+                    backend = self._task8_backend()
+                    managed_capability = self._task7_managed_root(backend)
+                    later_managed = backend.reopen_directory(
+                        managed_capability, SharePolicy.MUTATION
+                    )
+                    managed = backend._resource(managed_capability).node
+                    run_id = (
+                        "00000000-0000-4000-8000-000000000940"
+                        if injection == "close-helper"
+                        else "00000000-0000-4000-8000-000000000941"
+                    )
+                    candidate = self._task9_add_candidate(
+                        backend,
+                        managed,
+                        run_id=run_id,
+                        prefix=".deleting-",
+                        lease=False,
+                        heartbeat=False,
+                    )
+                    real_close_capability = lease_module._close_capability_retry
+                    real_bounded_secondary = lease_module._bounded_secondary
+                    real_close_resource = backend.close_resource
+                    real_dispose_coordinator = (
+                        lease_module._dispose_janitor_candidate_coordinator
+                    )
+                    pending_owner: DirectoryCapability | None = None
+                    pending_resource: _ManagedRecordedResource | None = None
+                    delete_error: OSError | None = None
+                    disposal_order: list[str] = []
+
+                    def arm_without_consuming_close(
+                        capability: FileCapability | DirectoryCapability,
+                    ) -> None:
+                        nonlocal delete_error, pending_owner, pending_resource
+                        assert isinstance(capability, DirectoryCapability)
+                        backend._cleanup_operation(f"delete:{candidate.name}")
+                        pending_owner = capability
+                        pending_resource = backend._resource(capability)
+                        if injection == "detail-bounding":
+                            pending_resource.close_failures = 2
+                            try:
+                                capability.close()
+                            except OSError as error:
+                                delete_error = error
+                                raise
+
+                    def close_helper_failure(
+                        capability: FileCapability | DirectoryCapability,
+                        label: str,
+                    ) -> tuple[str, ...]:
+                        if (
+                            injection == "close-helper"
+                            and label == "janitor candidate root"
+                        ):
+                            disposal_order.append("root-failure")
+                            raise _InjectedDisposalAbort(
+                                "injected candidate close helper abort"
+                            )
+                        return real_close_capability(capability, label)
+
+                    def detail_failure(
+                        label: str, error: BaseException
+                    ) -> str:
+                        if (
+                            injection == "detail-bounding"
+                            and label
+                            == "janitor candidate root close failed"
+                        ):
+                            disposal_order.append("root-failure")
+                            raise MemoryError(
+                                "injected candidate close detail allocation"
+                            )
+                        return real_bounded_secondary(label, error)
+
+                    def observe_coordinator_disposal(owners: object) -> None:
+                        disposal_order.append("coordinator-start")
+                        real_dispose_coordinator(owners)
+                        disposal_order.append("coordinator-end")
+
+                    def close_and_commit(value: object) -> None:
+                        real_close_resource(value)
+                        if (
+                            pending_resource is not None
+                            and value is pending_resource
+                            and pending_resource.closed
+                        ):
+                            parent = candidate.parent
+                            if (
+                                parent is not None
+                                and parent.children.get(candidate.name)
+                                is candidate
+                            ):
+                                del parent.children[candidate.name]
+
+                    expected_exception = (
+                        _InjectedDisposalAbort
+                        if injection == "close-helper"
+                        else MemoryError
+                    )
+                    with (
+                        mock.patch.object(
+                            backend,
+                            "delete",
+                            side_effect=arm_without_consuming_close,
+                        ),
+                        mock.patch.object(
+                            backend,
+                            "close_resource",
+                            side_effect=close_and_commit,
+                        ),
+                        mock.patch.object(
+                            lease_module,
+                            "_close_capability_retry",
+                            side_effect=close_helper_failure,
+                        ),
+                        mock.patch.object(
+                            lease_module,
+                            "_bounded_secondary",
+                            side_effect=detail_failure,
+                        ),
+                        mock.patch.object(
+                            lease_module,
+                            "_dispose_janitor_candidate_coordinator",
+                            side_effect=observe_coordinator_disposal,
+                        ),
+                        self.assertRaises(expected_exception),
+                    ):
+                        if call_path == "public":
+                            reclaim_abandoned(
+                                managed_capability.path_hint,
+                                backend=backend,
+                                managed_root_capability=managed_capability,
+                            )
+                        else:
+                            opened = backend.open_directory(
+                                managed_capability,
+                                candidate.name,
+                                SharePolicy.PINNED,
+                            )
+                            selected = lease_module._JanitorCandidate(
+                                candidate.name,
+                                candidate.identity,
+                                candidate.filesystem,
+                                run_id,
+                                candidate.modified_ns,
+                            )
+                            lease_module._reclaim_empty_unleased_candidate(
+                                managed_capability.path_hint,
+                                managed_capability,
+                                opened,
+                                selected,
+                                backend,
+                                current_time=time.time(),
+                                deadline=time.monotonic() + 5.0,
+                            )
+
+                    assert pending_owner is not None
+                    with registry._lock:
+                        matching = [
+                            cell
+                            for cell in registry._cells
+                            if (
+                                cell.active
+                                and cell.backend is backend
+                                and cell.name == candidate.name
+                            )
+                        ]
+                        exact_owner_retained = (
+                            len(matching) == 1
+                            and matching[0].owner is pending_owner
+                            and matching[0].identity == candidate.identity
+                            and matching[0].filesystem
+                            == candidate.filesystem
+                            and matching[0].removed_after == 1
+                            and matching[0].primary_error is delete_error
+                        )
+                    attempts_after_failure = pending_owner._close_attempts
+                    if managed_capability.is_open:
+                        managed_capability.close()
+                    owner_close_start = len(backend.cleanup_operations)
+                    with mock.patch.object(
+                        backend,
+                        "close_resource",
+                        side_effect=close_and_commit,
+                    ):
+                        pending_owner.close()
+                    owner_close_operations = backend.cleanup_operations[
+                        owner_close_start:
+                    ]
+                    retry_start = len(backend.cleanup_operations)
+                    retry_records = reclaim_abandoned(
+                        later_managed.path_hint,
+                        backend=backend,
+                        managed_root_capability=later_managed,
+                    )
+                    retry_operations = backend.cleanup_operations[retry_start:]
+                    retry_cleanup = _cleanup_records_only(retry_records)
+                    with registry._lock:
+                        remaining_cells = [
+                            cell
+                            for cell in registry._cells
+                            if cell.reserved and cell.backend is backend
+                        ]
+                        for cell in remaining_cells:
+                            if not cell.owner or not cell.owner.is_open:
+                                cell.clear()
+
+                    self.assertTrue(exact_owner_retained)
+                    self.assertEqual(
+                        attempts_after_failure,
+                        0 if injection == "close-helper" else 2,
+                    )
+                    self.assertEqual(disposal_order[-1], "coordinator-end")
+                    self.assertLess(
+                        disposal_order.index("root-failure"),
+                        disposal_order.index("coordinator-start"),
+                    )
+                    self.assertEqual(
+                        owner_close_operations, [f"close:{candidate.name}"]
+                    )
+                    self.assertEqual(len(retry_cleanup), 1, retry_records)
+                    self.assertEqual(
+                        retry_cleanup[0].status, ScratchCleanupStatus.CLEAN
+                    )
+                    self.assertEqual(retry_cleanup[0].removed_entries, 1)
+                    self.assertEqual(
+                        retry_operations.count(f"entry:{candidate.name}"), 1
+                    )
+                    self.assertNotIn(
+                        f"open_directory:{candidate.name}", retry_operations
+                    )
+                    self.assertNotIn(
+                        f"delete:{candidate.name}", retry_operations
+                    )
+                    self.assertEqual(remaining_cells, [])
+                    self.assertEqual(len(backend.live_resources), 0)
+
     def test_task9_pending_registry_token_prevents_aba_resume(
         self,
     ) -> None:
