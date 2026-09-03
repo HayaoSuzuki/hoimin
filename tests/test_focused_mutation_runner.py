@@ -962,10 +962,13 @@ class RunnerTests(unittest.TestCase):
             log_cleanup=lambda _: [],
             windows_tree_terminator=tree_terminator,
         )
+        runner_os = mock.Mock(wraps=os)
+        runner_os.name = "nt"
+        runner_os.environ = os.environ
 
         with (
             mock.patch(
-                "tools.focused_mutation_support.runner.os.name", "nt"
+                "tools.focused_mutation_support.runner.os", runner_os
             ),
             self.assertRaises(CommandInterrupted),
         ):
@@ -989,10 +992,13 @@ class RunnerTests(unittest.TestCase):
                 side_effect=OSError("taskkill unavailable")
             ),
         )
+        runner_os = mock.Mock(wraps=os)
+        runner_os.name = "nt"
+        runner_os.environ = os.environ
 
         with (
             mock.patch(
-                "tools.focused_mutation_support.runner.os.name", "nt"
+                "tools.focused_mutation_support.runner.os", runner_os
             ),
             self.assertRaises(CommandInterrupted) as caught,
         ):

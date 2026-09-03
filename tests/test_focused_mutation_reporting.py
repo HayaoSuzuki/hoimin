@@ -1752,6 +1752,7 @@ class FocusedMutationReportingTests(unittest.TestCase):
                     f"{scratch.path.name}.validated"
                 )
                 escaped = Path(directory) / "escaped-owned-root"
+                self.assertEqual(scratch.close_capabilities(), ())
                 scratch.path.rename(validated)
                 scratch.path = validated
                 validated.rename(escaped)

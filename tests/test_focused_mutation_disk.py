@@ -2057,7 +2057,10 @@ class ManagedPublicationCapabilityTests(unittest.TestCase):
             PosixFilesystemBackend().directory_rename_requires_closed_descendants
         )
         self.assertTrue(
-            WindowsFilesystemBackend().directory_rename_requires_closed_descendants
+            WindowsFilesystemBackend(
+                api=mock.Mock(),
+                osfhandle_opener=mock.Mock(),
+            ).directory_rename_requires_closed_descendants
         )
 
     def test_posix_created_secure_root_has_no_destructive_delete_exception(
@@ -8593,6 +8596,7 @@ class ManagedScratchTests(unittest.TestCase):
                     return (*errors, "injected coordinator close failure")
                 return errors
 
+            run_id = "00000000-0000-4000-8000-000000000110"
             with (
                 mock.patch(
                     "tools.focused_mutation_support.lease."
@@ -8603,14 +8607,19 @@ class ManagedScratchTests(unittest.TestCase):
             ):
                 ManagedScratch.create(
                     parent,
-                    run_id="00000000-0000-4000-8000-000000000110",
+                    run_id=run_id,
                 )
 
             managed = parent / "hoimin-focused-v1"
-            self.assertEqual(
-                sorted(path.name for path in managed.iterdir()),
-                [".hoimin-coordinator"],
-            )
+            staging = managed / f".staging-{run_id}"
+            active = managed / f"run-{run_id}"
+            self.assertFalse(active.exists())
+            self.assertTrue((managed / ".hoimin-coordinator").is_file())
+            if os.name == "nt":
+                self.assertFalse(staging.exists())
+            else:
+                self.assertTrue(staging.is_dir())
+                self.assertEqual(list(staging.iterdir()), [])
 
     def test_startup_janitor_preserves_a_live_leased_root(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -21430,11 +21439,15 @@ class OwnedOutputTests(unittest.TestCase):
                 else:
                     output.rename(moved)
                     output.symlink_to(replacement, target_is_directory=True)
-                    with self.assertRaisesRegex(OSError, "identity changed"):
+                    with self.assertRaises(OSError) as caught:
                         owner.write_atomic(
                             "json",
                             _write_text("{}\n"),
                         )
+                    self.assertTrue(
+                        caught.exception.errno == errno.ENOTDIR
+                        or "identity changed" in str(caught.exception)
+                    )
                     output.unlink()
                     moved.rename(output)
                 self.assertFalse((replacement / "run.json").exists())
@@ -22666,7 +22679,9 @@ class OwnedOutputTests(unittest.TestCase):
                 if descriptor == marker_fd:
                     marker_fstats += 1
                     if marker_fstats >= 2:
-                        return mock.Mock(st_size=result.st_size + 1)
+                        changed = list(result)
+                        changed[6] = result.st_size + 1
+                        return os.stat_result(changed)
                 return result
 
             observed: BaseException | None = None

@@ -1553,14 +1553,21 @@ class WindowsResourceOwnershipTests(unittest.TestCase):
         resource = _WindowsResource(47, None, "item", True)
         capability = self._capability(backend, resource)
 
-        descriptor = capability.detach_to_fd(os.O_RDONLY)
+        noinherit = 1 << 29
+        with mock.patch.object(
+            windows_native.os,
+            "O_NOINHERIT",
+            noinherit,
+            create=True,
+        ):
+            descriptor = capability.detach_to_fd(os.O_RDONLY)
 
         self.assertEqual(descriptor, 17)
         self.assertTrue(capability.detached)
         self.assertEqual(resource.handle, INVALID_OWNED_HANDLE)
         capability.close()
         self.assertEqual(api.closed, [])
-        self.assertTrue(opener.call_args.args[1] & getattr(os, "O_NOINHERIT", 0))
+        self.assertEqual(opener.call_args.args[1] & noinherit, noinherit)
 
 
 @unittest.skipUnless(os.name == "nt", "requires Windows native handles")
