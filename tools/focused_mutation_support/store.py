@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import threading
 import uuid
 from collections.abc import Callable
 from typing import BinaryIO, cast
@@ -181,29 +182,140 @@ class _OwnedBinaryStream:
             self.close_once(label)
         return self.close_errors
 
-    def __del__(self) -> None:
+    def close_finalizer_once(self, label: str) -> tuple[str, ...]:
         stream = self.stream
-        if stream is None or stream.closed or self._finalizer_attempted:
-            return
+        if stream is None or stream.closed:
+            self.stream = None
+            return self.close_errors
+        if self._finalizer_attempted:
+            return self.close_errors
         self._finalizer_attempted = True
         try:
             stream.close()
-        except BaseException:
-            return
+        except BaseException as error:
+            self._record_close_error(
+                _bounded_capability_detail(f"{label} final close failed", error)
+            )
         if stream.closed:
             self.stream = None
+        return self.close_errors
+
+    def __del__(self) -> None:
+        self.close_finalizer_once("binary stream")
+
+
+class _OwnedTaskDescriptor:
+    """Task 10 descriptor owner with a separate one-shot final close."""
+
+    def __init__(self) -> None:
+        self.fd = -1
+        self.close_attempts = 0
+        self._close_detail_0: str | None = None
+        self._close_detail_1: str | None = None
+        self._close_detail_count = 0
+        self._finalizer_attempted = False
+
+    @property
+    def close_errors(self) -> tuple[str, ...]:
+        if self._close_detail_count == 0:
+            return ()
+        if self._close_detail_count == 1:
+            assert self._close_detail_0 is not None
+            return (self._close_detail_0,)
+        assert self._close_detail_0 is not None
+        assert self._close_detail_1 is not None
+        return (self._close_detail_0, self._close_detail_1)
+
+    def _record_close_error(self, detail: str) -> None:
+        detail = _bounded_detail(detail)
+        if detail in self.close_errors:
+            return
+        if self._close_detail_count == 0:
+            self._close_detail_0 = detail
+            self._close_detail_count = 1
+        elif self._close_detail_count == 1:
+            self._close_detail_1 = detail
+            self._close_detail_count = 2
+
+    def adopt(self, descriptor: int) -> None:
+        if self.fd >= 0 or descriptor < 0:
+            raise RuntimeError("descriptor owner cannot adopt this descriptor")
+        self.fd = descriptor
+        self.close_attempts = 0
+        self._close_detail_0 = None
+        self._close_detail_1 = None
+        self._close_detail_count = 0
+        self._finalizer_attempted = False
+
+    def detach(self) -> int:
+        if self.fd < 0:
+            raise RuntimeError("descriptor owner is empty")
+        descriptor = self.fd
+        self.fd = -1
+        return descriptor
+
+    def close_retry(self, label: str) -> tuple[str, ...]:
+        while self.fd >= 0 and self.close_attempts < 2:
+            descriptor = self.fd
+            self.close_attempts += 1
+            try:
+                os.close(descriptor)
+            except BaseException as error:
+                self._record_close_error(
+                    _bounded_capability_detail(f"{label} close failed", error)
+                )
+            else:
+                self.fd = -1
+        return self.close_errors
+
+    def close_finalizer_once(self, label: str) -> tuple[str, ...]:
+        if self.fd < 0 or self._finalizer_attempted:
+            return self.close_errors
+        self._finalizer_attempted = True
+        descriptor = self.fd
+        try:
+            os.close(descriptor)
+        except BaseException as error:
+            self._record_close_error(
+                _bounded_capability_detail(f"{label} final close failed", error)
+            )
+        else:
+            self.fd = -1
+        return self.close_errors
+
+    def __del__(self) -> None:
+        self.close_finalizer_once("descriptor")
+
+
+class _OwnerOperationState:
+    __slots__ = ("lock", "epoch")
+
+    def __init__(self) -> None:
+        self.lock = threading.RLock()
+        self.epoch = 0
+
+    def begin(self) -> int:
+        self.epoch += 1
+        return self.epoch
 
 
 class _FileOwnerState:
     """One exact file identity with exactly one live ownership layer."""
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, operation_epoch: int) -> None:
         self.name = name
         self.identity: FileIdentity | None = None
         self.capability: FileCapability | DirectoryCapability | None = None
-        self.descriptor = _OwnedDescriptor()
+        self.descriptor = _OwnedTaskDescriptor()
         self.stream = _OwnedBinaryStream()
         self.renamed = False
+        self.delete_pending = False
+        self._layer_epoch = operation_epoch
+        self._resume_attempted = False
+
+    def begin_layer(self, operation_epoch: int) -> None:
+        self._layer_epoch = operation_epoch
+        self._resume_attempted = False
 
     @property
     def is_live(self) -> bool:
@@ -213,8 +325,48 @@ class _FileOwnerState:
             or self.stream.is_live
         )
 
-    def close_retry(self, label: str) -> tuple[str, ...]:
+    @property
+    def cleanup_pending(self) -> bool:
+        return self.is_live or self.delete_pending
+
+    def close_for_operation(
+        self, label: str, operation_epoch: int
+    ) -> tuple[str, ...]:
         details: list[str] = []
+        if not self.is_live:
+            return ()
+        saturated = False
+        if self.stream.is_live:
+            saturated = self.stream.close_attempts >= 2
+        elif self.descriptor.fd >= 0:
+            saturated = self.descriptor.close_attempts >= 2
+        else:
+            capability = self.capability
+            saturated = (
+                capability is not None and capability._close_attempts >= 2
+            )
+        later_operation = operation_epoch > self._layer_epoch
+        if saturated and later_operation:
+            self._layer_epoch = operation_epoch
+            if self._resume_attempted:
+                return ()
+            self._resume_attempted = True
+            if self.stream.is_live:
+                details.extend(self.stream.close_finalizer_once(label))
+            elif self.descriptor.fd >= 0:
+                details.extend(self.descriptor.close_finalizer_once(label))
+            else:
+                capability = self.capability
+                if capability is not None and capability.is_open:
+                    try:
+                        capability.close()
+                    except BaseException as error:
+                        details.append(
+                            _bounded_capability_detail(
+                                f"{label} final close failed", error
+                            )
+                        )
+            return tuple(dict.fromkeys(details))
         if self.stream.is_live:
             details.extend(self.stream.close_retry(label))
         if self.descriptor.fd >= 0:
@@ -222,7 +374,81 @@ class _FileOwnerState:
         capability = self.capability
         if capability is not None and capability.is_open:
             details.extend(_close_capability_retry(capability, label))
+        self._layer_epoch = operation_epoch
         return tuple(dict.fromkeys(_bounded_detail(detail) for detail in details))
+
+
+def _settle_owned_exact_child(
+    parent: DirectoryCapability,
+    owner: _FileOwnerState,
+    backend: FilesystemBackend,
+    label: str,
+    operation_epoch: int,
+) -> tuple[tuple[str, ...], bool]:
+    """Close, delete, and prove absence without abandoning a live owner."""
+
+    errors = list(owner.close_for_operation(label, operation_epoch))
+    if owner.is_live:
+        return tuple(dict.fromkeys(errors)), False
+    identity = owner.identity
+    if identity is None:
+        return tuple(dict.fromkeys(errors)), True
+    try:
+        evidence = backend.entry(parent, owner.name)
+    except BaseException as error:
+        errors.append(_bounded_capability_detail(f"{label} lookup failed", error))
+        return tuple(dict.fromkeys(errors)), False
+    if evidence is None:
+        return tuple(dict.fromkeys(errors)), True
+    if (
+        evidence.kind is not EntryKind.REGULAR
+        or evidence.identity != identity
+        or evidence.filesystem != parent.filesystem
+    ):
+        errors.append(
+            _bounded_detail(
+                f"{label} refused replacement: {owner.name}"
+            )
+        )
+        return tuple(dict.fromkeys(errors)), False
+    try:
+        capability = backend.open_entry(
+            parent, owner.name, SharePolicy.PINNED
+        )
+        owner.capability = capability
+        owner.begin_layer(operation_epoch)
+        if (
+            capability.kind is not EntryKind.REGULAR
+            or capability.identity != identity
+            or capability.filesystem != parent.filesystem
+        ):
+            raise OSError(
+                f"{label} identity changed before delete: {owner.name}"
+            )
+        owner.delete_pending = True
+        backend.delete(capability)
+    except BaseException as error:
+        errors.append(_bounded_capability_detail(f"{label} failed", error))
+    errors.extend(owner.close_for_operation(label, operation_epoch))
+    if owner.is_live:
+        return tuple(dict.fromkeys(errors)), False
+    try:
+        remaining = backend.entry(parent, owner.name)
+    except BaseException as error:
+        errors.append(
+            _bounded_capability_detail(
+                f"{label} absence verification failed", error
+            )
+        )
+        return tuple(dict.fromkeys(errors)), False
+    if remaining is not None:
+        errors.append(
+            _bounded_detail(
+                f"{label} absence verification failed: {owner.name} remains"
+            )
+        )
+        return tuple(dict.fromkeys(errors)), False
+    return tuple(dict.fromkeys(errors)), True
 
 
 class BoundedTextWriter:
@@ -289,6 +515,9 @@ class CommandPaths:
     _spool_owners: dict[str, _FileOwnerState] = field(
         default_factory=dict, repr=False, compare=False
     )
+    _operation_state: _OwnerOperationState = field(
+        default_factory=_OwnerOperationState, repr=False, compare=False
+    )
     capability_errors: list[str] = field(default_factory=list)
 
     def _name(self, stream_name: str) -> str:
@@ -299,12 +528,19 @@ class CommandPaths:
         raise ValueError(f"unknown command stream: {stream_name!r}")
 
     def open_writer(self, stream_name: str) -> BinaryIO:
+        with self._operation_state.lock:
+            operation_epoch = self._operation_state.begin()
+            return self._open_writer_locked(stream_name, operation_epoch)
+
+    def _open_writer_locked(
+        self, stream_name: str, operation_epoch: int
+    ) -> BinaryIO:
         name = self._name(stream_name)
         if name in self._spool_identities:
             raise RuntimeError(f"command spool identity already exists: {name}")
         if len(self._spool_identities) >= 2:
             raise RuntimeError("command spool identity registry is full")
-        owner = _FileOwnerState(name)
+        owner = _FileOwnerState(name, operation_epoch)
         self._spool_owners[name] = owner
         try:
             capability = self.backend.open_file(
@@ -325,14 +561,24 @@ class CommandPaths:
                 )
             )
             owner.capability = None
+            owner.begin_layer(operation_epoch)
             stream = os.fdopen(owner.descriptor.fd, "wb", closefd=True)
             owner.stream.adopt(stream)
             owner.descriptor.detach()
+            owner.begin_layer(operation_epoch)
             return cast(BinaryIO, owner.stream)
         except BaseException as primary_error:
-            details = list(owner.close_retry("command spool writer"))
+            details = list(
+                owner.close_for_operation("command spool writer", operation_epoch)
+            )
             if owner.identity is not None and not owner.is_live:
-                details.extend(self._discard_one(name, owner.identity))
+                discard_details, complete = self._discard_one(
+                    owner, operation_epoch
+                )
+                details.extend(discard_details)
+                if complete:
+                    self._spool_identities.pop(name, None)
+                    self._spool_owners.pop(name, None)
             elif owner.identity is None and not owner.is_live:
                 self._spool_owners.pop(name, None)
             for detail in details:
@@ -417,120 +663,79 @@ class CommandPaths:
                 if descriptor.fd >= 0:
                     raise OSError("command spool reader close failed")
 
-    def _discard_one(self, name: str, identity: FileIdentity) -> tuple[str, ...]:
-        errors: list[str] = []
-        capability: FileCapability | DirectoryCapability | None = None
-        try:
-            evidence = self.backend.entry(self.root, name)
-        except BaseException as error:
-            errors.append(_bounded_capability_detail("command spool lookup failed", error))
-            return tuple(errors)
-        if evidence is None:
-            self._spool_identities.pop(name, None)
-            self._spool_owners.pop(name, None)
-            return ()
-        if (
-            evidence.kind is not EntryKind.REGULAR
-            or evidence.identity != identity
-            or evidence.filesystem != self.root.filesystem
-        ):
-            errors.append(
-                _bounded_detail(
-                    f"command spool cleanup refused replacement: {name}"
-                )
-            )
-            return tuple(errors)
-        try:
-            capability = self.backend.open_entry(
-                self.root, name, SharePolicy.PINNED
-            )
-            if (
-                capability.kind is not EntryKind.REGULAR
-                or capability.identity != identity
-                or capability.filesystem != self.root.filesystem
-            ):
-                raise OSError(f"command spool identity changed before delete: {name}")
-            self.backend.delete(capability)
-            if capability.is_open:
-                errors.extend(
-                    _close_capability_retry(capability, "command spool delete")
-                )
-                if capability.is_open:
-                    return tuple(errors)
-            remaining = self.backend.entry(self.root, name)
-            if remaining is not None:
-                errors.append(
-                    _bounded_detail(
-                        f"command spool cleanup failed: path remains: {name}"
-                    )
-                )
-            else:
-                self._spool_identities.pop(name, None)
-                self._spool_owners.pop(name, None)
-        except BaseException as error:
-            errors.append(_bounded_capability_detail("command spool cleanup failed", error))
-            if capability is not None and capability.is_open:
-                errors.extend(
-                    _close_capability_retry(capability, "command spool cleanup")
-                )
-            if capability is not None and not capability.is_open:
-                try:
-                    remaining = self.backend.entry(self.root, name)
-                except BaseException as absence_error:
-                    errors.append(
-                        _bounded_capability_detail(
-                            "command spool absence verification failed",
-                            absence_error,
-                        )
-                    )
-                else:
-                    if remaining is None:
-                        self._spool_identities.pop(name, None)
-                        self._spool_owners.pop(name, None)
-                    else:
-                        errors.append(
-                            _bounded_detail(
-                                f"command spool cleanup failed: path remains: {name}"
-                            )
-                        )
-        return tuple(errors)
+    def _discard_one(
+        self,
+        owner: _FileOwnerState,
+        operation_epoch: int,
+    ) -> tuple[tuple[str, ...], bool]:
+        return _settle_owned_exact_child(
+            self.root,
+            owner,
+            self.backend,
+            "command spool cleanup",
+            operation_epoch,
+        )
 
     def discard(self) -> tuple[str, ...]:
+        with self._operation_state.lock:
+            operation_epoch = self._operation_state.begin()
+            return self._discard_locked(operation_epoch)
+
+    def _discard_locked(self, operation_epoch: int) -> tuple[str, ...]:
         errors: list[str] = []
         try:
             for name in (self.stdout_name, self.stderr_name):
                 owner = self._spool_owners.get(name)
                 if owner is not None:
-                    errors.extend(owner.close_retry("command spool writer"))
+                    errors.extend(
+                        owner.close_for_operation(
+                            "command spool writer", operation_epoch
+                        )
+                    )
                     if owner.is_live:
                         errors.append(
                             _bounded_detail(
                                 f"command spool cleanup blocked by live owner: {name}"
                             )
                         )
-                        continue
+                        break
                 identity = self._spool_identities.get(name)
-                if identity is not None:
-                    errors.extend(self._discard_one(name, identity))
+                if identity is not None and owner is not None:
+                    details, complete = self._discard_one(
+                        owner, operation_epoch
+                    )
+                    errors.extend(details)
+                    if complete:
+                        self._spool_identities.pop(name, None)
+                        self._spool_owners.pop(name, None)
+                    else:
+                        break
         finally:
-            errors.extend(self.close())
+            errors.extend(self._close_locked(operation_epoch))
         for detail in errors:
             _append_capability_error(self.capability_errors, detail)
         return tuple(self.capability_errors)
 
     def close(self) -> tuple[str, ...]:
+        with self._operation_state.lock:
+            operation_epoch = self._operation_state.begin()
+            return self._close_locked(operation_epoch)
+
+    def _close_locked(self, operation_epoch: int) -> tuple[str, ...]:
         live_owner = False
         for name in (self.stdout_name, self.stderr_name):
             owner = self._spool_owners.get(name)
             if owner is None:
                 continue
-            for detail in owner.close_retry("command spool writer"):
+            for detail in owner.close_for_operation(
+                "command spool writer", operation_epoch
+            ):
                 _append_capability_error(self.capability_errors, detail)
-            if owner.is_live:
+            if owner.cleanup_pending:
                 live_owner = True
                 _append_capability_error(
                     self.capability_errors,
-                    f"command spool root retained for live owner: {name}",
+                    f"command spool root retained for pending owner: {name}",
                 )
         if live_owner:
             return tuple(self.capability_errors)
@@ -654,6 +859,7 @@ class OwnedOutput:
         for detail in startup_errors:
             _append_capability_error(self.close_errors, detail)
         self._report_owners: dict[str, _FileOwnerState] = {}
+        self._operation_state = _OwnerOperationState()
 
     @classmethod
     def create(
@@ -891,53 +1097,35 @@ class OwnedOutput:
                 )
             return tuple(details)
 
-    def _settle_report_owner(self, kind: str) -> tuple[str, ...]:
+    def _settle_report_owner(
+        self, kind: str, operation_epoch: int
+    ) -> tuple[str, ...]:
         owner = self._report_owners.get(kind)
         if owner is None:
             return ()
-        details = list(owner.close_retry("report temporary"))
+        details = list(
+            owner.close_for_operation("report temporary", operation_epoch)
+        )
         for detail in details:
             _append_capability_error(self.close_errors, detail)
         if owner.is_live:
             return tuple(details)
         identity = owner.identity
-        if identity is not None and not owner.renamed and self._directory.is_open:
-            details.extend(
-                _delete_exact_child(
-                    self._directory,
-                    owner.name,
-                    identity,
-                    self._backend,
-                    "report temporary rollback",
-                )
-            )
-        if not owner.renamed and identity is not None and self._directory.is_open:
-            try:
-                remaining = self._backend.entry(self._directory, owner.name)
-            except BaseException as error:
-                details.append(
-                    _bounded_capability_detail(
-                        "report temporary absence verification failed", error
-                    )
-                )
-            else:
-                if remaining is not None:
-                    details.append(
-                        _bounded_detail(
-                            f"report temporary cleanup failed: path remains: {owner.name}"
-                        )
-                    )
-        if not details or (
-            not owner.is_live
-            and (
-                owner.renamed
-                or identity is None
-                or (
-                    self._directory.is_open
-                    and self._backend.entry(self._directory, owner.name) is None
-                )
-            )
+        complete = owner.renamed or identity is None
+        if (
+            not complete
+            and self._directory.is_open
+            and identity is not None
         ):
+            cleanup_details, complete = _settle_owned_exact_child(
+                self._directory,
+                owner,
+                self._backend,
+                "report temporary rollback",
+                operation_epoch,
+            )
+            details.extend(cleanup_details)
+        if complete:
             self._report_owners.pop(kind, None)
         for detail in details:
             _append_capability_error(self.close_errors, detail)
@@ -952,6 +1140,27 @@ class OwnedOutput:
         before_chunk: Callable[[int, int], None] | None = None,
         after_flush: Callable[[int], None] | None = None,
     ) -> None:
+        with self._operation_state.lock:
+            operation_epoch = self._operation_state.begin()
+            self._write_atomic_locked(
+                kind,
+                write,
+                operation_epoch=operation_epoch,
+                capacity=capacity,
+                before_chunk=before_chunk,
+                after_flush=after_flush,
+            )
+
+    def _write_atomic_locked(
+        self,
+        kind: str,
+        write: Callable[[BoundedTextWriter], None],
+        *,
+        operation_epoch: int,
+        capacity: int,
+        before_chunk: Callable[[int, int], None] | None,
+        after_flush: Callable[[int], None] | None,
+    ) -> None:
         self._verify()
         destinations = {"json": "run.json", "markdown": "report.md"}
         try:
@@ -959,14 +1168,14 @@ class OwnedOutput:
         except KeyError as error:
             raise ValueError(f"unsupported report kind: {kind!r}") from error
         temporary = f".hoimin-output-{self.run_id}-{kind}.tmp"
-        pending_details = self._settle_report_owner(kind)
+        pending_details = self._settle_report_owner(kind, operation_epoch)
         pending = self._report_owners.get(kind)
         if pending is not None:
             raise OSError(
                 "; ".join(pending_details)
                 or f"report temporary owner remains live: {temporary}"
             )
-        owner = _FileOwnerState(temporary)
+        owner = _FileOwnerState(temporary, operation_epoch)
         self._report_owners[kind] = owner
         try:
             opened = self._backend.open_file(
@@ -984,10 +1193,12 @@ class OwnedOutput:
                 opened.detach_to_fd(os.O_WRONLY | getattr(os, "O_BINARY", 0))
             )
             owner.capability = None
+            owner.begin_layer(operation_epoch)
             owner.stream.adopt(
                 os.fdopen(owner.descriptor.fd, "wb", closefd=True)
             )
             owner.descriptor.detach()
+            owner.begin_layer(operation_epoch)
             binary_stream = owner.stream
             try:
                 stream = BoundedTextWriter(
@@ -1025,6 +1236,7 @@ class OwnedOutput:
                 self._directory, temporary, SharePolicy.PINNED
             )
             owner.capability = capability
+            owner.begin_layer(operation_epoch)
             if (
                 capability.kind is not EntryKind.REGULAR
                 or capability.identity != owner.identity
@@ -1056,17 +1268,30 @@ class OwnedOutput:
                 raise OSError("atomic report destination identity changed")
             self._report_owners.pop(kind, None)
         except BaseException as primary_error:
-            rollback_errors = list(owner.close_retry("report temporary"))
+            rollback_errors = list(
+                owner.close_for_operation("report temporary", operation_epoch)
+            )
             if not owner.is_live:
-                rollback_errors.extend(self._settle_report_owner(kind))
+                rollback_errors.extend(
+                    self._settle_report_owner(kind, operation_epoch)
+                )
             _attach_secondary(primary_error, tuple(rollback_errors))
             raise
 
     def close(self, *, remove_marker: bool = False) -> tuple[str, ...]:
+        with self._operation_state.lock:
+            operation_epoch = self._operation_state.begin()
+            return self._close_locked(
+                operation_epoch, remove_marker=remove_marker
+            )
+
+    def _close_locked(
+        self, operation_epoch: int, *, remove_marker: bool
+    ) -> tuple[str, ...]:
         if self._marker_lock.fd < 0 and not self._directory.is_open:
             return tuple(self.close_errors)
         for kind in tuple(self._report_owners):
-            self._settle_report_owner(kind)
+            self._settle_report_owner(kind, operation_epoch)
         if self._report_owners:
             _append_capability_error(
                 self.close_errors,

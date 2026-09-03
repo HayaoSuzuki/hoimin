@@ -1585,6 +1585,21 @@ class RunnerTests(unittest.TestCase):
         captured_paths: list[CommandPaths] = []
         raw_writers: list[_Task10RunnerCloseStream] = []
 
+        def fallback_owner_cleanup() -> None:
+            for retained in raw_writers:
+                if retained.closed:
+                    continue
+                retained.failures = 0
+                retained.close()
+            for retained_paths in captured_paths:
+                retained_paths.discard()
+            store.close_command_root()
+            scratch.mark_cleanup_ready()
+            scratch.cleanup()
+            scratch.close_capabilities()
+
+        self.addCleanup(fallback_owner_cleanup)
+
         def capture_paths(sequence: int, label: str) -> CommandPaths:
             paths = real_command_paths(sequence, label)
             captured_paths.append(paths)
@@ -1593,6 +1608,8 @@ class RunnerTests(unittest.TestCase):
         def wrap_spool_writer(*args: object, **kwargs: object) -> BinaryIO:
             raw = cast(Callable[..., BinaryIO], real_fdopen)(*args, **kwargs)
             if kwargs.get("closefd") is True and args[1:2] == ("wb",):
+                if raw_writers:
+                    return raw
                 wrapped = _Task10RunnerCloseStream(raw, 2)
                 raw_writers.append(wrapped)
                 return cast(BinaryIO, wrapped)
@@ -1623,20 +1640,14 @@ class RunnerTests(unittest.TestCase):
             self.assertTrue(paths.root.is_open)
             self.assertTrue(store._live_root_tokens)
 
-            raw_writers[0].failures = 0
-            raw_writers[0].close()
             paths.discard()
+            self.assertEqual(raw_writers[0].close_calls, 3)
+            self.assertTrue(raw_writers[0].closed)
             self.assertFalse(paths.stdout.exists())
             self.assertFalse(paths.root.is_open)
             self.assertFalse(store._live_root_tokens)
         finally:
-            for stream in raw_writers:
-                if not stream.closed:
-                    stream.failures = 0
-                    stream.close()
-            for paths in captured_paths:
-                paths.discard()
-            self.close_task10_store(store, scratch)
+            pass
 
     def test_task10_runner_closes_pipe_owners_before_command_discard(self) -> None:
         store, scratch = self.task10_store()
