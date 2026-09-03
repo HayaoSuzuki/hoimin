@@ -19687,6 +19687,85 @@ class OwnedOutputTests(unittest.TestCase):
                 paths.discard()
                 store.close_command_root()
 
+    def test_task10_failed_capability_final_close_is_not_retried_by_gc(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            backend = _Task10RecordingBackend(root)
+            self.addCleanup(backend.close_backings)
+            parent = backend.open_root(root, SharePolicy.MUTATION)
+            managed = backend.create_secure_root(parent, "managed")
+            command_root = backend.create_directory(
+                managed, "commands", SharePolicy.MUTATION
+            )
+            command_node = backend._resource(command_root).node
+            parent.close()
+            managed.close()
+            store = RunStore(
+                root / "output",
+                command_root=command_root.path_hint,
+                command_root_capability=command_root,
+                backend=backend,
+            )
+            paths = store.command_paths(1, "failed-final-capability")
+            name = paths.stdout_name
+            real_open_file = backend.open_file
+            real_detach = FileCapability.detach_to_fd
+
+            def persistent_open(*args: object, **kwargs: object) -> FileCapability:
+                capability = cast(
+                    Callable[..., FileCapability], real_open_file
+                )(*args, **kwargs)
+                if capability.path_hint.name == name:
+                    backend._resource(capability).close_failures = 3
+                return capability
+
+            def fail_detach(capability: FileCapability, flags: int) -> int:
+                if capability.path_hint.name == name:
+                    raise OSError("injected detach failure")
+                return real_detach(capability, flags)
+
+            with (
+                mock.patch.object(backend, "open_file", side_effect=persistent_open),
+                mock.patch.object(FileCapability, "detach_to_fd", fail_detach),
+                self.assertRaisesRegex(OSError, "detach failure"),
+            ):
+                paths.open_writer("stdout")
+            self.assertEqual(backend.events.count(f"close:{name}"), 2)
+
+            paths.discard()
+            self.assertEqual(backend.events.count(f"close:{name}"), 3)
+            self.assertIn(name, command_node.children)
+            self.assertTrue(paths.root.is_open)
+            self.assertTrue(store._live_root_tokens)
+            settled_at = len(backend.events)
+
+            paths.discard()
+            self.assertEqual(backend.events.count(f"close:{name}"), 3)
+            self.assertFalse(
+                any(
+                    event.startswith(
+                        (f"entry:{name}", f"open-entry:{name}", f"delete:{name}")
+                    )
+                    for event in backend.events[settled_at:]
+                ),
+                backend.events[settled_at:],
+            )
+            del paths
+            gc.collect()
+            self.assertEqual(backend.events.count(f"close:{name}"), 3)
+            self.assertFalse(
+                any(
+                    event.startswith(
+                        (f"entry:{name}", f"open-entry:{name}", f"delete:{name}")
+                    )
+                    for event in backend.events[settled_at:]
+                ),
+                backend.events[settled_at:],
+            )
+            self.assertTrue(store._live_root_tokens)
+
     def test_task10_command_live_descriptor_blocks_delete_then_resumes_exactly(
         self,
     ) -> None:

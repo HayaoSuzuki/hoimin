@@ -359,7 +359,7 @@ class _FileOwnerState:
                 capability = self.capability
                 if capability is not None and capability.is_open:
                     try:
-                        capability.close()
+                        capability._close_finalizer_once()
                     except BaseException as error:
                         details.append(
                             _bounded_capability_detail(

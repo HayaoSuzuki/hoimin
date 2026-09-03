@@ -81,6 +81,7 @@ class _Capability:
     __slots__ = (
         "_close_attempts",
         "_created",
+        "_finalizer_attempted",
         "_filesystem",
         "_identity",
         "_kind",
@@ -114,6 +115,7 @@ class _Capability:
         self._state = _CapabilityState.CLOSED
         self._resource = None
         self._close_attempts = 0
+        self._finalizer_attempted = False
         if identity.volume <= 0 or identity.file <= 0:
             raise ValueError("file identity values must be nonzero")
         if filesystem.volume <= 0:
@@ -205,6 +207,12 @@ class _Capability:
         self._state = _CapabilityState.CLOSED
         self._resource = None
 
+    def _close_finalizer_once(self) -> None:
+        if self._state is not _CapabilityState.OPEN or self._finalizer_attempted:
+            return
+        self._finalizer_attempted = True
+        self.close()
+
     def __enter__(self) -> _Capability:
         if self._state is not _CapabilityState.OPEN:
             raise RuntimeError("filesystem capability is not open")
@@ -215,8 +223,8 @@ class _Capability:
 
     def __del__(self) -> None:
         try:
-            self.close()
-        except OSError:
+            self._close_finalizer_once()
+        except BaseException:
             pass
 
 
@@ -260,6 +268,7 @@ class DirectoryCapability(_Capability):
             path_hint=self._path_hint,
         )
         replacement._close_attempts = self._close_attempts
+        replacement._finalizer_attempted = self._finalizer_attempted
         self._state = _CapabilityState.TRANSFERRED
         self._resource = None
         return replacement

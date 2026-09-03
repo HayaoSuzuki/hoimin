@@ -1646,6 +1646,9 @@ class RunnerTests(unittest.TestCase):
             self.assertFalse(paths.stdout.exists())
             self.assertFalse(paths.root.is_open)
             self.assertFalse(store._live_root_tokens)
+            paths.discard()
+            self.assertEqual(raw_writers[0].close_calls, 3)
+            self.assertFalse(store._live_root_tokens)
         finally:
             pass
 

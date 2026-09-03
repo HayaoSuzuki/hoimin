@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import builtins
+import gc
 import os
 import stat
 import sys
@@ -47,14 +48,22 @@ def _set_backend_hook(
 class RecordingOwner:
     def __init__(self) -> None:
         self.closed: list[int] = []
+        self.close_attempts: list[int] = []
         self.detached: list[tuple[int, int]] = []
         self.fail_close = False
+        self.close_failures = 0
         self.fail_detach = False
 
     def close_resource(self, resource: object) -> None:
-        if self.fail_close:
+        if not isinstance(resource, int):
+            raise TypeError("recording resource must be an integer")
+        value = resource
+        self.close_attempts.append(value)
+        if self.fail_close or self.close_failures > 0:
+            if self.close_failures > 0:
+                self.close_failures -= 1
             raise OSError("close failed")
-        self.closed.append(int(cast(Any, resource)))
+        self.closed.append(value)
 
     def detach_file_resource(self, resource: object, flags: int) -> int:
         if self.fail_detach:
@@ -184,6 +193,41 @@ class CapabilityOwnershipTests(unittest.TestCase):
         self.assertFalse(capability.is_open)
         self.assertEqual(owner.closed, [7])
 
+    def test_failed_final_close_is_not_retried_during_destruction(self) -> None:
+        owner = RecordingOwner()
+        owner.close_failures = 3
+        capability = _test_file_capability(owner, 8)
+        for _ in range(2):
+            with self.assertRaisesRegex(OSError, "close failed"):
+                capability.close()
+        final_close = getattr(capability, "_close_finalizer_once", None)
+        if final_close is None:
+            self.fail("capability has no shared one-shot final close")
+        with self.assertRaisesRegex(OSError, "close failed"):
+            final_close()
+        self.assertTrue(capability.is_open)
+        del capability
+        gc.collect()
+        self.assertEqual(owner.close_attempts, [8, 8, 8])
+        self.assertEqual(owner.closed, [])
+
+    def test_successful_final_close_is_not_retried_during_destruction(self) -> None:
+        owner = RecordingOwner()
+        owner.close_failures = 2
+        capability = _test_file_capability(owner, 9)
+        for _ in range(2):
+            with self.assertRaisesRegex(OSError, "close failed"):
+                capability.close()
+        final_close = getattr(capability, "_close_finalizer_once", None)
+        if final_close is None:
+            self.fail("capability has no shared one-shot final close")
+        final_close()
+        self.assertTrue(capability.closed)
+        del capability
+        gc.collect()
+        self.assertEqual(owner.close_attempts, [9, 9, 9])
+        self.assertEqual(owner.closed, [9])
+
     def test_detach_transfers_once_and_failure_keeps_ownership(self) -> None:
         owner = RecordingOwner()
         capability = _test_file_capability(owner, 9)
@@ -253,6 +297,22 @@ class CapabilityOwnershipTests(unittest.TestCase):
         self.assertEqual(source._resource_for(owner), 17)
         source.close()
         self.assertEqual(owner.closed, [17])
+
+    def test_directory_move_does_not_renew_consumed_final_close(self) -> None:
+        owner = RecordingOwner()
+        owner.close_failures = 3
+        source = _test_directory_capability(owner, 18)
+        for _ in range(2):
+            with self.assertRaisesRegex(OSError, "close failed"):
+                source.close()
+        with self.assertRaisesRegex(OSError, "close failed"):
+            source._close_finalizer_once()
+        moved = source._move_for(owner)
+        del source
+        del moved
+        gc.collect()
+        self.assertEqual(owner.close_attempts, [18, 18, 18])
+        self.assertEqual(owner.closed, [])
 
     def test_wrong_owner_cannot_access_or_move_resource(self) -> None:
         class EqualOwner(RecordingOwner):
