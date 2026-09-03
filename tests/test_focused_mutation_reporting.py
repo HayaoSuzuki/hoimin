@@ -906,47 +906,48 @@ class FocusedMutationReportingTests(unittest.TestCase):
             )
 
     def test_combined_disk_observation_preserves_raw_and_derived_failures(self) -> None:
-        record = RunRecord.new(60.0)
-        prior = DiskFailure(
-            code="disk.measurement.failed",
-            reason=DiskStopReason.MEASUREMENT_FAILED,
-            message="monitor failed",
-        )
-        raw = DiskFailure(
-            code="filesystem.reserve.reached",
-            reason=DiskStopReason.FILESYSTEM_RESERVE_REACHED,
-        )
-        observation = DiskObservation(
-            owned_bytes=100,
-            available_bytes=20,
-            root_owned_bytes={"owned:scratch": 70, "owned:output": 30},
-        )
-        policy = DiskPolicy(
-            max_disk_bytes=100,
-            min_free_bytes=20,
-            scratch_root=Path("/tmp"),
-        )
-
-        selected = _record_disk_failures_for_observation(
-            record,
-            policy,
-            observation,
-            prior,
-            raw,
-        )
-
-        self.assertIs(selected, prior)
-        self.assertEqual(record.disk_stop["code"], prior.code)
-        self.assertTrue(
-            any(item.get("code") == raw.code for item in record.secondary_errors)
-        )
-        self.assertTrue(
-            any(
-                item.get("code") == "workspace.size.exceeded"
-                and item.get("observation", {}).get("owned_bytes") == 100
-                for item in record.secondary_errors
+        with tempfile.TemporaryDirectory() as directory:
+            record = RunRecord.new(60.0)
+            prior = DiskFailure(
+                code="disk.measurement.failed",
+                reason=DiskStopReason.MEASUREMENT_FAILED,
+                message="monitor failed",
             )
-        )
+            raw = DiskFailure(
+                code="filesystem.reserve.reached",
+                reason=DiskStopReason.FILESYSTEM_RESERVE_REACHED,
+            )
+            observation = DiskObservation(
+                owned_bytes=100,
+                available_bytes=20,
+                root_owned_bytes={"owned:scratch": 70, "owned:output": 30},
+            )
+            policy = DiskPolicy(
+                max_disk_bytes=100,
+                min_free_bytes=20,
+                scratch_root=Path(directory),
+            )
+
+            selected = _record_disk_failures_for_observation(
+                record,
+                policy,
+                observation,
+                prior,
+                raw,
+            )
+
+            self.assertIs(selected, prior)
+            self.assertEqual(record.disk_stop["code"], prior.code)
+            self.assertTrue(
+                any(item.get("code") == raw.code for item in record.secondary_errors)
+            )
+            self.assertTrue(
+                any(
+                    item.get("code") == "workspace.size.exceeded"
+                    and item.get("observation", {}).get("owned_bytes") == 100
+                    for item in record.secondary_errors
+                )
+            )
 
     def test_later_disk_failure_and_threshold_secondary_are_preserved(self) -> None:
         record = RunRecord.new(60.0)

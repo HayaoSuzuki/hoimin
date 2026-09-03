@@ -7,8 +7,20 @@ import os
 import stat
 from typing import cast
 
+from .filesystem import (
+    CreateDisposition,
+    EntryKind,
+    FileAccess,
+    SharePolicy,
+    SecurityDomain,
+    default_filesystem_backend,
+)
 from .model import Candidate, CandidateState, CommandRecord, RunState
-from .lease import validate_reported_path
+from .lease import (
+    _OwnedDescriptor,
+    _close_capability_retry,
+    validate_reported_path,
+)
 
 
 SUPPORTED_CARGO_MUTANTS_VERSION = "27.1.0"
@@ -32,9 +44,102 @@ _OUTER_GUARD_DEPTH_FIXTURES = (
 )
 
 
+def _raise_bounded_descriptor_close(
+    descriptor: _OwnedDescriptor,
+    label: str,
+    primary: BaseException | None = None,
+) -> None:
+    details = descriptor.close_retry(label)
+    if primary is not None:
+        for detail in details:
+            primary.add_note(detail)
+        return
+    if details:
+        raise OSError("; ".join(details))
+
+
+def _open_windows_bounded_regular(path: Path) -> _OwnedDescriptor:
+    target = Path(os.path.abspath(path))
+    descriptor = _OwnedDescriptor()
+    backend = default_filesystem_backend()
+    parent = None
+    regular = None
+    try:
+        parent = backend.open_root(
+            target.parent,
+            SharePolicy.PINNED,
+            SecurityDomain.CALLER,
+        )
+        regular = backend.open_file(
+            parent,
+            target.name,
+            access=FileAccess.READ,
+            disposition=CreateDisposition.OPEN_EXISTING,
+            share_policy=SharePolicy.PINNED,
+        )
+        if (
+            regular.kind is not EntryKind.REGULAR
+            or regular.filesystem != parent.filesystem
+        ):
+            raise OSError(f"bounded input identity changed: {path}")
+
+        parent_details = _close_capability_retry(parent, "bounded input parent")
+        if parent_details:
+            raise OSError("; ".join(parent_details))
+        if parent.is_open:
+            raise OSError("bounded input parent close failed")
+
+        descriptor.adopt(
+            regular.detach_to_fd(
+                os.O_RDONLY | getattr(os, "O_BINARY", 0)
+            )
+        )
+        return descriptor
+    except BaseException as primary:
+        details: list[str] = []
+        if regular is not None and regular.is_open:
+            details.extend(_close_capability_retry(regular, "bounded input file"))
+        if parent is not None and parent.is_open:
+            details.extend(_close_capability_retry(parent, "bounded input parent"))
+        details.extend(descriptor.close_retry("bounded input descriptor"))
+        for detail in details:
+            primary.add_note(detail)
+        raise
+
+
 def read_bounded_regular(path: Path, capacity: int) -> bytes:
     if capacity <= 0:
         raise ValueError("bounded read capacity must be positive")
+    if os.name == "nt":
+        descriptor = _open_windows_bounded_regular(path)
+        try:
+            metadata = os.fstat(descriptor.fd)
+            if not stat.S_ISREG(metadata.st_mode):
+                raise ValueError(f"bounded input is not a regular file: {path}")
+            if metadata.st_size > capacity:
+                raise ValueError(f"bounded input exceeds {capacity} bytes: {path}")
+            value = bytearray()
+            while len(value) <= capacity:
+                chunk = os.read(
+                    descriptor.fd,
+                    min(64 * 1024, capacity + 1 - len(value)),
+                )
+                if not chunk:
+                    break
+                value.extend(chunk)
+            if len(value) > capacity:
+                raise ValueError(f"bounded input exceeds {capacity} bytes: {path}")
+            result = bytes(value)
+        except BaseException as primary:
+            _raise_bounded_descriptor_close(
+                descriptor,
+                "bounded input descriptor",
+                primary,
+            )
+            raise
+        _raise_bounded_descriptor_close(descriptor, "bounded input descriptor")
+        return result
+
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(path, flags)
     try:
@@ -100,6 +205,40 @@ def _validate_json_shape(value: object) -> None:
 def read_bounded_regular_tail(path: Path, capacity: int) -> tuple[bytes, int]:
     if capacity < 0:
         raise ValueError("tail capacity cannot be negative")
+    if os.name == "nt":
+        descriptor = _open_windows_bounded_regular(path)
+        try:
+            metadata = os.fstat(descriptor.fd)
+            if not stat.S_ISREG(metadata.st_mode):
+                raise ValueError(f"diagnostic input is not a regular file: {path}")
+            observed = metadata.st_size
+            if capacity == 0:
+                result = b""
+            else:
+                os.lseek(descriptor.fd, max(0, observed - capacity), os.SEEK_SET)
+                value = bytearray()
+                while len(value) < min(observed, capacity):
+                    chunk = os.read(
+                        descriptor.fd,
+                        min(64 * 1024, capacity - len(value)),
+                    )
+                    if not chunk:
+                        break
+                    value.extend(chunk)
+                result = bytes(value)
+        except BaseException as primary:
+            _raise_bounded_descriptor_close(
+                descriptor,
+                "bounded diagnostic descriptor",
+                primary,
+            )
+            raise
+        _raise_bounded_descriptor_close(
+            descriptor,
+            "bounded diagnostic descriptor",
+        )
+        return result, observed
+
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(path, flags)
     try:

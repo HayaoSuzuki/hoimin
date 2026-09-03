@@ -26,6 +26,11 @@ from tools.focused_mutation_support.filesystem import (
     SharePolicy,
 )
 from tools.focused_mutation_support import windows_filesystem as windows_native
+from tools.focused_mutation_support import mutation as mutation_support
+from tools.focused_mutation_support.mutation import (
+    read_bounded_regular,
+    read_bounded_regular_tail,
+)
 from tools.focused_mutation_support.windows_filesystem import (
     DELETE,
     FILE_ID_EXTD_DIR_INFO,
@@ -1898,6 +1903,38 @@ class WindowsOpenTests(unittest.TestCase):
                 self.assertEqual(item.read_bytes(), b"replacement")
             finally:
                 root.close()
+
+    def test_bounded_reads_reject_replacement_between_observation_and_open(
+        self,
+    ) -> None:
+        for tail in (False, True):
+            with self.subTest(tail=tail), tempfile.TemporaryDirectory() as raw:
+                root_path = Path(raw)
+                item = root_path / "item"
+                old = root_path / "old"
+                item.write_bytes(b"original")
+
+                def replace() -> None:
+                    item.rename(old)
+                    item.write_bytes(b"replacement")
+
+                backend = WindowsFilesystemBackend(api=self._ApiProxy(before=replace))
+                with (
+                    mock.patch.object(
+                        mutation_support,
+                        "default_filesystem_backend",
+                        return_value=backend,
+                        create=True,
+                    ),
+                    self.assertRaisesRegex(OSError, "identity changed"),
+                ):
+                    if tail:
+                        read_bounded_regular_tail(item, 1024)
+                    else:
+                        read_bounded_regular(item, 1024)
+                self.assertEqual(old.read_bytes(), b"original")
+                self.assertEqual(item.read_bytes(), b"replacement")
+                self.assertEqual(backend._failed_closes, [])
 
     def test_create_rejects_replacement_before_post_open_observation(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

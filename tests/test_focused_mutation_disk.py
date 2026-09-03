@@ -60,6 +60,7 @@ from tools.focused_mutation_support.filesystem import (
 )
 from tools.focused_mutation_support.runner import CommandDiskStopped, CommandRunner
 from tools.focused_mutation_support.model import RunRecord
+from tools.focused_mutation_support import mutation as mutation_support
 from tools.focused_mutation_support.lease import (
     JanitorDiagnostic,
     ManagedScratch,
@@ -523,8 +524,176 @@ class BoundedCommandDrainTests(unittest.TestCase):
                 if os.name == "nt" and error.winerror == 1314:
                     self.skipTest("Windows symlink privilege is unavailable")
                 raise
-            with self.assertRaises(OSError):
-                read_bounded_regular(link, 1024)
+            for reader in (read_bounded_regular, read_bounded_regular_tail):
+                with self.subTest(reader=reader.__name__), self.assertRaises(OSError):
+                    reader(link, 1024)
+
+    @unittest.skipUnless(os.name == "nt", "Windows capability read contract")
+    def test_windows_bounded_reads_use_pinned_caller_capabilities_and_one_descriptor_owner(
+        self,
+    ) -> None:
+        for tail, expected in ((False, b"payload"), (True, b"load")):
+            with self.subTest(tail=tail), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                path = root / "input"
+                path.write_bytes(b"payload")
+                backend = _ManagedRecordingBackend(
+                    root,
+                    rename_requires_closed_descendants=True,
+                )
+                node = backend._new_node(
+                    EntryKind.REGULAR,
+                    SecurityDomain.CALLER,
+                    parent=backend.parent,
+                    name="input",
+                )
+                assert node.backing is not None
+                node.backing.write(b"payload")
+                node.backing.flush()
+
+                with mock.patch.object(
+                    mutation_support,
+                    "default_filesystem_backend",
+                    return_value=backend,
+                    create=True,
+                ):
+                    if tail:
+                        value, observed = read_bounded_regular_tail(path, 4)
+                        self.assertEqual(observed, 7)
+                    else:
+                        value = read_bounded_regular(path, 7)
+
+                self.assertEqual(value, expected)
+                self.assertEqual(
+                    backend.events,
+                    [
+                        "open-parent:pinned",
+                        "open_existing:input:read:pinned",
+                        f"close:{root.name}",
+                        "detach:input",
+                    ],
+                )
+                self.assertEqual(backend.live_resources, set())
+                backend._prune_detached()
+                self.assertEqual(backend.detached, {})
+
+    @unittest.skipUnless(os.name == "nt", "Windows capability read contract")
+    def test_windows_bounded_reads_preserve_primary_and_close_every_owner(self) -> None:
+        class InjectedDescriptorOwner:
+            def __init__(self, *, invalidate_before_read: bool = False) -> None:
+                self.fd = -1
+                self.invalidate_before_read = invalidate_before_read
+
+            def adopt(self, descriptor: int) -> None:
+                if self.invalidate_before_read:
+                    os.close(descriptor)
+                    self.fd = 1 << 30
+                else:
+                    self.fd = descriptor
+
+            def close_retry(self, _label: str) -> tuple[str, ...]:
+                if self.fd >= 0 and not self.invalidate_before_read:
+                    os.close(self.fd)
+                self.fd = -1
+                return ("injected bounded descriptor close failure",)
+
+        def backend_for(root: Path) -> _ManagedRecordingBackend:
+            backend = _ManagedRecordingBackend(
+                root,
+                rename_requires_closed_descendants=True,
+            )
+            node = backend._new_node(
+                EntryKind.REGULAR,
+                SecurityDomain.CALLER,
+                parent=backend.parent,
+                name="input",
+            )
+            assert node.backing is not None
+            node.backing.write(b"payload")
+            node.backing.flush()
+            return backend
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "input"
+            path.write_bytes(b"payload")
+
+            allocation_backend = backend_for(root)
+            with (
+                mock.patch.object(
+                    mutation_support,
+                    "default_filesystem_backend",
+                    return_value=allocation_backend,
+                    create=True,
+                ),
+                mock.patch.object(
+                    mutation_support,
+                    "_OwnedDescriptor",
+                    side_effect=MemoryError("injected descriptor allocation"),
+                    create=True,
+                ),
+                self.assertRaisesRegex(MemoryError, "descriptor allocation"),
+            ):
+                read_bounded_regular(path, 7)
+            self.assertEqual(allocation_backend.events, [])
+
+            parent_close_backend = backend_for(root)
+            parent_close_backend.failures[f"close:{root.name}"] = OSError(
+                "injected parent close"
+            )
+            with (
+                mock.patch.object(
+                    mutation_support,
+                    "default_filesystem_backend",
+                    return_value=parent_close_backend,
+                    create=True,
+                ),
+                self.assertRaisesRegex(OSError, "parent close"),
+            ):
+                read_bounded_regular(path, 7)
+            self.assertEqual(parent_close_backend.live_resources, set())
+
+            descriptor_close_backend = backend_for(root)
+            with (
+                mock.patch.object(
+                    mutation_support,
+                    "default_filesystem_backend",
+                    return_value=descriptor_close_backend,
+                    create=True,
+                ),
+                mock.patch.object(
+                    mutation_support,
+                    "_OwnedDescriptor",
+                    InjectedDescriptorOwner,
+                    create=True,
+                ),
+                self.assertRaisesRegex(OSError, "descriptor close failure"),
+            ):
+                read_bounded_regular(path, 7)
+            self.assertEqual(descriptor_close_backend.live_resources, set())
+
+            read_primary_backend = backend_for(root)
+            with (
+                mock.patch.object(
+                    mutation_support,
+                    "default_filesystem_backend",
+                    return_value=read_primary_backend,
+                    create=True,
+                ),
+                mock.patch.object(
+                    mutation_support,
+                    "_OwnedDescriptor",
+                    lambda: InjectedDescriptorOwner(invalidate_before_read=True),
+                    create=True,
+                ),
+                self.assertRaises(OSError) as raised,
+            ):
+                read_bounded_regular(path, 7)
+            self.assertIn(
+                "injected bounded descriptor close failure",
+                "\n".join(getattr(raised.exception, "__notes__", ())),
+            )
+            self.assertEqual(read_primary_backend.live_resources, set())
 
     def test_inventory_entry_count_is_bounded_before_entry_validation(self) -> None:
         inventory = "[" + ",".join("{}" for _ in range(10_001)) + "]"
