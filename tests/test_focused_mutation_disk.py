@@ -728,6 +728,32 @@ class BoundedCommandDrainTests(unittest.TestCase):
             self.assertEqual(len(tail), 16 * 1024)
             self.assertTrue(tail.endswith(b"TAIL"))
 
+    @unittest.skipUnless(os.name == "nt", "Windows shared-write tail contract")
+    def test_tail_read_excludes_growth_after_observed_bytes_are_read(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "compiler.log"
+            path.write_bytes(b"old")
+            real_read = os.read
+            grew = False
+
+            def read_then_grow(descriptor: int, count: int) -> bytes:
+                nonlocal grew
+                chunk = real_read(descriptor, count)
+                if not grew:
+                    with path.open("ab") as writer:
+                        writer.write(b"new")
+                        writer.flush()
+                        os.fsync(writer.fileno())
+                    grew = True
+                return chunk
+
+            with mock.patch.object(mutation_support.os, "read", read_then_grow):
+                tail, observed = read_bounded_regular_tail(path, 8)
+
+            self.assertEqual(observed, 3)
+            self.assertEqual(tail, b"old")
+            self.assertEqual(path.read_bytes(), b"oldnew")
+
 
 class _RecordedNode:
     def __init__(
