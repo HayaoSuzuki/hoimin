@@ -1,4 +1,6 @@
+import ast
 import os
+import re
 import subprocess
 import sys
 import unittest
@@ -44,6 +46,51 @@ def runtime_tags_for(system: str) -> frozenset[Tag]:
 
 
 class StandaloneContractTests(unittest.TestCase):
+    def test_windows_disk_safe_workflow_remains_in_ci_and_discovery(self) -> None:
+        repository_root = Path(__file__).resolve().parents[1]
+        workflow_source = (repository_root / "tools/focused_mutation.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn(
+            "disk-safe focused mutation requires the Windows native adapter",
+            workflow_source,
+        )
+
+        ci = (repository_root / ".github/workflows/ci.yml").read_text(
+            encoding="utf-8"
+        )
+        for job in ("quality", "wheel-smoke"):
+            with self.subTest(job=job):
+                section = re.search(
+                    rf"(?ms)^  {re.escape(job)}:\n(?P<body>.*?)(?=^  \S|\Z)",
+                    ci,
+                )
+                self.assertIsNotNone(section)
+                assert section is not None
+                self.assertIn("windows-latest", section.group("body"))
+
+        protected_classes = {
+            "DiskPolicyParserTests",
+            "AnchoredDiskGuardTests",
+            "ManagedScratchTests",
+            "OwnedOutputTests",
+            "FocusedMutationReportingTests",
+        }
+        for relative in (
+            "tests/test_focused_mutation_disk.py",
+            "tests/test_focused_mutation_reporting.py",
+        ):
+            source = (repository_root / relative).read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=relative)
+            for node in tree.body:
+                if isinstance(node, ast.ClassDef) and node.name in protected_classes:
+                    with self.subTest(file=relative, class_name=node.name):
+                        self.assertEqual(node.decorator_list, [])
+            self.assertNotIn(
+                "Task 8-10 RunStore activation is intentionally unmigrated on Windows",
+                source,
+            )
+
     def test_documentation_requires_build_before_standalone_smoke(self) -> None:
         repository_root = Path(__file__).resolve().parents[1]
         development = (repository_root / "docs/development.md").read_text(encoding="utf-8")

@@ -84,8 +84,11 @@ class FocusedMutationDocumentationTests(unittest.TestCase):
             "Cargo home is capacity-only",
             "Deferred cleanup is incomplete",
             "shared Cargo home is never traversed or deleted",
-            "Windows native disk-safety adapter remains unfinished",
-            "fails closed on Windows before mutation setup",
+            "Windows filesystem safety",
+            "pinned Win32 directory handles",
+            "NT handle-relative child opens, rename, and delete operations",
+            "Hoimin never falls back to pathname-based recursive deletion",
+            "current token user plus SYSTEM and Administrators protected ACL",
             "`3` means `budget_exhausted`",
             "deletes command spools after bounded extraction",
             "A spool cleanup failure is terminal",
@@ -98,6 +101,13 @@ class FocusedMutationDocumentationTests(unittest.TestCase):
         ):
             with self.subTest(required=required):
                 self.assertIn(required, normalized)
+        for obsolete in (
+            "Windows native disk-safety adapter remains unfinished",
+            "follow-up handoff",
+            "fails closed on Windows before mutation setup",
+        ):
+            with self.subTest(obsolete=obsolete):
+                self.assertNotIn(obsolete, normalized)
 
     def test_safe_example_uses_a_fresh_output_and_one_worker(self) -> None:
         development = (ROOT / "docs" / "development.md").read_text(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+import errno
 from enum import StrEnum
 from pathlib import Path
 import re
@@ -905,7 +906,7 @@ def _measure_capability(
     primary: BaseException | None = None
     try:
         check_deadline()
-        reopened = backend.reopen_directory(root, SharePolicy.SCAN)
+        reopened = backend.reopen_directory(root)
         try:
             check_deadline()
             if (
@@ -1388,7 +1389,12 @@ class DiskGuard:
                                 root.exact_path,
                                 SharePolicy.SCAN,
                             )
-                        except FileNotFoundError:
+                        except OSError as error:
+                            if (
+                                not isinstance(error, FileNotFoundError)
+                                and error.errno != errno.ENOENT
+                            ):
+                                raise
                             check_deadline()
                             if state.exact_identity is not None:
                                 raise DiskMeasurementError(

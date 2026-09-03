@@ -1,8 +1,10 @@
-import json
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime, timezone
 import inspect
 import io
+import json
 import os
 from pathlib import Path
 import re
@@ -14,7 +16,6 @@ import tempfile
 import time
 import unittest
 from unittest import mock
-from collections.abc import Sequence
 
 from tools.focused_mutation_support.model import (
     Candidate,
@@ -31,6 +32,11 @@ from tools.focused_mutation_support.disk import (
     DiskPolicy,
     DiskSecondary,
     DiskStopReason,
+)
+from tools.focused_mutation_support.filesystem import (
+    DirectoryCapability,
+    FilesystemBackend,
+    default_filesystem_backend,
 )
 from tools.focused_mutation_support.reporting import render_markdown
 from tools.focused_mutation_support.runner import (
@@ -355,7 +361,10 @@ def workflow_fixture(
         (),
         False,
         None,
-        DiskPolicy(scratch_root=Path(directory)),
+        DiskPolicy(
+            scratch_root=Path(directory),
+            sample_interval_seconds=60.0,
+        ),
     )
     dependencies = Dependencies(
         actual_clock,
@@ -364,6 +373,32 @@ def workflow_fixture(
         runner,
     )
     return options, dependencies, runner
+
+
+_REAL_DISK_GUARD_STOP_AND_JOIN = DiskGuard.stop_and_join
+
+
+def _stop_guard_but_report_timeout(guard: DiskGuard, timeout: float) -> bool:
+    _REAL_DISK_GUARD_STOP_AND_JOIN(guard, timeout)
+    return False
+
+
+@contextmanager
+def _close_captured_scratch_owners() -> Iterator[None]:
+    captured: list[ManagedScratch] = []
+    real_create = ManagedScratch.create
+
+    def capture(*args: object, **kwargs: object) -> ManagedScratch:
+        scratch = real_create(*args, **kwargs)
+        captured.append(scratch)
+        return scratch
+
+    with mock.patch.object(ManagedScratch, "create", side_effect=capture):
+        try:
+            yield
+        finally:
+            for scratch in reversed(captured):
+                scratch.close_capabilities()
 
 
 def command_record(*, exit_code: int = 0) -> CommandRecord:
@@ -400,6 +435,423 @@ def write_outcomes_json(
 
 
 class FocusedMutationReportingTests(unittest.TestCase):
+    def _task11_backend_dependency(self) -> None:
+        self.assertIn(
+            "filesystem_backend",
+            Dependencies.__dataclass_fields__,
+            "Task 11 must make the selected backend an explicit dependency",
+        )
+
+    def test_task11_main_reuses_the_option_validation_backend(self) -> None:
+        self._task11_backend_dependency()
+        backend = default_filesystem_backend()
+        observed: list[tuple[FilesystemBackend, FilesystemBackend]] = []
+
+        def completed(
+            _options: Options,
+            dependencies: Dependencies,
+            **_kwargs: object,
+        ) -> RunRecord:
+            runner_store = dependencies.runner._store
+            observed.append((dependencies.filesystem_backend, runner_store._backend))
+            return fixture_record(candidates=[], state=RunState.COMPLETED)
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch(
+                "tools.focused_mutation.default_filesystem_backend",
+                return_value=backend,
+            ) as workflow_selector,
+            mock.patch(
+                "tools.focused_mutation_support.disk.default_filesystem_backend",
+                return_value=backend,
+            ) as validation_selector,
+            mock.patch(
+                "tools.focused_mutation.run_workflow",
+                side_effect=completed,
+            ),
+        ):
+            exit_code = main(
+                [
+                    "--output",
+                    str(Path(directory) / "output"),
+                    "--scratch-root",
+                    directory,
+                    "--min-free-space",
+                    "1",
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        workflow_selector.assert_called_once_with()
+        validation_selector.assert_called_once_with()
+        self.assertEqual(observed, [(backend, backend)])
+
+    def test_task11_injected_backend_owns_every_workflow_boundary(self) -> None:
+        self._task11_backend_dependency()
+        with tempfile.TemporaryDirectory() as directory:
+            options, dependencies, runner = workflow_fixture(directory)
+            backend = default_filesystem_backend()
+            dependencies = replace(
+                dependencies,
+                filesystem_backend=backend,
+            )
+            output_backends: list[FilesystemBackend | None] = []
+            scratch_backends: list[FilesystemBackend | None] = []
+            store_arguments: list[
+                tuple[object, object, FilesystemBackend | None]
+            ] = []
+            guard_backends: list[FilesystemBackend | None] = []
+            real_output_create = OwnedOutput.create
+            real_scratch_create = ManagedScratch.create
+            real_store_init = RunStore.__init__
+            real_guard_init = DiskGuard.__init__
+
+            def create_output(*args: object, **kwargs: object) -> OwnedOutput:
+                output_backends.append(kwargs.get("backend"))
+                return real_output_create(*args, **kwargs)
+
+            def create_scratch(*args: object, **kwargs: object) -> ManagedScratch:
+                scratch_backends.append(kwargs.get("backend"))
+                return real_scratch_create(*args, **kwargs)
+
+            def initialize_store(
+                store: RunStore, *args: object, **kwargs: object
+            ) -> None:
+                store_arguments.append(
+                    (
+                        kwargs.get("command_root"),
+                        kwargs.get("command_root_capability"),
+                        kwargs.get("backend"),
+                    )
+                )
+                real_store_init(store, *args, **kwargs)
+
+            def initialize_guard(
+                guard: DiskGuard, *args: object, **kwargs: object
+            ) -> None:
+                guard_backends.append(kwargs.get("backend"))
+                real_guard_init(guard, *args, **kwargs)
+
+            with (
+                mock.patch.object(OwnedOutput, "create", side_effect=create_output),
+                mock.patch.object(ManagedScratch, "create", side_effect=create_scratch),
+                mock.patch.object(RunStore, "__init__", new=initialize_store),
+                mock.patch.object(DiskGuard, "__init__", new=initialize_guard),
+                mock.patch(
+                    "tools.focused_mutation.default_filesystem_backend",
+                    side_effect=AssertionError("workflow selected a second backend"),
+                ),
+                mock.patch(
+                    "tools.focused_mutation_support.disk.default_filesystem_backend",
+                    side_effect=AssertionError("disk selected a second backend"),
+                ),
+                mock.patch(
+                    "tools.focused_mutation_support.lease.default_filesystem_backend",
+                    side_effect=AssertionError("scratch selected a second backend"),
+                ),
+                mock.patch(
+                    "tools.focused_mutation_support.store.default_filesystem_backend",
+                    side_effect=AssertionError("store selected a second backend"),
+                ),
+            ):
+                record = run_workflow(options, dependencies)
+
+            self.assertEqual(
+                record.state,
+                RunState.COMPLETED,
+                (
+                    record.error,
+                    record.report_error,
+                    record.secondary_errors,
+                    record.cleanup,
+                ),
+            )
+            self.assertEqual(output_backends, [backend])
+            self.assertEqual(scratch_backends, [backend])
+            self.assertEqual(guard_backends, [backend, backend, backend])
+            authoritative = [
+                item for item in store_arguments if item[2] is backend
+            ]
+            self.assertEqual(authoritative, [(None, None, backend)])
+            self.assertTrue(runner.calls)
+
+    def test_task11_preflight_faults_release_owners_before_launch(self) -> None:
+        self._task11_backend_dependency()
+        cases = (
+            "output root pin",
+            "managed root create",
+            "first owned sample",
+            "bounded janitor selection",
+        )
+        for label in cases:
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                options, dependencies, runner = workflow_fixture(directory)
+                backend = default_filesystem_backend()
+                dependencies = replace(
+                    dependencies,
+                    filesystem_backend=backend,
+                )
+                original_open_root = backend.open_root
+                original_create_secure_root = backend.create_secure_root
+                original_entries_owned = backend.entries_owned
+
+                def open_root(*args: object, **kwargs: object) -> DirectoryCapability:
+                    if label == "output root pin":
+                        raise OSError(f"{label}: {options.output}")
+                    return original_open_root(*args, **kwargs)
+
+                def create_secure_root(
+                    *args: object, **kwargs: object
+                ) -> DirectoryCapability:
+                    if label == "managed root create":
+                        raise OSError(
+                            f"{label}: {options.disk_policy.scratch_root}"
+                        )
+                    return original_create_secure_root(*args, **kwargs)
+
+                def entries_owned(
+                    directory_capability: DirectoryCapability,
+                ) -> object:
+                    name = directory_capability.path_hint.name
+                    if (
+                        label == "bounded janitor selection"
+                        and name == "hoimin-focused-v1"
+                    ):
+                        raise OSError(f"{label}: {directory_capability.path_hint}")
+                    if label == "first owned sample" and name.startswith("run-"):
+                        raise OSError(f"{label}: {directory_capability.path_hint}")
+                    return original_entries_owned(directory_capability)
+
+                with (
+                    mock.patch.object(backend, "open_root", side_effect=open_root),
+                    mock.patch.object(
+                        backend,
+                        "create_secure_root",
+                        side_effect=create_secure_root,
+                    ),
+                    mock.patch.object(
+                        backend,
+                        "entries_owned",
+                        side_effect=entries_owned,
+                    ),
+                ):
+                    try:
+                        record = run_workflow(options, dependencies)
+                    except OSError as error:
+                        observed = str(error) + " " + " ".join(
+                            getattr(error, "__notes__", ())
+                        )
+                    else:
+                        observed = " ".join(
+                            filter(None, (record.error, record.report_error))
+                        )
+
+                self.assertIn(label, observed)
+                self.assertEqual(runner.calls, [])
+                self.assertFalse((options.output / ".hoimin-output-owner").exists())
+                managed = options.disk_policy.scratch_root / "hoimin-focused-v1"
+                if managed.exists():
+                    self.assertFalse(
+                        any(
+                            child.name.startswith(
+                                ("run-", ".staging-", ".deleting-")
+                            )
+                            for child in managed.iterdir()
+                        )
+                    )
+
+    def test_task11_real_runner_constructor_failure_closes_command_root(self) -> None:
+        self._task11_backend_dependency()
+        with tempfile.TemporaryDirectory() as directory:
+            options, dependencies, _runner = workflow_fixture(directory)
+            backend = default_filesystem_backend()
+            runner = CommandRunner(RunStore(options.output, backend=backend))
+            dependencies = replace(
+                dependencies,
+                runner=runner,
+                filesystem_backend=backend,
+            )
+            captured: list[tuple[RunStore, DirectoryCapability]] = []
+            close_attempts = 0
+            real_capability_close = DirectoryCapability.close
+
+            def reject_command_root(
+                store: RunStore,
+                capability: DirectoryCapability,
+                *,
+                require_managed: bool,
+            ) -> None:
+                self.assertTrue(require_managed)
+                self.assertIs(store._backend, backend)
+                self.assertTrue(capability.owned_by(backend))
+                captured.append((store, capability))
+                raise OSError("command root constructor primary")
+
+            def close_with_transient_error(
+                capability: DirectoryCapability,
+            ) -> None:
+                nonlocal close_attempts
+                if captured and capability is captured[0][1]:
+                    close_attempts += 1
+                    if close_attempts == 1:
+                        raise OSError("command root close secondary")
+                real_capability_close(capability)
+
+            with (
+                mock.patch.object(
+                    RunStore,
+                    "_validate_command_root",
+                    autospec=True,
+                    side_effect=reject_command_root,
+                ),
+                mock.patch.object(
+                    DirectoryCapability,
+                    "close",
+                    autospec=True,
+                    side_effect=close_with_transient_error,
+                ),
+                self.assertRaisesRegex(
+                    OSError, "command root constructor primary"
+                ) as raised,
+            ):
+                run_workflow(options, dependencies)
+
+            self.assertEqual(len(captured), 1)
+            self.assertTrue(captured[0][1].closed)
+            self.assertEqual(close_attempts, 2)
+            self.assertIn(
+                "command root close secondary",
+                " ".join(getattr(raised.exception, "__notes__", ())),
+            )
+            self.assertEqual(runner._store._live_root_tokens, set())
+
+    def test_task11_final_guard_failure_closes_all_acquired_owners(self) -> None:
+        self._task11_backend_dependency()
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
+            options, dependencies, _runner = workflow_fixture(directory)
+            options = replace(
+                options,
+                disk_policy=replace(options.disk_policy, keep_scratch=True),
+            )
+            backend = default_filesystem_backend()
+            dependencies = replace(dependencies, filesystem_backend=backend)
+            captured_scratch: list[ManagedScratch] = []
+            captured_output: list[OwnedOutput] = []
+            real_scratch_create = ManagedScratch.create
+            real_output_create = OwnedOutput.create
+            real_output_reopen = OwnedOutput.reopen_for_meter
+            output_reopens = 0
+
+            def capture_scratch(
+                *args: object, **kwargs: object
+            ) -> ManagedScratch:
+                scratch = real_scratch_create(*args, **kwargs)
+                captured_scratch.append(scratch)
+                return scratch
+
+            def capture_output(*args: object, **kwargs: object) -> OwnedOutput:
+                output = real_output_create(*args, **kwargs)
+                captured_output.append(output)
+                return output
+
+            def fail_final_output_meter(output: OwnedOutput) -> DirectoryCapability:
+                nonlocal output_reopens
+                output_reopens += 1
+                if output_reopens == 2:
+                    raise OSError("final output meter primary")
+                return real_output_reopen(output)
+
+            with (
+                mock.patch.object(
+                    ManagedScratch,
+                    "create",
+                    side_effect=capture_scratch,
+                ),
+                mock.patch.object(
+                    OwnedOutput,
+                    "create",
+                    side_effect=capture_output,
+                ),
+                mock.patch.object(
+                    OwnedOutput,
+                    "reopen_for_meter",
+                    autospec=True,
+                    side_effect=fail_final_output_meter,
+                ),
+                self.assertRaisesRegex(
+                    OSError, "final output meter primary"
+                ) as raised,
+            ):
+                run_workflow(options, dependencies)
+
+            scratch = captured_scratch[0]
+            output = captured_output[0]
+            scratch_owner_open = scratch._root is not None and scratch._root.is_open
+            output_owner_open = output._directory.is_open
+            marker_present = (options.output / ".hoimin-output-owner").exists()
+            scratch.close_capabilities()
+            output.close(remove_marker=True)
+
+            notes = getattr(raised.exception, "__notes__", ())
+            self.assertFalse(scratch_owner_open, notes)
+            self.assertFalse(output_owner_open, notes)
+            self.assertFalse(marker_present, notes)
+
+    def test_native_fake_workflow_completes_and_releases_owners(self) -> None:
+        self._task11_backend_dependency()
+        with tempfile.TemporaryDirectory() as raw:
+            options, dependencies, runner = workflow_fixture(raw)
+            close_states: list[tuple[int, bool]] = []
+            real_close_command_root = RunStore.close_command_root
+
+            def observe_close(store: RunStore) -> tuple[str, ...]:
+                close_states.append(
+                    (len(store._live_root_tokens), store._command_root is None)
+                )
+                return real_close_command_root(store)
+
+            with mock.patch.object(
+                RunStore,
+                "close_command_root",
+                autospec=True,
+                side_effect=observe_close,
+            ):
+                record = run_workflow(options, dependencies)
+
+            self.assertEqual(
+                record.state,
+                RunState.COMPLETED,
+                (
+                    record.error,
+                    record.report_error,
+                    record.secondary_errors,
+                    record.cleanup,
+                ),
+            )
+            self.assertTrue((options.output / "run.json").is_file())
+            self.assertTrue((options.output / "report.md").is_file())
+            self.assertFalse(
+                (options.output / ".hoimin-output-owner").exists()
+            )
+            self.assertTrue(runner.calls)
+            self.assertTrue(close_states)
+            self.assertTrue(
+                all(state == (0, True) for state in close_states),
+                close_states,
+            )
+            self.assertIsNotNone(record.scratch)
+            assert record.scratch is not None
+            scratch_path = record.scratch.get("path")
+            self.assertIsInstance(scratch_path, str)
+            assert isinstance(scratch_path, str)
+            self.assertFalse(Path(scratch_path).exists())
+            self.assertNotIn("native adapter", record.report_error or "")
+
+    @unittest.skipUnless(os.name == "nt", "requires Windows native workflow")
+    def test_windows_native_fake_workflow_completes_and_cleans_scratch(self) -> None:
+        self.test_native_fake_workflow_completes_and_releases_owners()
+
     def test_run_record_compatibility_dict_excludes_private_spool_capability(
         self,
     ) -> None:
@@ -804,7 +1256,7 @@ class FocusedMutationReportingTests(unittest.TestCase):
 
             self.assertEqual(record.state, RunState.COMPLETED)
             self.assertTrue(runner.calls)
-            self.assertTrue((options.output / ".hoimin-output-owner").is_file())
+            self.assertFalse((options.output / ".hoimin-output-owner").exists())
 
     def test_missing_exact_mutation_outcome_keeps_run_incomplete(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -814,7 +1266,11 @@ class FocusedMutationReportingTests(unittest.TestCase):
 
             record = run_workflow(options, dependencies)
 
-            self.assertEqual(record.state, RunState.COMMAND_FAILED)
+            self.assertEqual(
+                record.state,
+                RunState.COMMAND_FAILED,
+                (record.error, record.disk_stop, record.secondary_errors),
+            )
             self.assertEqual(record.candidates[0].state, CandidateState.ERROR)
             persisted = json.loads((options.output / "run.json").read_text())
             self.assertEqual(persisted["state"], RunState.COMMAND_FAILED.value)
@@ -833,6 +1289,7 @@ class FocusedMutationReportingTests(unittest.TestCase):
                 ),
             )
             with (
+                _close_captured_scratch_owners(),
                 mock.patch.object(
                     RunStore,
                     "initialize",
@@ -840,7 +1297,8 @@ class FocusedMutationReportingTests(unittest.TestCase):
                 ),
                 mock.patch(
                     "tools.focused_mutation_support.disk.DiskGuard.stop_and_join",
-                    return_value=False,
+                    autospec=True,
+                    side_effect=_stop_guard_but_report_timeout,
                 ),
                 self.assertRaisesRegex(OSError, "injected checkpoint"),
             ):
@@ -898,13 +1356,21 @@ class FocusedMutationReportingTests(unittest.TestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             options, dependencies, _ = workflow_fixture(directory)
-            with mock.patch(
-                "tools.focused_mutation_support.disk.DiskGuard.stop_and_join",
-                return_value=False,
+            with (
+                _close_captured_scratch_owners(),
+                mock.patch(
+                    "tools.focused_mutation_support.disk.DiskGuard.stop_and_join",
+                    autospec=True,
+                    side_effect=_stop_guard_but_report_timeout,
+                ),
             ):
                 record = run_workflow(options, dependencies)
 
-            self.assertEqual(record.state, RunState.COMMAND_FAILED)
+            self.assertEqual(
+                record.state,
+                RunState.COMMAND_FAILED,
+                (record.error, record.disk_stop, record.secondary_errors),
+            )
             self.assertIn("monitor", record.error)
             self.assertEqual(record.cleanup["status"], "deferred")
             remaining = record.cleanup["remaining_root"]
@@ -932,7 +1398,7 @@ class FocusedMutationReportingTests(unittest.TestCase):
             options, dependencies, _ = workflow_fixture(directory)
 
             def timeout_after_threshold(guard: DiskGuard, timeout: float) -> bool:
-                del timeout
+                _REAL_DISK_GUARD_STOP_AND_JOIN(guard, timeout)
                 failure = DiskFailure(
                     code="workspace.size.exceeded",
                     reason=DiskStopReason.WORKSPACE_SIZE_EXCEEDED,
@@ -941,10 +1407,13 @@ class FocusedMutationReportingTests(unittest.TestCase):
                 guard.latest_failure = failure
                 return False
 
-            with mock.patch(
-                "tools.focused_mutation_support.disk.DiskGuard.stop_and_join",
-                autospec=True,
-                side_effect=timeout_after_threshold,
+            with (
+                _close_captured_scratch_owners(),
+                mock.patch(
+                    "tools.focused_mutation_support.disk.DiskGuard.stop_and_join",
+                    autospec=True,
+                    side_effect=timeout_after_threshold,
+                ),
             ):
                 record = run_workflow(options, dependencies)
 
@@ -981,7 +1450,7 @@ class FocusedMutationReportingTests(unittest.TestCase):
             def threshold_before_process_drain(
                 guard: DiskGuard, timeout: float
             ) -> bool:
-                del timeout
+                _REAL_DISK_GUARD_STOP_AND_JOIN(guard, timeout)
                 failure = DiskFailure(
                     code="workspace.size.exceeded",
                     reason=DiskStopReason.WORKSPACE_SIZE_EXCEEDED,
@@ -1012,7 +1481,6 @@ class FocusedMutationReportingTests(unittest.TestCase):
             captured: dict[str, DiskObservation] = {}
 
             def timeout_after_link(guard: DiskGuard, timeout: float) -> bool:
-                del timeout
                 roots = {
                     root.enforcement: root.path
                     for root in guard.roots
@@ -1020,14 +1488,20 @@ class FocusedMutationReportingTests(unittest.TestCase):
                 scratch_file = roots["owned:scratch"] / "shared-hardlink"
                 scratch_file.write_bytes(b"x" * 32)
                 os.link(scratch_file, roots["owned:output"] / "shared-hardlink")
-                guard.sample()
-                captured["prior"] = guard.observations[-1]
+                with guard._sample_lock:
+                    guard._sample_locked()
+                    captured["prior"] = guard.observations[-1]
+                    guard._stop.set()
+                _REAL_DISK_GUARD_STOP_AND_JOIN(guard, timeout)
                 return False
 
-            with mock.patch(
-                "tools.focused_mutation_support.disk.DiskGuard.stop_and_join",
-                autospec=True,
-                side_effect=timeout_after_link,
+            with (
+                _close_captured_scratch_owners(),
+                mock.patch(
+                    "tools.focused_mutation_support.disk.DiskGuard.stop_and_join",
+                    autospec=True,
+                    side_effect=timeout_after_link,
+                ),
             ):
                 record = run_workflow(options, dependencies)
 
@@ -1402,6 +1876,8 @@ class FocusedMutationReportingTests(unittest.TestCase):
             options, dependencies, _ = workflow_fixture(directory)
 
             def publish_failure(guard: object, timeout: float) -> bool:
+                assert isinstance(guard, DiskGuard)
+                _REAL_DISK_GUARD_STOP_AND_JOIN(guard, timeout)
                 guard.failure = DiskFailure(  # type: ignore[attr-defined]
                     code="filesystem.reserve.reached",
                     reason=DiskStopReason.FILESYSTEM_RESERVE_REACHED,
@@ -1470,7 +1946,8 @@ class FocusedMutationReportingTests(unittest.TestCase):
             )
 
             def publish_failure(guard: object, timeout: float) -> bool:
-                del timeout
+                assert isinstance(guard, DiskGuard)
+                _REAL_DISK_GUARD_STOP_AND_JOIN(guard, timeout)
                 guard.failure = DiskFailure(  # type: ignore[attr-defined]
                     code="filesystem.reserve.reached",
                     reason=DiskStopReason.FILESYSTEM_RESERVE_REACHED,
@@ -1540,7 +2017,7 @@ class FocusedMutationReportingTests(unittest.TestCase):
             )
 
             def publish_both(guard: DiskGuard, timeout: float) -> bool:
-                del timeout
+                _REAL_DISK_GUARD_STOP_AND_JOIN(guard, timeout)
                 guard.failure = sticky
                 guard.latest_failure = later
                 return True
@@ -1872,7 +2349,10 @@ class FocusedMutationReportingTests(unittest.TestCase):
                 runner,
             )
 
-            record = run_workflow(options, dependencies)
+            try:
+                record = run_workflow(options, dependencies)
+            except ValueError as error:
+                self.fail(f"workflow command-root transfer failed: {error}")
 
             probe_commands = [
                 command
@@ -2866,10 +3346,10 @@ class FocusedMutationReportingTests(unittest.TestCase):
             store.commands.mkdir()
             probe = SubprocessProbe(root, CommandRunner(store))
             output_text = probe.text(
-                [sys.executable, "-c", "print('日本語.py')"], 12.0
+                [sys.executable, "-c", "print('日本語.py', end='')"], 12.0
             )
 
-        self.assertEqual(output_text, "日本語.py\n")
+        self.assertEqual(output_text, "日本語.py")
 
     def test_initial_repository_validation_timeout_exits_two(self) -> None:
         with (

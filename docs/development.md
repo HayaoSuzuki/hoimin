@@ -505,14 +505,23 @@ Focused results guide short test-improvement loops. A required complete
 inventory needs the external safety boundary described below.
 Operators do not use `--iterate` for the required final inventory.
 
-### Windows handoff
+### Windows filesystem safety
 
-The Windows native disk-safety adapter remains unfinished. The focused wrapper
-fails closed on Windows before mutation setup, so it neither creates scratch
-trees nor starts cargo-mutants there. Windows work still needs handle-relative
-metering, quota and reserve queries, lease and marker validation, bounded
-deletion, deadline checks, and native concurrency tests. Complete those items
-on a Windows machine before enabling the wrapper.
+The focused wrapper uses pinned Win32 directory handles and NT handle-relative
+child opens, rename, and delete operations on Windows. Meter handles share
+deletion; output roots deny delete sharing while report evidence is live;
+publication and cleanup acquire mutation authority before descendant marker
+handles. Reparse points, identity or volume changes, unsupported native
+identities, network volumes without a handle-derived volume-GUID/capacity
+contract, sharing violations, and close failures fail closed before mutation
+launch.
+
+Windows uses the same 8 GiB owned-byte default, 10 GiB free-space reserve,
+five-second/250,000-entry meter bound, 60-second owner cleanup bound, and
+30-second bounded janitor as POSIX. Hoimin never falls back to pathname-based
+recursive deletion. Caller output directories keep their inherited ACLs;
+Hoimin-managed protocol objects use the current token user plus SYSTEM and
+Administrators protected ACL.
 
 ## Rust mutation testing
 

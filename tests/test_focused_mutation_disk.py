@@ -258,14 +258,21 @@ class DiskPolicyParserTests(unittest.TestCase):
                     "00000000-0000-4000-8000-000000000011",
                 )
 
-    def test_windows_fails_closed_before_disk_safe_runtime_setup(self) -> None:
-        namespace = _parser().parse_args(["--output", r"C:\out"])
-
-        with (
-            mock.patch("tools.focused_mutation.os.name", "nt"),
-            self.assertRaisesRegex(ValueError, "Windows native adapter"),
-        ):
-            options_from_arguments(namespace, Path(r"C:\repo"))
+    def test_options_accept_the_selected_native_backend(self) -> None:
+        namespace = _parser().parse_args(
+            ["--output", "out", "--file", "src/lib.rs"]
+        )
+        try:
+            with mock.patch(
+                "tools.focused_mutation_support.disk.canonical_scratch_root",
+                return_value=(
+                    Path("C:/scratch") if os.name == "nt" else Path("/scratch")
+                ),
+            ):
+                options = options_from_arguments(namespace, Path.cwd())
+        except ValueError as error:
+            self.fail(f"selected native backend was rejected: {error}")
+        self.assertEqual(options.disk_policy.jobs, 1)
 
     def test_keep_scratch_is_recorded_without_disabling_monitoring(self) -> None:
         policy = self.parse("--keep-scratch")
@@ -510,7 +517,12 @@ class BoundedCommandDrainTests(unittest.TestCase):
             target = root / "target.json"
             target.write_text("[]", encoding="utf-8")
             link = root / "link.json"
-            link.symlink_to(target)
+            try:
+                link.symlink_to(target)
+            except OSError as error:
+                if os.name == "nt" and error.winerror == 1314:
+                    self.skipTest("Windows symlink privilege is unavailable")
+                raise
             with self.assertRaises(OSError):
                 read_bounded_regular(link, 1024)
 
@@ -676,6 +688,14 @@ class _RecordingFilesystemBackend(FilesystemBackend):
         self.allocation_error: BaseException | None = None
         self.operations: list[str] = []
         self.open_root_calls: list[Path] = []
+        self.reopen_calls: list[
+            tuple[
+                FileIdentity,
+                FilesystemIdentity,
+                SharePolicy,
+                SharePolicy | None,
+            ]
+        ] = []
         self.available_calls: list[DirectoryCapability] = []
         self.allocation_calls: list[DirectoryCapability] = []
         self.active_resources = 0
@@ -710,6 +730,7 @@ class _RecordingFilesystemBackend(FilesystemBackend):
         path_hint: Path,
         *,
         close_failures: int | None = None,
+        share_policy: SharePolicy = SharePolicy.SCAN,
     ) -> DirectoryCapability:
         resource = _RecordedResource(
             node,
@@ -730,7 +751,7 @@ class _RecordingFilesystemBackend(FilesystemBackend):
             logical_size=node.logical_size,
             modified_ns=0,
             security_domain=SecurityDomain.CALLER,
-            share_policy=SharePolicy.SCAN,
+            share_policy=share_policy,
             created=False,
             path_hint=path_hint,
         )
@@ -801,8 +822,27 @@ class _RecordingFilesystemBackend(FilesystemBackend):
         share_policy: SharePolicy | None = None,
     ) -> DirectoryCapability:
         self.operations.append("reopen_directory")
+        self.reopen_calls.append(
+            (
+                directory.identity,
+                directory.filesystem,
+                directory.share_policy,
+                share_policy,
+            )
+        )
+        if (
+            directory.share_policy is SharePolicy.PINNED
+            and share_policy is SharePolicy.SCAN
+        ):
+            raise ValueError("duplicate handle cannot change its share mode")
         resource = self._resource(directory)
-        reopened = self.directory_capability(resource.node, directory.path_hint)
+        reopened = self.directory_capability(
+            resource.node,
+            directory.path_hint,
+            share_policy=(
+                directory.share_policy if share_policy is None else share_policy
+            ),
+        )
         self.after_reopen()
         return reopened
 
@@ -5414,6 +5454,41 @@ class AnchoredDiskGuardTests(unittest.TestCase):
         self.assertEqual(backend.closed_identities.count(original.identity), 2)
         self.assertEqual(backend.active_resources, 0)
 
+    def test_pinned_factory_is_measured_through_same_policy_capability(self) -> None:
+        path = Path("C:/recorded/pinned")
+        backend = _RecordingFilesystemBackend()
+        filesystem = FilesystemIdentity(71, 73, 79)
+        root = self._node(filesystem=filesystem)
+        root.add(
+            "payload",
+            self._node(
+                filesystem=filesystem,
+                kind=EntryKind.REGULAR,
+                logical_size=11,
+            ),
+        )
+        backend.register(path, root)
+        retained = backend.directory_capability(
+            root,
+            path,
+            share_policy=SharePolicy.PINNED,
+        )
+        guard = DiskGuard(
+            self._policy(path),
+            [MeterRoot(path, capability_factory=lambda: retained)],
+            backend=backend,
+        )
+
+        self.assertIsNone(guard.sample())
+        self.assertEqual(guard.observations[-1].owned_bytes, 11)
+        self.assertEqual(
+            backend.reopen_calls[0],
+            (root.identity, filesystem, SharePolicy.PINNED, None),
+        )
+        self.assertEqual(backend.open_root_calls, [])
+        self.assertEqual(guard.close(), ())
+        self.assertEqual(backend.active_resources, 0)
+
     def test_factory_capability_validation_rolls_back_every_owner(self) -> None:
         path = Path("C:/recorded/owned")
         backend = _RecordingFilesystemBackend()
@@ -5588,6 +5663,45 @@ class AnchoredDiskGuardTests(unittest.TestCase):
         self.assertEqual(backend.closed_identities.count(exact.identity), 1)
         self.assertEqual(backend.active_resources, 1)
         self.assertEqual(guard.close(), ())
+
+    def test_windows_missing_errors_are_normalized_by_enoent(self) -> None:
+        path = Path("C:/recorded/owned")
+        exact_path = Path("C:/recorded/missing")
+        for winerror in (2, 3):
+            with self.subTest(winerror=winerror):
+                backend = _RecordingFilesystemBackend()
+                retained = self._node()
+                exact = self._node(filesystem=retained.filesystem)
+                backend.register(path, retained)
+                missing = OSError()
+                missing.args = (errno.ENOENT, "native path is absent")
+                missing.errno = errno.ENOENT
+                missing.filename = str(exact_path)
+                missing.winerror = winerror  # type: ignore[attr-defined]
+                backend.open_root_events[exact_path] = [missing, exact]
+                guard, _ = self._recording_guard(
+                    path,
+                    retained,
+                    backend=backend,
+                    meter_root=MeterRoot(
+                        path,
+                        charge_owned_bytes=False,
+                        enforcement="capacity_only:windows-missing",
+                        exact_path=exact_path,
+                    ),
+                )
+
+                self.assertIsNone(guard.sample())
+                self.assertIsNone(guard.sample())
+                self.assertEqual(
+                    backend.open_root_calls,
+                    [path, exact_path, exact_path],
+                )
+                self.assertEqual(
+                    backend.closed_identities.count(exact.identity),
+                    1,
+                )
+                self.assertEqual(guard.close(), ())
 
     def test_exact_path_close_failure_gets_a_final_cleanup_attempt(self) -> None:
         path = Path("C:/recorded/owned")
@@ -6709,10 +6823,6 @@ class AnchoredDiskGuardTests(unittest.TestCase):
         )
         launch.assert_not_called()
 
-    @unittest.skipIf(
-        os.name == "nt",
-        "Task 8-10 RunStore activation is intentionally unmigrated on Windows",
-    )
     def test_preflight_stop_happens_before_child_launch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -6783,10 +6893,6 @@ class AnchoredDiskGuardTests(unittest.TestCase):
         self.assertTrue(guard.stop_and_join(1.0))
         self.assertTrue(retained.closed)
 
-    @unittest.skipIf(
-        os.name == "nt",
-        "Task 8-10 RunStore activation is intentionally unmigrated on Windows",
-    )
     def test_periodic_size_stop_terminates_and_reaps_the_command(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

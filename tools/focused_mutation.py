@@ -49,6 +49,12 @@ from tools.focused_mutation_support.lease import (
     ScratchCleanupStatus,
     validate_reported_path,
 )
+from tools.focused_mutation_support.filesystem import (
+    DirectoryCapability,
+    FilesystemBackend,
+    SharePolicy,
+    default_filesystem_backend,
+)
 from tools.focused_mutation_support.model import (
     Candidate,
     CandidateState,
@@ -99,6 +105,9 @@ class Dependencies:
     probe: CommandProbe
     runner: CommandRunner
     restore_signal_handlers: Callable[[], None] | None = None
+    filesystem_backend: FilesystemBackend = field(
+        default_factory=default_filesystem_backend
+    )
 
 
 @dataclass(frozen=True)
@@ -279,6 +288,7 @@ def _prepare_runtime(
     owned_output: OwnedOutput,
     run_id: str,
 ) -> WorkflowRuntime:
+    backend = dependencies.filesystem_backend
     scratch: ManagedScratch | None = None
     guard: DiskGuard | None = None
     store: RunStore | None = None
@@ -290,20 +300,25 @@ def _prepare_runtime(
             run_id=run_id,
             stale_cleanup=stale_cleanup,
             stale_diagnostics=stale_cleanup_diagnostics,
+            backend=backend,
         )
         command_root = scratch.create_child("commands")
         inventory_dir = scratch.create_child("inventory")
         cargo_target = scratch.create_child("cargo-target")
         process_tmp = scratch.create_child("tmp")
+        uses_command_spool = isinstance(dependencies.runner, CommandRunner)
+        command_root_capability = (
+            scratch.open_child("commands", SharePolicy.MUTATION)
+            if uses_command_spool
+            else None
+        )
         store = RunStore(
             owned_output,
-            command_root=(
-                command_root
-                if isinstance(dependencies.runner, CommandRunner)
-                else None
-            ),
+            command_root=command_root if uses_command_spool else None,
+            command_root_capability=command_root_capability,
+            backend=backend,
         )
-        if isinstance(dependencies.runner, CommandRunner):
+        if uses_command_spool:
             dependencies.runner.set_store(store)
         cargo_home = Path(
             os.environ.get("CARGO_HOME", str(Path.home() / ".cargo"))
@@ -320,8 +335,16 @@ def _prepare_runtime(
         guard = DiskGuard(
             options.disk_policy,
             [
-                MeterRoot(scratch.path, enforcement="owned:scratch"),
-                MeterRoot(options.output, enforcement="owned:output"),
+                MeterRoot(
+                    scratch.path,
+                    enforcement="owned:scratch",
+                    capability_factory=scratch.reopen_for_meter,
+                ),
+                MeterRoot(
+                    options.output,
+                    enforcement="owned:output",
+                    capability_factory=owned_output.reopen_for_meter,
+                ),
                 MeterRoot(
                     capacity_root,
                     charge_owned_bytes=False,
@@ -331,6 +354,7 @@ def _prepare_runtime(
             ],
             monotonic=dependencies.monotonic,
             heartbeat=scratch.refresh_heartbeat,
+            backend=backend,
         )
         guard.start()
 
@@ -395,6 +419,7 @@ def _prepare_runtime(
                 "TEMP": str(process_tmp),
                 "CARGO_TARGET_DIR": str(cargo_target),
                 "CARGO_INCREMENTAL": "0",
+                "PYTHONUTF8": "1",
                 "HOIMIN_FOCUSED_MUTATION_OUTER_DEPTH_GUARD": "1",
             },
         )
@@ -486,6 +511,7 @@ class SubprocessProbe:
                 cwd=self.cwd,
                 timeout=timeout,
                 label=f"probe-{self.sequence:04d}",
+                environment={"PYTHONUTF8": "1"},
                 max_log_bytes=64 * 1024,
             )
         else:
@@ -711,10 +737,12 @@ def run_workflow(
     ):
         raise ValueError("output path must not overlap managed scratch")
     run_id = str(uuid.uuid4())
+    backend = dependencies.filesystem_backend
     owned_output = OwnedOutput.create(
         options.output,
         run_id,
         min_free_bytes=options.disk_policy.min_free_bytes,
+        backend=backend,
     )
     try:
         if owned_output.available_bytes() <= options.disk_policy.min_free_bytes:
@@ -1290,8 +1318,15 @@ def run_workflow(
         if cleanup_safe:
             execution_meter = DiskGuard(
                 options.disk_policy,
-                [MeterRoot(scratch.path, enforcement="owned:scratch")],
+                [
+                    MeterRoot(
+                        scratch.path,
+                        enforcement="owned:scratch",
+                        capability_factory=scratch.reopen_for_meter,
+                    )
+                ],
                 monotonic=dependencies.monotonic,
+                backend=backend,
             )
             execution_measurement_failure = execution_meter.sample()
             if execution_meter.observations:
@@ -1406,10 +1441,12 @@ def run_workflow(
             record.error = record.error or "scratch cleanup incomplete"
         elif cleanup.status is ScratchCleanupStatus.CLEAN and cleanup.details:
             _append_report_error(record, cleanup.details)
-        if joined:
-            _append_report_error(record, scratch.close_capabilities())
         final_roots = [
-            MeterRoot(options.output, enforcement="owned:output"),
+            MeterRoot(
+                options.output,
+                enforcement="owned:output",
+                capability_factory=owned_output.reopen_for_meter,
+            ),
             MeterRoot(
                 capacity_root,
                 charge_owned_bytes=False,
@@ -1417,19 +1454,93 @@ def run_workflow(
                 exact_path=capacity_exact,
             ),
         ]
-        if (
-            joined
-            and cleanup.remaining_root is not None
-            and scratch.path.exists()
-        ):
-            final_roots.insert(
-                0, MeterRoot(scratch.path, enforcement="owned:scratch")
+        scratch_meter_capability: DirectoryCapability | None = None
+        try:
+            if joined and cleanup.remaining_root is not None:
+                try:
+                    scratch_meter_capability = scratch.reopen_for_meter()
+                except OSError as error:
+                    if str(error) != "managed run root capability is unavailable":
+                        raise
+                else:
+                    def transfer_scratch_meter_capability() -> DirectoryCapability:
+                        nonlocal scratch_meter_capability
+                        capability = scratch_meter_capability
+                        if capability is None:
+                            raise RuntimeError(
+                                "scratch meter capability was already transferred"
+                            )
+                        scratch_meter_capability = None
+                        return capability
+
+                    final_roots.insert(
+                        0,
+                        MeterRoot(
+                            scratch.path,
+                            enforcement="owned:scratch",
+                            capability_factory=transfer_scratch_meter_capability,
+                        ),
+                    )
+            final_guard = DiskGuard(
+                options.disk_policy,
+                final_roots,
+                monotonic=dependencies.monotonic,
+                backend=backend,
             )
-        final_guard = DiskGuard(
-            options.disk_policy,
-            final_roots,
-            monotonic=dependencies.monotonic,
-        )
+        except BaseException as primary_error:
+            try:
+                if (
+                    scratch_meter_capability is not None
+                    and scratch_meter_capability.is_open
+                ):
+                    for _attempt in range(2):
+                        try:
+                            scratch_meter_capability.close()
+                        except BaseException as close_error:
+                            primary_error.add_note(
+                                _bounded_detail(
+                                    "final scratch meter close failed: "
+                                    f"{type(close_error).__name__}: {close_error}",
+                                    512,
+                                )
+                            )
+                        else:
+                            break
+            finally:
+                try:
+                    if joined:
+                        try:
+                            scratch_close_errors = scratch.close_capabilities()
+                        except BaseException as close_error:
+                            primary_error.add_note(
+                                _bounded_detail(
+                                    "final scratch owner close failed: "
+                                    f"{type(close_error).__name__}: {close_error}",
+                                    512,
+                                )
+                            )
+                        else:
+                            for detail in scratch_close_errors:
+                                primary_error.add_note(_bounded_detail(detail, 512))
+                finally:
+                    try:
+                        output_close_errors = owned_output.close(
+                            remove_marker=joined
+                        )
+                    except BaseException as close_error:
+                        primary_error.add_note(
+                            _bounded_detail(
+                                "final output owner close failed: "
+                                f"{type(close_error).__name__}: {close_error}",
+                                512,
+                            )
+                        )
+                    else:
+                        for detail in output_close_errors:
+                            primary_error.add_note(_bounded_detail(detail, 512))
+            raise
+        if joined:
+            _append_report_error(record, scratch.close_capabilities())
         deferred_observation = None
         if not joined and guard.observations:
             deferred_observation = guard.observations[-1]
@@ -1810,7 +1921,7 @@ def run_workflow(
                     )
             trailing_close_errors = [
                 *final_guard.close(),
-                *owned_output.release_marker(remove_marker=False),
+                *owned_output.release_marker(remove_marker=True),
                 *owned_output.close_directory(),
             ]
             _append_report_error(record, trailing_close_errors)
@@ -1879,10 +1990,6 @@ def options_from_arguments(
     *,
     budget_seconds: float | None = None,
 ) -> Options:
-    if os.name == "nt":
-        raise ValueError(
-            "disk-safe focused mutation requires the Windows native adapter"
-        )
     if budget_seconds is None:
         budget_seconds = parse_duration(arguments.budget)
     selectors = [*arguments.file, *arguments.symbol]
@@ -1951,10 +2058,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             repository = repository.parent
         if not (repository / ".git").exists():
             raise ValueError("current directory is not inside a Git repository")
+        backend = default_filesystem_backend()
         options = options_from_arguments(
             arguments, repository, budget_seconds=budget_seconds
         )
-        store = RunStore(options.output)
+        store = RunStore(options.output, backend=backend)
         cancellation = threading.Event()
         runner = CommandRunner(store, cancellation_event=cancellation)
         with _scoped_signal_handlers(cancellation) as restore_signal_handlers:
@@ -1966,6 +2074,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     SubprocessProbe(repository, runner),
                     runner,
                     restore_signal_handlers,
+                    filesystem_backend=backend,
                 ),
                 budget=budget,
             )
