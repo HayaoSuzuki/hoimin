@@ -6794,11 +6794,24 @@ mod tests {
         let parent = tempfile::tempdir().unwrap();
         let parent = Utf8Path::from_path(parent.path()).unwrap();
         let coordinator = ManagedRootCoordinator::open(parent).unwrap();
-        drop(coordinator);
+        let abandoned_root =
+            ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let active = abandoned_root.path().to_owned();
+        let run_id = active
+            .file_name()
+            .unwrap()
+            .strip_prefix("run-")
+            .unwrap()
+            .to_owned();
         let abandoned = parent
             .join("hoimin-workspaces-v1")
-            .join(format!(".deleting-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir(&abandoned).unwrap();
+            .join(format!(".deleting-{run_id}"));
+        drop(abandoned_root);
+        drop(coordinator);
+        for entry in std::fs::read_dir(&active).unwrap() {
+            std::fs::remove_file(entry.unwrap().path()).unwrap();
+        }
+        std::fs::rename(active, &abandoned).unwrap();
 
         let (rollback, execution, delivery, execution_spool, delivery_spool, reclaim) =
             create_managed_shell_roots_in(parent, &|_| {}).unwrap();

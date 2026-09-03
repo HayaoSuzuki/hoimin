@@ -286,11 +286,21 @@ mod tests {
 
     #[test]
     fn cleanup_ready_retry_replaces_a_partial_marker_from_an_interrupted_write() {
+        use std::io::Write;
+
         let parent = tempfile::tempdir().unwrap();
         let parent = Utf8Path::from_path(parent.path()).unwrap();
         let coordinator = ManagedRootCoordinator::open(parent).unwrap();
         let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
-        root.dir.write(super::CLEANUP_READY_FILE, b"{").unwrap();
+        let mut partial = super::create_owned_file(
+            &root.dir,
+            super::CLEANUP_READY_FILE,
+            super::OwnedFileAccess::Write,
+        )
+        .unwrap();
+        partial.write_all(b"{").unwrap();
+        partial.sync_all().unwrap();
+        drop(partial);
 
         root.mark_cleanup_ready().unwrap();
 
@@ -1169,9 +1179,22 @@ mod tests {
 
         let parent = tempfile::tempdir().unwrap();
         let managed = parent.path().join(MANAGED_DIR);
-        std::fs::create_dir(&managed).unwrap();
+        let parent_dir =
+            cap_std::fs::Dir::open_ambient_dir(parent.path(), cap_std::ambient_authority())
+                .unwrap();
+        super::create_managed_root_entry(&parent_dir, Utf8Path::from_path(&managed).unwrap())
+            .unwrap();
+        let managed_dir = super::open_owned_directory(&parent_dir, MANAGED_DIR).unwrap();
         let coordinator_path = managed.join(COORDINATOR_FILE);
-        std::fs::File::create(&coordinator_path).unwrap();
+        let coordinator_file = super::create_owned_file(
+            &managed_dir,
+            COORDINATOR_FILE,
+            super::OwnedFileAccess::ReadWrite,
+        )
+        .unwrap();
+        drop(coordinator_file);
+        drop(managed_dir);
+        drop(parent_dir);
         let writer_path = coordinator_path.clone();
         let writer = std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(25));
@@ -1771,7 +1794,7 @@ mod tests {
         let parent = Utf8Path::from_path(parent.path()).unwrap();
         let coordinator = ManagedRootCoordinator::open(parent).unwrap();
         let deleting = format!("{}{}", super::DELETING_PREFIX, uuid::Uuid::new_v4());
-        coordinator.dir.create_dir(&deleting).unwrap();
+        drop(super::create_owned_directory(&coordinator.dir, &deleting).unwrap());
 
         let report = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
 
@@ -2114,7 +2137,7 @@ mod tests {
         let parent = Utf8Path::from_path(parent.path()).unwrap();
         let coordinator = ManagedRootCoordinator::open(parent).unwrap();
         let staging = format!("{}{}", super::STAGING_PREFIX, uuid::Uuid::new_v4());
-        coordinator.dir.create_dir(&staging).unwrap();
+        drop(super::create_owned_directory(&coordinator.dir, &staging).unwrap());
         let future = std::time::SystemTime::now() + std::time::Duration::from_secs(25 * 60 * 60);
 
         let report = ManagedRunRoot::reclaim_abandoned(&coordinator, future);
@@ -2130,7 +2153,7 @@ mod tests {
         let parent = Utf8Path::from_path(parent.path()).unwrap();
         let coordinator = ManagedRootCoordinator::open(parent).unwrap();
         let deleting = format!("{}{}", super::DELETING_PREFIX, uuid::Uuid::new_v4());
-        coordinator.dir.create_dir(&deleting).unwrap();
+        drop(super::create_owned_directory(&coordinator.dir, &deleting).unwrap());
 
         let report = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
 
@@ -2146,7 +2169,7 @@ mod tests {
         let parent = Utf8Path::from_path(parent.path()).unwrap();
         let coordinator = ManagedRootCoordinator::open(parent).unwrap();
         let deleting = format!("{}{}", super::DELETING_PREFIX, uuid::Uuid::new_v4());
-        coordinator.dir.create_dir(&deleting).unwrap();
+        drop(super::create_owned_directory(&coordinator.dir, &deleting).unwrap());
         let deleting_path = coordinator.path.join(&deleting);
         let mut permissions = std::fs::metadata(&deleting_path).unwrap().permissions();
         permissions.set_readonly(true);
@@ -6322,7 +6345,6 @@ fn inspect_cleanup_entry(
     use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
 
     let entry = super::root::windows::open_entry_shared(parent, name)?;
-    windows::verify_current_user_owner(&entry)?;
     let metadata = entry.metadata()?;
     let identity = super::root::windows::file_identity_io(&entry)?;
     if metadata.is_dir() && metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0 {
