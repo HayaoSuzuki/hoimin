@@ -17940,6 +17940,15 @@ class ManagedScratchTests(unittest.TestCase):
         self.assertEqual(len(set(map(id, caught.exception.owners))), 2)
         self.assertTrue(all(owner.is_open for owner in caught.exception.owners))
         self.assertEqual(caught.exception.details, ())
+        inner = caught.exception.__cause__
+        self.assertIsInstance(inner, lease_module._CleanupOwnershipBlocked)
+        assert isinstance(inner, lease_module._CleanupOwnershipBlocked)
+        self.assertIsInstance(inner.owners, tuple)
+        self.assertIsInstance(inner.details, tuple)
+        self.assertEqual(
+            [owner.identity for owner in inner.owners],
+            [nested.identity, root_node.identity],
+        )
         graph_details = graph.details.details()
         self.assertIsInstance(graph_details, tuple)
         self.assertIn(
@@ -18025,6 +18034,17 @@ class ManagedScratchTests(unittest.TestCase):
                 parent = caught.exception.owners[0]
                 self.assertEqual(parent.identity, root_node.identity)
                 self.assertTrue(parent.is_open)
+                inner = caught.exception.__cause__
+                self.assertIsInstance(
+                    inner, lease_module._CleanupOwnershipBlocked
+                )
+                assert isinstance(
+                    inner, lease_module._CleanupOwnershipBlocked
+                )
+                self.assertIsInstance(inner.owners, tuple)
+                self.assertIsInstance(inner.details, tuple)
+                self.assertEqual(len(inner.owners), 1)
+                self.assertIs(inner.owners[0], parent)
                 if graph is None:
                     self.assertTrue(caught.exception.details)
                     self.assertIn(
@@ -18225,6 +18245,12 @@ class ManagedScratchTests(unittest.TestCase):
         self.assertIsInstance(caught.exception.details, tuple)
         self.assertEqual(len(caught.exception.owners), 1)
         self.assertIn("identity changed", str(caught.exception.primary))
+        inner = caught.exception.__cause__
+        self.assertIsInstance(inner, lease_module._CleanupOwnershipBlocked)
+        assert isinstance(inner, lease_module._CleanupOwnershipBlocked)
+        self.assertIsInstance(inner.owners, tuple)
+        self.assertEqual(len(inner.owners), 1)
+        self.assertIs(inner.owners[0], caught.exception.owners[0])
         directory_owner = caught.exception.owners[0]
         backend._resource(directory_owner).close_failures = 0
         directory_owner.close()
@@ -18278,6 +18304,12 @@ class ManagedScratchTests(unittest.TestCase):
         self.assertIsInstance(caught.exception.details, tuple)
         self.assertEqual(len(caught.exception.owners), 1)
         self.assertIn("identity changed", str(caught.exception.primary))
+        inner = caught.exception.__cause__
+        self.assertIsInstance(inner, lease_module._CleanupOwnershipBlocked)
+        assert isinstance(inner, lease_module._CleanupOwnershipBlocked)
+        self.assertIsInstance(inner.owners, tuple)
+        self.assertEqual(len(inner.owners), 1)
+        self.assertIs(inner.owners[0], caught.exception.owners[0])
         entry_owner = caught.exception.owners[0]
         backend._resource(entry_owner).close_failures = 0
         entry_owner.close()
