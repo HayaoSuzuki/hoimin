@@ -318,6 +318,20 @@ def classify_mutation_output(
         CandidateState.TIMEOUT: "Timeout",
         CandidateState.UNVIABLE: "Unviable",
     }[state]
+
+    def matches_mutant(item: object) -> bool:
+        if not isinstance(item, dict):
+            return False
+        scenario = item.get("scenario")
+        if not isinstance(scenario, dict):
+            return False
+        mutant = scenario.get("Mutant")
+        return (
+            isinstance(mutant, dict)
+            and mutant.get("name") == candidate.mutant_name
+            and item.get("summary") == expected
+        )
+
     outcome_items = outcomes.get("outcomes")
     if not isinstance(outcome_items, list) or len(outcome_items) != 2:
         return CandidateState.ERROR
@@ -331,12 +345,7 @@ def classify_mutation_output(
     mutant_matches = [
         item
         for item in outcome_items
-        if isinstance(item, dict)
-        and isinstance(item.get("scenario"), dict)
-        and isinstance(item["scenario"].get("Mutant"), dict)
-        and item["scenario"]["Mutant"].get("name")
-        == candidate.mutant_name
-        and item.get("summary") == expected
+        if matches_mutant(item)
     ]
     if baseline_count != 1 or len(mutant_matches) != 1:
         return CandidateState.ERROR
@@ -347,13 +356,7 @@ def classify_mutation_output(
                 item.get("scenario") == "Baseline"
                 and item.get("summary") == "Success"
             )
-            or (
-                isinstance(item.get("scenario"), dict)
-                and isinstance(item["scenario"].get("Mutant"), dict)
-                and item["scenario"]["Mutant"].get("name")
-                == candidate.mutant_name
-                and item.get("summary") == expected
-            )
+            or matches_mutant(item)
         )
         for item in outcome_items
     ):

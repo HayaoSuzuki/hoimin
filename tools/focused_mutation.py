@@ -700,9 +700,12 @@ def _comparison(path: Path | None, focused_count: int) -> dict[str, object] | No
     if path is None:
         return None
     value = read_bounded_regular_json(path, 8 * 1024**2)
-    if not isinstance(value, dict) or not isinstance(value.get("candidates"), list):
+    if not isinstance(value, dict):
         raise ValueError("prior inventory must contain a candidates array")
-    full = len(value["candidates"])
+    candidates = value.get("candidates")
+    if not isinstance(candidates, list):
+        raise ValueError("prior inventory must contain a candidates array")
+    full = len(candidates)
     if full > 1_000:
         raise ValueError("prior inventory candidates exceed 1000")
     return {
@@ -1682,7 +1685,7 @@ def run_workflow(
             raw_post_cleanup_failure,
         )
         if post_cleanup_observation is not None:
-            post_cleanup_item = {
+            post_cleanup_item: dict[str, object] = {
                 "phase": "post_cleanup",
                 "owned_bytes": post_cleanup_observation.owned_bytes,
                 "available_bytes": post_cleanup_observation.available_bytes,
@@ -1809,16 +1812,17 @@ def run_workflow(
                     isinstance(summary_start, dict)
                     and isinstance(summary_end, dict)
                 ):
-                    record.disk_summary["free_byte_delta"] = {
-                        key: (
-                            summary_end[key] - summary_start[key]
-                            if key in summary_start and key in summary_end
-                            and isinstance(summary_start[key], int)
-                            and isinstance(summary_end[key], int)
+                    free_byte_delta: dict[object, int | None] = {}
+                    for key in sorted(set(summary_start) | set(summary_end)):
+                        start_value = summary_start.get(key)
+                        end_value = summary_end.get(key)
+                        free_byte_delta[key] = (
+                            end_value - start_value
+                            if isinstance(start_value, int)
+                            and isinstance(end_value, int)
                             else None
                         )
-                        for key in sorted(set(summary_start) | set(summary_end))
-                    }
+                    record.disk_summary["free_byte_delta"] = free_byte_delta
                 current_peak = record.disk_summary.get("peak_owned_bytes", 0)
                 record.disk_summary["peak_owned_bytes"] = max(
                     current_peak if isinstance(current_peak, int) else 0,
@@ -1957,6 +1961,7 @@ def _scoped_signal_handlers(
     previous: list[tuple[signal.Signals, object]] = []
     restored = False
     previous_mask: set[int | signal.Signals] | None = None
+    pthread_sigmask = getattr(signal, "pthread_sigmask", None)
 
     def interrupt(_signum: int, _frame: object) -> None:
         cancellation.set()
@@ -1965,9 +1970,10 @@ def _scoped_signal_handlers(
         nonlocal restored, previous_mask
         if restored:
             return
-        if hasattr(signal, "pthread_sigmask"):
-            previous_mask = signal.pthread_sigmask(
-                signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM}
+        if pthread_sigmask is not None:
+            sig_block = getattr(signal, "SIG_BLOCK")
+            previous_mask = pthread_sigmask(
+                sig_block, {signal.SIGINT, signal.SIGTERM}
             )
         for signum, handler in previous:
             signal.signal(signum, cast(Any, handler))
@@ -1981,7 +1987,9 @@ def _scoped_signal_handlers(
     finally:
         restore()
         if previous_mask is not None:
-            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+            assert pthread_sigmask is not None
+            sig_setmask = getattr(signal, "SIG_SETMASK")
+            pthread_sigmask(sig_setmask, previous_mask)
 
 
 def options_from_arguments(

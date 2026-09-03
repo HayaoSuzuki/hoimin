@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from functools import cache
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +59,12 @@ class CreateDisposition(StrEnum):
     OPEN_EXISTING = "open_existing"
     CREATE_NEW = "create_new"
     OPEN_OR_CREATE = "open_or_create"
+
+
+class _CapabilityOwner(Protocol):
+    def close_resource(self, resource: object) -> None: ...
+
+    def detach_file_resource(self, resource: object, flags: int) -> int: ...
 
 
 def validate_component(name: str) -> str:
@@ -203,7 +209,8 @@ class _Capability:
         if self._state is not _CapabilityState.OPEN:
             return
         self._close_attempts += 1
-        self._owner.close_resource(self._resource)  # type: ignore[attr-defined]
+        owner = cast(_CapabilityOwner, self._owner)
+        owner.close_resource(self._resource)
         self._state = _CapabilityState.CLOSED
         self._resource = None
 
@@ -239,9 +246,8 @@ class FileCapability(_Capability):
             raise RuntimeError(
                 "only regular file capabilities can detach to a descriptor"
             )
-        descriptor = self._owner.detach_file_resource(  # type: ignore[attr-defined]
-            resource, flags
-        )
+        owner = cast(_CapabilityOwner, self._owner)
+        descriptor = owner.detach_file_resource(resource, flags)
         self._state = _CapabilityState.DETACHED
         self._resource = None
         return descriptor

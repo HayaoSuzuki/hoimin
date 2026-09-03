@@ -10,7 +10,7 @@ def _code(value: object) -> str:
 
 
 class TextWriter(Protocol):
-    def write(self, value: str) -> int: ...
+    def write(self, value: str, /) -> int: ...
 
 
 def write_markdown(record: RunRecord, writer: TextWriter) -> None:
