@@ -840,7 +840,8 @@ mod tests {
 
         #[cfg(unix)]
         {
-            use cap_std::fs::PermissionsExt;
+            use cap_std::fs::PermissionsExt as _;
+            use std::os::unix::fs::PermissionsExt as _;
 
             assert_eq!(
                 directory.metadata(".").unwrap().permissions().mode() & 0o777,
