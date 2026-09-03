@@ -6459,6 +6459,64 @@ class AnchoredDiskGuardTests(unittest.TestCase):
         self.assertEqual(guard.observations[-1].owned_bytes, 24)
         self.assertEqual(backend.operations.count("open_file"), 3)
 
+    def test_hard_link_identity_limit_is_shared_across_charged_roots(
+        self,
+    ) -> None:
+        filesystem = FilesystemIdentity(17, 19, 23)
+        first_path = Path("C:/recorded/owned-first")
+        second_path = Path("C:/recorded/owned-second")
+        first = self._node(filesystem=filesystem)
+        second = self._node(filesystem=filesystem)
+        first.add(
+            "first",
+            self._node(
+                filesystem=filesystem,
+                kind=EntryKind.REGULAR,
+                logical_size=11,
+            ),
+        )
+        first.add(
+            "second",
+            self._node(
+                filesystem=filesystem,
+                kind=EntryKind.REGULAR,
+                logical_size=13,
+            ),
+        )
+        second.add(
+            "global-third",
+            self._node(
+                filesystem=filesystem,
+                kind=EntryKind.REGULAR,
+                logical_size=17,
+            ),
+        )
+        backend = _RecordingFilesystemBackend()
+        backend.register(first_path, first)
+        backend.register(second_path, second)
+        guard = DiskGuard(
+            self._policy(first_path),
+            [
+                MeterRoot(first_path, enforcement="owned:first"),
+                MeterRoot(second_path, enforcement="owned:second"),
+            ],
+            monotonic=lambda: 0.0,
+            backend=backend,
+        )
+        self.addCleanup(guard.close)
+
+        with mock.patch(
+            "tools.focused_mutation_support.disk.MAX_TREE_ENTRIES", 2
+        ):
+            failure = guard.sample()
+
+        self.assertIsNotNone(failure)
+        assert failure is not None
+        assert failure.message is not None
+        self.assertIn("hard-link identity set exceeds entry limit", failure.message)
+        self.assertEqual(backend.operations.count("open_file"), 3)
+        self.assertEqual(backend.active_resources, 2)
+
     def test_successful_file_close_deadline_remains_primary(self) -> None:
         path = Path("C:/recorded/owned")
         root = self._node()
@@ -17589,6 +17647,360 @@ class ManagedScratchTests(unittest.TestCase):
         self.assertEqual(result.cursor.components, ())
         self.assertEqual(result.cursor.pending_absence.name, "nested")
 
+    def test_completed_directory_exception_paths_clear_slots_and_order_live_owners(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=[
+                "_CleanupCursor",
+                "_CleanupOwnerGraph",
+                "_CleanupOwnershipBlocked",
+                "_FixedOwnerRegistry",
+                "_remove_payload",
+            ],
+        )
+
+        def fixture() -> tuple[
+            _Task8ManagedRecordingBackend,
+            ManagedScratch,
+            _ManagedRecordedNode,
+            _ManagedRecordedNode,
+            DirectoryCapability,
+            DirectoryCapability,
+        ]:
+            backend = self._task8_backend()
+            scratch = self._task8_create(backend, run_id=str(uuid.uuid4()))
+            root_node = self._task8_root_node(backend, scratch)
+            nested = self._task8_add_payload(
+                backend, root_node, "nested", kind=EntryKind.DIRECTORY
+            )
+            root = scratch._root
+            anchor = scratch._managed_root_capability
+            assert root is not None
+            assert anchor is not None
+            return backend, scratch, root_node, nested, root, anchor
+
+        backend, scratch, _root_node, _nested, root, anchor = fixture()
+        graph = lease_module._CleanupOwnerGraph(
+            lease_module._FixedOwnerRegistry()
+        )
+        real_open = backend.open_directory
+        nested_opens = 0
+
+        def fail_completed_reopen(
+            parent: DirectoryCapability,
+            name: str,
+            share_policy: SharePolicy,
+        ) -> DirectoryCapability:
+            nonlocal nested_opens
+            if name == "nested":
+                nested_opens += 1
+                if nested_opens == 2:
+                    raise OSError("injected completed reopen failure")
+            return real_open(parent, name, share_policy)
+
+        with (
+            mock.patch.object(
+                backend, "open_directory", side_effect=fail_completed_reopen
+            ),
+            self.assertRaisesRegex(OSError, "completed reopen failure"),
+        ):
+            lease_module._remove_payload(
+                backend,
+                anchor,
+                root,
+                root_name=scratch.path.name,
+                root_identity=scratch._root_identity,
+                root_filesystem=scratch._root_filesystem,
+                cursor=lease_module._CleanupCursor(),
+                started=0.0,
+                absolute_deadline=60.0,
+                examined=0,
+                removed=0,
+                monotonic=lambda: 0.0,
+                owner_graph=graph,
+            )
+        self.assertIsNone(graph.walker_child.owner)
+        self.assertIsNotNone(graph.walker_parent.owner)
+        assert graph.walker_parent.owner is not None
+        self.assertFalse(graph.walker_parent.owner.is_open)
+
+        for use_graph in (False, True):
+            with self.subTest(delete_close_success=True, owner_graph=use_graph):
+                backend, scratch, _root_node, _nested, root, anchor = fixture()
+                graph = (
+                    lease_module._CleanupOwnerGraph(
+                        lease_module._FixedOwnerRegistry()
+                    )
+                    if use_graph
+                    else None
+                )
+
+                with (
+                    mock.patch.object(
+                        backend,
+                        "delete",
+                        side_effect=OSError("injected completed delete failure"),
+                    ),
+                    self.assertRaisesRegex(
+                        OSError, "completed delete failure"
+                    ),
+                ):
+                    lease_module._remove_payload(
+                        backend,
+                        anchor,
+                        root,
+                        root_name=scratch.path.name,
+                        root_identity=scratch._root_identity,
+                        root_filesystem=scratch._root_filesystem,
+                        cursor=lease_module._CleanupCursor(),
+                        started=0.0,
+                        absolute_deadline=60.0,
+                        examined=0,
+                        removed=0,
+                        monotonic=lambda: 0.0,
+                        owner_graph=graph,
+                    )
+                if graph is not None:
+                    self.assertIsNotNone(graph.walker_child.owner)
+                    assert graph.walker_child.owner is not None
+                    self.assertFalse(graph.walker_child.owner.is_open)
+                    self.assertIsNotNone(graph.walker_parent.owner)
+                    assert graph.walker_parent.owner is not None
+                    self.assertFalse(graph.walker_parent.owner.is_open)
+
+        backend, scratch, _root_node, _nested, root, anchor = fixture()
+        graph = lease_module._CleanupOwnerGraph(
+            lease_module._FixedOwnerRegistry()
+        )
+
+        def consume_child_then_fail(
+            capability: FileCapability | DirectoryCapability,
+        ) -> None:
+            capability.close()
+            raise OSError("injected consumed-child delete failure")
+
+        with (
+            mock.patch.object(
+                backend, "delete", side_effect=consume_child_then_fail
+            ),
+            self.assertRaisesRegex(
+                OSError, "consumed-child delete failure"
+            ),
+        ):
+            lease_module._remove_payload(
+                backend,
+                anchor,
+                root,
+                root_name=scratch.path.name,
+                root_identity=scratch._root_identity,
+                root_filesystem=scratch._root_filesystem,
+                cursor=lease_module._CleanupCursor(),
+                started=0.0,
+                absolute_deadline=60.0,
+                examined=0,
+                removed=0,
+                monotonic=lambda: 0.0,
+                owner_graph=graph,
+            )
+        self.assertIsNone(graph.walker_child.owner)
+
+        backend, scratch, _root_node, _nested, root, anchor = fixture()
+        graph = lease_module._CleanupOwnerGraph(
+            lease_module._FixedOwnerRegistry()
+        )
+        real_entry = backend.entry
+
+        def close_parent_then_fail_absence(
+            parent: DirectoryCapability, name: str
+        ) -> DirectoryEntry | None:
+            if name == "nested":
+                parent.close()
+                raise OSError("injected closed-parent absence failure")
+            return real_entry(parent, name)
+
+        with (
+            mock.patch.object(
+                backend, "entry", side_effect=close_parent_then_fail_absence
+            ),
+            self.assertRaisesRegex(
+                OSError, "closed-parent absence failure"
+            ),
+        ):
+            lease_module._remove_payload(
+                backend,
+                anchor,
+                root,
+                root_name=scratch.path.name,
+                root_identity=scratch._root_identity,
+                root_filesystem=scratch._root_filesystem,
+                cursor=lease_module._CleanupCursor(),
+                started=0.0,
+                absolute_deadline=60.0,
+                examined=0,
+                removed=0,
+                monotonic=lambda: 0.0,
+                owner_graph=graph,
+            )
+        self.assertIsNone(graph.walker_child.owner)
+        self.assertIsNone(graph.walker_parent.owner)
+
+        backend, scratch, root_node, nested, root, anchor = fixture()
+        graph = lease_module._CleanupOwnerGraph(
+            lease_module._FixedOwnerRegistry()
+        )
+
+        def fail_delete_with_two_live_owners(
+            capability: FileCapability | DirectoryCapability,
+        ) -> None:
+            backend._resource(capability).close_failures = 3
+            for resource in backend.live_resources:
+                if not resource.closed and resource.node is root_node:
+                    resource.close_failures = 3
+            raise OSError("injected completed delete failure")
+
+        with (
+            mock.patch.object(
+                backend,
+                "delete",
+                side_effect=fail_delete_with_two_live_owners,
+            ),
+            self.assertRaises(
+                lease_module._CleanupOwnershipBlocked
+            ) as caught,
+        ):
+            lease_module._remove_payload(
+                backend,
+                anchor,
+                root,
+                root_name=scratch.path.name,
+                root_identity=scratch._root_identity,
+                root_filesystem=scratch._root_filesystem,
+                cursor=lease_module._CleanupCursor(),
+                started=0.0,
+                absolute_deadline=60.0,
+                examined=0,
+                removed=0,
+                monotonic=lambda: 0.0,
+                owner_graph=graph,
+            )
+
+        self.assertIsInstance(caught.exception.owners, tuple)
+        self.assertIsInstance(caught.exception.details, tuple)
+        self.assertEqual(
+            [owner.identity for owner in caught.exception.owners],
+            [nested.identity, root_node.identity],
+        )
+        self.assertEqual(len(set(map(id, caught.exception.owners))), 2)
+        self.assertTrue(all(owner.is_open for owner in caught.exception.owners))
+        self.assertEqual(caught.exception.details, ())
+        graph_details = graph.details.details()
+        self.assertIsInstance(graph_details, tuple)
+        self.assertIn(
+            "cleanup completed directory close failed",
+            graph_details[0],
+        )
+        self.assertIn(
+            "cleanup completed directory parent close failed",
+            graph_details[-1],
+        )
+        self.assertIs(graph.walker_child.owner, caught.exception.owners[0])
+        self.assertIs(graph.walker_parent.owner, caught.exception.owners[1])
+        for owner in caught.exception.owners:
+            backend._resource(owner).close_failures = 0
+            owner.close()
+        graph.walker_child.owner = None
+        graph.walker_parent.owner = None
+        scratch._root = None
+
+    def test_completed_directory_parent_close_failure_has_immutable_owner_snapshot(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=[
+                "_CleanupCursor",
+                "_CleanupOwnerGraph",
+                "_CleanupOwnershipBlocked",
+                "_FixedOwnerRegistry",
+                "_remove_payload",
+            ],
+        )
+        for use_graph in (False, True):
+            with self.subTest(owner_graph=use_graph):
+                backend = self._task8_backend()
+                scratch = self._task8_create(backend, run_id=str(uuid.uuid4()))
+                root_node = self._task8_root_node(backend, scratch)
+                self._task8_add_payload(
+                    backend, root_node, "nested", kind=EntryKind.DIRECTORY
+                )
+                root = scratch._root
+                anchor = scratch._managed_root_capability
+                assert root is not None
+                assert anchor is not None
+                graph = (
+                    lease_module._CleanupOwnerGraph(
+                        lease_module._FixedOwnerRegistry()
+                    )
+                    if use_graph
+                    else None
+                )
+
+                def arm_parent_close(operation: str) -> None:
+                    if operation != "delete:nested":
+                        return
+                    for resource in backend.live_resources:
+                        if not resource.closed and resource.node is root_node:
+                            resource.close_failures = 3
+
+                backend.after_cleanup_operation = arm_parent_close
+                with self.assertRaises(
+                    lease_module._CleanupOwnershipBlocked
+                ) as caught:
+                    lease_module._remove_payload(
+                        backend,
+                        anchor,
+                        root,
+                        root_name=scratch.path.name,
+                        root_identity=scratch._root_identity,
+                        root_filesystem=scratch._root_filesystem,
+                        cursor=lease_module._CleanupCursor(),
+                        started=0.0,
+                        absolute_deadline=60.0,
+                        examined=0,
+                        removed=0,
+                        monotonic=lambda: 0.0,
+                        owner_graph=graph,
+                    )
+
+                self.assertIsInstance(caught.exception.owners, tuple)
+                self.assertIsInstance(caught.exception.details, tuple)
+                self.assertEqual(len(caught.exception.owners), 1)
+                parent = caught.exception.owners[0]
+                self.assertEqual(parent.identity, root_node.identity)
+                self.assertTrue(parent.is_open)
+                if graph is None:
+                    self.assertTrue(caught.exception.details)
+                    self.assertIn(
+                        "cleanup completed directory parent close failed",
+                        caught.exception.details[0],
+                    )
+                else:
+                    self.assertIs(graph.walker_parent.owner, parent)
+                    self.assertIsNotNone(graph.walker_child.owner)
+                    assert graph.walker_child.owner is not None
+                    self.assertFalse(graph.walker_child.owner.is_open)
+                    self.assertIn(
+                        "cleanup completed directory parent close failed",
+                        graph.details.details()[0],
+                    )
+                    graph.walker_parent.owner = None
+                    graph.walker_child.owner = None
+                backend._resource(parent).close_failures = 0
+                parent.close()
+                scratch._root = None
+
     def test_live_parent_after_iterator_close_returns_incomplete(self) -> None:
         backend = self._task8_backend()
         scratch = self._task8_create(
@@ -17630,6 +18042,240 @@ class ManagedScratchTests(unittest.TestCase):
             [owner.identity for owner in result.blocked_owners],
             [root_node.identity],
         )
+
+    def test_cleanup_actual_blocked_branches_return_immutable_ordered_snapshots(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=[
+                "_CleanupCursor",
+                "_CleanupOwnershipBlocked",
+                "_remove_payload",
+            ],
+        )
+
+        backend = self._task8_backend()
+        scratch = self._task8_create(backend, run_id=str(uuid.uuid4()))
+        root_node = self._task8_root_node(backend, scratch)
+        backend.iterator_auto_close = False
+        backend.iterator_close_failures_by_identity[root_node.identity] = 3
+        root = scratch._root
+        anchor = scratch._managed_root_capability
+        assert root is not None
+        assert anchor is not None
+        result = lease_module._remove_payload(
+            backend,
+            anchor,
+            root,
+            root_name=scratch.path.name,
+            root_identity=scratch._root_identity,
+            root_filesystem=scratch._root_filesystem,
+            cursor=lease_module._CleanupCursor(),
+            started=0.0,
+            absolute_deadline=60.0,
+            examined=0,
+            removed=0,
+            monotonic=lambda: 0.0,
+        )
+        self.assertIsInstance(result.blocked_owners, tuple)
+        self.assertIsInstance(result.details, tuple)
+        self.assertEqual(len(result.blocked_owners), 1)
+        self.assertEqual(result.blocked_owners[0].identity, root_node.identity)
+        for owner in result.blocked_owners:
+            backend._resource(owner).close_failures = 0
+            owner.close()
+        scratch._root = None
+
+        backend = self._task8_backend()
+        scratch = self._task8_create(backend, run_id=str(uuid.uuid4()))
+        root_node = self._task8_root_node(backend, scratch)
+        nested = self._task8_add_payload(
+            backend, root_node, "nested", kind=EntryKind.DIRECTORY
+        )
+        backend.iterator_close_failures_by_identity[root_node.identity] = 3
+        backend.close_failures_by_identity[nested.identity] = 3
+        root = scratch._root
+        anchor = scratch._managed_root_capability
+        assert root is not None
+        assert anchor is not None
+        result = lease_module._remove_payload(
+            backend,
+            anchor,
+            root,
+            root_name=scratch.path.name,
+            root_identity=scratch._root_identity,
+            root_filesystem=scratch._root_filesystem,
+            cursor=lease_module._CleanupCursor(),
+            started=0.0,
+            absolute_deadline=60.0,
+            examined=0,
+            removed=0,
+            monotonic=lambda: 0.0,
+        )
+        self.assertIsInstance(result.blocked_owners, tuple)
+        self.assertIsInstance(result.details, tuple)
+        self.assertEqual(
+            [owner.identity for owner in result.blocked_owners],
+            [root_node.identity, nested.identity],
+        )
+        self.assertIn("cleanup parent iterator close failed", result.details[0])
+        self.assertIn("cleanup directory close failed", result.details[-1])
+        for owner in result.blocked_owners:
+            backend._resource(owner).close_failures = 0
+            owner.close()
+        scratch._root = None
+
+        backend = self._task8_backend()
+        scratch = self._task8_create(backend, run_id=str(uuid.uuid4()))
+        root_node = self._task8_root_node(backend, scratch)
+        nested = self._task8_add_payload(
+            backend, root_node, "nested", kind=EntryKind.DIRECTORY
+        )
+        backend.close_failures_by_identity[nested.identity] = 3
+        root = scratch._root
+        anchor = scratch._managed_root_capability
+        assert root is not None
+        assert anchor is not None
+        real_open_directory = backend.open_directory
+
+        def mismatched_directory(
+            parent: DirectoryCapability,
+            name: str,
+            share_policy: SharePolicy,
+        ) -> DirectoryCapability:
+            opened = real_open_directory(parent, name, share_policy)
+            if name == nested.name:
+                opened._identity = FileIdentity(
+                    opened.identity.volume, opened.identity.file + 1000
+                )
+            return opened
+
+        with (
+            mock.patch.object(
+                backend, "open_directory", side_effect=mismatched_directory
+            ),
+            self.assertRaises(
+                lease_module._CleanupOwnershipBlocked
+            ) as caught,
+        ):
+            lease_module._remove_payload(
+                backend,
+                anchor,
+                root,
+                root_name=scratch.path.name,
+                root_identity=scratch._root_identity,
+                root_filesystem=scratch._root_filesystem,
+                cursor=lease_module._CleanupCursor(),
+                started=0.0,
+                absolute_deadline=60.0,
+                examined=0,
+                removed=0,
+                monotonic=lambda: 0.0,
+            )
+        self.assertIsInstance(caught.exception.owners, tuple)
+        self.assertIsInstance(caught.exception.details, tuple)
+        self.assertEqual(len(caught.exception.owners), 1)
+        self.assertIn("identity changed", str(caught.exception.primary))
+        directory_owner = caught.exception.owners[0]
+        backend._resource(directory_owner).close_failures = 0
+        directory_owner.close()
+        scratch._root = None
+
+        backend = self._task8_backend()
+        scratch = self._task8_create(backend, run_id=str(uuid.uuid4()))
+        root_node = self._task8_root_node(backend, scratch)
+        target = self._task8_add_payload(backend, root_node, "payload")
+        backend.close_failures_by_identity[target.identity] = 3
+        root = scratch._root
+        anchor = scratch._managed_root_capability
+        assert root is not None
+        assert anchor is not None
+        real_open_entry = backend.open_entry
+
+        def mismatched_entry(
+            parent: DirectoryCapability,
+            name: str,
+            share_policy: SharePolicy,
+        ) -> FileCapability | DirectoryCapability:
+            opened = real_open_entry(parent, name, share_policy)
+            opened._identity = FileIdentity(
+                opened.identity.volume, opened.identity.file + 1000
+            )
+            return opened
+
+        with (
+            mock.patch.object(
+                backend, "open_entry", side_effect=mismatched_entry
+            ),
+            self.assertRaises(
+                lease_module._CleanupOwnershipBlocked
+            ) as caught,
+        ):
+            lease_module._remove_payload(
+                backend,
+                anchor,
+                root,
+                root_name=scratch.path.name,
+                root_identity=scratch._root_identity,
+                root_filesystem=scratch._root_filesystem,
+                cursor=lease_module._CleanupCursor(),
+                started=0.0,
+                absolute_deadline=60.0,
+                examined=0,
+                removed=0,
+                monotonic=lambda: 0.0,
+            )
+        self.assertIsInstance(caught.exception.owners, tuple)
+        self.assertIsInstance(caught.exception.details, tuple)
+        self.assertEqual(len(caught.exception.owners), 1)
+        self.assertIn("identity changed", str(caught.exception.primary))
+        entry_owner = caught.exception.owners[0]
+        backend._resource(entry_owner).close_failures = 0
+        entry_owner.close()
+        scratch._root = None
+
+        backend = self._task8_backend()
+        scratch = self._task8_create(backend, run_id=str(uuid.uuid4()))
+        root_node = self._task8_root_node(backend, scratch)
+        self._task8_add_payload(backend, root_node, "payload")
+        backend.iterator_close_failures_by_identity[root_node.identity] = 3
+        root = scratch._root
+        anchor = scratch._managed_root_capability
+        assert root is not None
+        assert anchor is not None
+        with (
+            mock.patch.object(
+                backend,
+                "open_entry",
+                side_effect=OSError("injected ordinary entry failure"),
+            ),
+            self.assertRaises(
+                lease_module._CleanupOwnershipBlocked
+            ) as caught,
+        ):
+            lease_module._remove_payload(
+                backend,
+                anchor,
+                root,
+                root_name=scratch.path.name,
+                root_identity=scratch._root_identity,
+                root_filesystem=scratch._root_filesystem,
+                cursor=lease_module._CleanupCursor(),
+                started=0.0,
+                absolute_deadline=60.0,
+                examined=0,
+                removed=0,
+                monotonic=lambda: 0.0,
+            )
+        self.assertIsInstance(caught.exception.owners, tuple)
+        self.assertIsInstance(caught.exception.details, tuple)
+        self.assertEqual(len(caught.exception.owners), 1)
+        self.assertIn("ordinary entry failure", str(caught.exception.primary))
+        iterator_owner = caught.exception.owners[0]
+        backend._resource(iterator_owner).close_failures = 0
+        iterator_owner.close()
+        scratch._root = None
 
     def test_outer_unwind_merges_unique_live_owners_in_acquisition_order(
         self,
@@ -17692,6 +18338,8 @@ class ManagedScratchTests(unittest.TestCase):
             )
 
         self.assertEqual(len(caught.exception.owners), 2)
+        self.assertIsInstance(caught.exception.owners, tuple)
+        self.assertIsInstance(caught.exception.details, tuple)
         self.assertIs(caught.exception.owners[0], extra)
         self.assertEqual(
             caught.exception.owners[1].identity, root_node.identity
@@ -17879,6 +18527,8 @@ class ManagedScratchTests(unittest.TestCase):
                 )
 
                 self.assertFalse(result.complete)
+                self.assertIsInstance(result.blocked_owners, tuple)
+                self.assertIsInstance(result.details, tuple)
                 self.assertGreaterEqual(
                     backend.close_counts.get(nested.identity, 0), 1
                 )
@@ -17896,49 +18546,60 @@ class ManagedScratchTests(unittest.TestCase):
     def test_cleanup_result_and_diagnostic_collections_are_immutable_tuples(
         self,
     ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(backend, run_id=str(uuid.uuid4()))
+        root_node = self._task8_root_node(backend, scratch)
+        nested = self._task8_add_payload(
+            backend, root_node, "nested", kind=EntryKind.DIRECTORY
+        )
+        anchor = scratch._managed_root_capability
+        assert anchor is not None
         lease_module = __import__(
             "tools.focused_mutation_support.lease",
             fromlist=[
                 "_CleanupComponent",
                 "_CleanupCursor",
-                "_CleanupOwnershipBlocked",
-                "_CleanupSlice",
+                "_remove_payload",
             ],
         )
         component = lease_module._CleanupComponent(
-            "nested", FileIdentity(1, 2), FilesystemIdentity(1)
+            nested.name, nested.identity, nested.filesystem
         )
-        cursor = lease_module._CleanupCursor((component,), component)
-        cleanup_slice = lease_module._CleanupSlice(
-            2,
-            1,
-            False,
-            cursor,
-            details=("first", "second"),
-        )
-        blocked = lease_module._CleanupOwnershipBlocked(
-            "blocked", (), ("first", "second")
-        )
-        record = ScratchCleanupRecord(
-            ScratchCleanupStatus.DEFERRED,
-            2,
-            1,
-            ("first", "second"),
-        )
-        diagnostic = JanitorDiagnostic(("first", "second"))
+        opened = [False]
+        checks = [0]
 
-        self.assertIsInstance(cleanup_slice.cursor.components, tuple)
-        self.assertIsInstance(cleanup_slice.details, tuple)
-        self.assertIsInstance(cleanup_slice.blocked_owners, tuple)
-        self.assertIsInstance(blocked.owners, tuple)
-        self.assertIsInstance(blocked.details, tuple)
-        self.assertIsInstance(record.details, tuple)
-        self.assertIsInstance(diagnostic.details, tuple)
-        self.assertEqual(
-            cleanup_slice.details,
-            blocked.details,
-            "immutable diagnostic snapshots preserve insertion order",
+        def observe_open(operation: str) -> None:
+            if operation == "open_directory:nested":
+                opened[0] = True
+
+        def clock() -> float:
+            if not opened[0]:
+                return 0.0
+            checks[0] += 1
+            return 0.0 if checks[0] == 1 else 1.0
+
+        backend.after_cleanup_operation = observe_open
+        result = lease_module._remove_payload(
+            backend,
+            anchor,
+            None,
+            root_name=scratch.path.name,
+            root_identity=scratch._root_identity,
+            root_filesystem=scratch._root_filesystem,
+            cursor=lease_module._CleanupCursor((component,)),
+            started=0.0,
+            absolute_deadline=1.0,
+            examined=0,
+            removed=0,
+            monotonic=clock,
         )
+
+        self.assertFalse(result.complete)
+        self.assertIsInstance(result.cursor.components, tuple)
+        self.assertIsInstance(result.blocked_owners, tuple)
+        self.assertIsInstance(result.details, tuple)
+        self.assertEqual(result.blocked_owners, ())
+        self.assertEqual(result.details, ())
 
     def test_owned_root_report_recovery_stops_after_final_path_deadline(
         self,
