@@ -54,6 +54,13 @@ raise SystemExit(returncode)
 """
 
 
+def _kill_process_group(process_group: int, signal_number: int) -> None:
+    killpg: Callable[[int, int], None] | None = getattr(os, "killpg", None)
+    if killpg is None:
+        raise OSError("process-group signalling is unavailable")
+    killpg(process_group, signal_number)
+
+
 def terminate_windows_process_tree(
     pid: int,
     *,
@@ -333,7 +340,11 @@ class CommandRunner:
                 error = TypeError("disk_guard must provide sample()")
                 discard_paths(error)
                 raise error
-            failure = preflight()
+            try:
+                failure = preflight()
+            except BaseException as primary_error:
+                discard_paths(primary_error)
+                raise
             if failure is not None:
                 record.disk_stop_code = failure.code
                 discard_paths()
@@ -434,6 +445,7 @@ class CommandRunner:
         assert stdout_write is not None
         assert stderr_write is not None
         drain_failed = False
+        run_error: BaseException | None = None
         try:
             if self.interrupted:
                 record.interrupted = True
@@ -544,27 +556,43 @@ class CommandRunner:
                     lifecycle_failure = error
             self._complete(record, process, started)
         except BaseException as primary_error:
-            discard_paths(primary_error)
+            run_error = primary_error
             raise
         finally:
             for stream_name, writer in (
                 ("stdout", stdout_write),
                 ("stderr", stderr_write),
             ):
-                try:
-                    writer.close()
-                except OSError as error:
-                    record.cleanup_errors.append(
-                        f"{stream_name} pipe writer close failed: "
-                        f"{type(error).__name__}: {error}"
-                    )
+                attempts = 0
+                while not writer.closed and attempts < 2:
+                    attempts += 1
+                    try:
+                        writer.close()
+                    except BaseException as error:
+                        detail = (
+                            f"{stream_name} pipe writer close failed: "
+                            f"{type(error).__name__}: {error}"
+                        )
+                        if detail not in record.cleanup_errors:
+                            record.cleanup_errors.append(detail)
             drain_deadline = time.monotonic() + OUTPUT_DRAIN_JOIN_TIMEOUT
             for thread, stream, stream_name in (
                 (stdout_thread, stdout_read, "stdout"),
                 (stderr_thread, stderr_read, "stderr"),
             ):
                 if thread.ident is None:
-                    stream.close()
+                    attempts = 0
+                    while not stream.closed and attempts < 2:
+                        attempts += 1
+                        try:
+                            stream.close()
+                        except BaseException as error:
+                            detail = (
+                                f"{stream_name} pipe reader close failed: "
+                                f"{type(error).__name__}: {error}"
+                            )
+                            if detail not in record.cleanup_errors:
+                                record.cleanup_errors.append(detail)
                     continue
                 thread.join(max(0.0, drain_deadline - time.monotonic()))
                 if thread.is_alive():
@@ -573,6 +601,8 @@ class CommandRunner:
                         f"{stream_name} output drain did not settle within "
                         f"{OUTPUT_DRAIN_JOIN_TIMEOUT} seconds"
                     )
+            if run_error is not None:
+                discard_paths(run_error)
 
         if self.interrupted and outcome is None:
             record.interrupted = True
@@ -616,33 +646,35 @@ class CommandRunner:
                     f"{type(capture.error).__name__}: {capture.error}"
                 )
 
-        if disk_guard is not None:
-            post_drain_failure = getattr(disk_guard, "sample")()
-            if post_drain_failure is None:
-                retained_bytes = (
-                    len(stdout_capture.prefix)
-                    + stdout_capture.tail_length
-                    + len(stderr_capture.prefix)
-                    + stderr_capture.tail_length
-                )
-                post_drain_failure = getattr(
-                    disk_guard, "reserve_additional_bytes"
-                )(
-                    retained_bytes,
-                    filesystem=paths.root,
-                )
-            if post_drain_failure is not None:
-                if disk_failure is None:
-                    disk_failure = post_drain_failure
-                record.disk_stop_code = disk_failure.code
-                if outcome in {None, CommandTimedOut} and lifecycle_failure is None:
-                    outcome = CommandDiskStopped
-
         materialized = False
-        if disk_failure is not None:
-            record.cleanup_errors.extend(paths.discard())
-        else:
-            try:
+        materializing = False
+        try:
+            if disk_guard is not None:
+                post_drain_failure = getattr(disk_guard, "sample")()
+                if post_drain_failure is None:
+                    retained_bytes = (
+                        len(stdout_capture.prefix)
+                        + stdout_capture.tail_length
+                        + len(stderr_capture.prefix)
+                        + stderr_capture.tail_length
+                    )
+                    post_drain_failure = getattr(
+                        disk_guard, "reserve_additional_bytes"
+                    )(
+                        retained_bytes,
+                        filesystem=paths.root,
+                    )
+                if post_drain_failure is not None:
+                    if disk_failure is None:
+                        disk_failure = post_drain_failure
+                    record.disk_stop_code = disk_failure.code
+                    if outcome in {None, CommandTimedOut} and lifecycle_failure is None:
+                        outcome = CommandDiskStopped
+
+            if disk_failure is not None:
+                record.cleanup_errors.extend(paths.discard())
+            else:
+                materializing = True
                 for capture, stream_name in (
                     (stdout_capture, "stdout"),
                     (stderr_capture, "stderr"),
@@ -654,22 +686,21 @@ class CommandRunner:
                     else:
                         record.stderr_retained_bytes = retained
                 materialized = True
-            except BaseException as primary_error:
+                materializing = False
+            if materialized and disk_guard is not None:
+                post_write_failure = getattr(disk_guard, "sample")()
+                if post_write_failure is not None:
+                    if disk_failure is None:
+                        disk_failure = post_write_failure
+                    record.disk_stop_code = disk_failure.code
+                    record.cleanup_errors.extend(paths.discard())
+                    if outcome in {None, CommandTimedOut} and lifecycle_failure is None:
+                        outcome = CommandDiskStopped
+        except BaseException as primary_error:
+            if materializing:
                 self._cleanup_unsafe = "command spool materialization failed"
-                spool_errors = paths.discard()
-                record.cleanup_errors.extend(spool_errors)
-                for spool_error in spool_errors:
-                    primary_error.add_note(spool_error)
-                raise
-        if materialized and disk_guard is not None:
-            post_write_failure = getattr(disk_guard, "sample")()
-            if post_write_failure is not None:
-                if disk_failure is None:
-                    disk_failure = post_write_failure
-                record.disk_stop_code = disk_failure.code
-                record.cleanup_errors.extend(paths.discard())
-                if outcome in {None, CommandTimedOut} and lifecycle_failure is None:
-                    outcome = CommandDiskStopped
+            discard_paths(primary_error)
+            raise
         if materialized and disk_failure is None:
             try:
                 cleanup_errors = self._log_cleanup((paths.stdout, paths.stderr))
@@ -755,7 +786,7 @@ class CommandRunner:
         deadline = self._monotonic() + POSIX_REAP_PROBE_TIMEOUT
         while True:
             try:
-                os.killpg(process.pid, 0)
+                _kill_process_group(process.pid, 0)
             except ProcessLookupError:
                 return
             except OSError as error:
@@ -789,7 +820,7 @@ class CommandRunner:
                 ) from None
         else:
             try:
-                os.killpg(process.pid, signal.SIGTERM)
+                _kill_process_group(process.pid, signal.SIGTERM)
             except ProcessLookupError:
                 pass
             except OSError as error:
@@ -816,7 +847,10 @@ class CommandRunner:
             process.kill()
         else:
             try:
-                os.killpg(process.pid, signal.SIGKILL)
+                sigkill = getattr(signal, "SIGKILL", None)
+                if not isinstance(sigkill, int):
+                    raise OSError("SIGKILL is unavailable")
+                _kill_process_group(process.pid, sigkill)
             except ProcessLookupError:
                 pass
             except OSError as error:

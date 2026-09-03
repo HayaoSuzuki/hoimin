@@ -13,6 +13,7 @@ import time
 import unittest
 from unittest import mock
 from typing import Any, BinaryIO
+from typing import cast
 
 from tools.focused_mutation_support.model import CommandRecord
 from tools.focused_mutation_support.disk import (
@@ -609,6 +610,70 @@ class FakeClock:
     def sleep(self, seconds: float) -> None:
         self.sleeps.append(seconds)
         self.now += seconds
+
+
+class _Task10RunnerCloseStream:
+    def __init__(
+        self,
+        stream: BinaryIO,
+        failures: int,
+        events: list[str] | None = None,
+    ) -> None:
+        self.stream = stream
+        self.failures = failures
+        self.events = events
+        self.close_calls = 0
+
+    @property
+    def closed(self) -> bool:
+        return self.stream.closed
+
+    def read(self, size: int = -1) -> bytes:
+        return self.stream.read(size)
+
+    def write(self, value: bytes) -> int:
+        return self.stream.write(value)
+
+    def flush(self) -> None:
+        self.stream.flush()
+
+    def fileno(self) -> int:
+        return self.stream.fileno()
+
+    def close(self) -> None:
+        self.close_calls += 1
+        if self.events is not None:
+            self.events.append("stream-close")
+        if self.failures:
+            self.failures -= 1
+            raise OSError("injected runner stream close failure")
+        self.stream.close()
+
+    def __enter__(self) -> "_Task10RunnerCloseStream":
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.close()
+
+
+class _Task10BoundaryGuard:
+    def __init__(self, stage: str) -> None:
+        self.stage = stage
+        self.failure = None
+        self.sample_calls = 0
+
+    def sample(self) -> None:
+        self.sample_calls += 1
+        if (
+            (self.stage == "preflight" and self.sample_calls == 1)
+            or (self.stage == "post-drain" and self.sample_calls == 2)
+            or (self.stage == "post-write" and self.sample_calls == 3)
+        ):
+            raise OSError(f"injected {self.stage} sample failure")
+
+    def reserve_additional_bytes(self, _value: int, **_kwargs: object) -> None:
+        if self.stage == "reserve":
+            raise OSError("injected reserve failure")
 
 
 class RunnerTests(unittest.TestCase):
@@ -1508,6 +1573,173 @@ class RunnerTests(unittest.TestCase):
                             pass
                     if captured_paths and captured_paths[0].root.is_open:
                         captured_paths[0].close()
+                    self.close_task10_store(store, scratch)
+
+    def test_task10_returned_writer_close_failure_blocks_delete_then_resumes(
+        self,
+    ) -> None:
+        store, scratch = self.task10_store()
+        runner = CommandRunner(store)
+        real_fdopen = os.fdopen
+        real_command_paths = store.command_paths
+        captured_paths: list[CommandPaths] = []
+        raw_writers: list[_Task10RunnerCloseStream] = []
+
+        def capture_paths(sequence: int, label: str) -> CommandPaths:
+            paths = real_command_paths(sequence, label)
+            captured_paths.append(paths)
+            return paths
+
+        def wrap_spool_writer(*args: object, **kwargs: object) -> BinaryIO:
+            raw = cast(Callable[..., BinaryIO], real_fdopen)(*args, **kwargs)
+            if kwargs.get("closefd") is True and args[1:2] == ("wb",):
+                wrapped = _Task10RunnerCloseStream(raw, 2)
+                raw_writers.append(wrapped)
+                return cast(BinaryIO, wrapped)
+            return raw
+
+        try:
+            with (
+                mock.patch.object(
+                    store, "command_paths", side_effect=capture_paths
+                ),
+                mock.patch(
+                    "tools.focused_mutation_support.runner.os.fdopen",
+                    side_effect=wrap_spool_writer,
+                ),
+                self.assertRaisesRegex(OSError, "runner stream close failure"),
+            ):
+                runner.run(
+                    [sys.executable, str(self.fake), "payload"],
+                    cwd=self.work,
+                    timeout=5.0,
+                    label="writer-close-owner",
+                )
+            self.assertEqual(len(captured_paths), 1)
+            paths = captured_paths[0]
+            self.assertEqual(raw_writers[0].close_calls, 2)
+            self.assertFalse(raw_writers[0].closed)
+            self.assertTrue(paths.stdout.exists())
+            self.assertTrue(paths.root.is_open)
+            self.assertTrue(store._live_root_tokens)
+
+            raw_writers[0].failures = 0
+            raw_writers[0].close()
+            paths.discard()
+            self.assertFalse(paths.stdout.exists())
+            self.assertFalse(paths.root.is_open)
+            self.assertFalse(store._live_root_tokens)
+        finally:
+            for stream in raw_writers:
+                if not stream.closed:
+                    stream.failures = 0
+                    stream.close()
+            for paths in captured_paths:
+                paths.discard()
+            self.close_task10_store(store, scratch)
+
+    def test_task10_runner_closes_pipe_owners_before_command_discard(self) -> None:
+        store, scratch = self.task10_store()
+        runner = CommandRunner(
+            store,
+            popen_factory=mock.Mock(side_effect=OSError("injected popen failure")),
+        )
+        real_fdopen = os.fdopen
+        real_discard = CommandPaths.discard
+        events: list[str] = []
+        streams: list[_Task10RunnerCloseStream] = []
+
+        def wrap_pipe(*args: object, **kwargs: object) -> BinaryIO:
+            raw = cast(Callable[..., BinaryIO], real_fdopen)(*args, **kwargs)
+            wrapped = _Task10RunnerCloseStream(raw, 0, events)
+            streams.append(wrapped)
+            return cast(BinaryIO, wrapped)
+
+        def record_discard(paths: CommandPaths) -> tuple[str, ...]:
+            events.append("discard")
+            return real_discard(paths)
+
+        try:
+            with (
+                mock.patch(
+                    "tools.focused_mutation_support.runner.os.fdopen",
+                    side_effect=wrap_pipe,
+                ),
+                mock.patch.object(
+                    CommandPaths,
+                    "discard",
+                    autospec=True,
+                    side_effect=record_discard,
+                ),
+                self.assertRaisesRegex(OSError, "popen failure"),
+            ):
+                runner.run(
+                    [sys.executable, "-c", "pass"],
+                    cwd=self.work,
+                    timeout=5.0,
+                    label="pipe-close-order",
+                )
+            self.assertIn("discard", events)
+            discard_index = events.index("discard")
+            self.assertGreaterEqual(discard_index, 4, events)
+            self.assertTrue(
+                all(event == "stream-close" for event in events[:discard_index]),
+                events,
+            )
+        finally:
+            for stream in streams:
+                if not stream.closed:
+                    stream.close()
+            self.close_task10_store(store, scratch)
+
+    def test_task10_disk_boundary_exceptions_release_token_and_exact_spools(
+        self,
+    ) -> None:
+        for stage in ("preflight", "post-drain", "reserve", "post-write"):
+            with self.subTest(stage=stage):
+                store, scratch = self.task10_store()
+                runner = CommandRunner(store)
+                real_command_paths = store.command_paths
+                captured: list[CommandPaths] = []
+
+                def capture_paths(sequence: int, label: str) -> CommandPaths:
+                    paths = real_command_paths(sequence, label)
+                    captured.append(paths)
+                    return paths
+
+                try:
+                    with (
+                        mock.patch.object(
+                            store,
+                            "command_paths",
+                            side_effect=capture_paths,
+                        ),
+                        self.assertRaisesRegex(
+                            OSError, f"injected {stage}"
+                        ) as caught,
+                    ):
+                        runner.run(
+                            [sys.executable, str(self.fake), stage],
+                            cwd=self.work,
+                            timeout=5.0,
+                            label=f"boundary-{stage}",
+                            disk_guard=_Task10BoundaryGuard(stage),
+                        )
+                    self.assertEqual(str(caught.exception), f"injected {stage} " + (
+                        "sample failure" if stage != "reserve" else "failure"
+                    ))
+                    self.assertEqual(len(captured), 1)
+                    paths = captured[0]
+                    self.assertFalse(paths.stdout.exists())
+                    self.assertFalse(paths.stderr.exists())
+                    self.assertFalse(paths.root.is_open)
+                    self.assertFalse(store._live_root_tokens)
+                    self.assertLessEqual(
+                        len(getattr(caught.exception, "__notes__", ())), 64
+                    )
+                finally:
+                    for paths in captured:
+                        paths.discard()
                     self.close_task10_store(store, scratch)
 
     def test_post_drain_disk_stop_wins_over_command_timeout(self) -> None:
