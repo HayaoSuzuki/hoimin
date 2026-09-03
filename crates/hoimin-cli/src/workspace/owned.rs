@@ -840,7 +840,7 @@ mod tests {
 
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
+            use cap_std::fs::PermissionsExt;
 
             assert_eq!(
                 directory.metadata(".").unwrap().permissions().mode() & 0o777,
@@ -6277,10 +6277,7 @@ struct CleanupCapabilities {
 impl CleanupCapabilities {
     #[cfg(unix)]
     fn with_lease(lease_guard: Option<File>) -> Self {
-        Self {
-            lease_guard,
-            ..Self::default()
-        }
+        Self { lease_guard }
     }
 
     #[cfg(windows)]
