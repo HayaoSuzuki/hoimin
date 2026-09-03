@@ -18562,6 +18562,35 @@ class ManagedScratchTests(unittest.TestCase):
                 "_remove_payload",
             ],
         )
+        preflight_checks = [0]
+
+        def expire_before_cursor_open() -> float:
+            preflight_checks[0] += 1
+            return 0.0 if preflight_checks[0] == 1 else 1.0
+
+        unopened_backend = mock.Mock(spec=FilesystemBackend)
+        preexpired = lease_module._remove_payload(
+            unopened_backend,
+            cast(DirectoryCapability, object()),
+            None,
+            root_name="00000000-0000-4000-8000-000000000825",
+            root_identity=FileIdentity(1, 1),
+            root_filesystem=FilesystemIdentity(1),
+            cursor=lease_module._CleanupCursor(),
+            started=0.0,
+            absolute_deadline=1.0,
+            examined=0,
+            removed=0,
+            monotonic=expire_before_cursor_open,
+        )
+
+        self.assertFalse(preexpired.complete)
+        self.assertIsInstance(preexpired.details, tuple)
+        self.assertEqual(preexpired.details, ())
+        self.assertEqual(preexpired.blocked_owners, ())
+        self.assertEqual(unopened_backend.mock_calls, [])
+        self.assertEqual(preflight_checks, [2])
+
         component = lease_module._CleanupComponent(
             nested.name, nested.identity, nested.filesystem
         )
