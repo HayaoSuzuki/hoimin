@@ -6,6 +6,7 @@ import gc
 import os
 import struct
 import subprocess
+import sys
 import tempfile
 import types
 import unittest
@@ -121,6 +122,54 @@ class WindowsDirectoryRecordTests(unittest.TestCase):
         return windows_native._DirectoryRecordParser(encoded, self.filesystem)
 
     def test_parser_yields_two_records_lazily_with_exact_metadata(self) -> None:
+        terminal = _directory_record("terminal")
+        child_script = "\n".join(
+            (
+                "import importlib",
+                "from pathlib import Path",
+                "import sys",
+                "module_name = "
+                "'tools.focused_mutation_support.windows_filesystem'",
+                "module = importlib.import_module(module_name)",
+                "assert module is sys.modules[module_name]",
+                "origin = Path(module.__file__).resolve()",
+                "root = Path.cwd().resolve()",
+                "assert origin.is_relative_to(root), (origin, root)",
+                "filesystem_module = importlib.import_module("
+                "'tools.focused_mutation_support.filesystem')",
+                "parser = module._DirectoryRecordParser("
+                "bytes.fromhex(sys.argv[1]), "
+                "filesystem_module.FilesystemIdentity(1))",
+                "names = []",
+                "for _ in range(2):",
+                "    record = parser.next_record()",
+                "    if record is None:",
+                "        break",
+                "    names.append(record.name)",
+                "else:",
+                "    raise AssertionError("
+                "'terminal record did not terminate parser')",
+                "assert names == ['terminal'], names",
+            )
+        )
+        try:
+            child = subprocess.run(
+                [sys.executable, "-B", "-c", child_script, terminal.hex()],
+                cwd=Path.cwd(),
+                capture_output=True,
+                text=True,
+                timeout=2.0,
+                check=False,
+                shell=False,
+            )
+        except subprocess.TimeoutExpired as error:
+            self.fail(f"canonical parser child exceeded two seconds: {error}")
+        self.assertEqual(
+            child.returncode,
+            0,
+            f"canonical parser child failed:\n{child.stdout}\n{child.stderr}",
+        )
+
         first_size = _align_directory_record(88 + len("alpha".encode("utf-16-le")))
         encoded = _directory_record(
             "alpha",
