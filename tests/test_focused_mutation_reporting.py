@@ -435,6 +435,16 @@ def write_outcomes_json(
 
 
 class FocusedMutationReportingTests(unittest.TestCase):
+    @contextmanager
+    def _synthetic_main_repository(self) -> Iterator[None]:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            (repository / ".git").mkdir()
+            with mock.patch(
+                "tools.focused_mutation.Path.cwd", return_value=repository
+            ):
+                yield
+
     def _task11_backend_dependency(self) -> None:
         self.assertIn(
             "filesystem_backend",
@@ -458,6 +468,7 @@ class FocusedMutationReportingTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as directory,
+            self._synthetic_main_repository(),
             mock.patch(
                 "tools.focused_mutation.default_filesystem_backend",
                 return_value=backend,
@@ -2618,6 +2629,7 @@ class FocusedMutationReportingTests(unittest.TestCase):
         )
         stderr = io.StringIO()
         with (
+            self._synthetic_main_repository(),
             mock.patch(
                 "tools.focused_mutation.run_workflow", side_effect=primary
             ),
@@ -2644,9 +2656,12 @@ class FocusedMutationReportingTests(unittest.TestCase):
                 event.set()
                 return fixture_record(candidates=[], state=RunState.COMPLETED)
 
-            with mock.patch(
-                "tools.focused_mutation.run_workflow",
-                side_effect=finish_after_signal,
+            with (
+                self._synthetic_main_repository(),
+                mock.patch(
+                    "tools.focused_mutation.run_workflow",
+                    side_effect=finish_after_signal,
+                ),
             ):
                 exit_code = main(["--output", str(output)])
 
@@ -3327,6 +3342,7 @@ class FocusedMutationReportingTests(unittest.TestCase):
         clock = mock.Mock(return_value=100.0)
         record = fixture_record(candidates=[], state=RunState.COMPLETED)
         with (
+            self._synthetic_main_repository(),
             mock.patch("tools.focused_mutation.time.monotonic", clock),
             mock.patch(
                 "tools.focused_mutation.run_workflow",
@@ -3451,6 +3467,7 @@ class FocusedMutationReportingTests(unittest.TestCase):
             with self.subTest(state=state):
                 record = fixture_record(candidates=[], state=state)
                 with (
+                    self._synthetic_main_repository(),
                     mock.patch(
                         "tools.focused_mutation.subprocess.run",
                         return_value=repository_result,
