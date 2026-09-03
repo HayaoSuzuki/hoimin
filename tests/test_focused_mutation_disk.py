@@ -5930,13 +5930,19 @@ class AnchoredDiskGuardTests(unittest.TestCase):
         self,
     ) -> None:
         path = Path("C:/recorded/owned")
-        for case in ("identity", "kind", "filesystem"):
+        for case in (
+            "file-identity",
+            "file-kind",
+            "file-filesystem",
+            "directory-identity",
+            "directory-kind",
+        ):
             with self.subTest(case=case):
                 root = self._node()
                 original = self._node(
                     kind=(
                         EntryKind.REGULAR
-                        if case in {"identity", "kind"}
+                        if case.startswith("file-")
                         else EntryKind.DIRECTORY
                     ),
                     logical_size=7,
@@ -5951,18 +5957,32 @@ class AnchoredDiskGuardTests(unittest.TestCase):
                     *,
                     selected: str = case,
                 ) -> None:
-                    if selected == "kind":
+                    if selected == "file-kind":
                         backend.open_overrides[(EntryKind.REGULAR, name)] = (
-                            self._node(kind=EntryKind.REPARSE)
+                            self._node(
+                                kind=EntryKind.REPARSE,
+                                identity=original.identity,
+                                filesystem=original.filesystem,
+                            )
                         )
-                    elif selected == "filesystem":
-                        backend.open_overrides[(EntryKind.DIRECTORY, name)] = (
-                            self._node(filesystem=FilesystemIdentity(43))
-                        )
-                    else:
+                    elif selected == "file-filesystem":
                         backend.open_overrides[(EntryKind.REGULAR, name)] = (
                             self._node(
                                 kind=EntryKind.REGULAR,
+                                identity=original.identity,
+                                filesystem=FilesystemIdentity(43),
+                                logical_size=7,
+                            )
+                        )
+                    elif selected == "directory-identity":
+                        backend.open_overrides[(EntryKind.DIRECTORY, name)] = (
+                            self._node(filesystem=original.filesystem)
+                        )
+                    elif selected == "file-identity":
+                        backend.open_overrides[(EntryKind.REGULAR, name)] = (
+                            self._node(
+                                kind=EntryKind.REGULAR,
+                                filesystem=original.filesystem,
                                 logical_size=7,
                             )
                         )
@@ -5971,7 +5991,28 @@ class AnchoredDiskGuardTests(unittest.TestCase):
                 guard, _ = self._recording_guard(path, root, backend=backend)
                 self.addCleanup(guard.close)
 
-                failure = guard.sample()
+                if case == "directory-kind":
+                    real_open_directory = backend.open_directory
+
+                    def wrong_kind_directory(
+                        parent: DirectoryCapability,
+                        name: str,
+                        share_policy: SharePolicy,
+                    ) -> DirectoryCapability:
+                        opened = real_open_directory(parent, name, share_policy)
+                        opened._kind = EntryKind.REGULAR
+                        return opened
+
+                    open_patch = mock.patch.object(
+                        backend,
+                        "open_directory",
+                        side_effect=wrong_kind_directory,
+                    )
+                else:
+                    open_patch = nullcontext()
+
+                with open_patch:
+                    failure = guard.sample()
 
                 self.assertIsNotNone(failure)
                 assert failure is not None
@@ -6304,8 +6345,164 @@ class AnchoredDiskGuardTests(unittest.TestCase):
         assert failure is not None
         self.assertEqual(failure.reason, DiskStopReason.MEASUREMENT_FAILED)
         assert failure.message is not None
-        self.assertIn("diagnostic-anchor/d0/d1", failure.message)
+        self.assertIn(
+            "below diagnostic-anchor/d0/d1/d2/d3/d4/d5/d6/d127",
+            failure.message,
+        )
+        self.assertNotIn("/d7/d127", failure.message)
         self.assertLessEqual(len(failure.message.encode("utf-8")), 1_024)
+
+    def test_root_reopen_rejects_each_identity_filesystem_and_kind_mismatch(
+        self,
+    ) -> None:
+        path = Path("C:/recorded/owned")
+        for case in ("identity", "filesystem", "kind"):
+            with self.subTest(case=case):
+                root = self._node()
+                backend = _RecordingFilesystemBackend()
+                guard, _ = self._recording_guard(path, root, backend=backend)
+                self.addCleanup(guard.close)
+                real_reopen = backend.reopen_directory
+
+                def mismatched_reopen(
+                    directory: DirectoryCapability,
+                    share_policy: SharePolicy | None = None,
+                    *,
+                    selected: str = case,
+                ) -> DirectoryCapability:
+                    reopened = real_reopen(directory, share_policy)
+                    if selected == "identity":
+                        reopened._identity = FileIdentity(
+                            reopened.identity.volume, reopened.identity.file + 1
+                        )
+                    elif selected == "filesystem":
+                        reopened._filesystem = FilesystemIdentity(43)
+                    else:
+                        reopened._kind = EntryKind.REGULAR
+                    return reopened
+
+                with mock.patch.object(
+                    backend, "reopen_directory", side_effect=mismatched_reopen
+                ):
+                    failure = guard.sample()
+
+                self.assertIsNotNone(failure)
+                assert failure is not None
+                self.assertEqual(failure.reason, DiskStopReason.MEASUREMENT_FAILED)
+                assert failure.message is not None
+                self.assertIn("root identity changed", failure.message)
+                self.assertEqual(backend.active_resources, 1)
+
+    def test_meter_rejects_each_zero_or_negative_entry_metadata_field(
+        self,
+    ) -> None:
+        path = Path("C:/recorded/owned")
+        cases = (
+            ("identity-volume", FileIdentity(0, 7), FilesystemIdentity(17), 1),
+            ("identity-file", FileIdentity(17, 0), FilesystemIdentity(17), 1),
+            ("filesystem-volume", FileIdentity(17, 7), FilesystemIdentity(0), 1),
+            ("logical-size", FileIdentity(17, 7), FilesystemIdentity(17), -1),
+        )
+        for label, identity, filesystem, logical_size in cases:
+            with self.subTest(label=label):
+                root = self._node()
+                root.add(
+                    "malformed",
+                    self._node(
+                        identity=identity,
+                        filesystem=filesystem,
+                        kind=EntryKind.REPARSE,
+                        logical_size=logical_size,
+                    ),
+                )
+                guard, backend = self._recording_guard(path, root)
+                self.addCleanup(guard.close)
+
+                failure = guard.sample()
+
+                self.assertIsNotNone(failure)
+                assert failure is not None
+                assert failure.message is not None
+                self.assertIn("malformed metadata", failure.message)
+                self.assertEqual(backend.active_resources, 1)
+
+    def test_duplicate_hard_link_does_not_skip_following_unique_file(self) -> None:
+        path = Path("C:/recorded/owned")
+        root = self._node()
+        shared_identity = FileIdentity(root.filesystem.volume, 700)
+        root.add(
+            "first",
+            self._node(
+                identity=shared_identity,
+                kind=EntryKind.REGULAR,
+                logical_size=11,
+            ),
+        )
+        root.add(
+            "duplicate",
+            self._node(
+                identity=shared_identity,
+                kind=EntryKind.REGULAR,
+                logical_size=11,
+            ),
+        )
+        root.add(
+            "unique",
+            self._node(kind=EntryKind.REGULAR, logical_size=13),
+        )
+        guard, backend = self._recording_guard(path, root)
+        self.addCleanup(guard.close)
+
+        failure = guard.sample()
+
+        self.assertIsNone(failure)
+        self.assertEqual(guard.observations[-1].owned_bytes, 24)
+        self.assertEqual(backend.operations.count("open_file"), 3)
+
+    def test_successful_file_close_deadline_remains_primary(self) -> None:
+        path = Path("C:/recorded/owned")
+        root = self._node()
+        root.add("payload", self._node(kind=EntryKind.REGULAR, logical_size=1))
+        backend = _RecordingFilesystemBackend()
+        clock = [0.0]
+        guard, _ = self._recording_guard(
+            path, root, backend=backend, monotonic=lambda: clock[0]
+        )
+        self.addCleanup(guard.close)
+        real_close = backend.close_resource
+
+        def close_then_expire(resource: object) -> None:
+            real_close(resource)
+            if isinstance(resource, _RecordedResource) and resource.node.kind is EntryKind.REGULAR:
+                clock[0] = 5.0
+
+        with mock.patch.object(backend, "close_resource", side_effect=close_then_expire):
+            failure = guard.sample()
+
+        self.assertIsNotNone(failure)
+        assert failure is not None
+        assert failure.message is not None
+        self.assertIn("exceeded five seconds", failure.message)
+        self.assertNotIn("NoneType", failure.message)
+
+    def test_iterator_failure_remains_primary_when_unwind_close_also_fails(
+        self,
+    ) -> None:
+        path = Path("C:/recorded/owned")
+        root = self._node()
+        backend = _RecordingFilesystemBackend()
+        backend.iterator_fail_after[root.identity] = 0
+        backend.close_failures[root.identity] = 2
+        guard, _ = self._recording_guard(path, root, backend=backend)
+        self.addCleanup(guard.close)
+
+        failure = guard.sample()
+
+        self.assertIsNotNone(failure)
+        assert failure is not None
+        assert failure.message is not None
+        self.assertIn("injected iteration failure", failure.message)
+        self.assertIn("capability close failure", failure.message)
 
     def test_reserved_spool_bytes_trip_owned_limit_before_write(self) -> None:
         guard, backend, borrowed = self._reservation_guard(
@@ -6938,6 +7135,42 @@ class AnchoredDiskGuardTests(unittest.TestCase):
 
 
 class ManagedScratchTests(unittest.TestCase):
+    def setUp(self) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_DeferredEmptyPendingRegistry"],
+        )
+        registry = lease_module._DeferredEmptyPendingRegistry()
+        registry_patch = mock.patch.object(
+            lease_module, "_DEFERRED_EMPTY_PENDING", registry
+        )
+        registry_patch.start()
+        self.addCleanup(registry_patch.stop)
+
+        def assert_registry_released() -> None:
+            cells = tuple(registry._cells)
+            self.assertFalse(
+                any(cell.active for cell in cells),
+                "test left active deferred-empty evidence",
+            )
+            self.assertFalse(
+                any(cell.resolving for cell in cells),
+                "test left resolving deferred-empty evidence",
+            )
+            self.assertFalse(
+                any(
+                    cell.owner is not None and cell.owner.is_open
+                    for cell in cells
+                ),
+                "test left a live deferred-empty owner",
+            )
+            self.assertFalse(
+                any(cell.reserved for cell in cells),
+                "test left a deferred-empty reservation",
+            )
+
+        self.addCleanup(assert_registry_released)
+
     def _task7_backend(
         self, *, rename_requires_closed_descendants: bool = False
     ) -> _ManagedRecordingBackend:
@@ -8546,6 +8779,374 @@ class ManagedScratchTests(unittest.TestCase):
 
         self.assertEqual(observed_timeouts, [1.0])
         self.assertEqual(len(backend.live_resources), 0)
+
+    def test_reclaim_strictly_resolves_missing_or_replaced_paths_before_backend_io(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_ensure_managed_root"],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            missing = Path(directory) / "missing-parent" / "hoimin-focused-v1"
+            backend = mock.Mock(spec=FilesystemBackend)
+            with self.assertRaises(FileNotFoundError):
+                reclaim_abandoned(missing, backend=backend)
+            self.assertEqual(backend.mock_calls, [])
+
+        backend = self._task8_backend()
+        supplied = self._task7_managed_root(backend)
+        with tempfile.TemporaryDirectory() as directory:
+            actual = Path(directory) / "hoimin-focused-v1"
+            actual.mkdir()
+            replacement = Path(directory) / "replacement"
+            replacement.mkdir()
+            with (
+                mock.patch.object(
+                    lease_module,
+                    "_ensure_managed_root",
+                    return_value=(replacement.resolve(strict=True), supplied),
+                ),
+                mock.patch.object(
+                    lease_module,
+                    "_open_coordinator",
+                    side_effect=AssertionError(
+                        "coordinator opened after managed path replacement"
+                    ),
+                ),
+                self.assertRaisesRegex(OSError, "managed root path changed"),
+            ):
+                reclaim_abandoned(actual, backend=backend)
+
+    def test_reclaim_reopens_only_nonmutation_supplied_root_and_closes_original(
+        self,
+    ) -> None:
+        for share_policy, expected_reopens in (
+            (SharePolicy.MUTATION, 0),
+            (SharePolicy.PINNED, 1),
+        ):
+            with self.subTest(share_policy=share_policy):
+                backend = self._task8_backend()
+                root = self._task7_managed_root(backend)
+                root._share_policy = share_policy
+                original_identity = root.identity
+                real_reopen = backend.reopen_directory
+                lease_module = __import__(
+                    "tools.focused_mutation_support.lease",
+                    fromlist=["_select_janitor_candidates"],
+                )
+                with (
+                    mock.patch.object(
+                        backend,
+                        "reopen_directory",
+                        wraps=real_reopen,
+                    ) as reopen,
+                    mock.patch.object(
+                        lease_module,
+                        "_select_janitor_candidates",
+                        return_value=([], 0),
+                    ),
+                ):
+                    records = reclaim_abandoned(
+                        root.path_hint,
+                        backend=backend,
+                        managed_root_capability=root,
+                    )
+
+                self.assertEqual(records, [])
+                self.assertEqual(reopen.call_count, expected_reopens)
+                self.assertFalse(root.is_open)
+                self.assertGreaterEqual(
+                    backend.close_counts.get(original_identity, 0), 1
+                )
+
+    def test_selection_coordinator_close_failure_becomes_tuple_diagnostic(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        root = self._task7_managed_root(backend)
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_close_lease_lock_retry"],
+        )
+        real_close = lease_module._close_lease_lock_retry
+
+        def fail_selection_close(
+            lock: LeaseLock, label: str
+        ) -> tuple[str, ...]:
+            details = real_close(lock, label)
+            if label == "janitor selection coordinator":
+                return (*details, "injected selection close failure")
+            return details
+
+        with mock.patch.object(
+            lease_module,
+            "_close_lease_lock_retry",
+            side_effect=fail_selection_close,
+        ):
+            records = reclaim_abandoned(
+                root.path_hint,
+                backend=backend,
+                managed_root_capability=root,
+            )
+
+        self.assertEqual(len(records), 1, records)
+        diagnostic = records[0]
+        self.assertIsInstance(diagnostic, JanitorDiagnostic)
+        self.assertIsInstance(diagnostic.details, tuple)
+        self.assertEqual(
+            diagnostic.details, ("injected selection close failure",)
+        )
+
+    def test_candidate_loop_skips_blocked_first_and_processes_eligible_second(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_janitor_candidate_record"],
+        )
+        for first_disposition in ("pending-skip", "blocked"):
+            with self.subTest(first_disposition=first_disposition):
+                backend = self._task8_backend()
+                root = self._task7_managed_root(backend)
+                managed = backend._resource(root).node
+                first = self._task9_add_candidate(
+                    backend,
+                    managed,
+                    run_id="00000000-0000-4000-8000-000000000031",
+                    ready=True,
+                )
+                second = self._task9_add_candidate(
+                    backend,
+                    managed,
+                    run_id="00000000-0000-4000-8000-000000000032",
+                    ready=True,
+                )
+                visited: list[str] = []
+                pending = mock.Mock()
+
+                def resolve_matching(
+                    _backend: FilesystemBackend,
+                    _managed_root: Path,
+                    _root: DirectoryCapability,
+                    _record_ledger: object,
+                    skip_names: object,
+                    *,
+                    deadline: float,
+                ) -> bool:
+                    del deadline
+                    if first_disposition == "pending-skip":
+                        skip_names.add(first.name)
+                    return False
+
+                def blocks_candidate(
+                    _backend: FilesystemBackend,
+                    _managed_root: Path,
+                    _root: DirectoryCapability,
+                    candidate: object,
+                ) -> bool:
+                    return (
+                        first_disposition == "blocked"
+                        and getattr(candidate, "name") == first.name
+                    )
+
+                pending.resolve_matching.side_effect = resolve_matching
+                pending.blocks_candidate.side_effect = blocks_candidate
+
+                def record_candidate(
+                    _managed_root: Path,
+                    _root: DirectoryCapability,
+                    candidate: object,
+                    _backend: FilesystemBackend,
+                    **_kwargs: object,
+                ) -> ScratchCleanupRecord:
+                    visited.append(cast(str, getattr(candidate, "name")))
+                    return ScratchCleanupRecord(
+                        ScratchCleanupStatus.CLEAN, 1, 1
+                    )
+
+                with (
+                    mock.patch.object(
+                        lease_module, "_DEFERRED_EMPTY_PENDING", pending
+                    ),
+                    mock.patch.object(
+                        lease_module,
+                        "_janitor_candidate_record",
+                        side_effect=record_candidate,
+                    ),
+                ):
+                    reclaim_abandoned(
+                        root.path_hint,
+                        now=24 * 60 * 60 + 1.0,
+                        backend=backend,
+                        managed_root_capability=root,
+                    )
+
+                self.assertNotIn(first.name, visited)
+                self.assertIn(second.name, visited)
+
+    def test_candidate_and_deferred_loops_stop_exactly_at_deadline(self) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_janitor_candidate_record", "_resume_deferred_cleanup"],
+        )
+
+        backend = self._task8_backend()
+        root = self._task7_managed_root(backend)
+        managed = backend._resource(root).node
+        for number in (41, 42):
+            self._task9_add_candidate(
+                backend,
+                managed,
+                run_id=f"00000000-0000-4000-8000-{number:012d}",
+                ready=True,
+            )
+        phase = ["selection"]
+        deadline_checks = [0]
+        real_close = lease_module._close_lease_lock_retry
+
+        def enter_candidate_loop(
+            lock: LeaseLock, label: str
+        ) -> tuple[str, ...]:
+            details = real_close(lock, label)
+            if label == "janitor selection coordinator":
+                phase[0] = "candidate"
+            return details
+
+        def candidate_clock() -> float:
+            if phase[0] != "candidate":
+                return 0.0
+            deadline_checks[0] += 1
+            if deadline_checks[0] > 1:
+                raise AssertionError("candidate loop continued past deadline")
+            return 30.0
+
+        with (
+            mock.patch.object(
+                lease_module,
+                "_close_lease_lock_retry",
+                side_effect=enter_candidate_loop,
+            ),
+            mock.patch.object(
+                lease_module.time, "monotonic", side_effect=candidate_clock
+            ),
+            mock.patch.object(
+                lease_module,
+                "_janitor_candidate_record",
+                side_effect=AssertionError(
+                    "candidate work started at deadline equality"
+                ),
+            ),
+        ):
+            records = reclaim_abandoned(
+                root.path_hint,
+                backend=backend,
+                managed_root_capability=root,
+            )
+        self.assertEqual(records, [])
+        self.assertEqual(deadline_checks, [1])
+
+        backend = self._task8_backend()
+        root = self._task7_managed_root(backend)
+        managed = backend._resource(root).node
+        for number in (43, 44):
+            self._task9_add_candidate(
+                backend,
+                managed,
+                run_id=f"00000000-0000-4000-8000-{number:012d}",
+                ready=True,
+            )
+        phase = ["selection"]
+        loop_checks = [0]
+        real_close = lease_module._close_lease_lock_retry
+
+        def enter_loops(lock: LeaseLock, label: str) -> tuple[str, ...]:
+            details = real_close(lock, label)
+            if label == "janitor selection coordinator":
+                phase[0] = "loops"
+            return details
+
+        def deferred_clock() -> float:
+            if phase[0] != "loops":
+                return 0.0
+            loop_checks[0] += 1
+            if loop_checks[0] <= 2:
+                return 0.0
+            if loop_checks[0] == 3:
+                return 30.0
+            raise AssertionError("deferred loop continued past deadline")
+
+        with (
+            mock.patch.object(
+                lease_module,
+                "_close_lease_lock_retry",
+                side_effect=enter_loops,
+            ),
+            mock.patch.object(
+                lease_module.time, "monotonic", side_effect=deferred_clock
+            ),
+            mock.patch.object(
+                lease_module,
+                "_janitor_candidate_record",
+                return_value=ScratchCleanupRecord(
+                    ScratchCleanupStatus.DEFERRED,
+                    1,
+                    0,
+                    remaining_root="deferred",
+                ),
+            ),
+            mock.patch.object(
+                lease_module,
+                "_resume_deferred_cleanup",
+                side_effect=AssertionError(
+                    "deferred work started at deadline equality"
+                ),
+            ),
+        ):
+            records = reclaim_abandoned(
+                root.path_hint,
+                backend=backend,
+                managed_root_capability=root,
+            )
+        self.assertEqual(len(records), 2)
+        self.assertEqual(loop_checks, [3])
+
+    def test_final_root_close_failure_becomes_tuple_diagnostic(self) -> None:
+        backend = self._task8_backend()
+        root = self._task7_managed_root(backend)
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_close_capability_retry"],
+        )
+        real_close = lease_module._close_capability_retry
+
+        def fail_final_root_close(
+            capability: FileCapability | DirectoryCapability,
+            label: str,
+        ) -> tuple[str, ...]:
+            details = real_close(capability, label)
+            if label == "janitor managed root":
+                return (*details, "injected final root close failure")
+            return details
+
+        with mock.patch.object(
+            lease_module,
+            "_close_capability_retry",
+            side_effect=fail_final_root_close,
+        ):
+            records = reclaim_abandoned(
+                root.path_hint,
+                backend=backend,
+                managed_root_capability=root,
+            )
+
+        self.assertEqual(len(records), 1, records)
+        diagnostic = records[0]
+        self.assertIsInstance(diagnostic, JanitorDiagnostic)
+        self.assertIsInstance(diagnostic.details, tuple)
+        self.assertEqual(
+            diagnostic.details, ("injected final root close failure",)
+        )
 
     def test_cursor_persist_does_not_fsync_after_write_crosses_deadline(
         self,
@@ -13622,8 +14223,26 @@ class ManagedScratchTests(unittest.TestCase):
             if not resource.closed and resource.node.identity == payload.identity
         ]
         self.assertEqual(len(retained_resources), 1, retained_resources)
+        graph = scratch._cleanup_graph
+        assert graph is not None
+        self.assertTrue(
+            any(
+                owner is not None
+                and owner.identity == payload.identity
+                and owner.is_open
+                for owner in graph.blocked._owners
+            )
+        )
+        live_slots = [
+            slot.owner
+            for slot in graph.capability_slots()
+            if slot.owner is not None and slot.owner.is_open
+        ]
+        self.assertEqual(len(live_slots), 1, live_slots)
+        self.assertEqual(live_slots[0].identity, payload.identity)
         for resource in retained_resources:
             resource.close_failures = 0
+        del live_slots
         scratch.__del__()
         self.assertTrue(
             all(resource.closed for resource in retained_resources),
@@ -15887,9 +16506,35 @@ class ManagedScratchTests(unittest.TestCase):
             share_policy=SharePolicy.MUTATION,
         )
         cleanup_ready.close()
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_cleanup_handle_observer"],
+        )
+        owner_snapshots: list[
+            tuple[int, bool, bool, bool, bool]
+        ] = []
 
-        child_cleanup = scratch.remove_child(child)
-        root_cleanup = self._task8_cleanup(scratch, backend)
+        def observe_owner_graph(open_directories: int) -> None:
+            graph = scratch._cleanup_graph
+            if graph is None:
+                return
+            owner_snapshots.append(
+                (
+                    open_directories,
+                    graph.walker_parent.owner is not None,
+                    graph.walker_child.owner is not None,
+                    graph.walker_current.owner is not None,
+                    graph.walker_iterator.owner is not None,
+                )
+            )
+
+        with mock.patch.object(
+            lease_module,
+            "_cleanup_handle_observer",
+            side_effect=observe_owner_graph,
+        ):
+            child_cleanup = scratch.remove_child(child)
+            root_cleanup = self._task8_cleanup(scratch, backend)
 
         self.assertEqual(
             child_cleanup.status, ScratchCleanupStatus.CLEAN, child_cleanup
@@ -15907,6 +16552,17 @@ class ManagedScratchTests(unittest.TestCase):
         self.assertLess(marker_delete, root_delete)
         self.assertEqual(len(backend.live_resources), 0)
         self.assertLessEqual(backend.max_directory_resources, 3)
+        self.assertTrue(
+            any(iterator for _count, _parent, _child, _current, iterator in owner_snapshots),
+            owner_snapshots,
+        )
+        graph = scratch._cleanup_graph
+        assert graph is not None
+        self.assertTrue(
+            all(slot.owner is None for slot in graph.capability_slots())
+        )
+        self.assertIsNone(graph.walker_iterator.owner)
+        self.assertFalse(any(owner.is_open for owner in graph.blocked))
 
     def test_task8_recording_cleanup_deletes_reparse_and_other_exactly(
         self,
@@ -16724,6 +17380,565 @@ class ManagedScratchTests(unittest.TestCase):
         self.assertEqual(cleanup.status, ScratchCleanupStatus.DEFERRED, cleanup)
         self.assertGreaterEqual(cleanup.examined_entries, 1)
         self.assertEqual(cleanup.removed_entries, 0)
+
+    def test_committed_nested_pending_resumes_parent_and_removed_count_never_regresses(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000823",
+        )
+        root_node = self._task8_root_node(backend, scratch)
+        nested = self._task8_add_payload(
+            backend, root_node, "nested", kind=EntryKind.DIRECTORY
+        )
+        deeper = self._task8_add_payload(
+            backend, nested, "deeper", kind=EntryKind.DIRECTORY
+        )
+        removed_node = self._task8_add_payload(backend, nested, "gone")
+        del nested.children[removed_node.name]
+        removed_node.parent = None
+        self._task8_add_payload(backend, deeper, "gone")
+        root = scratch._root
+        anchor = scratch._managed_root_capability
+        assert root is not None
+        assert anchor is not None
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=[
+                "_CleanupComponent",
+                "_CleanupCursor",
+                "_PendingAbsenceCell",
+                "_remove_payload",
+            ],
+        )
+        nested_component = lease_module._CleanupComponent(
+            nested.name, nested.identity, nested.filesystem
+        )
+        deeper_component = lease_module._CleanupComponent(
+            deeper.name, deeper.identity, deeper.filesystem
+        )
+        pending = lease_module._PendingAbsenceCell()
+        pending.arm(
+            scope="payload",
+            name=removed_node.name,
+            identity=removed_node.identity,
+            filesystem=removed_node.filesystem,
+            parent_components=(nested_component,),
+            removed_after=7,
+        )
+        pending.commit()
+
+        result = lease_module._remove_payload(
+            backend,
+            anchor,
+            root,
+            root_name=scratch.path.name,
+            root_identity=scratch._root_identity,
+            root_filesystem=scratch._root_filesystem,
+            cursor=lease_module._CleanupCursor(
+                (nested_component, deeper_component)
+            ),
+            started=0.0,
+            absolute_deadline=60.0,
+            examined=0,
+            removed=10,
+            monotonic=lambda: 0.0,
+            pending_absence=pending,
+        )
+        scratch._root = result.root
+
+        self.assertTrue(result.complete, result)
+        self.assertEqual(result.removed_entries, 13)
+        self.assertFalse(pending.armed)
+        self.assertNotIn("nested", root_node.children)
+
+    def test_persisted_pending_replacement_fails_without_open_or_delete(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000824",
+        )
+        root_node = self._task8_root_node(backend, scratch)
+        replacement = self._task8_add_payload(backend, root_node, "payload")
+        root = scratch._root
+        anchor = scratch._managed_root_capability
+        assert root is not None
+        assert anchor is not None
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_CleanupComponent", "_CleanupCursor", "_remove_payload"],
+        )
+        pending = lease_module._CleanupComponent(
+            replacement.name, replacement.identity, replacement.filesystem
+        )
+        operation_start = len(backend.cleanup_operations)
+
+        with self.assertRaisesRegex(OSError, "same-name replacement"):
+            lease_module._remove_payload(
+                backend,
+                anchor,
+                root,
+                root_name=scratch.path.name,
+                root_identity=scratch._root_identity,
+                root_filesystem=scratch._root_filesystem,
+                cursor=lease_module._CleanupCursor((), pending),
+                started=0.0,
+                absolute_deadline=60.0,
+                examined=0,
+                removed=1,
+                monotonic=lambda: 0.0,
+            )
+
+        operations = backend.cleanup_operations[operation_start:]
+        self.assertNotIn("open_entry:payload", operations)
+        self.assertNotIn("delete:payload", operations)
+        self.assertIs(root_node.children["payload"], replacement)
+
+    def test_iterator_exhaustion_deadline_never_reports_complete_without_root(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000825",
+        )
+        root = scratch._root
+        anchor = scratch._managed_root_capability
+        assert root is not None
+        assert anchor is not None
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_CleanupCursor", "_remove_payload"],
+        )
+        clock = [0.0]
+
+        def cross_on_exhaustion(operation: str) -> None:
+            if operation.startswith("iterator.next:"):
+                clock[0] = 1.0
+
+        backend.after_cleanup_operation = cross_on_exhaustion
+        result = lease_module._remove_payload(
+            backend,
+            anchor,
+            root,
+            root_name=scratch.path.name,
+            root_identity=scratch._root_identity,
+            root_filesystem=scratch._root_filesystem,
+            cursor=lease_module._CleanupCursor(),
+            started=0.0,
+            absolute_deadline=1.0,
+            examined=0,
+            removed=0,
+            monotonic=lambda: clock[0],
+        )
+        scratch._root = result.root
+
+        self.assertFalse(result.complete)
+        self.assertIsNone(result.root)
+        self.assertEqual(result.removed_entries, 0)
+
+    def test_completed_directory_counts_once_and_deadline_defers_before_absence(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000826",
+        )
+        root_node = self._task8_root_node(backend, scratch)
+        self._task8_add_payload(
+            backend, root_node, "nested", kind=EntryKind.DIRECTORY
+        )
+        root = scratch._root
+        anchor = scratch._managed_root_capability
+        assert root is not None
+        assert anchor is not None
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_CleanupCursor", "_remove_payload"],
+        )
+        clock = [0.0]
+
+        def cross_after_delete(operation: str) -> None:
+            if operation == "delete:nested":
+                clock[0] = 1.0
+
+        backend.after_cleanup_operation = cross_after_delete
+        result = lease_module._remove_payload(
+            backend,
+            anchor,
+            root,
+            root_name=scratch.path.name,
+            root_identity=scratch._root_identity,
+            root_filesystem=scratch._root_filesystem,
+            cursor=lease_module._CleanupCursor(),
+            started=0.0,
+            absolute_deadline=1.0,
+            examined=0,
+            removed=0,
+            monotonic=lambda: clock[0],
+        )
+        scratch._root = result.root
+
+        self.assertFalse(result.complete)
+        self.assertEqual(result.removed_entries, 1)
+        self.assertEqual(result.cursor.components, ())
+        self.assertEqual(result.cursor.pending_absence.name, "nested")
+
+    def test_live_parent_after_iterator_close_returns_incomplete(self) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000827",
+        )
+        root_node = self._task8_root_node(backend, scratch)
+        self._task8_add_payload(
+            backend, root_node, "nested", kind=EntryKind.DIRECTORY
+        )
+        backend.iterator_close_failures_by_identity[root_node.identity] = 3
+        root = scratch._root
+        anchor = scratch._managed_root_capability
+        assert root is not None
+        assert anchor is not None
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_CleanupCursor", "_remove_payload"],
+        )
+
+        result = lease_module._remove_payload(
+            backend,
+            anchor,
+            root,
+            root_name=scratch.path.name,
+            root_identity=scratch._root_identity,
+            root_filesystem=scratch._root_filesystem,
+            cursor=lease_module._CleanupCursor(),
+            started=0.0,
+            absolute_deadline=60.0,
+            examined=0,
+            removed=0,
+            monotonic=lambda: 0.0,
+        )
+        scratch._root = result.root
+
+        self.assertFalse(result.complete)
+        self.assertEqual(
+            [owner.identity for owner in result.blocked_owners],
+            [root_node.identity],
+        )
+
+    def test_outer_unwind_merges_unique_live_owners_in_acquisition_order(
+        self,
+    ) -> None:
+        backend = self._task8_backend()
+        scratch = self._task8_create(
+            backend,
+            run_id="00000000-0000-4000-8000-000000000828",
+        )
+        root_node = self._task8_root_node(backend, scratch)
+        self._task8_add_payload(backend, root_node, "payload")
+        root = scratch._root
+        anchor = scratch._managed_root_capability
+        assert root is not None
+        assert anchor is not None
+        extra = backend.open_directory(anchor, scratch.path.name, SharePolicy.PINNED)
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=[
+                "_CleanupCursor",
+                "_CleanupOwnershipBlocked",
+                "_remove_payload",
+            ],
+        )
+        def fail_with_primary_owners(
+            directory: DirectoryCapability,
+            _name: str,
+            _share_policy: SharePolicy,
+        ) -> FileCapability | DirectoryCapability:
+            raise lease_module._CleanupOwnershipBlocked(
+                "injected primary owner",
+                (extra, directory),
+                ("primary detail",),
+            )
+
+        with (
+            mock.patch.object(
+                backend, "open_entry", side_effect=fail_with_primary_owners
+            ),
+            mock.patch.object(
+                lease_module,
+                "_close_cleanup_iterator",
+                return_value=("iterator detail",),
+            ),
+            self.assertRaises(lease_module._CleanupOwnershipBlocked) as caught,
+        ):
+            lease_module._remove_payload(
+                backend,
+                anchor,
+                root,
+                root_name=scratch.path.name,
+                root_identity=scratch._root_identity,
+                root_filesystem=scratch._root_filesystem,
+                cursor=lease_module._CleanupCursor(),
+                started=0.0,
+                absolute_deadline=60.0,
+                examined=0,
+                removed=0,
+                monotonic=lambda: 0.0,
+            )
+
+        self.assertEqual(len(caught.exception.owners), 2)
+        self.assertIs(caught.exception.owners[0], extra)
+        self.assertEqual(
+            caught.exception.owners[1].identity, root_node.identity
+        )
+        self.assertEqual(
+            caught.exception.details,
+            ("primary detail", "iterator detail"),
+        )
+        extra.close()
+        caught.exception.owners[1].close()
+        scratch._root = None
+
+    def test_vanished_directory_continues_but_permission_error_propagates(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_CleanupCursor", "_remove_payload"],
+        )
+        for failure_type in (FileNotFoundError, PermissionError):
+            with self.subTest(failure_type=failure_type):
+                backend = self._task8_backend()
+                scratch = self._task8_create(
+                    backend,
+                    run_id=str(uuid.uuid4()),
+                )
+                root_node = self._task8_root_node(backend, scratch)
+                vanished = self._task8_add_payload(
+                    backend, root_node, "a-vanished", kind=EntryKind.DIRECTORY
+                )
+                following = self._task8_add_payload(
+                    backend, root_node, "b-following"
+                )
+                root = scratch._root
+                anchor = scratch._managed_root_capability
+                assert root is not None
+                assert anchor is not None
+                real_open = backend.open_directory
+
+                def fail_first_open(
+                    directory: DirectoryCapability,
+                    name: str,
+                    share_policy: SharePolicy,
+                ) -> DirectoryCapability:
+                    if name == vanished.name:
+                        raise failure_type("injected directory open failure")
+                    return real_open(directory, name, share_policy)
+
+                invocation = lambda: lease_module._remove_payload(
+                    backend,
+                    anchor,
+                    root,
+                    root_name=scratch.path.name,
+                    root_identity=scratch._root_identity,
+                    root_filesystem=scratch._root_filesystem,
+                    cursor=lease_module._CleanupCursor(),
+                    started=0.0,
+                    absolute_deadline=60.0,
+                    examined=0,
+                    removed=0,
+                    monotonic=lambda: 0.0,
+                )
+                with mock.patch.object(
+                    backend, "open_directory", side_effect=fail_first_open
+                ):
+                    if failure_type is PermissionError:
+                        with self.assertRaises(PermissionError):
+                            invocation()
+                    else:
+                        result = invocation()
+                        scratch._root = result.root
+                        self.assertTrue(result.complete, result)
+                        self.assertNotIn(following.name, root_node.children)
+
+    def test_opened_entry_rejects_each_evidence_mismatch_before_delete(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_CleanupCursor", "_remove_payload"],
+        )
+        for mismatch in ("kind", "identity", "filesystem"):
+            with self.subTest(mismatch=mismatch):
+                backend = self._task8_backend()
+                scratch = self._task8_create(backend, run_id=str(uuid.uuid4()))
+                root_node = self._task8_root_node(backend, scratch)
+                target = self._task8_add_payload(backend, root_node, "payload")
+                root = scratch._root
+                anchor = scratch._managed_root_capability
+                assert root is not None
+                assert anchor is not None
+                real_open = backend.open_entry
+
+                def mismatched_open(
+                    directory: DirectoryCapability,
+                    name: str,
+                    share_policy: SharePolicy,
+                ) -> FileCapability | DirectoryCapability:
+                    opened = real_open(directory, name, share_policy)
+                    if mismatch == "kind":
+                        opened._kind = EntryKind.OTHER
+                    elif mismatch == "identity":
+                        opened._identity = FileIdentity(
+                            opened.identity.volume, opened.identity.file + 1000
+                        )
+                    else:
+                        opened._filesystem = FilesystemIdentity(
+                            opened.filesystem.volume + 1000
+                        )
+                    return opened
+
+                with (
+                    mock.patch.object(
+                        backend, "open_entry", side_effect=mismatched_open
+                    ),
+                    self.assertRaisesRegex(OSError, "identity changed"),
+                ):
+                    lease_module._remove_payload(
+                        backend,
+                        anchor,
+                        root,
+                        root_name=scratch.path.name,
+                        root_identity=scratch._root_identity,
+                        root_filesystem=scratch._root_filesystem,
+                        cursor=lease_module._CleanupCursor(),
+                        started=0.0,
+                        absolute_deadline=60.0,
+                        examined=0,
+                        removed=0,
+                        monotonic=lambda: 0.0,
+                    )
+
+                self.assertIs(root_node.children["payload"], target)
+                self.assertNotIn("delete:payload", backend.cleanup_operations)
+
+    def test_deadline_cleanup_closes_current_and_never_reports_complete(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=["_CleanupComponent", "_CleanupCursor", "_remove_payload"],
+        )
+        for close_blocked in (False, True):
+            with self.subTest(close_blocked=close_blocked):
+                backend = self._task8_backend()
+                scratch = self._task8_create(backend, run_id=str(uuid.uuid4()))
+                root_node = self._task8_root_node(backend, scratch)
+                nested = self._task8_add_payload(
+                    backend, root_node, "nested", kind=EntryKind.DIRECTORY
+                )
+                if close_blocked:
+                    backend.close_failures_by_identity[nested.identity] = 3
+                anchor = scratch._managed_root_capability
+                assert anchor is not None
+                component = lease_module._CleanupComponent(
+                    nested.name, nested.identity, nested.filesystem
+                )
+                nested_opened = [False]
+                checks_after_nested_open = [0]
+
+                def cross_after_open(operation: str) -> None:
+                    if operation == "open_directory:nested":
+                        nested_opened[0] = True
+
+                def clock() -> float:
+                    if not nested_opened[0]:
+                        return 0.0
+                    checks_after_nested_open[0] += 1
+                    return 0.0 if checks_after_nested_open[0] == 1 else 1.0
+
+                backend.after_cleanup_operation = cross_after_open
+                result = lease_module._remove_payload(
+                    backend,
+                    anchor,
+                    None,
+                    root_name=scratch.path.name,
+                    root_identity=scratch._root_identity,
+                    root_filesystem=scratch._root_filesystem,
+                    cursor=lease_module._CleanupCursor((component,)),
+                    started=0.0,
+                    absolute_deadline=1.0,
+                    examined=0,
+                    removed=0,
+                    monotonic=clock,
+                )
+
+                self.assertFalse(result.complete)
+                self.assertGreaterEqual(
+                    backend.close_counts.get(nested.identity, 0), 1
+                )
+                if close_blocked:
+                    self.assertEqual(
+                        [owner.identity for owner in result.blocked_owners],
+                        [nested.identity],
+                    )
+                    for owner in result.blocked_owners:
+                        backend._resource(owner).close_failures = 0
+                        owner.close()
+                else:
+                    self.assertEqual(result.blocked_owners, ())
+
+    def test_cleanup_result_and_diagnostic_collections_are_immutable_tuples(
+        self,
+    ) -> None:
+        lease_module = __import__(
+            "tools.focused_mutation_support.lease",
+            fromlist=[
+                "_CleanupComponent",
+                "_CleanupCursor",
+                "_CleanupOwnershipBlocked",
+                "_CleanupSlice",
+            ],
+        )
+        component = lease_module._CleanupComponent(
+            "nested", FileIdentity(1, 2), FilesystemIdentity(1)
+        )
+        cursor = lease_module._CleanupCursor((component,), component)
+        cleanup_slice = lease_module._CleanupSlice(
+            2,
+            1,
+            False,
+            cursor,
+            details=("first", "second"),
+        )
+        blocked = lease_module._CleanupOwnershipBlocked(
+            "blocked", (), ("first", "second")
+        )
+        record = ScratchCleanupRecord(
+            ScratchCleanupStatus.DEFERRED,
+            2,
+            1,
+            ("first", "second"),
+        )
+        diagnostic = JanitorDiagnostic(("first", "second"))
+
+        self.assertIsInstance(cleanup_slice.cursor.components, tuple)
+        self.assertIsInstance(cleanup_slice.details, tuple)
+        self.assertIsInstance(cleanup_slice.blocked_owners, tuple)
+        self.assertIsInstance(blocked.owners, tuple)
+        self.assertIsInstance(blocked.details, tuple)
+        self.assertIsInstance(record.details, tuple)
+        self.assertIsInstance(diagnostic.details, tuple)
+        self.assertEqual(
+            cleanup_slice.details,
+            blocked.details,
+            "immutable diagnostic snapshots preserve insertion order",
+        )
 
     def test_owned_root_report_recovery_stops_after_final_path_deadline(
         self,

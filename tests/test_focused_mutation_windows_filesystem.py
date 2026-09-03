@@ -264,6 +264,39 @@ class WindowsDirectoryRecordTests(unittest.TestCase):
             with self.subTest(label=label), self.assertRaises(OSError):
                 self._parser(encoded).next_record()
 
+    def test_parser_accepts_exact_header_boundary_records(self) -> None:
+        single = self._parser(
+            _directory_record("", file_id=17, record_size=88)
+        )
+        record = single.next_record()
+        assert record is not None
+        self.assertEqual(record.name, "")
+        self.assertIsNone(single.next_record())
+
+        encoded = _directory_record(
+            "", file_id=19, next_offset=88, record_size=88
+        )
+        encoded += _directory_record("", file_id=23, record_size=88)
+        pair = self._parser(encoded)
+        first = pair.next_record()
+        second = pair.next_record()
+        assert first is not None
+        assert second is not None
+        self.assertEqual(first.identity.file, 19)
+        self.assertEqual(second.identity.file, 23)
+        self.assertIsNone(pair.next_record())
+
+    def test_parser_accepts_zero_raw_filetime(self) -> None:
+        parser = self._parser(
+            _directory_record("epoch", modified_100ns=0)
+        )
+
+        record = parser.next_record()
+
+        assert record is not None
+        self.assertEqual(record.modified_ns, -11_644_473_600_000_000_000)
+        self.assertIsNone(parser.next_record())
+
 
 class _DirectoryEnumerationApi:
     def __init__(
@@ -3236,6 +3269,97 @@ class WindowsMutationTests(unittest.TestCase):
                 self.assertIs(resource.parent, source_parent)
                 self.assertEqual(resource.name, "source")
                 self.assertEqual(source.path_hint, source_parent.path_hint / "source")
+                source.close()
+                source_parent.close()
+                destination_parent.close()
+
+    def test_rename_postcheck_rejects_kind_only_source_change(self) -> None:
+        api, backend, source_parent, destination_parent, source = self._fixture()
+        before = _mutation_metadata(source)
+        changed = windows_native._Metadata(
+            source.identity,
+            source.filesystem,
+            EntryKind.DIRECTORY,
+            source.logical_size,
+            source.modified_ns,
+        )
+
+        with (
+            mock.patch.object(backend, "_metadata", side_effect=(before, changed)),
+            mock.patch.object(
+                backend,
+                "entry",
+                return_value=_mutation_entry(source, "source"),
+            ),
+            self.assertRaisesRegex(OSError, "source handle identity changed"),
+        ):
+            backend.rename(source, destination_parent, "renamed", replace=False)
+
+        self.assertEqual(len(api.rename_calls), 1)
+        self.assertIs(backend._resource(source).parent, source_parent)
+        source.close()
+        source_parent.close()
+        destination_parent.close()
+
+    def test_rename_same_entry_skips_old_source_lookup(self) -> None:
+        api, backend, source_parent, destination_parent, source = self._fixture()
+        matching = _mutation_metadata(source)
+        observations: list[tuple[DirectoryCapability, str]] = []
+
+        def observe(parent: DirectoryCapability, name: str) -> Any:
+            observations.append((parent, name))
+            if len(observations) > 2:
+                raise AssertionError("same-entry rename queried the old name")
+            return _mutation_entry(source, name)
+
+        with (
+            mock.patch.object(backend, "_metadata", side_effect=(matching, matching)),
+            mock.patch.object(backend, "entry", side_effect=observe),
+        ):
+            backend.rename(source, source_parent, "source", replace=False)
+
+        self.assertEqual(
+            observations,
+            [(source_parent, "source"), (source_parent, "source")],
+        )
+        self.assertEqual(len(api.rename_calls), 1)
+        source.close()
+        source_parent.close()
+        destination_parent.close()
+
+    def test_rename_checks_old_source_for_each_non_same_entry_axis(self) -> None:
+        for case in ("different-name", "different-parent"):
+            with self.subTest(case=case):
+                api, backend, source_parent, destination_parent, source = self._fixture()
+                matching = _mutation_metadata(source)
+                target_parent = (
+                    source_parent if case == "different-name" else destination_parent
+                )
+                target_name = "renamed" if case == "different-name" else "source"
+                observations = 0
+
+                def observe(parent: DirectoryCapability, name: str) -> Any:
+                    nonlocal observations
+                    observations += 1
+                    if observations == 1:
+                        return _mutation_entry(source, "source")
+                    if observations == 2:
+                        return _mutation_entry(source, target_name)
+                    self.assertIs(parent, source_parent)
+                    self.assertEqual(name, "source")
+                    return _mutation_entry(source, "source")
+
+                with (
+                    mock.patch.object(
+                        backend, "_metadata", side_effect=(matching, matching)
+                    ),
+                    mock.patch.object(backend, "entry", side_effect=observe),
+                    self.assertRaisesRegex(OSError, "old source entry remains"),
+                ):
+                    backend.rename(source, target_parent, target_name, replace=False)
+
+                self.assertEqual(observations, 3)
+                self.assertEqual(len(api.rename_calls), 1)
                 source.close()
                 source_parent.close()
                 destination_parent.close()
