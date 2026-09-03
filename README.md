@@ -173,6 +173,30 @@ hoimin copies regular files into isolated workers. It does not follow or copy sy
 
 These controls reduce accidental resource exhaustion. hoimin executes user-selected Python and test programs and is **not a security boundary** for untrusted code.
 
+## Disk-safe execution
+
+Hoimin treats disk safety as an ownership problem as well as a capacity limit. It
+meters generated workspaces and run-owned output against `--max-workspace-size`,
+checks `--min-free-space` before dispatching more work, and stops new mutation
+work when either guard is reached. These checks are cooperative unless a
+verified quota backend provides aggregate hard enforcement.
+
+Cleanup is limited to run roots whose identity, filesystem, and ownership were
+retained from creation. Hoimin does not follow symlinks or reparse points during
+cleanup, use wildcard recursive deletion, or continue through an identity or
+volume change. On Windows, pinned directory handles and handle-relative child
+operations protect workspace creation, publication, measurement, and cleanup;
+an unsupported identity, replacement race, sharing violation, or close failure
+fails closed instead of falling back to pathname-based deletion. Caller-provided
+output directories remain caller-owned.
+
+If cleanup is deferred, `run.json` and `report.md` record the exact retained
+scratch path and bounded diagnostics. Before removing it manually, verify its
+lease and run identifier, then remove only that exact path. Never delete the
+managed parent directory or use a wildcard. See
+[Windows filesystem safety](docs/development.md#windows-filesystem-safety) for
+the detailed capability and cleanup model.
+
 ## Mutation operators
 
 Without `--operators`, a run selects all 31 runtime operators. `--operators`
