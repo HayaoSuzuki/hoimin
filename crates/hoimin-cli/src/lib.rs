@@ -5,6 +5,7 @@ pub mod cli;
 pub mod fingerprint_inputs;
 mod interrupt;
 mod metrics;
+mod portable_path;
 pub mod plan;
 pub mod process;
 pub mod progress;
