@@ -112,3 +112,7 @@ root = "TimeoutLimitAuditMain"
 [[lean_exe]]
 name = "generate_disk_guard"
 root = "DiskGuardAuditMain"
+
+[[lean_exe]]
+name = "generate_cleanup_capability"
+root = "CleanupCapabilityAuditMain"

@@ -1,0 +1,5 @@
+{"id":"stable_entry","mode":"strict","outside_writable":false,"result":"complete","scenario":"stable-entry","schedule":["inspect","bind","effect"],"schema":1,"strategy":"post-inspection"}
+{"id":"preexisting_outside_link","mode":"strict","outside_writable":false,"result":"complete","scenario":"preexisting-outside-link","schedule":["swap","inspect","bind","effect"],"schema":1,"strategy":"post-inspection"}
+{"id":"entry_swap_after_inspection","mode":"internal-fixture","outside_writable":false,"result":"rejected","scenario":"entry-swap-after-inspection","schedule":["inspect","swap","bind","effect"],"schema":1,"strategy":"post-inspection"}
+{"id":"entry_swap_after_binding","mode":"model-only","outside_writable":false,"result":"complete","scenario":"entry-swap-after-binding","schedule":["inspect","bind","swap","effect"],"schema":1,"strategy":"post-inspection"}
+{"id":"retained_wrapper_swap","mode":"internal-fixture","outside_writable":false,"result":"complete","scenario":"retained-wrapper-swap","schedule":["inspect","swap","bind","effect"],"schema":1,"strategy":"retained"}
