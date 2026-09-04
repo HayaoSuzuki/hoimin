@@ -70,6 +70,9 @@ TAG_VALIDATION_COMMAND = (
     "assert tag == f'v{py}' == f'v{cargo}', (tag, py, cargo)\""
 )
 WHEEL_SMOKE_COMMAND = "uv run --frozen python tests/wheel_smoke.py"
+MANUAL_NON_LINUX_CI_COMMAND = (
+    "gh workflow run non-linux-ci.yml --ref <REF>"
+)
 EXPECTED_RELEASE_JOBS = {
     "validate-tag": {
         "runs-on": "ubuntu-latest",
@@ -506,6 +509,16 @@ class ToolchainReleaseDocumentationContractTests(unittest.TestCase):
         end = guide.index(f"\n{fence}", start)
         self.assertEqual(guide[start:end].splitlines(), expected_commands)
         self.assertNotIn("uv run maturin build --release", guide)
+
+    def test_development_guide_documents_one_shot_non_linux_ci(self) -> None:
+        guide = DEVELOPMENT_GUIDE.read_text(encoding="utf-8")
+        normalized = " ".join(guide.split())
+
+        self.assertIn("## CI platform execution policy", guide)
+        self.assertIn("Linux CI consumes runner capacity", normalized)
+        self.assertIn("not a dependency or merge condition", normalized)
+        self.assertIn("once against the final ref", normalized)
+        self.assertEqual(guide.count(MANUAL_NON_LINUX_CI_COMMAND), 1)
 
 
 class ShuffleWorkflowContractTests(unittest.TestCase):
