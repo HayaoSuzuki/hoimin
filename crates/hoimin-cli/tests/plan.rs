@@ -308,6 +308,31 @@ async fn plan_invalid_syntax_returns_two_without_a_manifest() {
     assert!(!marker.exists());
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn plan_rejects_a_literal_backslash_source_without_rewriting_it() {
+    let project = Project::new_with_sources(&[(
+        r"literal\calc.py",
+        "def add(left, right):\n    return left + right\n",
+    )]);
+    let marker = project.path.join("test-command-ran");
+    let args = plan_args(&project, std::iter::empty(), &marker);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty(), "failed plan emitted stdout");
+    let stderr = String::from_utf8(stderr).unwrap();
+    assert!(stderr.contains(r"src/literal\calc.py"), "{stderr}");
+    assert!(
+        !stderr.contains("src/literal/calc.py: No such file"),
+        "{stderr}"
+    );
+    assert!(!marker.exists(), "test command ran during plan validation");
+}
+
 #[tokio::test]
 async fn plan_preparation_failures_return_two_without_a_manifest() {
     let project = Project::new();

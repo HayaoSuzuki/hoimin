@@ -95,6 +95,40 @@ fn discovers_python_files_and_reports_regular_files() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn explicit_discovery_rejects_a_literal_backslash_path() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(temp.path().join(r"foo\bar.py"), "x = 1\n").unwrap();
+    let selection = Selection {
+        root: Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap(),
+        sources: vec![Utf8PathBuf::new()],
+        ..Selection::default()
+    };
+
+    let error = hoimin_cli::target::fs::discover_explicit(&selection).unwrap_err();
+
+    assert!(error.to_string().contains(r"foo\bar.py"), "{error}");
+}
+
+#[cfg(unix)]
+#[test]
+fn explicit_discovery_rejects_before_a_backslash_path_can_collide() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(temp.path().join(r"foo\bar.py"), "literal = 1\n").unwrap();
+    fs::create_dir(temp.path().join("foo")).unwrap();
+    fs::write(temp.path().join("foo/bar.py"), "nested = 1\n").unwrap();
+    let selection = Selection {
+        root: Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap(),
+        sources: vec![Utf8PathBuf::new()],
+        ..Selection::default()
+    };
+
+    let error = hoimin_cli::target::fs::discover_explicit(&selection).unwrap_err();
+
+    assert!(error.to_string().contains(r"foo\bar.py"), "{error}");
+}
+
 #[test]
 fn explicit_exclude_wins_over_include() {
     let temp = tempfile::tempdir().unwrap();
@@ -265,6 +299,28 @@ async fn changed_collects_untracked_python_in_unborn_repository() {
             Utf8PathBuf::from("pkg/a.py"),
             vec![LineRange { start: 1, end: 2 }],
         )])
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn git_handler_rejects_an_untracked_literal_backslash_path() {
+    let repo = FixtureRepo::new();
+    repo.write(r"literal\calc.py", "one\ntwo\n");
+
+    let error = handle_git(ResolveGitChanges {
+        id: EffectId(7),
+        root: repo.root(),
+        diff_base: None,
+    })
+    .await
+    .unwrap_err();
+
+    assert_eq!(error.failure.code(), "target.git");
+    assert!(
+        error.failure.message().contains(r"literal\calc.py"),
+        "{:?}",
+        error.failure
     );
 }
 

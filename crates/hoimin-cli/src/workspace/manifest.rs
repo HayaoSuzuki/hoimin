@@ -9,6 +9,8 @@ use camino::{Utf8Path, Utf8PathBuf};
 use ignore::overrides::OverrideBuilder;
 use ignore::{DirEntry, WalkBuilder};
 
+use crate::portable_path;
+
 use super::{CopyOptions, WorkspaceDiagnostic, WorkspaceError};
 
 #[cfg(test)]
@@ -244,11 +246,12 @@ pub fn relative_utf8(root: &Utf8Path, path: &Path) -> Result<Utf8PathBuf, Worksp
     let relative = path
         .strip_prefix(root.as_std_path())
         .map_err(|_| WorkspaceError::OutsideRoot)?;
-    let relative = relative
-        .to_str()
-        .ok_or(WorkspaceError::NonUtf8Path)?
-        .replace('\\', "/");
-    Ok(Utf8PathBuf::from(relative))
+    let relative = relative.to_str().ok_or(WorkspaceError::NonUtf8Path)?;
+    let relative =
+        portable_path::from_native(relative).map_err(|error| WorkspaceError::InvalidPath {
+            path: Utf8PathBuf::from(error.into_value()),
+        })?;
+    Ok(Utf8PathBuf::from(relative.into_owned()))
 }
 
 fn default_excluded(entry: &DirEntry) -> bool {

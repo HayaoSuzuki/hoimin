@@ -6,6 +6,7 @@ pub mod fingerprint_inputs;
 mod interrupt;
 mod metrics;
 pub mod plan;
+mod portable_path;
 pub mod process;
 pub mod progress;
 pub mod report;

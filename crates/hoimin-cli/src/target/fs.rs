@@ -7,12 +7,15 @@ use hoimin_core::{DiscoveredFile, Selection};
 use ignore::overrides::OverrideBuilder;
 use ignore::{DirEntry, Walk, WalkBuilder};
 
+use crate::portable_path;
+
 #[derive(Debug)]
 pub enum FsTargetError {
     InvalidGlob(ignore::Error),
     Walk(ignore::Error),
     NonUtf8Path,
     OutsideRoot,
+    UnsupportedPath(String),
 }
 
 impl fmt::Display for FsTargetError {
@@ -22,6 +25,12 @@ impl fmt::Display for FsTargetError {
             Self::Walk(error) => write!(formatter, "target discovery failed: {error}"),
             Self::NonUtf8Path => formatter.write_str("target path must be valid UTF-8"),
             Self::OutsideRoot => formatter.write_str("discovered path is outside root"),
+            Self::UnsupportedPath(path) => {
+                write!(
+                    formatter,
+                    "target path cannot be represented portably: {path}"
+                )
+            }
         }
     }
 }
@@ -96,11 +105,10 @@ fn collect(
                 .path()
                 .strip_prefix(root)
                 .map_err(|_| FsTargetError::OutsideRoot)?;
-            let relative = relative
-                .to_str()
-                .ok_or(FsTargetError::NonUtf8Path)?
-                .replace('\\', "/");
-            let path = Utf8PathBuf::from(relative);
+            let relative = relative.to_str().ok_or(FsTargetError::NonUtf8Path)?;
+            let relative = portable_path::from_native(relative)
+                .map_err(|error| FsTargetError::UnsupportedPath(error.into_value()))?;
+            let path = Utf8PathBuf::from(relative.into_owned());
             files.insert(
                 path.clone(),
                 DiscoveredFile {
