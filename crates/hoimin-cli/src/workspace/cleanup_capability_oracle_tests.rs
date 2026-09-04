@@ -266,6 +266,7 @@ mod unix {
         let stable_outside = tempfile::NamedTempFile::new().unwrap();
         set_mode(stable_outside.path(), 0o400);
         let mut fixture = Fixture::new();
+        set_mode(fixture.worker.root().join("pkg/a.py").as_std_path(), 0o400);
         let result = fixture.worker.try_cleanup();
         assert_eq!(result_name(&result), stable.result);
         assert_eq!(
@@ -290,6 +291,23 @@ mod unix {
             preexisting.outside_writable
         );
         result.unwrap();
+    }
+
+    #[test]
+    fn cleanup_unlinks_an_outside_hard_link_without_changing_its_permissions() {
+        let outside = tempfile::NamedTempFile::new().unwrap();
+        set_mode(outside.path(), 0o400);
+        let outside_permissions = permission_fingerprint(outside.path());
+        let mut fixture = Fixture::new();
+        fs::hard_link(
+            outside.path(),
+            fixture.worker.root().join("outside-hard-link"),
+        )
+        .unwrap();
+
+        fixture.worker.try_cleanup().unwrap();
+
+        assert_eq!(permission_fingerprint(outside.path()), outside_permissions);
     }
 
     #[test]

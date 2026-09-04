@@ -431,9 +431,11 @@ fn make_cleanup_wrapper_accessible(
 
 #[derive(Debug)]
 pub struct WorkerWorkspace {
-    temp: OwnedWorkspaceDirectory,
-    cleanup_wrapper: Option<File>,
+    // Rust drops fields in declaration order after Drop::drop. Keep both capabilities ahead of
+    // the TempDir owner so even unwinding cannot ask Windows to delete an open directory.
     root: WorkerRoot,
+    cleanup_wrapper: Option<File>,
+    temp: OwnedWorkspaceDirectory,
     manifest: WorkspaceManifest,
     snapshot: Arc<DiskSnapshot>,
     allowance: Arc<copy::CopyAllowance>,
@@ -459,9 +461,9 @@ impl WorkerWorkspace {
     ) -> Self {
         let cleanup_on_drop = !temp.is_managed();
         Self {
-            temp,
-            cleanup_wrapper,
             root,
+            cleanup_wrapper,
+            temp,
             manifest,
             snapshot,
             allowance,
