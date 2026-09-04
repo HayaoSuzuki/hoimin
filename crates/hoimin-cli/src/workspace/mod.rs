@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod cleanup_capability_oracle_tests;
 mod copy;
 mod disk;
 #[cfg(test)]
@@ -13,7 +15,7 @@ use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::fmt;
-use std::fs;
+use std::fs::{self, File};
 use std::path::{Component, Path, PathBuf};
 #[cfg(test)]
 use std::sync::Barrier;
@@ -325,6 +327,24 @@ impl OwnedWorkspaceDirectory {
         }
     }
 
+    fn open_cleanup_handle(&self) -> Result<Option<File>, WorkspaceError> {
+        match self {
+            Self::Temporary(temp) => cap_primitives::fs::open_ambient_dir(
+                temp.path(),
+                cap_primitives::ambient_authority(),
+            )
+            .map(Some)
+            .map_err(|error| {
+                WorkspaceError::io(
+                    "open cleanup wrapper",
+                    Utf8Path::from_path(temp.path()).unwrap_or(Utf8Path::new("<temporary>")),
+                    error,
+                )
+            }),
+            Self::Managed(_) => Ok(None),
+        }
+    }
+
     fn is_managed(&self) -> bool {
         matches!(self, Self::Managed(_))
     }
@@ -377,76 +397,34 @@ fn permission_fingerprint(permissions: &fs::Permissions) -> PermissionFingerprin
     permissions.mode()
 }
 
-fn make_tree_writable(root: &Path, error_path: &Utf8Path) -> Result<(), WorkspaceError> {
-    let mut stack = vec![(root.to_owned(), 0_usize)];
-    while let Some((path, depth)) = stack.pop() {
-        let metadata = match fs::symlink_metadata(&path) {
-            Ok(metadata) => metadata,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(error) => {
-                return Err(WorkspaceError::io(
-                    "inspect cleanup path",
-                    error_path,
-                    error,
-                ));
-            }
-        };
-        if metadata.file_type().is_symlink() {
-            continue;
-        }
-        make_cleanup_entry_accessible(&path, &metadata, error_path)?;
-        if metadata.is_dir() {
-            let entries = fs::read_dir(&path)
-                .map_err(|error| WorkspaceError::io("read cleanup directory", error_path, error))?;
-            for entry in entries {
-                let entry = entry
-                    .map_err(|error| WorkspaceError::io("read cleanup entry", error_path, error))?;
-                let child = entry.path();
-                let child_depth = depth + 1;
-                if child_depth > MAX_WORKER_TREE_DEPTH {
-                    return Err(WorkspaceError::TreeDepthExceeded {
-                        path: Utf8PathBuf::from_path_buf(child)
-                            .unwrap_or_else(|_| error_path.to_owned()),
-                        limit: MAX_WORKER_TREE_DEPTH,
-                    });
-                }
-                stack.push((child, child_depth));
-            }
-        }
-    }
-    Ok(())
-}
-
-#[cfg(windows)]
-#[allow(clippy::permissions_set_readonly_false)]
-fn make_cleanup_entry_accessible(
-    path: &Path,
-    metadata: &fs::Metadata,
+fn make_cleanup_wrapper_accessible(
+    wrapper: &File,
     error_path: &Utf8Path,
 ) -> Result<(), WorkspaceError> {
+    let metadata = wrapper
+        .metadata()
+        .map_err(|error| WorkspaceError::io("inspect cleanup wrapper", error_path, error))?;
+    #[cfg(test)]
+    root::parent_opened("cleanup-wrapper", error_path);
     let mut permissions = metadata.permissions();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        if permissions.mode() & 0o700 != 0o700 {
+            permissions.set_mode(permissions.mode() | 0o700);
+            wrapper.set_permissions(permissions).map_err(|error| {
+                WorkspaceError::io("prepare cleanup wrapper", error_path, error)
+            })?;
+        }
+    }
+    #[cfg(windows)]
     if permissions.readonly() {
+        #[allow(clippy::permissions_set_readonly_false)]
         permissions.set_readonly(false);
-        fs::set_permissions(path, permissions)
-            .map_err(|error| WorkspaceError::io("prepare cleanup path", error_path, error))?;
-    }
-    Ok(())
-}
-
-#[cfg(unix)]
-fn make_cleanup_entry_accessible(
-    path: &Path,
-    metadata: &fs::Metadata,
-    error_path: &Utf8Path,
-) -> Result<(), WorkspaceError> {
-    use std::os::unix::fs::PermissionsExt;
-
-    let mut permissions = metadata.permissions();
-    let required = if metadata.is_dir() { 0o700 } else { 0o200 };
-    if permissions.mode() & required != required {
-        permissions.set_mode(permissions.mode() | required);
-        fs::set_permissions(path, permissions)
-            .map_err(|error| WorkspaceError::io("prepare cleanup path", error_path, error))?;
+        wrapper
+            .set_permissions(permissions)
+            .map_err(|error| WorkspaceError::io("prepare cleanup wrapper", error_path, error))?;
     }
     Ok(())
 }
@@ -454,6 +432,7 @@ fn make_cleanup_entry_accessible(
 #[derive(Debug)]
 pub struct WorkerWorkspace {
     temp: OwnedWorkspaceDirectory,
+    cleanup_wrapper: Option<File>,
     root: WorkerRoot,
     manifest: WorkspaceManifest,
     snapshot: Arc<DiskSnapshot>,
@@ -469,6 +448,7 @@ impl WorkerWorkspace {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn from_materialized(
         temp: OwnedWorkspaceDirectory,
+        cleanup_wrapper: Option<File>,
         root: WorkerRoot,
         manifest: WorkspaceManifest,
         snapshot: Arc<DiskSnapshot>,
@@ -480,6 +460,7 @@ impl WorkerWorkspace {
         let cleanup_on_drop = !temp.is_managed();
         Self {
             temp,
+            cleanup_wrapper,
             root,
             manifest,
             snapshot,
@@ -536,8 +517,8 @@ impl WorkerWorkspace {
         if self.cleanup_complete {
             return Ok(());
         }
-        self.root.close();
         if self.temp.is_managed() {
+            self.root.close();
             return match self.temp.try_cleanup().map_err(worker_cleanup_error) {
                 Ok(()) => {
                     self.cleanup_complete = true;
@@ -546,25 +527,16 @@ impl WorkerWorkspace {
                 Err(error) => Err(error),
             };
         }
-        let wrapper = self.temp.path();
-        let wrapper_metadata = match fs::symlink_metadata(wrapper) {
-            Ok(metadata) => metadata,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                self.cleanup_complete = true;
-                return Ok(());
-            }
-            Err(error) => {
-                let wrapper = Utf8Path::from_path(wrapper).unwrap_or(self.root.path());
-                return Err(WorkspaceError::io(
-                    "inspect cleanup wrapper",
-                    wrapper,
-                    error,
-                ));
-            }
-        };
-        let wrapper_error_path = Utf8Path::from_path(wrapper).unwrap_or(self.root.path());
-        make_cleanup_entry_accessible(wrapper, &wrapper_metadata, wrapper_error_path)?;
-        make_tree_writable(self.root.path().as_std_path(), self.root.path())?;
+        let wrapper_error_path = Utf8PathBuf::from_path_buf(self.temp.path().to_owned())
+            .unwrap_or_else(|_| self.root.path().to_owned());
+        if let Some(wrapper) = self.cleanup_wrapper.as_ref() {
+            self.root.clear_for_cleanup()?;
+            make_cleanup_wrapper_accessible(wrapper, &wrapper_error_path)?;
+            self.root.close();
+            self.cleanup_wrapper = None;
+        }
+        #[cfg(test)]
+        root::parent_opened("cleanup-final", &wrapper_error_path);
         match self.temp.try_cleanup().map_err(worker_cleanup_error) {
             Ok(()) => {
                 self.cleanup_complete = true;
@@ -581,11 +553,16 @@ impl WorkerWorkspace {
 
 impl Drop for WorkerWorkspace {
     fn drop(&mut self) {
-        // The temp field owns the managed-child lifetime token, while root owns a descendant OS
-        // handle. Close the descendant before dropping that token: root cleanup may start on
-        // another thread as soon as the token publishes quiescence.
+        // Managed cleanup must close its descendant before publishing child quiescence. Ordinary
+        // cleanup needs both retained capabilities live until its capability-bound phase ends.
+        if self.temp.is_managed() {
+            self.root.close();
+        }
+        let cleanup_failed =
+            self.cleanup_on_drop && !self.cleanup_complete && self.try_cleanup().is_err();
         self.root.close();
-        if self.cleanup_on_drop && !self.cleanup_complete && self.try_cleanup().is_err() {
+        self.cleanup_wrapper = None;
+        if cleanup_failed {
             return;
         }
         if fs::symlink_metadata(self.temp.path()).is_ok() {
