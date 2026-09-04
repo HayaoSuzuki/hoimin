@@ -10,6 +10,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+NON_LINUX_CI_WORKFLOW = ROOT / ".github" / "workflows" / "non-linux-ci.yml"
 RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 DEVELOPMENT_GUIDE = ROOT / "docs" / "development.md"
 CARGO_MANIFEST = ROOT / "Cargo.toml"
@@ -27,6 +28,25 @@ REPOSITORY_RUST_JOBS = {
     "linux-cgroup-v2-hard",
 }
 COMPATIBILITY_RUST_JOBS = {"msrv", "rust-shuffle"}
+AUTOMATIC_LINUX_MATRIX_JOBS = {
+    "quality",
+    "rust",
+    "core-dependency-purity",
+    "wheel-smoke",
+}
+MANUAL_NON_LINUX_MATRIX_JOBS = {
+    "quality": ["windows-latest", "macos-14"],
+    "rust": ["windows-latest", "macos-14"],
+    "wheel-smoke": ["windows-latest", "macos-14"],
+}
+MANUAL_NON_LINUX_JOB_NAMES = {
+    "quality": "Manual quality (${{ matrix.os }})",
+    "rust": "Manual Rust (${{ matrix.os }})",
+    "core-dependency-purity": (
+        "Manual core dependency purity (windows-latest)"
+    ),
+    "wheel-smoke": "Manual wheel smoke (${{ matrix.os }})",
+}
 CHECKOUT_ACTION = (
     "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10"
 )
@@ -50,6 +70,9 @@ TAG_VALIDATION_COMMAND = (
     "assert tag == f'v{py}' == f'v{cargo}', (tag, py, cargo)\""
 )
 WHEEL_SMOKE_COMMAND = "uv run --frozen python tests/wheel_smoke.py"
+MANUAL_NON_LINUX_CI_COMMAND = (
+    "gh workflow run non-linux-ci.yml --ref <REF>"
+)
 EXPECTED_RELEASE_JOBS = {
     "validate-tag": {
         "runs-on": "ubuntu-latest",
@@ -338,6 +361,87 @@ class CiRustJobContractTests(unittest.TestCase):
         self.assertIn("cargo +nightly-2026-07-27 test", shuffle)
 
 
+class PlatformExecutionPolicyContractTests(unittest.TestCase):
+    def test_automatic_ci_hosted_matrices_are_linux_only(self) -> None:
+        workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+        decoded = yaml.safe_load(workflow)
+        jobs = decoded["jobs"]
+
+        self.assertEqual(
+            trigger_events(workflow),
+            {"pull_request", "push", "workflow_dispatch"},
+        )
+        self.assertNotIn("windows-latest", workflow)
+        self.assertNotIn("macos-14", workflow)
+        for job_name in AUTOMATIC_LINUX_MATRIX_JOBS:
+            matrix = jobs[job_name]["strategy"]["matrix"]
+            self.assertEqual(matrix, {"os": ["ubuntu-latest"]}, job_name)
+
+        matrix_runner_jobs = {
+            job_name
+            for job_name, job in jobs.items()
+            if job["runs-on"] == "${{ matrix.os }}"
+        }
+        self.assertEqual(matrix_runner_jobs, AUTOMATIC_LINUX_MATRIX_JOBS)
+        for job_name, job in jobs.items():
+            runner = job["runs-on"]
+            if job_name in matrix_runner_jobs:
+                continue
+            if isinstance(runner, list):
+                self.assertIn("linux", runner, job_name)
+                self.assertFalse(
+                    {"windows", "macos"}.intersection(runner),
+                    job_name,
+                )
+            else:
+                self.assertEqual(runner, "ubuntu-latest", job_name)
+
+    def test_non_linux_ci_has_only_a_manual_trigger(self) -> None:
+        workflow = NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8")
+        decoded = yaml.safe_load(workflow)
+
+        self.assertEqual(
+            set(decoded),
+            {"name", True, "permissions", "jobs"},
+        )
+        self.assertEqual(trigger_events(workflow), {"workflow_dispatch"})
+        self.assertEqual(decoded[True], {"workflow_dispatch": None})
+        self.assertEqual(decoded["permissions"], {"contents": "read"})
+
+    def test_manual_non_linux_jobs_are_complete_and_independent(self) -> None:
+        automatic = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+        workflow = NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8")
+        manual = yaml.safe_load(workflow)
+        jobs = manual["jobs"]
+
+        self.assertEqual(set(jobs), set(MANUAL_NON_LINUX_JOB_NAMES))
+        self.assertNotIn("ubuntu-latest", workflow)
+        self.assertNotRegex(workflow, r"(?m)^\s+if:")
+        for job_name, expected_name in MANUAL_NON_LINUX_JOB_NAMES.items():
+            job = jobs[job_name]
+            self.assertEqual(job["name"], expected_name, job_name)
+            self.assertNotIn("needs", job, job_name)
+            self.assertNotIn("outputs", job, job_name)
+            self.assertEqual(
+                job["steps"],
+                automatic["jobs"][job_name]["steps"],
+                job_name,
+            )
+
+        for job_name, expected_os in MANUAL_NON_LINUX_MATRIX_JOBS.items():
+            job = jobs[job_name]
+            self.assertEqual(
+                job["strategy"],
+                {"fail-fast": False, "matrix": {"os": expected_os}},
+                job_name,
+            )
+            self.assertEqual(job["runs-on"], "${{ matrix.os }}", job_name)
+
+        purity = jobs["core-dependency-purity"]
+        self.assertNotIn("strategy", purity)
+        self.assertEqual(purity["runs-on"], "windows-latest")
+
+
 class LatestStableCanaryContractTests(unittest.TestCase):
     def test_latest_stable_canary_is_isolated_and_environment_complete(self) -> None:
         workflow = STABLE_CANARY_WORKFLOW.read_text(encoding="utf-8")
@@ -430,6 +534,16 @@ class ToolchainReleaseDocumentationContractTests(unittest.TestCase):
         self.assertEqual(guide[start:end].splitlines(), expected_commands)
         self.assertNotIn("uv run maturin build --release", guide)
 
+    def test_development_guide_documents_one_shot_non_linux_ci(self) -> None:
+        guide = DEVELOPMENT_GUIDE.read_text(encoding="utf-8")
+        normalized = " ".join(guide.split())
+
+        self.assertIn("## CI platform execution policy", guide)
+        self.assertIn("Linux CI consumes runner capacity", normalized)
+        self.assertIn("not a dependency or merge condition", normalized)
+        self.assertIn("once against the final ref", normalized)
+        self.assertEqual(guide.count(MANUAL_NON_LINUX_CI_COMMAND), 1)
+
 
 class ShuffleWorkflowContractTests(unittest.TestCase):
     def test_msrv_job_matches_the_manifest_and_checks_the_locked_workspace(self) -> None:
@@ -470,7 +584,7 @@ class ShuffleWorkflowContractTests(unittest.TestCase):
         workflow = CI_WORKFLOW.read_text(encoding="utf-8")
 
         stable = job_block(workflow, "rust")
-        self.assertIn("matrix:\n        os: [ubuntu-latest, windows-latest, macos-14]", stable)
+        self.assertIn("matrix:\n        os: [ubuntu-latest]", stable)
         self.assertRegex(stable, r"(?m)^      - run: cargo test --workspace$")
         self.assertIn("  rust-shuffle:\n", workflow)
         shuffle = job_block(workflow, "rust-shuffle")
@@ -495,7 +609,7 @@ class ShuffleWorkflowContractTests(unittest.TestCase):
         release = RELEASE_WORKFLOW.read_text(encoding="utf-8")
 
         self.assertIn(
-            "matrix:\n        os: [ubuntu-latest, windows-latest, macos-14]",
+            "matrix:\n        os: [ubuntu-latest]",
             quality,
         )
         self.assertNotIn("nightly-2026-07-27", release)

@@ -46,7 +46,9 @@ def runtime_tags_for(system: str) -> frozenset[Tag]:
 
 
 class StandaloneContractTests(unittest.TestCase):
-    def test_windows_disk_safe_workflow_remains_in_ci_and_discovery(self) -> None:
+    def test_windows_disk_safe_workflow_remains_in_manual_ci_and_discovery(
+        self,
+    ) -> None:
         repository_root = Path(__file__).resolve().parents[1]
         workflow_source = (repository_root / "tools/focused_mutation.py").read_text(
             encoding="utf-8"
@@ -56,14 +58,14 @@ class StandaloneContractTests(unittest.TestCase):
             workflow_source,
         )
 
-        ci = (repository_root / ".github/workflows/ci.yml").read_text(
-            encoding="utf-8"
-        )
+        manual_ci = (
+            repository_root / ".github/workflows/non-linux-ci.yml"
+        ).read_text(encoding="utf-8")
         for job in ("quality", "wheel-smoke"):
             with self.subTest(job=job):
                 section = re.search(
                     rf"(?ms)^  {re.escape(job)}:\n(?P<body>.*?)(?=^  \S|\Z)",
-                    ci,
+                    manual_ci,
                 )
                 self.assertIsNotNone(section)
                 assert section is not None

@@ -14,6 +14,24 @@ uvx maturin build --release
 uv run --frozen python tests/wheel_smoke.py
 ```
 
+## CI platform execution policy
+
+Pull requests and pushes to `main` run the repository gates on Linux. Linux CI
+consumes runner capacity; it is the platform deliberately kept automatic.
+Windows and macOS validation lives in the separate `Manual non-Linux CI`
+workflow and starts only through `workflow_dispatch`. Its results are not a
+dependency or merge condition for automatic Linux CI.
+
+After the workflow exists on the default branch, run it once against the final
+ref that needs non-Linux evidence:
+
+```console
+gh workflow run non-linux-ci.yml --ref <REF>
+```
+
+Do not dispatch it for intermediate commits. The tag-triggered release workflow
+is separate from this validation policy.
+
 ## Pinned Rust toolchain
 
 `rust-toolchain.toml` pins the repository development and blocking CI
@@ -67,8 +85,9 @@ cargo +nightly-2026-07-27 test --workspace -- \
   -Z unstable-options --shuffle-seed <SEED>
 ```
 
-The nightly job supplements rather than replaces the stable Ubuntu, Windows,
-and macOS test jobs.
+The nightly job supplements rather than replaces the automatic stable Ubuntu
+jobs. Windows and macOS validation uses the manually dispatched workflow
+described above.
 
 ## Lean state-machine oracle
 
