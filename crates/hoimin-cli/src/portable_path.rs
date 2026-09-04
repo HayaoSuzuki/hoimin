@@ -13,7 +13,8 @@ impl PortablePathError {
         }
     }
 
-    pub(crate) fn value(&self) -> &str {
+    #[cfg(test)]
+    fn value(&self) -> &str {
         &self.value
     }
 

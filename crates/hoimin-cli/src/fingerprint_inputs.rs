@@ -5,6 +5,7 @@ use hoimin_core::FingerprintInputFile;
 use ignore::WalkBuilder;
 use ignore::overrides::{Override, OverrideBuilder};
 
+use crate::portable_path;
 use crate::workspace::{self, RootRelativeReadError, WorkspaceManifest};
 
 #[derive(Debug, thiserror::Error)]
@@ -153,7 +154,8 @@ fn resolve_exact(input: &str) -> Result<Utf8PathBuf, FingerprintInputError> {
 }
 
 fn normalize_exact_path(input: &str) -> Result<Utf8PathBuf, FingerprintInputError> {
-    let path = input.replace('\\', "/");
+    let path = portable_path::from_native(input)
+        .map_err(|_| FingerprintInputError::InvalidPath(input.to_owned()))?;
     let first = path.split('/').next().unwrap_or_default();
     if path.is_empty()
         || input.contains('\0')
@@ -223,7 +225,9 @@ fn resolve_one(root: &Utf8Path, pattern: &str) -> Result<Vec<Utf8PathBuf>, Finge
         let relative = Utf8PathBuf::from_path_buf(relative.to_path_buf()).map_err(|_| {
             FingerprintInputError::UnsupportedFile("selected path must be valid UTF-8".to_owned())
         })?;
-        let relative = Utf8PathBuf::from(relative.as_str().replace('\\', "/"));
+        let relative = portable_path::from_native(relative.as_str())
+            .map_err(|error| FingerprintInputError::UnsupportedFile(error.into_value()))?;
+        let relative = Utf8PathBuf::from(relative.into_owned());
         let file_type = entry
             .file_type()
             .ok_or_else(|| FingerprintInputError::UnsupportedFile(relative.as_str().to_owned()))?;

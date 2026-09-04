@@ -725,8 +725,12 @@ fn parse_line_selection(value: &str) -> Result<LineSelection, CliError> {
         name: "--line",
         value: value.to_owned(),
     })?;
+    let path = crate::portable_path::from_native(path).map_err(|_| CliError::InvalidValue {
+        name: "--line",
+        value: value.to_owned(),
+    })?;
     Ok(LineSelection {
-        path: Utf8PathBuf::from(path.replace('\\', "/")),
+        path: Utf8PathBuf::from(path.into_owned()),
         range: LineRange { start, end },
     })
 }

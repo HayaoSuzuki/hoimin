@@ -184,6 +184,51 @@ fn exact_file_treats_glob_metacharacters_literally() {
 }
 
 #[test]
+fn glob_pattern_can_escape_metacharacters() {
+    let fixture = fixture_root(&[("settings[prod].toml", "x")]);
+
+    let records = resolve(
+        &fixture.root,
+        &[r"settings\[prod\].toml".into()],
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(records[0].path, "settings[prod].toml");
+}
+
+#[cfg(unix)]
+#[test]
+fn exact_file_rejects_a_literal_backslash_with_its_original_spelling() {
+    let fixture = fixture_root(&[(r"literal\settings.toml", "x")]);
+
+    let error = resolve(
+        &fixture.root,
+        &[],
+        &[r"literal\settings.toml".into()],
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        r"fingerprint.file.invalid_path: literal\settings.toml"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn glob_walk_rejects_a_literal_backslash_with_its_original_spelling() {
+    let fixture = fixture_root(&[(r"literal\settings.toml", "x")]);
+
+    let error = resolve(&fixture.root, &["*".into()], &[]).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        r"fingerprint.include.unsupported_file: literal\settings.toml"
+    );
+}
+
+#[test]
 fn exact_file_rejects_unsafe_and_missing_paths() {
     let fixture = fixture_root(&[("file.txt", "x")]);
     for path in [

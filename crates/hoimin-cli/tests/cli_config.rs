@@ -938,6 +938,22 @@ fn parse_run_config_parses_ranges_limits_and_output() {
     assert_eq!(config.test_argv.len(), 3);
 }
 
+#[cfg(unix)]
+#[test]
+fn line_selector_rejects_a_literal_backslash_path() {
+    let error = hoimin_cli::cli::parse_config_from([
+        "hoimin",
+        "run",
+        "--line",
+        r"pkg\calc.py:4-7",
+        "--",
+        "python",
+    ])
+    .unwrap_err();
+
+    assert_eq!(error.to_string(), r"invalid --line: pkg\calc.py:4-7");
+}
+
 #[test]
 fn run_preserves_repeated_fingerprint_include_patterns() {
     let config = hoimin_cli::cli::parse_config_from([
