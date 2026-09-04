@@ -9,8 +9,7 @@ Prevent hoimin from rewriting a literal backslash in a Unix filename into a path
 This change covers each unconditional backslash-to-slash conversion in `hoimin-cli`:
 
 - CLI `--line` path parsing;
-- exact and glob fingerprint inputs;
-- fingerprint walk results;
+- exact fingerprint inputs and fingerprint walk results;
 - explicit filesystem target discovery;
 - Git binary-numstat paths, patch paths, and current-worktree paths;
 - workspace manifest paths.
@@ -96,7 +95,9 @@ Git adapters call `from_git` on decoded Git text. Filesystem and CLI adapters ca
 
 `parse_line_selection` will use `from_native`. It will preserve Windows input support and reject a Unix backslash as `CliError::InvalidValue` before target resolution. `--file` and `--source` continue through filesystem discovery, which enforces the same portable-path contract on encountered files.
 
-`normalize_exact_path` and `validate_pattern` will convert separators on Windows and reject a remaining backslash on Unix. `resolve_one` will validate each walked relative name before it creates a fingerprint record.
+`normalize_exact_path` will convert separators on Windows and reject a remaining backslash on Unix. `resolve_one` will validate each walked relative name before it creates a fingerprint record.
+
+`validate_pattern` is deliberately different: in the glob language, a backslash can escape a metacharacter rather than name a path separator. Its existing slash-normalized shadow is used only for traversal-safety checks; the original pattern is passed to `OverrideBuilder`. That validation-only projection remains unchanged so patterns that escape glob metacharacters retain their meaning. Any actual matched filesystem path still passes through `from_native` before becoming a fingerprint record.
 
 The input parsers retain their existing public error families:
 
@@ -151,10 +152,10 @@ Tests will use real filesystem and Git fixtures on Unix.
 - A collision test creates both `foo\bar.py` and `foo/bar.py` and asserts rejection before either can replace the other in the map.
 - A public `plan` test asserts exit 2, no plan JSON, and no misleading `foo/bar.py: No such file` diagnostic.
 - A workspace preflight test asserts `WorkspaceError::InvalidPath` for a literal backslash filename.
-- Fingerprint exact and glob tests assert stable domain error prefixes and the original spelling.
+- Fingerprint exact and walked-path tests assert stable domain error prefixes and the original spelling. A compatibility test pins escaped glob-metacharacter behavior so path validation does not consume glob syntax.
 - Git unit and integration tests assert that raw NUL paths and decoded C-quoted paths keep their literal backslash long enough to trigger `GitFailed`.
 - Windows-only helper tests assert that native `pkg\file.py` still becomes `pkg/file.py`.
-- A source scan asserts that unconditional `.replace('\\', "/")` no longer remains in `hoimin-cli`; Windows-only conversions and the documented core identity canonicalizer remain allowed.
+- A review-time source scan classifies every remaining `.replace('\\', "/")` in `hoimin-cli`; Windows-only native conversion and the glob validator's non-stored safety projection remain allowed. This is a review check, not a source-text unit test.
 
 The implementation will follow red-green-refactor for each behavior. The full workspace suite, formatting, Clippy, and repository Python tests will run before delivery.
 
@@ -178,7 +179,7 @@ The fix replaces a deterministic conversion and adds boundary checks. Focused un
 - changing colon handling for NTFS alternate data streams in issue 348;
 - changing `--line` range validation from issue 360;
 - altering stable candidate ID canonicalization for invalid candidate inputs;
-- changing include/exclude glob syntax beyond rejecting an unportable Unix backslash.
+- changing include/exclude glob syntax. Backslash escapes in glob patterns retain their existing meaning.
 
 ## Self-review record
 
@@ -192,4 +193,8 @@ The review traced the two reproduced failures through target discovery and the w
 
 ### Round 3: scope and implementation consistency
 
-The review searched all `hoimin-cli` backslash-to-slash conversions. It added the CLI line parser and both fingerprint input normalizers, which the issue evidence did not enumerate. It excluded Windows-only root comparison and `hoimin-core::canonical_identity_path`, where conversion either runs only on Windows or handles identities that production validation rejects. The review also rejected a Lean artifact and cargo-mutants run because native tests provide stronger same-premise evidence for this change.
+The review searched all `hoimin-cli` backslash-to-slash conversions. It added the CLI line parser, exact fingerprint inputs, and fingerprint walk results, which the issue evidence did not enumerate. It excluded Windows-only root comparison and `hoimin-core::canonical_identity_path`, where conversion either runs only on Windows or handles identities that production validation rejects. The review also rejected a Lean artifact and cargo-mutants run because native tests provide stronger same-premise evidence for this change.
+
+### Round 4: glob-language compatibility
+
+The review traced `validate_pattern` through `ignore::overrides::OverrideBuilder` and found that its backslash has a second role: escaping glob metacharacters. Rejecting every Unix backslash at that input boundary would silently narrow the public glob language. The design now leaves the original pattern and its validation-only slash projection intact, validates only concrete paths returned by the walk, and adds an escaped-metacharacter compatibility test. The review also replaced the proposed source-text assertion with a review-time classification, because implementation-text tests would couple behavior to spelling without improving the public contract.
