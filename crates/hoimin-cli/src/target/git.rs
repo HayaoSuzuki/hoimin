@@ -253,8 +253,8 @@ fn insert_binary_numstat_path(
 ) -> Result<(), TargetError> {
     let path = std::str::from_utf8(raw_path)
         .map_err(|_| TargetError::GitFailed("Git numstat path is not valid UTF-8".into()))?;
-    let path = portable_path::from_git(path)
-        .map_err(|error| TargetError::GitFailed(error.to_string()))?;
+    let path =
+        portable_path::from_git(path).map_err(|error| TargetError::GitFailed(error.to_string()))?;
     let path = Utf8PathBuf::from(path);
     if is_python(&path) {
         excluded.insert(path);
@@ -650,11 +650,8 @@ mod tests {
 
     #[test]
     fn binary_numstat_rejects_a_literal_backslash_path() {
-        let error = parse_binary_numstat(
-            b"-\t-\tliteral\\binary.py\0",
-            &mut BTreeSet::new(),
-        )
-        .unwrap_err();
+        let error =
+            parse_binary_numstat(b"-\t-\tliteral\\binary.py\0", &mut BTreeSet::new()).unwrap_err();
 
         assert!(error.to_string().contains(r"literal\binary.py"), "{error}");
     }
@@ -674,13 +671,10 @@ mod tests {
         std::fs::write(directory.path().join(r"literal\work.py"), "x = 1\n").unwrap();
         let root = Utf8PathBuf::from_path_buf(directory.path().to_path_buf()).unwrap();
 
-        let error = collect_current_worktree_paths(
-            &root,
-            b"literal\\work.py\0",
-            &mut BTreeMap::new(),
-        )
-        .await
-        .unwrap_err();
+        let error =
+            collect_current_worktree_paths(&root, b"literal\\work.py\0", &mut BTreeMap::new())
+                .await
+                .unwrap_err();
 
         assert!(error.to_string().contains(r"literal\work.py"), "{error}");
     }

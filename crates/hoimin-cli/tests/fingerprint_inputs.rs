@@ -187,12 +187,7 @@ fn exact_file_treats_glob_metacharacters_literally() {
 fn glob_pattern_can_escape_metacharacters() {
     let fixture = fixture_root(&[("settings[prod].toml", "x")]);
 
-    let records = resolve(
-        &fixture.root,
-        &[r"settings\[prod\].toml".into()],
-        &[],
-    )
-    .unwrap();
+    let records = resolve(&fixture.root, &[r"settings\[prod\].toml".into()], &[]).unwrap();
 
     assert_eq!(records[0].path, "settings[prod].toml");
 }
@@ -202,12 +197,7 @@ fn glob_pattern_can_escape_metacharacters() {
 fn exact_file_rejects_a_literal_backslash_with_its_original_spelling() {
     let fixture = fixture_root(&[(r"literal\settings.toml", "x")]);
 
-    let error = resolve(
-        &fixture.root,
-        &[],
-        &[r"literal\settings.toml".into()],
-    )
-    .unwrap_err();
+    let error = resolve(&fixture.root, &[], &[r"literal\settings.toml".into()]).unwrap_err();
 
     assert_eq!(
         error.to_string(),

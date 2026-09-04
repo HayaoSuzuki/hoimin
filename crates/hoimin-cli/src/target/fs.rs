@@ -26,7 +26,10 @@ impl fmt::Display for FsTargetError {
             Self::NonUtf8Path => formatter.write_str("target path must be valid UTF-8"),
             Self::OutsideRoot => formatter.write_str("discovered path is outside root"),
             Self::UnsupportedPath(path) => {
-                write!(formatter, "target path cannot be represented portably: {path}")
+                write!(
+                    formatter,
+                    "target path cannot be represented portably: {path}"
+                )
             }
         }
     }

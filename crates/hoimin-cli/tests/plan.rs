@@ -326,7 +326,10 @@ async fn plan_rejects_a_literal_backslash_source_without_rewriting_it() {
     assert!(stdout.is_empty(), "failed plan emitted stdout");
     let stderr = String::from_utf8(stderr).unwrap();
     assert!(stderr.contains(r"src/literal\calc.py"), "{stderr}");
-    assert!(!stderr.contains("src/literal/calc.py: No such file"), "{stderr}");
+    assert!(
+        !stderr.contains("src/literal/calc.py: No such file"),
+        "{stderr}"
+    );
     assert!(!marker.exists(), "test command ran during plan validation");
 }
 

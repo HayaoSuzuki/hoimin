@@ -151,7 +151,7 @@ Tests will use real filesystem and Git fixtures on Unix.
 - A target-discovery test creates only `foo\bar.py` and asserts an error containing that exact spelling.
 - A collision test creates both `foo\bar.py` and `foo/bar.py` and asserts rejection before either can replace the other in the map.
 - A public `plan` test asserts exit 2, no plan JSON, and no misleading `foo/bar.py: No such file` diagnostic.
-- A workspace preflight test asserts `WorkspaceError::InvalidPath` for a literal backslash filename.
+- Workspace preflight tests assert `WorkspaceError::InvalidPath` for a literal backslash filename and for a colliding literal/nested pair.
 - Fingerprint exact and walked-path tests assert stable domain error prefixes and the original spelling. A compatibility test pins escaped glob-metacharacter behavior so path validation does not consume glob syntax.
 - Git unit and integration tests assert that raw NUL paths and decoded C-quoted paths keep their literal backslash long enough to trigger `GitFailed`.
 - Windows-only helper tests assert that native `pkg\file.py` still becomes `pkg/file.py`.

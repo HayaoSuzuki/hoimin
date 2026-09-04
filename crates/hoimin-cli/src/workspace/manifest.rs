@@ -247,11 +247,10 @@ pub fn relative_utf8(root: &Utf8Path, path: &Path) -> Result<Utf8PathBuf, Worksp
         .strip_prefix(root.as_std_path())
         .map_err(|_| WorkspaceError::OutsideRoot)?;
     let relative = relative.to_str().ok_or(WorkspaceError::NonUtf8Path)?;
-    let relative = portable_path::from_native(relative).map_err(|error| {
-        WorkspaceError::InvalidPath {
+    let relative =
+        portable_path::from_native(relative).map_err(|error| WorkspaceError::InvalidPath {
             path: Utf8PathBuf::from(error.into_value()),
-        }
-    })?;
+        })?;
     Ok(Utf8PathBuf::from(relative.into_owned()))
 }
 
