@@ -6,7 +6,7 @@ use std::fs;
 use std::path::Path;
 
 use camino::{Utf8Path, Utf8PathBuf};
-use hoimin_cli::workspace::{CopyOptions, WorkspaceError, WorkspaceHandler};
+use hoimin_cli::workspace::{CopyOptions, WorkspaceError, WorkspaceHandler, WorkspacePlan};
 use hoimin_core::{
     BudgetLedger, EffectFailure, EffectId, IntegrityCheckpoint, Preflight, ReservationId,
     ResetWorker, RunBudgets, VerifyOriginals, release_workspace_copy, reserve_workspace_copy,
@@ -63,6 +63,24 @@ fn preflight_and_grant(
     });
     let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
     (ledger, grant)
+}
+
+#[cfg(unix)]
+#[test]
+fn preflight_rejects_a_literal_backslash_path() {
+    let project = tempfile::tempdir().unwrap();
+    let root = Utf8Path::from_path(project.path()).unwrap();
+    write(root, r"literal\settings.toml", b"value = 1\n");
+
+    let error = WorkspacePlan::preflight(root, EffectId(7), 1, CopyOptions::default())
+        .err()
+        .expect("literal backslash path must be rejected");
+
+    assert_eq!(error.code(), "workspace.path.invalid");
+    assert!(
+        error.to_string().contains(r"literal\settings.toml"),
+        "{error}"
+    );
 }
 
 fn link_created_or_platform_denied(result: std::io::Result<()>) -> bool {

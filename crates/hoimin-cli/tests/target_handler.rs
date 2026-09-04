@@ -95,6 +95,40 @@ fn discovers_python_files_and_reports_regular_files() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn explicit_discovery_rejects_a_literal_backslash_path() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(temp.path().join(r"foo\bar.py"), "x = 1\n").unwrap();
+    let selection = Selection {
+        root: Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap(),
+        sources: vec![Utf8PathBuf::new()],
+        ..Selection::default()
+    };
+
+    let error = hoimin_cli::target::fs::discover_explicit(&selection).unwrap_err();
+
+    assert!(error.to_string().contains(r"foo\bar.py"), "{error}");
+}
+
+#[cfg(unix)]
+#[test]
+fn explicit_discovery_rejects_before_a_backslash_path_can_collide() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(temp.path().join(r"foo\bar.py"), "literal = 1\n").unwrap();
+    fs::create_dir(temp.path().join("foo")).unwrap();
+    fs::write(temp.path().join("foo/bar.py"), "nested = 1\n").unwrap();
+    let selection = Selection {
+        root: Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap(),
+        sources: vec![Utf8PathBuf::new()],
+        ..Selection::default()
+    };
+
+    let error = hoimin_cli::target::fs::discover_explicit(&selection).unwrap_err();
+
+    assert!(error.to_string().contains(r"foo\bar.py"), "{error}");
+}
+
 #[test]
 fn explicit_exclude_wins_over_include() {
     let temp = tempfile::tempdir().unwrap();
