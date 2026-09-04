@@ -302,6 +302,28 @@ async fn changed_collects_untracked_python_in_unborn_repository() {
     );
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn git_handler_rejects_an_untracked_literal_backslash_path() {
+    let repo = FixtureRepo::new();
+    repo.write(r"literal\calc.py", "one\ntwo\n");
+
+    let error = handle_git(ResolveGitChanges {
+        id: EffectId(7),
+        root: repo.root(),
+        diff_base: None,
+    })
+    .await
+    .unwrap_err();
+
+    assert_eq!(error.failure.code(), "target.git");
+    assert!(
+        error.failure.message().contains(r"literal\calc.py"),
+        "{:?}",
+        error.failure
+    );
+}
+
 #[tokio::test]
 async fn changed_collects_staged_python_in_unborn_repository() {
     let repo = FixtureRepo::new();

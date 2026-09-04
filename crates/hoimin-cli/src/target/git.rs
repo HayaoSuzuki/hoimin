@@ -4,6 +4,8 @@ use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{EffectFailed, EffectId, LineRange, TargetError, normalize_changed};
 use tokio::process::Command;
 
+use crate::portable_path;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolveGitChanges {
     pub id: EffectId,
@@ -251,7 +253,9 @@ fn insert_binary_numstat_path(
 ) -> Result<(), TargetError> {
     let path = std::str::from_utf8(raw_path)
         .map_err(|_| TargetError::GitFailed("Git numstat path is not valid UTF-8".into()))?;
-    let path = Utf8PathBuf::from(path.replace('\\', "/"));
+    let path = portable_path::from_git(path)
+        .map_err(|error| TargetError::GitFailed(error.to_string()))?;
+    let path = Utf8PathBuf::from(path);
     if is_python(&path) {
         excluded.insert(path);
     }
@@ -272,7 +276,9 @@ fn parse_patch_path(value: &str) -> Result<Option<Utf8PathBuf>, TargetError> {
         .strip_prefix("a/")
         .or_else(|| decoded.strip_prefix("b/"))
         .unwrap_or(&decoded);
-    Ok(Some(Utf8PathBuf::from(relative.replace('\\', "/"))))
+    let relative = portable_path::from_git(relative)
+        .map_err(|error| TargetError::GitFailed(error.to_string()))?;
+    Ok(Some(Utf8PathBuf::from(relative)))
 }
 
 fn decode_git_quoted(value: &str) -> Result<String, TargetError> {
@@ -362,7 +368,9 @@ async fn collect_current_worktree_paths(
     {
         let path = std::str::from_utf8(raw_path)
             .map_err(|_| TargetError::GitFailed("Git path is not valid UTF-8".into()))?;
-        let path = Utf8PathBuf::from(path.replace('\\', "/"));
+        let path = portable_path::from_git(path)
+            .map_err(|error| TargetError::GitFailed(error.to_string()))?;
+        let path = Utf8PathBuf::from(path);
         if !is_python(&path) {
             continue;
         }
@@ -402,7 +410,9 @@ mod tests {
     use hoimin_core::LineRange;
     use proptest::prelude::*;
 
-    use super::{decode_git_quoted, parse_binary_numstat, parse_diff};
+    use super::{
+        collect_current_worktree_paths, decode_git_quoted, parse_binary_numstat, parse_diff,
+    };
 
     #[derive(Clone, Debug)]
     struct GeneratedHunk {
@@ -636,5 +646,42 @@ mod tests {
                 .to_string()
                 .contains("invalid Git numstat rename record")
         );
+    }
+
+    #[test]
+    fn binary_numstat_rejects_a_literal_backslash_path() {
+        let error = parse_binary_numstat(
+            b"-\t-\tliteral\\binary.py\0",
+            &mut BTreeSet::new(),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains(r"literal\binary.py"), "{error}");
+    }
+
+    #[test]
+    fn quoted_patch_header_rejects_a_decoded_literal_backslash_path() {
+        let diff = b"diff --git ignored ignored\n--- \"a/literal\\\\calc.py\"\n+++ \"b/literal\\\\calc.py\"\n@@ -1 +1 @@\n";
+
+        let error = parse_diff(diff, &mut BTreeMap::new(), &mut BTreeSet::new()).unwrap_err();
+
+        assert!(error.to_string().contains(r"literal\calc.py"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn current_worktree_record_rejects_a_literal_backslash_path() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join(r"literal\work.py"), "x = 1\n").unwrap();
+        let root = Utf8PathBuf::from_path_buf(directory.path().to_path_buf()).unwrap();
+
+        let error = collect_current_worktree_paths(
+            &root,
+            b"literal\\work.py\0",
+            &mut BTreeMap::new(),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error.to_string().contains(r"literal\work.py"), "{error}");
     }
 }
