@@ -18,6 +18,7 @@ SKILLS = {
             "   operators, limits, test argv, and fingerprint inputs unchanged for every verify that consumes\n"
             "   its plan.",
             "hoimin plan --root . --source <dir> --changed --profile focused \\\n"
+            "  --jobs 1 --max-workspace-size 8GiB --min-free-space 10GiB \\\n"
             "  --fingerprint-include pyproject.toml -- python -m pytest -q > \"$plan_path\"",
             "`plan` always writes one JSON document to standard output and diagnostics to standard error;\n"
             "do not pass `--format` to `plan`.",
@@ -67,6 +68,34 @@ SKILLS = {
 
 
 class SkillContractTests(unittest.TestCase):
+    def test_mutation_skills_require_disk_safe_execution(self) -> None:
+        required = {
+            "hoimin-mutation-testing": (
+                "--jobs 1",
+                "--max-workspace-size 8GiB",
+                "--min-free-space 10GiB",
+                "Stop before `plan` or `verify`",
+                "Remove only that exact temporary directory",
+                "trap cleanup_temp_dir EXIT",
+                "trap 'exit 130' INT",
+            ),
+            "hoimin-mutation-improvement": (
+                "--jobs 1",
+                "--max-workspace-size 8GiB",
+                "--min-free-space 10GiB",
+                "Stop before `verify`",
+                "Remove only that exact temporary directory",
+            ),
+        }
+
+        for root in (ROOT / ".agents", ROOT / ".claude"):
+            for name, phrases in required.items():
+                skill = root / "skills" / name / "SKILL.md"
+                body = skill.read_text(encoding="utf-8")
+                for phrase in phrases:
+                    with self.subTest(root=root.name, skill=name, phrase=phrase):
+                        self.assertIn(phrase, body)
+
     def test_macos_memory_policy_is_documented(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("--max-memory", readme)

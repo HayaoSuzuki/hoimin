@@ -9,6 +9,24 @@ Use a read-only plan to choose mutation candidates, then verify only the candida
 behavioral contracts need investigation. A survivor is evidence to investigate, not a reason to
 modify production code solely to make the mutant fail.
 
+## Keep disk use bounded
+
+Default every plan to `--jobs 1`, `--max-workspace-size 8GiB`, and
+`--min-free-space 10GiB`. Keep those limits unchanged for every verify that consumes the plan.
+Raising the workspace limit or job count, or lowering the free-space reserve, requires explicit
+user approval and a new plan.
+
+Stop before `plan` or `verify` if free-space measurement fails, the repository or temporary
+filesystem has 10 GiB or less available, or another mutation run is using the same root. Stop the
+loop after a disk-limit stop, measurement failure, or failed/deferred cleanup; diagnose it and
+account for any retained path before another verify.
+
+Keep all manifests and reports in one `mktemp -d` directory outside the repository. Install a
+cleanup trap immediately and keep the resolved path immutable.
+Remove only that exact temporary directory. Do this on success, failure, interruption, or
+cancellation; never delete its parent or use a glob. Treat cleanup failure as terminal and report
+the retained exact path.
+
 ## Plan candidates
 
 1. Inspect changed production Python files, their tests, and the normal test command. Target
@@ -20,9 +38,19 @@ modify production code solely to make the mutant fail.
    its plan.
 
 ```console
-temp_dir="$(mktemp -d)"
+readonly temp_dir="$(mktemp -d)"
 plan_path="$temp_dir/PLAN.json"
+cleanup_temp_dir() {
+  rm -rf -- "$temp_dir"
+  test ! -e "$temp_dir"
+}
+trap cleanup_temp_dir EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+python3 -c 'import shutil, sys; limit = 10 * 1024**3; sys.exit(0 if all(shutil.disk_usage(path).free > limit for path in sys.argv[1:]) else 1)' . "$temp_dir"
 hoimin plan --root . --source <dir> --changed --profile focused \
+  --jobs 1 --max-workspace-size 8GiB --min-free-space 10GiB \
   --fingerprint-include pyproject.toml -- python -m pytest -q > "$plan_path"
 ```
 
@@ -38,7 +66,8 @@ and process-group cleanup remain available. When this best-effort memory policy 
 include `--allow-best-effort-memory` in the plan:
 
 ```console
-hoimin plan --root . --source <dir> --allow-best-effort-memory -- python -m pytest -q
+hoimin plan --root . --source <dir> --allow-best-effort-memory \
+  --jobs 1 --max-workspace-size 8GiB --min-free-space 10GiB -- python -m pytest -q
 ```
 
 ## Select and verify candidates

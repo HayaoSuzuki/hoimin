@@ -18,6 +18,26 @@ fail.
 3. Discard and regenerate the plan before verify if production target source or a fingerprint
    input changes. Also replan before changing selector, operators, profile, limits, or test argv.
 
+## Keep verification disk-safe
+
+Use a plan with explicit disk limits, defaulting to `--jobs 1`,
+`--max-workspace-size 8GiB`, and `--min-free-space 10GiB`. Changing them requires explicit user
+approval and a new plan. Stop before `verify` if free-space measurement fails, the repository or
+temporary filesystem has 10 GiB or less available, or another mutation run is using the same
+root. Stop the loop after a disk-limit stop, measurement failure, or failed/deferred cleanup;
+diagnose it and account for any retained path before another verify.
+
+Keep the plan and reports in the immutable `mktemp -d` path established by the planning workflow,
+with its cleanup trap active for success, failure, interruption, and cancellation.
+Remove only that exact temporary directory. Never delete its parent or use a glob. Treat cleanup
+failure as terminal and report the retained exact path.
+
+Before every verify or reverify, check both filesystems:
+
+```console
+python3 -c 'import shutil, sys; limit = 10 * 1024**3; sys.exit(0 if all(shutil.disk_usage(path).free > limit for path in sys.argv[1:]) else 1)' . "$temp_dir"
+```
+
 ## Improve one selected candidate
 
 1. Read a candidate ID from `PLAN.json` and verify it. Preserve the report.
