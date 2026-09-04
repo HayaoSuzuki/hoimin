@@ -19,7 +19,7 @@ uv run --frozen python tests/wheel_smoke.py
 Pull requests and pushes to `main` run the repository gates on Linux. Linux CI
 consumes runner capacity; it is the platform deliberately kept automatic.
 Windows and macOS validation lives in the separate `Manual non-Linux CI`
-workflow and starts only through `workflow_dispatch`. Its result is not a
+workflow and starts only through `workflow_dispatch`. Its results are not a
 dependency or merge condition for automatic Linux CI.
 
 After the workflow exists on the default branch, run it once against the final

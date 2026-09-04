@@ -365,12 +365,36 @@ class PlatformExecutionPolicyContractTests(unittest.TestCase):
     def test_automatic_ci_hosted_matrices_are_linux_only(self) -> None:
         workflow = CI_WORKFLOW.read_text(encoding="utf-8")
         decoded = yaml.safe_load(workflow)
+        jobs = decoded["jobs"]
 
+        self.assertEqual(
+            trigger_events(workflow),
+            {"pull_request", "push", "workflow_dispatch"},
+        )
         self.assertNotIn("windows-latest", workflow)
         self.assertNotIn("macos-14", workflow)
         for job_name in AUTOMATIC_LINUX_MATRIX_JOBS:
-            matrix = decoded["jobs"][job_name]["strategy"]["matrix"]
+            matrix = jobs[job_name]["strategy"]["matrix"]
             self.assertEqual(matrix, {"os": ["ubuntu-latest"]}, job_name)
+
+        matrix_runner_jobs = {
+            job_name
+            for job_name, job in jobs.items()
+            if job["runs-on"] == "${{ matrix.os }}"
+        }
+        self.assertEqual(matrix_runner_jobs, AUTOMATIC_LINUX_MATRIX_JOBS)
+        for job_name, job in jobs.items():
+            runner = job["runs-on"]
+            if job_name in matrix_runner_jobs:
+                continue
+            if isinstance(runner, list):
+                self.assertIn("linux", runner, job_name)
+                self.assertFalse(
+                    {"windows", "macos"}.intersection(runner),
+                    job_name,
+                )
+            else:
+                self.assertEqual(runner, "ubuntu-latest", job_name)
 
     def test_non_linux_ci_has_only_a_manual_trigger(self) -> None:
         workflow = NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8")
