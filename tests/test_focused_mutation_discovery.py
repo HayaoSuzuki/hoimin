@@ -1,9 +1,11 @@
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 from tools.focused_mutation_support.discovery import (
     RepositorySnapshot,
+    _normalize_path,
     discover_candidates,
     discover_repository,
 )
@@ -23,6 +25,10 @@ class FakeProbe:
 
 
 class DiscoveryTests(unittest.TestCase):
+    def test_repository_path_rejects_markdown_control_characters(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Markdown"):
+            _normalize_path("crates/core/src/unsafe\nname.rs")
+
     def test_symbol_only_selection_uses_inventory_to_find_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -55,6 +61,56 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(
             probe.calls,
             [(("rg", "--files", "--glob", "*.rs", str(root)), 17.0)],
+        )
+
+    def test_symbol_selector_excludes_unrelated_changed_functions_before_cap(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            changed = root / "crates/core/src/changed.rs"
+            target = root / "crates/core/src/target.rs"
+            changed.parent.mkdir(parents=True)
+            changed.write_text(
+                "fn unrelated_first() {}\nfn unrelated_second() {}\n",
+                encoding="utf-8",
+            )
+            target.write_text("fn selected() {}\n", encoding="utf-8")
+            snapshot = RepositorySnapshot(
+                root,
+                "abc",
+                "feature",
+                (),
+                ("crates/core/src/changed.rs",),
+                (),
+            )
+            probe = FakeProbe(
+                {
+                    (
+                        "rg",
+                        "--files",
+                        "--glob",
+                        "*.rs",
+                        str(root),
+                    ): f"{changed}\n{target}\n"
+                }
+            )
+
+            try:
+                candidates = discover_candidates(
+                    snapshot,
+                    (),
+                    ("selected",),
+                    probe,
+                    lambda: 17.0,
+                    max_candidates=1,
+                )
+            except ValueError as error:
+                self.fail(f"symbol selection included unrelated functions: {error}")
+
+        self.assertEqual(
+            [(item.path, item.symbol) for item in candidates],
+            [("crates/core/src/target.rs", "selected")],
         )
 
     def test_explicit_rust_file_overrides_implicit_path_exclusions(self) -> None:
@@ -139,6 +195,58 @@ class DiscoveryTests(unittest.TestCase):
             [item.path for item in candidates],
             ["crates/core/src/generated_name.rs"],
         )
+
+    def test_oversized_rust_source_is_rejected_before_materialization(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "crates/core/src/oversized.rs"
+            target.parent.mkdir(parents=True)
+            with target.open("wb") as stream:
+                stream.truncate(8 * 1024**2 + 1)
+            snapshot = RepositorySnapshot(
+                root,
+                "abc",
+                "feature",
+                ("crates/core/src/oversized.rs",),
+                (),
+                (),
+            )
+
+            with mock.patch.object(
+                Path,
+                "read_text",
+                side_effect=AssertionError("unbounded source read"),
+            ):
+                candidates = discover_candidates(
+                    snapshot, (), (), FakeProbe({}), lambda: 10.0
+                )
+
+        self.assertEqual(candidates, [])
+
+    def test_oversized_function_symbol_is_rejected_before_candidate_record(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "crates/core/src/oversized_symbol.rs"
+            target.parent.mkdir(parents=True)
+            target.write_text(
+                "fn " + "x" * (16 * 1024 + 1) + "() {}\n",
+                encoding="utf-8",
+            )
+            snapshot = RepositorySnapshot(
+                root,
+                "abc",
+                "feature",
+                ("crates/core/src/oversized_symbol.rs",),
+                (),
+                (),
+            )
+
+            with self.assertRaisesRegex(
+                ValueError, "function symbol exceeds 16384 bytes"
+            ):
+                discover_candidates(
+                    snapshot, (), (), FakeProbe({}), lambda: 10.0
+                )
 
     def test_changed_and_explicit_targets_rank_deterministically(self) -> None:
         snapshot = RepositorySnapshot(
@@ -322,10 +430,10 @@ class DiscoveryTests(unittest.TestCase):
                 timeout=lambda: 10.0,
             )
 
-        self.assertEqual(len(candidates), 10)
+        self.assertEqual(len(candidates), 6)
         self.assertEqual(candidates[0].path, "crates/core/src/explicit.rs")
-        self.assertNotIn(
-            "crates/core/src/recent_3.rs", {item.path for item in candidates}
+        self.assertFalse(
+            any(item.path.startswith("crates/core/src/recent_") for item in candidates)
         )
         self.assertEqual(
             len(
@@ -351,6 +459,53 @@ class DiscoveryTests(unittest.TestCase):
             discover_candidates(
                 snapshot, (), (), FakeProbe({}), lambda: 10.0
             )
+
+    def test_explicit_symbol_must_resolve_to_exactly_one_function(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("a.rs", "b.rs"):
+                path = root / "crates/core/src" / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("fn duplicate() {}\n", encoding="utf-8")
+            snapshot = RepositorySnapshot(root, "abc", "feature", (), (), ())
+            inventory = "\n".join(
+                str(root / "crates/core/src" / name)
+                for name in ("a.rs", "b.rs")
+            )
+            probe = FakeProbe({
+                (
+                    "rg", "--files", "--glob", "*.rs", str(root)
+                ): inventory
+            })
+
+            with self.assertRaisesRegex(ValueError, "resolved to 2 functions"):
+                discover_candidates(
+                    snapshot, (), ("duplicate",), probe, lambda: 10.0
+                )
+            with self.assertRaisesRegex(ValueError, "resolved to 0 functions"):
+                discover_candidates(
+                    snapshot, (), ("missing",), probe, lambda: 10.0
+                )
+
+    def test_preliminary_selection_stops_at_configured_cap(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "crates/core/src/lib.rs"
+            path.parent.mkdir(parents=True)
+            path.write_text("fn a() {}\nfn b() {}\n", encoding="utf-8")
+            snapshot = RepositorySnapshot(
+                root, "abc", "feature", ("crates/core/src/lib.rs",), (), ()
+            )
+
+            with self.assertRaisesRegex(ValueError, "exceed 1"):
+                discover_candidates(
+                    snapshot,
+                    (),
+                    (),
+                    FakeProbe({}),
+                    lambda: 10.0,
+                    max_candidates=1,
+                )
 
     def test_ranking_uses_explicit_risk_signals_and_stable_ties(self) -> None:
         snapshot = RepositorySnapshot(

@@ -8,6 +8,45 @@ fn plan_value() -> serde_json::Value {
     serde_json::to_value(fixture_run_config().into_plan_config()).unwrap()
 }
 
+#[test]
+fn disk_limits_have_mandatory_eight_and_ten_gibibyte_defaults() {
+    let raw = RawRunLimits::default();
+    assert_eq!(raw.max_workspace_size, 8 * 1024 * 1024 * 1024);
+    assert_eq!(raw.min_free_space, 10 * 1024 * 1024 * 1024);
+
+    let normalized = RunConfig::try_from(RawRunConfig {
+        files: vec!["src/lib.py".into()],
+        test_argv: vec![CommandArg::Unix(b"python".to_vec())],
+        ..RawRunConfig::default()
+    })
+    .unwrap();
+    assert_eq!(
+        normalized.limits.max_workspace_size.get(),
+        8 * 1024 * 1024 * 1024
+    );
+    assert_eq!(
+        normalized.limits.min_free_space.get(),
+        10 * 1024 * 1024 * 1024
+    );
+}
+
+#[test]
+fn zero_disk_limits_name_the_public_flags() {
+    for (field, expected) in [
+        ("max_workspace_size", "--max-workspace-size"),
+        ("min_free_space", "--min-free-space"),
+    ] {
+        let mut raw = RawRunLimits::default();
+        match field {
+            "max_workspace_size" => raw.max_workspace_size = 0,
+            "min_free_space" => raw.min_free_space = 0,
+            _ => unreachable!(),
+        }
+        let error = hoimin_core::RunLimits::try_from(&raw).unwrap_err();
+        assert!(error.to_string().contains(expected), "{field}: {error}");
+    }
+}
+
 type InvalidPlanCase = (&'static str, fn(&mut serde_json::Value), ConfigError);
 
 #[test]

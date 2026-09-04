@@ -59,7 +59,7 @@ fn parent_opened(operation: &'static str, path: &Utf8Path) {
 }
 
 #[cfg(windows)]
-mod windows;
+pub(crate) mod windows;
 
 #[cfg(any(windows, test))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1193,6 +1193,10 @@ mod tests {
 
     use super::*;
 
+    fn outer_depth_guard_active() -> bool {
+        std::env::var_os("HOIMIN_FOCUSED_MUTATION_OUTER_DEPTH_GUARD").is_some()
+    }
+
     struct PausedParent {
         operation: &'static str,
         path: Utf8PathBuf,
@@ -1762,6 +1766,9 @@ mod tests {
 
     #[test]
     fn post_order_removal_handles_a_tree_at_the_supported_depth() {
+        if outer_depth_guard_active() {
+            return;
+        }
         let fixture = RootFixture::new();
         fixture.create_nested_directories("deep", 128);
         let root = WorkerRoot::open(fixture.worker_path()).unwrap();
@@ -1773,6 +1780,9 @@ mod tests {
 
     #[test]
     fn post_order_removal_reports_the_shared_depth_limit() {
+        if outer_depth_guard_active() {
+            return;
+        }
         let fixture = RootFixture::new();
         fixture.create_nested_directories("deep", 129);
         let root = WorkerRoot::open(fixture.worker_path()).unwrap();

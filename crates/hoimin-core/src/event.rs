@@ -5,13 +5,18 @@ use camino::Utf8PathBuf;
 use std::time::Duration;
 
 use crate::{
-    CandidateCursor, CandidateSpoolRef, EffectId, IntegrityCheckpoint, MutationCandidate,
-    OutputSpoolRef, ProcessTermination, ReservationId, ResourceMode, RunFingerprint,
-    SessionResumeRef, StoredResult, TargetSlice,
+    CandidateCursor, CandidateSpoolRef, DiskFailure, EffectId, IntegrityCheckpoint,
+    MutationCandidate, OutputSpoolRef, ProcessTermination, ReservationId, ResourceMode,
+    RunFingerprint, SessionResumeRef, StoredResult, TargetSlice,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct StartRequested;
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DiskStopRequested {
+    pub failure: DiskFailure,
+}
 
 macro_rules! completion_event {
     ($($name:ident),+ $(,)?) => {
@@ -344,6 +349,7 @@ pub enum RunEvent {
     OutputEmitted(OutputEmitted),
     CleanupFinished(CleanupFinished),
     EffectFailed(EffectFailed),
+    DiskStopRequested(DiskStopRequested),
     DeadlineReached,
     CancellationRequested,
 }

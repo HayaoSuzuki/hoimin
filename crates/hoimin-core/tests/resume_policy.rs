@@ -467,6 +467,8 @@ fn every_safety_limit_changes_the_fingerprint() {
         ("max_memory", mutate_max_memory),
         ("max_output", mutate_max_output),
         ("max_copy_size", mutate_max_copy_size),
+        ("max_workspace_size", mutate_max_workspace_size),
+        ("min_free_space", mutate_min_free_space),
         ("max_processes", mutate_max_processes),
     ] {
         let mut raw = fixture_raw_limits();
@@ -649,6 +651,8 @@ fn arbitrary_limits() -> impl Strategy<Value = hoimin_core::RunLimits> {
                     max_memory: memory,
                     max_output: output,
                     max_copy_size: copy,
+                    max_workspace_size: 8 * 1024 * 1024 * 1024,
+                    min_free_space: 10 * 1024 * 1024 * 1024,
                     max_processes: processes,
                 })
                     .try_into()
@@ -847,4 +851,10 @@ fn mutate_max_copy_size(v: &mut RawRunLimits) {
 }
 fn mutate_max_processes(v: &mut RawRunLimits) {
     v.max_processes += 1;
+}
+fn mutate_max_workspace_size(v: &mut RawRunLimits) {
+    v.max_workspace_size += 1;
+}
+fn mutate_min_free_space(v: &mut RawRunLimits) {
+    v.min_free_space += 1;
 }

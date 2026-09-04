@@ -108,6 +108,8 @@ The defaults are:
 | `--max-memory` | `1GiB` | run-wide descendant memory |
 | `--max-output` | `1MiB` | combined retained stdout and stderr per process |
 | `--max-copy-size` | `1GiB` | run-wide logical bytes copied across all workers |
+| `--max-workspace-size` | `8GiB` | logical bytes in generated workspaces and run-owned output |
+| `--min-free-space` | `10GiB` | mandatory filesystem reserve before more work starts |
 | `--max-processes` | `64` | run-wide descendants |
 | `--format` | `json` | `json`, `jsonl`, or `human` |
 | `--profile full` / `--profile focused` | `full` | candidate-selection profile |
@@ -117,6 +119,14 @@ The defaults are:
 By default, there are no include/exclude overrides or SQLite session, and `--changed`, `--resume`, and `--allow-best-effort-memory` are disabled.
 
 Every numeric limit must be nonzero. Memory, process, copy, and total-timeout limits are run-wide and are not multiplied by `--jobs`. On Windows, Job Objects provide hard process and memory enforcement. On Linux, delegated cgroup v2 provides hard enforcement. When hard enforcement is unavailable, Unix uses best-effort process groups and non-macOS Unix also applies per-process `RLIMIT_AS`. Linux and macOS require explicit `--allow-best-effort-memory` approval for this policy. On macOS, the memory limit is not enforced. Hoimin uses monotonic wall-clock deadlines on portable Unix and, on timeout or cancellation while it owns a live root, terminates that process group and reaps the root. Cleanup of descendants after the root exits naturally is not guaranteed. Reports identify `hard` or `best_effort` resource mode.
+
+`--max-copy-size` counts copied source bytes across workers. `--max-workspace-size`
+counts generated workspace bytes, including materialized workers and run-owned output.
+Keep the 10 GiB reserve even when the workspace limit is smaller. In this policy,
+raising a consumption limit or lowering the reserve is explicit risk acceptance:
+sampled monitoring can stop new work, but one child can consume the reserve between
+samples. Aggregate hard enforcement requires a verified, named quota backend.
+Without one, the disk guard provides cooperative enforcement.
 
 During discovery of one source file, each token, AST, and type-annotation
 producer retains at most `max_candidates + 1` candidate records and their
@@ -162,6 +172,30 @@ lower `--jobs` or raise `--mutant-timeout`.
 hoimin copies regular files into isolated workers. It does not follow or copy symlinks; each skipped symlink produces a diagnostic. The original tree is checked for changes and workers are reset between mutants.
 
 These controls reduce accidental resource exhaustion. hoimin executes user-selected Python and test programs and is **not a security boundary** for untrusted code.
+
+## Disk-safe execution
+
+Hoimin treats disk safety as an ownership problem as well as a capacity limit. It
+meters generated workspaces and run-owned output against `--max-workspace-size`,
+checks `--min-free-space` before dispatching more work, and stops new mutation
+work when either guard is reached. These checks are cooperative unless a
+verified quota backend provides aggregate hard enforcement.
+
+Cleanup is limited to run roots whose identity, filesystem, and ownership were
+retained from creation. Hoimin does not follow symlinks or reparse points during
+cleanup, use wildcard recursive deletion, or continue through an identity or
+volume change. On Windows, pinned directory handles and handle-relative child
+operations protect workspace creation, publication, measurement, and cleanup;
+an unsupported identity, replacement race, sharing violation, or close failure
+fails closed instead of falling back to pathname-based deletion. Caller-provided
+output directories remain caller-owned.
+
+If cleanup is deferred, `run.json` and `report.md` record the exact retained
+scratch path and bounded diagnostics. Before removing it manually, verify its
+lease and run identifier, then remove only that exact path. Never delete the
+managed parent directory or use a wildcard. See
+[Windows filesystem safety](docs/development.md#windows-filesystem-safety) for
+the detailed capability and cleanup model.
 
 ## Mutation operators
 

@@ -20,14 +20,33 @@ use hoimin_core::{
 
 use crate::process::ProcessCancellation;
 use crate::resource::ResourceBackend;
+use crate::workspace::ManagedChild;
 use crate::workspace::RootRelativeReader;
+#[cfg(test)]
 use tempfile::TempDir;
+
+#[derive(Clone)]
+enum CandidateSpoolOwner {
+    #[cfg(test)]
+    Temporary(Arc<TempDir>),
+    Managed(Arc<ManagedChild>),
+}
+
+impl CandidateSpoolOwner {
+    fn path(&self) -> &std::path::Path {
+        match self {
+            #[cfg(test)]
+            Self::Temporary(owner) => owner.path(),
+            Self::Managed(owner) => owner.path().as_std_path(),
+        }
+    }
+}
 
 pub struct AnalyzerHandler {
     root_path: Utf8PathBuf,
     root: Option<RootRelativeReader>,
     store: Option<CandidateStore>,
-    candidate_spool_owner: Option<Arc<TempDir>>,
+    candidate_spool_owner: Option<CandidateSpoolOwner>,
     #[cfg(test)]
     analysis_hook: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
 }
@@ -413,9 +432,20 @@ impl AnalyzerHandler {
         Self::new(root)
     }
 
+    #[cfg(test)]
     pub(crate) fn with_candidate_spool_owner(mut self, owner: Arc<TempDir>) -> Self {
-        self.candidate_spool_owner = Some(owner);
+        self.candidate_spool_owner = Some(CandidateSpoolOwner::Temporary(owner));
         self
+    }
+
+    pub(crate) fn with_managed_candidate_spool_owner(mut self, owner: Arc<ManagedChild>) -> Self {
+        self.candidate_spool_owner = Some(CandidateSpoolOwner::Managed(owner));
+        self
+    }
+
+    pub(crate) fn release_candidate_spool(&mut self) {
+        self.store = None;
+        self.candidate_spool_owner = None;
     }
 
     /// # Errors

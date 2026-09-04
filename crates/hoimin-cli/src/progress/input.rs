@@ -3,8 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use hoimin_core::{
-    MutantFinished, OutputEvent, ProcessTermination, REPORT_SCHEMA_VERSION, ReportVersions,
-    ResourceControl, VerificationSelection, summarize,
+    BaselineFinished, MutantFinished, MutationSummary, OutputEvent, ProcessTermination,
+    REPORT_SCHEMA_VERSION, ReportVersions, ResourceControl, VerificationSelection, summarize,
 };
 use serde::Deserialize;
 use thiserror::Error;
@@ -117,6 +117,34 @@ struct RunReportDocument {
     summary: OutputEvent,
 }
 
+#[derive(Deserialize)]
+struct ReportHeader {
+    schema_version: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LegacyV2ReportDocument {
+    schema_version: u32,
+    run: serde_json::Value,
+    baseline: Option<serde_json::Value>,
+    mutants: Vec<serde_json::Value>,
+    summary: serde_json::Value,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LegacyV2RunSummary {
+    schema_version: u32,
+    sequence: u64,
+    run_id: String,
+    counts: MutationSummary,
+    complete: bool,
+    exit_code: i32,
+    #[serde(default, rename = "verification_selection")]
+    _verification_selection: Option<VerificationSelection>,
+}
+
 /// Reads and validates one mutation run report.
 ///
 /// # Errors
@@ -127,6 +155,14 @@ pub fn read_report(path: &Path) -> Result<InputReport, ProgressError> {
         path: path.to_path_buf(),
         source,
     })?;
+    let header =
+        serde_json::from_slice::<ReportHeader>(&bytes).map_err(|source| ProgressError::Parse {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    if header.schema_version == 2 {
+        return read_legacy_v2(path, &bytes);
+    }
     let document = serde_json::from_slice::<RunReportDocument>(&bytes).map_err(|source| {
         ProgressError::Parse {
             path: path.to_path_buf(),
@@ -169,6 +205,163 @@ pub fn read_report(path: &Path) -> Result<InputReport, ProgressError> {
         })
         .collect();
     Ok(InputReport::Usable(UsableReport { source, mutants }))
+}
+
+fn read_legacy_v2(path: &Path, bytes: &[u8]) -> Result<InputReport, ProgressError> {
+    let document = serde_json::from_slice::<LegacyV2ReportDocument>(bytes).map_err(|source| {
+        ProgressError::Parse {
+            path: path.to_path_buf(),
+            source,
+        }
+    })?;
+    if document.schema_version != 2 {
+        return Err(ProgressError::UnsupportedSchema {
+            path: path.to_path_buf(),
+            found: document.schema_version,
+        });
+    }
+    let run = decode_legacy_event::<ProgressRunStarted>(path, &document.run, "run_started")?;
+    validate_legacy_version(path, run.schema_version)?;
+    if !run.normalized_config.is_null() && !run.normalized_config.is_object() {
+        return Err(invalid_structure(
+            path,
+            "normalized_config must be null or an object",
+        ));
+    }
+    let baseline = document
+        .baseline
+        .map(|value| decode_legacy_event::<BaselineFinished>(path, &value, "baseline_finished"))
+        .transpose()?;
+    let mutants = document
+        .mutants
+        .into_iter()
+        .map(|value| decode_legacy_event::<MutantFinished>(path, &value, "mutant_finished"))
+        .collect::<Result<Vec<_>, _>>()?;
+    let summary =
+        decode_legacy_event::<LegacyV2RunSummary>(path, &document.summary, "run_finished")?;
+
+    for version in baseline
+        .iter()
+        .map(|value| value.schema_version)
+        .chain(mutants.iter().map(|value| value.schema_version))
+        .chain(std::iter::once(summary.schema_version))
+    {
+        validate_legacy_version(path, version)?;
+    }
+    validate_legacy_structure(path, &run, baseline.as_ref(), &mutants, &summary)?;
+
+    let source = path.to_path_buf();
+    let Some(baseline) = baseline else {
+        return Ok(InputReport::Unusable {
+            source,
+            reason: UnusableReason::MissingBaseline,
+        });
+    };
+    if baseline.termination != ProcessTermination::Exit(0) {
+        return Ok(InputReport::Unusable {
+            source,
+            reason: UnusableReason::BaselineFailed,
+        });
+    }
+    if !summary.complete {
+        return Ok(InputReport::Unusable {
+            source,
+            reason: UnusableReason::Incomplete,
+        });
+    }
+    Ok(InputReport::Usable(UsableReport { source, mutants }))
+}
+
+fn decode_legacy_event<T: for<'de> Deserialize<'de>>(
+    path: &Path,
+    value: &serde_json::Value,
+    expected_kind: &'static str,
+) -> Result<T, ProgressError> {
+    let mut object = value
+        .as_object()
+        .cloned()
+        .ok_or_else(|| invalid_structure(path, "legacy report events must be JSON objects"))?;
+    let kind = object
+        .remove("kind")
+        .and_then(|value| value.as_str().map(str::to_owned));
+    if kind.as_deref() != Some(expected_kind) {
+        return Err(invalid_structure(
+            path,
+            "legacy report event kind is invalid",
+        ));
+    }
+    serde_json::from_value(serde_json::Value::Object(object)).map_err(|source| {
+        ProgressError::Parse {
+            path: path.to_path_buf(),
+            source,
+        }
+    })
+}
+
+fn validate_legacy_version(path: &Path, found: u32) -> Result<(), ProgressError> {
+    if found == 2 {
+        Ok(())
+    } else {
+        Err(ProgressError::UnsupportedSchema {
+            path: path.to_path_buf(),
+            found,
+        })
+    }
+}
+
+fn validate_legacy_structure(
+    path: &Path,
+    run: &ProgressRunStarted,
+    baseline: Option<&BaselineFinished>,
+    mutants: &[MutantFinished],
+    summary: &LegacyV2RunSummary,
+) -> Result<(), ProgressError> {
+    let mut stable_identities = BTreeMap::new();
+    for mutant in mutants {
+        if let Some(expected_sequence) =
+            stable_identities.insert(&mutant.candidate.id, mutant.candidate.sequence)
+        {
+            let message = if expected_sequence == mutant.candidate.sequence {
+                "mutant stable IDs must appear at most once"
+            } else {
+                "mutant stable IDs must map to one candidate sequence"
+            };
+            return Err(invalid_structure(path, message));
+        }
+    }
+    if summarize(&mutants.iter().map(|value| value.status).collect::<Vec<_>>()) != summary.counts {
+        return Err(invalid_structure(
+            path,
+            "summary counts must match mutant events",
+        ));
+    }
+    let mut previous = run.sequence;
+    for (run_id, sequence) in baseline
+        .map(|value| (value.run_id.as_str(), value.sequence))
+        .into_iter()
+        .chain(
+            mutants
+                .iter()
+                .map(|value| (value.run_id.as_str(), value.sequence)),
+        )
+        .chain(std::iter::once((summary.run_id.as_str(), summary.sequence)))
+    {
+        if run_id != run.run_id {
+            return Err(invalid_structure(
+                path,
+                "all present events must share run.run_id",
+            ));
+        }
+        if sequence <= previous {
+            return Err(invalid_structure(
+                path,
+                "event sequences must be strictly increasing in document order",
+            ));
+        }
+        previous = sequence;
+    }
+    let _ = summary.exit_code;
+    Ok(())
 }
 
 fn validate_schema_versions(

@@ -9,7 +9,240 @@ use crate::{
     contract_ensure,
 };
 
-pub const REPORT_SCHEMA_VERSION: u32 = 2;
+pub const REPORT_SCHEMA_VERSION: u32 = 3;
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DiskRunSummary {
+    pub configured_max_owned_bytes: u64,
+    pub configured_min_free_bytes: u64,
+    pub peak_owned_bytes: u64,
+    pub minimum_available_bytes: Option<u64>,
+    pub filesystems: Vec<DiskFilesystemReport>,
+    pub sample_count: u64,
+    pub maximum_measurement_ms: u64,
+    pub enforcement: Vec<DiskEnforcementReport>,
+    pub stop: Option<DiskStopReport>,
+    pub cleanup: Vec<DiskCleanupReport>,
+    pub removed_logical_bytes: Option<u64>,
+    pub stale_roots_reclaimed: u64,
+}
+
+impl DiskRunSummary {
+    #[must_use]
+    pub fn unmeasured(configured_max_owned_bytes: u64, configured_min_free_bytes: u64) -> Self {
+        Self {
+            configured_max_owned_bytes,
+            configured_min_free_bytes,
+            peak_owned_bytes: 0,
+            minimum_available_bytes: None,
+            filesystems: Vec::new(),
+            sample_count: 0,
+            maximum_measurement_ms: 0,
+            enforcement: Vec::new(),
+            stop: None,
+            cleanup: Vec::new(),
+            removed_logical_bytes: None,
+            stale_roots_reclaimed: 0,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DiskEnforcementReport {
+    PortableGuard,
+    CapacityOnly {
+        root_kind: String,
+        filesystem_key: String,
+    },
+    VerifiedAggregate {
+        backend: String,
+        probe: DiskCapabilityProbe,
+    },
+}
+
+impl<'de> Deserialize<'de> for DiskEnforcementReport {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(tag = "kind", rename_all = "snake_case")]
+        enum Encoded {
+            PortableGuard,
+            CapacityOnly {
+                root_kind: String,
+                filesystem_key: String,
+            },
+            VerifiedAggregate {
+                backend: String,
+                probe: DiskCapabilityProbe,
+            },
+        }
+
+        match Encoded::deserialize(deserializer)? {
+            Encoded::PortableGuard => Ok(Self::PortableGuard),
+            Encoded::CapacityOnly {
+                root_kind,
+                filesystem_key,
+            } => Ok(Self::CapacityOnly {
+                root_kind,
+                filesystem_key,
+            }),
+            Encoded::VerifiedAggregate { backend, probe } => {
+                Self::verified_aggregate(backend, probe).map_err(serde::de::Error::custom)
+            }
+        }
+    }
+}
+
+impl DiskEnforcementReport {
+    /// Creates a verified aggregate capability claim after validating its bounded evidence.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DiskEnforcementError`] when verification failed, the backend/capability pair is
+    /// not registered, or the observation exceeds 4 KiB.
+    pub fn verified_aggregate(
+        backend: String,
+        probe: DiskCapabilityProbe,
+    ) -> Result<Self, DiskEnforcementError> {
+        if !probe.verified {
+            return Err(DiskEnforcementError::Unverified);
+        }
+        if !matches!(
+            (backend.as_str(), probe.capability.as_str()),
+            ("linux_project_quota", "project_quota")
+        ) {
+            return Err(DiskEnforcementError::Unregistered);
+        }
+        if probe.observation.is_empty() || probe.observation.len() > 4 * 1024 {
+            return Err(DiskEnforcementError::InvalidObservation);
+        }
+        Ok(Self::VerifiedAggregate { backend, probe })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum DiskEnforcementError {
+    #[error("aggregate disk capability probe did not verify")]
+    Unverified,
+    #[error("aggregate disk backend and capability are not registered")]
+    Unregistered,
+    #[error("aggregate disk capability observation must contain at most 4096 bytes")]
+    InvalidObservation,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DiskCapabilityProbe {
+    pub capability: String,
+    pub verified: bool,
+    pub observation: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct DiskFilesystemReport {
+    pub key: String,
+    pub start_available_bytes: Option<u64>,
+    pub minimum_available_bytes: Option<u64>,
+    pub end_available_bytes: Option<u64>,
+    pub available_bytes_change: Option<i128>,
+}
+
+impl<'de> Deserialize<'de> for DiskFilesystemReport {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            key: String,
+            start_available_bytes: Box<serde_json::value::RawValue>,
+            minimum_available_bytes: Box<serde_json::value::RawValue>,
+            end_available_bytes: Box<serde_json::value::RawValue>,
+            available_bytes_change: Box<serde_json::value::RawValue>,
+        }
+
+        let wire = Wire::deserialize(deserializer)?;
+        let start_available_bytes =
+            serde_json::from_str::<Option<u64>>(wire.start_available_bytes.get())
+                .map_err(serde::de::Error::custom)?;
+        let minimum_available_bytes =
+            serde_json::from_str::<Option<u64>>(wire.minimum_available_bytes.get())
+                .map_err(serde::de::Error::custom)?;
+        let end_available_bytes =
+            serde_json::from_str::<Option<u64>>(wire.end_available_bytes.get())
+                .map_err(serde::de::Error::custom)?;
+        let available_bytes_change =
+            serde_json::from_str::<Option<i128>>(wire.available_bytes_change.get())
+                .map_err(serde::de::Error::custom)?;
+        match (
+            start_available_bytes,
+            end_available_bytes,
+            available_bytes_change,
+        ) {
+            (Some(start), Some(end), Some(reported)) => {
+                let expected = i128::from(end) - i128::from(start);
+                if reported != expected {
+                    return Err(serde::de::Error::custom(format_args!(
+                        "available_bytes_change {reported} does not match end-start {expected}"
+                    )));
+                }
+            }
+            (Some(_), Some(_), None) => {
+                return Err(serde::de::Error::custom(
+                    "available_bytes_change is required when both endpoints are present",
+                ));
+            }
+            (_, _, Some(_)) => {
+                return Err(serde::de::Error::custom(
+                    "available_bytes_change requires both endpoints",
+                ));
+            }
+            (_, _, None) => {}
+        }
+        Ok(Self {
+            key: wire.key,
+            start_available_bytes,
+            minimum_available_bytes,
+            end_available_bytes,
+            available_bytes_change,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DiskCleanupStatus {
+    Clean,
+    Failed,
+    Deferred,
+    Retained,
+    CleanupAfterDelivery,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DiskCleanupReport {
+    pub root_id: String,
+    pub owner: String,
+    pub status: DiskCleanupStatus,
+    pub examined_entries: u64,
+    pub removed_entries: u64,
+    pub details: Vec<String>,
+    pub omitted_detail_count: u64,
+    pub remaining_root: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DiskStopReport {
+    pub code: String,
+    pub owned_bytes: Option<u64>,
+    pub available_bytes: Option<u64>,
+    pub message: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secondary: Vec<crate::DiskSecondary>,
+}
 
 #[must_use]
 pub fn classify_mutant(termination: ProcessTermination) -> MutationStatus {
@@ -292,11 +525,12 @@ pub struct RunSummary {
     pub counts: MutationSummary,
     pub complete: bool,
     pub exit_code: i32,
+    pub disk: DiskRunSummary,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verification_selection: Option<VerificationSelection>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[allow(clippy::large_enum_variant)]
 pub enum OutputEvent {
@@ -306,6 +540,53 @@ pub enum OutputEvent {
     MutantFinished(MutantFinished),
     Diagnostic(Diagnostic),
     RunFinished(RunSummary),
+}
+
+impl<'de> Deserialize<'de> for OutputEvent {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        enum Kind {
+            RunStarted,
+            BaselineFinished,
+            MutantStarted,
+            MutantFinished,
+            Diagnostic,
+            RunFinished,
+        }
+
+        #[derive(Deserialize)]
+        struct Envelope {
+            kind: Kind,
+        }
+
+        let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+        let envelope =
+            serde_json::from_str::<Envelope>(raw.get()).map_err(serde::de::Error::custom)?;
+        match envelope.kind {
+            Kind::RunStarted => serde_json::from_str(raw.get())
+                .map(Self::RunStarted)
+                .map_err(serde::de::Error::custom),
+            Kind::BaselineFinished => serde_json::from_str(raw.get())
+                .map(Self::BaselineFinished)
+                .map_err(serde::de::Error::custom),
+            Kind::MutantStarted => serde_json::from_str(raw.get())
+                .map(Self::MutantStarted)
+                .map_err(serde::de::Error::custom),
+            Kind::MutantFinished => serde_json::from_str(raw.get())
+                .map(Self::MutantFinished)
+                .map_err(serde::de::Error::custom),
+            Kind::Diagnostic => serde_json::from_str(raw.get())
+                .map(Self::Diagnostic)
+                .map_err(serde::de::Error::custom),
+            Kind::RunFinished => serde_json::from_str(raw.get())
+                .map(Self::RunFinished)
+                .map_err(serde::de::Error::custom),
+        }
+    }
 }
 
 impl OutputEvent {

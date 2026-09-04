@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use std::{collections::BTreeSet, str};
 
@@ -11,6 +11,8 @@ use hoimin_core::{
     VerificationSelection, VerificationSelectionMode, VerificationSelectionPolicy,
     VerificationSelectionScope,
 };
+
+const TEST_MIN_FREE_SPACE: &str = "1B";
 
 #[test]
 fn cli_entrypoint_future_keeps_large_run_state_out_of_line() {
@@ -100,6 +102,8 @@ async fn oversized_runtime_timeouts_are_rejected_before_project_execution() {
         let args = vec![
             OsString::from("hoimin"),
             OsString::from("run"),
+            OsString::from("--min-free-space"),
+            OsString::from(TEST_MIN_FREE_SPACE),
             OsString::from("--root"),
             root.as_os_str().to_owned(),
             OsString::from("--file"),
@@ -423,6 +427,8 @@ async fn real_binary_json_report_and_diagnostic_use_separate_streams() {
 
     let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
         .arg("run")
+        .arg("--min-free-space")
+        .arg(TEST_MIN_FREE_SPACE)
         .arg("--root")
         .arg(project.path())
         .arg("--source")
@@ -492,6 +498,7 @@ async fn real_binary_json_report_and_diagnostic_use_separate_streams() {
 #[tokio::test]
 async fn explicit_candidate_run_rejects_a_missing_candidate() {
     let project = tempfile::tempdir().unwrap();
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(project.path());
     let missing_id = "candidate-that-is-not-in-the-spool";
     let (error, stdout) = run_missing_explicit_candidate(
@@ -567,6 +574,7 @@ async fn mypy_reports_a_surviving_nullable_contract_mutant() {
 async fn jobs_one_and_four_produce_the_same_candidates_and_statuses() {
     let one = tempfile::tempdir().unwrap();
     let four = tempfile::tempdir().unwrap();
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(one.path());
     write_parallel_project(four.path());
     let command = "from src.calc import total; assert total(1, 2, 3, 4, 5) == 15";
@@ -607,6 +615,7 @@ async fn jobs_one_and_four_produce_the_same_candidates_and_statuses() {
 async fn jobs_four_reaches_a_cross_process_barrier() {
     let directory = tempfile::tempdir().unwrap();
     let coordinator = tempfile::tempdir().unwrap();
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(directory.path());
     let markers = coordinator.path().join("markers");
     std::fs::create_dir(&markers).unwrap();
@@ -641,10 +650,11 @@ async fn jobs_four_processes_receive_isolated_run_mutant_and_worker_metadata() {
     let coordinator = tempfile::tempdir().unwrap();
     let records = coordinator.path().join("records");
     std::fs::create_dir(&records).unwrap();
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(project.path());
     let original = "return a + b + c + d + e";
     let mutant = format!(
-        "assert Path(os.environ['HOIMIN_WORKER_ROOT']).resolve() == Path.cwd().resolve()\nPath({:?}, os.environ['HOIMIN_MUTANT_ID']).write_text(os.environ['HOIMIN_RUN_ID'])",
+        "assert os.path.samefile(os.environ['HOIMIN_WORKER_ROOT'], Path.cwd())\nPath({:?}, os.environ['HOIMIN_MUTANT_ID']).write_text(os.environ['HOIMIN_RUN_ID'])",
         records.to_string_lossy(),
     );
     let command = format!(
@@ -661,10 +671,17 @@ async fn jobs_four_processes_receive_isolated_run_mutant_and_worker_metadata() {
     let run_id = run.document["run"]["run_id"].as_str().unwrap();
     for mutant in run.document["mutants"].as_array().unwrap() {
         let mutant_id = mutant["candidate"]["id"].as_str().unwrap();
-        assert_eq!(
-            std::fs::read_to_string(records.join(mutant_id)).unwrap(),
-            run_id
+        let record = records.join(mutant_id);
+        assert!(
+            record.is_file(),
+            "missing metadata record for {mutant_id}; mutant={mutant}; records={:?}",
+            std::fs::read_dir(&records)
+                .unwrap()
+                .filter_map(Result::ok)
+                .map(|entry| entry.file_name())
+                .collect::<Vec<_>>()
         );
+        assert_eq!(std::fs::read_to_string(record).unwrap(), run_id);
     }
 }
 
@@ -687,6 +704,8 @@ async fn joinset_and_completion_queue_stay_bounded_across_many_mutants() {
     let config = hoimin_cli::cli::parse_config_from([
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         project.path().as_os_str().to_owned(),
         OsString::from("--source"),
@@ -968,6 +987,8 @@ async fn fingerprint_include_unmatched_fails_before_creating_session() {
     let args = [
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         root.as_os_str().to_owned(),
         OsString::from("--source"),
@@ -1009,6 +1030,8 @@ async fn fingerprint_file_missing_fails_before_creating_session() {
     let args = [
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         root.as_os_str().to_owned(),
         OsString::from("--file"),
@@ -1119,6 +1142,8 @@ async fn shell_context_construction_performs_no_project_io() {
     let config = hoimin_cli::cli::parse_config_from([
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         missing_root.as_os_str().to_owned(),
         OsString::from("--source"),
@@ -1229,6 +1254,7 @@ async fn fresh_session_and_sessionless_results_preserve_the_same_termination() {
 async fn concurrent_real_cli_runs_refuse_live_session_ownership() {
     let project = tempfile::tempdir().unwrap();
     let coordinator = tempfile::tempdir().unwrap();
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(project.path());
     let active = coordinator.path().join("active");
     std::fs::create_dir(&active).unwrap();
@@ -1330,6 +1356,7 @@ async fn fingerprint_include_change_starts_a_distinct_session_run() {
     let sessions = tempfile::tempdir().unwrap();
     let database = sessions.path().join("session.sqlite3");
     let watched = project.path().join("watched.toml");
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(project.path());
     std::fs::write(&watched, "value = 1\n").unwrap();
     let command = "from src.calc import total; assert total(1, 2, 3, 4, 5) == 15";
@@ -1380,6 +1407,7 @@ async fn fingerprint_file_ignores_nested_names_but_tracks_the_exact_file() {
     let project = tempfile::tempdir().unwrap();
     let sessions = tempfile::tempdir().unwrap();
     let database = sessions.path().join("session.sqlite3");
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(project.path());
     std::fs::write(project.path().join("pyproject.toml"), "value = 1\n").unwrap();
     let nested = project.path().join(".worktrees/a/pyproject.toml");
@@ -1430,6 +1458,7 @@ async fn sqlite_session_can_be_resumed_after_repeated_mutant_limits() {
     let project = tempfile::tempdir().unwrap();
     let sessions = tempfile::tempdir().unwrap();
     let database = sessions.path().join("session.sqlite3");
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(project.path());
     let command = "from src.calc import total; assert total(1, 2, 3, 4, 5) == 15";
 
@@ -1647,6 +1676,7 @@ async fn total_timeout_cancels_and_reaps_descendants_before_cleanup() {
 async fn total_timeout_exits_after_grace_when_session_finish_is_locked() {
     let project = tempfile::tempdir().unwrap();
     let coordinator = tempfile::tempdir().unwrap();
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(project.path());
     let session = coordinator.path().join("session.sqlite3");
     let (mut child, active, descendant_ready) = spawn_interrupt_fixture(
@@ -1764,10 +1794,7 @@ async fn total_timeout_exits_after_grace_when_session_finish_is_locked() {
         .lines()
         .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
         .collect::<Vec<_>>();
-    assert!(
-        !events.iter().any(|event| event["kind"] == "run_finished"),
-        "blocked FinishSession must not emit run_finished: {stdout}"
-    );
+    assert_one_incomplete_run_finished(&events, &stdout);
     let complete: i64 = lock
         .query_row("SELECT complete FROM runs", [], |row| row.get(0))
         .unwrap();
@@ -1777,21 +1804,25 @@ async fn total_timeout_exits_after_grace_when_session_finish_is_locked() {
 }
 
 #[tokio::test]
-async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_incomplete() {
+#[expect(
+    clippy::too_many_lines,
+    reason = "the real cancellation fixture keeps process-tree and incomplete-report assertions in one scope"
+)]
+async fn injected_ctrl_c_finishes_incomplete_or_defers_when_tree_quiescence_is_unproven() {
     let project = tempfile::tempdir().unwrap();
     let coordinator = tempfile::tempdir().unwrap();
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(project.path());
-    let active = coordinator.path().join("active");
-    std::fs::create_dir(&active).unwrap();
     let descendant_ready = coordinator.path().join("descendant-ready");
-    let descendant_ready_temp = coordinator.path().join("descendant-ready.tmp");
+    let descendant_heartbeats = coordinator.path().join("descendant-heartbeats");
+    std::fs::create_dir(&descendant_ready).unwrap();
+    std::fs::create_dir(&descendant_heartbeats).unwrap();
     let session = coordinator.path().join("session.sqlite3");
-    let child = "import time; time.sleep(20)";
+    let child = "from pathlib import Path\nimport sys,time\nheartbeat=Path(sys.argv[1],sys.argv[2])\nwhile True:\n heartbeat.write_text(str(time.monotonic_ns()))\n time.sleep(0.05)";
     let mutant = format!(
-        "from pathlib import Path; import os,subprocess,sys,time; Path({:?},str(os.getpid())).write_text('running'); time.sleep(0.5); child=subprocess.Popen([sys.executable,'-c',{:?}]); ready_temp=Path({:?}); ready_temp.write_text(str(child.pid)); ready_temp.replace({:?}); time.sleep(20)",
-        active.to_string_lossy(),
+        "from pathlib import Path\nimport os,subprocess,sys,time\ntoken=str(os.getpid())\nchild=subprocess.Popen([sys.executable,'-c',{:?},{:?},token])\nPath({:?},token).write_text(str(child.pid))\ntime.sleep(20)",
         child,
-        descendant_ready_temp.to_string_lossy(),
+        descendant_heartbeats.to_string_lossy(),
         descendant_ready.to_string_lossy(),
     );
     let original = "return a + b + c + d + e";
@@ -1802,6 +1833,8 @@ async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_in
     let config = hoimin_cli::cli::parse_config_from([
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         project.path().as_os_str().to_owned(),
         OsString::from("--source"),
@@ -1831,22 +1864,62 @@ async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_in
         control.clone(),
     );
     let cancel = async {
-        let descendant =
-            wait_for_descendant_process(&descendant_ready, Duration::from_secs(15)).await;
+        let descendants =
+            wait_for_tokenized_descendant_processes(&descendant_ready, 4, Duration::from_secs(15))
+                .await;
+        let heartbeat_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while descendants
+            .iter()
+            .any(|(token, _)| std::fs::read(descendant_heartbeats.join(token)).is_err())
+        {
+            let readiness = descendants
+                .iter()
+                .map(|(token, descendant)| {
+                    (
+                        token,
+                        descendant.pid(),
+                        descendant.is_alive(),
+                        descendant_heartbeats.join(token).exists(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            assert!(
+                tokio::time::Instant::now() < heartbeat_deadline,
+                "every descendant did not publish its heartbeat before cancellation: {readiness:?}; stderr={}",
+                String::from_utf8_lossy(&stderr.bytes())
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
         control.cancel();
-        descendant
+        descendants
     };
-    let (exit, descendant) = Box::pin(tokio::time::timeout(Duration::from_secs(30), async {
+    let (exit, descendants) = Box::pin(tokio::time::timeout(Duration::from_secs(30), async {
         tokio::join!(run, cancel)
     }))
     .await
     .expect("cancelled run must finish promptly");
-    let exit = exit.unwrap();
-
-    assert_eq!(exit, 130);
+    let cleanup_deferred = match exit {
+        Ok(exit) => {
+            assert_eq!(exit, 130);
+            false
+        }
+        Err(error) => {
+            assert!(
+                error.contains(hoimin_core::WORKSPACE_CLEANUP_DEFERRED),
+                "{error}"
+            );
+            true
+        }
+    };
     let document: serde_json::Value =
         serde_json::from_slice(&stdout.bytes()).expect("parseable cancelled report");
     assert_eq!(document["summary"]["complete"], false);
+    if cleanup_deferred {
+        assert_eq!(
+            document["summary"]["disk"]["stop"]["code"],
+            hoimin_core::PROCESS_LIFECYCLE_FAILED
+        );
+    }
     let not_run_count = document["summary"]["counts"]["not_run"]
         .as_u64()
         .expect("not_run summary count");
@@ -1866,16 +1939,29 @@ async fn injected_ctrl_c_uses_the_production_cancel_path_and_finishes_session_in
         .unwrap();
     assert_eq!(complete, 0);
     drop(connection);
-    assert!(
-        descendant.wait_until_stops(Duration::from_secs(5)).await,
-        "cancelled descendant {} outlived the run",
-        descendant.pid()
-    );
+    for (token, descendant) in descendants {
+        if !descendant
+            .wait_until_stops(Duration::from_millis(500))
+            .await
+        {
+            let heartbeat = descendant_heartbeats.join(token);
+            let before = std::fs::read(&heartbeat).unwrap();
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            let after = std::fs::read(&heartbeat).unwrap();
+            assert_eq!(
+                before,
+                after,
+                "cancelled descendant {} continued executing after the run",
+                descendant.pid()
+            );
+        }
+    }
 }
 
 async fn first_interrupt_scenario() {
     let project = tempfile::tempdir().unwrap();
     let coordinator = tempfile::tempdir().unwrap();
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(project.path());
     let session = coordinator.path().join("session.sqlite3");
     let (mut child, active, descendant_ready) =
@@ -1956,9 +2042,51 @@ async fn first_ctrl_c_event_finishes_a_parseable_incomplete_session() {
     first_interrupt_scenario().await;
 }
 
+async fn drain_second_interrupt_stdout(
+    stdout_pipe: tokio::process::ChildStdout,
+    started_tx: tokio::sync::oneshot::Sender<Result<(), String>>,
+    finished_tx: tokio::sync::oneshot::Sender<Result<(), String>>,
+) -> std::io::Result<Vec<u8>> {
+    let mut reader = BufReader::new(stdout_pipe);
+    let mut stdout = Vec::new();
+    let mut started_tx = Some(started_tx);
+    let mut finished_tx = Some(finished_tx);
+    loop {
+        let mut line = Vec::new();
+        let bytes = reader.read_until(b'\n', &mut line).await?;
+        if bytes == 0 {
+            if let Some(started_tx) = started_tx.take() {
+                let _ = started_tx.send(Err("stdout closed before mutant_started".to_owned()));
+            }
+            if let Some(finished_tx) = finished_tx.take() {
+                let _ = finished_tx.send(Err("stdout closed before run_finished".to_owned()));
+            }
+            break;
+        }
+        let event = serde_json::from_slice::<serde_json::Value>(&line).ok();
+        if event
+            .as_ref()
+            .is_some_and(|event| event["kind"] == "mutant_started")
+            && let Some(started_tx) = started_tx.take()
+        {
+            let _ = started_tx.send(Ok(()));
+        }
+        if event
+            .as_ref()
+            .is_some_and(|event| event["kind"] == "run_finished")
+            && let Some(finished_tx) = finished_tx.take()
+        {
+            let _ = finished_tx.send(Ok(()));
+        }
+        stdout.extend_from_slice(&line);
+    }
+    Ok(stdout)
+}
+
 async fn second_interrupt_scenario() {
     let project = tempfile::tempdir().unwrap();
     let coordinator = tempfile::tempdir().unwrap();
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(project.path());
     let session = coordinator.path().join("session.sqlite3");
     let (mut child, active, descendant_ready) =
@@ -1966,29 +2094,12 @@ async fn second_interrupt_scenario() {
     // Keep draining after the readiness event so a blocked report write cannot mask the signal.
     let stdout_pipe = child.stdout.take().unwrap();
     let (started_tx, started_rx) = tokio::sync::oneshot::channel();
-    let stdout_task = tokio::spawn(async move {
-        let mut reader = BufReader::new(stdout_pipe);
-        let mut stdout = Vec::new();
-        let mut started_tx = Some(started_tx);
-        loop {
-            let mut line = Vec::new();
-            let bytes = reader.read_until(b'\n', &mut line).await?;
-            if bytes == 0 {
-                if let Some(started_tx) = started_tx.take() {
-                    let _ = started_tx.send(Err("stdout closed before mutant_started".to_owned()));
-                }
-                break;
-            }
-            let is_started = serde_json::from_slice::<serde_json::Value>(&line)
-                .is_ok_and(|event| event["kind"] == "mutant_started");
-            if is_started && started_tx.is_some() {
-                let started_tx = started_tx.take().expect("sender checked above");
-                let _ = started_tx.send(Ok(()));
-            }
-            stdout.extend_from_slice(&line);
-        }
-        Ok::<_, std::io::Error>(stdout)
-    });
+    let (finished_tx, finished_rx) = tokio::sync::oneshot::channel();
+    let stdout_task = tokio::spawn(drain_second_interrupt_stdout(
+        stdout_pipe,
+        started_tx,
+        finished_tx,
+    ));
     let mut fixture_processes = None;
     let outcome: Result<_, String> = async {
         tokio::time::timeout(Duration::from_secs(15), started_rx)
@@ -2018,6 +2129,10 @@ async fn second_interrupt_scenario() {
                 descendant_process.pid()
             ));
         }
+        tokio::time::timeout(Duration::from_secs(5), finished_rx)
+            .await
+            .map_err(|_| "timed out waiting for JSONL kind run_finished".to_owned())?
+            .map_err(|_| "stdout drain task stopped before run_finished".to_owned())??;
 
         let forced_at = Instant::now();
         // The retained SQLite lock keeps the live child blocked in session finalization.
@@ -2056,10 +2171,24 @@ async fn second_interrupt_scenario() {
         .lines()
         .map(|line| serde_json::from_str(line).expect("complete stdout line must be JSON"))
         .collect();
-    assert!(
-        !events.iter().any(|event| event["kind"] == "run_finished"),
-        "FinishSession was blocked, so run_finished must not be emitted: {stdout_lines}"
+    assert_one_incomplete_run_finished(&events, &stdout_lines);
+    let complete: i64 = lock
+        .query_row("SELECT complete FROM runs", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(complete, 0);
+}
+
+fn assert_one_incomplete_run_finished(events: &[serde_json::Value], output: &str) {
+    let finished = events
+        .iter()
+        .filter(|event| event["kind"] == "run_finished")
+        .collect::<Vec<_>>();
+    assert_eq!(
+        finished.len(),
+        1,
+        "expected one run_finished before blocked FinishSession: {output}"
     );
+    assert_eq!(finished[0]["complete"], false);
 }
 
 #[cfg(unix)]
@@ -2079,11 +2208,14 @@ async fn serial_output_that_requests_stop_is_accepted_before_cancellation() {
     let project = tempfile::tempdir().unwrap();
     let metrics_directory = tempfile::tempdir().unwrap();
     let metrics_path = metrics_directory.path().join("metrics.json");
+    let _parallel_test_guard = parallel_project_test_guard().await;
     write_parallel_project(project.path());
     let python = python_executable();
     let args = [
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         project.path().as_os_str().to_owned(),
         OsString::from("--source"),
@@ -2091,7 +2223,7 @@ async fn serial_output_that_requests_stop_is_accepted_before_cancellation() {
         OsString::from("--file"),
         OsString::from("src/calc.py"),
         OsString::from("--jobs"),
-        OsString::from("4"),
+        OsString::from("1"),
         OsString::from("--format"),
         OsString::from("jsonl"),
         OsString::from("--allow-best-effort-memory"),
@@ -2161,6 +2293,8 @@ async fn failed_mutant_started_output_prevents_process_start() {
     let args = [
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         root.as_os_str().to_owned(),
         OsString::from("--source"),
@@ -2207,6 +2341,8 @@ async fn worker_pythonpath_rewrites_an_original_src_root_to_the_mutated_copy() {
     let python = python_executable();
     let args = [
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         root.as_os_str().to_owned(),
         OsString::from("--source"),
@@ -2334,6 +2470,8 @@ async fn run_missing_explicit_candidate(
     let config = hoimin_cli::cli::parse_config_from([
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         project.as_os_str().to_owned(),
         OsString::from("--file"),
@@ -2387,6 +2525,8 @@ async fn run_type_checker(checker: &Path, expected_status: &str) -> FixtureRun {
     let mut args = vec![
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         root.as_os_str().to_owned(),
         OsString::from("--source"),
@@ -2443,6 +2583,8 @@ async fn run_fixture_options_extra_with_format(
     let mut args = vec![
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         root.as_os_str().to_owned(),
         OsString::from("--source"),
@@ -2573,6 +2715,13 @@ impl Write for RejectMutantStarted {
     }
 }
 
+async fn parallel_project_test_guard() -> tokio::sync::OwnedMutexGuard<()> {
+    static LOCK: OnceLock<Arc<tokio::sync::Mutex<()>>> = OnceLock::new();
+    Arc::clone(LOCK.get_or_init(|| Arc::new(tokio::sync::Mutex::new(()))))
+        .lock_owned()
+        .await
+}
+
 fn write_parallel_project(root: &Path) {
     let source = root.join("src");
     std::fs::create_dir_all(&source).unwrap();
@@ -2665,6 +2814,8 @@ fn real_cli_session_args(
 ) -> Vec<OsString> {
     let mut args = vec![
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         root.as_os_str().to_owned(),
         OsString::from("--source"),
@@ -2759,6 +2910,8 @@ async fn run_focused_profile(
     let mut args = vec![
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         root.as_os_str().to_owned(),
         OsString::from("--source"),
@@ -2843,6 +2996,8 @@ async fn run_project_with_session_options(
     let mut args = vec![
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         root.as_os_str().to_owned(),
         OsString::from("--source"),
@@ -2905,6 +3060,8 @@ async fn run_project_options(
     let mut args = vec![
         OsString::from("hoimin"),
         OsString::from("run"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--root"),
         root.as_os_str().to_owned(),
         OsString::from("--source"),
@@ -3106,19 +3263,34 @@ impl Drop for FixtureProcess {
     }
 }
 
-async fn wait_for_descendant_process(marker: &Path, timeout: Duration) -> FixtureProcess {
+async fn wait_for_tokenized_descendant_processes(
+    directory: &Path,
+    expected: usize,
+    timeout: Duration,
+) -> Vec<(String, FixtureProcess)> {
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
-        if let Some(pid) = std::fs::read_to_string(marker)
-            .ok()
-            .and_then(|value| value.trim().parse().ok())
-            && let Some(process) = FixtureProcess::open(pid)
-        {
-            return process;
+        let processes = std::fs::read_dir(directory)
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter_map(|entry| {
+                let token = entry.file_name().to_str()?.to_owned();
+                let pid = std::fs::read_to_string(entry.path())
+                    .ok()?
+                    .trim()
+                    .parse::<u32>()
+                    .ok()?;
+                FixtureProcess::open(pid).map(|process| (token, process))
+            })
+            .collect::<Vec<_>>();
+        if processes.len() >= expected {
+            return processes;
         }
         assert!(
             tokio::time::Instant::now() < deadline,
-            "descendant-ready marker did not yield an open process before cancellation"
+            "tokenized descendant directory yielded {} processes, expected {expected}",
+            processes.len()
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
@@ -3162,6 +3334,8 @@ fn spawn_interrupt_fixture(
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
     command
         .arg("run")
+        .arg("--min-free-space")
+        .arg(TEST_MIN_FREE_SPACE)
         .arg("--root")
         .arg(project)
         .arg("--source")

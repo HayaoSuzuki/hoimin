@@ -138,7 +138,14 @@ fn current_session_golden_matches_semantic_regeneration() {
     assert_eq!(user_version(&checked), 3);
     assert_eq!(user_version(&regenerated), 3);
     assert_eq!(schema_sql(&checked), schema_sql(&regenerated));
-    assert_eq!(logical_rows(&checked), logical_rows(&regenerated));
+    let checked_rows = logical_rows(&checked);
+    let regenerated_rows = logical_rows(&regenerated);
+    assert_eq!(checked_rows[0].1[1], Value::Integer(4));
+    assert_eq!(
+        regenerated_rows[0].1[1],
+        Value::Integer(i64::from(hoimin_core::FINGERPRINT_SCHEMA_VERSION))
+    );
+    assert_eq!(&checked_rows[1..], &regenerated_rows[1..]);
 }
 
 fn assert_golden_session_rows(connection: &Connection, original_version: i64) {
@@ -971,6 +978,30 @@ fn load_selects_only_the_newest_compatible_incomplete_run() {
             .resume
             .is_none()
     );
+}
+
+#[test]
+fn explicit_resume_rejects_the_newest_incomplete_older_fingerprint_schema() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("sessions.sqlite3");
+    let mut handler = SessionHandler::open(&path).unwrap();
+    handler.begin(begin_request(1, "legacy")).unwrap();
+    let connection = Connection::open(&path).unwrap();
+    connection
+        .execute("UPDATE fingerprints SET schema_version=4", [])
+        .unwrap();
+    drop(connection);
+
+    let failed = handler
+        .load(&LoadSession {
+            id: EffectId(2),
+            fingerprint: RunFingerprint::from_bytes([9; 32]),
+        })
+        .unwrap_err();
+
+    assert_eq!(failed.id, EffectId(2));
+    assert_eq!(failed.failure.code(), "session.resume.incompatible");
+    assert!(failed.failure.message().contains("start a new session"));
 }
 
 #[test]

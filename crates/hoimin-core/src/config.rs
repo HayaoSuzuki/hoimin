@@ -23,6 +23,8 @@ pub struct RawRunLimits {
     pub max_memory: u64,
     pub max_output: u64,
     pub max_copy_size: u64,
+    pub max_workspace_size: u64,
+    pub min_free_space: u64,
     pub max_processes: usize,
 }
 
@@ -39,6 +41,8 @@ impl Default for RawRunLimits {
             max_memory: 1024 * 1024 * 1024,
             max_output: 1024 * 1024,
             max_copy_size: 1024 * 1024 * 1024,
+            max_workspace_size: 8 * 1024 * 1024 * 1024,
+            min_free_space: 10 * 1024 * 1024 * 1024,
             max_processes: 64,
         }
     }
@@ -459,6 +463,8 @@ pub struct RunLimits {
     pub max_memory: NonZeroU64,
     pub max_output: NonZeroU64,
     pub max_copy_size: NonZeroU64,
+    pub max_workspace_size: NonZeroU64,
+    pub min_free_space: NonZeroU64,
     pub max_processes: NonZeroUsize,
 }
 
@@ -618,6 +624,8 @@ fn limit_flag(name: &str) -> &str {
         "max_memory" => "--max-memory",
         "max_output" => "--max-output",
         "max_copy_size" => "--max-copy-size",
+        "max_workspace_size" => "--max-workspace-size",
+        "min_free_space" => "--min-free-space",
         "max_processes" => "--max-processes",
         other => other,
     }
@@ -665,6 +673,10 @@ impl TryFrom<&RawRunLimits> for RunLimits {
                 .ok_or(ConfigError::InvalidLimit("max_output"))?,
             max_copy_size: NonZeroU64::new(raw.max_copy_size)
                 .ok_or(ConfigError::InvalidLimit("max_copy_size"))?,
+            max_workspace_size: NonZeroU64::new(raw.max_workspace_size)
+                .ok_or(ConfigError::InvalidLimit("max_workspace_size"))?,
+            min_free_space: NonZeroU64::new(raw.min_free_space)
+                .ok_or(ConfigError::InvalidLimit("min_free_space"))?,
             max_processes: nonzero_usize(raw.max_processes, "max_processes")?,
         };
         validate_limits(&limits)?;

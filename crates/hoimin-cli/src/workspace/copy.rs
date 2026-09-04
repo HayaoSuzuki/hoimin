@@ -14,9 +14,33 @@ use hoimin_core::{CreateWorker, EffectId, PreflightCompleted, ReservationId};
 
 use super::manifest::build_manifest;
 use super::{
-    CopyOptions, DiskSnapshot, SnapshotFile, WorkerRoot, WorkerWorkspace, WorkspaceDiagnostic,
-    WorkspaceError, WorkspaceManifest,
+    CopyOptions, DiskSnapshot, ManagedRunRoot, OwnedWorkspaceDirectory, SnapshotFile, WorkerRoot,
+    WorkerWorkspace, WorkspaceDiagnostic, WorkspaceError, WorkspaceManifest,
 };
+
+struct PendingOwnedWorkspace(Option<OwnedWorkspaceDirectory>);
+
+impl PendingOwnedWorkspace {
+    fn new(owner: OwnedWorkspaceDirectory) -> Self {
+        Self(Some(owner))
+    }
+
+    fn path(&self) -> &std::path::Path {
+        self.0.as_ref().expect("pending owner is present").path()
+    }
+
+    fn finish(mut self) -> OwnedWorkspaceDirectory {
+        self.0.take().expect("pending owner is present")
+    }
+}
+
+impl Drop for PendingOwnedWorkspace {
+    fn drop(&mut self) {
+        if let Some(owner) = self.0.as_ref() {
+            let _ = owner.try_cleanup();
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct WorkspacePlan {
@@ -30,6 +54,7 @@ pub struct WorkspacePlan {
     diagnostics: Vec<WorkspaceDiagnostic>,
     allowance: Arc<CopyAllowance>,
     state: Arc<Mutex<PlanState>>,
+    managed_root: Option<Arc<ManagedRunRoot>>,
     #[cfg(test)]
     materialization_metrics: Arc<MaterializationIoMetrics>,
     #[cfg(test)]
@@ -181,6 +206,7 @@ impl Drop for MaterializationRelease {
     }
 }
 
+#[derive(Debug)]
 pub(crate) enum ValidatedPreflightError<E> {
     Workspace(WorkspaceError),
     Validation(E),
@@ -325,6 +351,26 @@ impl WorkspacePlan {
         options: CopyOptions,
         validate: impl FnOnce(&Utf8Path, &WorkspaceManifest) -> Result<(), E>,
     ) -> Result<Self, ValidatedPreflightError<E>> {
+        Self::preflight_validated_in(
+            root,
+            preflight_id,
+            requested_workers,
+            options,
+            None,
+            None,
+            validate,
+        )
+    }
+
+    pub(crate) fn preflight_validated_in<E>(
+        root: &Utf8Path,
+        preflight_id: EffectId,
+        requested_workers: u32,
+        options: CopyOptions,
+        managed_root: Option<Arc<ManagedRunRoot>>,
+        max_owned_bytes: Option<u64>,
+        validate: impl FnOnce(&Utf8Path, &WorkspaceManifest) -> Result<(), E>,
+    ) -> Result<Self, ValidatedPreflightError<E>> {
         if requested_workers == 0 {
             return Err(WorkspaceError::ZeroWorkers.into());
         }
@@ -333,8 +379,28 @@ impl WorkspacePlan {
         let original_root =
             Utf8PathBuf::from_path_buf(canonical).map_err(|_| WorkspaceError::NonUtf8Path)?;
         let (manifest, diagnostics) = build_manifest(&original_root, &options)?;
+        let owned_copies = u64::from(requested_workers)
+            .checked_add(1)
+            .ok_or(WorkspaceError::CopySizeOverflow)?;
+        let planned_owned_bytes = manifest
+            .logical_bytes()
+            .checked_mul(owned_copies)
+            .ok_or(WorkspaceError::CopySizeOverflow)?;
+        if let Some(limit) = max_owned_bytes
+            && planned_owned_bytes >= limit
+        {
+            return Err(WorkspaceError::OwnedWorkspaceLimit {
+                planned: planned_owned_bytes,
+                limit,
+            }
+            .into());
+        }
         validate(&original_root, &manifest).map_err(ValidatedPreflightError::Validation)?;
-        let snapshot = Arc::new(create_disk_snapshot(&original_root, &manifest)?);
+        let snapshot = Arc::new(create_disk_snapshot(
+            &original_root,
+            &manifest,
+            managed_root.as_ref(),
+        )?);
         let (current, _) = build_manifest(&original_root, &options)?;
         if !manifest.content_matches(&current) {
             return Err(WorkspaceError::OriginalChanged {
@@ -362,6 +428,7 @@ impl WorkspacePlan {
                 charged: AtomicU64::new(0),
             }),
             state: Arc::new(Mutex::new(PlanState::default())),
+            managed_root,
             #[cfg(test)]
             materialization_metrics: Arc::new(MaterializationIoMetrics::default()),
             #[cfg(test)]
@@ -521,10 +588,19 @@ impl WorkspacePlan {
         worker: u32,
         open_root: impl FnOnce(Utf8PathBuf) -> Result<WorkerRoot, WorkspaceError>,
     ) -> Result<WorkerWorkspace, WorkspaceError> {
-        let temp = tempfile::Builder::new()
-            .prefix("hoimin-worker-")
-            .tempdir()
-            .map_err(|error| WorkspaceError::io("create worker", &self.original_root, error))?;
+        let temp = if let Some(managed) = &self.managed_root {
+            OwnedWorkspaceDirectory::Managed(managed.create_child("worker-")?)
+        } else {
+            OwnedWorkspaceDirectory::Temporary(
+                tempfile::Builder::new()
+                    .prefix("hoimin-worker-")
+                    .tempdir()
+                    .map_err(|error| {
+                        WorkspaceError::io("create worker", &self.original_root, error)
+                    })?,
+            )
+        };
+        let temp = PendingOwnedWorkspace::new(temp);
         let root_path = temp.path().join("workspace");
         fs::create_dir(&root_path).map_err(|error| {
             WorkspaceError::io("create worker root", &self.original_root, error)
@@ -590,7 +666,7 @@ impl WorkspacePlan {
         }
 
         Ok(WorkerWorkspace::from_materialized(
-            temp,
+            temp.finish(),
             root,
             self.manifest.clone(),
             Arc::clone(&self.snapshot),
@@ -605,11 +681,21 @@ impl WorkspacePlan {
 fn create_disk_snapshot(
     original_root: &Utf8Path,
     manifest: &WorkspaceManifest,
+    managed_root: Option<&Arc<ManagedRunRoot>>,
 ) -> Result<DiskSnapshot, WorkspaceError> {
-    let temp = tempfile::Builder::new()
-        .prefix("hoimin-snapshot-")
-        .tempdir()
-        .map_err(|error| WorkspaceError::io("create shared snapshot", original_root, error))?;
+    let temp = if let Some(managed) = managed_root {
+        OwnedWorkspaceDirectory::Managed(managed.create_child("snapshot-")?)
+    } else {
+        OwnedWorkspaceDirectory::Temporary(
+            tempfile::Builder::new()
+                .prefix("hoimin-snapshot-")
+                .tempdir()
+                .map_err(|error| {
+                    WorkspaceError::io("create shared snapshot", original_root, error)
+                })?,
+        )
+    };
+    let temp = PendingOwnedWorkspace::new(temp);
     let root_path = temp.path().join("workspace");
     fs::create_dir(&root_path)
         .map_err(|error| WorkspaceError::io("create shared snapshot root", original_root, error))?;
@@ -656,7 +742,7 @@ fn create_disk_snapshot(
     }
 
     Ok(DiskSnapshot {
-        _temp: temp,
+        _owner: temp.finish(),
         root,
         files,
     })
@@ -675,6 +761,88 @@ mod tests {
     use crate::workspace::ManifestEntry;
 
     use super::*;
+    use crate::workspace::{ManagedRootCoordinator, OwnerKind};
+
+    #[test]
+    fn owned_byte_limit_stops_before_snapshot_creation() {
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("target.py"), b"12345").unwrap();
+        let source = Utf8Path::from_path(source.path()).unwrap();
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root =
+            Arc::new(ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap());
+
+        let error = WorkspacePlan::preflight_validated_in(
+            source,
+            EffectId(7),
+            1,
+            CopyOptions::default(),
+            Some(Arc::clone(&root)),
+            Some(10),
+            |_, _| Ok::<_, Infallible>(()),
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            ValidatedPreflightError::Workspace(WorkspaceError::OwnedWorkspaceLimit {
+                planned: 10,
+                limit: 10
+            })
+        ));
+        let names = std::fs::read_dir(root.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names.len(),
+            2,
+            "snapshot child must not be created: {names:?}"
+        );
+    }
+
+    #[test]
+    fn snapshot_and_worker_are_materialized_below_the_leased_root() {
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("target.py"), b"pass\n").unwrap();
+        let source = Utf8Path::from_path(source.path()).unwrap();
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root =
+            Arc::new(ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap());
+        let plan = WorkspacePlan::preflight_validated_in(
+            source,
+            EffectId(7),
+            1,
+            CopyOptions::default(),
+            Some(Arc::clone(&root)),
+            Some(1_024),
+            |_, _| Ok::<_, Infallible>(()),
+        )
+        .unwrap();
+        let completed = plan.completed();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: completed.aggregate_logical_bytes,
+            processes: 1,
+        });
+        let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+
+        let mut worker = plan
+            .create_worker(&grant.create_worker(EffectId(8), 0).unwrap())
+            .unwrap();
+
+        assert!(worker.root().starts_with(root.path()));
+        worker.try_cleanup().unwrap();
+        drop((worker, plan));
+        assert_eq!(
+            root.cleanup(Duration::from_secs(1)).status,
+            hoimin_core::DiskCleanupStatus::Clean
+        );
+    }
 
     fn plan_with_padding(
         workers: u32,
@@ -790,7 +958,7 @@ mod tests {
         let manifest =
             WorkspaceManifest::from_entries_for_test(vec![entry("TARGET.py"), entry("target.py")]);
 
-        let error = create_disk_snapshot(&source_root, &manifest).unwrap_err();
+        let error = create_disk_snapshot(&source_root, &manifest, None).unwrap_err();
 
         assert_eq!(
             error,
@@ -847,6 +1015,78 @@ mod tests {
         assert_eq!(plan.observed_copy_bytes(), 0);
         let opened_path = opened_path.lock().unwrap().take().unwrap();
         assert!(!opened_path.exists());
+    }
+
+    #[test]
+    fn managed_snapshot_failure_removes_its_partial_child() {
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("target.py"), b"before\n").unwrap();
+        let source_root = Utf8Path::from_path(source.path()).unwrap();
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root =
+            Arc::new(ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap());
+
+        let error = WorkspacePlan::preflight_validated_in(
+            source_root,
+            EffectId(7),
+            1,
+            CopyOptions::default(),
+            Some(Arc::clone(&root)),
+            Some(1_024),
+            |source, _| fs::write(source.join("target.py"), b"after\n"),
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            ValidatedPreflightError::Workspace(WorkspaceError::OriginalChanged { .. })
+        ));
+        let names = std::fs::read_dir(root.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+        assert_eq!(names.len(), 2, "partial snapshot leaked: {names:?}");
+    }
+
+    #[test]
+    fn managed_worker_open_failure_removes_its_partial_child() {
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("target.py"), b"payload\n").unwrap();
+        let source_root = Utf8Path::from_path(source.path()).unwrap();
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root =
+            Arc::new(ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap());
+        let plan = WorkspacePlan::preflight_validated_in(
+            source_root,
+            EffectId(7),
+            1,
+            CopyOptions::default(),
+            Some(Arc::clone(&root)),
+            Some(1_024),
+            |_, _| Ok::<_, Infallible>(()),
+        )
+        .unwrap();
+
+        let error = plan
+            .materialize_worker_with_root_opener(0, |path| {
+                Err(WorkspaceError::io(
+                    "injected worker root open",
+                    path,
+                    "failure",
+                ))
+            })
+            .unwrap_err();
+
+        assert!(matches!(error, WorkspaceError::Io { .. }));
+        let names = std::fs::read_dir(root.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+        assert_eq!(names.len(), 3, "partial worker leaked: {names:?}");
     }
 
     #[test]

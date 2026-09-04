@@ -16,6 +16,8 @@ use hoimin_core::{
     MAX_JOBS, MutationCandidate, OutputFormat as CoreOutputFormat, VerificationSelectionPolicy,
 };
 
+const TEST_MIN_FREE_SPACE: &str = "1B";
+
 #[cfg(target_os = "macos")]
 #[tokio::test]
 async fn plan_rejects_unapproved_best_effort_memory_before_project_work() {
@@ -61,7 +63,7 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
     let stdout = String::from_utf8(stdout).unwrap();
     assert_eq!(stdout.matches('\n').count(), 1);
     let manifest: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(manifest["schema_version"], 2);
+    assert_eq!(manifest["schema_version"], 3);
     assert_eq!(manifest["ranking_rule_version"], 3);
     assert_eq!(manifest["kind"], "plan");
     assert!(
@@ -92,6 +94,14 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
     assert_eq!(
         manifest["normalized_config"]["fingerprint_files"],
         serde_json::json!(["pyproject.toml"])
+    );
+    assert_eq!(
+        manifest["normalized_config"]["limits"]["max_workspace_size"],
+        8 * 1024 * 1024 * 1024_u64
+    );
+    assert_eq!(
+        manifest["normalized_config"]["limits"]["min_free_space"],
+        10 * 1024 * 1024 * 1024_u64
     );
     assert!(manifest["normalized_config"].get("session").is_none());
     assert!(manifest["normalized_config"].get("resume").is_none());
@@ -202,6 +212,7 @@ async fn changed_selection_plan_matches_the_real_run_candidate_and_id() {
         ["--changed", "--operators", "binary_add_sub"],
         &marker,
     );
+    insert_test_min_free_space(&mut run_args);
     run_args[1] = OsString::from("run");
     *run_args.last_mut().unwrap() = OsString::from("pass");
     let mut run_stdout = Vec::new();
@@ -1566,7 +1577,8 @@ async fn write_plan_manifest_with_marker(
     options: &[&str],
     marker: &Path,
 ) -> (PathBuf, PlanManifest) {
-    let args = plan_args(project, options.iter().copied(), marker);
+    let mut args = plan_args(project, options.iter().copied(), marker);
+    insert_test_min_free_space(&mut args);
     let ParsedCommand::Plan(plan) = parse_from(args).unwrap() else {
         panic!("expected plan arguments");
     };
@@ -1589,6 +1601,7 @@ async fn write_budget_plan_manifest(project: &Project, marker: &Path) -> (PathBu
         ],
         marker,
     );
+    insert_test_min_free_space(&mut args);
     *args.last_mut().unwrap() = OsString::from(format!(
         "import time; from pathlib import Path; time.sleep(0.2); \
          Path({:?}).write_text('executed')",
@@ -1650,6 +1663,24 @@ fn plan_args<'a>(
         )),
     ]);
     args
+}
+
+fn insert_test_min_free_space(args: &mut Vec<OsString>) {
+    assert!(
+        !args.iter().any(|argument| argument == "--min-free-space"),
+        "test fixture must not override an explicit filesystem reserve"
+    );
+    let separator = args
+        .iter()
+        .position(|argument| argument == "--")
+        .expect("test command separator");
+    args.splice(
+        separator..separator,
+        [
+            OsString::from("--min-free-space"),
+            OsString::from(TEST_MIN_FREE_SPACE),
+        ],
+    );
 }
 
 #[cfg(target_os = "macos")]

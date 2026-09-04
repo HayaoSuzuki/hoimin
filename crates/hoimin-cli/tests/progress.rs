@@ -23,6 +23,8 @@ use proptest::prelude::*;
 use serde_json::{Value, json};
 use tokio::io::AsyncReadExt;
 
+const TEST_MIN_FREE_SPACE: &str = "1B";
+
 fn original_schema_v2_report() -> PathBuf {
     repo_root().join("crates/hoimin-cli/tests/golden/reports/schema-v2-original.json")
 }
@@ -45,6 +47,18 @@ fn golden_schema_v2_report_eras_are_usable() {
             "golden report must remain a usable schema-v2 input: {name}"
         );
     }
+}
+
+#[test]
+fn current_report_requires_disk_summary() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("missing-disk.json");
+    let mut report = valid_report();
+    report["summary"].as_object_mut().unwrap().remove("disk");
+    std::fs::write(&path, serde_json::to_vec(&report).unwrap()).unwrap();
+
+    let error = read_report(&path).unwrap_err();
+    assert!(matches!(error, ProgressError::Parse { .. }));
 }
 
 #[tokio::test]
@@ -1647,6 +1661,8 @@ fn real_binary_command(project: &Path, test_command: &str) -> tokio::process::Co
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
     command
         .arg("run")
+        .arg("--min-free-space")
+        .arg(TEST_MIN_FREE_SPACE)
         .arg("--root")
         .arg(project)
         .arg("--source")
@@ -2225,7 +2241,8 @@ fn valid_report() -> Value {
                 "score": 1.0
             },
             "complete": true,
-            "exit_code": 0
+            "exit_code": 0,
+            "disk": serde_json::to_value(hoimin_core::DiskRunSummary::unmeasured(8, 10)).unwrap()
         }
     })
 }

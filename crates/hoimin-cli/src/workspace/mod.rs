@@ -1,8 +1,10 @@
 mod copy;
+mod disk;
 #[cfg(test)]
 mod lean_oracle_tests;
 mod manifest;
 mod mutation;
+mod owned;
 mod reset;
 mod root;
 
@@ -28,7 +30,16 @@ use copy::ValidatedPreflightError;
 pub use copy::WorkspacePlan;
 #[cfg(test)]
 pub(crate) use copy::{MaterializationPause, MaterializationPauseController};
+#[cfg(test)]
+pub(crate) use disk::{DiskMeasurement, MeterReading};
+pub(crate) use disk::{
+    DiskMonitor, FilesystemKey, available_for_managed_roots, measure_managed_roots,
+};
 pub use manifest::{ManifestEntry, WorkspaceManifest};
+pub(crate) use owned::{
+    CleanupRecord, ManagedChild, ManagedRootCoordinator, ManagedRunRoot, OwnerKind, ReclaimReport,
+    truncate_diagnostic_detail,
+};
 use root::WorkerRoot;
 
 pub(crate) fn build_validation_manifest(
@@ -115,6 +126,8 @@ pub enum WorkspaceError {
     },
     #[error("observed workspace copy reached {observed} bytes, allowance is {allowance}")]
     CopyAllowanceExceeded { observed: u64, allowance: u64 },
+    #[error("planned owned workspace reaches {planned} bytes, limit is {limit}")]
+    OwnedWorkspaceLimit { planned: u64, limit: u64 },
     #[error("worker {worker} already exists")]
     WorkerAlreadyExists { worker: u32 },
     #[error("original workspace changed: {path}")]
@@ -176,6 +189,7 @@ impl WorkspaceError {
             Self::InvalidGrant { .. }
             | Self::CopyAllowanceExceeded { .. }
             | Self::CopySizeOverflow => "workspace.copy.limit",
+            Self::OwnedWorkspaceLimit { .. } => hoimin_core::WORKSPACE_SIZE_EXCEEDED,
             Self::PreflightMismatch { .. } => "workspace.preflight.mismatch",
             Self::WorkerOutOfRange { .. } => "workspace.worker.out_of_range",
             Self::AllowanceMismatch { .. } => "workspace.allowance.mismatch",
@@ -265,8 +279,73 @@ impl SnapshotFile {
 }
 
 #[derive(Debug)]
+pub(crate) enum OwnedWorkspaceDirectory {
+    Temporary(tempfile::TempDir),
+    Managed(ManagedChild),
+}
+
+impl From<tempfile::TempDir> for OwnedWorkspaceDirectory {
+    fn from(value: tempfile::TempDir) -> Self {
+        Self::Temporary(value)
+    }
+}
+
+impl From<ManagedChild> for OwnedWorkspaceDirectory {
+    fn from(value: ManagedChild) -> Self {
+        Self::Managed(value)
+    }
+}
+
+impl OwnedWorkspaceDirectory {
+    fn path(&self) -> &Path {
+        match self {
+            Self::Temporary(temp) => temp.path(),
+            Self::Managed(child) => child.path().as_std_path(),
+        }
+    }
+
+    fn try_cleanup(&self) -> Result<(), WorkspaceError> {
+        match self {
+            Self::Temporary(temp) => fs::remove_dir_all(temp.path())
+                .or_else(|error| {
+                    if error.kind() == std::io::ErrorKind::NotFound {
+                        Ok(())
+                    } else {
+                        Err(error)
+                    }
+                })
+                .map_err(|error| {
+                    WorkspaceError::io(
+                        "remove temporary workspace",
+                        Utf8Path::from_path(temp.path()).unwrap_or(Utf8Path::new("<temporary>")),
+                        error,
+                    )
+                }),
+            Self::Managed(child) => child.cleanup(),
+        }
+    }
+
+    fn is_managed(&self) -> bool {
+        matches!(self, Self::Managed(_))
+    }
+}
+
+fn worker_cleanup_error(error: WorkspaceError) -> WorkspaceError {
+    match error {
+        WorkspaceError::Io { path, message, .. } => WorkspaceError::Io {
+            // Preserve the effect-level operation that predates the owned-root implementation.
+            // The ownership strategy is an internal detail of a worker cleanup request.
+            operation: "remove worker workspace",
+            path,
+            message,
+        },
+        error => error,
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct DiskSnapshot {
-    _temp: tempfile::TempDir,
+    _owner: OwnedWorkspaceDirectory,
     root: Utf8PathBuf,
     files: BTreeMap<Utf8PathBuf, SnapshotFile>,
 }
@@ -374,7 +453,7 @@ fn make_cleanup_entry_accessible(
 
 #[derive(Debug)]
 pub struct WorkerWorkspace {
-    temp: tempfile::TempDir,
+    temp: OwnedWorkspaceDirectory,
     root: WorkerRoot,
     manifest: WorkspaceManifest,
     snapshot: Arc<DiskSnapshot>,
@@ -383,12 +462,13 @@ pub struct WorkerWorkspace {
     worker: u32,
     charged: u64,
     cleanup_complete: bool,
+    cleanup_on_drop: bool,
 }
 
 impl WorkerWorkspace {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn from_materialized(
-        temp: tempfile::TempDir,
+        temp: OwnedWorkspaceDirectory,
         root: WorkerRoot,
         manifest: WorkspaceManifest,
         snapshot: Arc<DiskSnapshot>,
@@ -397,6 +477,7 @@ impl WorkerWorkspace {
         worker: u32,
         charged: u64,
     ) -> Self {
+        let cleanup_on_drop = !temp.is_managed();
         Self {
             temp,
             root,
@@ -407,6 +488,7 @@ impl WorkerWorkspace {
             worker,
             charged,
             cleanup_complete: false,
+            cleanup_on_drop,
         }
     }
 
@@ -455,6 +537,15 @@ impl WorkerWorkspace {
             return Ok(());
         }
         self.root.close();
+        if self.temp.is_managed() {
+            return match self.temp.try_cleanup().map_err(worker_cleanup_error) {
+                Ok(()) => {
+                    self.cleanup_complete = true;
+                    Ok(())
+                }
+                Err(error) => Err(error),
+            };
+        }
         let wrapper = self.temp.path();
         let wrapper_metadata = match fs::symlink_metadata(wrapper) {
             Ok(metadata) => metadata,
@@ -474,27 +565,27 @@ impl WorkerWorkspace {
         let wrapper_error_path = Utf8Path::from_path(wrapper).unwrap_or(self.root.path());
         make_cleanup_entry_accessible(wrapper, &wrapper_metadata, wrapper_error_path)?;
         make_tree_writable(self.root.path().as_std_path(), self.root.path())?;
-        match fs::remove_dir_all(self.temp.path()) {
+        match self.temp.try_cleanup().map_err(worker_cleanup_error) {
             Ok(()) => {
                 self.cleanup_complete = true;
                 Ok(())
             }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                self.cleanup_complete = true;
-                Ok(())
-            }
-            Err(error) => Err(WorkspaceError::io(
-                "remove worker workspace",
-                self.root.path(),
-                error,
-            )),
+            Err(error) => Err(error),
         }
+    }
+
+    fn retain_for_janitor(&mut self) {
+        self.cleanup_on_drop = false;
     }
 }
 
 impl Drop for WorkerWorkspace {
     fn drop(&mut self) {
-        if !self.cleanup_complete && self.try_cleanup().is_err() {
+        // The temp field owns the managed-child lifetime token, while root owns a descendant OS
+        // handle. Close the descendant before dropping that token: root cleanup may start on
+        // another thread as soon as the token publishes quiescence.
+        self.root.close();
+        if self.cleanup_on_drop && !self.cleanup_complete && self.try_cleanup().is_err() {
             return;
         }
         if fs::symlink_metadata(self.temp.path()).is_ok() {
@@ -664,6 +755,8 @@ pub struct WorkspaceHandler {
     plan: Option<Arc<WorkspacePlan>>,
     workers: BTreeMap<u32, WorkerWorkspace>,
     pending_cleanup: BTreeMap<u32, WorkerWorkspace>,
+    managed_root: Option<Arc<ManagedRunRoot>>,
+    max_owned_bytes: Option<u64>,
     #[cfg(test)]
     materialization_pause: Option<MaterializationPause>,
     #[cfg(test)]
@@ -911,11 +1004,25 @@ impl WorkspaceHandler {
             plan: None,
             workers: BTreeMap::new(),
             pending_cleanup: BTreeMap::new(),
+            managed_root: None,
+            max_owned_bytes: None,
             #[cfg(test)]
             materialization_pause: None,
             #[cfg(test)]
             preflight_pause: None,
         }
+    }
+
+    #[must_use]
+    pub(crate) fn with_managed_root(mut self, root: Arc<ManagedRunRoot>) -> Self {
+        self.managed_root = Some(root);
+        self
+    }
+
+    #[must_use]
+    pub(crate) const fn with_max_owned_bytes(mut self, limit: u64) -> Self {
+        self.max_owned_bytes = Some(limit);
+        self
     }
 
     #[cfg(test)]
@@ -939,12 +1046,19 @@ impl WorkspaceHandler {
         request: Preflight,
     ) -> Result<PreflightCompleted, EffectFailed> {
         let id = request.id;
-        WorkspacePlan::preflight(
+        WorkspacePlan::preflight_validated_in(
             &self.original_root,
             id,
             self.requested_workers,
             self.options.clone(),
+            self.managed_root.clone(),
+            self.max_owned_bytes,
+            |_, _| Ok::<_, std::convert::Infallible>(()),
         )
+        .map_err(|error| match error {
+            ValidatedPreflightError::Workspace(error) => error,
+            ValidatedPreflightError::Validation(never) => match never {},
+        })
         .map(|plan| {
             #[cfg(test)]
             let plan = plan.with_materialization_pause(self.materialization_pause.clone());
@@ -969,11 +1083,13 @@ impl WorkspaceHandler {
             pause.wait();
         }
         let id = request.id;
-        match WorkspacePlan::preflight_validated(
+        match WorkspacePlan::preflight_validated_in(
             &self.original_root,
             id,
             self.requested_workers,
             self.options.clone(),
+            self.managed_root.clone(),
+            self.max_owned_bytes,
             validate,
         ) {
             Ok(plan) => {
@@ -1239,15 +1355,20 @@ impl WorkspaceHandler {
                 }
             }
         }
-        for workspace in self.workers.values_mut() {
-            workspace
-                .try_cleanup()
-                .map_err(|error| effect_failed(request.id, error))?;
+        let mut first_error = None;
+        for workspace in self
+            .workers
+            .values_mut()
+            .chain(self.pending_cleanup.values_mut())
+        {
+            if let Err(error) = workspace.try_cleanup()
+                && first_error.is_none()
+            {
+                first_error = Some(error);
+            }
         }
-        for workspace in self.pending_cleanup.values_mut() {
-            workspace
-                .try_cleanup()
-                .map_err(|error| effect_failed(request.id, error))?;
+        if let Some(error) = first_error {
+            return Err(effect_failed(request.id, error));
         }
         self.workers.clear();
         self.pending_cleanup.clear();
@@ -1324,6 +1445,15 @@ impl WorkspaceHandler {
         self.pending_cleanup.clear();
         self.plan = None;
         Ok(())
+    }
+
+    pub(crate) fn retain_workers_for_janitor(&mut self) {
+        for workspace in self.workers.values_mut() {
+            workspace.retain_for_janitor();
+        }
+        for workspace in self.pending_cleanup.values_mut() {
+            workspace.retain_for_janitor();
+        }
     }
 
     #[must_use]
@@ -1639,5 +1769,75 @@ mod task_tests {
         assert_eq!(handler.pending_cleanup_count(), 0);
         assert_ne!(handler.worker(0).unwrap().root(), old_root);
         assert!(!old_root.exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn dropping_a_managed_worker_closes_its_root_before_releasing_child_lifetime() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::create_dir(project.path().join("pkg")).unwrap();
+        std::fs::write(project.path().join("pkg/a.py"), b"original\n").unwrap();
+        let project_root = Utf8Path::from_path(project.path()).unwrap().to_owned();
+        let managed_parent = tempfile::tempdir().unwrap();
+        let managed_parent_path = Utf8Path::from_path(managed_parent.path()).unwrap();
+        let coordinator = super::ManagedRootCoordinator::open(managed_parent_path).unwrap();
+        let managed_root = std::sync::Arc::new(
+            super::ManagedRunRoot::create(&coordinator, super::OwnerKind::PublicExecution).unwrap(),
+        );
+        let mut handler =
+            WorkspaceHandler::new(project_root, Vec::new(), 1, CopyOptions::default())
+                .with_managed_root(std::sync::Arc::clone(&managed_root));
+        let completed = handler
+            .handle_preflight(Preflight { id: EffectId(1) })
+            .unwrap();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: completed.aggregate_logical_bytes,
+            processes: 1,
+        });
+        let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+        handler
+            .handle_create_worker(grant.create_worker(EffectId(2), 0).unwrap())
+            .unwrap();
+        let mut worker = handler.workers.remove(&0).unwrap();
+        let super::OwnedWorkspaceDirectory::Managed(child) = &mut worker.temp else {
+            panic!("managed root must create a managed worker");
+        };
+        let (published, release) = child.pause_after_quiescence_for_test();
+
+        let replacement_snapshot = tempfile::tempdir().unwrap();
+        let replacement_root = Utf8Path::from_path(replacement_snapshot.path())
+            .unwrap()
+            .to_owned();
+        let original_snapshot = std::mem::replace(
+            &mut worker.snapshot,
+            std::sync::Arc::new(super::DiskSnapshot {
+                _owner: replacement_snapshot.into(),
+                root: replacement_root,
+                files: std::collections::BTreeMap::new(),
+            }),
+        );
+        drop(handler);
+        drop(original_snapshot);
+        let drop_thread = std::thread::spawn(move || drop(worker));
+
+        published.wait();
+        let during_drop = managed_root.cleanup(std::time::Duration::from_secs(5));
+        release.wait();
+        drop_thread.join().unwrap();
+        if during_drop.status != hoimin_core::DiskCleanupStatus::Clean {
+            let cleanup = managed_root.cleanup(std::time::Duration::from_secs(5));
+            assert_eq!(
+                cleanup.status,
+                hoimin_core::DiskCleanupStatus::Clean,
+                "test cleanup did not recover: {cleanup:?}"
+            );
+        }
+
+        assert_eq!(
+            during_drop.status,
+            hoimin_core::DiskCleanupStatus::Clean,
+            "worker root outlived its managed-child lifetime: {during_drop:?}"
+        );
     }
 }

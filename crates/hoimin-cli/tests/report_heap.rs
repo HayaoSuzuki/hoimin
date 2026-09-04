@@ -110,6 +110,7 @@ fn measured_peak(mutants: u64) -> usize {
                 },
                 complete: true,
                 exit_code: 0,
+                disk: hoimin_core::DiskRunSummary::unmeasured(8, 10),
                 verification_selection: None,
             }),
         );

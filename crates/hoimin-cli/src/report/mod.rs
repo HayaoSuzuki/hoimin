@@ -135,6 +135,15 @@ where
         }
         Ok(OutputEmitted { id })
     }
+
+    pub(crate) fn flush_and_release_spool(&mut self) -> io::Result<()> {
+        let stdout = self.stdout.flush();
+        let stderr = self.stderr.flush();
+        // Release the descendant spool handle even when either external writer fails. Windows
+        // cannot claim the delivery directory while any descendant file remains open.
+        self.json = None;
+        stdout.and(stderr)
+    }
 }
 
 fn serialization_failed(id: hoimin_core::EffectId, error: &serde_json::Error) -> EffectFailed {

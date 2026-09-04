@@ -1,9 +1,226 @@
 use hoimin_core::{
-    ByteSpan, ExitPolicy, MutantFinished, MutantStarted, MutationCandidate, MutationStatus,
-    OutputEvent, ProcessTermination, ReportSequence, ReportVersions, ResourceMode, RunStarted,
-    VerificationSelectionPolicy, exit_code, exit_code_for, summarize,
+    ByteSpan, DiskFilesystemReport, ExitPolicy, MutantFinished, MutantStarted, MutationCandidate,
+    MutationStatus, OutputEvent, ProcessTermination, ReportSequence, ReportVersions, ResourceMode,
+    RunStarted, VerificationSelectionPolicy, exit_code, exit_code_for, summarize,
 };
+
+#[test]
+fn disk_filesystem_report_rejects_missing_and_unknown_wire_fields() {
+    let missing = r#"{
+        "key":"workspace",
+        "minimum_available_bytes":10
+    }"#;
+    assert!(serde_json::from_str::<DiskFilesystemReport>(missing).is_err());
+
+    let unknown = r#"{
+        "key":"workspace",
+        "start_available_bytes":null,
+        "minimum_available_bytes":10,
+        "end_available_bytes":null,
+        "available_bytes_change":null,
+        "unexpected":true
+    }"#;
+    assert!(serde_json::from_str::<DiskFilesystemReport>(unknown).is_err());
+}
 use serde_json::json;
+
+#[test]
+fn disk_filesystem_report_round_trips_through_json() {
+    let filesystem = hoimin_core::DiskFilesystemReport {
+        key: "workspace".into(),
+        start_available_bytes: Some(1_024),
+        minimum_available_bytes: Some(512),
+        end_available_bytes: Some(768),
+        available_bytes_change: Some(-256),
+    };
+    let mut disk = hoimin_core::DiskRunSummary::unmeasured(2_048, 256);
+    disk.filesystems.push(filesystem);
+    let event = OutputEvent::RunFinished(hoimin_core::RunSummary {
+        schema_version: hoimin_core::REPORT_SCHEMA_VERSION,
+        sequence: 1,
+        run_id: "run-1".into(),
+        counts: summarize(&[]),
+        complete: true,
+        exit_code: 0,
+        disk,
+        verification_selection: None,
+    });
+
+    let encoded = serde_json::to_vec(&event).unwrap();
+    let decoded: OutputEvent = serde_json::from_slice(&encoded).unwrap();
+
+    assert_eq!(decoded, event);
+}
+
+#[test]
+fn disk_filesystem_delta_preserves_the_full_u64_difference() {
+    let positive = hoimin_core::DiskFilesystemReport {
+        key: "positive".into(),
+        start_available_bytes: Some(0),
+        minimum_available_bytes: Some(0),
+        end_available_bytes: Some(u64::MAX),
+        available_bytes_change: Some(i128::from(u64::MAX)),
+    };
+    let negative = hoimin_core::DiskFilesystemReport {
+        key: "negative".into(),
+        start_available_bytes: Some(u64::MAX),
+        minimum_available_bytes: Some(0),
+        end_available_bytes: Some(0),
+        available_bytes_change: Some(-i128::from(u64::MAX)),
+    };
+
+    let mut disk = hoimin_core::DiskRunSummary::unmeasured(u64::MAX, 1);
+    disk.filesystems = vec![positive, negative];
+    let event = OutputEvent::RunFinished(hoimin_core::RunSummary {
+        schema_version: hoimin_core::REPORT_SCHEMA_VERSION,
+        sequence: 1,
+        run_id: "wide-delta".into(),
+        counts: summarize(&[]),
+        complete: true,
+        exit_code: 0,
+        disk,
+        verification_selection: None,
+    });
+
+    let encoded = serde_json::to_vec(&event).unwrap();
+    let decoded: OutputEvent = serde_json::from_slice(&encoded).unwrap();
+    assert_eq!(decoded, event);
+}
+
+#[test]
+fn disk_filesystem_report_rejects_a_non_numeric_delta() {
+    let malformed = json!({
+        "key": "workspace",
+        "start_available_bytes": 1024,
+        "minimum_available_bytes": 512,
+        "end_available_bytes": 768,
+        "available_bytes_change": "-256"
+    });
+
+    let decoded = serde_json::from_value::<hoimin_core::DiskFilesystemReport>(malformed);
+
+    assert!(decoded.is_err());
+}
+
+#[test]
+fn disk_filesystem_report_rejects_a_delta_that_disagrees_with_its_endpoints() {
+    let inconsistent = json!({
+        "key": "workspace",
+        "start_available_bytes": 1024,
+        "minimum_available_bytes": 512,
+        "end_available_bytes": 768,
+        "available_bytes_change": -255
+    });
+
+    let decoded = serde_json::from_value::<hoimin_core::DiskFilesystemReport>(inconsistent);
+
+    assert!(decoded.is_err());
+}
+
+#[test]
+fn disk_filesystem_report_requires_a_delta_when_both_endpoints_exist() {
+    let incomplete = json!({
+        "key": "workspace",
+        "start_available_bytes": 1024,
+        "minimum_available_bytes": 512,
+        "end_available_bytes": 768,
+        "available_bytes_change": null
+    });
+
+    let decoded = serde_json::from_value::<hoimin_core::DiskFilesystemReport>(incomplete);
+
+    assert!(decoded.is_err());
+}
+
+#[test]
+fn unmeasured_disk_summary_makes_no_enforcement_claim() {
+    let summary =
+        hoimin_core::DiskRunSummary::unmeasured(8 * 1024 * 1024 * 1024, 10 * 1024 * 1024 * 1024);
+
+    assert_eq!(summary.sample_count, 0);
+    assert!(summary.filesystems.is_empty());
+    assert!(summary.enforcement.is_empty());
+}
+
+#[test]
+fn disk_summary_rejects_unverified_or_unregistered_aggregate_claims() {
+    use hoimin_core::{DiskCapabilityProbe, DiskEnforcementReport};
+
+    assert!(
+        DiskEnforcementReport::verified_aggregate(
+            "unknown_backend".into(),
+            DiskCapabilityProbe {
+                capability: "unknown".into(),
+                verified: true,
+                observation: "probe passed".into(),
+            },
+        )
+        .is_err()
+    );
+    assert!(
+        DiskEnforcementReport::verified_aggregate(
+            "linux_project_quota".into(),
+            DiskCapabilityProbe {
+                capability: "project_quota".into(),
+                verified: false,
+                observation: "probe failed".into(),
+            },
+        )
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<DiskEnforcementReport>(serde_json::json!({
+            "kind": "verified_aggregate",
+            "backend": "linux_project_quota",
+            "probe": {
+                "capability": "project_quota",
+                "verified": false,
+                "observation": "probe failed"
+            }
+        }))
+        .is_err()
+    );
+}
+
+#[test]
+fn disk_summary_serializes_primary_stop_and_cleanup_independently() {
+    use hoimin_core::{DiskCleanupReport, DiskCleanupStatus, DiskRunSummary, DiskStopReport};
+
+    let summary = DiskRunSummary {
+        configured_max_owned_bytes: 8 * 1024 * 1024 * 1024,
+        configured_min_free_bytes: 10 * 1024 * 1024 * 1024,
+        peak_owned_bytes: 17,
+        minimum_available_bytes: Some(23),
+        filesystems: Vec::new(),
+        sample_count: 2,
+        maximum_measurement_ms: 7,
+        enforcement: Vec::new(),
+        stop: Some(DiskStopReport {
+            code: "workspace.size.exceeded".into(),
+            owned_bytes: Some(17),
+            available_bytes: Some(23),
+            message: None,
+            secondary: Vec::new(),
+        }),
+        cleanup: vec![DiskCleanupReport {
+            root_id: "execution".into(),
+            owner: "hoimin".into(),
+            status: DiskCleanupStatus::Failed,
+            examined_entries: 3,
+            removed_entries: 2,
+            details: vec!["one path remained".into()],
+            omitted_detail_count: 0,
+            remaining_root: Some("lease:execution".into()),
+        }],
+        removed_logical_bytes: None,
+        stale_roots_reclaimed: 0,
+    };
+
+    let value = serde_json::to_value(summary).unwrap();
+    assert_eq!(value["stop"]["code"], "workspace.size.exceeded");
+    assert_eq!(value["cleanup"][0]["status"], "failed");
+    assert_eq!(value["removed_logical_bytes"], serde_json::Value::Null);
+}
 
 #[test]
 fn run_started_versions_serialize_only_os_and_hoimin() {
@@ -627,7 +844,8 @@ fn all_event_variants_have_the_exact_public_kind() {
             "counts": { "killed": 0, "survived": 0, "timeout": 0,
                 "out_of_memory": 0, "process_limit": 0, "error": 0, "not_run": 0,
                 "inconclusive": 0, "score": null },
-            "complete": true, "exit_code": 0
+            "complete": true, "exit_code": 0,
+            "disk": disk_json()
         }))
         .unwrap(),
     ];
@@ -757,7 +975,7 @@ fn finished_event_with(
 fn run_finished_event(sequence: u64) -> OutputEvent {
     serde_json::from_value(serde_json::json!({
         "kind": "run_finished",
-        "schema_version": 2,
+        "schema_version": hoimin_core::REPORT_SCHEMA_VERSION,
         "sequence": sequence,
         "run_id": "run-1",
         "counts": {
@@ -773,7 +991,12 @@ fn run_finished_event(sequence: u64) -> OutputEvent {
         },
         "complete": true,
         "exit_code": 0,
+        "disk": disk_json(),
         "verification_selection": null
     }))
     .unwrap()
+}
+
+fn disk_json() -> serde_json::Value {
+    serde_json::to_value(hoimin_core::DiskRunSummary::unmeasured(8, 10)).unwrap()
 }

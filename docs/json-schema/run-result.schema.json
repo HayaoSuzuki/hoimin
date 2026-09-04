@@ -7,7 +7,7 @@
   "properties": {
     "schema_version": {
       "type": "integer",
-      "const": 2
+      "const": 3
     },
     "run": {
       "$ref": "run-event.schema.json#/$defs/runStarted"

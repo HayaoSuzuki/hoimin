@@ -3,7 +3,7 @@ mod output;
 use std::ffi::OsString;
 use std::future::Future;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -21,6 +21,7 @@ use crate::resource::{ProcessSupervisor, ResourceBackend, ResourceError};
 use crate::workspace::CommandEnvironment;
 
 const POST_TERMINATION_GRACE: Duration = Duration::from_secs(1);
+const PROCESS_TREE_QUIESCENCE_GRACE: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Eq, PartialEq)]
 enum ProcessSelection<T> {
@@ -188,10 +189,69 @@ pub enum ProcessError {
     InvalidSpoolToken(String),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ProcessHandler {
     backend: ResourceBackend,
     output_dir: Utf8PathBuf,
+    active_processes: Arc<AtomicUsize>,
+    active_output_drains: Arc<AtomicUsize>,
+    process_reap_failed: Arc<AtomicBool>,
+    output_drain_failed: Arc<AtomicBool>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ProcessDrainReport {
+    pub all_reaped: bool,
+    pub output_drains_joined: bool,
+    pub secondary_errors: Vec<String>,
+}
+
+struct ActiveCounter<'a>(&'a AtomicUsize);
+
+impl<'a> ActiveCounter<'a> {
+    fn enter(counter: &'a AtomicUsize) -> Self {
+        counter.fetch_add(1, Ordering::AcqRel);
+        Self(counter)
+    }
+}
+
+struct CompletionGuard<'a> {
+    _active: ActiveCounter<'a>,
+    failed: &'a AtomicBool,
+    completed: bool,
+}
+
+struct OutputDrainOutcome {
+    result: Result<OutputSpoolRef, EffectFailed>,
+    quiescent: bool,
+}
+
+impl<'a> CompletionGuard<'a> {
+    fn enter(active: &'a AtomicUsize, failed: &'a AtomicBool) -> Self {
+        Self {
+            _active: ActiveCounter::enter(active),
+            failed,
+            completed: false,
+        }
+    }
+
+    fn complete(&mut self) {
+        self.completed = true;
+    }
+}
+
+impl Drop for CompletionGuard<'_> {
+    fn drop(&mut self) {
+        if !self.completed {
+            self.failed.store(true, Ordering::Release);
+        }
+    }
+}
+
+impl Drop for ActiveCounter<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 impl ProcessHandler {
@@ -200,7 +260,16 @@ impl ProcessHandler {
         Self {
             backend,
             output_dir,
+            active_processes: Arc::new(AtomicUsize::new(0)),
+            active_output_drains: Arc::new(AtomicUsize::new(0)),
+            process_reap_failed: Arc::new(AtomicBool::new(false)),
+            output_drain_failed: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn inject_process_reap_failure(&self) {
+        self.process_reap_failed.store(true, Ordering::Release);
     }
 
     /// Returns the spool path represented by `output`.
@@ -228,6 +297,46 @@ impl ProcessHandler {
         self.backend.close()
     }
 
+    pub async fn drain_for_shutdown(&self, budget: Duration) -> ProcessDrainReport {
+        let deadline = tokio::time::Instant::now()
+            .checked_add(budget)
+            .unwrap_or_else(tokio::time::Instant::now);
+        loop {
+            let process_tasks_settled = self.active_processes.load(Ordering::Acquire) == 0;
+            let output_tasks_settled = self.active_output_drains.load(Ordering::Acquire) == 0;
+            if process_tasks_settled && output_tasks_settled {
+                let all_reaped = !self.process_reap_failed.load(Ordering::Acquire);
+                let output_drains_joined = !self.output_drain_failed.load(Ordering::Acquire);
+                let backend = self.backend.clone();
+                let close = tokio::task::spawn_blocking(move || backend.close());
+                let secondary_errors = match tokio::time::timeout_at(deadline, close).await {
+                    Ok(Ok(Ok(()))) => Vec::new(),
+                    Ok(Ok(Err(error))) => vec![format!("process.resource.close: {error}")],
+                    Ok(Err(error)) => vec![format!(
+                        "process.resource.close: process resource close task failed: {error}"
+                    )],
+                    Err(_) => vec![
+                        "process.resource.close: process resource close exceeded shutdown budget"
+                            .to_owned(),
+                    ],
+                };
+                return ProcessDrainReport {
+                    all_reaped,
+                    output_drains_joined,
+                    secondary_errors,
+                };
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return ProcessDrainReport {
+                    all_reaped: false,
+                    output_drains_joined: false,
+                    secondary_errors: Vec::new(),
+                };
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
     /// Runs a process with default cancellation and environment settings.
     ///
     /// # Errors
@@ -243,9 +352,22 @@ impl ProcessHandler {
     ///
     /// Returns an effect failure for cancellation, invalid arguments, resource setup, process I/O,
     /// termination, or output collection errors.
+    pub async fn run(&self, request: ProcessRequest) -> Result<ProcessFinished, EffectFailed> {
+        let id = request.process.id;
+        let handler = self.clone();
+        match tokio::spawn(async move { handler.run_owned(request).await }).await {
+            Ok(result) => result,
+            Err(error) => Err(EffectFailed::other(
+                id,
+                "process.lifecycle.join",
+                format!("owned process lifecycle task failed: {error}"),
+            )),
+        }
+    }
+
     // This coordinates the complete child lifecycle; extracting stages would obscure cleanup ordering.
     #[allow(clippy::too_many_lines)]
-    pub async fn run(&self, request: ProcessRequest) -> Result<ProcessFinished, EffectFailed> {
+    async fn run_owned(&self, request: ProcessRequest) -> Result<ProcessFinished, EffectFailed> {
         let ProcessRequest {
             process,
             cancellation,
@@ -337,15 +459,21 @@ impl ProcessHandler {
                 "process was cancelled before spawn",
             ));
         }
-        let mut child = command.spawn().map_err(|error| {
-            io_failure(
-                id,
-                "process.spawn",
-                "spawn process",
-                Some(process.cwd.clone()),
-                &error,
-            )
-        })?;
+        let mut active_process =
+            CompletionGuard::enter(&self.active_processes, &self.process_reap_failed);
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                active_process.complete();
+                return Err(io_failure(
+                    id,
+                    "process.spawn",
+                    "spawn process",
+                    Some(process.cwd.clone()),
+                    &error,
+                ));
+            }
+        };
         if let Err(error) = supervisor.attach(&child) {
             let terminate_error = child.start_kill().err();
             drop(spawn_guard);
@@ -361,6 +489,9 @@ impl ProcessHandler {
                     )),
                 },
             };
+            if cleanup_error.is_none() {
+                active_process.complete();
+            }
             return Err(attach_failure(id, &error, cleanup_error.as_ref()));
         }
         drop(spawn_guard);
@@ -382,6 +513,8 @@ impl ProcessHandler {
             .spool_path(&output_ref)
             .map_err(|error| EffectFailed::other(id, "process.output.token", error.to_string()))?;
         let (sender, receiver) = output::pipe_channel();
+        let mut active_output_drain =
+            CompletionGuard::enter(&self.active_output_drains, &self.output_drain_failed);
         let stdout_task = tokio::spawn(output::drain_pipe(stdout, sender.clone()));
         let stderr_task = tokio::spawn(output::drain_pipe(stderr, sender));
         let collector_task = tokio::spawn(output::collect_output(
@@ -391,7 +524,7 @@ impl ProcessHandler {
             receiver,
         ));
 
-        let process_result = match select_process_result(
+        let (process_result, process_reaped) = match select_process_result(
             child.wait(),
             cancellation.cancelled(),
             tokio::time::sleep_until(deadline),
@@ -399,23 +532,41 @@ impl ProcessHandler {
         .await
         {
             ProcessSelection::Exited(status) => match status {
-                Ok(status) => classify_and_terminate(id, &mut supervisor, exit_termination(status)),
-                Err(error) => Err(wait_failure_after_cleanup(
-                    id,
-                    &error,
-                    Box::pin(terminate_and_reap(id, &mut supervisor, &mut child)),
-                )
-                .await),
+                Ok(status) => {
+                    classify_and_terminate(id, &mut supervisor, exit_termination(status)).await
+                }
+                Err(error) => {
+                    let cleanup = terminate_and_reap(id, &mut supervisor, &mut child).await;
+                    let reaped = cleanup.as_ref().is_ok_and(|quiescent| *quiescent);
+                    (
+                        Err(preserve_primary_after_cleanup(
+                            io_failure(id, "process.wait", "wait for process", None, &error),
+                            "supervised cleanup after wait error failed",
+                            async { cleanup.map(|_| ()) },
+                        )
+                        .await),
+                        reaped,
+                    )
+                }
             },
-            ProcessSelection::Cancelled => terminate_and_reap(id, &mut supervisor, &mut child)
-                .await
-                .map(|()| ProcessTermination::Cancelled),
-            ProcessSelection::Timeout => terminate_and_reap(id, &mut supervisor, &mut child)
-                .await
-                .map(|()| ProcessTermination::Timeout),
+            ProcessSelection::Cancelled => {
+                let result = terminate_and_reap(id, &mut supervisor, &mut child).await;
+                let reaped = result.as_ref().is_ok_and(|quiescent| *quiescent);
+                (result.map(|_| ProcessTermination::Cancelled), reaped)
+            }
+            ProcessSelection::Timeout => {
+                let result = terminate_and_reap(id, &mut supervisor, &mut child).await;
+                let reaped = result.as_ref().is_ok_and(|quiescent| *quiescent);
+                (result.map(|_| ProcessTermination::Timeout), reaped)
+            }
         };
 
-        let output_result = await_output(
+        if process_reaped {
+            active_process.complete();
+        }
+        drop(active_process);
+
+        let output_outcome = await_output(
             id,
             stdout_task,
             stderr_task,
@@ -423,9 +574,13 @@ impl ProcessHandler {
             tokio::time::Instant::now() + POST_TERMINATION_GRACE,
         )
         .await;
+        if output_outcome.quiescent {
+            active_output_drain.complete();
+        }
+        drop(active_output_drain);
         let (termination, output, output_state) = combine_process_and_output(
             process_result,
-            output_result,
+            output_outcome.result,
             process.mutant_id.as_deref(),
             output_ref,
         )?;
@@ -471,20 +626,33 @@ async fn await_output(
     mut stderr_task: tokio::task::JoinHandle<std::io::Result<()>>,
     mut collector_task: tokio::task::JoinHandle<std::io::Result<OutputSpoolRef>>,
     deadline: tokio::time::Instant,
-) -> Result<OutputSpoolRef, EffectFailed> {
+) -> OutputDrainOutcome {
     if let Err(error) = await_pipe_until(id, "stdout", &mut stdout_task, deadline).await {
-        stderr_task.abort();
-        collector_task.abort();
-        return Err(error);
+        abort_and_join(&mut stderr_task).await;
+        let collector = await_collector(id, &mut collector_task, deadline).await;
+        return OutputDrainOutcome {
+            result: Err(error),
+            quiescent: collector.quiescent,
+        };
     }
     if let Err(error) = await_pipe_until(id, "stderr", &mut stderr_task, deadline).await {
-        collector_task.abort();
-        return Err(error);
+        let collector = await_collector(id, &mut collector_task, deadline).await;
+        return OutputDrainOutcome {
+            result: Err(error),
+            quiescent: collector.quiescent,
+        };
     }
-    if let Ok(result) = tokio::time::timeout_at(deadline, &mut collector_task).await {
-        result
-            .map_err(|error| EffectFailed::other(id, "process.output.join", error.to_string()))?
-            .map_err(|error| {
+    await_collector(id, &mut collector_task, deadline).await
+}
+
+async fn await_collector(
+    id: EffectId,
+    collector_task: &mut tokio::task::JoinHandle<std::io::Result<OutputSpoolRef>>,
+    deadline: tokio::time::Instant,
+) -> OutputDrainOutcome {
+    if let Ok(result) = tokio::time::timeout_at(deadline, &mut *collector_task).await {
+        let result = match result {
+            Ok(result) => result.map_err(|error| {
                 io_failure(
                     id,
                     "process.output.write",
@@ -492,14 +660,27 @@ async fn await_output(
                     None,
                     &error,
                 )
-            })
+            }),
+            Err(error) => Err(EffectFailed::other(
+                id,
+                "process.output.join",
+                error.to_string(),
+            )),
+        };
+        OutputDrainOutcome {
+            result,
+            quiescent: true,
+        }
     } else {
-        collector_task.abort();
-        Err(EffectFailed::other(
-            id,
-            "process.output.close.timeout",
-            "timed out draining process output after termination",
-        ))
+        abort_and_join(collector_task).await;
+        OutputDrainOutcome {
+            result: Err(EffectFailed::other(
+                id,
+                "process.output.close.timeout",
+                "timed out draining process output after termination",
+            )),
+            quiescent: false,
+        }
     }
 }
 
@@ -524,13 +705,18 @@ async fn await_pipe_until(
                 )
             })
     } else {
-        task.abort();
+        abort_and_join(task).await;
         Err(EffectFailed::other(
             id,
             "process.output.close.timeout",
             "timed out draining process output after termination",
         ))
     }
+}
+
+async fn abort_and_join<T>(task: &mut tokio::task::JoinHandle<T>) {
+    task.abort();
+    let _ = task.await;
 }
 
 pub(crate) async fn wait_after_termination(
@@ -619,6 +805,7 @@ where
     primary
 }
 
+#[cfg(test)]
 async fn wait_failure_after_cleanup<F>(
     id: EffectId,
     error: &std::io::Error,
@@ -636,11 +823,11 @@ where
     .await
 }
 
-fn classify_and_terminate(
+async fn classify_and_terminate(
     id: EffectId,
     supervisor: &mut ProcessSupervisor,
     termination: ProcessTermination,
-) -> Result<ProcessTermination, EffectFailed> {
+) -> (Result<ProcessTermination, EffectFailed>, bool) {
     let classification = supervisor.classify(termination).map_err(|error| {
         resource_failure(
             id,
@@ -650,7 +837,8 @@ fn classify_and_terminate(
         )
     });
     let termination = match terminate_supervised(id, supervisor, false) {
-        Ok(()) => Ok(()),
+        Ok(true) => Ok(true),
+        Ok(false) => await_tree_quiescence_after_root_reap(id, supervisor).await,
         Err(mut primary) => {
             if let Err(retry) = terminate_supervised(id, supervisor, false) {
                 append_cleanup_failure(&mut primary, "supervisor termination retry failed", &retry);
@@ -659,23 +847,28 @@ fn classify_and_terminate(
         }
     };
 
-    match (classification, termination) {
-        (Ok(classified), Ok(())) => Ok(classified),
-        (Err(error), Ok(())) | (Ok(_), Err(error)) => Err(error),
+    let reaped = termination.as_ref().is_ok_and(|quiescent| *quiescent);
+    let result = match (classification, termination) {
+        (Ok(classified), Ok(_)) => Ok(classified),
+        (Err(error), Ok(_)) | (Ok(_), Err(error)) => Err(error),
         (Err(mut primary), Err(cleanup)) => {
             append_cleanup_failure(&mut primary, "supervised termination also failed", &cleanup);
             Err(primary)
         }
-    }
+    };
+    (result, reaped)
 }
 
 async fn terminate_and_reap(
     id: EffectId,
     supervisor: &mut ProcessSupervisor,
     child: &mut Child,
-) -> Result<(), EffectFailed> {
+) -> Result<bool, EffectFailed> {
     match terminate_supervised(id, supervisor, true) {
-        Ok(()) => wait_after_termination(id, child).await,
+        Ok(_) => {
+            wait_after_termination(id, child).await?;
+            await_tree_quiescence_after_root_reap(id, supervisor).await
+        }
         Err(mut primary) => {
             let root_kill = child.start_kill().err().map(|error| {
                 io_failure(
@@ -700,6 +893,35 @@ async fn terminate_and_reap(
             }
             Err(primary)
         }
+    }
+}
+
+async fn await_tree_quiescence_after_root_reap(
+    id: EffectId,
+    supervisor: &mut ProcessSupervisor,
+) -> Result<bool, EffectFailed> {
+    // Keep this proof attempt strictly inside the shell's fixed two-second shutdown grace.
+    // Failure to prove absence is safe: the lifecycle retains the workspace for the janitor.
+    // Output drains and the completion channel still need time to settle after this check.
+    let deadline = tokio::time::Instant::now() + PROCESS_TREE_QUIESCENCE_GRACE;
+    loop {
+        let quiescent = supervisor
+            .refresh_tree_quiescence_after_root_reap()
+            .map_err(|error| {
+                resource_failure(
+                    id,
+                    "process.resource.quiescence",
+                    "verify process-tree quiescence after root reap",
+                    &error,
+                )
+            })?;
+        if quiescent {
+            return Ok(true);
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Ok(false);
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
     }
 }
 
@@ -753,7 +975,7 @@ pub(crate) fn terminate_supervised(
     id: EffectId,
     supervisor: &mut ProcessSupervisor,
     live_root_owned: bool,
-) -> Result<(), EffectFailed> {
+) -> Result<bool, EffectFailed> {
     supervisor.terminate(live_root_owned).map_err(|error| {
         resource_failure(
             id,
@@ -846,24 +1068,222 @@ fn native_argv(_argv: &[CommandArg]) -> Result<Vec<OsString>, String> {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
+    use std::ffi::OsStr;
     use std::future::{pending, ready};
     use std::process::Stdio;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::time::Duration;
 
     use hoimin_core::{
-        EffectFailed, EffectFailure, EffectId, MutationStatus, OutputSpoolRef, ProcessOutputState,
-        ProcessTermination, classify_mutant_result,
+        CommandArg, EffectFailed, EffectFailure, EffectId, MutationStatus, OutputSpoolRef,
+        ProcessLimits, ProcessOutputState, ProcessTermination, RunProcess, classify_mutant_result,
     };
     use serde::Deserialize;
     use tokio::process::Command;
 
     use super::{
-        POST_TERMINATION_GRACE, ProcessCancellation, ProcessSelection, ProcessStartGate,
-        append_cleanup_failure, attach_failure, combine_process_and_output, select_process_result,
+        CompletionGuard, POST_TERMINATION_GRACE, ProcessCancellation, ProcessHandler,
+        ProcessRequest, ProcessSelection, ProcessStartGate, abort_and_join, append_cleanup_failure,
+        attach_failure, await_output, combine_process_and_output, select_process_result,
         wait_after_termination, wait_failure_after_cleanup,
     };
-    use crate::resource::ResourceError;
+    use crate::resource::{PortableBackend, ResourceBackend, ResourceError};
+
+    #[tokio::test]
+    async fn shutdown_drain_reports_reap_output_and_close_status_separately() {
+        let output = tempfile::tempdir().unwrap();
+        let output = camino::Utf8PathBuf::from_path_buf(output.path().to_owned()).unwrap();
+        let handler = ProcessHandler::new(
+            ResourceBackend::Portable(PortableBackend::for_tests()),
+            output,
+        );
+
+        let report = handler.drain_for_shutdown(Duration::from_secs(1)).await;
+
+        assert!(report.all_reaped);
+        assert!(report.output_drains_joined);
+        assert!(report.secondary_errors.is_empty());
+    }
+
+    #[test]
+    fn shutdown_close_timeout_does_not_erase_completed_reap_proof() {
+        let output = tempfile::tempdir().unwrap();
+        let output = camino::Utf8PathBuf::from_path_buf(output.path().to_owned()).unwrap();
+        let handler = ProcessHandler::new(
+            ResourceBackend::Portable(PortableBackend::for_tests()),
+            output,
+        );
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .max_blocking_threads(1)
+            .build()
+            .unwrap();
+        runtime.block_on(async move {
+            let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+            let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
+            let blocker = tokio::task::spawn_blocking(move || {
+                entered_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+            });
+            entered_rx.await.unwrap();
+
+            let report = handler.drain_for_shutdown(Duration::from_millis(20)).await;
+            release_tx.send(()).unwrap();
+            blocker.await.unwrap();
+
+            assert!(report.all_reaped);
+            assert!(report.output_drains_joined);
+            assert_eq!(
+                report.secondary_errors,
+                ["process.resource.close: process resource close exceeded shutdown budget"]
+            );
+        });
+    }
+
+    #[tokio::test]
+    async fn shutdown_drain_never_turns_failed_completion_proofs_into_quiescence() {
+        let output = tempfile::tempdir().unwrap();
+        let output = camino::Utf8PathBuf::from_path_buf(output.path().to_owned()).unwrap();
+        let handler = ProcessHandler::new(
+            ResourceBackend::Portable(PortableBackend::for_tests()),
+            output,
+        );
+        handler.process_reap_failed.store(true, Ordering::Release);
+        handler.output_drain_failed.store(true, Ordering::Release);
+
+        let report = handler.drain_for_shutdown(Duration::from_secs(1)).await;
+
+        assert!(!report.all_reaped);
+        assert!(!report.output_drains_joined);
+    }
+
+    #[test]
+    fn completion_guard_records_failure_unless_completion_is_explicitly_proven() {
+        let active = AtomicUsize::new(0);
+        let failed = AtomicBool::new(false);
+        drop(CompletionGuard::enter(&active, &failed));
+        assert_eq!(active.load(Ordering::Acquire), 0);
+        assert!(failed.load(Ordering::Acquire));
+
+        let active = AtomicUsize::new(0);
+        let failed = AtomicBool::new(false);
+        let mut completed = CompletionGuard::enter(&active, &failed);
+        completed.complete();
+        drop(completed);
+        assert_eq!(active.load(Ordering::Acquire), 0);
+        assert!(!failed.load(Ordering::Acquire));
+    }
+
+    struct DropFlag(Arc<AtomicBool>);
+
+    impl Drop for DropFlag {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::Release);
+        }
+    }
+
+    #[tokio::test]
+    async fn aborting_an_output_task_waits_until_its_future_is_dropped() {
+        let dropped = Arc::new(AtomicBool::new(false));
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let task_dropped = Arc::clone(&dropped);
+        let mut task = tokio::spawn(async move {
+            let _drop = DropFlag(task_dropped);
+            started_tx.send(()).unwrap();
+            std::future::pending::<()>().await;
+        });
+        started_rx.await.unwrap();
+
+        abort_and_join(&mut task).await;
+
+        assert!(dropped.load(Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn aborting_a_timed_out_collector_does_not_prove_output_quiescence() {
+        let stdout = tokio::spawn(async { Ok(()) });
+        let stderr = tokio::spawn(async { Ok(()) });
+        let collector = tokio::spawn(async { pending::<std::io::Result<OutputSpoolRef>>().await });
+        let active = AtomicUsize::new(0);
+        let failed = AtomicBool::new(false);
+        let mut completion = CompletionGuard::enter(&active, &failed);
+
+        let outcome = await_output(
+            EffectId(48),
+            stdout,
+            stderr,
+            collector,
+            tokio::time::Instant::now() + Duration::from_millis(20),
+        )
+        .await;
+        if outcome.quiescent {
+            completion.complete();
+        }
+        drop(completion);
+
+        assert!(!outcome.quiescent);
+        assert_eq!(
+            outcome.result.unwrap_err().failure.code(),
+            "process.output.close.timeout"
+        );
+        assert!(failed.load(Ordering::Acquire));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn settled_output_tasks_remain_joined_when_the_spool_write_fails() {
+        let temporary = tempfile::tempdir().unwrap();
+        let output = camino::Utf8PathBuf::from_path_buf(temporary.path().join("spool")).unwrap();
+        let handler = Arc::new(ProcessHandler::new(
+            ResourceBackend::Portable(PortableBackend::for_tests()),
+            output.clone(),
+        ));
+        let start_gate = ProcessStartGate::new();
+        let spawn_guard = start_gate.begin_spawn();
+        let executable = std::env::current_exe().unwrap();
+        let request = ProcessRequest::from(RunProcess {
+            id: EffectId(49),
+            worker: None,
+            run_id: None,
+            mutant_id: None,
+            argv: vec![
+                native_test_arg(executable.as_os_str()),
+                native_test_arg(OsStr::new("--list")),
+            ],
+            cwd: camino::Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
+            limits: ProcessLimits {
+                timeout: Duration::from_secs(5),
+                max_output_bytes: 1024,
+                max_memory_bytes: 256 * 1024 * 1024,
+                max_processes: 8,
+            },
+        })
+        .with_start_gate(start_gate.clone());
+        let task = tokio::spawn({
+            let handler = Arc::clone(&handler);
+            async move { handler.run(request).await }
+        });
+        let setup_deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        while !output.is_dir() {
+            assert!(
+                tokio::time::Instant::now() < setup_deadline,
+                "process output directory was not prepared before spawn"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        std::fs::remove_dir(&output).unwrap();
+        std::fs::write(&output, b"blocks spool creation").unwrap();
+        drop(spawn_guard);
+
+        let error = task.await.unwrap().unwrap_err();
+        assert_eq!(error.failure.code(), "process.output.write");
+        let report = handler.drain_for_shutdown(Duration::from_secs(1)).await;
+        assert!(report.all_reaped);
+        assert!(
+            report.output_drains_joined,
+            "a terminal spool error must not erase the joined-task proof"
+        );
+    }
 
     fn output_ref() -> OutputSpoolRef {
         OutputSpoolRef {
@@ -871,6 +1291,20 @@ mod tests {
             retained: 0,
             observed: 0,
         }
+    }
+
+    #[cfg(unix)]
+    fn native_test_arg(value: &OsStr) -> CommandArg {
+        use std::os::unix::ffi::OsStrExt;
+
+        CommandArg::Unix(value.as_bytes().to_vec())
+    }
+
+    #[cfg(windows)]
+    fn native_test_arg(value: &OsStr) -> CommandArg {
+        use std::os::windows::ffi::OsStrExt;
+
+        CommandArg::Windows(value.encode_wide().collect())
     }
 
     #[derive(Debug, Deserialize)]
@@ -1031,6 +1465,70 @@ mod tests {
     #[ignore = "subprocess fixture for bounded reap tests"]
     fn root_child_fixture_waits() {
         std::thread::sleep(Duration::from_secs(10));
+    }
+
+    #[tokio::test]
+    async fn aborting_the_caller_does_not_report_quiescence_before_reap_and_output_drain() {
+        let output = tempfile::tempdir().unwrap();
+        let output = camino::Utf8PathBuf::from_path_buf(output.path().to_owned()).unwrap();
+        let handler = std::sync::Arc::new(ProcessHandler::new(
+            ResourceBackend::Portable(PortableBackend::for_tests()),
+            output,
+        ));
+        let cancellation = ProcessCancellation::new();
+        let executable = std::env::current_exe().unwrap();
+        let request = ProcessRequest::from(RunProcess {
+            id: EffectId(48),
+            worker: None,
+            run_id: None,
+            mutant_id: None,
+            argv: vec![
+                native_test_arg(executable.as_os_str()),
+                native_test_arg(OsStr::new("--ignored")),
+                native_test_arg(OsStr::new("--exact")),
+                native_test_arg(OsStr::new("process::tests::root_child_fixture_waits")),
+            ],
+            cwd: camino::Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
+            limits: ProcessLimits {
+                timeout: Duration::from_secs(10),
+                max_output_bytes: 1024,
+                max_memory_bytes: 256 * 1024 * 1024,
+                max_processes: 8,
+            },
+        })
+        .with_cancellation(cancellation.clone());
+        let task = tokio::spawn({
+            let handler = std::sync::Arc::clone(&handler);
+            async move { handler.run(request).await }
+        });
+
+        let started_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while handler.active_processes.load(Ordering::Acquire) == 0 {
+            assert!(
+                tokio::time::Instant::now() < started_deadline,
+                "fixture process did not enter the active-process registry"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        let premature = handler.drain_for_shutdown(Duration::from_millis(20)).await;
+        assert!(
+            !premature.all_reaped || !premature.output_drains_joined,
+            "aborting the caller falsely reported child and output quiescence"
+        );
+
+        cancellation.cancel();
+        let drained = handler.drain_for_shutdown(Duration::from_secs(3)).await;
+        assert!(
+            drained.all_reaped,
+            "child was not reaped after cancellation"
+        );
+        assert!(
+            drained.output_drains_joined,
+            "output drains did not join after cancellation"
+        );
     }
 
     #[tokio::test]

@@ -32,7 +32,7 @@ mod selection_tests;
 use ranking::{RANKING_RULE_VERSION, rank_candidates, validate_ranking, validate_ranking_against};
 pub use ranking::{RankedPlanCandidate, RankingReason, RankingReasonCode};
 
-pub const PLAN_SCHEMA_VERSION: u32 = 2;
+pub const PLAN_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

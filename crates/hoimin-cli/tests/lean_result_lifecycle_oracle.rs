@@ -10,6 +10,7 @@ use tokio::io::AsyncReadExt;
 
 const MODE_ENV: &str = "HOIMIN_RESULT_LIFECYCLE_MODE";
 const CASE_ENV: &str = "HOIMIN_RESULT_LIFECYCLE_CASE";
+const TEST_MIN_FREE_SPACE: &str = "1B";
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
 #[serde(deny_unknown_fields)]
@@ -506,6 +507,8 @@ fn build_cli_command(
         OsString::from("1"),
         OsString::from("--max-mutants"),
         OsString::from(if two_mutants { "2" } else { "1" }),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--format"),
         OsString::from("json"),
         OsString::from("--allow-best-effort-memory"),

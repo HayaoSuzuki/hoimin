@@ -17,6 +17,7 @@ use serde::Deserialize;
 
 const CORPUS: &str =
     include_str!("../../../formal/HoiminOracle/corpus/candidate-span-preservation.jsonl");
+const TEST_MIN_FREE_SPACE: &str = "1B";
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -454,6 +455,8 @@ async fn public_plan_and_verify_preserve_all_strict_candidate_fields() {
         OsString::from("binary_add_sub"),
         OsString::from("--jobs"),
         OsString::from("1"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
         OsString::from("--allow-best-effort-memory"),
     ];
     for case in &cases {

@@ -12,6 +12,8 @@ use tokio::io::AsyncReadExt;
 
 #[cfg(unix)]
 const REVIEWED_MISMATCHES: &[&str] = &[];
+#[cfg(unix)]
+const TEST_MIN_FREE_SPACE: &str = "1B";
 const EVENTS: &[&str] = &[
     "boot",
     "start_process",
@@ -340,6 +342,8 @@ fn spawn_scenario(
         .arg("src/calc.py")
         .arg("--jobs")
         .arg("1")
+        .arg("--min-free-space")
+        .arg(TEST_MIN_FREE_SPACE)
         .arg("--session")
         .arg(&paths.session)
         .arg("--format")

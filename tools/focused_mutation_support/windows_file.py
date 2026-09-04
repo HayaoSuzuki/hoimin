@@ -25,8 +25,8 @@ class WindowsHandle:
         if self._value is None:
             return
         if not self._close_handle(self._value):
-            code = ctypes.get_last_error()
-            raise ctypes.WinError(code)
+            code = ctypes.get_last_error()  # type: ignore[attr-defined]
+            raise ctypes.WinError(code)  # type: ignore[attr-defined]
         self._value = None
 
     def __enter__(self) -> WindowsHandle:
@@ -39,7 +39,7 @@ class WindowsHandle:
 def _open(path: Path, access: int, share: int) -> WindowsHandle:
     if os.name != "nt":
         raise RuntimeError("Windows file probing is only available on Windows")
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
     create_file = kernel32.CreateFileW
     create_file.argtypes = (
         wintypes.LPCWSTR,
@@ -65,8 +65,13 @@ def _open(path: Path, access: int, share: int) -> WindowsHandle:
     )
     invalid = wintypes.HANDLE(-1).value
     if value == invalid:
-        code = ctypes.get_last_error()
-        raise OSError(code, ctypes.FormatError(code), str(path), code)
+        code = ctypes.get_last_error()  # type: ignore[attr-defined]
+        raise OSError(
+            code,
+            ctypes.FormatError(code),  # type: ignore[attr-defined]
+            str(path),
+            code,
+        )
     return WindowsHandle(
         cast(int, value),
         cast(Callable[[int], int], close_handle),

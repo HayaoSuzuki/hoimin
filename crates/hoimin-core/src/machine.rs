@@ -185,6 +185,7 @@ pub struct RunState {
     run_finished_output_id: Option<EffectId>,
     baseline_elapsed: std::time::Duration,
     summary: MutationSummary,
+    disk_summary: crate::DiskRunSummary,
     output_sequence: u64,
     fingerprint: Option<RunFingerprint>,
     session_run_id: Option<String>,
@@ -208,6 +209,10 @@ impl RunState {
             copy: config.limits.max_copy_size.get(),
             processes: config.limits.max_processes.get() as u64,
         };
+        let disk_summary = crate::DiskRunSummary::unmeasured(
+            config.limits.max_workspace_size.get(),
+            config.limits.min_free_space.get(),
+        );
         Self {
             run_id: run_id.into(),
             config,
@@ -229,6 +234,7 @@ impl RunState {
             run_finished_output_id: None,
             baseline_elapsed: std::time::Duration::ZERO,
             summary: MutationSummary::default(),
+            disk_summary,
             output_sequence: 0,
             fingerprint: None,
             session_run_id: None,
@@ -339,6 +345,11 @@ impl RunState {
     #[must_use]
     pub fn summary(&self) -> &MutationSummary {
         &self.summary
+    }
+
+    #[must_use]
+    pub fn disk_summary(&self) -> &crate::DiskRunSummary {
+        &self.disk_summary
     }
 
     #[must_use]
@@ -1214,6 +1225,7 @@ impl RunState {
                 counts: self.summary.clone(),
                 complete: self.complete(),
                 exit_code: self.exit_code(),
+                disk: self.disk_summary.clone(),
                 verification_selection: self.verification_selection.clone(),
             }),
         })])
@@ -1221,20 +1233,23 @@ impl RunState {
 
     fn post_cleanup_effects(&mut self) -> Result<Vec<RunEffect>, MachineError> {
         self.phase = RunPhase::Finalize;
-        let complete = self.complete();
+        self.final_report_effects()
+    }
+
+    fn post_report_effects(&mut self) -> Result<Vec<RunEffect>, MachineError> {
         if let Some(run_id) = self.session_run_id.clone()
             && !self.flags.cleanup.session_finish_attempted
         {
             self.flags.cleanup.session_finish_attempted = true;
             let id = self.allocate_id()?;
-            Ok(vec![RunEffect::FinishSession(FinishSession {
+            return Ok(vec![RunEffect::FinishSession(FinishSession {
                 id,
                 run_id,
-                complete,
-            })])
-        } else {
-            self.final_report_effects()
+                complete: self.complete(),
+            })]);
         }
+        self.phase = RunPhase::Finished;
+        Ok(Vec::new())
     }
 }
 
@@ -1335,19 +1350,41 @@ pub fn transition(
     mut state: RunState,
     event: RunEvent,
 ) -> Result<(RunState, Vec<RunEffect>), MachineError> {
-    if matches!(
+    let is_stop = matches!(
         event,
-        RunEvent::DeadlineReached | RunEvent::CancellationRequested
-    ) && (state.run_finished_output_id.is_some()
-        || state.phase == RunPhase::Finished
-        || state.phase == RunPhase::Cleaning)
+        RunEvent::DeadlineReached
+            | RunEvent::CancellationRequested
+            | RunEvent::DiskStopRequested(_)
+    );
+    if is_stop
+        && (state.run_finished_output_id.is_some()
+            || state.flags.cleanup.session_finish_attempted
+            || state.phase == RunPhase::Finished
+            || state.phase == RunPhase::Cleaning)
     {
         return Ok((state, Vec::new()));
     }
     #[cfg(feature = "contracts")]
     let was_fatal = state.flags.outcome.infrastructure_error;
     let completed = state.accept_completion(&event)?;
+    let completed_kind = completed.as_ref().map(|pending| pending.kind);
     let completed_worker = completed.and_then(|pending| pending.worker);
+    if let RunEvent::EffectFailed(failed) = &event
+        && let Some(stop) = &mut state.disk_summary.stop
+    {
+        let secondary = crate::DiskSecondary::Error {
+            code: failed.failure.code().to_owned(),
+            message: failed.failure.message(),
+        };
+        let matches_primary = matches!(
+            &secondary,
+            crate::DiskSecondary::Error { code, message }
+                if stop.code == *code && stop.message.as_ref() == Some(message)
+        );
+        if !matches_primary && !stop.secondary.contains(&secondary) {
+            stop.secondary.push(secondary);
+        }
+    }
     let effects = match event {
         RunEvent::StartRequested(_) if state.phase == RunPhase::Validate => {
             state.phase = RunPhase::Preflight;
@@ -1752,12 +1789,12 @@ pub fn transition(
             state.cleanup_effects()?
         }
         RunEvent::SessionFinished(_) if state.phase == RunPhase::Finalize => {
-            state.final_report_effects()?
+            state.phase = RunPhase::Finished;
+            Vec::new()
         }
         RunEvent::OutputEmitted(value) if state.run_finished_output_id == Some(value.id) => {
             state.run_finished_output_id = None;
-            state.phase = RunPhase::Finished;
-            Vec::new()
+            state.post_report_effects()?
         }
         RunEvent::OutputEmitted(value) if state.diagnostic_output_id == Some(value.id) => {
             state.diagnostic_output_id = None;
@@ -1772,15 +1809,40 @@ pub fn transition(
                 .map_err(|error| MachineError::Budget(error.to_string()))?;
             state.copy_grant = None;
             state.flags.cleanup.cleanup_done = true;
+            state.disk_summary.cleanup.push(crate::DiskCleanupReport {
+                root_id: "execution".into(),
+                owner: "hoimin".into(),
+                status: crate::DiskCleanupStatus::Clean,
+                examined_entries: 0,
+                removed_entries: 0,
+                details: Vec::new(),
+                omitted_detail_count: 0,
+                remaining_root: None,
+            });
             state.post_cleanup_effects()?
         }
         RunEvent::OutputEmitted(_) => Vec::new(),
         RunEvent::EffectFailed(failed) if state.phase == RunPhase::Cleaning => {
+            let cleanup_status = if failed.failure.code() == crate::WORKSPACE_CLEANUP_DEFERRED {
+                crate::DiskCleanupStatus::Deferred
+            } else {
+                crate::DiskCleanupStatus::Failed
+            };
             state.flags.outcome.infrastructure_error = true;
             state.flags.scheduling.stop_requested = true;
             state.retire_pending();
             state.copy_grant = None;
             state.flags.cleanup.cleanup_done = true;
+            state.disk_summary.cleanup.push(crate::DiskCleanupReport {
+                root_id: "execution".into(),
+                owner: "hoimin".into(),
+                status: cleanup_status,
+                examined_entries: 0,
+                removed_entries: 0,
+                details: vec![failed.failure.message()],
+                omitted_detail_count: 0,
+                remaining_root: None,
+            });
             state.diagnostic_effect(&failed)?
         }
         RunEvent::EffectFailed(failed) if state.diagnostic_output_id == Some(failed.id) => {
@@ -1796,6 +1858,11 @@ pub fn transition(
             } else {
                 state.cleanup_effects()?
             }
+        }
+        RunEvent::EffectFailed(_) if completed_kind == Some(CompletionKind::SessionFinished) => {
+            state.flags.outcome.infrastructure_error = true;
+            state.phase = RunPhase::Finished;
+            Vec::new()
         }
         RunEvent::EffectFailed(failed) => {
             state.flags.outcome.infrastructure_error = true;
@@ -1829,6 +1896,33 @@ pub fn transition(
         RunEvent::DeadlineReached => {
             state.flags.outcome.incomplete = true;
             state.flags.scheduling.stop_requested = true;
+            let was_mutating = state.phase == RunPhase::Mutants;
+            state.retire_pending();
+            if was_mutating {
+                state.begin_stopped_mutant_drain()?
+            } else if !state.flags.report.report_started {
+                state.flags.report.stop_after_run_started = true;
+                state.start_run_effects()?
+            } else if state.copy_grant.is_some() {
+                state.phase = RunPhase::Finalize;
+                state.finalize_effects()?
+            } else {
+                state.cleanup_effects()?
+            }
+        }
+        RunEvent::DiskStopRequested(value) => {
+            state.flags.outcome.infrastructure_error = true;
+            state.flags.outcome.incomplete = true;
+            state.flags.scheduling.stop_requested = true;
+            if state.disk_summary.stop.is_none() {
+                state.disk_summary.stop = Some(crate::DiskStopReport {
+                    code: value.failure.code,
+                    owned_bytes: value.failure.observation.map(|item| item.owned_bytes),
+                    available_bytes: value.failure.observation.map(|item| item.available_bytes),
+                    message: value.failure.message,
+                    secondary: value.failure.secondary,
+                });
+            }
             let was_mutating = state.phase == RunPhase::Mutants;
             state.retire_pending();
             if was_mutating {
@@ -1985,6 +2079,7 @@ fn is_report_failure(failure: &EffectFailure) -> bool {
 fn completion(event: &RunEvent) -> Option<(EffectId, CompletionKind)> {
     Some(match event {
         RunEvent::StartRequested(_)
+        | RunEvent::DiskStopRequested(_)
         | RunEvent::DeadlineReached
         | RunEvent::CancellationRequested => return None,
         RunEvent::TargetsResolved(value) => (value.id, CompletionKind::TargetsResolved),

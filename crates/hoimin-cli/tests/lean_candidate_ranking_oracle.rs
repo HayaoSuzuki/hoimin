@@ -6,6 +6,7 @@ use std::time::Duration;
 use serde::Deserialize;
 
 const CORPUS: &str = include_str!("../../../formal/HoiminOracle/corpus/candidate-ranking.jsonl");
+const TEST_MIN_FREE_SPACE: &str = "1B";
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -325,6 +326,8 @@ fn plan_args(fixture: &Fixture) -> Vec<OsString> {
         "compare_eq_ne,binary_add_sub".into(),
         "--jobs".into(),
         "1".into(),
+        "--min-free-space".into(),
+        TEST_MIN_FREE_SPACE.into(),
         "--allow-best-effort-memory".into(),
         "--".into(),
         python_executable().into_os_string(),

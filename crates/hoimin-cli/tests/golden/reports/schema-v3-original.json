@@ -1,0 +1,164 @@
+{
+  "schema_version": 3,
+  "run": {
+    "kind": "run_started",
+    "schema_version": 3,
+    "sequence": 1,
+    "run_id": "schema-v3-original",
+    "normalized_config": {
+      "root": ".",
+      "selection": {
+        "root": ".",
+        "sources": [
+          "src"
+        ],
+        "files": [
+          "src/example.py"
+        ],
+        "lines": [],
+        "symbols": [],
+        "changed": false,
+        "diff_base": "golden-base",
+        "includes": [],
+        "excludes": []
+      },
+      "limits": {
+        "jobs": 1,
+        "max_mutants": 100,
+        "max_candidates": 10000,
+        "analyzer_timeout": {
+          "secs": 30,
+          "nanos": 0
+        },
+        "baseline_timeout": {
+          "secs": 60,
+          "nanos": 0
+        },
+        "mutant_timeout": "Auto",
+        "total_timeout": {
+          "secs": 300,
+          "nanos": 0
+        },
+        "max_memory": 1073741824,
+        "max_output": 1048576,
+        "max_copy_size": 1073741824,
+        "max_processes": 64,
+        "max_workspace_size": 8589934592,
+        "min_free_space": 10737418240
+      },
+      "test_argv": [
+        {
+          "Unix": [
+            112,
+            121,
+            116,
+            104,
+            111,
+            110
+          ]
+        }
+      ],
+      "output": {
+        "format": "json",
+        "metrics": "metrics.json"
+      },
+      "session": {
+        "path": "session.sqlite3"
+      },
+      "allow_best_effort_memory": true,
+      "resume": false
+    },
+    "versions": {
+      "os": "fixture",
+      "hoimin": "schema-v3-original"
+    },
+    "resource_control": {
+      "mode": "hard",
+      "mechanism": "fixture"
+    }
+  },
+  "baseline": {
+    "kind": "baseline_finished",
+    "schema_version": 3,
+    "sequence": 2,
+    "run_id": "schema-v3-original",
+    "termination": {
+      "Exit": 0
+    },
+    "elapsed_ms": 1,
+    "resource_mode": "hard",
+    "output": {
+      "token": "baseline",
+      "retained": 0,
+      "observed": 0
+    }
+  },
+  "mutants": [
+    {
+      "kind": "mutant_finished",
+      "schema_version": 3,
+      "sequence": 3,
+      "run_id": "schema-v3-original",
+      "candidate": {
+        "id": "mutant-1",
+        "sequence": 1,
+        "path": "src/example.py",
+        "span": {
+          "start": 0,
+          "length": 1
+        },
+        "original": "1",
+        "replacement": "0",
+        "operator": "integer_literal",
+        "line": 1,
+        "column": 0,
+        "symbol": "calculate",
+        "file_hash": "fixture-hash"
+      },
+      "status": "killed",
+      "termination": {
+        "Exit": 1
+      },
+      "elapsed_ms": 1,
+      "resource_mode": "hard",
+      "output": {
+        "token": "mutant-1",
+        "retained": 0,
+        "observed": 0
+      }
+    }
+  ],
+  "summary": {
+    "kind": "run_finished",
+    "schema_version": 3,
+    "sequence": 4,
+    "run_id": "schema-v3-original",
+    "counts": {
+      "killed": 1,
+      "survived": 0,
+      "timeout": 0,
+      "out_of_memory": 0,
+      "process_limit": 0,
+      "error": 0,
+      "not_run": 0,
+      "inconclusive": 0,
+      "score": 1.0
+    },
+    "complete": true,
+    "exit_code": 0,
+    "disk": {
+      "configured_max_owned_bytes": 8589934592,
+      "configured_min_free_bytes": 10737418240,
+      "peak_owned_bytes": 0,
+      "minimum_available_bytes": null,
+      "filesystems": [],
+      "sample_count": 0,
+      "maximum_measurement_ms": 0,
+      "enforcement": [],
+      "stop": null,
+      "cleanup": [],
+      "removed_logical_bytes": null,
+      "stale_roots_reclaimed": 0
+    }
+  }
+}

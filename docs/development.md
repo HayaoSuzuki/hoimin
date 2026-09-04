@@ -381,26 +381,69 @@ hours. Check the repository or organization Actions runner page for runner
 status and labels; do not replace the job with a hosted or best-effort runner.
 
 After changing the Rust analyzer or its tests, use the bounded workflow below
-to collect focused evidence. For the required complete Rust inventory, run
-`cargo mutants --workspace` as described in the Rust mutation testing section.
+to collect focused evidence. A raw `cargo mutants --workspace` invocation sits
+outside this guard; the Rust mutation testing section states the external safety
+boundary required for a complete inventory.
 
 ## Focused 30-minute Rust mutation workflow
 
-Use `tools/focused_mutation.py` to collect bounded evidence about the
-highest-ranked Rust changes. It requires `cargo-mutants` 27.1.0. Run it from
-the repository worktree and put its artifacts outside the repository:
+Provision the environment before starting the monitored command. Give
+`uv sync --frozen` its own capacity controls; provisioning runs outside the monitored
+mutation command. The wrapper uses the Python executable that already exists in
+`.venv` and requires `cargo-mutants` 27.1.0.
 
 ```console
-output_dir="$(mktemp -d /tmp/hoimin-focused-run.XXXXXX)"
-uv run --frozen python tools/focused_mutation.py \
-  --budget 30m \
-  --base origin/main \
-  --output "$output_dir"
+test -x .venv/bin/python
+hoimin_python="$(pwd -P)/.venv/bin/python"
+hoimin run --file tools/focused_mutation_support/disk.py --allow-best-effort-memory --max-workspace-size 8GiB --min-free-space 10GiB -- "$hoimin_python" -m unittest tests.test_focused_mutation_disk
+python3 -c 'import shutil, sys; sys.exit(0 if shutil.disk_usage(".").free > 10 * 1024**3 else 1)'
+mutation_output="$(mktemp -d /tmp/hoimin-focused.XXXXXX)"
+.venv/bin/python tools/focused_mutation.py \
+  --budget 30m --jobs 1 --max-disk 8GiB --min-free-space 10GiB \
+  --max-log-size 16MiB --output "$mutation_output"
 ```
 
-For a fixed path in automation, the equivalent output argument is
-`--output /tmp/hoimin-focused-run`. Do not name the output directory with a
-`mutants.out` prefix.
+Run the wrapper from the repository worktree. The output directory must start
+absent or empty. The guard monitors it as `owned:output`, preserves it for
+report delivery, and rejects an unrelated tree. Create a fresh `mktemp -d`
+directory for each invocation. For controlled automation, the equivalent
+argument is `--output /tmp/hoimin-focused-run` after the caller creates or
+verifies that exact empty directory. Do not use a `mutants.out` prefix.
+
+The wrapper defaults to `--jobs 1`; its maximum is four. Keep one worker until
+measurements show enough disk and memory headroom for an increase. Raising
+`--max-disk`, `--jobs`, or `--max-log-size` accepts more operational risk;
+lowering `--min-free-space` does the same. A higher reserve stops work earlier.
+The guard cannot stop one child from consuming the reserve between samples. It
+installs no per-file signal limit for scored mutation commands because a handled
+write-limit failure cannot be attributed without risking false mutation credit.
+Only a verified named quota backend provides aggregate hard enforcement.
+
+The monitor labels roots as `owned:scratch`, `owned:output`, and
+`capacity_only:cargo_home`. It charges owned roots against the 8 GiB logical
+limit. Cargo home is capacity-only: the monitor checks its filesystem reserve,
+while the shared Cargo home is never traversed or deleted. Generated workspace
+bytes and copied source bytes use separate limits. The workspace limit covers
+materialized run trees and run-owned output; the copy limit covers source copied
+into workers.
+
+One measurement can spend up to 5 seconds scanning before the monitor waits its
+250 ms post-scan delay. The ordinary cooperative detection ceiling is about
+5.25 seconds after the preceding scan. The delay is not a reaction guarantee.
+Portable code cannot preempt one blocking filesystem syscall, so a blocked call
+can extend that ceiling.
+
+The guard rejects oversized or structurally unbounded inputs before dispatch:
+
+- A scan accepts at most 250,000 tree entries, depth 128, and 129 open
+  directories.
+- Cargo-mutants input accepts 10,000 inventory entries. Tool JSON accepts 8 MiB,
+  100,000 JSON nodes, depth 64, and 16 KiB strings.
+- Selection accepts 1,000 selectors and selected candidates. Each selector and
+  candidate diagnostic has a 16 KiB encoded limit.
+- Each command retains 16 MiB by default. The 64 MiB command-log hard maximum
+  bounds any override. The wrapper applies 16 KiB selector, candidate diagnostic,
+  and encoded-path caps, a 16 MiB run-diagnostic cap, and a 32 MiB report cap.
 
 By default, the tool discovers eligible Rust files changed from `--base` and
 ranks their cargo-mutants inventory. Repeat `--file PATH` and `--symbol NAME`
@@ -410,21 +453,42 @@ unviable results during test development. The 30-minute budget reserves the
 last five minutes for checkpointing and reporting, so it stops starting
 mutations at that boundary.
 
-`run.json` is checkpointed throughout. `run.json` remains the recoverable
-machine-readable source of truth. Per-command arguments, stdout, and stderr are
-also retained below the same output directory. `report.md` is generated or
-refreshed during finalization as the human-readable summary. The tool attempts
+Each live run holds a lease. The monitor attempts a heartbeat refresh after 60
+elapsed seconds at the start of a successful sampling cycle. A long scan or one
+blocking filesystem syscall can delay that refresh. The janitor preserves a
+missing, malformed, future, or young heartbeat. It can
+reclaim an unlocked active root after the cleanup-ready marker validates or the
+valid heartbeat reaches the 24-hour heartbeat grace. A cleanup slice examines
+at most 50,000 entries or 5 seconds. The 60-second owner cleanup budget bounds
+the complete attempt; the bounded 30-second janitor spends at most 5 seconds
+selecting up to 256 candidates before fair cleanup slices.
+
+Deferred cleanup is incomplete. It leaves a validated managed root for bounded
+janitor retries and stops later mutation dispatch. Retained scratch also stays
+on disk. Remove only the exact retained path printed in `run.json` or
+`report.md`, after checking its lease and run identifier. Do not use a wildcard
+or delete the managed parent directory.
+
+`run.json` is checkpointed after setup and throughout the run. `run.json` remains
+the recoverable machine-readable source of truth and records command arguments and
+bounded diagnostics. An abrupt termination before the first checkpoint may
+contain only `.hoimin-output-owner` in the output directory; no mutation result
+is recoverable in that case. Recover from `run.json` only when it exists. During
+normal processing, the tool deletes command spools after
+bounded extraction, so their stdout and stderr files are not recovery artifacts.
+A spool cleanup failure is terminal and can leave the managed root for a bounded
+janitor retry. `report.md` is generated or refreshed during finalization as the
+human-readable summary. The tool attempts
 finalization after a timeout, handled interruption, baseline failure, or tool
 error, but `report.md` may be absent after an abrupt unhandled process
-termination before finalization. In that case, recover from `run.json` and the
-command artifacts. Treat incomplete output as a partial report: candidates
-marked `not_run`, `pending`, `timeout`, `unviable`, or `error` remain
-unverified.
+termination before finalization. Treat an existing incomplete `run.json` as a
+partial report: candidates marked `not_run`, `pending`,
+`timeout`, `unviable`, or `error` remain unverified.
 
-Exit code `0` means the run reached `completed` or `budget_exhausted`; the
-latter is an expected bounded result, not evidence that every candidate ran.
-Exit code `130` means interruption. Exit code `2` means a configuration,
-baseline, cargo-mutants, command, or reporting failure. A killed mutant is
+Exit code `0` means `completed`; `3` means `budget_exhausted`, a bounded partial
+result that does not show every candidate ran. Exit code `130` means
+interruption. Exit code `2` means a configuration, baseline, cargo-mutants,
+command, or reporting failure. A killed mutant is
 evidence that the selected test command detects that change. A survivor is not proof of a bug.
 Manually classify each survived result by inspecting the exact mutation,
 relevant production behavior, tests, and recorded command artifacts.
@@ -437,39 +501,42 @@ the focused candidate count with that inventory; without it, the reduction
 ratio is explicitly unmeasured. This comparison does not make a focused run a
 complete inventory.
 
-Focused results guide short test-improvement loops, but release evidence still
-requires the full command below. Run `cargo mutants --workspace` after the
-focused work, and do not use `--iterate` for the required final inventory.
+Focused results guide short test-improvement loops. A required complete
+inventory needs the external safety boundary described below.
+Operators do not use `--iterate` for the required final inventory.
+
+### Windows filesystem safety
+
+The focused wrapper uses pinned Win32 directory handles and NT handle-relative
+child opens, rename, and delete operations on Windows. Meter handles share
+deletion; output roots deny delete sharing while report evidence is live;
+publication and cleanup acquire mutation authority before descendant marker
+handles. Reparse points, identity or volume changes, unsupported native
+identities, network volumes without a handle-derived volume-GUID/capacity
+contract, sharing violations, and close failures fail closed before mutation
+launch.
+
+Windows uses the same 8 GiB owned-byte default, 10 GiB free-space reserve,
+five-second/250,000-entry meter bound, 60-second owner cleanup bound, and
+30-second bounded janitor as POSIX. Hoimin never falls back to pathname-based
+recursive deletion. Caller output directories keep their inherited ACLs;
+Hoimin-managed protocol objects use the current token user plus SYSTEM and
+Administrators protected ACL.
 
 ## Rust mutation testing
 
-Install `cargo-mutants` locally, then use the full command to discover every
-outcome. While adding tests, `--iterate` reuses previously caught and unviable
-outcomes; do not use it for the required final check.
+Install `cargo-mutants` locally. Use the guarded wrapper above for routine work.
+Do not run `cargo mutants --workspace` directly on a shared or unbounded
+filesystem. This repository does not currently provide a supported
+complete-inventory command. Treat complete inventory as unavailable until an
+operator provisions and verifies a named quota backend or an isolated volume
+with a hard capacity, a separate 10 GiB host reserve, one mutation worker, and
+explicit removal of that exact volume after evidence is copied out. Do not
+improvise a raw workspace command. `--iterate` can reuse caught and unviable
+outcomes during test development; do not use it for the required final check.
 
 ```console
 cargo install --locked cargo-mutants --version 27.1.0
-
-# Discover all remaining outcomes.
-cargo mutants --workspace
-
-# While adding tests, reuse caught and unviable outcomes from the prior run.
-cargo mutants --workspace --iterate
-
-# Required final check: do not use --iterate here.
-cargo mutants --workspace
-```
-
-The required reproducible priority check was validated with `cargo-mutants`
-27.1.0:
-
-```console
-cargo mutants --workspace --jobs 4 \
-  --file crates/hoimin-core/src/machine.rs \
-  --file crates/hoimin-core/src/target.rs \
-  --file crates/hoimin-cli/src/cli.rs \
-  --file crates/hoimin-cli/src/process/mod.rs \
-  --re '(TryFrom<Command> for ParsedCommand>::try_from|parse_bytes|raw_config|ProcessHandler::run|ProcessStartGate::cancel|ProcessCancellation::cancel|RunState::accept_completion|RunState::schedule_read_or_finalize|targets_are_normalized|changed_is_normalized)'
 ```
 
 `mutants.out/missed.txt` requires a behavior test unless the exact mutant is

@@ -4,6 +4,8 @@ import re
 from typing import Callable, Protocol, Sequence
 
 from .model import Candidate
+from .mutation import read_bounded_regular
+from .lease import validate_reported_path
 
 
 _EXCLUDED_PARTS = frozenset(
@@ -14,6 +16,8 @@ _FUNCTION = re.compile(
     r"(?:(?:async|const|unsafe|extern(?:\s+\"[^\"]+\")?)\s+)*"
     r"fn\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^>{}]*>)?\s*\("
 )
+MAX_SOURCE_BYTES = 8 * 1024**2
+MAX_SYMBOL_BYTES = 16 * 1024
 
 
 @dataclass(frozen=True)
@@ -38,7 +42,9 @@ def _normalize_path(value: str) -> str:
         raise ValueError(f"path must be repository-relative: {value}")
     if not path.parts or normalized in {"", "."}:
         raise ValueError("path must name a repository file")
-    return path.as_posix()
+    normalized_path = path.as_posix()
+    validate_reported_path(Path(normalized_path))
+    return normalized_path
 
 
 def _symbol_name(value: str) -> str:
@@ -160,6 +166,8 @@ def discover_candidates(
     explicit_symbols: Sequence[str],
     probe: CommandProbe,
     timeout: Callable[[], float],
+    *,
+    max_candidates: int | None = None,
 ) -> list[Candidate]:
     seen_paths: set[str] = set()
     candidates: list[Candidate] = []
@@ -178,14 +186,29 @@ def discover_candidates(
         seen_paths.add(path)
         source_path = snapshot.root / path
         try:
-            source = source_path.read_text(encoding="utf-8")
+            source = read_bounded_regular(
+                source_path, MAX_SOURCE_BYTES
+            ).decode("utf-8", errors="strict")
         except (OSError, UnicodeError):
             return
+        except ValueError:
+            return
         for symbol in _FUNCTION.findall(source):
+            if len(symbol.encode("utf-8", errors="strict")) > MAX_SYMBOL_BYTES:
+                raise ValueError(
+                    f"function symbol exceeds {MAX_SYMBOL_BYTES} bytes"
+                )
             if symbols is not None and symbol.casefold() not in symbols:
                 continue
             key = (path, symbol)
             if key not in seen_candidates:
+                if (
+                    max_candidates is not None
+                    and len(candidates) >= max_candidates
+                ):
+                    raise ValueError(
+                        f"selected mutation functions exceed {max_candidates}"
+                    )
                 seen_candidates.add(key)
                 candidates.append(Candidate(path, symbol, None))
                 if (
@@ -194,13 +217,18 @@ def discover_candidates(
                 ):
                     return
 
+    requested_symbols = frozenset(_symbol_name(symbol) for symbol in explicit_symbols)
+    normalized_explicit_files: list[str] = []
     for value in explicit_files:
+        path = _explicit_path(value)
+        if path is None:
+            raise ValueError(f"explicit file must be a Rust source file: {value}")
+        normalized_explicit_files.append(path)
         add_path(value, explicit=True)
     for values in (snapshot.dirty_paths, snapshot.base_paths):
         for value in values:
-            add_path(value)
+            add_path(value, symbols=requested_symbols or None)
 
-    requested_symbols = frozenset(_symbol_name(symbol) for symbol in explicit_symbols)
     if requested_symbols:
         inventory = probe.text(
             ["rg", "--files", "--glob", "*.rs", str(snapshot.root)],
@@ -220,7 +248,25 @@ def discover_candidates(
                     ) from error
             add_path(value, symbols=requested_symbols)
 
-    if len(candidates) < 10:
+    if max_candidates is not None and len(candidates) > max_candidates:
+        raise ValueError(
+            f"selected mutation functions exceed {max_candidates}"
+        )
+    for path in normalized_explicit_files:
+        if not any(candidate.path == path for candidate in candidates):
+            raise ValueError(f"explicit file resolved to no functions: {path}")
+    for symbol in requested_symbols:
+        matches = [
+            candidate
+            for candidate in candidates
+            if _symbol_name(candidate.symbol) == symbol
+        ]
+        if len(matches) != 1:
+            raise ValueError(
+                f"explicit symbol {symbol!r} resolved to {len(matches)} functions"
+            )
+
+    if not explicit_files and not explicit_symbols and len(candidates) < 10:
         for value in snapshot.recent_paths:
             add_path(value, candidate_limit=10)
             if len(candidates) >= 10:
