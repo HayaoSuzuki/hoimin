@@ -282,4 +282,35 @@ evidence.
 
 ## Implementation self-review record
 
-To be completed after implementation.
+### Round 1: capability and TOCTOU boundary
+
+The first pass traced each cleanup permission effect from acquisition to
+syscall. Wrapper and root changes use retained handles; opened directories use
+their handles; the one inaccessible-directory repair resolves a single name
+beneath an open parent and revalidates type plus device/inode. The pass also
+checked hard-link aliasing. Unix unlink does not need a file chmod, so the
+implementation omits that effect and a new regression confirms that an outside
+hard-linked inode keeps its permissions. No ambient cleanup permission effect
+remains.
+
+### Round 2: lifecycle, retry, and drop order
+
+The second pass walked construction failure, partial clear failure, wrapper
+repair failure, final removal failure, explicit retry, ordinary `Drop`, and
+managed-child quiescence. It found two lifecycle weaknesses. Root enumeration
+now uses a cloned handle so a retry starts with a fresh directory cursor.
+`WorkerWorkspace` now declares the root and wrapper capabilities before the
+`TempDir` owner, which preserves close-before-owner order during unwinding as
+well as normal `Drop`. Deterministic tests cover both retained-capability retry
+and final-removal retry.
+
+### Round 3: model premise, filesystem coverage, and operations
+
+The third pass compared each generated row with its Rust fixture. It found that
+the `stable_entry` fixture had not made its worker entry read-only; the test now
+sets mode `0400`. The wrapper row still compares only the permission
+fingerprint, and the post-binding row remains model-only as declared. Focused
+coverage includes mode-`0000` nested entries, non-UTF-8 names, FIFOs, the depth
+bound, reset, drop, and construction rollback. The explicit broken transition
+and red filesystem witness cover the risky mutation, so this pass rejected a
+costly `cargo-mutants` run that would add no identified predicate.
