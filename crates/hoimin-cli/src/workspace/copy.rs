@@ -29,6 +29,13 @@ impl PendingOwnedWorkspace {
         self.0.as_ref().expect("pending owner is present").path()
     }
 
+    fn open_cleanup_handle(&self) -> Result<Option<std::fs::File>, WorkspaceError> {
+        self.0
+            .as_ref()
+            .expect("pending owner is present")
+            .open_cleanup_handle()
+    }
+
     fn finish(mut self) -> OwnedWorkspaceDirectory {
         self.0.take().expect("pending owner is present")
     }
@@ -601,6 +608,9 @@ impl WorkspacePlan {
             )
         };
         let temp = PendingOwnedWorkspace::new(temp);
+        // Declare the retained wrapper after its pending owner so reverse local-drop order closes
+        // this handle before TempDir attempts cleanup on every materialization failure path.
+        let cleanup_wrapper = temp.open_cleanup_handle()?;
         let root_path = temp.path().join("workspace");
         fs::create_dir(&root_path).map_err(|error| {
             WorkspaceError::io("create worker root", &self.original_root, error)
@@ -667,6 +677,7 @@ impl WorkspacePlan {
 
         Ok(WorkerWorkspace::from_materialized(
             temp.finish(),
+            cleanup_wrapper,
             root,
             self.manifest.clone(),
             Arc::clone(&self.snapshot),

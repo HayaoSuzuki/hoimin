@@ -473,6 +473,28 @@ fn cleanup_restores_access_to_the_temporary_wrapper() {
     assert!(!wrapper.exists());
 }
 
+#[cfg(unix)]
+#[test]
+fn cleanup_removes_mode_zero_nested_directory_and_file() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let project = FixtureProject::new();
+    let mut worker = create_worker(project.root());
+    let wrapper = worker.root().parent().unwrap().to_owned();
+    let blocked = worker.root().join("blocked");
+    let nested = blocked.join("nested");
+    fs::create_dir_all(&nested).unwrap();
+    let file = nested.join("unreadable");
+    fs::write(&file, b"data").unwrap();
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o000)).unwrap();
+    fs::set_permissions(&nested, fs::Permissions::from_mode(0o000)).unwrap();
+    fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
+
+    worker.try_cleanup().unwrap();
+
+    assert!(!wrapper.exists());
+}
+
 #[test]
 fn file_apis_create_nested_replace_read_only_and_remove_files() {
     let project = FixtureProject::new();
