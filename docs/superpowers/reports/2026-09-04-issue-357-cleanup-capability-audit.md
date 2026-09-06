@@ -63,6 +63,12 @@ pending owner. Local declaration order closes the wrapper handle before
 `TempDir` on construction failure. `WorkerWorkspace` stores that handle beside
 `WorkerRoot`.
 
+On Linux, initial capability opens return `O_PATH` handles, which cannot be
+used with `fchmod`. The retained root and wrapper are therefore opened for
+reading through those capabilities before worker code runs. Removal also
+requests a readable, no-follow, directory-only handle: an `O_PATH` open would
+otherwise succeed on mode-zero entries and bypass permission recovery.
+
 `WorkerRoot::clear_for_cleanup` repairs the root through its open handle,
 enumerates direct names relative to a cloned root handle, and sends each name
 through the bounded no-follow removal state machine. The remover opens and
@@ -154,6 +160,7 @@ Additional Rust checks established these implementation boundaries:
 | A mode-`0500` wrapper could not be renamed by the macOS fixture | Use mode `0300`; preserve a missing-bit permission delta |
 | Native executable linking approached or crossed the RSS cap | Use serial `lean --run`; keep the 768 MiB limit |
 | A shared Cargo target reused an integration-test artifact from another checkout | Run final gates in an empty checkout-specific target outside the worktree |
+| Linux CI reported three failures because capability opens returned `O_PATH` handles | Retain readable root/wrapper handles before execution and open readable removal directories; reproduced all three failures in a nonroot Linux container before the fix |
 
 The reproduced permission mismatches are resolved. Inaccessible-directory
 repair has the platform compatibility boundary documented above.
@@ -233,6 +240,28 @@ commands were not repeated during this pass. Python resource-guard tests
 required an unsandboxed rerun because the sandbox denied process observation.
 Independent read-only review found the inaccessible-directory race described
 above and confirmed no remaining blocker after the repair.
+
+The subsequent Linux randomized-order job exposed the `O_PATH` issue above.
+It reproduced in isolation on stable Rust in a local Linux container, so test
+order was not necessary to trigger it. After repair, all nine focused cleanup
+tests passed in that same nonroot container, including the new mode-zero root
+and wrapper regression. This supersedes the earlier platform-readiness claim.
+
+Post-CI validation of the handle fix:
+
+| Gate | macOS host | Linux container, UID 501 |
+| --- | --- | --- |
+| Workspace library tests with contracts | 136 passed, 3 ignored | 137 passed, 3 ignored |
+| `workspace_handler` integration tests | 31 passed | 35 passed |
+| All-target/all-feature workspace Clippy, warnings denied | pass | pass |
+| Formatting and diff whitespace | pass | checked on host |
+
+The first broad Linux run had one additional staging-root reclamation failure;
+that unchanged test passed both alone and in the subsequent full workspace
+subset run. No change was made to that test or its implementation. The
+original three cleanup failures were reproduced before the fix and passed
+after it. Containers used Rust 1.98, not the CI nightly toolchain. GitHub CI
+was not polled after publishing the correction.
 
 The source scan found no `make_tree_writable` or
 `make_cleanup_entry_accessible`. Cleanup permission writes now use retained

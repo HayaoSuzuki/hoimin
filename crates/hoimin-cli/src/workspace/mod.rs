@@ -329,18 +329,15 @@ impl OwnedWorkspaceDirectory {
 
     fn open_cleanup_handle(&self) -> Result<Option<File>, WorkspaceError> {
         match self {
-            Self::Temporary(temp) => cap_primitives::fs::open_ambient_dir(
-                temp.path(),
-                cap_primitives::ambient_authority(),
-            )
-            .map(Some)
-            .map_err(|error| {
-                WorkspaceError::io(
-                    "open cleanup wrapper",
-                    Utf8Path::from_path(temp.path()).unwrap_or(Utf8Path::new("<temporary>")),
-                    error,
-                )
-            }),
+            Self::Temporary(temp) => root::open_retained_directory(temp.path())
+                .map(Some)
+                .map_err(|error| {
+                    WorkspaceError::io(
+                        "open cleanup wrapper",
+                        Utf8Path::from_path(temp.path()).unwrap_or(Utf8Path::new("<temporary>")),
+                        error,
+                    )
+                }),
             Self::Managed(_) => Ok(None),
         }
     }

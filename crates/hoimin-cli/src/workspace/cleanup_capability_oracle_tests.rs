@@ -311,6 +311,22 @@ mod unix {
     }
 
     #[test]
+    fn cleanup_repairs_mode_zero_root_and_wrapper_through_retained_handles() {
+        let mut fixture = Fixture::new();
+        let root = fixture.worker.root().to_owned();
+        let wrapper = root.parent().unwrap().to_owned();
+        set_mode(root.as_std_path(), 0o000);
+        set_mode(wrapper.as_std_path(), 0o000);
+        let result = fixture.worker.try_cleanup();
+        if result.is_err() {
+            set_mode(wrapper.as_std_path(), 0o700);
+            set_mode(root.as_std_path(), 0o700);
+        }
+        result.unwrap();
+        assert!(!wrapper.exists());
+    }
+
+    #[test]
     fn inaccessible_directory_swap_does_not_change_outside_hard_link_permissions() {
         if unsafe { libc::geteuid() } == 0 {
             return;

@@ -340,3 +340,14 @@ trailing-slash links. A second deterministic regression covers an outside
 directory symlink. Both permission-dependent fixtures skip privileged runners.
 All eight focused cleanup-capability tests pass. The report and design record
 the fail-closed boundary on other Unix targets and unsupported macOS kernels.
+
+### Round 6: Linux CI handle-kind correction
+
+PR #399's Linux randomized-order job failed three cleanup tests. Local nonroot
+Linux reproduction showed that cap-primitives returns `O_PATH` directory
+handles, which cannot be passed to `fchmod` and do not fail on mode-zero opens.
+Retained root/wrapper acquisition now binds readable handles before worker
+execution, and removal explicitly opens readable no-follow directories.
+An additional regression removes both root and wrapper access before cleanup.
+The nine focused cases passed after repair; independent review confirmed that
+directory-only resolution, no-follow behavior, and identity checks remain.

@@ -214,11 +214,8 @@ impl MutationFile {
 #[allow(dead_code)]
 impl WorkerRoot {
     pub(crate) fn open(path: Utf8PathBuf) -> Result<Self, WorkspaceError> {
-        let handle = cap_primitives::fs::open_ambient_dir(
-            path.as_std_path(),
-            cap_primitives::ambient_authority(),
-        )
-        .map_err(|error| WorkspaceError::io("open worker root", &path, error))?;
+        let handle = open_retained_directory(path.as_std_path())
+            .map_err(|error| WorkspaceError::io("open worker root", &path, error))?;
         Ok(Self {
             path,
             handle: Some(handle),
@@ -1152,6 +1149,28 @@ impl WorkerRoot {
     }
 }
 
+pub(super) fn open_retained_directory(path: &Path) -> io::Result<File> {
+    let directory =
+        cap_primitives::fs::open_ambient_dir(path, cap_primitives::ambient_authority())?;
+    // Linux capability opens return O_PATH descriptors, which cannot be used with fchmod.
+    // Bind a readable handle now, before worker code can remove directory permissions.
+    #[cfg(target_os = "linux")]
+    let directory = open_readable_directory(&directory, Path::new("."))?;
+    Ok(directory)
+}
+
+#[cfg(unix)]
+fn open_readable_directory(parent: &File, name: &Path) -> io::Result<File> {
+    let mut options = cap_primitives::fs::OpenOptions::new();
+    options
+        .read(true)
+        .follow(FollowSymlinks::No)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NONBLOCK);
+    // Do not use open_dir_nofollow: on Linux it requests O_PATH and succeeds even for
+    // mode-000 directories. Removal needs a readable, fchmod-capable descriptor.
+    cap_primitives::fs::open(parent, name, &options)
+}
+
 #[cfg(unix)]
 fn open_removal_directory(
     parent: &File,
@@ -1163,7 +1182,7 @@ fn open_removal_directory(
         cap_fs_ext::MetadataExt::dev(metadata),
         cap_fs_ext::MetadataExt::ino(metadata),
     );
-    let directory = match cap_primitives::fs::open_dir_nofollow(parent, Path::new(name)) {
+    let directory = match open_readable_directory(parent, Path::new(name)) {
         Ok(directory) => directory,
         Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
             #[cfg(test)]
@@ -1182,7 +1201,7 @@ fn open_removal_directory(
                     path: path.to_owned(),
                 });
             }
-            cap_primitives::fs::open_dir_nofollow(parent, Path::new(name)).map_err(|error| {
+            open_readable_directory(parent, Path::new(name)).map_err(|error| {
                 WorkerRoot::map_entry_error("open worker directory", path, error)
             })?
         }
