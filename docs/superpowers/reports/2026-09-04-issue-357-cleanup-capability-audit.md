@@ -16,8 +16,9 @@ by retry, non-UTF-8 entries, the 128-level depth bound, reset, and `Drop`.
 ## Claim and boundary
 
 Claim: cleanup permission effects target an object reached through a retained
-capability or through a no-follow lookup beneath an owned directory
-capability. They do not change an object outside the temporary workspace.
+capability or through a directory-only operation confined beneath an owned
+directory capability. Replacement links cannot redirect directory permission
+repair to an outside object. Unix regular files are unlinked without chmod.
 
 The claim covers `tempfile`-backed worker cleanup on supported Unix and Windows
 targets. It covers permission repair, iterative removal, read-only and
@@ -68,8 +69,14 @@ through the bounded no-follow removal state machine. The remover opens and
 identity-checks regular files before unlinking them. When permissions block a
 Unix directory open, it repairs that one name beneath the held parent, checks
 type plus device/inode again, then opens and checks the resulting handle.
-Linux uses the sandboxed `cap-primitives` permission operation. Other Unix
-targets use its no-follow `fchmodat` path.
+Linux uses the sandboxed `cap-primitives` permission operation with a trailing
+slash, enforcing directory type at the actual open. It may follow links within
+the held parent but cannot escape it. macOS uses a trailing slash together with
+Darwin's `AT_SYMLINK_NOFOLLOW_ANY`; ordinary `AT_SYMLINK_NOFOLLOW` follows a
+trailing-slash link and is insufficient. Other Unix targets, and macOS kernels
+that reject this flag, return an error for inaccessible-directory repair.
+They retain cleanup of directories that can already be opened. No weaker chmod
+fallback is used. These OS compatibility limits are outside the Lean proof.
 
 Regular Unix files need no permission change for unlink. Omitting that change
 also protects an outside inode that has a hard link inside the worker. Windows
@@ -138,14 +145,18 @@ Additional Rust checks established these implementation boundaries:
 | --- | --- |
 | Ambient permission repair follows a replacement symlink | Retain wrapper/root handles and use no-follow, handle-relative removal |
 | A read-only regular-file chmod can affect an outside hard link | Unix cleanup now identity-checks and unlinks without chmod; regression added |
-| A mode-`0000` directory cannot be opened before repair | Repair one child relative to the held parent, re-stat identity, then open |
+| A mode-`0000` directory cannot be opened before repair | Require directory type at the confined permission effect, re-stat identity, then open |
+| Swapping the inaccessible directory for an outside hard link changed mode `0400` to `0700` before identity rejection | Enforce the trailing-slash directory requirement during repair; deterministic regression now passes |
+| macOS ordinary no-follow chmod follows a trailing-slash symlink | Use `AT_SYMLINK_NOFOLLOW_ANY`; an outside-directory symlink regression passes |
 | Root directory iteration could share a cursor across retry | Enumerate through a cloned root handle |
 | Field declaration order placed `TempDir` before live handles during unwind | Declare root and wrapper capabilities before the owner |
 | The initial `stable_entry` adapter left its worker file writable | Set the worker entry to mode `0400` before cleanup |
 | A mode-`0500` wrapper could not be renamed by the macOS fixture | Use mode `0300`; preserve a missing-bit permission delta |
 | Native executable linking approached or crossed the RSS cap | Use serial `lean --run`; keep the 768 MiB limit |
+| A shared Cargo target reused an integration-test artifact from another checkout | Run final gates in an empty checkout-specific target outside the worktree |
 
-No semantic mismatch or owner decision remains open.
+The reproduced permission mismatches are resolved. Inaccessible-directory
+repair has the platform compatibility boundary documented above.
 
 ## Resource record
 
@@ -174,8 +185,24 @@ path. Neither infrastructure outcome counts as semantic evidence.
 The audit used temporary statistics directories
 `/private/tmp/hoimin-357-lean.TxeBn6` and
 `/private/tmp/hoimin-357-final.1T9UTS`. Cleanup removed both directories and
-the worktree-local Lean `.lake` cache after recording the table. Cargo used the
-repository's shared target directory; no worktree-local `target` remains.
+the worktree-local Lean `.lake` cache after recording the table.
+
+Final Rust validation used the checkout-specific target
+`/private/tmp/hoimin-357-branch-verify.YtmpPu`. Stable, all-feature, and MSRV
+artifacts raised its size to 9.0 GiB. Cleanup removed that directory after the
+last Rust gate. `uv sync --frozen` created a 377 MiB worktree-local Cargo target
+while building the Python package; cleanup removed it after the Python suite.
+Cleanup also removed the 144 MiB worktree virtual environment and two 1.1 GiB
+comparison targets. No worktree-local Cargo or Lean build directory remains.
+
+A repository-wide Cargo target reused an integration-test artifact built from
+another checkout. That artifact embedded the other checkout's
+`CARGO_MANIFEST_DIR`, which hid a missing `.venv` in one direction and reported
+`process.spawn` in the other. An empty target built from `origin/main` passed
+the isolated ranking test in five consecutive runs. The empty branch target
+passed after `uv sync --frozen` supplied the executable that the test derives
+from its manifest directory. This was verifier contamination, not a cleanup
+behavior mismatch.
 
 No Rust mutation run was needed. The Lean broken transition and deterministic
 filesystem race exercise the dangerous stale-path effect, while the focused
@@ -183,6 +210,35 @@ tests cover the permission predicates, hard-link alias, retry phase, tree
 depth, inaccessible directories, and special entries. A mutation run would
 repeat expensive workspace compilation without testing another identified
 branch.
+
+## Final verification
+
+| Gate | Result |
+| --- | --- |
+| `cargo fmt --all -- --check` | pass |
+| focused cleanup capability oracle | 8 passed (September 7 rerun) |
+| `cargo test --workspace --quiet` | pass; primary library 514 passed and 9 ignored (September 7 rerun) |
+| workspace Clippy, all targets and features, warnings denied | pass |
+| `hoimin-core` contracts tests | pass |
+| `hoimin-cli` contracts tests | pass |
+| Rust 1.88 workspace check, all targets and features, locked | pass |
+| `run_e2e` | 54 passed |
+| Python unittest discovery | 849 run, 56 skipped, no failures (September 7 rerun) |
+| `tests/test_skills.py` | 3 passed |
+
+The September 7 delivery pass also reran formatting, all-target/all-feature
+Clippy with warnings denied, and diff whitespace validation successfully.
+The contracts/MSRV/Lean rows retain the earlier validation evidence; those
+commands were not repeated during this pass. Python resource-guard tests
+required an unsandboxed rerun because the sandbox denied process observation.
+Independent read-only review found the inaccessible-directory race described
+above and confirmed no remaining blocker after the repair.
+
+The source scan found no `make_tree_writable` or
+`make_cleanup_entry_accessible`. Cleanup permission writes now use retained
+wrapper/root handles, opened entry handles, or the capability-relative
+inaccessible-directory operation. Other `set_permissions` matches belong to
+materialization, mutation/reset operations, managed-root code, or test setup.
 
 ## Reproduction
 
@@ -202,14 +258,17 @@ python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 768 \
   --check corpus/cleanup-capability.jsonl
 ```
 
-Run the Rust adapter from the repository root with the shared target:
+Run the Rust adapter from the repository root with an empty target dedicated to
+the current checkout:
 
 ```console
-CARGO_TARGET_DIR=/path/to/hoimin/target \
+CARGO_TARGET_DIR=/private/tmp/hoimin-357-verify.UNIQUE \
   cargo test -p hoimin-cli cleanup_capability --lib -- --nocapture
-CARGO_TARGET_DIR=/path/to/hoimin/target \
+CARGO_TARGET_DIR=/private/tmp/hoimin-357-verify.UNIQUE \
   cargo test -p hoimin-cli --test workspace_handler
 ```
+
+Remove that exact target after recording the results.
 
 Automatic GitHub Actions remain Linux-only. This work did not dispatch the
 manual macOS or Windows workflow and does not use it as a condition.

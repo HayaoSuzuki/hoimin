@@ -1166,6 +1166,8 @@ fn open_removal_directory(
     let directory = match cap_primitives::fs::open_dir_nofollow(parent, Path::new(name)) {
         Ok(directory) => directory,
         Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
+            #[cfg(test)]
+            parent_opened("cleanup-inaccessible-directory", path);
             make_inaccessible_directory_accessible(parent, name, metadata, path)?;
             let verified = cap_primitives::fs::stat(parent, Path::new(name), FollowSymlinks::No)
                 .map_err(|error| {
@@ -1227,10 +1229,32 @@ fn make_inaccessible_directory_accessible(
         ));
     }
     permissions.set_mode(permissions.mode() | 0o700);
+    // Require a directory at the permission effect itself: a preceding stat cannot prevent
+    // replacement with a hard link to an outside regular file.
+    let mut directory_name = name.clone();
+    directory_name.push("/");
     #[cfg(target_os = "linux")]
-    let result = cap_primitives::fs::set_permissions(parent, Path::new(name), permissions);
-    #[cfg(all(unix, not(target_os = "linux")))]
-    let result = cap_primitives::fs::set_symlink_permissions(parent, Path::new(name), permissions);
+    let result =
+        cap_primitives::fs::set_permissions(parent, Path::new(&directory_name), permissions);
+    #[cfg(target_os = "macos")]
+    let result: io::Result<()> = {
+        // Darwin's AT_SYMLINK_NOFOLLOW alone follows a link with a trailing slash. The
+        // SDK's AT_SYMLINK_NOFOLLOW_ANY rejects links in every component, including that
+        // case. libc/rustix do not yet expose the constant. Unsupported kernels fail closed.
+        const AT_SYMLINK_NOFOLLOW_ANY: u32 = 0x0800;
+        rustix::fs::chmodat(
+            parent,
+            Path::new(&directory_name),
+            rustix::fs::Mode::from_bits_truncate(permissions.mode() as rustix::fs::RawMode),
+            rustix::fs::AtFlags::from_bits_retain(AT_SYMLINK_NOFOLLOW_ANY),
+        )
+        .map_err(Into::into)
+    };
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    let result: io::Result<()> = Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "safe inaccessible-directory permission repair is unavailable",
+    ));
     result.map_err(|error| WorkspaceError::io("prepare worker directory", path, error))
 }
 

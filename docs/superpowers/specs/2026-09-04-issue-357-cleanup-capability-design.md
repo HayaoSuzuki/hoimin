@@ -154,13 +154,15 @@ mode `0500` otherwise opens successfully but rejects unlinking its children.
 For a mode `0000` Unix directory that cannot initially be opened, cleanup uses
 the capability-confined permission operation relative to the already-open
 parent. It then repeats no-follow metadata/type/identity validation before
-opening the directory. On non-Linux Unix, a no-follow `fchmodat` fallback is
-permitted only for the inaccessible-directory case; Linux keeps the
-cap-primitives FD-bound implementation and fails safely when its required
-kernel/procfs support is unavailable.
+opening the directory. The permission operation must enforce directory type
+itself: post-effect identity checks cannot prevent chmod of a replacement hard
+link. Linux passes a trailing slash to the confined cap-primitives operation.
+macOS uses a trailing slash with `AT_SYMLINK_NOFOLLOW_ANY`, since ordinary
+`AT_SYMLINK_NOFOLLOW` follows a trailing-slash link. Other Unix targets and
+kernels without the required support fail safely for this inaccessible case.
 
-Unix file permission bits are not needed for unlink, but the existing remover
-may open a regular file and apply its change through that file handle. Windows
+Unix file permission bits are not needed for unlink, so the remover omits
+chmod to preserve the permissions of outside hard-linked inodes. Windows
 continues to clear a read-only attribute on an opened file handle before
 deletion. Neither path performs a pathname chmod after a no-follow check.
 

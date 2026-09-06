@@ -1,8 +1,8 @@
 # Issue 357 Capability-Bound Worker Cleanup Implementation Plan
 
 > **Execution:** Use `superpowers:executing-plans` task by task. This plan is
-> intentionally single-agent because the active collaboration policy forbids
-> delegated agents unless the user explicitly requests them.
+> implemented in one checkout. Final independent read-only review follows
+> `superpowers:requesting-code-review` while the coordinator runs validation.
 
 **Goal:** Remove ambient pathname permission changes from ordinary worker
 cleanup while retaining cleanup of read-only, inaccessible, deep, and
@@ -34,8 +34,10 @@ fmt/Clippy/test, repository Python checks.
   schemas, non-UTF-8 support, and the 128-level worker-tree bound.
 - Keep a failed cleanup retryable. Do not close ordinary-worker capabilities
   until handle-relative preparation succeeds.
-- Use the repository's shared Cargo target. Do not create a worktree-local
-  `target` directory.
+- Use an empty, checkout-specific Cargo target outside the worktree for final
+  validation. Do not reuse a target built from another checkout, and do not
+  create a worktree-local `target` directory. Delete the external target after
+  recording the results.
 - Run Lean commands serially with a 20-second wall deadline, 768 MiB aggregate
   RSS cap, one Lake job, and per-command stats in a dedicated `/private/tmp`
   directory. Remove that directory after recording results.
@@ -217,18 +219,18 @@ fmt/Clippy/test, repository Python checks.
   a user-facing note after implementation review
 - Modify as needed: files above
 
-- [ ] Run `cargo fmt --all -- --check`.
-- [ ] Run focused cleanup/oracle tests, then `cargo test --workspace` using the
-  shared target directory.
-- [ ] Run the workspace Clippy command with warnings denied.
-- [ ] Run the contracts-feature workspace tests and the repository Python suite
+- [x] Run `cargo fmt --all -- --check`.
+- [x] Run focused cleanup/oracle tests, then `cargo test --workspace` using an
+  empty, checkout-specific target outside the worktree.
+- [x] Run the workspace Clippy command with warnings denied.
+- [x] Run the contracts-feature workspace tests and the repository Python suite
   that checks docs, workflows, and formal-oracle contracts.
-- [ ] Run an MSRV `cargo check --workspace --all-targets --locked` if the new
+- [x] Run an MSRV `cargo check --workspace --all-targets --locked` if the new
   Rust syntax or APIs are not already exercised by an equivalent local gate.
-- [ ] Run `git diff --check` and scan for ambient cleanup permission changes:
+- [x] Run `git diff --check` and scan for ambient cleanup permission changes:
   `rg -n "make_tree_writable|make_cleanup_entry_accessible|set_permissions" crates/hoimin-cli/src/workspace`.
   Classify every remaining match; do not turn source spelling into a unit test.
-- [ ] Perform three implementation self-review passes: capability/TOCTOU,
+- [x] Perform three implementation self-review passes: capability/TOCTOU,
   lifecycle/retry/drop ordering, and test/formal/operational evidence. Record
   concrete findings and fixes in this plan.
 - [ ] Confirm no worktree-local `target`, mutation output, Lean build leak, test
@@ -314,3 +316,27 @@ coverage includes mode-`0000` nested entries, non-UTF-8 names, FIFOs, the depth
 bound, reset, drop, and construction rollback. The explicit broken transition
 and red filesystem witness cover the risky mutation, so this pass rejected a
 costly `cargo-mutants` run that would add no identified predicate.
+
+### Round 4: verifier isolation and generated artifacts
+
+The fourth pass rebuilt the branch in an empty target outside the worktree. A
+repository-wide target had reused an integration-test binary built from a
+different checkout, including that checkout's `CARGO_MANIFEST_DIR`. The reused
+binary hid the missing worktree `.venv`, then produced a false `process.spawn`
+failure when the branch received a clean build. A worktree-local `uv sync`
+supplied the required Python executable. All Rust gates then ran against the
+branch-specific build. The pass removed the 9.0 GiB external Cargo target, the
+377 MiB worktree target created by the Python package build, and the 144 MiB
+virtual environment after verification.
+
+### Round 5: resumed delivery and independent review
+
+The uncommitted inaccessible-directory hard-link regression failed on macOS:
+the outside mode changed from `0400` to `0700` before identity rejection.
+Independent review confirmed the effect-before-validation defect. The repair
+now requires directory type during the permission operation; Linux retains
+capability confinement and macOS uses `AT_SYMLINK_NOFOLLOW_ANY` to reject
+trailing-slash links. A second deterministic regression covers an outside
+directory symlink. Both permission-dependent fixtures skip privileged runners.
+All eight focused cleanup-capability tests pass. The report and design record
+the fail-closed boundary on other Unix targets and unsupported macOS kernels.

@@ -311,6 +311,74 @@ mod unix {
     }
 
     #[test]
+    fn inaccessible_directory_swap_does_not_change_outside_hard_link_permissions() {
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+        let outside = tempfile::NamedTempFile::new().unwrap();
+        set_mode(outside.path(), 0o400);
+        let outside_permissions = permission_fingerprint(outside.path());
+        let fixture = Fixture::new();
+        let target = fixture.worker.root().join("blocked");
+        let held = fixture.worker.root().join("blocked-held");
+        fs::create_dir(&target).unwrap();
+        set_mode(target.as_std_path(), 0o000);
+        let (hook, entered, resume) =
+            CleanupPause::new("cleanup-inaccessible-directory", target.clone());
+        let cleanup = cleanup_in_thread(fixture.worker, hook);
+
+        entered.recv_timeout(Duration::from_secs(5)).unwrap();
+        set_mode(target.as_std_path(), 0o700);
+        fs::rename(&target, &held).unwrap();
+        fs::hard_link(outside.path(), &target).unwrap();
+        resume.send(()).unwrap();
+
+        let (mut worker, result) = cleanup.join().unwrap();
+        let outside_permissions_after_cleanup = permission_fingerprint(outside.path());
+        fs::remove_file(&target).unwrap();
+        set_mode(held.as_std_path(), 0o700);
+        fs::rename(&held, &target).unwrap();
+        worker.try_cleanup().unwrap();
+
+        assert!(result.is_err(), "replacement entry must be rejected");
+        assert_eq!(outside_permissions_after_cleanup, outside_permissions);
+    }
+
+    #[test]
+    fn inaccessible_directory_swap_does_not_change_outside_symlink_permissions() {
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+        let outside = tempfile::tempdir().unwrap();
+        set_mode(outside.path(), 0o400);
+        let outside_permissions = permission_fingerprint(outside.path());
+        let fixture = Fixture::new();
+        let target = fixture.worker.root().join("blocked");
+        let held = fixture.worker.root().join("blocked-held");
+        fs::create_dir(&target).unwrap();
+        set_mode(target.as_std_path(), 0o000);
+        let (hook, entered, resume) =
+            CleanupPause::new("cleanup-inaccessible-directory", target.clone());
+        let cleanup = cleanup_in_thread(fixture.worker, hook);
+
+        entered.recv_timeout(Duration::from_secs(5)).unwrap();
+        set_mode(target.as_std_path(), 0o700);
+        fs::rename(&target, &held).unwrap();
+        symlink(outside.path(), &target).unwrap();
+        resume.send(()).unwrap();
+
+        let (mut worker, result) = cleanup.join().unwrap();
+        let outside_permissions_after_cleanup = permission_fingerprint(outside.path());
+        fs::remove_file(&target).unwrap();
+        fs::rename(&held, &target).unwrap();
+        worker.try_cleanup().unwrap();
+        set_mode(outside.path(), 0o700);
+
+        assert!(result.is_err(), "replacement entry must be rejected");
+        assert_eq!(outside_permissions_after_cleanup, outside_permissions);
+    }
+
+    #[test]
     fn entry_swap_after_inspection_matches_the_lean_oracle() {
         let expected = case("entry_swap_after_inspection");
         let outside = tempfile::NamedTempFile::new().unwrap();
