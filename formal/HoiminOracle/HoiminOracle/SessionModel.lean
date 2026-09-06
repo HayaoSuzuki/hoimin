@@ -276,7 +276,11 @@ def rejectionCode (event : Event) : Rejection → String
   | .handlerClosed => "session.handler.closed"
   | .duplicateRun => "session.begin"
   | .active => "session.resume.active"
-  | .notOwner => "session.finish.owner"
+  | .notOwner =>
+      match event with
+      | .lookup _ _ _ => "session.lookup.owner"
+      | .persist _ _ _ _ _ _ => "session.persist.owner"
+      | _ => "session.finish.owner"
   | .missingRun =>
       match event with
       | .persist _ _ _ _ _ _ => "session.commit"
@@ -359,6 +363,8 @@ def lookupResult (state : State) (handler : Handler) (run : Run)
     (mutant : Mutant) : Verdict :=
   if !handlerLive state handler then
     reject state .handlerClosed
+  else if !owns state run handler then
+    reject state .notOwner
   else if state.pending.isSome then
     reject state .internalState
   else
@@ -373,6 +379,8 @@ def persistResult (state : State) (handler : Handler) (run : Run)
     (validity : PersistValidity) : Verdict :=
   if !handlerLive state handler then
     reject state .handlerClosed
+  else if !owns state run handler then
+    reject state .notOwner
   else if state.pending.isSome then
     reject state .internalState
   else
@@ -509,6 +517,15 @@ def step (state : State) : Event → Verdict
       startReplacement state handler run mutant status payload
   | .replacementCommit handler => commitReplacement state handler
   | .replacementRollback handler => rollbackReplacement state handler
+
+-- Deliberately bypass only the result-operation ownership guards, preserving the real
+-- owner collection in the observation. This models the bug fixed by issue #363.
+def brokenResultOwnershipStep (state : State) (event : Event) : Verdict :=
+  match event with
+  | .lookup handler run _ | .persist handler run _ _ _ _ =>
+      let verdict := step (addOwner state run handler) event
+      { verdict with state := { verdict.state with owners := state.owners } }
+  | _ => step state event
 
 def run : State → List Event → State
   | state, [] => state

@@ -196,7 +196,7 @@ private def specs : List CaseSpec := [
       named (.persist .h0 .r0 .m0 .killed .p1 .invalidDiagnostic),
       named (.lookup .h0 .r0 .m0)
     ] },
-  { id := "missing_run_persist_rolls_back"
+  { id := "missing_run_persist_requires_ownership"
     schedule := [open0, named (.persist .h0 .r0 .m0 .killed .p0 .valid)] },
   { id := "lookup_missing_and_completed_reject"
     schedule := [
@@ -218,6 +218,32 @@ private def specs : List CaseSpec := [
       open0, open1, begin0,
       named (.finish .h1 .r0 false),
       named (.load .h1 .f0)
+    ] },
+  { id := "result_operations_require_the_requested_runs_owner"
+    schedule := [
+      open0, open1, begin0,
+      named (.begin .h1 .r1 .f1),
+      named (.persist .h0 .r0 .m0 .timeout .p0 .valid),
+      named (.load .h1 .f0),
+      named (.lookup .h1 .r0 .m0),
+      named (.persist .h1 .r0 .m0 .killed .p1 .valid),
+      named (.persist .h1 .r0 .m1 .killed .p1 .valid),
+      named (.lookup .h0 .r0 .m0)
+    ] },
+  { id := "result_operations_require_reacquisition_after_finish"
+    schedule := [
+      open0, open1, begin0,
+      named (.finish .h0 .r0 false),
+      named (.persist .h0 .r0 .m0 .killed .p0 .valid),
+      named (.lookup .h0 .r0 .m0),
+      named (.load .h1 .f0),
+      named (.persist .h0 .r0 .m0 .killed .p0 .valid),
+      named (.lookup .h0 .r0 .m0),
+      named (.persist .h1 .r0 .m0 .killed .p1 .valid),
+      named (.finish .h1 .r0 false),
+      named (.load .h0 .f0),
+      named (.lookup .h0 .r0 .m0),
+      named (.persist .h0 .r0 .m1 .killed .p0 .valid)
     ] }
 ]
 

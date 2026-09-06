@@ -84,6 +84,13 @@ fn golden_session_schema_eras_migrate_without_semantic_loss() {
         drop(before);
 
         let mut handler = SessionHandler::open(&migrated_path).unwrap();
+        let resumed = handler
+            .load(&LoadSession {
+                id: EffectId(89),
+                fingerprint: RunFingerprint::from_bytes([1; 32]),
+            })
+            .unwrap();
+        assert_eq!(resumed.resume.unwrap().run_id, "golden-run");
         let loaded = handler
             .lookup(&lookup_request(90, "golden-run", "golden-mutant"))
             .unwrap();
@@ -893,7 +900,7 @@ fn timeout_can_be_replaced_then_resumed_and_completed_end_to_end() {
         ))
         .unwrap_err();
     assert_eq!(failed.id, EffectId(10));
-    assert_eq!(failed.failure.code(), "session.persist.complete");
+    assert_eq!(failed.failure.code(), "session.persist.owner");
 }
 
 #[test]
@@ -1059,6 +1066,165 @@ fn non_owner_finish_is_rejected_without_changing_run_state() {
         })
         .unwrap();
     assert_eq!(loaded.resume.unwrap().run_id, "owned");
+}
+
+#[test]
+fn non_owner_persist_cannot_insert_or_replace_results_in_another_run() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("sessions.sqlite3");
+    let mut owner = SessionHandler::open(&path).unwrap();
+    let mut contender = SessionHandler::open(&path).unwrap();
+    owner.begin(begin_request(1, "owned")).unwrap();
+    owner
+        .persist(&persist_with_status(
+            2,
+            "owned",
+            "retry",
+            MutationStatus::Timeout,
+        ))
+        .unwrap();
+    contender.begin(begin_request(3, "other-run")).unwrap();
+    let observer = Connection::open(&path).unwrap();
+    // Unauthorized calls must fail before attempting a write transaction, even if SQLite's
+    // writer slot is occupied. The owner's file lock is independent of this database lock.
+    observer.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let before = logical_rows(&observer);
+
+    for (id, mutant_id) in [(4, "new"), (5, "retry")] {
+        let failed = contender
+            .persist(&persist_request(id, "owned", mutant_id))
+            .unwrap_err();
+        assert_eq!(failed.id, EffectId(id));
+        assert_eq!(failed.failure.code(), "session.persist.owner");
+        assert_eq!(logical_rows(&observer), before);
+    }
+    observer.execute_batch("COMMIT").unwrap();
+    owner
+        .persist(&persist_request(6, "owned", "retry"))
+        .unwrap();
+}
+
+#[test]
+fn non_owner_lookup_requires_successful_load_for_the_requested_run() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("sessions.sqlite3");
+    let mut owner = SessionHandler::open(&path).unwrap();
+    let mut contender = SessionHandler::open(&path).unwrap();
+    owner.begin(begin_request(1, "owned")).unwrap();
+    owner.persist(&persist_request(2, "owned", "m1")).unwrap();
+    let mut other = begin_request(3, "other-run");
+    other.fingerprint = RunFingerprint::from_bytes([2; 32]);
+    contender.begin(other).unwrap();
+    let load = LoadSession {
+        id: EffectId(4),
+        fingerprint: RunFingerprint::from_bytes([1; 32]),
+    };
+    assert_eq!(
+        contender.load(&load).unwrap_err().failure.code(),
+        "session.resume.active"
+    );
+
+    let failed = contender
+        .lookup(&lookup_request(5, "owned", "m1"))
+        .unwrap_err();
+    assert_eq!(failed.id, EffectId(5));
+    assert_eq!(failed.failure.code(), "session.lookup.owner");
+    let failed = contender
+        .persist(&persist_request(6, "owned", "new"))
+        .unwrap_err();
+    assert_eq!(failed.failure.code(), "session.persist.owner");
+
+    drop(owner);
+    assert_eq!(
+        contender.load(&load).unwrap().resume.unwrap().run_id,
+        "owned"
+    );
+    let stored = contender.lookup(&lookup_request(7, "owned", "m1")).unwrap();
+    assert_eq!(stored.result.unwrap().status, MutationStatus::Killed);
+    contender
+        .persist(&persist_request(8, "owned", "new"))
+        .unwrap();
+}
+
+#[test]
+fn former_owner_result_operations_require_reacquisition_after_finish() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("sessions.sqlite3");
+    let mut former = SessionHandler::open(&path).unwrap();
+    let mut resumer = SessionHandler::open(&path).unwrap();
+    former.begin(begin_request(1, "partial")).unwrap();
+    former
+        .finish(FinishSession {
+            id: EffectId(2),
+            run_id: "partial".to_owned(),
+            complete: false,
+        })
+        .unwrap();
+    let load = LoadSession {
+        id: EffectId(3),
+        fingerprint: RunFingerprint::from_bytes([1; 32]),
+    };
+    // Finishing releases authority even before another handler acquires it.
+    assert_eq!(
+        former
+            .persist(&persist_request(4, "partial", "m1"))
+            .unwrap_err()
+            .failure
+            .code(),
+        "session.persist.owner"
+    );
+    assert_eq!(
+        former
+            .lookup(&lookup_request(5, "partial", "m1"))
+            .unwrap_err()
+            .failure
+            .code(),
+        "session.lookup.owner"
+    );
+    resumer.load(&load).unwrap().resume.unwrap();
+    let observer = Connection::open(&path).unwrap();
+    let before = logical_rows(&observer);
+    assert_eq!(
+        former
+            .persist(&persist_request(6, "partial", "m1"))
+            .unwrap_err()
+            .failure
+            .code(),
+        "session.persist.owner"
+    );
+    assert_eq!(
+        former
+            .lookup(&lookup_request(7, "partial", "m1"))
+            .unwrap_err()
+            .failure
+            .code(),
+        "session.lookup.owner"
+    );
+    assert_eq!(logical_rows(&observer), before);
+
+    resumer
+        .persist(&persist_request(8, "partial", "m1"))
+        .unwrap();
+    resumer
+        .finish(FinishSession {
+            id: EffectId(9),
+            run_id: "partial".to_owned(),
+            complete: false,
+        })
+        .unwrap();
+    former.load(&load).unwrap().resume.unwrap();
+    assert_eq!(
+        former
+            .lookup(&lookup_request(10, "partial", "m1"))
+            .unwrap()
+            .result
+            .unwrap()
+            .status,
+        MutationStatus::Killed
+    );
+    former
+        .persist(&persist_request(11, "partial", "m2"))
+        .unwrap();
 }
 
 #[test]
@@ -1269,6 +1435,13 @@ fn each_mutant_transaction_rolls_back_when_commit_fails() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("sessions.sqlite3");
     let mut handler = SessionHandler::open(&path).unwrap();
+    handler.begin(begin_request(1, "missing-run")).unwrap();
+    // Keep ownership while removing the referenced row to exercise the deferred foreign-key
+    // failure at commit, rather than the earlier ownership guard.
+    Connection::open(&path)
+        .unwrap()
+        .execute("DELETE FROM runs", [])
+        .unwrap();
 
     let failed = handler
         .persist(&persist_request(9, "missing-run", "m1"))
@@ -1435,7 +1608,16 @@ fn lookup_rejects_corrupt_status_candidate_mismatch_and_completed_runs() {
     let complete_path = temp.path().join("complete.sqlite3");
     let mut handler = SessionHandler::open(&complete_path).unwrap();
     handler.begin(begin_request(11, "run-complete")).unwrap();
-    handler.finish(finish_request(12, "run-complete")).unwrap();
+    // Corrupt the stored state without releasing this handler's ownership so the database
+    // completion checks remain covered after adding the ownership guard.
+    Connection::open(&complete_path)
+        .unwrap()
+        .execute("UPDATE runs SET complete=1", [])
+        .unwrap();
+    let failed = handler
+        .persist(&persist_request(12, "run-complete", "m1"))
+        .unwrap_err();
+    assert_eq!(failed.failure.code(), "session.persist.complete");
     let failed = handler
         .lookup(&lookup_request(13, "run-complete", "m1"))
         .unwrap_err();
@@ -1445,6 +1627,13 @@ fn lookup_rejects_corrupt_status_candidate_mismatch_and_completed_runs() {
     let null_path = temp.path().join("null.sqlite3");
     create_nullable_corrupt_database(&null_path);
     let mut handler = SessionHandler::open(&null_path).unwrap();
+    let resumed = handler
+        .load(&LoadSession {
+            id: EffectId(13),
+            fingerprint: RunFingerprint::from_bytes([0; 32]),
+        })
+        .unwrap();
+    assert_eq!(resumed.resume.unwrap().run_id, "run-null");
     let failed = handler
         .lookup(&lookup_request(14, "run-null", "m-null"))
         .unwrap_err();
