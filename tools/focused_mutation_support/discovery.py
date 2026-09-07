@@ -36,7 +36,7 @@ class CommandProbe(Protocol):
 
 
 def _normalize_path(value: str) -> str:
-    normalized = value.replace("\\", "/")
+    normalized = Path(value).as_posix()
     path = PurePosixPath(normalized)
     if path.is_absolute() or ".." in path.parts:
         raise ValueError(f"path must be repository-relative: {value}")
@@ -101,10 +101,6 @@ def _nul_paths(text: str) -> tuple[str, ...]:
     return _unique_eligible(tuple(item for item in text.split("\0") if item))
 
 
-def _line_paths(text: str) -> tuple[str, ...]:
-    return _unique_eligible(tuple(text.splitlines()))
-
-
 def discover_repository(
     repository: Path,
     base: str,
@@ -147,7 +143,7 @@ def discover_repository(
         timeout(),
     )
     history = probe.text(
-        ["git", "log", "--first-parent", "-20", "--name-only", "--format="],
+        ["git", "log", "--first-parent", "-20", "--name-only", "-z", "--format="],
         timeout(),
     )
     return RepositorySnapshot(
@@ -156,7 +152,7 @@ def discover_repository(
         branch=branch,
         dirty_paths=_status_paths(status),
         base_paths=_nul_paths(changed),
-        recent_paths=_line_paths(history),
+        recent_paths=_nul_paths(history),
     )
 
 
