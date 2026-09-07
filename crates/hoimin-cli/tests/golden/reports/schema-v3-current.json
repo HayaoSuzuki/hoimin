@@ -35,7 +35,7 @@
           "secs": 60,
           "nanos": 0
         },
-        "mutant_timeout": "Auto",
+        "mutant_timeout": "auto",
         "total_timeout": {
           "secs": 300,
           "nanos": 0
@@ -49,7 +49,7 @@
       },
       "test_argv": [
         {
-          "Unix": [
+          "unix": [
             112,
             121,
             116,
@@ -59,13 +59,13 @@
           ]
         },
         {
-          "Unix": [
+          "unix": [
             45,
             109
           ]
         },
         {
-          "Unix": [
+          "unix": [
             112,
             121,
             116,
