@@ -281,7 +281,8 @@ pub async fn prepare_verify(
 ///
 /// # Errors
 ///
-/// Returns an error when the manifest, selection, sources, or planned candidates are invalid.
+/// Returns an error when the manifest, selection, sources, or planned candidates are invalid,
+/// including a top-N selection from a plan with no retained candidates.
 pub async fn prepare_verify_selection(
     manifest_path: impl AsRef<Path>,
     requested_selection: &VerifySelection,
@@ -436,6 +437,12 @@ fn resolve_verify_selection(
         VerifySelection::Top { count, policy } => {
             let candidate_ids =
                 selection::select_top_candidate_ids(&manifest.candidates, *count, *policy);
+            if candidate_ids.is_empty() {
+                return Err(PlanError::CandidateInvalid(
+                    "--top requires at least one candidate; the plan has no retained candidates"
+                        .to_owned(),
+                ));
+            }
             let report_policy = match policy {
                 TopSelectionPolicy::Strict => VerificationSelectionPolicy::Strict,
                 TopSelectionPolicy::Diverse => VerificationSelectionPolicy::FileRoundRobinV1,
