@@ -198,21 +198,30 @@ fn real_binary_help_and_version_use_stdout() {
 }
 
 #[test]
-fn run_help_lists_all_mutation_operator_ids_and_selectors() {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
-        .args(["run", "--help"])
-        .output()
-        .unwrap();
+fn mutation_command_help_lists_all_operator_ids_and_selectors() {
+    for command in ["run", "plan"] {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+            .args([command, "--help"])
+            .output()
+            .unwrap();
 
-    assert!(
-        output.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(output.stderr.is_empty(), "stderr: {:?}", output.stderr);
-    let help = String::from_utf8(output.stdout).unwrap();
-    for name in MutationOperatorSelection::valid_names() {
-        assert!(help.contains(name), "missing {name} from:\n{help}");
+        assert!(
+            output.status.success(),
+            "{command} stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            output.stderr.is_empty(),
+            "{command} stderr: {:?}",
+            output.stderr
+        );
+        let help = String::from_utf8(output.stdout).unwrap();
+        for name in MutationOperatorSelection::valid_names() {
+            assert!(
+                help.contains(name),
+                "missing {name} from {command}:\n{help}"
+            );
+        }
     }
 }
 
@@ -472,6 +481,9 @@ fn verify_rejects_conflicting_or_invalid_selection_options() {
 fn verify_rejects_run_only_options_and_test_argv() {
     for option in [
         "--source",
+        "--operators",
+        "--exclude-operators",
+        "--profile",
         "--session",
         "--fingerprint-file",
         "--max-workspace-size",
@@ -503,6 +515,28 @@ fn verify_rejects_run_only_options_and_test_argv() {
         ])
         .is_err()
     );
+}
+
+#[test]
+fn verify_help_does_not_advertise_mutation_selection_options() {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+        .args(["verify", "--help"])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let help = String::from_utf8(output.stdout).unwrap();
+    for unexpected in [
+        "--operators",
+        "--exclude-operators",
+        "--profile",
+        "Mutation operator IDs and selector families",
+    ] {
+        assert!(
+            !help.contains(unexpected),
+            "unexpected {unexpected} in verify help:\n{help}"
+        );
+    }
 }
 
 #[test]
