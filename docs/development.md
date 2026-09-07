@@ -111,9 +111,37 @@ HOIMIN_ORACLE_CASE=cleanup_is_emitted_once \
 The generated JSONL corpus is owned by Lean and must not be edited by hand.
 New cases begin in report mode while their model/implementation boundary is
 reviewed. Promoted strict cases are blocking; infrastructure errors always
-fail. Corpus generation, freshness, and strict correspondence are separate,
-deterministic command boundaries suitable for a future CI job. This workflow
-does not currently modify or require a CI configuration.
+fail.
+
+The Linux `Lean audit` CI job is configured to compile all 117 package modules
+serially before building the aggregate library. It then runs all 28 corpus
+freshness checks and the 25 generators that expose sensitivity gates. The
+workflow is the canonical list of package targets, corpus paths, and gate
+commands; update its contract test whenever a library module or `lakefile.toml`
+executable changes.
+
+Every build and generator invocation runs alone through
+`tools/lean_resource_guard.py`, with a 30-second wall-time limit, 2 GiB
+aggregate RSS limit, and 250 ms sampling. Resource statistics are retained as
+the `lean-audit-stats` workflow artifact even when a gate fails. The Lake package
+uses `-j1` and `-DElab.async=false` to keep elaboration serial within each
+process. Run local Lean checks serially with the same guard rather than starting
+an unbounded aggregate build. Corpus freshness checks compare generated output;
+regenerate through the corresponding `lake exe generate* -- --output ...`
+command when an intentional model change requires it. Generated JSONL files
+must not be edited by hand.
+
+The complete 171-command sequence passed from an empty build cache in a
+one-CPU Linux aarch64 container with a hard 2 GiB limit and no swap. The longest
+command took 13.198 seconds; peak aggregate RSS was 1,077,976 KiB. Budget
+statistics take their exploration depth at runtime and run only for `--stats`,
+so corpus checks do not initialize the exhaustive statistics search. The
+statistics formulas, depth-six audit, proofs, and corpora remain unchanged.
+The initial GitHub-hosted run exceeded the former 20-second limit while
+building `ShutdownProofs` at 1,022,208 KiB peak RSS. The current 30-second limit
+retains the 2 GiB memory bound; the local measurements above used 20 seconds.
+The hosted follow-up passed all 171 commands. `ShutdownProofs` was the longest
+at 24.625 seconds and also had the highest RSS at 1,033,644 KiB.
 
 ## Shutdown deadline invariants
 

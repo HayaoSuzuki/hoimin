@@ -1,6 +1,7 @@
 name = "HoiminOracle"
 version = "0.1.0"
 defaultTargets = ["HoiminOracle"]
+moreLeanArgs = ["-j1", "-DElab.async=false"]
 
 [[lean_lib]]
 name = "HoiminOracle"

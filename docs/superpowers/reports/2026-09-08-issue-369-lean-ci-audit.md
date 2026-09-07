@@ -1,0 +1,225 @@
+# Issue #369: Lean CI audit
+
+## Scope and design
+
+This branch adds a dedicated Linux `lean-audit` job to the blocking CI graph.
+The job installs elan 4.1.2 from its versioned release, selects the repository's
+Lean 4.32.2 toolchain, and caches downloaded toolchains plus Lake output under a key derived from
+the toolchain declaration, Lake configuration, and Lean sources.
+The cache excludes elan binaries so an old cached installer cannot bypass a
+future installer-version update.
+
+The audit is deliberately serial. It first compiles the 88 library source
+modules, the aggregate `HoiminOracle` module, and all 28 executable roots one at
+a time. It requests each module's native object before the aggregate library
+build so later executable links do not trigger concurrent cold compilation.
+It then runs a freshness check for every `lakefile.toml` generator and the
+sensitivity mode exposed by 25 of those 28 generators. The generated corpora,
+state transitions, proofs, and search depths are unchanged. Budget statistics
+now take their depth as an argument and run only on the `--stats` path.
+
+Every build, freshness check, and sensitivity command is wrapped independently
+by `tools/lean_resource_guard.py`. The configuration uses a 30-second timeout, 2 GiB
+aggregate RSS limit, and 250 ms sampling. Lake adds `-j1` and
+`-DElab.async=false` to every Lean invocation. Per-command resource statistics
+are uploaded with `if: always()` so a failed gate retains its reason and peak
+measurement.
+
+## Contract evidence
+
+The workflow contract test executes the actual audit Bash with a recording
+`python3` substitute. It verifies the working directory and every guard
+argument, rejects duplicate statistics paths, and checks fail-fast behavior by
+making the fourth guarded call fail and observing that no fifth call starts.
+
+The same behavioral test derives the expected package module set from the Lean
+sources and executable roots. It requires all 117 targets exactly once and
+checks that every local import precedes its consumer. It also derives executable
+order from `lakefile.toml` and compares the complete command stream against all
+28 corpus files and all 25 supported sensitivity gates. The only root Lean file
+outside that package set is `DiskGuardBrokenConsumer.lean`, an intentionally
+broken proof-consumer fixture rather than a library or executable target.
+
+TDD started with three errors because `lean-audit` did not exist. After adding
+the job, all three behavioral and configuration tests passed. The combined CI
+workflow and resource-guard suite passed 27 tests outside the macOS sandbox;
+the sandboxed attempt returned exit 126 in the four tests that require `ps`
+process-group inspection.
+
+## Initial resource validation
+
+The initial 768 MiB draft could not complete a cold audit.
+Initial aggregate compilation stopped at 804,000 KiB. Adding serial
+Lean elaboration allowed `HoiminOracle.ShutdownModel` to complete on macOS at
+769,248 KiB, but `HoiminOracle.ShutdownProofs` later stopped at 820,624 KiB.
+In an isolated one-CPU Linux container, `HoiminOracle.ShutdownModel` stopped at
+791,580 KiB after 5.706 seconds. Each stop was the guard's expected RSS-limit
+exit 125; no limit was raised and no corpus or proof was changed.
+
+These measurements establish that 768 MiB is not a viable CI bound on either
+tested platform. Follow-up validation uses a 2 GiB limit with the same 20-second
+deadline. The Linux container also enforces 2 GiB with no swap and one CPU;
+the repository sources are read-only and the build cache starts empty.
+
+## Initial 2 GiB validation and startup timeout
+
+The exact workflow Bash ran in `rust:1.98-bookworm` on Linux aarch64 with
+`--memory=2g --memory-swap=2g --cpus=1 --pids-limit=128`. All 117 native module
+builds and the aggregate library build passed from an empty build cache.
+`ShutdownProofs` took 12.424 seconds and peaked at 943,656 KiB.
+The state-machine corpus check also passed.
+
+The next command, `lake exe generate_budget -- --check corpus/budget-cleanup.jsonl`,
+stopped after 20.242 seconds with exit 124 and peak RSS 1,054,276 KiB.
+Of 120 recorded commands, 119 passed and one timed out. The remaining 26
+freshness checks and 25 sensitivity gates did not run because the job is
+fail-fast.
+
+A reduced-work probe omitted Lake and executable linking:
+
+```sh
+python3 tools/lean_resource_guard.py \
+  --timeout-seconds 20 --rss-limit-mib 2048 --sample-ms 250 \
+  --stats /stats/budget-runtime-only.json \
+  -- .lake/build/bin/generate_budget --check corpus/budget-cleanup.jsonl
+```
+
+Under the same container limits, this also stopped with exit 124 after 20.184
+seconds, at 89,632 KiB peak RSS. Separating linking from execution is therefore
+not sufficient. Generated `BudgetModel.c` initializes `reachableStateCount`,
+`checkedTransitionCount`, and `boundedAuditPasses` at module startup. These
+constants evaluate the depth-six exhaustive exploration even though the corpus
+checker does not consume them; `BudgetMain.lean` uses them only in `--stats`.
+
+This was an infrastructure timeout, not a corpus mismatch. At this checkpoint,
+no Lean source, proof, search depth, or generated corpus had changed. No longer
+timeout was attempted.
+
+## Budget statistics startup fix
+
+The three budget statistic functions now accept a depth argument. The
+`@[noinline]` statistics handler receives `auditDepth` only after CLI dispatch
+selects `--stats`. This keeps the exhaustive computation out of native module
+initialization while preserving the prior formulas and depth-six `--stats`
+behavior. The checker still validates the fixed broken-model witnesses before
+checking the corpus. The imported depth-six `native_decide` proof and general
+invariant proofs remain unchanged.
+
+The workflow's bounded budget corpus check is the regression test: it timed out
+before the fix, then passed in 2.299 seconds including executable linking after
+the four affected modules were rebuilt. Peak RSS was 954,812 KiB. A subsequent
+generator-only run passed all 28 freshness checks and all 25 sensitivity gates.
+These results use the same one-CPU, no-swap 2 GiB container and 20-second guard.
+The full cold workflow is checked separately below. The depth-six `--stats`
+mode is not a CI gate and was not rerun with a larger timeout.
+
+## Complete cold validation
+
+The final run executed the unmodified `Run bounded Lean audit` Bash extracted
+from `.github/workflows/ci.yml`. It used an empty Lake cache, read-only sources,
+the pinned Lean 4.32.2 toolchain, and the Linux aarch64 container limits above.
+All 171 guarded commands returned exit 0: 117 native module builds, the
+aggregate library build, 28 corpus freshness checks, and 25 sensitivity gates.
+
+| Measurement | Result |
+| --- | --- |
+| Longest command | `build-HoiminOracle-ShutdownProofs`, 13.198 seconds |
+| Peak aggregate RSS | `check-generate_nested_try_flow`, 1,077,976 KiB |
+| Budget corpus check, including link | 2.124 seconds, 957,176 KiB |
+| Sum of guarded command elapsed times | 458.367 seconds |
+| Timeout or RSS-limit exits | 0 |
+
+The local statistics remain in
+`/private/tmp/hoimin-369-linux.RLwR2T/stats-final/lean-audit`.
+CI uploads the corresponding per-command JSON files as `lean-audit-stats`.
+This run establishes successful model compilation, broken-model detection,
+and corpus freshness in the tested container. The Rust replay tests below
+check implementation correspondence for their covered cases; Lean compilation
+alone does not prove the Rust implementation correct.
+
+## GitHub-hosted timeout and 30-second follow-up
+
+[Run 34152357641, Lean audit](https://github.com/tokyogas-tech/hoimin/actions/runs/34152357641/job/101837367614)
+completed 47 guarded commands before `build-HoiminOracle-ShutdownProofs` timed
+out. Its artifact records 20.243 seconds, exit 124, and 1,022,208 KiB peak RSS.
+The guard reported `timeout`, not an RSS-limit exit or a proof diagnostic.
+The remaining builds and generator gates did not run.
+
+The follow-up changes only the per-command deadline from 20 to 30 seconds.
+The 2 GiB RSS limit, 250 ms sampling, serial execution, proof files, and corpora
+remain unchanged. The earlier local measurements in this report retain their
+original 20-second bound.
+
+[The 30-second follow-up, run 34160946172](https://github.com/tokyogas-tech/hoimin/actions/runs/34160946172/job/101862702913)
+passed the bounded Lean audit step. Its uploaded statistics contain 171
+commands, each with `timeout_ms=30000` and exit 0. `ShutdownProofs` had both the
+longest elapsed time, 24.625 seconds, and the highest RSS, 1,033,644 KiB. Thus
+the retained 2 GiB limit and 30-second deadline covered this hosted run without
+changing proofs or corpus checks. Other CI jobs were still running when these
+Lean statistics were collected.
+
+## Cache-hit setup regression
+
+[Run 34161424781](https://github.com/tokyogas-tech/hoimin/actions/runs/34161424781/job/101864149854)
+restored the toolchain cache, then stopped during setup with `already installed`.
+The audit commands did not run. Reproduction with elan 4.1.2 confirmed that
+`elan toolchain install leanprover/lean4:v4.32.2` returns exit 1 when that
+toolchain is present.
+
+Setup now uses `elan run --install <repository-toolchain> lean --version`.
+This installs only a missing toolchain and verifies that the selected Lean
+binary runs. Setup retains failure propagation rather than accepting an
+installation or execution error.
+
+Three behavioral tests execute the workflow's setup Bash with a controlled
+elan boundary: cold setup executes the pinned Lean version, restored setup
+does not reinstall it, and installation failure returns the original exit
+code. The cold and restored cases failed before the fix and passed after it.
+The combined CI and resource-guard suite passed 30 tests; actionlint and
+`git diff --check` passed.
+
+Two real Linux aarch64 container probes executed the full setup Bash with only
+the installer asset's architecture changed from x86_64 to aarch64. An empty
+elan directory installed elan 4.1.2 and Lean 4.32.2, then printed the selected
+Lean version with exit 0. A second container started without elan binaries and
+mounted only the restored toolchains read-only; it also printed Lean 4.32.2
+and exited 0. Both containers used a hard 2 GiB limit and one CPU. No proof,
+corpus, audit timeout, or memory limit changed in this fix.
+
+## Verification recorded at this checkpoint
+
+| Command | Result |
+| --- | --- |
+| `python3 -m unittest tests.test_ci_workflow.LeanAuditWorkflowContractTests -v` | 3 passed |
+| `python3 -m unittest tests.test_ci_workflow tests.test_lean_resource_guard -v` | 27 passed outside the sandbox |
+| `actionlint .github/workflows/ci.yml` | Exit 1: existing custom runner label `cgroup-v2-delegated` is unknown |
+| `actionlint -ignore 'label "cgroup-v2-delegated" is unknown' .github/workflows/ci.yml` | Exit 0 |
+| `cargo fmt --all -- --check` | Exit 0 |
+| All eight `hoimin-core` `lean_*` integration-test binaries | 31 tests passed |
+| All nineteen `hoimin-cli` `lean_*` integration-test binaries | 72 tests passed |
+| `CARGO_TARGET_DIR=/private/tmp/hoimin-issue-356-target cargo test --workspace --quiet` | Exit 0 on macOS after rebuilding the package artifacts |
+| `git diff --check` | Exit 0 |
+
+The 2 GiB guard change was tested red-to-green against the actual workflow
+command stream. The combined Python suite was rerun and passed all 27 tests.
+The CLI integration tests required the repository Python environment at the
+worktree-relative `.venv` path; a temporary symlink supplied it for the passing
+run and was removed afterwards. An earlier run without that environment failed
+the candidate-ranking adapter's command-launch assertion.
+
+The final full-workspace run first encountered stale test binaries in the shared
+temporary Cargo target directory. Those binaries embedded another worktree's
+`CARGO_MANIFEST_DIR`, so their controlled Python lookup failed before executing
+the end-to-end fixtures. Removing only the `hoimin-cli` and `hoimin-core` build
+artifacts with `cargo clean -p hoimin-cli -p hoimin-core` forced compilation for
+this worktree. The full rerun then passed, including all 54 `run_e2e` tests.
+No Rust source or other worktree was changed, and the temporary `.venv` symlink
+was removed after the run.
+
+The 30-second workflow contract change failed against the former 20-second
+script, then passed after the script update. The combined workflow and guard
+suite passed all 27 tests; actionlint passed with the existing custom-runner
+label warning excluded. `git diff --check` passed.
+
+The local Linux validation used an isolated container; the hosted-runner
+failure and follow-up are recorded separately above.
