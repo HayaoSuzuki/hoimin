@@ -1444,23 +1444,99 @@ mod platform {
     }
 
     fn kill_all_listed_pids(path: &Path) -> Result<(), ResourceError> {
+        kill_all_listed_pids_with(path, open_pidfd, send_sigkill)
+    }
+
+    fn kill_all_listed_pids_with<Handle, OpenPidfd, SendSignal>(
+        path: &Path,
+        mut open_pidfd: OpenPidfd,
+        mut send_signal: SendSignal,
+    ) -> Result<(), ResourceError>
+    where
+        OpenPidfd: FnMut(i32) -> io::Result<Handle>,
+        SendSignal: FnMut(&Handle) -> io::Result<()>,
+    {
         for cgroup in cgroup_tree(path)? {
             let procs = fs::read(cgroup.join("cgroup.procs"))
                 .map_err(|error| cleanup_error(&cgroup, error))?;
             for pid in parse_member_pids(&procs)? {
-                let pid = i32::try_from(pid)
-                    .map_err(|_| cleanup_error(&cgroup, io::Error::other("cgroup pid overflow")))?;
-                // SAFETY: pid was read immediately from this owned cgroup's membership file.
-                let result = unsafe { libc::kill(pid, libc::SIGKILL) };
-                if result != 0 {
-                    let error = io::Error::last_os_error();
-                    if error.raw_os_error() != Some(libc::ESRCH) {
-                        return Err(cleanup_error(&cgroup, error));
-                    }
-                }
+                signal_verified_member(
+                    &cgroup,
+                    pid,
+                    &mut open_pidfd,
+                    |path| {
+                        let procs = fs::read(path.join("cgroup.procs"))
+                            .map_err(|error| cleanup_error(path, error))?;
+                        parse_member_pids(&procs)
+                    },
+                    &mut send_signal,
+                )?;
             }
         }
         Ok(())
+    }
+
+    fn signal_verified_member<Handle, OpenPidfd, ReadMembership, SendSignal>(
+        cgroup: &Path,
+        pid: u32,
+        open_pidfd: OpenPidfd,
+        read_membership: ReadMembership,
+        send_signal: SendSignal,
+    ) -> Result<(), ResourceError>
+    where
+        OpenPidfd: FnOnce(i32) -> io::Result<Handle>,
+        ReadMembership: FnOnce(&Path) -> Result<Vec<u32>, ResourceError>,
+        SendSignal: FnOnce(&Handle) -> io::Result<()>,
+    {
+        let numeric_pid = i32::try_from(pid)
+            .map_err(|_| cleanup_error(cgroup, io::Error::other("cgroup pid overflow")))?;
+        let handle = match open_pidfd(numeric_pid) {
+            Ok(handle) => handle,
+            Err(error) if error.raw_os_error() == Some(libc::ESRCH) => return Ok(()),
+            Err(error) => return Err(cleanup_error(cgroup, error)),
+        };
+        if !read_membership(cgroup)?.contains(&pid) {
+            return Ok(());
+        }
+        match send_signal(&handle) {
+            Ok(()) => Ok(()),
+            Err(error) if error.raw_os_error() == Some(libc::ESRCH) => Ok(()),
+            Err(error) => Err(cleanup_error(cgroup, error)),
+        }
+    }
+
+    fn open_pidfd(pid: i32) -> io::Result<std::os::fd::OwnedFd> {
+        use std::os::fd::FromRawFd;
+
+        // SAFETY: pidfd_open receives a valid scalar PID and zero flags.
+        let result = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0_u32) };
+        if result < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let descriptor = i32::try_from(result).expect("Linux file descriptors fit c_int");
+        // SAFETY: pidfd_open returned a new owned descriptor with close-on-exec set.
+        Ok(unsafe { std::os::fd::OwnedFd::from_raw_fd(descriptor) })
+    }
+
+    fn send_sigkill(pidfd: &std::os::fd::OwnedFd) -> io::Result<()> {
+        use std::os::fd::AsRawFd;
+
+        // SAFETY: pidfd remains live for the call, the signal is valid, and null info with zero
+        // flags requests kill(2)-equivalent signal metadata.
+        let result = unsafe {
+            libc::syscall(
+                libc::SYS_pidfd_send_signal,
+                pidfd.as_raw_fd(),
+                libc::SIGKILL,
+                std::ptr::null::<libc::siginfo_t>(),
+                0_u32,
+            )
+        };
+        if result < 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
     }
 
     fn kill_verified_live_group(path: &Path, pid: i32) -> Result<(), ResourceError> {
@@ -1574,11 +1650,193 @@ mod platform {
 
     #[cfg(test)]
     mod tests {
+        use std::cell::{Cell, RefCell};
+        use std::io;
+        use std::os::unix::process::ExitStatusExt;
+        use std::path::Path;
         use std::process::{Child, Command};
 
         use super::{
-            LinuxRunCgroup, RunState, system_page_size, wait_for_launcher_stop, write_memory_limit,
+            LinuxRunCgroup, RunState, kill_all_listed_pids_with, open_pidfd, send_sigkill,
+            signal_verified_member, system_page_size, wait_for_launcher_stop, write_memory_limit,
         };
+
+        struct DropRecorder<'a>(&'a Cell<usize>);
+
+        impl Drop for DropRecorder<'_> {
+            fn drop(&mut self) {
+                self.0.set(self.0.get() + 1);
+            }
+        }
+
+        #[test]
+        fn cleanup_rechecks_fake_cgroup_membership_after_opening_pidfd() {
+            let cgroup = tempfile::tempdir().unwrap();
+            let membership = cgroup.path().join("cgroup.procs");
+            std::fs::write(&membership, b"41\n").unwrap();
+            let opened = Cell::new(0);
+
+            kill_all_listed_pids_with(
+                cgroup.path(),
+                |pid| {
+                    assert_eq!(pid, 41);
+                    opened.set(opened.get() + 1);
+                    std::fs::write(&membership, b"").unwrap();
+                    Ok("original process")
+                },
+                |_| panic!("a process that migrated away must not be signaled"),
+            )
+            .unwrap();
+
+            assert_eq!(opened.get(), 1);
+        }
+
+        #[test]
+        fn pidfd_signal_targets_the_acquired_process() {
+            let mut child = ReapingChild(
+                Command::new("sleep")
+                    .arg("60")
+                    .spawn()
+                    .expect("spawn pidfd target"),
+            );
+            let pid = i32::try_from(child.0.id()).expect("fixture pid fits i32");
+
+            let pidfd = open_pidfd(pid).expect("acquire child pidfd");
+            send_sigkill(&pidfd).expect("signal child through pidfd");
+            let status = child.0.wait().expect("reap pidfd target");
+
+            assert_eq!(status.signal(), Some(libc::SIGKILL));
+        }
+
+        #[test]
+        fn member_is_revalidated_after_pidfd_acquisition() {
+            let events = RefCell::new(Vec::new());
+            let signaled = Cell::new(false);
+
+            signal_verified_member(
+                Path::new("/owned"),
+                41,
+                |pid| {
+                    events.borrow_mut().push("open");
+                    assert_eq!(pid, 41);
+                    Ok("original process")
+                },
+                |_| {
+                    events.borrow_mut().push("membership");
+                    Ok(Vec::new())
+                },
+                |_| {
+                    events.borrow_mut().push("signal");
+                    signaled.set(true);
+                    Ok(())
+                },
+            )
+            .unwrap();
+
+            assert_eq!(*events.borrow(), ["open", "membership"]);
+            assert!(!signaled.get());
+        }
+
+        #[test]
+        fn signal_uses_the_handle_acquired_before_membership_validation() {
+            signal_verified_member(
+                Path::new("/owned"),
+                41,
+                |_| Ok("original process"),
+                |_| Ok(vec![41]),
+                |handle| {
+                    assert_eq!(*handle, "original process");
+                    Ok(())
+                },
+            )
+            .unwrap();
+        }
+
+        #[test]
+        fn process_exit_before_pidfd_acquisition_is_not_a_cleanup_error() {
+            let membership_read = Cell::new(false);
+            let signaled = Cell::new(false);
+
+            signal_verified_member(
+                Path::new("/owned"),
+                41,
+                |_| Err::<(), _>(std::io::Error::from_raw_os_error(libc::ESRCH)),
+                |_| {
+                    membership_read.set(true);
+                    Ok(vec![41])
+                },
+                |()| {
+                    signaled.set(true);
+                    Ok(())
+                },
+            )
+            .unwrap();
+
+            assert!(!membership_read.get());
+            assert!(!signaled.get());
+        }
+
+        #[test]
+        fn process_exit_after_pidfd_acquisition_is_not_a_cleanup_error() {
+            signal_verified_member(
+                Path::new("/owned"),
+                41,
+                |_| Ok("original process"),
+                |_| Ok(vec![41]),
+                |_| Err(std::io::Error::from_raw_os_error(libc::ESRCH)),
+            )
+            .unwrap();
+        }
+
+        #[test]
+        fn pidfd_open_failures_are_fail_closed() {
+            for error_code in [libc::ENOSYS, libc::EPERM, libc::EMFILE, libc::EINVAL] {
+                let membership_read = Cell::new(false);
+                let signaled = Cell::new(false);
+                let error = signal_verified_member(
+                    Path::new("/owned"),
+                    41,
+                    |_| Err::<(), _>(io::Error::from_raw_os_error(error_code)),
+                    |_| {
+                        membership_read.set(true);
+                        Ok(vec![41])
+                    },
+                    |()| {
+                        signaled.set(true);
+                        Ok(())
+                    },
+                )
+                .unwrap_err();
+
+                let super::ResourceError::CgroupCleanup { source, .. } = error else {
+                    panic!("unexpected error: {error}");
+                };
+                assert_eq!(source.raw_os_error(), Some(error_code));
+                assert!(!membership_read.get());
+                assert!(!signaled.get());
+            }
+        }
+
+        #[test]
+        fn pidfd_signal_failures_are_fail_closed_and_release_the_handle() {
+            for error_code in [libc::ENOSYS, libc::EPERM, libc::EINVAL] {
+                let drops = Cell::new(0);
+                let error = signal_verified_member(
+                    Path::new("/owned"),
+                    41,
+                    |_| Ok(DropRecorder(&drops)),
+                    |_| Ok(vec![41]),
+                    |_| Err(io::Error::from_raw_os_error(error_code)),
+                )
+                .unwrap_err();
+
+                let super::ResourceError::CgroupCleanup { source, .. } = error else {
+                    panic!("unexpected error: {error}");
+                };
+                assert_eq!(source.raw_os_error(), Some(error_code));
+                assert_eq!(drops.get(), 1);
+            }
+        }
 
         #[test]
         fn page_sized_memory_limits_are_written_and_verified() {
