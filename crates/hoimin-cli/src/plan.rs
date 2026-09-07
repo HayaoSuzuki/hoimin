@@ -548,6 +548,7 @@ fn validate_header(manifest: &PlanManifest) -> Result<(), PlanError> {
     }
 
     validate_ranking(&manifest.candidates).map_err(PlanError::ManifestInvalid)?;
+    validate_candidate_sequences(&manifest.candidates)?;
     let mut candidate_ids = BTreeSet::new();
     for candidate in &manifest.candidates {
         if !valid_candidate_id(&candidate.id) {
@@ -566,6 +567,29 @@ fn validate_header(manifest: &PlanManifest) -> Result<(), PlanError> {
             return Err(PlanError::CandidateInvalid(format!(
                 "candidate path is not root-relative: {}",
                 candidate.path
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_candidate_sequences(candidates: &[RankedPlanCandidate]) -> Result<(), PlanError> {
+    let mut sequences = candidates
+        .iter()
+        .map(|candidate| candidate.sequence)
+        .collect::<Vec<_>>();
+    sequences.sort_unstable();
+    for (index, sequence) in sequences.into_iter().enumerate() {
+        let expected = u64::try_from(index)
+            .ok()
+            .and_then(|index| index.checked_add(1))
+            .ok_or_else(|| {
+                PlanError::CandidateInvalid("candidate sequence count overflow".to_owned())
+            })?;
+        if sequence != expected {
+            return Err(PlanError::CandidateInvalid(format!(
+                "candidate sequences must be a permutation of 1..={}; expected {expected}, got {sequence}",
+                candidates.len()
             )));
         }
     }
@@ -678,6 +702,7 @@ async fn validate_requested_candidates(
         .iter()
         .map(|candidate| (candidate.id.as_str(), &candidate.candidate))
         .collect::<BTreeMap<_, _>>();
+    let mut requested_paths = BTreeSet::new();
     let mut source_bytes = BTreeMap::new();
     for candidate_id in requested_ids {
         let candidate = candidates.get(candidate_id.as_str()).ok_or_else(|| {
@@ -689,6 +714,7 @@ async fn validate_requested_candidates(
                 candidate.path
             )));
         }
+        requested_paths.insert(candidate.path.clone());
         let source = if let Some(source) = source_bytes.get(&candidate.path) {
             source
         } else {
@@ -713,9 +739,10 @@ async fn validate_requested_candidates(
         }
     }
 
+    let discovery_targets = requested_discovery_targets(targets, &requested_paths);
     let discovery = discover_plan_targets(
         &config.root,
-        targets,
+        &discovery_targets,
         &config.operators,
         config.profile,
         config.limits.max_candidates.get(),
@@ -739,13 +766,24 @@ async fn validate_requested_candidates(
                 "candidate is not discoverable under the planned configuration: {candidate_id}"
             ))
         })?;
-        if *current != *planned {
+        if candidate_descriptor(current) != candidate_descriptor(planned) {
             return Err(PlanError::CandidateInvalid(format!(
                 "candidate descriptor differs for {candidate_id}"
             )));
         }
     }
     Ok(())
+}
+
+fn requested_discovery_targets(
+    targets: &[TargetSlice],
+    requested_paths: &BTreeSet<Utf8PathBuf>,
+) -> Vec<TargetSlice> {
+    targets
+        .iter()
+        .filter(|target| requested_paths.contains(&target.path))
+        .cloned()
+        .collect()
 }
 
 fn candidate_descriptor(candidate: &MutationCandidate) -> CandidateDescriptor {
@@ -793,6 +831,7 @@ fn plan_diagnostic(diagnostic: &AnalyzerDiagnostic) -> PlanDiagnostic {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::ffi::OsString;
     use std::fmt::Write as _;
     use std::sync::{Arc, mpsc};
@@ -800,7 +839,8 @@ mod tests {
 
     use camino::Utf8PathBuf;
     use hoimin_core::{
-        ByteSpan, CommandArg, EffectFailed, EffectId, MutationCandidate, RawRunConfig, RunConfig,
+        ByteSpan, CommandArg, EffectFailed, EffectId, LineRange, MutationCandidate, RawRunConfig,
+        RunConfig, TargetSlice,
     };
 
     use crate::analyzer::DiscoveryControl;
@@ -809,7 +849,7 @@ mod tests {
     use super::{
         DiscoveryCaller, PLAN_SCHEMA_VERSION, PlanError, PlanManifest, RANKING_RULE_VERSION,
         RankedPlanCandidate, create_with_discovery_control, map_discovery_error, plan_output,
-        prepare_verify_with_discovery_control,
+        prepare_verify_with_discovery_control, requested_discovery_targets,
     };
 
     struct Project {
@@ -968,6 +1008,36 @@ mod tests {
         assert!(
             matches!(error, PlanError::ManifestInvalid(message) if message == "candidate ranking must contain exactly one operator reason, got 0")
         );
+    }
+
+    #[test]
+    fn verification_discovery_retains_only_requested_candidate_files_and_their_slices() {
+        let first_requested = TargetSlice {
+            path: Utf8PathBuf::from("src/z_requested.py"),
+            lines: vec![LineRange { start: 4, end: 9 }],
+            symbols: vec!["z_selected".to_owned()],
+        };
+        let second_requested = TargetSlice {
+            path: Utf8PathBuf::from("src/a_requested.py"),
+            lines: vec![LineRange { start: 12, end: 18 }],
+            symbols: vec!["a_selected".to_owned()],
+        };
+        let targets = vec![
+            first_requested.clone(),
+            TargetSlice {
+                path: Utf8PathBuf::from("src/omitted.py"),
+                lines: Vec::new(),
+                symbols: Vec::new(),
+            },
+            second_requested.clone(),
+        ];
+
+        let actual = requested_discovery_targets(
+            &targets,
+            &BTreeSet::from([first_requested.path.clone(), second_requested.path.clone()]),
+        );
+
+        assert_eq!(actual, vec![first_requested, second_requested]);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
