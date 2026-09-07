@@ -929,11 +929,7 @@ where
         }
         RunEffect::CreateWorker(request) => context.workspace_mut().prepare_create_task(request),
         RunEffect::ReadCandidate(request) => return Ok(BlockingEffect::Candidate(request)),
-        RunEffect::ApplyMutation(request) => {
-            let candidate = request.candidate.clone();
-            context.active_candidates.insert(request.worker, candidate);
-            context.workspace_mut().prepare_apply_task(request)
-        }
+        RunEffect::ApplyMutation(request) => context.workspace_mut().prepare_apply_task(request),
         RunEffect::ResetWorker(request) => context.workspace_mut().prepare_reset_task(request),
         RunEffect::VerifyOriginals(request) => context.workspace().prepare_verify_task(request),
         RunEffect::Cleanup(request) => {
@@ -965,7 +961,7 @@ where
     Stdout: Write,
     Stderr: Write,
 {
-    let event = match completion {
+    match completion {
         BlockingEffectCompletion::Workspace(completion) => context
             .workspace_mut()
             .accept_task_completion(*completion)
@@ -988,23 +984,7 @@ where
             context.blocking_secondary_errors.extend(secondary_errors);
             *event
         }
-    };
-    match &event {
-        RunEvent::CandidateLoaded(value) => {
-            if let Some(candidate) = &value.candidate {
-                context
-                    .active_candidates
-                    .insert(value.worker, candidate.clone());
-            } else {
-                context.active_candidates.remove(&value.worker);
-            }
-        }
-        RunEvent::WorkerReset(value) => {
-            context.active_candidates.remove(&value.worker);
-        }
-        _ => {}
     }
-    event
 }
 
 #[cfg(test)]
@@ -1030,24 +1010,14 @@ where
         RunEffect::ApplyMutation(request) => {
             let candidate = request.candidate.clone();
             context
-                .active_candidates
-                .insert(request.worker, candidate.clone());
-            context
                 .workspace_mut()
                 .handle_apply_mutation(request, &candidate)
                 .map(RunEvent::MutationApplied)
         }
-        RunEffect::ResetWorker(request) => {
-            let worker = request.worker;
-            let result = context
-                .workspace_mut()
-                .handle_reset_worker(request)
-                .map(RunEvent::WorkerReset);
-            if result.is_ok() {
-                context.active_candidates.remove(&worker);
-            }
-            result
-        }
+        RunEffect::ResetWorker(request) => context
+            .workspace_mut()
+            .handle_reset_worker(request)
+            .map(RunEvent::WorkerReset),
         RunEffect::VerifyOriginals(request) => context
             .workspace()
             .handle_verify_originals(request)
@@ -1817,7 +1787,6 @@ pub struct ShellContext<Stdout, Stderr> {
     report: ReportHandler<Stdout, Stderr>,
     session: Option<SessionDispatcher>,
     session_path: Option<Utf8PathBuf>,
-    active_candidates: BTreeMap<u32, hoimin_core::MutationCandidate>,
     spool_dir: Arc<ManagedShellRoots>,
     resolved_targets: Option<Vec<TargetSlice>>,
     config: RunConfig,
@@ -1862,7 +1831,6 @@ where
             report: report.attach(stdout, stderr),
             session: None,
             session_path,
-            active_candidates: BTreeMap::new(),
             spool_dir,
             resolved_targets: None,
             config,
