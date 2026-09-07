@@ -124,6 +124,12 @@ By default, there are no include/exclude overrides or SQLite session, and `--cha
 
 Every numeric limit must be nonzero. Memory, process, copy, and total-timeout limits are run-wide and are not multiplied by `--jobs`. On Windows, Job Objects provide hard process and memory enforcement. On Linux, delegated cgroup v2 provides hard enforcement. When hard enforcement is unavailable, Unix uses best-effort process groups and non-macOS Unix also applies per-process `RLIMIT_AS`. Linux and macOS require explicit `--allow-best-effort-memory` approval for this policy. On macOS, the memory limit is not enforced. Hoimin uses monotonic wall-clock deadlines on portable Unix and, on timeout or cancellation while it owns a live root, terminates that process group and reaps the root. Cleanup of descendants after the root exits naturally is not guaranteed. Reports identify `hard` or `best_effort` resource mode.
 
+Linux cgroup hard enforcement requires `--max-memory` to be at least one host
+page. Smaller values fail before a test-process cgroup is created or the test command starts;
+the diagnostic reports the host-specific minimum. Larger limits continue to
+round down to page granularity. This does not impose a new minimum on macOS or
+portable best-effort backends.
+
 `--max-copy-size` counts copied source bytes across workers. `--max-workspace-size`
 counts generated workspace bytes, including materialized workers and run-owned output.
 Keep the 10 GiB reserve even when the workspace limit is smaller. In this policy,
