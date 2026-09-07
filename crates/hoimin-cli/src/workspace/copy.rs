@@ -963,7 +963,6 @@ mod tests {
         let entry = |path: &str| ManifestEntry {
             path: Utf8PathBuf::from(path),
             size: u64::try_from(bytes.len()).unwrap(),
-            modified: None,
             blake3: blake3::hash(bytes),
         };
         let manifest =

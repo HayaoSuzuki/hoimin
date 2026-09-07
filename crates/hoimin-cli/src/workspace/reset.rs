@@ -276,6 +276,72 @@ mod tests {
     }
 
     #[test]
+    fn reset_skips_reading_shorter_worker_contents() {
+        assert_size_mismatch_skips_worker_read(4);
+    }
+
+    #[test]
+    fn reset_skips_reading_larger_worker_contents() {
+        assert_size_mismatch_skips_worker_read(2 * 1024 * 1024);
+    }
+
+    #[test]
+    fn reset_restores_empty_worker_contents() {
+        assert_size_mismatch_skips_worker_read(0);
+    }
+
+    fn assert_size_mismatch_skips_worker_read(changed_bytes: usize) {
+        const PADDING_BYTES: usize = 1024 * 1024;
+        let (_project, mut worker, snapshot_permissions) =
+            changed_worker_with_padding(PADDING_BYTES);
+        worker
+            .write("swap/target.py", &vec![b'x'; changed_bytes])
+            .unwrap();
+        reset_io_metrics();
+
+        worker.reset().unwrap();
+
+        let fixture_bytes = (PADDING_BYTES + b"original\n".len()) as u64;
+        let verification_passes = u64::from(cfg!(feature = "contracts"));
+        assert_eq!(
+            current_reset_io_metrics(),
+            ResetIoMetrics {
+                tree_walks: 1 + verification_passes,
+                worker_bytes: PADDING_BYTES as u64 + verification_passes * fixture_bytes,
+                snapshot_bytes: (1 + verification_passes) * fixture_bytes,
+            }
+        );
+        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
+        assert_eq!(
+            permission_fingerprint(&worker.root().join("swap/target.py")),
+            snapshot_permissions
+        );
+    }
+
+    #[test]
+    fn reset_compares_same_size_contents_with_preserved_mtime() {
+        let (_project, mut worker, _snapshot_permissions) = changed_worker();
+        worker.reset().unwrap();
+        let path = worker.root().join("swap/target.py");
+        let modified = fs::metadata(&path).unwrap().modified().unwrap();
+        fs::write(&path, b"mutated!\n").unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(modified))
+            .unwrap();
+        assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), modified);
+        reset_io_metrics();
+
+        worker.reset().unwrap();
+
+        let expected_reads = if cfg!(feature = "contracts") { 18 } else { 9 };
+        assert_eq!(current_reset_io_metrics().worker_bytes, expected_reads);
+        assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
+    }
+
+    #[test]
     #[ignore = "manual before/after performance evidence"]
     fn benchmark_workspace_reset_io() {
         const CYCLES: u64 = 10;

@@ -925,6 +925,10 @@ impl WorkerRoot {
         if is_link_or_reparse(&metadata) || !metadata.is_file() {
             return Ok(false);
         }
+        // A size mismatch proves inequality; matching metadata never proves equal contents.
+        if metadata.len() != expected.len() as u64 {
+            return Ok(false);
+        }
         #[cfg(windows)]
         {
             let (bytes, permissions) = windows::snapshot(&parent, &name, path)?;
@@ -945,7 +949,7 @@ impl WorkerRoot {
             let file_metadata = file
                 .metadata()
                 .map_err(|error| WorkspaceError::io("verify restored file", path, error))?;
-            if !file_metadata.is_file() {
+            if !file_metadata.is_file() || file_metadata.len() != expected.len() as u64 {
                 return Ok(false);
             }
             let mut bytes = Vec::new();
