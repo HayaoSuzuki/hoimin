@@ -63,8 +63,10 @@ theorem successful_replacement_is_exact
       · simp_all [reject]
       · split at accepted
         · simp_all [reject]
-        · rw [present]
-          simp_all [SameExceptResult, accept]
+        · split at accepted
+          · simp_all [reject]
+          · rw [present]
+            simp_all [SameExceptResult, accept]
 
 private theorem filtered_owner_is_absent (owners : List (Run × Handler))
     (handler : Handler) :
@@ -117,6 +119,23 @@ theorem non_owner_finish_is_rejected_without_state_change
     (step state (.finish handler run complete)).rejection.isSome = true ∧
       (step state (.finish handler run complete)).state = state := by
   simp [step, finishRun, live, notOwner, reject]
+
+theorem non_owner_persist_is_rejected_without_state_change
+    (state : State) (handler : Handler) (run : Run) (mutant : Mutant)
+    (status : Status) (payload : Payload) (validity : PersistValidity)
+    (live : handlerLive state handler = true)
+    (notOwner : owns state run handler = false) :
+    (step state (.persist handler run mutant status payload validity)).rejection = some .notOwner ∧
+      (step state (.persist handler run mutant status payload validity)).state = state := by
+  simp [step, persistResult, live, notOwner, reject]
+
+theorem non_owner_lookup_is_rejected_without_state_change
+    (state : State) (handler : Handler) (run : Run) (mutant : Mutant)
+    (live : handlerLive state handler = true)
+    (notOwner : owns state run handler = false) :
+    (step state (.lookup handler run mutant)).rejection = some .notOwner ∧
+      (step state (.lookup handler run mutant)).state = state := by
+  simp [step, lookupResult, live, notOwner, reject]
 
 private theorem ownerCount_after_release (state : State) (run : Run) :
     ownerCount (releaseRun state run) run = 0 := by

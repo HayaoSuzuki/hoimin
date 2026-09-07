@@ -157,8 +157,10 @@ fn validate_case(case: &OracleCase) -> Result<(), String> {
                     | "session.finish.owner"
                     | "session.finish.state"
                     | "session.lookup.complete"
+                    | "session.lookup.owner"
                     | "session.lookup.state"
                     | "session.persist.complete"
+                    | "session.persist.owner"
                     | "session.persist.diagnostic"
                     | "session.resume.active"
             )
@@ -754,7 +756,7 @@ fn mismatch_detail(result: &CaseResult) -> String {
 
 #[test]
 fn corpus_is_well_formed() {
-    assert_eq!(parse_corpus(corpus_text()).unwrap().len(), 18);
+    assert_eq!(parse_corpus(corpus_text()).unwrap().len(), 20);
 }
 
 #[test]

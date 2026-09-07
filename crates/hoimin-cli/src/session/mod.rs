@@ -145,17 +145,19 @@ impl SessionHandler {
         })
     }
 
-    /// Looks up a stored mutant result for an incomplete run.
+    /// Looks up a stored mutant result for an owned, incomplete run.
     ///
     /// # Errors
     ///
-    /// Returns [`EffectFailed`] when the run is unavailable for resumption, the database cannot
-    /// be read, or stored rows are inconsistent.
+    /// Returns [`EffectFailed`] when this handler does not own the run, the run is unavailable
+    /// for resumption, the database cannot be read, or stored rows are inconsistent. Ownership
+    /// must be acquired through `begin` or `load`, and is released by a successful `finish`.
     pub fn lookup(
         &mut self,
         request: &LookupStoredResult,
     ) -> Result<StoredResultLoaded, EffectFailed> {
         let id = request.id;
+        self.require_ownership(id, &request.run_id, "session.lookup.owner")?;
         let worker = request.worker;
         let complete = self
             .connection
@@ -252,11 +254,13 @@ impl SessionHandler {
     ///
     /// # Errors
     ///
-    /// Returns [`EffectFailed`] when the run is complete, the result conflicts with stored data,
-    /// diagnostics do not match the mutant, or the database transaction fails.
+    /// Returns [`EffectFailed`] when this handler does not own the run, the run is complete,
+    /// the result conflicts with stored data, diagnostics do not match the mutant, or the
+    /// database transaction fails. Ownership must be acquired through `begin` or `load`, and
+    /// is released by a successful `finish`.
     pub fn persist(&mut self, request: &PersistResult) -> Result<ResultPersisted, EffectFailed> {
         let id = request.id;
-        let worker = request.worker;
+        self.require_ownership(id, &request.result.run_id, "session.persist.owner")?;
         let run_id = request.result.run_id.clone();
         let mutant_id = request.result.candidate.id.clone();
         let transaction = self
@@ -353,7 +357,7 @@ impl SessionHandler {
         );
         Ok(ResultPersisted {
             id,
-            worker,
+            worker: request.worker,
             run_id,
             mutant_id,
         })
@@ -368,13 +372,7 @@ impl SessionHandler {
     /// successful finish releases ownership, so later finish calls require a new load first.
     pub fn finish(&mut self, request: FinishSession) -> Result<SessionFinished, EffectFailed> {
         let id = request.id;
-        if !self.ownerships.contains_key(&request.run_id) {
-            return Err(state_failure(
-                id,
-                "session.finish.owner",
-                "handler does not own run",
-            ));
-        }
+        self.require_ownership(id, &request.run_id, "session.finish.owner")?;
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -406,6 +404,19 @@ impl SessionHandler {
             run_id: request.run_id,
             complete: request.complete,
         })
+    }
+
+    fn require_ownership(
+        &self,
+        id: EffectId,
+        run_id: &str,
+        code: &str,
+    ) -> Result<(), EffectFailed> {
+        if self.ownerships.contains_key(run_id) {
+            Ok(())
+        } else {
+            Err(state_failure(id, code, "handler does not own run"))
+        }
     }
 
     fn acquire_ownership(
