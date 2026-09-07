@@ -60,3 +60,11 @@ docker run --rm --mount type=bind,source=/Users/hayao/RustroverProjects/hoimin/.
 ```
 
 This check passed. The exclusion covers only the existing custom self-hosted Linux label. The existing manual `non-linux-ci.yml` workflow is unchanged and was not dispatched.
+
+The next Linux Wheel smoke run reached Python tests and failed its Lean workflow contract: the fixture hardcoded 117 modules, while the new model brought discovery to 118. The revised test compares the executed module set with discovered sources, checks the guarded resource-audit command and depth, and verifies that a resource-audit failure stops execution before corpus checks. The focused CI workflow suite passed all 26 tests. No production Python code changed, so mutation testing has no production target.
+
+The first local full Python run also encountered `monitor_error` in four pre-existing process-monitor tests because the sandbox denied process/RSS observation. Those failures are infrastructure errors. With process monitoring permitted, the full suite passed: 862 tests, 56 platform skips, 42.363 seconds.
+
+```sh
+/Users/hayao/RustroverProjects/hoimin/.venv/bin/python -m unittest discover -s tests -p 'test_*.py'
+```
