@@ -806,19 +806,22 @@ impl BlockingEffect {
                 targets,
                 resource_mode,
             } => {
+                let mut run_fingerprint = None;
                 let event = match workspace.handle_preflight_validated(request, |root, manifest| {
-                    recheck_fingerprint_inputs(&config, root, manifest, &copied_at_start, id)
+                    recheck_fingerprint_inputs(&config, root, manifest, &copied_at_start, id)?;
+                    run_fingerprint = Some(prepare_manifest_fingerprint(
+                        &config,
+                        &targets,
+                        resource_mode,
+                        manifest,
+                        id,
+                    )?);
+                    Ok(())
                 }) {
-                    Ok(mut value) => match prepare_fingerprint(&config, &targets, resource_mode) {
-                        Ok(run_fingerprint) => {
-                            value.fingerprint = Some(run_fingerprint);
-                            RunEvent::PreflightCompleted(value)
-                        }
-                        Err(mut error) => {
-                            error.id = value.id;
-                            RunEvent::EffectFailed(error)
-                        }
-                    },
+                    Ok(mut value) => {
+                        value.fingerprint = run_fingerprint;
+                        RunEvent::PreflightCompleted(value)
+                    }
                     Err(error) => RunEvent::EffectFailed(error),
                 };
                 BlockingEffectCompletion::OwnedWorkspace {
@@ -1903,20 +1906,28 @@ where
     }
 }
 
-fn prepare_fingerprint(
+fn prepare_manifest_fingerprint(
     config: &RunConfig,
     targets: &[TargetSlice],
     resource_mode: ResourceMode,
+    manifest: &WorkspaceManifest,
+    id: EffectId,
 ) -> Result<hoimin_core::RunFingerprint, EffectFailed> {
-    let id = EffectId(0);
     let mut sources = Vec::with_capacity(targets.len());
     for target in targets {
-        let bytes = std::fs::read(config.root.join(&target.path)).map_err(|error| {
-            EffectFailed::other(id, "fingerprint.source.read", error.to_string())
+        let entry = manifest.entry(&target.path).ok_or_else(|| {
+            EffectFailed::other(
+                id,
+                "fingerprint.source.manifest_missing",
+                format!(
+                    "fingerprint source is not in the workspace manifest: {}",
+                    target.path
+                ),
+            )
         })?;
         sources.push(SourceHash {
             path: target.path.clone(),
-            hash: *blake3::hash(&bytes).as_bytes(),
+            hash: *entry.blake3.as_bytes(),
         });
     }
     Ok(fingerprint(&FingerprintInput::from_config(
@@ -8142,6 +8153,144 @@ mod tests {
         assert_eq!(completed.id, EffectId(17));
         assert_eq!(completed.fingerprint, Some(expected_fingerprint));
         assert!(context.workspace.is_some());
+    }
+
+    #[test]
+    fn manifest_fingerprint_uses_snapshotted_hash_after_target_changes() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"original\n").unwrap();
+        let config = crate::cli::parse_config_from([
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+            OsString::from("unused-test-command"),
+        ])
+        .unwrap();
+        let targets = vec![TargetSlice {
+            path: Utf8PathBuf::from("target.py"),
+            lines: Vec::new(),
+            symbols: Vec::new(),
+        }];
+        let manifest =
+            crate::workspace::build_validation_manifest(&config.root, &CopyOptions::default())
+                .unwrap();
+        std::fs::write(project.path().join("target.py"), b"changed\n").unwrap();
+
+        let actual = prepare_manifest_fingerprint(
+            &config,
+            &targets,
+            ResourceMode::BestEffort,
+            &manifest,
+            EffectId(51),
+        )
+        .unwrap();
+        let expected = fingerprint(&FingerprintInput::from_config(
+            &config,
+            vec![SourceHash {
+                path: Utf8PathBuf::from("target.py"),
+                hash: *blake3::hash(b"original\n").as_bytes(),
+            }],
+            targets,
+            ResourceMode::BestEffort,
+        ));
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn manifest_fingerprint_uses_snapshotted_hash_after_target_is_removed() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"original\n").unwrap();
+        let config = crate::cli::parse_config_from([
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+            OsString::from("unused-test-command"),
+        ])
+        .unwrap();
+        let targets = vec![TargetSlice {
+            path: Utf8PathBuf::from("target.py"),
+            lines: Vec::new(),
+            symbols: Vec::new(),
+        }];
+        let manifest =
+            crate::workspace::build_validation_manifest(&config.root, &CopyOptions::default())
+                .unwrap();
+        std::fs::remove_file(project.path().join("target.py")).unwrap();
+
+        let actual = prepare_manifest_fingerprint(
+            &config,
+            &targets,
+            ResourceMode::BestEffort,
+            &manifest,
+            EffectId(52),
+        )
+        .unwrap();
+        let expected = fingerprint(&FingerprintInput::from_config(
+            &config,
+            vec![SourceHash {
+                path: Utf8PathBuf::from("target.py"),
+                hash: *blake3::hash(b"original\n").as_bytes(),
+            }],
+            targets,
+            ResourceMode::BestEffort,
+        ));
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn manifest_fingerprint_rejects_target_missing_from_manifest() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), b"original\n").unwrap();
+        let config = crate::cli::parse_config_from([
+            OsString::from("hoimin"),
+            OsString::from("run"),
+            OsString::from("--root"),
+            project.path().as_os_str().to_owned(),
+            OsString::from("--file"),
+            OsString::from("target.py"),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+            OsString::from("unused-test-command"),
+        ])
+        .unwrap();
+        let targets = vec![TargetSlice {
+            path: Utf8PathBuf::from("target.py"),
+            lines: Vec::new(),
+            symbols: Vec::new(),
+        }];
+        let manifest = crate::workspace::build_validation_manifest(
+            &config.root,
+            &CopyOptions {
+                includes: Vec::new(),
+                excludes: vec!["target.py".to_owned()],
+            },
+        )
+        .unwrap();
+
+        let error = prepare_manifest_fingerprint(
+            &config,
+            &targets,
+            ResourceMode::BestEffort,
+            &manifest,
+            EffectId(53),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.id, EffectId(53));
+        assert_eq!(error.failure.code(), "fingerprint.source.manifest_missing");
+        assert!(error.failure.message().contains("target.py"));
     }
 
     #[tokio::test]
