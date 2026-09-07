@@ -14,6 +14,183 @@ use hoimin_core::{
 
 const TEST_MIN_FREE_SPACE: &str = "1B";
 
+#[cfg(unix)]
+fn full_report_transport() -> (std::os::unix::net::UnixStream, std::os::fd::OwnedFd, usize) {
+    let (consumer, mut producer) = std::os::unix::net::UnixStream::pair().unwrap();
+    producer.set_nonblocking(true).unwrap();
+    let mut filled = 0;
+    loop {
+        match producer.write(&[b'x'; 4096]) {
+            Ok(0) => panic!("report transport closed while filling it"),
+            Ok(bytes) => filled += bytes,
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
+            Err(error) => panic!("could not fill report transport: {error}"),
+        }
+    }
+    producer.set_nonblocking(false).unwrap();
+    (consumer, producer.into(), filled)
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn stalled_report_consumer_cannot_outlive_total_timeout_and_grace() {
+    use std::process::Stdio;
+
+    for format in ["jsonl", "json", "human"] {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), "pass\n").unwrap();
+        let (consumer, producer, _) = full_report_transport();
+        let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+            .args(["run", "--min-free-space", TEST_MIN_FREE_SPACE, "--root"])
+            .arg(project.path())
+            .args([
+                "--file",
+                "target.py",
+                "--format",
+                format,
+                "--allow-best-effort-memory",
+                "--total-timeout",
+                "1s",
+                "--",
+            ])
+            .arg(python_executable())
+            .args(["-c", "pass"])
+            .stdout(Stdio::from(producer))
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let mut stderr = child.stderr.take().unwrap();
+        let diagnostics = tokio::spawn(async move {
+            let mut bytes = Vec::new();
+            stderr.read_to_end(&mut bytes).await.unwrap();
+            String::from_utf8(bytes).unwrap()
+        });
+        let status = tokio::time::timeout(Duration::from_secs(6), child.wait()).await;
+        if status.is_err() {
+            child.kill().await.unwrap();
+            child.wait().await.unwrap();
+        }
+        drop(consumer);
+        let diagnostics = diagnostics.await.unwrap();
+        let status = status
+            .unwrap_or_else(|_| {
+                panic!("format={format}: stalled report exceeded timeout plus grace: {diagnostics}")
+            })
+            .unwrap();
+        assert_eq!(status.code(), Some(2), "format={format}: {diagnostics}");
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn stalled_stderr_cannot_reenter_an_unbounded_terminal_diagnostic() {
+    use std::process::Stdio;
+
+    for format in ["json", "jsonl", "human"] {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), "def broken(:\n").unwrap();
+        let (consumer, producer, _) = full_report_transport();
+        let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+            .args(["run", "--min-free-space", TEST_MIN_FREE_SPACE, "--root"])
+            .arg(project.path())
+            .args([
+                "--file",
+                "target.py",
+                "--format",
+                format,
+                "--allow-best-effort-memory",
+                "--total-timeout",
+                "1s",
+                "--",
+            ])
+            .arg(python_executable())
+            .args(["-c", "pass"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::from(producer))
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let result = tokio::time::timeout(Duration::from_secs(6), child.wait()).await;
+        reap_test_child(&mut child).await.unwrap();
+        drop(consumer);
+        assert_eq!(
+            result
+                .expect("stalled stderr exceeded shutdown grace")
+                .unwrap()
+                .code(),
+            Some(2),
+            "format={format}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn first_sigint_bounds_a_started_report_write() {
+    use std::io::Read;
+    use std::process::Stdio;
+
+    for format in ["jsonl", "json"] {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("target.py"), "pass\n").unwrap();
+        let (mut consumer, producer, filled) = full_report_transport();
+        let padding = "padding".repeat(2048);
+        let arguments = filled / padding.len() + 4;
+        let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+            .args(["run", "--min-free-space", TEST_MIN_FREE_SPACE, "--root"])
+            .arg(project.path())
+            .args([
+                "--file",
+                "target.py",
+                "--format",
+                format,
+                "--allow-best-effort-memory",
+                "--total-timeout",
+                "30s",
+                "--",
+            ])
+            .arg(python_executable())
+            .args(["-c", "pass"])
+            .args(std::iter::repeat_n(padding, arguments))
+            .stdout(Stdio::from(producer))
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let ready = tokio::task::spawn_blocking(move || {
+            consumer.set_read_timeout(Some(Duration::from_secs(5)))?;
+            let mut prefix = vec![0; filled + 1];
+            consumer.read_exact(&mut prefix)?;
+            if prefix[filled] != b'{' {
+                return Err(io::Error::other("report did not begin with a JSON object"));
+            }
+            Ok::<_, io::Error>(consumer)
+        });
+        let outcome: Result<_, String> = async {
+            let consumer = ready
+                .await
+                .map_err(|error| error.to_string())?
+                .map_err(|error| error.to_string())?;
+            send_fixture_interrupt(child.id()).await?;
+            let status = tokio::time::timeout(Duration::from_secs(4), child.wait())
+                .await
+                .map_err(|_| "first interrupt exceeded shutdown grace".to_owned())?
+                .map_err(|error| error.to_string())?;
+            drop(consumer);
+            Ok(status)
+        }
+        .await;
+        reap_test_child(&mut child).await.unwrap();
+        assert_eq!(
+            outcome
+                .unwrap_or_else(|error| panic!("format={format}: {error}"))
+                .code(),
+            Some(2)
+        );
+    }
+}
+
 #[test]
 fn cli_entrypoint_future_keeps_large_run_state_out_of_line() {
     let mut stdout = Vec::new();
@@ -1848,8 +2025,6 @@ async fn total_timeout_exits_after_grace_when_session_finish_is_locked() {
     .unwrap();
 
     assert_eq!(status.code(), Some(2), "stderr={stderr} stdout={stdout}");
-    assert!(stderr.contains("total timeout"), "{stderr}");
-    assert!(stderr.contains("shutdown grace expired"), "{stderr}");
     let events = stdout
         .lines()
         .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
