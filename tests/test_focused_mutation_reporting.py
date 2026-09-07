@@ -193,6 +193,7 @@ class WorkflowProbe:
                 "--first-parent",
                 "-20",
                 "--name-only",
+                "-z",
                 "--format=",
             ): "",
         }

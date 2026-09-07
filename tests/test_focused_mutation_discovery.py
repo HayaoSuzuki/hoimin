@@ -1,4 +1,6 @@
 from pathlib import Path
+import os
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -24,7 +26,71 @@ class FakeProbe:
         return self.replies[key]
 
 
+class LocalGitProbe:
+    def __init__(self, root: Path):
+        self.root = root
+
+    def text(self, argv: list[str], timeout: float) -> str:
+        return subprocess.run(
+            argv,
+            cwd=self.root,
+            check=True,
+            capture_output=True,
+            encoding="utf-8",
+            timeout=timeout,
+        ).stdout
+
+
 class DiscoveryTests(unittest.TestCase):
+    def test_recent_git_paths_reach_fallback_selection_and_ranking(self) -> None:
+        names = ["日本.rs", "with space.rs"]
+        if os.name != "nt":
+            names.extend(['with"quote.rs', "with\\backslash.rs"])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            probe = LocalGitProbe(root)
+            probe.text(["git", "init", "--quiet"], 10.0)
+            probe.text(["git", "config", "core.quotepath", "true"], 10.0)
+            for name in names:
+                source = root / "crates/core/src" / name
+                source.parent.mkdir(parents=True, exist_ok=True)
+                for revision in range(2):
+                    source.write_text(
+                        f"fn selected() {{ let revision = {revision}; }}\n",
+                        encoding="utf-8",
+                    )
+                    probe.text(["git", "add", "--", str(source)], 10.0)
+                    probe.text(
+                        [
+                            "git", "-c", "user.name=Test", "-c",
+                            "user.email=test@example.invalid", "-c",
+                            "commit.gpgsign=false", "-c", "core.hooksPath=",
+                            "commit", "--quiet", "-m", "Update source",
+                        ],
+                        10.0,
+                    )
+
+            snapshot = discover_repository(root, "HEAD", probe, lambda: 10.0)
+            self.assertEqual(snapshot.dirty_paths, ())
+            self.assertEqual(snapshot.base_paths, ())
+            self.assertEqual(
+                snapshot.recent_paths,
+                tuple(f"crates/core/src/{name}" for name in reversed(names)),
+            )
+            candidates = discover_candidates(
+                snapshot, (), (), probe, lambda: 10.0
+            )
+            self.assertEqual(
+                {(item.path, item.symbol) for item in candidates},
+                {(f"crates/core/src/{name}", "selected") for name in names},
+            )
+            ranked = rank_candidates(candidates, snapshot)
+            for candidate in ranked:
+                self.assertEqual(
+                    [reason.code for reason in candidate.reasons],
+                    ["recent_change"],
+                )
+
     def test_repository_path_rejects_markdown_control_characters(self) -> None:
         with self.assertRaisesRegex(ValueError, "Markdown"):
             _normalize_path("crates/core/src/unsafe\nname.rs")
@@ -349,8 +415,9 @@ class DiscoveryTests(unittest.TestCase):
                         "--first-parent",
                         "-20",
                         "--name-only",
+                        "-z",
                         "--format=",
-                    ): "crates/core/src/recent.rs\n",
+                    ): "crates/core/src/recent.rs\0",
                 }
             )
 
@@ -379,7 +446,7 @@ class DiscoveryTests(unittest.TestCase):
                     ), 8.0),
                     ((
                         "git", "log", "--first-parent", "-20",
-                        "--name-only", "--format=",
+                        "--name-only", "-z", "--format=",
                     ), 7.0),
                 ],
             )
