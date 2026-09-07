@@ -563,7 +563,7 @@ class LeanAuditWorkflowContractTests(unittest.TestCase):
             self.assertEqual(arguments[0], "tools/lean_resource_guard.py")
             self.assertEqual(arguments[1:7], [
                 "--timeout-seconds",
-                "20",
+                "30",
                 "--rss-limit-mib",
                 "2048",
                 "--sample-ms",

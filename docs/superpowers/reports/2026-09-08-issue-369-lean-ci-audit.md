@@ -19,7 +19,7 @@ state transitions, proofs, and search depths are unchanged. Budget statistics
 now take their depth as an argument and run only on the `--stats` path.
 
 Every build, freshness check, and sensitivity command is wrapped independently
-by `tools/lean_resource_guard.py`. The configuration uses a 20-second timeout, 2 GiB
+by `tools/lean_resource_guard.py`. The configuration uses a 30-second timeout, 2 GiB
 aggregate RSS limit, and 250 ms sampling. Lake adds `-j1` and
 `-DElab.async=false` to every Lean invocation. Per-command resource statistics
 are uploaded with `if: always()` so a failed gate retains its reason and peak
@@ -137,6 +137,20 @@ and corpus freshness in the tested container. The Rust replay tests below
 check implementation correspondence for their covered cases; Lean compilation
 alone does not prove the Rust implementation correct.
 
+## GitHub-hosted timeout and 30-second follow-up
+
+[Run 34152357641, Lean audit](https://github.com/tokyogas-tech/hoimin/actions/runs/34152357641/job/101837367614)
+completed 47 guarded commands before `build-HoiminOracle-ShutdownProofs` timed
+out. Its artifact records 20.243 seconds, exit 124, and 1,022,208 KiB peak RSS.
+The guard reported `timeout`, not an RSS-limit exit or a proof diagnostic.
+The remaining builds and generator gates did not run.
+
+The follow-up changes only the per-command deadline from 20 to 30 seconds.
+The 2 GiB RSS limit, 250 ms sampling, serial execution, proof files, and corpora
+remain unchanged. The earlier local measurements in this report retain their
+original 20-second bound. Hosted-runner completion under 30 seconds remains to
+be measured by the next CI run.
+
 ## Verification recorded at this checkpoint
 
 | Command | Result |
@@ -167,5 +181,10 @@ this worktree. The full rerun then passed, including all 54 `run_e2e` tests.
 No Rust source or other worktree was changed, and the temporary `.venv` symlink
 was removed after the run.
 
-No GitHub Actions run was started. Linux validation used an isolated local
-container and does not establish hosted-runner behavior.
+The 30-second workflow contract change failed against the former 20-second
+script, then passed after the script update. The combined workflow and guard
+suite passed all 27 tests; actionlint passed with the existing custom-runner
+label warning excluded. `git diff --check` passed.
+
+The local Linux validation used an isolated container; the hosted-runner
+failure and follow-up are recorded separately above.

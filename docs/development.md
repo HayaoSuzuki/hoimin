@@ -121,7 +121,7 @@ commands; update its contract test whenever a library module or `lakefile.toml`
 executable changes.
 
 Every build and generator invocation runs alone through
-`tools/lean_resource_guard.py`, with a 20-second wall-time limit, 2 GiB
+`tools/lean_resource_guard.py`, with a 30-second wall-time limit, 2 GiB
 aggregate RSS limit, and 250 ms sampling. Resource statistics are retained as
 the `lean-audit-stats` workflow artifact even when a gate fails. The Lake package
 uses `-j1` and `-DElab.async=false` to keep elaboration serial within each
@@ -137,7 +137,9 @@ command took 13.198 seconds; peak aggregate RSS was 1,077,976 KiB. Budget
 statistics take their exploration depth at runtime and run only for `--stats`,
 so corpus checks do not initialize the exhaustive statistics search. The
 statistics formulas, depth-six audit, proofs, and corpora remain unchanged.
-These local measurements do not establish GitHub-hosted runner performance.
+The initial GitHub-hosted run exceeded the former 20-second limit while
+building `ShutdownProofs` at 1,022,208 KiB peak RSS. The current 30-second limit
+retains the 2 GiB memory bound; the local measurements above used 20 seconds.
 
 ## Shutdown deadline invariants
 

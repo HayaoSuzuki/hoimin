@@ -101,7 +101,7 @@ jobs:
             local name="$1"
             shift
             python3 tools/lean_resource_guard.py \
-              --timeout-seconds 20 \
+              --timeout-seconds 30 \
               --rss-limit-mib 2048 \
               --sample-ms 250 \
               --stats "$stats_dir/$name.json" \
