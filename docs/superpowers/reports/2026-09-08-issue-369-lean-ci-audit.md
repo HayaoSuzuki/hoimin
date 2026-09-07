@@ -14,8 +14,9 @@ modules, the aggregate `HoiminOracle` module, and all 28 executable roots one at
 a time. It requests each module's native object before the aggregate library
 build so later executable links do not trigger concurrent cold compilation.
 It then runs a freshness check for every `lakefile.toml` generator and the
-sensitivity mode exposed by 25 of those 28 generators. The generated corpora
-and Lean model are unchanged.
+sensitivity mode exposed by 25 of those 28 generators. The generated corpora,
+state transitions, proofs, and search depths are unchanged. Budget statistics
+now take their depth as an argument and run only on the `--stats` path.
 
 Every build, freshness check, and sensitivity command is wrapped independently
 by `tools/lean_resource_guard.py`. The configuration uses a 20-second timeout, 2 GiB
@@ -60,7 +61,7 @@ tested platform. Follow-up validation uses a 2 GiB limit with the same 20-second
 deadline. The Linux container also enforces 2 GiB with no swap and one CPU;
 the repository sources are read-only and the build cache starts empty.
 
-## 2 GiB validation and remaining blocker
+## Initial 2 GiB validation and startup timeout
 
 The exact workflow Bash ran in `rust:1.98-bookworm` on Linux aarch64 with
 `--memory=2g --memory-swap=2g --cpus=1 --pids-limit=128`. All 117 native module
@@ -90,10 +91,51 @@ not sufficient. Generated `BudgetModel.c` initializes `reachableStateCount`,
 constants evaluate the depth-six exhaustive exploration even though the corpus
 checker does not consume them; `BudgetMain.lean` uses them only in `--stats`.
 
-This is an infrastructure timeout, not a corpus mismatch. No Lean source,
-proof, search depth, or generated corpus was changed. The complete audit and
-PR remain blocked on separating statistics evaluation from checker startup;
-no longer timeout was attempted.
+This was an infrastructure timeout, not a corpus mismatch. At this checkpoint,
+no Lean source, proof, search depth, or generated corpus had changed. No longer
+timeout was attempted.
+
+## Budget statistics startup fix
+
+The three budget statistic functions now accept a depth argument. The
+`@[noinline]` statistics handler receives `auditDepth` only after CLI dispatch
+selects `--stats`. This keeps the exhaustive computation out of native module
+initialization while preserving the prior formulas and depth-six `--stats`
+behavior. The checker still validates the fixed broken-model witnesses before
+checking the corpus. The imported depth-six `native_decide` proof and general
+invariant proofs remain unchanged.
+
+The workflow's bounded budget corpus check is the regression test: it timed out
+before the fix, then passed in 2.299 seconds including executable linking after
+the four affected modules were rebuilt. Peak RSS was 954,812 KiB. A subsequent
+generator-only run passed all 28 freshness checks and all 25 sensitivity gates.
+These results use the same one-CPU, no-swap 2 GiB container and 20-second guard.
+The full cold workflow is checked separately below. The depth-six `--stats`
+mode is not a CI gate and was not rerun with a larger timeout.
+
+## Complete cold validation
+
+The final run executed the unmodified `Run bounded Lean audit` Bash extracted
+from `.github/workflows/ci.yml`. It used an empty Lake cache, read-only sources,
+the pinned Lean 4.32.2 toolchain, and the Linux aarch64 container limits above.
+All 171 guarded commands returned exit 0: 117 native module builds, the
+aggregate library build, 28 corpus freshness checks, and 25 sensitivity gates.
+
+| Measurement | Result |
+| --- | --- |
+| Longest command | `build-HoiminOracle-ShutdownProofs`, 13.198 seconds |
+| Peak aggregate RSS | `check-generate_nested_try_flow`, 1,077,976 KiB |
+| Budget corpus check, including link | 2.124 seconds, 957,176 KiB |
+| Sum of guarded command elapsed times | 458.367 seconds |
+| Timeout or RSS-limit exits | 0 |
+
+The local statistics remain in
+`/private/tmp/hoimin-369-linux.RLwR2T/stats-final/lean-audit`.
+CI uploads the corresponding per-command JSON files as `lean-audit-stats`.
+This run establishes successful model compilation, broken-model detection,
+and corpus freshness in the tested container. The Rust replay tests below
+check implementation correspondence for their covered cases; Lean compilation
+alone does not prove the Rust implementation correct.
 
 ## Verification recorded at this checkpoint
 
@@ -106,6 +148,7 @@ no longer timeout was attempted.
 | `cargo fmt --all -- --check` | Exit 0 |
 | All eight `hoimin-core` `lean_*` integration-test binaries | 31 tests passed |
 | All nineteen `hoimin-cli` `lean_*` integration-test binaries | 72 tests passed |
+| `CARGO_TARGET_DIR=/private/tmp/hoimin-issue-356-target cargo test --workspace --quiet` | Exit 0 on macOS after rebuilding the package artifacts |
 | `git diff --check` | Exit 0 |
 
 The 2 GiB guard change was tested red-to-green against the actual workflow
@@ -114,6 +157,15 @@ The CLI integration tests required the repository Python environment at the
 worktree-relative `.venv` path; a temporary symlink supplied it for the passing
 run and was removed afterwards. An earlier run without that environment failed
 the candidate-ranking adapter's command-launch assertion.
+
+The final full-workspace run first encountered stale test binaries in the shared
+temporary Cargo target directory. Those binaries embedded another worktree's
+`CARGO_MANIFEST_DIR`, so their controlled Python lookup failed before executing
+the end-to-end fixtures. Removing only the `hoimin-cli` and `hoimin-core` build
+artifacts with `cargo clean -p hoimin-cli -p hoimin-core` forced compilation for
+this worktree. The full rerun then passed, including all 54 `run_e2e` tests.
+No Rust source or other worktree was changed, and the temporary `.venv` symlink
+was removed after the run.
 
 No GitHub Actions run was started. Linux validation used an isolated local
 container and does not establish hosted-runner behavior.

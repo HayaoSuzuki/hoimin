@@ -19,11 +19,11 @@ private def checkCorpus (path : System.FilePath) : IO UInt32 := do
     IO.eprintln s!"cannot check Lean budget oracle corpus {path}: {error}"
     return 1
 
-private def printStats : IO UInt32 := do
-  unless boundedAuditPasses do
+@[noinline] private def printStats (depth : Nat) : IO UInt32 := do
+  unless boundedAuditPasses depth do
     IO.eprintln "bounded budget audit found an unsafe reachable state"
     return 2
-  IO.println s!"depth={auditDepth} alphabet={alphabetSize} states={reachableStateCount} transitions={checkedTransitionCount}"
+  IO.println s!"depth={depth} alphabet={alphabetSize} states={reachableStateCount depth} transitions={checkedTransitionCount depth}"
   return 0
 
 def main (args : List String) : IO UInt32 := do
@@ -36,7 +36,7 @@ def main (args : List String) : IO UInt32 := do
   match args with
   | ["--output", path] => writeCorpus path
   | ["--check", path] => checkCorpus path
-  | ["--stats"] => printStats
+  | ["--stats"] => printStats auditDepth
   | _ =>
       IO.eprintln "usage: generate_budget (--output PATH | --check PATH | --stats)"
       return 2

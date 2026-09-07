@@ -252,15 +252,15 @@ def auditDepth : Nat := 6
 
 def alphabetSize : Nat := eventAlphabet.length
 
-def reachableStateCount : Nat :=
-  (reachableUpTo auditDepth).length
+def reachableStateCount (depth : Nat) : Nat :=
+  (reachableUpTo depth).length
 
-def checkedTransitionCount : Nat :=
-  ((explorationLayers auditDepth).take auditDepth).foldl
+def checkedTransitionCount (depth : Nat) : Nat :=
+  ((explorationLayers depth).take depth).foldl
     (fun count layer => count + layer.length * alphabetSize) 0
 
-def boundedAuditPasses : Bool :=
-  (reachableUpTo auditDepth).all fun item => safe item.state
+def boundedAuditPasses (depth : Nat) : Bool :=
+  (reachableUpTo depth).all fun item => safe item.state
 
 def partialReleaseStep (state : State) (ids : List Nat) : Verdict :=
   ids.foldl (fun verdict id =>

@@ -131,13 +131,13 @@ regenerate through the corresponding `lake exe generate* -- --output ...`
 command when an intentional model change requires it. Generated JSONL files
 must not be edited by hand.
 
-The complete sequence is not yet validated. A cold Linux run under the 2 GiB
-bound compiled all 117 modules and the aggregate library, but the budget corpus
-checker exceeded the 20-second deadline. Running the already-built checker
-directly also timed out. Its generated native code initializes exhaustive
-budget statistics before dispatching `--check`, although those statistics are
-only needed by `--stats`. The CI job remains blocked until this startup work is
-separated and the complete sequence passes without raising the time limit.
+The complete 171-command sequence passed from an empty build cache in a
+one-CPU Linux aarch64 container with a hard 2 GiB limit and no swap. The longest
+command took 13.198 seconds; peak aggregate RSS was 1,077,976 KiB. Budget
+statistics take their exploration depth at runtime and run only for `--stats`,
+so corpus checks do not initialize the exhaustive statistics search. The
+statistics formulas, depth-six audit, proofs, and corpora remain unchanged.
+These local measurements do not establish GitHub-hosted runner performance.
 
 ## Shutdown deadline invariants
 
