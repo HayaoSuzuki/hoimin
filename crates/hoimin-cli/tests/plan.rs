@@ -814,6 +814,34 @@ async fn verify_rejects_tampered_candidate_before_baseline() {
 }
 
 #[tokio::test]
+async fn verify_rejects_a_tampered_requested_symbol_after_scoped_rediscovery() {
+    let project = Project::new_with_sources(&[
+        ("a.py", "def first(left, right):\n    return left + right\n"),
+        (
+            "b.py",
+            "def second(left, right):\n    return left == right\n",
+        ),
+    ]);
+    let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
+    let requested_index = manifest
+        .candidates
+        .iter()
+        .position(|candidate| candidate.path == Path::new("src/b.py"))
+        .unwrap();
+    let requested = manifest.candidates[requested_index].id.clone();
+    let mut value = serde_json::to_value(manifest).unwrap();
+    value["candidates"][requested_index]["symbol"] = serde_json::json!("forged");
+    write_json(&path, &value);
+
+    let error = prepare_verify(&path, &[requested], OutputFormat::Json)
+        .await
+        .unwrap_err();
+
+    assert_error_code(error, "plan.candidate.invalid");
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
 async fn verify_rejects_malformed_headers_and_source_paths() {
     let project = Project::new();
     let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
@@ -938,6 +966,151 @@ async fn truncated_plan_accepts_a_contained_candidate() {
         ResolvedVerifySelection::ExplicitCandidates(ref ids) if ids.len() == 1
     ));
     assert_eq!(verified.config.output.format, CoreOutputFormat::Jsonl);
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn truncated_plan_accepts_a_retained_candidate_from_a_later_file() {
+    let project = Project::new_with_sources(&[
+        ("a.py", "def first(left, right):\n    return left + right\n"),
+        (
+            "b.py",
+            "def second(left, right):\n    return left == right and left != right\n",
+        ),
+    ]);
+    let (path, manifest, marker) = write_plan_manifest(&project, &["--max-candidates", "2"]).await;
+    assert!(manifest.truncated);
+    let candidate = manifest
+        .candidates
+        .iter()
+        .find(|candidate| candidate.path == Path::new("src/b.py"))
+        .unwrap();
+    assert_eq!(candidate.sequence, 2);
+
+    let verified = prepare_verify(
+        &path,
+        std::slice::from_ref(&candidate.id),
+        OutputFormat::Jsonl,
+    )
+    .await
+    .unwrap();
+
+    assert!(verified.plan_truncated);
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_accepts_a_requested_candidate_from_a_later_file() {
+    let project = Project::new_with_sources(&[
+        ("a.py", "def first(left, right):\n    return left + right\n"),
+        (
+            "b.py",
+            "def second(left, right):\n    return left == right\n",
+        ),
+    ]);
+    let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
+    let candidate = manifest
+        .candidates
+        .iter()
+        .find(|candidate| candidate.path == Path::new("src/b.py"))
+        .unwrap();
+    assert!(candidate.sequence > 1);
+
+    let verified = prepare_verify(
+        &path,
+        std::slice::from_ref(&candidate.id),
+        OutputFormat::Json,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        verified.selection,
+        ResolvedVerifySelection::ExplicitCandidates(BTreeSet::from([candidate.id.clone()]))
+    );
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_does_not_analyze_an_unrequested_file_after_source_record_validation() {
+    let project = Project::new_with_sources(&[
+        ("a.py", "# no mutation candidates\n"),
+        (
+            "b.py",
+            "def second(left, right):\n    return left == right\n",
+        ),
+    ]);
+    let (path, mut manifest, marker) = write_plan_manifest(&project, &[]).await;
+    let requested = manifest
+        .candidates
+        .iter()
+        .find(|candidate| candidate.path == Path::new("src/b.py"))
+        .unwrap()
+        .id
+        .clone();
+    let unrequested_bytes = [0xff];
+    std::fs::write(project.path.join("src/a.py"), unrequested_bytes).unwrap();
+    manifest
+        .sources
+        .iter_mut()
+        .find(|source| source.path == Path::new("src/a.py"))
+        .unwrap()
+        .hash = blake3::hash(&unrequested_bytes).to_hex().to_string();
+    write_json(&path, &serde_json::to_value(manifest).unwrap());
+
+    let verified = prepare_verify(&path, &[requested], OutputFormat::Json).await;
+
+    assert!(verified.is_ok(), "{verified:?}");
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_accepts_generated_sequence_permutations_and_same_span_operators() {
+    let project = Project::new_with_source(
+        "def selected(items, value, left, right):\n    items.append(value)\n    return left == right\n",
+    );
+    let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
+    assert!(
+        manifest
+            .candidates
+            .windows(2)
+            .any(|pair| pair[0].sequence > pair[1].sequence),
+        "ranking should differ from discovery order"
+    );
+    assert!(manifest.candidates.iter().enumerate().any(|(index, left)| {
+        manifest.candidates[index + 1..]
+            .iter()
+            .any(|right| left.span == right.span && left.operator != right.operator)
+    }));
+    let requested = manifest
+        .candidates
+        .iter()
+        .find(|candidate| candidate.operator == "structure_append_extend")
+        .unwrap()
+        .id
+        .clone();
+
+    let verified = prepare_verify(&path, &[requested], OutputFormat::Json).await;
+
+    assert!(verified.is_ok(), "{verified:?}");
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_rejects_candidate_sequences_that_are_not_a_complete_permutation() {
+    let project = Project::new();
+    let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
+    assert!(manifest.candidates.len() >= 2);
+    let requested = manifest.candidates[0].id.clone();
+    let mut value = serde_json::to_value(&manifest).unwrap();
+    value["candidates"][0]["sequence"] = serde_json::json!(manifest.candidates[1].sequence);
+    write_json(&path, &value);
+
+    let error = prepare_verify(&path, &[requested], OutputFormat::Json)
+        .await
+        .unwrap_err();
+
+    assert_error_code(error, "plan.candidate.invalid");
     assert!(!marker.exists());
 }
 
