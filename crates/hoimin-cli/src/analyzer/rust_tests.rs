@@ -2917,6 +2917,159 @@ const TOKEN_OPERATOR_NAMES: &[&str] = &[
     "unary_sign",
 ];
 
+const NATIVE_PYTHON_OPERATOR_NAMES: &[&str] = &[
+    "binary_power",
+    "binary_matmul",
+    "augmented_power",
+    "augmented_matmul",
+    "bitwise_xor",
+    "bitwise_invert",
+    "augmented_bitwise_and_or",
+    "augmented_bitwise_xor",
+    "augmented_bitwise_shift",
+];
+
+#[test]
+fn native_python_operator_syntax_uses_exact_ast_roles_and_reparses() {
+    for (source, operator, original, replacement) in [
+        (
+            "def calculate(a, b):\n    return a ** b\n",
+            "binary_power",
+            "**",
+            "*",
+        ),
+        (
+            "def calculate(a, b):\n    return a @ b\n",
+            "binary_matmul",
+            "@",
+            "*",
+        ),
+        (
+            "def calculate(a, b):\n    return a ^ b\n",
+            "bitwise_xor",
+            "^",
+            "&",
+        ),
+        (
+            "def calculate(a):\n    return ~a\n",
+            "bitwise_invert",
+            "~",
+            "+",
+        ),
+        (
+            "def calculate(a, b):\n    a **= b\n    return a\n",
+            "augmented_power",
+            "**=",
+            "*=",
+        ),
+        (
+            "def calculate(a, b):\n    a @= b\n    return a\n",
+            "augmented_matmul",
+            "@=",
+            "*=",
+        ),
+        (
+            "def calculate(a, b):\n    a &= b\n    return a\n",
+            "augmented_bitwise_and_or",
+            "&=",
+            "|=",
+        ),
+        (
+            "def calculate(a, b):\n    a |= b\n    return a\n",
+            "augmented_bitwise_and_or",
+            "|=",
+            "&=",
+        ),
+        (
+            "def calculate(a, b):\n    a ^= b\n    return a\n",
+            "augmented_bitwise_xor",
+            "^=",
+            "&=",
+        ),
+        (
+            "def calculate(a, b):\n    a <<= b\n    return a\n",
+            "augmented_bitwise_shift",
+            "<<=",
+            ">>=",
+        ),
+        (
+            "def calculate(a, b):\n    a >>= b\n    return a\n",
+            "augmented_bitwise_shift",
+            ">>=",
+            "<<=",
+        ),
+    ] {
+        let operators: MutationOperatorSelection =
+            serde_json::from_value(serde_json::json!([operator])).unwrap();
+        let output = analyze_source(
+            &AnalyzeRequest {
+                path: Utf8Path::new("pkg/sample.py"),
+                lines: &[],
+                symbols: &[],
+                operators: &operators,
+                profile: MutationProfile::Full,
+                max_candidates: 10_000,
+            },
+            source,
+        );
+
+        assert_eq!(output.candidates.len(), 1, "operator: {operator}");
+        let candidate = &output.candidates[0];
+        assert_eq!(candidate.operator, operator);
+        assert_eq!(candidate.original, original);
+        assert_eq!(candidate.replacement, replacement);
+        let start = usize::try_from(candidate.span.start).unwrap();
+        let end = start + usize::try_from(candidate.span.length).unwrap();
+        assert_eq!(&source[start..end], original);
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
+fn native_python_operator_spellings_outside_operator_roles_are_ignored() {
+    let source = concat!(
+        "@decorate\n",
+        "def collect(**kwargs):\n",
+        "    value: Left @ Right\n",
+        "    text = '** @ ^ ~ **= @= &= |= ^= <<= >>='\n",
+        "    # ** @ ^ ~ **= @= &= |= ^= <<= >>=\n",
+        "    return kwargs\n",
+    );
+
+    let output = analyze(source);
+    assert!(
+        output
+            .candidates
+            .iter()
+            .all(|candidate| !NATIVE_PYTHON_OPERATOR_NAMES.contains(&candidate.operator.as_str()))
+    );
+}
+
+#[test]
+fn native_python_operator_syntax_obeys_line_symbol_and_candidate_limits() {
+    let source = concat!(
+        "def selected(a, b):\n",
+        "    return a ** b\n",
+        "def ignored(a, b):\n",
+        "    return a @ b\n",
+    );
+    let selected = analyze_with(
+        Utf8Path::new("pkg/sample.py"),
+        &[LineRange { start: 2, end: 2 }],
+        &["pkg.sample:selected".to_owned()],
+        10_000,
+        source,
+    );
+    assert_eq!(selected.candidates.len(), 1);
+    assert_eq!(selected.candidates[0].operator, "binary_power");
+    assert_eq!(selected.candidates[0].symbol.as_deref(), Some("selected"));
+
+    let bounded = analyze_with(Utf8Path::new("pkg/sample.py"), &[], &[], 1, source);
+    assert_eq!(bounded.candidates.len(), 1);
+    assert_eq!(bounded.candidates[0].operator, "binary_power");
+    assert!(bounded.truncated);
+}
+
 #[test]
 fn token_operator_candidates_cover_supported_ast_roles_and_reparse() {
     let source = concat!(

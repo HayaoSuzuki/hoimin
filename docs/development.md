@@ -205,6 +205,21 @@ traversal admits boolean singletons inside nested patterns but excludes `None`,
 wildcard and capture patterns, and string values. A token with an ambiguous
 grammatical role does not produce a candidate: matching text alone never grants
 eligibility.
+
+Native Python operator syntax uses these token-local mappings:
+
+- `**` becomes `*` (`binary_power`) and `@` becomes `*` (`binary_matmul`).
+- `^` becomes `&` (`bitwise_xor`) and unary `~` becomes unary `+`
+  (`bitwise_invert`).
+- `**=` and `@=` become `*=` (`augmented_power` and `augmented_matmul`).
+- `&=` and `|=` exchange spellings (`augmented_bitwise_and_or`), `^=` becomes
+  `&=` (`augmented_bitwise_xor`), and `<<=` and `>>=` exchange spellings
+  (`augmented_bitwise_shift`).
+
+The binary, unary, and augmented-assignment AST roles admit these spellings only
+in their operator positions. Decorators, keyword unpacking, annotations,
+strings, and comments remain excluded.
+
 Every approved raw-token operator is then checked against the annotation
 containment index and skipped when its complete token range lies inside an
 annotation. Deliberate annotation mutations remain in the separate opt-in

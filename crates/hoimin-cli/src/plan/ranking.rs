@@ -223,7 +223,16 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::AugmentedFloorMod
         | MutationOperator::UnarySign
         | MutationOperator::BitwiseAndOr
-        | MutationOperator::BitwiseShift => RankingReasonCode::Arithmetic,
+        | MutationOperator::BitwiseShift
+        | MutationOperator::BinaryPower
+        | MutationOperator::BinaryMatmul
+        | MutationOperator::AugmentedPower
+        | MutationOperator::AugmentedMatmul
+        | MutationOperator::BitwiseXor
+        | MutationOperator::BitwiseInvert
+        | MutationOperator::AugmentedBitwiseAndOr
+        | MutationOperator::AugmentedBitwiseXor
+        | MutationOperator::AugmentedBitwiseShift => RankingReasonCode::Arithmetic,
         MutationOperator::TypeNullableRemove
         | MutationOperator::TypeNullableAdd
         | MutationOperator::TypeListSequence

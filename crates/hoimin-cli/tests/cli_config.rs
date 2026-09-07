@@ -7,7 +7,7 @@ use hoimin_cli::cli::{
 };
 use hoimin_core::{MutationOperator, MutationOperatorSelection, MutationProfile};
 
-const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 33] = [
+const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 42] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -34,6 +34,15 @@ const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 33] = [
     "collection_string_split_rsplit",
     "bitwise_and_or",
     "bitwise_shift",
+    "binary_power",
+    "binary_matmul",
+    "augmented_power",
+    "augmented_matmul",
+    "bitwise_xor",
+    "bitwise_invert",
+    "augmented_bitwise_and_or",
+    "augmented_bitwise_xor",
+    "augmented_bitwise_shift",
     "structure_append_extend",
     "structure_mapping_get_subscript",
     "structure_sort_reverse",
@@ -1367,7 +1376,18 @@ fn collection_operator_flags_expand_families_and_preserve_runtime_default() {
                 "structure_slice_neighbor",
             ][..],
         ),
-        ("bitwise_ops", &["bitwise_and_or", "bitwise_shift"][..]),
+        (
+            "bitwise_ops",
+            &[
+                "bitwise_and_or",
+                "bitwise_shift",
+                "bitwise_xor",
+                "bitwise_invert",
+                "augmented_bitwise_and_or",
+                "augmented_bitwise_xor",
+                "augmented_bitwise_shift",
+            ][..],
+        ),
     ] {
         let selected = hoimin_cli::cli::parse_config_from([
             "hoimin",

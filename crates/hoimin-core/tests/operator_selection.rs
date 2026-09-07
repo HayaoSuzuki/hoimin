@@ -32,6 +32,34 @@ fn augmented_arithmetic_operator_ids_are_default_and_valid() {
 }
 
 #[test]
+fn native_python_operator_ids_are_default_valid_and_selectable() {
+    let selected = MutationOperatorSelection::default();
+    let selected_names = selected.names();
+    let valid_names = MutationOperatorSelection::valid_names();
+
+    for name in [
+        "binary_power",
+        "binary_matmul",
+        "augmented_power",
+        "augmented_matmul",
+        "bitwise_xor",
+        "bitwise_invert",
+        "augmented_bitwise_and_or",
+        "augmented_bitwise_xor",
+        "augmented_bitwise_shift",
+    ] {
+        assert!(selected_names.iter().any(|selected| selected == name));
+        assert!(valid_names.contains(&name));
+        assert_eq!(
+            MutationOperatorSelection::parse_selector(name)
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+}
+
+#[test]
 fn default_runtime_selection_contains_collection_structure_and_bitwise_operators() {
     let selected = MutationOperatorSelection::default();
 
@@ -157,7 +185,12 @@ fn collection_structure_and_bitwise_selector_families_expand_exactly() {
         MutationOperatorSelection::parse_selector("bitwise_ops").unwrap(),
         vec![
             MutationOperator::BitwiseAndOr,
-            MutationOperator::BitwiseShift
+            MutationOperator::BitwiseShift,
+            MutationOperator::BitwiseXor,
+            MutationOperator::BitwiseInvert,
+            MutationOperator::AugmentedBitwiseAndOr,
+            MutationOperator::AugmentedBitwiseXor,
+            MutationOperator::AugmentedBitwiseShift,
         ]
     );
 }

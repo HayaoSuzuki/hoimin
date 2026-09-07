@@ -479,14 +479,25 @@ fn replacement(text: &str, unary: bool) -> Option<(&'static str, &'static str)> 
         "/=" => ("*=", "augmented_mul_div"),
         "//=" => ("%=", "augmented_floor_mod"),
         "%=" => ("//=", "augmented_floor_mod"),
+        "**=" => ("*=", "augmented_power"),
+        "@=" => ("*=", "augmented_matmul"),
+        "&=" => ("|=", "augmented_bitwise_and_or"),
+        "|=" => ("&=", "augmented_bitwise_and_or"),
+        "^=" => ("&=", "augmented_bitwise_xor"),
+        "<<=" => (">>=", "augmented_bitwise_shift"),
+        ">>=" => ("<<=", "augmented_bitwise_shift"),
         "*" => ("/", "binary_mul_div"),
         "/" => ("*", "binary_mul_div"),
         "//" => ("%", "binary_floor_mod"),
         "%" => ("//", "binary_floor_mod"),
+        "**" => ("*", "binary_power"),
+        "@" => ("*", "binary_matmul"),
         "&" => ("|", "bitwise_and_or"),
         "|" => ("&", "bitwise_and_or"),
+        "^" => ("&", "bitwise_xor"),
         "<<" => (">>", "bitwise_shift"),
         ">>" => ("<<", "bitwise_shift"),
+        "~" => ("+", "bitwise_invert"),
         "break" => ("continue", "break_continue"),
         "continue" => ("break", "break_continue"),
         "True" => ("False", "boolean_literal"),
@@ -1601,7 +1612,10 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
             Stmt::AugAssign(assign) => {
                 self.record_operator_tokens(
                     TextRange::new(assign.target.range().end(), assign.value.range().start()),
-                    &["+=", "-=", "*=", "/=", "//=", "%="],
+                    &[
+                        "+=", "-=", "*=", "/=", "//=", "%=", "**=", "@=", "&=", "|=", "^=", "<<=",
+                        ">>=",
+                    ],
                 );
             }
             Stmt::AnnAssign(assign) => {
@@ -1695,12 +1709,14 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
             }
             Expr::BinOp(binary) => self.record_operator_tokens(
                 TextRange::new(binary.left.range().end(), binary.right.range().start()),
-                &["+", "-", "*", "/", "//", "%", "&", "|", "<<", ">>"],
+                &[
+                    "+", "-", "*", "/", "//", "%", "**", "@", "&", "|", "^", "<<", ">>",
+                ],
             ),
             Expr::UnaryOp(unary) => {
                 self.record_operator_tokens(
                     TextRange::new(unary.range().start(), unary.operand.range().start()),
-                    &["not", "+", "-"],
+                    &["not", "+", "-", "~"],
                 );
                 let start = usize::from(unary.range().start());
                 match unary.op {
