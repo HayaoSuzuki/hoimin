@@ -988,14 +988,14 @@ fn load_selects_only_the_newest_compatible_incomplete_run() {
 }
 
 #[test]
-fn explicit_resume_rejects_the_newest_incomplete_older_fingerprint_schema() {
+fn explicit_resume_rejects_the_previous_fingerprint_schema() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("sessions.sqlite3");
     let mut handler = SessionHandler::open(&path).unwrap();
     handler.begin(begin_request(1, "legacy")).unwrap();
     let connection = Connection::open(&path).unwrap();
     connection
-        .execute("UPDATE fingerprints SET schema_version=4", [])
+        .execute("UPDATE fingerprints SET schema_version=5", [])
         .unwrap();
     drop(connection);
 
