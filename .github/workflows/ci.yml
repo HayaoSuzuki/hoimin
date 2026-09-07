@@ -124,6 +124,7 @@ jobs:
             HoiminOracle.ProcessOutputModel
             HoiminOracle.ProgressDecisionModel
             HoiminOracle.ReportSequenceModel
+            HoiminOracle.ResourceCleanupModel
             HoiminOracle.ResultLifecycleModel
             HoiminOracle.SchemaMigrationModel
             HoiminOracle.ScopeResolutionModel
@@ -231,6 +232,8 @@ jobs:
             run_guard "build-${module//./-}" lake build "+${module}:o"
           done
           run_guard build-library lake build HoiminOracle
+          run_guard resource-cleanup \
+            lake env lean -j1 -DElab.async=false --run ResourceCleanupAuditMain.lean 4
 
           generators=(
             'generate|corpus/state-machine.jsonl|check-only'

@@ -642,6 +642,7 @@ mod platform {
                     path: run_path.clone(),
                     diagnostics: diagnostics.clone(),
                     state: Mutex::new(RunState::default()),
+                    close_gate: Mutex::new(()),
                 })
             })();
             let run = match setup {
@@ -707,6 +708,7 @@ mod platform {
         path: PathBuf,
         diagnostics: Vec<String>,
         state: Mutex<RunState>,
+        close_gate: Mutex<()>,
     }
 
     #[derive(Debug, Default)]
@@ -728,6 +730,7 @@ mod platform {
     struct RootCgroup {
         id: Uuid,
         path: PathBuf,
+        cleanup_gate: Mutex<()>,
     }
 
     #[derive(Debug, Default)]
@@ -766,6 +769,7 @@ mod platform {
             let root = Arc::new(RootCgroup {
                 id: Uuid::new_v4(),
                 path,
+                cleanup_gate: Mutex::new(()),
             });
             let signal = Arc::new(RootSignal::default());
             state.roots.insert(
@@ -841,6 +845,19 @@ mod platform {
             root: &RootCgroup,
             live_root_pid: Option<i32>,
         ) -> Result<(), ResourceError> {
+            self.terminate_root_with(root, live_root_pid, cleanup_cgroup)
+        }
+
+        fn terminate_root_with(
+            &self,
+            root: &RootCgroup,
+            live_root_pid: Option<i32>,
+            cleanup: impl FnOnce(&Path, Option<i32>) -> Result<(), ResourceError>,
+        ) -> Result<(), ResourceError> {
+            let _cleanup_guard = root
+                .cleanup_gate
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             let mut state = self
                 .state
                 .lock()
@@ -848,17 +865,26 @@ mod platform {
             let accounting = (!state.cleaned)
                 .then(|| Self::refresh_events(&mut state).err())
                 .flatten();
-            if !state.roots.contains_key(&root.id) {
+            let Some(entry) = state.roots.get_mut(&root.id) else {
                 return accounting.map_or(Ok(()), Err);
-            }
+            };
+            let was_active = entry.active;
+            entry.active = false;
+            drop(state);
             let mut cleaned = false;
             let result = run_cleanup_after_accounting(accounting, || {
-                let result = cleanup_cgroup(&root.path, live_root_pid);
+                let result = cleanup(&root.path, live_root_pid);
                 cleaned = result.is_ok();
                 result
             });
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if cleaned {
                 state.roots.remove(&root.id);
+            } else if let Some(entry) = state.roots.get_mut(&root.id) {
+                entry.active = was_active;
             }
             result
         }
@@ -879,6 +905,17 @@ mod platform {
         }
 
         fn close(&self) -> Result<(), ResourceError> {
+            self.close_with(cleanup_cgroup)
+        }
+
+        fn close_with(
+            &self,
+            mut cleanup: impl FnMut(&Path, Option<i32>) -> Result<(), ResourceError>,
+        ) -> Result<(), ResourceError> {
+            let _close_guard = self
+                .close_gate
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             let mut state = self
                 .state
                 .lock()
@@ -887,26 +924,64 @@ mod platform {
             if state.cleaned {
                 return Ok(());
             }
-            let accounting = Self::refresh_events(&mut state).err();
-            let roots: Vec<_> = state
+            let mut roots: Vec<_> = state
                 .roots
                 .values()
                 .map(|entry| Arc::clone(&entry.root))
                 .collect();
+            drop(state);
+            roots.sort_by_key(|root| root.id);
+            let _root_guards: Vec<_> = roots
+                .iter()
+                .map(|root| {
+                    root.cleanup_gate
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                })
+                .collect();
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let accounting = Self::refresh_events(&mut state).err();
+            let active_roots: Vec<_> = state
+                .roots
+                .iter_mut()
+                .filter_map(|(id, entry)| {
+                    let was_active = entry.active;
+                    entry.active = false;
+                    was_active.then_some(*id)
+                })
+                .collect();
+            drop(state);
             let mut first_error = None;
-            for root in roots {
-                match cleanup_cgroup(&root.path, None) {
+            for root in &roots {
+                match cleanup(&root.path, None) {
                     Ok(()) => {
-                        state.roots.remove(&root.id);
+                        self.state
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .roots
+                            .remove(&root.id);
                     }
                     Err(error) if first_error.is_none() => first_error = Some(error),
                     Err(_) => {}
                 }
             }
-            let run_cleanup = cleanup_cgroup(&self.path, None);
+            let run_cleanup = cleanup(&self.path, None);
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if run_cleanup.is_ok() {
                 state.roots.clear();
                 state.cleaned = true;
+            } else {
+                for id in active_roots {
+                    if let Some(entry) = state.roots.get_mut(&id) {
+                        entry.active = true;
+                    }
+                }
             }
             let cleanup = first_error.map_or(run_cleanup, Err);
             run_cleanup_after_accounting(accounting, || cleanup)
@@ -1655,11 +1730,279 @@ mod platform {
         use std::os::unix::process::ExitStatusExt;
         use std::path::Path;
         use std::process::{Child, Command};
+        use std::sync::{Arc, Mutex, mpsc};
+        use std::time::Duration;
 
         use super::{
-            LinuxRunCgroup, RunState, kill_all_listed_pids_with, open_pidfd, send_sigkill,
-            signal_verified_member, system_page_size, wait_for_launcher_stop, write_memory_limit,
+            CgroupEventCounters, LinuxRunCgroup, RootCgroup, RootEntry, RootSignal, RunState,
+            kill_all_listed_pids_with, open_pidfd, send_sigkill, signal_verified_member,
+            system_page_size, wait_for_launcher_stop, write_memory_limit,
         };
+
+        fn fake_run(path: &Path) -> Arc<LinuxRunCgroup> {
+            std::fs::create_dir(path).unwrap();
+            Arc::new(LinuxRunCgroup {
+                path: path.to_owned(),
+                diagnostics: Vec::new(),
+                state: Mutex::new(RunState::default()),
+                close_gate: Mutex::new(()),
+            })
+        }
+
+        fn fake_root(run: &LinuxRunCgroup) -> Arc<RootCgroup> {
+            let id = uuid::Uuid::new_v4();
+            let path = run.path.join(id.to_string());
+            std::fs::create_dir(&path).unwrap();
+            std::fs::write(path.join("memory.events"), b"oom_kill 0\n").unwrap();
+            std::fs::write(path.join("pids.events"), b"max 0\n").unwrap();
+            let root = Arc::new(RootCgroup {
+                id,
+                path,
+                cleanup_gate: Mutex::new(()),
+            });
+            run.state.lock().unwrap().roots.insert(
+                id,
+                RootEntry {
+                    root: Arc::clone(&root),
+                    signal: Arc::new(RootSignal::default()),
+                    active: true,
+                    counters: CgroupEventCounters::default(),
+                },
+            );
+            root
+        }
+
+        fn remove_fake_cgroup(path: &Path, _pid: Option<i32>) -> Result<(), super::ResourceError> {
+            match std::fs::remove_dir_all(path) {
+                Ok(()) => Ok(()),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+                Err(error) => Err(super::cleanup_error(path, error)),
+            }
+        }
+
+        #[test]
+        fn root_cleanup_releases_state_and_allows_sibling_termination() {
+            let directory = tempfile::tempdir().unwrap();
+            let run = fake_run(&directory.path().join("run"));
+            let root = fake_root(&run);
+            let sibling = fake_root(&run);
+            let (paused_tx, paused_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            std::thread::scope(|scope| {
+                let run = &run;
+                let root = &root;
+                let sibling = &sibling;
+                let terminating = scope.spawn(move || {
+                    run.terminate_root_with(root, Some(41), |path, pid| {
+                        assert_eq!(pid, Some(41));
+                        remove_fake_cgroup(path, pid)?;
+                        paused_tx.send(()).unwrap();
+                        release_rx.recv().unwrap();
+                        Ok(())
+                    })
+                });
+                paused_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                let state_available = run.state.try_lock().is_ok();
+                let (sibling_tx, sibling_rx) = mpsc::channel();
+                let sibling_termination = scope.spawn(move || {
+                    sibling_tx
+                        .send(run.terminate_root_with(sibling, None, remove_fake_cgroup))
+                        .unwrap();
+                });
+                let sibling_result = sibling_rx.recv_timeout(Duration::from_secs(2));
+                release_tx.send(()).unwrap();
+                terminating.join().unwrap().unwrap();
+                sibling_termination.join().unwrap();
+                assert!(
+                    state_available,
+                    "cleanup must release the shared state mutex"
+                );
+                sibling_result
+                    .expect("sibling cleanup must progress while the first cleanup is paused")
+                    .expect("refresh must skip the root whose counters have been removed");
+            });
+            assert!(run.state.lock().unwrap().roots.is_empty());
+        }
+
+        #[test]
+        fn close_cleanup_releases_state_and_publishes_closed_before_waiting() {
+            let directory = tempfile::tempdir().unwrap();
+            let run = fake_run(&directory.path().join("run"));
+            let root = fake_root(&run);
+            let observed = Cell::new(false);
+            run.close_with(|path, pid| {
+                if path == root.path
+                    && let Ok(state) = run.state.try_lock()
+                {
+                    assert!(state.closed);
+                    assert!(!state.roots[&root.id].active);
+                    observed.set(true);
+                }
+                remove_fake_cgroup(path, pid)
+            })
+            .unwrap();
+            assert!(
+                observed.get(),
+                "close cleanup must release the shared state mutex"
+            );
+            assert!(run.state.lock().unwrap().cleaned);
+        }
+
+        #[test]
+        fn close_waits_for_inflight_root_cleanup_without_holding_state() {
+            let directory = tempfile::tempdir().unwrap();
+            let run = fake_run(&directory.path().join("run"));
+            let root = fake_root(&run);
+            let (paused_tx, paused_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            std::thread::scope(|scope| {
+                let run = &run;
+                let root = &root;
+                let terminating = scope.spawn(move || {
+                    run.terminate_root_with(root, None, |path, pid| {
+                        remove_fake_cgroup(path, pid)?;
+                        paused_tx.send(()).unwrap();
+                        release_rx.recv().unwrap();
+                        Ok(())
+                    })
+                });
+                paused_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                let closing = scope.spawn(|| run.close_with(remove_fake_cgroup));
+                let deadline = std::time::Instant::now() + Duration::from_secs(5);
+                let closed = loop {
+                    if run.state.try_lock().is_ok_and(|state| state.closed) {
+                        break true;
+                    }
+                    if std::time::Instant::now() >= deadline {
+                        break false;
+                    }
+                    std::thread::yield_now();
+                };
+                let blocked_on_root = root.cleanup_gate.try_lock().is_err();
+                release_tx.send(()).unwrap();
+                terminating.join().unwrap().unwrap();
+                closing.join().unwrap().unwrap();
+                assert!(
+                    closed,
+                    "close must publish closed and release state before waiting"
+                );
+                assert!(blocked_on_root);
+            });
+            assert!(run.state.lock().unwrap().cleaned);
+        }
+
+        #[test]
+        fn close_keeps_all_root_gates_through_recursive_run_cleanup() {
+            let directory = tempfile::tempdir().unwrap();
+            let run = fake_run(&directory.path().join("run"));
+            let first = fake_root(&run);
+            let second = fake_root(&run);
+            let mut calls = Vec::new();
+            let error = run
+                .close_with(|path, pid| {
+                    calls.push(path.to_owned());
+                    assert!(run.close_gate.try_lock().is_err());
+                    assert!(first.cleanup_gate.try_lock().is_err());
+                    assert!(second.cleanup_gate.try_lock().is_err());
+                    assert!(run.state.try_lock().is_ok());
+                    if path == first.path {
+                        Err(super::cleanup_error(path, io::Error::other("root retry")))
+                    } else {
+                        remove_fake_cgroup(path, pid)
+                    }
+                })
+                .unwrap_err();
+            assert!(matches!(error, super::ResourceError::CgroupCleanup { .. }));
+            let mut expected_roots = [first.as_ref(), second.as_ref()];
+            expected_roots.sort_by_key(|root| root.id);
+            assert_eq!(
+                calls,
+                [
+                    expected_roots[0].path.clone(),
+                    expected_roots[1].path.clone(),
+                    run.path.clone()
+                ]
+            );
+            assert!(run.state.lock().unwrap().cleaned);
+            run.close_with(|_, _| panic!("successful recursive cleanup must not repeat"))
+                .unwrap();
+        }
+
+        #[test]
+        fn failed_root_cleanup_restores_accounting_and_remains_retryable() {
+            let directory = tempfile::tempdir().unwrap();
+            let run = fake_run(&directory.path().join("run"));
+            let root = fake_root(&run);
+            let signal = Arc::clone(&run.state.lock().unwrap().roots[&root.id].signal);
+            run.terminate_root_with(&root, None, |path, _| {
+                assert!(!run.state.lock().unwrap().roots[&root.id].active);
+                Err(super::cleanup_error(path, io::Error::other("retry")))
+            })
+            .unwrap_err();
+            assert!(run.state.lock().unwrap().roots[&root.id].active);
+            std::fs::write(root.path.join("memory.events"), b"oom_kill 1\n").unwrap();
+            assert_eq!(
+                run.classify_root(&signal, hoimin_core::ProcessTermination::Exit(0))
+                    .unwrap(),
+                hoimin_core::ProcessTermination::OutOfMemory,
+            );
+            run.terminate_root_with(&root, None, remove_fake_cgroup)
+                .unwrap();
+            assert!(run.state.lock().unwrap().roots.is_empty());
+        }
+
+        #[test]
+        fn failed_close_restores_only_failed_roots_and_retries_run_removal() {
+            let directory = tempfile::tempdir().unwrap();
+            let run = fake_run(&directory.path().join("run"));
+            let root = fake_root(&run);
+            let sibling = fake_root(&run);
+            run.close_with(|path, pid| {
+                if path == sibling.path {
+                    remove_fake_cgroup(path, pid)
+                } else {
+                    Err(super::cleanup_error(path, io::Error::other("retry")))
+                }
+            })
+            .unwrap_err();
+            {
+                let state = run.state.lock().unwrap();
+                assert!(state.closed);
+                assert!(!state.cleaned);
+                assert_eq!(state.roots.len(), 1);
+                assert!(state.roots[&root.id].active);
+            }
+            let limits = hoimin_core::ProcessLimits {
+                timeout: Duration::from_secs(1),
+                max_output_bytes: 1024,
+                max_memory_bytes: 4096,
+                max_processes: 1,
+            };
+            assert!(matches!(
+                run.prepare_root(limits),
+                Err(super::ResourceError::RunClosed)
+            ));
+            run.close_with(remove_fake_cgroup).unwrap();
+            assert!(run.state.lock().unwrap().cleaned);
+            assert!(!run.path.exists());
+        }
+
+        #[test]
+        fn accounting_error_still_commits_successful_root_cleanup() {
+            let directory = tempfile::tempdir().unwrap();
+            let run = fake_run(&directory.path().join("run"));
+            let root = fake_root(&run);
+            std::fs::write(root.path.join("memory.events"), b"oom_kill invalid\n").unwrap();
+            let error = run
+                .terminate_root_with(&root, None, remove_fake_cgroup)
+                .unwrap_err();
+            assert!(matches!(error, super::ResourceError::InvalidCgroupData(_)));
+            assert!(run.state.lock().unwrap().roots.is_empty());
+            run.terminate_root_with(&root, None, |_, _| {
+                panic!("removed root must not be cleaned twice")
+            })
+            .unwrap();
+        }
 
         struct DropRecorder<'a>(&'a Cell<usize>);
 
@@ -1875,6 +2218,7 @@ mod platform {
                 path: directory.path().to_owned(),
                 diagnostics: Vec::new(),
                 state: std::sync::Mutex::new(RunState::default()),
+                close_gate: Mutex::new(()),
             });
             let error = run
                 .prepare_root(hoimin_core::ProcessLimits {

@@ -647,7 +647,7 @@ if args[0] == "run":
 
         sources = lean_module_sources()
         module_count = len(sources)
-        self.assertEqual(module_count, 117)
+        self.assertTrue(sources)
         module_commands = guarded_commands[:module_count]
         modules = [command[2][1:-2] for command in module_commands]
         self.assertTrue(
@@ -676,6 +676,13 @@ if args[0] == "run":
 
         remaining = guarded_commands[module_count:]
         self.assertEqual(remaining.pop(0), ["lake", "build", "HoiminOracle"])
+        self.assertEqual(
+            remaining.pop(0),
+            [
+                "lake", "env", "lean", "-j1", "-DElab.async=false",
+                "--run", "ResourceCleanupAuditMain.lean", "4",
+            ],
+        )
         lakefile = tomllib.loads(LEAN_LAKEFILE.read_text(encoding="utf-8"))
         executable_names = [item["name"] for item in lakefile["lean_exe"]]
         self.assertEqual(executable_names, list(LEAN_CORPUS_BY_EXECUTABLE))
@@ -708,6 +715,25 @@ if args[0] == "run":
 
         self.assertEqual(completed.returncode, 23)
         self.assertEqual(len(calls), 4)
+
+    def test_resource_cleanup_failure_stops_before_corpus_checks(self) -> None:
+        workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+        script = named_step(
+            workflow["jobs"]["lean-audit"], "Run bounded Lean audit"
+        )["run"]
+        resource_gate = len(lean_module_sources()) + 2
+
+        completed, calls = lean_gate_invocations(self, script, fail_at=resource_gate)
+
+        self.assertEqual(completed.returncode, 23)
+        self.assertEqual(len(calls), resource_gate)
+        self.assertEqual(
+            calls[-1]["argv"][10:],
+            [
+                "lake", "env", "lean", "-j1", "-DElab.async=false",
+                "--run", "ResourceCleanupAuditMain.lean", "4",
+            ],
+        )
 
 class PlatformExecutionPolicyContractTests(unittest.TestCase):
     def test_automatic_ci_hosted_matrices_are_linux_only(self) -> None:

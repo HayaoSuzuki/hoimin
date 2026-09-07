@@ -1,3 +1,4 @@
+mod blocking;
 mod output;
 
 use std::ffi::OsString;
@@ -19,6 +20,7 @@ use uuid::Uuid;
 
 use crate::resource::{ProcessSupervisor, ResourceBackend, ResourceError};
 use crate::workspace::CommandEnvironment;
+use blocking::BlockingOwner;
 
 const POST_TERMINATION_GRACE: Duration = Duration::from_secs(1);
 const PROCESS_TREE_QUIESCENCE_GRACE: Duration = Duration::from_millis(250);
@@ -427,17 +429,18 @@ impl ProcessHandler {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut supervisor =
-            self.backend
-                .prepare(&mut command, process.limits)
-                .map_err(|error| {
-                    resource_failure(
-                        id,
-                        "process.resource.setup",
-                        "prepare resource supervisor",
-                        &error,
-                    )
-                })?;
+        let supervisor = self
+            .backend
+            .prepare(&mut command, process.limits)
+            .map_err(|error| {
+                resource_failure(
+                    id,
+                    "process.resource.setup",
+                    "prepare resource supervisor",
+                    &error,
+                )
+            })?;
+        let mut supervisor = BlockingOwner::new(supervisor);
         let started = Instant::now();
         let deadline = tokio::time::Instant::now() + process.limits.timeout;
         let start_guard = start_gate.as_ref().map(ProcessStartGate::begin_spawn);
@@ -474,7 +477,7 @@ impl ProcessHandler {
                 ));
             }
         };
-        if let Err(error) = supervisor.attach(&child) {
+        if let Err(error) = supervisor.value_mut(id)?.attach(&child) {
             let terminate_error = child.start_kill().err();
             drop(spawn_guard);
             drop(start_guard);
@@ -490,9 +493,17 @@ impl ProcessHandler {
                 },
             };
             if cleanup_error.is_none() {
+                supervisor.value_mut(id)?.record_root_reaped();
+            }
+            let supervisor_cleanup = supervisor.finish(id).await;
+            if cleanup_error.is_none() && supervisor_cleanup.is_ok() {
                 active_process.complete();
             }
-            return Err(attach_failure(id, &error, cleanup_error.as_ref()));
+            let mut primary = attach_failure(id, &error, cleanup_error.as_ref());
+            if let Err(cleanup) = supervisor_cleanup {
+                append_cleanup_failure(&mut primary, "supervisor destruction failed", &cleanup);
+            }
+            return Err(primary);
         }
         drop(spawn_guard);
         drop(start_guard);
@@ -524,7 +535,7 @@ impl ProcessHandler {
             receiver,
         ));
 
-        let (process_result, process_reaped) = match select_process_result(
+        let (mut process_result, mut process_reaped) = match select_process_result(
             child.wait(),
             cancellation.cancelled(),
             tokio::time::sleep_until(deadline),
@@ -561,6 +572,15 @@ impl ProcessHandler {
             }
         };
 
+        if let Err(cleanup) = supervisor.finish(id).await {
+            process_reaped = false;
+            match &mut process_result {
+                Err(primary) => {
+                    append_cleanup_failure(primary, "supervisor destruction failed", &cleanup);
+                }
+                Ok(_) => process_result = Err(cleanup),
+            }
+        }
         if process_reaped {
             active_process.complete();
         }
@@ -825,22 +845,31 @@ where
 
 async fn classify_and_terminate(
     id: EffectId,
-    supervisor: &mut ProcessSupervisor,
+    supervisor: &mut BlockingOwner<ProcessSupervisor>,
     termination: ProcessTermination,
 ) -> (Result<ProcessTermination, EffectFailed>, bool) {
-    let classification = supervisor.classify(termination).map_err(|error| {
-        resource_failure(
-            id,
-            "process.resource.classify",
-            "classify process termination",
-            &error,
-        )
-    });
-    let termination = match terminate_supervised(id, supervisor, false) {
+    match supervisor.value_mut(id) {
+        Ok(supervisor) => supervisor.record_root_reaped(),
+        Err(error) => return (Err(error), false),
+    }
+    let classification = supervisor
+        .run(id, move |supervisor| supervisor.classify(termination))
+        .await
+        .and_then(|result| {
+            result.map_err(|error| {
+                resource_failure(
+                    id,
+                    "process.resource.classify",
+                    "classify process termination",
+                    &error,
+                )
+            })
+        });
+    let termination = match terminate_supervised(id, supervisor, false).await {
         Ok(true) => Ok(true),
         Ok(false) => await_tree_quiescence_after_root_reap(id, supervisor).await,
         Err(mut primary) => {
-            if let Err(retry) = terminate_supervised(id, supervisor, false) {
+            if let Err(retry) = terminate_supervised(id, supervisor, false).await {
                 append_cleanup_failure(&mut primary, "supervisor termination retry failed", &retry);
             }
             Err(primary)
@@ -861,12 +890,13 @@ async fn classify_and_terminate(
 
 async fn terminate_and_reap(
     id: EffectId,
-    supervisor: &mut ProcessSupervisor,
+    supervisor: &mut BlockingOwner<ProcessSupervisor>,
     child: &mut Child,
 ) -> Result<bool, EffectFailed> {
-    match terminate_supervised(id, supervisor, true) {
+    match terminate_supervised(id, supervisor, true).await {
         Ok(_) => {
             wait_after_termination(id, child).await?;
+            supervisor.value_mut(id)?.record_root_reaped();
             await_tree_quiescence_after_root_reap(id, supervisor).await
         }
         Err(mut primary) => {
@@ -879,8 +909,13 @@ async fn terminate_and_reap(
                     &error,
                 )
             });
-            let tree_retry = terminate_supervised(id, supervisor, true).err();
+            let tree_retry = terminate_supervised(id, supervisor, true).await.err();
             let root_wait = wait_after_termination(id, child).await.err();
+            if root_wait.is_none()
+                && let Ok(supervisor) = supervisor.value_mut(id)
+            {
+                supervisor.record_root_reaped();
+            }
 
             for (label, cleanup) in [
                 ("direct root kill failed", root_kill),
@@ -898,7 +933,7 @@ async fn terminate_and_reap(
 
 async fn await_tree_quiescence_after_root_reap(
     id: EffectId,
-    supervisor: &mut ProcessSupervisor,
+    supervisor: &mut BlockingOwner<ProcessSupervisor>,
 ) -> Result<bool, EffectFailed> {
     // Keep this proof attempt strictly inside the shell's fixed two-second shutdown grace.
     // Failure to prove absence is safe: the lifecycle retains the workspace for the janitor.
@@ -906,7 +941,11 @@ async fn await_tree_quiescence_after_root_reap(
     let deadline = tokio::time::Instant::now() + PROCESS_TREE_QUIESCENCE_GRACE;
     loop {
         let quiescent = supervisor
-            .refresh_tree_quiescence_after_root_reap()
+            .run(
+                id,
+                ProcessSupervisor::refresh_tree_quiescence_after_root_reap,
+            )
+            .await?
             .map_err(|error| {
                 resource_failure(
                     id,
@@ -971,19 +1010,22 @@ fn attach_failure(
     }
 }
 
-pub(crate) fn terminate_supervised(
+async fn terminate_supervised(
     id: EffectId,
-    supervisor: &mut ProcessSupervisor,
+    supervisor: &mut BlockingOwner<ProcessSupervisor>,
     live_root_owned: bool,
 ) -> Result<bool, EffectFailed> {
-    supervisor.terminate(live_root_owned).map_err(|error| {
-        resource_failure(
-            id,
-            "process.resource.terminate",
-            "terminate supervised process tree",
-            &error,
-        )
-    })
+    supervisor
+        .run(id, move |supervisor| supervisor.terminate(live_root_owned))
+        .await?
+        .map_err(|error| {
+            resource_failure(
+                id,
+                "process.resource.terminate",
+                "terminate supervised process tree",
+                &error,
+            )
+        })
 }
 
 fn io_failure(

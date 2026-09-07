@@ -204,6 +204,20 @@ impl PortableSupervisor {
         })
     }
 
+    #[cfg_attr(
+        not(unix),
+        allow(
+            clippy::unused_self,
+            reason = "only Unix numeric process groups need disarming after reap"
+        )
+    )]
+    pub(crate) fn record_root_reaped(&mut self) {
+        #[cfg(unix)]
+        if let Some(group) = self.process_group.take() {
+            self.reaped_process_group = Some(group);
+        }
+    }
+
     pub(crate) fn classify(
         &mut self,
         termination: hoimin_core::ProcessTermination,
@@ -402,6 +416,27 @@ mod unix_tests {
 
     const EXPECTED_CPU_SOFT: &str = "HOIMIN_TEST_EXPECTED_CPU_SOFT";
     const EXPECTED_CPU_HARD: &str = "HOIMIN_TEST_EXPECTED_CPU_HARD";
+
+    #[test]
+    fn recording_root_reap_disarms_signaling_before_cleanup_can_yield() {
+        let mut supervisor =
+            super::PortableSupervisor::new(std::sync::Arc::default(), std::sync::Arc::default())
+                .unwrap();
+        supervisor.process_group = Some(41);
+        supervisor.record_root_reaped();
+        let signaling_target = supervisor.process_group.take();
+        let probe_target = supervisor.reaped_process_group;
+        drop(supervisor);
+        assert_eq!(
+            signaling_target, None,
+            "Drop must not signal a recycled group"
+        );
+        assert_eq!(
+            probe_target,
+            Some(41),
+            "non-signaling quiescence checks retain the group"
+        );
+    }
 
     #[test]
     fn reaped_group_is_forgotten_before_probe_error_can_escape() {
