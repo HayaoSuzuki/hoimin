@@ -15,6 +15,23 @@ use super::{CopyOptions, WorkspaceDiagnostic, WorkspaceError};
 #[cfg(test)]
 thread_local! {
     static BUILD_METRICS: Cell<(u64, u64)> = const { Cell::new((0, 0)) };
+    static SOURCE_CONTENT_METRICS: Cell<SourceContentMetrics> = const {
+        Cell::new(SourceContentMetrics {
+            reads: 0,
+            read_bytes: 0,
+            hashes: 0,
+            hash_bytes: 0,
+        })
+    };
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct SourceContentMetrics {
+    pub(crate) reads: u64,
+    pub(crate) read_bytes: u64,
+    pub(crate) hashes: u64,
+    pub(crate) hash_bytes: u64,
 }
 
 #[cfg(test)]
@@ -25,6 +42,43 @@ pub(crate) fn reset_build_metrics() {
 #[cfg(test)]
 pub(crate) fn build_metrics() -> (u64, u64) {
     BUILD_METRICS.with(Cell::get)
+}
+
+#[cfg(test)]
+pub(crate) fn reset_source_content_metrics() {
+    SOURCE_CONTENT_METRICS.with(|metrics| {
+        metrics.set(SourceContentMetrics {
+            reads: 0,
+            read_bytes: 0,
+            hashes: 0,
+            hash_bytes: 0,
+        });
+    });
+}
+
+#[cfg(test)]
+pub(crate) fn source_content_metrics() -> SourceContentMetrics {
+    SOURCE_CONTENT_METRICS.with(Cell::get)
+}
+
+#[cfg(test)]
+pub(crate) fn record_source_content_read(bytes: usize) {
+    SOURCE_CONTENT_METRICS.with(|metrics| {
+        let mut current = metrics.get();
+        current.reads += 1;
+        current.read_bytes += bytes as u64;
+        metrics.set(current);
+    });
+}
+
+#[cfg(test)]
+pub(crate) fn record_source_content_hash(bytes: usize) {
+    SOURCE_CONTENT_METRICS.with(|metrics| {
+        let mut current = metrics.get();
+        current.hashes += 1;
+        current.hash_bytes += bytes as u64;
+        metrics.set(current);
+    });
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -41,15 +95,6 @@ pub struct WorkspaceManifest {
 }
 
 impl WorkspaceManifest {
-    #[cfg(all(test, windows))]
-    pub(crate) fn from_entries_for_test(entries: Vec<ManifestEntry>) -> Self {
-        let logical_bytes = entries.iter().map(|entry| entry.size).sum();
-        Self {
-            entries,
-            logical_bytes,
-        }
-    }
-
     #[must_use]
     pub fn entries(&self) -> &[ManifestEntry] {
         &self.entries
@@ -106,45 +151,39 @@ pub fn build_manifest(
     root: &Utf8Path,
     options: &CopyOptions,
 ) -> Result<(WorkspaceManifest, Vec<WorkspaceDiagnostic>), WorkspaceError> {
+    build_manifest_with_contents(root, options, |_, _| Ok(()))
+}
+
+pub(crate) fn build_manifest_with_contents(
+    root: &Utf8Path,
+    options: &CopyOptions,
+    mut observe: impl FnMut(&ManifestEntry, &[u8]) -> Result<(), WorkspaceError>,
+) -> Result<(WorkspaceManifest, Vec<WorkspaceDiagnostic>), WorkspaceError> {
     #[cfg(test)]
     BUILD_METRICS.with(|metrics| {
         let (builds, bytes) = metrics.get();
         metrics.set((builds + 1, bytes));
     });
-    let metadata =
-        fs::metadata(root).map_err(|error| WorkspaceError::io("read root", root, error))?;
-    if !metadata.is_dir() {
-        return Err(WorkspaceError::RootNotDirectory(root.to_owned()));
-    }
     let mut entries = BTreeMap::<Utf8PathBuf, ManifestEntry>::new();
-    let mut symlinks = BTreeSet::<Utf8PathBuf>::new();
-
-    let normal_overrides = overrides(root.as_std_path(), &[], &options.excludes)?;
-    let mut normal = WalkBuilder::new(root.as_std_path());
-    normal
-        .hidden(false)
-        .require_git(false)
-        .follow_links(false)
-        .overrides(normal_overrides)
-        .filter_entry(|entry| !default_excluded(entry));
-    collect(normal, root, &mut entries, &mut symlinks)?;
-
-    if !options.includes.is_empty() {
-        let include_overrides =
-            overrides(root.as_std_path(), &options.includes, &options.excludes)?;
-        let mut included = WalkBuilder::new(root.as_std_path());
-        included
-            .hidden(false)
-            .ignore(false)
-            .git_ignore(false)
-            .git_global(false)
-            .git_exclude(false)
-            .parents(false)
-            .follow_links(false)
-            .overrides(include_overrides)
-            .filter_entry(|entry| !default_excluded(entry));
-        collect(included, root, &mut entries, &mut symlinks)?;
-    }
+    let symlinks = walk_selected_files(root, options, &mut |path, native_path| {
+        let bytes = fs::read(native_path)
+            .map_err(|error| WorkspaceError::io("read manifest file", &path, error))?;
+        #[cfg(test)]
+        record_source_content_read(bytes.len());
+        #[cfg(test)]
+        BUILD_METRICS.with(|metrics| {
+            let (builds, total_bytes) = metrics.get();
+            metrics.set((builds, total_bytes + bytes.len() as u64));
+        });
+        let size = u64::try_from(bytes.len()).map_err(|_| WorkspaceError::CopySizeOverflow)?;
+        let blake3 = blake3::hash(&bytes);
+        #[cfg(test)]
+        record_source_content_hash(bytes.len());
+        let entry = ManifestEntry { path, size, blake3 };
+        observe(&entry, &bytes)?;
+        entries.insert(entry.path.clone(), entry);
+        Ok(())
+    })?;
 
     let logical_bytes = entries.values().try_fold(0_u64, |total, entry| {
         total
@@ -161,6 +200,67 @@ pub fn build_manifest(
             .map(|path| WorkspaceDiagnostic::SymlinkSkipped { path })
             .collect(),
     ))
+}
+
+pub(crate) fn inventory_logical_bytes(
+    root: &Utf8Path,
+    options: &CopyOptions,
+) -> Result<u64, WorkspaceError> {
+    let mut sizes = BTreeMap::<Utf8PathBuf, u64>::new();
+    walk_selected_files(root, options, &mut |path, native_path| {
+        let size = fs::metadata(native_path)
+            .map_err(|error| WorkspaceError::io("read inventory metadata", &path, error))?
+            .len();
+        sizes.insert(path, size);
+        Ok(())
+    })?;
+    sizes.values().try_fold(0_u64, |total, size| {
+        total
+            .checked_add(*size)
+            .ok_or(WorkspaceError::CopySizeOverflow)
+    })
+}
+
+fn walk_selected_files(
+    root: &Utf8Path,
+    options: &CopyOptions,
+    visit: &mut impl FnMut(Utf8PathBuf, &Path) -> Result<(), WorkspaceError>,
+) -> Result<BTreeSet<Utf8PathBuf>, WorkspaceError> {
+    let metadata =
+        fs::metadata(root).map_err(|error| WorkspaceError::io("read root", root, error))?;
+    if !metadata.is_dir() {
+        return Err(WorkspaceError::RootNotDirectory(root.to_owned()));
+    }
+    let mut symlinks = BTreeSet::<Utf8PathBuf>::new();
+
+    let normal_overrides = overrides(root.as_std_path(), &[], &options.excludes)?;
+    let mut normal = WalkBuilder::new(root.as_std_path());
+    normal
+        .hidden(false)
+        .require_git(false)
+        .follow_links(false)
+        .overrides(normal_overrides)
+        .filter_entry(|entry| !default_excluded(entry));
+    collect(normal, root, &mut symlinks, visit)?;
+
+    if !options.includes.is_empty() {
+        let include_overrides =
+            overrides(root.as_std_path(), &options.includes, &options.excludes)?;
+        let mut included = WalkBuilder::new(root.as_std_path());
+        included
+            .hidden(false)
+            .ignore(false)
+            .git_ignore(false)
+            .git_global(false)
+            .git_exclude(false)
+            .parents(false)
+            .follow_links(false)
+            .overrides(include_overrides)
+            .filter_entry(|entry| !default_excluded(entry));
+        collect(included, root, &mut symlinks, visit)?;
+    }
+
+    Ok(symlinks)
 }
 
 fn overrides(
@@ -197,8 +297,8 @@ fn overrides(
 fn collect(
     builder: WalkBuilder,
     root: &Utf8Path,
-    entries: &mut BTreeMap<Utf8PathBuf, ManifestEntry>,
     symlinks: &mut BTreeSet<Utf8PathBuf>,
+    visit: &mut impl FnMut(Utf8PathBuf, &Path) -> Result<(), WorkspaceError>,
 ) -> Result<(), WorkspaceError> {
     for result in builder.build() {
         let entry = result.map_err(|error| WorkspaceError::Walk(error.to_string()))?;
@@ -216,22 +316,7 @@ fn collect(
         if !file_type.is_file() {
             continue;
         }
-        let bytes = fs::read(entry.path())
-            .map_err(|error| WorkspaceError::io("read manifest file", &path, error))?;
-        #[cfg(test)]
-        BUILD_METRICS.with(|metrics| {
-            let (builds, total_bytes) = metrics.get();
-            metrics.set((builds, total_bytes + bytes.len() as u64));
-        });
-        let size = u64::try_from(bytes.len()).map_err(|_| WorkspaceError::CopySizeOverflow)?;
-        entries.insert(
-            path.clone(),
-            ManifestEntry {
-                path,
-                size,
-                blake3: blake3::hash(&bytes),
-            },
-        );
+        visit(path, entry.path())?;
     }
     Ok(())
 }

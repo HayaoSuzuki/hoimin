@@ -1,3 +1,5 @@
+#[cfg(test)]
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 use std::fs;
@@ -12,12 +14,28 @@ use std::time::Duration;
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{CreateWorker, EffectId, PreflightCompleted, ReservationId};
 
-use super::manifest::build_manifest;
+use super::manifest::{build_manifest, build_manifest_with_contents, inventory_logical_bytes};
 use super::{
     CopyOptions, DiskSnapshot, ManagedRunRoot, OwnedWorkspaceDirectory, SnapshotFile, WorkerRoot,
     WorkerWorkspace, WorkspaceDiagnostic, WorkspaceError, WorkspaceManifest,
 };
 
+#[cfg(test)]
+thread_local! {
+    static SNAPSHOT_WRITE_METRICS: Cell<(u64, u64)> = const { Cell::new((0, 0)) };
+}
+
+#[cfg(test)]
+fn reset_snapshot_write_metrics() {
+    SNAPSHOT_WRITE_METRICS.with(|metrics| metrics.set((0, 0)));
+}
+
+#[cfg(test)]
+fn snapshot_write_metrics() -> (u64, u64) {
+    SNAPSHOT_WRITE_METRICS.with(Cell::get)
+}
+
+#[derive(Debug)]
 struct PendingOwnedWorkspace(Option<OwnedWorkspaceDirectory>);
 
 impl PendingOwnedWorkspace {
@@ -45,6 +63,23 @@ impl Drop for PendingOwnedWorkspace {
     fn drop(&mut self) {
         if let Some(owner) = self.0.as_ref() {
             let _ = owner.try_cleanup();
+        }
+    }
+}
+
+#[derive(Debug)]
+struct PendingDiskSnapshot {
+    owner: PendingOwnedWorkspace,
+    root: Utf8PathBuf,
+    files: BTreeMap<Utf8PathBuf, SnapshotFile>,
+}
+
+impl PendingDiskSnapshot {
+    fn finish(self) -> DiskSnapshot {
+        DiskSnapshot {
+            _owner: self.owner.finish(),
+            root: self.root,
+            files: self.files,
         }
     }
 }
@@ -385,29 +420,21 @@ impl WorkspacePlan {
             .map_err(|error| WorkspaceError::io("canonicalize root", root, error))?;
         let original_root =
             Utf8PathBuf::from_path_buf(canonical).map_err(|_| WorkspaceError::NonUtf8Path)?;
-        let (manifest, diagnostics) = build_manifest(&original_root, &options)?;
         let owned_copies = u64::from(requested_workers)
             .checked_add(1)
             .ok_or(WorkspaceError::CopySizeOverflow)?;
-        let planned_owned_bytes = manifest
-            .logical_bytes()
-            .checked_mul(owned_copies)
-            .ok_or(WorkspaceError::CopySizeOverflow)?;
-        if let Some(limit) = max_owned_bytes
-            && planned_owned_bytes >= limit
-        {
-            return Err(WorkspaceError::OwnedWorkspaceLimit {
-                planned: planned_owned_bytes,
-                limit,
-            }
-            .into());
+        if let Some(limit) = max_owned_bytes {
+            let inventory_bytes = inventory_logical_bytes(&original_root, &options)?;
+            enforce_owned_limit(inventory_bytes, owned_copies, Some(limit))?;
         }
-        validate(&original_root, &manifest).map_err(ValidatedPreflightError::Validation)?;
-        let snapshot = Arc::new(create_disk_snapshot(
+        let (manifest, diagnostics, snapshot) = create_pending_disk_snapshot(
             &original_root,
-            &manifest,
+            &options,
+            owned_copies,
+            max_owned_bytes,
             managed_root.as_ref(),
-        )?);
+        )?;
+        validate(&original_root, &manifest).map_err(ValidatedPreflightError::Validation)?;
         let (current, _) = build_manifest(&original_root, &options)?;
         if !manifest.content_matches(&current) {
             return Err(WorkspaceError::OriginalChanged {
@@ -421,6 +448,7 @@ impl WorkspacePlan {
             .logical_bytes()
             .checked_mul(u64::from(requested_workers))
             .ok_or(WorkspaceError::CopySizeOverflow)?;
+        let snapshot = Arc::new(snapshot.finish());
         Ok(Self {
             preflight_id,
             original_root,
@@ -689,44 +717,76 @@ impl WorkspacePlan {
     }
 }
 
-fn create_disk_snapshot(
-    original_root: &Utf8Path,
-    manifest: &WorkspaceManifest,
-    managed_root: Option<&Arc<ManagedRunRoot>>,
-) -> Result<DiskSnapshot, WorkspaceError> {
-    let temp = if let Some(managed) = managed_root {
-        OwnedWorkspaceDirectory::Managed(managed.create_child("snapshot-")?)
+fn enforce_owned_limit(
+    logical_bytes: u64,
+    owned_copies: u64,
+    limit: Option<u64>,
+) -> Result<(), WorkspaceError> {
+    let planned = logical_bytes
+        .checked_mul(owned_copies)
+        .ok_or(WorkspaceError::CopySizeOverflow)?;
+    if let Some(limit) = limit
+        && planned >= limit
+    {
+        Err(WorkspaceError::OwnedWorkspaceLimit { planned, limit })
     } else {
-        OwnedWorkspaceDirectory::Temporary(
-            tempfile::Builder::new()
-                .prefix("hoimin-snapshot-")
-                .tempdir()
-                .map_err(|error| {
-                    WorkspaceError::io("create shared snapshot", original_root, error)
-                })?,
-        )
-    };
-    let temp = PendingOwnedWorkspace::new(temp);
-    let root_path = temp.path().join("workspace");
-    fs::create_dir(&root_path)
-        .map_err(|error| WorkspaceError::io("create shared snapshot root", original_root, error))?;
-    let root = Utf8PathBuf::from_path_buf(root_path).map_err(|_| WorkspaceError::NonUtf8Path)?;
-    let mut files = BTreeMap::new();
+        Ok(())
+    }
+}
 
-    for entry in manifest.entries() {
-        let source = original_root.join(&entry.path);
-        let bytes = fs::read(&source)
-            .map_err(|error| WorkspaceError::io("read original", &entry.path, error))?;
-        let amount = u64::try_from(bytes.len()).map_err(|_| WorkspaceError::CopySizeOverflow)?;
-        if amount != entry.size || blake3::hash(&bytes) != entry.blake3 {
-            return Err(WorkspaceError::OriginalChanged {
-                path: entry.path.clone(),
-            });
+struct SnapshotWriter<'a> {
+    original_root: &'a Utf8Path,
+    snapshot_root: &'a Utf8Path,
+    owned_copies: u64,
+    max_owned_bytes: Option<u64>,
+    logical_bytes: u64,
+    first_entries: BTreeMap<Utf8PathBuf, super::ManifestEntry>,
+    files: BTreeMap<Utf8PathBuf, SnapshotFile>,
+}
+
+impl<'a> SnapshotWriter<'a> {
+    fn new(
+        original_root: &'a Utf8Path,
+        snapshot_root: &'a Utf8Path,
+        owned_copies: u64,
+        max_owned_bytes: Option<u64>,
+    ) -> Self {
+        Self {
+            original_root,
+            snapshot_root,
+            owned_copies,
+            max_owned_bytes,
+            logical_bytes: 0,
+            first_entries: BTreeMap::new(),
+            files: BTreeMap::new(),
         }
+    }
+
+    fn write(&mut self, entry: &super::ManifestEntry, bytes: &[u8]) -> Result<(), WorkspaceError> {
+        if let Some(first) = self.first_entries.get(&entry.path) {
+            if first != entry {
+                return Err(WorkspaceError::OriginalChanged {
+                    path: entry.path.clone(),
+                });
+            }
+            let permissions = fs::metadata(self.original_root.join(&entry.path))
+                .map_err(|error| WorkspaceError::io("read original metadata", &entry.path, error))?
+                .permissions();
+            self.files
+                .insert(entry.path.clone(), SnapshotFile::new(permissions));
+            return Ok(());
+        }
+
+        let next_logical_bytes = self
+            .logical_bytes
+            .checked_add(entry.size)
+            .ok_or(WorkspaceError::CopySizeOverflow)?;
+        enforce_owned_limit(next_logical_bytes, self.owned_copies, self.max_owned_bytes)?;
+        let source = self.original_root.join(&entry.path);
         let permissions = fs::metadata(&source)
             .map_err(|error| WorkspaceError::io("read original metadata", &entry.path, error))?
             .permissions();
-        let destination = root.join(&entry.path);
+        let destination = self.snapshot_root.join(&entry.path);
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent).map_err(|error| {
                 WorkspaceError::io("create shared snapshot directory", parent, error)
@@ -749,14 +809,88 @@ fn create_disk_snapshot(
         }
         fs::write(&destination, bytes)
             .map_err(|error| WorkspaceError::io("write shared snapshot", &entry.path, error))?;
-        files.insert(entry.path.clone(), SnapshotFile::new(permissions));
+        #[cfg(test)]
+        SNAPSHOT_WRITE_METRICS.with(|metrics| {
+            let (writes, written_bytes) = metrics.get();
+            metrics.set((writes + 1, written_bytes + bytes.len() as u64));
+        });
+        self.logical_bytes = next_logical_bytes;
+        self.first_entries.insert(entry.path.clone(), entry.clone());
+        self.files
+            .insert(entry.path.clone(), SnapshotFile::new(permissions));
+        Ok(())
     }
 
-    Ok(DiskSnapshot {
-        _owner: temp.finish(),
-        root,
-        files,
-    })
+    fn finish(self) -> (u64, BTreeMap<Utf8PathBuf, SnapshotFile>) {
+        (self.logical_bytes, self.files)
+    }
+}
+
+fn create_pending_disk_snapshot(
+    original_root: &Utf8Path,
+    options: &CopyOptions,
+    owned_copies: u64,
+    max_owned_bytes: Option<u64>,
+    managed_root: Option<&Arc<ManagedRunRoot>>,
+) -> Result<
+    (
+        WorkspaceManifest,
+        Vec<WorkspaceDiagnostic>,
+        PendingDiskSnapshot,
+    ),
+    WorkspaceError,
+> {
+    let temp = if let Some(managed) = managed_root {
+        OwnedWorkspaceDirectory::Managed(managed.create_child("snapshot-")?)
+    } else {
+        OwnedWorkspaceDirectory::Temporary(
+            tempfile::Builder::new()
+                .prefix("hoimin-snapshot-")
+                .tempdir()
+                .map_err(|error| {
+                    WorkspaceError::io("create shared snapshot", original_root, error)
+                })?,
+        )
+    };
+    let temp = PendingOwnedWorkspace::new(temp);
+    let root_path = temp.path().join("workspace");
+    fs::create_dir(&root_path)
+        .map_err(|error| WorkspaceError::io("create shared snapshot root", original_root, error))?;
+    let canonical_original = fs::canonicalize(original_root)
+        .map_err(|error| WorkspaceError::io("canonicalize root", original_root, error))?;
+    let canonical_root = fs::canonicalize(&root_path).map_err(|error| {
+        WorkspaceError::io("canonicalize shared snapshot", original_root, error)
+    })?;
+    if super::relative_inside(&canonical_root, &canonical_original).is_some() {
+        return Err(WorkspaceError::io(
+            "create shared snapshot",
+            Utf8PathBuf::from_path_buf(canonical_root).map_err(|_| WorkspaceError::NonUtf8Path)?,
+            "snapshot directory resolves inside original workspace",
+        ));
+    }
+    let root =
+        Utf8PathBuf::from_path_buf(canonical_root).map_err(|_| WorkspaceError::NonUtf8Path)?;
+    let mut writer = SnapshotWriter::new(original_root, &root, owned_copies, max_owned_bytes);
+
+    let (manifest, diagnostics) =
+        build_manifest_with_contents(original_root, options, |entry, bytes| {
+            writer.write(entry, bytes)
+        })?;
+    let (logical_bytes, files) = writer.finish();
+
+    if logical_bytes != manifest.logical_bytes() {
+        return Err(WorkspaceError::CopySizeOverflow);
+    }
+
+    Ok((
+        manifest,
+        diagnostics,
+        PendingDiskSnapshot {
+            owner: temp,
+            root,
+            files,
+        },
+    ))
 }
 
 #[cfg(test)]
@@ -768,11 +902,71 @@ mod tests {
 
     use hoimin_core::{BudgetLedger, RunBudgets, reserve_workspace_copy};
 
-    #[cfg(windows)]
     use crate::workspace::ManifestEntry;
 
     use super::*;
     use crate::workspace::{ManagedRootCoordinator, OwnerKind};
+
+    #[test]
+    fn preflight_reads_and_hashes_source_contents_twice() {
+        let source = tempfile::tempdir().unwrap();
+        let contents = vec![b'x'; 1024 * 1024];
+        fs::write(source.path().join("target.py"), &contents).unwrap();
+        let source_root = Utf8Path::from_path(source.path()).unwrap();
+        crate::workspace::manifest::reset_source_content_metrics();
+
+        let plan =
+            WorkspacePlan::preflight(source_root, EffectId(6), 1, CopyOptions::default()).unwrap();
+
+        assert_eq!(plan.manifest.logical_bytes(), 1024 * 1024);
+        assert_eq!(
+            crate::workspace::manifest::source_content_metrics(),
+            crate::workspace::manifest::SourceContentMetrics {
+                reads: 2,
+                read_bytes: 2 * 1024 * 1024,
+                hashes: 2,
+                hash_bytes: 2 * 1024 * 1024,
+            }
+        );
+    }
+
+    #[test]
+    fn inventory_counts_unique_paths_without_reading_contents() {
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("target.py"), b"12345").unwrap();
+        let source_root = Utf8Path::from_path(source.path()).unwrap();
+        let options = CopyOptions {
+            includes: vec!["target.py".to_owned()],
+            excludes: Vec::new(),
+        };
+        crate::workspace::manifest::reset_source_content_metrics();
+
+        assert_eq!(inventory_logical_bytes(source_root, &options).unwrap(), 5);
+        assert_eq!(
+            crate::workspace::manifest::source_content_metrics(),
+            crate::workspace::manifest::SourceContentMetrics {
+                reads: 0,
+                read_bytes: 0,
+                hashes: 0,
+                hash_bytes: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn owned_limit_check_rejects_equality_and_overflow() {
+        assert_eq!(
+            enforce_owned_limit(5, 2, Some(10)),
+            Err(WorkspaceError::OwnedWorkspaceLimit {
+                planned: 10,
+                limit: 10,
+            })
+        );
+        assert_eq!(
+            enforce_owned_limit(u64::MAX, 2, None),
+            Err(WorkspaceError::CopySizeOverflow)
+        );
+    }
 
     #[test]
     fn owned_byte_limit_stops_before_snapshot_creation() {
@@ -784,6 +978,8 @@ mod tests {
         let coordinator = ManagedRootCoordinator::open(parent).unwrap();
         let root =
             Arc::new(ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap());
+        crate::workspace::manifest::reset_source_content_metrics();
+        reset_snapshot_write_metrics();
 
         let error = WorkspacePlan::preflight_validated_in(
             source,
@@ -812,6 +1008,189 @@ mod tests {
             2,
             "snapshot child must not be created: {names:?}"
         );
+        assert_eq!(
+            crate::workspace::manifest::source_content_metrics(),
+            crate::workspace::manifest::SourceContentMetrics {
+                reads: 0,
+                read_bytes: 0,
+                hashes: 0,
+                hash_bytes: 0,
+            }
+        );
+        assert_eq!(snapshot_write_metrics(), (0, 0));
+    }
+
+    #[test]
+    fn source_growth_is_rechecked_before_the_first_snapshot_write() {
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("target.py"), b"1234").unwrap();
+        let source_root = Utf8Path::from_path(source.path()).unwrap();
+        assert_eq!(
+            inventory_logical_bytes(source_root, &CopyOptions::default()).unwrap(),
+            4
+        );
+        fs::write(source.path().join("target.py"), b"12345").unwrap();
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root =
+            Arc::new(ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap());
+        reset_snapshot_write_metrics();
+
+        let error = create_pending_disk_snapshot(
+            source_root,
+            &CopyOptions::default(),
+            2,
+            Some(10),
+            Some(&root),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            WorkspaceError::OwnedWorkspaceLimit {
+                planned: 10,
+                limit: 10,
+            }
+        );
+        assert_eq!(snapshot_write_metrics(), (0, 0));
+        let names = fs::read_dir(root.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+        assert_eq!(names.len(), 2, "partial snapshot leaked: {names:?}");
+    }
+
+    #[test]
+    fn added_file_crossing_the_limit_cleans_a_partial_snapshot() {
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("target.py"), b"1234").unwrap();
+        let source_root = Utf8Path::from_path(source.path()).unwrap();
+        assert_eq!(
+            inventory_logical_bytes(source_root, &CopyOptions::default()).unwrap(),
+            4
+        );
+        fs::write(source.path().join("added.py"), b"12").unwrap();
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root =
+            Arc::new(ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap());
+        reset_snapshot_write_metrics();
+
+        let error = create_pending_disk_snapshot(
+            source_root,
+            &CopyOptions::default(),
+            2,
+            Some(10),
+            Some(&root),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            WorkspaceError::OwnedWorkspaceLimit {
+                planned: 12,
+                limit: 10,
+            }
+        );
+        assert_eq!(snapshot_write_metrics(), (1, 2));
+        let names = fs::read_dir(root.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+        assert_eq!(names.len(), 2, "partial snapshot leaked: {names:?}");
+    }
+
+    #[test]
+    fn source_shrink_uses_the_actual_manifest_size() {
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("target.py"), b"12345").unwrap();
+        let source_root = Utf8Path::from_path(source.path()).unwrap();
+        assert_eq!(
+            inventory_logical_bytes(source_root, &CopyOptions::default()).unwrap(),
+            5
+        );
+        fs::write(source.path().join("target.py"), b"123").unwrap();
+
+        let (manifest, _, snapshot) =
+            create_pending_disk_snapshot(source_root, &CopyOptions::default(), 2, Some(12), None)
+                .unwrap();
+
+        assert_eq!(manifest.logical_bytes(), 3);
+        assert_eq!(fs::read(snapshot.root.join("target.py")).unwrap(), b"123");
+    }
+
+    #[test]
+    fn snapshot_inside_source_is_rejected_before_content_reads_or_writes() {
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("target.py"), b"payload\n").unwrap();
+        let source_root = Utf8Path::from_path(source.path()).unwrap();
+        let managed_parent = source.path().join("managed");
+        fs::create_dir(&managed_parent).unwrap();
+        let managed_parent = Utf8Path::from_path(&managed_parent).unwrap();
+        let coordinator = ManagedRootCoordinator::open(managed_parent).unwrap();
+        let root =
+            Arc::new(ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap());
+        let inventory = inventory_logical_bytes(source_root, &CopyOptions::default()).unwrap();
+        let limit = inventory
+            .checked_add(1_024)
+            .unwrap()
+            .checked_mul(2)
+            .unwrap();
+        let validation_called = Cell::new(false);
+        crate::workspace::manifest::reset_source_content_metrics();
+        reset_snapshot_write_metrics();
+
+        let error = WorkspacePlan::preflight_validated_in(
+            source_root,
+            EffectId(7),
+            1,
+            CopyOptions::default(),
+            Some(Arc::clone(&root)),
+            Some(limit),
+            |_, _| {
+                validation_called.set(true);
+                Ok::<_, Infallible>(())
+            },
+        )
+        .unwrap_err();
+
+        let ValidatedPreflightError::Workspace(WorkspaceError::Io {
+            operation,
+            path,
+            message,
+        }) = error
+        else {
+            panic!("expected nested-snapshot error, got {error:?}");
+        };
+        assert_eq!(operation, "create shared snapshot");
+        assert_eq!(
+            message,
+            "snapshot directory resolves inside original workspace"
+        );
+        let canonical_source = fs::canonicalize(source_root).unwrap();
+        assert!(super::super::relative_inside(path.as_std_path(), &canonical_source).is_some());
+        assert!(!validation_called.get());
+        assert_eq!(
+            crate::workspace::manifest::source_content_metrics(),
+            crate::workspace::manifest::SourceContentMetrics {
+                reads: 0,
+                read_bytes: 0,
+                hashes: 0,
+                hash_bytes: 0,
+            }
+        );
+        assert_eq!(snapshot_write_metrics(), (0, 0));
+        assert_eq!(
+            fs::read(source.path().join("target.py")).unwrap(),
+            b"payload\n"
+        );
+        let names = fs::read_dir(root.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+        assert_eq!(names.len(), 2, "rejected snapshot child leaked: {names:?}");
     }
 
     #[test]
@@ -953,11 +1332,91 @@ mod tests {
         drop(materialized);
     }
 
+    #[test]
+    fn duplicate_include_reads_each_visit_but_writes_and_charges_once() {
+        let source = tempfile::tempdir().unwrap();
+        let bytes = b"payload\n";
+        fs::write(source.path().join("target.py"), bytes).unwrap();
+        let source_root = Utf8Path::from_path(source.path()).unwrap();
+        let options = CopyOptions {
+            includes: vec!["target.py".to_owned()],
+            excludes: Vec::new(),
+        };
+        crate::workspace::manifest::reset_source_content_metrics();
+        reset_snapshot_write_metrics();
+
+        let plan = WorkspacePlan::preflight(source_root, EffectId(7), 1, options).unwrap();
+
+        let bytes_len = u64::try_from(bytes.len()).unwrap();
+        assert_eq!(plan.manifest.logical_bytes(), bytes_len);
+        assert_eq!(snapshot_write_metrics(), (1, bytes_len));
+        assert_eq!(
+            crate::workspace::manifest::source_content_metrics(),
+            crate::workspace::manifest::SourceContentMetrics {
+                reads: 4,
+                read_bytes: 4 * bytes_len,
+                hashes: 4,
+                hash_bytes: 4 * bytes_len,
+            }
+        );
+
+        let completed = plan.completed();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: completed.aggregate_logical_bytes,
+            processes: 1,
+        });
+        let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+        let worker = plan
+            .create_worker(&grant.create_worker(EffectId(8), 0).unwrap())
+            .unwrap();
+        assert_eq!(worker.read("target.py").unwrap(), bytes);
+        assert_eq!(plan.observed_copy_bytes(), bytes_len);
+    }
+
+    #[test]
+    fn duplicate_path_content_drift_does_not_replace_the_first_snapshot() {
+        let source = tempfile::tempdir().unwrap();
+        let source_root = Utf8Path::from_path(source.path()).unwrap();
+        let snapshot = tempfile::tempdir().unwrap();
+        let snapshot_root = Utf8Path::from_path(snapshot.path()).unwrap();
+        let first_bytes = b"first\n";
+        let second_bytes = b"other\n";
+        fs::write(source.path().join("target.py"), first_bytes).unwrap();
+        let entry = |bytes: &[u8]| ManifestEntry {
+            path: Utf8PathBuf::from("target.py"),
+            size: u64::try_from(bytes.len()).unwrap(),
+            blake3: blake3::hash(bytes),
+        };
+        reset_snapshot_write_metrics();
+        let mut writer = SnapshotWriter::new(source_root, snapshot_root, 2, None);
+
+        writer.write(&entry(first_bytes), first_bytes).unwrap();
+        fs::write(source.path().join("target.py"), second_bytes).unwrap();
+        let error = writer
+            .write(&entry(second_bytes), second_bytes)
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            WorkspaceError::OriginalChanged {
+                path: Utf8PathBuf::from("target.py"),
+            }
+        );
+        assert_eq!(
+            fs::read(snapshot.path().join("target.py")).unwrap(),
+            first_bytes
+        );
+        assert_eq!(snapshot_write_metrics(), (1, 6));
+    }
+
     #[cfg(windows)]
     #[test]
     fn disk_snapshot_rejects_paths_that_alias_on_its_filesystem() {
         let source = tempfile::tempdir().unwrap();
         let source_root = Utf8PathBuf::from_path_buf(source.path().to_owned()).unwrap();
+        let snapshot = tempfile::tempdir().unwrap();
+        let snapshot_root = Utf8Path::from_path(snapshot.path()).unwrap();
         let bytes = b"same source bytes";
         fs::write(source.path().join("TARGET.py"), bytes).unwrap();
         let entry = |path: &str| ManifestEntry {
@@ -965,10 +1424,10 @@ mod tests {
             size: u64::try_from(bytes.len()).unwrap(),
             blake3: blake3::hash(bytes),
         };
-        let manifest =
-            WorkspaceManifest::from_entries_for_test(vec![entry("TARGET.py"), entry("target.py")]);
+        let mut writer = SnapshotWriter::new(&source_root, snapshot_root, 1, None);
+        writer.write(&entry("TARGET.py"), bytes).unwrap();
 
-        let error = create_disk_snapshot(&source_root, &manifest, None).unwrap_err();
+        let error = writer.write(&entry("target.py"), bytes).unwrap_err();
 
         assert_eq!(
             error,
@@ -1028,7 +1487,63 @@ mod tests {
     }
 
     #[test]
-    fn managed_snapshot_failure_removes_its_partial_child() {
+    fn validation_runs_after_snapshot_creation_and_failure_cleans_it() {
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("target.py"), b"payload\n").unwrap();
+        let source_root = Utf8Path::from_path(source.path()).unwrap();
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root =
+            Arc::new(ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap());
+        let saw_snapshot = Cell::new(false);
+        reset_snapshot_write_metrics();
+
+        let error = WorkspacePlan::preflight_validated_in(
+            source_root,
+            EffectId(7),
+            1,
+            CopyOptions::default(),
+            Some(Arc::clone(&root)),
+            Some(1_024),
+            |_, _| {
+                let snapshot = fs::read_dir(root.path())
+                    .unwrap()
+                    .map(|entry| entry.unwrap().path())
+                    .find(|path| {
+                        path.file_name()
+                            .is_some_and(|name| name.to_string_lossy().starts_with("snapshot-"))
+                    })
+                    .expect("validation should observe the pending snapshot");
+                assert_eq!(
+                    fs::read(snapshot.join("workspace").join("target.py")).unwrap(),
+                    b"payload\n"
+                );
+                saw_snapshot.set(true);
+                Err("rejected")
+            },
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            ValidatedPreflightError::Validation("rejected")
+        ));
+        assert!(saw_snapshot.get());
+        assert_eq!(snapshot_write_metrics(), (1, 8));
+        let names = fs::read_dir(root.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names.len(),
+            2,
+            "failed validation leaked snapshot: {names:?}"
+        );
+    }
+
+    #[test]
+    fn managed_final_verification_failure_removes_its_partial_child() {
         let source = tempfile::tempdir().unwrap();
         fs::write(source.path().join("target.py"), b"before\n").unwrap();
         let source_root = Utf8Path::from_path(source.path()).unwrap();
@@ -1045,7 +1560,7 @@ mod tests {
             CopyOptions::default(),
             Some(Arc::clone(&root)),
             Some(1_024),
-            |source, _| fs::write(source.join("target.py"), b"after\n"),
+            |source, _| fs::write(source.join("target.py"), b"second\n"),
         )
         .unwrap_err();
 
@@ -1058,6 +1573,56 @@ mod tests {
             .map(|entry| entry.unwrap().file_name())
             .collect::<Vec<_>>();
         assert_eq!(names.len(), 2, "partial snapshot leaked: {names:?}");
+    }
+
+    #[test]
+    fn final_verification_detects_added_and_removed_paths_and_cleans_snapshot() {
+        fn add_file(root: &Utf8Path) {
+            fs::write(root.join("added.py"), b"added\n").unwrap();
+        }
+
+        fn remove_file(root: &Utf8Path) {
+            fs::remove_file(root.join("target.py")).unwrap();
+        }
+
+        fn assert_detected(mutate: fn(&Utf8Path), expected_path: &str) {
+            let source = tempfile::tempdir().unwrap();
+            fs::write(source.path().join("target.py"), b"before\n").unwrap();
+            let source_root = Utf8Path::from_path(source.path()).unwrap();
+            let parent = tempfile::tempdir().unwrap();
+            let parent = Utf8Path::from_path(parent.path()).unwrap();
+            let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+            let root =
+                Arc::new(ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap());
+
+            let error = WorkspacePlan::preflight_validated_in(
+                source_root,
+                EffectId(7),
+                1,
+                CopyOptions::default(),
+                Some(Arc::clone(&root)),
+                Some(1_024),
+                |source, _| {
+                    mutate(source);
+                    Ok::<_, Infallible>(())
+                },
+            )
+            .unwrap_err();
+
+            assert!(matches!(
+                error,
+                ValidatedPreflightError::Workspace(WorkspaceError::OriginalChanged { path })
+                    if path == Utf8Path::new(expected_path)
+            ));
+            let names = fs::read_dir(root.path())
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect::<Vec<_>>();
+            assert_eq!(names.len(), 2, "partial snapshot leaked: {names:?}");
+        }
+
+        assert_detected(add_file, "added.py");
+        assert_detected(remove_file, "target.py");
     }
 
     #[test]

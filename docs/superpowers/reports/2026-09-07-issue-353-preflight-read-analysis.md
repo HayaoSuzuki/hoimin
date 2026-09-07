@@ -1,47 +1,98 @@
-# Issue #353: preflight read-count analysis
+# Issue #353: preflight source-read optimization
 
-## Current behavior
+## Result
 
-`WorkspacePlan::preflight_validated_in` performs three content-read phases:
+Workspace preflight now reads and hashes ordinary source files twice instead of
+three times. The first content pass builds the manifest and writes the shared
+snapshot from the bytes it just hashed. The existing full post-copy manifest
+pass still checks the source path set, sizes, and hashes before preflight
+returns.
 
-1. Build a complete manifest, check owned-workspace capacity, and run the validation callback.
-2. Read each manifest file again, verify its size and hash, and write the shared snapshot.
-3. Walk the source tree again and compare a fresh path/size/hash manifest before returning the plan.
+A 1 MiB fixture records these totals:
 
-The validation callback runs before snapshot allocation or copying. The final
-walk also detects additions and removals and samples source content after the
-snapshot copy.
+| Measurement | Before | After |
+| --- | ---: | ---: |
+| Source content reads | 3 | 2 |
+| Source bytes read | 3 MiB | 2 MiB |
+| Source hashes | 3 | 2 |
+| Source bytes hashed | 3 MiB | 2 MiB |
 
-## Evaluated optimization
+The metadata capacity inventory reads and hashes zero content bytes.
 
-A combined second pass could build the fresh manifest and copy each file from
-the same bytes used for hashing. It would preserve exact snapshot-to-manifest
-content agreement while reducing ordinary source reads from three to two.
-It would change the timing of source-change detection.
+## Preflight sequence
 
-For example, the first pass records file `a.py` as content A. A combined pass
-reads and copies A, then another writer changes `a.py` to same-size content B
-before that pass finishes. The combined pass can succeed. The current separate
-third pass would detect B if it reads the file after that change. Both designs
-allow changes after their last observation; neither provides an atomic
-filesystem snapshot. The optimization nevertheless removes the separate
-post-copy content observation.
+When an owned-workspace limit is configured, preflight first walks the selected
+files and totals their metadata sizes. This check preserves the existing
+`planned >= limit` rejection before snapshot allocation. Preflight skips this
+extra metadata walk when no owned-workspace limit is configured.
 
-## Decision
+The content-bearing sequence is:
 
-Retain the existing implementation. A two-read design needs a separate contract
-decision about post-copy source verification, or permission to retain the first
-pass's bytes before validation. Retaining an entire project in RAM introduces
-an unbounded memory cost; spooling it to disk moves copying before validation.
-A metadata-only final walk cannot detect same-size, same-mtime content changes.
+1. Walk each selected file, read and hash it, build the initial manifest, and
+   write those exact bytes to a pending snapshot.
+2. Before each first write for a logical path, recompute the cumulative owned
+   size with checked addition and multiplication. This catches files that grew
+   or appeared after the metadata inventory.
+3. Run the validation callback against the initial manifest.
+4. Build a fresh full manifest from the source and compare every path, size,
+   and hash with the initial manifest.
+5. Publish the snapshot only after validation and the final comparison succeed.
 
-The analysis also identified constraints for any later implementation:
+The initial content walk supplies the plan diagnostics. It uses the existing
+normal and explicit-include walks, default exclusions, symlink handling, and
+portable-path checks.
 
-- Preserve capacity and validation failure behavior before snapshot allocation.
-- Treat repeated visits to the same logical path from include walks separately
-  from distinct paths that alias on the destination filesystem.
-- Keep partial snapshots under their pending owner until the final manifest
-  comparison succeeds, including managed-workspace cleanup on failure.
-- Measure content reads and hashes across both manifest and copy code paths.
+## Snapshot and failure guarantees
 
-No production optimization is included with this report.
+The snapshot writer consumes the same byte slice that the manifest builder
+hashed. It does not reopen or rehash the file. A normal walk and an explicit
+include can visit the same logical path more than once. The writer compares
+each repeat with its first size and hash, writes and charges the path once, and
+returns `OriginalChanged` if the repeated observation differs. Distinct logical
+paths that alias on the destination filesystem still return
+`SnapshotPathCollision`.
+
+The pending snapshot owner remains live through validation and the final full
+manifest comparison. Its drop path removes temporary or managed partial
+snapshots after read, capacity, write, validation, or final-comparison errors.
+Successful preflight keeps the initial manifest's actual unique byte total for
+worker allowances, so a source shrink after metadata inventory reduces the
+grant.
+
+The snapshot destination must resolve outside the source workspace. Preflight
+canonicalizes both paths and applies the existing platform-aware containment
+check before the first content read or snapshot write. It rejects a nested
+temporary or managed destination and drops the empty pending snapshot, which
+prevents the source walker from descending into its own output. This rejection
+uses the existing `workspace.io` error code.
+
+Validation now runs after temporary snapshot creation. A validation failure
+therefore performs snapshot I/O before cleanup. The owned-workspace capacity
+check still runs before allocation, and the cumulative actual-size guard runs
+before each snapshot write.
+
+## Source mutation boundary
+
+The final full content scan remains separate from snapshot creation. It catches
+same-size source changes made by validation as well as additions and removals.
+As before, a non-atomic filesystem can change a file after that file's final
+observation. The implementation guarantees two complete content observations,
+an exact-byte snapshot from the first observation, and a completed manifest
+comparison before return; it does not provide an atomic filesystem snapshot.
+
+## Verification
+
+The commands below ran on macOS arm64. The Windows-specific destination-alias
+regression was updated but was not executed on this host.
+
+- Focused copy tests: 22 passed, 1 ignored.
+- The read/hash regression records two reads and two hashes for a 1 MiB file.
+- Capacity tests cover equality, checked overflow, growth before the first
+  write, an added file after a partial write, and shrinkage.
+- Snapshot tests cover duplicate include visits, repeat drift, destination alias
+  collision on Windows, validation cleanup, and final-verification cleanup.
+- `cargo test --workspace --all-features -- --test-threads=1`: exit 0.
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`: exit
+  0.
+- `cargo fmt --all -- --check`: exit 0.
+- `git diff --check`: exit 0.
