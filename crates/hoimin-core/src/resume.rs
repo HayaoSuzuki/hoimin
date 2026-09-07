@@ -9,7 +9,7 @@ use crate::{
     TargetSlice,
 };
 
-pub const FINGERPRINT_SCHEMA_VERSION: u8 = 5;
+pub const FINGERPRINT_SCHEMA_VERSION: u8 = 6;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceHash {
@@ -73,7 +73,7 @@ pub fn fingerprint(input: &FingerprintInput) -> RunFingerprint {
     encoder.field(2, &encode_targets(&input.targets));
     encoder.field(3, &encode_operators(&input.operators));
     encoder.field(4, &encode_argv(&input.test_argv));
-    encoder.field(5, &encode_limits(&input.limits));
+    encoder.field(5, &encode_compatibility_limits(&input.limits));
     encoder.field(
         6,
         &[match input.resource_mode {
@@ -245,9 +245,8 @@ fn encode_argv(argv: &[CommandArg]) -> Vec<u8> {
     out.bytes
 }
 
-fn encode_limits(limits: &RunLimits) -> Vec<u8> {
+fn encode_compatibility_limits(limits: &RunLimits) -> Vec<u8> {
     let mut out = Encoder::new();
-    out.u64(limits.jobs.get() as u64);
     out.u64(limits.max_mutants.get() as u64);
     out.u64(limits.max_candidates.get() as u64);
     out.duration(limits.analyzer_timeout.get());
@@ -261,7 +260,6 @@ fn encode_limits(limits: &RunLimits) -> Vec<u8> {
     }
     out.duration(limits.total_timeout.get());
     out.u64(limits.max_memory.get());
-    out.u64(limits.max_output.get());
     out.u64(limits.max_copy_size.get());
     out.u64(limits.max_workspace_size.get());
     out.u64(limits.min_free_space.get());

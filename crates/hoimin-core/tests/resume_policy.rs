@@ -354,7 +354,6 @@ fn model_argv(argv: &[CommandArg]) -> Vec<u8> {
 
 fn model_limits(limits: &hoimin_core::RunLimits) -> Vec<u8> {
     let mut out = ModelEncoder::default();
-    out.number(1, limits.jobs.get() as u64);
     out.number(2, limits.max_mutants.get() as u64);
     out.number(3, limits.max_candidates.get() as u64);
     out.duration(4, limits.analyzer_timeout.get());
@@ -368,7 +367,6 @@ fn model_limits(limits: &hoimin_core::RunLimits) -> Vec<u8> {
     }
     out.duration(8, limits.total_timeout.get());
     out.number(9, limits.max_memory.get());
-    out.number(10, limits.max_output.get());
     out.number(11, limits.max_copy_size.get());
     out.number(12, limits.max_processes.get() as u64);
     out.0
@@ -452,20 +450,41 @@ fn fingerprint_changes_when_type_operator_selection_changes() {
     };
     assert_ne!(fingerprint(&fixture_input()), fingerprint(&changed));
 }
+
 #[test]
-fn every_safety_limit_changes_the_fingerprint() {
+fn worker_concurrency_does_not_change_resume_compatibility() {
+    let original = fixture_input();
+    let mut raw = fixture_raw_limits();
+    mutate_jobs(&mut raw);
+    let mut changed = original.clone();
+    changed.limits = (&raw).try_into().unwrap();
+
+    assert_eq!(fingerprint(&original), fingerprint(&changed));
+}
+
+#[test]
+fn output_retention_does_not_change_resume_compatibility() {
+    let original = fixture_input();
+    let mut raw = fixture_raw_limits();
+    mutate_max_output(&mut raw);
+    let mut changed = original.clone();
+    changed.limits = (&raw).try_into().unwrap();
+
+    assert_eq!(fingerprint(&original), fingerprint(&changed));
+}
+
+#[test]
+fn every_verdict_or_safety_limit_changes_the_fingerprint() {
     let original = fixture_input();
     let expected = fingerprint(&original);
     for (name, mutate) in [
-        ("jobs", mutate_jobs as fn(&mut RawRunLimits)),
-        ("max_mutants", mutate_max_mutants),
+        ("max_mutants", mutate_max_mutants as fn(&mut RawRunLimits)),
         ("max_candidates", mutate_max_candidates),
         ("analyzer_timeout", mutate_analyzer_timeout),
         ("baseline_timeout", mutate_baseline_timeout),
         ("mutant_timeout", mutate_mutant_timeout),
         ("total_timeout", mutate_total_timeout),
         ("max_memory", mutate_max_memory),
-        ("max_output", mutate_max_output),
         ("max_copy_size", mutate_max_copy_size),
         ("max_workspace_size", mutate_max_workspace_size),
         ("min_free_space", mutate_min_free_space),

@@ -1212,6 +1212,66 @@ async fn sqlite_session_saves_and_resumes_a_determinate_result_without_reexecuti
 }
 
 #[tokio::test]
+async fn sqlite_session_reuses_results_after_jobs_and_output_retention_change() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = directory.path().join("session.sqlite3");
+    let command = ["-m", "unittest", "discover", "-s", "tests"];
+    let first = run_fixture_options_extra(
+        &command,
+        Some(&database),
+        false,
+        &["--jobs", "1", "--max-output", "1KiB"],
+    )
+    .await;
+    assert_eq!(first.exit_code, 0, "{}", first.stderr);
+    assert_eq!(first.statuses, ["killed"]);
+    let first_run_id = first.document["run"]["run_id"].as_str().unwrap().to_owned();
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    connection
+        .execute("UPDATE runs SET complete=0", [])
+        .unwrap();
+    drop(connection);
+
+    let resumed = run_fixture_options_extra(
+        &command,
+        Some(&database),
+        true,
+        &["--jobs", "2", "--max-output", "2KiB"],
+    )
+    .await;
+
+    assert_eq!(resumed.exit_code, 0, "{}", resumed.stderr);
+    assert_eq!(resumed.statuses, ["killed"]);
+    assert_eq!(
+        resumed.document["run"]["run_id"].as_str().unwrap(),
+        first_run_id
+    );
+    assert_eq!(
+        resumed.document["run"]["normalized_config"]["limits"]["jobs"],
+        2
+    );
+    assert_eq!(
+        resumed.document["run"]["normalized_config"]["limits"]["max_output"],
+        2 * 1_024
+    );
+    assert_eq!(
+        resumed.document["mutants"][0]["termination"],
+        serde_json::Value::Null,
+        "a reused result is emitted synthetically without process termination"
+    );
+    assert_eq!(
+        resumed.document["mutants"][0]["output"],
+        serde_json::Value::Null,
+        "a reused result does not import output retained under the earlier limit"
+    );
+    let connection = rusqlite::Connection::open(database).unwrap();
+    let run_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM runs", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(run_count, 1);
+}
+
+#[tokio::test]
 async fn fresh_session_and_sessionless_results_preserve_the_same_termination() {
     let sessions = tempfile::tempdir().unwrap();
     let database = sessions.path().join("session.sqlite3");
