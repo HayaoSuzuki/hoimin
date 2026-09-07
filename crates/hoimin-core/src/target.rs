@@ -108,6 +108,12 @@ pub fn resolve_explicit(
         }
     }
 
+    for raw_path in &selection.files {
+        let requested = checked_explicit_path(selection, &sources, raw_path)?;
+        let path = require_python(&available, &requested)?;
+        targets.insert(path.clone(), whole_file(path));
+    }
+
     for line in &selection.lines {
         if line.range.start == 0 || line.range.start > line.range.end {
             return Err(TargetError::InvalidLineRange(line.range));
@@ -120,7 +126,6 @@ pub fn resolve_explicit(
             symbols: Vec::new(),
         });
         entry.lines.push(line.range);
-        entry.symbols.clear();
         normalize_ranges(&mut entry.lines);
     }
 
@@ -134,12 +139,6 @@ pub fn resolve_explicit(
         entry.symbols.push(symbol.qualname.clone());
         entry.symbols.sort();
         entry.symbols.dedup();
-    }
-
-    for raw_path in &selection.files {
-        let requested = checked_explicit_path(selection, &sources, raw_path)?;
-        let path = require_python(&available, &requested)?;
-        targets.insert(path.clone(), whole_file(path));
     }
 
     let targets: Vec<_> = targets.into_values().collect();

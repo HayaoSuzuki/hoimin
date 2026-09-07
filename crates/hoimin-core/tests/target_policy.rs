@@ -292,7 +292,7 @@ fn target_normalization_requires_sorted_paths_and_valid_disjoint_ranges() {
 }
 
 #[test]
-fn explicit_selectors_form_a_union_and_are_normalized() {
+fn whole_file_and_subfile_selectors_resolve_sorted_targets() {
     let selection = Selection {
         root: Utf8PathBuf::from("project"),
         sources: vec![Utf8PathBuf::from("pkg")],
@@ -317,7 +317,9 @@ fn explicit_selectors_form_a_union_and_are_normalized() {
             .collect::<Vec<_>>(),
         ["pkg/a.py", "pkg/b.py", "pkg/c.py"]
     );
+    assert!(targets[0].lines.is_empty());
     assert_eq!(targets[1].lines, [LineRange { start: 4, end: 7 }]);
+    assert!(targets[2].lines.is_empty());
 }
 
 #[test]
@@ -386,18 +388,166 @@ fn root_source_contains_root_relative_file_and_line_selectors() {
 }
 
 #[test]
-fn whole_file_union_wins_over_line_on_the_same_path() {
+fn file_and_line_match_source_and_line_on_the_same_path() {
+    let line = LineSelection {
+        path: Utf8PathBuf::from("pkg/a.py"),
+        range: LineRange { start: 4, end: 7 },
+    };
+    let file_selection = Selection {
+        root: Utf8PathBuf::from("project"),
+        files: vec![Utf8PathBuf::from("pkg/./a.py")],
+        lines: vec![line.clone()],
+        ..Selection::default()
+    };
+    let source_selection = Selection {
+        root: Utf8PathBuf::from("project"),
+        sources: vec![Utf8PathBuf::from("pkg")],
+        lines: vec![line],
+        ..Selection::default()
+    };
+    let discovered = [DiscoveredFile::python("pkg/a.py")];
+
+    let from_file = resolve_explicit(&file_selection, &discovered).unwrap();
+    let from_source = resolve_explicit(&source_selection, &discovered).unwrap();
+
+    assert_eq!(from_file, from_source);
+    assert_eq!(
+        from_file,
+        vec![TargetSlice {
+            path: Utf8PathBuf::from("pkg/a.py"),
+            lines: vec![LineRange { start: 4, end: 7 }],
+            symbols: Vec::new(),
+        }]
+    );
+}
+
+#[test]
+fn file_and_symbol_match_source_and_symbol_on_the_same_path() {
+    let symbol = SymbolSelection {
+        module: "a".into(),
+        qualname: "Widget.run".into(),
+    };
+    let file_selection = Selection {
+        root: Utf8PathBuf::from("project"),
+        sources: vec![Utf8PathBuf::from("pkg")],
+        files: vec![Utf8PathBuf::from("pkg/a.py")],
+        symbols: vec![symbol.clone()],
+        ..Selection::default()
+    };
+    let source_selection = Selection {
+        root: Utf8PathBuf::from("project"),
+        sources: vec![Utf8PathBuf::from("pkg")],
+        symbols: vec![symbol],
+        ..Selection::default()
+    };
+    let discovered = [
+        DiscoveredFile::python("pkg/b.py"),
+        DiscoveredFile::python("pkg/a.py"),
+    ];
+
+    let from_file = resolve_explicit(&file_selection, &discovered).unwrap();
+    let from_source = resolve_explicit(&source_selection, &discovered).unwrap();
+
+    assert_eq!(from_file, from_source);
+    assert_eq!(
+        from_file,
+        vec![
+            TargetSlice {
+                path: Utf8PathBuf::from("pkg/a.py"),
+                lines: Vec::new(),
+                symbols: vec!["Widget.run".into()],
+            },
+            TargetSlice {
+                path: Utf8PathBuf::from("pkg/b.py"),
+                lines: Vec::new(),
+                symbols: Vec::new(),
+            },
+        ]
+    );
+}
+
+#[test]
+fn duplicate_file_selectors_normalize_before_line_narrowing() {
+    let selection = Selection {
+        root: Utf8PathBuf::from("project"),
+        files: vec![
+            Utf8PathBuf::from("z.py"),
+            Utf8PathBuf::from("pkg/../a.py"),
+            Utf8PathBuf::from("./a.py"),
+        ],
+        lines: vec![
+            LineSelection {
+                path: Utf8PathBuf::from("a.py"),
+                range: LineRange { start: 6, end: 7 },
+            },
+            LineSelection {
+                path: Utf8PathBuf::from("./a.py"),
+                range: LineRange { start: 2, end: 5 },
+            },
+        ],
+        ..Selection::default()
+    };
+    let discovered = [
+        DiscoveredFile::python("z.py"),
+        DiscoveredFile::python("a.py"),
+    ];
+
+    let targets = resolve_explicit(&selection, &discovered).unwrap();
+
+    assert_eq!(
+        targets,
+        vec![
+            TargetSlice {
+                path: Utf8PathBuf::from("a.py"),
+                lines: vec![LineRange { start: 2, end: 7 }],
+                symbols: Vec::new(),
+            },
+            TargetSlice {
+                path: Utf8PathBuf::from("z.py"),
+                lines: Vec::new(),
+                symbols: Vec::new(),
+            },
+        ]
+    );
+}
+
+#[test]
+fn changed_lines_intersect_a_file_line_selector_after_resolution() {
     let selection = Selection {
         root: Utf8PathBuf::from("project"),
         files: vec![Utf8PathBuf::from("pkg/a.py")],
         lines: vec![LineSelection {
             path: Utf8PathBuf::from("pkg/a.py"),
-            range: LineRange { start: 4, end: 7 },
+            range: LineRange { start: 4, end: 8 },
         }],
         ..Selection::default()
     };
-    let targets = resolve_explicit(&selection, &[DiscoveredFile::python("pkg/a.py")]).unwrap();
-    assert!(targets[0].lines.is_empty());
+    let explicit = resolve_explicit(&selection, &[DiscoveredFile::python("pkg/a.py")]).unwrap();
+    let changed = BTreeMap::from([
+        (
+            Utf8PathBuf::from("pkg/a.py"),
+            vec![
+                LineRange { start: 1, end: 5 },
+                LineRange { start: 7, end: 9 },
+            ],
+        ),
+        (
+            Utf8PathBuf::from("pkg/other.py"),
+            vec![LineRange { start: 4, end: 8 }],
+        ),
+    ]);
+
+    assert_eq!(
+        intersect_changed(&explicit, &changed),
+        vec![TargetSlice {
+            path: Utf8PathBuf::from("pkg/a.py"),
+            lines: vec![
+                LineRange { start: 4, end: 5 },
+                LineRange { start: 7, end: 8 },
+            ],
+            symbols: Vec::new(),
+        }]
+    );
 }
 
 #[test]

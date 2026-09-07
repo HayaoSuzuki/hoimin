@@ -5,7 +5,9 @@ use std::process::Command;
 use camino::Utf8PathBuf;
 use hoimin_cli::target::TargetHandler;
 use hoimin_cli::target::git::{GitChangesResolved, ResolveGitChanges, handle_git};
-use hoimin_core::{EffectId, LineRange, ResolveTargets, Selection, TargetError, TargetSlice};
+use hoimin_core::{
+    EffectId, LineRange, LineSelection, ResolveTargets, Selection, TargetError, TargetSlice,
+};
 use tempfile::TempDir;
 
 struct FixtureRepo {
@@ -164,6 +166,36 @@ fn include_can_restore_a_gitignored_file() {
     };
     let files = hoimin_cli::target::fs::discover_explicit(&selection).unwrap();
     assert!(files.iter().any(|file| file.path == "pkg/generated.py"));
+}
+
+#[tokio::test]
+async fn file_and_line_narrow_one_real_discovered_target() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::create_dir(temp.path().join("pkg")).unwrap();
+    fs::write(temp.path().join("pkg/a.py"), "first\nsecond\nthird\n").unwrap();
+    fs::write(temp.path().join("pkg/other.py"), "other = True\n").unwrap();
+    let root = Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap();
+
+    let targets = TargetHandler::resolve(&Selection {
+        root,
+        files: vec![Utf8PathBuf::from("pkg/./a.py")],
+        lines: vec![LineSelection {
+            path: Utf8PathBuf::from("pkg/a.py"),
+            range: LineRange { start: 2, end: 3 },
+        }],
+        ..Selection::default()
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(
+        targets,
+        vec![TargetSlice {
+            path: Utf8PathBuf::from("pkg/a.py"),
+            lines: vec![LineRange { start: 2, end: 3 }],
+            symbols: Vec::new(),
+        }]
+    );
 }
 
 #[tokio::test]

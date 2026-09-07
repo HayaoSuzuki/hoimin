@@ -78,7 +78,9 @@ At least one target selector is required:
 - `--changed` restricts selection to staged, unstaged, and untracked Git changes. It requires `--source`.
 - `--diff-base REV` uses the merge base of `REV` and `HEAD` for `--changed`. It is invalid without `--changed`.
 
-Explicit selectors form a union. For example, `--source src --file src/calc.py` selects `src/calc.py` and every Python file below `src`. Use `--file` alone for a run limited to named files.
+Whole-file selectors establish the selected files first. For example, `--source src --file src/calc.py` selects every Python file below `src`, while `--file src/calc.py` alone selects only that file. A `--line` or `--symbol` then narrows a matching file. Selectors for different files remain combined. The resolver merges multiple line ranges on one file. Candidates must satisfy both constraints when a file has line and symbol selectors.
+
+For example, `--file src/calc.py --line src/calc.py:10-12` selects only lines 10 through 12 of `src/calc.py`. Adding `--file src/calc.py` to `--source src --symbol calc:add` preserves the symbol restriction on `src/calc.py`. Other Python files selected by `--source src` remain whole-file targets unless they have a line or symbol selector.
 
 `--root DIR` resolves relative paths and defaults to the current directory. Combining explicit selectors with `--changed` intersects each explicit target with changed lines. When that target also has a symbol selector, a candidate must be both on a changed line and inside the selected symbol. A `--symbol` requires `--source`; when `--source` is present, file and line paths must be inside a source root.
 
