@@ -112,6 +112,7 @@ fn windows_final_name_units_are_valid(name: &[u16]) -> bool {
         && name != [u16::from(b'.'), u16::from(b'.')]
         && !name.contains(&u16::from(b'/'))
         && !name.contains(&u16::from(b'\\'))
+        && !name.contains(&u16::from(b':'))
         && !name.contains(&0)
 }
 
@@ -1584,7 +1585,7 @@ mod tests {
                 &valid.encode_utf16().collect::<Vec<_>>()
             ));
         }
-        for invalid in ["", ".", "..", "a/b", r"a\b", "nul\0byte"] {
+        for invalid in ["", ".", "..", "a/b", r"a\b", "name:stream", "nul\0byte"] {
             assert!(!windows_final_name_units_are_valid(
                 &invalid.encode_utf16().collect::<Vec<_>>()
             ));

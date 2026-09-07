@@ -232,15 +232,11 @@ pub fn normalized_relative_path(path: &str) -> bool {
     if path.is_empty() || path.starts_with('/') || path.contains('\\') {
         return false;
     }
-    let mut parts = path.split('/');
-    let Some(first) = parts.next() else {
-        return false;
-    };
-    !first.contains(':') && valid_path_part(first) && parts.all(valid_path_part)
+    path.split('/').all(valid_path_part)
 }
 
 fn valid_path_part(part: &str) -> bool {
-    !part.is_empty() && part != "." && part != ".."
+    !part.is_empty() && part != "." && part != ".." && !part.contains(':')
 }
 
 fn canonical_identity_path(path: &str) -> String {

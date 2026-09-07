@@ -96,13 +96,15 @@ fn rejects_wrong_line_metadata_and_non_normalized_path() {
 }
 
 #[test]
-fn path_policy_matches_task4_helper_for_colons_and_absolute_paths() {
+fn candidate_paths_reject_absolute_parent_and_colon_components() {
     let source = b"x = 1\nvalue == 2\n";
-    let mut nested_colon = descriptor(source);
-    nested_colon.path = Utf8PathBuf::from("pkg/a:b.py");
-    assert!(validate_candidate(source, &nested_colon).is_ok());
-
-    for invalid in ["/pkg/calc.py", "C:/pkg/calc.py", "pkg/../calc.py"] {
+    for invalid in [
+        "/pkg/calc.py",
+        "C:/pkg/calc.py",
+        "pkg/../calc.py",
+        "pkg:cache/calc.py",
+        "pkg/calc.py:stream",
+    ] {
         let mut candidate = descriptor(source);
         candidate.path = Utf8PathBuf::from(invalid);
         assert_eq!(

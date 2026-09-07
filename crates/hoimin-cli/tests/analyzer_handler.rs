@@ -441,11 +441,11 @@ fn candidate_limit_is_a_typed_expected_completion() {
 }
 
 #[test]
-fn protocol_accepts_nested_colon_path_like_task4() {
+fn protocol_rejects_candidate_path_with_nested_colon() {
     let mut protocol = protocol();
     assert!(matches!(
         protocol.receive_line(br#"{"kind":"candidate","effect_id":7,"path":"pkg/a:b.py","span":{"start":1,"length":1},"original":"+","replacement":"-","operator":"binary_add_sub","line":1,"column":1,"symbol":null}"#),
-        Ok(Some(AnalyzerRecord::Candidate(_)))
+        Err(ProtocolError::InvalidRecord("invalid candidate fields"))
     ));
 }
 

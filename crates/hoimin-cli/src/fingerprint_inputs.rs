@@ -156,11 +156,10 @@ fn resolve_exact(input: &str) -> Result<Utf8PathBuf, FingerprintInputError> {
 fn normalize_exact_path(input: &str) -> Result<Utf8PathBuf, FingerprintInputError> {
     let path = portable_path::from_native(input)
         .map_err(|_| FingerprintInputError::InvalidPath(input.to_owned()))?;
-    let first = path.split('/').next().unwrap_or_default();
     if path.is_empty()
         || input.contains('\0')
         || path.starts_with('/')
-        || first.contains(':')
+        || path.split('/').any(|component| component.contains(':'))
         || path.split('/').any(|component| component == "..")
     {
         return Err(FingerprintInputError::InvalidPath(input.to_owned()));
@@ -183,8 +182,7 @@ fn validate_pattern(root: &Utf8Path, pattern: &str) -> Result<(), FingerprintInp
         || slash_pattern.starts_with('/')
         || slash_pattern
             .split('/')
-            .next()
-            .is_some_and(|component| component.contains(':'))
+            .any(|component| component.contains(':'))
         || slash_pattern.split('/').any(|component| component == "..")
     {
         return Err(FingerprintInputError::InvalidGlob(pattern.to_owned()));
