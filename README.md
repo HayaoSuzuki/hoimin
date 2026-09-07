@@ -373,10 +373,12 @@ process, blocking-I/O, and internal-finalization waits then receive at most a
 fixed additional two seconds for orderly shutdown. A timeout whose cleanup
 completes inside that grace remains an incomplete run with exit code `4`. If
 cleanup cannot finish before the shutdown grace expires, the run is an
-infrastructure failure with exit code `2`; stderr identifies both the original
-timeout and the expired shutdown grace. This bound assumes synchronous report
-output makes progress: a blocked caller-provided `Write` cannot be forcibly
-cancelled and can delay return or diagnostics.
+infrastructure failure with exit code `2`. CLI report writes and flushes share
+that shutdown deadline. Once the budget expires, the CLI can exit without a
+final stderr diagnostic; stdout can contain a partial report if its consumer
+stalls. The library's caller-provided, borrowed `Write` APIs retain synchronous
+behavior: those writers cannot be forcibly cancelled and can delay return or
+diagnostics.
 
 ## Sessions and resume
 
