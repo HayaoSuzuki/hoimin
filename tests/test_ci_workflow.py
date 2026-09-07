@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import json
+import os
 import re
+import subprocess
+import sys
+import tempfile
 import tomllib
 import unittest
 from pathlib import Path
@@ -15,6 +20,9 @@ RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 DEVELOPMENT_GUIDE = ROOT / "docs" / "development.md"
 CARGO_MANIFEST = ROOT / "Cargo.toml"
 RUST_TOOLCHAIN = ROOT / "rust-toolchain.toml"
+LEAN_ORACLE = ROOT / "formal" / "HoiminOracle"
+LEAN_LAKEFILE = LEAN_ORACLE / "lakefile.toml"
+LEAN_TOOLCHAIN = LEAN_ORACLE / "lean-toolchain"
 STABLE_CANARY_WORKFLOW = (
     ROOT / ".github" / "workflows" / "rust-stable-canary.yml"
 )
@@ -28,6 +36,7 @@ REPOSITORY_RUST_JOBS = {
     "linux-cgroup-v2-hard",
 }
 COMPATIBILITY_RUST_JOBS = {"msrv", "rust-shuffle"}
+LEAN_JOBS = {"lean-audit"}
 AUTOMATIC_LINUX_MATRIX_JOBS = {
     "quality",
     "rust",
@@ -56,6 +65,51 @@ SETUP_PYTHON_ACTION = (
 SETUP_UV_ACTION = (
     "astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b"
 )
+LEAN_CACHE_ACTION = (
+    "actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809"
+)
+LEAN_ELAN_VERSION = "v4.1.2"
+LEAN_CORPUS_BY_EXECUTABLE = {
+    "generate": "corpus/state-machine.jsonl",
+    "generate_budget": "corpus/budget-cleanup.jsonl",
+    "generate_session": "corpus/session-recovery.jsonl",
+    "generate_shutdown": "corpus/shutdown-orchestration.jsonl",
+    "generate_workspace": "corpus/workspace-lifecycle.jsonl",
+    "generate_result_lifecycle": "corpus/result-lifecycle.jsonl",
+    "generate_candidate_ranking": "corpus/candidate-ranking.jsonl",
+    "generate_schema_migration": "corpus/schema-migration-concurrency.jsonl",
+    "generate_binding_flow": "corpus/binding-flow-joins.jsonl",
+    "generate_annotation_scope": "corpus/annotation-scope-correspondence.jsonl",
+    "generate_exception_match_binding": (
+        "corpus/exception-match-binding-correspondence.jsonl"
+    ),
+    "generate_top_budget_projection": "corpus/top-budget-projection.jsonl",
+    "generate_progress_decision": "corpus/progress-decision.jsonl",
+    "generate_nested_try_flow": "corpus/nested-try-flow.jsonl",
+    "generate_nested_match_exits": "corpus/nested-match-exits.jsonl",
+    "generate_multiple_handler_joins": "corpus/multiple-handler-joins.jsonl",
+    "generate_report_sequence": "corpus/report-sequence.jsonl",
+    "generate_compound_pattern_guards": "corpus/compound-pattern-guards.jsonl",
+    "generate_except_star_flow": "corpus/except-star-flow.jsonl",
+    "generate_bounded_candidate_discovery": (
+        "corpus/bounded-candidate-discovery.jsonl"
+    ),
+    "generate_mutation_score_exit_policy": (
+        "corpus/mutation-score-exit-policy.jsonl"
+    ),
+    "generate_output_retention": "corpus/output-retention.jsonl",
+    "generate_candidate_span": "corpus/candidate-span-preservation.jsonl",
+    "generate_changed_target": "corpus/changed-target-composition.jsonl",
+    "generate_process_output": "corpus/process-output-outcome.jsonl",
+    "generate_timeout_limit": "corpus/timeout-limit.jsonl",
+    "generate_disk_guard": "corpus/disk-guard-lifecycle.jsonl",
+    "generate_cleanup_capability": "corpus/cleanup-capability.jsonl",
+}
+LEAN_SENSITIVITY_EXECUTABLES = {
+    name
+    for name in LEAN_CORPUS_BY_EXECUTABLE
+    if name not in {"generate", "generate_budget", "generate_workspace"}
+}
 UPLOAD_ARTIFACT_ACTION = (
     "actions/upload-artifact@"
     "ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -220,6 +274,82 @@ def job_block(workflow: str, job_name: str) -> str:
     end = len(workflow) if next_job is None else start + len(marker) + next_job.start()
     return workflow[start:end]
 
+
+def named_step(job: dict[str, object], name: str) -> dict[str, object]:
+    steps = job["steps"]
+    assert isinstance(steps, list)
+    return next(step for step in steps if step.get("name") == name)
+
+
+def lean_gate_invocations(
+    test: unittest.TestCase,
+    script: str,
+    *,
+    fail_at: int | None = None,
+) -> tuple[subprocess.CompletedProcess[str], list[dict[str, object]]]:
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        temporary = Path(temporary_directory)
+        fake_bin = temporary / "bin"
+        fake_bin.mkdir()
+        call_log = temporary / "calls.jsonl"
+        fake_python = fake_bin / "python3"
+        fake_python.write_text(
+            f"""#!{sys.executable}
+import json
+import os
+import sys
+
+record = {{"argv": sys.argv[1:], "cwd": os.getcwd()}}
+with open(os.environ["LEAN_CALL_LOG"], "a", encoding="utf-8") as stream:
+    stream.write(json.dumps(record) + "\\n")
+call_count = len(open(os.environ["LEAN_CALL_LOG"], encoding="utf-8").readlines())
+if call_count == int(os.environ.get("LEAN_FAIL_AT", "0")):
+    raise SystemExit(23)
+""",
+            encoding="utf-8",
+        )
+        fake_python.chmod(0o755)
+        runner_temp = temporary / "runner"
+        runner_temp.mkdir()
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "LEAN_CALL_LOG": str(call_log),
+                "LEAN_FAIL_AT": str(fail_at or 0),
+                "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+                "RUNNER_TEMP": str(runner_temp),
+            }
+        )
+        completed = subprocess.run(
+            ["bash", "-euo", "pipefail", "-c", script],
+            cwd=temporary,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        calls = (
+            [json.loads(line) for line in call_log.read_text().splitlines()]
+            if call_log.exists()
+            else []
+        )
+        expected_cwd = str(temporary.resolve())
+        test.assertTrue(all(call["cwd"] == expected_cwd for call in calls))
+        return completed, calls
+
+
+def lean_module_sources() -> dict[str, Path]:
+    lakefile = tomllib.loads(LEAN_LAKEFILE.read_text(encoding="utf-8"))
+    executable_roots = {executable["root"] for executable in lakefile["lean_exe"]}
+    sources = [LEAN_ORACLE / "HoiminOracle.lean"]
+    sources.extend((LEAN_ORACLE / "HoiminOracle").glob("*.lean"))
+    sources.extend(LEAN_ORACLE / f"{root}.lean" for root in executable_roots)
+    return {
+        ".".join(source.relative_to(LEAN_ORACLE).with_suffix("").parts): source
+        for source in sources
+    }
+
 def trigger_events(workflow: str) -> set[str]:
     start = workflow.index("on:\n") + len("on:\n")
     end = workflow.index("\npermissions:", start)
@@ -284,7 +414,7 @@ class CiRustJobContractTests(unittest.TestCase):
 
         self.assertEqual(
             set(decoded["jobs"]),
-            REPOSITORY_RUST_JOBS | COMPATIBILITY_RUST_JOBS,
+            REPOSITORY_RUST_JOBS | COMPATIBILITY_RUST_JOBS | LEAN_JOBS,
         )
         self.assertNotIn("RUSTUP_TOOLCHAIN", workflow)
         self.assertNotIn("rustup override", workflow)
@@ -360,6 +490,157 @@ class CiRustJobContractTests(unittest.TestCase):
         self.assertIn("cargo +1.88 check", msrv)
         self.assertIn("cargo +nightly-2026-07-27 test", shuffle)
 
+
+class LeanAuditWorkflowContractTests(unittest.TestCase):
+    def test_job_uses_pinned_tools_repository_toolchain_and_cache(self) -> None:
+        workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+        job = workflow["jobs"]["lean-audit"]
+
+        self.assertEqual(job["needs"], "quality")
+        self.assertEqual(job["runs-on"], "ubuntu-latest")
+        self.assertEqual(job["timeout-minutes"], 60)
+        self.assertNotIn("if", job)
+        self.assertEqual(job["steps"][0], {"uses": CHECKOUT_ACTION})
+        self.assertEqual(
+            job["steps"][1],
+            {
+                "uses": SETUP_PYTHON_ACTION,
+                "with": {"python-version": "3.14"},
+            },
+        )
+        cache = job["steps"][2]
+        self.assertEqual(cache["uses"], LEAN_CACHE_ACTION)
+        self.assertEqual(
+            set(cache["with"]["path"].splitlines()),
+            {"~/.elan", "formal/HoiminOracle/.lake"},
+        )
+        self.assertIn("formal/HoiminOracle/lean-toolchain", cache["with"]["key"])
+        self.assertIn("formal/HoiminOracle/lakefile.toml", cache["with"]["key"])
+        self.assertIn("formal/HoiminOracle/**/*.lean", cache["with"]["key"])
+
+        install = named_step(job, "Install pinned Lean toolchain")["run"]
+        self.assertIn(f"releases/download/{LEAN_ELAN_VERSION}/", install)
+        self.assertIn('echo "$HOME/.elan/bin" >> "$GITHUB_PATH"', install)
+        self.assertIn(
+            'elan toolchain install "$(cat formal/HoiminOracle/lean-toolchain)"',
+            install,
+        )
+        self.assertEqual(
+            LEAN_TOOLCHAIN.read_text(encoding="utf-8").strip(),
+            "leanprover/lean4:v4.32.2",
+        )
+        lakefile = tomllib.loads(LEAN_LAKEFILE.read_text(encoding="utf-8"))
+        self.assertEqual(
+            lakefile["moreLeanArgs"],
+            ["-j1", "-DElab.async=false"],
+        )
+        artifact = job["steps"][-1]
+        self.assertEqual(artifact["if"], "always()")
+        self.assertEqual(artifact["uses"], UPLOAD_ARTIFACT_ACTION)
+        self.assertEqual(
+            artifact["with"],
+            {
+                "name": "lean-audit-stats",
+                "path": "${{ runner.temp }}/lean-audit",
+                "if-no-files-found": "warn",
+                "retention-days": 7,
+            },
+        )
+
+    def test_bounded_audit_covers_every_module_and_generator(self) -> None:
+        workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+        step = named_step(workflow["jobs"]["lean-audit"], "Run bounded Lean audit")
+
+        self.assertEqual(step["working-directory"], "formal/HoiminOracle")
+        self.assertEqual(step["shell"], "bash")
+        completed, calls = lean_gate_invocations(self, step["run"])
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+        guarded_commands: list[list[str]] = []
+        stats_paths: list[str] = []
+        for call in calls:
+            arguments = call["argv"]
+            self.assertEqual(arguments[0], "tools/lean_resource_guard.py")
+            self.assertEqual(arguments[1:7], [
+                "--timeout-seconds",
+                "20",
+                "--rss-limit-mib",
+                "768",
+                "--sample-ms",
+                "250",
+            ])
+            self.assertEqual(arguments[7], "--stats")
+            stats_paths.append(arguments[8])
+            self.assertEqual(arguments[9], "--")
+            guarded_commands.append(arguments[10:])
+        self.assertEqual(len(stats_paths), len(set(stats_paths)))
+        self.assertTrue(
+            all("/runner/lean-audit/" in path for path in stats_paths)
+        )
+
+        sources = lean_module_sources()
+        module_count = len(sources)
+        self.assertEqual(module_count, 117)
+        module_commands = guarded_commands[:module_count]
+        modules = [command[2][1:-2] for command in module_commands]
+        self.assertTrue(
+            all(
+                command[:2] == ["lake", "build"]
+                and command[2].startswith("+")
+                and command[2].endswith(":o")
+                for command in module_commands
+            )
+        )
+        self.assertEqual(set(modules), set(sources))
+        self.assertEqual(len(modules), len(set(modules)))
+        positions = {module: index for index, module in enumerate(modules)}
+        for module, source in sources.items():
+            imports = re.findall(
+                r"(?m)^import ([A-Za-z0-9_.]+)$",
+                source.read_text(encoding="utf-8"),
+            )
+            for dependency in imports:
+                if dependency in positions:
+                    self.assertLess(
+                        positions[dependency],
+                        positions[module],
+                        f"{dependency} must be built before {module}",
+                    )
+
+        remaining = guarded_commands[module_count:]
+        self.assertEqual(remaining.pop(0), ["lake", "build", "HoiminOracle"])
+        lakefile = tomllib.loads(LEAN_LAKEFILE.read_text(encoding="utf-8"))
+        executable_names = [item["name"] for item in lakefile["lean_exe"]]
+        self.assertEqual(executable_names, list(LEAN_CORPUS_BY_EXECUTABLE))
+        expected_gates: list[list[str]] = []
+        for executable, corpus in LEAN_CORPUS_BY_EXECUTABLE.items():
+            expected_gates.append(
+                ["lake", "exe", executable, "--", "--check", corpus]
+            )
+            if executable in LEAN_SENSITIVITY_EXECUTABLES:
+                expected_gates.append(
+                    ["lake", "exe", executable, "--", "--sensitivity"]
+                )
+        self.assertEqual(remaining, expected_gates)
+        self.assertEqual(
+            set(LEAN_CORPUS_BY_EXECUTABLE.values()),
+            {
+                str(path.relative_to(LEAN_ORACLE))
+                for path in (LEAN_ORACLE / "corpus").glob("*.jsonl")
+            },
+        )
+
+    def test_bounded_audit_stops_after_the_first_failed_gate(self) -> None:
+        workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+        script = named_step(
+            workflow["jobs"]["lean-audit"],
+            "Run bounded Lean audit",
+        )["run"]
+
+        completed, calls = lean_gate_invocations(self, script, fail_at=4)
+
+        self.assertEqual(completed.returncode, 23)
+        self.assertEqual(len(calls), 4)
 
 class PlatformExecutionPolicyContractTests(unittest.TestCase):
     def test_automatic_ci_hosted_matrices_are_linux_only(self) -> None:

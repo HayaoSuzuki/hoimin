@@ -58,6 +58,228 @@ jobs:
       - run: cargo test -p hoimin-cli --test run_e2e
       - run: uv run --frozen python -m unittest tests/test_skills.py
 
+  lean-audit:
+    needs: quality
+    name: Lean audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.14'
+      - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            ~/.elan
+            formal/HoiminOracle/.lake
+          key: lean-${{ runner.os }}-${{ hashFiles('formal/HoiminOracle/lean-toolchain', 'formal/HoiminOracle/lakefile.toml', 'formal/HoiminOracle/**/*.lean') }}
+          restore-keys: lean-${{ runner.os }}-
+      - name: Install pinned Lean toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.elan/bin:$PATH"
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          if ! command -v elan >/dev/null; then
+            curl --proto '=https' --tlsv1.2 --fail --location \
+              https://github.com/leanprover/elan/releases/download/v4.1.2/elan-x86_64-unknown-linux-gnu.tar.gz \
+              --output "$RUNNER_TEMP/elan.tar.gz"
+            tar -xzf "$RUNNER_TEMP/elan.tar.gz" -C "$RUNNER_TEMP"
+            "$RUNNER_TEMP/elan-init" -y --default-toolchain none
+          fi
+          elan toolchain install "$(cat formal/HoiminOracle/lean-toolchain)"
+      - name: Run bounded Lean audit
+        working-directory: formal/HoiminOracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          stats_dir="$RUNNER_TEMP/lean-audit"
+          mkdir -p "$stats_dir"
+
+          run_guard() {
+            local name="$1"
+            shift
+            python3 tools/lean_resource_guard.py \
+              --timeout-seconds 20 \
+              --rss-limit-mib 768 \
+              --sample-ms 250 \
+              --stats "$stats_dir/$name.json" \
+              -- "$@"
+          }
+
+          modules=(
+            HoiminOracle.BindingFlowModel
+            HoiminOracle.BoundedCandidateDiscoveryModel
+            HoiminOracle.BudgetModel
+            HoiminOracle.CandidateRankingModel
+            HoiminOracle.CandidateSpanModel
+            HoiminOracle.ChangedTargetModel
+            HoiminOracle.CleanupCapabilityModel
+            HoiminOracle.DiskGuardModel
+            HoiminOracle.FactIndexModel
+            HoiminOracle.Model
+            HoiminOracle.MutationScoreExitPolicyModel
+            HoiminOracle.OutputRetentionModel
+            HoiminOracle.ProcessOutputModel
+            HoiminOracle.ProgressDecisionModel
+            HoiminOracle.ReportSequenceModel
+            HoiminOracle.ResultLifecycleModel
+            HoiminOracle.SchemaMigrationModel
+            HoiminOracle.ScopeResolutionModel
+            HoiminOracle.SessionModel
+            HoiminOracle.ShutdownModel
+            HoiminOracle.TimeoutLimitModel
+            HoiminOracle.TopBudgetProjectionModel
+            HoiminOracle.WorkspaceModel
+            HoiminOracle.AnnotationScopeModel
+            HoiminOracle.BindingFlowProofs
+            HoiminOracle.BoundedCandidateDiscoveryProofs
+            HoiminOracle.BudgetProofs
+            HoiminOracle.CandidateRankingProofs
+            HoiminOracle.CandidateSpanProofs
+            HoiminOracle.Cases
+            HoiminOracle.ChangedTargetProofs
+            HoiminOracle.CleanupCapabilityProofs
+            HoiminOracle.CompoundPatternGuardModel
+            HoiminOracle.DiskGuardCases
+            HoiminOracle.ExceptionMatchBindingModel
+            HoiminOracle.FactIndexProofs
+            HoiminOracle.MutationScoreExitPolicyProofs
+            HoiminOracle.NestedTryFlowModel
+            HoiminOracle.OutputRetentionProofs
+            HoiminOracle.ProcessOutputProofs
+            HoiminOracle.ProgressDecisionProofs
+            HoiminOracle.Proofs
+            HoiminOracle.ReportSequenceProofs
+            HoiminOracle.ResultLifecycleProofs
+            HoiminOracle.SchemaMigrationProofs
+            HoiminOracle.ScopeResolutionProofs
+            HoiminOracle.SessionProofs
+            HoiminOracle.ShutdownProofs
+            HoiminOracle.TimeoutLimitProofs
+            HoiminOracle.TopBudgetProjectionProofs
+            HoiminOracle.WorkspaceProofs
+            HoiminOracle.AnnotationScopeProofs
+            HoiminOracle.BindingFlowCases
+            HoiminOracle.BoundedCandidateDiscoveryCases
+            HoiminOracle.BudgetCases
+            HoiminOracle.CandidateRankingCases
+            HoiminOracle.CandidateSpanCases
+            HoiminOracle.ChangedTargetCases
+            HoiminOracle.CleanupCapabilityCases
+            HoiminOracle.CompoundPatternGuardProofs
+            HoiminOracle.DiskGuardProofs
+            HoiminOracle.ExceptStarFlowModel
+            HoiminOracle.ExceptionMatchBindingProofs
+            HoiminOracle.MultipleHandlerJoinModel
+            HoiminOracle.MutationScoreExitPolicyCases
+            HoiminOracle.NestedMatchExitModel
+            HoiminOracle.NestedTryFlowProofs
+            HoiminOracle.OutputRetentionCases
+            HoiminOracle.ProcessOutputCases
+            HoiminOracle.ProgressDecisionCases
+            HoiminOracle.ReportSequenceCases
+            HoiminOracle.ResultLifecycleCases
+            HoiminOracle.SchemaMigrationCases
+            HoiminOracle.SessionCases
+            HoiminOracle.ShutdownCases
+            HoiminOracle.TimeoutLimitCases
+            HoiminOracle.TopBudgetProjectionCases
+            HoiminOracle.WorkspaceCases
+            Main
+            BindingFlowAuditMain
+            BoundedCandidateDiscoveryAuditMain
+            BudgetMain
+            CandidateRankingAuditMain
+            CandidateSpanAuditMain
+            ChangedTargetAuditMain
+            CleanupCapabilityAuditMain
+            DiskGuardAuditMain
+            HoiminOracle.AnnotationScopeCases
+            HoiminOracle.CompoundPatternGuardCases
+            HoiminOracle.ExceptStarFlowProofs
+            HoiminOracle.ExceptionMatchBindingCases
+            HoiminOracle.MultipleHandlerJoinProofs
+            HoiminOracle.NestedMatchExitProofs
+            HoiminOracle.NestedTryFlowCases
+            MutationScoreExitPolicyAuditMain
+            OutputRetentionAuditMain
+            ProcessOutputAuditMain
+            ProgressDecisionAuditMain
+            ReportSequenceAuditMain
+            ResultLifecycleAuditMain
+            SchemaMigrationAuditMain
+            SessionAuditMain
+            ShutdownAuditMain
+            TimeoutLimitAuditMain
+            TopBudgetProjectionAuditMain
+            WorkspaceAuditMain
+            AnnotationScopeAuditMain
+            CompoundPatternGuardAuditMain
+            ExceptionMatchBindingAuditMain
+            HoiminOracle.ExceptStarFlowCases
+            HoiminOracle.MultipleHandlerJoinCases
+            HoiminOracle.NestedMatchExitCases
+            NestedTryFlowAuditMain
+            ExceptStarFlowAuditMain
+            HoiminOracle
+            MultipleHandlerJoinAuditMain
+            NestedMatchExitAuditMain
+          )
+          for module in "${modules[@]}"; do
+            run_guard "build-${module//./-}" lake build "+${module}:o"
+          done
+          run_guard build-library lake build HoiminOracle
+
+          generators=(
+            'generate|corpus/state-machine.jsonl|check-only'
+            'generate_budget|corpus/budget-cleanup.jsonl|check-only'
+            'generate_session|corpus/session-recovery.jsonl|sensitivity'
+            'generate_shutdown|corpus/shutdown-orchestration.jsonl|sensitivity'
+            'generate_workspace|corpus/workspace-lifecycle.jsonl|check-only'
+            'generate_result_lifecycle|corpus/result-lifecycle.jsonl|sensitivity'
+            'generate_candidate_ranking|corpus/candidate-ranking.jsonl|sensitivity'
+            'generate_schema_migration|corpus/schema-migration-concurrency.jsonl|sensitivity'
+            'generate_binding_flow|corpus/binding-flow-joins.jsonl|sensitivity'
+            'generate_annotation_scope|corpus/annotation-scope-correspondence.jsonl|sensitivity'
+            'generate_exception_match_binding|corpus/exception-match-binding-correspondence.jsonl|sensitivity'
+            'generate_top_budget_projection|corpus/top-budget-projection.jsonl|sensitivity'
+            'generate_progress_decision|corpus/progress-decision.jsonl|sensitivity'
+            'generate_nested_try_flow|corpus/nested-try-flow.jsonl|sensitivity'
+            'generate_nested_match_exits|corpus/nested-match-exits.jsonl|sensitivity'
+            'generate_multiple_handler_joins|corpus/multiple-handler-joins.jsonl|sensitivity'
+            'generate_report_sequence|corpus/report-sequence.jsonl|sensitivity'
+            'generate_compound_pattern_guards|corpus/compound-pattern-guards.jsonl|sensitivity'
+            'generate_except_star_flow|corpus/except-star-flow.jsonl|sensitivity'
+            'generate_bounded_candidate_discovery|corpus/bounded-candidate-discovery.jsonl|sensitivity'
+            'generate_mutation_score_exit_policy|corpus/mutation-score-exit-policy.jsonl|sensitivity'
+            'generate_output_retention|corpus/output-retention.jsonl|sensitivity'
+            'generate_candidate_span|corpus/candidate-span-preservation.jsonl|sensitivity'
+            'generate_changed_target|corpus/changed-target-composition.jsonl|sensitivity'
+            'generate_process_output|corpus/process-output-outcome.jsonl|sensitivity'
+            'generate_timeout_limit|corpus/timeout-limit.jsonl|sensitivity'
+            'generate_disk_guard|corpus/disk-guard-lifecycle.jsonl|sensitivity'
+            'generate_cleanup_capability|corpus/cleanup-capability.jsonl|sensitivity'
+          )
+          for entry in "${generators[@]}"; do
+            IFS='|' read -r executable corpus sensitivity <<< "$entry"
+            run_guard "check-$executable" \
+              lake exe "$executable" -- --check "$corpus"
+            if [[ "$sensitivity" == sensitivity ]]; then
+              run_guard "sensitivity-$executable" \
+                lake exe "$executable" -- --sensitivity
+            fi
+          done
+      - name: Upload Lean resource statistics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: lean-audit-stats
+          path: ${{ runner.temp }}/lean-audit
+          if-no-files-found: warn
+          retention-days: 7
+
   rust-shuffle:
     needs: quality
     name: Rust randomized order (nightly-2026-07-27)

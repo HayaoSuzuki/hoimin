@@ -111,9 +111,31 @@ HOIMIN_ORACLE_CASE=cleanup_is_emitted_once \
 The generated JSONL corpus is owned by Lean and must not be edited by hand.
 New cases begin in report mode while their model/implementation boundary is
 reviewed. Promoted strict cases are blocking; infrastructure errors always
-fail. Corpus generation, freshness, and strict correspondence are separate,
-deterministic command boundaries suitable for a future CI job. This workflow
-does not currently modify or require a CI configuration.
+fail.
+
+The Linux `Lean audit` CI job is configured to compile all 117 package modules
+serially before building the aggregate library. It then runs all 28 corpus
+freshness checks and the 25 generators that expose sensitivity gates. The
+workflow is the canonical list of package targets, corpus paths, and gate
+commands; update its contract test whenever a library module or `lakefile.toml`
+executable changes.
+
+Every build and generator invocation runs alone through
+`tools/lean_resource_guard.py`, with a 20-second wall-time limit, 768 MiB
+aggregate RSS limit, and 250 ms sampling. Resource statistics are retained as
+the `lean-audit-stats` workflow artifact even when a gate fails. The Lake package
+uses `-j1` and `-DElab.async=false` to keep elaboration serial within each
+process. Run local Lean checks serially with the same guard rather than starting
+an unbounded aggregate build. Corpus freshness checks compare generated output;
+regenerate through the corresponding `lake exe generate* -- --output ...`
+command when an intentional model change requires it. Generated JSONL files
+must not be edited by hand.
+
+The 768 MiB configuration is not yet validated for the complete package. Lean
+4.32.2 exceeded it while compiling `HoiminOracle.ShutdownProofs` on macOS and
+`HoiminOracle.ShutdownModel` in an isolated Linux container, even with serial
+elaboration. Treat the CI job as blocked until a measured safe bound is approved
+and the complete sequence passes under that bound.
 
 ## Shutdown deadline invariants
 
