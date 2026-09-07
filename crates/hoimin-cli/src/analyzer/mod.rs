@@ -365,7 +365,9 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
             || cancellation.is_cancelled(),
         )
         .map_err(|_| discovery_cancelled())?;
-        let validation = CandidateValidationContext::new(&source);
+        let validation = CandidateValidationContext::new(&source).map_err(|error| {
+            EffectFailed::other(EffectId(0), "analyzer.source", error.to_string())
+        })?;
         for candidate in output.candidates {
             ensure_discovery_active(&cancellation)?;
             let sequence = u64::try_from(discovery.candidates.len())
@@ -584,7 +586,8 @@ fn analyze_and_store(
         || cancellation.is_cancelled(),
     )
     .map_err(|_| cancelled(id))?;
-    let validation = CandidateValidationContext::new(&source);
+    let validation = CandidateValidationContext::new(&source)
+        .map_err(|error| EffectFailed::other(id, "analyzer.source", error.to_string()))?;
     for candidate in output.candidates {
         if cancellation.is_cancelled() {
             return Err(cancelled(id));
@@ -764,7 +767,7 @@ mod tests {
     #[test]
     fn batch_conversion_preserves_strict_candidate_identity() {
         let source = b"x = 1\nvalue == 2\n";
-        let context = CandidateValidationContext::new(source);
+        let context = CandidateValidationContext::new(source).unwrap();
 
         let converted = mutation_candidate(&context, analyzer_candidate(), 7).unwrap();
         let identity = CandidateIdentity {
@@ -791,7 +794,7 @@ mod tests {
     #[test]
     fn batch_conversion_rejects_stale_source_metadata() {
         let source = b"x = 1\nvalue == 2\n";
-        let context = CandidateValidationContext::new(source);
+        let context = CandidateValidationContext::new(source).unwrap();
 
         let mut stale_original = analyzer_candidate();
         stale_original.original = ">=".into();

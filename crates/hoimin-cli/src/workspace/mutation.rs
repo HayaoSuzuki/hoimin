@@ -43,7 +43,8 @@ impl WorkerWorkspace {
                             path: candidate.path.clone(),
                         }
                     }
-                    CandidateValidationError::UnsupportedSchema
+                    CandidateValidationError::SourceTooLarge
+                    | CandidateValidationError::UnsupportedSchema
                     | CandidateValidationError::InvalidPath
                     | CandidateValidationError::SpanOutOfBounds
                     | CandidateValidationError::LocationMismatch
