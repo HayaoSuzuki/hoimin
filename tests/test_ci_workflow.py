@@ -565,7 +565,7 @@ class LeanAuditWorkflowContractTests(unittest.TestCase):
                 "--timeout-seconds",
                 "20",
                 "--rss-limit-mib",
-                "768",
+                "2048",
                 "--sample-ms",
                 "250",
             ])

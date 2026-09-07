@@ -102,7 +102,7 @@ jobs:
             shift
             python3 tools/lean_resource_guard.py \
               --timeout-seconds 20 \
-              --rss-limit-mib 768 \
+              --rss-limit-mib 2048 \
               --sample-ms 250 \
               --stats "$stats_dir/$name.json" \
               -- "$@"

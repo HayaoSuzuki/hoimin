@@ -121,7 +121,7 @@ commands; update its contract test whenever a library module or `lakefile.toml`
 executable changes.
 
 Every build and generator invocation runs alone through
-`tools/lean_resource_guard.py`, with a 20-second wall-time limit, 768 MiB
+`tools/lean_resource_guard.py`, with a 20-second wall-time limit, 2 GiB
 aggregate RSS limit, and 250 ms sampling. Resource statistics are retained as
 the `lean-audit-stats` workflow artifact even when a gate fails. The Lake package
 uses `-j1` and `-DElab.async=false` to keep elaboration serial within each
@@ -131,11 +131,13 @@ regenerate through the corresponding `lake exe generate* -- --output ...`
 command when an intentional model change requires it. Generated JSONL files
 must not be edited by hand.
 
-The 768 MiB configuration is not yet validated for the complete package. Lean
-4.32.2 exceeded it while compiling `HoiminOracle.ShutdownProofs` on macOS and
-`HoiminOracle.ShutdownModel` in an isolated Linux container, even with serial
-elaboration. Treat the CI job as blocked until a measured safe bound is approved
-and the complete sequence passes under that bound.
+The complete sequence is not yet validated. A cold Linux run under the 2 GiB
+bound compiled all 117 modules and the aggregate library, but the budget corpus
+checker exceeded the 20-second deadline. Running the already-built checker
+directly also timed out. Its generated native code initializes exhaustive
+budget statistics before dispatching `--check`, although those statistics are
+only needed by `--stats`. The CI job remains blocked until this startup work is
+separated and the complete sequence passes without raising the time limit.
 
 ## Shutdown deadline invariants
 
