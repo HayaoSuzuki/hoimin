@@ -446,8 +446,11 @@ impl NonZeroDuration {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum MutantTimeout {
+    #[serde(alias = "Auto")]
     Auto,
+    #[serde(alias = "Fixed")]
     Fixed(NonZeroDuration),
 }
 

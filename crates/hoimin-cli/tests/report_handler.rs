@@ -110,6 +110,7 @@ fn current_report_golden_matches_typed_semantic_regeneration() {
     let checked: GoldenReportDocument = serde_json::from_slice(&checked_bytes).unwrap();
     let checked_value: serde_json::Value = serde_json::from_slice(&checked_bytes).unwrap();
     assert_schema_valid(&result_schema, &checked_value, &event_schema);
+    assert_canonical_normalized_config(&checked_value["run"]);
     let regenerated: GoldenReportDocument =
         serde_json::from_slice(&render_json_report(&all_optional_report_events(true))).unwrap();
 
@@ -151,8 +152,10 @@ fn current_event_golden_matches_typed_semantic_regeneration() {
     let root = repo_root();
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
     let path = root.join("crates/hoimin-cli/tests/golden/events/schema-v3-current.jsonl");
-    let checked = std::fs::read_to_string(path)
-        .unwrap()
+    let text = std::fs::read_to_string(path).unwrap();
+    let first: serde_json::Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
+    assert_canonical_normalized_config(&first);
+    let checked = text
         .lines()
         .map(|line| {
             let event = serde_json::from_str::<OutputEvent>(line).unwrap();
@@ -163,6 +166,16 @@ fn current_event_golden_matches_typed_semantic_regeneration() {
         .collect::<Vec<_>>();
 
     assert_eq!(checked, all_optional_report_events(true));
+}
+
+fn assert_canonical_normalized_config(event: &serde_json::Value) {
+    assert_eq!(
+        event["normalized_config"]["limits"]["mutant_timeout"],
+        "auto"
+    );
+    for argument in event["normalized_config"]["test_argv"].as_array().unwrap() {
+        assert!(argument.get("unix").is_some());
+    }
 }
 
 #[test]

@@ -57,8 +57,11 @@ pub enum ResourceMode {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CommandArg {
+    #[serde(alias = "Unix")]
     Unix(Vec<u8>),
+    #[serde(alias = "Windows")]
     Windows(Vec<u16>),
 }
 
