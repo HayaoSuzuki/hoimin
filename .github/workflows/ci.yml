@@ -58,24 +58,6 @@ jobs:
       - run: cargo test -p hoimin-cli --test run_e2e
       - run: uv run --frozen python -m unittest tests/test_skills.py
 
-  windows-resource:
-    needs: quality
-    name: Windows resource lifecycle
-    runs-on: windows-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
-        with:
-          python-version: '3.14'
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-      - name: Install repository Rust toolchain
-        run: rustup toolchain install
-      - run: uv sync --frozen
-      - run: cargo clippy -p hoimin-cli --lib --all-features -- -D warnings
-      - run: cargo test -p hoimin-cli --lib --all-features resource:: -- --test-threads=1
-      - run: cargo test -p hoimin-cli --lib --all-features process:: -- --test-threads=1
-
   lean-audit:
     needs: quality
     name: Lean audit

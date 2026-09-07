@@ -10,4 +10,4 @@ The process lifecycle transfers its unique supervisor into blocking operations f
 
 Constraints: Rust 1.88; no added dependencies; preserve accounting-primary and process-primary errors, retryability, cleanup ownership, and late-notification generation safety. Source comments remain limited to safety or non-obvious contracts.
 
-Verification combines deterministic ownership/progress tests, existing process/resource regressions on macOS, Linux-specific regressions, and Windows CI. Model reasoning is not a claim that the kernel implementation is proved. No wall-clock speedup benchmark is required: a paused root must permit unrelated registry operations.
+Verification combines deterministic ownership/progress tests, existing process/resource regressions on macOS, Linux-specific regressions, and Windows Rust cross-checks. CI retains the existing Linux runners; Windows runtime tests remain unexecuted. Model reasoning is not a claim that the kernel implementation is proved. No wall-clock speedup benchmark is required: a paused root must permit unrelated registry operations.

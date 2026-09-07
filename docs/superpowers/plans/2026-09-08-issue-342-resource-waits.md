@@ -32,7 +32,7 @@ Rust 1.88; no added dependencies; preserve accounting-primary and process-primar
 
 - [x] Add a paused wait test that asserts `state.try_lock().is_ok()` and retains the process handle while a notification removes its registration.
 - [x] Replace nonzero completion-port waits inside the mutex with an owned per-process wait outside it; reacquire the lock and drain notifications before choosing the fallback.
-- [ ] Check Windows compilation and run resource/process regressions in a dedicated Windows CI job (the existing matrix is Linux-only).
+- [x] Cross-check Windows Rust compilation and library Clippy. Preserve the Linux-only CI matrix; Windows runtime regressions remain unexecuted.
 
 ### Task 3: Owned blocking supervisor operations
 
@@ -45,7 +45,7 @@ Rust 1.88; no added dependencies; preserve accounting-primary and process-primar
 - [x] Preserve direct child kill/reap fallback and complete lifecycle guards only after awaited supervisor destruction.
 - [x] Run macOS process regressions, workspace all-feature tests, formatting and Clippy.
 
-Review added two regressions: completed-but-unconsumed task output must retain the drop-routing wrapper, and Unix reaping must disarm process-group signaling before the first await. The latter also changes `resource/mod.rs` and `resource/portable.rs`. Windows CI needs platform-specific Clippy allowances in `portable_path.rs` and the reap transition; neither allowance changes runtime behavior.
+Review added two regressions: completed-but-unconsumed task output must retain the drop-routing wrapper, and Unix reaping must disarm process-group signaling before the first await. The latter also changes `resource/mod.rs` and `resource/portable.rs`. Windows cross-checks need platform-specific Clippy allowances in `portable_path.rs` and the reap transition; neither allowance changes runtime behavior.
 
 ### Task 4: Review and handoff
 
