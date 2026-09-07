@@ -14,6 +14,24 @@ fn unknown_operator_error_lists_valid_operators_and_selectors() {
 }
 
 #[test]
+fn augmented_arithmetic_operator_ids_are_default_and_valid() {
+    let selected = MutationOperatorSelection::default();
+    let selected_names = selected.names();
+    let valid_names = MutationOperatorSelection::valid_names();
+
+    for name in ["augmented_mul_div", "augmented_floor_mod"] {
+        assert!(selected_names.iter().any(|selected| selected == name));
+        assert!(valid_names.contains(&name));
+        assert_eq!(
+            MutationOperatorSelection::parse_selector(name)
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+}
+
+#[test]
 fn default_runtime_selection_contains_collection_structure_and_bitwise_operators() {
     let selected = MutationOperatorSelection::default();
 

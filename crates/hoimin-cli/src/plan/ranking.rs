@@ -218,7 +218,9 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         MutationOperator::BinaryAddSub
         | MutationOperator::AugmentedAddSub
         | MutationOperator::BinaryMulDiv
+        | MutationOperator::AugmentedMulDiv
         | MutationOperator::BinaryFloorMod
+        | MutationOperator::AugmentedFloorMod
         | MutationOperator::UnarySign
         | MutationOperator::BitwiseAndOr
         | MutationOperator::BitwiseShift => RankingReasonCode::Arithmetic,

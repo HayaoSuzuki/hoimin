@@ -13,7 +13,7 @@ use ruff_python_ast::token::TokenKind;
 use ruff_python_ast::visitor::Visitor;
 use ruff_python_ast::{
     CmpOp, Expr, ExprCall, ExprContext, ExprList, ExprSlice, ExprSubscript, ExprTuple, ModModule,
-    Number, Operator, Pattern, Stmt, TypeParam, TypeParams, UnaryOp, visitor,
+    Number, Operator, Pattern, Singleton, Stmt, TypeParam, TypeParams, UnaryOp, visitor,
 };
 use ruff_python_parser::parse_module;
 use ruff_text_size::{Ranged, TextRange};
@@ -475,6 +475,10 @@ fn replacement(text: &str, unary: bool) -> Option<(&'static str, &'static str)> 
         "or" => ("and", "boolean_and_or"),
         "+=" => ("-=", "augmented_add_sub"),
         "-=" => ("+=", "augmented_add_sub"),
+        "*=" => ("/=", "augmented_mul_div"),
+        "/=" => ("*=", "augmented_mul_div"),
+        "//=" => ("%=", "augmented_floor_mod"),
+        "%=" => ("//=", "augmented_floor_mod"),
         "*" => ("/", "binary_mul_div"),
         "/" => ("*", "binary_mul_div"),
         "//" => ("%", "binary_floor_mod"),
@@ -1597,7 +1601,7 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
             Stmt::AugAssign(assign) => {
                 self.record_operator_tokens(
                     TextRange::new(assign.target.range().end(), assign.value.range().start()),
-                    &["+=", "-="],
+                    &["+=", "-=", "*=", "/=", "//=", "%="],
                 );
             }
             Stmt::AnnAssign(assign) => {
@@ -1725,6 +1729,15 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
             _ => {}
         }
         visitor::walk_expr(self, expression);
+    }
+
+    fn visit_pattern(&mut self, pattern: &'ast Pattern) {
+        if let Pattern::MatchSingleton(singleton) = pattern
+            && matches!(singleton.value, Singleton::True | Singleton::False)
+        {
+            self.record_operator_tokens(singleton.range(), &["True", "False"]);
+        }
+        visitor::walk_pattern(self, pattern);
     }
 }
 

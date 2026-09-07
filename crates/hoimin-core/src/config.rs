@@ -59,7 +59,9 @@ pub enum MutationOperator {
     BinaryAddSub,
     AugmentedAddSub,
     BinaryMulDiv,
+    AugmentedMulDiv,
     BinaryFloorMod,
+    AugmentedFloorMod,
     UnarySign,
     RemoveNot,
     BooleanLiteral,
@@ -115,7 +117,9 @@ impl MutationOperator {
             Self::BinaryAddSub => "binary_add_sub",
             Self::AugmentedAddSub => "augmented_add_sub",
             Self::BinaryMulDiv => "binary_mul_div",
+            Self::AugmentedMulDiv => "augmented_mul_div",
             Self::BinaryFloorMod => "binary_floor_mod",
+            Self::AugmentedFloorMod => "augmented_floor_mod",
             Self::UnarySign => "unary_sign",
             Self::RemoveNot => "remove_not",
             Self::BooleanLiteral => "boolean_literal",
@@ -152,7 +156,7 @@ impl MutationOperator {
             Self::TypeSequenceIterable => "type_sequence_iterable",
         }
     }
-    fn all() -> [Self; 43] {
+    fn all() -> [Self; 45] {
         [
             Self::CompareEqNe,
             Self::CompareOrder,
@@ -162,7 +166,9 @@ impl MutationOperator {
             Self::BinaryAddSub,
             Self::AugmentedAddSub,
             Self::BinaryMulDiv,
+            Self::AugmentedMulDiv,
             Self::BinaryFloorMod,
+            Self::AugmentedFloorMod,
             Self::UnarySign,
             Self::RemoveNot,
             Self::BooleanLiteral,
@@ -238,7 +244,9 @@ impl MutationOperatorSelection {
                 MutationOperator::BinaryAddSub,
                 MutationOperator::AugmentedAddSub,
                 MutationOperator::BinaryMulDiv,
+                MutationOperator::AugmentedMulDiv,
                 MutationOperator::BinaryFloorMod,
+                MutationOperator::AugmentedFloorMod,
                 MutationOperator::UnarySign,
                 MutationOperator::RemoveNot,
                 MutationOperator::BooleanLiteral,

@@ -2899,6 +2899,8 @@ fn candidate_replacements_reparse_as_python() {
 
 const TOKEN_OPERATOR_NAMES: &[&str] = &[
     "augmented_add_sub",
+    "augmented_floor_mod",
+    "augmented_mul_div",
     "binary_add_sub",
     "binary_floor_mod",
     "binary_mul_div",
@@ -2936,6 +2938,10 @@ fn token_operator_candidates_cover_supported_ast_roles_and_reparse() {
         "shifted = left << right >> extra\n",
         "value += increment\n",
         "value -= decrement\n",
+        "value *= factor\n",
+        "value /= divisor\n",
+        "value //= divisor\n",
+        "value %= modulus\n",
         "inverted = not value\n",
         "truth = True\n",
         "falsity = False\n",
@@ -2985,6 +2991,10 @@ fn token_operator_candidates_cover_supported_ast_roles_and_reparse() {
             (">>", "<<", "bitwise_shift"),
             ("+=", "-=", "augmented_add_sub"),
             ("-=", "+=", "augmented_add_sub"),
+            ("*=", "/=", "augmented_mul_div"),
+            ("/=", "*=", "augmented_mul_div"),
+            ("//=", "%=", "augmented_floor_mod"),
+            ("%=", "//=", "augmented_floor_mod"),
             ("not value", "value", "remove_not"),
             ("True", "False", "boolean_literal"),
             ("False", "True", "boolean_literal"),
@@ -2999,6 +3009,108 @@ fn token_operator_candidates_cover_supported_ast_roles_and_reparse() {
     {
         apply_candidate_and_reparse(source, candidate);
     }
+}
+
+#[test]
+fn match_boolean_patterns_mutate_without_admitting_other_pattern_tokens() {
+    let source = concat!(
+        "def classify(value):\n",
+        "    match value:\n",
+        "        case True:\n            result = 'False'\n",
+        "        case False:\n            result = 'True'\n",
+        "        case [True, False]:\n            pass\n",
+        "        case {'enabled': True}:\n            pass\n",
+        "        case True | False:\n            pass\n",
+        "        case None:\n            pass\n",
+        "        case 'True':\n            pass\n",
+        "        case _:\n            pass\n",
+        "def capture(other):\n",
+        "    match other:\n",
+        "        case captured:\n            pass\n",
+    );
+    let output = analyze(source);
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.span.length,
+                candidate.line,
+                candidate.column,
+                candidate.symbol.as_deref(),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        candidates,
+        vec![
+            ("True", "False", 4, 3, 13, Some("classify")),
+            ("False", "True", 5, 5, 13, Some("classify")),
+            ("True", "False", 4, 7, 14, Some("classify")),
+            ("False", "True", 5, 7, 20, Some("classify")),
+            ("True", "False", 4, 9, 25, Some("classify")),
+            ("True", "False", 4, 11, 13, Some("classify")),
+            ("False", "True", 5, 11, 20, Some("classify")),
+        ]
+    );
+    for candidate in &output.candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
+fn augmented_and_pattern_candidates_share_line_symbol_and_focused_selection() {
+    let source = concat!(
+        "def selected(value, factor):\n",
+        "    value *= factor\n",
+        "    match value:\n",
+        "        case True:\n            return value\n",
+        "def ignored(value, factor):\n",
+        "    value //= factor\n",
+        "    match value:\n",
+        "        case False:\n            return value\n",
+    );
+    let lines = [
+        LineRange { start: 2, end: 2 },
+        LineRange { start: 4, end: 4 },
+    ];
+    let symbols = ["pkg.sample:selected".to_owned()];
+    let operators = MutationOperatorSelection::default();
+    let output = analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/sample.py"),
+            lines: &lines,
+            symbols: &symbols,
+            operators: &operators,
+            profile: MutationProfile::Focused,
+            max_candidates: 10_000,
+        },
+        source,
+    );
+
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+                candidate.line,
+                candidate.symbol.as_deref(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        candidates,
+        vec![
+            ("*=", "/=", "augmented_mul_div", 2, Some("selected")),
+            ("True", "False", "boolean_literal", 4, Some("selected")),
+        ]
+    );
 }
 
 #[test]
@@ -3528,8 +3640,9 @@ fn omits_candidates_for_unselected_operators() {
 }
 
 const MUTABLE_OPERATOR_TOKENS: &[&str] = &[
-    "==", "!=", "<", "<=", ">", ">=", "in", "not in", "is", "is not", "and", "or", "+=", "-=", "*",
-    "/", "//", "%", "&", "|", "<<", ">>", "break", "continue", "True", "False", "+", "-", "not",
+    "==", "!=", "<", "<=", ">", ">=", "in", "not in", "is", "is not", "and", "or", "+=", "-=",
+    "*=", "/=", "//=", "%=", "*", "/", "//", "%", "&", "|", "<<", ">>", "break", "continue",
+    "True", "False", "+", "-", "not",
 ];
 
 const NESTED_QUOTE_PAIRS: &[(&str, &str, &str)] = &[
