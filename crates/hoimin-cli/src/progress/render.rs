@@ -74,7 +74,7 @@ where
     {
         writeln!(
             stdout,
-            "score: {}",
+            "comparable score: {}",
             optional_score(comparison.current_score, false)
         )
         .map_err(write_error)?;

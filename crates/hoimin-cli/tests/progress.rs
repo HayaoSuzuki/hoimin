@@ -983,7 +983,7 @@ async fn output_human_includes_latest_comparison_fields() {
     assert!(stderr.is_empty());
     for field in [
         "state: stalled",
-        "score: 1.000000",
+        "comparable score: 1.000000",
         "delta: +0.000000",
         "improvements: 0",
         "regressions: 0",
@@ -998,6 +998,68 @@ async fn output_human_includes_latest_comparison_fields() {
     ] {
         assert!(output.contains(field), "missing `{field}` from:\n{output}");
     }
+}
+
+#[tokio::test]
+async fn output_labels_the_intersection_score_as_comparable() {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut before = valid_report();
+    before["mutants"][0]["status"] = json!("survived");
+    before["mutants"][0]["termination"] = json!({ "Exit": 0 });
+    let mut newly_conclusive = before["mutants"][0].clone();
+    newly_conclusive["sequence"] = json!(4);
+    newly_conclusive["candidate"]["id"] = json!("mutant-2");
+    newly_conclusive["candidate"]["sequence"] = json!(2);
+    newly_conclusive["candidate"]["span"]["start"] = json!(2);
+    newly_conclusive["candidate"]["original"] = json!("2");
+    newly_conclusive["status"] = json!("timeout");
+    newly_conclusive["termination"] = json!("Timeout");
+    before["mutants"] = json!([before["mutants"][0].clone(), newly_conclusive]);
+    before["summary"]["sequence"] = json!(5);
+    before["summary"]["counts"] = json!({
+        "killed": 0,
+        "survived": 1,
+        "timeout": 1,
+        "out_of_memory": 0,
+        "process_limit": 0,
+        "error": 0,
+        "not_run": 0,
+        "inconclusive": 1,
+        "score": 0.0
+    });
+
+    let mut after = before.clone();
+    after["mutants"][1]["status"] = json!("killed");
+    after["mutants"][1]["termination"] = json!({ "Exit": 1 });
+    after["summary"]["counts"] = json!({
+        "killed": 1,
+        "survived": 1,
+        "timeout": 0,
+        "out_of_memory": 0,
+        "process_limit": 0,
+        "error": 0,
+        "not_run": 0,
+        "inconclusive": 0,
+        "score": 0.5
+    });
+    let reports = vec![
+        write_json(&fixture, "before.json", &before),
+        write_json(&fixture, "after.json", &after),
+    ];
+
+    let (human_code, stdout, human_stderr) = run_progress(&reports, "human").await;
+    let output = String::from_utf8(stdout).unwrap();
+    assert_eq!(human_code, 0);
+    assert!(human_stderr.is_empty());
+    assert!(output.contains("comparable score: 0.000000"), "{output}");
+    assert!(!output.lines().any(|line| line.starts_with("score:")));
+
+    let (json_code, stdout, json_stderr) = run_progress(&reports, "json").await;
+    let document: Value = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(json_code, 0);
+    assert!(json_stderr.is_empty());
+    assert_eq!(document["comparisons"][0]["current_score"], 0.0);
+    assert_eq!(document["comparisons"][0]["score_delta"], 0.0);
 }
 
 #[tokio::test]

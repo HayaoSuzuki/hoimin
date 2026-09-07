@@ -194,7 +194,8 @@
           "$ref": "#/$defs/nullableScore"
         },
         "current_score": {
-          "$ref": "#/$defs/nullableScore"
+          "$ref": "#/$defs/nullableScore",
+          "description": "Mutation score for the current report over common mutants with conclusive results in both reports."
         },
         "score_delta": {
           "$ref": "#/$defs/nullableScoreDelta"
