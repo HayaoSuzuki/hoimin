@@ -96,3 +96,27 @@ regression was updated but was not executed on this host.
   0.
 - `cargo fmt --all -- --check`: exit 0.
 - `git diff --check`: exit 0.
+
+## CI follow-up: directory traversal order
+
+The Linux randomized-order job in run `34099500933` failed because
+`added_file_crossing_the_limit_cleans_a_partial_snapshot` expected the two-byte
+file to precede the four-byte file. The source walker does not sort directory
+entries; either file can precede the other. CI recorded one four-byte write
+before the expected capacity rejection.
+
+Swapping the fixture sizes reproduced the same assertion failure on macOS.
+The test now covers both size assignments and accepts either valid first-file
+size. It still requires exactly one snapshot write, rejection at 12 planned
+bytes against a 10-byte limit, and removal of the partial snapshot. This change
+does not modify production code or impose sorting on the source walker.
+
+Follow-up verification on macOS arm64:
+
+- The expanded fixture failed with the old assertion: `(1, 4)` versus `(1, 2)`.
+- Copy tests passed: 22 passed, 1 ignored, with default parallel execution.
+- The same 22 tests passed with `nightly-2026-07-27` and
+  `-Z unstable-options --shuffle-seed 353`; 1 benchmark remained ignored.
+  Nightly emitted deprecation warnings for existing `fetch_update` calls.
+- `cargo clippy -p hoimin-cli --all-targets --all-features -- -D warnings`,
+  formatting, and whitespace checks passed.

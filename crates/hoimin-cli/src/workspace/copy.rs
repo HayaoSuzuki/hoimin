@@ -1063,43 +1063,47 @@ mod tests {
 
     #[test]
     fn added_file_crossing_the_limit_cleans_a_partial_snapshot() {
-        let source = tempfile::tempdir().unwrap();
-        fs::write(source.path().join("target.py"), b"1234").unwrap();
-        let source_root = Utf8Path::from_path(source.path()).unwrap();
-        assert_eq!(
-            inventory_logical_bytes(source_root, &CopyOptions::default()).unwrap(),
-            4
-        );
-        fs::write(source.path().join("added.py"), b"12").unwrap();
-        let parent = tempfile::tempdir().unwrap();
-        let parent = Utf8Path::from_path(parent.path()).unwrap();
-        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
-        let root =
-            Arc::new(ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap());
-        reset_snapshot_write_metrics();
+        for (original, added) in [(b"1234".as_slice(), b"12".as_slice()), (b"12", b"1234")] {
+            let source = tempfile::tempdir().unwrap();
+            fs::write(source.path().join("target.py"), original).unwrap();
+            let source_root = Utf8Path::from_path(source.path()).unwrap();
+            assert_eq!(
+                inventory_logical_bytes(source_root, &CopyOptions::default()).unwrap(),
+                original.len() as u64
+            );
+            fs::write(source.path().join("added.py"), added).unwrap();
+            let parent = tempfile::tempdir().unwrap();
+            let parent = Utf8Path::from_path(parent.path()).unwrap();
+            let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+            let root =
+                Arc::new(ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap());
+            reset_snapshot_write_metrics();
 
-        let error = create_pending_disk_snapshot(
-            source_root,
-            &CopyOptions::default(),
-            2,
-            Some(10),
-            Some(&root),
-        )
-        .unwrap_err();
+            let error = create_pending_disk_snapshot(
+                source_root,
+                &CopyOptions::default(),
+                2,
+                Some(10),
+                Some(&root),
+            )
+            .unwrap_err();
 
-        assert_eq!(
-            error,
-            WorkspaceError::OwnedWorkspaceLimit {
-                planned: 12,
-                limit: 10,
-            }
-        );
-        assert_eq!(snapshot_write_metrics(), (1, 2));
-        let names = fs::read_dir(root.path())
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name())
-            .collect::<Vec<_>>();
-        assert_eq!(names.len(), 2, "partial snapshot leaked: {names:?}");
+            assert_eq!(
+                error,
+                WorkspaceError::OwnedWorkspaceLimit {
+                    planned: 12,
+                    limit: 10,
+                }
+            );
+            let (writes, written_bytes) = snapshot_write_metrics();
+            assert_eq!(writes, 1);
+            assert!(matches!(written_bytes, 2 | 4), "{written_bytes}");
+            let names = fs::read_dir(root.path())
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect::<Vec<_>>();
+            assert_eq!(names.len(), 2, "partial snapshot leaked: {names:?}");
+        }
     }
 
     #[test]
