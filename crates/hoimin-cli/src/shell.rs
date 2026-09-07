@@ -28,7 +28,8 @@ use uuid::Uuid;
 use crate::analyzer::{AnalyzerHandler, CandidateStore};
 use crate::metrics::{MetricsCollector, MetricsError, finalize_metrics};
 use crate::process::{ProcessCancellation, ProcessHandler, ProcessRequest, ProcessStartGate};
-use crate::report::{PreparedReport, ReportHandler};
+use crate::report::PreparedReport;
+use crate::report::delivery::ReportDelivery;
 #[cfg(not(any(windows, target_os = "linux")))]
 use crate::resource::PortableBackend;
 use crate::resource::ResourceBackend;
@@ -1784,7 +1785,7 @@ pub struct ShellContext<Stdout, Stderr> {
     workspace: Option<WorkspaceHandler>,
     analyzer: AnalyzerHandler,
     process: Arc<ProcessHandler>,
-    report: ReportHandler<Stdout, Stderr>,
+    report: ReportDelivery<Stdout, Stderr>,
     session: Option<SessionDispatcher>,
     session_path: Option<Utf8PathBuf>,
     spool_dir: Arc<ManagedShellRoots>,
@@ -1828,7 +1829,7 @@ where
             workspace: Some(workspace),
             analyzer,
             process,
-            report: report.attach(stdout, stderr),
+            report: ReportDelivery::Inline(report.attach(stdout, stderr)),
             session: None,
             session_path,
             spool_dir,
@@ -2040,7 +2041,11 @@ where
             if let OutputEvent::RunStarted(run_started) = &mut request.event {
                 run_started.versions = context.report_versions.clone();
             }
-            context.report.handle(request).map(RunEvent::OutputEmitted)
+            context
+                .report
+                .handle(request)
+                .await
+                .map(RunEvent::OutputEmitted)
         }
         RunEffect::Cleanup(_) => unreachable!("cleanup bypassed owned blocking dispatch"),
         RunEffect::LoadSession(request) => match session(context, id).await {
@@ -2204,6 +2209,7 @@ where
         RunControl::new(),
         CandidateSelection::All,
         None,
+        None,
     )
     .await
 }
@@ -2259,6 +2265,7 @@ where
         RunControl::new(),
         CandidateSelection::Explicit(candidate_ids, verification_selection),
         Some(fingerprint_copy_inputs),
+        None,
     )
     .await
 }
@@ -2312,6 +2319,7 @@ where
         RunControl::new(),
         CandidateSelection::Ordered(candidate_ids, verification_selection),
         Some(fingerprint_copy_inputs),
+        None,
     )
     .await
 }
@@ -2335,6 +2343,7 @@ where
         control,
         CandidateSelection::All,
         None,
+        None,
     )
     .await
 }
@@ -2345,10 +2354,67 @@ enum CandidateSelection {
     Ordered(Vec<String>, hoimin_core::VerificationSelection),
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "the loop keeps cancellation, completion, and state-transition ordering in one auditable sequence"
-)]
+type OwnedReportFactory<Stdout, Stderr> =
+    fn(ReportDelivery<Stdout, Stderr>, Arc<dyn Send + Sync>) -> ReportDelivery<Stdout, Stderr>;
+
+pub(crate) async fn run_owned_loop<Stdout, Stderr>(
+    config: RunConfig,
+    stdout: Stdout,
+    stderr: Stderr,
+    control: RunControl,
+) -> Result<i32, String>
+where
+    Stdout: Write + Send + 'static,
+    Stderr: Write + Send + 'static,
+{
+    let config = prepare_run_config(config).map_err(|error| error.to_string())?;
+    let context = prepare_loop_context(&config, stdout, stderr, &control).await?;
+    Ok(Box::pin(run_loop_context(
+        config,
+        context,
+        control,
+        CandidateSelection::All,
+        None,
+        Some(ReportDelivery::into_owned),
+    ))
+    .await
+    .unwrap_or(2))
+}
+
+pub(crate) async fn run_owned_verified<Stdout, Stderr>(
+    verified: crate::plan::VerifiedPlan,
+    stdout: Stdout,
+    stderr: Stderr,
+) -> Result<i32, String>
+where
+    Stdout: Write + Send + 'static,
+    Stderr: Write + Send + 'static,
+{
+    if verified.config.session.is_some() || verified.config.resume {
+        return Err("selected candidate execution does not support sessions or resume".to_owned());
+    }
+    let selection = match verified.selection {
+        crate::plan::ResolvedVerifySelection::ExplicitCandidates(ids) => {
+            CandidateSelection::Explicit(ids, verified.verification_selection)
+        }
+        crate::plan::ResolvedVerifySelection::RankedCandidates(ids) => {
+            CandidateSelection::Ordered(ids, verified.verification_selection)
+        }
+    };
+    let control = RunControl::new();
+    let context = prepare_loop_context(&verified.config, stdout, stderr, &control).await?;
+    Ok(Box::pin(run_loop_context(
+        verified.config,
+        context,
+        control,
+        selection,
+        Some(verified.fingerprint_copy_inputs),
+        Some(ReportDelivery::into_owned),
+    ))
+    .await
+    .unwrap_or(2))
+}
+
 async fn run_loop_prepared<Stdout, Stderr>(
     config: RunConfig,
     stdout: Stdout,
@@ -2356,23 +2422,71 @@ async fn run_loop_prepared<Stdout, Stderr>(
     control: RunControl,
     candidate_selection: CandidateSelection,
     fingerprint_copy_inputs: Option<BTreeSet<Utf8PathBuf>>,
+    owned_report: Option<OwnedReportFactory<Stdout, Stderr>>,
 ) -> Result<i32, String>
 where
     Stdout: Write,
     Stderr: Write,
 {
-    let metrics_path = config.output.metrics.clone();
+    let context = prepare_loop_context(&config, stdout, stderr, &control).await?;
+    Box::pin(run_loop_context(
+        config,
+        context,
+        control,
+        candidate_selection,
+        fingerprint_copy_inputs,
+        owned_report,
+    ))
+    .await
+}
+
+async fn prepare_loop_context<Stdout: Write, Stderr: Write>(
+    config: &RunConfig,
+    stdout: Stdout,
+    stderr: Stderr,
+    control: &RunControl,
+) -> Result<ShellContext<Stdout, Stderr>, String> {
     #[cfg(not(test))]
-    let mut context = ShellContext::new(&config, stdout, stderr).await?;
+    let _ = control;
+    #[cfg(not(test))]
+    let context = ShellContext::new(config, stdout, stderr).await?;
     #[cfg(test)]
-    let mut context = ShellContext::new_in(
-        &config,
+    let context = ShellContext::new_in(
+        config,
         stdout,
         stderr,
         Utf8PathBuf::from_path_buf(control.managed_parent.path().to_owned())
             .map_err(|_| "test managed parent is not UTF-8".to_owned())?,
     )
     .await?;
+    Ok(context)
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "the loop keeps cancellation, completion, and state-transition ordering in one auditable sequence"
+)]
+async fn run_loop_context<Stdout: Write, Stderr: Write>(
+    config: RunConfig,
+    mut context: ShellContext<Stdout, Stderr>,
+    control: RunControl,
+    candidate_selection: CandidateSelection,
+    fingerprint_copy_inputs: Option<BTreeSet<Utf8PathBuf>>,
+    owned_report: Option<OwnedReportFactory<Stdout, Stderr>>,
+) -> Result<i32, String> {
+    let metrics_path = config.output.metrics.clone();
+    if let Some(own_report) = owned_report {
+        let delivery_child = context
+            .spool_dir
+            .delivery_spool
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        context.report = own_report(
+            context.report,
+            Arc::new((Arc::clone(&context.spool_dir.delivery_root), delivery_child)),
+        );
+    }
     #[cfg(test)]
     control.observe_managed_roots(&context.spool_dir);
     #[cfg(test)]
@@ -2388,6 +2502,12 @@ where
     }
     let deadline = tokio::time::Instant::now() + config.limits.total_timeout.get();
     let shutdown_grace = control.shutdown_grace();
+    let report_admission = context.report.admission();
+    if let Some(admission) = &report_admission {
+        admission.restrict_to(
+            ShutdownBudget::for_total_timeout_with_grace(deadline, shutdown_grace).deadline(),
+        );
+    }
     let max_jobs = config.limits.jobs.get();
     let channel_capacity = config.limits.jobs.get().saturating_add(1);
     let mut metrics = None;
@@ -2999,13 +3119,60 @@ where
                                 });
                             }
                         }
-                        let emitted = context.report.handle(request);
-                        #[cfg(test)]
-                        if emitted.is_ok() {
-                            control.observe_finalization_event("run_finished_written");
-                        }
+                        let (emitted, flushed) = {
+                            let delivery = async {
+                                let emitted = context.report.handle(request).await;
+                                #[cfg(test)]
+                                if emitted.is_ok() {
+                                    control.observe_finalization_event("run_finished_written");
+                                }
+                                let flushed = context.report.flush_and_release_spool().await;
+                                (emitted, flushed)
+                            };
+                            tokio::pin!(delivery);
+                            loop {
+                                let limit = shutdown_budget.unwrap_or_else(|| {
+                                    ShutdownBudget::for_total_timeout_with_grace(deadline, shutdown_grace)
+                                });
+                                if let Some(admission) = &report_admission {
+                                    admission.restrict_to(limit.deadline());
+                                }
+                                tokio::select! {
+                                    biased;
+                                    () = tokio::time::sleep_until(limit.deadline()), if report_admission.is_some() => {
+                                        return Err(limit.expiry_error(process_tasks.len(), io_tasks.len() + 1));
+                                    }
+                                    () = control.cancelled(), if report_admission.is_some() && !stop_signalled => {
+                                        cancellation.cancel();
+                                        stop_signalled = true;
+                                        establish_event_shutdown_budget(
+                                            &mut shutdown_budget, &RunEvent::CancellationRequested,
+                                            deadline, tokio::time::Instant::now(), shutdown_grace,
+                                        );
+                                    }
+                                    signal = interrupts.first(), if report_admission.is_some() && !stop_signalled => {
+                                        cancellation.cancel();
+                                        stop_signalled = true;
+                                        let event = first_interrupt_event(signal)?;
+                                        establish_event_shutdown_budget(
+                                            &mut shutdown_budget, &event, deadline,
+                                            tokio::time::Instant::now(), shutdown_grace,
+                                        );
+                                    }
+                                    () = tokio::time::sleep_until(deadline), if report_admission.is_some() && !stop_signalled => {
+                                        cancellation.cancel();
+                                        stop_signalled = true;
+                                        establish_event_shutdown_budget(
+                                            &mut shutdown_budget, &RunEvent::DeadlineReached,
+                                            deadline, tokio::time::Instant::now(), shutdown_grace,
+                                        );
+                                    }
+                                    completed = &mut delivery => break completed,
+                                }
+                            }
+                        };
                         let mut delivery_errors = Vec::new();
-                        let report_flushed = match context.report.flush_and_release_spool() {
+                        let report_flushed = match flushed {
                             Ok(()) => true,
                             Err(error) => {
                                 delivery_errors.push(format!(
@@ -3139,6 +3306,9 @@ where
                         let event = if stopping {
                             let budget = shutdown_budget
                                 .ok_or_else(|| "stopping run has no shutdown budget".to_owned())?;
+                            if let Some(admission) = &report_admission {
+                                admission.restrict_to(budget.deadline());
+                            }
                             let mut execution = Box::pin(execute_effect_with_cancellation(
                                 &mut context,
                                 effect,
@@ -3293,6 +3463,9 @@ where
                                     budget,
                                     signal_failure: pending_signal_failure,
                                 } => {
+                                    if let Some(admission) = &report_admission {
+                                        admission.restrict_to(budget.deadline());
+                                    }
                                     if budget.wait(&mut execution).await.is_err() {
                                         drop(execution);
                                         let expiry_error = shutdown_expiry_error(
@@ -3985,6 +4158,7 @@ where
     }
     .await;
     let outer_finalization = async {
+        let mut post_report_output = false;
         ensure_outer_finalization_budget(
             &mut shutdown_budget,
             run_result.is_err(),
@@ -3995,6 +4169,9 @@ where
         let budget = shutdown_budget
             .as_ref()
             .expect("outer finalization established a shutdown budget");
+        if let Some(admission) = &report_admission {
+            admission.restrict_to(budget.deadline());
+        }
         let _disk_stats = disk_monitor.as_ref().map(DiskMonitor::stats);
         let (process_reaped, output_drained, process_errors) = if execution_safety_proven {
             (true, true, Vec::new())
@@ -4058,7 +4235,23 @@ where
             finalization_errors
                 .push("disk lifecycle rejected outer monitor join completion".to_owned());
         }
-        let safe_to_remove = cleanup_quiescence_proven([
+        let mut report_released = delivery_cleaned || delivery_cleanup_attempted;
+        if !report_released
+            && (report_admission.is_none() || tokio::time::Instant::now() < budget.deadline())
+        {
+            match budget.wait(context.report.flush_and_release_spool()).await {
+                Ok(result) => {
+                    report_released = context.report.is_quiescent();
+                    if let Err(error) = result {
+                        finalization_errors.push(format!(
+                            "report flush before delivery cleanup failed: {error}"
+                        ));
+                    }
+                }
+                Err(_) => finalization_errors.push(budget.expiry_error(0, 1)),
+            }
+        }
+        let execution_quiescent = cleanup_quiescence_proven([
             process_reaped,
             output_drained,
             monitor_joined,
@@ -4070,10 +4263,16 @@ where
                 .as_ref()
                 .expect("outer finalization established a shutdown budget"),
             shutdown_expiry_reported,
-            safe_to_remove,
+            execution_quiescent,
             Box::new(|| {}),
         )
         .await;
+        let execution_safe_to_remove = execution_quiescent
+            && context.workspace.is_some()
+            && close.workspace.is_ok()
+            && close.expiry.is_none();
+        let delivery_safe_to_remove =
+            execution_safe_to_remove && report_released && context.report.is_quiescent();
         if close.expiry.is_some() {
             shutdown_expiry_reported = true;
         }
@@ -4096,7 +4295,7 @@ where
         for error in finalization_errors.drain(..).chain(process_errors) {
             run_result = append_finalization_error(run_result, error);
         }
-        if safe_to_remove {
+        if execution_safe_to_remove {
             if !execution_cleaned && !execution_cleanup_attempted {
                 context.analyzer.release_candidate_spool();
                 context.spool_dir.release_execution_spool();
@@ -4159,13 +4358,35 @@ where
                     .execution_root
                     .abandon_for_janitor("execution-root cleanup was already attempted".to_owned());
             }
-            if !delivery_cleaned && !delivery_cleanup_attempted {
-                if let Err(error) = context.report.flush_and_release_spool() {
+        } else {
+            if !execution_cleaned && !execution_cleanup_attempted {
+                execution_cleanup_attempted = true;
+                let requested = disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
+                    root: DiskRootId::Execution,
+                });
+                let completed = requested
+                    && disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
+                        root: DiskRootId::Execution,
+                        outcome: DiskCleanupOutcome::Deferred(
+                            CLEANUP_QUIESCENCE_UNPROVEN.to_owned(),
+                        ),
+                    });
+                if !completed {
                     run_result = append_finalization_error(
                         run_result,
-                        format!("report flush before delivery cleanup failed: {error}"),
+                        "disk lifecycle rejected deferred outer execution cleanup".to_owned(),
                     );
                 }
+            }
+            if !execution_cleaned {
+                context
+                    .spool_dir
+                    .execution_root
+                    .abandon_for_janitor(CLEANUP_QUIESCENCE_UNPROVEN.to_owned());
+            }
+        }
+        if delivery_safe_to_remove {
+            if !delivery_cleaned && !delivery_cleanup_attempted {
                 if disk_lifecycle.snapshot().report == DiskComponentState::Pending
                     && !disk_lifecycle.apply(DiskLifecycleEvent::ReportFailed)
                 {
@@ -4237,31 +4458,6 @@ where
                     .abandon_for_janitor("delivery-root cleanup was already attempted".to_owned());
             }
         } else {
-            if !execution_cleaned && !execution_cleanup_attempted {
-                execution_cleanup_attempted = true;
-                let requested = disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
-                    root: DiskRootId::Execution,
-                });
-                let completed = requested
-                    && disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
-                        root: DiskRootId::Execution,
-                        outcome: DiskCleanupOutcome::Deferred(
-                            CLEANUP_QUIESCENCE_UNPROVEN.to_owned(),
-                        ),
-                    });
-                if !completed {
-                    run_result = append_finalization_error(
-                        run_result,
-                        "disk lifecycle rejected deferred outer execution cleanup".to_owned(),
-                    );
-                }
-            }
-            if !execution_cleaned {
-                context
-                    .spool_dir
-                    .execution_root
-                    .abandon_for_janitor(CLEANUP_QUIESCENCE_UNPROVEN.to_owned());
-            }
             if disk_lifecycle.snapshot().report == DiskComponentState::Pending {
                 let _ = disk_lifecycle.apply(DiskLifecycleEvent::ReportFailed);
             }
@@ -4328,14 +4524,53 @@ where
                 (None, _) => unreachable!("outer finalization always has a shutdown budget"),
             }
             for (code, message) in metrics_warnings {
-                emit_metrics_warning(&mut context, &diagnostic_run_id, code, message);
+                if tokio::time::Instant::now() >= budget.deadline()
+                    || !context.report.is_quiescent()
+                {
+                    break;
+                }
+                post_report_output = true;
+                let _ = budget
+                    .wait(emit_metrics_warning(
+                        &mut context,
+                        &diagnostic_run_id,
+                        code,
+                        message,
+                    ))
+                    .await;
             }
         }
-        combine_close_results(
+        let result = combine_close_results(
             run_result.map(|(exit_code, _)| exit_code),
             close.workspace,
             close.process,
-        )
+        );
+        if owned_report.is_some()
+            && let Err(error) = &result
+            && context.report.is_quiescent()
+            && tokio::time::Instant::now() < budget.deadline()
+        {
+            post_report_output = true;
+            let _ = budget
+                .wait(context.report.handle(EmitOutput {
+                    id: EffectId(u64::MAX),
+                    event: OutputEvent::Diagnostic(Diagnostic::new(
+                        &diagnostic_run_id,
+                        u64::MAX,
+                        "error",
+                        "run.finalization.failed",
+                        error,
+                    )),
+                }))
+                .await;
+        }
+        if post_report_output
+            && context.report.is_quiescent()
+            && tokio::time::Instant::now() < budget.deadline()
+        {
+            let _ = budget.wait(context.report.flush_and_release_spool()).await;
+        }
+        result
     };
     finish_with_interrupt_monitor(interrupts, outer_finalization).await
 }
@@ -4484,16 +4719,25 @@ fn phase_stage(phase: RunPhase) -> Option<&'static str> {
     }
 }
 
-fn emit_metrics_warning<Stdout: Write, Stderr: Write>(
+async fn emit_metrics_warning<Stdout: Write, Stderr: Write>(
     context: &mut ShellContext<Stdout, Stderr>,
     run_id: &str,
     code: &str,
     message: String,
 ) {
-    let _ = context.report.handle(EmitOutput {
-        id: EffectId(u64::MAX),
-        event: OutputEvent::Diagnostic(Diagnostic::new(run_id, u64::MAX, "warning", code, message)),
-    });
+    let _ = context
+        .report
+        .handle(EmitOutput {
+            id: EffectId(u64::MAX),
+            event: OutputEvent::Diagnostic(Diagnostic::new(
+                run_id,
+                u64::MAX,
+                "warning",
+                code,
+                message,
+            )),
+        })
+        .await;
 }
 
 fn first_interrupt_event(signal: Result<(), String>) -> Result<RunEvent, String> {
@@ -6497,6 +6741,100 @@ mod tests {
 
     struct AlwaysFailingWriter;
 
+    struct PausedReportWriter {
+        entered: Option<tokio::sync::oneshot::Sender<()>>,
+        release: std::sync::mpsc::Receiver<()>,
+        pause_flush: bool,
+    }
+
+    impl PausedReportWriter {
+        fn pause(&mut self) -> std::io::Result<()> {
+            if let Some(entered) = self.entered.take() {
+                let _ = entered.send(());
+                self.release
+                    .recv_timeout(Duration::from_secs(4))
+                    .map_err(std::io::Error::other)?;
+            }
+            Ok(())
+        }
+    }
+
+    impl Write for PausedReportWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            if !self.pause_flush {
+                self.pause()?;
+            }
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            if self.pause_flush {
+                self.pause()?;
+            }
+            Ok(())
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn interrupted_owned_json_delivery_retains_its_spool_until_write_or_flush_returns() {
+        for pause_flush in [false, true] {
+            let project = tempfile::tempdir().unwrap();
+            let config = output_failure_test_config(&project, "json");
+            let mut control = RunControl::new();
+            control.shutdown_grace = Duration::from_millis(50);
+            let observed = control.clone();
+            let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+            let (release_tx, release_rx) = std::sync::mpsc::channel();
+            let writer = PausedReportWriter {
+                entered: Some(entered_tx),
+                release: release_rx,
+                pause_flush,
+            };
+            let mut run = Box::pin(run_owned_loop(config, writer, Vec::new(), control));
+            tokio::select! {
+                result = &mut run => panic!("run finished before report pause: {result:?}"),
+                entered = entered_rx => entered.unwrap(),
+            }
+            let roots = observed.managed_root_paths();
+            let delivery = &roots[1];
+            let child = std::fs::read_dir(delivery)
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .find(|path| {
+                    path.file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .starts_with("report-")
+                })
+                .expect("delivery child exists during JSON write");
+            let spool = std::fs::read_dir(&child)
+                .unwrap()
+                .next()
+                .unwrap()
+                .unwrap()
+                .path();
+            observed.cancel();
+            let result = tokio::time::timeout(Duration::from_secs(1), &mut run).await;
+            let retained = delivery.exists() && child.exists() && spool.exists();
+            let execution_removed = !roots[0].exists();
+            let acknowledged = observed
+                .finalization_events()
+                .contains(&"output_acknowledged");
+            release_tx.send(()).unwrap();
+            drop(run);
+            assert_eq!(result.unwrap().unwrap(), 2);
+            assert!(
+                retained,
+                "cleanup removed a report resource while its operation was blocked"
+            );
+            assert!(
+                execution_removed,
+                "report delivery retained an already-cleaned execution root"
+            );
+            assert!(!acknowledged, "incomplete report delivery was acknowledged");
+        }
+    }
+
     impl std::io::Write for AlwaysFailingWriter {
         fn write(&mut self, _bytes: &[u8]) -> std::io::Result<usize> {
             Err(std::io::Error::other("injected report write failure"))
@@ -6504,6 +6842,35 @@ mod tests {
 
         fn flush(&mut self) -> std::io::Result<()> {
             Err(std::io::Error::other("injected report flush failure"))
+        }
+    }
+
+    #[tokio::test]
+    async fn owned_report_io_failure_releases_managed_roots_without_output_acknowledgement() {
+        for format in ["json", "jsonl", "human"] {
+            let project = tempfile::tempdir().unwrap();
+            let config = output_failure_test_config(&project, format);
+            let control = RunControl::new();
+            let observed = control.clone();
+            assert_eq!(
+                run_owned_loop(config, AlwaysFailingWriter, Vec::new(), control)
+                    .await
+                    .unwrap(),
+                2
+            );
+            assert!(
+                observed
+                    .managed_root_paths()
+                    .iter()
+                    .all(|root| !root.exists()),
+                "format={format}"
+            );
+            assert!(
+                !observed
+                    .finalization_events()
+                    .contains(&"output_acknowledged"),
+                "format={format}"
+            );
         }
     }
 
