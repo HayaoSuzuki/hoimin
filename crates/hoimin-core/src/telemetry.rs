@@ -123,6 +123,16 @@ impl RunMetrics {
                     worker.worker
                 )));
             }
+            if worker
+                .busy_ms
+                .checked_add(worker.queue_wait_ms)
+                .is_none_or(|accounted_ms| accounted_ms > self.elapsed_ms)
+            {
+                return Err(MetricsValidationError::Invalid(format!(
+                    "worker {} combined busy and queue wait time exceeds run elapsed time",
+                    worker.worker
+                )));
+            }
         }
         if !self
             .workers

@@ -66,6 +66,7 @@
     },
     "worker": {
       "type": "object",
+      "description": "Within each worker, busy_ms and queue_wait_ms account for disjoint intervals and their sum must not exceed the run elapsed_ms. Intervals from different workers may overlap.",
       "required": ["worker", "busy_ms", "queue_wait_ms", "processes"],
       "properties": {
         "worker": {

@@ -99,6 +99,70 @@ fn metrics_reject_busy_time_above_run_elapsed_time() {
 }
 
 #[test]
+fn metrics_reject_combined_worker_time_above_run_elapsed_time() {
+    for (elapsed_ms, busy_ms, queue_wait_ms) in [
+        (10, 6, 5),
+        (10, 10, 10),
+        (u64::MAX, u64::MAX, 1),
+        (u64::MAX, u64::MAX, u64::MAX),
+    ] {
+        let mut metrics = RunMetrics::empty("run-1");
+        metrics.elapsed_ms = elapsed_ms;
+        metrics.workers = vec![WorkerMetric {
+            busy_ms,
+            queue_wait_ms,
+            ..WorkerMetric::new(7)
+        }];
+
+        assert_eq!(
+            validation_message(&metrics),
+            "worker 7 combined busy and queue wait time exceeds run elapsed time"
+        );
+    }
+}
+
+#[test]
+fn metrics_accept_combined_worker_time_at_the_run_boundary() {
+    for (elapsed_ms, busy_ms, queue_wait_ms) in [
+        (0, 0, 0),
+        (10, 6, 4),
+        (10, 0, 10),
+        (10, 10, 0),
+        (u64::MAX, u64::MAX - 1, 1),
+    ] {
+        let mut metrics = RunMetrics::empty("run-1");
+        metrics.elapsed_ms = elapsed_ms;
+        metrics.workers = vec![WorkerMetric {
+            busy_ms,
+            queue_wait_ms,
+            ..WorkerMetric::new(7)
+        }];
+
+        assert_eq!(metrics.validate(), Ok(()));
+    }
+}
+
+#[test]
+fn metrics_allow_parallel_workers_to_share_the_same_run_interval() {
+    let mut metrics = RunMetrics::empty("run-1");
+    metrics.elapsed_ms = 10;
+    metrics.workers = vec![
+        WorkerMetric {
+            busy_ms: 6,
+            queue_wait_ms: 4,
+            ..WorkerMetric::new(0)
+        },
+        WorkerMetric {
+            busy_ms: 7,
+            queue_wait_ms: 3,
+            ..WorkerMetric::new(1)
+        },
+    ];
+
+    assert_eq!(metrics.validate(), Ok(()));
+}
+
+#[test]
 fn metrics_validate_version_identity_names_and_duration_bounds() {
     let mut metrics = RunMetrics::empty("run-1");
     metrics.schema_version = 2;
