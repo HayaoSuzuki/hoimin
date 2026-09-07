@@ -49,6 +49,8 @@ def write_markdown(record: RunRecord, writer: TextWriter) -> None:
     emit("# Focused mutation report")
     emit()
     emit(f"- State: {_code(record.state.value)}")
+    if record.error:
+        emit(f"- Error: {_code(' '.join(record.error.splitlines()))}")
     emit(f"- Elapsed: `{elapsed:.1f}s` of `{record.total_budget_seconds:.1f}s`")
     emit(f"- Commit: {_code(head)}")
     emit(f"- Dirty worktree: `{dirty}`")

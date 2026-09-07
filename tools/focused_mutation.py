@@ -140,6 +140,11 @@ def _bounded_detail(value: str, capacity: int = 4 * 1024) -> str:
 
 def _cli_error_detail(error: BaseException, capacity: int = 20 * 1024) -> str:
     parts = [str(error)]
+    if isinstance(error, subprocess.CalledProcessError) and error.stderr:
+        stderr = error.stderr
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+        parts.append(f"stderr: {stderr.rstrip()}")
     notes = getattr(error, "__notes__", ())
     for note in notes:
         parts.append(f"secondary: {note}")
@@ -525,10 +530,19 @@ class SubprocessProbe:
         primary_error: BaseException | None = None
         try:
             if record.exit_code != 0:
-                raise subprocess.CalledProcessError(
+                failure = subprocess.CalledProcessError(
                     record.exit_code if record.exit_code is not None else -1,
                     argv,
                 )
+                try:
+                    stderr = _read_command_stream(record, "stderr", 32 * 1024)
+                    assert isinstance(stderr, bytes)
+                    failure.stderr = stderr.decode("utf-8", errors="replace")
+                except (OSError, ValueError) as error:
+                    failure.add_note(f"repository probe stderr could not be read: {error}")
+                if record.stderr_truncated:
+                    failure.add_note("repository probe stderr was truncated")
+                raise failure
             if record.stdout_truncated or record.stderr_truncated:
                 raise ValueError(
                     f"repository probe output was truncated: {argv[0]}"
@@ -1208,6 +1222,10 @@ def run_workflow(
     except subprocess.TimeoutExpired as error:
         record.state = RunState.COMMAND_FAILED
         record.error = f"{error.cmd} timed out"
+        _mark_pending(record, "command_failed")
+    except subprocess.CalledProcessError as error:
+        record.state = RunState.COMMAND_FAILED
+        record.error = _cli_error_detail(error)
         _mark_pending(record, "command_failed")
     except (OSError, subprocess.SubprocessError) as error:
         record.state = RunState.TOOL_UNAVAILABLE
