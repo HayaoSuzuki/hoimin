@@ -508,11 +508,14 @@ impl TryFrom<Command> for ParsedCommand {
 }
 
 pub fn write_completions(shell: Shell, writer: &mut impl std::io::Write) {
-    clap_complete::generate(shell, &mut RootCli::command(), "hoimin", writer);
+    clap_complete::generate(shell, &mut root_command(), "hoimin", writer);
 }
 
 fn root_command() -> clap::Command {
-    RootCli::command().mut_subcommand("run", |command| command.after_help(operator_help()))
+    let operator_roster = operator_help();
+    RootCli::command()
+        .mut_subcommand("run", |command| command.after_help(operator_roster.clone()))
+        .mut_subcommand("plan", |command| command.after_help(operator_roster))
 }
 
 fn operator_help() -> String {
