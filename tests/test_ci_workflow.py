@@ -492,6 +492,77 @@ class CiRustJobContractTests(unittest.TestCase):
 
 
 class LeanAuditWorkflowContractTests(unittest.TestCase):
+    def run_toolchain_setup(
+        self, *, cached: bool, install_fails: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+        script = named_step(
+            workflow["jobs"]["lean-audit"], "Install pinned Lean toolchain"
+        )["run"]
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            elan_bin = temporary / ".elan" / "bin"
+            elan_bin.mkdir(parents=True)
+            elan = elan_bin / "elan"
+            elan.write_text(
+                f"""#!{sys.executable}
+import os
+import sys
+from pathlib import Path
+
+args = sys.argv[1:]
+cached = Path(os.environ["TEST_TOOLCHAIN_CACHE"])
+toolchain = "leanprover/lean4:v4.32.2"
+if args == ["toolchain", "install", toolchain]:
+    if cached.exists():
+        sys.exit("error: toolchain is already installed")
+elif args != ["run", "--install", toolchain, "lean", "--version"]:
+    sys.exit("unexpected toolchain selection or command")
+if not cached.exists():
+    if os.environ["TEST_INSTALL_FAILS"] == "1":
+        sys.exit(23)
+    cached.touch()
+if args[0] == "run":
+    print("Lean (version 4.32.2)")
+""",
+                encoding="utf-8",
+            )
+            elan.chmod(0o755)
+            cached_toolchain = temporary / "cached-toolchain"
+            if cached:
+                cached_toolchain.touch()
+            return subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", script],
+                cwd=ROOT,
+                env={
+                    **os.environ,
+                    "HOME": str(temporary),
+                    "ELAN_HOME": str(temporary / ".elan"),
+                    "GITHUB_PATH": str(temporary / "github-path"),
+                    "RUNNER_TEMP": str(temporary),
+                    "TEST_TOOLCHAIN_CACHE": str(cached_toolchain),
+                    "TEST_INSTALL_FAILS": str(int(install_fails)),
+                },
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+    def test_toolchain_setup_executes_pinned_lean_without_cache(self) -> None:
+        completed = self.run_toolchain_setup(cached=False)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("Lean (version 4.32.2)", completed.stdout)
+
+    def test_toolchain_setup_reuses_cache_without_installing(self) -> None:
+        completed = self.run_toolchain_setup(cached=True, install_fails=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("Lean (version 4.32.2)", completed.stdout)
+
+    def test_toolchain_setup_propagates_install_failure(self) -> None:
+        completed = self.run_toolchain_setup(cached=False, install_fails=True)
+        self.assertEqual(completed.returncode, 23, completed.stderr)
+
     def test_job_uses_pinned_tools_repository_toolchain_and_cache(self) -> None:
         workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
         job = workflow["jobs"]["lean-audit"]
@@ -521,10 +592,6 @@ class LeanAuditWorkflowContractTests(unittest.TestCase):
         install = named_step(job, "Install pinned Lean toolchain")["run"]
         self.assertIn(f"releases/download/{LEAN_ELAN_VERSION}/", install)
         self.assertIn('echo "$HOME/.elan/bin" >> "$GITHUB_PATH"', install)
-        self.assertIn(
-            'elan toolchain install "$(cat formal/HoiminOracle/lean-toolchain)"',
-            install,
-        )
         self.assertEqual(
             LEAN_TOOLCHAIN.read_text(encoding="utf-8").strip(),
             "leanprover/lean4:v4.32.2",

@@ -158,6 +158,34 @@ the retained 2 GiB limit and 30-second deadline covered this hosted run without
 changing proofs or corpus checks. Other CI jobs were still running when these
 Lean statistics were collected.
 
+## Cache-hit setup regression
+
+[Run 34161424781](https://github.com/tokyogas-tech/hoimin/actions/runs/34161424781/job/101864149854)
+restored the toolchain cache, then stopped during setup with `already installed`.
+The audit commands did not run. Reproduction with elan 4.1.2 confirmed that
+`elan toolchain install leanprover/lean4:v4.32.2` returns exit 1 when that
+toolchain is present.
+
+Setup now uses `elan run --install <repository-toolchain> lean --version`.
+This installs only a missing toolchain and verifies that the selected Lean
+binary runs. Setup retains failure propagation rather than accepting an
+installation or execution error.
+
+Three behavioral tests execute the workflow's setup Bash with a controlled
+elan boundary: cold setup executes the pinned Lean version, restored setup
+does not reinstall it, and installation failure returns the original exit
+code. The cold and restored cases failed before the fix and passed after it.
+The combined CI and resource-guard suite passed 30 tests; actionlint and
+`git diff --check` passed.
+
+Two real Linux aarch64 container probes executed the full setup Bash with only
+the installer asset's architecture changed from x86_64 to aarch64. An empty
+elan directory installed elan 4.1.2 and Lean 4.32.2, then printed the selected
+Lean version with exit 0. A second container started without elan binaries and
+mounted only the restored toolchains read-only; it also printed Lean 4.32.2
+and exited 0. Both containers used a hard 2 GiB limit and one CPU. No proof,
+corpus, audit timeout, or memory limit changed in this fix.
+
 ## Verification recorded at this checkpoint
 
 | Command | Result |
