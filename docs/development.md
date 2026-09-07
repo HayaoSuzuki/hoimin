@@ -171,9 +171,12 @@ preserved.
 Raw-token replacements are restricted to the AST-proven token-start allowlist
 recorded by `AstFacts`. It records only the operator spellings in the precise
 AST gaps for their supported roles, such as comparisons, boolean and binary
-expressions, unary expressions, augmented assignments, boolean literals, and
-`break`/`continue`. A token with an ambiguous grammatical role is skipped
-conservatively: matching text alone is never enough to make it a candidate.
+expressions, unary expressions, augmented assignments, boolean literals,
+`True`/`False` singleton match patterns, and `break`/`continue`. The pattern
+traversal admits boolean singletons inside nested patterns but excludes `None`,
+wildcard and capture patterns, and string values. A token with an ambiguous
+grammatical role does not produce a candidate: matching text alone never grants
+eligibility.
 Every approved raw-token operator is then checked against the annotation
 containment index and skipped when its complete token range lies inside an
 annotation. Deliberate annotation mutations remain in the separate opt-in

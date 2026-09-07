@@ -7,7 +7,7 @@ use hoimin_cli::cli::{
 };
 use hoimin_core::{MutationOperator, MutationOperatorSelection, MutationProfile};
 
-const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 31] = [
+const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 33] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -16,7 +16,9 @@ const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 31] = [
     "binary_add_sub",
     "augmented_add_sub",
     "binary_mul_div",
+    "augmented_mul_div",
     "binary_floor_mod",
+    "augmented_floor_mod",
     "unary_sign",
     "remove_not",
     "boolean_literal",
@@ -53,6 +55,8 @@ fn readme_documents_all_mutation_operator_ids_and_selector_families() {
         "boolean_and_or",
         "binary_add_sub",
         "augmented_add_sub",
+        "augmented_mul_div",
+        "augmented_floor_mod",
         "binary_mul_div",
         "binary_floor_mod",
         "unary_sign",
@@ -96,7 +100,7 @@ fn readme_documents_all_mutation_operator_ids_and_selector_families() {
         assert!(readme.contains(name), "README is missing {name}");
     }
     for expected in [
-        "all 31 runtime operators",
+        "all 33 runtime operators",
         "collection_ops",
         "structure_ops",
         "bitwise_ops",

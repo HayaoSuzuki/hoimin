@@ -196,7 +196,9 @@ const ARITHMETIC_OPERATORS: &[&str] = &[
     "binary_add_sub",
     "augmented_add_sub",
     "binary_mul_div",
+    "augmented_mul_div",
     "binary_floor_mod",
+    "augmented_floor_mod",
     "unary_sign",
     "bitwise_and_or",
     "bitwise_shift",
@@ -244,7 +246,7 @@ fn ranking_assigns_every_operator_to_its_fixed_category() {
         .into_iter()
         .filter_map(MutationOperator::from_name)
         .collect::<BTreeSet<_>>();
-    assert_eq!(tested.len(), 43);
+    assert_eq!(tested.len(), 45);
     assert_eq!(tested, canonical);
 
     for (operators, expected) in categories {
