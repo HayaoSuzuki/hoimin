@@ -270,35 +270,11 @@ impl WorkerRoot {
     }
 
     pub(crate) fn is_missing(&self, path: &Utf8Path) -> Result<bool, WorkspaceError> {
-        let components = Self::components(path)?;
-        let (name, parents) =
-            components
-                .split_last()
-                .ok_or_else(|| WorkspaceError::InvalidPath {
-                    path: path.to_owned(),
-                })?;
-        let mut parent = self
-            .handle()
-            .try_clone()
-            .map_err(|error| WorkspaceError::io("clone worker root", path, error))?;
+        let Some((parent, name)) = self.open_parent_if_present(path)? else {
+            return Ok(true);
+        };
 
-        for component in parents {
-            let component = Path::new(component);
-            if cap_primitives::fs::stat(&parent, component, FollowSymlinks::No)
-                .is_ok_and(|metadata| is_link_or_reparse(&metadata))
-            {
-                return Err(WorkspaceError::InvalidPath {
-                    path: path.to_owned(),
-                });
-            }
-            match cap_primitives::fs::open_dir_nofollow(&parent, component) {
-                Ok(opened) => parent = opened,
-                Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(true),
-                Err(error) => return Err(Self::map_parent_error(path, error)),
-            }
-        }
-
-        match cap_primitives::fs::stat(&parent, Path::new(name), FollowSymlinks::No) {
+        match cap_primitives::fs::stat(&parent, Path::new(&name), FollowSymlinks::No) {
             Ok(_) => Ok(false),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(true),
             Err(error) => Err(Self::map_entry_error("inspect worker file", path, error)),
@@ -462,7 +438,9 @@ impl WorkerRoot {
     }
 
     pub(crate) fn try_exists(&self, path: &Utf8Path) -> Result<bool, WorkspaceError> {
-        let (parent, name) = self.open_parent(path, false)?;
+        let Some((parent, name)) = self.open_parent_if_present(path)? else {
+            return Ok(false);
+        };
         match cap_primitives::fs::stat(&parent, Path::new(&name), FollowSymlinks::No) {
             Ok(metadata) if is_link_or_reparse(&metadata) => Err(WorkspaceError::InvalidPath {
                 path: path.to_owned(),
@@ -471,6 +449,36 @@ impl WorkerRoot {
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
             Err(error) => Err(Self::map_entry_error("inspect worker file", path, error)),
         }
+    }
+
+    fn open_parent_if_present(
+        &self,
+        path: &Utf8Path,
+    ) -> Result<Option<(File, OsString)>, WorkspaceError> {
+        let components = Self::components(path)?;
+        let (name, parents) = components.split_last().expect("validated nonempty path");
+        let mut parent = self
+            .handle()
+            .try_clone()
+            .map_err(|error| WorkspaceError::io("clone worker root", path, error))?;
+
+        for component in parents {
+            let component = Path::new(component);
+            if cap_primitives::fs::stat(&parent, component, FollowSymlinks::No)
+                .is_ok_and(|metadata| is_link_or_reparse(&metadata))
+            {
+                return Err(WorkspaceError::InvalidPath {
+                    path: path.to_owned(),
+                });
+            }
+            match cap_primitives::fs::open_dir_nofollow(&parent, component) {
+                Ok(opened) => parent = opened,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+                Err(error) => return Err(Self::map_parent_error(path, error)),
+            }
+        }
+
+        Ok(Some((parent, OsString::from(name))))
     }
 
     pub(crate) fn entries(&self) -> Result<Vec<WorkerEntry>, WorkspaceError> {
@@ -1714,6 +1722,66 @@ mod tests {
                 .is_err()
         );
         assert!(!fixture.worker.join("missing").exists());
+    }
+
+    #[test]
+    fn try_exists_returns_true_for_a_regular_file() {
+        let fixture = RootFixture::new();
+        fs::write(fixture.worker.join("present.py"), b"contents").unwrap();
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+
+        assert!(root.try_exists(Utf8Path::new("present.py")).unwrap());
+    }
+
+    #[test]
+    fn try_exists_returns_false_when_the_final_entry_is_missing() {
+        let fixture = RootFixture::new();
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+
+        assert!(!root.try_exists(Utf8Path::new("missing.py")).unwrap());
+    }
+
+    #[test]
+    fn try_exists_returns_false_when_an_intermediate_parent_is_missing() {
+        let fixture = RootFixture::new();
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+
+        assert!(!root.try_exists(Utf8Path::new("missing/file.py")).unwrap());
+    }
+
+    #[test]
+    fn try_exists_preserves_non_directory_parent_errors() {
+        let fixture = RootFixture::new();
+        fs::write(fixture.worker.join("regular"), b"contents").unwrap();
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+
+        assert!(matches!(
+            root.try_exists(Utf8Path::new("regular/child")),
+            Err(WorkspaceError::Io { .. })
+        ));
+    }
+
+    #[test]
+    fn try_exists_rejects_linked_parents() {
+        let fixture = RootFixture::new();
+        fixture.link_dir("outside", "linked").unwrap();
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+
+        assert!(matches!(
+            root.try_exists(Utf8Path::new("linked/secret.txt")),
+            Err(WorkspaceError::InvalidPath { .. })
+        ));
+    }
+
+    #[test]
+    fn try_exists_rejects_non_normal_paths() {
+        let fixture = RootFixture::new();
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+
+        assert!(matches!(
+            root.try_exists(Utf8Path::new("../outside")),
+            Err(WorkspaceError::InvalidPath { .. })
+        ));
     }
 
     #[test]
