@@ -65,6 +65,8 @@ impl From<&CandidateDescriptor> for CandidateIdentity {
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum CandidateValidationError {
+    #[error("candidate source exceeds the maximum supported length of 4294967295 bytes")]
+    SourceTooLarge,
     #[error("unsupported candidate schema version")]
     UnsupportedSchema,
     #[error("candidate path is not a normalized relative path")]
@@ -93,33 +95,43 @@ pub struct CandidateValidationContext<'source> {
 }
 
 impl<'source> CandidateValidationContext<'source> {
-    #[must_use]
-    #[allow(
-        clippy::cast_possible_truncation,
-        reason = "candidate spans use u32 offsets, so sources cannot exceed u32::MAX bytes."
-    )]
-    pub fn new(source: &'source [u8]) -> Self {
-        let mut line_starts = Vec::new();
-        line_starts.push(0);
-        line_starts.extend(
+    /// # Errors
+    ///
+    /// Returns [`CandidateValidationError::SourceTooLarge`] when the source exceeds `u32::MAX` bytes.
+    pub fn new(source: &'source [u8]) -> Result<Self, CandidateValidationError> {
+        let line_starts = source_line_starts(
+            source.len(),
             source
                 .iter()
                 .enumerate()
                 .filter(|(_, byte)| **byte == b'\n')
-                .map(|(offset, _)| (offset + 1) as u32),
-        );
-        Self {
+                .map(|(offset, _)| offset + 1),
+        )?;
+        Ok(Self {
             source,
             text: std::str::from_utf8(source),
             file_hash: blake3::hash(source).to_hex().to_string(),
             line_starts,
-        }
+        })
     }
 
     #[must_use]
     pub fn file_hash(&self) -> &str {
         &self.file_hash
     }
+}
+
+fn source_line_starts(
+    source_len: usize,
+    newline_ends: impl Iterator<Item = usize>,
+) -> Result<Vec<u32>, CandidateValidationError> {
+    u32::try_from(source_len).map_err(|_| CandidateValidationError::SourceTooLarge)?;
+    let mut line_starts = vec![0];
+    for offset in newline_ends {
+        line_starts
+            .push(u32::try_from(offset).map_err(|_| CandidateValidationError::SourceTooLarge)?);
+    }
+    Ok(line_starts)
 }
 
 #[must_use]
@@ -168,7 +180,7 @@ pub fn validate_candidate(
     source: &[u8],
     candidate: &CandidateDescriptor,
 ) -> Result<MutantId, CandidateValidationError> {
-    validate_candidate_with_context(&CandidateValidationContext::new(source), candidate)
+    validate_candidate_with_context(&CandidateValidationContext::new(source)?, candidate)
 }
 
 /// Validates a candidate using source facts shared by a batch from the same file.
@@ -255,4 +267,50 @@ fn canonical_identity_path(path: &str) -> String {
         normalized.push_str(part);
     }
     normalized
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CandidateValidationError, source_line_starts};
+
+    #[test]
+    fn line_index_preserves_empty_and_trailing_newline_sources() {
+        assert_eq!(source_line_starts(0, std::iter::empty()).unwrap(), [0]);
+        assert_eq!(
+            source_line_starts(4, [2, 4].into_iter()).unwrap(),
+            [0, 2, 4]
+        );
+    }
+
+    #[test]
+    fn line_index_accepts_the_largest_representable_offset() {
+        let max = usize::try_from(u32::MAX).unwrap();
+        assert_eq!(
+            source_line_starts(max, [max].into_iter()).unwrap(),
+            [0, u32::MAX]
+        );
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn oversized_source_is_rejected_before_scanning_newlines() {
+        let too_large = usize::try_from(u32::MAX).unwrap() + 1;
+        let newline_ends = std::iter::from_fn(|| -> Option<usize> {
+            panic!("oversized sources must be rejected before scanning")
+        });
+        assert_eq!(
+            source_line_starts(too_large, newline_ends),
+            Err(CandidateValidationError::SourceTooLarge)
+        );
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn oversized_source_without_newlines_is_rejected() {
+        let too_large = usize::try_from(u32::MAX).unwrap() + 1;
+        assert_eq!(
+            source_line_starts(too_large, std::iter::empty()),
+            Err(CandidateValidationError::SourceTooLarge)
+        );
+    }
 }

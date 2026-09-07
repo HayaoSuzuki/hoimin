@@ -145,7 +145,7 @@ fn stable_id_normalizes_only_harmless_path_variants() {
 #[test]
 fn reusable_context_matches_strict_validation_for_multiple_locations() {
     let source = b"x = 1\nvalue == 2\nother != 3\n";
-    let context = CandidateValidationContext::new(source);
+    let context = CandidateValidationContext::new(source).unwrap();
     assert_eq!(context.file_hash(), blake3::hash(source).to_hex().as_str());
 
     let first = descriptor(source);
@@ -187,7 +187,7 @@ fn reusable_context_preserves_unicode_and_crlf_location_semantics() {
         symbol: None,
         file_hash: blake3::hash(source).to_hex().to_string(),
     };
-    let context = CandidateValidationContext::new(source);
+    let context = CandidateValidationContext::new(source).unwrap();
 
     assert_eq!(
         validate_candidate_with_context(&context, &candidate),
@@ -221,7 +221,7 @@ fn reusable_context_preserves_validation_error_precedence() {
         symbol: None,
         file_hash: valid_hash.clone(),
     };
-    let context = CandidateValidationContext::new(source);
+    let context = CandidateValidationContext::new(source).unwrap();
 
     let cases = [
         (
