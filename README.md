@@ -165,6 +165,10 @@ workers, reading files on demand for reset. Per-worker copy accounting remains g
 by `--max-copy-size`; allow disk capacity for the shared pristine copy in addition to the
 materialized workers.
 
+During reset, a worker file whose size differs from the pristine copy is restored
+without reading its changed contents. Same-size files still undergo full byte and
+permission comparison, including when their modification time has not changed.
+
 ```console
 hoimin run --root . --source src --profile focused --jobs 4 --max-memory 4GiB --mutant-timeout 2m -- python -m pytest -q
 ```

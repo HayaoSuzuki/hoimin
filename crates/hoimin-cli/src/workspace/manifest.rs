@@ -3,7 +3,6 @@ use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
-use std::time::SystemTime;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use ignore::overrides::OverrideBuilder;
@@ -32,7 +31,6 @@ pub(crate) fn build_metrics() -> (u64, u64) {
 pub struct ManifestEntry {
     pub path: Utf8PathBuf,
     pub size: u64,
-    pub modified: Option<SystemTime>,
     pub blake3: blake3::Hash,
 }
 
@@ -225,16 +223,12 @@ fn collect(
             let (builds, total_bytes) = metrics.get();
             metrics.set((builds, total_bytes + bytes.len() as u64));
         });
-        let metadata = entry
-            .metadata()
-            .map_err(|error| WorkspaceError::io("read manifest metadata", &path, error))?;
         let size = u64::try_from(bytes.len()).map_err(|_| WorkspaceError::CopySizeOverflow)?;
         entries.insert(
             path.clone(),
             ManifestEntry {
                 path,
                 size,
-                modified: metadata.modified().ok(),
                 blake3: blake3::hash(&bytes),
             },
         );
