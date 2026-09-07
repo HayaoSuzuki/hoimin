@@ -148,8 +148,15 @@ The remaining builds and generator gates did not run.
 The follow-up changes only the per-command deadline from 20 to 30 seconds.
 The 2 GiB RSS limit, 250 ms sampling, serial execution, proof files, and corpora
 remain unchanged. The earlier local measurements in this report retain their
-original 20-second bound. Hosted-runner completion under 30 seconds remains to
-be measured by the next CI run.
+original 20-second bound.
+
+[The 30-second follow-up, run 34160946172](https://github.com/tokyogas-tech/hoimin/actions/runs/34160946172/job/101862702913)
+passed the bounded Lean audit step. Its uploaded statistics contain 171
+commands, each with `timeout_ms=30000` and exit 0. `ShutdownProofs` had both the
+longest elapsed time, 24.625 seconds, and the highest RSS, 1,033,644 KiB. Thus
+the retained 2 GiB limit and 30-second deadline covered this hosted run without
+changing proofs or corpus checks. Other CI jobs were still running when these
+Lean statistics were collected.
 
 ## Verification recorded at this checkpoint
 

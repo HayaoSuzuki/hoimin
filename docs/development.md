@@ -140,6 +140,8 @@ statistics formulas, depth-six audit, proofs, and corpora remain unchanged.
 The initial GitHub-hosted run exceeded the former 20-second limit while
 building `ShutdownProofs` at 1,022,208 KiB peak RSS. The current 30-second limit
 retains the 2 GiB memory bound; the local measurements above used 20 seconds.
+The hosted follow-up passed all 171 commands. `ShutdownProofs` was the longest
+at 24.625 seconds and also had the highest RSS at 1,033,644 KiB.
 
 ## Shutdown deadline invariants
 
