@@ -40,7 +40,9 @@ Verification does not rewrite the plan or change its execution limits.
 `--candidate ID` remains available for exact selection and may be repeated.
 `--candidate` and `--top` are mutually exclusive, and one selection mode is
 required. If `N` exceeds the retained candidate count, `--top N` selects every retained candidate
-and reports the actual selected count. Version-1 manifests
+and reports the actual selected count. A plan with no retained candidates cannot be verified
+with `--top`: both selection policies reject it with exit code 2 before running the baseline.
+Version-1 manifests
 must be regenerated with the current `hoimin plan`.
 
 `--candidate` is repeatable, so one `verify` invocation can execute multiple planned candidates.

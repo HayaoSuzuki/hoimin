@@ -1355,6 +1355,53 @@ async fn verify_runs_only_requested_candidates() {
 }
 
 #[tokio::test]
+async fn verify_top_strict_rejects_empty_plan_before_baseline() {
+    assert_empty_top_selection_is_rejected("strict").await;
+}
+
+#[tokio::test]
+async fn verify_top_diverse_rejects_empty_plan_before_baseline() {
+    assert_empty_top_selection_is_rejected("diverse").await;
+}
+
+async fn assert_empty_top_selection_is_rejected(policy: &str) {
+    let project = Project::new_with_source("# No mutation candidates.\n");
+    let coordinator = tempfile::tempdir().unwrap();
+    let marker = coordinator.path().join("test-command-ran");
+    let (path, manifest) = write_plan_manifest_with_marker(&project, &[], &marker).await;
+    assert!(manifest.candidates.is_empty());
+    assert!(!manifest.truncated);
+    let original_plan = std::fs::read(&path).unwrap();
+
+    for format in ["json", "jsonl"] {
+        let args = [
+            OsString::from("hoimin"),
+            OsString::from("verify"),
+            path.as_os_str().to_owned(),
+            OsString::from("--top"),
+            OsString::from("5"),
+            OsString::from("--selection-policy"),
+            OsString::from(policy),
+            OsString::from("--format"),
+            OsString::from(format),
+        ];
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+
+        assert_eq!(code, 2, "policy={policy}, format={format}");
+        assert!(stdout.is_empty(), "empty verification emitted run output");
+        let stderr = String::from_utf8(stderr).unwrap();
+        for expected in ["plan.candidate.invalid", "--top", "no retained candidates"] {
+            assert!(stderr.contains(expected), "stderr={stderr}");
+        }
+        assert!(!marker.exists(), "empty verification ran the baseline");
+        assert_eq!(std::fs::read(&path).unwrap(), original_plan);
+    }
+}
+
+#[tokio::test]
 async fn verify_top_executes_the_highest_ranked_retained_candidate() {
     let project = Project::new();
     let coordinator = tempfile::tempdir().unwrap();
