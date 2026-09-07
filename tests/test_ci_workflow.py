@@ -512,7 +512,7 @@ class LeanAuditWorkflowContractTests(unittest.TestCase):
         self.assertEqual(cache["uses"], LEAN_CACHE_ACTION)
         self.assertEqual(
             set(cache["with"]["path"].splitlines()),
-            {"~/.elan", "formal/HoiminOracle/.lake"},
+            {"~/.elan/toolchains", "formal/HoiminOracle/.lake"},
         )
         self.assertIn("formal/HoiminOracle/lean-toolchain", cache["with"]["key"])
         self.assertIn("formal/HoiminOracle/lakefile.toml", cache["with"]["key"])

@@ -71,7 +71,7 @@ jobs:
       - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
           path: |
-            ~/.elan
+            ~/.elan/toolchains
             formal/HoiminOracle/.lake
           key: lean-${{ runner.os }}-${{ hashFiles('formal/HoiminOracle/lean-toolchain', 'formal/HoiminOracle/lakefile.toml', 'formal/HoiminOracle/**/*.lean') }}
           restore-keys: lean-${{ runner.os }}-

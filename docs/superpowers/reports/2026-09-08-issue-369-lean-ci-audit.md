@@ -4,8 +4,10 @@
 
 This branch adds a dedicated Linux `lean-audit` job to the blocking CI graph.
 The job installs elan 4.1.2 from its versioned release, selects the repository's
-Lean 4.32.2 toolchain, and caches elan plus Lake output under a key derived from
+Lean 4.32.2 toolchain, and caches downloaded toolchains plus Lake output under a key derived from
 the toolchain declaration, Lake configuration, and Lean sources.
+The cache excludes elan binaries so an old cached installer cannot bypass a
+future installer-version update.
 
 The audit is deliberately serial. It first compiles the 88 library source
 modules, the aggregate `HoiminOracle` module, and all 28 executable roots one at
