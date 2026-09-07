@@ -28,12 +28,21 @@ fn normalized_memory_limit(
             "system page size must be positive".into(),
         ));
     }
-    let max_finite_pages = page_counter_max_pages.checked_sub(1).ok_or_else(|| {
-        ResourceError::InvalidCgroupData("cgroup page counter has no finite range".into())
-    })?;
+    let max_finite_pages = page_counter_max_pages
+        .checked_sub(1)
+        .filter(|pages| *pages > 0)
+        .ok_or_else(|| {
+            ResourceError::InvalidCgroupData("cgroup page counter has no finite range".into())
+        })?;
     let max_finite_bytes = max_finite_pages.checked_mul(page_size).ok_or_else(|| {
         ResourceError::InvalidCgroupData("finite cgroup memory limit overflowed u64".into())
     })?;
+    if limit < page_size {
+        return Err(ResourceError::InvalidCgroupMemoryLimit {
+            requested: limit,
+            page_size,
+        });
+    }
     Ok((limit - limit % page_size).min(max_finite_bytes))
 }
 
@@ -738,6 +747,8 @@ mod platform {
             if state.closed {
                 return Err(ResourceError::RunClosed);
             }
+            // Reject invalid limits before creating a root cgroup or launching a child.
+            system_memory_limit(limits.max_memory_bytes)?;
             Self::refresh_events(&mut state)?;
             let path = create_unique_child(&self.path, "root")?;
             let mut diagnostics = Vec::new();
@@ -1168,12 +1179,13 @@ mod platform {
         })
     }
 
-    fn write_memory_limit(
-        path: &Path,
-        requested: u64,
-        diagnostics: &mut Vec<String>,
-    ) -> Result<(), ResourceError> {
+    fn system_memory_limit(requested: u64) -> Result<(u64, u64), ResourceError> {
         let page_size = system_page_size()?;
+        if page_size == 0 {
+            return Err(ResourceError::InvalidCgroupData(
+                "system page size must be positive".into(),
+            ));
+        }
         let long_max = u64::try_from(libc::c_long::MAX)
             .expect("Linux signed long maximum is positive and fits u64");
         let page_counter_max_pages = if cfg!(target_pointer_width = "32") {
@@ -1182,6 +1194,15 @@ mod platform {
             long_max / page_size
         };
         let effective = normalized_memory_limit(requested, page_size, page_counter_max_pages)?;
+        Ok((effective, page_size))
+    }
+
+    fn write_memory_limit(
+        path: &Path,
+        requested: u64,
+        diagnostics: &mut Vec<String>,
+    ) -> Result<(), ResourceError> {
+        let (effective, page_size) = system_memory_limit(requested)?;
         let value = effective.to_string();
         write_exact_limit(path, value.as_bytes())?;
         if effective != requested {
@@ -1555,7 +1576,60 @@ mod platform {
     mod tests {
         use std::process::{Child, Command};
 
-        use super::wait_for_launcher_stop;
+        use super::{
+            LinuxRunCgroup, RunState, system_page_size, wait_for_launcher_stop, write_memory_limit,
+        };
+
+        #[test]
+        fn page_sized_memory_limits_are_written_and_verified() {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("memory.max");
+            let page_size = system_page_size().unwrap();
+            for requested in [page_size, page_size + 1] {
+                let mut diagnostics = Vec::new();
+                write_memory_limit(&path, requested, &mut diagnostics).unwrap();
+                assert_eq!(
+                    std::fs::read_to_string(&path).unwrap(),
+                    page_size.to_string()
+                );
+                assert_eq!(diagnostics.is_empty(), requested == page_size);
+            }
+        }
+
+        #[test]
+        fn subpage_memory_rejection_does_not_write_the_limit_file() {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("memory.max");
+            std::fs::write(&path, b"unchanged").unwrap();
+            let mut diagnostics = Vec::new();
+            let error =
+                write_memory_limit(&path, system_page_size().unwrap() - 1, &mut diagnostics)
+                    .unwrap_err();
+            assert!(error.to_string().contains("--max-memory"));
+            assert_eq!(std::fs::read(&path).unwrap(), b"unchanged");
+            assert!(diagnostics.is_empty());
+        }
+
+        #[test]
+        fn subpage_memory_rejection_precedes_root_cgroup_creation() {
+            let directory = tempfile::tempdir().unwrap();
+            let run = std::sync::Arc::new(LinuxRunCgroup {
+                path: directory.path().to_owned(),
+                diagnostics: Vec::new(),
+                state: std::sync::Mutex::new(RunState::default()),
+            });
+            let error = run
+                .prepare_root(hoimin_core::ProcessLimits {
+                    timeout: std::time::Duration::from_secs(1),
+                    max_output_bytes: 1024,
+                    max_memory_bytes: 100,
+                    max_processes: 1,
+                })
+                .unwrap_err();
+            assert!(error.to_string().contains("--max-memory"), "{error}");
+            assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+            assert!(run.state.lock().unwrap().roots.is_empty());
+        }
 
         struct ReapingChild(Child);
 
@@ -1674,13 +1748,38 @@ mod tests {
     }
 
     #[test]
+    fn memory_limit_normalization_rejects_subpage_values() {
+        for page_size in [4_096, 16_384, 65_536] {
+            for requested in [0, 1, 100, page_size - 1] {
+                let error = normalized_memory_limit(requested, page_size, 1_000_000)
+                    .expect_err("subpage memory must not normalize to zero");
+                let message = error.to_string();
+                assert!(message.contains("--max-memory"), "{message}");
+                assert!(message.contains(&requested.to_string()), "{message}");
+                assert!(message.contains(&page_size.to_string()), "{message}");
+            }
+        }
+    }
+
+    #[test]
+    fn memory_limit_normalization_accepts_one_page_boundary() {
+        for page_size in [4_096, 16_384, 65_536] {
+            for requested in [page_size, page_size + 1, 2 * page_size - 1] {
+                assert_eq!(
+                    normalized_memory_limit(requested, page_size, 2).unwrap(),
+                    page_size
+                );
+            }
+        }
+    }
+
+    #[test]
     fn memory_limit_normalization_rounds_down_to_the_host_page_size() {
         let page_counter_max_pages = 1_000_000_000;
         for (requested, page_size, expected) in [
             (1_000_000_000, 4_096, 999_997_440),
             (1024 * 1024 * 1024, 4_096, 1024 * 1024 * 1024),
             (1_000_000_000, 65_536, 999_948_288),
-            (1, 4_096, 0),
         ] {
             assert_eq!(
                 normalized_memory_limit(requested, page_size, page_counter_max_pages).unwrap(),
@@ -1698,8 +1797,10 @@ mod tests {
     fn memory_limit_normalization_rejects_invalid_kernel_boundaries() {
         let zero_page = normalized_memory_limit(1_000_000_000, 0, 4).unwrap_err();
         let no_finite_range = normalized_memory_limit(1_000_000_000, 4_096, 0).unwrap_err();
+        let only_zero = normalized_memory_limit(1_000_000_000, 4_096, 1).unwrap_err();
 
         assert!(matches!(zero_page, ResourceError::InvalidCgroupData(_)));
+        assert!(matches!(only_zero, ResourceError::InvalidCgroupData(_)));
         assert!(matches!(
             no_finite_range,
             ResourceError::InvalidCgroupData(_)

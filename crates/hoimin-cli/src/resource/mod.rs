@@ -39,6 +39,10 @@ pub enum ResourceError {
     InvalidLimit(&'static str),
     #[error("invalid cgroup event data: {0}")]
     InvalidCgroupData(String),
+    #[error(
+        "invalid --max-memory: {requested} bytes; Linux cgroup hard limits require at least {page_size} bytes (one host page)"
+    )]
+    InvalidCgroupMemoryLimit { requested: u64, page_size: u64 },
     #[error("retryable cgroup cleanup failed for {path}: {source}")]
     CgroupCleanup {
         path: std::path::PathBuf,
