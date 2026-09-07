@@ -79,6 +79,7 @@ fn resolve_rejects_absolute_parent_nul_and_invalid_glob_patterns() {
     for pattern in [
         "/tmp/x",
         "C:\\tmp\\x",
+        "nested/file.toml:stream",
         "../x",
         "nested\\..\\x",
         "file\0name",
@@ -86,6 +87,16 @@ fn resolve_rejects_absolute_parent_nul_and_invalid_glob_patterns() {
     ] {
         let error = resolve(&fixture.root, &[pattern.into()], &[]).unwrap_err();
         assert_error_prefix(&error, "fingerprint.include.invalid_glob");
+    }
+}
+
+#[test]
+fn exact_file_rejects_colons_in_every_component() {
+    let fixture = fixture_root(&[]);
+
+    for path in ["cache:metadata/file.toml", "nested/file.toml:stream"] {
+        let error = resolve(&fixture.root, &[], &[path.into()]).unwrap_err();
+        assert_error_prefix(&error, "fingerprint.file.invalid_path");
     }
 }
 
