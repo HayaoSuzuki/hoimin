@@ -422,6 +422,10 @@ impl fmt::Display for CliError {
                     formatter,
                     "invalid {name}: {value}; expected a duration such as 90s or 5m"
                 ),
+                "--line" => write!(
+                    formatter,
+                    "invalid {name}: {value}; expected PATH:START-END with 1-based START <= END"
+                ),
                 _ => write!(formatter, "invalid {name}: {value}"),
             },
             Self::NonUtf8Value(name) => write!(formatter, "{name} must be valid UTF-8"),
@@ -712,27 +716,33 @@ fn utf8_path(path: PathBuf, name: &'static str) -> Result<Utf8PathBuf, CliError>
 fn parse_line_selection(value: &str) -> Result<LineSelection, CliError> {
     let (path, range) = value
         .rsplit_once(':')
-        .ok_or_else(|| CliError::InvalidValue {
-            name: "--line",
-            value: value.to_owned(),
-        })?;
+        .ok_or_else(|| invalid_line_selection(value))?;
+    if path.is_empty() {
+        return Err(invalid_line_selection(value));
+    }
     let (start, end) = range.split_once('-').unwrap_or((range, range));
-    let start = start.parse::<u32>().map_err(|_| CliError::InvalidValue {
-        name: "--line",
-        value: value.to_owned(),
-    })?;
-    let end = end.parse::<u32>().map_err(|_| CliError::InvalidValue {
-        name: "--line",
-        value: value.to_owned(),
-    })?;
-    let path = crate::portable_path::from_native(path).map_err(|_| CliError::InvalidValue {
-        name: "--line",
-        value: value.to_owned(),
-    })?;
+    let start = start
+        .parse::<u32>()
+        .map_err(|_| invalid_line_selection(value))?;
+    let end = end
+        .parse::<u32>()
+        .map_err(|_| invalid_line_selection(value))?;
+    if start == 0 || start > end {
+        return Err(invalid_line_selection(value));
+    }
+    let path =
+        crate::portable_path::from_native(path).map_err(|_| invalid_line_selection(value))?;
     Ok(LineSelection {
         path: Utf8PathBuf::from(path.into_owned()),
         range: LineRange { start, end },
     })
+}
+
+fn invalid_line_selection(value: &str) -> CliError {
+    CliError::InvalidValue {
+        name: "--line",
+        value: value.to_owned(),
+    }
 }
 
 fn parse_symbol_selection(value: &str) -> Result<SymbolSelection, CliError> {

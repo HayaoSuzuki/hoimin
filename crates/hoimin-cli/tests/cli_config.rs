@@ -938,6 +938,120 @@ fn parse_run_config_parses_ranges_limits_and_output() {
     assert_eq!(config.test_argv.len(), 3);
 }
 
+fn assert_invalid_line_selector(value: &str) {
+    let error =
+        hoimin_cli::cli::parse_config_from(["hoimin", "run", "--line", value, "--", "python"])
+            .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!("invalid --line: {value}; expected PATH:START-END with 1-based START <= END")
+    );
+}
+
+#[test]
+fn line_selector_rejects_an_empty_path_during_cli_validation() {
+    assert_invalid_line_selector(":5-10");
+}
+
+#[test]
+fn line_selector_rejects_line_zero_during_cli_validation() {
+    assert_invalid_line_selector("src/a.py:0-5");
+}
+
+#[test]
+fn line_selector_rejects_a_reversed_range_during_cli_validation() {
+    assert_invalid_line_selector("src/a.py:10-5");
+}
+
+#[test]
+fn line_selector_splits_on_the_final_colon() {
+    let config = hoimin_cli::cli::parse_config_from([
+        "hoimin",
+        "run",
+        "--line",
+        "C:/repo/pkg/a.py:4-7",
+        "--",
+        "python",
+    ])
+    .unwrap();
+
+    assert_eq!(config.selection.lines[0].path, "C:/repo/pkg/a.py");
+    assert_eq!(
+        config.selection.lines[0].range,
+        hoimin_core::LineRange { start: 4, end: 7 }
+    );
+}
+
+#[test]
+fn line_selector_accepts_one_based_u32_boundaries() {
+    for (value, expected) in [
+        ("src/a.py:1", hoimin_core::LineRange { start: 1, end: 1 }),
+        (
+            "src/a.py:1-4294967295",
+            hoimin_core::LineRange {
+                start: 1,
+                end: u32::MAX,
+            },
+        ),
+        (
+            "src/a.py:4294967295",
+            hoimin_core::LineRange {
+                start: u32::MAX,
+                end: u32::MAX,
+            },
+        ),
+    ] {
+        let config =
+            hoimin_cli::cli::parse_config_from(["hoimin", "run", "--line", value, "--", "python"])
+                .unwrap();
+
+        assert_eq!(config.selection.lines[0].range, expected, "{value}");
+    }
+}
+
+#[cfg(unix)]
+fn assert_cli_rejects_line_selector_before_test_command(value: &str) {
+    let project = tempfile::tempdir().unwrap();
+    fs::create_dir(project.path().join("src")).unwrap();
+    fs::write(project.path().join("src/a.py"), "value = 1\n").unwrap();
+    let marker = project.path().join("test-command.ran");
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+        .args(["run", "--root"])
+        .arg(project.path())
+        .args(["--line", value, "--allow-best-effort-memory", "--"])
+        .args(["/bin/sh", "-c", "printf ran > \"$1\"", "line-test"])
+        .arg(&marker)
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2), "{value}");
+    assert!(!marker.exists(), "test command ran for {value}");
+    assert!(output.stdout.is_empty(), "{value}");
+    assert_eq!(
+        String::from_utf8(output.stderr).unwrap(),
+        format!("invalid --line: {value}; expected PATH:START-END with 1-based START <= END\n")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn binary_rejects_an_empty_line_selector_path_before_the_test_command() {
+    assert_cli_rejects_line_selector_before_test_command(":5-10");
+}
+
+#[cfg(unix)]
+#[test]
+fn binary_rejects_line_zero_before_the_test_command() {
+    assert_cli_rejects_line_selector_before_test_command("src/a.py:0-5");
+}
+
+#[cfg(unix)]
+#[test]
+fn binary_rejects_a_reversed_line_range_before_the_test_command() {
+    assert_cli_rejects_line_selector_before_test_command("src/a.py:10-5");
+}
+
 #[cfg(unix)]
 #[test]
 fn line_selector_rejects_a_literal_backslash_path() {
@@ -951,7 +1065,10 @@ fn line_selector_rejects_a_literal_backslash_path() {
     ])
     .unwrap_err();
 
-    assert_eq!(error.to_string(), r"invalid --line: pkg\calc.py:4-7");
+    assert_eq!(
+        error.to_string(),
+        r"invalid --line: pkg\calc.py:4-7; expected PATH:START-END with 1-based START <= END"
+    );
 }
 
 #[test]
