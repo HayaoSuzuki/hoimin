@@ -58,6 +58,8 @@ from tools.focused_mutation import (
     SubprocessProbe,
     _attach_candidate_diagnostic,
     _candidate_package,
+    _cli_error_detail,
+    _discard_command_spool,
     _parser,
     _record_disk_failure,
     _record_disk_failures_for_observation,
@@ -3340,6 +3342,131 @@ class FocusedMutationReportingTests(unittest.TestCase):
         self.assertFalse(
             any(item.state is CandidateState.TIMEOUT for item in record.candidates)
         )
+
+    def test_failed_probe_keeps_stderr_after_spool_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = RunStore(root)
+            store.commands.mkdir()
+            probe = SubprocessProbe(root, CommandRunner(store))
+            with self.assertRaises(subprocess.CalledProcessError) as raised:
+                probe.text(
+                    [
+                        sys.executable, "-c",
+                        "import os; os.write(2, 'unknown revision: 日本語'.encode()); "
+                        "raise SystemExit(128)",
+                    ],
+                    12.0,
+                )
+
+            self.assertEqual(raised.exception.returncode, 128)
+            self.assertEqual(raised.exception.stderr, "unknown revision: 日本語")
+            self.assertEqual(list(store.commands.iterdir()), [])
+
+    def test_failed_probe_bounds_non_utf8_stderr(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = RunStore(root)
+            store.commands.mkdir()
+            probe = SubprocessProbe(root, CommandRunner(store))
+            with self.assertRaises(subprocess.CalledProcessError) as raised:
+                probe.text(
+                    [
+                        sys.executable, "-c",
+                        "import os; os.write(2, b'\\xff' + b'x' * 100000); "
+                        "raise SystemExit(128)",
+                    ],
+                    12.0,
+                )
+
+            self.assertEqual(raised.exception.returncode, 128)
+            self.assertIn("\ufffd", raised.exception.stderr)
+            detail = _cli_error_detail(raised.exception)
+            self.assertLessEqual(len(detail.encode("utf-8")), 20 * 1024)
+            self.assertIn("[truncated]", detail)
+            self.assertEqual(list(store.commands.iterdir()), [])
+
+    def test_failed_probe_keeps_read_and_cleanup_errors_secondary(self) -> None:
+        def discard_with_injected_failure(command: CommandRecord) -> bool:
+            _discard_command_spool(command)
+            return False
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = RunStore(root)
+            store.commands.mkdir()
+            probe = SubprocessProbe(root, CommandRunner(store))
+            with (
+                mock.patch(
+                    "tools.focused_mutation._read_command_stream",
+                    side_effect=PermissionError("stderr access denied"),
+                ),
+                mock.patch(
+                    "tools.focused_mutation._discard_command_spool",
+                    side_effect=discard_with_injected_failure,
+                ),
+                self.assertRaises(subprocess.CalledProcessError) as raised,
+            ):
+                probe.text([sys.executable, "-c", "raise SystemExit(128)"], 12.0)
+
+            self.assertEqual(raised.exception.returncode, 128)
+            detail = _cli_error_detail(raised.exception)
+            self.assertIn("stderr access denied", detail)
+            self.assertIn("spool cleanup failed", detail)
+
+    def test_missing_git_base_reports_command_failure_with_stderr(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            options, dependencies, _ = workflow_fixture(directory)
+            for argv in (
+                ["git", "init", "--quiet"],
+                ["git", "add", "."],
+                [
+                    "git", "-c", "user.name=Test", "-c",
+                    "user.email=test@example.invalid", "-c",
+                    "commit.gpgsign=false", "-c", "core.hooksPath=",
+                    "commit", "--quiet", "-m", "Initial source",
+                ],
+            ):
+                subprocess.run(
+                    argv, cwd=options.repository, check=True,
+                    capture_output=True, timeout=10.0,
+                )
+            runner = CommandRunner(RunStore(options.output))
+            dependencies = replace(
+                dependencies,
+                probe=SubprocessProbe(options.repository, runner),
+                runner=runner,
+            )
+
+            with mock.patch.dict(os.environ, {"LC_ALL": "C"}):
+                record = run_workflow(options, dependencies)
+
+            self.assertEqual(record.state, RunState.COMMAND_FAILED)
+            assert record.error is not None
+            self.assertIn("bad revision", record.error)
+            persisted = json.loads((options.output / "run.json").read_text())
+            self.assertEqual(persisted["state"], "command_failed")
+            self.assertIn("bad revision", persisted["error"])
+            self.assertIn(
+                "bad revision", (options.output / "report.md").read_text()
+            )
+            failed = [item for item in record.commands if item.exit_code != 0]
+            self.assertEqual(len(failed), 1)
+            self.assertIn("diff", failed[0].argv)
+            self.assertFalse(Path(failed[0].stderr_path).exists())
+
+    def test_missing_probe_executable_remains_tool_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            options, dependencies, _ = workflow_fixture(directory)
+            with mock.patch.object(
+                dependencies.probe, "text",
+                side_effect=FileNotFoundError("git executable is unavailable"),
+            ):
+                record = run_workflow(options, dependencies)
+
+            self.assertEqual(record.state, RunState.TOOL_UNAVAILABLE)
+            assert record.error is not None
+            self.assertIn("git executable is unavailable", record.error)
 
     def test_initial_repository_validation_uses_overall_budget_deadline(self) -> None:
         clock = mock.Mock(return_value=100.0)
