@@ -5,7 +5,7 @@ use std::mem::{size_of, zeroed};
 use std::ptr::{dangling_mut, null, null_mut};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, Weak};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use hoimin_core::{ProcessLimits, ProcessTermination, ResourceMode, RunLimits};
 use tokio::process::{Child, Command};
@@ -154,12 +154,11 @@ struct ActiveRoot {
     signal: Option<Weak<RootSignal>>,
     // Keeping the process object open prevents Windows from recycling its PID before the
     // corresponding Job Object exit notification has been consumed.
-    process: Option<OwnedHandle>,
+    process: Option<Arc<OwnedHandle>>,
 }
 
 impl Drop for ActiveRoot {
     fn drop(&mut self) {
-        // Make the PID-reuse barrier explicit: removing the registration closes its handle.
         drop(self.process.take());
     }
 }
@@ -273,11 +272,62 @@ impl WindowsRunJob {
         signal: &RootSignal,
         termination: ProcessTermination,
     ) -> Result<ProcessTermination, ResourceError> {
+        self.classify_root_with_wait(root_id, signal, termination, |process| {
+            let timeout_ms = u32::try_from(NOTIFICATION_BARRIER_TIMEOUT.as_millis())
+                .expect("bounded timeout fits u32");
+            wait_root_process(process, timeout_ms)
+        })
+    }
+
+    fn classify_root_with_wait(
+        &self,
+        root_id: Uuid,
+        signal: &RootSignal,
+        termination: ProcessTermination,
+        wait: impl FnOnce(&OwnedHandle) -> Result<bool, ResourceError>,
+    ) -> Result<ProcessTermination, ResourceError> {
+        let process = {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            self.drain_pending(&mut state)?;
+            if root_notification_consumed(&state, root_id) {
+                None
+            } else {
+                Some(
+                    state
+                        .active
+                        .iter()
+                        .find(|root| root.id == root_id)
+                        .and_then(|root| root.process.as_ref())
+                        .cloned()
+                        .ok_or_else(|| {
+                            ResourceError::io(
+                                "retain root process exit handle",
+                                io::Error::other("registered root has no process exit handle"),
+                            )
+                        })?,
+                )
+            }
+        };
+        let signaled = process.as_ref().map(|process| wait(process)).transpose()?;
         let mut state = self
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        match self.drain_until_root_exit(&mut state, root_id)? {
+        self.drain_pending(&mut state)?;
+        let barrier = if root_notification_consumed(&state, root_id) {
+            RootExitBarrier::NotificationConsumed
+        } else if signaled == Some(true) {
+            RootExitBarrier::ProcessSignaled
+        } else {
+            return Err(ResourceError::io(
+                "wait for Job Object exit notification",
+                io::Error::new(io::ErrorKind::TimedOut, "root exit notification timed out"),
+            ));
+        };
+        match barrier {
             RootExitBarrier::NotificationConsumed => {
                 forget_root_generation(&mut state, root_id);
             }
@@ -308,51 +358,6 @@ impl WindowsRunJob {
             match self.next_notification(0)? {
                 Some((message, pid)) => self.record_notification(state, message, pid)?,
                 None => return Ok(()),
-            }
-        }
-    }
-
-    fn drain_until_root_exit(
-        &self,
-        state: &mut RunState,
-        root_id: Uuid,
-    ) -> Result<RootExitBarrier, ResourceError> {
-        if root_notification_consumed(state, root_id) {
-            return Ok(RootExitBarrier::NotificationConsumed);
-        }
-        let deadline = Instant::now() + NOTIFICATION_BARRIER_TIMEOUT;
-        loop {
-            while let Some((message, pid)) = self.next_notification(0)? {
-                self.record_notification(state, message, pid)?;
-                if root_notification_consumed(state, root_id) {
-                    return Ok(RootExitBarrier::NotificationConsumed);
-                }
-            }
-            if root_process_signaled(state, root_id)? {
-                return Ok(RootExitBarrier::ProcessSignaled);
-            }
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                return Err(ResourceError::io(
-                    "wait for Job Object exit notification",
-                    io::Error::new(io::ErrorKind::TimedOut, "root exit notification timed out"),
-                ));
-            }
-            let timeout_ms = u32::try_from(remaining.as_millis().min(u128::from(u32::MAX)))
-                .expect("bounded timeout fits u32");
-            if let Some((message, pid)) = self.next_notification(timeout_ms.max(1))? {
-                self.record_notification(state, message, pid)?;
-                if root_notification_consumed(state, root_id) {
-                    return Ok(RootExitBarrier::NotificationConsumed);
-                }
-            } else {
-                if root_process_signaled(state, root_id)? {
-                    return Ok(RootExitBarrier::ProcessSignaled);
-                }
-                return Err(ResourceError::io(
-                    "wait for Job Object exit notification",
-                    io::Error::new(io::ErrorKind::TimedOut, "root exit notification timed out"),
-                ));
             }
         }
     }
@@ -434,6 +439,7 @@ fn root_notification_consumed(state: &RunState, root_id: Uuid) -> bool {
     state.exited_roots.contains(&root_id) || state.active.iter().all(|root| root.id != root_id)
 }
 
+#[cfg(test)]
 fn root_process_signaled(state: &RunState, root_id: Uuid) -> Result<bool, ResourceError> {
     let Some(process) = state
         .active
@@ -443,8 +449,12 @@ fn root_process_signaled(state: &RunState, root_id: Uuid) -> Result<bool, Resour
     else {
         return Ok(false);
     };
-    // SAFETY: the generation retains ownership of this process handle while it is registered.
-    match unsafe { WaitForSingleObject(process.raw(), 0) } {
+    wait_root_process(process, 0)
+}
+
+fn wait_root_process(process: &OwnedHandle, timeout_ms: u32) -> Result<bool, ResourceError> {
+    // SAFETY: the caller retains ownership of the process handle throughout this wait.
+    match unsafe { WaitForSingleObject(process.raw(), timeout_ms) } {
         WAIT_OBJECT_0 => Ok(true),
         WAIT_TIMEOUT => Ok(false),
         _ => Err(ResourceError::io(
@@ -470,7 +480,7 @@ fn register_root(
                 id: root_id,
                 pid,
                 signal: None,
-                process: Some(original_process),
+                process: Some(Arc::new(original_process)),
             });
             return Err(error);
         }
@@ -479,7 +489,7 @@ fn register_root(
         id: root_id,
         pid,
         signal: signal.map(Arc::downgrade),
-        process: Some(process),
+        process: Some(Arc::new(process)),
     });
     drop(original_process);
     Ok(())
@@ -1486,7 +1496,7 @@ mod tests {
                 id: root_id,
                 pid,
                 signal: Some(Arc::downgrade(&signal)),
-                process: Some(process.0),
+                process: Some(Arc::new(process.0)),
             });
 
         let termination = ProcessTermination::Exit(7);
@@ -1540,7 +1550,7 @@ mod tests {
                 id: root_id,
                 pid,
                 signal: Some(Arc::downgrade(&signal)),
-                process: Some(process.0),
+                process: Some(Arc::new(process.0)),
             });
         // SAFETY: the completion port is live, and this test posts the same PID-shaped value that
         // the Job Object completion protocol supplies through the overlapped pointer.
@@ -1573,6 +1583,85 @@ mod tests {
     }
 
     #[test]
+    fn root_exit_wait_releases_registry_and_retains_process_generation() {
+        let backend = WindowsBackend::new(&run_limits()).unwrap();
+        let mut child = std::process::Command::new("ping.exe")
+            .args(["-n", "30", "127.0.0.1"])
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let process = Arc::new(FixtureProcessHandle::open(pid).0);
+        let retained = Arc::downgrade(&process);
+        let root_id = Uuid::from_u128(1_204);
+        let signal = Arc::new(RootSignal::default());
+        backend.inner.state.lock().unwrap().active.push(ActiveRoot {
+            id: root_id,
+            pid,
+            signal: Some(Arc::downgrade(&signal)),
+            process: Some(process),
+        });
+        let result = backend.inner.classify_root_with_wait(
+            root_id,
+            &signal,
+            ProcessTermination::Exit(0),
+            |process| {
+                let mut state = backend
+                    .inner
+                    .state
+                    .try_lock()
+                    .expect("root exit wait must not retain the registry mutex");
+                assert!(state.active[0].process.is_some());
+                forget_root_generation(&mut state, root_id);
+                assert!(
+                    retained.upgrade().is_some(),
+                    "wait owns the process generation"
+                );
+                // SAFETY: the waiter owns the open process handle after registration removal.
+                assert_eq!(
+                    unsafe { WaitForSingleObject(process.raw(), 0) },
+                    WAIT_TIMEOUT
+                );
+                Ok(false)
+            },
+        );
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert_eq!(result.unwrap(), ProcessTermination::Exit(0));
+        assert!(retained.upgrade().is_none());
+    }
+
+    #[test]
+    fn root_exit_wait_timeout_retains_registration_for_retry() {
+        let backend = WindowsBackend::new(&run_limits()).unwrap();
+        let mut child = std::process::Command::new("ping.exe")
+            .args(["-n", "30", "127.0.0.1"])
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let root_id = Uuid::from_u128(1_205);
+        let signal = Arc::new(RootSignal::default());
+        backend.inner.state.lock().unwrap().active.push(ActiveRoot {
+            id: root_id,
+            pid,
+            signal: Some(Arc::downgrade(&signal)),
+            process: Some(Arc::new(FixtureProcessHandle::open(pid).0)),
+        });
+        let error = backend
+            .inner
+            .classify_root_with_wait(root_id, &signal, ProcessTermination::Exit(0), |_| Ok(false))
+            .unwrap_err();
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert!(error.to_string().contains("timed out"));
+        let state = backend.inner.state.lock().unwrap();
+        assert_eq!(state.active.len(), 1);
+        assert!(state.active[0].signal.is_some());
+        assert!(state.active[0].process.is_some());
+    }
+
+    #[test]
     fn running_root_process_handle_is_not_classified_as_signaled() {
         let mut child = std::process::Command::new("ping.exe")
             .args(["-n", "30", "127.0.0.1"])
@@ -1593,7 +1682,7 @@ mod tests {
                 id: root_id,
                 pid,
                 signal: Some(Arc::downgrade(&signal)),
-                process: Some(process.0),
+                process: Some(Arc::new(process.0)),
             }],
             ..RunState::default()
         };

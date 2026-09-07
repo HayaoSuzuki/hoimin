@@ -31,6 +31,13 @@ pub(crate) fn from_git(value: &str) -> Result<&str, PortablePathError> {
     }
 }
 
+#[cfg_attr(
+    windows,
+    allow(
+        clippy::unnecessary_wraps,
+        reason = "the shared API rejects backslashes on Unix"
+    )
+)]
 pub(crate) fn from_native(value: &str) -> Result<Cow<'_, str>, PortablePathError> {
     #[cfg(windows)]
     {

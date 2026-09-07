@@ -175,6 +175,16 @@ pub(crate) enum ProcessSupervisor {
 }
 
 impl ProcessSupervisor {
+    pub(crate) fn record_root_reaped(&mut self) {
+        match self {
+            Self::Portable(supervisor) => supervisor.record_root_reaped(),
+            #[cfg(target_os = "linux")]
+            Self::Linux(_) => {}
+            #[cfg(windows)]
+            Self::Windows(_) => {}
+        }
+    }
+
     pub(crate) fn attach(&mut self, child: &Child) -> Result<(), ResourceError> {
         match self {
             Self::Portable(supervisor) => supervisor.attach(child),
