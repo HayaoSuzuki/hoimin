@@ -2168,6 +2168,13 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     fn collect_exception_handler(&mut self, except_handler: &ruff_python_ast::ExceptHandler) {
         let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
         self.collect_risky_exception_handler(except_handler, handler);
+        self.collect_exception_type_pair(handler);
+    }
+
+    fn collect_exception_type_pair(
+        &mut self,
+        handler: &ruff_python_ast::ExceptHandlerExceptHandler,
+    ) {
         let Some(Expr::Name(name)) = handler.type_.as_deref() else {
             return;
         };
@@ -2324,6 +2331,10 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                 self.visit_body(&try_statement.body);
                 for except_handler in &try_statement.handlers {
                     let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
+                    if self.check_cancelled() {
+                        return;
+                    }
+                    self.collect_exception_type_pair(handler);
                     if let Some(type_) = &handler.type_ {
                         self.visit_exception_type(type_);
                     }

@@ -283,9 +283,9 @@ Python exception candidates are collected by the Rust analyzer's
 `ExceptHandler` AST pass and its `Stmt::Raise` statement pass, then use the
 shared selection, profile, source ordering, deduplication, and candidate-limit
 pipeline. The default `exception_type_pair` operator replaces only simple,
-unqualified handler names or the simple primary name of a supported raise
-expression with a curated counterpart: `ValueError`/`TypeError`, `KeyError`
-with `IndexError` and `AttributeError`,
+unqualified handler names in either `except` or `except*`, or the simple
+primary name of a supported raise expression, with a curated counterpart:
+`ValueError`/`TypeError`, `KeyError` with `IndexError` and `AttributeError`,
 `FileNotFoundError`/`PermissionError`, `ConnectionError`/`TimeoutError`,
 `ImportError`/`ModuleNotFoundError`, and
 `ZeroDivisionError`/`OverflowError`.
@@ -304,8 +304,10 @@ comprehension and match captures, and `except ... as` targets suppress only
 occurrences where their binding is visible; sibling scopes do not leak. Class
 targets are not closure bindings for methods. Wildcard imports and ambiguous
 control flow remain conservative `Unknown` results. Qualified and dynamic
-handler types, `except*`, and tuple members outside the curated built-in name
-set are skipped.
+handler types and tuple members are skipped by the safe pair operator. The
+starred handler path invokes only this safe simple-name collector; its
+`Exception`/`BaseException`, bare-handler, and tuple rewrites remain disabled
+even when the explicit-only risky operators are selected.
 
 For a raise statement, `AstCandidateCollector::visit_stmt` inspects only
 `StmtRaise.exc`. It accepts `raise ValueError` and calls whose callee is a
