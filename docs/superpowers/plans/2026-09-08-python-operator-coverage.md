@@ -1,6 +1,6 @@
 # Python Operator Coverage Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Discover mutations for Python 3.14 operator syntax and trusted standard-library operator functions.
 
@@ -40,7 +40,7 @@
 - Consumes: existing `replacement(&str, bool)` and AST token allowlists.
 - Produces: nine syntax variants in `MutationOperator`, with exact names from the spec; default runtime count becomes 42 before Task 2.
 
-- [ ] Add a table-driven analyzer test using each source below, selecting the exact operator ID from the spec and asserting exactly one candidate, original/replacement text and parseability:
+- [x] Add a table-driven analyzer test using each source below, selecting the exact operator ID from the spec and asserting exactly one candidate, original/replacement text and parseability:
 
 ```python
 def calculate(a, b):
@@ -49,8 +49,8 @@ def calculate(a, b):
 
 Repeat for `@`, `^`, unary `~a`, and each augmented spelling in the spec. Check source slices against candidate spans. Add negative decorator, `**kwargs`, annotation, string and comment examples. Exercise line/symbol selection and a candidate cap of one using mixed new syntax.
 
-- [ ] Run `CARGO_TARGET_DIR=/private/tmp/hoimin-python-operator-target cargo test -p hoimin-cli --lib analyzer::rust::rust_tests` and record the expected missing-selector failures.
-- [ ] Add the nine enum variants, serialization names, default/all catalogs and bitwise family members. Extend arithmetic ranking. Add token mappings, e.g.:
+- [x] Run `CARGO_TARGET_DIR=/private/tmp/hoimin-python-operator-target cargo test -p hoimin-cli --lib analyzer::rust::rust_tests` and record the expected missing-selector failures.
+- [x] Add the nine enum variants, serialization names, default/all catalogs and bitwise family members. Extend arithmetic ranking. Add token mappings, e.g.:
 
 ```rust
 "**" => Some(("*", "binary_power")),
@@ -59,8 +59,8 @@ Repeat for `@`, `^`, unary `~a`, and each augmented spelling in the spec. Check 
 ```
 
 Expand only the BinOp, UnaryOp and AugAssign AST allowlists with their corresponding spellings. Update explicit selector/count expectations and document new syntax mappings.
-- [ ] Run analyzer tests, core operator-selection tests, CLI configuration tests, and `cargo fmt --all -- --check` with the dedicated target directory. Record actual results.
-- [ ] Self-review and commit only Task 1 paths with `feat: cover missing Python operator syntax`.
+- [x] Run analyzer tests, core operator-selection tests, CLI configuration tests, and `cargo fmt --all -- --check` with the dedicated target directory. Record actual results.
+- [x] Self-review and commit only Task 1 paths with `feat: cover missing Python operator syntax`.
 
 ### Task 2: Imported operator callables
 
@@ -79,7 +79,7 @@ Expand only the BinOp, UnaryOp and AugAssign AST allowlists with their correspon
 - Consumes: Task 1 catalog and existing `AstCandidateCollector::add_candidate` filtering/bounding.
 - Produces: `MutationOperator::OperatorFunction` (`operator_function`), bringing runtime count to 43, and a focused `OperatorImports` index with callable replacement lookup integrated into the AST collector. Final concrete signatures belong to this module and its sole caller.
 
-- [ ] Write analyzer tests before implementation for every function mapping and dunder alias listed in the spec, qualified and from-import aliases, and higher-order references:
+- [x] Write analyzer tests before implementation for every function mapping and dunder alias listed in the spec, qualified and from-import aliases, and higher-order references:
 
 ```python
 import operator as op
@@ -91,11 +91,11 @@ def combine(values):
 ```
 
 Assert exact source/replacement spans, parseability, operator ID and candidate count. Include negative tests for rebinding, function parameters, local/conditional/relative imports, wildcard imports, exception/match bindings, comprehensions, walrus, global/nonlocal, module attribute assignment/deletion and dynamic namespace writes. Assert that an imported module whose name is shadowed does not produce candidates even if an unrelated attribute is named `add`.
-- [ ] Run the focused new tests and record missing functionality failures.
-- [ ] Implement the catalog and conservative binding analysis in the new module. A unique unconditional module import is trusted only if no other binding anywhere in the module affects its bound name. Account for AST binding sites not represented as Store names (parameters, aliases, function/class names, exception targets, pattern captures and type parameters). Namespace mutation uncertainty invalidates identity conservatively. Pair replacements preserve callable argument evaluation by editing the callable reference only; lambda replacements use positional-only parameters. Suppress generated `__import__` use if that builtin is shadowed or namespace identity is uncertain.
-- [ ] Integrate via the existing bounded AST producer, skip annotation spans and non-Load contexts, and preserve cancellation checks. Add `operator_function` to default/all catalogs and ranking. Do not refactor existing audited builtin resolution.
-- [ ] Run analyzer/core/CLI selection tests, add bounded prefix, profile, line/symbol and annotation regression tests for function candidates, and document the mapping and conservative exclusions in `docs/development.md`.
-- [ ] Self-review and commit Task 2 with `feat: mutate trusted operator module callables`.
+- [x] Run the focused new tests and record missing functionality failures.
+- [x] Implement the catalog and conservative binding analysis in the new module. A unique unconditional module import is trusted only if no other binding anywhere in the module affects its bound name. Account for AST binding sites not represented as Store names (parameters, aliases, function/class names, exception targets, pattern captures and type parameters). Namespace mutation uncertainty invalidates identity conservatively. Pair replacements preserve callable argument evaluation by editing the callable reference only; lambda replacements use positional-only parameters. Suppress generated `__import__` use if that builtin is shadowed or namespace identity is uncertain.
+- [x] Integrate via the existing bounded AST producer, skip annotation spans and non-Load contexts, and preserve cancellation checks. Add `operator_function` to default/all catalogs and ranking. Do not refactor existing audited builtin resolution.
+- [x] Run analyzer/core/CLI selection tests, add bounded prefix, profile, line/symbol and annotation regression tests for function candidates, and document the mapping and conservative exclusions in `docs/development.md`.
+- [x] Self-review and commit Task 2 with `feat: mutate trusted operator module callables`.
 
 ### Task 3: Executable contracts and delivery documentation
 

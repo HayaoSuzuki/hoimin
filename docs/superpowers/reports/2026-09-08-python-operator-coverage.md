@@ -65,15 +65,16 @@ Task 1 and Task 2 contents before the final passing runs.
 ## Verification record
 
 Local platform: macOS 15.7.7 (24G720), arm64; rustc 1.98.0; Cargo 1.98.0;
-controlled CPython 3.14.7. Every Cargo command used
-`CARGO_TARGET_DIR=/private/tmp/hoimin-python-operator-target`.
+controlled CPython 3.14.7. Cargo commands used
+`CARGO_TARGET_DIR=/private/tmp/hoimin-python-operator-target`; the Rust 1.88
+check used `/private/tmp/hoimin-python-operator-msrv-target`.
 
 | Command | Result |
 | --- | --- |
 | `cargo test -p hoimin-cli --test operator_function_contracts -- --test-threads=1` | 8 passed, 0 failed after the Python 3.14 identity additions |
 | `cargo test -p hoimin-cli --test cli_config readme_documents_all_mutation_operator_ids_and_selector_families -- --exact --test-threads=1` | 1 passed, 0 failed, 54 filtered out |
-| `cargo test --workspace --all-features -- --test-threads=1` | Exit 0; 1,548 passed, 0 failed, 12 ignored across 1,560 registered top-level tests |
-| `cargo test --workspace --all-features -- --list` | Exit 0; 1,560 registered top-level tests |
+| `cargo test --workspace --all-features -- --test-threads=1` | Exit 0 after the class-namespace fix; 1,555 passed, 0 failed, 12 ignored across 66 result groups |
+| `cargo +1.88 check --workspace --all-targets --all-features --locked` | Exit 0 after the class-namespace fix, no warnings |
 | `cargo clippy --workspace --all-targets --all-features -- -D warnings` | Exit 0, no warnings |
 | `cargo fmt --all -- --check` | Exit 0 |
 | `git diff --check` | Exit 0 |
@@ -100,15 +101,19 @@ for a from-imported `is_not_none(None)` reference.
 
 No production Python changed, and the repository mutation-testing policy forbids
 mutating test modules, so this task did not run Hoimin against the Python test or
-fixture modules. The controller owns the final workspace and MSRV checks, push,
-pull request, and final-head CI observation. No Windows or GitHub actions ran
-during this task.
+fixture modules. Local workspace tests, MSRV, lint and formatting checks are
+complete. Pull request creation and final-head CI observation remain pending
+at this commit. No Windows workflow was dispatched.
 
-The independent whole-branch review completed after the Python 3.14 extension
-and reported one Important finding: a custom metaclass can supply a class-body
+The independent whole-branch review reported one Important finding: a custom
+metaclass can supply a class-body
 namespace binding through `__prepare__` that shadows an ordinary trusted alias.
 The follow-up adds scope-aware class-namespace lookup facts and regression cases
 for module and from-import aliases, inherited metaclasses, method decorators and
 defaults, nested classes, and retained method/lambda globals. The focused
 `operator_function` analyzer group passes 13 tests. The reviewer reported no
-other findings; controller-owned final workspace and CI checks remain pending.
+other findings. The scoped re-review of `589581e..c72d8e7` approved the fix:
+the original CLI reproduction now emits the method-body candidate and excludes
+the unrelated class-body callable. Whole-branch review is complete with no open
+findings. The final local verification results appear above; GitHub records CI
+results on the pull request.
