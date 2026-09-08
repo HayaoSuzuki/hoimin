@@ -46,6 +46,11 @@ it does not resolve the project's import search path. Explicit `__dict__`/`vars`
 namespace access and writes to `__import__` must not bypass the conservative
 mutation guards.
 
+Skip import aliases beginning with `__` inside class-definition ranges. Python's
+private-name mangling and compiler-provided class names can resolve them to other
+objects. This also excludes some safe aliases, including bare `__add__` imports
+inside classes; ordinary module aliases such as `op.__add__` remain eligible.
+
 Apply mutations to loaded callable references, including higher-order uses, not
 import declarations, stores, annotations, match patterns, or arbitrary attributes.
 Match guards remain ordinary expressions. Pattern grammar cannot accept lambda
