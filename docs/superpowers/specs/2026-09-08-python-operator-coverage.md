@@ -47,7 +47,10 @@ namespace access and writes to `__import__` must not bypass the conservative
 mutation guards.
 
 Apply mutations to loaded callable references, including higher-order uses, not
-import declarations, stores, annotations, or arbitrary attributes. Direct calls
+import declarations, stores, annotations, match patterns, or arbitrary attributes.
+Match guards remain ordinary expressions. Pattern grammar cannot accept lambda
+or generated import expressions; exclude patterns instead of emitting invalid
+Python. Direct calls
 retain their original argument text, order, count, and evaluation frequency.
 For a module alias, replace only the member name for function-to-function pairs.
 For a from-import alias, a qualified `__import__('operator').replacement` lookup
