@@ -56,7 +56,18 @@ private-name exclusions. The external test exercises a metaclass class binding,
 an ordinary module binding, candidate generation, byte-span application, and
 fresh interpreter runs for both baseline and mutant.
 
-## Remaining validation
+## Scope-restoration review follow-up
 
-The controller will run full Rust workspace tests, all contracts, and the Rust
-1.88 MSRV gate. There are no implementation concerns known at task handoff.
+The minimal class-comprehension fixture now places a direct `op.add` class
+lookup immediately after the comprehension and asserts that only the
+comprehension body and later lambda body are candidates. Removing only the
+final `self.scope = outer` from `visit_comprehension_scope` made the test fail:
+the observed candidate lines were 3, 4, and 5 instead of 3 and 5. Restoring the
+production line unchanged returned the focused `operator_function` suite to 16
+passed tests. `cargo fmt --all --check` and `git diff --check` also passed.
+
+## Controller validation
+
+The controller's all-feature workspace gate passed 1,562 tests with 12 ignored.
+The Rust 1.88 MSRV check and workspace clippy with warnings denied also passed.
+There are no implementation concerns known at task handoff.

@@ -667,7 +667,7 @@ fn operator_function_class_namespace_lookups_are_excluded() {
 
 #[test]
 fn operator_function_class_comprehensions_use_implicit_function_scope() {
-    let source = "import operator as op\nclass Subject:\n    values = [op.add(2, 3) for _ in (0,)]\n    callback = lambda: op.add(2, 3)\n";
+    let source = "import operator as op\nclass Subject:\n    values = [op.add(2, 3) for _ in (0,)]\n    direct = op.add(2, 3)\n    callback = lambda: op.add(2, 3)\n";
     let candidates = analyze(source)
         .candidates
         .into_iter()
@@ -678,7 +678,7 @@ fn operator_function_class_comprehensions_use_implicit_function_scope() {
         candidates,
         vec![
             (3, "add".to_owned(), "sub".to_owned()),
-            (4, "add".to_owned(), "sub".to_owned()),
+            (5, "add".to_owned(), "sub".to_owned()),
         ]
     );
 }
