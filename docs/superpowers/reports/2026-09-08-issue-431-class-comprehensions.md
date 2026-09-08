@@ -43,12 +43,19 @@ returned zero candidates. With the implementation restored, the generated
 
 The controller's initial sandboxed Python run had three failures and one error
 because process inspection was denied. The five isolated guard tests passed
-with elevation, and the elevated full Python gate passed with 862 tests passed,
+with elevation, and the elevated full Python gate passed with 862 tests run,
 56 skipped, in 43.761 seconds. No source change was needed for that environment
 constraint.
 
-Full Rust workspace and Rust 1.88 MSRV validation are assigned to the
-controller after this task commit.
+Controller verification on the committed implementation:
+
+- `CARGO_TARGET_DIR=/private/tmp/hoimin-python-operator-target HOIMIN_OPERATOR_TEST_PYTHON=/Users/hayao/RustroverProjects/hoimin/.venv/bin/python cargo test --offline --workspace --all-features -- --test-threads=1`: 1,562 passed, 0 failed, 12 ignored across 66 result groups.
+- `CARGO_TARGET_DIR=/private/tmp/hoimin-python-operator-msrv-target cargo +1.88 check --offline --workspace --all-targets --all-features --locked`: passed.
+- `CARGO_TARGET_DIR=/private/tmp/hoimin-python-operator-target cargo clippy --offline --workspace --all-targets --all-features -- -D warnings`: passed.
+- `cargo fmt --all -- --check` and `git diff --check`: passed.
+
+Local platform is macOS arm64. Linux CI results will be available on the PR;
+no Windows workflow was dispatched for this platform-independent visitor change.
 
 ## Limitations
 
