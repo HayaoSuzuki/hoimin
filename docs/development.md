@@ -271,13 +271,16 @@ including function bodies defined before the import even if callers would run
 them afterward. Stores, annotations, and match patterns do not produce callable
 candidates; pattern grammar cannot generally accept the replacement expressions.
 
-Import aliases beginning with `__` are excluded throughout class-definition
-ranges, including method bodies and nested functions. Python can mangle private
-names or supply implicit class bindings such as `__class__`, `__module__`, and
-`__qualname__` without AST assignment targets. This guard deliberately also skips
-safe double-underscore spellings inside classes. These aliases remain eligible
-outside classes, and ordinary aliases inside classes remain eligible, including
-documented dunder member references such as `op.__add__`.
+All imported-alias loads evaluated in a class namespace are excluded. A custom
+or inherited metaclass can supply even ordinary names through `__prepare__`
+without an AST assignment target. The exclusion includes class-body statements
+and method decorators and defaults; it deliberately skips safe class-namespace
+loads instead of attempting metaclass-provenance inference. Ordinary method and
+lambda bodies use function/global lookup and remain eligible. Import aliases
+beginning with `__` remain excluded throughout class-definition ranges,
+including method bodies and nested functions, because private-name mangling and
+compiler-provided names such as `__class__`, `__module__`, and `__qualname__`
+can resolve them to other objects.
 
 Wildcard imports, dynamic namespace operations, explicit `__dict__`/`vars`
 access, and writes to builtin `__import__` invalidate namespace certainty.

@@ -31,11 +31,14 @@ writes, and uncertain `__import__` identity. It also skips relative and local
 imports.
 
 Stores, annotations, and match patterns do not produce callable candidates;
-match guards remain expression sites. Hoimin excludes import aliases beginning
-with `__` throughout a class definition, including methods and nested functions,
-because Python can mangle private names or supply class names that the AST does
-not expose as assignments. Ordinary aliases and member references such as
-`op.__add__` remain eligible in class code. The analysis works within one module,
+match guards remain expression sites. Hoimin excludes all imported-alias loads
+evaluated in a class namespace because a custom or inherited metaclass can
+populate ordinary names through `__prepare__` without an AST Store node. This
+conservatively excludes safe class-body loads, including method decorators and
+defaults. Ordinary method and lambda bodies still use eligible function/global
+lookups. Aliases beginning with `__` remain excluded throughout a class
+definition because Python can mangle private names or supply class names that
+the AST does not expose as assignments. The analysis works within one module,
 assumes a normal standard-library import, and does not resolve project import
 search paths, custom loaders, or external monkey-patching.
 
@@ -101,8 +104,11 @@ fixture modules. The controller owns the final workspace and MSRV checks, push,
 pull request, and final-head CI observation. No Windows or GitHub actions ran
 during this task.
 
-The independent whole-branch review completed after the Python 3.14 extension.
-It reported one Important finding: a custom metaclass can supply a class-body
+The independent whole-branch review completed after the Python 3.14 extension
+and reported one Important finding: a custom metaclass can supply a class-body
 namespace binding through `__prepare__` that shadows an ordinary trusted alias.
-The follow-up fix is pending as a separate commit; the reviewer reported no
-other findings.
+The follow-up adds scope-aware class-namespace lookup facts and regression cases
+for module and from-import aliases, inherited metaclasses, method decorators and
+defaults, nested classes, and retained method/lambda globals. The focused
+`operator_function` analyzer group passes 13 tests. The reviewer reported no
+other findings; controller-owned final workspace and CI checks remain pending.

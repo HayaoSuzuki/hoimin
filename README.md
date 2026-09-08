@@ -268,13 +268,14 @@ binding after shadowing, deletion, wildcard or conditional imports, dynamic
 namespace access, module attribute writes, or an uncertain `__import__`
 binding. Hoimin excludes relative and local imports. Stores, annotations, and
 match patterns do not produce function candidates; match guards remain ordinary
-expressions. Hoimin excludes an import alias beginning with `__` throughout a
-class definition, including methods and nested functions, because private-name
-mangling and compiler-provided class names can resolve it to another object.
-Ordinary aliases and documented member references such as `op.__add__` remain
-eligible inside classes. These checks operate within one module and assume the
-normal standard-library `operator` module; they do not prove anything about a
-custom import loader or external monkey-patching.
+expressions. Hoimin excludes every imported-alias load evaluated in a class
+namespace because a custom metaclass can supply ordinary names without an AST
+assignment. Method and lambda bodies remain eligible because they use
+function/global lookup. An alias beginning with `__` stays excluded throughout
+a class definition because private-name mangling and compiler-provided class
+names can resolve it to another object. These checks operate within one module
+and assume the normal standard-library `operator` module; they do not prove
+anything about a custom import loader or external monkey-patching.
 
 The exception selector `exception_risky` is opt-in only; enable it with
 `--operators exception_risky` (or select individual IDs). It exposes

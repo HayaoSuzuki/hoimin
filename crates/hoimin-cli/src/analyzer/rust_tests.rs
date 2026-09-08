@@ -619,22 +619,49 @@ fn operator_function_class_guard_preserves_independent_import_references() {
     }
     let source = "import operator as op\nfrom operator import add as plus\nclass C:\n    initial = op.__add__(2, 3)\n    def run(self):\n        def nested(): return plus(2, 3)\n        return op.add(2, 3)\n";
     let output = analyze(source);
-    assert_eq!(output.candidates.len(), 3);
+    assert_eq!(output.candidates.len(), 2);
     assert_eq!(
         output
             .candidates
             .iter()
             .map(|c| (c.original.as_str(), c.replacement.as_str()))
             .collect::<Vec<_>>(),
-        vec![
-            ("__add__", "__sub__"),
-            ("plus", "__import__('operator').sub"),
-            ("add", "sub")
-        ]
+        vec![("plus", "__import__('operator').sub"), ("add", "sub")]
     );
     for candidate in &output.candidates {
         assert_eq!(candidate.operator, "operator_function");
         apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
+fn operator_function_class_namespace_lookups_are_excluded() {
+    for (import, alias, reference) in [
+        ("import operator as op", "op", "op.add"),
+        ("from operator import add as plus", "plus", "plus"),
+    ] {
+        let source = format!(
+            "{import}\nclass Proxy:\n    @staticmethod\n    def add(left, right): return left * right\nclass Meta(type):\n    @classmethod\n    def __prepare__(mcls, name, bases): return {{'{alias}': Proxy}}\nclass Base(metaclass=Meta): pass\nclass Subject(Base):\n    result = {reference}(2, 3)\n    @decorate({reference})\n    def configured(self, action={reference}): return action\n    callback = lambda: {reference}(2, 3)\n    def method(self):\n        class Nested(Base):\n            result = {reference}(2, 3)\n        return {reference}(2, 3)\n"
+        );
+        assert!(parse_module(&source).is_ok(), "{source}");
+        let output = analyze(&source);
+        let candidates = output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "operator_function")
+            .collect::<Vec<_>>();
+        assert_eq!(candidates.len(), 2, "{source}");
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|candidate| source.lines().nth(candidate.line as usize - 1).unwrap())
+                .collect::<Vec<_>>(),
+            vec![
+                format!("    callback = lambda: {reference}(2, 3)"),
+                format!("        return {reference}(2, 3)")
+            ],
+            "{source}"
+        );
     }
 }
 
