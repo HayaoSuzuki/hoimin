@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Discover mutations for Python 3.13 operator syntax and trusted standard-library operator functions.
+**Goal:** Discover mutations for Python 3.14 operator syntax and trusted standard-library operator functions.
 
 **Architecture:** Extend existing token allowlists and the bounded AST producer. Keep conservative operator import resolution and callable replacement mapping in a focused analyzer module, separate from the existing builtin resolver.
 
@@ -119,7 +119,24 @@ def operand(value):
     return value
 ```
 
-Check `pow(2, 3)` becomes multiplication (6), matrix-multiplication custom protocol dispatch changes to `__mul__`, bitwise/invert and augmented protocol effects, `contains` keeps container/item order, `setitem`/`delitem` no longer modify the target, `call` evaluates arguments but does not invoke the target, and from-import/dunder/higher-order replacements execute. Use positional-only argument failures and side-effect event lists to expose duplicated/reordered evaluation. Default to the controlled `.venv` interpreter; accept `HOIMIN_OPERATOR_TEST_PYTHON` only in this test helper so the controller can also execute the contracts on installed Python 3.13 without changing project dependencies.
+Check `pow(2, 3)` becomes multiplication (6), matrix-multiplication custom protocol dispatch changes to `__mul__`, bitwise/invert and augmented protocol effects, `contains` keeps container/item order, `setitem`/`delitem` no longer modify the target, `call` evaluates arguments but does not invoke the target, and from-import/dunder/higher-order replacements execute. Use positional-only argument failures and side-effect event lists to expose duplicated/reordered evaluation. Default to the controlled `.venv` interpreter; accept `HOIMIN_OPERATOR_TEST_PYTHON` only in this test helper so the contracts can select an installed Python 3.14 interpreter without changing project dependencies.
 - [x] Run the focused integration suite and full Rust workspace tests, format and clippy. Run relevant repository Python tests if available. Production Python is unchanged: do not mutation-test fixture/test modules.
 - [x] Update README's runtime count to 43, syntax/function inventory and conservative import restrictions. Record exact commands, counts, local platform, skipped checks, conservative scope and final review outcome in the report. Commit docs and tests.
 - [ ] Obtain independent whole-branch review, fix findings and rerun affected tests. Push only the feature branch, create a PR with changes/verification prose, and observe final-head checks at 180-second intervals without dispatching Windows workflows.
+
+### Task 4: Python 3.14 identity predicates
+
+**Files:**
+- Modify: `crates/hoimin-cli/src/analyzer/rust/operator_functions.rs`
+- Test: `crates/hoimin-cli/src/analyzer/rust_tests.rs`
+- Test: `crates/hoimin-cli/tests/operator_function_contracts.rs`
+- Modify: `README.md`, `docs/development.md`, the specification, plan, and delivery report
+
+- [x] Add analyzer RED cases for `is_none` / `is_not_none` in qualified,
+  from-import, and higher-order forms. Keep invented `__is_none__` and
+  `__is_not_none__` spellings excluded.
+- [x] Add external CPython 3.14 baseline/mutant contracts with literal identity
+  results, then add the two canonical catalog entries without dunder aliases.
+- [x] Align the compatibility target and inventory documentation with Python
+  3.14. Remove the obsolete earlier-version verification step without changing
+  the package version floor or workflows.

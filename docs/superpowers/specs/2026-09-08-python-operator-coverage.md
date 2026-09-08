@@ -3,13 +3,12 @@
 ## Scope
 
 Extend runtime mutation discovery to the operator syntax and operator functions
-documented by [Python 3.13](https://docs.python.org/ja/3.13/library/operator.html).
+documented by [Python 3.14](https://docs.python.org/ja/3.14/library/operator.html).
 Use the existing token and AST candidate producers. Preserve bounded discovery,
 selection, profile filtering, annotation exclusion, and deterministic ordering.
 
 The helper APIs `attrgetter`, `itemgetter`, `methodcaller`, and `length_hint` are
-not operator syntax/function counterparts and are outside this change. Python
-3.14-only APIs are outside the compatibility target.
+not operator syntax/function counterparts and are outside this change.
 
 ## Syntax additions
 
@@ -32,7 +31,8 @@ operator position, never decorators, unpacking, strings, comments, or annotation
 
 ## Function forms
 
-Add the default runtime selector `operator_function`. Resolve `import operator`,
+Add the default runtime selector `operator_function` for 53 canonical Python
+3.14 callables and 46 documented dunder aliases. Resolve `import operator`,
 `import operator as op`, and `from operator import add as plus` conservatively.
 Only unconditional module imports with a unique, unmodified binding are trusted.
 If any binding, parameter, deletion, wildcard import, dynamic namespace operation,
@@ -72,7 +72,7 @@ module. Do not inject imports or change all uses by mutating an import statement
 | `neg`, `pos` | exchange |
 | `abs` | `neg` |
 | `index`, `inv`, `invert` | `pos` |
-| `not_`, `truth`; `is_`, `is_not` | exchange each pair |
+| `not_`, `truth`; `is_`, `is_not`; `is_none`, `is_not_none` | exchange each pair |
 | `iadd`, `isub`; `imul`, `itruediv`; `ifloordiv`, `imod` | exchange each pair |
 | `ipow`, `imatmul` | `imul` |
 | `iand`, `ior`; `ilshift`, `irshift` | exchange each pair |
@@ -86,6 +86,8 @@ module. Do not inject imports or change all uses by mutating an import statement
 
 Recognize documented dunder aliases and preserve dunder spelling when the
 destination has that documented alias; otherwise use the canonical destination.
+Do not invent aliases for callables without documented dunder spellings,
+including `is_none` and `is_not_none`.
 Lambdas preserve argument evaluation but intentionally remove the operation. No
 claims of semantic equivalence are made; protocol differences are the mutation.
 Identity/introspection of a mutated callable is not preserved.

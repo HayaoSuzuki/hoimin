@@ -229,7 +229,7 @@ opt-in type IDs, and five opt-in risky exception IDs.
 | Structural calls | `structure_append_extend`, `structure_mapping_get_subscript`, `structure_sort_reverse`, `structure_sorted_reversed` | `append(x)` ↔ `extend([x])`; `mapping.get(k)` ↔ `mapping[k]`; `sort()` ↔ `reverse()`; `sorted(x)` ↔ `reversed(x)` |
 | Bitwise operators | `bitwise_and_or`, `bitwise_shift` | `&` ↔ `\|`; `<<` ↔ `>>` |
 | Additional operator syntax | `binary_power`, `binary_matmul`, `augmented_power`, `augmented_matmul`, `bitwise_xor`, `bitwise_invert`, `augmented_bitwise_and_or`, `augmented_bitwise_xor`, `augmented_bitwise_shift` | `**` and `@` become `*`; `**=` and `@=` become `*=`; `^` becomes `&`; `~` becomes unary `+`; `&=`/`\|=` and `<<=`/`>>=` exchange; `^=` becomes `&=` |
-| Standard-library operator functions | `operator_function` | Mutates trusted Python 3.13 `operator` callable references across comparison, arithmetic, bitwise, unary, truth, identity, in-place, and sequence operations; also covers `contains`, `getitem`, `setitem`, `delitem`, and `call` |
+| Standard-library operator functions | `operator_function` | Mutates trusted Python 3.14 `operator` callable references across comparison, arithmetic, bitwise, unary, truth, identity, in-place, and sequence operations; also covers `contains`, `getitem`, `setitem`, `delitem`, and `call` |
 | Boundary operators | `structure_index_neighbor`, `structure_slice_neighbor` | adjacent plain-decimal index and slice-bound values |
 | Exception types | `exception_type_pair` | curated pairs such as `ValueError` ↔ `TypeError` in simple `except`/`except*` clauses and supported `raise` expressions |
 
@@ -251,7 +251,7 @@ available, the candidate is skipped.
 The `operator_function` selector recognizes the documented callable pairs
 `eq`/`ne`, `lt`/`le`, `gt`/`ge`, `add`/`sub`, `mul`/`truediv`,
 `floordiv`/`mod`, `and_`/`or_`, `lshift`/`rshift`, `neg`/`pos`,
-`not_`/`truth`, `is_`/`is_not`, `iadd`/`isub`, `imul`/`itruediv`,
+`not_`/`truth`, `is_`/`is_not`, `is_none`/`is_not_none`, `iadd`/`isub`, `imul`/`itruediv`,
 `ifloordiv`/`imod`, `iand`/`ior`, `ilshift`/`irshift`,
 `concat`/`iconcat`, and `countOf`/`indexOf`. It also maps `pow` and `matmul`
 to `mul`; `xor` to `and_`; `abs` to `neg`; `index`, `inv`, and `invert` to
@@ -260,7 +260,7 @@ to `mul`; `xor` to `and_`; `abs` to `neg`; `index`, `inv`, and `invert` to
 `delitem`, and `call` evaluate their arguments but suppress the underlying
 operation. Documented dunder aliases follow the same mappings. The unrelated
 helpers `attrgetter`, `itemgetter`, `methodcaller`, and `length_hint` stay out of
-scope, as do Python 3.14-only APIs.
+scope, as do functions outside the documented Python 3.14 inventory.
 
 Hoimin trusts only unique, unmodified, unconditional module-level
 `import operator` and absolute `from operator import ...` bindings. It skips a

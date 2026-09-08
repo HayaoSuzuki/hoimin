@@ -10,7 +10,7 @@ use ruff_text_size::{Ranged, TextRange};
 
 use super::{AnalysisCancelled, ContainmentIndex};
 
-// Python 3.13 canonical names, documented aliases, and mutation destinations.
+// Python 3.14 canonical names, documented aliases, and mutation destinations.
 // An empty alias means there is no documented dunder form.
 const FUNCTIONS: &[(&str, &str, &str)] = &[
     ("eq", "__eq__", "ne"),
@@ -42,6 +42,8 @@ const FUNCTIONS: &[(&str, &str, &str)] = &[
     ("truth", "", "not_"),
     ("is_", "", "is_not"),
     ("is_not", "", "is_"),
+    ("is_none", "", "is_not_none"),
+    ("is_not_none", "", "is_none"),
     ("iadd", "__iadd__", "isub"),
     ("isub", "__isub__", "iadd"),
     ("imul", "__imul__", "itruediv"),

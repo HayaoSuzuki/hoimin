@@ -629,3 +629,33 @@ async fn from_import_dunder_and_higher_order_function_replacements_execute() {
         assert_contract(case).await;
     }
 }
+
+#[tokio::test]
+async fn python_314_none_identity_function_replacements_execute() {
+    let cases = [
+        ContractCase {
+            name: "operator.is_none",
+            operator: "operator_function",
+            original: "is_none",
+            replacement: "is_not_none",
+            source: "import operator as op\naction = op.is_none\n",
+            harness: "import subject; print(subject.action(None))\n",
+            baseline_stdout: "True\n",
+            mutant_stdout: "False\n",
+        },
+        ContractCase {
+            name: "from-import operator.is_not_none",
+            operator: "operator_function",
+            original: "present",
+            replacement: "__import__('operator').is_none",
+            source: "from operator import is_not_none as present\naction = present\n",
+            harness: "import subject; print(subject.action(None))\n",
+            baseline_stdout: "False\n",
+            mutant_stdout: "True\n",
+        },
+    ];
+
+    for case in cases {
+        assert_contract(case).await;
+    }
+}

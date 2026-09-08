@@ -220,8 +220,8 @@ The binary, unary, and augmented-assignment AST roles admit these spellings only
 in their operator positions. Decorators, keyword unpacking, annotations,
 strings, and comments remain excluded.
 
-`operator_function` is a default runtime selector for the Python 3.13 `operator`
-callables (51 canonical names and 46 documented dunder aliases). The independent
+`operator_function` is a default runtime selector for the Python 3.14 `operator`
+callables (53 canonical names and 46 documented dunder aliases). The independent
 `OperatorImports` index trusts only unique, unconditional module-level imports:
 `import operator`, module aliases, and absolute `from operator import ...`
 aliases. It does not alter the audited builtin resolver. Callable references are
@@ -237,7 +237,7 @@ eligible in both direct calls and higher-order uses such as `map(op.add, xs, ys)
 | `neg` / `pos` | Exchange |
 | `abs` | `neg` |
 | `index`, `inv`, `invert` | `pos` |
-| `not_` / `truth`, `is_` / `is_not` | Exchange each pair |
+| `not_` / `truth`, `is_` / `is_not`, `is_none` / `is_not_none` | Exchange each pair |
 | `iadd` / `isub`, `imul` / `itruediv`, `ifloordiv` / `imod` | Exchange each pair |
 | `ipow`, `imatmul` | `imul` |
 | `iand` / `ior`, `ilshift` / `irshift` | Exchange each pair |
@@ -257,8 +257,10 @@ binding or namespace uncertainty. Lambda mutations replace the complete callable
 reference. All forms retain argument text, order, count, and evaluation frequency;
 lambdas intentionally suppress the underlying operation. Callable identity and
 introspection are not preserved. Helpers `attrgetter`, `itemgetter`,
-`methodcaller`, and `length_hint`, undocumented aliases, and Python 3.14-only APIs
-are excluded.
+`methodcaller`, and `length_hint`, undocumented aliases, and functions outside
+the documented Python 3.14 inventory are excluded. The Python 3.14 identity
+predicates have no documented dunder aliases; names such as `__is_none__` and
+`__is_not_none__` are not candidates.
 
 The index invalidates an imported name if any other binding anywhere in the
 module affects it, including parameters, definitions, type parameters, imports,
