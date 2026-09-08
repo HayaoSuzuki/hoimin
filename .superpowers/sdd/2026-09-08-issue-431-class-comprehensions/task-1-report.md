@@ -44,7 +44,7 @@ was `[5]` and its generated `add` to `sub` mutant stdout was `[-1]`.
 
 Formatting and clippy passed with the task's prescribed target directory and
 offline dependency resolution. The controller reported that the elevated full
-Python gate passed with 862 tests passed and 56 skipped in 43.761 seconds after
+Python gate passed with 862 tests run and 56 skipped in 43.761 seconds after
 confirming that the sandbox-only failures came from denied process inspection.
 
 ## Coverage
