@@ -276,7 +276,11 @@ or inherited metaclass can supply even ordinary names through `__prepare__`
 without an AST assignment target. The exclusion includes class-body statements
 and method decorators and defaults; it deliberately skips safe class-namespace
 loads instead of attempting metaclass-provenance inference. Ordinary method and
-lambda bodies use function/global lookup and remain eligible. Import aliases
+lambda bodies use function/global lookup and remain eligible. Class-body list,
+set, and dict comprehensions and generator expressions likewise use their
+implicit function scope for targets, filters, later iterables, and produced
+expressions. Their leftmost iterable remains a class-namespace lookup and is
+excluded. Import aliases
 beginning with `__` remain excluded throughout class-definition ranges,
 including method bodies and nested functions, because private-name mangling and
 compiler-provided names such as `__class__`, `__module__`, and `__qualname__`

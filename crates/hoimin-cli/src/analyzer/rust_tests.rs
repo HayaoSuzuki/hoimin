@@ -666,6 +666,86 @@ fn operator_function_class_namespace_lookups_are_excluded() {
 }
 
 #[test]
+fn operator_function_class_comprehensions_use_implicit_function_scope() {
+    let source = "import operator as op\nclass Subject:\n    values = [op.add(2, 3) for _ in (0,)]\n    direct = op.add(2, 3)\n    callback = lambda: op.add(2, 3)\n";
+    let candidates = analyze(source)
+        .candidates
+        .into_iter()
+        .filter(|candidate| candidate.operator == "operator_function")
+        .map(|candidate| (candidate.line, candidate.original, candidate.replacement))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        candidates,
+        vec![
+            (3, "add".to_owned(), "sub".to_owned()),
+            (5, "add".to_owned(), "sub".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn operator_function_class_comprehensions_cover_all_forms_and_nested_scopes() {
+    let source = "import operator as op\nfrom operator import sub as minus\nclass Subject:\n    set_values = {op.mul(2, 3) for _ in (0,)}\n    dict_values = {op.pow(2, 3): minus(3, 2) for _ in (0,)}\n    generator_values = tuple(op.xor(2, 3) for _ in (0,))\n    filtered = [item for item in (1,) if op.truth(item)]\n    later = [op.add(left, right) for left in (1,) for right in op.concat((2,), (3,))]\n    nested = [[op.mul(left, right) for right in op.sub((2,), (1,))] for left in (1,)]\n";
+    let candidates = analyze(source)
+        .candidates
+        .into_iter()
+        .filter(|candidate| candidate.operator == "operator_function")
+        .map(|candidate| (candidate.line, candidate.original, candidate.replacement))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        candidates,
+        vec![
+            (4, "mul".to_owned(), "truediv".to_owned()),
+            (5, "pow".to_owned(), "mul".to_owned()),
+            (
+                5,
+                "minus".to_owned(),
+                "__import__('operator').add".to_owned(),
+            ),
+            (6, "xor".to_owned(), "and_".to_owned()),
+            (7, "truth".to_owned(), "not_".to_owned()),
+            (8, "add".to_owned(), "sub".to_owned()),
+            (8, "concat".to_owned(), "iconcat".to_owned()),
+            (9, "mul".to_owned(), "truediv".to_owned()),
+            (9, "sub".to_owned(), "add".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn operator_function_class_comprehensions_preserve_identity_guards_and_first_iterable_scope() {
+    let source = "import operator as op\nclass Subject:\n    values = [op.sub(3, 2) for _ in op.add((0,), (1,))]\n    nested = [[op.mul(left, right) for right in op.sub((2,), (1,))] for left in op.add((0,), (1,))]\n";
+    let candidates = analyze(source)
+        .candidates
+        .into_iter()
+        .filter(|candidate| candidate.operator == "operator_function")
+        .map(|candidate| (candidate.line, candidate.original, candidate.replacement))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        candidates,
+        vec![
+            (3, "sub".to_owned(), "add".to_owned()),
+            (4, "mul".to_owned(), "truediv".to_owned()),
+            (4, "sub".to_owned(), "add".to_owned()),
+        ]
+    );
+
+    for excluded in [
+        "from operator import add as plus\nclass Subject:\n    values = [plus(2, 3) for plus in (lambda left, right: left * right,)]\n",
+        "from operator import add as __plus\nclass Subject:\n    values = [__plus(2, 3) for _ in (0,)]\n",
+        "import operator as __op\nclass Subject:\n    values = [__op.add(2, 3) for _ in (0,)]\n",
+    ] {
+        assert!(
+            analyze(excluded)
+                .candidates
+                .iter()
+                .all(|candidate| candidate.operator != "operator_function"),
+            "{excluded}"
+        );
+    }
+}
+
+#[test]
 fn operator_function_qualified_dynamic_namespace_access_is_uncertain() {
     for alteration in [
         "import builtins as b\nb.exec(code)",
