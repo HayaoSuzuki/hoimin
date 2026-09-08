@@ -215,10 +215,11 @@ the detailed capability and cleanup model.
 
 ## Mutation operators
 
-Without `--operators`, a run selects all 33 runtime operators. `--operators`
+Without `--operators`, a run selects all 43 runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
 individual IDs or selector families. Type-annotation `type_*` operators remain
-opt-in.
+opt-in. Hoimin exposes 55 operator IDs in total: 43 default runtime IDs, seven
+opt-in type IDs, and five opt-in risky exception IDs.
 
 | Group | Runtime IDs | Mutations |
 | --- | --- | --- |
@@ -227,6 +228,8 @@ opt-in.
 | Same-contract methods | `collection_min_max`, `collection_set_add_discard`, `collection_set_remove_discard`, `collection_string_starts_ends`, `collection_string_split_rsplit` | `min(...)` ↔ `max(...)`; `add`/`discard`, `remove`/`discard`, `startswith`/`endswith`, and `split`/`rsplit` when `maxsplit` is supplied |
 | Structural calls | `structure_append_extend`, `structure_mapping_get_subscript`, `structure_sort_reverse`, `structure_sorted_reversed` | `append(x)` ↔ `extend([x])`; `mapping.get(k)` ↔ `mapping[k]`; `sort()` ↔ `reverse()`; `sorted(x)` ↔ `reversed(x)` |
 | Bitwise operators | `bitwise_and_or`, `bitwise_shift` | `&` ↔ `\|`; `<<` ↔ `>>` |
+| Additional operator syntax | `binary_power`, `binary_matmul`, `augmented_power`, `augmented_matmul`, `bitwise_xor`, `bitwise_invert`, `augmented_bitwise_and_or`, `augmented_bitwise_xor`, `augmented_bitwise_shift` | `**` and `@` become `*`; `**=` and `@=` become `*=`; `^` becomes `&`; `~` becomes unary `+`; `&=`/`\|=` and `<<=`/`>>=` exchange; `^=` becomes `&=` |
+| Standard-library operator functions | `operator_function` | Mutates trusted Python 3.13 `operator` callable references across comparison, arithmetic, bitwise, unary, truth, identity, in-place, and sequence operations; also covers `contains`, `getitem`, `setitem`, `delitem`, and `call` |
 | Boundary operators | `structure_index_neighbor`, `structure_slice_neighbor` | adjacent plain-decimal index and slice-bound values |
 | Exception types | `exception_type_pair` | curated pairs such as `ValueError` ↔ `TypeError` in simple `except`/`except*` clauses and supported `raise` expressions |
 
@@ -244,6 +247,34 @@ historical `type_mapping` name remains accepted as an alias for
 Import-dependent type replacements are emitted only when their direct name or
 module alias remains unshadowed at the annotation site. If no safe spelling is
 available, the candidate is skipped.
+
+The `operator_function` selector recognizes the documented callable pairs
+`eq`/`ne`, `lt`/`le`, `gt`/`ge`, `add`/`sub`, `mul`/`truediv`,
+`floordiv`/`mod`, `and_`/`or_`, `lshift`/`rshift`, `neg`/`pos`,
+`not_`/`truth`, `is_`/`is_not`, `iadd`/`isub`, `imul`/`itruediv`,
+`ifloordiv`/`imod`, `iand`/`ior`, `ilshift`/`irshift`,
+`concat`/`iconcat`, and `countOf`/`indexOf`. It also maps `pow` and `matmul`
+to `mul`; `xor` to `and_`; `abs` to `neg`; `index`, `inv`, and `invert` to
+`pos`; `ipow` and `imatmul` to `imul`; `ixor` to `iand`; and `getitem` to
+`contains`. The `contains` replacement reverses membership, while `setitem`,
+`delitem`, and `call` evaluate their arguments but suppress the underlying
+operation. Documented dunder aliases follow the same mappings. The unrelated
+helpers `attrgetter`, `itemgetter`, `methodcaller`, and `length_hint` stay out of
+scope, as do Python 3.14-only APIs.
+
+Hoimin trusts only unique, unmodified, unconditional module-level
+`import operator` and absolute `from operator import ...` bindings. It skips a
+binding after shadowing, deletion, wildcard or conditional imports, dynamic
+namespace access, module attribute writes, or an uncertain `__import__`
+binding. Hoimin excludes relative and local imports. Stores, annotations, and
+match patterns do not produce function candidates; match guards remain ordinary
+expressions. Hoimin excludes an import alias beginning with `__` throughout a
+class definition, including methods and nested functions, because private-name
+mangling and compiler-provided class names can resolve it to another object.
+Ordinary aliases and documented member references such as `op.__add__` remain
+eligible inside classes. These checks operate within one module and assume the
+normal standard-library `operator` module; they do not prove anything about a
+custom import loader or external monkey-patching.
 
 The exception selector `exception_risky` is opt-in only; enable it with
 `--operators exception_risky` (or select individual IDs). It exposes

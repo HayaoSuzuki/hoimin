@@ -101,6 +101,7 @@ Assert exact source/replacement spans, parseability, operator ID and candidate c
 
 **Files:**
 - Modify: `README.md`
+- Test: `crates/hoimin-cli/tests/cli_config.rs` (README inventory contract)
 - Create: `crates/hoimin-cli/tests/operator_function_contracts.rs`
 - Create: `docs/superpowers/reports/2026-09-08-python-operator-coverage.md`
 - Modify: `docs/superpowers/plans/2026-09-08-python-operator-coverage.md`
@@ -109,7 +110,7 @@ Assert exact source/replacement spans, parseability, operator ID and candidate c
 - Consumes: CLI analyzer output and all operator IDs from Tasks 1 and 2.
 - Produces: executable regression coverage and verification record; no new production interface.
 
-- [ ] Add a separate Rust integration test file following the existing analyzer CLI fixture conventions; do not edit dirty main `run_e2e.rs`. Generate actual mutants from CLI analysis and run the mutated source with CPython. Verify non-equivalence with explicit expectations rather than merely parsing:
+- [x] Add a separate Rust integration test file following the existing analyzer CLI fixture conventions; do not edit dirty main `run_e2e.rs`. Generate actual mutants from CLI analysis and run the mutated source with CPython. Verify non-equivalence with explicit expectations rather than merely parsing:
 
 ```python
 events = []
@@ -119,6 +120,6 @@ def operand(value):
 ```
 
 Check `pow(2, 3)` becomes multiplication (6), matrix-multiplication custom protocol dispatch changes to `__mul__`, bitwise/invert and augmented protocol effects, `contains` keeps container/item order, `setitem`/`delitem` no longer modify the target, `call` evaluates arguments but does not invoke the target, and from-import/dunder/higher-order replacements execute. Use positional-only argument failures and side-effect event lists to expose duplicated/reordered evaluation. Default to the controlled `.venv` interpreter; accept `HOIMIN_OPERATOR_TEST_PYTHON` only in this test helper so the controller can also execute the contracts on installed Python 3.13 without changing project dependencies.
-- [ ] Run the focused integration suite and full Rust workspace tests, format and clippy. Run relevant repository Python tests if available. Production Python is unchanged: do not mutation-test fixture/test modules.
-- [ ] Update README's runtime count to 43, syntax/function inventory and conservative import restrictions. Record exact commands, counts, local platform, skipped checks, conservative scope and final review outcome in the report. Commit docs and tests.
+- [x] Run the focused integration suite and full Rust workspace tests, format and clippy. Run relevant repository Python tests if available. Production Python is unchanged: do not mutation-test fixture/test modules.
+- [x] Update README's runtime count to 43, syntax/function inventory and conservative import restrictions. Record exact commands, counts, local platform, skipped checks, conservative scope and final review outcome in the report. Commit docs and tests.
 - [ ] Obtain independent whole-branch review, fix findings and rerun affected tests. Push only the feature branch, create a PR with changes/verification prose, and observe final-head checks at 180-second intervals without dispatching Windows workflows.

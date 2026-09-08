@@ -84,6 +84,16 @@ fn readme_documents_all_mutation_operator_ids_and_selector_families() {
         "collection_string_split_rsplit",
         "bitwise_and_or",
         "bitwise_shift",
+        "binary_power",
+        "binary_matmul",
+        "augmented_power",
+        "augmented_matmul",
+        "bitwise_xor",
+        "bitwise_invert",
+        "augmented_bitwise_and_or",
+        "augmented_bitwise_xor",
+        "augmented_bitwise_shift",
+        "operator_function",
         "structure_append_extend",
         "structure_mapping_get_subscript",
         "structure_sort_reverse",
@@ -110,7 +120,8 @@ fn readme_documents_all_mutation_operator_ids_and_selector_families() {
         assert!(readme.contains(name), "README is missing {name}");
     }
     for expected in [
-        "all 33 runtime operators",
+        "all 43 runtime operators",
+        "55 operator IDs",
         "collection_ops",
         "structure_ops",
         "bitwise_ops",
