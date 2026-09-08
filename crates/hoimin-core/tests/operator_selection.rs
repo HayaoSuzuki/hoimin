@@ -47,6 +47,7 @@ fn native_python_operator_ids_are_default_valid_and_selectable() {
         "augmented_bitwise_and_or",
         "augmented_bitwise_xor",
         "augmented_bitwise_shift",
+        "operator_function",
     ] {
         assert!(selected_names.iter().any(|selected| selected == name));
         assert!(valid_names.contains(&name));

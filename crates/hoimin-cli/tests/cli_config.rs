@@ -7,7 +7,7 @@ use hoimin_cli::cli::{
 };
 use hoimin_core::{MutationOperator, MutationOperatorSelection, MutationProfile};
 
-const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 42] = [
+const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 43] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -43,6 +43,7 @@ const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 42] = [
     "augmented_bitwise_and_or",
     "augmented_bitwise_xor",
     "augmented_bitwise_shift",
+    "operator_function",
     "structure_append_extend",
     "structure_mapping_get_subscript",
     "structure_sort_reverse",

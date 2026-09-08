@@ -86,6 +86,7 @@ pub enum MutationOperator {
     AugmentedBitwiseAndOr,
     AugmentedBitwiseXor,
     AugmentedBitwiseShift,
+    OperatorFunction,
     StructureAppendExtend,
     StructureMappingGetSubscript,
     StructureSortReverse,
@@ -153,6 +154,7 @@ impl MutationOperator {
             Self::AugmentedBitwiseAndOr => "augmented_bitwise_and_or",
             Self::AugmentedBitwiseXor => "augmented_bitwise_xor",
             Self::AugmentedBitwiseShift => "augmented_bitwise_shift",
+            Self::OperatorFunction => "operator_function",
             Self::StructureAppendExtend => "structure_append_extend",
             Self::StructureMappingGetSubscript => "structure_mapping_get_subscript",
             Self::StructureSortReverse => "structure_sort_reverse",
@@ -174,7 +176,7 @@ impl MutationOperator {
             Self::TypeSequenceIterable => "type_sequence_iterable",
         }
     }
-    fn all() -> [Self; 54] {
+    fn all() -> [Self; 55] {
         [
             Self::CompareEqNe,
             Self::CompareOrder,
@@ -211,6 +213,7 @@ impl MutationOperator {
             Self::AugmentedBitwiseAndOr,
             Self::AugmentedBitwiseXor,
             Self::AugmentedBitwiseShift,
+            Self::OperatorFunction,
             Self::StructureAppendExtend,
             Self::StructureMappingGetSubscript,
             Self::StructureSortReverse,
@@ -298,6 +301,7 @@ impl MutationOperatorSelection {
                 MutationOperator::AugmentedBitwiseAndOr,
                 MutationOperator::AugmentedBitwiseXor,
                 MutationOperator::AugmentedBitwiseShift,
+                MutationOperator::OperatorFunction,
                 MutationOperator::StructureAppendExtend,
                 MutationOperator::StructureMappingGetSubscript,
                 MutationOperator::StructureSortReverse,

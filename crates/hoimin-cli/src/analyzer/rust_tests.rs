@@ -130,6 +130,461 @@ fn analyze(source: &str) -> super::AnalyzerOutput {
     analyze_with(Utf8Path::new("pkg/sample.py"), &[], &[], 10_000, source)
 }
 
+// These literal expectations detect missing callable families, incorrect pairs, and
+// alias spellings independently of the production catalog.
+type OperatorFunctionPair = (
+    &'static str,
+    &'static str,
+    Option<(&'static str, &'static str)>,
+);
+const OPERATOR_FUNCTION_PAIRS: &[OperatorFunctionPair] = &[
+    ("eq", "ne", Some(("__eq__", "__ne__"))),
+    ("ne", "eq", Some(("__ne__", "__eq__"))),
+    ("lt", "le", Some(("__lt__", "__le__"))),
+    ("le", "lt", Some(("__le__", "__lt__"))),
+    ("gt", "ge", Some(("__gt__", "__ge__"))),
+    ("ge", "gt", Some(("__ge__", "__gt__"))),
+    ("add", "sub", Some(("__add__", "__sub__"))),
+    ("sub", "add", Some(("__sub__", "__add__"))),
+    ("mul", "truediv", Some(("__mul__", "__truediv__"))),
+    ("truediv", "mul", Some(("__truediv__", "__mul__"))),
+    ("floordiv", "mod", Some(("__floordiv__", "__mod__"))),
+    ("mod", "floordiv", Some(("__mod__", "__floordiv__"))),
+    ("pow", "mul", Some(("__pow__", "__mul__"))),
+    ("matmul", "mul", Some(("__matmul__", "__mul__"))),
+    ("and_", "or_", Some(("__and__", "__or__"))),
+    ("or_", "and_", Some(("__or__", "__and__"))),
+    ("lshift", "rshift", Some(("__lshift__", "__rshift__"))),
+    ("rshift", "lshift", Some(("__rshift__", "__lshift__"))),
+    ("xor", "and_", Some(("__xor__", "__and__"))),
+    ("neg", "pos", Some(("__neg__", "__pos__"))),
+    ("pos", "neg", Some(("__pos__", "__neg__"))),
+    ("abs", "neg", Some(("__abs__", "__neg__"))),
+    ("index", "pos", Some(("__index__", "__pos__"))),
+    ("inv", "pos", Some(("__inv__", "__pos__"))),
+    ("invert", "pos", Some(("__invert__", "__pos__"))),
+    ("not_", "truth", Some(("__not__", "truth"))),
+    ("truth", "not_", None),
+    ("is_", "is_not", None),
+    ("is_not", "is_", None),
+    ("iadd", "isub", Some(("__iadd__", "__isub__"))),
+    ("isub", "iadd", Some(("__isub__", "__iadd__"))),
+    ("imul", "itruediv", Some(("__imul__", "__itruediv__"))),
+    ("itruediv", "imul", Some(("__itruediv__", "__imul__"))),
+    ("ifloordiv", "imod", Some(("__ifloordiv__", "__imod__"))),
+    ("imod", "ifloordiv", Some(("__imod__", "__ifloordiv__"))),
+    ("ipow", "imul", Some(("__ipow__", "__imul__"))),
+    ("imatmul", "imul", Some(("__imatmul__", "__imul__"))),
+    ("iand", "ior", Some(("__iand__", "__ior__"))),
+    ("ior", "iand", Some(("__ior__", "__iand__"))),
+    ("ilshift", "irshift", Some(("__ilshift__", "__irshift__"))),
+    ("irshift", "ilshift", Some(("__irshift__", "__ilshift__"))),
+    ("ixor", "iand", Some(("__ixor__", "__iand__"))),
+    ("concat", "iconcat", Some(("__concat__", "__iconcat__"))),
+    ("iconcat", "concat", Some(("__iconcat__", "__concat__"))),
+    ("countOf", "indexOf", None),
+    ("indexOf", "countOf", None),
+    ("getitem", "contains", Some(("__getitem__", "__contains__"))),
+];
+
+#[test]
+fn operator_function_pairs_cover_qualified_imported_and_higher_order_references() {
+    for &(original, replacement, alias) in OPERATOR_FUNCTION_PAIRS {
+        for (original, replacement) in std::iter::once((original, replacement)).chain(alias) {
+            for module in ["operator", "op"] {
+                let source = format!(
+                    "import operator as {module}\nresult = {module}.{original}(left(), right())\n"
+                );
+                let output = analyze(&source);
+                assert_eq!(output.candidates.len(), 1, "{source}");
+                let candidate = &output.candidates[0];
+                assert_eq!(candidate.operator, "operator_function");
+                assert_eq!(candidate.original, original);
+                assert_eq!(candidate.replacement, replacement);
+                assert_eq!(
+                    usize::try_from(candidate.span.start).unwrap(),
+                    source.rfind(&format!(".{original}(")).unwrap() + 1
+                );
+                assert_eq!(
+                    usize::try_from(candidate.span.length).unwrap(),
+                    original.len()
+                );
+                apply_candidate_and_reparse(&source, candidate);
+            }
+            for usage in ["plus(left(), right())", "map(plus, values, values)"] {
+                let source = format!("from operator import {original} as plus\nresult = {usage}\n");
+                let output = analyze(&source);
+                assert_eq!(output.candidates.len(), 1, "{source}");
+                let candidate = &output.candidates[0];
+                assert_eq!(candidate.operator, "operator_function");
+                assert_eq!(candidate.original, "plus");
+                assert_eq!(
+                    candidate.replacement,
+                    format!("__import__('operator').{replacement}")
+                );
+                assert_eq!(
+                    usize::try_from(candidate.span.start).unwrap(),
+                    source.rfind("plus").unwrap()
+                );
+                assert_eq!(candidate.span.length, 4);
+                apply_candidate_and_reparse(&source, candidate);
+            }
+        }
+    }
+}
+
+#[test]
+fn operator_function_lambdas_replace_only_callable_references() {
+    for (name, replacement) in [
+        (
+            "contains",
+            "(lambda container, item, /: item not in container)",
+        ),
+        (
+            "__contains__",
+            "(lambda container, item, /: item not in container)",
+        ),
+        ("setitem", "(lambda container, key, value, /: None)"),
+        ("__setitem__", "(lambda container, key, value, /: None)"),
+        ("delitem", "(lambda container, key, /: None)"),
+        ("__delitem__", "(lambda container, key, /: None)"),
+        ("call", "(lambda target, /, *args, **kwargs: None)"),
+        ("__call__", "(lambda target, /, *args, **kwargs: None)"),
+    ] {
+        for (import, reference) in [
+            ("import operator as op".to_owned(), format!("op.{name}")),
+            (
+                format!("from operator import {name} as action"),
+                "action".to_owned(),
+            ),
+        ] {
+            let source = format!("{import}\nresult = {reference}(*arguments(), **keywords())\n");
+            let output = analyze(&source);
+            assert_eq!(output.candidates.len(), 1, "{source}");
+            let candidate = &output.candidates[0];
+            assert_eq!(candidate.operator, "operator_function");
+            assert_eq!(candidate.original, reference);
+            assert_eq!(candidate.replacement, replacement);
+            assert_eq!(
+                usize::try_from(candidate.span.start).unwrap(),
+                source.rfind(&reference).unwrap()
+            );
+            assert_eq!(
+                usize::try_from(candidate.span.length).unwrap(),
+                reference.len()
+            );
+            let mutated = apply_candidate_and_reparse(&source, candidate);
+            assert!(mutated.ends_with("(*arguments(), **keywords())\n"));
+        }
+    }
+}
+
+#[test]
+fn operator_function_uncertain_bindings_and_namespaces_are_excluded() {
+    for alteration in [
+        "op = other",
+        "del op",
+        "op += other",
+        "op: object",
+        "op, x = pair",
+        "def f(op): pass",
+        "def f(*op): pass",
+        "def f(**op): pass",
+        "def f(*, op): pass",
+        "f = lambda op: op",
+        "def op(): pass",
+        "class op: pass",
+        "type op = object",
+        "def f[op](): pass",
+        "class C[*op]: pass",
+        "type T[**op] = object",
+        "import other as op",
+        "from other import value as op",
+        "import operator as op",
+        "if condition:\n    import operator as op",
+        "def f():\n    import operator as op",
+        "from other import *",
+        "for op in values: pass",
+        "with context() as op: pass",
+        "try: pass\nexcept Exception as op: pass",
+        "match value:\n    case op: pass",
+        "match value:\n    case [*op]: pass",
+        "match value:\n    case {'x': x, **op}: pass",
+        "values = [x for op in items]",
+        "values = {x for op in items}",
+        "values = {x: x for op in items}",
+        "values = (x for op in items)",
+        "value = (op := other)",
+        "def f():\n    global op",
+        "def f():\n    nonlocal op",
+        "op.add = other",
+        "del op.add",
+        "op.add += other",
+        "op.add: object",
+        "setattr(op, 'add', other)",
+        "delattr(op, 'add')",
+        "exec(code)",
+        "globals()['op'] = other",
+        "locals().update(values)",
+        "vars(op)['add'] = other",
+        "op.__dict__['add'] = other",
+        "namespace = op.__dict__",
+        "run = exec",
+        "import operator as other\nother.sub = replacement",
+        "def f():\n    import operator as other\n    other.add = replacement",
+        "other = op\nother.add = replacement",
+        "change(op)",
+        "import builtins\nbuiltins.__import__ = replacement",
+        "__builtins__['__import__'] = replacement",
+    ] {
+        let source = format!("import operator as op\nresult = op.add(a, b)\n{alteration}\n");
+        assert!(parse_module(&source).is_ok(), "{source}");
+        assert!(
+            analyze(&source)
+                .candidates
+                .iter()
+                .all(|c| c.operator != "operator_function"),
+            "{source}"
+        );
+    }
+    for source in [
+        "if condition:\n    import operator as op\nresult = op.add(a, b)\n",
+        "def f():\n    import operator as op\n    return op.add(a, b)\n",
+        "from .operator import add\nresult = add(a, b)\n",
+        "from other import add\nresult = add(a, b)\n",
+        "import other as op\nresult = op.add(a, b)\n",
+        "from operator import add as plus\ndef f(plus): return plus(a, b)\n",
+        "from operator import add as plus\n__import__ = custom\nresult = plus(a, b)\n",
+        "from operator import add as plus\ndef f(__import__): return plus(a, b)\n",
+    ] {
+        assert!(
+            analyze(source)
+                .candidates
+                .iter()
+                .all(|c| c.operator != "operator_function"),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn operator_function_helpers_and_undocumented_dunders_are_excluded() {
+    for name in [
+        "attrgetter",
+        "itemgetter",
+        "methodcaller",
+        "length_hint",
+        "is_none",
+        "is_not_none",
+        "__truth__",
+        "__is__",
+        "__is_not__",
+        "__countOf__",
+        "__indexOf__",
+        "__and___",
+        "__not___",
+    ] {
+        let source = format!("import operator as op\nresult = op.{name}(value)\n");
+        assert!(analyze(&source).candidates.is_empty(), "{source}");
+    }
+}
+
+#[test]
+fn operator_function_source_order_selection_profiles_and_annotations() {
+    for source in [
+        "result = op.add(a, b)\nimport operator as op\n",
+        "result = plus(a, b)\nfrom operator import add as plus\n",
+        "def f(): return plus(a, b)\nfrom operator import add as plus\n",
+        "import operator as op\nx: op.add\ndef f(x: op.mul) -> op.sub: pass\ntype Alias = op.pow\n",
+    ] {
+        assert!(
+            analyze(source)
+                .candidates
+                .iter()
+                .all(|c| c.operator != "operator_function"),
+            "{source}"
+        );
+    }
+    let source = "import operator as op\nfrom operator import add as plus\ndef calculate(a, b):\n    return op.add(a, b), plus(a, b)\ndef combine(values):\n    return map(op.add, values, values)\n";
+    let full = analyze(source);
+    assert_eq!(
+        full.candidates
+            .iter()
+            .filter(|c| c.operator == "operator_function")
+            .count(),
+        3
+    );
+    for limit in 0..=5 {
+        let bounded = analyze_with_profile(MutationProfile::Full, limit, source);
+        assert_eq!(
+            bounded.candidates,
+            full.candidates[..limit.min(full.candidates.len())]
+        );
+        assert_eq!(bounded.truncated, limit < full.candidates.len());
+        assert!(
+            bounded
+                .retention
+                .producer_peaks
+                .iter()
+                .all(|peak| *peak <= limit + 1)
+        );
+        assert!(bounded.retention.merged_peak <= limit + 1);
+    }
+    let selected = analyze_with(
+        Utf8Path::new("pkg/sample.py"),
+        &[LineRange { start: 6, end: 6 }],
+        &["combine".to_owned()],
+        10,
+        source,
+    );
+    assert_eq!(selected.candidates.len(), 1);
+    assert_eq!(selected.candidates[0].original, "add");
+    assert_eq!(selected.candidates[0].replacement, "sub");
+    assert_eq!(selected.candidates[0].line, 6);
+    assert_eq!(selected.candidates[0].symbol.as_deref(), Some("combine"));
+    let arid = "import operator as op\nprint(op.add)\nassert op.eq(a, b)\nresult = op.sub(a, b)\n";
+    assert_eq!(
+        analyze(arid)
+            .candidates
+            .iter()
+            .filter(|c| c.operator == "operator_function")
+            .count(),
+        3
+    );
+    let focused = analyze_with_profile(MutationProfile::Focused, 10, arid);
+    assert_eq!(focused.candidates.len(), 1);
+    assert_eq!(focused.candidates[0].original, "sub");
+    let mut operators = MutationOperatorSelection::default();
+    operators.exclude(MutationOperator::from_name("operator_function").unwrap());
+    let output = analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/sample.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            profile: MutationProfile::Full,
+            max_candidates: 10,
+        },
+        source,
+    );
+    assert!(
+        output
+            .candidates
+            .iter()
+            .all(|c| c.operator != "operator_function")
+    );
+}
+
+#[test]
+fn operator_function_independent_bindings_and_import_builtin_guards() {
+    for source in [
+        "import operator\nresult = operator.add(a, b)\n",
+        "from operator import add\nresult = add(a, b)\n",
+        "import operator as op\nfrom operator import add as plus\nplus = other\nresult = op.add(a, b)\n",
+        "import operator as op\n__import__ = custom\nresult = op.add(a, b)\n",
+        "from operator import setitem as update\n__import__ = custom\nresult = update(a, b, c)\n",
+        "import operator as op\nclass C:\n    def f(self):\n        self.value = value\n        return op.add(a, b)\n",
+    ] {
+        assert_eq!(
+            analyze(source)
+                .candidates
+                .iter()
+                .filter(|c| c.operator == "operator_function")
+                .count(),
+            1,
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn operator_function_index_traversal_observes_cancellation() {
+    let source = format!(
+        "import operator as op\n{}",
+        "result = op.add(a, b)\n".repeat(100)
+    );
+    let module = parse_module(&source).unwrap();
+    let probes = std::cell::Cell::new(0);
+    let result = super::OperatorImports::build(module.syntax(), &|| {
+        probes.set(probes.get() + 1);
+        probes.get() >= 10
+    });
+    assert!(matches!(result, Err(super::AnalysisCancelled)));
+    assert_eq!(
+        probes.get(),
+        10,
+        "cancellation must latch on its first observation"
+    );
+}
+
+#[test]
+fn operator_function_qualified_dynamic_namespace_access_is_uncertain() {
+    for alteration in [
+        "import builtins as b\nb.exec(code)",
+        "op.__setattr__('add', replacement)",
+        "op.__delattr__('add')",
+        "op.__getattribute__('__dict__')['add'] = replacement",
+        "from operator import __dict__ as namespace\nnamespace['add'] = replacement",
+        "from operator import __setattr__ as write\nwrite('add', replacement)",
+        "from builtins import exec as execute\nexecute(code)",
+        "from builtins import globals as namespace\nnamespace()['op'] = other",
+        "from sys import modules as loaded\nloaded['operator'].add = replacement",
+        "import builtins as b\nrun = b.exec\nrun(code)",
+        "import builtins as b\nb.globals()['op'] = other",
+        "__builtins__.exec(code)",
+        "import sys\nsys.modules['operator'].add = replacement",
+        "import sys as system\nsystem.modules['builtins'].__import__ = replacement",
+    ] {
+        let source = format!("import operator as op\nresult = op.add(a, b)\n{alteration}\n");
+        assert!(
+            analyze(&source)
+                .candidates
+                .iter()
+                .all(|c| c.operator != "operator_function"),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn operator_function_lambda_replacements_exclude_pattern_values() {
+    for name in ["contains", "setitem", "delitem", "call"] {
+        let source = format!("import operator as op\nmatch value:\n    case op.{name}: pass\n");
+        let output = analyze(&source);
+        for candidate in &output.candidates {
+            apply_candidate_and_reparse(&source, candidate);
+        }
+        assert!(
+            output
+                .candidates
+                .iter()
+                .all(|c| c.operator != "operator_function")
+        );
+    }
+    for source in [
+        "from operator import add as plus\nmatch value:\n    case plus(): pass\n",
+        "import operator as op\nmatch value:\n    case op.call(): pass\n",
+    ] {
+        assert!(
+            analyze(source)
+                .candidates
+                .iter()
+                .all(|c| c.operator != "operator_function"),
+            "{source}"
+        );
+    }
+    let source =
+        "import operator as op\nmatch value:\n    case _ if op.contains(container, item): pass\n";
+    let output = analyze(source);
+    assert_eq!(output.candidates.len(), 1);
+    assert_eq!(output.candidates[0].original, "op.contains");
+    assert_eq!(
+        output.candidates[0].replacement,
+        "(lambda container, item, /: item not in container)"
+    );
+    apply_candidate_and_reparse(source, &output.candidates[0]);
+}
+
 fn apply_candidate_and_reparse(source: &str, candidate: &super::AnalyzerCandidate) -> String {
     let start = usize::try_from(candidate.span.start).expect("candidate start fits usize");
     let length = usize::try_from(candidate.span.length).expect("candidate length fits usize");

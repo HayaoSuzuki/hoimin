@@ -200,7 +200,8 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::ExceptionBaseBoundary
         | MutationOperator::ExceptionTupleAddPair
         | MutationOperator::ExceptionTupleRemoveMember => RankingReasonCode::ExceptionHandling,
-        MutationOperator::CollectionAnyAll
+        MutationOperator::OperatorFunction
+        | MutationOperator::CollectionAnyAll
         | MutationOperator::CollectionListTuple
         | MutationOperator::CollectionSetFrozenset
         | MutationOperator::CollectionAppendInsert

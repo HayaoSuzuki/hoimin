@@ -22,9 +22,12 @@ use super::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
 #[path = "rust/fact_index.rs"]
 mod fact_index;
+#[path = "rust/operator_functions.rs"]
+mod operator_functions;
 #[cfg(test)]
 use fact_index::IndexLookupStats;
 use fact_index::{ContainmentIndex, NotOperandIndex, ScopeIndex, ScopeInterval};
+use operator_functions::OperatorImports;
 
 pub(crate) struct AnalyzeRequest<'a> {
     pub path: &'a Utf8Path,
@@ -1826,6 +1829,8 @@ fn exception_pair_replacements(name: &str) -> &'static [&'static str] {
 }
 
 struct AstCandidateCollector<'a, F> {
+    operator_imports: OperatorImports,
+    in_pattern: bool,
     source: &'a str,
     line_index: &'a LineIndex,
     facts: &'a AstFacts<'a>,
@@ -1847,6 +1852,15 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         cancelled: &'a F,
     ) -> Result<ProducerPrefix, AnalysisCancelled> {
         let mut collector = Self {
+            in_pattern: false,
+            operator_imports: if request
+                .operators
+                .contains(MutationOperator::OperatorFunction)
+            {
+                OperatorImports::build(module, cancelled)?
+            } else {
+                OperatorImports::default()
+            },
             source,
             line_index,
             facts,
@@ -2403,6 +2417,11 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
 
     fn visit_expr(&mut self, expression: &'ast Expr) {
         if !self.check_cancelled() && !self.facts.contains_annotation_span(expression.range()) {
+            if !self.in_pattern
+                && let Some((range, replacement)) = self.operator_imports.replacement(expression)
+            {
+                self.add_candidate(range, replacement, MutationOperator::OperatorFunction);
+            }
             match expression {
                 Expr::Call(call) => self.collect_call(call),
                 Expr::Subscript(subscript) => self.collect_subscript(subscript),
@@ -2412,6 +2431,15 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
             }
             visitor::walk_expr(self, expression);
         }
+    }
+
+    fn visit_pattern(&mut self, pattern: &'ast Pattern) {
+        if self.check_cancelled() {
+            return;
+        }
+        let previous = std::mem::replace(&mut self.in_pattern, true);
+        visitor::walk_pattern(self, pattern);
+        self.in_pattern = previous;
     }
 }
 

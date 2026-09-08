@@ -220,6 +220,76 @@ The binary, unary, and augmented-assignment AST roles admit these spellings only
 in their operator positions. Decorators, keyword unpacking, annotations,
 strings, and comments remain excluded.
 
+`operator_function` is a default runtime selector for the Python 3.13 `operator`
+callables (51 canonical names and 46 documented dunder aliases). The independent
+`OperatorImports` index trusts only unique, unconditional module-level imports:
+`import operator`, module aliases, and absolute `from operator import ...`
+aliases. It does not alter the audited builtin resolver. Callable references are
+eligible in both direct calls and higher-order uses such as `map(op.add, xs, ys)`.
+
+| Callable names | Replacement |
+| --- | --- |
+| `eq` / `ne`, `lt` / `le`, `gt` / `ge` | Exchange each pair |
+| `add` / `sub`, `mul` / `truediv`, `floordiv` / `mod` | Exchange each pair |
+| `pow`, `matmul` | `mul` |
+| `and_` / `or_`, `lshift` / `rshift` | Exchange each pair |
+| `xor` | `and_` |
+| `neg` / `pos` | Exchange |
+| `abs` | `neg` |
+| `index`, `inv`, `invert` | `pos` |
+| `not_` / `truth`, `is_` / `is_not` | Exchange each pair |
+| `iadd` / `isub`, `imul` / `itruediv`, `ifloordiv` / `imod` | Exchange each pair |
+| `ipow`, `imatmul` | `imul` |
+| `iand` / `ior`, `ilshift` / `irshift` | Exchange each pair |
+| `ixor` | `iand` |
+| `concat` / `iconcat`, `countOf` / `indexOf` | Exchange each pair |
+| `getitem` | `contains` |
+| `contains` | `(lambda container, item, /: item not in container)` |
+| `setitem` | `(lambda container, key, value, /: None)` |
+| `delitem` | `(lambda container, key, /: None)` |
+| `call` | `(lambda target, /, *args, **kwargs: None)` |
+
+For function pairs through a module alias, only the member token changes. A
+dunder source keeps dunder spelling when the destination has a documented alias;
+for example, `__not__` becomes `truth`. A from-import reference becomes
+`__import__('operator').replacement` only when the builtin `__import__` has no
+binding or namespace uncertainty. Lambda mutations replace the complete callable
+reference. All forms retain argument text, order, count, and evaluation frequency;
+lambdas intentionally suppress the underlying operation. Callable identity and
+introspection are not preserved. Helpers `attrgetter`, `itemgetter`,
+`methodcaller`, and `length_hint`, undocumented aliases, and Python 3.14-only APIs
+are excluded.
+
+The index invalidates an imported name if any other binding anywhere in the
+module affects it, including parameters, definitions, type parameters, imports,
+assignment/deletion targets, comprehensions, walrus expressions, exception and
+pattern captures, and `global`/`nonlocal` declarations. Relative, conditional,
+and local imports are not trusted. References before the import are excluded,
+including function bodies defined before the import even if callers would run
+them afterward. Stores, annotations, and match patterns do not produce callable
+candidates; pattern grammar cannot generally accept the replacement expressions.
+
+Wildcard imports, dynamic namespace operations, explicit `__dict__`/`vars`
+access, and writes to builtin `__import__` invalidate namespace certainty.
+Taking references to namespace operations (`exec`, `eval`, `globals`, `locals`,
+`vars`, `setattr`, `delattr`, `__import__`) also counts, including qualified
+attributes and aliases imported from `builtins` or `operator`. Namespace
+dunders (`__dict__`, `__setattr__`, `__delattr__`, `__getattribute__`) are also
+uncertain, including from-import aliases. `sys.modules` access and imports
+are conservative exclusions. Attribute names associated with these operations
+are treated as uncertain even on other objects. A write/delete through any
+imported `operator` module alias, including local aliases, invalidates all
+operator imports. Letting a module alias escape through assignment, argument
+passing, or another bare load also invalidates all operator imports, avoiding
+unsound assumptions about mutation through another alias. Ordinary writes such
+as `self.value = value` do not invalidate independent operator bindings.
+
+These checks are intra-module and deliberately conservative. They assume normal
+standard-library imports, do not resolve project import search paths, and do not
+prove absence of external monkey-patching or custom import loaders. The index
+traversal checks cancellation, and its candidates enter the existing bounded AST
+producer, selection, profile filtering, and deterministic merge.
+
 Every approved raw-token operator is then checked against the annotation
 containment index and skipped when its complete token range lies inside an
 annotation. Deliberate annotation mutations remain in the separate opt-in
@@ -399,7 +469,8 @@ fixed-score category:
 - `high_value_control` (100): comparisons, membership and identity tests,
   boolean operations, `not`, boolean literals, and `break`/`continue`.
 - `exception_handling` (90): safe and risky exception-handler mutations.
-- `behavioral` (80): collection and structural behavior mutations.
+- `behavioral` (80): collection, structural, and `operator_function` callable
+  and protocol behavior mutations.
 - `arithmetic` (70): arithmetic, unary-sign, and bitwise mutations.
 - `type_annotation` (50): type-annotation mutations.
 
