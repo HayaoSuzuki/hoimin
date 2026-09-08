@@ -107,6 +107,44 @@ fn diverse_keeps_round_robin_progress_until_count_is_reached() {
 }
 
 #[test]
+fn diverse_keeps_selecting_the_dense_file_after_singleton_files_exhaust() {
+    let candidates = vec![
+        candidate("A1", "src/a.py", 1, 100),
+        candidate("B1", "src/b.py", 2, 100),
+        candidate("C1", "src/c.py", 3, 100),
+        candidate("D1", "src/d.py", 4, 100),
+        candidate("D2", "src/d.py", 5, 100),
+        candidate("D3", "src/d.py", 6, 100),
+        candidate("D4", "src/d.py", 7, 100),
+    ];
+
+    assert_eq!(
+        select_ids(&candidates, 4, TopSelectionPolicy::Diverse),
+        ["A1", "B1", "C1", "D1"]
+    );
+    assert_eq!(
+        select_ids(&candidates, 5, TopSelectionPolicy::Diverse),
+        ["A1", "B1", "C1", "D1", "D2"]
+    );
+    assert_eq!(
+        select_ids(&candidates, 20, TopSelectionPolicy::Diverse),
+        ["A1", "B1", "C1", "D1", "D2", "D3", "D4"]
+    );
+}
+
+#[test]
+fn diverse_returns_no_ids_for_empty_candidates() {
+    assert!(
+        select_top_candidate_ids(
+            &[],
+            NonZeroUsize::new(1).unwrap(),
+            TopSelectionPolicy::Diverse,
+        )
+        .is_empty()
+    );
+}
+
+#[test]
 fn diverse_is_deterministic_and_selects_each_retained_candidate_once() {
     let candidates = vec![
         candidate("A1", "src/a.py", 1, 100),

@@ -55,19 +55,19 @@ fn select_from_tier(candidates: &[RankedPlanCandidate], limit: usize, selected: 
         groups[index].push_back(candidate);
     }
 
+    let mut active_groups = groups
+        .into_iter()
+        .filter(|group| !group.is_empty())
+        .collect::<VecDeque<_>>();
+
     while selected.len() < limit {
-        let mut selected_in_round = false;
-        for group in &mut groups {
-            if let Some(candidate) = group.pop_front() {
-                selected.push(candidate.id.clone());
-                selected_in_round = true;
-                if selected.len() == limit {
-                    return;
-                }
-            }
-        }
-        if !selected_in_round {
+        let Some(mut group) = active_groups.pop_front() else {
             return;
+        };
+        let candidate = group.pop_front().expect("active groups contain candidates");
+        selected.push(candidate.id.clone());
+        if !group.is_empty() {
+            active_groups.push_back(group);
         }
     }
 }
