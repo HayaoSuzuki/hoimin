@@ -19,6 +19,33 @@ pub enum InputReport {
 }
 
 #[derive(Debug)]
+pub(super) struct InputDisposition {
+    pub(super) source: PathBuf,
+    pub(super) reason: Option<UnusableReason>,
+}
+
+impl From<&InputReport> for InputDisposition {
+    fn from(input: &InputReport) -> Self {
+        match input {
+            InputReport::Usable(report) => Self {
+                source: report.source.clone(),
+                reason: None,
+            },
+            InputReport::Unusable { source, reason } => Self {
+                source: source.clone(),
+                reason: Some(*reason),
+            },
+        }
+    }
+}
+
+impl InputDisposition {
+    pub(super) fn is_usable(&self) -> bool {
+        self.reason.is_none()
+    }
+}
+
+#[derive(Debug)]
 pub struct UsableReport {
     pub source: PathBuf,
     pub mutants: Vec<MutantFinished>,
