@@ -16,3 +16,22 @@ The public output regression covers a usable report, an unusable gap, a usable c
 - `cargo test --offline -p hoimin-cli --test lean_progress_decision_oracle -- --test-threads=1` — 2 passed
 - `cargo fmt --all --check`
 - `cargo clippy --offline -p hoimin-cli --all-targets --all-features -- -D warnings`
+
+## Whole-workspace validation
+
+- `cargo test --offline --workspace --all-features -- --test-threads=1` — 1,558 passed, 0 failed, 12 ignored (67 result groups).
+- `cargo +1.88 check --offline --workspace --all-targets --all-features --locked` — passed.
+
+## Process memory experiment
+
+A separate CLI process compared the same valid 50,000-mutant report repeated 2, 4, and 8 times. macOS `wait4` measured peak RSS. The before and after JSON outputs were byte-for-byte identical for all three histories.
+
+| Reports | Before RSS (bytes) | After RSS (bytes) |
+| --- | ---: | ---: |
+| 2 | 163,315,712 | 170,065,920 |
+| 4 | 258,768,896 | 226,328,576 |
+| 8 | 467,877,888 | 244,580,352 |
+
+For eight reports, peak RSS decreased by about 48%. Elapsed time was essentially unchanged (11.61 versus 11.55 seconds). RSS includes allocator-retained pages and remains higher than live allocations; the allocation regression above directly establishes that decoded histories are no longer retained. This synthetic workload measures report comparison, not mutation execution.
+
+- `cargo clippy --offline --workspace --all-targets --all-features -- -D warnings` — passed.
