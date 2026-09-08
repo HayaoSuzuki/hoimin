@@ -378,6 +378,31 @@ def run():
 }
 
 #[tokio::test]
+async fn class_comprehension_function_replacement_uses_module_binding() {
+    assert_contract(ContractCase {
+        name: "class comprehension module binding",
+        operator: "operator_function",
+        original: "add",
+        replacement: "sub",
+        source: r"import operator as op
+class ClassOperator:
+    @staticmethod
+    def add(left, right): return (0,)
+class Meta(type):
+    @classmethod
+    def __prepare__(mcls, name, bases): return {'op': ClassOperator}
+class Subject(metaclass=Meta):
+    direct = op.add(2, 3)
+    values = [op.add(2, 3) for _ in op.add(None, None)]
+",
+        harness: "from subject import Subject; print(Subject.values)\n",
+        baseline_stdout: "[5]\n",
+        mutant_stdout: "[-1]\n",
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn operator_function_bitwise_unary_and_inplace_replacements_execute() {
     let cases = [
         ContractCase {

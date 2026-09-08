@@ -5,7 +5,7 @@
 use std::collections::{HashMap, HashSet};
 
 use ruff_python_ast::visitor::{self, Visitor};
-use ruff_python_ast::{Expr, ExprContext, ModModule, Pattern, Stmt, TypeParam};
+use ruff_python_ast::{Comprehension, Expr, ExprContext, ModModule, Pattern, Stmt, TypeParam};
 use ruff_text_size::{Ranged, TextRange};
 
 use super::{AnalysisCancelled, ContainmentIndex};
@@ -252,6 +252,30 @@ impl<F: Fn() -> bool> ClassLookupScan<'_, F> {
         }
         self.cancelled_observed
     }
+
+    fn visit_comprehension_scope<'ast>(
+        &mut self,
+        generators: &'ast [Comprehension],
+        produced: impl IntoIterator<Item = &'ast Expr>,
+    ) {
+        let Some((first, remaining)) = generators.split_first() else {
+            return;
+        };
+        self.visit_expr(&first.iter);
+        let outer = self.scope;
+        self.scope = LookupScope::Function;
+        self.visit_expr(&first.target);
+        for condition in &first.ifs {
+            self.visit_expr(condition);
+        }
+        for generator in remaining {
+            self.visit_comprehension(generator);
+        }
+        for expression in produced {
+            self.visit_expr(expression);
+        }
+        self.scope = outer;
+    }
 }
 
 impl<'ast, F: Fn() -> bool> Visitor<'ast> for ClassLookupScan<'_, F> {
@@ -316,16 +340,33 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for ClassLookupScan<'_, F> {
                 usize::from(expression.range().end()),
             ));
         }
-        if let Expr::Lambda(lambda) = expression {
-            if let Some(parameters) = &lambda.parameters {
-                self.visit_parameters(parameters);
+        match expression {
+            Expr::Lambda(lambda) => {
+                if let Some(parameters) = &lambda.parameters {
+                    self.visit_parameters(parameters);
+                }
+                let outer = self.scope;
+                self.scope = LookupScope::Function;
+                self.visit_expr(&lambda.body);
+                self.scope = outer;
             }
-            let outer = self.scope;
-            self.scope = LookupScope::Function;
-            self.visit_expr(&lambda.body);
-            self.scope = outer;
-        } else {
-            visitor::walk_expr(self, expression);
+            Expr::ListComp(comprehension) => self.visit_comprehension_scope(
+                &comprehension.generators,
+                std::iter::once(comprehension.elt.as_ref()),
+            ),
+            Expr::SetComp(comprehension) => self.visit_comprehension_scope(
+                &comprehension.generators,
+                std::iter::once(comprehension.elt.as_ref()),
+            ),
+            Expr::DictComp(comprehension) => self.visit_comprehension_scope(
+                &comprehension.generators,
+                [comprehension.key.as_ref(), comprehension.value.as_ref()],
+            ),
+            Expr::Generator(comprehension) => self.visit_comprehension_scope(
+                &comprehension.generators,
+                std::iter::once(comprehension.elt.as_ref()),
+            ),
+            _ => visitor::walk_expr(self, expression),
         }
     }
 }
