@@ -4,16 +4,16 @@ use serde::Serialize;
 
 use crate::cli::ProgressOutputFormat;
 
-use super::compare::{CandidateSetEligibility, candidate_set_eligibility};
-use super::{
-    Comparison, InputReport, ProgressError, ProgressResult, ProgressState, UnusableReason,
-};
+use super::compare::CandidateSetEligibility;
+use super::input::InputDisposition;
+use super::{Comparison, ProgressError, ProgressResult, ProgressState, UnusableReason};
 
 const PROGRESS_SCHEMA_VERSION: u32 = 1;
 
 pub(super) fn render<Stdout, Stderr>(
     format: ProgressOutputFormat,
-    inputs: &[InputReport],
+    inputs: &[InputDisposition],
+    eligibilities: &[CandidateSetEligibility],
     result: &ProgressResult,
     stdout: &mut Stdout,
     stderr: &mut Stderr,
@@ -22,7 +22,7 @@ where
     Stdout: Write,
     Stderr: Write,
 {
-    write_diagnostics(inputs, result, stderr)?;
+    write_diagnostics(inputs, eligibilities, result, stderr)?;
     match format {
         ProgressOutputFormat::Human => render_human(inputs, result, stdout),
         ProgressOutputFormat::Json => render_json(inputs, result, stdout),
@@ -30,17 +30,14 @@ where
 }
 
 fn render_json<Stdout>(
-    inputs: &[InputReport],
+    inputs: &[InputDisposition],
     result: &ProgressResult,
     stdout: &mut Stdout,
 ) -> Result<(), ProgressError>
 where
     Stdout: Write,
 {
-    let inputs = inputs
-        .iter()
-        .map(InputDisposition::from)
-        .collect::<Vec<_>>();
+    let inputs = inputs.iter().map(InputDocument::from).collect::<Vec<_>>();
     let comparisons = result
         .comparisons
         .iter()
@@ -60,7 +57,7 @@ where
 }
 
 fn render_human<Stdout>(
-    inputs: &[InputReport],
+    inputs: &[InputDisposition],
     result: &ProgressResult,
     stdout: &mut Stdout,
 ) -> Result<(), ProgressError>
@@ -107,15 +104,16 @@ where
     .map_err(write_error)
 }
 
-fn final_pair_is_usable(inputs: &[InputReport]) -> bool {
+fn final_pair_is_usable(inputs: &[InputDisposition]) -> bool {
     inputs
         .windows(2)
         .last()
-        .is_some_and(|pair| matches!(pair, [InputReport::Usable(_), InputReport::Usable(_)]))
+        .is_some_and(|pair| pair.iter().all(InputDisposition::is_usable))
 }
 
 fn write_diagnostics<Stderr>(
-    inputs: &[InputReport],
+    inputs: &[InputDisposition],
+    eligibilities: &[CandidateSetEligibility],
     result: &ProgressResult,
     stderr: &mut Stderr,
 ) -> Result<(), ProgressError>
@@ -123,32 +121,29 @@ where
     Stderr: Write,
 {
     for input in inputs {
-        if let InputReport::Unusable { source, reason } = input {
+        if let Some(reason) = input.reason {
             writeln!(
                 stderr,
                 "warning: unusable progress report {}: {}",
-                source.display(),
-                unusable_reason_label(*reason)
+                input.source.display(),
+                unusable_reason_label(reason)
             )
             .map_err(write_error)?;
         }
     }
-    let mut comparison_index = 0;
-    for pair in inputs.windows(2) {
-        let [InputReport::Usable(previous), InputReport::Usable(current)] = pair else {
-            continue;
-        };
-        comparison_index += 1;
-        match candidate_set_eligibility(previous, current) {
+    for (comparison_index, eligibility) in eligibilities.iter().enumerate() {
+        match eligibility {
             CandidateSetEligibility::Matching => {}
             CandidateSetEligibility::Different => writeln!(
                 stderr,
-                "warning: comparison {comparison_index} has different candidate ID sets; progress is indeterminate"
+                "warning: comparison {} has different candidate ID sets; progress is indeterminate",
+                comparison_index + 1,
             )
             .map_err(write_error)?,
             CandidateSetEligibility::Duplicate => writeln!(
                 stderr,
-                "warning: comparison {comparison_index} has duplicate candidate IDs; progress is indeterminate"
+                "warning: comparison {} has duplicate candidate IDs; progress is indeterminate",
+                comparison_index + 1,
             )
             .map_err(write_error)?,
         }
@@ -211,7 +206,7 @@ struct ProgressDocument<'a> {
     patience: usize,
     consecutive_stalls: usize,
     latest: LatestDecision,
-    inputs: &'a [InputDisposition],
+    inputs: &'a [InputDocument],
     comparisons: &'a [ComparisonDocument],
 }
 
@@ -235,25 +230,18 @@ impl From<&ProgressResult> for LatestDecision {
 }
 
 #[derive(Serialize)]
-struct InputDisposition {
+struct InputDocument {
     source: String,
     usable: bool,
     reason: Option<&'static str>,
 }
 
-impl From<&InputReport> for InputDisposition {
-    fn from(input: &InputReport) -> Self {
-        match input {
-            InputReport::Usable(report) => Self {
-                source: report.source.display().to_string(),
-                usable: true,
-                reason: None,
-            },
-            InputReport::Unusable { source, reason } => Self {
-                source: source.display().to_string(),
-                usable: false,
-                reason: Some(unusable_reason_name(*reason)),
-            },
+impl From<&InputDisposition> for InputDocument {
+    fn from(input: &InputDisposition) -> Self {
+        Self {
+            source: input.source.display().to_string(),
+            usable: input.is_usable(),
+            reason: input.reason.map(unusable_reason_name),
         }
     }
 }

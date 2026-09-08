@@ -1110,6 +1110,59 @@ async fn output_human_omits_stale_comparison_fields_after_an_unusable_report() {
 }
 
 #[tokio::test]
+async fn output_defers_mixed_history_rendering_until_all_reports_are_valid() {
+    let fixture = tempfile::tempdir().unwrap();
+    let first = write_json(&fixture, "first.json", &valid_report());
+    let mut missing_baseline = valid_report();
+    missing_baseline["baseline"] = Value::Null;
+    let missing_baseline = write_json(&fixture, "missing-baseline.json", &missing_baseline);
+    let before = write_json(&fixture, "before.json", &valid_report());
+    let mut different = valid_report();
+    different["mutants"][0]["candidate"]["id"] = json!("different-id");
+    let different = write_json(&fixture, "different.json", &different);
+    let mut incomplete = valid_report();
+    incomplete["summary"]["complete"] = json!(false);
+    incomplete["summary"]["exit_code"] = json!(4);
+    let incomplete = write_json(&fixture, "incomplete.json", &incomplete);
+    let reports = vec![
+        first.clone(),
+        missing_baseline.clone(),
+        before,
+        different,
+        incomplete.clone(),
+    ];
+    let expected_diagnostics = format!(
+        "warning: unusable progress report {}: missing baseline\nwarning: unusable progress report {}: incomplete run\nwarning: comparison 1 has different candidate ID sets; progress is indeterminate\n",
+        missing_baseline.display(),
+        incomplete.display(),
+    );
+
+    let (code, stdout, stderr) = run_progress(&reports, "json").await;
+    assert_eq!(code, 0);
+    assert_eq!(String::from_utf8(stderr).unwrap(), expected_diagnostics);
+    let document: Value = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(
+        document["inputs"],
+        json!([
+            { "source": first.display().to_string(), "usable": true, "reason": null },
+            { "source": missing_baseline.display().to_string(), "usable": false, "reason": "missing_baseline" },
+            { "source": reports[2].display().to_string(), "usable": true, "reason": null },
+            { "source": reports[3].display().to_string(), "usable": true, "reason": null },
+            { "source": incomplete.display().to_string(), "usable": false, "reason": "incomplete" },
+        ])
+    );
+    assert_eq!(document["comparisons"].as_array().unwrap().len(), 1);
+    assert_eq!(document["comparisons"][0]["state"], "indeterminate");
+
+    let (code, stdout, stderr) = run_progress(&reports, "human").await;
+    assert_eq!(code, 0);
+    assert_eq!(String::from_utf8(stderr).unwrap(), expected_diagnostics);
+    let output = String::from_utf8(stdout).unwrap();
+    assert!(output.contains("state: indeterminate"), "{output}");
+    assert!(!output.contains("comparable score:"), "{output}");
+}
+
+#[tokio::test]
 async fn documented_progress_invocation_accepts_ordered_reports() {
     let fixture = tempfile::tempdir().unwrap();
     let first = write_json(&fixture, "before.json", &valid_report());
@@ -1150,6 +1203,35 @@ async fn output_malformed_json_returns_exit_two() {
             .unwrap()
             .contains("could not parse progress report")
     );
+}
+
+#[tokio::test]
+async fn output_late_malformed_report_emits_no_earlier_warnings_or_output() {
+    let fixture = tempfile::tempdir().unwrap();
+    let valid = write_json(&fixture, "valid.json", &valid_report());
+    let mut incomplete = valid_report();
+    incomplete["summary"]["complete"] = json!(false);
+    incomplete["summary"]["exit_code"] = json!(4);
+    let incomplete = write_json(&fixture, "incomplete.json", &incomplete);
+    let malformed = fixture.path().join("malformed.json");
+    std::fs::write(&malformed, b"{ not json").unwrap();
+
+    for format in ["json", "human"] {
+        let (code, stdout, stderr) = run_progress(
+            &[valid.clone(), incomplete.clone(), malformed.clone()],
+            format,
+        )
+        .await;
+
+        assert_eq!(code, 2, "{format}");
+        assert!(stdout.is_empty(), "{format}");
+        let diagnostic = String::from_utf8(stderr).unwrap();
+        assert!(
+            diagnostic.contains("could not parse progress report"),
+            "{format}: {diagnostic}"
+        );
+        assert!(!diagnostic.contains("warning:"), "{format}: {diagnostic}");
+    }
 }
 
 #[tokio::test]

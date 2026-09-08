@@ -16,6 +16,69 @@ pub struct ProgressResult {
     pub patience: NonZeroUsize,
 }
 
+pub(crate) struct ProgressAccumulator {
+    result: ProgressResult,
+}
+
+impl ProgressAccumulator {
+    pub(crate) fn new(patience: NonZeroUsize) -> Self {
+        Self {
+            result: ProgressResult {
+                comparisons: Vec::new(),
+                latest: ProgressState::Indeterminate,
+                consecutive_stalls: 0,
+                patience,
+            },
+        }
+    }
+
+    pub(crate) fn advance(
+        &mut self,
+        previous: &InputReport,
+        current: &InputReport,
+    ) -> Option<CandidateSetEligibility> {
+        let (InputReport::Usable(previous), InputReport::Usable(current)) = (previous, current)
+        else {
+            self.result.consecutive_stalls = 0;
+            self.result.latest = ProgressState::Indeterminate;
+            return None;
+        };
+
+        let eligibility = candidate_set_eligibility(previous, current);
+        let comparison = compare_usable_reports(previous, current, eligibility);
+        match comparison.state {
+            ProgressState::Improving => {
+                self.result.consecutive_stalls = 0;
+                self.result.latest = ProgressState::Improving;
+            }
+            ProgressState::Regressing => {
+                self.result.consecutive_stalls = 0;
+                self.result.latest = ProgressState::Regressing;
+            }
+            ProgressState::Stalled => {
+                self.result.consecutive_stalls += 1;
+                self.result.latest = if self.result.consecutive_stalls >= self.result.patience.get()
+                {
+                    ProgressState::Saturated
+                } else {
+                    ProgressState::Stalled
+                };
+            }
+            ProgressState::Indeterminate => {
+                self.result.consecutive_stalls = 0;
+                self.result.latest = ProgressState::Indeterminate;
+            }
+            ProgressState::Saturated => unreachable!("individual comparisons cannot saturate"),
+        }
+        self.result.comparisons.push(comparison);
+        Some(eligibility)
+    }
+
+    pub(crate) fn into_result(self) -> ProgressResult {
+        self.result
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Comparison {
     pub common: usize,
@@ -76,55 +139,16 @@ struct ReportMutants<'a> {
 
 #[must_use]
 pub fn compare_reports(reports: &[InputReport], patience: NonZeroUsize) -> ProgressResult {
-    let mut comparisons = Vec::new();
-    let mut consecutive_stalls = 0;
-    let mut latest = ProgressState::Indeterminate;
+    let mut accumulator = ProgressAccumulator::new(patience);
 
     for pair in reports.windows(2) {
         let [previous, current] = pair else {
             unreachable!("windows(2) always yields two elements");
         };
-        let (InputReport::Usable(previous), InputReport::Usable(current)) = (previous, current)
-        else {
-            consecutive_stalls = 0;
-            latest = ProgressState::Indeterminate;
-            continue;
-        };
-
-        let eligibility = candidate_set_eligibility(previous, current);
-        let comparison = compare_usable_reports(previous, current, eligibility);
-        match comparison.state {
-            ProgressState::Improving => {
-                consecutive_stalls = 0;
-                latest = ProgressState::Improving;
-            }
-            ProgressState::Regressing => {
-                consecutive_stalls = 0;
-                latest = ProgressState::Regressing;
-            }
-            ProgressState::Stalled => {
-                consecutive_stalls += 1;
-                latest = if consecutive_stalls >= patience.get() {
-                    ProgressState::Saturated
-                } else {
-                    ProgressState::Stalled
-                };
-            }
-            ProgressState::Indeterminate => {
-                consecutive_stalls = 0;
-                latest = ProgressState::Indeterminate;
-            }
-            ProgressState::Saturated => unreachable!("individual comparisons cannot saturate"),
-        }
-        comparisons.push(comparison);
+        accumulator.advance(previous, current);
     }
 
-    ProgressResult {
-        comparisons,
-        latest,
-        consecutive_stalls,
-        patience,
-    }
+    accumulator.into_result()
 }
 
 fn compare_usable_reports(
