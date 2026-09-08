@@ -8,7 +8,7 @@ use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{Expr, ExprContext, ModModule, Pattern, Stmt, TypeParam};
 use ruff_text_size::{Ranged, TextRange};
 
-use super::AnalysisCancelled;
+use super::{AnalysisCancelled, ContainmentIndex};
 
 // Python 3.13 canonical names, documented aliases, and mutation destinations.
 // An empty alias means there is no documented dunder form.
@@ -120,6 +120,7 @@ struct ImportedBinding {
 pub(super) struct OperatorImports {
     trusted: HashMap<String, ImportedBinding>,
     import_builtin_available: bool,
+    class_ranges: ContainmentIndex,
 }
 
 impl OperatorImports {
@@ -137,6 +138,7 @@ impl OperatorImports {
             attribute_writes: HashSet::new(),
             escaped_names: HashSet::new(),
             namespace_uncertain: false,
+            class_ranges: Vec::new(),
         };
         scan.visit_body(&module.body);
         if scan.cancelled_observed {
@@ -154,7 +156,21 @@ impl OperatorImports {
         Ok(Self {
             trusted: scan.trusted,
             import_builtin_available: !scan.bindings.contains_key("__import__"),
+            class_ranges: ContainmentIndex::new(scan.class_ranges),
         })
+    }
+
+    fn trusted_binding(&self, name: &str, range: TextRange) -> Option<&ImportedBinding> {
+        // Class compilation can mangle private names or provide implicit names
+        // such as __class__. Raw AST spelling cannot prove identity there.
+        if name.starts_with("__")
+            && self
+                .class_ranges
+                .contains(usize::from(range.start()), usize::from(range.end()))
+        {
+            return None;
+        }
+        self.trusted.get(name)
     }
 
     pub(super) fn replacement(&self, expression: &Expr) -> Option<(TextRange, String)> {
@@ -163,7 +179,7 @@ impl OperatorImports {
                 let Expr::Name(module) = attribute.value.as_ref() else {
                     return None;
                 };
-                let binding = self.trusted.get(module.id.as_str())?;
+                let binding = self.trusted_binding(module.id.as_str(), expression.range())?;
                 if binding.member.is_some() {
                     return None;
                 }
@@ -174,7 +190,7 @@ impl OperatorImports {
                 )
             }
             Expr::Name(name) if name.ctx == ExprContext::Load => {
-                let binding = self.trusted.get(name.id.as_str())?;
+                let binding = self.trusted_binding(name.id.as_str(), expression.range())?;
                 (binding, binding.member.as_deref()?, None)
             }
             _ => return None,
@@ -208,6 +224,7 @@ struct ImportScan<'a, F> {
     attribute_writes: HashSet<String>,
     escaped_names: HashSet<String>,
     namespace_uncertain: bool,
+    class_ranges: Vec<(usize, usize)>,
 }
 
 impl<F: Fn() -> bool> ImportScan<'_, F> {
@@ -299,7 +316,13 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for ImportScan<'_, F> {
                 }
             }
             Stmt::FunctionDef(definition) => self.bind(definition.name.as_str()),
-            Stmt::ClassDef(definition) => self.bind(definition.name.as_str()),
+            Stmt::ClassDef(definition) => {
+                self.bind(definition.name.as_str());
+                self.class_ranges.push((
+                    usize::from(definition.range().start()),
+                    usize::from(definition.range().end()),
+                ));
+            }
             Stmt::Global(global) => {
                 for name in &global.names {
                     self.bind(name.as_str());

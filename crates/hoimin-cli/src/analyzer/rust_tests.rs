@@ -518,6 +518,125 @@ fn operator_function_index_traversal_observes_cancellation() {
 }
 
 #[test]
+fn operator_function_class_mangling_does_not_trust_unrelated_callables() {
+    for source in [
+        "from operator import add as __op\n_C__op = lambda a, b: a * b\nclass C:\n    def run(self): return __op(2, 3)\n",
+        "import operator as __op\nclass Other:\n    @staticmethod\n    def add(a, b): return a * b\n_C__op = Other\nclass C:\n    def run(self): return __op.add(2, 3)\n",
+        "from operator import setitem as __op\n_C__op = lambda a, b, c: c\nclass C:\n    def run(self): return __op(container, key, value)\n",
+    ] {
+        assert!(parse_module(source).is_ok(), "{source}");
+        let output = analyze(source);
+        assert!(
+            output
+                .candidates
+                .iter()
+                .all(|c| c.operator != "operator_function"),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn operator_function_implicit_class_bindings_do_not_resolve_to_module_imports() {
+    for source in [
+        "from operator import add as __class__\nclass C:\n    def __init__(self, a, b): self.value = a * b\n    def run(self): return __class__(2, 3).value\n",
+        "import operator as __class__\nclass C:\n    @staticmethod\n    def add(a, b): return a * b\n    def run(self): return __class__.add(2, 3)\n",
+    ] {
+        assert!(parse_module(source).is_ok(), "{source}");
+        let output = analyze(source);
+        assert!(
+            output
+                .candidates
+                .iter()
+                .all(|c| c.operator != "operator_function"),
+            "{source}"
+        );
+    }
+    // CPython supplies class names without corresponding AST Store nodes. The
+    // conservative guard also excludes the safe __safe__ spelling in this table.
+    for alias in [
+        "__module__",
+        "__qualname__",
+        "__firstlineno__",
+        "__type_params__",
+        "__annotations__",
+        "__doc__",
+        "__static_attributes__",
+        "__classcell__",
+        "__classdict__",
+        "__classdictcell__",
+        "__annotate_func__",
+        "__safe__",
+    ] {
+        for (import, reference) in [
+            (
+                format!("from operator import add as {alias}"),
+                alias.to_owned(),
+            ),
+            (
+                format!("import operator as {alias}"),
+                format!("{alias}.add"),
+            ),
+        ] {
+            let source = format!("{import}\nclass C:\n    result = {reference}(2, 3)\n");
+            assert!(parse_module(&source).is_ok(), "{source}");
+            assert!(
+                analyze(&source)
+                    .candidates
+                    .iter()
+                    .all(|c| c.operator != "operator_function"),
+                "{source}"
+            );
+        }
+    }
+}
+
+#[test]
+fn operator_function_class_guard_preserves_independent_import_references() {
+    for alias in ["__op", "__class__", "__safe__"] {
+        for (import, reference) in [
+            (
+                format!("from operator import add as {alias}"),
+                alias.to_owned(),
+            ),
+            (
+                format!("import operator as {alias}"),
+                format!("{alias}.add"),
+            ),
+        ] {
+            let source = format!(
+                "{import}\nbefore = {reference}(2, 3)\nclass C: pass\ndef run(): return {reference}(2, 3)\n"
+            );
+            let output = analyze(&source);
+            assert_eq!(output.candidates.len(), 2, "{source}");
+            for candidate in &output.candidates {
+                assert_eq!(candidate.operator, "operator_function");
+                apply_candidate_and_reparse(&source, candidate);
+            }
+        }
+    }
+    let source = "import operator as op\nfrom operator import add as plus\nclass C:\n    initial = op.__add__(2, 3)\n    def run(self):\n        def nested(): return plus(2, 3)\n        return op.add(2, 3)\n";
+    let output = analyze(source);
+    assert_eq!(output.candidates.len(), 3);
+    assert_eq!(
+        output
+            .candidates
+            .iter()
+            .map(|c| (c.original.as_str(), c.replacement.as_str()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("__add__", "__sub__"),
+            ("plus", "__import__('operator').sub"),
+            ("add", "sub")
+        ]
+    );
+    for candidate in &output.candidates {
+        assert_eq!(candidate.operator, "operator_function");
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
 fn operator_function_qualified_dynamic_namespace_access_is_uncertain() {
     for alteration in [
         "import builtins as b\nb.exec(code)",
