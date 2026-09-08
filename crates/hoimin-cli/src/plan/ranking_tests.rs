@@ -176,6 +176,7 @@ const EXCEPTION_HANDLING_OPERATORS: &[&str] = &[
     "exception_tuple_remove_member",
 ];
 const BEHAVIORAL_OPERATORS: &[&str] = &[
+    "operator_function",
     "collection_any_all",
     "collection_list_tuple",
     "collection_set_frozenset",
@@ -202,6 +203,15 @@ const ARITHMETIC_OPERATORS: &[&str] = &[
     "unary_sign",
     "bitwise_and_or",
     "bitwise_shift",
+    "binary_power",
+    "binary_matmul",
+    "augmented_power",
+    "augmented_matmul",
+    "bitwise_xor",
+    "bitwise_invert",
+    "augmented_bitwise_and_or",
+    "augmented_bitwise_xor",
+    "augmented_bitwise_shift",
 ];
 const TYPE_ANNOTATION_OPERATORS: &[&str] = &[
     "type_nullable_remove",
@@ -246,7 +256,7 @@ fn ranking_assigns_every_operator_to_its_fixed_category() {
         .into_iter()
         .filter_map(MutationOperator::from_name)
         .collect::<BTreeSet<_>>();
-    assert_eq!(tested.len(), 45);
+    assert_eq!(tested.len(), 55);
     assert_eq!(tested, canonical);
 
     for (operators, expected) in categories {
