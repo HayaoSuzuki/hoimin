@@ -22,3 +22,20 @@ analyzer::rust::rust_tests::nullable_removal_preserves_multiline_annotation_synt
 operator_function_contracts` passed 14 tests. `cargo fmt --all -- --check` and
 `git diff --check` both exited 0. The controller owns full-workspace, MSRV,
 Clippy, and independent CLI-matrix verification.
+
+## Review round 1 repair
+
+The retained side of an unparenthesized multiline union is now grouped before
+replacement, independently of annotation-level parentheses outside the candidate
+span. Optional bracket interiors retain leading and trailing whitespace around
+an already-grouped operand; only an exact full-interior match may use the
+existing grouping directly. Exact-replacement/reparse and public-plan CPython
+contracts cover both repairs.
+
+The public-plan contracts are split into annotation-site, Optional-layout, and
+union-layout tests to keep each behavioral scope small enough for
+warnings-denied Clippy. Focused verification passed: the analyzer regression
+passed 1 test, `operator_function_contracts` passed 16 tests, and
+`cargo clippy --offline --workspace --all-targets --all-features -- -D warnings`,
+formatting, and diff checks exited 0. The controller owns the final workspace
+and CLI-matrix verification.

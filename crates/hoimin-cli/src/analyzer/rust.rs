@@ -5260,7 +5260,11 @@ fn nullable_union_operand_source(
         facts.tokens.expect("parser tokens are set"),
     )
     .unwrap_or_else(|| retained.range());
-    source_text(source, range).map(str::to_owned)
+    let retained_source = source_text(source, range)?;
+    if range == retained.range() && retained_source.contains(['\n', '\r', '#']) {
+        return Some(format!("({retained_source})"));
+    }
+    Some(retained_source.to_owned())
 }
 
 fn nullable_optional_inner_source(
@@ -5293,7 +5297,7 @@ fn nullable_optional_inner_source(
     )
     .unwrap_or_else(|| optional.slice.range());
     let retained = source_text(source, retained_range)?;
-    if interior.trim() == retained && retained_range != optional.slice.range() {
+    if interior == retained && retained_range != optional.slice.range() {
         return Some(retained.to_owned());
     }
     if !interior.contains(['\n', '\r', '#']) {

@@ -78,3 +78,50 @@ gates specified by the task plan.
 
 No production concerns found in task scope. The requested broad final gates are
 intentionally deferred to the controller.
+
+## Review round 1 repair
+
+Review found two uncovered source-boundary cases and one test-organization
+warning. For `x: (int\n | str\n | None)`, the retained left union operand was
+multiline but had no operand-local parentheses. The union helper now adds a
+grouping context when an unparenthesized extracted operand contains a newline,
+carriage return, or comment. For `Optional[\n    (int | str)\n]`, the Optional
+fast path previously compared trimmed text and discarded the bracket interior's
+leading and trailing whitespace. It now preserves an already-grouped operand
+only when the full interior matches exactly; otherwise multiline/comment
+interior is emitted inside fresh grouping.
+
+The new unit cases assert the exact replacement and reparse both reported
+examples. The public-plan contracts evaluate both forms through
+`typing.get_type_hints`. The previous oversized contract test is split into
+annotation-site, Optional-layout, and union-layout tests, each retaining the
+shared manifest-span assertion.
+
+RED evidence:
+
+```text
+nullable_removal_preserves_multiline_annotation_syntax
+FAILED: None trailing ungrouped multiline union
+left:  "int\n | str"
+right: "(int\n | str)"
+
+nullable_optional_removal_preserves_source_layout
+FAILED: Optional grouped union surrounding whitespace
+left:  "(int | str)"
+right: "(\n    (int | str)\n)"
+```
+
+GREEN verification used the same target directory and CPython interpreter as
+above.
+
+| Command | Result |
+| --- | --- |
+| `cargo test --offline -p hoimin-cli --lib analyzer::rust::rust_tests::nullable_removal_preserves_multiline_annotation_syntax -- --exact` | 1 passed |
+| `cargo test --offline -p hoimin-cli --test operator_function_contracts` | 16 passed |
+| `cargo clippy --offline --workspace --all-targets --all-features -- -D warnings` | Exit 0 |
+| `cargo fmt --all -- --check` | Exit 0 |
+| `git diff --check` | Exit 0 |
+
+The source-boundary repair adds no fallback parsing, schema change, or public
+interface. Broad workspace and independent CLI verification remain with the
+controller.

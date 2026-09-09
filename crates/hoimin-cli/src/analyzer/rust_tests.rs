@@ -4964,6 +4964,11 @@ fn nullable_removal_preserves_multiline_annotation_syntax() {
             "(int\n | str)",
         ),
         (
+            "None trailing ungrouped multiline union",
+            "x: (int\n | str\n | None)\n",
+            "(int\n | str)",
+        ),
+        (
             "parameter Optional grouped union",
             "from typing import Optional\ndef f(value: Optional[(int\n | str)]):\n    pass\n",
             "(int\n | str)",
@@ -4977,6 +4982,11 @@ fn nullable_removal_preserves_multiline_annotation_syntax() {
             "Optional union comments",
             "from typing import Optional\nx: Optional[\n    # first\n    int\n    | str  # second\n]\n",
             "(\n    # first\n    int\n    | str  # second\n)",
+        ),
+        (
+            "Optional grouped union surrounding whitespace",
+            "from typing import Optional\nx: Optional[\n    (int | str)\n]\n",
+            "(\n    (int | str)\n)",
         ),
     ] {
         let output = analyze_types(source);
