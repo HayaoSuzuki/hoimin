@@ -29,7 +29,7 @@
 
 **Interfaces:** Consume AnnotationCollector sites and AstFacts parser tokens; produce the same AnalyzerCandidate and plan manifest schemas. Thread facts/tokens through annotation_replacements and nullable_removal privately.
 
-- [ ] Add a regression using this exact valid source, locate type_nullable_remove, require one candidate, apply its span and replacement, and assert Ruff parsing succeeds:
+- [x] Add a regression using this exact valid source, locate type_nullable_remove, require one candidate, apply its span and replacement, and assert Ruff parsing succeeds:
 
 ```python
 from typing import Optional
@@ -37,8 +37,8 @@ x: Optional[(int
  | str)]
 ```
 
-- [ ] Run the new focused analyzer regression before production edits and record the expected parse failure. Add counterparts for `None | (int\n | str)` and `(int\n | str) | None`, function parameters, return annotations and comments.
-- [ ] Implement extraction following the spec. The intended boundaries are:
+- [x] Run the new focused analyzer regression before production edits and record the expected parse failure. Add counterparts for `None | (int\n | str)` and `(int\n | str) | None`, function parameters, return annotations and comments.
+- [x] Implement extraction following the spec. The intended boundaries are:
 
 ```rust
 let range = ruff_python_ast::token::parenthesized_range(
@@ -49,9 +49,9 @@ let retained_source = &source[usize::from(range.start())..usize::from(range.end(
 
 For Optional, find its own Lsqb after the complete base, not a bracket in a comment or nested base. Preserve the original inner source. Keep a simple trivia-free argument unchanged; if removing brackets removes multiline/comment/grouping context, return a grouped expression containing that interior. Do not use Call-specific parenthesis rules for annotation operands.
 
-- [ ] Extend CPython contract tests through actual plan output. Assert the emitted candidate count and evaluate annotation objects with annotationlib.get_annotations or typing.get_type_hints in variable, parameter and return contexts. For the reproduction, the baseline type members must be `{int, str, type(None)}` and the mutant `{int, str}`. Add nested grouping, multiline without explicit operand parentheses, comments and ordinary single-line controls. Recreate source for each mutation and avoid bytecode cache reuse.
-- [ ] Run focused analyzer and operator_function_contracts tests. Record commands and outcomes in the tracked report.
-- [ ] Self-review source boundaries and the tests, then commit only this task's code, tests and docs. Do not push or create PR; the controller owns integration verification and publishing.
+- [x] Extend CPython contract tests through actual plan output. Assert the emitted candidate count and evaluate annotation objects with annotationlib.get_annotations or typing.get_type_hints in variable, parameter and return contexts. For the reproduction, the baseline type members must be `{int, str, type(None)}` and the mutant `{int, str}`. Add nested grouping, multiline without explicit operand parentheses, comments and ordinary single-line controls. Recreate source for each mutation and avoid bytecode cache reuse.
+- [x] Run focused analyzer and operator_function_contracts tests. Record commands and outcomes in the tracked report.
+- [x] Self-review source boundaries and the tests, then commit only this task's code, tests and docs. Do not push or create PR; the controller owns integration verification and publishing.
 
 ## Controller validation and delivery
 
