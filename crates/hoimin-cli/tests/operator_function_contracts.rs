@@ -123,6 +123,186 @@ const JSON_RUN_HARNESS: &str = concat!(
     "print(json.dumps(subject.run(), separators=(',', ':')))\n",
 );
 
+#[tokio::test]
+async fn structural_mapping_and_append_mutants_keep_grouped_calls() {
+    let cases = [
+        ContractCase {
+            name: "grouped mapping get",
+            operator: "structure_mapping_get_subscript",
+            original: "(holder\n        .mapping).get(key())",
+            replacement: "(holder\n        .mapping)[key()]",
+            source: r"events = []
+class Mapping:
+    def get(self, key):
+        events.append(['get', key])
+        return ['get', key]
+    def __getitem__(self, key):
+        events.append(['item', key])
+        return ['item', key]
+class Holder:
+    pass
+holder = Holder()
+holder.mapping = Mapping()
+def key():
+    events.append('key')
+    return 'x'
+def run():
+    events.clear()
+    return [(holder
+        .mapping).get(key()), events]
+",
+            harness: JSON_RUN_HARNESS,
+            baseline_stdout: "[[\"get\",\"x\"],[\"key\",[\"get\",\"x\"]]]\n",
+            mutant_stdout: "[[\"item\",\"x\"],[\"key\",[\"item\",\"x\"]]]\n",
+        },
+        ContractCase {
+            name: "grouped append",
+            operator: "structure_append_extend",
+            original: "(items\n        .append)(value())",
+            replacement: "(items\n        .extend)([value()])",
+            source: r"events = []
+class Items:
+    def append(self, value):
+        events.insert(len(events), ['append', value])
+    def extend(self, values):
+        events.insert(len(events), ['extend', values])
+items = Items()
+def value():
+    events.insert(len(events), 'value')
+    return 'x'
+def run():
+    events.clear()
+    (items
+        .append)(value())
+    return events
+",
+            harness: JSON_RUN_HARNESS,
+            baseline_stdout: "[\"value\",[\"append\",\"x\"]]\n",
+            mutant_stdout: "[\"value\",[\"extend\",[\"x\"]]]\n",
+        },
+    ];
+
+    for case in cases {
+        assert_contract(case).await;
+    }
+}
+
+#[tokio::test]
+async fn collection_mutants_keep_parenthesized_argument_evaluation() {
+    let cases = [
+        ContractCase {
+            name: "parenthesized append argument",
+            operator: "collection_append_insert",
+            original: "items.append((value()))",
+            replacement: "items.insert(0, (value()))",
+            source: r"events = []
+class Items:
+    def append(self, value):
+        events.insert(len(events), ['append', value])
+    def insert(self, index, value):
+        events.insert(len(events), ['insert', index, value])
+items = Items()
+def value():
+    events.insert(len(events), 'value')
+    return 'x'
+def run():
+    events.clear()
+    items.append((value()))
+    return events
+",
+            harness: JSON_RUN_HARNESS,
+            baseline_stdout: "[\"value\",[\"append\",\"x\"]]\n",
+            mutant_stdout: "[\"value\",[\"insert\",0,\"x\"]]\n",
+        },
+        ContractCase {
+            name: "parenthesized insert arguments",
+            operator: "collection_append_insert",
+            original: "items.insert((0), ((value())))",
+            replacement: "items.append(((value())))",
+            source: r"events = []
+class Items:
+    def append(self, value):
+        events.insert(len(events), ['append', value])
+    def insert(self, index, value):
+        events.insert(len(events), ['insert', index, value])
+items = Items()
+def value():
+    events.insert(len(events), 'value')
+    return 'x'
+def run():
+    events.clear()
+    items.insert((0), ((value())))
+    return events
+",
+            harness: JSON_RUN_HARNESS,
+            baseline_stdout: "[\"value\",[\"insert\",0,\"x\"]]\n",
+            mutant_stdout: "[\"value\",[\"append\",\"x\"]]\n",
+        },
+    ];
+
+    for case in cases {
+        assert_contract(case).await;
+    }
+}
+
+#[tokio::test]
+async fn structural_extend_keeps_call_trailing_comma() {
+    assert_contract(ContractCase {
+        name: "extend call trailing comma",
+        operator: "structure_append_extend",
+        original: "items.extend([value,],)",
+        replacement: "items.append(value,)",
+        source: r"events = []
+class Items:
+    def append(self, value):
+        events.insert(len(events), ['append', value])
+    def extend(self, values):
+        events.insert(len(events), ['extend', values])
+items = Items()
+value = 'x'
+def run():
+    events.clear()
+    items.extend([value,],)
+    return events
+",
+        harness: JSON_RUN_HARNESS,
+        baseline_stdout: "[[\"extend\",[\"x\"]]]\n",
+        mutant_stdout: "[[\"append\",\"x\"]]\n",
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn structural_extend_keeps_tuple_element_and_comment() {
+    assert_contract(ContractCase {
+        name: "extend tuple element comment",
+        operator: "structure_append_extend",
+        original: "items.extend([\n        (value(),), # kept\n    ])",
+        replacement: "items.append(\n        (value(),) # kept\n    )",
+        source: r"events = []
+class Items:
+    def append(self, value):
+        events.insert(len(events), ['append', value])
+    def extend(self, values):
+        events.insert(len(events), ['extend', values])
+items = Items()
+def value():
+    events.insert(len(events), 'value')
+    return 'x'
+def run():
+    events.clear()
+    items.extend([
+        (value(),), # kept
+    ])
+    return events
+",
+        harness: JSON_RUN_HARNESS,
+        baseline_stdout: "[\"value\",[\"extend\",[[\"x\"]]]]\n",
+        mutant_stdout: "[\"value\",[\"append\",[\"x\"]]]\n",
+    })
+    .await;
+}
+
 macro_rules! augmented_source {
     ($original_method:literal, $original_result:literal, $replacement_method:literal, $replacement_result:literal, $operator:literal) => {
         concat!(
