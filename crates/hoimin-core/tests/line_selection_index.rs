@@ -55,6 +55,23 @@ fn contains_matches_inclusive_endpoints_and_gaps() {
 }
 
 #[test]
+fn contains_matches_the_selector_predicate_for_empty_and_repeated_selections() {
+    let root = Utf8Path::new("");
+    assert_matches_oracle(root, &[], &[("src/calc.py", 0), ("src/calc.py", 3)]);
+
+    let selections = [
+        selection("src/calc.py", 3, 5),
+        selection("src/calc.py", 3, 5),
+        selection("src/calc.py", 3, 5),
+    ];
+    assert_matches_oracle(
+        root,
+        &selections,
+        &[("src/calc.py", 2), ("src/calc.py", 3), ("src/calc.py", 5)],
+    );
+}
+
+#[test]
 fn contains_matches_the_selector_predicate_for_merged_ranges_and_path_aliases() {
     let root = Utf8Path::new("/workspace");
     let selections = [

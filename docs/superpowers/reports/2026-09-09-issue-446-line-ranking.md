@@ -19,4 +19,12 @@ The core oracle covers merged and sparse ranges, endpoints, zero, `u32::MAX`, al
 
 - Equality policy is reused through the core key; CLI does not reproduce platform-specific path handling.
 - Memory is bounded by normalized selector metadata, and lookups use a file map plus range binary search.
-- The ranking change leaves symbol selection, changed/operator reasons, scoring, and sorting unchanged. Controller-owned release comparison and workspace gates remain pending.
+- The ranking change leaves symbol selection, changed/operator reasons, scoring, and sorting unchanged.
+
+## Review correction
+
+The task review identified two omitted direct-oracle inputs. The core oracle now also queries an empty selector slice and three identical path/range selectors. `cargo test --offline -p hoimin-core --test line_selection_index` passed 4 tests, and the scoped `cargo clippy --offline -p hoimin-core --test line_selection_index -- -D warnings`, formatting, and diff checks passed.
+
+## Controller validation
+
+The controller completed the workspace suite (1,596 passed, 13 ignored), all-features MSRV and Clippy checks, and complete-output release equivalence. The 10,000-candidate many-file benchmark changed from 3912.596 ms to 3.881 ms; the sparse single-file case changed from 3564.736 ms to 1.902 ms.
