@@ -836,6 +836,116 @@ async fn from_import_dunder_and_higher_order_function_replacements_execute() {
 }
 
 #[tokio::test]
+async fn nullable_annotation_removal_preserves_valid_type_members() {
+    let cases = [
+        ContractCase {
+            name: "variable Optional grouped union",
+            operator: "type_nullable_remove",
+            original: "Optional[(int\n | str)]",
+            replacement: "(int\n | str)",
+            source: "from typing import Optional, get_type_hints\nvalue: Optional[(int\n | str)]\ndef run():\n    return sorted(member.__name__ for member in get_type_hints(__import__(__name__))[\"value\"].__args__)\n",
+            harness: JSON_RUN_HARNESS,
+            baseline_stdout: "[\"NoneType\",\"int\",\"str\"]\n",
+            mutant_stdout: "[\"int\",\"str\"]\n",
+        },
+        ContractCase {
+            name: "parameter Optional grouped union",
+            operator: "type_nullable_remove",
+            original: "Optional[(int\n | str)]",
+            replacement: "(int\n | str)",
+            source: "from typing import Optional, get_type_hints\ndef target(value: Optional[(int\n | str)]):\n    pass\ndef run():\n    return sorted(member.__name__ for member in get_type_hints(target)[\"value\"].__args__)\n",
+            harness: JSON_RUN_HARNESS,
+            baseline_stdout: "[\"NoneType\",\"int\",\"str\"]\n",
+            mutant_stdout: "[\"int\",\"str\"]\n",
+        },
+        ContractCase {
+            name: "return Optional grouped union",
+            operator: "type_nullable_remove",
+            original: "Optional[(int\n | str)]",
+            replacement: "(int\n | str)",
+            source: "from typing import Optional, get_type_hints\ndef target() -> Optional[(int\n | str)]:\n    pass\ndef run():\n    return sorted(member.__name__ for member in get_type_hints(target)[\"return\"].__args__)\n",
+            harness: JSON_RUN_HARNESS,
+            baseline_stdout: "[\"NoneType\",\"int\",\"str\"]\n",
+            mutant_stdout: "[\"int\",\"str\"]\n",
+        },
+        ContractCase {
+            name: "Optional unparenthesized multiline union",
+            operator: "type_nullable_remove",
+            original: "Optional[int\n | str]",
+            replacement: "(int\n | str)",
+            source: "from typing import Optional, get_type_hints\nvalue: Optional[int\n | str]\ndef run():\n    return sorted(member.__name__ for member in get_type_hints(__import__(__name__))[\"value\"].__args__)\n",
+            harness: JSON_RUN_HARNESS,
+            baseline_stdout: "[\"NoneType\",\"int\",\"str\"]\n",
+            mutant_stdout: "[\"int\",\"str\"]\n",
+        },
+        ContractCase {
+            name: "Optional comments",
+            operator: "type_nullable_remove",
+            original: "Optional[\n    # retained leading comment\n    int\n    | str  # retained trailing comment\n]",
+            replacement: "(\n    # retained leading comment\n    int\n    | str  # retained trailing comment\n)",
+            source: "from typing import Optional, get_type_hints\nvalue: Optional[\n    # retained leading comment\n    int\n    | str  # retained trailing comment\n]\ndef run():\n    return sorted(member.__name__ for member in get_type_hints(__import__(__name__))[\"value\"].__args__)\n",
+            harness: JSON_RUN_HARNESS,
+            baseline_stdout: "[\"NoneType\",\"int\",\"str\"]\n",
+            mutant_stdout: "[\"int\",\"str\"]\n",
+        },
+        ContractCase {
+            name: "Optional nested grouping",
+            operator: "type_nullable_remove",
+            original: "Optional[((int\n | str))]",
+            replacement: "((int\n | str))",
+            source: "from typing import Optional, get_type_hints\nvalue: Optional[((int\n | str))]\ndef run():\n    return sorted(member.__name__ for member in get_type_hints(__import__(__name__))[\"value\"].__args__)\n",
+            harness: JSON_RUN_HARNESS,
+            baseline_stdout: "[\"NoneType\",\"int\",\"str\"]\n",
+            mutant_stdout: "[\"int\",\"str\"]\n",
+        },
+        ContractCase {
+            name: "None leading grouped union",
+            operator: "type_nullable_remove",
+            original: "None | (int\n | str)",
+            replacement: "(int\n | str)",
+            source: "from typing import get_type_hints\nvalue: None | (int\n | str)\ndef run():\n    return sorted(member.__name__ for member in get_type_hints(__import__(__name__))[\"value\"].__args__)\n",
+            harness: JSON_RUN_HARNESS,
+            baseline_stdout: "[\"NoneType\",\"int\",\"str\"]\n",
+            mutant_stdout: "[\"int\",\"str\"]\n",
+        },
+        ContractCase {
+            name: "None trailing grouped union",
+            operator: "type_nullable_remove",
+            original: "(int\n | str) | None",
+            replacement: "(int\n | str)",
+            source: "from typing import get_type_hints\nvalue: (int\n | str) | None\ndef run():\n    return sorted(member.__name__ for member in get_type_hints(__import__(__name__))[\"value\"].__args__)\n",
+            harness: JSON_RUN_HARNESS,
+            baseline_stdout: "[\"NoneType\",\"int\",\"str\"]\n",
+            mutant_stdout: "[\"int\",\"str\"]\n",
+        },
+        ContractCase {
+            name: "ordinary Optional",
+            operator: "type_nullable_remove",
+            original: "Optional[int]",
+            replacement: "int",
+            source: "from typing import Optional, get_type_hints\nvalue: Optional[int]\ndef run():\n    annotation = get_type_hints(__import__(__name__))[\"value\"]\n    return sorted(member.__name__ for member in getattr(annotation, \"__args__\", (annotation,)))\n",
+            harness: JSON_RUN_HARNESS,
+            baseline_stdout: "[\"NoneType\",\"int\"]\n",
+            mutant_stdout: "[\"int\"]\n",
+        },
+        ContractCase {
+            name: "ordinary trailing None",
+            operator: "type_nullable_remove",
+            original: "int | None",
+            replacement: "int",
+            source: "from typing import get_type_hints\nvalue: int | None\ndef run():\n    annotation = get_type_hints(__import__(__name__))[\"value\"]\n    return sorted(member.__name__ for member in getattr(annotation, \"__args__\", (annotation,)))\n",
+            harness: JSON_RUN_HARNESS,
+            baseline_stdout: "[\"NoneType\",\"int\"]\n",
+            mutant_stdout: "[\"int\"]\n",
+        },
+    ];
+
+    for case in cases {
+        assert_contract(case).await;
+    }
+}
+
+#[tokio::test]
 async fn python_314_none_identity_function_replacements_execute() {
     let cases = [
         ContractCase {
