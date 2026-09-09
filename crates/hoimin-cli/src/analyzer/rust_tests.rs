@@ -4946,6 +4946,72 @@ fn type_annotations_emit_supported_candidates_in_source_order() {
 }
 
 #[test]
+fn nullable_removal_preserves_multiline_annotation_syntax() {
+    for (name, source, expected) in [
+        (
+            "Optional grouped union",
+            "from typing import Optional\nx: Optional[(int\n | str)]\n",
+            "(int\n | str)",
+        ),
+        (
+            "None leading grouped union",
+            "x: None | (int\n | str)\n",
+            "(int\n | str)",
+        ),
+        (
+            "None trailing grouped union",
+            "x: (int\n | str) | None\n",
+            "(int\n | str)",
+        ),
+        (
+            "None trailing ungrouped multiline union",
+            "x: (int\n | str\n | None)\n",
+            "(int\n | str)",
+        ),
+        (
+            "parameter Optional grouped union",
+            "from typing import Optional\ndef f(value: Optional[(int\n | str)]):\n    pass\n",
+            "(int\n | str)",
+        ),
+        (
+            "return Optional grouped union",
+            "from typing import Optional\ndef f() -> Optional[(int\n | str)]:\n    pass\n",
+            "(int\n | str)",
+        ),
+        (
+            "Optional union comments",
+            "from typing import Optional\nx: Optional[\n    # first\n    int\n    | str  # second\n]\n",
+            "(\n    # first\n    int\n    | str  # second\n)",
+        ),
+        (
+            "Optional grouped union surrounding whitespace",
+            "from typing import Optional\nx: Optional[\n    (int | str)\n]\n",
+            "(\n    (int | str)\n)",
+        ),
+        (
+            "None trailing hash string literal",
+            "def resolve(value):\n    return int\nx: resolve(\"#\") | None\n",
+            "resolve(\"#\")",
+        ),
+        (
+            "Optional hash string literal",
+            "from typing import Optional\ndef resolve(value):\n    return int\nx: Optional[resolve(\"#\")]\n",
+            "resolve(\"#\")",
+        ),
+    ] {
+        let output = analyze_types(source);
+        let candidates = output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "type_nullable_remove")
+            .collect::<Vec<_>>();
+        assert_eq!(candidates.len(), 1, "{name}");
+        assert_eq!(candidates[0].replacement, expected, "{name}");
+        apply_candidate_and_reparse(source, candidates[0]);
+    }
+}
+
+#[test]
 fn typing_import_rebinding_linear() {
     for (name, source, expected) in [
         (

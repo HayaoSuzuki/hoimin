@@ -12,8 +12,8 @@ use ruff_python_ast::identifier;
 use ruff_python_ast::token::TokenKind;
 use ruff_python_ast::visitor::Visitor;
 use ruff_python_ast::{
-    CmpOp, Expr, ExprCall, ExprContext, ExprList, ExprSlice, ExprSubscript, ExprTuple, ModModule,
-    Number, Operator, Pattern, Singleton, Stmt, TypeParam, TypeParams, UnaryOp, visitor,
+    CmpOp, Expr, ExprBinOp, ExprCall, ExprContext, ExprList, ExprSlice, ExprSubscript, ExprTuple,
+    ModModule, Number, Operator, Pattern, Singleton, Stmt, TypeParam, TypeParams, UnaryOp, visitor,
 };
 use ruff_python_parser::parse_module;
 use ruff_text_size::{Ranged, TextRange};
@@ -5176,7 +5176,7 @@ fn type_annotation_candidates(
     let mut candidates = CandidatePrefix::new(request.max_candidates);
     for site in AnnotationCollector::collect(module) {
         for (replacement, operator) in
-            annotation_replacements(site.annotation, source, &site.imports)
+            annotation_replacements(site.annotation, source, facts, &site.imports)
         {
             let range = site.annotation.range();
             let start = usize::from(range.start());
@@ -5201,13 +5201,14 @@ fn type_annotation_candidates(
 fn annotation_replacements(
     annotation: &Expr,
     source: &str,
+    facts: &AstFacts<'_>,
     imports: &KnownImports,
 ) -> Vec<(String, MutationOperator)> {
     if contains_disallowed_annotation(annotation, imports) {
         return Vec::new();
     }
     let mut replacements = Vec::new();
-    if let Some(replacement) = nullable_removal(annotation, source, imports) {
+    if let Some(replacement) = nullable_removal(annotation, source, facts, imports) {
         replacements.push((replacement, MutationOperator::TypeNullableRemove));
     } else if nullable_add_allowed(annotation, imports) {
         let range = annotation.range();
@@ -5223,22 +5224,104 @@ fn annotation_replacements(
     replacements
 }
 
-fn nullable_removal(annotation: &Expr, source: &str, imports: &KnownImports) -> Option<String> {
+fn nullable_removal(
+    annotation: &Expr,
+    source: &str,
+    facts: &AstFacts<'_>,
+    imports: &KnownImports,
+) -> Option<String> {
     if let Expr::BinOp(binary) = annotation
         && binary.op == Operator::BitOr
     {
         if is_none(binary.left.as_ref()) {
-            return Some(expression_source(binary.right.as_ref(), source));
+            return nullable_union_operand_source(binary.right.as_ref(), binary, source, facts);
         }
         if is_none(binary.right.as_ref()) {
-            return Some(expression_source(binary.left.as_ref(), source));
+            return nullable_union_operand_source(binary.left.as_ref(), binary, source, facts);
         }
     }
     let Expr::Subscript(subscript) = annotation else {
         return None;
     };
     (imports.resolved_name(subscript.value.as_ref()).as_deref() == Some("typing.Optional"))
-        .then(|| expression_source(subscript.slice.as_ref(), source))
+        .then(|| nullable_optional_inner_source(subscript, source, facts))
+        .flatten()
+}
+
+fn nullable_union_operand_source(
+    retained: &Expr,
+    parent: &ExprBinOp,
+    source: &str,
+    facts: &AstFacts<'_>,
+) -> Option<String> {
+    let range = ruff_python_ast::token::parenthesized_range(
+        retained.into(),
+        parent.into(),
+        facts.tokens.expect("parser tokens are set"),
+    )
+    .unwrap_or_else(|| retained.range());
+    let retained_source = source_text(source, range)?;
+    if range == retained.range() && range_contains_annotation_trivia(source, range, facts) {
+        return Some(format!("({retained_source})"));
+    }
+    Some(retained_source.to_owned())
+}
+
+fn nullable_optional_inner_source(
+    optional: &ExprSubscript,
+    source: &str,
+    facts: &AstFacts<'_>,
+) -> Option<String> {
+    let tokens = facts.tokens.expect("parser tokens are set");
+    let base_range = ruff_python_ast::token::parenthesized_range(
+        optional.value.as_ref().into(),
+        optional.into(),
+        tokens,
+    )
+    .unwrap_or_else(|| optional.value.range());
+    let optional_tokens = facts.candidate_tokens_in_range(optional.range());
+    let opening = optional_tokens.iter().find(|token| {
+        token.kind() == TokenKind::Lsqb && token.range().start() >= base_range.end()
+    })?;
+    let closing = optional_tokens
+        .iter()
+        .rfind(|token| token.kind() == TokenKind::Rsqb)?;
+    let interior_range = TextRange::new(opening.range().end(), closing.range().start());
+    let interior = source_text(source, interior_range)?;
+    let retained_range = ruff_python_ast::token::parenthesized_range(
+        optional.slice.as_ref().into(),
+        optional.into(),
+        tokens,
+    )
+    .unwrap_or_else(|| optional.slice.range());
+    let retained = source_text(source, retained_range)?;
+    if interior == retained && retained_range != optional.slice.range() {
+        return Some(retained.to_owned());
+    }
+    if !range_contains_annotation_trivia(source, interior_range, facts) {
+        return Some(retained.to_owned());
+    }
+    Some(format!("({interior})"))
+}
+
+fn range_contains_annotation_trivia(source: &str, range: TextRange, facts: &AstFacts<'_>) -> bool {
+    let start = usize::from(range.start());
+    let end = usize::from(range.end());
+    let mut previous_end = start;
+    for token in facts.candidate_tokens_in_range(range) {
+        if matches!(
+            token.kind(),
+            TokenKind::Comment | TokenKind::Newline | TokenKind::NonLogicalNewline
+        ) {
+            return true;
+        }
+        let token_start = usize::from(token.range().start()).clamp(start, end);
+        if source[previous_end..token_start].contains(['\n', '\r', '#']) {
+            return true;
+        }
+        previous_end = usize::from(token.range().end()).clamp(previous_end, end);
+    }
+    source[previous_end..end].contains(['\n', '\r', '#'])
 }
 
 fn nullable_add_allowed(annotation: &Expr, imports: &KnownImports) -> bool {
