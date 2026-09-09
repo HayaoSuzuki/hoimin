@@ -186,6 +186,59 @@ fn glob_and_exact_file_are_deduplicated() {
 }
 
 #[test]
+fn exact_binary_files_keep_expected_hashes_with_glob_overlap_and_aliases() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = Utf8PathBuf::from_path_buf(directory.path().to_path_buf()).unwrap();
+    let bytes = [0, 0xff, b'\n', b'x'];
+    std::fs::write(root.join("data.bin"), bytes).unwrap();
+
+    let records = resolve(
+        &root,
+        &["*.bin".into()],
+        &["./data.bin".into(), "data.bin".into()],
+    )
+    .unwrap();
+
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].path, "data.bin");
+    assert_eq!(records[0].hash, blake3::hash(&bytes).to_hex().to_string());
+}
+
+#[test]
+fn exact_file_selection_order_does_not_change_sorted_records() {
+    let fixture = fixture_root(&[("z.bin", "z"), ("a.bin", "a")]);
+
+    let forward = resolve(&fixture.root, &[], &["z.bin".into(), "a.bin".into()]).unwrap();
+    let reverse = resolve(&fixture.root, &[], &["a.bin".into(), "z.bin".into()]).unwrap();
+
+    let expected = vec![
+        hoimin_core::FingerprintInputFile {
+            path: "a.bin".into(),
+            hash: blake3::hash(b"a").to_hex().to_string(),
+        },
+        hoimin_core::FingerprintInputFile {
+            path: "z.bin".into(),
+            hash: blake3::hash(b"z").to_hex().to_string(),
+        },
+    ];
+    assert_eq!(forward, expected);
+    assert_eq!(reverse, expected);
+}
+
+#[test]
+fn repeated_resolve_observes_updated_exact_file_contents() {
+    let fixture = fixture_root(&[("data.bin", "before")]);
+
+    let before = resolve(&fixture.root, &[], &["data.bin".into()]).unwrap();
+    std::fs::write(fixture.root.join("data.bin"), b"after").unwrap();
+    let after = resolve(&fixture.root, &[], &["data.bin".into()]).unwrap();
+
+    assert_eq!(before[0].hash, blake3::hash(b"before").to_hex().to_string());
+    assert_eq!(after[0].hash, blake3::hash(b"after").to_hex().to_string());
+    assert_ne!(before, after);
+}
+
+#[test]
 fn exact_file_treats_glob_metacharacters_literally() {
     let fixture = fixture_root(&[("settings[prod].toml", "x")]);
 
