@@ -1,6 +1,8 @@
 use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 
+use camino::Utf8Path;
 use hoimin_core::{
     MutationCandidate, MutationOperator, Selection, TargetSlice, logical_paths_equal,
     normalize_logical_path,
@@ -52,6 +54,19 @@ pub(crate) fn rank_candidates(
     targets: &[TargetSlice],
     candidates: Vec<MutationCandidate>,
 ) -> Vec<RankedPlanCandidate> {
+    let selected_symbols = targets
+        .iter()
+        .filter(|target| !target.symbols.is_empty())
+        .fold(
+            HashMap::<&Utf8Path, HashSet<&str>>::new(),
+            |mut selected_symbols, target| {
+                selected_symbols
+                    .entry(target.path.as_path())
+                    .or_default()
+                    .extend(target.symbols.iter().map(String::as_str));
+                selected_symbols
+            },
+        );
     let mut ranked = candidates
         .into_iter()
         .map(|candidate| {
@@ -64,13 +79,15 @@ pub(crate) fn rank_candidates(
             }) {
                 ranking_reasons.push(reason(RankingReasonCode::ExplicitLine));
             }
-            if targets.iter().any(|target| {
-                target.path == candidate.path
-                    && candidate
+            if selected_symbols
+                .get(candidate.path.as_path())
+                .is_some_and(|symbols| {
+                    candidate
                         .symbol
-                        .as_ref()
-                        .is_some_and(|symbol| target.symbols.contains(symbol))
-            }) {
+                        .as_deref()
+                        .is_some_and(|symbol| symbols.contains(symbol))
+                })
+            {
                 ranking_reasons.push(reason(RankingReasonCode::ExplicitSymbol));
             }
             if selection.changed {

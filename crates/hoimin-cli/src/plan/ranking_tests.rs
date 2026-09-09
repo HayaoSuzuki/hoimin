@@ -84,6 +84,101 @@ fn ranking_accumulates_selector_and_operator_reasons() {
 }
 
 #[test]
+fn ranking_uses_all_resolved_target_symbols_without_changing_output_order() {
+    let targets = vec![
+        TargetSlice {
+            path: Utf8PathBuf::from("src/a.py"),
+            lines: Vec::new(),
+            symbols: vec!["first".to_owned(), "shared".to_owned()],
+        },
+        TargetSlice {
+            path: Utf8PathBuf::from("src/a.py"),
+            lines: Vec::new(),
+            symbols: vec!["second".to_owned(), "shared".to_owned()],
+        },
+        TargetSlice {
+            path: Utf8PathBuf::from("src/b.py"),
+            lines: Vec::new(),
+            symbols: vec!["other".to_owned()],
+        },
+        TargetSlice {
+            path: Utf8PathBuf::from("src/empty.py"),
+            lines: Vec::new(),
+            symbols: Vec::new(),
+        },
+    ];
+
+    let ranked = rank_candidates(
+        &Selection::default(),
+        &targets,
+        vec![
+            candidate("first", "src/a.py", 1, 0, "binary_add_sub", Some("first")),
+            candidate("second", "src/a.py", 2, 0, "binary_add_sub", Some("second")),
+            candidate("shared", "src/a.py", 4, 0, "binary_add_sub", Some("shared")),
+            candidate("other", "src/b.py", 1, 0, "binary_add_sub", Some("other")),
+            candidate(
+                "wrong-file",
+                "src/b.py",
+                2,
+                0,
+                "binary_add_sub",
+                Some("first"),
+            ),
+            candidate("none", "src/a.py", 3, 0, "binary_add_sub", None),
+            candidate(
+                "empty",
+                "src/empty.py",
+                1,
+                0,
+                "binary_add_sub",
+                Some("empty"),
+            ),
+            candidate(
+                "missing-path",
+                "src/missing.py",
+                1,
+                0,
+                "binary_add_sub",
+                Some("missing"),
+            ),
+        ],
+    );
+
+    assert_eq!(
+        ranked
+            .iter()
+            .map(|entry| (entry.candidate.id.as_str(), entry.rank, entry.score))
+            .collect::<Vec<_>>(),
+        vec![
+            ("first", 1, 320),
+            ("second", 2, 320),
+            ("shared", 3, 320),
+            ("other", 4, 320),
+            ("none", 5, 70),
+            ("wrong-file", 6, 70),
+            ("empty", 7, 70),
+            ("missing-path", 8, 70),
+        ]
+    );
+    for entry in ranked.iter().take(4) {
+        assert_eq!(
+            entry.ranking_reasons,
+            vec![
+                reason(RankingReasonCode::ExplicitSymbol, 250),
+                reason(RankingReasonCode::Arithmetic, 70),
+            ]
+        );
+    }
+    for entry in ranked.iter().skip(4) {
+        assert_eq!(
+            entry.ranking_reasons,
+            vec![reason(RankingReasonCode::Arithmetic, 70)]
+        );
+    }
+    validate_ranking_against(&Selection::default(), &targets, &ranked).unwrap();
+}
+
+#[test]
 fn ranking_normalizes_explicit_line_paths_before_matching_candidates() {
     let (absolute_root, absolute_selection) = if cfg!(windows) {
         ("C:/workspace", "C:/workspace/src/calc.py")
