@@ -145,3 +145,15 @@ behavioral assertions without lint suppression.
 | `cargo test --offline -p hoimin-cli --test operator_function_contracts` | 13 passed |
 | `cargo clippy --offline --workspace --all-targets --all-features -- -D warnings` | Exit 0 |
 | `git diff --check` | Exit 0 |
+
+## Final independent validation of production commit 36d1304
+
+- `cargo test --offline --workspace --all-features -- --test-threads=1`: 1590 passed, 0 failed, 13 ignored across 67 result groups.
+- `cargo +1.88 check --offline --workspace --all-targets --all-features --locked`: passed.
+- `cargo clippy --offline --workspace --all-targets --all-features -- -D warnings`: passed; formatting and diff checks also passed.
+- Actual CLI matrix: all 16 expected mutants parsed with CPython 3.14.7; the mapping receiver/key combinations produced and parsed all 96 expected candidates.
+- Actual CLI argument matrix: all 78 expected candidates passed concrete method-name and argument-value assertions, covering grouped callees/arguments, grouped zero literals, list/call trailing commas, and comments. Before the final comma repair, 15 of these 78 cases failed.
+- The py_compile-only run still reports the repaired multiline mapping mutant as survived (score 0.0, CLI exit 1), rather than syntax-error killed.
+- Independent task review and scoped re-review approved the argument/receiver repairs. A separate final whole-branch review and final fix re-review approved the singleton-comma repair and test organization; no required source changes remain.
+
+The first verification sections above retain the implementation and review history; this section records the final code. Design and plan each contain three completed self-review rounds. No dependencies, public schemas, eligibility rules, or ranking/identity algorithms changed. Corrected replacement text can appropriately change a candidate ID, including when preserving previously discarded grouping.
