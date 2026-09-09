@@ -928,6 +928,16 @@ async fn nullable_optional_removal_preserves_source_layout() {
             baseline_stdout: "[\"NoneType\",\"int\"]\n",
             mutant_stdout: "[\"int\"]\n",
         },
+        ContractCase {
+            name: "Optional hash string literal",
+            operator: "type_nullable_remove",
+            original: "Optional[resolve(\"#\")]",
+            replacement: "resolve(\"#\")",
+            source: "from typing import Optional, get_type_hints\ndef resolve(value):\n    return int\nvalue: Optional[resolve(\"#\")]\ndef run():\n    annotation = get_type_hints(__import__(__name__))[\"value\"]\n    return sorted(member.__name__ for member in getattr(annotation, \"__args__\", (annotation,)))\n",
+            harness: JSON_RUN_HARNESS,
+            baseline_stdout: "[\"NoneType\",\"int\"]\n",
+            mutant_stdout: "[\"int\"]\n",
+        },
     ];
 
     for case in cases {
@@ -974,6 +984,16 @@ async fn nullable_union_removal_preserves_source_layout() {
             original: "int | None",
             replacement: "int",
             source: "from typing import get_type_hints\nvalue: int | None\ndef run():\n    annotation = get_type_hints(__import__(__name__))[\"value\"]\n    return sorted(member.__name__ for member in getattr(annotation, \"__args__\", (annotation,)))\n",
+            harness: JSON_RUN_HARNESS,
+            baseline_stdout: "[\"NoneType\",\"int\"]\n",
+            mutant_stdout: "[\"int\"]\n",
+        },
+        ContractCase {
+            name: "None trailing hash string literal",
+            operator: "type_nullable_remove",
+            original: "resolve(\"#\") | None",
+            replacement: "resolve(\"#\")",
+            source: "from typing import get_type_hints\ndef resolve(value):\n    return int\nvalue: resolve(\"#\") | None\ndef run():\n    annotation = get_type_hints(__import__(__name__))[\"value\"]\n    return sorted(member.__name__ for member in getattr(annotation, \"__args__\", (annotation,)))\n",
             harness: JSON_RUN_HARNESS,
             baseline_stdout: "[\"NoneType\",\"int\"]\n",
             mutant_stdout: "[\"int\"]\n",

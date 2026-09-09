@@ -125,3 +125,29 @@ above.
 The source-boundary repair adds no fallback parsing, schema change, or public
 interface. Broad workspace and independent CLI verification remain with the
 controller.
+
+## Review round 2 repair
+
+The round-one grouping check treated every raw `#` as comment trivia, so a
+supported retained expression such as `resolve("#") | None` unnecessarily
+became `(resolve("#"))`. The same condition changed
+`Optional[resolve("#")]`. The replacement logic now detects line-continuation
+and comment trivia only outside Ruff token spans, including explicit newline and
+comment tokens. A `#` or newline inside a string token is therefore ordinary
+expression content, while genuine comments and multiline layout still require
+grouping.
+
+RED regression output showed both literal-hash cases produced
+`(resolve("#"))` rather than `resolve("#")`. Unit exact-output/reparse cases
+and public-plan CPython contracts now cover the union and Optional forms; the
+existing multiline and comment cases remain in the same test groups.
+
+| Command | Result |
+| --- | --- |
+| `cargo test --offline -p hoimin-cli --lib analyzer::rust::rust_tests::nullable_removal_preserves_multiline_annotation_syntax -- --exact` | 1 passed |
+| `cargo test --offline -p hoimin-cli --test operator_function_contracts` | 16 passed |
+| `cargo clippy --offline --workspace --all-targets --all-features -- -D warnings` | Exit 0 |
+| `cargo fmt --all -- --check` | Exit 0 |
+| `git diff --check` | Exit 0 |
+
+No candidate policy, schema, or fallback parsing behavior changed.

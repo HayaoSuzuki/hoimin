@@ -5261,7 +5261,7 @@ fn nullable_union_operand_source(
     )
     .unwrap_or_else(|| retained.range());
     let retained_source = source_text(source, range)?;
-    if range == retained.range() && retained_source.contains(['\n', '\r', '#']) {
+    if range == retained.range() && range_contains_annotation_trivia(source, range, facts) {
         return Some(format!("({retained_source})"));
     }
     Some(retained_source.to_owned())
@@ -5286,10 +5286,8 @@ fn nullable_optional_inner_source(
     let closing = optional_tokens
         .iter()
         .rfind(|token| token.kind() == TokenKind::Rsqb)?;
-    let interior = source_text(
-        source,
-        TextRange::new(opening.range().end(), closing.range().start()),
-    )?;
+    let interior_range = TextRange::new(opening.range().end(), closing.range().start());
+    let interior = source_text(source, interior_range)?;
     let retained_range = ruff_python_ast::token::parenthesized_range(
         optional.slice.as_ref().into(),
         optional.into(),
@@ -5300,10 +5298,30 @@ fn nullable_optional_inner_source(
     if interior == retained && retained_range != optional.slice.range() {
         return Some(retained.to_owned());
     }
-    if !interior.contains(['\n', '\r', '#']) {
+    if !range_contains_annotation_trivia(source, interior_range, facts) {
         return Some(retained.to_owned());
     }
     Some(format!("({interior})"))
+}
+
+fn range_contains_annotation_trivia(source: &str, range: TextRange, facts: &AstFacts<'_>) -> bool {
+    let start = usize::from(range.start());
+    let end = usize::from(range.end());
+    let mut previous_end = start;
+    for token in facts.candidate_tokens_in_range(range) {
+        if matches!(
+            token.kind(),
+            TokenKind::Comment | TokenKind::Newline | TokenKind::NonLogicalNewline
+        ) {
+            return true;
+        }
+        let token_start = usize::from(token.range().start()).clamp(start, end);
+        if source[previous_end..token_start].contains(['\n', '\r', '#']) {
+            return true;
+        }
+        previous_end = usize::from(token.range().end()).clamp(previous_end, end);
+    }
+    source[previous_end..end].contains(['\n', '\r', '#'])
 }
 
 fn nullable_add_allowed(annotation: &Expr, imports: &KnownImports) -> bool {

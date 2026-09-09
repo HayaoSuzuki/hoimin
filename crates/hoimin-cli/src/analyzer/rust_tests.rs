@@ -4988,6 +4988,16 @@ fn nullable_removal_preserves_multiline_annotation_syntax() {
             "from typing import Optional\nx: Optional[\n    (int | str)\n]\n",
             "(\n    (int | str)\n)",
         ),
+        (
+            "None trailing hash string literal",
+            "def resolve(value):\n    return int\nx: resolve(\"#\") | None\n",
+            "resolve(\"#\")",
+        ),
+        (
+            "Optional hash string literal",
+            "from typing import Optional\ndef resolve(value):\n    return int\nx: Optional[resolve(\"#\")]\n",
+            "resolve(\"#\")",
+        ),
     ] {
         let output = analyze_types(source);
         let candidates = output

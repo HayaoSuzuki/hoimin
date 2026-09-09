@@ -39,3 +39,13 @@ passed 1 test, `operator_function_contracts` passed 16 tests, and
 `cargo clippy --offline --workspace --all-targets --all-features -- -D warnings`,
 formatting, and diff checks exited 0. The controller owns the final workspace
 and CLI-matrix verification.
+
+## Review round 2 repair
+
+Trivia detection now inspects gaps between Ruff parser tokens and explicit
+comment/newline tokens. It groups actual multiline or commented source without
+mistaking `#` inside a string literal for a comment. Regressions and public-plan
+contracts cover both `resolve("#") | None` and `Optional[resolve("#")]`, while
+the multiline/comment cases remain covered. The focused analyzer test passed,
+the 16-test contract target passed, and warnings-denied all-targets/all-features
+Clippy, formatting, and diff checks passed.
