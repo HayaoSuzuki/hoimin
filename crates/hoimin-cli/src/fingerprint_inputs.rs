@@ -62,28 +62,30 @@ pub fn resolve(
                 FingerprintInputError::ExactUnsupportedFile(format!("{path}: {error}"))
             }
         })?;
-        selected.insert(path, Some(bytes));
+        selected.insert(path, Some(blake3::hash(&bytes)));
     }
 
     selected
         .into_iter()
-        .map(|(path, exact_bytes)| {
-            let bytes = exact_bytes.map_or_else(
+        .map(|(path, exact_digest)| {
+            let digest = exact_digest.map_or_else(
                 || {
-                    workspace::read_root_relative(root, &path).map_err(|error| match error {
-                        RootRelativeReadError::NotFound => {
-                            FingerprintInputError::UnsupportedFile(format!("{path}: not found"))
-                        }
-                        RootRelativeReadError::Other(error) => {
-                            FingerprintInputError::UnsupportedFile(format!("{path}: {error}"))
-                        }
-                    })
+                    workspace::read_root_relative(root, &path)
+                        .map_err(|error| match error {
+                            RootRelativeReadError::NotFound => {
+                                FingerprintInputError::UnsupportedFile(format!("{path}: not found"))
+                            }
+                            RootRelativeReadError::Other(error) => {
+                                FingerprintInputError::UnsupportedFile(format!("{path}: {error}"))
+                            }
+                        })
+                        .map(|bytes| blake3::hash(&bytes))
                 },
                 Ok,
             )?;
             Ok(FingerprintInputFile {
                 path,
-                hash: blake3::hash(&bytes).to_hex().to_string(),
+                hash: digest.to_hex().to_string(),
             })
         })
         .collect()
