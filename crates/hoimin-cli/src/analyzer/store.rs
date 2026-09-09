@@ -108,11 +108,22 @@ impl CandidateStore {
                 limit: MAX_SPOOL_RECORD_BYTES,
             });
         }
-        serde_json::to_writer(self.file.as_file_mut(), candidate)
-            .map_err(|error| StoreError::Io(error.to_string()))?;
+        let record_size = counter
+            .bytes
+            .checked_add(1)
+            .ok_or(StoreError::RecordTooLarge {
+                limit: MAX_SPOOL_RECORD_BYTES,
+            })?;
+        let record_size = usize::try_from(record_size).map_err(|_| StoreError::RecordTooLarge {
+            limit: MAX_SPOOL_RECORD_BYTES,
+        })?;
+        let mut record = Vec::with_capacity(record_size);
+        serde_json::to_writer(&mut record, candidate)
+            .map_err(|error| StoreError::CorruptRecord(error.to_string()))?;
+        record.push(b'\n');
         self.file
             .as_file_mut()
-            .write_all(b"\n")
+            .write_all(&record)
             .map_err(|error| io_error(&error))?;
         self.count = expected;
         self.records_written = expected;
@@ -547,6 +558,41 @@ mod tests {
         assert_eq!(store.count(), 0);
         assert_eq!(store.records_written, 0);
         assert_eq!(store.file.as_file().metadata().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn push_writes_one_complete_jsonl_record() {
+        let candidate = candidate_with_payload_len(512);
+        let mut expected = serde_json::to_vec(&candidate).unwrap();
+        expected.push(b'\n');
+        let mut store = CandidateStore::new(1).unwrap();
+
+        store.push(&candidate).unwrap();
+
+        assert_eq!(store.file.as_file().metadata().unwrap().len(), 513);
+        let spool = FinishedSpool(store.finish().unwrap());
+        assert_eq!(std::fs::read(&spool.0.token).unwrap(), expected);
+    }
+
+    #[test]
+    fn push_write_error_keeps_counts_and_tempfile_cleanup() {
+        let temporary = NamedTempFile::new().unwrap();
+        let path = temporary.path().to_owned();
+        let (_file, temp_path) = temporary.into_parts();
+        let read_only = OpenOptions::new().read(true).open(&path).unwrap();
+        let mut store =
+            CandidateStore::with_file(1, NamedTempFile::from_parts(read_only, temp_path));
+
+        assert!(matches!(
+            store.push(&candidate_with_payload_len(512)),
+            Err(StoreError::Io(_))
+        ));
+        assert_eq!(store.count(), 0);
+        assert_eq!(store.records_written, 0);
+        assert_eq!(store.file.as_file().metadata().unwrap().len(), 0);
+
+        drop(store);
+        assert!(!path.exists());
     }
 
     fn candidate_with_payload_len(target: u64) -> MutationCandidate {
