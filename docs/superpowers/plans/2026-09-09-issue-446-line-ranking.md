@@ -29,7 +29,7 @@
 
 **Interfaces:** Introduce public LineSelectionIndex::new(root, selections) and contains(path,line) as specified. Consume existing path_equality_key and normalize_ranges internally. ranking's external interfaces remain unchanged.
 
-- [ ] Add tests for the new index before implementation. First require inclusive endpoints and gaps with ranges [2,4], [4,6], [9,9], compare queries0..12 with this reference:
+- [x] Add tests for the new index before implementation. First require inclusive endpoints and gaps with ranges [2,4], [4,6], [9,9], compare queries0..12 with this reference:
 
 ```rust
 let expected = selections.iter().any(|selected| {
@@ -42,17 +42,17 @@ assert_eq!(index.contains(candidate_path, line), expected);
 
 Record the initial unavailable-index failure as the RED for the new API. The performance defect is separately established by the existing old-production benchmark; output compatibility tests are expected to pass against both algorithms.
 
-- [ ] Implement grouped normalized intervals with existing core equality keys. Preserve the old predicate for invalid selector paths and inverted intervals. Use binary search rather than any over every interval:
+- [x] Implement grouped normalized intervals with existing core equality keys. Preserve the old predicate for invalid selector paths and inverted intervals. Use binary search rather than any over every interval:
 
 ```rust
 let end = ranges.partition_point(|range| range.start <= line);
 end.checked_sub(1).is_some_and(|index| line <= ranges[index].end)
 ```
 
-- [ ] Add deterministic differential cases for repeated/overlapping/adjacent/sparse ranges; multiple files; 0/u32::MAX; absolute/relative/dot aliases; invalid and mismatched paths. Test Unix case and literal backslash differences. Add cfg(windows) tests for case, separators and non-ASCII simple-uppercase behavior using the same oracle.
-- [ ] Replace ranking's ExplicitLine loop with a single constructed index and contains(candidate.path,candidate.line). Preserve selected_symbols and all scoring/sorting logic.
-- [ ] Extend ranking tests to exercise mixed line/file/changed/symbol conditions, multiple files and gaps; compare reasons, scores, ranks and ordering. Run `cargo test --offline -p hoimin-core --test line_selection_index` and focused `cargo test --offline -p hoimin-cli --lib plan::ranking_tests`.
-- [ ] Self-review, record focused evidence in the tracked report and commit code/tests/docs. Controller owns release comparison, whole-workspace/MSRV/Clippy gates, reviews and PR; do not duplicate those suites or publish.
+- [x] Add deterministic differential cases for repeated/overlapping/adjacent/sparse ranges; multiple files; 0/u32::MAX; absolute/relative/dot aliases; invalid and mismatched paths. Test Unix case and literal backslash differences. Add cfg(windows) tests for case, separators and non-ASCII simple-uppercase behavior using the same oracle.
+- [x] Replace ranking's ExplicitLine loop with a single constructed index and contains(candidate.path,candidate.line). Preserve selected_symbols and all scoring/sorting logic.
+- [x] Extend ranking tests to exercise mixed line/file/changed/symbol conditions, multiple files and gaps; compare reasons, scores, ranks and ordering. Run `cargo test --offline -p hoimin-core --test line_selection_index` and focused `cargo test --offline -p hoimin-cli --lib plan::ranking_tests`.
+- [x] Self-review, record focused evidence in the tracked report and commit code/tests/docs. Controller owns release comparison, whole-workspace/MSRV/Clippy gates, reviews and PR; do not duplicate those suites or publish.
 
 ## Controller validation and delivery
 
