@@ -179,6 +179,56 @@ fn ranking_uses_all_resolved_target_symbols_without_changing_output_order() {
 }
 
 #[test]
+fn ranking_keeps_explicit_symbol_paths_exact() {
+    let dot_path = rank_candidates(
+        &Selection::default(),
+        &[TargetSlice {
+            path: Utf8PathBuf::from("src/./a.py"),
+            lines: Vec::new(),
+            symbols: vec!["selected".to_owned()],
+        }],
+        vec![candidate(
+            "candidate",
+            "src/a.py",
+            1,
+            0,
+            "binary_add_sub",
+            Some("selected"),
+        )],
+    );
+    assert_eq!(dot_path[0].score, 320);
+    assert_eq!(
+        dot_path[0].ranking_reasons,
+        vec![
+            reason(RankingReasonCode::ExplicitSymbol, 250),
+            reason(RankingReasonCode::Arithmetic, 70),
+        ]
+    );
+
+    let case_distinct = rank_candidates(
+        &Selection::default(),
+        &[TargetSlice {
+            path: Utf8PathBuf::from("src/A.py"),
+            lines: Vec::new(),
+            symbols: vec!["selected".to_owned()],
+        }],
+        vec![candidate(
+            "candidate",
+            "src/a.py",
+            1,
+            0,
+            "binary_add_sub",
+            Some("selected"),
+        )],
+    );
+    assert_eq!(case_distinct[0].score, 70);
+    assert_eq!(
+        case_distinct[0].ranking_reasons,
+        vec![reason(RankingReasonCode::Arithmetic, 70)]
+    );
+}
+
+#[test]
 fn ranking_normalizes_explicit_line_paths_before_matching_candidates() {
     let (absolute_root, absolute_selection) = if cfg!(windows) {
         ("C:/workspace", "C:/workspace/src/calc.py")
