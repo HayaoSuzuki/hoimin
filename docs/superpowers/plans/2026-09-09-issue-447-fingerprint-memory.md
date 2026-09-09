@@ -27,7 +27,7 @@
 
 **Interfaces:** resolve and recheck/recheck_manifest signatures remain unchanged. The local selection map stores Option<blake3::Hash> instead of Option<Vec<u8>>. workspace::read_root_relative remains the reader.
 
-- [ ] Before production edits, run existing fingerprint_inputs tests and add compatibility cases with binary content, normalized duplicate exact paths, mixed glob/exact selections and repeat resolve after file modification. Example expected digest uses the actual byte content:
+- [x] Before production edits, run existing fingerprint_inputs tests and add compatibility cases with binary content, normalized duplicate exact paths, mixed glob/exact selections and repeat resolve after file modification. Example expected digest uses the actual byte content:
 
 ```rust
 let bytes = [0, 0xff, b'\n', b'x'];
@@ -38,8 +38,8 @@ assert_eq!(records[0].path, "data.bin");
 assert_eq!(records[0].hash, blake3::hash(&bytes).to_hex().to_string());
 ```
 
-- [ ] Record performance RED using the existing reproduced before-binary RSS evidence in the Issue; correctness compatibility tests should pass before the optimization. Do not distort a behavior test to manufacture failure for a performance-only change.
-- [ ] Keep the safe exact read/error mapping, but retain the digest:
+- [x] Record performance RED using the existing reproduced before-binary RSS evidence in the Issue; correctness compatibility tests should pass before the optimization. Do not distort a behavior test to manufacture failure for a performance-only change.
+- [x] Keep the safe exact read/error mapping, but retain the digest:
 
 ```rust
 let digest = blake3::hash(&bytes);
@@ -47,8 +47,8 @@ selected.insert(path, Some(digest));
 ```
 
 In the final map traversal, use the existing digest or read/hash the glob file with unchanged include-error mapping; only then convert the digest to the emitted hex string. Ensure no Vec of exact bytes is stored in map or closure state across iterations.
-- [ ] Run `cargo test --offline -p hoimin-cli --test fingerprint_inputs`, relevant CLI config fingerprint tests and `plan` integration fingerprint tests. Preserve existing failure ordering, symlink and update detection tests. Inspect the actual test names before choosing filters and confirm nonzero counts.
-- [ ] Self-review lifetime, duplicate read behavior and errors. Write tracked report, commit implementation/tests/docs and report back. Controller owns paired actual CLI memory measurement, whole-workspace/MSRV/Clippy gates, independent reviews and PR; no publishing or duplicate broad suites.
+- [x] Run `cargo test --offline -p hoimin-cli --test fingerprint_inputs`, relevant CLI config fingerprint tests and `plan` integration fingerprint tests. Preserve existing failure ordering, symlink and update detection tests. Inspect the actual test names before choosing filters and confirm nonzero counts.
+- [x] Self-review lifetime, duplicate read behavior and errors. Write tracked report, commit implementation/tests/docs and report back. Controller owns paired actual CLI memory measurement, whole-workspace/MSRV/Clippy gates, independent reviews and PR; no publishing or duplicate broad suites.
 
 ## Controller validation and delivery
 
