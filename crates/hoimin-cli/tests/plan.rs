@@ -1,8 +1,11 @@
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
 use std::time::{Duration, Instant};
 
+#[cfg(unix)]
+use hoimin_cli::target::git::{ResolveGitChanges, handle_git};
 use hoimin_cli::{
     analyzer::discover_targets,
     cli::{OutputFormat, ParsedCommand, TopSelectionPolicy, VerifySelection, parse_from},
@@ -12,11 +15,11 @@ use hoimin_cli::{
     },
     shell,
     target::TargetHandler,
-    target::git::{ResolveGitChanges, handle_git},
 };
+#[cfg(unix)]
+use hoimin_core::EffectId;
 use hoimin_core::{
-    EffectId, MAX_JOBS, MutationCandidate, OutputFormat as CoreOutputFormat,
-    VerificationSelectionPolicy,
+    MAX_JOBS, MutationCandidate, OutputFormat as CoreOutputFormat, VerificationSelectionPolicy,
 };
 
 const TEST_MIN_FREE_SPACE: &str = "1B";

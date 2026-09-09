@@ -396,6 +396,9 @@ async fn collect_current_worktree_paths(
             }
         })
         .collect::<Result<Vec<_>, _>>()?;
+    if eligible_targets.is_some_and(<[TargetSlice]>::is_empty) {
+        return Ok(());
+    }
     let paths = eligible_targets.map_or_else(
         || paths.clone(),
         |eligible_targets| {

@@ -514,6 +514,43 @@ async fn changed_target_with_an_empty_explicit_scope_does_not_read_untracked_fil
     assert!(targets.is_empty());
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn changed_target_with_only_an_excluded_unreadable_file_skips_current_file_reads() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let repo = FixtureRepo::new();
+    repo.write("pkg/excluded.py", "one\ntwo\n");
+    let excluded = repo.temp.path().join("pkg/excluded.py");
+    fs::set_permissions(&excluded, fs::Permissions::from_mode(0o000)).unwrap();
+    if fs::read(&excluded).is_ok() {
+        return;
+    }
+
+    let targets = TargetHandler::resolve(&Selection {
+        root: repo.root(),
+        sources: vec![Utf8PathBuf::from("pkg")],
+        excludes: vec!["pkg/excluded.py".into()],
+        changed: true,
+        ..Selection::default()
+    })
+    .await
+    .unwrap();
+
+    assert!(targets.is_empty());
+}
+
+#[tokio::test]
+async fn standalone_git_skips_an_indexed_unborn_path_replaced_by_a_directory() {
+    let repo = FixtureRepo::new();
+    repo.write("pkg/indexed.py", "one\ntwo\n");
+    repo.git(&["add", "pkg/indexed.py"]);
+    repo.remove("pkg/indexed.py");
+    fs::create_dir(repo.temp.path().join("pkg/indexed.py")).unwrap();
+
+    assert!(repo.changed_lines(None).await.changed.is_empty());
+}
+
 #[tokio::test]
 async fn standalone_git_skips_an_indexed_path_when_its_parent_disappears() {
     let repo = FixtureRepo::new();

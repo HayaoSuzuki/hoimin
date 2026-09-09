@@ -241,13 +241,21 @@ impl WorkerRoot {
         let (parent, name) = self.open_parent(path, false)?;
         #[cfg(test)]
         parent_opened("read", path);
+        Self::reject_non_file(&parent, &name, path, "read worker file")?;
         #[cfg(windows)]
         {
-            windows::read(&parent, &name, path)
+            match windows::read(&parent, &name, path) {
+                Ok(contents) => Ok(contents),
+                Err(_) if Self::entry_is_non_file(&parent, &name) => {
+                    Err(WorkspaceError::InvalidPath {
+                        path: path.to_owned(),
+                    })
+                }
+                Err(error) => Err(error),
+            }
         }
         #[cfg(unix)]
         {
-            Self::reject_non_file(&parent, &name, path, "read worker file")?;
             let mut options = cap_primitives::fs::OpenOptions::new();
             options
                 .read(true)
@@ -1138,7 +1146,6 @@ impl WorkerRoot {
         }
     }
 
-    #[cfg(unix)]
     fn reject_non_file(
         parent: &File,
         name: &OsString,
@@ -1146,18 +1153,19 @@ impl WorkerRoot {
         operation: &'static str,
     ) -> Result<(), WorkspaceError> {
         match cap_primitives::fs::stat(parent, Path::new(name), FollowSymlinks::No) {
-            Ok(metadata) if !metadata.is_file() => Err(WorkspaceError::InvalidPath {
-                path: logical_path.to_owned(),
-            }),
+            Ok(metadata) if is_link_or_reparse(&metadata) || !metadata.is_file() => {
+                Err(WorkspaceError::InvalidPath {
+                    path: logical_path.to_owned(),
+                })
+            }
             Ok(_) => Ok(()),
             Err(error) => Err(Self::map_entry_error(operation, logical_path, error)),
         }
     }
 
-    #[cfg(unix)]
     fn entry_is_non_file(parent: &File, name: &OsString) -> bool {
         cap_primitives::fs::stat(parent, Path::new(name), FollowSymlinks::No)
-            .is_ok_and(|metadata| !metadata.is_file())
+            .is_ok_and(|metadata| is_link_or_reparse(&metadata) || !metadata.is_file())
     }
 
     fn reject_link_if_present(
