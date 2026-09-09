@@ -6,7 +6,7 @@ use hoimin_core::{
     intersect_changed, resolve_explicit,
 };
 
-use self::git::resolve_changed;
+use self::git::resolve_changed_scoped;
 
 pub struct TargetHandler;
 
@@ -24,7 +24,12 @@ impl TargetHandler {
             return Ok(explicit);
         }
 
-        let changed = resolve_changed(&selection.root, selection.diff_base.as_deref()).await?;
+        let changed = resolve_changed_scoped(
+            &selection.root,
+            selection.diff_base.as_deref(),
+            Some(&explicit),
+        )
+        .await?;
         if explicit.is_empty()
             && (!selection.sources.is_empty()
                 || !selection.files.is_empty()

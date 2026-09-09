@@ -1,7 +1,11 @@
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
+use std::time::{Duration, Instant};
 
+#[cfg(unix)]
+use hoimin_cli::target::git::{ResolveGitChanges, handle_git};
 use hoimin_cli::{
     analyzer::discover_targets,
     cli::{OutputFormat, ParsedCommand, TopSelectionPolicy, VerifySelection, parse_from},
@@ -12,11 +16,26 @@ use hoimin_cli::{
     shell,
     target::TargetHandler,
 };
+#[cfg(unix)]
+use hoimin_core::EffectId;
 use hoimin_core::{
     MAX_JOBS, MutationCandidate, OutputFormat as CoreOutputFormat, VerificationSelectionPolicy,
 };
 
 const TEST_MIN_FREE_SPACE: &str = "1B";
+
+#[cfg(unix)]
+struct TestChild(std::process::Child);
+
+#[cfg(unix)]
+impl Drop for TestChild {
+    fn drop(&mut self) {
+        if self.0.try_wait().is_ok_and(|status| status.is_none()) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+}
 
 #[cfg(target_os = "macos")]
 #[tokio::test]
@@ -263,6 +282,102 @@ async fn changed_selection_plan_matches_the_real_run_candidate_and_id() {
         .map(|candidate| candidate.id.as_str())
         .collect::<BTreeSet<_>>();
     assert_eq!(run_ids, plan_ids);
+}
+
+#[cfg(unix)]
+#[test]
+fn changed_plan_skips_an_untracked_fifo_with_a_bounded_subprocess() {
+    let (project, _) = Project::new_changed_git();
+    let fifo = project.path.join("src/pipe");
+    let output = std::process::Command::new("mkfifo")
+        .arg(&fifo)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "mkfifo failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::os::unix::fs::symlink("pipe", project.path.join("src/stalled.py")).unwrap();
+    assert!(
+        run_git(
+            &project.path,
+            &["ls-files", "--others", "--exclude-standard"]
+        )
+        .lines()
+        .any(|path| path == "src/stalled.py")
+    );
+
+    let mut child = TestChild(
+        std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--ignored", "--exact", "changed_plan_fifo_child"])
+            .env("HOIMIN_FIFO_PLAN_ROOT", &project.path)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let status = loop {
+        if let Some(status) = child.0.try_wait().unwrap() {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            child.0.kill().unwrap();
+            break child.0.wait().unwrap();
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+
+    assert!(status.success(), "plan subprocess status: {status}");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+#[ignore = "subprocess fixture for the changed-plan FIFO regression"]
+async fn changed_plan_fifo_child() {
+    let root = PathBuf::from(std::env::var_os("HOIMIN_FIFO_PLAN_ROOT").unwrap());
+    let git_root = camino::Utf8PathBuf::from_path_buf(root.clone()).unwrap();
+    let changed = handle_git(ResolveGitChanges {
+        id: EffectId(31),
+        root: git_root,
+        diff_base: None,
+    })
+    .await
+    .unwrap();
+    assert!(
+        !changed
+            .changed
+            .contains_key(camino::Utf8Path::new("src/stalled.py"))
+    );
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let exit = hoimin_cli::run_with_io(
+        [
+            OsString::from("hoimin"),
+            OsString::from("plan"),
+            OsString::from("--root"),
+            root.into_os_string(),
+            OsString::from("--source"),
+            OsString::from("src"),
+            OsString::from("--changed"),
+            OsString::from("--operators"),
+            OsString::from("binary_add_sub"),
+            OsString::from("--min-free-space"),
+            OsString::from(TEST_MIN_FREE_SPACE),
+            OsString::from("--allow-best-effort-memory"),
+            OsString::from("--"),
+            python_executable().into_os_string(),
+            OsString::from("-c"),
+            OsString::from("pass"),
+        ],
+        &mut stdout,
+        &mut stderr,
+    )
+    .await;
+
+    assert_eq!(exit, 0, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert!(!stdout.is_empty());
 }
 
 #[tokio::test]

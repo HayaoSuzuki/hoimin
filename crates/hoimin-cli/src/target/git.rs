@@ -1,10 +1,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use camino::{Utf8Path, Utf8PathBuf};
-use hoimin_core::{EffectFailed, EffectId, LineRange, TargetError, normalize_changed};
+use hoimin_core::{
+    EffectFailed, EffectId, LineRange, TargetError, TargetSlice, intersect_changed,
+    normalize_changed,
+};
 use tokio::process::Command;
 
-use crate::portable_path;
+use crate::{
+    portable_path,
+    workspace::{WorkerRoot, WorkspaceError},
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolveGitChanges {
@@ -35,6 +41,14 @@ pub async fn handle_git(request: ResolveGitChanges) -> Result<GitChangesResolved
 pub(crate) async fn resolve_changed(
     root: &Utf8Path,
     diff_base: Option<&str>,
+) -> Result<BTreeMap<Utf8PathBuf, Vec<LineRange>>, TargetError> {
+    resolve_changed_scoped(root, diff_base, None).await
+}
+
+pub(crate) async fn resolve_changed_scoped(
+    root: &Utf8Path,
+    diff_base: Option<&str>,
+    eligible_targets: Option<&[TargetSlice]>,
 ) -> Result<BTreeMap<Utf8PathBuf, Vec<LineRange>>, TargetError> {
     ensure_git_worktree(root).await?;
     let mut changed = BTreeMap::<Utf8PathBuf, Vec<LineRange>>::new();
@@ -83,12 +97,12 @@ pub(crate) async fn resolve_changed(
         parse_binary_numstat(&output, &mut excluded)?;
     } else {
         let indexed = run_git(root, &["ls-files", "-z"]).await?;
-        collect_current_worktree_paths(root, &indexed, &mut changed).await?;
+        collect_current_worktree_paths(root, &indexed, &mut changed, eligible_targets).await?;
     }
     changed.retain(|path, _| !excluded.contains(path));
 
     let untracked = run_git(root, &["ls-files", "--others", "--exclude-standard", "-z"]).await?;
-    collect_current_worktree_paths(root, &untracked, &mut changed).await?;
+    collect_current_worktree_paths(root, &untracked, &mut changed, eligible_targets).await?;
     Ok(normalize_changed(changed))
 }
 
@@ -361,37 +375,89 @@ async fn collect_current_worktree_paths(
     root: &Utf8Path,
     output: &[u8],
     changed: &mut BTreeMap<Utf8PathBuf, Vec<LineRange>>,
+    eligible_targets: Option<&[TargetSlice]>,
 ) -> Result<(), TargetError> {
-    for raw_path in output
+    let paths = output
         .split(|byte| *byte == 0)
         .filter(|path| !path.is_empty())
-    {
-        let path = std::str::from_utf8(raw_path)
-            .map_err(|_| TargetError::GitFailed("Git path is not valid UTF-8".into()))?;
-        let path = portable_path::from_git(path)
-            .map_err(|error| TargetError::GitFailed(error.to_string()))?;
-        let path = Utf8PathBuf::from(path);
-        if !is_python(&path) {
-            continue;
+        .filter_map(|raw_path| {
+            let path = std::str::from_utf8(raw_path)
+                .map_err(|_| TargetError::GitFailed("Git path is not valid UTF-8".into()));
+            let path = path.and_then(|path| {
+                let path = portable_path::from_git(path)
+                    .map_err(|error| TargetError::GitFailed(error.to_string()))?;
+                let path = Utf8PathBuf::from(path);
+                Ok(path)
+            });
+            match path {
+                Ok(path) if is_python(&path) => Some(Ok(path)),
+                Ok(_) => None,
+                Err(error) => Some(Err(error)),
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if eligible_targets.is_some_and(<[TargetSlice]>::is_empty) {
+        return Ok(());
+    }
+    let paths = eligible_targets.map_or_else(
+        || paths.clone(),
+        |eligible_targets| {
+            let current = paths
+                .iter()
+                .cloned()
+                .map(|path| {
+                    (
+                        path,
+                        vec![LineRange {
+                            start: 1,
+                            end: u32::MAX,
+                        }],
+                    )
+                })
+                .collect();
+            intersect_changed(eligible_targets, &current)
+                .into_iter()
+                .map(|target| target.path)
+                .collect()
+        },
+    );
+    let root = root.to_owned();
+    let current = tokio::task::spawn_blocking(move || {
+        let worker_root =
+            WorkerRoot::open(root).map_err(|error| TargetError::GitFailed(error.to_string()))?;
+        let mut current = BTreeMap::<Utf8PathBuf, Vec<LineRange>>::new();
+        for path in paths {
+            let contents = match worker_root.read(&path) {
+                Ok(contents) => contents,
+                Err(WorkspaceError::InvalidPath { .. }) => continue,
+                Err(error) => match worker_root.is_missing(&path) {
+                    Ok(true) => continue,
+                    Ok(false) => return Err(TargetError::GitFailed(error.to_string())),
+                    Err(missing_error) => {
+                        return Err(TargetError::GitFailed(missing_error.to_string()));
+                    }
+                },
+            };
+            if contents.contains(&0) || contents.is_empty() {
+                continue;
+            }
+            let mut line_count = usize::from(!contents.ends_with(b"\n"));
+            for byte in &contents {
+                line_count += usize::from(*byte == b'\n');
+            }
+            let end = u32::try_from(line_count)
+                .map_err(|_| TargetError::GitFailed("Python file has too many lines".into()))?;
+            current
+                .entry(path)
+                .or_default()
+                .push(LineRange { start: 1, end });
         }
-        let contents = match tokio::fs::read(root.join(&path)).await {
-            Ok(contents) => contents,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(error) => return Err(TargetError::GitFailed(error.to_string())),
-        };
-        if contents.contains(&0) || contents.is_empty() {
-            continue;
-        }
-        let mut line_count = usize::from(!contents.ends_with(b"\n"));
-        for byte in &contents {
-            line_count += usize::from(*byte == b'\n');
-        }
-        let end = u32::try_from(line_count)
-            .map_err(|_| TargetError::GitFailed("Python file has too many lines".into()))?;
-        changed
-            .entry(path)
-            .or_default()
-            .push(LineRange { start: 1, end });
+        Ok(current)
+    })
+    .await
+    .map_err(|error| TargetError::GitFailed(error.to_string()))??;
+    for (path, ranges) in current {
+        changed.entry(path).or_default().extend(ranges);
     }
     Ok(())
 }
@@ -671,10 +737,14 @@ mod tests {
         std::fs::write(directory.path().join(r"literal\work.py"), "x = 1\n").unwrap();
         let root = Utf8PathBuf::from_path_buf(directory.path().to_path_buf()).unwrap();
 
-        let error =
-            collect_current_worktree_paths(&root, b"literal\\work.py\0", &mut BTreeMap::new())
-                .await
-                .unwrap_err();
+        let error = collect_current_worktree_paths(
+            &root,
+            b"literal\\work.py\0",
+            &mut BTreeMap::new(),
+            None,
+        )
+        .await
+        .unwrap_err();
 
         assert!(error.to_string().contains(r"literal\work.py"), "{error}");
     }
