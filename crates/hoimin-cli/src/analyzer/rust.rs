@@ -2629,15 +2629,35 @@ fn extend_to_append_replacement(
     let closing = tokens
         .iter()
         .rfind(|token| token.kind() == TokenKind::Rsqb)?;
-    replace_within_call(
-        source,
-        call,
-        [
-            (attribute.attr.range(), "append"),
-            (opening.range(), ""),
-            (closing.range(), ""),
-        ],
-    )
+    let trailing_comma = facts
+        .candidate_tokens_in_range(TextRange::new(
+            list.elts[0].range().end(),
+            closing.range().start(),
+        ))
+        .iter()
+        .find(|token| token.kind() == TokenKind::Comma);
+    if let Some(trailing_comma) = trailing_comma {
+        replace_within_call(
+            source,
+            call,
+            [
+                (attribute.attr.range(), "append"),
+                (opening.range(), ""),
+                (closing.range(), ""),
+                (trailing_comma.range(), ""),
+            ],
+        )
+    } else {
+        replace_within_call(
+            source,
+            call,
+            [
+                (attribute.attr.range(), "append"),
+                (opening.range(), ""),
+                (closing.range(), ""),
+            ],
+        )
+    }
 }
 
 fn mapping_get_to_subscript_replacement(

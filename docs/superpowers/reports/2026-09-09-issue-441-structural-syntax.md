@@ -118,3 +118,30 @@ zero and value insert arguments, retained argument comments, and an inner
 receiver subscript. The external CPython contract verifies both collection
 directions with grouped argument evaluation. The controller owns the fresh
 whole-workspace, MSRV, full-Clippy, and CLI-probe verification of this revision.
+
+## Final review repair and test organization
+
+Final review found that `extend_to_append_replacement` retained a singleton
+list's trailing comma after removing its brackets. This produced
+`items.append(value,,)` for `items.extend([value,],)`, and changed a grouped
+list into a tuple for `items.extend(([value,]))`. The new RED exact-output test
+also covers a tuple element and a trailing element comment.
+
+The repair removes only the comma token between the single list element and the
+list closing bracket. A call's trailing comma and a tuple element's internal
+comma remain untouched. CPython contract cases verify the resulting call with a
+trailing comma plus tuple and comment preservation.
+
+Review also found Clippy `too_many_lines` failures in the two expanded tests.
+The unit test is now split into named mapping/callee and collection-argument
+cases; the CPython contracts are split into grouped mapping/append, grouped
+collection arguments, and the two singleton-extend cases. This preserves the
+behavioral assertions without lint suppression.
+
+| Command | Result |
+| --- | --- |
+| `cargo fmt --check` | Exit 0 |
+| `cargo test --offline -p hoimin-cli --lib structure_` | 10 passed |
+| `cargo test --offline -p hoimin-cli --test operator_function_contracts` | 13 passed |
+| `cargo clippy --offline --workspace --all-targets --all-features -- -D warnings` | Exit 0 |
+| `git diff --check` | Exit 0 |

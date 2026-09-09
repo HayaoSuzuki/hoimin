@@ -124,7 +124,7 @@ const JSON_RUN_HARNESS: &str = concat!(
 );
 
 #[tokio::test]
-async fn structural_mutants_keep_grouped_calls_and_expression_evaluation() {
+async fn structural_mapping_and_append_mutants_keep_grouped_calls() {
     let cases = [
         ContractCase {
             name: "grouped mapping get",
@@ -180,6 +180,16 @@ def run():
             baseline_stdout: "[\"value\",[\"append\",\"x\"]]\n",
             mutant_stdout: "[\"value\",[\"extend\",[\"x\"]]]\n",
         },
+    ];
+
+    for case in cases {
+        assert_contract(case).await;
+    }
+}
+
+#[tokio::test]
+async fn collection_mutants_keep_parenthesized_argument_evaluation() {
+    let cases = [
         ContractCase {
             name: "parenthesized append argument",
             operator: "collection_append_insert",
@@ -233,6 +243,64 @@ def run():
     for case in cases {
         assert_contract(case).await;
     }
+}
+
+#[tokio::test]
+async fn structural_extend_keeps_call_trailing_comma() {
+    assert_contract(ContractCase {
+        name: "extend call trailing comma",
+        operator: "structure_append_extend",
+        original: "items.extend([value,],)",
+        replacement: "items.append(value,)",
+        source: r"events = []
+class Items:
+    def append(self, value):
+        events.insert(len(events), ['append', value])
+    def extend(self, values):
+        events.insert(len(events), ['extend', values])
+items = Items()
+value = 'x'
+def run():
+    events.clear()
+    items.extend([value,],)
+    return events
+",
+        harness: JSON_RUN_HARNESS,
+        baseline_stdout: "[[\"extend\",[\"x\"]]]\n",
+        mutant_stdout: "[[\"append\",\"x\"]]\n",
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn structural_extend_keeps_tuple_element_and_comment() {
+    assert_contract(ContractCase {
+        name: "extend tuple element comment",
+        operator: "structure_append_extend",
+        original: "items.extend([\n        (value(),), # kept\n    ])",
+        replacement: "items.append(\n        (value(),) # kept\n    )",
+        source: r"events = []
+class Items:
+    def append(self, value):
+        events.insert(len(events), ['append', value])
+    def extend(self, values):
+        events.insert(len(events), ['extend', values])
+items = Items()
+def value():
+    events.insert(len(events), 'value')
+    return 'x'
+def run():
+    events.clear()
+    items.extend([
+        (value(),), # kept
+    ])
+    return events
+",
+        harness: JSON_RUN_HARNESS,
+        baseline_stdout: "[\"value\",[\"extend\",[[\"x\"]]]]\n",
+        mutant_stdout: "[\"value\",[\"append\",[\"x\"]]]\n",
+    })
+    .await;
 }
 
 macro_rules! augmented_source {
