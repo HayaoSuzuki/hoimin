@@ -247,14 +247,23 @@ impl WorkerRoot {
         }
         #[cfg(unix)]
         {
-            Self::reject_link(&parent, &name, path, "read worker file")?;
+            Self::reject_non_file(&parent, &name, path, "read worker file")?;
             let mut options = cap_primitives::fs::OpenOptions::new();
             options
                 .read(true)
                 .follow(FollowSymlinks::No)
                 .custom_flags(libc::O_NONBLOCK);
-            let mut file = cap_primitives::fs::open(&parent, Path::new(&name), &options)
-                .map_err(|error| Self::map_entry_error("read worker file", path, error))?;
+            let mut file = match cap_primitives::fs::open(&parent, Path::new(&name), &options) {
+                Ok(file) => file,
+                Err(error) => {
+                    if Self::entry_is_non_file(&parent, &name) {
+                        return Err(WorkspaceError::InvalidPath {
+                            path: path.to_owned(),
+                        });
+                    }
+                    return Err(Self::map_entry_error("read worker file", path, error));
+                }
+            };
             let metadata = file
                 .metadata()
                 .map_err(|error| WorkspaceError::io("inspect worker file", path, error))?;
@@ -1129,6 +1138,28 @@ impl WorkerRoot {
         }
     }
 
+    #[cfg(unix)]
+    fn reject_non_file(
+        parent: &File,
+        name: &OsString,
+        logical_path: &Utf8Path,
+        operation: &'static str,
+    ) -> Result<(), WorkspaceError> {
+        match cap_primitives::fs::stat(parent, Path::new(name), FollowSymlinks::No) {
+            Ok(metadata) if !metadata.is_file() => Err(WorkspaceError::InvalidPath {
+                path: logical_path.to_owned(),
+            }),
+            Ok(_) => Ok(()),
+            Err(error) => Err(Self::map_entry_error(operation, logical_path, error)),
+        }
+    }
+
+    #[cfg(unix)]
+    fn entry_is_non_file(parent: &File, name: &OsString) -> bool {
+        cap_primitives::fs::stat(parent, Path::new(name), FollowSymlinks::No)
+            .is_ok_and(|metadata| !metadata.is_file())
+    }
+
     fn reject_link_if_present(
         parent: &File,
         name: &OsString,
@@ -1732,6 +1763,23 @@ mod tests {
         let root = WorkerRoot::open(fixture.worker_path()).unwrap();
 
         assert!(root.try_exists(Utf8Path::new("present.py")).unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_rejects_a_fifo() {
+        let fixture = RootFixture::new();
+        let output = std::process::Command::new("mkfifo")
+            .arg(fixture.worker.join("fifo.py"))
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+
+        assert!(matches!(
+            root.read(Utf8Path::new("fifo.py")),
+            Err(WorkspaceError::InvalidPath { .. })
+        ));
     }
 
     #[test]

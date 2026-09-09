@@ -371,6 +371,160 @@ async fn changed_collects_staged_python_in_unborn_repository() {
     );
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn standalone_git_skips_an_untracked_python_self_link() {
+    let repo = FixtureRepo::new();
+    repo.write("pkg/regular.py", "one\ntwo\n");
+    std::os::unix::fs::symlink("self.py", repo.temp.path().join("pkg/self.py")).unwrap();
+
+    assert_eq!(
+        repo.changed_lines(None).await.changed,
+        BTreeMap::from([(
+            Utf8PathBuf::from("pkg/regular.py"),
+            vec![LineRange { start: 1, end: 2 }],
+        )])
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn standalone_git_skips_an_untracked_link_to_an_external_regular_python_file() {
+    let repo = FixtureRepo::new();
+    let external = tempfile::tempdir().unwrap();
+    fs::write(external.path().join("outside.py"), "outside\n").unwrap();
+    repo.write("pkg/regular.py", "one\ntwo\n");
+    std::os::unix::fs::symlink(
+        external.path().join("outside.py"),
+        repo.temp.path().join("pkg/external.py"),
+    )
+    .unwrap();
+
+    assert_eq!(
+        repo.changed_lines(None).await.changed,
+        BTreeMap::from([(
+            Utf8PathBuf::from("pkg/regular.py"),
+            vec![LineRange { start: 1, end: 2 }],
+        )])
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn standalone_git_skips_an_indexed_unborn_path_replaced_by_an_external_link() {
+    let repo = FixtureRepo::new();
+    let external = tempfile::tempdir().unwrap();
+    fs::write(external.path().join("outside.py"), "outside\n").unwrap();
+    repo.write("pkg/indexed.py", "one\ntwo\n");
+    repo.git(&["add", "pkg/indexed.py"]);
+    repo.remove("pkg/indexed.py");
+    std::os::unix::fs::symlink(
+        external.path().join("outside.py"),
+        repo.temp.path().join("pkg/indexed.py"),
+    )
+    .unwrap();
+
+    assert!(repo.changed_lines(None).await.changed.is_empty());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn changed_target_skips_an_excluded_untracked_python_self_link() {
+    let repo = FixtureRepo::new();
+    repo.write("pkg/selected.py", "one\ntwo\n");
+    std::os::unix::fs::symlink("excluded.py", repo.temp.path().join("pkg/excluded.py")).unwrap();
+
+    let targets = TargetHandler::resolve(&Selection {
+        root: repo.root(),
+        sources: vec![Utf8PathBuf::from("pkg")],
+        excludes: vec!["pkg/excluded.py".into()],
+        changed: true,
+        ..Selection::default()
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(
+        targets,
+        vec![TargetSlice {
+            path: Utf8PathBuf::from("pkg/selected.py"),
+            lines: vec![LineRange { start: 1, end: 2 }],
+            symbols: Vec::new(),
+        }]
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn changed_target_skips_an_excluded_unreadable_regular_file() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let repo = FixtureRepo::new();
+    repo.write("pkg/selected.py", "one\ntwo\n");
+    repo.write("pkg/excluded.py", "one\ntwo\n");
+    let excluded = repo.temp.path().join("pkg/excluded.py");
+    fs::set_permissions(&excluded, fs::Permissions::from_mode(0o000)).unwrap();
+    if fs::read(&excluded).is_ok() {
+        return;
+    }
+
+    let targets = TargetHandler::resolve(&Selection {
+        root: repo.root(),
+        sources: vec![Utf8PathBuf::from("pkg")],
+        excludes: vec!["pkg/excluded.py".into()],
+        changed: true,
+        ..Selection::default()
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(
+        targets,
+        vec![TargetSlice {
+            path: Utf8PathBuf::from("pkg/selected.py"),
+            lines: vec![LineRange { start: 1, end: 2 }],
+            symbols: Vec::new(),
+        }]
+    );
+    let error = handle_git(ResolveGitChanges {
+        id: EffectId(8),
+        root: repo.root(),
+        diff_base: None,
+    })
+    .await
+    .unwrap_err();
+    assert_eq!(error.failure.code(), "target.git");
+}
+
+#[tokio::test]
+async fn changed_target_with_an_empty_explicit_scope_does_not_read_untracked_files() {
+    let repo = FixtureRepo::new();
+    repo.write("pkg/excluded.py", "one\ntwo\n");
+
+    let targets = TargetHandler::resolve(&Selection {
+        root: repo.root(),
+        sources: vec![Utf8PathBuf::from("pkg")],
+        excludes: vec!["pkg/excluded.py".into()],
+        changed: true,
+        ..Selection::default()
+    })
+    .await
+    .unwrap();
+
+    assert!(targets.is_empty());
+}
+
+#[tokio::test]
+async fn standalone_git_skips_an_indexed_path_when_its_parent_disappears() {
+    let repo = FixtureRepo::new();
+    repo.write("pkg/missing.py", "one\ntwo\n");
+    repo.git(&["add", "pkg/missing.py"]);
+    repo.remove("pkg/missing.py");
+    fs::remove_dir(repo.temp.path().join("pkg")).unwrap();
+
+    assert!(repo.changed_lines(None).await.changed.is_empty());
+}
+
 #[tokio::test]
 async fn uses_diff_base_against_worktree() {
     let repo = FixtureRepo::new();

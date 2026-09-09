@@ -42,7 +42,7 @@ pub(crate) use owned::{
     CleanupRecord, ManagedChild, ManagedRootCoordinator, ManagedRunRoot, OwnerKind, ReclaimReport,
     truncate_diagnostic_detail,
 };
-use root::WorkerRoot;
+pub(crate) use root::WorkerRoot;
 
 pub(crate) fn build_validation_manifest(
     root: &Utf8Path,
