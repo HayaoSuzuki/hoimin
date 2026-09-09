@@ -269,6 +269,148 @@ fn ranking_normalizes_explicit_line_paths_before_matching_candidates() {
     }
 }
 
+#[test]
+fn ranking_preserves_mixed_selector_scores_reasons_and_ordering() {
+    let (selection, targets, ranked) = mixed_selector_ranking();
+
+    assert_eq!(
+        ranked
+            .iter()
+            .map(|entry| (
+                entry.candidate.id.as_str(),
+                entry.rank,
+                entry.score,
+                entry
+                    .ranking_reasons
+                    .iter()
+                    .map(|reason| reason.code)
+                    .collect::<Vec<_>>(),
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                "line-symbol",
+                1,
+                850,
+                vec![
+                    RankingReasonCode::ExplicitLine,
+                    RankingReasonCode::ExplicitSymbol,
+                    RankingReasonCode::ChangedLine,
+                    RankingReasonCode::HighValueControl,
+                ],
+            ),
+            (
+                "other-line",
+                2,
+                570,
+                vec![
+                    RankingReasonCode::ExplicitLine,
+                    RankingReasonCode::ChangedLine,
+                    RankingReasonCode::Arithmetic,
+                ],
+            ),
+            (
+                "line-gap-symbol",
+                3,
+                520,
+                vec![
+                    RankingReasonCode::ExplicitSymbol,
+                    RankingReasonCode::ChangedLine,
+                    RankingReasonCode::Arithmetic,
+                ],
+            ),
+            (
+                "unselected",
+                4,
+                280,
+                vec![
+                    RankingReasonCode::ChangedLine,
+                    RankingReasonCode::Behavioral,
+                ],
+            ),
+            (
+                "file-only",
+                5,
+                270,
+                vec![
+                    RankingReasonCode::ChangedLine,
+                    RankingReasonCode::Arithmetic,
+                ],
+            ),
+        ]
+    );
+    validate_ranking_against(&selection, &targets, &ranked).unwrap();
+}
+
+fn mixed_selector_ranking() -> (Selection, Vec<TargetSlice>, Vec<RankedPlanCandidate>) {
+    let selection = Selection {
+        files: vec![Utf8PathBuf::from("src/file_only.py")],
+        lines: vec![
+            selection("src/line.py", 2, 4),
+            selection("src/line.py", 9, 9),
+            selection("src/other.py", 1, 1),
+        ],
+        changed: true,
+        ..Selection::default()
+    };
+    let targets = vec![
+        TargetSlice {
+            path: Utf8PathBuf::from("src/line.py"),
+            lines: vec![LineRange { start: 2, end: 4 }],
+            symbols: vec!["chosen".to_owned()],
+        },
+        TargetSlice {
+            path: Utf8PathBuf::from("src/file_only.py"),
+            lines: Vec::new(),
+            symbols: Vec::new(),
+        },
+    ];
+    let candidates = vec![
+        candidate(
+            "line-symbol",
+            "src/line.py",
+            2,
+            0,
+            "compare_eq_ne",
+            Some("chosen"),
+        ),
+        candidate(
+            "line-gap-symbol",
+            "src/line.py",
+            6,
+            0,
+            "binary_add_sub",
+            Some("chosen"),
+        ),
+        candidate("other-line", "src/other.py", 1, 0, "binary_add_sub", None),
+        candidate(
+            "file-only",
+            "src/file_only.py",
+            1,
+            0,
+            "binary_add_sub",
+            None,
+        ),
+        candidate(
+            "unselected",
+            "src/unselected.py",
+            1,
+            0,
+            "collection_any_all",
+            None,
+        ),
+    ];
+    let ranked = rank_candidates(&selection, &targets, candidates);
+    (selection, targets, ranked)
+}
+
+fn selection(path: &str, start: u32, end: u32) -> LineSelection {
+    LineSelection {
+        path: Utf8PathBuf::from(path),
+        range: LineRange { start, end },
+    }
+}
+
 #[cfg(windows)]
 #[test]
 fn ranking_compares_explicit_line_paths_with_windows_case_rules() {

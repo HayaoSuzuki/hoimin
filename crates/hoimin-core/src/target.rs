@@ -25,6 +25,47 @@ pub struct LineSelection {
     pub range: LineRange,
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct LineSelectionIndex {
+    ranges: BTreeMap<String, Vec<LineRange>>,
+}
+
+impl LineSelectionIndex {
+    #[must_use]
+    pub fn new(root: &Utf8Path, selections: &[LineSelection]) -> Self {
+        let mut ranges = BTreeMap::<String, Vec<LineRange>>::new();
+        for selection in selections {
+            if selection.range.start > selection.range.end {
+                continue;
+            }
+            if let Ok(path) = normalize_logical(root, &selection.path) {
+                ranges
+                    .entry(path_equality_key(&path).into_owned())
+                    .or_default()
+                    .push(selection.range);
+            }
+        }
+        for ranges in ranges.values_mut() {
+            normalize_ranges(ranges);
+        }
+        Self { ranges }
+    }
+
+    #[must_use]
+    pub fn contains(&self, path: &Utf8Path, line: u32) -> bool {
+        if self.ranges.is_empty() {
+            return false;
+        }
+        let path = path_equality_key(path);
+        let Some(ranges) = self.ranges.get(path.as_ref()) else {
+            return false;
+        };
+        let end = ranges.partition_point(|range| range.start <= line);
+        end.checked_sub(1)
+            .is_some_and(|index| line <= ranges[index].end)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SymbolSelection {
     pub module: String,

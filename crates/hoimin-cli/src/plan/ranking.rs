@@ -4,8 +4,7 @@ use std::ops::Deref;
 
 use camino::Utf8Path;
 use hoimin_core::{
-    MutationCandidate, MutationOperator, Selection, TargetSlice, logical_paths_equal,
-    normalize_logical_path,
+    LineSelectionIndex, MutationCandidate, MutationOperator, Selection, TargetSlice,
 };
 use serde::{Deserialize, Serialize};
 
@@ -54,6 +53,7 @@ pub(crate) fn rank_candidates(
     targets: &[TargetSlice],
     candidates: Vec<MutationCandidate>,
 ) -> Vec<RankedPlanCandidate> {
+    let explicit_lines = LineSelectionIndex::new(&selection.root, &selection.lines);
     let selected_symbols = targets
         .iter()
         .filter(|target| !target.symbols.is_empty())
@@ -71,12 +71,7 @@ pub(crate) fn rank_candidates(
         .into_iter()
         .map(|candidate| {
             let mut ranking_reasons = Vec::new();
-            if selection.lines.iter().any(|line| {
-                normalize_logical_path(&selection.root, &line.path)
-                    .is_ok_and(|path| logical_paths_equal(&path, &candidate.path))
-                    && line.range.start <= candidate.line
-                    && candidate.line <= line.range.end
-            }) {
+            if explicit_lines.contains(&candidate.path, candidate.line) {
                 ranking_reasons.push(reason(RankingReasonCode::ExplicitLine));
             }
             if selected_symbols
