@@ -47,7 +47,7 @@ selected.insert(path, Some(digest));
 ```
 
 In the final map traversal, use the existing digest or read/hash the glob file with unchanged include-error mapping; only then convert the digest to the emitted hex string. Ensure no Vec of exact bytes is stored in map or closure state across iterations.
-- [ ] Run `cargo test --offline -p hoimin-cli --test fingerprint_inputs`, relevant CLI config fingerprint tests and plan_verify fingerprint tests. Preserve existing failure ordering, symlink and update detection tests. Inspect the actual test names before choosing filters and confirm nonzero counts.
+- [ ] Run `cargo test --offline -p hoimin-cli --test fingerprint_inputs`, relevant CLI config fingerprint tests and `plan` integration fingerprint tests. Preserve existing failure ordering, symlink and update detection tests. Inspect the actual test names before choosing filters and confirm nonzero counts.
 - [ ] Self-review lifetime, duplicate read behavior and errors. Write tracked report, commit implementation/tests/docs and report back. Controller owns paired actual CLI memory measurement, whole-workspace/MSRV/Clippy gates, independent reviews and PR; no publishing or duplicate broad suites.
 
 ## Controller validation and delivery
