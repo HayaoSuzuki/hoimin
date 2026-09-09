@@ -2044,7 +2044,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 }
             }
             "extend" if exact_one => {
-                if let Some(replacement) = extend_to_append_replacement(self.source, call) {
+                if let Some(replacement) =
+                    extend_to_append_replacement(self.source, call, self.facts)
+                {
                     self.add_candidate(
                         call.range(),
                         replacement,
@@ -2058,7 +2060,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                     && is_supported_mapping_key(&call.arguments.args[0])
                     && matches!(call.func.as_ref(), Expr::Attribute(attribute) if is_simple_receiver(attribute.value.as_ref())) =>
             {
-                if let Some(replacement) = mapping_get_to_subscript_replacement(self.source, call) {
+                if let Some(replacement) =
+                    mapping_get_to_subscript_replacement(self.source, call, self.facts)
+                {
                     self.add_candidate(
                         call.range(),
                         replacement,
@@ -2098,7 +2102,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         {
             return;
         }
-        if let Some(replacement) = subscript_to_mapping_get_replacement(self.source, subscript) {
+        if let Some(replacement) =
+            subscript_to_mapping_get_replacement(self.source, subscript, self.facts)
+        {
             self.add_candidate(
                 subscript.range(),
                 replacement,
@@ -2535,63 +2541,132 @@ fn append_to_insert_replacement(source: &str, call: &ExprCall) -> Option<String>
     let Expr::Attribute(attribute) = call.func.as_ref() else {
         return None;
     };
-    let function_start = usize::from(call.func.range().start());
-    let attribute_start = usize::from(attribute.attr.range().start());
-    let prefix = source.get(function_start..attribute_start)?;
-    let arguments = source_text(source, call.arguments.inner_range())?;
-    Some(format!("{prefix}insert(0, {arguments})"))
+    let argument = call.arguments.args.first()?;
+    replace_within_call(
+        source,
+        call,
+        [
+            (attribute.attr.range(), "insert"),
+            (
+                TextRange::new(argument.range().start(), argument.range().start()),
+                "0, ",
+            ),
+        ],
+    )
 }
 
 fn insert_to_append_replacement(source: &str, call: &ExprCall) -> Option<String> {
     let Expr::Attribute(attribute) = call.func.as_ref() else {
         return None;
     };
-    let function_start = usize::from(call.func.range().start());
-    let attribute_start = usize::from(attribute.attr.range().start());
-    let prefix = source.get(function_start..attribute_start)?;
     let expression = call.arguments.args.get(1)?;
     if matches!(expression, Expr::Yield(_) | Expr::YieldFrom(_)) {
         return None;
     }
-    let argument = source_text(source, expression.range())?;
-    Some(format!("{prefix}append({argument})"))
+    let first = call.arguments.args.first()?;
+    replace_within_call(
+        source,
+        call,
+        [
+            (attribute.attr.range(), "append"),
+            (
+                TextRange::new(first.range().start(), expression.range().start()),
+                "",
+            ),
+        ],
+    )
 }
 
 fn append_to_extend_replacement(source: &str, call: &ExprCall) -> Option<String> {
-    let prefix = method_call_prefix(source, call)?;
-    let argument = source_text(source, call.arguments.inner_range())?;
-    Some(format!("{prefix}extend([{argument}])"))
+    let Expr::Attribute(attribute) = call.func.as_ref() else {
+        return None;
+    };
+    let inner = call.arguments.inner_range();
+    replace_within_call(
+        source,
+        call,
+        [
+            (attribute.attr.range(), "extend"),
+            (TextRange::new(inner.start(), inner.start()), "["),
+            (TextRange::new(inner.end(), inner.end()), "]"),
+        ],
+    )
 }
 
-fn extend_to_append_replacement(source: &str, call: &ExprCall) -> Option<String> {
+fn extend_to_append_replacement(
+    source: &str,
+    call: &ExprCall,
+    facts: &AstFacts<'_>,
+) -> Option<String> {
+    let Expr::Attribute(attribute) = call.func.as_ref() else {
+        return None;
+    };
     let Expr::List(list) = call.arguments.args.first()? else {
         return None;
     };
     if list.ctx != ExprContext::Load || list.elts.len() != 1 || list.elts[0].is_starred_expr() {
         return None;
     }
-    let prefix = method_call_prefix(source, call)?;
-    let literal = source_text(source, list.range())?;
-    let contents = literal.strip_prefix('[')?.strip_suffix(']')?;
-    Some(format!("{prefix}append({contents})"))
+    let tokens = facts.candidate_tokens_in_range(list.range());
+    let opening = tokens
+        .iter()
+        .find(|token| token.kind() == TokenKind::Lsqb)?;
+    let closing = tokens
+        .iter()
+        .rfind(|token| token.kind() == TokenKind::Rsqb)?;
+    replace_within_call(
+        source,
+        call,
+        [
+            (attribute.attr.range(), "append"),
+            (opening.range(), ""),
+            (closing.range(), ""),
+        ],
+    )
 }
 
-fn mapping_get_to_subscript_replacement(source: &str, call: &ExprCall) -> Option<String> {
+fn mapping_get_to_subscript_replacement(
+    source: &str,
+    call: &ExprCall,
+    facts: &AstFacts<'_>,
+) -> Option<String> {
     let Expr::Attribute(attribute) = call.func.as_ref() else {
         return None;
     };
-    let receiver = source_text(source, attribute.value.range())?;
+    let receiver_range = ruff_python_ast::token::parenthesized_range(
+        attribute.value.as_ref().into(),
+        attribute.into(),
+        facts.tokens.expect("parser tokens are set"),
+    )
+    .unwrap_or_else(|| attribute.value.range());
+    let receiver = source_text(source, receiver_range)?;
     let key = source_text(source, call.arguments.inner_range())?;
     Some(format!("{receiver}[{key}]"))
 }
 
-fn subscript_to_mapping_get_replacement(source: &str, subscript: &ExprSubscript) -> Option<String> {
-    let receiver = source_text(source, subscript.value.range())?;
-    let receiver_end = usize::from(subscript.value.range().end());
-    let subscript_end = usize::from(subscript.range().end());
-    let indexed = source.get(receiver_end..subscript_end)?;
-    let opening_bracket = indexed.find('[')?;
-    let key = indexed.get(opening_bracket + 1..)?.strip_suffix(']')?;
+fn subscript_to_mapping_get_replacement(
+    source: &str,
+    subscript: &ExprSubscript,
+    facts: &AstFacts<'_>,
+) -> Option<String> {
+    let receiver_range = ruff_python_ast::token::parenthesized_range(
+        subscript.value.as_ref().into(),
+        subscript.into(),
+        facts.tokens.expect("parser tokens are set"),
+    )
+    .unwrap_or_else(|| subscript.value.range());
+    let receiver = source_text(source, receiver_range)?;
+    let tokens = facts.candidate_tokens_in_range(subscript.range());
+    let opening = tokens
+        .iter()
+        .find(|token| token.kind() == TokenKind::Lsqb)?;
+    let closing = tokens
+        .iter()
+        .rfind(|token| token.kind() == TokenKind::Rsqb)?;
+    let key = source_text(
+        source,
+        TextRange::new(opening.range().end(), closing.range().start()),
+    )?;
     Some(format!("{receiver}.get({key})"))
 }
 
@@ -2603,22 +2678,29 @@ fn renamed_method_call_replacement(
     let Expr::Attribute(attribute) = call.func.as_ref() else {
         return None;
     };
-    let function_start = usize::from(call.func.range().start());
-    let attribute_start = usize::from(attribute.attr.range().start());
-    let attribute_end = usize::from(attribute.attr.range().end());
-    let call_end = usize::from(call.range().end());
-    let prefix = source.get(function_start..attribute_start)?;
-    let suffix = source.get(attribute_end..call_end)?;
-    Some(format!("{prefix}{replacement}{suffix}"))
+    replace_within_call(source, call, [(attribute.attr.range(), replacement)])
 }
 
-fn method_call_prefix<'a>(source: &'a str, call: &ExprCall) -> Option<&'a str> {
-    let Expr::Attribute(attribute) = call.func.as_ref() else {
-        return None;
-    };
-    let function_start = usize::from(call.func.range().start());
-    let attribute_start = usize::from(attribute.attr.range().start());
-    source.get(function_start..attribute_start)
+fn replace_within_call<const N: usize>(
+    source: &str,
+    call: &ExprCall,
+    edits: [(TextRange, &str); N],
+) -> Option<String> {
+    let call_range = call.range();
+    let call_start = usize::from(call_range.start());
+    let call_end = usize::from(call_range.end());
+    let mut replacement = source.get(call_start..call_end)?.to_owned();
+    let mut edits = edits;
+    edits.sort_unstable_by_key(|(range, _)| range.start());
+    for (range, text) in edits.into_iter().rev() {
+        let start = usize::from(range.start()).checked_sub(call_start)?;
+        let end = usize::from(range.end()).checked_sub(call_start)?;
+        if end > replacement.len() {
+            return None;
+        }
+        replacement.replace_range(start..end, text);
+    }
+    Some(replacement)
 }
 
 fn is_simple_receiver(expression: &Expr) -> bool {

@@ -123,6 +123,70 @@ const JSON_RUN_HARNESS: &str = concat!(
     "print(json.dumps(subject.run(), separators=(',', ':')))\n",
 );
 
+#[tokio::test]
+async fn structural_mutants_keep_grouped_calls_and_expression_evaluation() {
+    let cases = [
+        ContractCase {
+            name: "grouped mapping get",
+            operator: "structure_mapping_get_subscript",
+            original: "(holder\n        .mapping).get(key())",
+            replacement: "(holder\n        .mapping)[key()]",
+            source: r"events = []
+class Mapping:
+    def get(self, key):
+        events.append(['get', key])
+        return ['get', key]
+    def __getitem__(self, key):
+        events.append(['item', key])
+        return ['item', key]
+class Holder:
+    pass
+holder = Holder()
+holder.mapping = Mapping()
+def key():
+    events.append('key')
+    return 'x'
+def run():
+    events.clear()
+    return [(holder
+        .mapping).get(key()), events]
+",
+            harness: JSON_RUN_HARNESS,
+            baseline_stdout: "[[\"get\",\"x\"],[\"key\",[\"get\",\"x\"]]]\n",
+            mutant_stdout: "[[\"item\",\"x\"],[\"key\",[\"item\",\"x\"]]]\n",
+        },
+        ContractCase {
+            name: "grouped append",
+            operator: "structure_append_extend",
+            original: "(items\n        .append)(value())",
+            replacement: "(items\n        .extend)([value()])",
+            source: r"events = []
+class Items:
+    def append(self, value):
+        events.insert(len(events), ['append', value])
+    def extend(self, values):
+        events.insert(len(events), ['extend', values])
+items = Items()
+def value():
+    events.insert(len(events), 'value')
+    return 'x'
+def run():
+    events.clear()
+    (items
+        .append)(value())
+    return events
+",
+            harness: JSON_RUN_HARNESS,
+            baseline_stdout: "[\"value\",[\"append\",\"x\"]]\n",
+            mutant_stdout: "[\"value\",[\"extend\",[\"x\"]]]\n",
+        },
+    ];
+
+    for case in cases {
+        assert_contract(case).await;
+    }
+}
+
 macro_rules! augmented_source {
     ($original_method:literal, $original_result:literal, $replacement_method:literal, $replacement_result:literal, $operator:literal) => {
         concat!(

@@ -3235,6 +3235,139 @@ fn structure_replacements_preserve_nested_sources_and_reparse() {
 }
 
 #[test]
+fn structure_replacements_preserve_grouped_calls_and_delimiters() {
+    let source = concat!(
+        "sort_grouped = (items.sort)()\n",
+        "reverse_grouped = (items.reverse)()\n",
+        "nested_sort = ((items.sort))()\n",
+        "got = (d\n    .data).get((first,\n    second))\n",
+        "subscripted = (d\n    .data)[(first,\n    second)]\n",
+        "commented = (d # [ receiver comment\n)[key]\n",
+        "appended = (items\n    .append)(value)\n",
+        "extended = (items\n    .extend)([value])\n",
+        "inserted = (items\n    .insert)(0, value)\n",
+    );
+    let output = analyze(source);
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| {
+            matches!(
+                candidate.operator.as_str(),
+                "structure_append_extend"
+                    | "structure_mapping_get_subscript"
+                    | "structure_sort_reverse"
+                    | "collection_append_insert"
+            )
+        })
+        .collect();
+    let actual: Vec<_> = candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.replacement.as_str(),
+                candidate.operator.as_str(),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        actual,
+        vec![
+            (
+                "(items.sort)()",
+                "(items.reverse)()",
+                "structure_sort_reverse",
+            ),
+            (
+                "(items.reverse)()",
+                "(items.sort)()",
+                "structure_sort_reverse",
+            ),
+            (
+                "((items.sort))()",
+                "((items.reverse))()",
+                "structure_sort_reverse",
+            ),
+            (
+                "(d\n    .data).get((first,\n    second))",
+                "(d\n    .data)[(first,\n    second)]",
+                "structure_mapping_get_subscript",
+            ),
+            (
+                "(d\n    .data)[(first,\n    second)]",
+                "(d\n    .data).get((first,\n    second))",
+                "structure_mapping_get_subscript",
+            ),
+            (
+                "(d # [ receiver comment\n)[key]",
+                "(d # [ receiver comment\n).get(key)",
+                "structure_mapping_get_subscript",
+            ),
+            (
+                "(items\n    .append)(value)",
+                "(items\n    .insert)(0, value)",
+                "collection_append_insert",
+            ),
+            (
+                "(items\n    .append)(value)",
+                "(items\n    .extend)([value])",
+                "structure_append_extend",
+            ),
+            (
+                "(items\n    .extend)([value])",
+                "(items\n    .append)(value)",
+                "structure_append_extend",
+            ),
+            (
+                "(items\n    .insert)(0, value)",
+                "(items\n    .append)(value)",
+                "collection_append_insert",
+            ),
+        ]
+    );
+
+    for candidate in candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
+fn structure_replacements_keep_crlf_unicode_boundaries() {
+    let source = "é = (items.sort)()\r\nvalue = (mapping\r\n    .data)[key]\r\n";
+    let output = analyze(source);
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| {
+            matches!(
+                candidate.operator.as_str(),
+                "structure_mapping_get_subscript" | "structure_sort_reverse"
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        candidates
+            .iter()
+            .map(|candidate| (candidate.original.as_str(), candidate.replacement.as_str()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("(items.sort)()", "(items.reverse)()"),
+            (
+                "(mapping\r\n    .data)[key]",
+                "(mapping\r\n    .data).get(key)",
+            ),
+        ]
+    );
+
+    for candidate in candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+}
+
+#[test]
 fn structure_candidates_skip_type_annotation_expressions() {
     let source = concat!(
         "value: mapping[key]\n",
