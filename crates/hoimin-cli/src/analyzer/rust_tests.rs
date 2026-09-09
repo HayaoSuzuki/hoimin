@@ -3246,6 +3246,11 @@ fn structure_replacements_preserve_grouped_calls_and_delimiters() {
         "appended = (items\n    .append)(value)\n",
         "extended = (items\n    .extend)([value])\n",
         "inserted = (items\n    .insert)(0, value)\n",
+        "parenthesized_append = items.append((value))\n",
+        "parenthesized_insert = items.insert((0), ((value)))\n",
+        "commented_append = items.append((\n    value # kept\n))\n",
+        "commented_insert = items.insert(\n    (0), # kept\n    ((value))\n)\n",
+        "nested_receiver = obj.items[0].data[key]\n",
     );
     let output = analyze(source);
     let candidates: Vec<_> = output
@@ -3324,6 +3329,46 @@ fn structure_replacements_preserve_grouped_calls_and_delimiters() {
                 "(items\n    .insert)(0, value)",
                 "(items\n    .append)(value)",
                 "collection_append_insert",
+            ),
+            (
+                "items.append((value))",
+                "items.insert(0, (value))",
+                "collection_append_insert",
+            ),
+            (
+                "items.append((value))",
+                "items.extend([(value)])",
+                "structure_append_extend",
+            ),
+            (
+                "items.insert((0), ((value)))",
+                "items.append(((value)))",
+                "collection_append_insert",
+            ),
+            (
+                "items.append((\n    value # kept\n))",
+                "items.insert(0, (\n    value # kept\n))",
+                "collection_append_insert",
+            ),
+            (
+                "items.append((\n    value # kept\n))",
+                "items.extend([(\n    value # kept\n)])",
+                "structure_append_extend",
+            ),
+            (
+                "items.insert(\n    (0), # kept\n    ((value))\n)",
+                "items.append(\n    # kept\n    ((value))\n)",
+                "collection_append_insert",
+            ),
+            (
+                "obj.items[0].data[key]",
+                "obj.items[0].data.get(key)",
+                "structure_mapping_get_subscript",
+            ),
+            (
+                "obj.items[0]",
+                "obj.items.get(0)",
+                "structure_mapping_get_subscript",
             ),
         ]
     );

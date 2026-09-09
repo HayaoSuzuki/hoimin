@@ -62,4 +62,59 @@ warnings-denied Clippy. The candidate identity scheme, eligibility, ordering,
 and ordinary candidates remain unchanged; repaired replacements correctly
 produce new candidate IDs where replacement text changes.
 
-The controller owns the remaining whole-workspace, MSRV, and CLI matrix gates.
+## Independent CLI validation
+
+Using the actual built CLI and CPython 3.14.7, a 16-candidate matrix covered
+parenthesized/multiline sort, append, insert, extend, mapping receivers and
+bracket-containing comments. Before the change, 10 of these candidates caused
+SyntaxError. After the change, all 16 parsed successfully, with every expected
+candidate still present. A separate receiver/key matrix produced all 96 expected
+mapping candidates, and each applied mutant parsed under CPython. This matrix
+included nested parentheses, CRLF, tuple keys, comments containing brackets,
+and both mapping directions.
+
+A real `hoimin run --file case.py --operators structure_mapping_get_subscript
+--max-mutants 1 --format json -- .../python -m py_compile case.py` used the same
+multiline mapping fixture before and after. Baseline compilation passed in both
+runs. Before: mutant killed with Exit(1), score 1.0, CLI exit 0. After: mutant
+survived with Exit(0), score 0.0, CLI exit 1. The verification command only checks
+syntax, so surviving is the expected result. The command also supplied the
+fixture root, `--allow-best-effort-memory`, and `--min-free-space 1B` on macOS.
+
+The Rust 1.88 all-workspace/all-targets/all-features locked check and full
+warnings-denied Clippy passed. `cargo test --offline --workspace --all-features
+-- --test-threads=1` completed with 1,585 passed, zero failed, and 13 ignored
+across 67 result groups. Independent review results are recorded below.
+
+## Round-one review repair
+
+The preceding whole-workspace, MSRV, and full-Clippy record applies to the
+pre-review-fix revision. Independent review found two structural boundary bugs:
+AST argument expression ranges omit user parentheses, and selecting the first
+square-bracket token in a full subscript range can select a receiver's inner
+subscript.
+
+The new RED exact-output/reparse test failed with all three concrete symptoms:
+`items.append((value))` became `items.insert((0, value))`,
+`items.insert((0), ((value)))` became invalid `items.append((value)))`, and
+`obj.items[0].data[key]` used the receiver's first bracket. The repair gets each
+argument's complete parenthesized range using its `Arguments` AST parent,
+removes the first insert argument and separator independently so comments stay
+in place, and selects an opening subscript bracket only after the preserved
+receiver range.
+
+The focused GREEN verification after the repair was:
+
+| Command | Result |
+| --- | --- |
+| `cargo fmt --check` | Exit 0 |
+| `cargo test --offline -p hoimin-cli --lib structure_` | 9 passed |
+| `cargo test --offline -p hoimin-cli --lib collection_` | 11 passed |
+| `cargo test --offline -p hoimin-cli --test operator_function_contracts` | 10 passed |
+| `git diff --check` | Exit 0 |
+
+The exact-output fixtures now include parenthesized append values, parenthesized
+zero and value insert arguments, retained argument comments, and an inner
+receiver subscript. The external CPython contract verifies both collection
+directions with grouped argument evaluation. The controller owns the fresh
+whole-workspace, MSRV, full-Clippy, and CLI-probe verification of this revision.

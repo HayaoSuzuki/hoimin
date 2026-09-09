@@ -1970,7 +1970,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         let exact_one = has_exact_positional_arguments(call, 1);
         match name {
             "append" if has_supported_append_insert_arguments(call) => {
-                if let Some(replacement) = append_to_insert_replacement(self.source, call) {
+                if let Some(replacement) =
+                    append_to_insert_replacement(self.source, call, self.facts)
+                {
                     self.add_candidate(
                         call.range(),
                         replacement,
@@ -1982,7 +1984,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 if has_exact_positional_arguments(call, 2)
                     && is_zero_literal(&call.arguments.args[0]) =>
             {
-                if let Some(replacement) = insert_to_append_replacement(self.source, call) {
+                if let Some(replacement) =
+                    insert_to_append_replacement(self.source, call, self.facts)
+                {
                     self.add_candidate(
                         call.range(),
                         replacement,
@@ -2537,25 +2541,30 @@ fn decimal_literal_value(source: &str, expression: &Expr) -> Option<u64> {
     literal.parse().ok()
 }
 
-fn append_to_insert_replacement(source: &str, call: &ExprCall) -> Option<String> {
+fn append_to_insert_replacement(
+    source: &str,
+    call: &ExprCall,
+    facts: &AstFacts<'_>,
+) -> Option<String> {
     let Expr::Attribute(attribute) = call.func.as_ref() else {
         return None;
     };
-    let argument = call.arguments.args.first()?;
+    let argument = parenthesized_argument_range(call, call.arguments.args.first()?, facts);
     replace_within_call(
         source,
         call,
         [
             (attribute.attr.range(), "insert"),
-            (
-                TextRange::new(argument.range().start(), argument.range().start()),
-                "0, ",
-            ),
+            (TextRange::new(argument.start(), argument.start()), "0, "),
         ],
     )
 }
 
-fn insert_to_append_replacement(source: &str, call: &ExprCall) -> Option<String> {
+fn insert_to_append_replacement(
+    source: &str,
+    call: &ExprCall,
+    facts: &AstFacts<'_>,
+) -> Option<String> {
     let Expr::Attribute(attribute) = call.func.as_ref() else {
         return None;
     };
@@ -2563,16 +2572,22 @@ fn insert_to_append_replacement(source: &str, call: &ExprCall) -> Option<String>
     if matches!(expression, Expr::Yield(_) | Expr::YieldFrom(_)) {
         return None;
     }
-    let first = call.arguments.args.first()?;
+    let first = parenthesized_argument_range(call, call.arguments.args.first()?, facts);
+    let expression = parenthesized_argument_range(call, expression, facts);
+    let separator_range = TextRange::new(first.end(), expression.start());
+    let comma = facts
+        .candidate_tokens_in_range(separator_range)
+        .iter()
+        .find(|token| token.kind() == TokenKind::Comma)?;
+    let comma_and_following_whitespace =
+        comma_and_following_whitespace_range(source, comma.range(), expression.start())?;
     replace_within_call(
         source,
         call,
         [
             (attribute.attr.range(), "append"),
-            (
-                TextRange::new(first.range().start(), expression.range().start()),
-                "",
-            ),
+            (first, ""),
+            (comma_and_following_whitespace, ""),
         ],
     )
 }
@@ -2657,9 +2672,9 @@ fn subscript_to_mapping_get_replacement(
     .unwrap_or_else(|| subscript.value.range());
     let receiver = source_text(source, receiver_range)?;
     let tokens = facts.candidate_tokens_in_range(subscript.range());
-    let opening = tokens
-        .iter()
-        .find(|token| token.kind() == TokenKind::Lsqb)?;
+    let opening = tokens.iter().find(|token| {
+        token.kind() == TokenKind::Lsqb && token.range().start() >= receiver_range.end()
+    })?;
     let closing = tokens
         .iter()
         .rfind(|token| token.kind() == TokenKind::Rsqb)?;
@@ -2679,6 +2694,34 @@ fn renamed_method_call_replacement(
         return None;
     };
     replace_within_call(source, call, [(attribute.attr.range(), replacement)])
+}
+
+fn parenthesized_argument_range(
+    call: &ExprCall,
+    argument: &Expr,
+    facts: &AstFacts<'_>,
+) -> TextRange {
+    ruff_python_ast::token::parenthesized_range(
+        argument.into(),
+        (&call.arguments).into(),
+        facts.tokens.expect("parser tokens are set"),
+    )
+    .unwrap_or_else(|| argument.range())
+}
+
+fn comma_and_following_whitespace_range(
+    source: &str,
+    comma: TextRange,
+    expression_start: ruff_text_size::TextSize,
+) -> Option<TextRange> {
+    let end = usize::from(expression_start);
+    let suffix = source.get(usize::from(comma.end())..end)?;
+    let whitespace_end = suffix
+        .char_indices()
+        .find(|(_, character)| !character.is_whitespace())
+        .map_or(suffix.len(), |(index, _)| index);
+    let length = comma.len() + ruff_text_size::TextSize::try_from(whitespace_end).ok()?;
+    Some(TextRange::at(comma.start(), length))
 }
 
 fn replace_within_call<const N: usize>(

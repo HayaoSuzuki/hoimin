@@ -180,6 +180,54 @@ def run():
             baseline_stdout: "[\"value\",[\"append\",\"x\"]]\n",
             mutant_stdout: "[\"value\",[\"extend\",[\"x\"]]]\n",
         },
+        ContractCase {
+            name: "parenthesized append argument",
+            operator: "collection_append_insert",
+            original: "items.append((value()))",
+            replacement: "items.insert(0, (value()))",
+            source: r"events = []
+class Items:
+    def append(self, value):
+        events.insert(len(events), ['append', value])
+    def insert(self, index, value):
+        events.insert(len(events), ['insert', index, value])
+items = Items()
+def value():
+    events.insert(len(events), 'value')
+    return 'x'
+def run():
+    events.clear()
+    items.append((value()))
+    return events
+",
+            harness: JSON_RUN_HARNESS,
+            baseline_stdout: "[\"value\",[\"append\",\"x\"]]\n",
+            mutant_stdout: "[\"value\",[\"insert\",0,\"x\"]]\n",
+        },
+        ContractCase {
+            name: "parenthesized insert arguments",
+            operator: "collection_append_insert",
+            original: "items.insert((0), ((value())))",
+            replacement: "items.append(((value())))",
+            source: r"events = []
+class Items:
+    def append(self, value):
+        events.insert(len(events), ['append', value])
+    def insert(self, index, value):
+        events.insert(len(events), ['insert', index, value])
+items = Items()
+def value():
+    events.insert(len(events), 'value')
+    return 'x'
+def run():
+    events.clear()
+    items.insert((0), ((value())))
+    return events
+",
+            harness: JSON_RUN_HARNESS,
+            baseline_stdout: "[\"value\",[\"insert\",0,\"x\"]]\n",
+            mutant_stdout: "[\"value\",[\"append\",\"x\"]]\n",
+        },
     ];
 
     for case in cases {
