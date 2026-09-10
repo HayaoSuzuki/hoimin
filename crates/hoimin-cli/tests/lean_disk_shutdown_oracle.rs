@@ -119,6 +119,7 @@ fn runtime_oracle_rejects_unknown_duplicate_and_empty_targets() {
     assert!(validate_targets(&duplicate).is_err());
     assert!(validate_targets(&[]).is_err());
     assert!(validate_targets(&["native".to_owned()]).is_err());
+    assert!(validate_targets(&["python".to_owned()]).is_err());
 
     let first = source.lines().next().unwrap();
     let unknown = first.replacen("\"schema\":1", "\"schema\":1,\"extra\":true", 1);
@@ -365,10 +366,7 @@ fn validate_targets(targets: &[String]) -> Result<(), &'static str> {
     if unique.is_empty() || unique.len() != targets.len() {
         return Err("empty or duplicate implementation targets");
     }
-    if unique
-        .iter()
-        .any(|target| !matches!(target.as_str(), "rust" | "python"))
-    {
+    if unique.iter().any(|target| target.as_str() != "rust") {
         return Err("unknown implementation target");
     }
     Ok(())

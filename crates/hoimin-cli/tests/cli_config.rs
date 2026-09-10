@@ -169,38 +169,15 @@ fn development_docs_explain_exception_mutation_policy() {
 }
 
 #[test]
-fn docs_publish_mandatory_disk_defaults_and_the_safe_wrapper_command() {
+fn docs_publish_mandatory_disk_defaults() {
     let readme =
         fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../README.md")).unwrap();
-    let development = fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../docs/development.md"
-    ))
-    .unwrap();
-    let development = development.split_whitespace().collect::<Vec<_>>().join(" ");
-
     for expected in [
         "`--max-workspace-size` | `8GiB`",
         "`--min-free-space` | `10GiB`",
         "raising a consumption limit or lowering the reserve is explicit risk acceptance",
     ] {
         assert!(readme.contains(expected), "README is missing {expected}");
-    }
-    for expected in [
-        "hoimin_python=\"$(pwd -P)/.venv/bin/python\"",
-        "hoimin run --file tools/focused_mutation_support/disk.py --allow-best-effort-memory --max-workspace-size 8GiB --min-free-space 10GiB -- \"$hoimin_python\" -m unittest tests.test_focused_mutation_disk",
-        "mutation_output=\"$(mktemp -d /tmp/hoimin-focused.XXXXXX)\"",
-        ".venv/bin/python tools/focused_mutation.py",
-        "--budget 30m --jobs 1 --max-disk 8GiB --min-free-space 10GiB",
-        "uv sync --frozen",
-        "outside the monitored mutation command",
-        "`3` means `budget_exhausted`",
-        "does not currently provide a supported complete-inventory command",
-    ] {
-        assert!(
-            development.contains(expected),
-            "development docs missing {expected}"
-        );
     }
 }
 

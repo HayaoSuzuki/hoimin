@@ -479,6 +479,98 @@ async fn collection_default_run_reports_canonical_ids_with_stable_spans() {
 }
 
 #[tokio::test]
+async fn protocol_contracts_distinguish_generated_mutants_in_external_tests() {
+    // Each weak command passes both versions. The stronger command observes a
+    // contract that the actual Rust-generated replacement breaks. Test doubles
+    // live only in the external command, outside the selected mutation source.
+    let cases = [
+        (
+            "boolean_and_or",
+            "def probe(left, right):\n    return left and right()\n",
+            "assert probe(False, lambda: False) is False",
+            "calls = []\ndef right():\n    calls.append('called')\n    return False\nassert probe(False, right) is False\nassert calls == []",
+            1,
+        ),
+        (
+            "collection_any_all",
+            "def probe(items):\n    return any(items)\n",
+            "assert probe([True, True]) is True",
+            "items = iter([True, True])\nassert probe(items) is True\nassert list(items) == [True]",
+            1,
+        ),
+        (
+            "structure_mapping_get_subscript",
+            "def probe(mapping, key):\n    return mapping.get(key)\n",
+            "assert probe({'present': 42}, 'present') == 42",
+            "class Missing(dict):\n    def __missing__(self, key):\n        return 42\nassert probe(Missing(), 'absent') is None",
+            1,
+        ),
+        (
+            "structure_append_extend",
+            "def probe(items, value):\n    items.append(value)\n",
+            "items = []\nprobe(items, 7)\nassert items == [7]",
+            "class Logged(list):\n    def append(self, value):\n        super().append(('append', value))\n    def extend(self, values):\n        super().extend(('extend', value) for value in values)\nitems = Logged()\nprobe(items, 7)\nassert items == [('append', 7)]",
+            1,
+        ),
+        (
+            "structure_sorted_reversed",
+            "def probe(items):\n    return sorted(items)\n",
+            "assert list(probe([2, 1])) == [1, 2]",
+            "assert list(probe([2, 3, 1])) == [1, 2, 3]",
+            1,
+        ),
+        (
+            "structure_index_neighbor",
+            "def probe(items):\n    return items[1]\n",
+            "assert probe([7, 7, 7]) == 7",
+            "assert probe([10, 20, 30]) == 20",
+            2,
+        ),
+        (
+            "structure_slice_neighbor",
+            "def probe(items):\n    return items[:1]\n",
+            "assert probe([]) == []",
+            "assert probe([10, 20, 30]) == [10]",
+            2,
+        ),
+    ];
+
+    for (operator, source, weak, strong, count) in cases {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::create_dir(project.path().join("src")).unwrap();
+        std::fs::write(project.path().join("src/__init__.py"), "").unwrap();
+        let source_path = project.path().join("src/calc.py");
+        std::fs::write(&source_path, source).unwrap();
+
+        for (command, status, exit_code) in [(weak, "survived", 1), (strong, "killed", 0)] {
+            let command = format!("from src.calc import probe\n{command}\n");
+            let run =
+                run_project_options(project.path(), 1, &command, &["--operators", operator]).await;
+            assert_eq!(
+                run.exit_code, exit_code,
+                "{operator}: {} {}",
+                run.stderr, run.stdout
+            );
+            assert_eq!(
+                run.document["summary"]["complete"], true,
+                "{operator}: {}",
+                run.stderr
+            );
+            assert_eq!(
+                run.statuses,
+                vec![status; count],
+                "{operator}: {}",
+                run.stdout
+            );
+            for mutant in run.document["mutants"].as_array().unwrap() {
+                assert_eq!(mutant["candidate"]["operator"], operator);
+            }
+            assert_eq!(std::fs::read_to_string(&source_path).unwrap(), source);
+        }
+    }
+}
+
+#[tokio::test]
 async fn exception_default_run_reports_canonical_json_candidate() {
     let project = tempfile::tempdir().unwrap();
     write_exception_operator_project(project.path());

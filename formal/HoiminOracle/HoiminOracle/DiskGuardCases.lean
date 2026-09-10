@@ -9,7 +9,7 @@ inductive CorrespondenceMode where
 inductive Layer where | policy | runtime
   deriving BEq, DecidableEq, Repr
 
-inductive ImplementationTarget where | rust | python
+inductive ImplementationTarget where | rust
   deriving BEq, DecidableEq, Repr
 
 structure TerminalObservation where
@@ -68,9 +68,7 @@ def expected (state : State) (accepted : Bool := true)
 def observeExecution (execution : Execution) : TerminalObservation :=
   expected execution.state execution.accepted execution.rejectedAt
 
-private def both : List ImplementationTarget := [.rust, .python]
 private def rustOnly : List ImplementationTarget := [.rust]
-private def pythonOnly : List ImplementationTarget := [.python]
 
 private def settledState (owned : List RootId) (delivery : List RootId := []) : State :=
   { State.initial owned delivery with
@@ -80,7 +78,7 @@ private def settledState (owned : List RootId) (delivery : List RootId := []) : 
 
 private def policyCase (id : String) (events : List Event) (state : State)
     (accepted : Bool := true) (rejectedAt : Option Nat := none) : OracleCase :=
-  { id, mode := .strict, layer := .policy, implementationTargets := both
+  { id, mode := .strict, layer := .policy, implementationTargets := rustOnly
     initial := State.initial, events, expected := expected state accepted rejectedAt }
 
 def fixedCases : List OracleCase := [
@@ -115,37 +113,12 @@ def fixedCases : List OracleCase := [
     [.observe 10 10 11 10, .dispatch]
     { State.initial with stop := some .sizeExceeded } false (some 1),
   { id := "runtime_settled_process_drain_rejects_dispatch"
-    mode := .strict, layer := .runtime, implementationTargets := both
+    mode := .strict, layer := .runtime, implementationTargets := rustOnly
     initial := State.initial [executionRoot]
     events := [.processDrainSucceeded, .dispatch]
     expected := expected
       { State.initial [executionRoot] with processDrain := .succeeded }
       false (some 1) },
-  { id := "runtime_zero_active_python_completion"
-    mode := .internalFixture, layer := .runtime, implementationTargets := pythonOnly
-    initial := State.initial [executionRoot]
-    events := [.processDrainSucceeded, .outputDrained, .monitorJoined,
-      .requestCleanup executionRoot, .cleanupSucceeded executionRoot,
-      .reportSucceeded, .finish]
-    expected := expected
-      { settledState [executionRoot] with
-        cleanupRequested := [executionRoot]
-        cleanupClean := [executionRoot]
-        report := .succeeded
-        finished := true } },
-  { id := "runtime_one_active_python_completion"
-    mode := .internalFixture, layer := .runtime, implementationTargets := pythonOnly
-    initial := State.initial [executionRoot]
-    events := [.dispatch, .processDrainSucceeded, .outputDrained, .monitorJoined,
-      .requestCleanup executionRoot, .cleanupSucceeded executionRoot,
-      .reportSucceeded, .finish]
-    expected := expected
-      { settledState [executionRoot] with
-        dispatched := 1
-        cleanupRequested := [executionRoot]
-        cleanupClean := [executionRoot]
-        report := .succeeded
-        finished := true } },
   { id := "runtime_two_active_global_drain"
     mode := .internalFixture, layer := .runtime, implementationTargets := rustOnly
     initial := State.initial [executionRoot] [] 2
@@ -164,45 +137,6 @@ def fixedCases : List OracleCase := [
         dispatched := 1
         cleanupRequested := [executionRoot, deliveryRoot]
         cleanupClean := [executionRoot, deliveryRoot]
-        report := .succeeded
-        finished := true } },
-  { id := "runtime_execution_cleanup_failure_can_finish"
-    mode := .internalFixture, layer := .runtime, implementationTargets := pythonOnly
-    initial := State.initial [executionRoot]
-    events := [.processDrainSucceeded, .outputDrained, .monitorJoined,
-      .requestCleanup executionRoot, .cleanupFailed executionRoot,
-      .reportSucceeded, .finish]
-    expected := expected
-      { settledState [executionRoot] with
-        cleanupRequested := [executionRoot]
-        cleanupFailed := [executionRoot]
-        report := .succeeded
-        finished := true } },
-  { id := "runtime_deferred_cleanup_blocks_finish"
-    mode := .internalFixture, layer := .runtime, implementationTargets := pythonOnly
-    initial := State.initial [executionRoot]
-    events := [.processDrainSucceeded, .outputDrained, .monitorJoined,
-      .requestCleanup executionRoot, .cleanupDeferred executionRoot,
-      .reportSucceeded, .finish]
-    expected := expected
-      { settledState [executionRoot] with
-        cleanupRequested := [executionRoot]
-        cleanupDeferred := [executionRoot]
-        report := .succeeded } false (some 6) },
-  { id := "runtime_failed_component_retention_can_finish"
-    mode := .internalFixture, layer := .runtime, implementationTargets := pythonOnly
-    initial := State.initial [executionRoot]
-    events := [.processDrainFailed, .outputDrained, .monitorJoined,
-      .requestCleanup executionRoot, .cleanupRetained executionRoot,
-      .reportSucceeded, .finish]
-    expected := expected
-      { State.initial [executionRoot] with
-        stop := some .processFailed
-        processDrain := .failed
-        outputDrain := .succeeded
-        monitorJoin := .succeeded
-        cleanupRequested := [executionRoot]
-        cleanupRetained := [executionRoot]
         report := .succeeded
         finished := true } },
   { id := "runtime_report_failure_delivery_cleanup_then_reject_finish"
@@ -230,27 +164,13 @@ def fixedCases : List OracleCase := [
         cleanupClean := [executionRoot]
         cleanupFailed := [deliveryRoot]
         report := .succeeded } false (some 8) },
-  { id := "runtime_monitor_failure_deferred_rejects_finish"
-    mode := .internalFixture, layer := .runtime, implementationTargets := pythonOnly
-    initial := State.initial [executionRoot]
-    events := [.processDrainSucceeded, .outputDrained, .monitorJoinFailed,
-      .requestCleanup executionRoot, .cleanupDeferred executionRoot,
-      .reportSucceeded, .finish]
-    expected := expected
-      { State.initial [executionRoot] with
-        processDrain := .succeeded
-        outputDrain := .succeeded
-        monitorJoin := .failed
-        cleanupRequested := [executionRoot]
-        cleanupDeferred := [executionRoot]
-        report := .succeeded } false (some 6) },
   { id := "runtime_cleanup_before_components_rejected"
-    mode := .internalFixture, layer := .runtime, implementationTargets := both
+    mode := .internalFixture, layer := .runtime, implementationTargets := rustOnly
     initial := State.initial [executionRoot]
     events := [.requestCleanup executionRoot]
     expected := expected (State.initial [executionRoot]) false (some 0) },
   { id := "runtime_destructive_cleanup_after_failure_rejected"
-    mode := .internalFixture, layer := .runtime, implementationTargets := both
+    mode := .internalFixture, layer := .runtime, implementationTargets := rustOnly
     initial := State.initial [executionRoot]
     events := [.processDrainFailed, .outputDrained, .monitorJoined,
       .requestCleanup executionRoot, .cleanupSucceeded executionRoot]
@@ -262,7 +182,7 @@ def fixedCases : List OracleCase := [
         monitorJoin := .succeeded
         cleanupRequested := [executionRoot] } false (some 4) },
   { id := "runtime_cleanup_failed_after_output_failure_rejected"
-    mode := .internalFixture, layer := .runtime, implementationTargets := both
+    mode := .internalFixture, layer := .runtime, implementationTargets := rustOnly
     initial := State.initial [executionRoot]
     events := [.processDrainSucceeded, .outputDrainFailed, .monitorJoined,
       .requestCleanup executionRoot, .cleanupFailed executionRoot]
@@ -273,7 +193,7 @@ def fixedCases : List OracleCase := [
         monitorJoin := .succeeded
         cleanupRequested := [executionRoot] } false (some 4) },
   { id := "runtime_cleanup_succeeded_after_monitor_failure_rejected"
-    mode := .internalFixture, layer := .runtime, implementationTargets := both
+    mode := .internalFixture, layer := .runtime, implementationTargets := rustOnly
     initial := State.initial [executionRoot]
     events := [.processDrainSucceeded, .outputDrained, .monitorJoinFailed,
       .requestCleanup executionRoot, .cleanupSucceeded executionRoot]
@@ -284,7 +204,7 @@ def fixedCases : List OracleCase := [
         monitorJoin := .failed
         cleanupRequested := [executionRoot] } false (some 4) },
   { id := "runtime_duplicate_cleanup_request_rejected"
-    mode := .strict, layer := .runtime, implementationTargets := both
+    mode := .strict, layer := .runtime, implementationTargets := rustOnly
     initial := State.initial [executionRoot]
     events := [.processDrainSucceeded, .outputDrained, .monitorJoined,
       .requestCleanup executionRoot, .requestCleanup executionRoot]

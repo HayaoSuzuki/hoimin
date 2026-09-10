@@ -14,10 +14,6 @@ use hoimin_core::{
 
 const SUPPORTED_WORKER_TREE_DEPTH: usize = 128;
 
-fn outer_depth_guard_active() -> bool {
-    std::env::var_os("HOIMIN_FOCUSED_MUTATION_OUTER_DEPTH_GUARD").is_some()
-}
-
 fn write(root: &Utf8Path, path: &str, bytes: &[u8]) {
     let destination = root.join(path);
     fs::create_dir_all(destination.parent().unwrap()).unwrap();
@@ -298,9 +294,6 @@ fn cleanup_reports_reservation_only_after_worker_directory_is_deleted() {
 
 #[test]
 fn cleanup_releases_state_when_the_temporary_wrapper_was_already_removed() {
-    if outer_depth_guard_active() {
-        return;
-    }
     let project = tempfile::tempdir().unwrap();
     let root = Utf8Path::from_path(project.path()).unwrap();
     write(root, "pkg/a.py", b"original\n");
@@ -1022,9 +1015,6 @@ fn reset_retains_failed_discard_until_cleanup_then_allows_recreation() {
 
 #[test]
 fn reset_preserves_depth_error_while_discard_cleanup_is_pending() {
-    if outer_depth_guard_active() {
-        return;
-    }
     let project = tempfile::tempdir().unwrap();
     let root = Utf8Path::from_path(project.path()).unwrap();
     write(root, "pkg/a.py", b"original\n");

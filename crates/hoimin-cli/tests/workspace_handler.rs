@@ -23,10 +23,6 @@ use tempfile::TempDir;
 
 const SUPPORTED_WORKER_TREE_DEPTH: usize = 128;
 
-fn outer_depth_guard_active() -> bool {
-    std::env::var_os("HOIMIN_FOCUSED_MUTATION_OUTER_DEPTH_GUARD").is_some()
-}
-
 struct FixtureProject {
     temp: TempDir,
 }
@@ -405,9 +401,6 @@ fn handler_reset_and_cleanup_release_non_utf8_worker_state() {
 
 #[test]
 fn reset_handles_a_tree_at_the_supported_depth() {
-    if outer_depth_guard_active() {
-        return;
-    }
     let project = FixtureProject::new();
     let mut worker = create_worker(project.root());
     create_nested_directories(worker.root().as_std_path(), SUPPORTED_WORKER_TREE_DEPTH);
@@ -419,9 +412,6 @@ fn reset_handles_a_tree_at_the_supported_depth() {
 
 #[test]
 fn reset_reports_a_depth_error_beyond_the_supported_depth() {
-    if outer_depth_guard_active() {
-        return;
-    }
     let project = FixtureProject::new();
     let mut worker = create_worker(project.root());
     create_nested_directories(worker.root().as_std_path(), SUPPORTED_WORKER_TREE_DEPTH + 1);
@@ -439,9 +429,6 @@ fn reset_reports_a_depth_error_beyond_the_supported_depth() {
 
 #[test]
 fn cleanup_reports_the_same_depth_error_as_reset() {
-    if outer_depth_guard_active() {
-        return;
-    }
     let project = FixtureProject::new();
     let mut worker = create_worker(project.root());
     create_nested_directories(worker.root().as_std_path(), SUPPORTED_WORKER_TREE_DEPTH + 1);

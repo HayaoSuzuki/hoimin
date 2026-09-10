@@ -11,10 +11,6 @@ mod tests {
         ManagedRunRoot, OwnerKind, ensure_direct_child_capacity,
     };
 
-    fn outer_depth_guard_active() -> bool {
-        std::env::var_os("HOIMIN_FOCUSED_MUTATION_OUTER_DEPTH_GUARD").is_some()
-    }
-
     fn create_test_owned_directory_entry(
         parent: &cap_std::fs::Dir,
         name: &str,
@@ -1508,9 +1504,6 @@ mod tests {
 
     #[test]
     fn cleanup_removes_a_tree_deeper_than_the_meter_limit() {
-        if outer_depth_guard_active() {
-            return;
-        }
         let parent = tempfile::tempdir().unwrap();
         let parent = Utf8Path::from_path(parent.path()).unwrap();
         let coordinator = ManagedRootCoordinator::open(parent).unwrap();

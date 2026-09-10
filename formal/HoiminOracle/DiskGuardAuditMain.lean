@@ -29,7 +29,6 @@ private def layerName : Layer → String
 
 private def targetName : ImplementationTarget → String
   | .rust => "rust"
-  | .python => "python"
 
 private def rootName : RootId → String
   | ⟨0, _⟩ => "execution"
@@ -192,7 +191,7 @@ private def sensitivityJson (family : BrokenFamily) : Lean.Json :=
       ("correct", statesJson (traceStates step witness.1 witness.2)),
       ("broken", statesJson (traceStates (brokenStep family) witness.1 witness.2))]),
     ("classification", .str (if brokenDetected family then "detected" else "escaped")),
-    ("implementation_correspondence", .str "pending Rust/Python adapter execution"),
+    ("implementation_correspondence", .str "pending Rust adapter execution"),
     ("owner_question", .str "Does production preserve this approved lifecycle rule?"),
     ("reproduction_command", .str
       "lake exe generate_disk_guard -- --sensitivity")]

@@ -114,6 +114,8 @@ fn corpus_contract_rejects_unknown_or_duplicate_metadata() {
     assert!(validate_contract(&case).is_err());
     case.implementation_targets.clear();
     assert!(validate_contract(&case).is_err());
+    case.implementation_targets.push("python".into());
+    assert!(validate_contract(&case).is_err());
 }
 
 fn parse_corpus() -> Vec<CorpusCase> {
@@ -145,10 +147,7 @@ fn validate_contract(case: &CorpusCase) -> Result<(), String> {
     if targets.is_empty() || targets.len() != case.implementation_targets.len() {
         return Err("empty or duplicate targets".into());
     }
-    if targets
-        .iter()
-        .any(|value| !matches!(value.as_str(), "rust" | "python"))
-    {
+    if targets.iter().any(|value| value.as_str() != "rust") {
         return Err("unknown target".into());
     }
     Ok(())

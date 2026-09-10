@@ -1,4 +1,3 @@
-import ast
 import os
 import re
 import subprocess
@@ -46,18 +45,8 @@ def runtime_tags_for(system: str) -> frozenset[Tag]:
 
 
 class StandaloneContractTests(unittest.TestCase):
-    def test_windows_disk_safe_workflow_remains_in_manual_ci_and_discovery(
-        self,
-    ) -> None:
+    def test_windows_quality_and_wheel_smoke_remain_in_manual_ci(self) -> None:
         repository_root = Path(__file__).resolve().parents[1]
-        workflow_source = (repository_root / "tools/focused_mutation.py").read_text(
-            encoding="utf-8"
-        )
-        self.assertNotIn(
-            "disk-safe focused mutation requires the Windows native adapter",
-            workflow_source,
-        )
-
         manual_ci = (
             repository_root / ".github/workflows/non-linux-ci.yml"
         ).read_text(encoding="utf-8")
@@ -70,28 +59,6 @@ class StandaloneContractTests(unittest.TestCase):
                 self.assertIsNotNone(section)
                 assert section is not None
                 self.assertIn("windows-latest", section.group("body"))
-
-        protected_classes = {
-            "DiskPolicyParserTests",
-            "AnchoredDiskGuardTests",
-            "ManagedScratchTests",
-            "OwnedOutputTests",
-            "FocusedMutationReportingTests",
-        }
-        for relative in (
-            "tests/test_focused_mutation_disk.py",
-            "tests/test_focused_mutation_reporting.py",
-        ):
-            source = (repository_root / relative).read_text(encoding="utf-8")
-            tree = ast.parse(source, filename=relative)
-            for node in tree.body:
-                if isinstance(node, ast.ClassDef) and node.name in protected_classes:
-                    with self.subTest(file=relative, class_name=node.name):
-                        self.assertEqual(node.decorator_list, [])
-            self.assertNotIn(
-                "Task 8-10 RunStore activation is intentionally unmigrated on Windows",
-                source,
-            )
 
     def test_documentation_requires_build_before_standalone_smoke(self) -> None:
         repository_root = Path(__file__).resolve().parents[1]

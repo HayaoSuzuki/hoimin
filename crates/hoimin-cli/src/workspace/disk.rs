@@ -1197,10 +1197,6 @@ mod tests {
         RootCapability::open(path).unwrap()
     }
 
-    fn outer_depth_guard_active() -> bool {
-        std::env::var_os("HOIMIN_FOCUSED_MUTATION_OUTER_DEPTH_GUARD").is_some()
-    }
-
     struct ScriptedMeter {
         readings: std::sync::Mutex<VecDeque<std::io::Result<MeterReading>>>,
     }
@@ -1785,10 +1781,6 @@ mod tests {
     fn exact_depth_bound_uses_at_most_one_hundred_twenty_nine_directory_handles() {
         use std::cell::Cell;
 
-        if outer_depth_guard_active() {
-            return;
-        }
-
         let temp = tempfile::tempdir().unwrap();
         let temp = Utf8Path::from_path(temp.path()).unwrap();
         let root = temp.join("root");
@@ -1829,10 +1821,6 @@ mod tests {
     fn directory_handle_bound_child() {
         use std::cell::Cell;
 
-        if outer_depth_guard_active() {
-            return;
-        }
-
         if std::env::var_os("HOIMIN_DISK_HANDLE_BOUND_CHILD").is_none() {
             return;
         }
@@ -1866,9 +1854,6 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn fresh_process_observes_the_real_directory_descriptor_bound() {
-        if outer_depth_guard_active() {
-            return;
-        }
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .arg("--exact")
             .arg("workspace::disk::tests::directory_handle_bound_child")
@@ -2002,9 +1987,6 @@ mod tests {
 
     #[test]
     fn rejects_a_tree_deeper_than_the_bound() {
-        if outer_depth_guard_active() {
-            return;
-        }
         let temp = tempfile::tempdir().unwrap();
         let temp = Utf8Path::from_path(temp.path()).unwrap();
         let root = temp.join("root");
