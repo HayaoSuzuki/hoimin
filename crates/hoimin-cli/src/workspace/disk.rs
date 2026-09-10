@@ -866,7 +866,7 @@ fn open_meter_root_directory(root: &RootCapability) -> io::Result<rustix::fs::Di
 }
 
 #[cfg(target_os = "macos")]
-type MacosMountIdentity = [u8; std::mem::size_of::<libc::fsid_t>()];
+type MacosMountIdentity = [u8; size_of::<libc::fsid_t>()];
 
 #[cfg(target_os = "macos")]
 fn macos_mount_identity(fd: &impl std::os::fd::AsFd) -> io::Result<MacosMountIdentity> {
@@ -880,7 +880,7 @@ fn macos_mount_identity(fd: &impl std::os::fd::AsFd) -> io::Result<MacosMountIde
         }
         result
     };
-    let mut identity = [0_u8; std::mem::size_of::<libc::fsid_t>()];
+    let mut identity = [0_u8; size_of::<libc::fsid_t>()];
     // SAFETY: identity has exactly the byte size of f_fsid and both ranges are valid/nonoverlap.
     unsafe {
         std::ptr::copy_nonoverlapping(

@@ -26,7 +26,7 @@ use serde_json::json;
 
 #[test]
 fn disk_filesystem_report_round_trips_through_json() {
-    let filesystem = hoimin_core::DiskFilesystemReport {
+    let filesystem = DiskFilesystemReport {
         key: "workspace".into(),
         start_available_bytes: Some(1_024),
         minimum_available_bytes: Some(512),
@@ -54,14 +54,14 @@ fn disk_filesystem_report_round_trips_through_json() {
 
 #[test]
 fn disk_filesystem_delta_preserves_the_full_u64_difference() {
-    let positive = hoimin_core::DiskFilesystemReport {
+    let positive = DiskFilesystemReport {
         key: "positive".into(),
         start_available_bytes: Some(0),
         minimum_available_bytes: Some(0),
         end_available_bytes: Some(u64::MAX),
         available_bytes_change: Some(i128::from(u64::MAX)),
     };
-    let negative = hoimin_core::DiskFilesystemReport {
+    let negative = DiskFilesystemReport {
         key: "negative".into(),
         start_available_bytes: Some(u64::MAX),
         minimum_available_bytes: Some(0),
@@ -97,7 +97,7 @@ fn disk_filesystem_report_rejects_a_non_numeric_delta() {
         "available_bytes_change": "-256"
     });
 
-    let decoded = serde_json::from_value::<hoimin_core::DiskFilesystemReport>(malformed);
+    let decoded = serde_json::from_value::<DiskFilesystemReport>(malformed);
 
     assert!(decoded.is_err());
 }
@@ -112,7 +112,7 @@ fn disk_filesystem_report_rejects_a_delta_that_disagrees_with_its_endpoints() {
         "available_bytes_change": -255
     });
 
-    let decoded = serde_json::from_value::<hoimin_core::DiskFilesystemReport>(inconsistent);
+    let decoded = serde_json::from_value::<DiskFilesystemReport>(inconsistent);
 
     assert!(decoded.is_err());
 }
@@ -127,7 +127,7 @@ fn disk_filesystem_report_requires_a_delta_when_both_endpoints_exist() {
         "available_bytes_change": null
     });
 
-    let decoded = serde_json::from_value::<hoimin_core::DiskFilesystemReport>(incomplete);
+    let decoded = serde_json::from_value::<DiskFilesystemReport>(incomplete);
 
     assert!(decoded.is_err());
 }
@@ -169,7 +169,7 @@ fn disk_summary_rejects_unverified_or_unregistered_aggregate_claims() {
         .is_err()
     );
     assert!(
-        serde_json::from_value::<DiskEnforcementReport>(serde_json::json!({
+        serde_json::from_value::<DiskEnforcementReport>(json!({
             "kind": "verified_aggregate",
             "backend": "linux_project_quota",
             "probe": {
@@ -238,7 +238,7 @@ fn run_started_versions_serialize_only_os_and_hoimin() {
 fn verification_selection_policy_uses_stable_snake_case_serialization() {
     assert_eq!(
         serde_json::to_value(VerificationSelectionPolicy::FileRoundRobinV1).unwrap(),
-        serde_json::json!("file_round_robin_v1"),
+        json!("file_round_robin_v1"),
     );
 }
 #[test]
@@ -820,7 +820,7 @@ fn legacy_mutant_finish_defaults_and_omits_output_completion_fields() {
 fn all_event_variants_have_the_exact_public_kind() {
     let events = [
         OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)),
-        serde_json::from_value(serde_json::json!({
+        serde_json::from_value(json!({
             "kind": "baseline_finished",
             "schema_version": 1,
             "sequence": 2,
@@ -833,12 +833,12 @@ fn all_event_variants_have_the_exact_public_kind() {
         .unwrap(),
         OutputEvent::MutantStarted(MutantStarted::new("run-1", 3, "m1", 7)),
         finished_event(4, candidate("m1", 7)),
-        serde_json::from_value(serde_json::json!({
+        serde_json::from_value(json!({
             "kind": "diagnostic", "schema_version": 1, "sequence": 5,
             "run_id": "run-1", "level": "warning", "code": "x", "message": "y"
         }))
         .unwrap(),
-        serde_json::from_value(serde_json::json!({
+        serde_json::from_value(json!({
             "kind": "run_finished", "schema_version": 1, "sequence": 6,
             "run_id": "run-1",
             "counts": { "killed": 0, "survived": 0, "timeout": 0,
@@ -973,7 +973,7 @@ fn finished_event_with(
 
 #[cfg(not(feature = "contracts"))]
 fn run_finished_event(sequence: u64) -> OutputEvent {
-    serde_json::from_value(serde_json::json!({
+    serde_json::from_value(json!({
         "kind": "run_finished",
         "schema_version": hoimin_core::REPORT_SCHEMA_VERSION,
         "sequence": sequence,

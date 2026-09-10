@@ -1305,17 +1305,20 @@ mod tests {
             let handler = Arc::clone(&handler);
             async move { handler.run(request).await }
         });
-        let setup_deadline = tokio::time::Instant::now() + Duration::from_secs(2);
-        while !output.is_dir() {
-            assert!(
-                tokio::time::Instant::now() < setup_deadline,
-                "process output directory was not prepared before spawn"
-            );
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        std::fs::remove_dir(&output).unwrap();
-        std::fs::write(&output, b"blocks spool creation").unwrap();
-        drop(spawn_guard);
+        // Keep the synchronous spawn gate locked while allowing the runtime to make progress.
+        tokio::task::block_in_place(|| {
+            let setup_deadline = std::time::Instant::now() + Duration::from_secs(2);
+            while !output.is_dir() {
+                assert!(
+                    std::time::Instant::now() < setup_deadline,
+                    "process output directory was not prepared before spawn"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            std::fs::remove_dir(&output).unwrap();
+            std::fs::write(&output, b"blocks spool creation").unwrap();
+            drop(spawn_guard);
+        });
 
         let error = task.await.unwrap().unwrap_err();
         assert_eq!(error.failure.code(), "process.output.write");
@@ -1513,7 +1516,7 @@ mod tests {
     async fn aborting_the_caller_does_not_report_quiescence_before_reap_and_output_drain() {
         let output = tempfile::tempdir().unwrap();
         let output = camino::Utf8PathBuf::from_path_buf(output.path().to_owned()).unwrap();
-        let handler = std::sync::Arc::new(ProcessHandler::new(
+        let handler = Arc::new(ProcessHandler::new(
             ResourceBackend::Portable(PortableBackend::for_tests()),
             output,
         ));
@@ -1540,7 +1543,7 @@ mod tests {
         })
         .with_cancellation(cancellation.clone());
         let task = tokio::spawn({
-            let handler = std::sync::Arc::clone(&handler);
+            let handler = Arc::clone(&handler);
             async move { handler.run(request).await }
         });
 
@@ -1658,13 +1661,8 @@ mod tests {
 
     #[test]
     fn process_error_precedes_output_cleanup_error() {
-        let primary =
-            hoimin_core::EffectFailed::other(EffectId(41), "process.resource.terminate", "primary");
-        let cleanup = hoimin_core::EffectFailed::other(
-            EffectId(41),
-            "process.output.close.timeout",
-            "cleanup",
-        );
+        let primary = EffectFailed::other(EffectId(41), "process.resource.terminate", "primary");
+        let cleanup = EffectFailed::other(EffectId(41), "process.output.close.timeout", "cleanup");
 
         let error = combine_process_and_output(
             Err(primary.clone()),
@@ -1679,7 +1677,7 @@ mod tests {
 
     #[test]
     fn cleanup_failures_preserve_primary_error_and_append_details_in_order() {
-        let mut primary = hoimin_core::EffectFailed {
+        let mut primary = EffectFailed {
             id: EffectId(44),
             failure: EffectFailure::Io {
                 code: "process.resource.terminate".into(),
@@ -1688,9 +1686,8 @@ mod tests {
                 message: "primary termination failure".into(),
             },
         };
-        let root_kill =
-            hoimin_core::EffectFailed::other(EffectId(44), "process.kill", "root kill detail");
-        let tree_retry = hoimin_core::EffectFailed::other(
+        let root_kill = EffectFailed::other(EffectId(44), "process.kill", "root kill detail");
+        let tree_retry = EffectFailed::other(
             EffectId(44),
             "process.resource.terminate",
             "tree retry detail",
@@ -1779,11 +1776,7 @@ mod tests {
 
     #[test]
     fn mutant_output_close_timeout_preserves_the_known_termination() {
-        let cleanup = hoimin_core::EffectFailed::other(
-            EffectId(42),
-            "process.output.close.timeout",
-            "cleanup",
-        );
+        let cleanup = EffectFailed::other(EffectId(42), "process.output.close.timeout", "cleanup");
         let fallback = output_ref();
 
         let result = combine_process_and_output(
@@ -1828,11 +1821,7 @@ mod tests {
 
     #[test]
     fn baseline_output_close_timeout_remains_fatal() {
-        let cleanup = hoimin_core::EffectFailed::other(
-            EffectId(42),
-            "process.output.close.timeout",
-            "cleanup",
-        );
+        let cleanup = EffectFailed::other(EffectId(42), "process.output.close.timeout", "cleanup");
 
         let error = combine_process_and_output(
             Ok(ProcessTermination::Exit(0)),
@@ -1847,8 +1836,7 @@ mod tests {
 
     #[test]
     fn mutant_output_io_failure_remains_fatal() {
-        let failure =
-            hoimin_core::EffectFailed::other(EffectId(42), "process.stdout.read", "read failed");
+        let failure = EffectFailed::other(EffectId(42), "process.stdout.read", "read failed");
 
         let error = combine_process_and_output(
             Ok(ProcessTermination::Exit(0)),

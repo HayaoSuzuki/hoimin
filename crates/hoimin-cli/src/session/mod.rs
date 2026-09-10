@@ -1040,7 +1040,7 @@ mod dispatch_tests {
         let operation = dispatcher.begin(BeginSession {
             id: EffectId(91),
             run_id: "blocked".to_owned(),
-            fingerprint: hoimin_core::RunFingerprint::from_bytes([9; 32]),
+            fingerprint: RunFingerprint::from_bytes([9; 32]),
         });
         tokio::pin!(operation);
 

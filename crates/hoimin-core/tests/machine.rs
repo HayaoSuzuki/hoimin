@@ -780,7 +780,7 @@ fn deadline_before_preflight_still_emits_a_complete_report_before_cleanup() {
     let (state, effects) = transition(state, RunEvent::DeadlineReached).unwrap();
     let started_id = effect_id(find_effect(
         &effects,
-        |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, hoimin_core::OutputEvent::RunStarted(_))),
+        |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, OutputEvent::RunStarted(_))),
     ));
     let (state, effects) = transition(
         state,
@@ -793,7 +793,7 @@ fn deadline_before_preflight_still_emits_a_complete_report_before_cleanup() {
     };
     let (state, effects) = transition(
         state,
-        RunEvent::CleanupFinished(hoimin_core::CleanupFinished {
+        RunEvent::CleanupFinished(CleanupFinished {
             id: cleanup.id,
             released_reservations: cleanup.reservations.clone(),
         }),
@@ -804,7 +804,7 @@ fn deadline_before_preflight_still_emits_a_complete_report_before_cleanup() {
     assert!(effects.iter().any(|effect| matches!(
         effect,
         RunEffect::EmitOutput(value)
-            if matches!(&value.event, hoimin_core::OutputEvent::RunFinished(_))
+            if matches!(&value.event, OutputEvent::RunFinished(_))
     )));
     assert!(
         !effects
@@ -872,7 +872,7 @@ fn cancellation_flushes_active_and_remaining_candidates_as_not_run() {
         (state, effects) = complete_mutant_started(state, &effects);
         let finished = find_effect(&effects, |effect| {
             matches!(effect, RunEffect::EmitOutput(value)
-                if matches!(&value.event, hoimin_core::OutputEvent::MutantFinished(value)
+                if matches!(&value.event, OutputEvent::MutantFinished(value)
                     if value.status == MutationStatus::NotRun
                         && value.candidate.sequence == sequence))
         });
@@ -968,7 +968,7 @@ fn one_active_candidate_is_applied_classified_and_reported() {
     assert!(effects.iter().any(|effect| matches!(
         effect,
         RunEffect::EmitOutput(value)
-            if matches!(&value.event, hoimin_core::OutputEvent::MutantFinished(value)
+            if matches!(&value.event, OutputEvent::MutantFinished(value)
                 if value.status == MutationStatus::Killed && value.candidate == candidate)
     )));
 }
@@ -1089,7 +1089,7 @@ fn candidate_filter_skips_unrequested_candidates() {
     }));
     let (state, effects) = transition(
         state,
-        RunEvent::WorkerReset(hoimin_core::WorkerReset {
+        RunEvent::WorkerReset(WorkerReset {
             id: reset_id,
             worker: 0,
         }),
@@ -1860,13 +1860,12 @@ fn four_jobs_fill_four_independent_worker_chains_in_every_completion_order() {
                         state = next;
                         let output = find_effect(
                             &produced,
-                            |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, hoimin_core::OutputEvent::MutantFinished(_))),
+                            |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, OutputEvent::MutantFinished(_))),
                         );
                         let RunEffect::EmitOutput(output) = output else {
                             unreachable!()
                         };
-                        let hoimin_core::OutputEvent::MutantFinished(finished) = &output.event
-                        else {
+                        let OutputEvent::MutantFinished(finished) = &output.event else {
                             unreachable!()
                         };
                         assert_eq!(finished.candidate.sequence, u64::from(worker) + 1);
@@ -1932,7 +1931,7 @@ fn cleanup_failure_terminates_without_reemitting_cleanup() {
     .unwrap();
     let diagnostic_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::EmitOutput(value)
-            if matches!(&value.event, hoimin_core::OutputEvent::Diagnostic(_)))
+            if matches!(&value.event, OutputEvent::Diagnostic(_)))
     }));
     let (state, effects) = transition(
         state,
@@ -1954,7 +1953,7 @@ fn cleanup_failure_terminates_without_reemitting_cleanup() {
 
     let cleanup_diagnostic_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::EmitOutput(value)
-            if matches!(&value.event, hoimin_core::OutputEvent::Diagnostic(value)
+            if matches!(&value.event, OutputEvent::Diagnostic(value)
                 if value.code == "workspace.cleanup"))
     }));
     let (state, effects) = transition(
@@ -1966,12 +1965,12 @@ fn cleanup_failure_terminates_without_reemitting_cleanup() {
     .unwrap();
     let report = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::EmitOutput(value)
-            if matches!(&value.event, hoimin_core::OutputEvent::RunFinished(_)))
+            if matches!(&value.event, OutputEvent::RunFinished(_)))
     });
     let RunEffect::EmitOutput(report) = report else {
         unreachable!()
     };
-    let hoimin_core::OutputEvent::RunFinished(summary) = &report.event else {
+    let OutputEvent::RunFinished(summary) = &report.event else {
         unreachable!()
     };
     assert_eq!(summary.exit_code, 2);
@@ -2008,7 +2007,7 @@ fn cleanup_rejects_mismatched_reservations_without_consuming_the_pending_effect(
         assert_eq!(error.code(), "machine.cleanup.reservation_mismatch");
         assert!(matches!(
             error,
-            hoimin_core::MachineError::CleanupReservationMismatch {
+            MachineError::CleanupReservationMismatch {
                 id,
                 expected: ref actual_expected,
                 received: ref actual_received,
@@ -2098,7 +2097,7 @@ fn deferred_cleanup_failure_is_reported_as_deferred() {
     .unwrap();
     let diagnostic_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::EmitOutput(value)
-            if matches!(&value.event, hoimin_core::OutputEvent::Diagnostic(_)))
+            if matches!(&value.event, OutputEvent::Diagnostic(_)))
     }));
     let (_state, effects) = transition(
         state,
@@ -2107,7 +2106,7 @@ fn deferred_cleanup_failure_is_reported_as_deferred() {
     .unwrap();
     let report = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::EmitOutput(value)
-            if matches!(&value.event, hoimin_core::OutputEvent::RunFinished(_)))
+            if matches!(&value.event, OutputEvent::RunFinished(_)))
     });
     let RunEffect::EmitOutput(report) = report else {
         unreachable!()
@@ -2125,9 +2124,7 @@ fn deferred_cleanup_failure_is_reported_as_deferred() {
 
 fn assert_failed_cleanup_delivery_order(state: RunState, effects: &[RunEffect]) {
     let output = effects.iter().find_map(|effect| match effect {
-        RunEffect::EmitOutput(value)
-            if matches!(&value.event, hoimin_core::OutputEvent::RunFinished(_)) =>
-        {
+        RunEffect::EmitOutput(value) if matches!(&value.event, OutputEvent::RunFinished(_)) => {
             Some(value)
         }
         _ => None,
@@ -2242,7 +2239,7 @@ fn pre_start_failure_emits_run_started_then_one_machine_readable_diagnostic() {
     .unwrap();
     let started_id = effect_id(find_effect(
         &effects,
-        |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, hoimin_core::OutputEvent::RunStarted(_))),
+        |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, OutputEvent::RunStarted(_))),
     ));
     let (_, effects) = transition(
         state,
@@ -2253,7 +2250,7 @@ fn pre_start_failure_emits_run_started_then_one_machine_readable_diagnostic() {
     assert!(effects.iter().any(|effect| matches!(
         effect,
         RunEffect::EmitOutput(value)
-            if matches!(&value.event, hoimin_core::OutputEvent::Diagnostic(value)
+            if matches!(&value.event, OutputEvent::Diagnostic(value)
                 if value.code == "target.resolve")
     )));
     assert!(!effects.iter().any(|effect| matches!(
@@ -2993,7 +2990,7 @@ fn resumed_determinate_result_is_reused_without_mutant_execution() {
     let (next, effects) = complete_mutant_started(next, &effects);
     let finished_id = effect_id(find_effect(
         &effects,
-        |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, hoimin_core::OutputEvent::MutantFinished(_))),
+        |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, OutputEvent::MutantFinished(_))),
     ));
     let (next, effects) = transition(
         next,
@@ -3043,7 +3040,7 @@ fn reused_result_is_counted_only_after_finished_output_succeeds() {
     let (state, effects) = complete_mutant_started(state, &effects);
     let finished_id = effect_id(find_effect(
         &effects,
-        |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, hoimin_core::OutputEvent::MutantFinished(_))),
+        |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, OutputEvent::MutantFinished(_))),
     ));
     let (failed, produced) = transition(
         state,
@@ -3547,7 +3544,7 @@ fn every_process_termination_is_classified_by_the_machine() {
         assert!(effects.iter().any(|effect| matches!(
             effect,
             RunEffect::EmitOutput(value)
-                if matches!(&value.event, hoimin_core::OutputEvent::MutantFinished(value)
+                if matches!(&value.event, OutputEvent::MutantFinished(value)
                     if value.status == expected)
         )));
     }
@@ -3624,7 +3621,7 @@ fn max_mutants_reports_remaining_candidates_as_not_run_in_stable_order() {
     }));
     let (state, effects) = transition(
         state,
-        RunEvent::WorkerReset(hoimin_core::WorkerReset {
+        RunEvent::WorkerReset(WorkerReset {
             id: reset_id,
             worker: 0,
         }),
@@ -3655,12 +3652,12 @@ fn max_mutants_reports_remaining_candidates_as_not_run_in_stable_order() {
     assert!(effects.iter().any(|effect| matches!(
         effect,
         RunEffect::EmitOutput(value)
-            if matches!(&value.event, hoimin_core::OutputEvent::MutantFinished(value)
+            if matches!(&value.event, OutputEvent::MutantFinished(value)
                 if value.status == MutationStatus::NotRun && value.candidate.sequence == 2)
     )));
     let finished_id = effect_id(find_effect(
         &effects,
-        |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, hoimin_core::OutputEvent::MutantFinished(_))),
+        |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, OutputEvent::MutantFinished(_))),
     ));
     let (next, _) = transition(
         next,
@@ -3743,7 +3740,7 @@ fn completion_ledger_stays_bounded_across_ten_thousand_mutants() {
         }));
         let (next, effects) = transition(
             state,
-            RunEvent::WorkerReset(hoimin_core::WorkerReset {
+            RunEvent::WorkerReset(WorkerReset {
                 id: reset_id,
                 worker: 0,
             }),
@@ -4554,7 +4551,7 @@ fn waiting_for_cleanup() -> (RunState, hoimin_core::Cleanup) {
     .unwrap();
     let diagnostic_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::EmitOutput(value)
-            if matches!(&value.event, hoimin_core::OutputEvent::Diagnostic(_)))
+            if matches!(&value.event, OutputEvent::Diagnostic(_)))
     }));
     let (state, effects) = transition(
         state,
@@ -4770,7 +4767,7 @@ fn waiting_for_materialization_verification_with(config: RunConfig) -> (RunState
 fn complete_run_started(state: RunState, effects: &[RunEffect]) -> (RunState, Vec<RunEffect>) {
     let output_id = effect_id(find_effect(
         effects,
-        |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, hoimin_core::OutputEvent::RunStarted(_))),
+        |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, OutputEvent::RunStarted(_))),
     ));
     transition(
         state,
@@ -4801,7 +4798,7 @@ fn complete_materialization_verification(
 fn complete_mutant_started(state: RunState, effects: &[RunEffect]) -> (RunState, Vec<RunEffect>) {
     let output_id = effect_id(find_effect(
         effects,
-        |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, hoimin_core::OutputEvent::MutantStarted(_))),
+        |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, OutputEvent::MutantStarted(_))),
     ));
     transition(
         state,
@@ -5104,7 +5101,7 @@ fn waiting_for_reset(termination: ProcessTermination) -> (RunState, Vec<RunEffec
     .unwrap();
     let finished_id = effect_id(find_effect(
         &effects,
-        |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, hoimin_core::OutputEvent::MutantFinished(_))),
+        |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, OutputEvent::MutantFinished(_))),
     ));
     transition(
         state,
@@ -5187,7 +5184,7 @@ fn effect_id(effect: &RunEffect) -> EffectId {
     effect.id()
 }
 
-fn reservation_id(effect: &RunEffect) -> hoimin_core::ReservationId {
+fn reservation_id(effect: &RunEffect) -> ReservationId {
     match effect {
         RunEffect::CreateWorker(value) => value.reservation_id(),
         _ => panic!("expected create worker"),

@@ -813,7 +813,7 @@ fn operator_function_lambda_replacements_exclude_pattern_values() {
     apply_candidate_and_reparse(source, &output.candidates[0]);
 }
 
-fn apply_candidate_and_reparse(source: &str, candidate: &super::AnalyzerCandidate) -> String {
+fn apply_candidate_and_reparse(source: &str, candidate: &AnalyzerCandidate) -> String {
     let start = usize::try_from(candidate.span.start).expect("candidate start fits usize");
     let length = usize::try_from(candidate.span.length).expect("candidate length fits usize");
     let end = start

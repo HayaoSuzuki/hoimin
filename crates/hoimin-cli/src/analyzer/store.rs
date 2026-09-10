@@ -600,7 +600,7 @@ mod tests {
             id: "boundary".to_owned(),
             sequence: 1,
             path: "src/boundary.py".into(),
-            span: hoimin_core::ByteSpan {
+            span: ByteSpan {
                 start: 0,
                 length: 1,
             },

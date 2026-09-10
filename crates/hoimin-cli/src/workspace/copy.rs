@@ -27,7 +27,7 @@ thread_local! {
 
 #[cfg(test)]
 fn reset_snapshot_write_metrics() {
-    SNAPSHOT_WRITE_METRICS.with(|metrics| metrics.set((0, 0)));
+    SNAPSHOT_WRITE_METRICS.set((0, 0));
 }
 
 #[cfg(test)]
@@ -47,7 +47,7 @@ impl PendingOwnedWorkspace {
         self.0.as_ref().expect("pending owner is present").path()
     }
 
-    fn open_cleanup_handle(&self) -> Result<Option<std::fs::File>, WorkspaceError> {
+    fn open_cleanup_handle(&self) -> Result<Option<fs::File>, WorkspaceError> {
         self.0
             .as_ref()
             .expect("pending owner is present")
@@ -999,7 +999,7 @@ mod tests {
                 limit: 10
             })
         ));
-        let names = std::fs::read_dir(root.path())
+        let names = fs::read_dir(root.path())
             .unwrap()
             .map(|entry| entry.unwrap().file_name())
             .collect::<Vec<_>>();
@@ -1572,7 +1572,7 @@ mod tests {
             error,
             ValidatedPreflightError::Workspace(WorkspaceError::OriginalChanged { .. })
         ));
-        let names = std::fs::read_dir(root.path())
+        let names = fs::read_dir(root.path())
             .unwrap()
             .map(|entry| entry.unwrap().file_name())
             .collect::<Vec<_>>();
@@ -1661,7 +1661,7 @@ mod tests {
             .unwrap_err();
 
         assert!(matches!(error, WorkspaceError::Io { .. }));
-        let names = std::fs::read_dir(root.path())
+        let names = fs::read_dir(root.path())
             .unwrap()
             .map(|entry| entry.unwrap().file_name())
             .collect::<Vec<_>>();
@@ -1743,7 +1743,7 @@ mod tests {
             release: Mutex::new(release_rx),
         }));
         let plan = Arc::new(plan);
-        let (result_tx, result_rx) = mpsc::channel();
+        let (result_tx, result_rx) = channel();
 
         let first_plan = Arc::clone(&plan);
         let first_result = result_tx.clone();
@@ -1801,7 +1801,7 @@ mod tests {
 
         assert_eq!(
             controller.wait_until_entered(Duration::ZERO),
-            Err(mpsc::RecvTimeoutError::Timeout)
+            Err(RecvTimeoutError::Timeout)
         );
     }
 

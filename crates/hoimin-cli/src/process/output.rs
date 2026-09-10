@@ -14,10 +14,7 @@ pub(crate) fn pipe_channel() -> (mpsc::Sender<Vec<u8>>, mpsc::Receiver<Vec<u8>>)
     mpsc::channel(PIPE_CHANNEL_CHUNKS)
 }
 
-pub(crate) async fn drain_pipe<R>(
-    mut reader: R,
-    sender: mpsc::Sender<Vec<u8>>,
-) -> std::io::Result<()>
+pub(crate) async fn drain_pipe<R>(mut reader: R, sender: mpsc::Sender<Vec<u8>>) -> io::Result<()>
 where
     R: AsyncRead + Unpin,
 {
@@ -267,7 +264,7 @@ mod tests {
             _capacity: u64,
             _position: u64,
             _chunk: &[u8],
-        ) -> impl std::future::Future<Output = std::io::Result<u64>> {
+        ) -> impl Future<Output = std::io::Result<u64>> {
             std::future::ready(Err(std::io::Error::other(format!(
                 "lean-error-{}",
                 self.code
@@ -279,7 +276,7 @@ mod tests {
             _capacity: u64,
             _position: u64,
             _truncated: bool,
-        ) -> impl std::future::Future<Output = std::io::Result<()>> {
+        ) -> impl Future<Output = std::io::Result<()>> {
             std::future::poll_fn(|_| panic!("a failed sink must not be finalized"))
         }
     }

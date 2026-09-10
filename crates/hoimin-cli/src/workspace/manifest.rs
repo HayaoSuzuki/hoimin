@@ -36,7 +36,7 @@ pub(crate) struct SourceContentMetrics {
 
 #[cfg(test)]
 pub(crate) fn reset_build_metrics() {
-    BUILD_METRICS.with(|metrics| metrics.set((0, 0)));
+    BUILD_METRICS.set((0, 0));
 }
 
 #[cfg(test)]

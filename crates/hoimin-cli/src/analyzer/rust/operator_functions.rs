@@ -279,15 +279,6 @@ impl<F: Fn() -> bool> ClassLookupScan<'_, F> {
 }
 
 impl<'ast, F: Fn() -> bool> Visitor<'ast> for ClassLookupScan<'_, F> {
-    fn visit_body(&mut self, body: &'ast [Stmt]) {
-        for statement in body {
-            self.visit_stmt(statement);
-            if self.cancelled_observed {
-                break;
-            }
-        }
-    }
-
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
         if self.stop() {
             return;
@@ -369,6 +360,15 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for ClassLookupScan<'_, F> {
             _ => visitor::walk_expr(self, expression),
         }
     }
+
+    fn visit_body(&mut self, body: &'ast [Stmt]) {
+        for statement in body {
+            self.visit_stmt(statement);
+            if self.cancelled_observed {
+                break;
+            }
+        }
+    }
 }
 
 struct ImportScan<'a, F> {
@@ -413,15 +413,6 @@ impl<F: Fn() -> bool> ImportScan<'_, F> {
 }
 
 impl<'ast, F: Fn() -> bool> Visitor<'ast> for ImportScan<'_, F> {
-    fn visit_body(&mut self, body: &'ast [Stmt]) {
-        for statement in body {
-            self.visit_stmt(statement);
-            if self.cancelled_observed {
-                break;
-            }
-        }
-    }
-
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
         if self.stop() {
             return;
@@ -532,6 +523,17 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for ImportScan<'_, F> {
         visitor::walk_expr(self, expression);
     }
 
+    fn visit_except_handler(&mut self, handler: &'ast ruff_python_ast::ExceptHandler) {
+        if self.stop() {
+            return;
+        }
+        let ruff_python_ast::ExceptHandler::ExceptHandler(exception) = handler;
+        if let Some(name) = &exception.name {
+            self.bind(name.as_str());
+        }
+        visitor::walk_except_handler(self, handler);
+    }
+
     fn visit_parameter(&mut self, parameter: &'ast ruff_python_ast::Parameter) {
         if self.stop() {
             return;
@@ -553,17 +555,6 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for ImportScan<'_, F> {
         visitor::walk_type_param(self, parameter);
     }
 
-    fn visit_except_handler(&mut self, handler: &'ast ruff_python_ast::ExceptHandler) {
-        if self.stop() {
-            return;
-        }
-        let ruff_python_ast::ExceptHandler::ExceptHandler(exception) = handler;
-        if let Some(name) = &exception.name {
-            self.bind(name.as_str());
-        }
-        visitor::walk_except_handler(self, handler);
-    }
-
     fn visit_pattern(&mut self, pattern: &'ast Pattern) {
         if self.stop() {
             return;
@@ -578,5 +569,14 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for ImportScan<'_, F> {
             self.bind(name.as_str());
         }
         visitor::walk_pattern(self, pattern);
+    }
+
+    fn visit_body(&mut self, body: &'ast [Stmt]) {
+        for statement in body {
+            self.visit_stmt(statement);
+            if self.cancelled_observed {
+                break;
+            }
+        }
     }
 }

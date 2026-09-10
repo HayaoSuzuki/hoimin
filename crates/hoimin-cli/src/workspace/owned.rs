@@ -227,7 +227,7 @@ mod tests {
         let coordinator = ManagedRootCoordinator::open(parent).unwrap();
         let before = super::read_coordinator_state(
             &coordinator.file,
-            &coordinator.path.join(super::COORDINATOR_FILE),
+            &coordinator.path.join(COORDINATOR_FILE),
         )
         .unwrap();
         let base = std::time::Instant::now();
@@ -250,7 +250,7 @@ mod tests {
         assert!(error.to_string().contains("deadline"), "{error}");
         let after = super::read_coordinator_state(
             &coordinator.file,
-            &coordinator.path.join(super::COORDINATOR_FILE),
+            &coordinator.path.join(COORDINATOR_FILE),
         )
         .unwrap();
         assert_eq!(after, before);
@@ -337,10 +337,10 @@ mod tests {
 
             assert!(result.is_err(), "boundary {selected:?} did not fail");
             let _ = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
-            let residual = std::fs::read_dir(parent.join(super::MANAGED_DIR))
+            let residual = std::fs::read_dir(parent.join(MANAGED_DIR))
                 .unwrap()
                 .map(|entry| entry.unwrap().file_name())
-                .filter(|name| name != super::COORDINATOR_FILE)
+                .filter(|name| name != COORDINATOR_FILE)
                 .collect::<Vec<_>>();
             assert!(
                 residual.is_empty(),
@@ -2319,7 +2319,7 @@ const MAX_CLEANUP_SLICE_DURATION: Duration = Duration::from_secs(5);
 const MAX_CLEANUP_DEPTH: usize = 4_096;
 const OWNER_CLEANUP_BUDGET: Duration = Duration::from_secs(60);
 const JANITOR_CLEANUP_BUDGET: Duration = Duration::from_secs(30);
-const STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+const STALE_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -6467,7 +6467,7 @@ fn remove_one_claimed_entry_with_capabilities(
     #[cfg(target_os = "macos")]
     ensure_same_cleanup_mount(parent, &current, started, budget)?;
     let root_identity = directory_identity(&current)?;
-    let mut components: Vec<(std::ffi::OsString, (u64, u64))> = Vec::new();
+    let mut components: Vec<(OsString, (u64, u64))> = Vec::new();
     let mut cursor_bytes = 0_usize;
     let mut examined = 0_u64;
     loop {
@@ -6802,7 +6802,7 @@ fn reopen_cleanup_parent(
     parent: &cap_std::fs::Dir,
     root_name: &str,
     root_identity: (u64, u64),
-    components: &[(std::ffi::OsString, (u64, u64))],
+    components: &[(OsString, (u64, u64))],
     started: std::time::Instant,
     budget: Duration,
 ) -> std::io::Result<cap_std::fs::Dir> {
@@ -7196,7 +7196,7 @@ fn metadata_identity(metadata: &cap_std::fs::Metadata) -> (u64, u64) {
 }
 
 #[cfg(target_os = "macos")]
-type MacosMountIdentity = [u8; std::mem::size_of::<libc::fsid_t>()];
+type MacosMountIdentity = [u8; size_of::<libc::fsid_t>()];
 
 #[cfg(target_os = "macos")]
 fn macos_directory_mount_identity(dir: &cap_std::fs::Dir) -> std::io::Result<MacosMountIdentity> {
@@ -7210,7 +7210,7 @@ fn macos_directory_mount_identity(dir: &cap_std::fs::Dir) -> std::io::Result<Mac
         }
         result
     };
-    let mut identity = [0_u8; std::mem::size_of::<libc::fsid_t>()];
+    let mut identity = [0_u8; size_of::<libc::fsid_t>()];
     // SAFETY: identity has exactly the byte size of f_fsid and both ranges are valid/nonoverlap.
     unsafe {
         std::ptr::copy_nonoverlapping(

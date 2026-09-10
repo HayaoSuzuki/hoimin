@@ -198,9 +198,9 @@ fn cli_entrypoint_future_keeps_large_run_state_out_of_line() {
     let future = hoimin_cli::run_with_io(["hoimin", "--help"], &mut stdout, &mut stderr);
 
     assert!(
-        std::mem::size_of_val(&future) <= 14 * 1024,
+        size_of_val(&future) <= 14 * 1024,
         "CLI future grew to {} bytes; large run state must remain out of line",
-        std::mem::size_of_val(&future)
+        size_of_val(&future)
     );
 }
 
@@ -2041,7 +2041,7 @@ async fn total_timeout_exits_after_grace_when_session_finish_is_locked() {
             }
             stdout.extend_from_slice(&line);
         }
-        Ok::<_, std::io::Error>(stdout)
+        Ok::<_, io::Error>(stdout)
     });
     let stderr_task = tokio::spawn(async move {
         let mut reader = stderr_pipe;
@@ -2373,7 +2373,7 @@ async fn drain_second_interrupt_stdout(
     stdout_pipe: tokio::process::ChildStdout,
     started_tx: tokio::sync::oneshot::Sender<Result<(), String>>,
     finished_tx: tokio::sync::oneshot::Sender<Result<(), String>>,
-) -> std::io::Result<Vec<u8>> {
+) -> io::Result<Vec<u8>> {
     let mut reader = BufReader::new(stdout_pipe);
     let mut stdout = Vec::new();
     let mut started_tx = Some(started_tx);
@@ -2587,7 +2587,7 @@ async fn serial_output_that_requests_stop_is_accepted_before_cancellation() {
     let ids = mutants
         .iter()
         .map(|event| event["candidate"]["id"].as_str().unwrap())
-        .collect::<std::collections::BTreeSet<_>>();
+        .collect::<BTreeSet<_>>();
     assert_eq!(
         ids.len(),
         mutants.len(),
@@ -3839,10 +3839,7 @@ fn send_sigint(pid: Option<u32>) -> Result<(), String> {
     let pid = i32::try_from(pid).map_err(|error| error.to_string())?;
     // SAFETY: `pid` belongs to the live child spawned by this test.
     if unsafe { libc::kill(pid, libc::SIGINT) } != 0 {
-        return Err(format!(
-            "SIGINT failed: {}",
-            std::io::Error::last_os_error()
-        ));
+        return Err(format!("SIGINT failed: {}", io::Error::last_os_error()));
     }
     Ok(())
 }
@@ -3975,7 +3972,7 @@ async fn kill_fixture_processes(active: &Path, descendant_marker: &Path) -> Resu
         if termination_failed {
             return Err(format!(
                 "failed to terminate fixture process {pid}: {}",
-                std::io::Error::last_os_error()
+                io::Error::last_os_error()
             ));
         }
         if !process.wait_until_stops(Duration::from_secs(5)).await {

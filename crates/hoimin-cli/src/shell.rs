@@ -6835,7 +6835,7 @@ mod tests {
         }
     }
 
-    impl std::io::Write for AlwaysFailingWriter {
+    impl Write for AlwaysFailingWriter {
         fn write(&mut self, _bytes: &[u8]) -> std::io::Result<usize> {
             Err(std::io::Error::other("injected report write failure"))
         }
@@ -7023,7 +7023,7 @@ mod tests {
         }
     }
 
-    impl std::io::Write for BorrowedNonSendWriter<'_> {
+    impl Write for BorrowedNonSendWriter<'_> {
         fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
             self.buffer.extend_from_slice(bytes);
             Ok(bytes.len())
@@ -7199,7 +7199,7 @@ mod tests {
             remaining_root: Some("stale".to_owned()),
         };
 
-        super::apply_execution_cleanup_evidence(&mut report, Some(&cleanup), &reclaim);
+        apply_execution_cleanup_evidence(&mut report, Some(&cleanup), &reclaim);
 
         assert_eq!(report.status, hoimin_core::DiskCleanupStatus::Clean);
         assert_eq!(report.examined_entries, 4);
@@ -7317,8 +7317,8 @@ mod tests {
     }
 
     async fn context_with_worker() -> (
-        tempfile::TempDir,
-        tempfile::TempDir,
+        TempDir,
+        TempDir,
         ShellContext<Vec<u8>, Vec<u8>>,
         MutationCandidate,
         CreateWorker,
@@ -8053,7 +8053,7 @@ mod tests {
 
     #[tokio::test]
     async fn interrupt_monitor_remains_live_while_outer_finalization_is_pending() {
-        let (signal_tx, signal_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (signal_tx, signal_rx) = mpsc::unbounded_channel();
         let (forced_tx, forced_rx) = tokio::sync::oneshot::channel();
         let monitor = crate::interrupt::spawn_test_monitor(signal_rx, move |code| {
             let _ = forced_tx.send(code);
@@ -8645,7 +8645,7 @@ mod tests {
         let (entered_tx, entered_rx) = std::sync::mpsc::sync_channel(2);
         let (release_first_tx, release_first_rx) = std::sync::mpsc::sync_channel(0);
         let (release_second_tx, release_second_rx) = std::sync::mpsc::sync_channel(0);
-        let (completion_tx, mut completion_rx) = tokio::sync::mpsc::channel(2);
+        let (completion_tx, mut completion_rx) = mpsc::channel(2);
         let mut tasks = JoinSet::new();
         let first_entered = entered_tx.clone();
         spawn_blocking_effect(
@@ -8736,10 +8736,7 @@ mod tests {
         );
     }
 
-    fn paused_materialization_config(
-        project: &tempfile::TempDir,
-        total_timeout: &str,
-    ) -> RunConfig {
+    fn paused_materialization_config(project: &TempDir, total_timeout: &str) -> RunConfig {
         std::fs::write(project.path().join("target.py"), b"value = 1\n").unwrap();
         parse_host_independent_shell_test_config(vec![
             OsString::from("hoimin"),
@@ -8902,7 +8899,7 @@ mod tests {
     async fn benchmark_blocking_io_dispatch() {
         const OPERATIONS: usize = 4;
         const OPERATION_MILLIS: u64 = 50;
-        let serial_started = std::time::Instant::now();
+        let serial_started = Instant::now();
         for sequence in 0..OPERATIONS {
             run_blocking_io(EffectId(u64::try_from(sequence).unwrap() + 1), || {
                 std::thread::sleep(Duration::from_millis(OPERATION_MILLIS));
@@ -8912,9 +8909,9 @@ mod tests {
         }
         let serial_millis = serial_started.elapsed().as_millis();
 
-        let (completion_tx, mut completion_rx) = tokio::sync::mpsc::channel(OPERATIONS);
+        let (completion_tx, mut completion_rx) = mpsc::channel(OPERATIONS);
         let mut tasks = JoinSet::new();
-        let concurrent_started = std::time::Instant::now();
+        let concurrent_started = Instant::now();
         let mut io_in_flight = 0_usize;
         let mut max_io_in_flight = 0_usize;
         for sequence in 0..OPERATIONS {
@@ -8980,7 +8977,7 @@ mod tests {
         std::fs::write(&input, "version = 'B'\n").unwrap();
         let error = context
             .workspace_mut()
-            .handle_preflight_validated(hoimin_core::Preflight { id }, |root, manifest| {
+            .handle_preflight_validated(Preflight { id }, |root, manifest| {
                 std::fs::write(&input, "version = 'A'\n").unwrap();
                 let result =
                     recheck_fingerprint_inputs(&config, root, manifest, &copied_at_start, id);
@@ -9028,7 +9025,7 @@ mod tests {
         std::fs::remove_file(&input).unwrap();
         let error = context
             .workspace_mut()
-            .handle_preflight_validated(hoimin_core::Preflight { id }, |root, manifest| {
+            .handle_preflight_validated(Preflight { id }, |root, manifest| {
                 std::fs::write(&input, "version = 'A'\n").unwrap();
                 let result =
                     recheck_fingerprint_inputs(&config, root, manifest, &copied_at_start, id);
@@ -9073,7 +9070,7 @@ mod tests {
         std::fs::write(&added, "added = true\n").unwrap();
         let error = context
             .workspace_mut()
-            .handle_preflight_validated(hoimin_core::Preflight { id }, |root, manifest| {
+            .handle_preflight_validated(Preflight { id }, |root, manifest| {
                 std::fs::remove_file(&added).unwrap();
                 let result =
                     recheck_fingerprint_inputs(&config, root, manifest, &copied_at_start, id);
@@ -9122,7 +9119,7 @@ mod tests {
 
         let completed = context
             .workspace_mut()
-            .handle_preflight_validated(hoimin_core::Preflight { id }, |root, manifest| {
+            .handle_preflight_validated(Preflight { id }, |root, manifest| {
                 recheck_fingerprint_inputs(&config, root, manifest, &copied_at_start, id)
             })
             .unwrap();
@@ -9166,7 +9163,7 @@ mod tests {
         std::fs::write(&input, "value = 'B'\n").unwrap();
         let error = context
             .workspace_mut()
-            .handle_preflight_validated(hoimin_core::Preflight { id }, |root, manifest| {
+            .handle_preflight_validated(Preflight { id }, |root, manifest| {
                 assert!(manifest.entry(Utf8Path::new("excluded.toml")).is_none());
                 recheck_fingerprint_inputs(&config, root, manifest, &copied_at_start, id)
             })
@@ -9298,7 +9295,7 @@ mod tests {
         let (sender, mut receiver) = mpsc::channel(2);
         sender
             .send(ShellCompletion {
-                event: RunEvent::EffectFailed(hoimin_core::EffectFailed::other(
+                event: RunEvent::EffectFailed(EffectFailed::other(
                     EffectId(1),
                     "process.spawn",
                     "failed",

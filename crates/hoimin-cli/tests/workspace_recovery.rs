@@ -574,7 +574,7 @@ fn root_relative_file_apis_remain_bound_to_open_worker_root() {
 }
 
 #[cfg(unix)]
-fn create_dir_symlink(target: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
+fn create_dir_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
     std::os::unix::fs::symlink(target, link)
 }
 
@@ -584,7 +584,7 @@ fn create_dir_symlink(target: &std::path::Path, link: &std::path::Path) -> std::
 }
 
 #[cfg(unix)]
-fn create_file_symlink(target: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
+fn create_file_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
     std::os::unix::fs::symlink(target, link)
 }
 

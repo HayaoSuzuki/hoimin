@@ -1089,12 +1089,8 @@ impl WorkerRoot {
 
         for component in parents {
             let component_path = Path::new(component);
-            if cap_primitives::fs::stat(
-                &parent,
-                component_path,
-                cap_primitives::fs::FollowSymlinks::No,
-            )
-            .is_ok_and(|metadata| is_link_or_reparse(&metadata))
+            if cap_primitives::fs::stat(&parent, component_path, FollowSymlinks::No)
+                .is_ok_and(|metadata| is_link_or_reparse(&metadata))
             {
                 return Err(WorkspaceError::InvalidPath {
                     path: path.to_owned(),
@@ -1653,7 +1649,7 @@ mod tests {
             self.worker.clone()
         }
 
-        fn link_dir(&self, target: &str, link: &str) -> std::io::Result<()> {
+        fn link_dir(&self, target: &str, link: &str) -> io::Result<()> {
             #[cfg(unix)]
             {
                 std::os::unix::fs::symlink(
@@ -2150,9 +2146,7 @@ mod tests {
         let root = WorkerRoot::open(fixture.worker_path()).unwrap();
         let (parent, name) = root.open_parent(Utf8Path::new("target"), false).unwrap();
         let mut options = cap_primitives::fs::OpenOptions::new();
-        options
-            .read(true)
-            .follow(cap_primitives::fs::FollowSymlinks::No);
+        options.read(true).follow(FollowSymlinks::No);
         let inspected = cap_primitives::fs::open(&parent, Path::new(&name), &options).unwrap();
         let mutation_file = MutationFile {
             file: inspected,

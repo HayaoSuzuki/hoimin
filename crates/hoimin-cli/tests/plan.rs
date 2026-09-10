@@ -1245,7 +1245,7 @@ async fn verify_top_resolves_the_saved_rank_prefix_and_retained_scope() {
         &path,
         &VerifySelection::Top {
             count: std::num::NonZeroUsize::new(1).unwrap(),
-            policy: hoimin_cli::cli::TopSelectionPolicy::Strict,
+            policy: TopSelectionPolicy::Strict,
         },
         OutputFormat::Json,
     )
@@ -1279,7 +1279,7 @@ async fn verify_top_above_a_truncated_plan_selects_every_retained_candidate() {
         &path,
         &VerifySelection::Top {
             count: std::num::NonZeroUsize::new(30).unwrap(),
-            policy: hoimin_cli::cli::TopSelectionPolicy::Strict,
+            policy: TopSelectionPolicy::Strict,
         },
         OutputFormat::Json,
     )

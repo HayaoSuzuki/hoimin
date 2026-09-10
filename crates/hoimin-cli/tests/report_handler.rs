@@ -308,7 +308,7 @@ fn all_optional_report_events(current: bool) -> Vec<OutputEvent> {
             candidate,
             status: MutationStatus::Killed,
             termination: Some(ProcessTermination::Exit(7)),
-            output_state: hoimin_core::ProcessOutputState::Complete,
+            output_state: ProcessOutputState::Complete,
             elapsed_ms: 13,
             resource_mode: ResourceMode::Hard,
             output: Some(OutputSpoolRef {
@@ -896,7 +896,7 @@ fn documented_events() -> Vec<OutputEvent> {
             },
             status,
             termination,
-            output_state: hoimin_core::ProcessOutputState::Complete,
+            output_state: ProcessOutputState::Complete,
             elapsed_ms: 2,
             resource_mode: if mutant_sequence % 2 == 0 {
                 ResourceMode::Hard
@@ -1727,7 +1727,7 @@ fn mutant_finished(event_sequence: u64, mutant_sequence: u64) -> OutputEvent {
         },
         status: MutationStatus::Killed,
         termination: Some(ProcessTermination::Exit(1)),
-        output_state: hoimin_core::ProcessOutputState::Complete,
+        output_state: ProcessOutputState::Complete,
         elapsed_ms: 2,
         resource_mode: ResourceMode::Hard,
         output: Some(output_ref()),

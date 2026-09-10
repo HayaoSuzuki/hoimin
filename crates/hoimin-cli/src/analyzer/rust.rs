@@ -1457,7 +1457,7 @@ impl<'tokens> AstFacts<'tokens> {
         self.scope_index = ScopeIndex::new(std::mem::take(&mut self.scopes));
     }
 
-    fn record_arid_range(&mut self, range: ruff_text_size::TextRange) {
+    fn record_arid_range(&mut self, range: TextRange) {
         self.arid_ranges
             .push((usize::from(range.start()), usize::from(range.end())));
     }
@@ -1572,7 +1572,7 @@ impl<'tokens> AstFacts<'tokens> {
     fn visit_definition(
         &mut self,
         name: &str,
-        range: ruff_text_size::TextRange,
+        range: TextRange,
         decorators: &[ruff_python_ast::Decorator],
         statement: &Stmt,
     ) {
@@ -2412,19 +2412,6 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
         }
     }
 
-    fn visit_except_handler(&mut self, except_handler: &'ast ruff_python_ast::ExceptHandler) {
-        if !self.check_cancelled() {
-            self.collect_exception_handler(except_handler);
-        }
-        if !self.check_cancelled() {
-            let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
-            if let Some(type_) = &handler.type_ {
-                self.visit_exception_type(type_);
-            }
-            self.visit_body(&handler.body);
-        }
-    }
-
     fn visit_expr(&mut self, expression: &'ast Expr) {
         if !self.check_cancelled() && !self.facts.contains_annotation_span(expression.range()) {
             if !self.in_pattern
@@ -2440,6 +2427,19 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                 _ => {}
             }
             visitor::walk_expr(self, expression);
+        }
+    }
+
+    fn visit_except_handler(&mut self, except_handler: &'ast ruff_python_ast::ExceptHandler) {
+        if !self.check_cancelled() {
+            self.collect_exception_handler(except_handler);
+        }
+        if !self.check_cancelled() {
+            let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
+            if let Some(type_) = &handler.type_ {
+                self.visit_exception_type(type_);
+            }
+            self.visit_body(&handler.body);
         }
     }
 
@@ -3458,6 +3458,14 @@ impl<'ast> Visitor<'ast> for FunctionLocalCollector {
         visitor::walk_expr(self, expression);
     }
 
+    fn visit_except_handler(&mut self, except_handler: &'ast ruff_python_ast::ExceptHandler) {
+        let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
+        if let Some(name) = &handler.name {
+            self.locals.insert(name.as_str().to_owned());
+        }
+        visitor::walk_except_handler(self, except_handler);
+    }
+
     fn visit_pattern(&mut self, pattern: &'ast Pattern) {
         match pattern {
             Pattern::MatchMapping(mapping) => {
@@ -3478,14 +3486,6 @@ impl<'ast> Visitor<'ast> for FunctionLocalCollector {
             _ => {}
         }
         visitor::walk_pattern(self, pattern);
-    }
-
-    fn visit_except_handler(&mut self, except_handler: &'ast ruff_python_ast::ExceptHandler) {
-        let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
-        if let Some(name) = &handler.name {
-            self.locals.insert(name.as_str().to_owned());
-        }
-        visitor::walk_except_handler(self, except_handler);
     }
 }
 

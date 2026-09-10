@@ -17,17 +17,17 @@ unsafe impl GlobalAlloc for TrackingAllocator {
         pointer
     }
 
+    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
+        deallocated(layout.size());
+        unsafe { System.dealloc(pointer, layout) };
+    }
+
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         let pointer = unsafe { System.alloc_zeroed(layout) };
         if !pointer.is_null() {
             allocated(layout.size());
         }
         pointer
-    }
-
-    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
-        deallocated(layout.size());
-        unsafe { System.dealloc(pointer, layout) };
     }
 
     unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {

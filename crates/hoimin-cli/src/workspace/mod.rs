@@ -114,8 +114,8 @@ pub enum WorkspaceError {
     InvalidGrant { requested: u64, expected: u64 },
     #[error("workspace preflight {received:?} does not match plan preflight {expected:?}")]
     PreflightMismatch {
-        expected: hoimin_core::EffectId,
-        received: hoimin_core::EffectId,
+        expected: EffectId,
+        received: EffectId,
     },
     #[error("worker {worker} is outside requested worker count {requested_workers}")]
     WorkerOutOfRange { worker: u32, requested_workers: u32 },
@@ -236,7 +236,7 @@ thread_local! {
 
 #[cfg(test)]
 pub(crate) fn reset_io_metrics() {
-    RESET_IO_METRICS.with(|metrics| metrics.set(ResetIoMetrics::default()));
+    RESET_IO_METRICS.set(ResetIoMetrics::default());
 }
 
 #[cfg(test)]
@@ -1523,7 +1523,7 @@ pub fn handle_verify_originals(
     handler.handle_verify_originals(request)
 }
 
-fn effect_failed(id: hoimin_core::EffectId, error: WorkspaceError) -> EffectFailed {
+fn effect_failed(id: EffectId, error: WorkspaceError) -> EffectFailed {
     let code = error.code().to_owned();
     let message = error.to_string();
     let failure = match error {

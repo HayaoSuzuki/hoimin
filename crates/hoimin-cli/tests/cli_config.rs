@@ -241,7 +241,7 @@ fn completions_accept_supported_shells() {
 #[test]
 fn run_resolves_metrics_path_from_invocation_directory() {
     let invocation_dir = std::env::current_dir().unwrap();
-    let config = hoimin_cli::cli::parse_config_from([
+    let config = parse_config_from([
         "hoimin",
         "run",
         "--file",
@@ -574,15 +574,8 @@ fn run_requires_test_argv() {
 
 #[test]
 fn line_and_symbol_are_independent_target_selectors() {
-    let line = hoimin_cli::cli::parse_config_from([
-        "hoimin",
-        "run",
-        "--line",
-        "pkg/a.py:4-7",
-        "--",
-        "python",
-    ])
-    .unwrap();
+    let line =
+        parse_config_from(["hoimin", "run", "--line", "pkg/a.py:4-7", "--", "python"]).unwrap();
     assert_eq!(line.selection.lines.len(), 1);
 
     let ParsedCommand::Run(symbol_only) =
@@ -592,7 +585,7 @@ fn line_and_symbol_are_independent_target_selectors() {
     };
     assert_eq!(symbol_only.symbol, ["pkg.a:run"]);
 
-    let symbol = hoimin_cli::cli::parse_config_from([
+    let symbol = parse_config_from([
         "hoimin",
         "run",
         "--source",
@@ -608,7 +601,7 @@ fn line_and_symbol_are_independent_target_selectors() {
 
 #[test]
 fn binary_byte_units_preserve_their_1024_multiplier() {
-    let config = hoimin_cli::cli::parse_config_from([
+    let config = parse_config_from([
         "hoimin",
         "run",
         "--file",
@@ -823,12 +816,10 @@ fn documented_defaults_are_applied() {
 
 #[test]
 fn mutation_profile_defaults_to_full_and_accepts_focused() {
-    let full =
-        hoimin_cli::cli::parse_config_from(["hoimin", "run", "--file", "x.py", "--", "check"])
-            .unwrap();
+    let full = parse_config_from(["hoimin", "run", "--file", "x.py", "--", "check"]).unwrap();
     assert_eq!(full.profile, MutationProfile::Full);
 
-    let focused = hoimin_cli::cli::parse_config_from([
+    let focused = parse_config_from([
         "hoimin",
         "run",
         "--file",
@@ -844,7 +835,7 @@ fn mutation_profile_defaults_to_full_and_accepts_focused() {
 
 #[test]
 fn mutation_profile_rejects_unknown_value() {
-    let error = hoimin_cli::cli::parse_from([
+    let error = parse_from([
         "hoimin",
         "run",
         "--file",
@@ -909,7 +900,7 @@ fn verify_help_explains_repeatable_candidates_and_plan_inheritance() {
 
 #[test]
 fn parse_run_config_validates_cross_flag_rules() {
-    let error = hoimin_cli::cli::parse_config_from([
+    let error = parse_config_from([
         "hoimin",
         "run",
         "--file",
@@ -944,7 +935,7 @@ async fn runtime_entrypoint_applies_typed_validation() {
 
 #[test]
 fn parse_run_config_parses_ranges_limits_and_output() {
-    let config = hoimin_cli::cli::parse_config_from([
+    let config = parse_config_from([
         "hoimin",
         "run",
         "--source",
@@ -975,9 +966,7 @@ fn parse_run_config_parses_ranges_limits_and_output() {
 }
 
 fn assert_invalid_line_selector(value: &str) {
-    let error =
-        hoimin_cli::cli::parse_config_from(["hoimin", "run", "--line", value, "--", "python"])
-            .unwrap_err();
+    let error = parse_config_from(["hoimin", "run", "--line", value, "--", "python"]).unwrap_err();
 
     assert_eq!(
         error.to_string(),
@@ -1002,7 +991,7 @@ fn line_selector_rejects_a_reversed_range_during_cli_validation() {
 
 #[test]
 fn line_selector_splits_on_the_final_colon() {
-    let config = hoimin_cli::cli::parse_config_from([
+    let config = parse_config_from([
         "hoimin",
         "run",
         "--line",
@@ -1038,9 +1027,7 @@ fn line_selector_accepts_one_based_u32_boundaries() {
             },
         ),
     ] {
-        let config =
-            hoimin_cli::cli::parse_config_from(["hoimin", "run", "--line", value, "--", "python"])
-                .unwrap();
+        let config = parse_config_from(["hoimin", "run", "--line", value, "--", "python"]).unwrap();
 
         assert_eq!(config.selection.lines[0].range, expected, "{value}");
     }
@@ -1091,7 +1078,7 @@ fn binary_rejects_a_reversed_line_range_before_the_test_command() {
 #[cfg(unix)]
 #[test]
 fn line_selector_rejects_a_literal_backslash_path() {
-    let error = hoimin_cli::cli::parse_config_from([
+    let error = parse_config_from([
         "hoimin",
         "run",
         "--line",
@@ -1109,7 +1096,7 @@ fn line_selector_rejects_a_literal_backslash_path() {
 
 #[test]
 fn run_preserves_repeated_fingerprint_include_patterns() {
-    let config = hoimin_cli::cli::parse_config_from([
+    let config = parse_config_from([
         "hoimin",
         "run",
         "--file",
@@ -1145,7 +1132,7 @@ fn run_preserves_repeated_fingerprint_include_patterns() {
 
 #[test]
 fn parse_run_config_rejects_obsolete_python_option() {
-    let error = hoimin_cli::cli::parse_config_from([
+    let error = parse_config_from([
         "hoimin",
         "run",
         "--file",
@@ -1166,7 +1153,7 @@ fn test_argv_preserves_non_utf8_bytes() {
     use std::os::unix::ffi::OsStringExt;
 
     let invalid = std::ffi::OsString::from_vec(vec![0xff, b'x']);
-    let config = hoimin_cli::cli::parse_config_from([
+    let config = parse_config_from([
         std::ffi::OsString::from("hoimin"),
         std::ffi::OsString::from("run"),
         std::ffi::OsString::from("--file"),
@@ -1225,9 +1212,7 @@ fn selector_rejects_non_utf8_wide_units() {
 }
 #[test]
 fn operator_flags_expand_groups_and_preserve_runtime_default() {
-    let default =
-        hoimin_cli::cli::parse_config_from(["hoimin", "run", "--file", "x.py", "--", "check"])
-            .unwrap();
+    let default = parse_config_from(["hoimin", "run", "--file", "x.py", "--", "check"]).unwrap();
     assert!(
         !default
             .operators
@@ -1254,7 +1239,7 @@ fn operator_flags_expand_groups_and_preserve_runtime_default() {
             .operators
             .contains(MutationOperator::StructureSliceNeighbor)
     );
-    let selected = hoimin_cli::cli::parse_config_from([
+    let selected = parse_config_from([
         "hoimin",
         "run",
         "--file",
@@ -1293,7 +1278,7 @@ fn operator_flags_expand_groups_and_preserve_runtime_default() {
 
 #[test]
 fn exception_operator_flags_keep_risky_mutations_explicit() {
-    let selected = hoimin_cli::cli::parse_config_from([
+    let selected = parse_config_from([
         "hoimin",
         "run",
         "--file",
@@ -1326,9 +1311,7 @@ fn exception_operator_flags_keep_risky_mutations_explicit() {
 
 #[test]
 fn collection_operator_flags_expand_families_and_preserve_runtime_default() {
-    let default =
-        hoimin_cli::cli::parse_config_from(["hoimin", "run", "--file", "x.py", "--", "check"])
-            .unwrap();
+    let default = parse_config_from(["hoimin", "run", "--file", "x.py", "--", "check"]).unwrap();
     assert_eq!(
         default.operators.names(),
         RUNTIME_DEFAULT_OPERATOR_IDS.map(str::to_owned)
@@ -1378,7 +1361,7 @@ fn collection_operator_flags_expand_families_and_preserve_runtime_default() {
             ][..],
         ),
     ] {
-        let selected = hoimin_cli::cli::parse_config_from([
+        let selected = parse_config_from([
             "hoimin",
             "run",
             "--file",
@@ -1399,7 +1382,7 @@ fn collection_operator_flags_expand_families_and_preserve_runtime_default() {
         );
     }
 
-    let without_structure = hoimin_cli::cli::parse_config_from([
+    let without_structure = parse_config_from([
         "hoimin",
         "run",
         "--file",
@@ -1422,7 +1405,7 @@ fn collection_operator_flags_expand_families_and_preserve_runtime_default() {
 
 #[test]
 fn collection_operator_validation_lists_every_new_canonical_id() {
-    let error = hoimin_cli::cli::parse_config_from([
+    let error = parse_config_from([
         "hoimin",
         "run",
         "--file",
@@ -1460,7 +1443,7 @@ fn collection_operator_validation_lists_every_new_canonical_id() {
 
 #[test]
 fn operator_flags_reject_unknown_names() {
-    let error = hoimin_cli::cli::parse_config_from([
+    let error = parse_config_from([
         "hoimin",
         "run",
         "--file",
@@ -1481,7 +1464,7 @@ fn operator_flags_reject_unknown_names() {
 
 #[test]
 fn operator_flags_reject_type_mapping_alias() {
-    let error = hoimin_cli::cli::parse_config_from([
+    let error = parse_config_from([
         "hoimin",
         "run",
         "--file",

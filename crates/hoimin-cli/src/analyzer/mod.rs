@@ -48,7 +48,7 @@ pub struct AnalyzerHandler {
     store: Option<CandidateStore>,
     candidate_spool_owner: Option<CandidateSpoolOwner>,
     #[cfg(test)]
-    analysis_hook: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+    analysis_hook: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
