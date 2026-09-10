@@ -30,25 +30,23 @@ fs2 = "0.4.3"
 hoimin-core = { path = "../hoimin-core" }
 humantime = "2.2"
 ignore = "0.4"
-rusqlite = { version = "0.37", features = ["bundled"] }
+rusqlite = { version = "0.40.2", default-features = false, features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tempfile = "3.20"
 thiserror = "2.0"
 tokio = { version = "1.47", features = ["fs", "io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
-tracing = "0.1"
-uuid = { version = "1.17", features = ["serde", "v4"] }
+uuid = { version = "1.17", features = ["v4"] }
 ruff_python_parser = { version = "0.6.2", package = "littrs-ruff-python-parser" }
 ruff_python_ast = { version = "0.6.2", package = "littrs-ruff-python-ast" }
 ruff_text_size = { version = "0.6.2", package = "littrs-ruff-text-size" }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.60", features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_Diagnostics_ToolHelp", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading"] }
+windows-sys = { version = "0.61.2", features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_Diagnostics_ToolHelp", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 rustix = { version = "1.1", features = ["fs"] }
 
 [dev-dependencies]
-pretty_assertions = "1.4.1"
 proptest = "1.7"
