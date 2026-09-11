@@ -570,6 +570,12 @@ fn validate_header(manifest: &PlanManifest) -> Result<(), PlanError> {
                 candidate.path
             )));
         }
+        crate::analyzer::CandidateStore::record_size(&candidate.candidate).map_err(|error| {
+            PlanError::CandidateInvalid(format!(
+                "{}:{} ({}): {error}",
+                candidate.path, candidate.line, candidate.operator
+            ))
+        })?;
     }
     Ok(())
 }
