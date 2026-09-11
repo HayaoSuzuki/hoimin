@@ -2285,3 +2285,134 @@ async fn python_physical_lines_match_plan_run_and_verify_selection() {
         );
     }
 }
+
+#[tokio::test]
+async fn oversized_candidate_plan_fails_with_context_before_baseline() {
+    let source = format!("value = [\"{}\"]\n", "a".repeat(1100 * 1024));
+    let project = Project::new_with_source(&source);
+    let marker = project.path.join("test-command-ran");
+    let args = plan_args(&project, ["--operators", "collection_list_tuple"], &marker);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    // pins: issue #459 — plan used to succeed for a candidate the spool cannot encode.
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty());
+    assert!(!marker.exists());
+    let error = String::from_utf8(stderr).unwrap();
+    for detail in ["src/calc.py:1", "collection_list_tuple", "2097152"] {
+        assert!(error.contains(detail), "missing {detail}: {error}");
+    }
+}
+
+#[tokio::test]
+async fn oversized_legacy_candidate_is_rejected_before_verify_baseline() {
+    let project = Project::new_with_source("value = [\"a\"]\n");
+    let coordinator = tempfile::tempdir().unwrap();
+    let marker = coordinator.path().join("test-command-ran");
+    let (path, mut manifest) = write_plan_manifest_with_marker(
+        &project,
+        &["--operators", "collection_list_tuple"],
+        &marker,
+    )
+    .await;
+    let contents = format!("\"{}\"", "a".repeat(1100 * 1024));
+    let source = format!("value = [{contents}]\n");
+    std::fs::write(project.path.join("src/calc.py"), &source).unwrap();
+    let candidate = &mut manifest.candidates[0].candidate;
+    candidate.original = format!("[{contents}]");
+    candidate.replacement = format!("({contents},)");
+    candidate.span.length = u64::try_from(candidate.original.len()).unwrap();
+    candidate.file_hash = blake3::hash(source.as_bytes()).to_hex().to_string();
+    candidate.id = hoimin_core::stable_mutant_id(&hoimin_core::CandidateIdentity {
+        schema_version: hoimin_core::CANDIDATE_SCHEMA_VERSION,
+        file_hash: candidate.file_hash.clone(),
+        path: candidate.path.clone(),
+        span: candidate.span,
+        operator: candidate.operator.clone(),
+        replacement: candidate.replacement.clone(),
+    })
+    .to_string();
+    manifest.sources[0].hash.clone_from(&candidate.file_hash);
+    write_json(&path, &serde_json::to_value(&manifest).unwrap());
+    let args = vec![
+        "hoimin".into(),
+        "verify".into(),
+        path.into_os_string(),
+        "--top".into(),
+        "1".into(),
+    ];
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    assert_eq!(code, 2);
+    // pins: issue #459 — an old valid oversized plan used to start baseline first.
+    assert!(!marker.exists());
+    assert!(stdout.is_empty());
+    let error = String::from_utf8(stderr).unwrap();
+    for detail in ["src/calc.py:1", "collection_list_tuple", "2097152"] {
+        assert!(error.contains(detail), "missing {detail}: {error}");
+    }
+}
+
+#[tokio::test]
+async fn candidate_record_limits_agree_for_plan_verify_and_direct_run() {
+    for (size, fits) in [(900 * 1024, true), (1100 * 1024, false)] {
+        let source = format!("value = [\"{}\"]\n", "a".repeat(size));
+        let project = Project::new_with_source(&source);
+        let coordinator = tempfile::tempdir().unwrap();
+        let marker = coordinator.path().join("test-command-ran");
+        let mut args = plan_args(&project, ["--operators", "collection_list_tuple"], &marker);
+        insert_test_min_free_space(&mut args);
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        if fits {
+            assert_eq!(
+                hoimin_cli::run_with_io(args.clone(), &mut stdout, &mut stderr).await,
+                0
+            );
+            let path = coordinator.path().join("plan.json");
+            std::fs::write(&path, &stdout).unwrap();
+            stdout.clear();
+            stderr.clear();
+            let verify = vec![
+                "hoimin".into(),
+                "verify".into(),
+                path.into_os_string(),
+                "--top".into(),
+                "1".into(),
+            ];
+            assert_eq!(
+                hoimin_cli::run_with_io(verify, &mut stdout, &mut stderr).await,
+                1,
+                "{}",
+                String::from_utf8_lossy(&stderr)
+            );
+            let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+            assert_eq!(report["summary"]["complete"], true);
+            assert_eq!(report["summary"]["counts"]["survived"], 1);
+        }
+        args[1] = "run".into();
+        stdout.clear();
+        stderr.clear();
+        let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+        assert_eq!(
+            code,
+            if fits { 1 } else { 2 },
+            "{}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(report["summary"]["complete"], fits);
+        assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+        if fits {
+            assert_eq!(report["summary"]["counts"]["survived"], 1);
+        } else {
+            assert!(report["mutants"].as_array().unwrap().is_empty());
+            let error = String::from_utf8(stderr).unwrap();
+            for detail in ["src/calc.py:1", "collection_list_tuple", "2097152"] {
+                assert!(error.contains(detail), "missing {detail}: {error}");
+            }
+        }
+    }
+}
