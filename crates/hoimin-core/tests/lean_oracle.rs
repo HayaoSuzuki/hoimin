@@ -91,7 +91,7 @@ impl Driver {
         })
         .map_err(|error| format!("fixture config is invalid: {error}"))?;
         let (state, outstanding) = transition(
-            RunState::new("lean-oracle", config),
+            RunState::new("lean-oracle", config, test_resource_control()),
             RunEvent::StartRequested(StartRequested),
         )
         .map_err(|error| format!("cannot start fixture machine: {error}"))?;
@@ -853,4 +853,11 @@ fn oracle_correspondence() {
             .all(|result| result.mode != "strict" || result.class == CaseClass::Match),
         "strict Lean oracle mismatch: {results:#?}"
     );
+}
+
+fn test_resource_control() -> hoimin_core::ResourceControl {
+    hoimin_core::ResourceControl {
+        mode: hoimin_core::ResourceMode::Hard,
+        mechanism: "test_supplied_hard".into(),
+    }
 }

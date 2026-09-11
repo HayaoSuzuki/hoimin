@@ -418,17 +418,19 @@ pub struct RunStarted {
 }
 
 impl RunStarted {
-    pub fn minimal(run_id: impl Into<String>, sequence: u64) -> Self {
+    /// Builds a header with an explicit description of the selected resource backend.
+    pub fn minimal(
+        run_id: impl Into<String>,
+        sequence: u64,
+        resource_control: ResourceControl,
+    ) -> Self {
         Self {
             schema_version: REPORT_SCHEMA_VERSION,
             sequence,
             run_id: run_id.into(),
             normalized_config: None,
             versions: ReportVersions::default(),
-            resource_control: ResourceControl {
-                mode: ResourceMode::Hard,
-                mechanism: String::new(),
-            },
+            resource_control,
             verification_selection: None,
         }
     }

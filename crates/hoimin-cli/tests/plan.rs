@@ -1614,6 +1614,17 @@ async fn verify_runs_only_requested_candidates() {
         .iter()
         .find(|event| event["kind"] == "run_started")
         .unwrap();
+    let baseline = events
+        .iter()
+        .find(|event| event["kind"] == "baseline_finished")
+        .unwrap();
+    assert_selected_resource_policy(started, baseline);
+    assert!(
+        events
+            .iter()
+            .filter(|event| event["kind"] == "mutant_finished")
+            .all(|event| event["resource_mode"] == baseline["resource_mode"])
+    );
     assert_eq!(
         started["verification_selection"],
         serde_json::json!({
@@ -1717,6 +1728,7 @@ async fn verify_top_executes_the_highest_ranked_retained_candidate() {
     );
     let document: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
     assert!(!document["baseline"].is_null());
+    assert_selected_resource_policy(&document["run"], &document["baseline"]);
     let expected_selection = serde_json::json!({
         "mode": "top",
         "policy": "strict",
@@ -1736,6 +1748,10 @@ async fn verify_top_executes_the_highest_ranked_retained_candidate() {
     assert_eq!(document["summary"]["complete"], false);
     let mutants = document["mutants"].as_array().unwrap();
     assert_eq!(mutants.len(), 1);
+    assert_eq!(
+        mutants[0]["resource_mode"],
+        document["baseline"]["resource_mode"]
+    );
     assert_eq!(mutants[0]["candidate"]["id"], candidate_id);
 }
 
@@ -2142,4 +2158,18 @@ fn python_executable() -> PathBuf {
         executable.display()
     );
     executable
+}
+
+fn assert_selected_resource_policy(run: &serde_json::Value, baseline: &serde_json::Value) {
+    assert_eq!(run["resource_control"]["mode"], baseline["resource_mode"]);
+    assert!(
+        !run["resource_control"]["mechanism"]
+            .as_str()
+            .unwrap()
+            .is_empty()
+    );
+    if cfg!(target_os = "macos") {
+        assert_eq!(run["resource_control"]["mode"], "best_effort");
+        assert_eq!(run["resource_control"]["mechanism"], "portable");
+    }
 }

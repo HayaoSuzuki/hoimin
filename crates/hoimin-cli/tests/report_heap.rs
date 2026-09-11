@@ -39,7 +39,7 @@ fn measured_peak(mutants: u64) -> usize {
             ReportHandler::new(OutputFormat::Json, io::sink(), io::sink(), spool.path()).unwrap();
         emit(
             &mut handler,
-            OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)),
+            OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control())),
         );
         for index in 0..mutants {
             emit(&mut handler, mutant_finished(index + 2, index));
@@ -104,4 +104,11 @@ fn mutant_finished(event_sequence: u64, mutant_sequence: u64) -> OutputEvent {
         output: None,
         diagnostics: Vec::new(),
     })
+}
+
+fn test_resource_control() -> hoimin_core::ResourceControl {
+    hoimin_core::ResourceControl {
+        mode: hoimin_core::ResourceMode::Hard,
+        mechanism: "test_supplied_hard".into(),
+    }
 }

@@ -4001,3 +4001,150 @@ async fn kill_fixture_processes(processes: Option<&FixtureProcesses>) -> Result<
     }
     Ok(())
 }
+
+// Uses a real timeout to leave the session incomplete; never edits saved results.
+#[tokio::test]
+async fn selected_resource_policy_survives_fresh_and_natural_resume_reports() {
+    let mut mismatches = Vec::new();
+    for format in ["json", "jsonl"] {
+        let project = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let session = sessions.path().join("session.sqlite");
+        std::fs::write(
+            project.path().join("calc.py"),
+            "def first(a, b):\n    return a + b\ndef second(a, b):\n    return a + b\n",
+        )
+        .unwrap();
+
+        let mut prior_ids = Vec::new();
+        let mut history = Vec::new();
+        for resume in [false, true] {
+            let stdout = resource_policy_run(project.path(), &session, format, resume).await;
+            let (run, baseline, mutants, summary) = if format == "json" {
+                let doc: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+                (
+                    doc["run"].clone(),
+                    doc["baseline"].clone(),
+                    doc["mutants"].as_array().unwrap().clone(),
+                    doc["summary"].clone(),
+                )
+            } else {
+                let events: Vec<serde_json::Value> = String::from_utf8_lossy(&stdout)
+                    .lines()
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .collect();
+                let event = |kind| events.iter().find(|v| v["kind"] == kind).unwrap().clone();
+                (
+                    event("run_started"),
+                    event("baseline_finished"),
+                    events
+                        .iter()
+                        .filter(|v| v["kind"] == "mutant_finished")
+                        .cloned()
+                        .collect(),
+                    event("run_finished"),
+                )
+            };
+            assert_eq!(summary["complete"], false);
+            assert_eq!(mutants.len(), 2);
+            let killed = mutants.iter().find(|v| v["status"] == "killed").unwrap();
+            let timeout = mutants.iter().find(|v| v["status"] == "timeout").unwrap();
+            assert_eq!(timeout["termination"], "Timeout");
+            let ids: Vec<_> = mutants
+                .iter()
+                .map(|v| v["candidate"]["id"].clone())
+                .collect();
+            if resume {
+                assert_eq!(ids, prior_ids);
+                assert!(killed["termination"].is_null());
+                assert!(killed["output"].is_null());
+                assert_eq!(killed["elapsed_ms"], 0);
+            } else {
+                assert!(!killed["termination"].is_null());
+                prior_ids = ids;
+            }
+            let mode = baseline["resource_mode"].clone();
+            if cfg!(target_os = "macos") {
+                assert_eq!(mode, "best_effort");
+                assert_eq!(run["resource_control"]["mechanism"], "portable");
+            }
+            if run["resource_control"]["mode"] != mode
+                || run["resource_control"]["mechanism"]
+                    .as_str()
+                    .unwrap()
+                    .is_empty()
+                || mutants.iter().any(|v| v["resource_mode"] != mode)
+            {
+                mismatches.push(format!(
+                    "{format} resume={resume}: {}",
+                    String::from_utf8_lossy(&stdout)
+                ));
+            }
+            let connection = rusqlite::Connection::open(&session).unwrap();
+            let rows = connection.prepare("SELECT * FROM results WHERE status = 'killed' AND run_id = (SELECT run_id FROM runs ORDER BY id LIMIT 1) ORDER BY mutant_id").unwrap()
+                .query_map([], |row| Ok((0..row.as_ref().column_count()).map(|i| row.get::<_, rusqlite::types::Value>(i).unwrap()).collect::<Vec<_>>())).unwrap()
+                .collect::<Result<Vec<_>, _>>().unwrap();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(
+                rows[0][0],
+                rusqlite::types::Value::Text(run["run_id"].as_str().unwrap().to_owned())
+            );
+            assert_eq!(
+                rows[0][1],
+                rusqlite::types::Value::Text(
+                    killed["candidate"]["id"].as_str().unwrap().to_owned()
+                )
+            );
+            if resume {
+                assert_eq!(rows, history);
+            } else {
+                history = rows;
+            }
+        }
+    }
+    assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+}
+
+async fn resource_policy_run(root: &Path, session: &Path, format: &str, resume: bool) -> Vec<u8> {
+    let command = "from pathlib import Path; import time; s=Path('calc.py').read_text(); first,second=s.split('def second'); time.sleep(6) if 'a - b' in second else None; assert 'a - b' not in first";
+    let mut args: Vec<OsString> = ["hoimin", "run", "--root"]
+        .into_iter()
+        .map(Into::into)
+        .collect();
+    args.push(root.into());
+    args.extend(
+        [
+            "--file",
+            "calc.py",
+            "--operators",
+            "binary_add_sub",
+            "--jobs",
+            "1",
+            "--min-free-space",
+            "1B",
+            "--mutant-timeout",
+            "2s",
+            "--format",
+            format,
+            "--allow-best-effort-memory",
+            "--session",
+        ]
+        .into_iter()
+        .map(OsString::from),
+    );
+    args.push(session.as_os_str().to_owned());
+    if resume {
+        args.push("--resume".into());
+    }
+    args.extend([
+        OsString::from("--"),
+        python_executable().into(),
+        "-c".into(),
+        command.into(),
+    ]);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let exit = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    assert_eq!(exit, 4, "{}", String::from_utf8_lossy(&stderr));
+    stdout
+}

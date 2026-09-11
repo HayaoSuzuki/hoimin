@@ -14,6 +14,17 @@ pages (or the reason no update was needed), and checks performed in the PR or
 final handoff. These steps also apply when no personal `create-okf` skill is
 installed.
 
+## Resource policy at the core boundary
+
+Select the process backend before constructing `RunState`. Pass its
+`ProcessHandler::resource_control()` description as the final argument to
+`RunState::new`, `with_fingerprint`, `with_candidate_filter`, or
+`with_ordered_candidate_filter`. `RunStarted::minimal` also requires an explicit
+`ResourceControl` as its final argument. Rust callers using the older constructor
+signatures must supply this argument; there is no inferred or default backend.
+Tests that supply a policy exercise core reporting, not native OS enforcement.
+The report schema retains its existing `mode` and singular `mechanism` fields.
+
 ## Local quality gate
 
 Run the Rust quality gate locally with the same commands used in CI:

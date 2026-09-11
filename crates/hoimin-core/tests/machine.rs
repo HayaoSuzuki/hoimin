@@ -129,16 +129,15 @@ fn baseline_success_requests_analysis_without_performing_io() {
 
 #[test]
 fn top_verification_observes_budget_after_successful_baseline() {
-    let initial_state = RunState::new("run-1", fixture_config()).with_verification_selection(
-        VerificationSelection {
+    let initial_state = RunState::new("run-1", fixture_config(), test_resource_control())
+        .with_verification_selection(VerificationSelection {
             mode: VerificationSelectionMode::Top,
             policy: VerificationSelectionPolicy::Strict,
             requested: 30,
             selected: 30,
             scope: VerificationSelectionScope::RetainedCandidates,
             plan_truncated: false,
-        },
-    );
+        });
     let (state, effects) = waiting_for_baseline_from(initial_state);
     let baseline_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunBaseline(_))
@@ -164,16 +163,15 @@ fn top_verification_observes_budget_after_successful_baseline() {
 
 #[test]
 fn explicit_verification_skips_budget_observation() {
-    let initial_state = RunState::new("run-1", fixture_config()).with_verification_selection(
-        VerificationSelection {
+    let initial_state = RunState::new("run-1", fixture_config(), test_resource_control())
+        .with_verification_selection(VerificationSelection {
             mode: VerificationSelectionMode::CandidateIds,
             policy: VerificationSelectionPolicy::ExplicitCandidates,
             requested: 30,
             selected: 30,
             scope: VerificationSelectionScope::ExplicitCandidates,
             plan_truncated: false,
-        },
-    );
+        });
     let (state, effects) = waiting_for_baseline_from(initial_state);
     let baseline_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunBaseline(_))
@@ -317,7 +315,7 @@ fn sufficient_top_budget_proceeds_directly_to_analysis() {
 
 #[test]
 fn run_started_emits_normalized_focused_profile() {
-    let state = RunState::new("run-1", focused_config());
+    let state = RunState::new("run-1", focused_config(), test_resource_control());
     let (state, effects) = transition(state, RunEvent::StartRequested(StartRequested)).unwrap();
     let resolve_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::ResolveTargets(_))
@@ -3407,6 +3405,7 @@ fn filtered_analysis_advances_across_nonfinal_targets_before_receiving_a_spool()
             "run-1",
             fixture_config(),
             BTreeSet::from(["m1_selected".to_owned()]),
+            test_resource_control(),
         ),
         RunEvent::StartRequested(StartRequested),
     )
@@ -3834,6 +3833,29 @@ impl ScheduleHarness {
         completion_classes: Vec<u8>,
         max_mutants: Option<usize>,
     ) -> Self {
+        Self::new_with_resource_control(
+            candidate_count,
+            jobs,
+            filter,
+            session,
+            completion_classes,
+            max_mutants,
+            hoimin_core::ResourceControl {
+                mode: ResourceMode::Hard,
+                mechanism: "test_supplied_hard".into(),
+            },
+        )
+    }
+
+    fn new_with_resource_control(
+        candidate_count: usize,
+        jobs: usize,
+        filter: ScheduleFilter,
+        session: bool,
+        completion_classes: Vec<u8>,
+        max_mutants: Option<usize>,
+        resource_control: hoimin_core::ResourceControl,
+    ) -> Self {
         let candidates: Vec<_> = (1..=candidate_count)
             .map(|sequence| fixture_candidate(u64::try_from(sequence).unwrap()))
             .collect();
@@ -3854,15 +3876,19 @@ impl ScheduleHarness {
             .map(|candidate| candidate.id.clone())
             .collect();
         let state = match filter {
-            ScheduleFilter::All => RunState::new("schedule-run", config),
+            ScheduleFilter::All => RunState::new("schedule-run", config, resource_control),
             ScheduleFilter::Explicit => RunState::with_candidate_filter(
                 "schedule-run",
                 config,
                 candidate_ids.iter().cloned().collect(),
+                resource_control,
             ),
-            ScheduleFilter::Ordered => {
-                RunState::with_ordered_candidate_filter("schedule-run", config, candidate_ids)
-            }
+            ScheduleFilter::Ordered => RunState::with_ordered_candidate_filter(
+                "schedule-run",
+                config,
+                candidate_ids,
+                resource_control,
+            ),
         };
         let (state, effects) = transition(state, RunEvent::StartRequested(StartRequested)).unwrap();
         let mut harness = Self {
@@ -4529,7 +4555,7 @@ fn adversarial_schedule_retries_failed_synthetic_mutant_finished_output() {
 
 fn start_state() -> (RunState, Vec<RunEffect>) {
     transition(
-        RunState::new("run-1", fixture_config()),
+        RunState::new("run-1", fixture_config(), test_resource_control()),
         RunEvent::StartRequested(StartRequested),
     )
     .unwrap()
@@ -4567,7 +4593,11 @@ fn waiting_for_cleanup() -> (RunState, hoimin_core::Cleanup) {
 }
 
 fn waiting_for_baseline() -> (RunState, Vec<RunEffect>) {
-    waiting_for_baseline_from(RunState::new("run-1", fixture_config()))
+    waiting_for_baseline_from(RunState::new(
+        "run-1",
+        fixture_config(),
+        test_resource_control(),
+    ))
 }
 
 fn waiting_for_baseline_from(initial_state: RunState) -> (RunState, Vec<RunEffect>) {
@@ -4619,16 +4649,15 @@ fn waiting_for_baseline_from(initial_state: RunState) -> (RunState, Vec<RunEffec
 }
 
 fn waiting_for_top_budget_observation() -> (RunState, Vec<RunEffect>) {
-    let initial_state = RunState::new("run-1", fixture_config()).with_verification_selection(
-        VerificationSelection {
+    let initial_state = RunState::new("run-1", fixture_config(), test_resource_control())
+        .with_verification_selection(VerificationSelection {
             mode: VerificationSelectionMode::Top,
             policy: VerificationSelectionPolicy::Strict,
             requested: 30,
             selected: 30,
             scope: VerificationSelectionScope::RetainedCandidates,
             plan_truncated: false,
-        },
-    );
+        });
     let (state, effects) = waiting_for_baseline_from(initial_state);
     let baseline_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunBaseline(_))
@@ -4674,9 +4703,14 @@ fn waiting_for_materialization_verification_with(config: RunConfig) -> (RunState
     let resume = config.resume;
     let jobs = u32::try_from(config.limits.jobs.get()).unwrap();
     let initial_state = if session_enabled {
-        RunState::with_fingerprint("run-1", config, RunFingerprint::from_bytes([7; 32]))
+        RunState::with_fingerprint(
+            "run-1",
+            config,
+            RunFingerprint::from_bytes([7; 32]),
+            test_resource_control(),
+        )
     } else {
-        RunState::new("run-1", config)
+        RunState::new("run-1", config, test_resource_control())
     };
     let (state, effects) =
         transition(initial_state, RunEvent::StartRequested(StartRequested)).unwrap();
@@ -4937,13 +4971,22 @@ fn waiting_for_successful_cleanup() -> (RunState, hoimin_core::Cleanup) {
 }
 
 fn waiting_for_filtered_analysis(candidate_ids: BTreeSet<String>) -> (RunState, Vec<RunEffect>) {
-    let initial_state = RunState::with_candidate_filter("run-1", fixture_config(), candidate_ids);
+    let initial_state = RunState::with_candidate_filter(
+        "run-1",
+        fixture_config(),
+        candidate_ids,
+        test_resource_control(),
+    );
     waiting_for_selected_analysis(initial_state, 1)
 }
 
 fn waiting_for_ordered_analysis(candidate_ids: Vec<String>) -> (RunState, Vec<RunEffect>) {
-    let initial_state =
-        RunState::with_ordered_candidate_filter("run-1", fixture_config(), candidate_ids);
+    let initial_state = RunState::with_ordered_candidate_filter(
+        "run-1",
+        fixture_config(),
+        candidate_ids,
+        test_resource_control(),
+    );
     waiting_for_selected_analysis(initial_state, 1)
 }
 
@@ -4957,6 +5000,7 @@ fn waiting_for_ordered_analysis_with_jobs(
         "run-1",
         RunConfig::try_from(raw).unwrap(),
         candidate_ids,
+        test_resource_control(),
     );
     waiting_for_selected_analysis(initial_state, jobs)
 }
@@ -5188,5 +5232,117 @@ fn reservation_id(effect: &RunEffect) -> ReservationId {
     match effect {
         RunEffect::CreateWorker(value) => value.reservation_id(),
         _ => panic!("expected create worker"),
+    }
+}
+
+// Supplied-policy transition tests: these do not claim native OS enforcement.
+#[test]
+fn selected_resource_policy_reaches_headers_and_synthetic_transitions_for_every_selection() {
+    for mode in [ResourceMode::Hard, ResourceMode::BestEffort] {
+        for filter in [
+            ScheduleFilter::All,
+            ScheduleFilter::Explicit,
+            ScheduleFilter::Ordered,
+        ] {
+            for scenario in ["executed", "reused", "cancelled", "deadline"] {
+                let policy = hoimin_core::ResourceControl {
+                    mode,
+                    mechanism: format!("supplied_{mode:?}"),
+                };
+                let mut harness = ScheduleHarness::new_with_resource_control(
+                    2,
+                    1,
+                    filter,
+                    true,
+                    vec![0],
+                    None,
+                    policy.clone(),
+                );
+                harness.complete_until(|effect| matches!(effect, RunEffect::LookupStoredResult(_)));
+                if scenario == "reused" {
+                    let index = harness
+                        .pending
+                        .iter()
+                        .position(|effect| matches!(effect, RunEffect::LookupStoredResult(_)))
+                        .unwrap();
+                    let RunEffect::LookupStoredResult(lookup) = harness.pending.remove(index)
+                    else {
+                        unreachable!()
+                    };
+                    let (state, effects) = transition(
+                        harness.state.clone(),
+                        RunEvent::StoredResultLoaded(StoredResultLoaded {
+                            id: lookup.id,
+                            worker: lookup.worker,
+                            result: Some(StoredResult {
+                                mutant_id: lookup.mutant_id,
+                                status: MutationStatus::Killed,
+                            }),
+                        }),
+                    )
+                    .unwrap();
+                    harness.state = state;
+                    harness.register(effects);
+                } else if scenario == "cancelled" {
+                    harness.stop(RunEvent::CancellationRequested);
+                } else if scenario == "deadline" {
+                    harness.stop(RunEvent::DeadlineReached);
+                }
+                let harness = harness.finish(&[]);
+                let headers: Vec<_> = harness
+                    .output_events
+                    .iter()
+                    .filter_map(|(_, event)| match event {
+                        OutputEvent::RunStarted(value) => Some(value),
+                        _ => None,
+                    })
+                    .collect();
+                assert_eq!(headers.len(), 1);
+                assert_eq!(headers[0].resource_control, policy);
+                let mutants: Vec<_> = harness
+                    .output_events
+                    .iter()
+                    .filter_map(|(_, event)| match event {
+                        OutputEvent::MutantFinished(value) => Some(value),
+                        _ => None,
+                    })
+                    .collect();
+                assert_eq!(mutants.len(), 2, "{scenario}");
+                let expected_synthetic = match scenario {
+                    "executed" => 0,
+                    "reused" => 1,
+                    _ => 2,
+                };
+                assert_eq!(
+                    mutants.iter().filter(|v| v.termination.is_none()).count(),
+                    expected_synthetic
+                );
+                for mutant in mutants {
+                    if mutant.termination.is_none() {
+                        assert_eq!(mutant.resource_mode, mode, "{scenario}");
+                        assert_eq!(mutant.elapsed_ms, 0);
+                        assert!(mutant.output.is_none());
+                        assert_eq!(
+                            mutant.status,
+                            if scenario == "reused" {
+                                MutationStatus::Killed
+                            } else {
+                                MutationStatus::NotRun
+                            }
+                        );
+                    } else {
+                        // The harness supplies Hard process observations, even for a BestEffort header.
+                        assert_eq!(mutant.resource_mode, ResourceMode::Hard);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn test_resource_control() -> hoimin_core::ResourceControl {
+    hoimin_core::ResourceControl {
+        mode: hoimin_core::ResourceMode::Hard,
+        mechanism: "test_supplied_hard".into(),
     }
 }
