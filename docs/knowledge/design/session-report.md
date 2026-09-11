@@ -43,6 +43,11 @@ sources:
   resource: ../../json-schema/run-result.schema.json
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
+- id: issue-488
+  resource: ../../superpowers/specs/2026-09-11-issue-488-windows-resource-scope-design.md
+  working_tree: untracked
+  sha256: 9187c4029df0e3f1e0be45f43d11fa4b875201fcbcb7e0a22a4b4c0f31510d4a
+
 - id: issue-487
   resource: ../../superpowers/specs/2026-09-11-issue-487-resource-report-policy-design.md
   working_tree: untracked
@@ -93,6 +98,12 @@ JSON Schemaは結果の構造を定める元資料として保持する。ただ
 
 run所有権、再利用条件、結果置換、DBスキーマ、集計値と終了コードの規則、JSON読取り処理を変更したら更新する。保存・読取り・比較の各処理で同じ前提が維持されるかを調べる。旧報告にある未解決という記述は、その報告の時点として扱う。
 
+# Windowsの制限値を読むときの単位
+
+Issue488では、Windowsのnormalized_config内のmax-memory／max-processesを、各root process treeの上限として説明する。resource_modeのhardはOSによる強制方式を表し、複数のtreeを合計した上限を意味しない。jobsを増やした場合の合計量も考慮して設定する必要がある。[^issue-488]
+
+この制限単位の修正は、開始・再利用結果へbackend情報を渡すIssue487とは独立している。既存の出力構造を説明するためだけに重複した情報伝播APIや新たなschema欄を追加しない。[^issue-488]
+
 # 選択した資源制限方式と再利用結果
 
 Issue487では、実際に選択したbackendのmodeと識別用mechanismを、run開始前にcoreへ渡す。runヘッダーと、再利用・停止によって生成する結果は同じrunの方針を表す。best-effortを許可する設定から実行方式を推測せず、実プロセスの結果は実行側から受け取ったmodeを保つ。[^issue-487]
@@ -109,6 +120,8 @@ Issue487では、実際に選択したbackendのmodeと識別用mechanismを、r
 [^migration]: [2026-08-11-lean-schema-migration-concurrency-audit.md](../../superpowers/reports/2026-08-11-lean-schema-migration-concurrency-audit.md)。
 [^reader]: [input.rs](../../../crates/hoimin-cli/src/progress/input.rs)。
 [^schema]: [run-result.schema.json](../../json-schema/run-result.schema.json)。
+
+[^issue-488]: [2026-09-11-issue-488-windows-resource-scope-design.md](../../superpowers/specs/2026-09-11-issue-488-windows-resource-scope-design.md)。
 
 [^issue-487]: [2026-09-11-issue-487-resource-report-policy-design.md](../../superpowers/specs/2026-09-11-issue-487-resource-report-policy-design.md)。
 

@@ -792,7 +792,8 @@ class PlatformExecutionPolicyContractTests(unittest.TestCase):
 
         self.assertEqual(
             set(jobs),
-            set(MANUAL_NON_LINUX_JOB_NAMES) | {"windows-metrics-destinations"},
+            set(MANUAL_NON_LINUX_JOB_NAMES)
+            | {"windows-resource-scope", "windows-metrics-destinations"},
         )
         self.assertNotIn("ubuntu-latest", workflow)
         self.assertNotRegex(workflow, r"(?m)^\s+if:")
@@ -819,6 +820,26 @@ class PlatformExecutionPolicyContractTests(unittest.TestCase):
         purity = jobs["core-dependency-purity"]
         self.assertNotIn("strategy", purity)
         self.assertEqual(purity["runs-on"], "windows-latest")
+
+    def test_windows_resource_scope_runs_native_acceptance_independently(self) -> None:
+        jobs = yaml.safe_load(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+        self.assertIn("windows-resource-scope", jobs)
+        self.assertEqual(jobs["windows-resource-scope"], {
+            "name": "Manual Windows resource scope",
+            "runs-on": "windows-latest",
+            "timeout-minutes": 20,
+            "steps": [
+                {"uses": CHECKOUT_ACTION},
+                {"uses": SETUP_PYTHON_ACTION, "with": {"python-version": "3.14"}},
+                {"uses": SETUP_UV_ACTION, "with": {"enable-cache": True}},
+                {"name": "Install repository Rust toolchain", "run": "rustup toolchain install"},
+                {"run": "uv sync --frozen"},
+                {"run": "cargo clippy -p hoimin-cli --lib --test process_handler --test windows_resource_scope --all-features -- -D warnings"},
+                {"run": "cargo test -p hoimin-cli --all-features --lib resource::windows::tests -- --nocapture"},
+                {"run": "cargo test -p hoimin-cli --all-features --test process_handler job_object -- --nocapture"},
+                {"run": "cargo test -p hoimin-cli --all-features --test windows_resource_scope -- --nocapture"},
+            ],
+        })
 
     def test_windows_metrics_destinations_runs_native_acceptance_independently(
         self,

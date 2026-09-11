@@ -36,7 +36,7 @@ struct PublicOutputAuditCase {
 use hoimin_cli::resource::WindowsBackend;
 #[cfg(target_os = "linux")]
 use hoimin_cli::resource::probe_linux_cgroup_with_launcher;
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(target_os = "linux")]
 use hoimin_core::{RawRunLimits, RunLimits};
 
 #[cfg(unix)]
@@ -127,7 +127,7 @@ fn portable_handler_with_classification_and_termination_failure(
     )
 }
 
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(target_os = "linux")]
 fn hard_run_limits(max_memory: u64, max_processes: usize) -> RunLimits {
     let raw = RawRunLimits {
         max_memory,
@@ -1493,41 +1493,59 @@ mod job_object {
 
     use super::*;
 
-    fn hard_handler(
-        output_dir: &Utf8Path,
-        max_memory: u64,
-        max_processes: usize,
-    ) -> ProcessHandler {
-        let backend = WindowsBackend::new(&hard_run_limits(max_memory, max_processes)).unwrap();
+    fn hard_handler(output_dir: &Utf8Path) -> ProcessHandler {
+        let backend = WindowsBackend::new().unwrap();
         let handler = ProcessHandler::new(ResourceBackend::Windows(backend), output_dir.to_owned());
         assert_eq!(handler.resource_control().mode, ResourceMode::Hard);
         assert_eq!(handler.resource_control().mechanism, "windows_job_object");
         handler
     }
 
+    fn native_python() -> CommandArg {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let configuration = fs::read_to_string(root.join(".venv/pyvenv.cfg")).unwrap();
+        let home = configuration
+            .lines()
+            .find_map(|line| line.strip_prefix("home = "))
+            .unwrap();
+        let executable = std::path::Path::new(home).join("python.exe");
+        assert!(executable.is_file());
+        native_arg(executable.as_os_str())
+    }
+
+    fn native_run_python(id: u64, code: &str, limits: ProcessLimits) -> RunProcess {
+        let mut request = super::run_python(id, code, limits);
+        request.argv[0] = native_python();
+        request
+    }
+
+    fn root_limits(memory: u64, processes: u32) -> ProcessLimits {
+        ProcessLimits {
+            max_memory_bytes: memory,
+            max_processes: processes,
+            ..limits(Duration::from_secs(15), 4096)
+        }
+    }
+
     #[tokio::test]
     async fn job_object_classifies_memory_and_process_limits_without_leaking_state() {
         let output = tempfile::tempdir().unwrap();
-        let handler = hard_handler(
-            Utf8Path::from_path(output.path()).unwrap(),
-            128 * 1024 * 1024,
-            3,
-        );
+        let handler = hard_handler(Utf8Path::from_path(output.path()).unwrap());
 
         assert_eq!(handler.mode(), ResourceMode::Hard);
         let memory = handler
-            .handle(run_python(
+            .handle(native_run_python(
                 101,
-                "chunks=[]\nwhile True: chunks.append(bytearray(8*1024*1024))",
-                limits(Duration::from_secs(10), 64),
+                "chunks=[bytearray(8*1024*1024) for _ in range(32)]",
+                root_limits(128 * 1024 * 1024, 3),
             ))
             .await
             .unwrap();
         let processes = handler
-            .handle(run_python(
+            .handle(native_run_python(
                 102,
                 "import subprocess,sys,time\nchildren=[]\nfor _ in range(8): children.append(subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']))",
-                limits(Duration::from_secs(10), 4096),
+                root_limits(128 * 1024 * 1024, 3),
             ))
             .await
             .unwrap();
@@ -1537,71 +1555,106 @@ mod job_object {
         handler.close().unwrap();
     }
 
-    #[tokio::test]
-    async fn job_object_memory_limit_is_isolated_per_concurrent_root() {
+    async fn assert_offender_isolated(memory: bool) {
         let output = tempfile::tempdir().unwrap();
-        let handler = Arc::new(hard_handler(
-            Utf8Path::from_path(output.path()).unwrap(),
-            160 * 1024 * 1024,
-            16,
-        ));
-        let first = handler.handle(run_python(
-            103,
-            "import time\nx=bytearray(96*1024*1024); x[::4096]=b'x'*(len(x[::4096])); time.sleep(0.7)",
-            limits(Duration::from_secs(5), 64),
-        ));
-        let second = handler.handle(run_python(
-            104,
-            "import time\nx=bytearray(96*1024*1024); x[::4096]=b'x'*(len(x[::4096])); time.sleep(0.7)",
-            limits(Duration::from_secs(5), 64),
-        ));
-
-        let (first, second) = tokio::join!(first, second);
-        let terminations = [first.unwrap().termination, second.unwrap().termination];
-
-        assert_eq!(
-            terminations,
-            [ProcessTermination::Exit(0), ProcessTermination::Exit(0)]
+        let directory = Utf8Path::from_path(output.path()).unwrap();
+        let handler = hard_handler(directory);
+        let offender_pid = directory.join("offender.pid");
+        let healthy_pid = directory.join("healthy.pid");
+        let offender_guard = FixtureChildGuard::new(offender_pid.clone());
+        let healthy_guard = FixtureChildGuard::new(healthy_pid.clone());
+        let release = directory.join("release");
+        let extra_pid = directory.join("extra.pid");
+        let extra_guard = FixtureChildGuard::new(extra_pid.clone());
+        let fixture = |own: &Utf8Path, peer: &Utf8Path, action: &str| {
+            format!(
+                "import pathlib,subprocess,sys,time\nchild=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)'])\npathlib.Path({own:?}).write_text(str(child.pid))\ndeadline=time.monotonic()+10\nwhile not pathlib.Path({peer:?}).exists():\n if time.monotonic()>=deadline: raise TimeoutError('sibling not ready')\n time.sleep(0.01)\n{action}"
+            )
+        };
+        let action = if memory {
+            "try:\n chunks=[bytearray(8*1024*1024) for _ in range(32)]\nexcept MemoryError:\n time.sleep(2)".to_owned()
+        } else {
+            format!(
+                "try:\n for _ in range(3):\n  extra=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)'])\n  pathlib.Path({extra_pid:?}).write_text(str(extra.pid))\nexcept OSError:\n time.sleep(2)"
+            )
+        };
+        let offender_code = fixture(&offender_pid, &healthy_pid, &action);
+        let healthy_code = fixture(
+            &healthy_pid,
+            &offender_pid,
+            &format!(
+                "while not pathlib.Path({release:?}).exists():\n if time.monotonic()>=deadline: raise TimeoutError('offender not classified')\n time.sleep(0.01)\nsys.stdout.write('healthy')"
+            ),
         );
+        let offender = async {
+            let result = handler
+                .handle(native_run_python(
+                    103,
+                    &offender_code,
+                    root_limits(128 * 1024 * 1024, 3),
+                ))
+                .await
+                .unwrap();
+            fs::write(&release, b"classified").unwrap();
+            result
+        };
+        let healthy = handler.handle(native_run_python(
+            104,
+            &healthy_code,
+            root_limits(128 * 1024 * 1024, 3),
+        ));
+        let (offender, healthy) = tokio::join!(offender, healthy);
+        let healthy = healthy.unwrap();
+        assert_eq!(
+            offender.termination,
+            if memory {
+                ProcessTermination::OutOfMemory
+            } else {
+                ProcessTermination::ProcessLimit
+            }
+        );
+        assert_eq!(healthy.termination, ProcessTermination::Exit(0));
+        assert_eq!(
+            fs::read(handler.spool_path(&healthy.output).unwrap()).unwrap(),
+            b"healthy"
+        );
+        let mut descendants = vec![&offender_guard, &healthy_guard];
+        if !memory {
+            descendants.push(&extra_guard);
+        }
+        let cleanup_deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        for guard in descendants {
+            let pid = guard
+                .pid()
+                .expect("descendant published before limit violation");
+            assert!(
+                wait_until_process_stops_before(pid, cleanup_deadline).await,
+                "descendant {pid} survived root cleanup"
+            );
+        }
         handler.close().unwrap();
     }
 
     #[tokio::test]
-    async fn job_object_process_limit_is_isolated_per_concurrent_root() {
-        let output = tempfile::tempdir().unwrap();
-        let handler = Arc::new(hard_handler(
-            Utf8Path::from_path(output.path()).unwrap(),
-            512 * 1024 * 1024,
-            3,
-        ));
-        let code = "import subprocess,sys,time\nchild=subprocess.Popen([sys.executable,'-c','import time; time.sleep(1)']); time.sleep(0.5); child.wait()";
-        let first = handler.handle(run_python(105, code, limits(Duration::from_secs(5), 4096)));
-        let second = handler.handle(run_python(106, code, limits(Duration::from_secs(5), 4096)));
+    async fn job_object_memory_offender_preserves_healthy_sibling_and_cleans_descendants() {
+        assert_offender_isolated(true).await;
+    }
 
-        let (first, second) = tokio::join!(first, second);
-        let terminations = [first.unwrap().termination, second.unwrap().termination];
-
-        assert_eq!(
-            terminations,
-            [ProcessTermination::Exit(0), ProcessTermination::Exit(0)]
-        );
-        handler.close().unwrap();
+    #[tokio::test]
+    async fn job_object_process_offender_preserves_healthy_sibling_and_cleans_descendants() {
+        assert_offender_isolated(false).await;
     }
 
     #[tokio::test]
     async fn job_object_timeout_is_isolated_from_sibling_root() {
         let output = tempfile::tempdir().unwrap();
-        let handler = Arc::new(hard_handler(
-            Utf8Path::from_path(output.path()).unwrap(),
-            512 * 1024 * 1024,
-            16,
-        ));
-        let timed_out = handler.handle(run_python(
+        let handler = Arc::new(hard_handler(Utf8Path::from_path(output.path()).unwrap()));
+        let timed_out = handler.handle(native_run_python(
             107,
             "import time; time.sleep(30)",
             limits(Duration::from_millis(200), 64),
         ));
-        let sibling = handler.handle(run_python(
+        let sibling = handler.handle(native_run_python(
             108,
             "import sys,time; time.sleep(0.7); sys.stdout.write('alive')",
             limits(Duration::from_secs(5), 64),
@@ -1626,7 +1679,7 @@ mod job_object {
         let output_dir = Utf8Path::from_path(output.path()).unwrap();
         let pid_file = output_dir.join("hard-close-child.pid");
         let guard = FixtureChildGuard::new(pid_file.clone());
-        let handler = Arc::new(hard_handler(output_dir, 512 * 1024 * 1024, 16));
+        let handler = Arc::new(hard_handler(output_dir));
         let deadline = tokio::time::Instant::now() + REAL_PROCESS_FIXTURE_BUDGET;
         let request = RunProcess {
             id: EffectId(109),
@@ -1634,7 +1687,7 @@ mod job_object {
             run_id: None,
             mutant_id: None,
             argv: vec![
-                python_executable(),
+                native_python(),
                 utf8_arg("-c"),
                 utf8_arg(
                     "import pathlib,subprocess,sys,time; child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']); pathlib.Path(sys.argv[1]).write_text(str(child.pid)); time.sleep(30)",
@@ -1656,7 +1709,7 @@ mod job_object {
         assert!(wait_until_process_stops_before(child_pid, deadline).await);
 
         let failed = handler
-            .handle(run_python(
+            .handle(native_run_python(
                 110,
                 "raise SystemExit(0)",
                 limits(Duration::from_secs(1), 64),

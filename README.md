@@ -25,7 +25,7 @@ hoimin verify PLAN.json --top 10 --format json > reports/batch-a-001.json
 hoimin verify PLAN.json --top 10 --selection-policy diverse
 ```
 
-Each version-3 plan candidate records `rank`, `score`, and `ranking_reasons`.
+Each plan candidate records `rank`, `score`, and `ranking_reasons`.
 The scores are transparent ordering heuristics for focusing effort; they do not
 claim that a higher-ranked mutant is more likely to reveal a defect, and
 lower-ranked candidates remain valid. `verify` uses the saved ranks and never re-ranks
@@ -149,12 +149,12 @@ The defaults are:
 | `--baseline-timeout` | `60s` | baseline process |
 | `--mutant-timeout` | `auto` | each mutant; `max(5s, 2 × baseline elapsed + 1s)` |
 | `--total-timeout` | `5m` | complete run |
-| `--max-memory` | `1GiB` | run-wide descendant memory |
+| `--max-memory` | `1GiB` | Windows: committed memory per root tree; Linux cgroup: run-wide |
 | `--max-output` | `1MiB` | combined retained stdout and stderr per process |
 | `--max-copy-size` | `1GiB` | run-wide logical bytes copied across all workers |
 | `--max-workspace-size` | `8GiB` | logical bytes in generated workspaces and run-owned output |
 | `--min-free-space` | `10GiB` | mandatory filesystem reserve before more work starts |
-| `--max-processes` | `64` | run-wide descendants |
+| `--max-processes` | `64` | Windows: processes per root tree, including the root; Linux cgroup: run-wide |
 | `--format` | `json` | `json`, `jsonl`, or `human` |
 | `--profile full` / `--profile focused` | `full` | candidate-selection profile |
 | `--fingerprint-include GLOB` | none | invalidates compatible session reuse; does not copy worker files |
@@ -162,7 +162,15 @@ The defaults are:
 
 By default, there are no include/exclude overrides or SQLite session, and `--changed`, `--resume`, and `--allow-best-effort-memory` are disabled.
 
-Every numeric limit must be nonzero. Memory, process, copy, and total-timeout limits are run-wide and are not multiplied by `--jobs`. On Windows, Job Objects provide hard process and memory enforcement. On Linux, delegated cgroup v2 provides hard enforcement. When hard enforcement is unavailable, Unix uses best-effort process groups and non-macOS Unix also applies per-process `RLIMIT_AS`. Linux and macOS require explicit `--allow-best-effort-memory` approval for this policy. On macOS, the memory limit is not enforced. Hoimin uses monotonic wall-clock deadlines on portable Unix and, on timeout or cancellation while it owns a live root, terminates that process group and reaps the root. Cleanup of descendants after the root exits naturally is not guaranteed. Reports identify `hard` or `best_effort` resource mode.
+Every numeric limit must be nonzero. Copy and total-timeout limits are run-wide.
+
+On Windows, each baseline or mutant root process and its descendants share their own full `--max-memory` and `--max-processes` allowance, enforced by a nested Job Object. Memory means committed memory, not RSS; the process count includes the root itself. With `--jobs J`, concurrent trees can approach `J × max-memory` and `J × max-processes` in total. The outer run Job Object owns cleanup and imposes no aggregate memory or process cap. Host-imposed parent Job Objects can make effective limits stricter.
+
+On Linux, delegated cgroup v2 provides run-wide hard memory and process enforcement, shared across workers. When hard enforcement is unavailable, Unix uses best-effort process groups and non-macOS Unix also applies per-process `RLIMIT_AS`. Linux and macOS require explicit `--allow-best-effort-memory` approval for this policy. On macOS, the memory limit is not enforced. Hoimin uses monotonic wall-clock deadlines on portable Unix and, on timeout or cancellation while it owns a live root, terminates that process group and reaps the root. Cleanup of descendants after the root exits naturally is not guaranteed.
+
+Reports identify `hard` or `best_effort` resource mode. This describes enforcement strength, not aggregation scope: on Windows, the memory and process limits in `normalized_config` apply per root tree.
+
+Rust callers construct `WindowsBackend::new()` without run limits and supply caps through each `ProcessLimits` request; the formerly ignored constructor argument has been removed.
 
 The run header records the selected backend in `resource_control.mode` and the stable `resource_control.mechanism` identifier (`portable`, `linux_cgroup_v2`, or `windows_job_object`). Synthetic reused and not-run results report the current run’s selected mode; reused results retain null termination/output and zero elapsed time. Actual process results retain their observed mode.
 
@@ -207,8 +215,10 @@ Start with `--jobs 1` and a focused test command. Record the baseline elapsed ti
 estimate one test worker's memory use before increasing concurrency gradually. A small
 target can often keep `--jobs 1 --max-memory 1GiB --mutant-timeout auto`.
 
-`--max-memory` is one run-wide limit shared by the analyzer, baseline, and all concurrent
-workers; it is not multiplied by `--jobs`. When increasing `--jobs`, set an explicit
+`--max-memory` is shared across concurrent test workers under Linux cgroup hard enforcement.
+On Windows, it applies separately to each root tree: for example, `--jobs 4 --max-memory 4GiB`
+allows concurrent test trees to approach 16 GiB of committed memory. Size concurrency and
+per-root caps together. The in-process analyzer is not covered by these descendant limits. When increasing `--jobs`, set an explicit
 `--mutant-timeout` with headroom for contention instead of assuming that the `auto` value
 derived from a single baseline will remain sufficient. For example, a focused baseline
 that takes about 14 seconds can be tried with the following measured settings:

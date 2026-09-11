@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
-use hoimin_core::{ProcessLimits, ProcessTermination, ResourceMode, RunLimits};
+use hoimin_core::{ProcessLimits, ProcessTermination, ResourceMode};
 use tokio::process::{Child, Command};
 use uuid::Uuid;
 use windows_sys::Win32::Foundation::{
@@ -59,9 +59,9 @@ enum AttachFault {
 impl WindowsBackend {
     /// # Errors
     ///
-    /// Returns an error when configured limits cannot be represented by the Windows Job Object API
-    /// or its run-wide job cannot be created.
-    pub fn new(_limits: &RunLimits) -> Result<Self, ResourceError> {
+    /// Returns an error when the run ownership Job Object cannot be created or configured.
+    /// Resource caps are supplied separately on each process request and apply to that root tree.
+    pub fn new() -> Result<Self, ResourceError> {
         Ok(Self {
             inner: Arc::new(WindowsRunJob::new()?),
             attach_fault: AttachFault::None,
@@ -69,18 +69,15 @@ impl WindowsBackend {
     }
 
     #[cfg(test)]
-    fn with_test_fault(
-        limits: &RunLimits,
-        attach_fault: AttachFault,
-    ) -> Result<Self, ResourceError> {
-        let mut backend = Self::new(limits)?;
+    fn with_test_fault(attach_fault: AttachFault) -> Result<Self, ResourceError> {
+        let mut backend = Self::new()?;
         backend.attach_fault = attach_fault;
         Ok(backend)
     }
 
     #[cfg(test)]
-    fn with_test_close_failure(limits: &RunLimits) -> Result<Self, ResourceError> {
-        let backend = Self::new(limits)?;
+    fn with_test_close_failure() -> Result<Self, ResourceError> {
+        let backend = Self::new()?;
         backend.inner.close_failures.store(1, Ordering::Release);
         Ok(backend)
     }
@@ -777,8 +774,7 @@ mod tests {
 
     use camino::{Utf8Path, Utf8PathBuf};
     use hoimin_core::{
-        CommandArg, EffectFailure, EffectId, ProcessLimits, ProcessTermination, RawRunLimits,
-        RunLimits, RunProcess,
+        CommandArg, EffectFailure, EffectId, ProcessLimits, ProcessTermination, RunProcess,
     };
     use tokio::process::Command;
     use uuid::Uuid;
@@ -810,8 +806,67 @@ mod tests {
         }
     }
 
-    fn run_limits() -> RunLimits {
-        RunLimits::try_from(&RawRunLimits::default()).unwrap()
+    #[test]
+    fn native_caps_follow_each_request_and_outer_job_only_owns_cleanup() {
+        use windows_sys::Win32::System::JobObjects::{
+            JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_JOB_MEMORY,
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+            JobObjectExtendedLimitInformation, QueryInformationJobObject,
+        };
+        let read = |job| {
+            let mut information = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+            let mut returned = 0;
+            let size = u32::try_from(std::mem::size_of_val(&information)).unwrap();
+            // SAFETY: both output pointers refer to initialized, correctly sized live values.
+            let ok = unsafe {
+                QueryInformationJobObject(
+                    job,
+                    JobObjectExtendedLimitInformation,
+                    (&raw mut information).cast(),
+                    size,
+                    &raw mut returned,
+                )
+            };
+            assert_ne!(
+                ok,
+                0,
+                "native limit query: {}",
+                std::io::Error::last_os_error()
+            );
+            assert_eq!(returned, size);
+            information
+        };
+        let backend = WindowsBackend::new().unwrap();
+        let outer = read(backend.inner.job.raw());
+        assert_eq!(
+            outer.BasicLimitInformation.LimitFlags,
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        );
+        assert_eq!(outer.JobMemoryLimit, 0);
+        assert_eq!(outer.BasicLimitInformation.ActiveProcessLimit, 0);
+        for (memory, processes) in [(128 * 1024 * 1024, 3), (160 * 1024 * 1024, 16)] {
+            let requested = ProcessLimits {
+                max_memory_bytes: memory,
+                max_processes: processes,
+                ..fixture_limits()
+            };
+            let mut command = Command::new("python");
+            let crate::resource::ProcessSupervisor::Windows(supervisor) =
+                backend.prepare(&mut command, requested).unwrap()
+            else {
+                panic!("Windows backend returned another supervisor");
+            };
+            let inner = read(supervisor.root_job.raw());
+            assert_eq!(
+                inner.BasicLimitInformation.LimitFlags,
+                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+                    | JOB_OBJECT_LIMIT_JOB_MEMORY
+                    | JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+            );
+            assert_eq!(inner.JobMemoryLimit, usize::try_from(memory).unwrap());
+            assert_eq!(inner.BasicLimitInformation.ActiveProcessLimit, processes);
+        }
+        backend.close().unwrap();
     }
 
     fn fixture_limits() -> ProcessLimits {
@@ -1011,7 +1066,7 @@ mod tests {
 
     #[tokio::test]
     async fn job_process_count_wait_uses_the_callers_absolute_deadline() {
-        let backend = WindowsBackend::new(&run_limits()).unwrap();
+        let backend = WindowsBackend::new().unwrap();
         let deadline = tokio::time::Instant::now() + Duration::from_millis(25);
         let process = std::future::pending::<Result<(), &'static str>>();
         tokio::pin!(process);
@@ -1035,7 +1090,7 @@ mod tests {
 
     #[tokio::test]
     async fn job_process_count_wait_reports_process_completion_before_assignment() {
-        let backend = WindowsBackend::new(&run_limits()).unwrap();
+        let backend = WindowsBackend::new().unwrap();
         let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
         let process = std::future::ready::<Result<(), &'static str>>(Err("attach failed"));
         tokio::pin!(process);
@@ -1143,7 +1198,7 @@ mod tests {
         let output_dir = Utf8Path::from_path(temporary.path()).unwrap();
         let identities = output_dir.join("root-and-descendant.txt");
         let release = output_dir.join("release-root");
-        let backend = WindowsBackend::new(&run_limits()).unwrap();
+        let backend = WindowsBackend::new().unwrap();
         let code = "import os,pathlib,subprocess,sys,time; identities=pathlib.Path(sys.argv[1]); release=pathlib.Path(sys.argv[2]); child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)'],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); pending=identities.with_suffix('.pending'); pending.write_text(f'{os.getpid()} {child.pid}',encoding='utf-8'); os.replace(pending,identities);\nwhile not release.exists(): time.sleep(0.005)";
         let started = Instant::now();
         let deadline = tokio::time::Instant::now() + Duration::from_secs(6);
@@ -1231,7 +1286,7 @@ mod tests {
         let output_dir = Utf8Path::from_path(temporary.path()).unwrap();
         let abnormal_ready = output_dir.join("abnormal-root.ready");
         let abnormal_release = output_dir.join("release-abnormal-root");
-        let backend = WindowsBackend::new(&run_limits()).unwrap();
+        let backend = WindowsBackend::new().unwrap();
         let handler = Arc::new(ProcessHandler::new(
             ResourceBackend::Windows(backend.clone()),
             output_dir.to_owned(),
@@ -1317,7 +1372,7 @@ mod tests {
             let temporary = tempfile::tempdir().unwrap();
             let output_dir = Utf8Path::from_path(temporary.path()).unwrap();
             let marker = output_dir.join(format!("fault-{sequence}.marker"));
-            let backend = WindowsBackend::with_test_fault(&run_limits(), fault).unwrap();
+            let backend = WindowsBackend::with_test_fault(fault).unwrap();
             let handler = ProcessHandler::new(
                 ResourceBackend::Windows(backend.clone()),
                 output_dir.to_owned(),
@@ -1384,8 +1439,7 @@ mod tests {
     async fn exit_handle_reopen_failure_preserves_detached_generation_identity() {
         let temporary = tempfile::tempdir().unwrap();
         let output_dir = Utf8Path::from_path(temporary.path()).unwrap();
-        let backend =
-            WindowsBackend::with_test_fault(&run_limits(), AttachFault::ExitHandleOpen).unwrap();
+        let backend = WindowsBackend::with_test_fault(AttachFault::ExitHandleOpen).unwrap();
         let handler = ProcessHandler::new(
             ResourceBackend::Windows(backend.clone()),
             output_dir.to_owned(),
@@ -1426,7 +1480,7 @@ mod tests {
     async fn timeout_cleanup_retains_signaled_detached_generation() {
         let temporary = tempfile::tempdir().unwrap();
         let output_dir = Utf8Path::from_path(temporary.path()).unwrap();
-        let backend = WindowsBackend::new(&run_limits()).unwrap();
+        let backend = WindowsBackend::new().unwrap();
         let handler = ProcessHandler::new(
             ResourceBackend::Windows(backend.clone()),
             output_dir.to_owned(),
@@ -1469,7 +1523,7 @@ mod tests {
 
     #[test]
     fn signaled_root_without_exit_notification_classifies_and_retains_generation() {
-        let backend = WindowsBackend::new(&run_limits()).unwrap();
+        let backend = WindowsBackend::new().unwrap();
         let mut child = std::process::Command::new("cmd.exe")
             .args(["/D", "/C", "exit 7"])
             .spawn()
@@ -1523,7 +1577,7 @@ mod tests {
 
     #[test]
     fn queued_exit_notification_wins_over_signaled_process_fallback() {
-        let backend = WindowsBackend::new(&run_limits()).unwrap();
+        let backend = WindowsBackend::new().unwrap();
         let mut child = std::process::Command::new("cmd.exe")
             .args(["/D", "/C", "exit 8"])
             .spawn()
@@ -1584,7 +1638,7 @@ mod tests {
 
     #[test]
     fn root_exit_wait_releases_registry_and_retains_process_generation() {
-        let backend = WindowsBackend::new(&run_limits()).unwrap();
+        let backend = WindowsBackend::new().unwrap();
         let mut child = std::process::Command::new("ping.exe")
             .args(["-n", "30", "127.0.0.1"])
             .stdout(Stdio::null())
@@ -1633,7 +1687,7 @@ mod tests {
 
     #[test]
     fn root_exit_wait_timeout_retains_registration_for_retry() {
-        let backend = WindowsBackend::new(&run_limits()).unwrap();
+        let backend = WindowsBackend::new().unwrap();
         let mut child = std::process::Command::new("ping.exe")
             .args(["-n", "30", "127.0.0.1"])
             .stdout(Stdio::null())
@@ -1695,7 +1749,7 @@ mod tests {
 
     #[test]
     fn close_failure_keeps_run_closed_and_retries_termination() {
-        let backend = WindowsBackend::with_test_close_failure(&run_limits()).unwrap();
+        let backend = WindowsBackend::with_test_close_failure().unwrap();
 
         let first = backend.close().expect_err("first termination is injected");
         assert!(

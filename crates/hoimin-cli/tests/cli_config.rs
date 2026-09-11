@@ -1540,3 +1540,21 @@ fn import_roots_reject_absolute_and_escaping_paths() {
         assert!(error.to_string().contains("--import-root"), "{error}");
     }
 }
+
+#[test]
+fn run_help_explains_windows_per_root_resource_scope() {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+        .args(["run", "--help"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let help = String::from_utf8(output.stdout).unwrap();
+    for contract in [
+        "Windows: per root process tree",
+        "committed memory",
+        "including the root",
+        "jobs multiplies",
+    ] {
+        assert!(help.contains(contract), "missing {contract}: {help}");
+    }
+}
