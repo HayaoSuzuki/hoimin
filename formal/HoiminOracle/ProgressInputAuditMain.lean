@@ -41,7 +41,19 @@ private def caseJson (id : String) (input : Input) : Lean.Json := Id.run do
         ("latest_state", .str (latestName result.latest)),
         ("consecutive_stalls", Lean.toJson result.consecutiveStalls),
         ("comparisons", Lean.toJson result.comparisons.length)]
-  return Lean.Json.mkObj [
+  let resultFields := match input.resultFields with
+    | none => []
+    | some fields => [("result_fields", Lean.Json.mkObj [
+        ("termination", match fields.termination with
+          | none => .null
+          | some .exitZero => Lean.Json.mkObj [("Exit", Lean.toJson (0 : Nat))]
+          | some .exitNonzero => Lean.Json.mkObj [("Exit", Lean.toJson (1 : Nat))]
+          | some .timeout => .str "Timeout"
+          | some .outOfMemory => .str "OutOfMemory"
+          | some .processLimit => .str "ProcessLimit"
+          | some .cancelled => .str "Cancelled"),
+        ("output_state", .str (if fields.outputState == .complete then "complete" else "close_timed_out"))])]
+  return Lean.Json.mkObj ([
     ("schema", Lean.toJson (1 : Nat)), ("id", .str id), ("mode", .str "strict"),
     ("statuses", Lean.toJson (input.statuses.map statusName)),
     ("baseline", .str (match input.baseline with
@@ -54,7 +66,7 @@ private def caseJson (id : String) (input : Input) : Lean.Json := Id.run do
       ("process_limit", Lean.toJson counts.processLimit), ("error", Lean.toJson counts.error),
       ("not_run", Lean.toJson counts.notRun), ("inconclusive", Lean.toJson (inconclusive counts))]),
     ("score", score), ("expected_disposition", .str (dispositionName (classify input))),
-    ("expected_history", history)]
+    ("expected_history", history)] ++ resultFields)
 
 private def renderCorpus : String :=
   String.join (cases.map fun (id, input) => (caseJson id input).compress ++ "\n")
@@ -76,7 +88,7 @@ def main (args : List String) : IO UInt32 := do
     for (name, detected) in sensitivities do IO.println s!"{name}={detected}"
     return 0
   | ["--stats"] =>
-    IO.println s!"profiles={profiles.length} cases={cases.length} exit_codes=8 complete_values=2"
+    IO.println s!"profiles={profiles.length} summary_cases={summaryCases.length} result_cases={resultCases.length} cases={cases.length} exit_codes=8 complete_values=2 statuses=7 terminations=7 output_states=2"
     return 0
   | _ =>
     IO.eprintln "usage: generate_progress_input --output PATH | --check PATH | --sensitivity | --stats"

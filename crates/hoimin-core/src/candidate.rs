@@ -99,14 +99,7 @@ impl<'source> CandidateValidationContext<'source> {
     ///
     /// Returns [`CandidateValidationError::SourceTooLarge`] when the source exceeds `u32::MAX` bytes.
     pub fn new(source: &'source [u8]) -> Result<Self, CandidateValidationError> {
-        let line_starts = source_line_starts(
-            source.len(),
-            source
-                .iter()
-                .enumerate()
-                .filter(|(_, byte)| **byte == b'\n')
-                .map(|(offset, _)| offset + 1),
-        )?;
+        let line_starts = python_line_starts(source)?;
         Ok(Self {
             source,
             text: std::str::from_utf8(source),
@@ -121,6 +114,23 @@ impl<'source> CandidateValidationContext<'source> {
     }
 }
 
+/// Returns physical line starts for Python's LF, CRLF and lone-CR line endings.
+/// Offsets refer to the unchanged input bytes, including any leading UTF-8 BOM.
+///
+/// # Errors
+///
+/// Returns [`CandidateValidationError::SourceTooLarge`] before scanning when the
+/// source exceeds `u32::MAX` bytes.
+pub fn python_line_starts(source: &[u8]) -> Result<Vec<u32>, CandidateValidationError> {
+    source_line_starts(
+        source.len(),
+        source.iter().enumerate().filter_map(|(offset, byte)| {
+            (*byte == b'\n' || (*byte == b'\r' && source.get(offset + 1) != Some(&b'\n')))
+                .then_some(offset + 1)
+        }),
+    )
+}
+
 fn source_line_starts(
     source_len: usize,
     newline_ends: impl Iterator<Item = usize>,
@@ -132,6 +142,24 @@ fn source_line_starts(
             .push(u32::try_from(offset).map_err(|_| CandidateValidationError::SourceTooLarge)?);
     }
     Ok(line_starts)
+}
+
+/// Returns the zero-based Python source column for a checked byte range.
+///
+/// Columns count Unicode scalar values. A single UTF-8 BOM is excluded only
+/// when it begins the file; byte offsets and the source itself remain unchanged.
+/// `None` is returned when either bound is outside `source`, the range is
+/// reversed, a bound is not a UTF-8 character boundary, or the column cannot
+/// be represented as `u32`.
+#[must_use]
+pub fn python_source_column(source: &str, line_start: usize, offset: usize) -> Option<u32> {
+    let prefix = source.get(line_start..offset)?;
+    let visible_prefix = if line_start == 0 {
+        prefix.strip_prefix('\u{feff}').unwrap_or(prefix)
+    } else {
+        prefix
+    };
+    u32::try_from(visible_prefix.chars().count()).ok()
 }
 
 #[must_use]
@@ -232,8 +260,8 @@ pub fn validate_candidate_with_context(
         u32::try_from(line_index + 1).map_err(|_| CandidateValidationError::LocationMismatch)?;
     let line_start = usize::try_from(context.line_starts[line_index])
         .map_err(|_| CandidateValidationError::LocationMismatch)?;
-    let column = u32::try_from(text[line_start..start].chars().count())
-        .map_err(|_| CandidateValidationError::LocationMismatch)?;
+    let column = python_source_column(text, line_start, start)
+        .ok_or(CandidateValidationError::LocationMismatch)?;
     if candidate.line != line || candidate.column != column {
         return Err(CandidateValidationError::LocationMismatch);
     }

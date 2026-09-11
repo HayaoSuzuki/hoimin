@@ -121,3 +121,7 @@ root = "DiskGuardAuditMain"
 [[lean_exe]]
 name = "generate_cleanup_capability"
 root = "CleanupCapabilityAuditMain"
+
+[[lean_exe]]
+name = "generate_comprehension_bindings"
+root = "ComprehensionBindingAuditMain"

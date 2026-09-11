@@ -7,7 +7,7 @@ use hoimin_core::{DiscoveredFile, Selection};
 use ignore::overrides::OverrideBuilder;
 use ignore::{DirEntry, Walk, WalkBuilder};
 
-use crate::portable_path;
+use crate::{copy_policy::default_excluded, portable_path};
 
 #[derive(Debug)]
 pub enum FsTargetError {
@@ -48,7 +48,10 @@ pub fn discover_explicit(selection: &Selection) -> Result<Vec<DiscoveredFile>, F
 
     let excludes = build_overrides(root, &[], &selection.excludes)?;
     let mut normal = WalkBuilder::new(root);
-    normal.overrides(excludes);
+    normal
+        .require_git(false)
+        .overrides(excludes)
+        .filter_entry(|entry| !default_excluded(entry));
     collect(normal.build(), root, &mut files)?;
 
     if !selection.includes.is_empty() {
@@ -61,7 +64,8 @@ pub fn discover_explicit(selection: &Selection) -> Result<Vec<DiscoveredFile>, F
             .git_global(false)
             .git_exclude(false)
             .parents(false)
-            .overrides(includes);
+            .overrides(includes)
+            .filter_entry(|entry| !default_excluded(entry));
         collect(restored.build(), root, &mut files)?;
     }
 

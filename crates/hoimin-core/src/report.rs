@@ -694,6 +694,47 @@ pub enum ReportSequenceError {
     },
 }
 
+impl MutantFinished {
+    /// Validates one result independently of report lifecycle events.
+    ///
+    /// Complete output with absent termination is accepted for legacy reports.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ReportSequenceError`] for missing output-close result fields,
+    /// inconsistent output diagnostics, or a status that disagrees with the
+    /// termination and output state, checked in that order.
+    pub fn validate_result(&self) -> Result<(), ReportSequenceError> {
+        if !output_state_matches_result(self) {
+            return Err(ReportSequenceError::MutantOutputStateMismatch {
+                mutant_id: self.candidate.id.clone(),
+                mutant_sequence: self.candidate.sequence,
+                output_state: self.output_state,
+            });
+        }
+        if !output_diagnostics_match(self) {
+            return Err(ReportSequenceError::MutantOutputDiagnosticMismatch {
+                mutant_id: self.candidate.id.clone(),
+                mutant_sequence: self.candidate.sequence,
+                output_state: self.output_state,
+            });
+        }
+        if let Some(termination) = self.termination {
+            let expected_status = classify_mutant_result(termination, self.output_state);
+            if self.status != expected_status {
+                return Err(ReportSequenceError::MutantStatusTerminationMismatch {
+                    mutant_id: self.candidate.id.clone(),
+                    mutant_sequence: self.candidate.sequence,
+                    status: self.status,
+                    termination,
+                    expected_status,
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
 fn output_state_matches_result(value: &MutantFinished) -> bool {
     match value.output_state {
         ProcessOutputState::Complete => true,
@@ -706,18 +747,18 @@ fn output_state_matches_result(value: &MutantFinished) -> bool {
 }
 
 fn output_diagnostics_match(value: &MutantFinished) -> bool {
-    let close_timeout = value
+    let mut close_timeout = value
         .diagnostics
         .iter()
-        .filter(|diagnostic| diagnostic.code == PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE)
-        .collect::<Vec<_>>();
+        .filter(|diagnostic| diagnostic.code == PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE);
     match value.output_state {
-        ProcessOutputState::Complete => close_timeout.is_empty(),
+        ProcessOutputState::Complete => close_timeout.next().is_none(),
         ProcessOutputState::CloseTimedOut => {
-            close_timeout.len() == 1
-                && close_timeout[0].mutant_id == value.candidate.id
-                && close_timeout[0].level == "error"
-                && !close_timeout[0].message.trim().is_empty()
+            close_timeout.next().is_some_and(|diagnostic| {
+                diagnostic.mutant_id == value.candidate.id
+                    && diagnostic.level == "error"
+                    && !diagnostic.message.trim().is_empty()
+            }) && close_timeout.next().is_none()
         }
     }
 }
@@ -776,37 +817,13 @@ impl ReportSequence {
                     }
                     _ => {
                         let key = (value.candidate.id.clone(), value.candidate.sequence);
-                        if !self.active_mutants.contains(&key) {
+                        if self.active_mutants.contains(&key) {
+                            value.validate_result().err()
+                        } else {
                             Some(ReportSequenceError::MutantNotStarted {
                                 mutant_id: value.candidate.id.clone(),
                                 mutant_sequence: value.candidate.sequence,
                             })
-                        } else if !output_state_matches_result(value) {
-                            Some(ReportSequenceError::MutantOutputStateMismatch {
-                                mutant_id: value.candidate.id.clone(),
-                                mutant_sequence: value.candidate.sequence,
-                                output_state: value.output_state,
-                            })
-                        } else if !output_diagnostics_match(value) {
-                            Some(ReportSequenceError::MutantOutputDiagnosticMismatch {
-                                mutant_id: value.candidate.id.clone(),
-                                mutant_sequence: value.candidate.sequence,
-                                output_state: value.output_state,
-                            })
-                        } else if let Some(termination) = value.termination {
-                            let expected_status =
-                                classify_mutant_result(termination, value.output_state);
-                            (value.status != expected_status).then(|| {
-                                ReportSequenceError::MutantStatusTerminationMismatch {
-                                    mutant_id: value.candidate.id.clone(),
-                                    mutant_sequence: value.candidate.sequence,
-                                    status: value.status,
-                                    termination,
-                                    expected_status,
-                                }
-                            })
-                        } else {
-                            None
                         }
                     }
                 }
