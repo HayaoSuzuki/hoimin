@@ -382,6 +382,7 @@ async fn prepare_verify_selection_inner(
     let copy_options = crate::workspace::CopyOptions {
         includes: config.selection.includes.clone(),
         excludes: config.selection.excludes.clone(),
+        literal_exclusions: Vec::new(),
     };
     let copy_manifest = crate::workspace::build_validation_manifest(&config.root, &copy_options)
         .map_err(|error| PlanError::Workspace(error.to_string()))?;
@@ -569,6 +570,12 @@ fn validate_header(manifest: &PlanManifest) -> Result<(), PlanError> {
                 candidate.path
             )));
         }
+        crate::analyzer::CandidateStore::record_size(&candidate.candidate).map_err(|error| {
+            PlanError::CandidateInvalid(format!(
+                "{}:{} ({}): {error}",
+                candidate.path, candidate.line, candidate.operator
+            ))
+        })?;
     }
     Ok(())
 }

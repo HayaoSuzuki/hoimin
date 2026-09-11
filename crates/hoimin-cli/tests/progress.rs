@@ -2398,3 +2398,112 @@ fn valid_report() -> Value {
         }
     })
 }
+
+fn result_report(schema: u32, close_timeout: bool) -> Value {
+    let mut document = valid_report();
+    document["schema_version"] = json!(schema);
+    for field in ["run", "baseline", "summary"] {
+        document[field]["schema_version"] = json!(schema);
+    }
+    document["mutants"][0]["schema_version"] = json!(schema);
+    if schema == 2 {
+        document["summary"].as_object_mut().unwrap().remove("disk");
+    }
+    if close_timeout {
+        let mutant = &mut document["mutants"][0];
+        mutant["status"] = json!("error");
+        mutant["termination"] = json!({"Exit": 0});
+        mutant["output_state"] = json!("close_timed_out");
+        mutant["output"] = json!({"token": "partial", "retained": 0, "observed": 0});
+        mutant["diagnostics"] = json!([{
+            "mutant_id": mutant["candidate"]["id"], "level": "error",
+            "code": hoimin_core::PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE,
+            "message": "captured output may be incomplete"
+        }]);
+        document["summary"]["counts"] =
+            serde_json::to_value(hoimin_core::summarize(&[MutationStatus::Error])).unwrap();
+        document["summary"]["complete"] = json!(false);
+        document["summary"]["exit_code"] = json!(2);
+    }
+    document
+}
+
+#[test]
+fn input_rejects_malformed_result_fields_and_diagnostics_in_both_schemas() {
+    let fixture = tempfile::tempdir().unwrap();
+    for schema in [2, 3] {
+        for defect in [
+            "termination",
+            "output",
+            "status",
+            "missing_diagnostic",
+            "duplicate",
+            "wrong_id",
+            "wrong_level",
+            "wrong_code",
+            "blank_message",
+            "complete_diagnostic",
+        ] {
+            let mut document = result_report(schema, true);
+            let mutant = &mut document["mutants"][0];
+            match defect {
+                "termination" | "output" => mutant[defect] = Value::Null,
+                "status" => mutant["status"] = json!("killed"),
+                "missing_diagnostic" => mutant["diagnostics"] = json!([]),
+                "duplicate" => {
+                    let diagnostic = mutant["diagnostics"][0].clone();
+                    mutant["diagnostics"]
+                        .as_array_mut()
+                        .unwrap()
+                        .push(diagnostic);
+                }
+                "wrong_id" => mutant["diagnostics"][0]["mutant_id"] = json!("other"),
+                "wrong_level" => mutant["diagnostics"][0]["level"] = json!("warning"),
+                "wrong_code" => mutant["diagnostics"][0]["code"] = json!("other"),
+                "blank_message" => mutant["diagnostics"][0]["message"] = json!(" \t\n"),
+                "complete_diagnostic" => mutant["output_state"] = json!("complete"),
+                _ => unreachable!(),
+            }
+            if defect == "status" {
+                document["summary"]["counts"] =
+                    serde_json::to_value(hoimin_core::summarize(&[MutationStatus::Killed]))
+                        .unwrap();
+                document["summary"]["complete"] = json!(true);
+                document["summary"]["exit_code"] = json!(0);
+            }
+            let path = write_json(&fixture, &format!("v{schema}-{defect}.json"), &document);
+            let error = read_report(&path).unwrap_err().to_string();
+            assert!(error.contains(path.to_str().unwrap()), "{error}");
+            assert!(
+                error.contains(document["mutants"][0]["candidate"]["id"].as_str().unwrap()),
+                "{error}"
+            );
+            let reason = if matches!(defect, "termination" | "output" | "status") {
+                "lacks its required result fields"
+            } else {
+                "disagrees with its diagnostics"
+            };
+            assert!(error.contains(reason), "v{schema} {defect}: {error}");
+        }
+    }
+}
+
+#[test]
+fn input_preserves_output_error_override_and_legacy_null_termination() {
+    let fixture = tempfile::tempdir().unwrap();
+    for schema in [2, 3] {
+        let document = result_report(schema, true);
+        let path = write_json(&fixture, "output-error.json", &document);
+        assert!(matches!(
+            read_report(&path),
+            Ok(InputReport::Unusable {
+                reason: UnusableReason::Incomplete,
+                ..
+            })
+        ));
+        let mut legacy = result_report(schema, false);
+        legacy["mutants"][0]["termination"] = Value::Null;
+        let path = write_json(&fixture, "legacy.json", &legacy);
+        assert!(matches!(read_report(&path), Ok(InputReport::Usable(_))));
+    }
+}
