@@ -320,6 +320,52 @@ async fn assert_planned_boolean_is_killed(
 }
 
 #[tokio::test]
+async fn cli_verify_rejects_a_bom_counted_column_before_baseline() {
+    let source = "\u{feff}enabled = True\n";
+    let project = Project::new_with_source(source);
+    let (path, manifest, marker) = write_plan_manifest(
+        &project,
+        &["--file", "src/calc.py", "--operators", "boolean_literal"],
+    )
+    .await;
+    let index = manifest
+        .candidates
+        .iter()
+        .position(|candidate| candidate.candidate.original == "True")
+        .unwrap();
+    let requested = manifest.candidates[index].id.clone();
+    assert_eq!(manifest.candidates[index].candidate.column, 10);
+    let mut tampered = serde_json::to_value(manifest).unwrap();
+    tampered["candidates"][index]["column"] = serde_json::json!(11);
+    write_json(&path, &tampered);
+    let args = [
+        OsString::from("hoimin"),
+        OsString::from("verify"),
+        path.as_os_str().to_owned(),
+        OsString::from("--candidate"),
+        OsString::from(requested),
+        OsString::from("--format"),
+        OsString::from("json"),
+    ];
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).unwrap(),
+        "plan.candidate.invalid: candidate line or column does not match its byte span\n",
+    );
+    assert!(!marker.exists(), "invalid coordinate ran the baseline");
+    assert_eq!(
+        std::fs::read(project.path.join("src/calc.py")).unwrap(),
+        source.as_bytes(),
+    );
+}
+
+#[tokio::test]
 async fn plan_candidates_match_shared_discovery_for_normalized_selectors() {
     let project = Project::new();
     for options in [
