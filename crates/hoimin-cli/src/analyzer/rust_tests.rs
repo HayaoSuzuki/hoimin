@@ -4379,6 +4379,17 @@ fn large_source_analysis_observes_cancellation_during_token_traversal() {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     let source = "value = left == right\n".repeat(20_000);
+    // Account for the new preflight probes so cancellation still reaches the
+    // token traversal named by this regression, rather than stopping in the guard.
+    let parsed = ruff_python_parser::parse_module(&source).unwrap();
+    let preflight_probes = AtomicUsize::new(0);
+    super::depth::check(parsed.syntax(), &|| {
+        preflight_probes.fetch_add(1, Ordering::Relaxed);
+        false
+    })
+    .unwrap();
+    let cancel_on = preflight_probes.load(Ordering::Relaxed) + 128;
+    drop(parsed);
     let probes = AtomicUsize::new(0);
     let result = analyze_source_cancellable(
         &AnalyzeRequest {
@@ -4390,10 +4401,10 @@ fn large_source_analysis_observes_cancellation_during_token_traversal() {
             max_candidates: usize::MAX,
         },
         &source,
-        || probes.fetch_add(1, Ordering::Relaxed) >= 128,
+        || probes.fetch_add(1, Ordering::Relaxed) >= cancel_on,
     );
 
-    assert!(matches!(result, Err(super::AnalysisCancelled)));
+    assert!(matches!(result, Err(super::AnalysisError::Cancelled)));
 }
 
 fn analyze_types(source: &str) -> super::AnalyzerOutput {

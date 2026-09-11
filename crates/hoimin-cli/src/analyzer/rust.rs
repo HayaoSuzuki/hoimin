@@ -15,11 +15,15 @@ use ruff_python_ast::{
     CmpOp, Expr, ExprBinOp, ExprCall, ExprContext, ExprList, ExprSlice, ExprSubscript, ExprTuple,
     ModModule, Number, Operator, Pattern, Singleton, Stmt, TypeParam, TypeParams, UnaryOp, visitor,
 };
+#[cfg(test)]
 use ruff_python_parser::parse_module;
+use ruff_python_parser::parse_unchecked_source;
 use ruff_text_size::{Ranged, TextRange};
 
 use super::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
+#[path = "rust/depth.rs"]
+mod depth;
 #[path = "rust/fact_index.rs"]
 mod fact_index;
 #[path = "rust/operator_functions.rs"]
@@ -179,9 +183,23 @@ fn candidate_identity(candidate: &AnalyzerCandidate) -> CandidateIdentity {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct AnalysisCancelled;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub(crate) enum AnalysisError {
+    #[error("analysis cancelled")]
+    Cancelled,
+    #[error("analysis depth exceeds supported limit {limit}")]
+    DepthExceeded { limit: usize },
+}
+
+impl From<AnalysisCancelled> for AnalysisError {
+    fn from(_: AnalysisCancelled) -> Self {
+        Self::Cancelled
+    }
+}
+
 pub(crate) fn analyze_source(request: &AnalyzeRequest<'_>, source: &str) -> AnalyzerOutput {
     analyze_source_cancellable(request, source, || false)
-        .expect("the non-cancellable analyzer probe never cancels")
+        .expect("the analyzer probe requires a source within the supported analysis depth")
 }
 
 #[expect(
@@ -192,26 +210,30 @@ pub(crate) fn analyze_source_cancellable(
     request: &AnalyzeRequest<'_>,
     source: &str,
     cancelled: impl Fn() -> bool,
-) -> Result<AnalyzerOutput, AnalysisCancelled> {
+) -> Result<AnalyzerOutput, AnalysisError> {
     if cancelled() {
-        return Err(AnalysisCancelled);
+        return Err(AnalysisError::Cancelled);
     }
-    let Ok(parsed) = parse_module(source) else {
+    // Retain invalid partial trees too: parse_module drops those recursively on Err.
+    let parsed = parse_unchecked_source(source, ruff_python_ast::PySourceType::Python);
+    if !parsed.has_valid_syntax() {
+        depth::dispose(parsed.into_syntax());
         return Ok(invalid_syntax(request.path));
-    };
-    if cancelled() {
-        return Err(AnalysisCancelled);
+    }
+    if let Err(error) = depth::check(parsed.syntax(), &cancelled) {
+        depth::dispose(parsed.into_syntax());
+        return Err(error);
     }
     let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
     if cancelled() {
-        return Err(AnalysisCancelled);
+        return Err(AnalysisError::Cancelled);
     }
     let line_index = LineIndex::new(source);
     let mut token_candidates = CandidatePrefix::new(request.max_candidates);
     let tokens: Vec<_> = parsed.tokens().iter().collect();
     for (index, token) in tokens.iter().enumerate() {
         if cancelled() {
-            return Err(AnalysisCancelled);
+            return Err(AnalysisError::Cancelled);
         }
         if matches!(
             token.kind(),
@@ -314,7 +336,7 @@ pub(crate) fn analyze_source_cancellable(
         }
     }
     if cancelled() {
-        return Err(AnalysisCancelled);
+        return Err(AnalysisError::Cancelled);
     }
     let token_candidates = token_candidates.finish();
     let ast_candidates = ast_candidates(
@@ -326,12 +348,12 @@ pub(crate) fn analyze_source_cancellable(
         &cancelled,
     )?;
     if cancelled() {
-        return Err(AnalysisCancelled);
+        return Err(AnalysisError::Cancelled);
     }
     let type_annotation_candidates =
         type_annotation_candidates(parsed.syntax(), source, &line_index, &facts, request);
     if cancelled() {
-        return Err(AnalysisCancelled);
+        return Err(AnalysisError::Cancelled);
     }
     let producer_overflowed = token_candidates.overflowed
         || ast_candidates.overflowed

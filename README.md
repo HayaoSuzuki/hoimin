@@ -148,6 +148,12 @@ and small per-node replacement lists still scale with source size. Therefore
 `--max-candidates` is not a general Hoimin memory limit. `--max-memory`
 continues to govern descendant processes, not the Hoimin CLI itself.
 
+Analysis supports AST depth up to 128, counting the module as depth 1 and
+including auxiliary syntax nodes. A deeper tree fails with its source path and
+`analysis depth exceeds supported limit 128`; it does not produce a complete
+empty result. This limit applies even with `--max-candidates 1`. Flat files with
+many shallow statements are not rejected by this depth limit.
+
 For `plan` creation and `verify` rediscovery, `--analyzer-timeout` is one
 deadline for the complete discovery phase, not a new deadline per target. A
 discovery timeout returns promptly while an already-running blocking analyzer
