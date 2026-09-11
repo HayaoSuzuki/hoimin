@@ -292,6 +292,12 @@ IDs are `type_nullable_remove`, `type_nullable_add`, `type_list_sequence`,
 historical `type_mapping` name remains accepted as an alias for
 `type_dict_mapping`.
 
+Builtin call and exception pairs require both names to resolve to builtins.
+PEP 695 type parameters can shadow either name in generic function and class
+bodies, including nested closures and comprehensions. Function defaults and
+decorators use the enclosing scope; generic class bases and keywords can see
+the type parameters. Runtime mutations remain excluded from type positions.
+
 Import-dependent type replacements are emitted only when their direct name or
 module alias remains unshadowed at the annotation site. If no safe spelling is
 available, the candidate is skipped.

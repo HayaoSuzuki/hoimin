@@ -642,6 +642,7 @@ enum NameScopeKind {
     Function,
     Class,
     Comprehension,
+    TypeParameters,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -752,6 +753,23 @@ impl NameResolutionIndex {
                     self.resolve_parent(scope.parent, name, offset)
                 }
             }
+            NameScopeKind::TypeParameters => {
+                if scope.locals.contains(name) {
+                    NameResolution::Shadowed
+                } else if direct {
+                    // Declaration headers execute in the annotation scope, which can
+                    // read its immediately enclosing class namespace.
+                    scope
+                        .parent
+                        .map_or(NameResolution::DefinitelyBuiltin, |parent| {
+                            self.resolve_scope(parent, name, true, offset)
+                        })
+                } else {
+                    // Function/comprehension bodies capture type parameters, but do
+                    // not acquire annotation-scope access to ordinary class locals.
+                    self.resolve_parent(scope.parent, name, offset)
+                }
+            }
             NameScopeKind::Class => {
                 if direct {
                     match Self::resolve_ordered_at(scope, name, offset) {
@@ -808,6 +826,12 @@ impl NameResolutionIndex {
                     return self.resolve_scope(scope_id, name, true, offset);
                 }
                 NameScopeKind::Class => parent = scope.parent,
+                NameScopeKind::TypeParameters => {
+                    if scope.locals.contains(name) {
+                        return NameResolution::Shadowed;
+                    }
+                    parent = scope.parent;
+                }
                 NameScopeKind::Function | NameScopeKind::Comprehension => {
                     return self.resolve_scope(scope_id, name, false, offset);
                 }
@@ -895,6 +919,30 @@ impl NameResolutionBuilder {
         self.current = outer;
     }
 
+    fn in_type_parameters(
+        &mut self,
+        parameters: Option<&TypeParams>,
+        visit: impl FnOnce(&mut Self),
+    ) {
+        let Some(parameters) = parameters else {
+            visit(self);
+            return;
+        };
+        let scope = self.new_scope(NameScopeKind::TypeParameters);
+        for parameter in parameters.iter() {
+            let name = match parameter {
+                TypeParam::TypeVar(parameter) => parameter.name.as_str(),
+                TypeParam::TypeVarTuple(parameter) => parameter.name.as_str(),
+                TypeParam::ParamSpec(parameter) => parameter.name.as_str(),
+            };
+            self.add_local(scope, name);
+        }
+        self.in_scope(scope, |this| {
+            this.visit_type_params(parameters);
+            visit(this);
+        });
+    }
+
     fn in_loop_back_edge(&mut self, visit: impl FnOnce(&mut Self)) {
         self.loop_back_edges.push(LoopBackEdgeContext {
             scope: self.current,
@@ -922,6 +970,13 @@ impl NameResolutionBuilder {
         if owner == current {
             return true;
         }
+        if scopes[current.0].kind == NameScopeKind::TypeParameters {
+            // Header evaluation is synchronous in its enclosing scope. In
+            // particular, module loops and active exception targets still apply.
+            return scopes[current.0]
+                .parent
+                .is_some_and(|parent| Self::loop_scope_visible(scopes, parent, owner));
+        }
         if scopes[current.0].kind != NameScopeKind::Class {
             return false;
         }
@@ -930,7 +985,7 @@ impl NameResolutionBuilder {
             let scope = &scopes[scope_id.0];
             match scope.kind {
                 NameScopeKind::Module => return scope_id == owner,
-                NameScopeKind::Class => parent = scope.parent,
+                NameScopeKind::Class | NameScopeKind::TypeParameters => parent = scope.parent,
                 NameScopeKind::Function | NameScopeKind::Comprehension => return false,
             }
         }
@@ -1021,7 +1076,9 @@ impl NameResolutionBuilder {
         let scope = &mut self.index.scopes[self.current.0];
         scope.possible_bindings.insert(name.to_owned());
         match scope.kind {
-            NameScopeKind::Function | NameScopeKind::Comprehension => {
+            NameScopeKind::Function
+            | NameScopeKind::Comprehension
+            | NameScopeKind::TypeParameters => {
                 scope.locals.insert(name.to_owned());
             }
             NameScopeKind::Module | NameScopeKind::Class => {
@@ -1143,22 +1200,7 @@ impl NameResolutionBuilder {
     }
 
     fn temporary_binding_visible(&self, owner: ScopeId) -> bool {
-        if owner == self.current {
-            return true;
-        }
-        if self.index.scopes[self.current.0].kind != NameScopeKind::Class {
-            return false;
-        }
-        let mut parent = self.index.scopes[self.current.0].parent;
-        while let Some(scope_id) = parent {
-            let scope = &self.index.scopes[scope_id.0];
-            match scope.kind {
-                NameScopeKind::Module => return scope_id == owner,
-                NameScopeKind::Class => parent = scope.parent,
-                NameScopeKind::Function | NameScopeKind::Comprehension => return false,
-            }
-        }
-        false
+        Self::loop_scope_visible(&self.index.scopes, self.current, owner)
     }
 
     fn visit_comprehension_expression(
@@ -1209,18 +1251,26 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
                 for decorator in &definition.decorator_list {
                     self.visit_decorator(decorator);
                 }
-                if let Some(type_params) = &definition.type_params {
-                    self.visit_type_params(type_params);
+                // Ordinary defaults, like decorators, do not see this declaration's
+                // type parameters. Parameter and return annotations do.
+                for parameter in definition.parameters.iter_non_variadic_params() {
+                    if let Some(default) = &parameter.default {
+                        self.visit_expr(default);
+                    }
                 }
-                self.visit_parameters(&definition.parameters);
-                if let Some(returns) = &definition.returns {
-                    self.visit_annotation(returns);
-                }
-                let scope = self.new_scope(NameScopeKind::Function);
-                for parameter in definition.parameters.as_ref() {
-                    self.add_local(scope, parameter.name().as_str());
-                }
-                self.in_scope(scope, |this| this.visit_body(&definition.body));
+                self.in_type_parameters(definition.type_params.as_deref(), |this| {
+                    for parameter in definition.parameters.as_ref() {
+                        this.visit_parameter(parameter.as_parameter());
+                    }
+                    if let Some(returns) = &definition.returns {
+                        this.visit_annotation(returns);
+                    }
+                    let scope = this.new_scope(NameScopeKind::Function);
+                    for parameter in definition.parameters.as_ref() {
+                        this.add_local(scope, parameter.name().as_str());
+                    }
+                    this.in_scope(scope, |this| this.visit_body(&definition.body));
+                });
                 return;
             }
             Stmt::ClassDef(definition) => {
@@ -1228,14 +1278,13 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
                 for decorator in &definition.decorator_list {
                     self.visit_decorator(decorator);
                 }
-                if let Some(type_params) = &definition.type_params {
-                    self.visit_type_params(type_params);
-                }
-                if let Some(arguments) = &definition.arguments {
-                    self.visit_arguments(arguments);
-                }
-                let scope = self.new_scope(NameScopeKind::Class);
-                self.in_scope(scope, |this| this.visit_body(&definition.body));
+                self.in_type_parameters(definition.type_params.as_deref(), |this| {
+                    if let Some(arguments) = &definition.arguments {
+                        this.visit_arguments(arguments);
+                    }
+                    let scope = this.new_scope(NameScopeKind::Class);
+                    this.in_scope(scope, |this| this.visit_body(&definition.body));
+                });
                 return;
             }
             Stmt::Import(import) => {
